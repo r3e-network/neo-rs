@@ -1,0 +1,29 @@
+[package]
+name = "neo-base"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+neo-proc-macros  =  { path = "../neo-proc-macros"}
+
+base58      = { version = "0.2" }
+base64      = { version = "0.21", default-features = false, features = ["alloc"] }
+hex         = { version = "0.4", default-features = false, features = ["alloc"] }
+
+ripemd      = { version = "0.1", default-features = false }
+sha2        = { version = "0.10", default-features = false, features = ["asm", "asm-aarch64"]}
+tiny-keccak = { version = "2", features = ["keccak"] }
+
+bytes       = { version = "1", default-features = false }
+serde       = { version = "1", default-features = false, features = ["derive", "alloc"] }
+
+cfg-if      = { version = "1" }
+
+thiserror        = { version = "1", optional = true }
+thiserror-no-std = { version = "2", optional = true }
+
+
+[features]
+default = ["thiserror-no-std"]
+
+std = ["thiserror", "serde/std"]

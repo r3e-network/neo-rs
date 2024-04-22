@@ -1,0 +1,27 @@
+[package]
+name = "neo-crypto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+neo-base   = { path = "../neo-base" }
+
+rand_core  = { version = "0.6", default-features = false, features = ["getrandom", "alloc"]}
+p256       = { version = "0", default-features = false, features = ["arithmetic", "ecdsa", "ecdh"]}
+
+subtle    = { version = "2", default-features = false }
+zeroize   = { version = "1.7", features = ["zeroize_derive"]}
+
+scrypt    = { version = "0", default-features = false }
+aes       = { version = "0.8" }
+
+serde     = { version = "1", default-features = false, features = ["derive", "alloc"] }
+
+thiserror        = { version = "1", optional = true }
+thiserror-no-std = { version = "2", optional = true }
+
+
+[features]
+default = ["thiserror-no-std"]
+
+std     = ["thiserror", "rand_core/std"]

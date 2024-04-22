@@ -1,0 +1,14 @@
+[package]
+name = "neo-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+neo-core = { path = "../neo-core" }
+neo-vm   = { path = "../neo-vm" }
+
+
+[features]
+default = []
+
+std     = []
