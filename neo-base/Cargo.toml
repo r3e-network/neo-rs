@@ -1,29 +1,31 @@
 [package]
 name = "neo-base"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-neo-proc-macros  =  { path = "../neo-proc-macros"}
+bytes     = { version = "1.10", default-features = false }
+thiserror = { version = "2", default-features = false }
 
-base58      = { version = "0.2" }
-base64      = { version = "0.21", default-features = false, features = ["alloc"] }
-hex         = { version = "0.4", default-features = false, features = ["alloc"] }
+sha2   = { version = "0.10", default-features = false }
+ripemd = { version = "0.1", default-features = false }
 
-ripemd      = { version = "0.1", default-features = false }
-sha2        = { version = "0.10", default-features = false, features = ["asm", "asm-aarch64"]}
-tiny-keccak = { version = "2", features = ["keccak"] }
+bs58   = { version = "0.5", default-features = false, features = ["alloc"] }
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+hex    = { version = "0.4", default-features = false, features = ["alloc"] }
 
-bytes       = { version = "1", default-features = false }
-serde       = { version = "1", default-features = false, features = ["derive", "alloc"] }
-
-cfg-if      = { version = "1" }
-
-thiserror        = { version = "1", optional = true }
-thiserror-no-std = { version = "2", optional = true }
-
+chrono = { version = "0.4", optional = true}
+serde  = { version = "1", default-features = false, features = ["alloc", "derive"] }
 
 [features]
-default = ["thiserror-no-std"]
+default = []
 
-std = ["thiserror", "serde/std"]
+std = [
+    "bs58/default",
+    "bytes/std",
+    "sha2/default",
+    "thiserror/std",
+    "chrono",
+]
+
+enclave = ["sha2/force-soft"]

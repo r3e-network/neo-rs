@@ -1,64 +1,73 @@
-// Copyright @ 2023 - 2024, R3E Network
+// Copyright @ 2025 - present, R3E Network
 // All Rights Reserved
 
-pub mod uint256;
-pub mod uint160;
+use core::cmp::{Ord, Ordering, PartialOrd};
+use core::fmt::{Debug, Display, Formatter};
 
-pub use uint256::*;
-pub use uint160::*;
-
-
-pub trait Widening: Sized {
-    const BITS: u8;
-
-    type DoubleWidth;
-
-    fn add_with_carrying(self, rhs: Self, carry: bool) -> (Self, bool);
-
-    fn sub_with_borrowing(self, rhs: Self, carry: bool) -> (Self, bool);
-
-    fn mul_with_carrying(self, rhs: Self, carry: Self) -> (Self, Self);
-
-    fn mul_widening(self, rhs: Self) -> (Self, Self);
+/// Int256 is a 256-bit integer, in little endian
+#[derive(Copy, Clone, Default, Hash, Eq, PartialEq)]
+#[repr(C)]
+pub struct I256 {
+    low: u128,
+    high: i128,
 }
 
-impl Widening for u64 {
-    const BITS: u8 = 64;
+#[cfg(target_endian = "little")]
+impl I256 {
+    pub const ZERO: Self = Self { low: 0, high: 0 };
 
-    type DoubleWidth = u128;
+    pub const ONE: Self = Self { low: 1, high: 0 };
+
+    pub const MINUS_ONE: Self = Self {
+        low: u128::MAX,
+        high: -1,
+    };
+
+    pub const MAX: Self = Self {
+        low: u128::MAX,
+        high: i128::MAX,
+    };
+
+    pub const MIN: Self = Self {
+        low: u128::MIN,
+        high: i128::MIN,
+    };
 
     #[inline]
-    fn add_with_carrying(self, rhs: Self, carry: bool) -> (Self, bool) {
-        let (r1, o1) = self.overflowing_add(rhs);
-        if carry {
-            let (r2, o2) = r1.overflowing_add(1);
-            (r2, o1 || o2)
-        } else {
-            (r1, o1)
-        }
+    pub fn to_le_bytes(&self) -> [u8; 32] {
+        unsafe { core::mem::transmute_copy(self) }
     }
 
     #[inline]
-    fn sub_with_borrowing(self, rhs: Self, borrow: bool) -> (Self, bool) {
-        let (r1, o1) = self.overflowing_sub(rhs);
-        if borrow {
-            let (s2, o2) = r1.overflowing_sub(1);
-            (s2, o1 || o2)
-        } else {
-            (r1, o1)
-        }
+    pub fn to_be_bytes(&self) -> [u8; 32] {
+        let mut bytes = self.to_le_bytes();
+        bytes.reverse();
+        bytes
     }
+}
 
-    #[inline]
-    fn mul_with_carrying(self, rhs: Self, carry: Self) -> (Self, Self) {
-        let r = carry as Self::DoubleWidth +
-            self as Self::DoubleWidth * rhs as Self::DoubleWidth;
-        (r as Self, (r >> Self::BITS) as Self)
+impl Debug for I256 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{self}")
     }
+}
 
-    #[inline]
-    fn mul_widening(self, rhs: Self) -> (Self, Self) {
-        let r = self as Self::DoubleWidth * rhs as Self::DoubleWidth;
-        (r as Self, (r >> Self::BITS) as Self)
+impl Display for I256 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        let h = self.to_be_bytes();
+        f.write_str("0x")?;
+        f.write_str(&hex::encode(h))
+    }
+}
+
+impl PartialOrd for I256 {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for I256 {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.high.cmp(&other.high).then(self.low.cmp(&other.low))
     }
 }

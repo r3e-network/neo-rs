@@ -1,9 +1,10 @@
-// Copyright @ 2023 - 2024, R3E Network
+// Copyright @ 2025 - present, R3E Network
 // All Rights Reserved
 
-use alloc::{string::String, vec::Vec};
-use crate::{errors, encoding::base58::{ToBase58Check, FromBase58Check}};
+use alloc::string::String;
+use alloc::vec::Vec;
 
+use crate::encoding::{FromBase58Check, ToBase58Check};
 
 #[derive(Debug, Clone)]
 pub struct Wif {
@@ -16,7 +17,9 @@ pub struct Wif {
 }
 
 impl Wif {
-    pub fn version(&self) -> u8 { self.version }
+    pub fn version(&self) -> u8 {
+        self.version
+    }
 
     pub fn data(&self) -> &[u8] {
         if self.compressed {
@@ -26,7 +29,9 @@ impl Wif {
         }
     }
 
-    pub fn compressed(&self) -> bool { self.compressed }
+    pub fn compressed(&self) -> bool {
+        self.compressed
+    }
 }
 
 pub trait WifEncode {
@@ -50,20 +55,19 @@ impl<T: AsRef<[u8]>> WifEncode for T {
             buf.push(1u8);
         }
 
-        buf.to_base58_check(None, None)
+        buf.to_base58_check()
     }
 }
 
-
-#[derive(Debug, PartialEq, Eq, Copy, Clone, errors::Error)]
+#[derive(Debug, Copy, Clone, thiserror::Error)]
 pub enum WifDecodeError {
     #[error("wif-decode: invalid base58 encoded")]
     InvalidBase58Encoded,
 
     #[error("wif-decode: invalid length '{0}'")]
-    InvalidWifLength(usize),
+    InvalidLength(usize),
 
-    #[error("wif-decode: invalid compressed flag '{0}'")]
+    #[error("wif-decode: invalid compressed flag")]
     InvalidCompressedFlag(u8),
 }
 
@@ -71,21 +75,24 @@ impl<T: AsRef<str>> WifDecode for T {
     type Error = WifDecodeError;
 
     fn wif_decode(&self, expected_data_size: usize) -> Result<Wif, Self::Error> {
-        let b58 = Vec::from_base58_check(self.as_ref(), None, None)
+        let b58 = Vec::from_base58_check(self.as_ref())
             .map_err(|_err| Self::Error::InvalidBase58Encoded)?;
 
-        if b58.len() <= 1 || (b58.len() != expected_data_size && b58.len() != expected_data_size + 1) {
-            return Err(Self::Error::InvalidWifLength(b58.len()));
+        let size = b58.len();
+        if size <= 1 || (size != expected_data_size && size != expected_data_size + 1) {
+            return Err(Self::Error::InvalidLength(size));
         }
 
-        let compressed = b58.len() == expected_data_size + 1;
-
+        let compressed = size == expected_data_size + 1;
         let last = b58.last().copied().unwrap_or(0);
         if compressed && last != 0x01 {
             return Err(Self::Error::InvalidCompressedFlag(last));
         }
 
-
-        Ok(Wif { version: b58[0], compressed, whole: b58 })
+        Ok(Wif {
+            version: b58[0],
+            compressed,
+            whole: b58,
+        })
     }
 }

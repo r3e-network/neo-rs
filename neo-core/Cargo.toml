@@ -1,34 +1,32 @@
 [package]
 name = "neo-core"
 version = "0.1.0"
-edition = "2021"
-
-
-#[lib]
-#name       = "neo"
-#crate-type = ["staticlib"]
-
+edition = "2024"
 
 [dependencies]
-neo-base   = { path = "../neo-base" }
-neo-crypto = { path = "../neo-crypto" }
+neo-base   = { path = "../neo-base", default-features = false }
+neo-crypto = { path = "../neo-crypto", default-features = false }
 
-bytes     = { version = "1", default-features = false }
-subtle    = { version = "2", default-features = false }
+hashbrown = { version = "0.16" }
+thiserror = { version = "2", default-features = false }
+bytes     = { version = "1.10", default-features = false }
 
-hex              = { version = "0.4", default-features = false, features = ["alloc"] }
-serde            = { version = "1", default-features = false, features = ["derive", "alloc"] }
-serde_json       = { version = "1", default-features = false, features = ["alloc"]}
-serde_repr       = { version = "0" }
+serde      = { version = "1", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
 
-hashbrown        = { version = "0", features = ["serde"]}
-mimalloc         = { version = "0", default-features = false }
-
-thiserror        = { version = "1", optional = true }
-thiserror-no-std = { version = "2", optional = true }
-
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
 
 [features]
-default = ["thiserror-no-std"]
+default = []
 
-std     = ["thiserror", "serde/std", "serde_json/std"]
+std = [
+    "neo-base/std",
+    "neo-crypto/std",
+    "thiserror/std",
+    "bytes/std",
+]
+
+enclave = [
+    "neo-base/enclave",
+    "neo-crypto/enclave"
+]

@@ -1,13 +1,6 @@
 [package]
 name = "neo-proc-macros"
 version = "0.1.0"
-edition = "2021"
-
-[lib]
-proc-macro = true
-
+edition = "2024"
 
 [dependencies]
-proc-macro2 = { version = "1" }
-syn         = { version = "2" }
-quote       = { version = "1" }

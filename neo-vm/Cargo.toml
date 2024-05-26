@@ -1,19 +1,6 @@
 [package]
 name = "neo-vm"
 version = "0.1.0"
-edition = "2021"
-
+edition = "2024"
 
 [dependencies]
-neo-core     = { path = "../neo-core" }
-
-bytes        = { version = "1", default-features = false }
-
-strum        = { version = "0", default-features = false }
-strum_macros = { version = "0" }
-
-
-[features]
-default = []
-
-std     = []

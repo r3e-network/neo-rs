@@ -1,31 +1,19 @@
-// Copyright @ 2023 - 2024, R3E Network
+// Copyright @ 2025 - present, R3E Network
 // All Rights Reserved
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(all(feature = "std", feature = "enclave"))]
+compile_error!("feature 'std' and 'enclave' cannot be enabled both");
+
 extern crate alloc;
+extern crate core;
 
 pub mod bytes;
-pub mod defer;
 pub mod encoding;
-pub mod errors;
 pub mod hash;
 pub mod math;
-pub mod mem;
+pub mod merkle;
 
-
-pub fn byzantine_honest_quorum(n: u32) -> u32 { n - (n - 1) / 3 }
-
-pub fn byzantine_failure_quorum(n: u32) -> u32 { (n - 1) / 3 }
-
-// #[cfg(all(not(test), not(feature = "std")))]
-// #[panic_handler]
-// fn on_panic(_info: &core::panic::PanicInfo) -> ! {
-//     cfg_if::cfg_if! {
-//         if #[cfg(target_arch = "wasm32")] {
-//             core::arch::wasm32::unreachable();
-//         } else {
-//             unreachable!();
-//         }
-//     }
-// }
+#[cfg(feature = "std")]
+pub mod time;

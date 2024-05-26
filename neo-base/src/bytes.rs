@@ -1,68 +1,72 @@
-// Copyright @ 2023 - 2024, R3E Network
+// Copyright @ 2025 - present, R3E Network
 // All Rights Reserved
 
-pub trait ToArray<T: Copy, const N: usize> {
-    /// slice to array. slice.len() must be constant
-    fn to_array(&self) -> [T; N];
+use alloc::{string::String, vec::Vec};
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+
+use crate::encoding::*;
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct Bytes(pub(crate) Vec<u8>);
+
+impl Bytes {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_slice()
+    }
 }
 
-impl<T: Copy + Default, const N: usize> ToArray<T, N> for [T] {
-    /// slice to array. slice.len() must be constant
+impl From<Vec<u8>> for Bytes {
+    fn from(value: Vec<u8>) -> Self {
+        Bytes(value)
+    }
+}
+
+impl Into<Vec<u8>> for Bytes {
+    fn into(self) -> Vec<u8> {
+        self.0
+    }
+}
+
+impl Default for Bytes {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl BinEncoder for Bytes {
+    fn encode_bin(&self, w: &mut impl BinWriter) {
+        w.write_varint(self.0.len() as u64);
+        w.write(&self.0);
+    }
+}
+
+impl BinDecoder for Bytes {
+    fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
+        let len = r.read_varint_le()?;
+        let mut buf = Vec::with_capacity(len as usize);
+        r.read_full(buf.as_mut_slice())?;
+        Ok(Bytes(buf))
+    }
+}
+
+impl Serialize for Bytes {
     #[inline]
-    fn to_array(&self) -> [T; N] {
-        let mut d = [Default::default(); N];
-        d.copy_from_slice(self);
-        d
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0.to_base64_std())
     }
 }
 
-pub trait ToRevArray<T: Copy, const N: usize> {
-    fn to_rev_array(&self) -> [T; N];
-}
-
-impl<T: Copy + Default, const N: usize> ToRevArray<T, N> for [T] {
-    /// slice to revered array(for endian transition). slice.len() must be constant
+impl<'de> Deserialize<'de> for Bytes {
     #[inline]
-    fn to_rev_array(&self) -> [T; N] {
-        let mut d = [Default::default(); N];
-        d.copy_from_slice(self);
-        d.reverse();
-        d
-    }
-}
-
-
-pub fn xor_array<const N: usize>(left: &[u8], right: &[u8]) -> [u8; N] {
-    let mut d = [0u8; N];
-    if left.len() != right.len() {
-        panic!("left length {} != right length {}", left.len(), right.len());
-    }
-
-    if left.len() != d.len() {
-        panic!("source length {} != dest length {}", left.len(), N);
-    }
-
-    left.into_iter()
-        .enumerate()
-        .for_each(|(idx, v)| d[idx] = v ^ right[idx]);
-    d
-}
-
-pub trait LeadingZeroBytes {
-    fn leading_zero_bytes(&self) -> usize;
-}
-
-impl<T: AsRef<[u8]>> LeadingZeroBytes for T {
-    /// Self must be big endian
-    fn leading_zero_bytes(&self) -> usize {
-        let mut count = 0;
-        for b in self.as_ref().iter() {
-            if *b != 0 {
-                return count;
-            }
-            count += 1;
-        }
-
-        count
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        Vec::from_base64_std(&value)
+            .map(|v| v.into())
+            .map_err(D::Error::custom)
     }
 }

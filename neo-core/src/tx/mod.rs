@@ -1,32 +1,33 @@
-// Copyright @ 2023 - 2024, R3E Network
+// Copyright @ 2025 - present, R3E Network
 // All Rights Reserved
 
+mod attr;
+mod signer;
+mod verify;
+mod witness;
 
-pub mod attr;
-pub mod signer;
-pub mod witness;
-pub mod pool;
-
-pub use {attr::*, pool::*, signer::*, witness::*};
-
+pub use attr::*;
+pub use signer::*;
+pub use verify::*;
+pub use witness::*;
 
 use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
 
-use neo_base::encoding::bin::*;
-use crate::types::{H160, H256, Script, VmState};
+use crate::h256::H256;
+use crate::script::Script;
 
-
-#[derive(Debug, Clone, Deserialize, Serialize, BinEncode, InnerBinDecode)]
+#[derive(Debug, Clone)]
 pub struct Tx {
     /// i.e. tx-id, None means no set. Set it to None if hash-fields changed
-    #[bin(ignore)]
-    #[serde(skip_serializing_if = "Option::is_none", skip_deserializing)]
+    //  #[bin(ignore)]
+    // #[serde(skip_serializing_if = "Option::is_none", skip_deserializing)]
     hash: Option<H256>,
 
     /// None means not-computed. Set it to None if hash-fields changed
-    #[bin(ignore)]
-    #[serde(skip_serializing_if = "Option::is_none", skip_deserializing)]
+    // #[bin(ignore)]
+    // #[serde(skip_serializing_if = "Option::is_none", skip_deserializing)]
     size: Option<u32>,
 
     pub version: u8,
@@ -35,7 +36,7 @@ pub struct Tx {
     pub sysfee: u64,
     pub netfee: u64,
 
-    #[serde(rename = "validuntilblock")]
+    //#[serde(rename = "validuntilblock")]
     pub valid_until_block: u32,
 
     pub signers: Vec<Signer>,
@@ -48,99 +49,10 @@ pub struct Tx {
     pub witnesses: Vec<Witness>,
 }
 
-impl EncodeHashFields for Tx {
-    fn encode_hash_fields(&self, w: &mut impl BinWriter) {
-        self.version.encode_bin(w); // 1
-        self.nonce.encode_bin(w); // 4
-        self.sysfee.encode_bin(w); // 8
-        self.netfee.encode_bin(w); // 8
-        self.valid_until_block.encode_bin(w); // 4
-        self.signers.encode_bin(w);
-        self.attributes.encode_bin(w);
-        self.script.encode_bin(w);
-    }
-}
-
-impl BinDecoder for Tx {
-    fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
-        let mut tx = Self::decode_bin_inner(r)?;
-        tx.calc_hash_and_size();
-        Ok(tx)
-    }
-}
-
-impl Tx {
-    /// i.e. TxID
-    pub fn hash(&self) -> H256 { self.hash.unwrap_or_else(|| self.calc_hash()) }
-
-    pub fn size(&self) -> u32 { self.size.unwrap_or_else(|| self.bin_size() as u32) }
-
-    pub fn signers(&self) -> Vec<&H160> { self.signers.iter().map(|s| &s.account).collect() }
-
-    pub fn calc_hash_and_size(&mut self) {
-        self.size = Some(self.bin_size() as u32); // assume never exceed u32::MAX
-        self.hash = Some(self.calc_hash());
-    }
-
-    fn calc_hash(&self) -> H256 { self.hash_fields_sha256().into() }
-}
-
-
-#[derive(Debug, Clone, BinEncode, BinDecode)]
-pub struct StatedTx {
-    pub block_index: u32,
-    pub tx: Tx,
-    pub state: VmState,
-}
-
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-
-    #[test]
-    fn test_tx_encoding() {
-        let mut tx = Tx {
-            hash: None,
-            size: None,
-            version: 1,
-            nonce: 0x11223344,
-            sysfee: 2233,
-            netfee: 4455,
-            valid_until_block: 9999,
-            signers: Vec::new(),
-            attributes: Vec::new(),
-            script: Default::default(),
-            witnesses: Vec::new(),
-        };
-
-        let decode = serde_json::to_string(&tx)
-            .expect("json encode should be ok");
-
-        let got: Tx = serde_json::from_str(&decode)
-            .expect("json decode should be ok");
-
-        assert!(tx.hash.is_none());
-        assert!(tx.size.is_none());
-        assert_eq!(got.version, tx.version);
-        assert_eq!(got.nonce, tx.nonce);
-        assert_eq!(got.sysfee, tx.sysfee);
-        assert_eq!(got.netfee, tx.netfee);
-        assert_eq!(got.valid_until_block, tx.valid_until_block);
-
-        tx.calc_hash_and_size();
-        let decode = serde_json::to_string(&tx)
-            .expect("json encode should be ok");
-
-        let mut got: Tx = serde_json::from_str(&decode)
-            .expect("json decode should be ok");
-
-        assert_eq!(got.hash, None);
-        assert_eq!(got.size, None);
-
-        got.calc_hash_and_size();
-        assert_eq!(got.hash, tx.hash);
-        assert_eq!(got.size, tx.size);
-    }
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
+pub enum Role {
+    StateValidator = 4,
+    Oracle = 8,
+    NeoFSAlphabet = 16,
+    P2pNotary = 32,
 }

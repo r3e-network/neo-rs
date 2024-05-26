@@ -1,3 +1,6 @@
+# Copyright @ 2025 - present, R3E Network
+# All Rights Reserved
+
 [workspace]
 resolver = "2"
 
@@ -6,19 +9,11 @@ members = [
     "neo-core",
     "neo-crypto",
     "neo-consensus",
-    "neo-legacy",
+    "neo-contract",
     "neo-runtime",
     "neo-p2p",
     "neo-rpc",
     "neo-store",
-    "neo-proc-macros",
     "neo-vm",
-#   "neo-wasm",
+    "neo-proc-macros",
 ]
-
-[profile.release]
-lto = "fat"
-opt_level = 3
-codegen_units = 1
-
-# RUSTFLAGS="-C target-cpu=native"

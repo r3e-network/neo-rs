@@ -4,3 +4,12 @@
 .idea/
 
 /neo-wasm
+**/log/
+/.vscode
+**/.DS_Store
+
+# Added by cargo
+#
+# already existing elements were commented out
+
+#/target
