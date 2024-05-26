@@ -3,30 +3,25 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(not(feature = "std"))]
 extern crate alloc;
-
-
-pub use neo_crypto::secp256r1::*;
-
-
-pub mod contract;
-pub mod types;
-pub mod tx;
 
 pub mod block;
 pub mod blockchain;
 
-pub mod merkle;
-
+pub mod contract;
 pub mod ledger;
 
-pub mod wallet;
+pub mod merkle;
+pub mod mpt;
 pub mod nns;
 
 pub mod payload;
 pub mod store;
+pub mod tx;
+pub mod types;
+pub mod wallet;
 
+pub use neo_crypto::secp256r1::*;
 
 // #[global_allocator]
 // static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

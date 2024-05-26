@@ -73,7 +73,8 @@ impl<const N: usize> Serialize for FixedBytes<N> {
 impl<'de, const N: usize> Deserialize<'de> for FixedBytes<N> {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Vec::from_base64_std(String::deserialize(deserializer)?.as_str())
+        let value = String::deserialize(deserializer)?;
+        Vec::from_base64_std(value.as_str())
             .map(|v| v.as_slice().into())
             .map_err(D::Error::custom)
     }
@@ -141,7 +142,8 @@ impl Serialize for Bytes {
 impl<'de> Deserialize<'de> for Bytes {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Vec::from_base64_std(String::deserialize(deserializer)?.as_str())
+        let value = String::deserialize(deserializer)?;
+        Vec::from_base64_std(value.as_str())
             .map(|v| v.into())
             .map_err(D::Error::custom)
     }

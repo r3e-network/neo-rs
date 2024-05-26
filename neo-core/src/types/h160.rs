@@ -106,8 +106,8 @@ impl Serialize for H160 {
 impl<'de> Deserialize<'de> for H160 {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        H160::try_from(String::deserialize(deserializer)?.as_str())
-            .map_err(D::Error::custom)
+        let value = String::deserialize(deserializer)?;
+        H160::try_from(value.as_str()).map_err(D::Error::custom)
     }
 }
 

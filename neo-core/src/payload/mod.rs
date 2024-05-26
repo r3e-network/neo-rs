@@ -4,6 +4,7 @@
 pub mod blocks;
 pub mod nodes;
 pub mod extensible;
+pub mod pool;
 
 
 use alloc::vec::Vec;

@@ -2,7 +2,7 @@
 // All Rights Reserved
 
 
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 use core::cmp::Ordering;
 
 use neo_core::{PublicKey, types::{ScriptHash, ToBftHash}};
@@ -12,10 +12,18 @@ const EFFECTIVE_VOTER_TURNOUT: u64 = 5;
 const NEO_TOTAL_SUPPLY: u64 = 1000_000_000; // 0.1 Billion
 
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum Role {
+    Primary,
+    Backup,
+    WatchOnly,
+}
+
+
 #[derive(Debug, Clone)]
 pub struct Member {
     pub key: PublicKey,
-    pub votes: u64, // Uint256,
+    pub votes: u64, // U256,
 }
 
 pub trait MemberCache {
@@ -29,26 +37,25 @@ pub trait MemberCache {
     fn voters_count(&self) -> u64;
 }
 
-/// NOTE: committee_members cannot be zero
+
 #[inline]
 pub fn should_refresh_committee(height: u32, nr_committee: u32) -> bool {
-    height % nr_committee == 0
+    nr_committee == 0 || height % nr_committee == 0
 }
 
 #[allow(dead_code)]
-pub struct Committee<Members: MemberCache> {
+pub struct Committee {
     /// The number of validators, from settings, i.e. from config.
     nr_validators: u32,
 
     /// The number of committee, from settings.
     nr_committee: u32,
 
-    members: Members,
-
+    members: Box<dyn MemberCache>,
     // cached: Vec<Member>,
 }
 
-impl<Members: MemberCache> Committee<Members> {
+impl Committee {
     pub fn next_block_validators(&self) -> Vec<PublicKey> {
         let mut members = self.next_committee();
         let nr_validators = self.nr_validators as usize;

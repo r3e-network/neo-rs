@@ -5,7 +5,7 @@
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
-use neo_base::{encoding::bin::*, math::Uint256};
+use neo_base::{encoding::bin::*, math::U256};
 use crate::{PublicKey, types::{Bytes, H160, H256, Sign}};
 
 
@@ -34,7 +34,7 @@ pub type ParamMap = hashbrown::HashMap<ParamValue, ParamValue>;
 #[serde(tag = "type", content = "value")]
 pub enum ParamValue {
     Boolean(bool),
-    Integer(Uint256),
+    Integer(U256),
 
     ByteArray(Bytes),
     String(String),
@@ -80,7 +80,7 @@ pub enum Param {
     Any(#[serde(default, skip_serializing_if = "Option::is_none")] Option<ParamValue>),
 
     Boolean(bool),
-    Integer(Uint256),
+    Integer(U256),
 
     ByteArray(Bytes),
     String(String),

@@ -1,6 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+
 pub trait ToArray<T: Copy, const N: usize> {
     /// slice to array. slice.len() must be constant
     fn to_array(&self) -> [T; N];

@@ -71,18 +71,35 @@ impl BinDecoder for Tx {
 
 impl Tx {
     /// i.e. TxID
-    pub fn hash(&self) -> H256 { self.hash.unwrap_or_else(|| self.calc_hash()) }
+    pub fn hash(&self) -> H256 {
+        self.hash.unwrap_or_else(|| self.calc_hash())
+    }
 
-    pub fn size(&self) -> u32 { self.size.unwrap_or_else(|| self.bin_size() as u32) }
+    pub fn size(&self) -> u32 {
+        self.size.unwrap_or_else(|| self.bin_size() as u32)
+    }
 
-    pub fn signers(&self) -> Vec<&H160> { self.signers.iter().map(|s| &s.account).collect() }
+    pub fn signers(&self) -> Vec<&H160> {
+        self.signers.iter().map(|s| &s.account).collect()
+    }
+
+    pub fn conflicts(&self) -> Vec<Conflicts> {
+        self.attributes.iter()
+            .map_while(|attr| match attr {
+                TxAttr::Conflicts(conflicts) => Some(conflicts.clone()),
+                _ => None,
+            })
+            .collect()
+    }
 
     pub fn calc_hash_and_size(&mut self) {
         self.size = Some(self.bin_size() as u32); // assume never exceed u32::MAX
         self.hash = Some(self.calc_hash());
     }
 
-    fn calc_hash(&self) -> H256 { self.hash_fields_sha256().into() }
+    fn calc_hash(&self) -> H256 {
+        self.hash_fields_sha256().into()
+    }
 }
 
 
@@ -94,10 +111,15 @@ pub struct StatedTx {
 }
 
 
+impl StatedTx {
+    #[inline]
+    pub fn hash(&self) -> H256 { self.tx.hash() }
+}
+
+
 #[cfg(test)]
 mod test {
     use super::*;
-
 
     #[test]
     fn test_tx_encoding() {

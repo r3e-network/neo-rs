@@ -1,11 +1,13 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+
 use alloc::{string::String, vec::Vec};
 use core::result::Result;
 use base64::{Engine, engine::general_purpose::{STANDARD, URL_SAFE}};
 
 use crate::errors;
+
 
 pub trait ToBase64 {
     fn to_base64_std(&self) -> String;
@@ -69,6 +71,7 @@ impl FromBase64 for Vec<u8> {
             .map_err(FromBase64Error::from)
     }
 }
+
 
 #[cfg(test)]
 mod test {

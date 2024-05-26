@@ -5,7 +5,7 @@
 use std::{collections::BTreeMap, sync::{Arc, Mutex}};
 
 use neo_base::errors;
-use neo_core::store::{*, chain::{PutError, GetError}};
+use neo_core::store::{self, *, chain::{PutError, GetError}};
 
 
 struct Item {
@@ -25,6 +25,58 @@ impl MockStore {
     }
 }
 
+
+#[derive(Clone)]
+pub struct WriteBatch {
+    deletes: Vec<(Vec<u8>, Versions)>,
+    puts: Vec<(Vec<u8>, Vec<u8>, Versions)>,
+    inner: Arc<Mutex<MockInner>>,
+}
+
+impl store::WriteBatch for WriteBatch {
+    type CommitError = WriteError;
+
+    fn add_delete(&mut self, key: Vec<u8>, options: &WriteOptions) {
+        self.deletes.push((key, options.version));
+    }
+
+    fn add_put(&mut self, key: Vec<u8>, value: Vec<u8>, options: &WriteOptions) {
+        self.puts.push((key, value, options.version));
+    }
+
+    fn commit(self) -> Result<BatchWritten, Self::CommitError> {
+        let mut inner = self.inner.lock().unwrap();
+        for (key, version) in self.deletes.iter() {
+            if !inner.can_delete(key, *version) {
+                return Err(WriteError::Conflict);
+            }
+        }
+
+        for (key, _, version) in self.puts.iter() {
+            if !inner.can_put(key, *version) {
+                return Err(WriteError::Conflict);
+            }
+        }
+
+        let deleted = self.deletes.iter()
+            .map(|(key, _)| inner.store.remove(key)
+                .map(|v| v.version)
+                .unwrap_or(NOT_EXISTS))
+            .collect();
+
+        let put = self.puts.into_iter()
+            .map(|(key, value, _)| {
+                let version = inner.next_version();
+                inner.store.insert(key, Item { version, value });
+                version
+            })
+            .collect();
+
+        Ok(BatchWritten { deleted, put })
+    }
+}
+
+
 struct MockInner {
     version: u64,
     store: BTreeMap<Vec<u8>, Item>,
@@ -38,6 +90,28 @@ impl MockInner {
     fn next_version(&mut self) -> Version {
         self.version += 1;
         self.version
+    }
+
+    fn can_put(&self, key: &[u8], version: Versions) -> bool {
+        if let Versions::Expected(expected) = version {
+            self.store.get(key)
+                .map(|v| v.version == expected)
+                .unwrap_or(false)
+        } else if let Versions::IfNotExist = version {
+            self.store.get(key).is_none()
+        } else {
+            true
+        }
+    }
+
+    fn can_delete(&self, key: &[u8], version: Versions) -> bool {
+        if let Versions::Expected(expected) = version {
+            self.store.get(key)
+                .map(|v| v.version == expected)
+                .unwrap_or(false)
+        } else {
+            true
+        }
     }
 }
 
@@ -87,43 +161,32 @@ impl Into<PutError> for WriteError {
 impl Store for MockStore {
     type WriteError = WriteError;
 
-    fn delete(&self, key: &[u8], options: &WriteOptions) -> Result<(), Self::WriteError> {
+    type WriteBatch = WriteBatch;
+
+    fn delete(&self, key: &[u8], options: &WriteOptions) -> Result<Version, Self::WriteError> {
         let mut inner = self.inner.lock().unwrap();
-        if let Versions::Expected(expected) = options.version {
-            if let Some(existed) = inner.store.get(key) {
-                if existed.version == expected {
-                    inner.store.remove(key);
-                    return Ok(());
-                }
-            }
+        if !inner.can_delete(key, options.version) {
             return Err(WriteError::Conflict);
         }
 
-        inner.store.remove(key);
-        Ok(())
+        let v = inner.store.remove(key)
+            .map(|v| v.version)
+            .unwrap_or(NOT_EXISTS);
+        Ok(v)
     }
 
-    fn put(&self, key: &[u8], value: &[u8], options: &WriteOptions) -> Result<Version, Self::WriteError> {
+    fn put(&self, key: Vec<u8>, value: Vec<u8>, options: &WriteOptions) -> Result<Version, Self::WriteError> {
         let mut inner = self.inner.lock().unwrap();
-        if let Versions::Expected(expected) = options.version {
-            if let Some(existed) = inner.store.get(key) {
-                if existed.version == expected {
-                    let version = inner.next_version();
-                    inner.store.insert(key.to_vec(), Item { version, value: value.to_vec() });
-                    return Ok(version);
-                }
-            }
+        if !inner.can_put(&key, options.version) {
             return Err(WriteError::Conflict);
-        } else if let Versions::IfNotExist = options.version {
-            if inner.store.get(key).is_some() {
-                return Err(WriteError::Conflict);
-            }
         }
 
         let version = inner.next_version();
-        inner.store.insert(key.to_vec(), Item { version, value: value.to_vec() });
+        inner.store.insert(key, Item { version, value });
         Ok(version)
     }
 
-    // fn write_batch<W: crate::WriteBatch>(&mut self) -> W {}
+    fn write_batch(&self) -> WriteBatch {
+        WriteBatch { deletes: Vec::new(), puts: Vec::new(), inner: self.inner.clone() }
+    }
 }

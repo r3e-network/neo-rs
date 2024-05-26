@@ -196,8 +196,8 @@ impl Serialize for PublicKey {
 impl<'de> Deserialize<'de> for PublicKey {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        PublicKey::from_hex(String::deserialize(deserializer)?.as_str())
-            .map_err(D::Error::custom)
+        let value = String::deserialize(deserializer)?;
+        PublicKey::from_hex(value.as_str()).map_err(D::Error::custom)
     }
 }
 

@@ -1,12 +1,14 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+
 use alloc::{string::String, vec::Vec};
 use bytes::{BytesMut, BufMut, Bytes, Buf};
 
 use crate::{errors, hash::{Sha256, SHA256_HASH_SIZE}};
 
 pub use neo_proc_macros::{BinEncode, BinDecode, InnerBinDecode};
+
 
 pub trait BinWriter {
     fn write_varint_le(&mut self, value: u64);
@@ -56,8 +58,6 @@ pub trait BinReader {
         }
     }
 
-    fn read(&mut self, buf: &mut [u8]) -> usize;
-
     /// like `read_exact`
     fn read_full(&mut self, buf: &mut [u8]) -> Result<(), BinDecodeError>;
 
@@ -105,13 +105,6 @@ impl From<Vec<u8>> for Buffer {
 }
 
 impl BinReader for Buffer {
-    fn read(&mut self, buf: &mut [u8]) -> usize {
-        let n = core::cmp::min(self.remaining(), buf.len());
-        self.buf.copy_to_slice(&mut buf[..n]);
-        self.consumed += n;
-        n
-    }
-
     fn read_full(&mut self, buf: &mut [u8]) -> Result<(), BinDecodeError> {
         if self.remaining() < buf.len() {
             return Err(BinDecodeError::EndOfBuffer);
@@ -149,27 +142,20 @@ impl<'a> AsRef<[u8]> for RefBuffer<'a> {
 }
 
 impl<'a> From<&'a [u8]> for RefBuffer<'a> {
-    fn from(value: &'a [u8]) -> Self {
-        Self { consumed: 0, buf: value }
-    }
+    fn from(value: &'a [u8]) -> Self { Self { consumed: 0, buf: value } }
 }
 
 impl<'a> BinReader for RefBuffer<'a> {
-    fn read(&mut self, buf: &mut [u8]) -> usize {
-        let remain = &self.buf[self.consumed..];
-        let n = core::cmp::min(remain.len(), buf.len());
-
-        buf[..n].copy_from_slice(&remain[..n]);
-        self.consumed += n;
-        n
-    }
-
     fn read_full(&mut self, buf: &mut [u8]) -> Result<(), BinDecodeError> {
         if self.remaining() < buf.len() {
             return Err(BinDecodeError::EndOfBuffer);
         }
 
-        let _ = self.read(buf);
+        let remain = &self.buf[self.consumed..];
+        let n = core::cmp::min(remain.len(), buf.len());
+
+        buf[..n].copy_from_slice(&remain[..n]);
+        self.consumed += n;
         Ok(())
     }
 
@@ -268,6 +254,32 @@ impl<T: BinEncoder> BinEncoder for Vec<T> {
     }
 }
 
+impl BinEncoder for () {
+    fn encode_bin(&self, _w: &mut impl BinWriter) {}
+
+    fn bin_size(&self) -> usize { 0 }
+}
+
+impl<T1: BinEncoder, T2: BinEncoder> BinEncoder for (&T1, &T2) {
+    fn encode_bin(&self, w: &mut impl BinWriter) {
+        self.0.encode_bin(w);
+        self.1.encode_bin(w);
+    }
+
+    fn bin_size(&self) -> usize { self.0.bin_size() + self.1.bin_size() }
+}
+
+impl<T1: BinEncoder, T2: BinEncoder, T3: BinEncoder> BinEncoder for (&T1, &T2, &T3) {
+    fn encode_bin(&self, w: &mut impl BinWriter) {
+        self.0.encode_bin(w);
+        self.1.encode_bin(w);
+        self.2.encode_bin(w);
+    }
+
+    fn bin_size(&self) -> usize { self.0.bin_size() + self.1.bin_size() + self.2.bin_size() }
+}
+
+
 pub trait ToBinEncoded {
     fn to_bin_encoded(&self) -> Vec<u8>;
 }
@@ -282,6 +294,7 @@ impl<T: BinEncoder> ToBinEncoded for T {
     }
 }
 
+
 /// Bin-encoding and then computing the SHA256
 pub trait BinSha256 {
     fn bin_sha256(&self) -> [u8; SHA256_HASH_SIZE];
@@ -289,9 +302,7 @@ pub trait BinSha256 {
 
 impl<T: BinEncoder> BinSha256 for T {
     #[inline]
-    fn bin_sha256(&self) -> [u8; SHA256_HASH_SIZE] {
-        self.to_bin_encoded().sha256()
-    }
+    fn bin_sha256(&self) -> [u8; SHA256_HASH_SIZE] { self.to_bin_encoded().sha256() }
 }
 
 
@@ -342,7 +353,6 @@ impl BinDecoder for u64 {
 impl BinDecoder for String {
     fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
         let offset = r.consumed();
-
         String::from_utf8(Vec::decode_bin(r)?)
             .map_err(|_err| BinDecodeError::InvalidValue("String", offset))
     }
@@ -362,6 +372,23 @@ impl<T: BinDecoder> BinDecoder for Vec<T> {
         Ok(items)
     }
 }
+
+impl BinDecoder for () {
+    fn decode_bin(_r: &mut impl BinReader) -> Result<Self, BinDecodeError> { Ok(()) }
+}
+
+impl<T1: BinDecoder, T2: BinDecoder> BinDecoder for (T1, T2) {
+    fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
+        Ok((BinDecoder::decode_bin(r)?, BinDecoder::decode_bin(r)?))
+    }
+}
+
+impl<T1: BinDecoder, T2: BinDecoder, T3: BinDecoder> BinDecoder for (T1, T2, T3) {
+    fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
+        Ok((BinDecoder::decode_bin(r)?, BinDecoder::decode_bin(r)?, BinDecoder::decode_bin(r)?))
+    }
+}
+
 
 pub trait EncodeHashFields {
     fn encode_hash_fields(&self, w: &mut impl BinWriter);
@@ -397,6 +424,29 @@ pub fn to_varint_le(value: u64) -> (u8, [u8; 9]) {
         le[0] = 0xff;
         le[1..=8].copy_from_slice(&value.to_le_bytes());
         (9, le)
+    }
+}
+
+
+pub mod big_endian {
+    use super::{BinEncoder, BinDecodeError, BinDecoder, BinReader, BinWriter};
+
+    pub struct U32(pub u32);
+
+    impl U32 {
+        pub fn as_u32(&self) -> u32 { self.0 }
+    }
+
+    impl BinEncoder for U32 {
+        fn encode_bin(&self, w: &mut impl BinWriter) { w.write(&self.0.to_be_bytes()) }
+
+        fn bin_size(&self) -> usize { core::mem::size_of::<u32>() }
+    }
+
+    impl BinDecoder for U32 {
+        fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
+            BinDecoder::decode_bin(r).map(|v: u32| Self(v.swap_bytes()))
+        }
     }
 }
 

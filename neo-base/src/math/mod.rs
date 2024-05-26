@@ -1,11 +1,11 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-pub mod uint256;
-pub mod uint160;
+pub mod u256;
+pub mod u160;
 
-pub use uint256::*;
-pub use uint160::*;
+pub use u256::*;
+pub use u160::*;
 
 
 pub trait Widening: Sized {

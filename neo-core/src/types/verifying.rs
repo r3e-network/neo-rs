@@ -17,6 +17,10 @@ impl Sign {
         buf.put_varbytes(self.as_bytes());
         buf.into()
     }
+
+    pub fn as_secp256r1_sign(&self) -> Secp256r1Sign {
+        Secp256r1Sign::from(self.0.clone())
+    }
 }
 
 impl Into<Secp256r1Sign> for Sign {
