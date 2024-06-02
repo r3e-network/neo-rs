@@ -9,24 +9,35 @@ pub mod recovery;
 pub mod state_machine;
 pub mod timer;
 
+#[cfg(test)]
+pub mod state_machine_test;
+
 
 use alloc::string::String;
-use core::time::Duration;
+use std::sync::mpsc;
 
 use neo_base::{encoding::bin::*, errors};
 use neo_core::{
-    block::{self, Header}, Keypair,
-    merkle::MerkleSha256, payload::{CONSENSUS_CATEGORY, Extensible},
-    tx,
-    types::{H160, ToBftHash, ToCheckSign, ToScriptHash},
+    Keypair,
+    blockchain::ChainStates,
+    payload::{CONSENSUS_CATEGORY, Extensible}, tx, types::*,
 };
-use neo_crypto::rand;
-use crate::Block;
+use crate::unix_milli_now;
 
 pub use {committee::*, context::*, message::*, recovery::*, state_machine::*, timer::*};
 
 
-#[derive(Debug, Copy, Clone, Default, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone)]
+pub enum Broadcasts {
+    PrepareRequest,
+    PrepareResponse,
+    Commit,
+    Block,
+    RecoveryRequest,
+}
+
+
+#[derive(Debug, Copy, Clone, Default, Hash, Eq, PartialEq)]
 pub struct HView {
     /// The height of the chain, i.e. block number
     pub height: u32,
@@ -35,79 +46,98 @@ pub struct HView {
     pub view_number: ViewNumber,
 }
 
+impl HView {
+    #[inline]
+    pub fn zero(&self) -> bool { self.eq(&Self::default()) }
+
+    #[inline]
+    pub fn is_previous(&self, other: &HView) -> bool {
+        self.height < other.height || (self.height == other.height && self.view_number < other.view_number)
+    }
+}
+
 
 #[derive(Debug)]
 pub struct Settings {
     pub network: u32,
     pub version: u32,
-    pub duration_per_block: Duration,
+    pub millis_per_block: u64,
 
     pub max_txs_per_block: u32,
     pub max_block_size: usize,
     pub max_block_sysfee: u64,
 
+    pub max_pending_broadcasts: u32,
+
     /// i.e. timestamp_increment
     pub milli_increment: u64,
-    pub unix_milli_now: fn() -> u64,
-
     pub recovery_logs: String,
     pub ignore_recovery_logs: bool,
 }
 
-impl Settings {
-    pub(crate) fn next_block_unix_milli(&self, now: u64, prev_block_unix_milli: u64) -> u64 {
-        let timestamp = self.milli_increment + prev_block_unix_milli;
-        let now = now / self.milli_increment * self.milli_increment;
-        core::cmp::max(now, timestamp)
-    }
 
-    pub fn millis_per_block(&self) -> u64 {
-        self.duration_per_block.as_millis() as u64
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            network: Network::PrivateNet.as_magic(),
+            version: 0,
+            millis_per_block: DEFAULT_MILLIS_PER_BLOCK,
+            max_txs_per_block: DEFAULT_MAX_TXS_PER_BLOCK,
+            max_block_size: DEFAULT_MAX_BLOCK_SIZE,
+            max_block_sysfee: DEFAULT_MAX_BLOCK_SYSFEE,
+            max_pending_broadcasts: DEFAULT_MAX_PENDING_BROADCASTS,
+            milli_increment: max_block_timestamp_increment(DEFAULT_MILLIS_PER_BLOCK),
+            recovery_logs: "".into(),
+            ignore_recovery_logs: true,
+        }
     }
+}
+
+
+#[inline]
+pub fn next_block_unix_milli(now: u64, milli_increment: u64, prev_block_unix_milli: u64) -> u64 {
+    let timestamp = milli_increment + prev_block_unix_milli;
+    let now = now / milli_increment * milli_increment;
+    core::cmp::max(now, timestamp)
 }
 
 
 pub struct DbftConsensus {
     settings: Settings,
-    committee: Committee,
     state_machine: StateMachine,
+    timer_rx: mpsc::Receiver<Timer>,
+    broadcast_rx: mpsc::Receiver<Payload>,
 }
 
 
 impl DbftConsensus {
-    pub fn new_not_signed_block(&self) -> Block {
-        let nonce = rand::read_u64()
-            .expect("`rand_u64` should be ok");
+    pub fn new(settings: Settings, self_keypair: Keypair, committee: Committee, chain: Box<dyn ChainStates>) -> Self {
+        let nr_validators = committee.nr_validators;
+        let millis_per_block = settings.millis_per_block;
+        let max_pending = settings.max_pending_broadcasts as usize;
 
-        let validators = self.committee.compute_next_block_validators();
-        let next_consensus = validators.to_bft_hash()
-            .expect("`next_validators` should be valid");
+        let (timer_tx, timer_rx) = mpsc::sync_channel(1);
+        let (broadcast_tx, broadcast_rx) = mpsc::sync_channel(max_pending);
 
-        let states = self.state_machine.states();
-        let cx = self.state_machine.context();
-
-        let now = (self.settings.unix_milli_now)();
-        let witness = cx.new_block_witness(states.view_number, &validators);
-        let unix_milli = self.settings.next_block_unix_milli(now, states.received_unix_milli);
-        let mut head = Header {
-            hash: None,
-            version: self.settings.version,
-            prev_hash: states.prev_hash,
-            merkle_root: cx.tx_hashes.merkle_sha256(),
-            unix_milli,
-            nonce,
-            index: states.block_index,
-            primary: states.primary_index,
-            next_consensus: next_consensus.into(),
-            witnesses: witness.into(),
+        let mut dbft = Self {
+            settings,
+            state_machine: StateMachine {
+                self_keypair,
+                timer: ViewTimer::new(unix_milli_now, timer_tx),
+                broadcast_tx,
+                unix_milli_now,
+                chain,
+                committee,
+                states: ConsensusStates::new(),
+                context: ConsensusContext::new(nr_validators),
+                header: None,
+            },
+            timer_rx,
+            broadcast_rx,
         };
-        head.calc_hash();
 
-        Block {
-            network: self.settings.network,
-            block: block::Block::new(head, cx.txs()),
-            sign: Default::default(),
-        }
+        dbft.state_machine.reset_consensus(0, millis_per_block);
+        dbft
     }
 
     fn check_payload(&self, payload: &Extensible) -> Result<(), OnPayloadError> {
@@ -138,11 +168,12 @@ impl DbftConsensus {
         // 7. Ignore the message if the message.BlockIndex is lower than the current block height
         let states = self.state_machine.states();
         if meta.block_index != states.block_index {
+            // TODO: add to cached message if  meta.block_index > states.block_index
             return Err(OnPayloadError::InvalidMessageMeta("block_index", states.block_index, meta));
         }
 
         let index = meta.validator_index as usize;
-        let validators = self.committee.next_block_validators();
+        let validators = &states.validators;
 
         // 8.1. Ignore the message if the `validator_index` is out of the current consensus nodes.
         if index >= validators.len() {
@@ -154,7 +185,6 @@ impl DbftConsensus {
         if !sender.eq(&validator) {
             return Err(OnPayloadError::InvalidSender(sender.clone(), meta.validator_index));
         }
-
         Ok(())
     }
 
@@ -208,10 +238,10 @@ impl ToPayload for Payload {
             valid_block_end: meta.block_index,
             sender: script.to_script_hash().into(),
             data: self.to_bin_encoded().into(),
-            witnesses: Default::default(),
+            witnesses: tx::Witnesses::default(),
         };
 
-        let invocation = ext.sign(network, sender.secret)
+        let invocation = ext.sign(network, &sender.secret)
             .expect("`sign` payload should be ok")
             .to_invocation_script();
 

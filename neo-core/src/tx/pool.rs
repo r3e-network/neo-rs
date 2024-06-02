@@ -2,6 +2,9 @@
 // All Rights Reserved
 
 
+use std::sync::{Arc, Mutex};
+
+
 #[derive(Debug, Copy, Clone)]
 #[repr(u8)]
 pub enum TxRemovalReason {
@@ -12,5 +15,10 @@ pub enum TxRemovalReason {
 
 
 pub struct TxPool {
+    inner: Arc<Mutex<InnerPool>>,
+}
+
+
+struct InnerPool {
     //
 }

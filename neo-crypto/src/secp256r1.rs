@@ -19,13 +19,15 @@ const EVEN_PREFIX: u8 = 0x02;
 const UNCOMPRESSED_PREFIX: u8 = 0x04;
 
 
-pub struct Keypair<'a> {
-    pub secret: &'a PrivateKey,
-    pub public: &'a PublicKey,
+#[derive(Debug, Clone)]
+pub struct Keypair {
+    pub secret: PrivateKey,
+    pub public: PublicKey,
 }
 
-impl<'a> Keypair<'a> {
-    pub fn new(secret: &'a PrivateKey, public: &'a PublicKey) -> Self {
+impl Keypair {
+    // NOTE: `secret` and `public` must be a keypair
+    pub fn new(secret: PrivateKey, public: PublicKey) -> Self {
         Self { secret, public }
     }
 }

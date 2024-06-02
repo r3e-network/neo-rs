@@ -13,6 +13,6 @@ neo-core  =  { path = "../neo-core" }
 
 
 [features]
-default = []
+default = ["std"]
 
 std     = ["neo-base/std", "neo-core/std"]

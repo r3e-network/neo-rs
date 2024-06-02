@@ -3,7 +3,7 @@
 
 
 use alloc::{string::String, vec::Vec};
-use core::{fmt::Debug, time::Duration};
+use core::fmt::Debug;
 
 use crate::PublicKey;
 
@@ -46,14 +46,19 @@ pub const NEP_FLAG: u8 = 0xe0;
 
 
 pub const MAX_SIGNERS: usize = 1024;
+pub const DEFAULT_MAX_PENDING_BROADCASTS: u32 = 128;
 
-pub const DEFAULT_DURATION_PER_BLOCK: Duration = Duration::from_millis(15_000);
+pub const DEFAULT_MILLIS_PER_BLOCK: u64 = 15_000;
 
 /// max block size: default is 256KiB
 pub const DEFAULT_MAX_BLOCK_SIZE: usize = 0x40000;
 
 /// max block sysfee in GAS
-pub const DEFAULT_MAX_BLOCK_SYSFEE: usize = 1500_0000_0000;
+pub const DEFAULT_MAX_BLOCK_SYSFEE: u64 = 1500_0000_0000;
+pub const DEFAULT_MAX_TXS_PER_BLOCK: u32 = 512;
+
+pub const DEFAULT_VALIDATOR_NUM: u32 = 7;
+pub const DEFAULT_COMMITTEE_NUM: u32 = 21;
 
 /// address version
 pub const ADDRESS_V3: u8 = 0x35;
@@ -92,14 +97,12 @@ pub struct HardForkHeight {
 pub struct NeoSettings {
     pub network: u32,
     pub address_version: u8,
+    pub millis_per_block: u64,
 
     pub standby_committee: Vec<PublicKey>,
-    pub committee_members_count: u32,
-
-    pub validators_count: u32,
+    pub nr_committee_members: u32,
+    pub nr_validators: u32,
     pub seed_list: Vec<String>,
-
-    pub duration_per_block: Duration,
 
     /// see Tx.valid_until_block
     pub max_valid_until_block_increment: u64,
@@ -120,17 +123,17 @@ pub struct NeoSettings {
 
 impl Default for NeoSettings {
     fn default() -> Self {
-        let increment = VALID_UNTIL_BLOCK_INCREMENT_BASE / DEFAULT_DURATION_PER_BLOCK.as_millis() as u64;
+        let increment = max_block_timestamp_increment(DEFAULT_MILLIS_PER_BLOCK);
         Self {
             network: 0,
             address_version: ADDRESS_V3,
+            millis_per_block: DEFAULT_MILLIS_PER_BLOCK,
             standby_committee: Vec::new(),
-            committee_members_count: 0,
-            validators_count: 0,
+            nr_committee_members: DEFAULT_COMMITTEE_NUM,
+            nr_validators: DEFAULT_VALIDATOR_NUM,
             seed_list: Vec::new(),
-            duration_per_block: DEFAULT_DURATION_PER_BLOCK,
             max_valid_until_block_increment: increment,
-            max_txs_per_block: 512,
+            max_txs_per_block: DEFAULT_MAX_TXS_PER_BLOCK,
             max_txpool_size: 50_000,
             max_traceable_blocks: 2_102_400,
             hard_forks: Vec::new(),
@@ -141,9 +144,15 @@ impl Default for NeoSettings {
 
 impl NeoSettings {
     pub fn standby_validators(&self) -> &[PublicKey] {
-        let take = core::cmp::min(self.validators_count as usize, self.standby_committee.len());
+        let take = core::cmp::min(self.nr_validators as usize, self.standby_committee.len());
         &self.standby_committee[..take]
     }
+}
+
+
+#[inline]
+pub const fn max_block_timestamp_increment(millis_per_block: u64) -> u64 {
+    VALID_UNTIL_BLOCK_INCREMENT_BASE / millis_per_block
 }
 
 

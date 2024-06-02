@@ -3,8 +3,9 @@
 
 
 use alloc::{vec, vec::Vec};
+use hashbrown::HashMap;
 
-use neo_base::{byzantine_honest_quorum};
+use neo_base::byzantine_honest_quorum;
 use neo_core::{
     PublicKey, tx::{Tx, Witness}, types::{H160, H256},
     contract::{ToMultiSignContract, context::MultiSignContext},
@@ -12,19 +13,21 @@ use neo_core::{
 use crate::dbft_v2::*;
 
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct ConsensusStates {
     pub validators: Vec<PublicKey>,
     pub prev_hash: H256,
     pub block_index: u32,
     pub view_number: ViewNumber,
 
-    pub self_index: u8,
+    pub self_index: ViewIndex,
     pub not_validator: bool,
     pub watch_only: bool,
 
-    /// block_index if block_index < view_number else (block_index - view_number) % validators.len()
-    pub primary_index: u8,
+    pub on_recovering: bool,
+    pub block_sent: bool,
+
+    pub primary_index: ViewIndex,
     pub received_unix_milli: u64,
     pub received_block_index: u32,
 }
@@ -40,6 +43,8 @@ impl ConsensusStates {
             self_index: 0,
             not_validator: true,
             watch_only: true,
+            on_recovering: false,
+            block_sent: false,
             primary_index: 0,
             received_unix_milli: 0,
             received_block_index: 0,
@@ -58,6 +63,10 @@ impl ConsensusStates {
         self.not_validator || self.watch_only
     }
 
+    pub fn height_view(&self) -> HView {
+        HView { height: self.block_index, view_number: self.view_number }
+    }
+
     pub fn new_message_meta(&self) -> MessageMeta {
         MessageMeta {
             block_index: self.block_index,
@@ -68,11 +77,22 @@ impl ConsensusStates {
 }
 
 
+pub fn primary_index(block_index: u32, view_number: ViewNumber, nr_validators: u32) -> ViewIndex {
+    let nr_validators = nr_validators as i64;
+    let primary = (block_index as i64 - view_number as i64) % nr_validators;
+    if primary >= 0 {
+        primary as ViewIndex
+    } else {
+        (primary + nr_validators) as ViewIndex
+    }
+}
+
+
 #[derive(Debug, Default, Clone)]
 #[allow(dead_code)]
 pub struct VerificationContext {
-    pub senders_fee: hashbrown::HashMap<H160, u64>,
-    pub oracle_responses: hashbrown::HashMap<u64, H256>,
+    pub senders_fee: HashMap<H160, u64>,
+    pub oracle_responses: HashMap<u64, H256>,
 }
 
 impl VerificationContext {
@@ -108,14 +128,14 @@ impl Prepares {
 
 pub struct ConsensusContext {
     pub tx_hashes: Vec<H256>,
-    pub txs: hashbrown::HashMap<H256, Tx>,
+    pub txs: HashMap<H256, Tx>,
 
     pub prepares: Vec<Prepares>,
     pub commits: Vec<Option<Message<Commit>>>,
     pub change_views: Vec<Option<Message<ChangeViewRequest>>>,
     pub last_change_views: Vec<Option<Message<ChangeViewRequest>>>,
 
-    pub last_seen_message: hashbrown::HashMap<PublicKey, HView>,
+    pub last_seen_message: HashMap<PublicKey, HView>,
     pub verifications: VerificationContext,
 }
 
@@ -125,12 +145,12 @@ impl ConsensusContext {
         let nr_validators = nr_validators as usize;
         Self {
             tx_hashes: Vec::default(),
-            txs: hashbrown::HashMap::default(),
-            prepares: vec![Default::default(); nr_validators],
+            txs: HashMap::default(),
+            prepares: vec![Prepares::default(); nr_validators],
             commits: vec![None; nr_validators],
             change_views: vec![None; nr_validators],
             last_change_views: vec![None; nr_validators],
-            last_seen_message: hashbrown::HashMap::new(),
+            last_seen_message: HashMap::new(),
             verifications: VerificationContext::new(),
         }
     }
@@ -139,7 +159,7 @@ impl ConsensusContext {
         let message = &prepare.message;
 
         self.tx_hashes = message.tx_hashes.clone();
-        self.txs = Default::default(); // TODO: log the rewritten txs
+        self.txs = HashMap::new(); // TODO: log the rewritten txs
         self.verifications = VerificationContext::new();
         for prepares in self.prepares.iter_mut() {
             let Some(r) = prepares.response.as_ref() else { continue; };
@@ -189,7 +209,7 @@ impl ConsensusContext {
     }
 
     fn max_quorum_preparation(&self) -> Option<H256> {
-        let mut hashes = hashbrown::HashMap::new();
+        let mut hashes = HashMap::new();
         self.prepares.iter()
             .filter_map(|p| p.response.as_ref())
             .for_each(|res| {

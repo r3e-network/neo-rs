@@ -46,16 +46,20 @@ pub fn should_refresh_committee(height: u32, nr_committee: u32) -> bool {
 #[allow(dead_code)]
 pub struct Committee {
     /// The number of validators, from settings, i.e. from config.
-    nr_validators: u32,
+    pub(crate) nr_validators: u32,
 
     /// The number of committee, from settings.
-    nr_committee: u32,
+    pub(crate) nr_committee: u32,
 
     members: Box<dyn MemberCache>,
     // cached: Vec<Member>,
 }
 
 impl Committee {
+    pub fn new(nr_validators: u32, nr_committee: u32, members: Box<dyn MemberCache>) -> Self {
+        Self { nr_validators, nr_committee, members }
+    }
+
     pub fn next_block_validators(&self) -> Vec<PublicKey> {
         let mut members = self.next_committee();
         let nr_validators = self.nr_validators as usize;
@@ -93,7 +97,6 @@ impl Committee {
         keys.sort();
         keys
     }
-
 
     fn compute_committee_members(&self) -> Vec<Member> {
         let voters = self.members.voters_count();

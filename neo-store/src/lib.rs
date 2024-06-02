@@ -2,9 +2,6 @@
 // All Rights Reserved
 
 
-extern crate alloc;
-
-
 /// NOTE: just for testing
 pub mod mock;
 

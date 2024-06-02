@@ -5,6 +5,8 @@
 pub mod attr;
 pub mod signer;
 pub mod witness;
+
+#[cfg(feature = "std")]
 pub mod pool;
 
 pub use {attr::*, pool::*, signer::*, witness::*};

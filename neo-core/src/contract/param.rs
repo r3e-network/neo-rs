@@ -4,6 +4,7 @@
 
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
+use hashbrown::HashMap;
 
 use neo_base::{encoding::bin::*, math::U256};
 use crate::{PublicKey, types::{Bytes, H160, H256, Sign}};
@@ -27,7 +28,7 @@ pub enum ParamType {
 }
 
 
-pub type ParamMap = hashbrown::HashMap<ParamValue, ParamValue>;
+pub type ParamMap = HashMap<ParamValue, ParamValue>;
 
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

@@ -4,6 +4,7 @@
 
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
+use hashbrown::HashMap;
 
 use crate::{PublicKey, types::{Role, Script}};
 
@@ -11,7 +12,7 @@ use crate::{PublicKey, types::{Role, Script}};
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Genesis {
     #[serde(rename = "Roles")]
-    pub roles: hashbrown::HashMap<Role, Vec<PublicKey>>,
+    pub roles: HashMap<Role, Vec<PublicKey>>,
 
     #[serde(rename = "Transaction")]
     pub tx: GenesisTx,
