@@ -429,8 +429,9 @@ pub fn to_varint_le(value: u64) -> (u8, [u8; 9]) {
 
 
 pub mod big_endian {
-    use super::{BinEncoder, BinDecodeError, BinDecoder, BinReader, BinWriter};
+    use super::*;
 
+    #[derive(Debug, Copy, Clone)]
     pub struct U32(pub u32);
 
     impl U32 {

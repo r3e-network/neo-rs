@@ -3,8 +3,7 @@
 
 
 use neo_base::math::U256;
-use crate::contract::param::Param;
-use crate::types::H160;
+use crate::{contract::Param, types::H160};
 
 /// NEP-17 is a Fungible-Token Contract
 pub trait Nep17 {

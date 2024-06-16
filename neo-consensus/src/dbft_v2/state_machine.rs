@@ -8,11 +8,11 @@ use hashbrown::HashMap;
 use neo_base::{byzantine_failure_quorum, byzantine_honest_quorum};
 use neo_core::{
     block::{self, Header},
-    blockchain::ChainStates,
     merkle::MerkleSha256,
+    store::ChainStates,
     types::{H256, Sign, ToSignData},
 };
-use neo_crypto::{rand, ecdsa::DigestVerify};
+use neo_crypto::{rand, ecdsa::{DigestVerify, Sign as EcdsaSign}};
 use crate::dbft_v2::*;
 
 
@@ -152,15 +152,12 @@ impl StateMachine {
         }
 
         let delay_millis = self.timeout_millis_on_resetting(millis_per_block);
-        self.timer.reset_timeout(view, delay_millis);
+        self.reset_timeout_millis(delay_millis);
     }
 
     fn timeout_millis_on_resetting(&self, millis_per_block: u64) -> u64 {
-        let millis = if self.states.is_primary() && !self.states.on_recovering {
-            if self.states.view_number == 0 { millis_per_block } else { 0 }
-        } else {
-            millis_per_block << core::cmp::min(32, self.states.view_number + 1)
-        };
+        let primary = self.states.is_primary() && !self.states.on_recovering;
+        let millis = millis_on_resetting(primary, self.states.view_number, millis_per_block);
 
         let diff = if self.states.received_block_index + 1 == self.states.block_index {
             self.unix_milli_now() - self.states.received_unix_milli
@@ -171,10 +168,8 @@ impl StateMachine {
         if millis > diff { millis - diff } else { 0 }
     }
 
-    fn reset_timeout_millis(&self, view_number: ViewNumber, millis_per_block: u64) {
-        let timeout_millis = millis_per_block << core::cmp::min(32, view_number + 1);
-        let view = self.states.height_view();
-        self.timer.reset_timeout(view, timeout_millis);
+    fn reset_timeout_millis(&self, timeout_millis: u64) {
+        self.timer.reset_timeout(self.states.height_view(), timeout_millis);
     }
 
     fn extend_timeout_millis(&self, max_in_blocks: u32, millis_per_block: u64) {
@@ -195,11 +190,11 @@ impl StateMachine {
             return;
         }
 
+        let millis_per_block = settings.millis_per_block;
         let primary = self.states.primary_index as usize;
-        let prepare_sent = primary < self.context.prepares.len() &&
-            self.context.prepares[primary].has_request();
+        let sent = primary < self.context.prepares.len() && self.context.prepares[primary].has_request();
 
-        if self.states.is_primary() && !prepare_sent {
+        if self.states.is_primary() && !sent {
             self.context.txs = HashMap::new(); // TODO: from tx-pool
             self.context.tx_hashes = self.context.txs.iter()
                 .map(|(hash, _)| hash.clone())
@@ -208,31 +203,26 @@ impl StateMachine {
             let meta = self.states.new_message_meta();
             let message = self.new_prepare_request(settings.version, settings.milli_increment, meta);
             self.broadcast_tx.send(Payload::PrepareRequest(message))
-                .expect("`broadcast_tx.send(PrepareRequest) should be ok");
+                .expect("`broadcast_tx.send(PrepareRequest)` should be ok");
 
             if self.states.nr_validators() == 1 {
-                self.commit_if_needed(settings.millis_per_block);
+                self.commit_if_needed(settings.network, millis_per_block);
             }
 
             if self.context.tx_hashes.len() > 0 {
                 // TODO: send txs
             }
 
-            let timeout_millis = if self.states.view_number == 0 {
-                settings.millis_per_block
-            } else {
-                settings.millis_per_block << core::cmp::min(32, self.states.view_number + 1)
-            };
-            self.timer.reset_timeout(self.states.height_view(), timeout_millis);
+            self.reset_timeout_millis(millis_on_timeout(self.states.view_number, millis_per_block));
             return;
         }
 
-        if (self.states.is_primary() && prepare_sent) || self.states.is_backup() {
+        if (self.states.is_primary() && sent) || self.states.is_backup() {
             if self.context.has_commit(self.states.self_index) {
                 let meta = self.states.new_message_meta();
                 let recovery = self.context.new_recovery_message(meta);
                 self.broadcast_tx.send(Payload::RecoveryMessage(recovery))
-                    .expect("`broadcast_tx.send(RecoveryMessage) should be ok");
+                    .expect("`broadcast_tx.send(RecoveryMessage)` should be ok");
             } else {
                 let reason = if self.context.has_all_txs() {
                     ChangeViewReason::Timeout
@@ -240,7 +230,7 @@ impl StateMachine {
                     ChangeViewReason::TxNotFound
                 };
 
-                self.try_to_change_view(reason, settings.millis_per_block);
+                self.try_to_change_view(reason, millis_per_block);
             }
         }
     }
@@ -249,9 +239,9 @@ impl StateMachine {
         let meta = message.message_meta();
         let validator = meta.validator_index as usize;
         if validator < self.states.validators.len() {
+            let current = meta.height_view();
             let validator = &self.states.validators[validator];
             let existed = self.context.last_seen_message.get(validator);
-            let current = HView { height: meta.block_index, view_number: meta.view_number };
             if existed.is_some_and(|v| v.is_previous(&current)) || existed.is_none() {
                 self.context.last_seen_message.insert(validator.clone(), current);
             }
@@ -421,7 +411,7 @@ impl StateMachine {
         self.broadcast_tx.send(Payload::PrepareResponse(message))
             .expect("`broadcast_tx.send(PrepareResponse)` should be ok");
 
-        self.commit_if_needed(millis_per_block);
+        self.commit_if_needed(settings.network, millis_per_block);
     }
 
     fn try_to_change_view(&mut self, reason: ChangeViewReason, millis_per_block: u64) {
@@ -430,7 +420,7 @@ impl StateMachine {
         }
 
         let changed_view = self.states.view_number + 1;
-        self.reset_timeout_millis(changed_view, millis_per_block);
+        self.reset_timeout_millis(millis_on_setting(changed_view, millis_per_block));
 
         let nr_validators = self.states.nr_validators() as u32;
         let quorum = byzantine_failure_quorum(nr_validators) as usize;
@@ -442,7 +432,7 @@ impl StateMachine {
                 message: RecoveryRequest { unix_milli: self.unix_milli_now(), payload_hash: H256::default() },
             };
             self.broadcast_tx.send(Payload::RecoveryRequest(message))
-                .expect("`broadcast_tx.send(RecoveryRequest) should be ok");
+                .expect("`broadcast_tx.send(RecoveryRequest)` should be ok");
         } else { // TODO: log
             let change_view = self.context.new_change_view(
                 self.states.new_message_meta(),
@@ -453,7 +443,7 @@ impl StateMachine {
             let myself = self.states.self_index as usize;
             self.context.change_views[myself] = Some(change_view.clone());
             self.broadcast_tx.send(Payload::ChangeView(change_view))
-                .expect("`broadcast_tx.send(ChangeView) should be ok");
+                .expect("`broadcast_tx.send(ChangeView)` should be ok");
 
             self.change_view_if_needed(millis_per_block, changed_view);
         }
@@ -511,11 +501,11 @@ impl StateMachine {
         //  are N-f Commit messages have been received.
         let prepares = &self.context.prepares[self.states.primary_index as usize];
         if prepares.has_request() || prepares.has_response() {
-            self.commit_if_needed(settings.millis_per_block);
+            self.commit_if_needed(settings.network, settings.millis_per_block);
         }
     }
 
-    fn commit_if_needed(&mut self, millis_per_block: u64) {
+    fn commit_if_needed(&mut self, network: u32, millis_per_block: u64) {
         let prepares = self.context.prepares.iter()
             .filter(|p| p.has_request() || p.has_response())
             .count();
@@ -525,21 +515,28 @@ impl StateMachine {
             return;
         }
 
-        // TODO: save context
-        let _commit = Message {
+        let Some(head) = self.header.as_ref() else {
+            return; // TODO: log
+        };
+        let sign_data = head.to_sign_data(network);
+        let sign = self.self_keypair.secret.sign(&sign_data)
+            .expect("`sign(header)` should be ok");
+
+        let commit = Message {
             meta: self.states.new_message_meta(),
-            message: Commit { sign: Sign::default() },
-        }; // TODO: send commit
+            message: Commit { sign: Sign::from(sign) },
+        };
+        self.broadcast_tx.send(Payload::Commit(commit))
+            .expect("`broadcast_tx.send(Commit)` should be ok");
 
-
-        self.reset_timeout_millis(self.states.view_number, millis_per_block);
-        self.new_block_if_needed();
+        self.reset_timeout_millis(millis_on_setting(self.states.view_number, millis_per_block));
+        self.create_block_if_needed();
     }
 }
 
 
 impl StateMachine {
-    fn new_block_if_needed(&mut self) {
+    fn create_block_if_needed(&mut self) {
         let commits = self.context.commits.iter()
             .filter(|commit| commit.as_ref()
                 .is_some_and(|m| m.meta.view_number == self.states.view_number))
@@ -588,7 +585,7 @@ impl StateMachine {
             return; // TODO: log
         }
 
-        self.commit_if_needed(settings.millis_per_block);
+        self.create_block_if_needed();
     }
 }
 

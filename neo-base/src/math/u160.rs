@@ -3,12 +3,13 @@
 
 use alloc::string::{String, ToString};
 use core::{
+    cmp::{Ord, PartialOrd, Ordering},
     fmt::{Display, Formatter},
     ops::{Add, Sub, BitAnd, BitOr, BitXor, Not},
 };
 use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
 
-use crate::{errors, math::Widening, encoding::hex::StartsWith0x};
+use crate::{errors, cmp_elem, math::Widening, encoding::hex::StartsWith0x};
 
 
 const N: usize = 3;
@@ -73,6 +74,22 @@ impl From<u64> for U160 {
 impl From<u128> for U160 {
     #[inline]
     fn from(value: u128) -> Self { Self { n: [value as u64, (value >> 64) as u64, 0] } }
+}
+
+impl PartialOrd for U160 {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+}
+
+impl Ord for U160 {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        cmp_elem!(self, other, 2);
+        cmp_elem!(self, other, 1);
+        cmp_elem!(self, other, 0);
+
+        Ordering::Equal
+    }
 }
 
 #[derive(Debug, Clone, Copy, errors::Error)]
@@ -213,5 +230,14 @@ mod test {
         let w = u + v;
         let x: U160 = (u64::MAX as u128 + u64::MAX as u128).into();
         assert_eq!(w, x);
+
+        let order = w.cmp(&x);
+        assert_eq!(order, Ordering::Equal);
+
+        let w: U160 = 1u64.into();
+        let x: U160 = (1u128 << 64).into();
+        let order = w.cmp(&x);
+        assert_eq!(order, Ordering::Less);
+        assert!(x > w);
     }
 }

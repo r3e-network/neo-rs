@@ -4,8 +4,7 @@
 
 use neo_base::math::U256;
 
-use crate::contract::param::ParamValue;
-use crate::types::{Bytes, H160};
+use crate::{contract::ParamValue, types::{Bytes, H160}};
 
 
 pub trait Iter<T> {

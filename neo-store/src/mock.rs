@@ -4,15 +4,13 @@
 
 use std::{collections::BTreeMap, sync::{Arc, Mutex}};
 
-use neo_base::errors;
-use neo_core::store::{self, *, chain::{PutError, GetError}};
+use neo_core::store::{self, *};
 
 
 struct Item {
     pub version: Version,
     pub value: Vec<u8>,
 }
-
 
 #[derive(Clone)]
 pub struct MockStore {
@@ -34,8 +32,6 @@ pub struct WriteBatch {
 }
 
 impl store::WriteBatch for WriteBatch {
-    type CommitError = WriteError;
-
     fn add_delete(&mut self, key: Vec<u8>, options: &WriteOptions) {
         self.deletes.push((key, options.version));
     }
@@ -44,17 +40,17 @@ impl store::WriteBatch for WriteBatch {
         self.puts.push((key, value, options.version));
     }
 
-    fn commit(self) -> Result<BatchWritten, Self::CommitError> {
+    fn commit(self) -> Result<BatchWritten, CommitError> {
         let mut inner = self.inner.lock().unwrap();
         for (key, version) in self.deletes.iter() {
             if !inner.can_delete(key, *version) {
-                return Err(WriteError::Conflict);
+                return Err(CommitError::Conflicted);
             }
         }
 
         for (key, _, version) in self.puts.iter() {
             if !inner.can_put(key, *version) {
-                return Err(WriteError::Conflict);
+                return Err(CommitError::Conflicted);
             }
         }
 
@@ -115,30 +111,16 @@ impl MockInner {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, errors::Error)]
-pub enum ReadError {
-    #[error("read-error: no such key")]
-    NoSuchKey,
-}
-
-
-impl Into<GetError> for ReadError {
-    fn into(self) -> GetError {
-        match self { ReadError::NoSuchKey => GetError::NoSuchKey }
-    }
-}
 
 impl ReadOnlyStore for MockStore {
-    type ReadError = ReadError;
-
-    fn get(&self, key: &[u8]) -> Result<(Vec<u8>, Version), Self::ReadError> {
+    fn get(&self, key: &[u8]) -> Result<(Vec<u8>, Version), ReadError> {
         let inner = self.inner.lock().unwrap();
         inner.store.get(key)
             .map(|m| (m.value.clone(), m.version))
             .ok_or_else(|| ReadError::NoSuchKey)
     }
 
-    fn contains(&self, key: &[u8]) -> Result<Version, Self::ReadError> {
+    fn contains(&self, key: &[u8]) -> Result<Version, ReadError> {
         let inner = self.inner.lock().unwrap();
         inner.store.get(key)
             .map(|m| m.version)
@@ -146,27 +128,14 @@ impl ReadOnlyStore for MockStore {
     }
 }
 
-#[derive(Debug, errors::Error)]
-pub enum WriteError {
-    #[error("write-error: conflict")]
-    Conflict,
-}
-
-impl Into<PutError> for WriteError {
-    fn into(self) -> PutError {
-        match self { WriteError::Conflict => PutError::AlreadyExists }
-    }
-}
 
 impl Store for MockStore {
-    type WriteError = WriteError;
-
     type WriteBatch = WriteBatch;
 
-    fn delete(&self, key: &[u8], options: &WriteOptions) -> Result<Version, Self::WriteError> {
+    fn delete(&self, key: &[u8], options: &WriteOptions) -> Result<Version, WriteError> {
         let mut inner = self.inner.lock().unwrap();
         if !inner.can_delete(key, options.version) {
-            return Err(WriteError::Conflict);
+            return Err(WriteError::Conflicted);
         }
 
         let v = inner.store.remove(key)
@@ -175,10 +144,10 @@ impl Store for MockStore {
         Ok(v)
     }
 
-    fn put(&self, key: Vec<u8>, value: Vec<u8>, options: &WriteOptions) -> Result<Version, Self::WriteError> {
+    fn put(&self, key: Vec<u8>, value: Vec<u8>, options: &WriteOptions) -> Result<Version, WriteError> {
         let mut inner = self.inner.lock().unwrap();
         if !inner.can_put(&key, options.version) {
-            return Err(WriteError::Conflict);
+            return Err(WriteError::Conflicted);
         }
 
         let version = inner.next_version();

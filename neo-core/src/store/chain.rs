@@ -2,44 +2,15 @@
 // All Rights Reserved
 
 
-use neo_base::{errors, encoding::bin::*};
+use neo_base::encoding::bin::*;
 use crate::block::{StatedBlock, TrimmedBlock, IndexHash};
 use crate::{store::{self, *}, types::H256, tx::StatedTx};
 
 
-#[derive(Debug, errors::Error)]
-pub enum GetError {
-    #[error("get-error: no-such-key")]
-    NoSuchKey,
-
-    #[error("get-error: bin-decode-error: {0}")]
-    BinDecodeError(BinDecodeError),
-}
-
-
-#[derive(Debug, errors::Error)]
-pub enum PutError {
-    #[error("put-error: already exists")]
-    AlreadyExists,
-}
-
-
-pub trait GetBinEncoded {
-    fn get_bin_encoded<T: BinDecoder>(&self, key: &[u8]) -> Result<T, GetError>;
-}
-
-impl<Store: ReadOnlyStore> GetBinEncoded for Store
-    where Store::ReadError: Into<GetError>
-{
-    fn get_bin_encoded<T: BinDecoder>(&self, key: &[u8]) -> Result<T, GetError> {
-        let (data, _version) = self.get(key)
-            .map_err(|err| err.into())?;
-
-        let mut rb = RefBuffer::from(data.as_slice());
-        BinDecoder::decode_bin(&mut rb)
-            .map_err(|err| GetError::BinDecodeError(err))
-    }
-}
+pub const PREFIX_BLOCK: u8 = 5;
+pub const PREFIX_INDEX_TO_HASH: u8 = 9;
+pub const PREFIX_TX: u8 = 11;
+pub const PREFIX_CURRENT_BLOCK: u8 = 12;
 
 
 pub struct TxStore<Store: store::Store> {
@@ -47,20 +18,17 @@ pub struct TxStore<Store: store::Store> {
     store: Store,
 }
 
-impl<Store: store::Store> TxStore<Store>
-    where Store::ReadError: Into<GetError>,
-          Store::WriteError: Into<PutError>
-{
+impl<Store: store::Store> TxStore<Store> {
     pub fn new(contract_id: u32, store: Store) -> Self {
         Self { contract_id, store }
     }
 
     #[inline]
-    pub fn tx_key(&self, hash: &H256) -> Vec<u8> {
-        StoreKey { contract_id: self.contract_id, prefix: PREFIX_TX, key: hash }.to_bin_encoded()
+    fn tx_key(&self, hash: &H256) -> Vec<u8> {
+        StoreKey::new(self.contract_id, PREFIX_TX, hash).to_bin_encoded()
     }
 
-    pub fn get_tx(&self, hash: &H256) -> Result<StatedTx, GetError> {
+    pub fn get_tx(&self, hash: &H256) -> Result<StatedTx, BinReadError> {
         let key = self.tx_key(hash);
         let mut tx = self.store.get_bin_encoded::<StatedTx>(&key)?;
 
@@ -79,26 +47,22 @@ pub struct BlockStore<Store: store::Store> {
     store: Store,
 }
 
-impl<Store: store::Store> BlockStore<Store>
-    where Store::ReadError: Into<GetError>,
-          Store::WriteError: Into<PutError>,
-          <<Store as store::Store>::WriteBatch as WriteBatch>::CommitError: Into<PutError>,
-{
+impl<Store: store::Store> BlockStore<Store> {
     pub fn new(contract_id: u32, store: Store) -> Self {
         Self { contract_id, store }
     }
 
-    pub fn get_block_hash(&self, block_index: u32) -> Result<H256, GetError> {
+    pub fn get_block_hash(&self, block_index: u32) -> Result<H256, BinReadError> {
         let key = self.store_key(PREFIX_INDEX_TO_HASH, &big_endian::U32(block_index));
         self.store.get_bin_encoded(&key.to_bin_encoded())
     }
 
     #[inline]
-    pub fn store_key<Key: BinEncoder>(&self, prefix: u8, key: &Key) -> Vec<u8> {
-        StoreKey { contract_id: self.contract_id, prefix, key }.to_bin_encoded()
+    fn store_key<Key: BinEncoder + Debug>(&self, prefix: u8, key: &Key) -> Vec<u8> {
+        StoreKey::new(self.contract_id, prefix, key).to_bin_encoded()
     }
 
-    pub fn get_block_with_hash(&self, hash: &H256) -> Result<TrimmedBlock, GetError> {
+    pub fn get_block_with_hash(&self, hash: &H256) -> Result<TrimmedBlock, BinReadError> {
         let key = self.store_key(PREFIX_BLOCK, hash);
         let mut block = self.store.get_bin_encoded::<TrimmedBlock>(&key)?;
 
@@ -110,12 +74,12 @@ impl<Store: store::Store> BlockStore<Store>
         Ok(block)
     }
 
-    pub fn get_block_with_index(&self, block_index: u32) -> Result<TrimmedBlock, GetError> {
+    pub fn get_block_with_index(&self, block_index: u32) -> Result<TrimmedBlock, BinReadError> {
         let hash = self.get_block_hash(block_index)?;
         self.get_block_with_hash(&hash)
     }
 
-    pub fn put_block(&self, block: &StatedBlock) -> Result<(), PutError> {
+    pub fn put_block(&self, block: &StatedBlock) -> Result<(), BinWriteError> {
         let mut batch = self.store.write_batch();
 
         let block_index = block.header.index;
@@ -170,6 +134,8 @@ impl<Store: store::Store> BlockStore<Store>
         // Commit all, must be all succeed or all failed
         batch.commit()
             .map(|_written| ())
-            .map_err(|err| err.into())
+            .map_err(|err| match err {
+                CommitError::Conflicted => BinWriteError::AlreadyExists,
+            })
     }
 }

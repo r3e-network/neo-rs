@@ -5,8 +5,7 @@
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
-use crate::{PublicKey, types::{Sign, Extra}};
-use crate::contract::param::{NamedParamType, ParamType};
+use crate::{PublicKey, contract::{NamedParamType, ParamType}, types::{Sign, Extra}};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

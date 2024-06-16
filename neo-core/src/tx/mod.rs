@@ -6,10 +6,17 @@ pub mod attr;
 pub mod signer;
 pub mod witness;
 
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", test))]
 pub mod pool;
 
-pub use {attr::*, pool::*, signer::*, witness::*};
+#[cfg(any(feature = "std", test))]
+pub mod pool_event;
+
+#[cfg(test)]
+mod pool_test;
+
+
+pub use {attr::*, pool::*, pool_event::*, signer::*, witness::*};
 
 
 use alloc::vec::Vec;
@@ -81,8 +88,22 @@ impl Tx {
         self.size.unwrap_or_else(|| self.bin_size() as u32)
     }
 
+    pub fn fee(&self) -> u64 {
+        self.sysfee + self.netfee
+    }
+
+    pub fn netfee_per_byte(&self) -> u64 {
+        self.netfee / self.size() as u64
+    }
+
     pub fn signers(&self) -> Vec<&H160> {
         self.signers.iter().map(|s| &s.account).collect()
+    }
+
+    pub fn has_signer(&self, signer: &H160) -> bool {
+        self.signers.iter()
+            .find(|s| s.account.eq(signer))
+            .is_some()
     }
 
     pub fn conflicts(&self) -> Vec<Conflicts> {

@@ -4,7 +4,7 @@
 
 use std::ops::DerefMut;
 use std::sync::{mpsc, Mutex};
-use crate::dbft_v2::HView;
+use crate::dbft_v2::{HView, ViewNumber};
 
 
 #[derive(Debug, Copy, Clone)]
@@ -83,6 +83,30 @@ impl ViewTimer {
     }
 }
 
+
+#[inline]
+pub fn millis_on_setting(view_number: ViewNumber, millis_per_block: u64) -> u64 {
+    millis_per_block << core::cmp::min(32, view_number + 1)
+}
+
+#[inline]
+pub fn millis_on_resetting(primary: bool, view_number: ViewNumber, millis_per_block: u64) -> u64 {
+    if primary {
+        if view_number == 0 { millis_per_block } else { 0 }
+    } else {
+        millis_per_block << core::cmp::min(32, view_number + 1)
+    }
+}
+
+
+#[inline]
+pub fn millis_on_timeout(view_number: ViewNumber, millis_per_block: u64) -> u64 {
+    if view_number == 0 {
+        millis_per_block
+    } else {
+        millis_per_block << core::cmp::min(32, view_number + 1)
+    }
+}
 
 #[cfg(test)]
 mod test {

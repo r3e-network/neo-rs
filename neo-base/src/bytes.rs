@@ -36,11 +36,11 @@ impl<T: Copy + Default, const N: usize> ToRevArray<T, N> for [T] {
 pub fn xor_array<const N: usize>(left: &[u8], right: &[u8]) -> [u8; N] {
     let mut d = [0u8; N];
     if left.len() != right.len() {
-        panic!("left length {} != right length {}", left.len(), right.len());
+        core::panic!("left length {} != right length {}", left.len(), right.len());
     }
 
     if left.len() != d.len() {
-        panic!("source length {} != dest length {}", left.len(), N);
+        core::panic!("source length {} != dest length {}", left.len(), N);
     }
 
     left.into_iter()

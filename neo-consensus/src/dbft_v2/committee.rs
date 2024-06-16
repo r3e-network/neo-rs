@@ -5,37 +5,10 @@
 use alloc::{boxed::Box, vec::Vec};
 use core::cmp::Ordering;
 
-use neo_core::{PublicKey, types::{ScriptHash, ToBftHash}};
+use neo_core::{PublicKey, types::{Member, MemberCache, ScriptHash, ToBftHash, NEO_TOTAL_SUPPLY}};
 
 
 const EFFECTIVE_VOTER_TURNOUT: u64 = 5;
-const NEO_TOTAL_SUPPLY: u64 = 1000_000_000; // 0.1 Billion
-
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum Role {
-    Primary,
-    Backup,
-    WatchOnly,
-}
-
-
-#[derive(Debug, Clone)]
-pub struct Member {
-    pub key: PublicKey,
-    pub votes: u64, // U256,
-}
-
-pub trait MemberCache {
-    /// `candidate_members` returns candidates which have registered and not be blocked.
-    fn candidate_members(&self) -> Vec<Member>;
-
-    fn committee_members(&self) -> Vec<Member>;
-
-    fn standby_committee(&self) -> Vec<PublicKey>;
-
-    fn voters_count(&self) -> u64;
-}
 
 
 #[inline]
@@ -74,7 +47,7 @@ impl Committee {
     pub fn next_committee_hash(&self) -> ScriptHash {
         self.next_committee()
             .to_bft_hash()
-            .expect("to_bft_hash should be ok")
+            .expect("`to_bft_hash` should be ok")
     }
 
     pub fn next_committee(&self) -> Vec<PublicKey> {

@@ -10,21 +10,19 @@ pub mod state_machine;
 pub mod timer;
 
 #[cfg(test)]
-pub mod state_machine_test;
+mod state_machine_test;
 
+pub use {committee::*, context::*, message::*, recovery::*, state_machine::*, timer::*};
 
 use alloc::string::String;
 use std::sync::mpsc;
 
 use neo_base::{encoding::bin::*, errors};
 use neo_core::{
-    Keypair,
-    blockchain::ChainStates,
+    Keypair, store::ChainStates,
     payload::{CONSENSUS_CATEGORY, Extensible}, tx, types::*,
 };
 use crate::unix_milli_now;
-
-pub use {committee::*, context::*, message::*, recovery::*, state_machine::*, timer::*};
 
 
 #[derive(Debug, Copy, Clone)]
@@ -111,7 +109,12 @@ pub struct DbftConsensus {
 
 
 impl DbftConsensus {
-    pub fn new(settings: Settings, self_keypair: Keypair, committee: Committee, chain: Box<dyn ChainStates>) -> Self {
+    pub fn new(
+        settings: Settings,
+        self_keypair: Keypair,
+        committee: Committee,
+        chain: Box<dyn ChainStates>,
+    ) -> Self {
         let nr_validators = committee.nr_validators;
         let millis_per_block = settings.millis_per_block;
         let max_pending = settings.max_pending_broadcasts as usize;

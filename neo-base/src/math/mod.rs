@@ -62,3 +62,14 @@ impl Widening for u64 {
         (r as Self, (r >> Self::BITS) as Self)
     }
 }
+
+
+#[macro_export]
+macro_rules! cmp_elem {
+    ($lhs:ident, $rhs:ident, $n:expr) => {
+        let order = $lhs.n[$n].cmp(&$rhs.n[$n]);
+        if order != Ordering::Equal {
+            return order;
+        }
+    };
+}

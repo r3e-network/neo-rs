@@ -4,6 +4,7 @@
 
 pub mod bytes;
 pub mod check_sign;
+pub mod dbft;
 pub mod genesis;
 
 pub mod h160;
@@ -14,8 +15,10 @@ pub mod script;
 pub mod settings;
 pub mod verifying;
 
-pub use {bytes::*, check_sign::*, genesis::*, h160::*, h256::*, script::*, settings::*, verifying::*};
-
+pub use {
+    bytes::*, check_sign::*, dbft::*, genesis::*,
+    h160::*, h256::*, script::*, settings::*, verifying::*,
+};
 
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};

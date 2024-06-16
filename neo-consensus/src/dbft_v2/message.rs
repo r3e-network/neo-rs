@@ -11,6 +11,7 @@ use crate::dbft_v2::*;
 
 
 pub type ViewNumber = u8;
+
 pub type ViewIndex = u8;
 
 
@@ -33,6 +34,13 @@ pub struct MessageMeta {
     pub view_number: ViewNumber,
 }
 
+impl MessageMeta {
+    #[inline]
+    pub fn height_view(&self) -> HView {
+        HView { height: self.block_index, view_number: self.view_number }
+    }
+}
+
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct Message<M: Debug + Clone + BinEncoder + BinDecoder> {
@@ -46,7 +54,7 @@ impl Message<ChangeViewRequest> {
             validator_index: self.meta.validator_index,
             original_view_number: self.meta.view_number,
             unix_milli: self.message.unix_milli,
-            invocation_script: Default::default(), // TODO
+            invocation_script: Bytes::default(), // TODO: sign
         }
     }
 }
@@ -57,7 +65,7 @@ impl Message<Commit> {
             view_number: self.meta.view_number,
             validator_index: self.meta.validator_index,
             sign: self.message.sign.clone(),
-            invocation_script: Default::default(), // TODO
+            invocation_script: Bytes::default(), // TODO: sign
         }
     }
 }
@@ -66,7 +74,7 @@ impl Message<PrepareRequest> {
     pub fn to_preparation_compact(&self) -> PreparationCompact {
         PreparationCompact {
             validator_index: self.meta.validator_index,
-            invocation_script: Default::default(), // TODO
+            invocation_script: Bytes::default(), // TODO: sign
         }
     }
 }
@@ -75,7 +83,7 @@ impl Message<PrepareResponse> {
     pub fn to_preparation_compact(&self) -> PreparationCompact {
         PreparationCompact {
             validator_index: self.meta.validator_index,
-            invocation_script: Default::default(), // TODO
+            invocation_script: Bytes::default(), // TODO: sign
         }
     }
 }

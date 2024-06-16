@@ -50,7 +50,7 @@ impl ToNep2Key for PrivateKey {
 
         let _ = SecretKey::from(derived[KEY_SIZE..].to_array())
             .aes256_ecb_encrypt_aligned(key.as_mut_slice())
-            .expect("aes256_ecb_encrypt_aligned should be ok");
+            .expect("`aes256_ecb_encrypt_aligned` should be ok");
 
         let mut buf = BytesMut::with_capacity(3 + 4 + key.len());
 
@@ -102,7 +102,7 @@ impl<T: AsRef<[u8]>> Nep2KeyDecrypt for T {
 
         let _ = SecretKey::from(derived[KEY_SIZE..].to_array())
             .aes256_ecb_decrypt_aligned(encrypted.as_mut_slice())
-            .expect("decrypt 32-bytes data should be ok");
+            .expect("`aes256_ecb_decrypt_aligned` should be ok");
 
         // secret-key
         let sk = xor_array::<KEY_SIZE>(&encrypted, &derived[..KEY_SIZE]);
