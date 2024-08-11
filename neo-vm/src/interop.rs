@@ -8,7 +8,7 @@ use crate::RunPrice;
 
 
 #[derive(EnumString, Display, Copy, Clone, PartialEq, Eq)]
-pub enum InteropService {
+pub enum InteropCall {
     #[strum(serialize = "System.Crypto.CheckSig")]
     SystemCryptoCheckSig,
 
@@ -112,42 +112,43 @@ pub enum InteropService {
 }
 
 
-impl RunPrice for InteropService {
+impl RunPrice for InteropCall {
     fn price(&self) -> u64 {
+        use InteropCall::*;
         match self {
-            Self::SystemRuntimePlatform |
-            Self::SystemRuntimeGetTrigger |
-            Self::SystemRuntimeGetTime |
-            Self::SystemRuntimeGetScriptContainer |
-            Self::SystemRuntimeGetNetwork => 1 << 3,
+            SystemRuntimePlatform |
+            SystemRuntimeGetTrigger |
+            SystemRuntimeGetTime |
+            SystemRuntimeGetScriptContainer |
+            SystemRuntimeGetNetwork => 1 << 3,
 
-            Self::SystemIteratorValue |
-            Self::SystemRuntimeGetExecutingScriptHash |
-            Self::SystemRuntimeGetCallingScriptHash |
-            Self::SystemRuntimeGetEntryScriptHash |
-            Self::SystemRuntimeGetInvocationCounter |
-            Self::SystemRuntimeGasLeft |
-            Self::SystemRuntimeBurnGas |
-            Self::SystemRuntimeGetRandom |
-            Self::SystemStorageGetContext |
-            Self::SystemStorageGetReadOnlyContext |
-            Self::SystemStorageAsReadOnly => 1 << 4,
+            SystemIteratorValue |
+            SystemRuntimeGetExecutingScriptHash |
+            SystemRuntimeGetCallingScriptHash |
+            SystemRuntimeGetEntryScriptHash |
+            SystemRuntimeGetInvocationCounter |
+            SystemRuntimeGasLeft |
+            SystemRuntimeBurnGas |
+            SystemRuntimeGetRandom |
+            SystemStorageGetContext |
+            SystemStorageGetReadOnlyContext |
+            SystemStorageAsReadOnly => 1 << 4,
 
-            Self::SystemContractGetCallFlags |
-            Self::SystemRuntimeCheckWitness => 1 << 10,
+            SystemContractGetCallFlags |
+            SystemRuntimeCheckWitness => 1 << 10,
 
-            Self::SystemRuntimeGetNotifications => 1 << 12,
+            SystemRuntimeGetNotifications => 1 << 12,
 
-            Self::SystemCryptoCheckSig |
-            Self::SystemContractCall |
-            Self::SystemContractCreateStandardAccount |
-            Self::SystemIteratorNext |
-            Self::SystemRuntimeLog |
-            Self::SystemRuntimeNotify |
-            Self::SystemStorageGet |
-            Self::SystemStorageFind |
-            Self::SystemStoragePut |
-            Self::SystemStorageDelete => 1 << 15,
+            SystemCryptoCheckSig |
+            SystemContractCall |
+            SystemContractCreateStandardAccount |
+            SystemIteratorNext |
+            SystemRuntimeLog |
+            SystemRuntimeNotify |
+            SystemStorageGet |
+            SystemStorageFind |
+            SystemStoragePut |
+            SystemStorageDelete => 1 << 15,
             _ => 0,
         }
     }

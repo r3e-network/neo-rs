@@ -2,7 +2,6 @@
 // All Rights Reserved
 
 
-use std::ops::{Add, Sub};
 use neo_base::{errors, math::U256, encoding::{bin::ToBinEncoded, hex::ToHex}};
 use crate::{store::{self, *}, types::H160};
 
@@ -33,8 +32,8 @@ impl<Store: store::Store> Nep17Store<Store> {
         Self { contract_id, store }
     }
 
-    /// `mint` initializes token supply
-    pub fn mint(&self, account: &H160, amount: &U256) {
+    /// `mint` initializes token supply, for native contract
+    pub(crate) fn mint(&self, account: &H160, amount: &U256) {
         if amount.is_zero() {
             return;
         }
@@ -80,7 +79,7 @@ impl<Store: store::Store> Nep17Store<Store> {
         let total = self.total_supply();  // TODO: with version
         batch.add_put(
             StoreKey::new(self.contract_id, KEY_TOTAL_SUPPLY, &()).to_bin_encoded(),
-            total.add(curr).sub(prev).to_bin_encoded(),
+            (total + curr - prev).to_bin_encoded(),
             &WriteOptions::with_always(),
         );
 

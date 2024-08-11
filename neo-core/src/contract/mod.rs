@@ -9,16 +9,12 @@ use neo_base::{errors, encoding::bin::*};
 use crate::{PublicKey, PUBLIC_COMPRESSED_SIZE, types::*};
 
 pub mod context;
-
 pub mod event;
 pub mod manifest;
-
 pub mod nef;
 pub mod nep17;
 pub mod nep11;
-
 pub mod natives;
-
 pub mod param;
 
 pub use {context::*, event::*, manifest::*, nef::*, nep17::*, nep11::*, natives::*, param::*};

@@ -2,6 +2,8 @@
 // All Rights Reserved
 
 
+use alloc::vec::Vec;
+
 use neo_base::encoding::bin::*;
 use crate::PublicKey;
 

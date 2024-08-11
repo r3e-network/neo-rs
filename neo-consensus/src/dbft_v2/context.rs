@@ -3,6 +3,11 @@
 
 
 use alloc::{vec, vec::Vec};
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
 
 use neo_base::byzantine_honest_quorum;

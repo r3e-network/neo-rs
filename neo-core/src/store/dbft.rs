@@ -2,9 +2,11 @@
 // All Rights Reserved
 
 
+use alloc::vec::Vec;
+
 use neo_base::encoding::bin::*;
-use crate::{PublicKey, types::{Member, ToBftHash, NEO_TOTAL_SUPPLY}};
-use crate::store::{self, DEFAULT_STORAGE_PRICE, NEO_CONTRACT_ID, Nep17Store, StoreKey, WriteBatch, WriteOptions};
+use crate::{PublicKey, store::{self, *}};
+use crate::types::{Member, ToBftHash, NEO_TOTAL_SUPPLY};
 
 
 pub const PREFIX_VOTERS_COUNT: u8 = 1;
@@ -12,7 +14,7 @@ pub const PREFIX_CANDIDATE: u8 = 33;
 
 pub const PREFIX_REGISTER_PRICE: u8 = 13;
 pub const PREFIX_COMMITTEE: u8 = 14;
-pub const PREFIX_GASPER_BLOCK: u8 = 29;
+pub const PREFIX_GAS_PER_BLOCK: u8 = 29;
 
 pub const PREFIX_VOTER_REWARD_PER_COMMITTEE: u8 = 23;
 

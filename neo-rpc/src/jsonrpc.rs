@@ -17,10 +17,8 @@ pub struct Request<Params> {
     #[serde(rename = "jsonrpc")]
     pub version: Version,
 
-    pub method: String,
-
     pub id: u64,
-
+    pub method: String,
     pub params: Params,
 }
 
@@ -32,7 +30,6 @@ pub struct Response<Result> {
     pub version: Version,
 
     pub id: u64,
-
     pub result: Result,
 }
 

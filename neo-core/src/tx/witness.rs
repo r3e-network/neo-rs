@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use neo_base::encoding::bin::*;
 use crate::types::Script;
 
-
 pub const MAX_CONDITION_NESTING: usize = 2;
 
 

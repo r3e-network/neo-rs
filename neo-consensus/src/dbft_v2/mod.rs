@@ -56,10 +56,10 @@ impl HView {
 
 
 #[derive(Debug)]
-pub struct Settings {
+pub struct DbftSettings {
     pub network: u32,
     pub version: u32,
-    pub millis_per_block: u64,
+    pub per_block_millis: u64,
 
     pub max_txs_per_block: u32,
     pub max_block_size: usize,
@@ -74,17 +74,17 @@ pub struct Settings {
 }
 
 
-impl Default for Settings {
+impl Default for DbftSettings {
     fn default() -> Self {
         Self {
             network: Network::PrivateNet.as_magic(),
             version: 0,
-            millis_per_block: DEFAULT_MILLIS_PER_BLOCK,
+            per_block_millis: DEFAULT_PER_BLOCK_MILLIS,
             max_txs_per_block: DEFAULT_MAX_TXS_PER_BLOCK,
             max_block_size: DEFAULT_MAX_BLOCK_SIZE,
             max_block_sysfee: DEFAULT_MAX_BLOCK_SYSFEE,
             max_pending_broadcasts: DEFAULT_MAX_PENDING_BROADCASTS,
-            milli_increment: max_block_timestamp_increment(DEFAULT_MILLIS_PER_BLOCK),
+            milli_increment: max_block_timestamp_increment(DEFAULT_PER_BLOCK_MILLIS),
             recovery_logs: "".into(),
             ignore_recovery_logs: true,
         }
@@ -101,7 +101,7 @@ pub fn next_block_unix_milli(now: u64, milli_increment: u64, prev_block_unix_mil
 
 
 pub struct DbftConsensus {
-    settings: Settings,
+    settings: DbftSettings,
     state_machine: StateMachine,
     timer_rx: mpsc::Receiver<Timer>,
     broadcast_rx: mpsc::Receiver<Payload>,
@@ -109,14 +109,9 @@ pub struct DbftConsensus {
 
 
 impl DbftConsensus {
-    pub fn new(
-        settings: Settings,
-        self_keypair: Keypair,
-        committee: Committee,
-        chain: Box<dyn ChainStates>,
-    ) -> Self {
+    pub fn new(settings: DbftSettings, self_keypair: Keypair, committee: Committee, chain: Box<dyn ChainStates>) -> Self {
         let nr_validators = committee.nr_validators;
-        let millis_per_block = settings.millis_per_block;
+        let per_block_millis = settings.per_block_millis;
         let max_pending = settings.max_pending_broadcasts as usize;
 
         let (timer_tx, timer_rx) = mpsc::sync_channel(1);
@@ -139,7 +134,7 @@ impl DbftConsensus {
             broadcast_rx,
         };
 
-        dbft.state_machine.reset_consensus(0, millis_per_block);
+        dbft.state_machine.reset_consensus(0, per_block_millis);
         dbft
     }
 

@@ -3,8 +3,8 @@
 
 
 use alloc::{vec, vec::Vec};
-use neo_base::hash::{Sha256, SlicesSha256};
 
+use neo_base::hash::{Sha256, SlicesSha256};
 use crate::types::H256;
 
 

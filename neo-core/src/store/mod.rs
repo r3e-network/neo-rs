@@ -2,18 +2,19 @@
 // All Rights Reserved
 
 
+use alloc::vec::Vec;
+use core::fmt::Debug;
+
+use neo_base::{encoding::bin::*, errors};
+
+pub use {chain::*, contract::*, dbft::*, policy::*, snapshot::*, states::*};
+
 pub mod chain;
 pub mod contract;
 pub mod dbft;
 pub mod policy;
 pub mod snapshot;
 pub mod states;
-
-pub use {chain::*, contract::*, dbft::*, policy::*, snapshot::*, states::*};
-
-use alloc::vec::Vec;
-use core::fmt::Debug;
-use neo_base::{errors, encoding::bin::*};
 
 
 pub const VOTER_REWARD_FACTOR: u64 = 100_000_000;
@@ -28,7 +29,7 @@ pub const NOT_EXISTS: Version = 0;
 
 /// Data Access Layer Settings
 #[derive(Debug, Clone)]
-pub struct Settings {
+pub struct DalSettings {
     pub network: u32,
 
     // pub p2p_sign: bool,
@@ -198,10 +199,9 @@ impl<'a, Key: BinEncoder + Debug> StoreKey<'a, Key> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use neo_base::{encoding::hex::ToHex, hash::Sha256};
     use crate::types::H256;
-    use neo_base::{hash::Sha256, encoding::hex::ToHex};
-
+    use super::*;
 
     #[test]
     fn test_store_key() {

@@ -197,7 +197,7 @@ pub enum Role {
     StateValidator = 4,
     Oracle = 8,
     NeoFSAlphabet = 16,
-    P2PNotary = 32,
+    P2pNotary = 32,
 }
 
 
@@ -211,6 +211,7 @@ pub enum VmState {
 }
 
 
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct AccountId {
     version: u8,

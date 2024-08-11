@@ -4,14 +4,14 @@
 pub mod blocks;
 pub mod nodes;
 pub mod extensible;
+pub mod p2p;
 
+pub use {blocks::*, extensible::*, nodes::*, p2p::*};
 
 use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
 use crate::types::H256;
-
-pub use {blocks::*, extensible::*, nodes::*};
 
 
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
@@ -19,45 +19,6 @@ pub use {blocks::*, extensible::*, nodes::*};
 pub enum MessageFlag {
     None = 0x00,
     Compressed = 0x01,
-}
-
-
-#[derive(Debug, Clone, BinEncode, BinDecode)]
-pub enum MessageCommand {
-    Version = 0x00,
-    Verack = 0x01,
-
-    GetAddr = 0x10,
-    Addr = 0x11,
-    Ping = 0x18,
-    Pong = 0x19,
-
-    GetHeaders = 0x20,
-    Headers = 0x21,
-    GetBlocks = 0x24,
-
-    /// i.e. MemPool
-    TxPool = 0x25,
-
-    Inventory = 0x27,
-    GetData = 0x28,
-    GetBlockByIndex = 0x29,
-    NotFound = 0x2a,
-    Tx = 0x2b,
-    Block = 0x2c,
-    Extensible = 0x2e,
-    Reject = 0x2f,
-
-    FilterLoad = 0x30,
-    FilterAdd = 0x31,
-    FilterClear = 0x32,
-    MerkleBlock = 0x38,
-
-    Alert = 0x40,
-
-    P2PNotaryRequest = 0x50,
-    // GetMPTData = 0x51,
-    // MPTData = 0x52,
 }
 
 
@@ -75,7 +36,7 @@ pub enum Inventory {
     Extensible(Vec<H256>),
 
     #[bin(tag = 0x50)]
-    P2PNotaryRequest(Vec<H256>),
+    P2pNotaryRequest(Vec<H256>),
 }
 
 

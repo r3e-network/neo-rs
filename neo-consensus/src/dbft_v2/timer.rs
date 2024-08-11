@@ -85,26 +85,26 @@ impl ViewTimer {
 
 
 #[inline]
-pub fn millis_on_setting(view_number: ViewNumber, millis_per_block: u64) -> u64 {
-    millis_per_block << core::cmp::min(32, view_number + 1)
+pub fn millis_on_setting(view_number: ViewNumber, per_block_millis: u64) -> u64 {
+    per_block_millis << core::cmp::min(32, view_number + 1)
 }
 
 #[inline]
-pub fn millis_on_resetting(primary: bool, view_number: ViewNumber, millis_per_block: u64) -> u64 {
+pub fn millis_on_resetting(primary: bool, view_number: ViewNumber, per_block_millis: u64) -> u64 {
     if primary {
-        if view_number == 0 { millis_per_block } else { 0 }
+        if view_number == 0 { per_block_millis } else { 0 }
     } else {
-        millis_per_block << core::cmp::min(32, view_number + 1)
+        per_block_millis << core::cmp::min(32, view_number + 1)
     }
 }
 
 
 #[inline]
-pub fn millis_on_timeout(view_number: ViewNumber, millis_per_block: u64) -> u64 {
+pub fn millis_on_timeout(view_number: ViewNumber, per_block_millis: u64) -> u64 {
     if view_number == 0 {
-        millis_per_block
+        per_block_millis
     } else {
-        millis_per_block << core::cmp::min(32, view_number + 1)
+        per_block_millis << core::cmp::min(32, view_number + 1)
     }
 }
 

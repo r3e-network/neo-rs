@@ -2,6 +2,7 @@
 // All Rights Reserved
 
 use serde::{Deserialize, Serialize};
+
 use neo_base::encoding::bin::*;
 
 use crate::types::{Bytes, H256};

@@ -8,9 +8,9 @@ edition = "2021"
 
 
 [dependencies]
-neo-base   = { path = "../neo-base"}
-neo-core   = { path = "../neo-core"}
-neo-crypto = { path = "../neo-crypto" }
+neo-base   = { path = "../neo-base", default-features = false }
+neo-core   = { path = "../neo-core", default-features = false }
+neo-crypto = { path = "../neo-crypto", default-features = false }
 
 hashbrown  = { version = "0", features = ["serde"]}
 timer      = { version = "0.2" }

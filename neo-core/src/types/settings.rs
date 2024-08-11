@@ -21,8 +21,8 @@ pub const MAX_MANIFEST_SIZE: u32 = 0xFFFF;
 pub const MAX_SUBITEMS: u32 = 16;
 pub const MAX_NESTING_DEPTH: u8 = 2;
 
-/// neo seed endpoints of mainnet
-pub const SEED_LIST_MAINNET: &[&'static str] = &[
+/// neo seed endpoints of main-net
+pub const SEED_LIST_MAIN_NET: &[&'static str] = &[
     "seed1.neo.org:10333",
     "seed2.neo.org:10333",
     "seed3.neo.org:10333",
@@ -30,8 +30,8 @@ pub const SEED_LIST_MAINNET: &[&'static str] = &[
     "seed5.neo.org:10333",
 ];
 
-/// neo seed endpoints of testnet
-pub const SEED_LIST_TESTNET: &[&'static str] = &[
+/// neo seed endpoints of test-net
+pub const SEED_LIST_TEST_NET: &[&'static str] = &[
     "seed1t5.neo.org:20333",
     "seed2t5.neo.org:20333",
     "seed3t5.neo.org:20333",
@@ -39,6 +39,14 @@ pub const SEED_LIST_TESTNET: &[&'static str] = &[
     "seed5t5.neo.org:20333",
 ];
 
+
+/// neo seed endpoints of private-net
+pub const SEED_LIST_PRIVATE_NET: &[&'static str] = &[
+    "127.0.0.1:10234",
+    "127.0.0.1:10235",
+    "127.0.0.1:10236",
+    "127.0.0.1:10237",
+];
 
 pub const NEP_HEADER_1: u8 = 0x01;
 pub const NEP_HEADER_2: u8 = 0x42;
@@ -48,7 +56,7 @@ pub const NEP_FLAG: u8 = 0xe0;
 pub const MAX_SIGNERS: usize = 1024;
 pub const DEFAULT_MAX_PENDING_BROADCASTS: u32 = 128;
 
-pub const DEFAULT_MILLIS_PER_BLOCK: u64 = 15_000;
+pub const DEFAULT_PER_BLOCK_MILLIS: u64 = 15_000;
 
 /// max block size: default is 256KiB
 pub const DEFAULT_MAX_BLOCK_SIZE: usize = 0x40000;
@@ -97,12 +105,12 @@ pub struct HardForkHeight {
 pub struct NeoSettings {
     pub network: u32,
     pub address_version: u8,
-    pub millis_per_block: u64,
+    pub per_block_millis: u64,
 
     pub standby_committee: Vec<PublicKey>,
     pub nr_committee_members: u32,
     pub nr_validators: u32,
-    pub seed_list: Vec<String>,
+    pub seeds: Vec<String>,
 
     /// see Tx.valid_until_block
     pub max_valid_until_block_increment: u64,
@@ -118,26 +126,27 @@ pub struct NeoSettings {
     /// The hard fork and the block height from which a hard fork is activated.
     pub hard_forks: Vec<HardForkHeight>,
 
-    pub initial_gas_distribution: u64,
+    /// i.e. initial_gas_distribution
+    pub initial_gas: u64,
 }
 
 impl Default for NeoSettings {
     fn default() -> Self {
-        let increment = max_block_timestamp_increment(DEFAULT_MILLIS_PER_BLOCK);
+        let increment = max_block_timestamp_increment(DEFAULT_PER_BLOCK_MILLIS);
         Self {
             network: 0,
             address_version: ADDRESS_V3,
-            millis_per_block: DEFAULT_MILLIS_PER_BLOCK,
+            per_block_millis: DEFAULT_PER_BLOCK_MILLIS,
             standby_committee: Vec::new(),
             nr_committee_members: DEFAULT_COMMITTEE_NUM,
             nr_validators: DEFAULT_VALIDATOR_NUM,
-            seed_list: Vec::new(),
+            seeds: Vec::new(),
             max_valid_until_block_increment: increment,
             max_txs_per_block: DEFAULT_MAX_TXS_PER_BLOCK,
             max_txpool_size: 50_000,
             max_traceable_blocks: 2_102_400,
             hard_forks: Vec::new(),
-            initial_gas_distribution: 52_000_000_0000_0000,
+            initial_gas: 52_000_000_0000_0000, // 52_000_000 GAS
         }
     }
 }
@@ -151,8 +160,8 @@ impl NeoSettings {
 
 
 #[inline]
-pub const fn max_block_timestamp_increment(millis_per_block: u64) -> u64 {
-    VALID_UNTIL_BLOCK_INCREMENT_BASE / millis_per_block
+pub const fn max_block_timestamp_increment(per_block_millis: u64) -> u64 {
+    VALID_UNTIL_BLOCK_INCREMENT_BASE / per_block_millis
 }
 
 

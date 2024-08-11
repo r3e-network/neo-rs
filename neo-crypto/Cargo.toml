@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-neo-base   = { path = "../neo-base" }
+neo-base   = { path = "../neo-base", default-features = false }
 
 rand_core  = { version = "0.6", default-features = false, features = ["getrandom", "alloc"]}
 p256       = { version = "0", default-features = false, features = ["arithmetic", "ecdsa", "ecdh"]}
@@ -28,3 +28,4 @@ thiserror-no-std = { version = "2", optional = true }
 default = ["thiserror-no-std"]
 
 std     = ["neo-base/std", "thiserror", "rand_core/std"]
+sgx     = []

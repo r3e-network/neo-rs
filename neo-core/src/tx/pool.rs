@@ -3,9 +3,8 @@
 
 
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{HashMap, BTreeMap};
 use std::sync::{Arc, Mutex};
-use hashbrown::HashMap;
 
 use neo_base::{errors, math::U256};
 use crate::{store::{FeeStates, BlockStates}, tx::{Tx, TxAttr}, types::{H160, H256}};

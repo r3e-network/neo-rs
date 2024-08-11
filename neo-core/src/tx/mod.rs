@@ -15,8 +15,10 @@ pub mod pool_event;
 #[cfg(test)]
 mod pool_test;
 
+pub use {attr::*, signer::*, witness::*};
 
-pub use {attr::*, pool::*, pool_event::*, signer::*, witness::*};
+#[cfg(any(feature = "std", test))]
+pub use {pool::*, pool_event::*};
 
 
 use alloc::vec::Vec;

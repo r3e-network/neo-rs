@@ -19,6 +19,7 @@ pub mod dbft_v2;
 
 use neo_core::{block, payload::Extensible, tx::Tx, types::Sign};
 
+
 pub struct Block {
     pub network: u32,
     pub block: block::Block,

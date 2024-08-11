@@ -298,5 +298,9 @@ mod test {
 
         let z = w - U256::from(2u64);
         assert_eq!(z, !U256::default());
+
+        let z = U256::from(1u64);
+        let z = z - U256::from(2u64) + 3u64;
+        assert_eq!(z, U256::from(2u64));
     }
 }

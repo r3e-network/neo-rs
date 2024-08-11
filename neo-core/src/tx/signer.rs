@@ -3,11 +3,11 @@
 
 
 use alloc::vec::Vec;
+
 use serde::{Deserialize, Serialize};
+
 use neo_base::encoding::bin::*;
-
-use crate::{PublicKey, types::H160, tx::*};
-
+use crate::{PublicKey, tx::*, types::H160};
 
 pub const MAX_ALLOWED_GROUPS: usize = 16;
 

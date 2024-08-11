@@ -2,7 +2,8 @@
 // All Rights Reserved
 
 
-use std::{collections::BTreeMap, sync::{Arc, Mutex}};
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use neo_core::store::{self, *};
 

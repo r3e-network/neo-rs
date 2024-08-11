@@ -4,6 +4,11 @@
 
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
 
 use crate::{PublicKey, types::{Role, Script}};

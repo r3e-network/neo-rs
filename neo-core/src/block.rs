@@ -5,8 +5,8 @@ use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::{bin::*, encode_hex_u64, decode_hex_u64};
-use crate::{PublicKey, types::{H160, H256, Script, ToBftHash}, tx::{Witnesses, Witness, Tx}};
-use crate::tx::StatedTx;
+use crate::{PublicKey, tx::{Witnesses, Witness, Tx, StatedTx}};
+use crate::types::{H160, H256, Script, ToBftHash};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, InnerBinDecode)]
@@ -90,7 +90,7 @@ impl BinDecoder for Header {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, BinEncode)]
+#[derive(Debug, Clone, Serialize, Deserialize, BinEncode, BinDecode)]
 pub struct Block {
     header: Header,
 

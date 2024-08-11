@@ -3,8 +3,9 @@
 
 
 use neo_base::encoding::bin::*;
-use crate::block::{StatedBlock, TrimmedBlock, IndexHash};
-use crate::{store::{self, *}, types::H256, tx::StatedTx};
+
+use crate::{store::{self, *}, tx::StatedTx, types::H256};
+use crate::block::{IndexHash, StatedBlock, TrimmedBlock};
 
 
 pub const PREFIX_BLOCK: u8 = 5;

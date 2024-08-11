@@ -4,6 +4,11 @@
 
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
 
 use neo_base::{encoding::bin::*, math::U256};

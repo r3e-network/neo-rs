@@ -5,7 +5,7 @@
 use alloc::{vec::Vec, string::String};
 
 use neo_base::encoding::bin::*;
-use crate::{tx::{Tx, Witness}, types::{Bytes, FixedBytes}};
+use crate::types::{Bytes, FixedBytes};
 
 
 const MAX_CAPABILITIES: usize = 32;
@@ -43,6 +43,29 @@ pub struct Version {
     pub capabilities: Vec<Capability>,
 }
 
+impl Version {
+    pub fn port(&self) -> Option<u16> {
+        self.capabilities.iter()
+            .find_map(|x| match x {
+                Capability::TcpServer { port } => Some(*port),
+                Capability::FullNode { .. } => None,
+            })
+    }
+
+    #[inline]
+    pub fn full_node(&self) -> bool {
+        self.start_height().is_some()
+    }
+
+    pub fn start_height(&self) -> Option<u32> {
+        self.capabilities.iter()
+            .find_map(|x| match x {
+                Capability::TcpServer { .. } => None,
+                Capability::FullNode { start_height } => Some(*start_height),
+            })
+    }
+}
+
 
 impl BinDecoder for Version {
     fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
@@ -63,11 +86,17 @@ impl BinDecoder for Version {
 
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
-pub struct Addr {
+pub struct NodeAddr {
     /// i.e unix timestamp in second, UTC
     pub unix_seconds: u32,
     pub ip: FixedBytes<MAX_IP_ADDR_SIZE>,
     pub capabilities: Vec<Capability>,
+}
+
+
+#[derive(Debug, Clone, BinEncode, BinDecode)]
+pub struct NodeList {
+    pub nodes: Vec<NodeAddr>,
 }
 
 
@@ -81,20 +110,20 @@ pub struct Ping {
 }
 
 
-#[derive(Debug, Clone, BinEncode, BinDecode)]
-pub struct P2PNotaryRequest {
-    pub main_tx: Tx,
-    pub fallback_tx: Tx,
-    pub witness: Witness,
-}
-
-
-impl EncodeHashFields for P2PNotaryRequest {
-    fn encode_hash_fields(&self, w: &mut impl BinWriter) {
-        self.main_tx.encode_bin(w);
-        self.fallback_tx.encode_bin(w);
-    }
-}
+// #[derive(Debug, Clone, BinEncode, BinDecode)]
+// pub struct NotaryRequest {
+//     pub main_tx: Tx,
+//     pub fallback_tx: Tx,
+//     pub witness: Witness,
+// }
+//
+//
+// impl EncodeHashFields for NotaryRequest {
+//     fn encode_hash_fields(&self, w: &mut impl BinWriter) {
+//         self.main_tx.encode_bin(w);
+//         self.fallback_tx.encode_bin(w);
+//     }
+// }
 
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
