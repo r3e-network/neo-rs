@@ -17,7 +17,7 @@ use crate::{*, PeerStage::*};
 
 
 #[derive(Debug, Clone)]
-pub struct HandleSettings {
+pub struct HandleConfig {
     pub network: u32,
     pub nonce: u32,
     pub port: u16,
@@ -27,7 +27,7 @@ pub struct HandleSettings {
     pub ping_timeout: Duration,
 }
 
-impl Default for HandleSettings {
+impl Default for HandleConfig {
     fn default() -> Self {
         let nonce = neo_crypto::rand::read_u64().expect("`read_u64` should be ok");
         Self {
@@ -73,13 +73,13 @@ pub enum HandleError {
 #[derive(Clone)]
 pub struct MessageHandleV2 {
     net_handles: NetHandles,
-    settings: HandleSettings,
+    config: HandleConfig,
 }
 
 impl MessageHandleV2 {
     #[inline]
-    pub fn new(settings: HandleSettings, net_handles: NetHandles) -> Self {
-        Self { net_handles, settings }
+    pub fn new(config: HandleConfig, net_handles: NetHandles) -> Self {
+        Self { net_handles, config }
     }
 
     #[inline]
@@ -120,8 +120,8 @@ impl MessageHandleV2 {
     }
 
     pub fn on_heartbeat(&self, tick: Arc<Tick>, discovery: Discovery) {
-        let ping_timeout = self.settings.ping_timeout;
-        let handshake_timeout = self.settings.ping_timeout;
+        let ping_timeout = self.config.ping_timeout;
+        let handshake_timeout = self.config.ping_timeout;
         while tick.wait() {
             let now = UnixTime::now();
             let dsc = discovery.lock().unwrap();
@@ -153,7 +153,7 @@ impl MessageHandleV2 {
         let ping = P2pMessage::Ping(Ping {
             last_block_index: 0, // TODO: get last block index
             unix_seconds: unix_seconds_now() as u32,
-            nonce: self.settings.nonce,
+            nonce: self.config.nonce,
         });
 
         let ping: Bytes = ping.to_bin_encoded().into();
@@ -173,17 +173,17 @@ impl MessageHandleV2 {
 
 impl MessageHandleV2 {
     fn on_incoming(&self, discovery: &Discovery, event: &NetEvent, peer: &SocketAddr) {
-        let port = self.settings.port;
-        let capabilities = if self.settings.relay {
+        let port = self.config.port;
+        let capabilities = if self.config.relay {
             vec![TcpServer { port }, FullNode { start_height: 0 }] // TODO: set start_height
         } else {
             vec![TcpServer { port }]
         };
         let version = P2pMessage::Version(Version {
-            network: self.settings.network,
+            network: self.config.network,
             version: 0,
             unix_seconds: unix_seconds_now() as u32,
-            nonce: self.settings.nonce,
+            nonce: self.config.nonce,
             user_agent: neo_base::VERSION.into(),
             capabilities,
         });
@@ -252,7 +252,7 @@ impl MessageHandleV2 {
     }
 
     fn on_version(&self, discovery: &Discovery, addr: &SocketAddr, version: Version) -> Result<(), HandleError> {
-        if version.nonce == self.settings.nonce {
+        if version.nonce == self.config.nonce {
             version.port()
                 .map(|port| SocketAddr::new(addr.ip(), port))
                 .map(|service| { // TODO: log
@@ -261,7 +261,7 @@ impl MessageHandleV2 {
             return Err(HandleError::IdenticalNonce(version.nonce));
         }
 
-        if version.network != self.settings.network {
+        if version.network != self.config.network {
             return Err(HandleError::NetworkMismatch(version.network));
         }
 
@@ -355,7 +355,7 @@ impl MessageHandleV2 {
         let pong = P2pMessage::Pong(Pong {
             last_block_index: 0, // TODO: get last lock index
             unix_seconds: unix_seconds_now() as u32,
-            nonce: self.settings.nonce,
+            nonce: self.config.nonce,
         });
 
         let handle = self.net_handle(peer).ok_or(HandleError::NoSuchNetHandle)?;

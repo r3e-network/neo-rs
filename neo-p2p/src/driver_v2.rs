@@ -35,7 +35,7 @@ pub type NetHandles = Arc<DashMap<SocketAddr, NetHandle>>;
 
 
 // #[derive(Debug,Clone)]
-// pub struct NetSettings {
+// pub struct NetConfig {
 //     pub max_peers: u32,
 //     pub listen: SocketAddr,
 // }

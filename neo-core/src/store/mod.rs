@@ -27,9 +27,9 @@ pub const EXEC_TX: u8 = 2;
 pub const NOT_EXISTS: Version = 0;
 
 
-/// Data Access Layer Settings
+/// Data Access Layer Config
 #[derive(Debug, Clone)]
-pub struct DalSettings {
+pub struct DalConfig {
     pub network: u32,
 
     // pub p2p_sign: bool,

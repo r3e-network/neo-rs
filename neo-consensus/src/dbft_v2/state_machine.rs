@@ -186,7 +186,7 @@ impl StateMachine {
         }
     }
 
-    pub fn on_timeout(&mut self, settings: &DbftSettings, view: HView) { // TODO: log
+    pub fn on_timeout(&mut self, settings: &DbftConfig, view: HView) { // TODO: log
         if self.states.watch_only ||
             view.height != self.states.block_index ||
             view.view_number != self.states.view_number { // TODO: block is sent
@@ -238,7 +238,7 @@ impl StateMachine {
         }
     }
 
-    pub fn on_message(&mut self, settings: &DbftSettings, message: Payload) {
+    pub fn on_message(&mut self, settings: &DbftConfig, message: Payload) {
         let meta = message.message_meta();
         let validator = meta.validator_index as usize;
         if validator < self.states.validators.len() {
@@ -285,7 +285,7 @@ impl StateMachine {
         }
     }
 
-    fn check_prepare_request(&self, settings: &DbftSettings, prepare: &Message<PrepareRequest>) -> bool {
+    fn check_prepare_request(&self, settings: &DbftConfig, prepare: &Message<PrepareRequest>) -> bool {
         let meta = prepare.meta;
         let message = &prepare.message;
 
@@ -323,7 +323,7 @@ impl StateMachine {
             message.unix_milli > now + (MAX_ADVANCED_BLOCKS * settings.per_block_millis))
     }
 
-    fn on_prepare_request(&mut self, settings: &DbftSettings, prepare: Message<PrepareRequest>) {
+    fn on_prepare_request(&mut self, settings: &DbftConfig, prepare: Message<PrepareRequest>) {
         if !self.check_prepare_request(settings, &prepare) {
             return;
         }
@@ -382,7 +382,7 @@ impl StateMachine {
         // 12. Broadcast a `GetData` message with transaction hashes if they were missed in the block
     }
 
-    fn response_prepare_if_needed(&mut self, settings: &DbftSettings, payload_hash: H256) {
+    fn response_prepare_if_needed(&mut self, settings: &DbftConfig, payload_hash: H256) {
         if !self.context.has_all_txs() {
             return;
         }
@@ -482,7 +482,7 @@ impl StateMachine {
                 .unwrap_or(true)
     }
 
-    fn on_prepare_response(&mut self, settings: &DbftSettings, prepare: Message<PrepareResponse>) {
+    fn on_prepare_response(&mut self, settings: &DbftConfig, prepare: Message<PrepareResponse>) {
         if !self.check_prepare_response(&prepare) {
             return;
         }
@@ -558,7 +558,7 @@ impl StateMachine {
         // TODO: send block
     }
 
-    fn on_commit(&mut self, settings: &DbftSettings, commit: Message<Commit>) {
+    fn on_commit(&mut self, settings: &DbftConfig, commit: Message<Commit>) {
         // 0. On receiving a Commit send by consensus nodes after receiving N-f PrepareResponse.
 
         // 1. Ignore it if it has been received from the same node before.
@@ -631,7 +631,7 @@ impl StateMachine {
         new_view_number > existed_view
     }
 
-    fn on_change_view(&mut self, settings: &DbftSettings, chang_view: Message<ChangeViewRequest>) {
+    fn on_change_view(&mut self, settings: &DbftConfig, chang_view: Message<ChangeViewRequest>) {
         if !self.check_change_view(&chang_view) {
             return;
         }
@@ -724,13 +724,13 @@ impl StateMachine {
     // 0. On receiving a RecoveryMessage broadcast by consensus nodes when receiving
     //  an accessible RecoveryRequest or time out after a Commit message has been sent.
     #[inline]
-    fn on_recovery_message(&mut self, settings: &DbftSettings, recovery: Message<RecoveryMessage>) {
+    fn on_recovery_message(&mut self, settings: &DbftConfig, recovery: Message<RecoveryMessage>) {
         self.states.on_recovering = true;
         self.on_recovery_message_inner(settings, recovery);
         self.states.on_recovering = false;
     }
 
-    fn on_recovery_message_inner(&mut self, settings: &DbftSettings, recovery: Message<RecoveryMessage>) {
+    fn on_recovery_message_inner(&mut self, settings: &DbftConfig, recovery: Message<RecoveryMessage>) {
         let meta = recovery.meta;
         let message = &recovery.message;
 

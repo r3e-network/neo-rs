@@ -16,18 +16,18 @@ use crate::*;
 
 #[test]
 fn test_message_handle() {
-    let settings = NodeSettings {
+    let config = NodeConfig {
         seeds: vec![],
         listen: "127.0.0.1:10231".into(),
         ping_interval: Duration::from_secs(1),
         ping_timeout: Duration::from_secs(3),
         ..Default::default()
     };
-    let service: SocketAddr = settings.listen.parse().unwrap();
+    let service: SocketAddr = config.listen.parse().unwrap();
 
-    let local = LocalNode::new(settings);
+    let local = LocalNode::new(config);
     let handle = MessageHandleV2::new(
-        local.settings().handle_settings(local.port()),
+        local.node_config().handle_config(local.port()),
         local.net_handles(),
     );
 

@@ -7,7 +7,9 @@ use core::fmt::{Display, Formatter};
 
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
-use neo_base::{encoding::bin::*, encoding::hex::{StartsWith0x, ToRevHex}, errors};
+use neo_base::errors;
+use neo_base::encoding::bin::*;
+use neo_base::encoding::hex::{StartsWith0x, ToRevHex};
 
 
 pub const H256_SIZE: usize = 32;

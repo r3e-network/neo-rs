@@ -102,7 +102,7 @@ pub struct HardForkHeight {
 
 
 #[derive(Debug)]
-pub struct NeoSettings {
+pub struct NeoConfig {
     pub network: u32,
     pub address_version: u8,
     pub per_block_millis: u64,
@@ -130,7 +130,7 @@ pub struct NeoSettings {
     pub initial_gas: u64,
 }
 
-impl Default for NeoSettings {
+impl Default for NeoConfig {
     fn default() -> Self {
         let increment = max_block_timestamp_increment(DEFAULT_PER_BLOCK_MILLIS);
         Self {
@@ -151,7 +151,7 @@ impl Default for NeoSettings {
     }
 }
 
-impl NeoSettings {
+impl NeoConfig {
     pub fn standby_validators(&self) -> &[PublicKey] {
         let take = core::cmp::min(self.nr_validators as usize, self.standby_committee.len());
         &self.standby_committee[..take]
@@ -166,21 +166,21 @@ pub const fn max_block_timestamp_increment(per_block_millis: u64) -> u64 {
 
 
 #[derive(Debug)]
-pub struct WalletSettings {
+pub struct WalletConfig {
     pub path: String,
     pub password: String,
 }
 
 
 #[derive(Debug)]
-pub struct ConsensusSettings {
+pub struct ConsensusConfig {
     pub enabled: bool,
-    pub unlock_wallet: WalletSettings,
+    pub unlock_wallet: WalletConfig,
 }
 
 
 #[derive(Debug)]
-pub struct AppSettings {
+pub struct AppConfig {
     pub log_level: String,
     pub log_path: String,
 }

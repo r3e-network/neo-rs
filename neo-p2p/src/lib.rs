@@ -85,7 +85,7 @@ impl Dial for mpsc::Sender<SocketAddr> {
 }
 
 #[derive(Debug, Clone)]
-pub struct NodeSettings {
+pub struct NodeConfig {
     pub nonce: u32,
     pub min_peers: u32,
     pub max_peers: u32,
@@ -113,9 +113,9 @@ pub struct NodeSettings {
     pub per_block_millis: u64,
 }
 
-impl NodeSettings {
-    pub fn handle_settings(&self, port: u16) -> HandleSettings {
-        HandleSettings {
+impl NodeConfig {
+    pub fn handle_config(&self, port: u16) -> HandleConfig {
+        HandleConfig {
             network: self.network,
             nonce: self.nonce,
             port,
@@ -126,7 +126,7 @@ impl NodeSettings {
     }
 }
 
-impl Default for NodeSettings {
+impl Default for NodeConfig {
     fn default() -> Self {
         let nonce = neo_crypto::rand::read_u64()
             .expect("`rand::read_u64()` should be ok");

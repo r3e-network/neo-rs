@@ -2,6 +2,7 @@
 // All Rights Reserved
 
 use alloc::{string::String, vec::Vec};
+
 use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::bin::*;

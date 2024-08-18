@@ -54,7 +54,7 @@ impl HView {
 
 
 #[derive(Debug)]
-pub struct DbftSettings {
+pub struct DbftConfig {
     pub network: u32,
     pub version: u32,
     pub per_block_millis: u64,
@@ -72,7 +72,7 @@ pub struct DbftSettings {
 }
 
 
-impl Default for DbftSettings {
+impl Default for DbftConfig {
     fn default() -> Self {
         Self {
             network: Network::PrivateNet.as_magic(),
@@ -99,7 +99,7 @@ pub fn next_block_unix_milli(now: u64, milli_increment: u64, prev_block_unix_mil
 
 
 pub struct DbftConsensus {
-    settings: DbftSettings,
+    settings: DbftConfig,
     state_machine: StateMachine,
     timer_rx: mpsc::Receiver<Timer>,
     broadcast_rx: mpsc::Receiver<Payload>,
@@ -107,7 +107,7 @@ pub struct DbftConsensus {
 
 
 impl DbftConsensus {
-    pub fn new(settings: DbftSettings, self_keypair: Keypair, committee: Committee, chain: Box<dyn ChainStates>) -> Self {
+    pub fn new(settings: DbftConfig, self_keypair: Keypair, committee: Committee, chain: Box<dyn ChainStates>) -> Self {
         let nr_validators = committee.nr_validators;
         let per_block_millis = settings.per_block_millis;
         let max_pending = settings.max_pending_broadcasts as usize;

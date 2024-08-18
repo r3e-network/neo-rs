@@ -7,7 +7,9 @@ use std::collections::{HashMap, BTreeMap};
 use std::sync::{Arc, Mutex};
 
 use neo_base::{errors, math::U256};
-use crate::{store::{FeeStates, BlockStates}, tx::{Tx, TxAttr}, types::{H160, H256}};
+use crate::store::{FeeStates, BlockStates};
+use crate::tx::{Tx, TxAttr};
+use crate::types::{H160, H256};
 
 
 #[derive(Debug, Copy, Clone)]

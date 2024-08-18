@@ -20,13 +20,13 @@ pub struct LocalNode {
     net_rx: AtomicCell<Option<mpsc::Receiver<NetMessage>>>,
     driver: NetDriver,
     local: SocketAddr,
-    settings: NodeSettings,
+    config: NodeConfig,
 }
 
 impl LocalNode {
-    pub fn new(/* ledger: Arc<dyn Ledger>,*/ settings: NodeSettings) -> Self {
-        let local: SocketAddr = settings.listen.parse()
-            .expect(&format!("SocketAddr::parse({}) is not ok", &settings.listen));
+    pub fn new(/* ledger: Arc<dyn Ledger>,*/ config: NodeConfig) -> Self {
+        let local: SocketAddr = config.listen.parse()
+            .expect(&format!("SocketAddr::parse({}) is not ok", &config.listen));
 
         // let n = std::thread::available_parallelism().unwrap_or(8.into()).get();
         let runtime = runtime::Builder::new_multi_thread()
@@ -38,7 +38,7 @@ impl LocalNode {
         let (net_tx, net_rx) = mpsc::channel(MESSAGE_CHAN_SIZE);
         let driver = NetDriver::new(
             runtime.handle().clone(),
-            settings.max_peers as usize,
+            config.max_peers as usize,
             local, net_tx,
         );
         Self {
@@ -46,15 +46,15 @@ impl LocalNode {
             net_rx: AtomicCell::new(Some(net_rx)),
             driver,
             local,
-            settings,
+            config,
         }
     }
 
-    pub fn settings(&self) -> &NodeSettings { &self.settings }
+    pub fn node_config(&self) -> &NodeConfig { &self.config }
 
     pub fn net_handles(&self) -> NetHandles { self.driver.net_handles() }
 
-    pub fn seeds(&self) -> &[String] { &self.settings.seeds }
+    pub fn seeds(&self) -> &[String] { &self.config.seeds }
 
     pub fn port(&self) -> u16 { self.local.port() }
 
@@ -64,7 +64,7 @@ impl LocalNode {
     pub fn run(&self, handle: MessageHandleV2) -> NodeHandle {
         let (connect_tx, connect_rx) = mpsc::channel(CONNECT_CHAN_SIZE);
 
-        let heartbeat = self.settings.ping_interval;
+        let heartbeat = self.config.ping_interval;
         let node = NodeHandle::new(connect_tx, heartbeat, self.seeds());
 
         let discovery = node.discovery();
@@ -86,11 +86,11 @@ impl LocalNode {
     }
 
     pub fn on_discovering(&self, discovery: Discovery) {
-        let attempt_peers = self.settings.attempt_peers;
-        let per_block_millis = self.settings.per_block_millis;
+        let attempt_peers = self.config.attempt_peers;
+        let per_block_millis = self.config.per_block_millis;
 
         let check_millis = per_block_millis;
-        let factor = self.settings.discovery_factor as u64;
+        let factor = self.config.discovery_factor as u64;
         let broadcast = factor * per_block_millis;
 
         let Some(runtime) = self.runtime.as_ref() else { return; };
@@ -162,11 +162,11 @@ mod test {
 
     #[test]
     fn test_run_node() {
-        let node = LocalNode::new(NodeSettings::default());
+        let node = LocalNode::new(NodeConfig::default());
         let addr = node.local_addr();
 
         let message = MessageHandleV2::new(
-            node.settings.handle_settings(node.port()),
+            node.config.handle_config(node.port()),
             node.net_handles(),
         );
         let handle = node.run(message);
