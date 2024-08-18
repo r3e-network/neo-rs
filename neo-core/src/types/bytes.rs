@@ -3,10 +3,12 @@
 
 
 use alloc::{string::String, vec, vec::Vec};
-use bytes::{BytesMut, BufMut};
+use core::net::IpAddr;
 
+use bytes::{BytesMut, BufMut};
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-use neo_base::encoding::{base64::{FromBase64, ToBase64}, bin::*};
+
+use neo_base::encoding::{base64::*, bin::*};
 
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -15,7 +17,9 @@ pub struct FixedBytes<const N: usize>(pub(crate) [u8; N]);
 impl<const N: usize> FixedBytes<N> {
     pub fn as_bytes(&self) -> &[u8] { &self.0 }
 
-    pub fn is_zero(&self) -> bool { self.0.iter().all(|x| *x == 0) }
+    pub fn is_zero(&self) -> bool {
+        self.0.iter().all(|x| *x == 0)
+    }
 }
 
 impl<const N: usize> From<[u8; N]> for FixedBytes<N> {
@@ -49,7 +53,9 @@ impl<const N: usize> Default for FixedBytes<N> {
 }
 
 impl<const N: usize> BinEncoder for FixedBytes<N> {
-    fn encode_bin(&self, w: &mut impl BinWriter) { w.write(self.0.as_ref()) }
+    fn encode_bin(&self, w: &mut impl BinWriter) {
+        w.write(self.0.as_ref())
+    }
 
     fn bin_size(&self) -> usize { N }
 }
@@ -77,6 +83,17 @@ impl<'de, const N: usize> Deserialize<'de> for FixedBytes<N> {
         Vec::from_base64_std(value.as_str())
             .map(|v| v.as_slice().into())
             .map_err(D::Error::custom)
+    }
+}
+
+
+impl From<IpAddr> for FixedBytes<16> {
+    #[inline]
+    fn from(addr: IpAddr) -> Self {
+        match addr {
+            IpAddr::V4(addr) => addr.to_ipv6_mapped().octets().into(),
+            IpAddr::V6(addr) => addr.octets().into(),
+        }
     }
 }
 

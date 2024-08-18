@@ -11,12 +11,10 @@ use std::collections::HashMap;
 use hashbrown::HashMap;
 
 use neo_base::{byzantine_failure_quorum, byzantine_honest_quorum};
-use neo_core::{
-    block::{self, Header},
-    merkle::MerkleSha256,
-    store::ChainStates,
-    types::{H256, Sign, ToSignData},
-};
+use neo_core::block::{self, Header};
+use neo_core::merkle::MerkleSha256;
+use neo_core::store::ChainStates;
+use neo_core::types::{H256, Sign, ToSignData};
 use neo_crypto::{rand, ecdsa::{DigestVerify, Sign as EcdsaSign}};
 use crate::dbft_v2::*;
 

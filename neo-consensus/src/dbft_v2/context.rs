@@ -11,10 +11,10 @@ use std::collections::HashMap;
 use hashbrown::HashMap;
 
 use neo_base::byzantine_honest_quorum;
-use neo_core::{
-    PublicKey, tx::{Tx, Witness}, types::{H160, H256},
-    contract::{ToMultiSignContract, context::MultiSignContext},
-};
+use neo_core::PublicKey;
+use neo_core::tx::{Tx, Witness};
+use neo_core::types::{H160, H256};
+use neo_core::contract::{ToMultiSignContract, context::MultiSignContext};
 use crate::dbft_v2::*;
 
 

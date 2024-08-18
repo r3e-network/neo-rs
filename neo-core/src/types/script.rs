@@ -2,12 +2,12 @@
 // All Rights Reserved
 
 use alloc::vec::Vec;
+
 use bytes::BytesMut;
-use serde::{Serializer, Serialize, Deserializer, Deserialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use neo_base::encoding::bin::*;
 use crate::types::{Bytes, CheckSign, ToCheckSign};
-
 
 // The maximum length of invocation-script.
 // It should fit 11/21 multi-signature for the committee.

@@ -10,21 +10,17 @@ use tokio::sync::mpsc;
 use neo_base::errors;
 use neo_core::types::{Bytes, Network, DEFAULT_PER_BLOCK_MILLIS, SEED_LIST_PRIVATE_NET};
 
-pub use {codec::*, discovery::*, driver_v2::*, handle::*, node::*, peer::*};
-
+pub use {codec::*, discovery::*, driver_v2::*, handle_v2::*, node::*, peer::*};
 
 pub mod codec;
 pub mod discovery;
 pub mod driver_v2;
-pub mod handle;
+pub mod handle_v2;
 pub mod node;
 pub mod peer;
 
-
-pub type LocalTime = chrono::DateTime<chrono::Local>;
-
-#[inline]
-pub fn local_now() -> LocalTime { chrono::Local::now() }
+#[cfg(test)]
+mod handle_v2_test;
 
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -32,8 +28,9 @@ pub enum NetEvent {
     Connected,
     NotConnected,
     Accepted,
-    Received(Bytes),
+    Message(Bytes),
     Disconnected,
+    Timeout,
 }
 
 impl NetEvent {
@@ -51,17 +48,12 @@ pub struct NetMessage {
 }
 
 
-#[derive(Debug, Default, Clone)]
-pub struct PeerStates {
-    pub last_block_index: u32,
-    pub hand_shook: bool,
-
-    // full_node is always false if `Version` is not receive
-    pub full_node: bool,
-}
+// pub trait MessageHandle: Send + 'static {
+//     fn on_received(self, net_rx: mpsc::Receiver<NetMessage>, discovery: Discovery);
+// }
 
 
-#[derive(Debug, errors::Error)]
+#[derive(Debug, Clone, errors::Error)]
 pub enum SendError {
     #[error("send: timeout after {0:?}")]
     Timeout(Duration),
@@ -112,8 +104,8 @@ pub struct NodeSettings {
     pub relay: bool,
     pub seeds: Vec<String>,
 
-    /// i.e. proto_tick_interval
-    pub tick_interval: Duration,
+    // i.e. proto_tick_interval
+    // pub tick_interval: Duration,
     pub ping_interval: Duration,
     pub ping_timeout: Duration,
     pub dial_timeout: Duration,
@@ -122,12 +114,14 @@ pub struct NodeSettings {
 }
 
 impl NodeSettings {
-    pub fn message_handle_settings(&self, port: u16) -> HandleSettings {
+    pub fn handle_settings(&self, port: u16) -> HandleSettings {
         HandleSettings {
             network: self.network,
             nonce: self.nonce,
             port,
             relay: self.relay,
+            ping_interval: self.ping_interval,
+            ping_timeout: self.ping_timeout,
         }
     }
 }
@@ -147,7 +141,7 @@ impl Default for NodeSettings {
             network: Network::PrivateNet.as_magic(),
             relay: true,
             seeds: SEED_LIST_PRIVATE_NET.iter().map(|&x| x.into()).collect(),
-            tick_interval: Duration::from_secs(2),
+            // tick_interval: Duration::from_secs(2),
             ping_interval: Duration::from_secs(30),
             ping_timeout: Duration::from_secs(90),
             dial_timeout: Duration::from_secs(5),

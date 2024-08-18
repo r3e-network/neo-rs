@@ -4,9 +4,10 @@
 
 use alloc::string::{String, ToString};
 use core::fmt::{Display, Formatter};
-use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
 
-use neo_base::{errors, encoding::bin::*, encoding::hex::{ToRevHex, StartsWith0x}};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+
+use neo_base::{encoding::bin::*, encoding::hex::{StartsWith0x, ToRevHex}, errors};
 
 
 pub const H256_SIZE: usize = 32;

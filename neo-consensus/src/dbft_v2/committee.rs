@@ -5,7 +5,8 @@
 use alloc::{boxed::Box, vec::Vec};
 use core::cmp::Ordering;
 
-use neo_core::{PublicKey, types::{Member, MemberCache, ScriptHash, ToBftHash, NEO_TOTAL_SUPPLY}};
+use neo_core::PublicKey;
+use neo_core::types::{Member, MemberCache, ScriptHash, ToBftHash, NEO_TOTAL_SUPPLY};
 
 
 const EFFECTIVE_VOTER_TURNOUT: u64 = 5;

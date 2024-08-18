@@ -5,7 +5,6 @@
 
 extern crate alloc;
 
-
 pub mod bytes;
 pub mod defer;
 pub mod encoding;
@@ -14,6 +13,8 @@ pub mod hash;
 pub mod math;
 pub mod mem;
 
+#[cfg(feature = "std")]
+pub mod time;
 
 
 pub const GIT_VERSION: &str = git_version::git_version!();

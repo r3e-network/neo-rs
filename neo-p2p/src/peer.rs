@@ -4,11 +4,14 @@
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+use std::time::Duration;
 
 use trust_dns_resolver::Resolver;
 
+use neo_base::time::{AtomicUnixTime, UnixTime};
 use neo_core::payload::Version;
-use crate::{local_now, LocalTime, SeedState};
+use crate::SeedState;
 
 
 #[derive(Debug, Copy, Clone)]
@@ -30,11 +33,78 @@ impl PeerStage {
     pub fn belongs(self, stages: u32) -> bool {
         (self.as_u32() & stages) != 0
     }
+}
 
-    // pub const fn hand_shook() -> u32 {
-    //     use PeerStage::*;
-    //     VersionSent.as_u32() | VersionReceived.as_u32() | VersionAckSent.as_u32() | VersionAckReceived.as_u32()
-    // }
+
+#[derive(Debug, Copy, Clone)]
+pub struct Timeouts {
+    pub ping: bool,
+    pub handshake: bool,
+}
+
+
+#[derive(Debug)]
+pub struct Connected {
+    pub addr: SocketAddr,
+    pub connected_at: UnixTime,
+    pub stages: AtomicU32,
+    pub ping_sent: AtomicUnixTime,
+    pub ping_recv: AtomicUnixTime,
+    pub pong_recv: AtomicUnixTime,
+}
+
+impl Connected {
+    #[inline]
+    pub fn new(addr: SocketAddr, stages: u32) -> Connected {
+        Connected {
+            addr,
+            connected_at: UnixTime::now(),
+            stages: AtomicU32::new(stages),
+            ping_sent: AtomicUnixTime::default(),
+            ping_recv: AtomicUnixTime::default(),
+            pong_recv: AtomicUnixTime::default(),
+        }
+    }
+
+    #[inline]
+    pub fn stages(&self) -> u32 { self.stages.load(Relaxed) }
+
+    #[inline]
+    pub fn add_stages(&self, stages: u32) {
+        let mut old = self.stages.load(Relaxed);
+        while self.stages.compare_exchange(old, old | stages, Relaxed, Relaxed).is_err() {
+            old = self.stages.load(Relaxed);
+        }
+    }
+
+    #[inline]
+    pub fn is_accepted(&self) -> bool {
+        self.stages.load(Relaxed) & PeerStage::Accepted.as_u32() != 0
+    }
+
+    pub fn ping_timeout(&self, now: UnixTime, timeout: Duration) -> bool {
+        let sent = self.ping_sent.load().unix_millis();
+        if sent == 0 { // not sent
+            return false;
+        }
+
+        let timeout = timeout.as_millis() as i64;
+        let now = now.unix_millis();
+        let recv = self.pong_recv.load().unix_millis();
+        if recv > 0 && now - recv < timeout {
+            return false;
+        }
+
+        (recv < sent && now - sent >= timeout) || (recv > sent && recv - sent >= timeout)
+    }
+
+    pub fn handshake_timeout(&self, now: UnixTime, timeout: Duration) -> bool {
+        if self.stages() & PeerStage::VersionAckReceived.as_u32() != 0 {
+            return false;
+        }
+
+        now.unix_millis() - self.connected_at.unix_millis() >= timeout.as_millis() as i64
+    }
 }
 
 
@@ -42,17 +112,29 @@ impl PeerStage {
 pub struct TcpPeer {
     // `addr` is the connection socket address
     pub addr: SocketAddr,
-    pub handshake_at: LocalTime,
+    pub handshake_at: UnixTime,
+    // pub ping_sent: AtomicUnixTime,
+    // pub ping_recv: AtomicUnixTime,
+    // pub pong_recv: AtomicUnixTime,
+    // pub last_block_index: AtomicU32,
     pub score: u64,
-    pub last_block_index: u32,
     pub version: Version,
 }
 
 impl TcpPeer {
     #[inline]
     pub fn new(addr: SocketAddr, version: Version) -> Self {
-        let last_block_index = version.start_height().unwrap_or(0);
-        Self { addr, handshake_at: local_now(), score: 0, last_block_index, version }
+        // let last_block_index = version.start_height().unwrap_or(0);
+        Self {
+            addr,
+            handshake_at: UnixTime::now(),
+            // ping_sent: AtomicUnixTime::default(),
+            // ping_recv: AtomicUnixTime::default(),
+            // pong_recv: AtomicUnixTime::default(),
+            // last_block_index: AtomicU32::new(last_block_index),
+            score: 0,
+            version,
+        }
     }
 
     #[inline]
@@ -60,9 +142,6 @@ impl TcpPeer {
         self.version.port()
             .map(|x| SocketAddr::new(self.addr.ip(), x))
     }
-
-    #[inline]
-    pub fn full_node(&self) -> bool { self.version.full_node() }
 }
 
 
@@ -114,6 +193,7 @@ impl DnsResolver {
         seeds
     }
 
+    // TODO: resolve seeds periodically
     pub fn resolves(&self) -> HashMap<String, Seed> {
         self.seeds.iter()
             .filter_map(|(host, port)| {
@@ -135,6 +215,46 @@ impl DnsResolver {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_connected() {
+        let addr = "127.0.0.1:10234".parse().unwrap();
+        let connected = Connected::new(addr, PeerStage::Accepted.as_u32());
+        assert_eq!(connected.is_accepted(), true);
+
+        connected.add_stages(PeerStage::VersionSent.as_u32());
+        assert_eq!(connected.stages(), PeerStage::VersionSent.as_u32() | PeerStage::Accepted.as_u32());
+        assert_eq!(connected.is_accepted(), true);
+
+        let now = UnixTime::now();
+        let timeout = Duration::from_secs(2);
+        let ping = connected.ping_timeout(now, timeout);
+        assert_eq!(ping, false);
+
+        let handshake = connected.handshake_timeout(now, timeout);
+        assert_eq!(handshake, false);
+
+        connected.ping_sent.store(now - Duration::from_secs(3));
+        let ping = connected.ping_timeout(now, timeout);
+        assert_eq!(ping, true);
+
+        connected.ping_sent.store(now - Duration::from_secs(10));
+        connected.pong_recv.store(now - Duration::from_secs(2));
+        let ping = connected.ping_timeout(now, timeout);
+        assert_eq!(ping, true);
+
+        connected.ping_sent.store(now - Duration::from_secs(4));
+        connected.pong_recv.store(now - Duration::from_secs(3));
+        let ping = connected.ping_timeout(now, timeout);
+        assert_eq!(ping, false);
+
+        let handshake = connected.handshake_timeout(now, Duration::from_secs(0));
+        assert_eq!(handshake, true);
+
+        connected.add_stages(PeerStage::VersionAckReceived.as_u32());
+        let handshake = connected.handshake_timeout(now, Duration::from_secs(0));
+        assert_eq!(handshake, false);
+    }
 
     #[test]
     fn test_dns_resolver() {

@@ -5,8 +5,10 @@
 use bytes::BytesMut;
 
 use neo_base::encoding::bin::HashFieldsSha256;
-use neo_crypto::ecdsa::{ECC256_SIGN_SIZE, Secp256r1Sign, SignError, Sign as EcdsaSign, DigestVerify};
-use crate::{PrivateKey, PublicKey, types::{FixedBytes, Varbytes, Script, SIGN_DATA_SIZE}};
+use neo_crypto::ecdsa::{DigestVerify, ECC256_SIGN_SIZE, Secp256r1Sign, Sign as EcdsaSign, SignError};
+
+use crate::{PrivateKey, PublicKey};
+use crate::types::{FixedBytes, Script, SIGN_DATA_SIZE, Varbytes};
 
 
 pub type Sign = FixedBytes<ECC256_SIGN_SIZE>;
@@ -127,8 +129,9 @@ impl<T: HashFieldsSha256> MultiSignVerify for T {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use neo_base::hash::{Sha256, SHA256_HASH_SIZE};
+
+    use super::*;
 
     struct MockHashFields;
 

@@ -43,7 +43,9 @@ pub trait Sha256Twice {
 
 impl<T: Sha256> Sha256Twice for T {
     #[inline]
-    fn sha256_twice(&self) -> [u8; SHA256_HASH_SIZE] { self.sha256().sha256() }
+    fn sha256_twice(&self) -> [u8; SHA256_HASH_SIZE] {
+        self.sha256().sha256()
+    }
 }
 
 pub trait Ripemd160 {

@@ -57,7 +57,7 @@ impl ViewTimer {
         if delay_millis > 0 {
             *(guards.deref_mut()) = GuardTimer {
                 timer: Timer { view, start_unix_milli: now, delay_millis: delay_millis as u64 },
-                guard: Some(self.schedule(view, delay_millis, now)),
+                guard: Some(self.schedule(view, delay_millis as u64, now)),
             };
         }
     }
@@ -67,13 +67,13 @@ impl ViewTimer {
         let mut guards = self.timer.lock().unwrap();
         *(guards.deref_mut()) = GuardTimer {
             timer: Timer { view, start_unix_milli: now, delay_millis },
-            guard: Some(self.schedule(view, delay_millis as i64, now)),
+            guard: Some(self.schedule(view, delay_millis, now)),
         };
     }
 
-    fn schedule(&self, view: HView, delay_millis: i64, now: u64) -> timer::Guard {
-        let delay = chrono::Duration::milliseconds(delay_millis);
-        let timer = Timer { view, start_unix_milli: now, delay_millis: delay_millis as u64 };
+    fn schedule(&self, view: HView, delay_millis: u64, now: u64) -> timer::Guard {
+        let delay = chrono::Duration::milliseconds(delay_millis as i64);
+        let timer = Timer { view, start_unix_milli: now, delay_millis };
 
         let send = timer.clone();
         let tx = self.tx.clone();
@@ -110,13 +110,13 @@ pub fn millis_on_timeout(view_number: ViewNumber, per_block_millis: u64) -> u64 
 
 #[cfg(test)]
 mod test {
+    use neo_base::time::unix_millis_now;
     use super::*;
-    use crate::unix_milli_now;
 
     #[test]
     fn test_timer() {
         let (tx, rx) = mpsc::sync_channel(1);
-        let vt = ViewTimer::new(unix_milli_now, tx);
+        let vt = ViewTimer::new(unix_millis_now, tx);
         vt.reset_timeout(HView { height: 2, view_number: 1 }, 100);
 
         let timer = rx.recv().expect("`recv` should be ok");

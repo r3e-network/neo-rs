@@ -12,6 +12,7 @@ neo-base     = { path = "../neo-base", default-features = false }
 neo-core     = { path = "../neo-core", default-features = false }
 neo-crypto   = { path = "../neo-crypto", default-features = false }
 
+dashmap      = { version = "6" }
 crossbeam    = { version = "0.8" }
 chrono       = { version = "0.4" }
 

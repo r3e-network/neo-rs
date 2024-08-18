@@ -43,7 +43,3 @@ pub trait Consensus {
     fn on_payload(&mut self, payload: &Extensible) -> Result<(), Self::OnPayloadError>;
 }
 
-#[inline]
-pub fn unix_milli_now() -> u64 {
-    chrono::Utc::now().timestamp_millis() as u64
-}

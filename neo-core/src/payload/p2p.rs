@@ -32,7 +32,7 @@ pub enum P2pMessage {
     Ping(Ping),
 
     #[bin(tag = 0x19)]
-    Pong(Ping),
+    Pong(Pong),
 
     #[bin(tag = 0x20)]
     GetHeaders(BlockIndexRange),
@@ -56,7 +56,7 @@ pub enum P2pMessage {
     GetBlockByIndex(BlockIndexRange),
 
     #[bin(tag = 0x2a)]
-    NotFound,
+    NotFound(Inventory),
 
     #[bin(tag = 0x2b)]
     Tx(Tx),
@@ -67,6 +67,7 @@ pub enum P2pMessage {
     #[bin(tag = 0x2e)]
     Extensible(Extensible),
 
+    // Sent to reject an inventory.
     #[bin(tag = 0x2f)]
     Reject,
 

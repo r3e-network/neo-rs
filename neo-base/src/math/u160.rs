@@ -2,11 +2,10 @@
 // All Rights Reserved
 
 use alloc::string::{String, ToString};
-use core::{
-    cmp::{Ord, PartialOrd, Ordering},
-    fmt::{Display, Formatter},
-    ops::{Add, Sub, BitAnd, BitOr, BitXor, Not},
-};
+use core::cmp::{Ord, PartialOrd, Ordering};
+use core::fmt::{Display, Formatter};
+use core::ops::{Add, Sub, BitAnd, BitOr, BitXor, Not};
+
 use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
 
 use crate::{errors, cmp_elem, math::Widening, encoding::hex::StartsWith0x};
@@ -68,17 +67,23 @@ impl Display for U160 {
 
 impl From<u64> for U160 {
     #[inline]
-    fn from(value: u64) -> Self { Self { n: [value, 0, 0] } }
+    fn from(value: u64) -> Self {
+        Self { n: [value, 0, 0] }
+    }
 }
 
 impl From<u128> for U160 {
     #[inline]
-    fn from(value: u128) -> Self { Self { n: [value as u64, (value >> 64) as u64, 0] } }
+    fn from(value: u128) -> Self {
+        Self { n: [value as u64, (value >> 64) as u64, 0] }
+    }
 }
 
 impl PartialOrd for U160 {
     #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Ord for U160 {

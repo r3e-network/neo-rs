@@ -12,17 +12,15 @@ pub mod timer;
 #[cfg(test)]
 mod state_machine_test;
 
-pub use {committee::*, context::*, message::*, recovery::*, state_machine::*, timer::*};
-
 use alloc::string::String;
 use std::sync::mpsc;
 
-use neo_base::{encoding::bin::*, errors};
-use neo_core::{
-    Keypair, store::ChainStates,
-    payload::{CONSENSUS_CATEGORY, Extensible}, tx, types::*,
-};
-use crate::unix_milli_now;
+use neo_base::{encoding::bin::*, errors, time::unix_millis_now};
+use neo_core::{Keypair, tx, types::*};
+use neo_core::store::ChainStates;
+use neo_core::payload::{CONSENSUS_CATEGORY, Extensible};
+
+pub use {committee::*, context::*, message::*, recovery::*, state_machine::*, timer::*};
 
 
 #[derive(Debug, Copy, Clone)]
@@ -121,9 +119,9 @@ impl DbftConsensus {
             settings,
             state_machine: StateMachine {
                 self_keypair,
-                timer: ViewTimer::new(unix_milli_now, timer_tx),
+                timer: ViewTimer::new(unix_millis_now, timer_tx),
                 broadcast_tx,
-                unix_milli_now,
+                unix_milli_now: unix_millis_now,
                 chain,
                 committee,
                 states: ConsensusStates::new(),

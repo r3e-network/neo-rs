@@ -2,9 +2,11 @@
 // All Rights Reserved
 
 
-use alloc::{vec::Vec, string::String};
+use alloc::{string::String, vec::Vec};
+use std::net::SocketAddr;
 
 use neo_base::encoding::bin::*;
+
 use crate::types::{Bytes, FixedBytes};
 
 
@@ -20,16 +22,34 @@ pub enum Capability {
     #[bin(tag = 0x01)]
     TcpServer { port: u16 },
 
-    // WsServer { port: u16 }, // deprecated
     #[bin(tag = 0x10)]
     FullNode { start_height: u32 },
 }
 
 
-pub trait NodeCapability {
-    fn node_capability(&self) -> Capability;
+pub(crate) trait NodeCapability {
+    fn port(&self) -> Option<u16>;
+
+    fn start_height(&self) -> Option<u32>;
 }
 
+impl NodeCapability for Vec<Capability> {
+    fn port(&self) -> Option<u16> {
+        self.iter()
+            .find_map(|x| match x {
+                Capability::TcpServer { port } => Some(*port),
+                Capability::FullNode { .. } => None,
+            })
+    }
+
+    fn start_height(&self) -> Option<u32> {
+        self.iter()
+            .find_map(|x| match x {
+                Capability::TcpServer { .. } => None,
+                Capability::FullNode { start_height } => Some(*start_height),
+            })
+    }
+}
 
 #[derive(Debug, Clone, BinEncode, InnerBinDecode)]
 pub struct Version {
@@ -44,12 +64,9 @@ pub struct Version {
 }
 
 impl Version {
+    #[inline]
     pub fn port(&self) -> Option<u16> {
-        self.capabilities.iter()
-            .find_map(|x| match x {
-                Capability::TcpServer { port } => Some(*port),
-                Capability::FullNode { .. } => None,
-            })
+        self.capabilities.port()
     }
 
     #[inline]
@@ -57,12 +74,9 @@ impl Version {
         self.start_height().is_some()
     }
 
+    #[inline]
     pub fn start_height(&self) -> Option<u32> {
-        self.capabilities.iter()
-            .find_map(|x| match x {
-                Capability::TcpServer { .. } => None,
-                Capability::FullNode { start_height } => Some(*start_height),
-            })
+        self.capabilities.start_height()
     }
 }
 
@@ -93,6 +107,25 @@ pub struct NodeAddr {
     pub capabilities: Vec<Capability>,
 }
 
+impl NodeAddr {
+    #[inline]
+    pub fn service_addr(&self) -> Option<SocketAddr> {
+        let ip: [u8; MAX_IP_ADDR_SIZE] = self.ip.clone().into();
+        self.capabilities.port()
+            .map(|port| SocketAddr::new(ip.into(), port))
+    }
+
+    #[inline]
+    pub fn full_node(&self) -> bool {
+        self.capabilities.start_height().is_some()
+    }
+
+    #[inline]
+    pub fn start_height(&self) -> Option<u32> {
+        self.capabilities.start_height()
+    }
+}
+
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct NodeList {
@@ -108,6 +141,8 @@ pub struct Ping {
     pub unix_seconds: u32,
     pub nonce: u32,
 }
+
+pub type Pong = Ping;
 
 
 // #[derive(Debug, Clone, BinEncode, BinDecode)]

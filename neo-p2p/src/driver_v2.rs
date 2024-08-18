@@ -2,19 +2,21 @@
 // All Rights Reserved
 
 
-use std::collections::HashMap;
-use std::io::{Error as IoError};
+use std::io::Error as IoError;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering::Relaxed};
 use std::time::Duration;
 
+use dashmap::DashMap;
 use tokio::{io::AsyncWriteExt, runtime::Handle, sync::mpsc};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::time::timeout;
 use tokio_stream::StreamExt;
-use tokio_util::{bytes::BytesMut, codec::{Encoder, FramedRead}};
+use tokio_util::bytes::BytesMut;
+use tokio_util::codec::{Encoder, FramedRead};
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 use neo_core::types::Bytes;
@@ -29,7 +31,7 @@ pub(crate) const MESSAGE_CHAN_SIZE: usize = 128;
 pub(crate) const CONNECT_CHAN_SIZE: usize = 128;
 
 
-pub type SharedHandles = Arc<Mutex<HashMap<SocketAddr, NetHandle>>>;
+pub type NetHandles = Arc<DashMap<SocketAddr, NetHandle>>;
 
 
 // #[derive(Debug,Clone)]
@@ -44,7 +46,7 @@ pub struct NetDriver {
     max_peers: usize,
     runtime: Handle,
     listen: SocketAddr,
-    handles: SharedHandles,
+    handles: NetHandles,
     close_tx: mpsc::Sender<SocketAddr>,
     net_tx: mpsc::Sender<NetMessage>,
 }
@@ -52,7 +54,7 @@ pub struct NetDriver {
 impl NetDriver {
     pub fn new(runtime: Handle, max_peers: usize, listen: SocketAddr, net_tx: mpsc::Sender<NetMessage>) -> Self {
         let (close_tx, close_rx) = mpsc::channel(CLOSE_CHAN_SIZE);
-        let handles = Arc::new(Mutex::new(HashMap::with_capacity(max_peers)));
+        let handles = Arc::new(DashMap::with_capacity(max_peers));
 
         let driver = Self { max_peers, runtime, listen, handles, close_tx, net_tx };
         driver.on_closing(close_rx);
@@ -61,24 +63,22 @@ impl NetDriver {
     }
 
     #[inline]
-    pub fn handles(&self) -> SharedHandles { self.handles.clone() }
+    pub fn net_handles(&self) -> NetHandles { self.handles.clone() }
 
     #[inline]
-    pub fn remove(&self, peer: &SocketAddr) -> Option<NetHandle> {
-        self.handles.lock().unwrap().remove(peer)
+    fn remove_net_handle(&self, peer: &SocketAddr) -> Option<NetHandle> {
+        self.handles.remove(peer).map(|(_, v)| v)
     }
 
     fn on_closing(&self, mut close_rx: mpsc::Receiver<SocketAddr>) {
-        let handles = self.handles();
+        let handles = self.net_handles();
         let net_tx = self.net_tx.clone();
         let _close = self.runtime.spawn(async move {
             while let Some(addr) = close_rx.recv().await {
-                let handle = {
-                    handles.lock().unwrap().remove(&addr)
-                };
-
+                let handle = handles.remove(&addr);
                 // let is_some = handle.is_some();
                 drop(handle);
+
                 // if is_some {
                 let _ = net_tx.send(Disconnected.with_peer(addr)).await;
                 //}
@@ -144,20 +144,18 @@ impl NetDriver {
     async fn on_established(&self, peer: SocketAddr, event: NetEvent, stream: TcpStream) {
         let canceler = CancellationToken::new();
         let cancelee = canceler.clone();
-
         let (data_tx, data_rx) = mpsc::channel(MESSAGE_CHAN_SIZE);
         {
             let handle = NetHandle::new(data_tx, canceler);
-            let mut handles = self.handles.lock().unwrap();
-            if handles.len() >= self.max_peers {
+            if self.handles.len() >= self.max_peers {
                 return;
             }
-            handles.insert(peer, handle);
+            self.handles.insert(peer, handle);
         }
 
         if let Err(_err) = self.net_tx.send_timeout(event.with_peer(peer), SEND_TIMEOUT).await {
-            // TODO: log error
-            self.remove(&peer);
+            // println!("send_timeout to {} err {:?}", &peer, _err);
+            self.remove_net_handle(&peer);
             return;
         }
 
@@ -177,12 +175,12 @@ impl NetDriver {
                 }
 
                 if let Err(_err) = writer.write_all(buf.as_ref()).await { // TODO: timeout
+                    // println!("write to {} err: {}", &peer, _err);
                     break; // TODO: log error
                 }
             }
 
             let _ = close_tx.send(peer).await;
-            // println!("write task existed!");
         });
     }
 
@@ -200,7 +198,6 @@ impl NetDriver {
             }
 
             let _ = close_tx.send(peer).await;
-            // println!("read task existed!");
         });
     }
 
@@ -209,8 +206,7 @@ impl NetDriver {
         while let Some(frame) = frames.next().await {
             match frame {
                 Ok(message) => {
-                    // println!("write: try send-to {} {}", peer, message.len());
-                    let message = Received(message).with_peer(peer);
+                    let message = Message(message).with_peer(peer);
                     if let Err(_err) = net_tx.send_timeout(message, SEND_TIMEOUT).await {
                         // TODO: log error
                     }
@@ -223,20 +219,65 @@ impl NetDriver {
 
 
 #[allow(dead_code)]
+pub(crate) struct NetHandleStates {
+    sent_get_addrs: AtomicI32,
+    last_block_index: AtomicU32,
+    cancel: DropGuard,
+}
+
+
+impl NetHandleStates {
+    #[inline]
+    pub fn last_block_index(&self) -> u32 {
+        self.last_block_index.load(Relaxed)
+    }
+
+    #[inline]
+    pub fn set_last_block_index(&self, new: u32) {
+        let old = self.last_block_index();
+        if new > old {
+            let _ = self.last_block_index.compare_exchange(old, new, Relaxed, Relaxed);
+        }
+    }
+
+    #[inline]
+    pub fn on_sent_get_address(&self) {
+        self.sent_get_addrs.fetch_add(1, Relaxed);
+    }
+
+    pub fn on_recv_address(&self) -> bool {
+        loop {
+            let old = self.sent_get_addrs.load(Relaxed);
+            if old <= 0 {
+                return false;
+            }
+
+            if self.sent_get_addrs.compare_exchange(old, old - 1, Relaxed, Relaxed).is_ok() {
+                return true;
+            }
+        }
+    }
+}
+
+
 #[derive(Clone)]
 pub struct NetHandle {
     data_tx: mpsc::Sender<Bytes>,
-    cancel: Arc<DropGuard>,
+    pub(crate) states: Arc<NetHandleStates>,
 }
 
 impl NetHandle {
     #[inline]
     pub fn new(data_tx: mpsc::Sender<Bytes>, cancel: CancellationToken) -> Self {
-        Self { data_tx, cancel: Arc::new(cancel.drop_guard()) }
+        Self {
+            data_tx,
+            states: Arc::new(NetHandleStates {
+                sent_get_addrs: AtomicI32::new(0),
+                last_block_index: AtomicU32::new(0),
+                cancel: cancel.drop_guard(),
+            }),
+        }
     }
-
-    // #[inline]
-    // pub fn peer(&self) -> SocketAddr { self.peer }
 
     pub fn try_seed(&self, message: Bytes) -> Result<(), SendError> {
         self.data_tx.try_send(message)
@@ -262,7 +303,6 @@ fn is_acceptable(err: &IoError) -> bool {
 mod test {
     use std::{io::Write, net::TcpStream};
     use tokio::runtime::Runtime;
-
     use neo_base::encoding::bin::*;
     use neo_core::payload::{P2pMessage, Ping};
     use crate::{driver_v2::*, ToMessageEncoded};
@@ -297,9 +337,9 @@ mod test {
 
         let recv = net_rx.blocking_recv()
             .expect("`blocking_recv` should be Some");
-        assert!(matches!(recv.event, Received(_)));
+        assert!(matches!(recv.event, Message(_)));
 
-        let Received(event) = recv.event else { return; };
+        let Message(event) = recv.event else { return; };
         let mut buf = RefBuffer::from(event.as_bytes());
         let recv: P2pMessage = BinDecoder::decode_bin(&mut buf)
             .expect("`decode_bin` should be ok");
@@ -312,10 +352,10 @@ mod test {
 
         let local = stream.local_addr()
             .expect("`local_addr` should be ok");
-        driver.remove(&local);
+        driver.remove_net_handle(&local);
 
         cancel.cancel();
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(Duration::from_millis(1000));
 
         let recv = net_rx.blocking_recv()
             .expect("`blocking_recv` should be Some");

@@ -35,8 +35,8 @@ pub enum Inventory {
     #[bin(tag = 0x2e)]
     Extensible(Vec<H256>),
 
-    #[bin(tag = 0x50)]
-    P2pNotaryRequest(Vec<H256>),
+    // #[bin(tag = 0x50)]
+    // P2pNotaryRequest(Vec<H256>),
 }
 
 
