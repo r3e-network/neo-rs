@@ -1,0 +1,20 @@
+# Copyright @ 2023 - 2024, R3E Network
+# All Rights Reserved
+
+# config for local development
+graceful: 1s
+p2p:
+  min_peers: 3
+  max_peers: 128
+  attempt_peers: 16
+  discovery_factor: 1000
+  broadcast_factor: 0
+  listen: "127.0.0.1:10236"
+  network: 0x4e454e
+  relay: true
+  seeds:
+    - "127.0.0.1:10234"
+    - "127.0.0.1:10235"
+    - "127.0.0.1:10236"
+    - "127.0.0.1:10237"
+

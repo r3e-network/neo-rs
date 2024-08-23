@@ -34,13 +34,6 @@ pub(crate) const CONNECT_CHAN_SIZE: usize = 128;
 pub type NetHandles = Arc<DashMap<SocketAddr, NetHandle>>;
 
 
-// #[derive(Debug,Clone)]
-// pub struct NetConfig {
-//     pub max_peers: u32,
-//     pub listen: SocketAddr,
-// }
-
-
 #[derive(Clone)]
 pub struct NetDriver {
     max_peers: usize,
@@ -76,12 +69,13 @@ impl NetDriver {
         let _close = self.runtime.spawn(async move {
             while let Some(addr) = close_rx.recv().await {
                 let handle = handles.remove(&addr);
-                // let is_some = handle.is_some();
+                let is_some = handle.is_some();
                 drop(handle);
 
-                // if is_some {
-                let _ = net_tx.send(Disconnected.with_peer(addr)).await;
-                //}
+                if is_some {
+                    log::warn!("close net-handle for {}", &addr);
+                    let _ = net_tx.send(Disconnected.with_peer(addr)).await;
+                }
             }
         });
     }
@@ -92,7 +86,8 @@ impl NetDriver {
                 Ok((stream, peer)) => {
                     self.on_established(peer, Accepted, stream).await;
                 }
-                Err(err) => { // TODO: log error
+                Err(err) => {
+                    log::error!("accept got err: {}", &err);
                     if !is_acceptable(&err) { break; }
                 }
             }
@@ -106,14 +101,10 @@ impl NetDriver {
             let listener = TcpListener::bind(listen).await
                 .expect(&format!("`TcpListener::bind({})` is not ok", &listen));
             tokio::select! {
-                _ = driver.do_accepting(listener) => {
-                    // println!("accept existed");
-                },
-                _ = cancel.cancelled() => {
-                    // println!("accept exit-signal from exit_rx");
-                },
+                _ = driver.do_accepting(listener) => { },
+                _ = cancel.cancelled() => { log::warn!("`on_accepting` {} canceled", &listen); },
             }
-            // println!("NetDriver::run exited!");
+            // log::warn!("`on_accepting` exited");
         });
     }
 
@@ -121,40 +112,47 @@ impl NetDriver {
         let driver = self.clone();
         let _connect = self.runtime.spawn(async move {
             while let Some(peer) = connect_rx.recv().await {
+                log::info!("try to connect peer {}", &peer);
                 let other = driver.clone();
                 let task = async move {
                     match TcpStream::connect(peer).await {
                         Ok(stream) => {
                             other.on_established(peer, Connected, stream).await;
                         }
-                        Err(_err) => { // TODO: log error
+                        Err(err) => {
+                            log::error!("connect to {} err: {}", &peer, &err);
                             let _ = other.net_tx.send(NotConnected.with_peer(peer)).await;
                         }
                     }
                 };
 
-                if let Err(_err) = timeout(DIAL_TIMEOUT, task).await {
+                if let Err(err) = timeout(DIAL_TIMEOUT, task).await {
+                    log::error!("connect to {} with timeout err: {}", &peer, &err);
                     let _ = driver.net_tx.send(NotConnected.with_peer(peer)).await;
-                    // TODO: log error
                 }
             }
+            log::warn!("`on_connecting` exited");
         });
     }
 
     async fn on_established(&self, peer: SocketAddr, event: NetEvent, stream: TcpStream) {
+        let source = if matches!(event, Accepted) { "Accepted" } else { "Connected" };
+        log::info!("`on_established` for {} with {}", &peer, source);
+
         let canceler = CancellationToken::new();
         let cancelee = canceler.clone();
         let (data_tx, data_rx) = mpsc::channel(MESSAGE_CHAN_SIZE);
         {
             let handle = NetHandle::new(data_tx, canceler);
             if self.handles.len() >= self.max_peers {
+                log::warn!("not established {} for {} because too many connections", source, &peer);
                 return;
             }
             self.handles.insert(peer, handle);
         }
 
-        if let Err(_err) = self.net_tx.send_timeout(event.with_peer(peer), SEND_TIMEOUT).await {
-            // println!("send_timeout to {} err {:?}", &peer, _err);
+        if let Err(err) = self.net_tx.send_timeout(event.with_peer(peer), SEND_TIMEOUT).await {
+            log::error!("sent on_established '{}' for {} err: {}", source, &peer, &err);
             self.remove_net_handle(&peer);
             return;
         }
@@ -170,13 +168,15 @@ impl NetDriver {
             let mut encoder = MessageEncoder;
             while let Some(message) = data_rx.recv().await {
                 let mut buf = BytesMut::new();
-                if let Err(_err) = encoder.encode(message, &mut buf) {
-                    continue; // TODO: log error
+                if let Err(err) = encoder.encode(message, &mut buf) {
+                    log::error!("encode message to {} err: {}", &peer, &err);
+                    continue;
                 }
 
-                if let Err(_err) = writer.write_all(buf.as_ref()).await { // TODO: timeout
-                    // println!("write to {} err: {}", &peer, _err);
-                    break; // TODO: log error
+                // TODO: write timeout
+                if let Err(err) = writer.write_all(buf.as_ref()).await {
+                    log::error!("write data {} to {} err: {}", buf.len(), &peer, &err);
+                    break;
                 }
             }
 
@@ -189,12 +189,8 @@ impl NetDriver {
         let close_tx = self.close_tx.clone();
         let _read = self.runtime.spawn(async move {
             tokio::select! {
-                _ = Self::do_reading(reader, peer, net_tx) => {
-                    // println!("reading exited");
-                },
-                _ = cancelee.cancelled() => {
-                    // println!("read exit-signal from exit_rx");
-                },
+                _ = Self::do_reading(reader, peer, net_tx) => { },
+                _ = cancelee.cancelled() => { log::warn!("`on_reading` for {} canceled", &peer); },
             }
 
             let _ = close_tx.send(peer).await;
@@ -207,11 +203,15 @@ impl NetDriver {
             match frame {
                 Ok(message) => {
                     let message = Message(message).with_peer(peer);
-                    if let Err(_err) = net_tx.send_timeout(message, SEND_TIMEOUT).await {
-                        // TODO: log error
+                    if let Err(err) = net_tx.send_timeout(message, SEND_TIMEOUT).await {
+                        log::error!("sent message from {} err: {}", &peer, err);
+                        break; // break or not ?
                     }
                 }
-                Err(_err) => {}
+                Err(err) => {
+                    log::error!("read next frame from {} err: {}", &peer, err);
+                    break;
+                }
             }
         }
     }
@@ -303,9 +303,11 @@ fn is_acceptable(err: &IoError) -> bool {
 mod test {
     use std::{io::Write, net::TcpStream};
     use tokio::runtime::Runtime;
+
     use neo_base::encoding::bin::*;
     use neo_core::payload::{P2pMessage, Ping};
     use crate::{driver_v2::*, ToMessageEncoded};
+
 
     #[test]
     fn test_listen() {

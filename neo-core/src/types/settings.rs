@@ -40,8 +40,8 @@ pub const SEED_LIST_TEST_NET: &[&'static str] = &[
 ];
 
 
-/// neo seed endpoints of private-net
-pub const SEED_LIST_PRIVATE_NET: &[&'static str] = &[
+/// neo seed endpoints of dev-net
+pub const SEED_LIST_DEV_NET: &[&'static str] = &[
     "127.0.0.1:10234",
     "127.0.0.1:10235",
     "127.0.0.1:10236",
@@ -78,7 +78,7 @@ pub const VALID_UNTIL_BLOCK_INCREMENT_BASE: u64 = 86_400_000;
 pub enum Network {
     MainNet = 0x00746e41,
     TestNet = 0x74746e41,
-    PrivateNet = 0x4e454e,
+    DevNet = 0x4e454e, // i.e. PrivateNet
 }
 
 impl Network {

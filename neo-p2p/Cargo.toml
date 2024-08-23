@@ -12,6 +12,9 @@ neo-base     = { path = "../neo-base", default-features = false }
 neo-core     = { path = "../neo-core", default-features = false }
 neo-crypto   = { path = "../neo-crypto", default-features = false }
 
+log          = { version = "0.4" }
+serde        = { version = "1", default-features = false, features = ["derive", "alloc"] }
+
 dashmap      = { version = "6" }
 crossbeam    = { version = "0.8" }
 chrono       = { version = "0.4" }
@@ -24,6 +27,11 @@ trust-dns-resolver = { version = "0.23" }
 
 libc         = { version = "0.2" }
 thiserror    = { version = "1" }
+
+
+[dev-dependencies]
+ctor       =  { version = "0.2" }
+env_logger =  { version = "0.11" }
 
 
 [features]

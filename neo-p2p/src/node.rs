@@ -20,11 +20,11 @@ pub struct LocalNode {
     net_rx: AtomicCell<Option<mpsc::Receiver<NetMessage>>>,
     driver: NetDriver,
     local: SocketAddr,
-    config: NodeConfig,
+    config: P2pConfig,
 }
 
 impl LocalNode {
-    pub fn new(/* ledger: Arc<dyn Ledger>,*/ config: NodeConfig) -> Self {
+    pub fn new(/* ledger: Arc<dyn Ledger>,*/ config: P2pConfig) -> Self {
         let local: SocketAddr = config.listen.parse()
             .expect(&format!("SocketAddr::parse({}) is not ok", &config.listen));
 
@@ -50,7 +50,7 @@ impl LocalNode {
         }
     }
 
-    pub fn node_config(&self) -> &NodeConfig { &self.config }
+    pub fn p2p_config(&self) -> &P2pConfig { &self.config }
 
     pub fn net_handles(&self) -> NetHandles { self.driver.net_handles() }
 
@@ -64,19 +64,19 @@ impl LocalNode {
     pub fn run(&self, handle: MessageHandleV2) -> NodeHandle {
         let (connect_tx, connect_rx) = mpsc::channel(CONNECT_CHAN_SIZE);
 
-        let heartbeat = self.config.ping_interval;
-        let node = NodeHandle::new(connect_tx, heartbeat, self.seeds());
+        let tick = self.config.tick_interval;
+        let node = NodeHandle::new(connect_tx, tick, self.seeds());
 
         let discovery = node.discovery();
         let to_recv = handle.clone();
         let Some(net_rx) = self.net_rx.take() else {
-            return node;
+            panic!("`net_rx` has been token");
         };
         std::thread::spawn(move || { to_recv.on_received(net_rx, discovery); });
 
         let discovery = node.discovery();
-        let heartbeat = node.heartbeat_tick();
-        std::thread::spawn(move || { handle.on_heartbeat(heartbeat, discovery); });
+        let tick = node.protocol_tick();
+        std::thread::spawn(move || { handle.on_protocol_tick(tick, discovery); });
 
         self.driver.on_connecting(connect_rx);
         self.driver.on_accepting(node.cancelee());
@@ -125,31 +125,31 @@ pub struct NodeHandle {
     // connect_tx: mpsc::Sender<SocketAddr>,
     discovery: Discovery,
     cancel: CancellationToken,
-    heartbeat_tick: Arc<Tick>,
+    tick: Arc<Tick>,
 }
 
 impl NodeHandle {
-    pub fn new(connect_tx: mpsc::Sender<SocketAddr>, heartbeat: Duration, seeds: &[String]) -> Self {
+    pub fn new(connect_tx: mpsc::Sender<SocketAddr>, protocol_tick: Duration, seeds: &[String]) -> Self {
         let resolver = DnsResolver::new(seeds);
         Self {
             // connect_tx: connect_tx.clone(),
             discovery: DiscoveryV1::with_shared(connect_tx, resolver),
             cancel: CancellationToken::new(),
-            heartbeat_tick: Arc::new(Tick::new(heartbeat)),
+            tick: Arc::new(Tick::new(protocol_tick)),
         }
     }
 
-    fn heartbeat_tick(&self) -> Arc<Tick> { self.heartbeat_tick.clone() }
+    fn protocol_tick(&self) -> Arc<Tick> { self.tick.clone() }
 
-    pub fn cancelee(&self) -> CancellationToken { self.cancel.clone() }
+    pub(crate) fn cancelee(&self) -> CancellationToken { self.cancel.clone() }
 
-    pub fn discovery(&self) -> Discovery { self.discovery.clone() }
+    pub(crate) fn discovery(&self) -> Discovery { self.discovery.clone() }
 }
 
 impl Drop for NodeHandle {
     fn drop(&mut self) {
         self.cancel.cancel();
-        self.heartbeat_tick.stop();
+        self.tick.stop();
     }
 }
 
@@ -160,13 +160,15 @@ mod test {
     use neo_core::payload::{P2pMessage, Ping};
     use super::*;
 
+
     #[test]
     fn test_run_node() {
-        let node = LocalNode::new(NodeConfig::default());
+        let node = LocalNode::new(P2pConfig::default());
         let addr = node.local_addr();
 
         let message = MessageHandleV2::new(
-            node.config.handle_config(node.port()),
+            node.port(),
+            node.config.clone(),
             node.net_handles(),
         );
         let handle = node.run(message);

@@ -154,7 +154,7 @@ pub struct Seed {
 impl Seed {
     #[inline]
     pub fn new(addr: SocketAddr) -> Self {
-        Self { addr, state: SeedState::Temporary }
+        Self { addr, state: SeedState::Reachable } // initial SeedState is `Reachable`
     }
 
     #[inline]
@@ -205,8 +205,17 @@ impl DnsResolver {
 
     fn resolve(&self, host: &str) -> Option<IpAddr> {
         match self.resolver.lookup_ip(host) {
-            Ok(lookup) => { lookup.iter().next() }
-            Err(_err) => { /*TODO: log error */ None }
+            Ok(lookup) => {
+                let addr = lookup.iter().next();
+                if addr.is_none() {
+                    log::error!("`loop_ip` for {} no IpAddr got", host)
+                }
+                addr
+            }
+            Err(err) => {
+                log::error!("`lookup_ip` for {} err: {}", host, err);
+                None
+            }
         }
     }
 }

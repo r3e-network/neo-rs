@@ -16,7 +16,7 @@ use crate::*;
 
 #[test]
 fn test_message_handle() {
-    let config = NodeConfig {
+    let config = P2pConfig {
         seeds: vec![],
         listen: "127.0.0.1:10231".into(),
         ping_interval: Duration::from_secs(1),
@@ -27,7 +27,8 @@ fn test_message_handle() {
 
     let local = LocalNode::new(config);
     let handle = MessageHandleV2::new(
-        local.node_config().handle_config(local.port()),
+        local.port(),
+        local.p2p_config().clone(),
         local.net_handles(),
     );
 
@@ -54,13 +55,14 @@ fn test_message_handle() {
         .expect("`decode` should be ok")
         .expect("message should be Some(Bytes)");
 
-    let message: P2pMessage = BinDecoder::decode_bin(&mut RefBuffer::from(message.as_bytes()))
+    let mut buf = RefBuffer::from(message.as_bytes());
+    let message: P2pMessage = BinDecoder::decode_bin(&mut buf)
         .expect("`decode_bin` should be ok");
     // println!("message {:?}", &message);
 
     let P2pMessage::Version(version) = message else { panic!("should be Version") };
     assert_eq!(version.version, 0);
-    assert_eq!(version.network, Network::PrivateNet.as_magic());
+    assert_eq!(version.network, Network::DevNet.as_magic());
 
     let mut buf = BytesMut::zeroed(1024);
     let n = stream.read(buf.as_mut()).expect("`read` should be ok");
@@ -70,7 +72,8 @@ fn test_message_handle() {
         .expect("`decode` should be ok")
         .expect("message should be Some(Bytes)");
 
-    let message: P2pMessage = BinDecoder::decode_bin(&mut RefBuffer::from(message.as_bytes()))
+    let mut buf = RefBuffer::from(message.as_bytes());
+    let message: P2pMessage = BinDecoder::decode_bin(&mut buf)
         .expect("`decode_bin` should be ok");
 
     let P2pMessage::Ping(ping) = message else { panic!("should be Ping") };

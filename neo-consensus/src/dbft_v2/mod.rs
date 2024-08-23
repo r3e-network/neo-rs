@@ -75,7 +75,7 @@ pub struct DbftConfig {
 impl Default for DbftConfig {
     fn default() -> Self {
         Self {
-            network: Network::PrivateNet.as_magic(),
+            network: Network::DevNet.as_magic(),
             version: 0,
             per_block_millis: DEFAULT_PER_BLOCK_MILLIS,
             max_txs_per_block: DEFAULT_MAX_TXS_PER_BLOCK,

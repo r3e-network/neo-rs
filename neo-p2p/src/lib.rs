@@ -5,10 +5,11 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use serde::{Serialize, Deserialize};
 use tokio::sync::mpsc;
 
 use neo_base::errors;
-use neo_core::types::{Bytes, Network, DEFAULT_PER_BLOCK_MILLIS, SEED_LIST_PRIVATE_NET};
+use neo_core::types::{Bytes, DEFAULT_PER_BLOCK_MILLIS, Network, SEED_LIST_DEV_NET};
 
 pub use {codec::*, discovery::*, driver_v2::*, handle_v2::*, node::*, peer::*};
 
@@ -84,8 +85,9 @@ impl Dial for mpsc::Sender<SocketAddr> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct NodeConfig {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct P2pConfig {
     pub nonce: u32,
     pub min_peers: u32,
     pub max_peers: u32,
@@ -104,8 +106,8 @@ pub struct NodeConfig {
     pub relay: bool,
     pub seeds: Vec<String>,
 
-    // i.e. proto_tick_interval
-    // pub tick_interval: Duration,
+    // i.e. protocol_tick_interval
+    pub tick_interval: Duration,
     pub ping_interval: Duration,
     pub ping_timeout: Duration,
     pub dial_timeout: Duration,
@@ -113,35 +115,23 @@ pub struct NodeConfig {
     pub per_block_millis: u64,
 }
 
-impl NodeConfig {
-    pub fn handle_config(&self, port: u16) -> HandleConfig {
-        HandleConfig {
-            network: self.network,
-            nonce: self.nonce,
-            port,
-            relay: self.relay,
-            ping_interval: self.ping_interval,
-            ping_timeout: self.ping_timeout,
-        }
-    }
-}
 
-impl Default for NodeConfig {
+impl Default for P2pConfig {
     fn default() -> Self {
         let nonce = neo_crypto::rand::read_u64()
             .expect("`rand::read_u64()` should be ok");
         Self {
             nonce: nonce as u32,
             min_peers: 3,
-            max_peers: 100,
+            max_peers: 128,
             attempt_peers: 20,
             discovery_factor: 1000,
             broadcast_factor: 0,
             listen: "127.0.0.1:10234".into(),
-            network: Network::PrivateNet.as_magic(),
+            network: Network::DevNet.as_magic(),
             relay: true,
-            seeds: SEED_LIST_PRIVATE_NET.iter().map(|&x| x.into()).collect(),
-            // tick_interval: Duration::from_secs(2),
+            seeds: SEED_LIST_DEV_NET.iter().map(|&x| x.into()).collect(),
+            tick_interval: Duration::from_secs(3),
             ping_interval: Duration::from_secs(30),
             ping_timeout: Duration::from_secs(90),
             dial_timeout: Duration::from_secs(5),
@@ -149,3 +139,8 @@ impl Default for NodeConfig {
         }
     }
 }
+
+
+#[cfg(test)]
+#[ctor::ctor]
+fn init_log() { env_logger::init(); }

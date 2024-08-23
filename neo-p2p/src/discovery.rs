@@ -21,6 +21,8 @@ pub struct Discoveries {
     pub net_size: u32,
     pub fan_out: u32,
     pub unconnected: u32,
+    pub connected: u32,
+    pub goods: u32,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -67,7 +69,7 @@ pub struct DiscoveryV1<Dial: crate::Dial> {
     // nonce -> service address
     nodes: HashMap<u32, SocketAddr>,
 
-    // optimal fan out
+    // i.e. optimal fan out
     fan_out: u32,
     net_size: u32,
 }
@@ -101,8 +103,6 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
 
         self.fan_out = (fan_out + 0.5) as u32;
         self.net_size = net_size as u32;
-
-        // TODO: log net-size and disconnects.len();
     }
 
     fn seed_mut(&mut self, addr: &SocketAddr) -> Option<&mut Seed> {
@@ -116,7 +116,10 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
         let not_full = self.unconnected.len() < MAX_POOL_SIZE;
         if not_full {
             self.unconnected.insert(addr, Knew::new());
-        } // TODO: log not added because of full
+            log::info!("peer {} added to unconnected", &addr);
+        } else {
+            log::warn!("peer {} not add to unconnected on fulled", &addr);
+        }
         not_full
     }
 
@@ -140,6 +143,12 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
             self.attempts.remove(&addr);
         }
     }
+
+    fn request_seed(&self, state: SeedState) -> Option<SocketAddr> {
+        self.seeds.iter()
+            .find(|(_, seed)| seed.state == state && !self.attempts.contains_key(&seed.addr))
+            .map(|(_, seed)| seed.addr.clone())
+    }
 }
 
 
@@ -154,6 +163,8 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
             }
             self.add_unconnected(addr.clone());
         }
+
+        self.update_net_size();
     }
 
     pub fn request_remotes(&mut self, nr_remotes: u32) {
@@ -166,13 +177,10 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
             let next = self.unconnected.iter()
                 .find(|(k, _)| !self.connected.contains_key(k) && !self.attempts.contains_key(k))
                 .map(|(k, _)| k.clone())
-                .or_else(|| {
-                    self.seeds.iter()
-                        .find(|(_, seed)| seed.temporary() && !self.attempts.contains_key(&seed.addr))
-                        .map(|(_, seed)| seed.addr.clone())
-                });
-
+                .or_else(|| self.request_seed(Reachable))
+                .or_else(|| self.request_seed(Temporary));
             if let Some(next) = next {
+                // log::info!("request_remotes next {}", &next);
                 self.try_connect(next);
             }
         }
@@ -198,23 +206,27 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
         self.nodes.insert(peer.version.nonce, service);
         // self.goods.insert(service, peer);
         self.goods.insert(peer.addr, peer);
+
+        // self.seed_mut(&service)
+        //     .filter(|seed| seed.state != Permanent)
+        //     .map(|seed| seed.state = Reachable);
     }
 
     // `addr` may be client or server socket addr
     pub fn on_disconnected(&mut self, addr: &SocketAddr) {
         self.connected.remove(addr);
         self.attempts.remove(addr);
-        if let Some(seed) = self.seed_mut(addr) { // if peer is server socket addr
-            seed.state = Temporary;
-        }
+        self.seed_mut(addr)
+            .filter(|seed| seed.state != Permanent)
+            .map(|seed| seed.state = Temporary);
 
         let Some(peer) = self.goods.remove(addr) else { return; };
         self.nodes.remove(&peer.version.nonce);
 
         let Some(service) = peer.service_addr() else { return; };
-        if let Some(seed) = self.seed_mut(&service) { // if peer is client socket addr
-            seed.state = Temporary;
-        }
+        self.seed_mut(&service) // if peer is client socket addr
+            .filter(|seed| seed.state != Permanent)
+            .map(|seed| seed.state = Temporary);
 
         self.back_fill(core::slice::from_ref(&service)); // back fill server socket addr
     }
@@ -234,10 +246,13 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
     // `service` is the server socket addr. `on_failure` is called when `connect` failed
     pub fn on_failure(&mut self, service: &SocketAddr) {
         if let Some(seed) = self.seed_mut(service) {
-            seed.state = Temporary;
+            if seed.state != Permanent {
+                seed.state = Temporary;
+            }
             self.attempts.remove(&service);
             self.connected.remove(&service);
             self.unconnected.remove(&service);
+            // log::info!("`on_failure` for {}", &service);
         } else {
             self.unconnected.get_mut(&service)
                 .filter(|v| v.remain_times > 0)
@@ -283,6 +298,8 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
             net_size: self.net_size,
             fan_out: self.fan_out,
             unconnected: self.unconnected.len() as u32,
+            connected: self.connected.len() as u32,
+            goods: self.goods.len() as u32,
         }
     }
 }
@@ -320,7 +337,7 @@ mod test {
         assert!(!disc.attempts.contains_key(&addr));
 
         disc.on_good(TcpPeer::new(addr, Version {
-            network: Network::PrivateNet.as_magic(),
+            network: Network::DevNet.as_magic(),
             version: 0,
             unix_seconds: unix_seconds_now() as u32,
             nonce: 12345,

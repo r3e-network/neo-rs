@@ -16,32 +16,6 @@ use neo_core::payload::{*, Capability::*};
 use crate::{*, PeerStage::*};
 
 
-#[derive(Debug, Clone)]
-pub struct HandleConfig {
-    pub network: u32,
-    pub nonce: u32,
-    pub port: u16,
-    pub relay: bool,
-
-    pub ping_interval: Duration,
-    pub ping_timeout: Duration,
-}
-
-impl Default for HandleConfig {
-    fn default() -> Self {
-        let nonce = neo_crypto::rand::read_u64().expect("`read_u64` should be ok");
-        Self {
-            network: Network::PrivateNet.as_magic(),
-            nonce: nonce as u32,
-            port: 10234,
-            relay: true,
-            ping_interval: Duration::from_secs(30),
-            ping_timeout: Duration::from_secs(90),
-        }
-    }
-}
-
-
 #[derive(Debug, Clone, errors::Error)]
 pub enum HandleError {
     #[error("handle: identical nonce '{0}'")]
@@ -73,13 +47,14 @@ pub enum HandleError {
 #[derive(Clone)]
 pub struct MessageHandleV2 {
     net_handles: NetHandles,
-    config: HandleConfig,
+    port: u16,
+    config: P2pConfig,
 }
 
 impl MessageHandleV2 {
     #[inline]
-    pub fn new(config: HandleConfig, net_handles: NetHandles) -> Self {
-        Self { net_handles, config }
+    pub fn new(port: u16, config: P2pConfig, net_handles: NetHandles) -> Self {
+        Self { net_handles, port, config }
     }
 
     #[inline]
@@ -116,38 +91,70 @@ impl MessageHandleV2 {
                 Timeout => { self.on_handle_err(&discovery, &net, HandleError::Timeout("net_rx")); }
             }
         }
-        // TODO: log exit action
+        log::warn!("`on_received` exited");
     }
 
-    pub fn on_heartbeat(&self, tick: Arc<Tick>, discovery: Discovery) {
-        let ping_timeout = self.config.ping_timeout;
-        let handshake_timeout = self.config.ping_timeout;
+    pub fn on_protocol_tick(&self, tick: Arc<Tick>, discovery: Discovery) {
+        let min_peers = self.config.min_peers;
+        let ping_millis = self.config.ping_interval.as_millis() as i64;
+
+        let mut ping_at = UnixTime::now();
         while tick.wait() {
             let now = UnixTime::now();
-            let dsc = discovery.lock().unwrap();
-            let peers: Vec<_> = dsc.connected_peers()
-                .map(|x| {
-                    let ping = x.ping_timeout(now, ping_timeout);
-                    if !ping {
-                        x.ping_sent.store(now);
-                    }
-                    (x.addr, Timeouts { ping, handshake: x.handshake_timeout(now, handshake_timeout) })
-                })
-                .collect();
-            drop(dsc);
 
-            for (peer, timeouts) in peers.iter().filter(|(_, x)| x.ping || x.handshake) {
-                self.on_handle_err(
-                    &discovery,
-                    &NetEvent::Timeout.with_peer(*peer),
-                    HandleError::Timeout(if timeouts.ping { "Ping" } else { "Handshake" }),
-                );
+            // tick_interval should less then ping_interval
+            if (now - ping_at).num_milliseconds() >= ping_millis { // heartbeat
+                self.on_heartbeat(&discovery);
+                ping_at = now;
             }
 
-            self.broadcast_ping(&peers, &discovery);
+            let stats = { discovery.lock().unwrap().discoveries() };
+            let peers = stats.goods; // stats.connected ?
+            let optimal = core::cmp::min(self.config.min_peers, stats.fan_out);
+            if peers < min_peers || optimal > peers { // request more connection
+                let n = core::cmp::min(self.config.attempt_peers, optimal - peers /* overflow is ok */);
+                discovery.lock().unwrap().request_remotes(n);
+            }
+
+            // TODO: move GetAddress routine to there
         }
-        // TODO: log exit action
+        log::warn!("`on_protocol_tick` exited");
     }
+
+
+    fn on_heartbeat(&self, discovery: &Discovery) {
+        let ping_timeout = self.config.ping_timeout;
+        let handshake_timeout = self.config.ping_timeout;
+
+        let now = UnixTime::now();
+        let should_ping = |x: &crate::Connected| {
+            let ping = x.ping_timeout(now, ping_timeout);
+            if !ping {
+                x.ping_sent.store(now);
+            }
+            (x.addr, Timeouts { ping, handshake: x.handshake_timeout(now, handshake_timeout) })
+        };
+
+        //let dsc = discovery.lock().unwrap();
+        let peers: Vec<_> = {
+            discovery.lock()
+                .unwrap()
+                .connected_peers()
+                .map(should_ping)
+                .collect()
+        };
+
+        for (peer, timeouts) in peers.iter().filter(|(_, x)| x.ping || x.handshake) {
+            self.on_handle_err(
+                &discovery,
+                &NetEvent::Timeout.with_peer(*peer),
+                HandleError::Timeout(if timeouts.ping { "Ping" } else { "Handshake" }),
+            );
+        }
+
+        self.broadcast_ping(&peers, &discovery);
+    }
+
 
     fn broadcast_ping(&self, peers: &[(SocketAddr, Timeouts)], discovery: &Discovery) {
         let ping = P2pMessage::Ping(Ping {
@@ -173,11 +180,10 @@ impl MessageHandleV2 {
 
 impl MessageHandleV2 {
     fn on_incoming(&self, discovery: &Discovery, event: &NetEvent, peer: &SocketAddr) {
-        let port = self.config.port;
         let capabilities = if self.config.relay {
-            vec![TcpServer { port }, FullNode { start_height: 0 }] // TODO: set start_height
+            vec![TcpServer { port: self.port }, FullNode { start_height: 0 }] // TODO: set start_height
         } else {
-            vec![TcpServer { port }]
+            vec![TcpServer { port: self.port }]
         };
         let version = P2pMessage::Version(Version {
             network: self.config.network,
@@ -190,22 +196,31 @@ impl MessageHandleV2 {
 
         let message = version.to_bin_encoded().into();
         let Some(handle) = self.net_handle(peer) else { return; };
-        if let Err(_err) = handle.try_seed(message) { // TODO: log error
+        if let Err(err) = handle.try_seed(message) {
+            log::error!("`on_incoming` try send `Version` err: {:?}", err);
             self.remove_net_handle(peer);
             return;
         }
 
         let stage = if matches!(event, NetEvent::Accepted) { Accepted } else { Connected };
-        discovery.lock().unwrap().on_incoming(peer.clone(), stage.as_u32() | VersionSent.as_u32());
+        let mut disc = discovery.lock().unwrap();
+
+        disc.on_incoming(peer.clone(), stage.as_u32() | VersionSent.as_u32());
+        let stats = disc.discoveries();
+        drop(disc);
+
+        log::info!("`on_incoming` from {},{:?}, net-stats: {:?}", peer, stage, &stats);
     }
 
-    fn on_handle_err<T: Error>(&self, discovery: &Discovery, net: &NetMessage, _err: T) {
+    fn on_handle_err<T: Error>(&self, discovery: &Discovery, net: &NetMessage, err: T) {
         if let NetEvent::Message(_data) = &net.event {
             //
         }
 
         self.remove_net_handle(&net.peer);
         { discovery.lock().unwrap().on_disconnected(&net.peer); }
+
+        log::error!("handle NetEvent from {} err: {}", net.peer, &err);
     }
 
     fn on_message(&self, discovery: &Discovery, peer: &SocketAddr, message: P2pMessage) -> Result<(), HandleError> {
@@ -256,7 +271,8 @@ impl MessageHandleV2 {
             version.port()
                 .map(|port| SocketAddr::new(addr.ip(), port))
                 .map(|service| { // TODO: log
-                    discovery.lock().unwrap().on_failure_always(service);
+                    { discovery.lock().unwrap().on_failure_always(service); }
+                    log::error!("`on_failure_always` for {},{}, nonce {}", addr, &service, version.nonce);
                 });
             return Err(HandleError::IdenticalNonce(version.nonce));
         }
