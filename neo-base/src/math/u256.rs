@@ -8,7 +8,9 @@ use core::ops::{Add, AddAssign, Sub, SubAssign, BitAnd, BitOr, BitXor, Not};
 
 use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
 
-use crate::{errors, cmp_elem, math::Widening, encoding::{bin::*, hex::StartsWith0x}};
+use crate::{errors, cmp_elem};
+use crate::math::Widening;
+use crate::encoding::{bin::*, hex::StartsWith0x};
 
 
 const N: usize = 4;
@@ -46,7 +48,9 @@ impl U256 {
     }
 
     #[inline]
-    pub fn is_zero(&self) -> bool { self.eq(&Self::default()) }
+    pub fn is_zero(&self) -> bool {
+        self.eq(&Self::default())
+    }
 
     #[inline]
     pub fn is_even(&self) -> bool { self.n[0] & 1u64 == 0 }
@@ -292,7 +296,7 @@ impl Not for U256 {
 
 #[cfg(test)]
 mod test {
-    use std::cmp::Ordering;
+    use core::cmp::Ordering;
     use crate::math::U256;
 
     #[test]

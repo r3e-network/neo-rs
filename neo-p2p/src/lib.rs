@@ -141,6 +141,6 @@ impl Default for P2pConfig {
 }
 
 
-#[cfg(test)]
-#[ctor::ctor]
-fn init_log() { env_logger::init(); }
+// #[cfg(test)]
+// #[ctor::ctor]
+// fn init_log() { env_logger::init(); }

@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc;
 
+use neo_base::math::LcgRand;
 use neo_base::time::UnixTime;
 use crate::{*, SeedState::*};
 
@@ -55,7 +56,7 @@ pub type Discovery = Arc<Mutex<DiscoveryV1<mpsc::Sender<SocketAddr>>>>;
 pub struct DiscoveryV1<Dial: crate::Dial> {
     dial: Dial,
     resolver: DnsResolver,
-    seeds: HashMap<String, Seed>,
+    seeds: Vec<(String, Seed)>, // HashMap<String, Seed>,
 
     // knew but not connected
     unconnected: HashMap<SocketAddr, Knew>,
@@ -98,7 +99,7 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
     }
 
     fn update_net_size(&mut self) {
-        let net_size = self.connected.len() + self.unconnected.len() + 1; // +1 is self
+        let net_size = self.connected.len() + self.unconnected.len() + 1; // +1 is itself
         let fan_out = if net_size > 2 { 2.5 * ((net_size - 1) as f64).ln() } else { 1.0 };
 
         self.fan_out = (fan_out + 0.5) as u32;
@@ -135,7 +136,6 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
         self.update_net_size();
     }
 
-
     #[inline]
     fn try_connect(&mut self, addr: SocketAddr) {
         self.attempts.insert(addr, UnixTime::now());
@@ -144,13 +144,25 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
         }
     }
 
-    fn request_seed(&self, state: SeedState) -> Option<SocketAddr> {
-        self.seeds.iter()
-            .find(|(_, seed)| seed.state == state && !self.attempts.contains_key(&seed.addr))
-            .map(|(_, seed)| seed.addr.clone())
+    fn request_seed(&self) -> Option<SocketAddr> {
+        let mut rand = LcgRand::new(UnixTime::now().unix_micros() as u64);
+        let mut select = |state: SeedState| {
+            let mut addr = None;
+            for (idx, (_, seed)) in self.seeds.iter().enumerate() {
+                if seed.state == state &&
+                    !self.attempts.contains_key(&seed.addr) &&
+                    (addr.is_none() || rand.next() % (idx as u64 + 1) == 0) {
+                    addr = Some(&seed.addr);
+                }
+            }
+            addr
+        };
+
+        select(Reachable)
+            .or_else(|| select(Temporary))
+            .cloned()
     }
 }
-
 
 impl<Dial: crate::Dial> DiscoveryV1<Dial> {
     // addrs should be service address list
@@ -177,8 +189,7 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
             let next = self.unconnected.iter()
                 .find(|(k, _)| !self.connected.contains_key(k) && !self.attempts.contains_key(k))
                 .map(|(k, _)| k.clone())
-                .or_else(|| self.request_seed(Reachable))
-                .or_else(|| self.request_seed(Temporary));
+                .or_else(|| self.request_seed());
             if let Some(next) = next {
                 // log::info!("request_remotes next {}", &next);
                 self.try_connect(next);
@@ -362,9 +373,8 @@ mod test {
         assert!(!disc.unconnected.contains_key(&addr));
         assert!(!disc.failures.contains_key(&addr)); // seed
 
-        let Some(seed) = disc.seeds.get(seed) else {
-            panic!("should be exists");
-        };
-        assert_eq!(seed.state, Permanent);
+        let (service, state) = &disc.seeds[0];
+        assert_eq!(service.as_str(), seed);
+        assert_eq!(state.state, Permanent);
     }
 }

@@ -8,15 +8,23 @@ edition = "2021"
 
 
 [dependencies]
-neo-core     = { path = "../neo-core" }
+neo-base     = { path = "../neo-base", default-features = false }
+neo-core     = { path = "../neo-core", default-features = false }
 
+tinyvec      = { version = "1", features = ["alloc"] }
 bytes        = { version = "1", default-features = false }
 
-strum        = { version = "0", default-features = false }
-strum_macros = { version = "0" }
+hashbrown    = { version = "0", features = ["serde"]}
+
+num_enum     = { version = "0.7"}
+strum        = { version = "0", default-features = false, features = ["derive"] }
+
+thiserror        = { version = "1", optional = true }
+thiserror-no-std = { version = "2", optional = true }
 
 
 [features]
-default = []
+# default = ["neo-base/default", "neo-core/default", "thiserror-no-std"]
+default = ["std"]
 
-std     = []
+std     = ["neo-base/std", "neo-core/std", "thiserror"]

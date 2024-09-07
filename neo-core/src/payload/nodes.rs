@@ -3,10 +3,9 @@
 
 
 use alloc::{string::String, vec::Vec};
-use std::net::SocketAddr;
+use core::net::SocketAddr;
 
 use neo_base::encoding::bin::*;
-
 use crate::types::{Bytes, FixedBytes};
 
 

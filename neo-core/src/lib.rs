@@ -7,6 +7,8 @@ extern crate alloc;
 extern crate core;
 
 pub mod block;
+
+#[cfg(feature = "std")]
 pub mod blockchain;
 
 pub mod contract;

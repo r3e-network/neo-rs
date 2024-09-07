@@ -2,11 +2,22 @@
 // All Rights Reserved
 
 
-pub struct ScriptBuilder {
-    // buf: bytes::BytesMut,
+use bytes::BytesMut;
+
+use neo_base::errors;
+
+
+#[derive(Debug, errors::Error)]
+pub enum EmitError {
+    //
 }
 
 
-pub struct ScriptDecoder {
-    // buf: bytes::Bytes,
+pub struct ScriptBuilder {
+    buf: BytesMut,
+}
+
+
+impl ScriptBuilder {
+    pub fn new() -> Self { Self { buf: BytesMut::new() } }
 }

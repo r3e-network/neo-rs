@@ -8,7 +8,9 @@ use core::ops::{Add, Sub, BitAnd, BitOr, BitXor, Not};
 
 use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
 
-use crate::{errors, cmp_elem, math::Widening, encoding::hex::StartsWith0x};
+use crate::{errors, cmp_elem};
+use crate::math::Widening;
+use crate::encoding::hex::StartsWith0x;
 
 
 const N: usize = 3;

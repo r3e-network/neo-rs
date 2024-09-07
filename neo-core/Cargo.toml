@@ -34,6 +34,6 @@ thiserror-no-std = { version = "2", optional = true }
 
 
 [features]
-default = ["thiserror-no-std"]
+default = ["neo-base/default", "neo-crypto/default", "thiserror-no-std"]
 
-std     = ["neo-base/std", "thiserror", "serde/std", "serde_json/std"]
+std     = ["neo-base/std", "neo-crypto/std", "serde/std", "serde_json/std", "thiserror"]

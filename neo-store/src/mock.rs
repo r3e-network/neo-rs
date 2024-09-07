@@ -56,9 +56,11 @@ impl store::WriteBatch for WriteBatch {
         }
 
         let deleted = self.deletes.iter()
-            .map(|(key, _)| inner.store.remove(key)
-                .map(|v| v.version)
-                .unwrap_or(NOT_EXISTS))
+            .map(|(key, _)|
+                inner.store.remove(key)
+                    .map(|v| v.version)
+                    .unwrap_or(NOT_EXISTS)
+            )
             .collect();
 
         let put = self.puts.into_iter()

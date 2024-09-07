@@ -77,13 +77,12 @@ impl MessageHandleV2 {
             match &net.event {
                 Message(message) => {
                     let mut buf = RefBuffer::from(message.as_bytes());
-                    match BinDecoder::decode_bin(&mut buf) {
-                        Ok(message) => {
+                    let _ = BinDecoder::decode_bin(&mut buf)
+                        .map(|message| {
                             let _ = self.on_message(&discovery, &net.peer, message)
                                 .map_err(|err| { self.on_handle_err(&discovery, &net, err); });
-                        }
-                        Err(err) => { self.on_handle_err(&discovery, &net, err); }
-                    }
+                        })
+                        .map_err(|err| { self.on_handle_err(&discovery, &net, err); });
                 }
                 Connected | Accepted => { self.on_incoming(&discovery, &net.event, &net.peer); }
                 Disconnected => { discovery.lock().unwrap().on_disconnected(&net.peer); }
@@ -163,17 +162,17 @@ impl MessageHandleV2 {
             nonce: self.config.nonce,
         });
 
-        let ping: Bytes = ping.to_bin_encoded().into();
+        use NetEvent::Disconnected;
+        let message: Bytes = ping.to_bin_encoded().into();
         for (peer, _) in peers.iter().filter(|(_, x)| !x.ping && !x.handshake) {
             let _ = self.net_handle(peer)
                 .ok_or(HandleError::NoSuchNetHandle)
                 .and_then(|handle| {
-                    handle.try_seed(ping.clone())
+                    handle.try_seed(message.clone())
+                        .map(|()| { log::info!("send {:?} to {}", &ping, peer); })
                         .map_err(|err| HandleError::SendError("Ping", err))
                 })
-                .map_err(|err| {
-                    self.on_handle_err(&discovery, &NetEvent::Disconnected.with_peer(*peer), err);
-                });
+                .map_err(|err| { self.on_handle_err(discovery, &Disconnected.with_peer(*peer), err); });
         }
     }
 }
@@ -367,6 +366,7 @@ impl MessageHandleV2 {
                 .map(|x| x.ping_recv.store(now))
                 .ok_or(HandleError::NoSuchAddress)?;
         }
+        log::info!("recv {:?} from {}", &ping, peer);
 
         let pong = P2pMessage::Pong(Pong {
             last_block_index: 0, // TODO: get last lock index

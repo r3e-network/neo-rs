@@ -34,4 +34,4 @@ thiserror-no-std = { version = "2", optional = true }
 [features]
 default = ["thiserror-no-std"]
 
-std = ["thiserror", "serde/std", "chrono"]
+std     = ["serde/std", "chrono", "thiserror"]

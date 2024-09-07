@@ -2,7 +2,6 @@
 // All Rights Reserved
 
 
-use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 use std::time::Duration;
@@ -185,7 +184,7 @@ impl DnsResolver {
         Self { seeds, resolver }
     }
 
-    pub(crate) fn on_start(&self) -> HashMap<String, Seed> {
+    pub(crate) fn on_start(&self) -> Vec<(String, Seed)> {
         let seeds = self.resolves();
         if seeds.len() != self.seeds.len() {
             panic!("`DnsResolver::on_start`: resolved {} != seeds {}", seeds.len(), self.seeds.len());
@@ -194,7 +193,7 @@ impl DnsResolver {
     }
 
     // TODO: resolve seeds periodically
-    pub fn resolves(&self) -> HashMap<String, Seed> {
+    pub fn resolves(&self) -> Vec<(String, Seed)> {
         self.seeds.iter()
             .filter_map(|(host, port)| {
                 self.resolve(host)

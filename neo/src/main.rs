@@ -13,7 +13,7 @@ mod node;
 
 
 #[derive(Parser)]
-#[command(author = "R3E Network team")]
+#[command(author = "R3E Network Team")]
 #[command(version = neo_base::VERSION)]
 #[command(about = "A rust implementation for NEO")]
 struct Cli {

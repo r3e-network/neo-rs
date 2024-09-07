@@ -25,7 +25,7 @@ thiserror-no-std = { version = "2", optional = true }
 
 
 [features]
-default = ["thiserror-no-std"]
+default = ["neo-base/default", "thiserror-no-std"]
 
-std     = ["neo-base/std", "thiserror", "rand_core/std"]
+std     = ["neo-base/std", "rand_core/std", "thiserror"]
 sgx     = []
