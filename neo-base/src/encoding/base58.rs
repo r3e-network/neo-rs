@@ -144,3 +144,7 @@ mod test {
         assert_eq!(addr.to_hex(), "17e4f124b1c3b23553f07cebfb852b2a60aa6c6d94");
     }
 }
+
+pub fn encode_check(p0: &[u8; 34]) -> String {
+    todo!()
+}

@@ -13,8 +13,13 @@ members = [
     "neo-store",
     "neo-proc-macros",
     "neo-vm",
-#   "neo-wasm",
+    "neo-json",
+    "neo-cli",
 ]
+
+[workspace.dependencies]
+neorust = { git = "https://github.com/R3E-Network/NeoRust", branch = "master" }
+primitive-types = "0.12.1"
 
 [profile.release]
 lto = "fat"
