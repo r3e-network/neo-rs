@@ -5,13 +5,19 @@
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use hashbrown::HashMap;
+
 use crate::{PublicKey, types::{Role, Script}};
 
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Genesis {
     #[serde(rename = "Roles")]
-    pub roles: hashbrown::HashMap<Role, Vec<PublicKey>>,
+    pub roles: HashMap<Role, Vec<PublicKey>>,
 
     #[serde(rename = "Transaction")]
     pub tx: GenesisTx,

@@ -7,6 +7,7 @@ use crate::{hash::Sha256Twice, errors};
 
 pub use base58::{FromBase58, ToBase58, FromBase58Error};
 
+
 pub trait ToBase58Check {
     fn to_base58_check(&self, prefix: Option<u8>, suffix: Option<u8>) -> String;
 }
@@ -106,6 +107,7 @@ impl FromBase58Check for Vec<u8> {
         }
     }
 }
+
 
 #[cfg(test)]
 mod test {

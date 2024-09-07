@@ -2,10 +2,9 @@
 // All Rights Reserved
 
 
-use neo_base::math::Uint256;
+use neo_base::math::U256;
 
-use crate::contract::param::ParamValue;
-use crate::types::{Bytes, H160};
+use crate::{contract::ParamValue, types::{Bytes, H160}};
 
 
 pub trait Iter<T> {
@@ -35,12 +34,12 @@ pub trait Nep11 {
 
     fn decimals(&self) -> u8;
 
-    fn total_supply(&self) -> Uint256;
+    fn total_supply(&self) -> U256;
 
     /// `properties` is optional
     fn properties(&self) -> Bytes;
 
-    fn balance_of(&self, owner: &H160) -> Uint256;
+    fn balance_of(&self, owner: &H160) -> U256;
 
     fn tokens_of<TokenIter: Iter<Bytes>>(&self, owner: &H160) -> TokenIter;
 

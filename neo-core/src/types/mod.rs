@@ -2,8 +2,21 @@
 // All Rights Reserved
 
 
+use alloc::{string::String, vec::Vec};
+
+use serde::{Deserialize, Serialize};
+
+use neo_base::errors;
+use neo_base::encoding::{base58::*, bin::*};
+use neo_base::hash::{Ripemd160, Sha256};
+use crate::PublicKey;
+
+pub use {bytes::*, check_sign::*, dbft::*, genesis::*, h160::*, h256::*, script::*, settings::*, verifying::*};
+
+
 pub mod bytes;
 pub mod check_sign;
+pub mod dbft;
 pub mod genesis;
 
 pub mod h160;
@@ -13,16 +26,6 @@ pub mod script;
 
 pub mod settings;
 pub mod verifying;
-
-pub use {bytes::*, check_sign::*, genesis::*, h160::*, h256::*, script::*, settings::*, verifying::*};
-
-
-use alloc::{string::String, vec::Vec};
-use serde::{Deserialize, Serialize};
-
-use neo_base::{errors, encoding::{base58::*, bin::*}, hash::{Ripemd160, Sha256}};
-use crate::PublicKey;
-
 
 pub const SCRIPT_HASH_SIZE: usize = H160_SIZE;
 pub const ACCOUNT_SIZE: usize = H160_SIZE;
@@ -194,7 +197,7 @@ pub enum Role {
     StateValidator = 4,
     Oracle = 8,
     NeoFSAlphabet = 16,
-    P2PNotary = 32,
+    P2pNotary = 32,
 }
 
 
@@ -208,6 +211,7 @@ pub enum VmState {
 }
 
 
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct AccountId {
     version: u8,
@@ -234,9 +238,10 @@ pub type Extra = Option<serde_json::Map<String, serde_json::Value>>;
 
 #[cfg(test)]
 mod test {
+    use neo_base::bytes::ToArray;
+    use neo_base::encoding::base64::ToBase64;
+    use neo_base::encoding::hex::DecodeHex;
     use super::*;
-    use neo_base::{bytes::ToArray, encoding::{base64::ToBase64, hex::DecodeHex}};
-
 
     #[test]
     fn test_script_hash() {

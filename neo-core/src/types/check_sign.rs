@@ -2,14 +2,13 @@
 // All Rights Reserved
 
 use alloc::vec::Vec;
-use bytes::{BytesMut, BufMut};
-use neo_base::{byzantine_honest_quorum, errors};
 
+use bytes::{BufMut, BytesMut};
+
+use neo_base::{byzantine_honest_quorum, errors};
 use neo_base::hash::{Ripemd160, Sha256};
-use crate::{
-    PublicKey, PUBLIC_COMPRESSED_SIZE,
-    types::{Bytes, MAX_SIGNERS, Script, ScriptHash, ToScriptHash, Varint},
-};
+use crate::{PUBLIC_COMPRESSED_SIZE, PublicKey};
+use crate::types::{Bytes, MAX_SIGNERS, Script, ScriptHash, ToScriptHash, Varint};
 
 
 // 40 bytes = 1-byte CHECK_SIG_PUSH_DATA1 + 1-byte length + 33-bytes key + 1-byte OpCode + 4-bytes suffix
@@ -184,10 +183,11 @@ impl<T: AsRef<[PublicKey]>> ToBftHash for T {
 #[cfg(test)]
 mod test {
     use alloc::vec::Vec;
+
     use neo_base::encoding::hex::DecodeHex;
     use neo_crypto::secp256r1::PublicKey;
-    use crate::types::{ToNeo3Address, ToCheckMultiSign, ToCheckSign, ToScriptHash};
 
+    use crate::types::{ToCheckMultiSign, ToCheckSign, ToNeo3Address, ToScriptHash};
 
     #[test]
     fn test_one_key_address() {

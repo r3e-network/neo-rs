@@ -19,11 +19,10 @@ pub struct GasContract {
     //
 }
 
-pub struct Natives {
+pub struct Policy {
     //
 }
 
-
-pub struct Policy {
+pub struct NativeContracts {
     //
 }

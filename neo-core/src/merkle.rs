@@ -1,10 +1,12 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use alloc::{vec, vec::Vec};
-use neo_base::hash::{Sha256, SlicesSha256};
 
+use alloc::{vec, vec::Vec};
+
+use neo_base::hash::{Sha256, SlicesSha256};
 use crate::types::H256;
+
 
 #[allow(dead_code)]
 pub struct MerkleTree {
@@ -90,11 +92,11 @@ fn children_sha256(off: usize, hashes: &[H256]) -> H256 {
     two.iter().slices_sha256().sha256().into()
 }
 
+
 /// Calculating the sha256 merkle-root
 pub trait MerkleSha256 {
     fn merkle_sha256(&self) -> H256;
 }
-
 
 impl<T: AsRef<[H256]>> MerkleSha256 for T {
     fn merkle_sha256(&self) -> H256 {
@@ -127,10 +129,10 @@ impl<T: AsRef<[H256]>> MerkleSha256 for T {
     }
 }
 
+
 #[cfg(test)]
 mod test {
     use super::*;
-
     use neo_base::{hash::Sha256, encoding::hex::{FromRevHex, ToHex}, bytes::ToArray};
     use crate::types::H256;
 

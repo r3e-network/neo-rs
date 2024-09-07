@@ -1,6 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+
 struct Defer<F: FnOnce()> {
     action: Option<F>,
 }
@@ -17,13 +18,16 @@ pub fn defer<F: FnOnce()>(action: F) -> impl Drop {
     Defer { action: Some(action) }
 }
 
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_defer() {
         let mut x = 0;
         {
-            let _d = super::defer(|| x += 1);
+            let _d = defer(|| x += 1);
         }
         assert_eq!(x, 1);
     }

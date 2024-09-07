@@ -4,7 +4,7 @@
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
-use crate::{types::{Extra, H160}, contract::param::NamedParamType};
+use crate::{types::{Extra, H160}, contract::NamedParamType};
 
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

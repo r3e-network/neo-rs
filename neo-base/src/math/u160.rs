@@ -2,24 +2,26 @@
 // All Rights Reserved
 
 use alloc::string::{String, ToString};
-use core::{
-    fmt::{Display, Formatter},
-    ops::{Add, Sub, BitAnd, BitOr, BitXor, Not},
-};
+use core::cmp::{Ord, PartialOrd, Ordering};
+use core::fmt::{Display, Formatter};
+use core::ops::{Add, Sub, BitAnd, BitOr, BitXor, Not};
+
 use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
 
-use crate::{errors, math::Widening, encoding::hex::StartsWith0x};
+use crate::{errors, cmp_elem};
+use crate::math::Widening;
+use crate::encoding::hex::StartsWith0x;
 
 
 const N: usize = 3;
 const MASK: u64 = 0xFFffFFff;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct Uint160 {
+pub struct U160 {
     n: [u64; N], // little endian
 }
 
-impl Uint160 {
+impl U160 {
     #[inline]
     pub fn to_le_bytes(&self) -> [u8; 20] {
         let t: [u8; 24] = unsafe { core::mem::transmute_copy(&self.n) };
@@ -55,7 +57,7 @@ impl Uint160 {
 }
 
 
-impl Display for Uint160 {
+impl Display for U160 {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         let h = self.to_be_bytes();
@@ -65,27 +67,49 @@ impl Display for Uint160 {
     }
 }
 
-impl From<u64> for Uint160 {
+impl From<u64> for U160 {
     #[inline]
-    fn from(value: u64) -> Self { Self { n: [value, 0, 0] } }
+    fn from(value: u64) -> Self {
+        Self { n: [value, 0, 0] }
+    }
 }
 
-impl From<u128> for Uint160 {
+impl From<u128> for U160 {
     #[inline]
-    fn from(value: u128) -> Self { Self { n: [value as u64, (value >> 64) as u64, 0] } }
+    fn from(value: u128) -> Self {
+        Self { n: [value as u64, (value >> 64) as u64, 0] }
+    }
+}
+
+impl PartialOrd for U160 {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for U160 {
+    #[inline]
+    fn cmp(&self, other: &Self) -> Ordering {
+        cmp_elem!(self, other, 2);
+        cmp_elem!(self, other, 1);
+        cmp_elem!(self, other, 0);
+
+        Ordering::Equal
+    }
 }
 
 #[derive(Debug, Clone, Copy, errors::Error)]
-pub enum ToUint160Error {
-    #[error("to-uint160: hex-encode uint160's length must be 40")]
+pub enum ToU160Error {
+    #[error("to-u160: hex-encode u160's length must be 40")]
     InvalidLength,
 
-    #[error("to-uint160: invalid character '{0}'")]
+    #[error("to-u160: invalid character '{0}'")]
     InvalidChar(char),
 }
 
-impl TryFrom<&str> for Uint160 {
-    type Error = ToUint160Error;
+impl TryFrom<&str> for U160 {
+    type Error = ToU160Error;
 
     /// value must be big-endian
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -104,27 +128,27 @@ impl TryFrom<&str> for Uint160 {
     }
 }
 
-impl Serialize for Uint160 {
+impl Serialize for U160 {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.to_string())
     }
 }
 
-impl<'de> Deserialize<'de> for Uint160 {
+impl<'de> Deserialize<'de> for U160 {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Uint160::try_from(String::deserialize(deserializer)?.as_str())
-            .map_err(D::Error::custom)
+        let value = String::deserialize(deserializer)?;
+        U160::try_from(value.as_str()).map_err(D::Error::custom)
     }
 }
 
-impl Default for Uint160 {
+impl Default for U160 {
     #[inline]
     fn default() -> Self { Self { n: [0; N] } }
 }
 
-impl Add for Uint160 {
+impl Add for U160 {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -136,7 +160,7 @@ impl Add for Uint160 {
     }
 }
 
-impl Sub for Uint160 {
+impl Sub for U160 {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -148,7 +172,7 @@ impl Sub for Uint160 {
     }
 }
 
-impl BitAnd for Uint160 {
+impl BitAnd for U160 {
     type Output = Self;
 
     #[inline]
@@ -161,7 +185,7 @@ impl BitAnd for Uint160 {
     }
 }
 
-impl BitOr for Uint160 {
+impl BitOr for U160 {
     type Output = Self;
 
     #[inline]
@@ -174,7 +198,7 @@ impl BitOr for Uint160 {
     }
 }
 
-impl BitXor for Uint160 {
+impl BitXor for U160 {
     type Output = Self;
 
     #[inline]
@@ -187,7 +211,7 @@ impl BitXor for Uint160 {
     }
 }
 
-impl Not for Uint160 {
+impl Not for U160 {
     type Output = Self;
 
     #[inline]
@@ -207,11 +231,20 @@ mod test {
 
     #[test]
     fn test_uint160() {
-        let u: Uint160 = u64::MAX.into();
-        let v: Uint160 = u64::MAX.into();
+        let u: U160 = u64::MAX.into();
+        let v: U160 = u64::MAX.into();
 
         let w = u + v;
-        let x: Uint160 = (u64::MAX as u128 + u64::MAX as u128).into();
+        let x: U160 = (u64::MAX as u128 + u64::MAX as u128).into();
         assert_eq!(w, x);
+
+        let order = w.cmp(&x);
+        assert_eq!(order, Ordering::Equal);
+
+        let w: U160 = 1u64.into();
+        let x: U160 = (1u128 << 64).into();
+        let order = w.cmp(&x);
+        assert_eq!(order, Ordering::Less);
+        assert!(x > w);
     }
 }

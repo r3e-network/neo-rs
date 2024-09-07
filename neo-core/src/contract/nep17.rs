@@ -2,9 +2,8 @@
 // All Rights Reserved
 
 
-use neo_base::math::Uint256;
-use crate::contract::param::Param;
-use crate::types::H160;
+use neo_base::math::U256;
+use crate::{contract::Param, types::H160};
 
 /// NEP-17 is a Fungible-Token Contract
 pub trait Nep17 {
@@ -18,11 +17,11 @@ pub trait Nep17 {
 
     fn decimals(&self) -> u8;
 
-    fn total_supply(&self) -> Uint256;
+    fn total_supply(&self) -> U256;
 
-    fn balance_of(&self, account: &H160) -> Uint256;
+    fn balance_of(&self, account: &H160) -> U256;
 
-    fn transfer(&self, from: &H160, to: &H160, amount: &Uint256, data: &Param) -> Result<bool, Self::TransferError>;
+    fn transfer(&self, from: &H160, to: &H160, amount: &U256, data: &Param) -> Result<bool, Self::TransferError>;
 }
 
 /// A triggered event when the `transfer` of a Nep17 contract is called.
@@ -31,5 +30,5 @@ pub trait Nep17Event {
 
     type EmitError;
 
-    fn emit_transfer(&self, from: &H160, to: &H160, amount: &Uint256) -> Result<(), Self::EmitError>;
+    fn emit_transfer(&self, from: &H160, to: &H160, amount: &U256) -> Result<(), Self::EmitError>;
 }

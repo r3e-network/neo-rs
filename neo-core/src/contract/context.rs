@@ -2,14 +2,21 @@
 // All Rights Reserved
 
 use alloc::vec::Vec;
-
 use bytes::BytesMut;
+
+#[cfg(feature = "std")]
+use std::collections::HashMap;
+
+#[cfg(not(feature = "std"))]
+use hashbrown::HashMap;
+
 use crate::{PublicKey, types::{Sign, Script, Varbytes}};
+
 
 pub struct MultiSignContext<'a> {
     validators: &'a [PublicKey],
     arguments: Vec<Sign>,
-    signs: hashbrown::HashMap<&'a PublicKey, usize>,
+    signs: HashMap<&'a PublicKey, usize>,
 }
 
 
@@ -18,7 +25,7 @@ impl<'a> MultiSignContext<'a> {
         Self {
             validators,
             arguments: Vec::with_capacity(validators.len()),
-            signs: hashbrown::HashMap::with_capacity(validators.len()),
+            signs: HashMap::with_capacity(validators.len()),
         }
     }
 

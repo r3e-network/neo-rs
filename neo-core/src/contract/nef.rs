@@ -29,7 +29,7 @@ pub enum CallFlags {
     /// ReadStates | WriteStates
     States = 0x03,
 
-    /// ReadStates| AllowCall
+    /// ReadStates | AllowCall
     ReadOnly = 0x05,
 
     /// States | AllowCall | AllowNotify

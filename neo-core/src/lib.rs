@@ -3,22 +3,29 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(not(feature = "std"))]
 extern crate alloc;
 
 pub use neo_crypto::secp256r1::*;
 
 pub mod big_decimal;
 pub mod io;
+extern crate core;
+
 pub mod block;
+
+#[cfg(feature = "std")]
 pub mod blockchain;
 pub mod contains_transaction_type;
 pub mod contract;
 pub mod hardfork;
+
+pub mod contract;
 pub mod ledger;
 
 pub mod merkle;
 pub mod neo_system;
+pub mod merkle;
+pub mod mpt;
 pub mod nns;
 pub mod payload;
 pub mod protocol_settings;
@@ -32,6 +39,12 @@ pub mod wallet;
 mod persistence;
 mod neo_contract;
 mod event;
+pub mod tx;
+pub mod types;
+pub mod wallet;
+
+pub use neo_crypto::secp256r1::*;
+
 // #[global_allocator]
 // static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 

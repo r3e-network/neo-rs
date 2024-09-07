@@ -2,10 +2,11 @@
 // All Rights Reserved
 
 
-use alloc::{vec::Vec, string::String};
+use alloc::{string::String, vec::Vec};
+use core::net::SocketAddr;
 
 use neo_base::encoding::bin::*;
-use crate::{tx::{Tx, Witness}, types::{Bytes, FixedBytes}};
+use crate::types::{Bytes, FixedBytes};
 
 
 const MAX_CAPABILITIES: usize = 32;
@@ -20,16 +21,34 @@ pub enum Capability {
     #[bin(tag = 0x01)]
     TcpServer { port: u16 },
 
-    // WsServer { port: u16 }, // deprecated
     #[bin(tag = 0x10)]
     FullNode { start_height: u32 },
 }
 
 
-pub trait NodeCapability {
-    fn node_capability(&self) -> Capability;
+pub(crate) trait NodeCapability {
+    fn port(&self) -> Option<u16>;
+
+    fn start_height(&self) -> Option<u32>;
 }
 
+impl NodeCapability for Vec<Capability> {
+    fn port(&self) -> Option<u16> {
+        self.iter()
+            .find_map(|x| match x {
+                Capability::TcpServer { port } => Some(*port),
+                Capability::FullNode { .. } => None,
+            })
+    }
+
+    fn start_height(&self) -> Option<u32> {
+        self.iter()
+            .find_map(|x| match x {
+                Capability::TcpServer { .. } => None,
+                Capability::FullNode { start_height } => Some(*start_height),
+            })
+    }
+}
 
 #[derive(Debug, Clone, BinEncode, InnerBinDecode)]
 pub struct Version {
@@ -41,6 +60,23 @@ pub struct Version {
     pub nonce: u32,
     pub user_agent: String,
     pub capabilities: Vec<Capability>,
+}
+
+impl Version {
+    #[inline]
+    pub fn port(&self) -> Option<u16> {
+        self.capabilities.port()
+    }
+
+    #[inline]
+    pub fn full_node(&self) -> bool {
+        self.start_height().is_some()
+    }
+
+    #[inline]
+    pub fn start_height(&self) -> Option<u32> {
+        self.capabilities.start_height()
+    }
 }
 
 
@@ -63,11 +99,36 @@ impl BinDecoder for Version {
 
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
-pub struct Addr {
+pub struct NodeAddr {
     /// i.e unix timestamp in second, UTC
     pub unix_seconds: u32,
     pub ip: FixedBytes<MAX_IP_ADDR_SIZE>,
     pub capabilities: Vec<Capability>,
+}
+
+impl NodeAddr {
+    #[inline]
+    pub fn service_addr(&self) -> Option<SocketAddr> {
+        let ip: [u8; MAX_IP_ADDR_SIZE] = self.ip.clone().into();
+        self.capabilities.port()
+            .map(|port| SocketAddr::new(ip.into(), port))
+    }
+
+    #[inline]
+    pub fn full_node(&self) -> bool {
+        self.capabilities.start_height().is_some()
+    }
+
+    #[inline]
+    pub fn start_height(&self) -> Option<u32> {
+        self.capabilities.start_height()
+    }
+}
+
+
+#[derive(Debug, Clone, BinEncode, BinDecode)]
+pub struct NodeList {
+    pub nodes: Vec<NodeAddr>,
 }
 
 
@@ -80,21 +141,23 @@ pub struct Ping {
     pub nonce: u32,
 }
 
-
-#[derive(Debug, Clone, BinEncode, BinDecode)]
-pub struct P2PNotaryRequest {
-    pub main_tx: Tx,
-    pub fallback_tx: Tx,
-    pub witness: Witness,
-}
+pub type Pong = Ping;
 
 
-impl EncodeHashFields for P2PNotaryRequest {
-    fn encode_hash_fields(&self, w: &mut impl BinWriter) {
-        self.main_tx.encode_bin(w);
-        self.fallback_tx.encode_bin(w);
-    }
-}
+// #[derive(Debug, Clone, BinEncode, BinDecode)]
+// pub struct NotaryRequest {
+//     pub main_tx: Tx,
+//     pub fallback_tx: Tx,
+//     pub witness: Witness,
+// }
+//
+//
+// impl EncodeHashFields for NotaryRequest {
+//     fn encode_hash_fields(&self, w: &mut impl BinWriter) {
+//         self.main_tx.encode_bin(w);
+//         self.fallback_tx.encode_bin(w);
+//     }
+// }
 
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]

@@ -1,3 +1,6 @@
+# Copyright @ 2023 - 2024, R3E Network
+# All Rights Reserved
+
 [package]
 name = "neo-core"
 version = "0.1.0"
@@ -10,8 +13,8 @@ edition = "2021"
 
 
 [dependencies]
-neo-base   = { path = "../neo-base" }
-neo-crypto = { path = "../neo-crypto" }
+neo-base   = { path = "../neo-base", default-features = false }
+neo-crypto = { path = "../neo-crypto", default-features = false }
 
 bytes     = { version = "1", default-features = false }
 subtle    = { version = "2", default-features = false }
@@ -23,6 +26,8 @@ serde_repr       = { version = "0" }
 
 hashbrown        = { version = "0", features = ["serde"]}
 mimalloc         = { version = "0", default-features = false }
+
+lz4_flex         = { version = "0.11", default-features = false }
 
 thiserror        = { version = "1", optional = true }
 thiserror-no-std = { version = "2", optional = true }
@@ -38,6 +43,6 @@ murmur3 = "0.5.2"
 num-traits = "0.2.19"
 
 [features]
-default = ["thiserror-no-std"]
+default = ["neo-base/default", "neo-crypto/default", "thiserror-no-std"]
 
-std     = ["thiserror", "serde/std", "serde_json/std"]
+std     = ["neo-base/std", "neo-crypto/std", "serde/std", "serde_json/std", "thiserror"]

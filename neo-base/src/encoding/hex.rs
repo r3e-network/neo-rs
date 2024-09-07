@@ -1,6 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+
 use alloc::{string::String, vec::Vec};
 pub use hex::{FromHex, FromHexError};
 
@@ -107,6 +108,7 @@ impl<T: AsRef<[u8]>> StartsWith0x for T {
         v.starts_with("0x".as_bytes()) || v.starts_with("0X".as_bytes())
     }
 }
+
 
 #[cfg(test)]
 mod test {

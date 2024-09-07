@@ -1,11 +1,14 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-pub mod uint256;
-pub mod uint160;
 
-pub use uint256::*;
-pub use uint160::*;
+pub use u160::*;
+pub use u256::*;
+pub use i256::*;
+
+pub mod i256;
+pub mod u256;
+pub mod u160;
 
 
 pub trait Widening: Sized {
@@ -60,5 +63,71 @@ impl Widening for u64 {
     fn mul_widening(self, rhs: Self) -> (Self, Self) {
         let r = self as Self::DoubleWidth * rhs as Self::DoubleWidth;
         (r as Self, (r >> Self::BITS) as Self)
+    }
+}
+
+
+#[macro_export]
+macro_rules! cmp_elem {
+    ($lhs:ident, $rhs:ident, $n:expr) => {
+        let order = $lhs.n[$n].cmp(&$rhs.n[$n]);
+        if order != Ordering::Equal {
+            return order;
+        }
+    };
+}
+
+
+/// Linear Congruential Generator
+pub struct LcgRand {
+    current: u64,
+}
+
+
+impl LcgRand {
+    #[inline]
+    pub fn new(seed: u64) -> LcgRand {
+        LcgRand { current: seed }
+    }
+
+    #[inline]
+    pub fn next(&mut self) -> u64 {
+        self.current = self.current
+            .wrapping_mul(6364136223846793005u64)
+            .wrapping_add(1442695040888963407u64);
+        self.current
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_widening() {
+        let u = 1u64;
+        let (v, carry) = u.add_with_carrying(u, true);
+        assert_eq!(v, 3);
+        assert_eq!(carry, false);
+
+        let (v, carry) = u.sub_with_borrowing(2, false);
+        assert_eq!(v, u64::MAX);
+        assert_eq!(carry, true);
+
+        let (v, w) = u.mul_with_carrying(2, 1);
+        assert_eq!(v, 3);
+        assert_eq!(w, 0);
+
+        let (v, w) = u64::MAX.mul_with_carrying(2, 0);
+        assert_eq!(v, 0xfffffffffffffffe);
+        assert_eq!(w, 1);
+    }
+
+    #[test]
+    fn test_lcg_rand() {
+        let mut lr = LcgRand::new(42);
+        let n = lr.next();
+        assert_eq!(n, 0x91778aed87ee5eb1);
     }
 }

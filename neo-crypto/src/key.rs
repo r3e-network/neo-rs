@@ -28,7 +28,7 @@ impl<const N: usize> SecretKey<N> {
     }
 
     #[inline]
-    pub fn as_slice(&self) -> &[u8] { self.key.as_ref() }
+    pub fn as_bytes(&self) -> &[u8] { self.key.as_ref() }
 }
 
 impl<const N: usize> AsRef<[u8]> for SecretKey<N> {

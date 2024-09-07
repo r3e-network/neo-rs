@@ -1,9 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-#![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(not(feature = "std"))]
 extern crate alloc;
 
 
@@ -30,8 +28,9 @@ pub struct Block {
 
 
 pub trait Consensus {
-    type OnPayloadError;
     type OnTxError;
+
+    type OnPayloadError;
 
     fn name(&self) -> &str;
 
@@ -39,8 +38,8 @@ pub trait Consensus {
 
     fn stop(&mut self);
 
-    fn on_payload(&mut self, payload: &Extensible) -> Result<(), Self::OnPayloadError>;
-
     fn on_tx(&mut self, tx: &Tx) -> Result<(), Self::OnTxError>;
+
+    fn on_payload(&mut self, payload: &Extensible) -> Result<(), Self::OnPayloadError>;
 }
 

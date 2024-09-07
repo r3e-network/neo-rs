@@ -1,14 +1,18 @@
+# Copyright @ 2023 - 2024, R3E Network
+# All Rights Reserved
+
 [package]
 name = "neo-runtime"
 version = "0.1.0"
 edition = "2021"
 
+
 [dependencies]
-neo-core = { path = "../neo-core" }
-neo-vm   = { path = "../neo-vm" }
+neo-core = { path = "../neo-core", default-features = false }
+neo-vm   = { path = "../neo-vm", default-features = false }
 
 
 [features]
-default = []
+default = ["neo-core/default", "neo-vm/default"]
 
-std     = []
+std     = ["neo-core/std", "neo-vm/std"]

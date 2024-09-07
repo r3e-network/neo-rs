@@ -2,11 +2,11 @@
 // All Rights Reserved
 
 use alloc::{string::String, vec::Vec};
+
 use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::bin::*;
 use crate::types::Script;
-
 
 pub const MAX_CONDITION_NESTING: usize = 2;
 

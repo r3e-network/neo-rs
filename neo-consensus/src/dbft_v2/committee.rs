@@ -2,53 +2,38 @@
 // All Rights Reserved
 
 
-use alloc::vec::Vec;
+use alloc::{boxed::Box, vec::Vec};
 use core::cmp::Ordering;
 
-use neo_core::{PublicKey, types::{ScriptHash, ToBftHash}};
+use neo_core::PublicKey;
+use neo_core::types::{Member, MemberCache, ScriptHash, ToBftHash, NEO_TOTAL_SUPPLY};
 
 
 const EFFECTIVE_VOTER_TURNOUT: u64 = 5;
-const NEO_TOTAL_SUPPLY: u64 = 1000_000_000; // 0.1 Billion
 
 
-#[derive(Debug, Clone)]
-pub struct Member {
-    pub key: PublicKey,
-    pub votes: u64, // Uint256,
-}
-
-pub trait MemberCache {
-    /// `candidate_members` returns candidates which have registered and not be blocked.
-    fn candidate_members(&self) -> Vec<Member>;
-
-    fn committee_members(&self) -> Vec<Member>;
-
-    fn standby_committee(&self) -> Vec<PublicKey>;
-
-    fn voters_count(&self) -> u64;
-}
-
-/// NOTE: committee_members cannot be zero
 #[inline]
 pub fn should_refresh_committee(height: u32, nr_committee: u32) -> bool {
-    height % nr_committee == 0
+    nr_committee == 0 || height % nr_committee == 0
 }
 
 #[allow(dead_code)]
-pub struct Committee<Members: MemberCache> {
+pub struct Committee {
     /// The number of validators, from settings, i.e. from config.
-    nr_validators: u32,
+    pub(crate) nr_validators: u32,
 
     /// The number of committee, from settings.
-    nr_committee: u32,
+    pub(crate) nr_committee: u32,
 
-    members: Members,
-
+    members: Box<dyn MemberCache>,
     // cached: Vec<Member>,
 }
 
-impl<Members: MemberCache> Committee<Members> {
+impl Committee {
+    pub fn new(nr_validators: u32, nr_committee: u32, members: Box<dyn MemberCache>) -> Self {
+        Self { nr_validators, nr_committee, members }
+    }
+
     pub fn next_block_validators(&self) -> Vec<PublicKey> {
         let mut members = self.next_committee();
         let nr_validators = self.nr_validators as usize;
@@ -63,7 +48,7 @@ impl<Members: MemberCache> Committee<Members> {
     pub fn next_committee_hash(&self) -> ScriptHash {
         self.next_committee()
             .to_bft_hash()
-            .expect("to_bft_hash should be ok")
+            .expect("`to_bft_hash` should be ok")
     }
 
     pub fn next_committee(&self) -> Vec<PublicKey> {
@@ -86,7 +71,6 @@ impl<Members: MemberCache> Committee<Members> {
         keys.sort();
         keys
     }
-
 
     fn compute_committee_members(&self) -> Vec<Member> {
         let voters = self.members.voters_count();

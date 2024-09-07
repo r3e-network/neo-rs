@@ -1,13 +1,13 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use aes::{
-    Aes256,
-    cipher::{KeyInit, BlockEncrypt, BlockDecrypt, generic_array::GenericArray},
-};
+
+use aes::Aes256;
+use aes::cipher::{KeyInit, BlockEncrypt, BlockDecrypt, generic_array::GenericArray};
 
 use neo_base::errors;
 use crate::key::SecretKey;
+
 
 pub const AES256_KEY_SIZE: usize = 32;
 pub const AES128_KEY_SIZE: usize = 16;

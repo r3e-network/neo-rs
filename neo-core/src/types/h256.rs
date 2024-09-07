@@ -4,9 +4,12 @@
 
 use alloc::string::{String, ToString};
 use core::fmt::{Display, Formatter};
-use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
 
-use neo_base::{errors, encoding::bin::*, encoding::hex::{ToRevHex, StartsWith0x}};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+
+use neo_base::errors;
+use neo_base::encoding::bin::*;
+use neo_base::encoding::hex::{StartsWith0x, ToRevHex};
 
 
 pub const H256_SIZE: usize = 32;
@@ -107,8 +110,8 @@ impl Serialize for H256 {
 impl<'de> Deserialize<'de> for H256 {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        H256::try_from(String::deserialize(deserializer)?.as_str())
-            .map_err(D::Error::custom)
+        let value = String::deserialize(deserializer)?;
+        H256::try_from(value.as_str()).map_err(D::Error::custom)
     }
 }
 

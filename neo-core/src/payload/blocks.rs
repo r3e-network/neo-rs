@@ -27,7 +27,6 @@ pub struct BlockHashRange {
     pub count: u16,
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct Headers {
     pub headers: Vec<Header>,

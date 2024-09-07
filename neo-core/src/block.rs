@@ -1,11 +1,13 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::{bin::*, encode_hex_u64, decode_hex_u64};
-use crate::{PublicKey, types::{H160, H256, Script, ToBftHash}, tx::{Witnesses, Witness, Tx}};
+use crate::{PublicKey, tx::{Witnesses, Witness, Tx, StatedTx}};
+use crate::types::{H160, H256, Script, ToBftHash};
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, InnerBinDecode)]
@@ -89,7 +91,7 @@ impl BinDecoder for Header {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, BinEncode)]
+#[derive(Debug, Clone, Serialize, Deserialize, BinEncode, BinDecode)]
 pub struct Block {
     header: Header,
 
@@ -98,24 +100,22 @@ pub struct Block {
 }
 
 impl Block {
-    #[inline]
+    pub fn new(header: Header, txs: Vec<Tx>) -> Self { Self { header, txs } }
+
     pub fn hash(&self) -> H256 { self.header.hash() }
 
-    #[inline]
     pub fn header(&self) -> &Header { &self.header }
 
-    #[inline]
     pub fn txs(&self) -> &[Tx] { self.txs.as_slice() }
 
-    #[inline]
-    pub fn new(header: Header, txs: Vec<Tx>) -> Self { Self { header, txs } }
+    pub fn block_index(&self) -> u32 { self.header.index }
 
     pub fn new_genesis_block(validators: &[PublicKey]) -> Self {
         let next_consensus = validators.to_bft_hash()
             .expect("`to_bft_hash` should be ok");
 
         // 0x11 is op-code PUSH1
-        let witness = Witness::new(Script::default(), b"\x11".as_slice().into());
+        let witness = Witness::new(Script::default(), Script::from(&b"\x11"[..]));
         let mut header = Header {
             hash: None,
             version: 0,
@@ -133,11 +133,10 @@ impl Block {
         Self::new(header, Vec::new())
     }
 
-
     pub fn to_trimmed_block(&self) -> TrimmedBlock {
         TrimmedBlock {
             header: self.header.clone(),
-            hashes: self.txs.iter().map(|t| t.hash()).collect(),
+            hashes: self.txs.iter().map(|tx| tx.hash()).collect(),
         }
     }
 }
@@ -149,7 +148,7 @@ impl EncodeHashFields for Block {
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize, BinEncode)]
+#[derive(Debug, Clone, Serialize, Deserialize, BinEncode, BinDecode)]
 pub struct TrimmedBlock {
     pub header: Header,
 
@@ -159,27 +158,49 @@ pub struct TrimmedBlock {
 
 
 impl TrimmedBlock {
-    #[inline]
     pub fn hash(&self) -> H256 { self.header.hash() }
 
-    #[inline]
     pub fn header(&self) -> &Header { &self.header }
+
+    pub fn block_index(&self) -> u32 { self.header.index }
 }
 
 
-/// Block hash and it's height
-#[derive(Debug, Copy, Clone)]
-pub struct HashHeight {
+#[derive(Debug, Clone)]
+pub struct StatedBlock {
+    pub header: Header,
+
+    pub txs: Vec<StatedTx>,
+}
+
+impl StatedBlock {
+    pub fn hash(&self) -> H256 { self.header.hash() }
+
+    pub fn txs(&self) -> &[StatedTx] { &self.txs }
+
+    pub fn block_index(&self) -> u32 { self.header.index }
+
+    pub fn to_trimmed_block(&self) -> TrimmedBlock {
+        TrimmedBlock {
+            header: self.header.clone(),
+            hashes: self.txs.iter().map(|tx| tx.hash()).collect(),
+        }
+    }
+}
+
+/// Block hash and it's height, i.e. `HashIndexState`
+#[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
+pub struct IndexHash {
+    pub index: u32,
     pub hash: H256,
-    pub height: u32,
 }
 
-pub trait HashToHeight {
-    fn hash_to_height(&self, hash: &H256) -> Option<u32>;
+pub trait HashToIndex {
+    fn hash_to_index(&self, hash: &H256) -> Option<u32>;
 }
 
-pub trait HeightToHash {
-    fn height_to_hash(&self, height: u32) -> Option<H256>;
+pub trait IndexToHash {
+    fn index_to_hash(&self, height: u32) -> Option<H256>;
 }
 
 

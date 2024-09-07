@@ -46,11 +46,11 @@ impl ToNep2Key for PrivateKey {
 
         let derived: &[u8; 64] = derived.as_ref();
         let sk = SecretKey::<KEY_SIZE>::from(self.as_le_bytes().to_rev_array());
-        let mut key = xor_array::<KEY_SIZE>(sk.as_slice(), &derived[..KEY_SIZE]);
+        let mut key = xor_array::<KEY_SIZE>(sk.as_bytes(), &derived[..KEY_SIZE]);
 
         let _ = SecretKey::from(derived[KEY_SIZE..].to_array())
             .aes256_ecb_encrypt_aligned(key.as_mut_slice())
-            .expect("aes256_ecb_encrypt_aligned should be ok");
+            .expect("`aes256_ecb_encrypt_aligned` should be ok");
 
         let mut buf = BytesMut::with_capacity(3 + 4 + key.len());
 
@@ -97,12 +97,12 @@ impl<T: AsRef<[u8]>> Nep2KeyDecrypt for T {
         let derived = self.derive_key::<DERIVED_KEY_SIZE>(&raw[3..7], scrypt_params())
             .expect("default nep2-key params should be ok");
 
-        let derived = derived.as_slice();
+        let derived = derived.as_bytes();
         let mut encrypted: [u8; KEY_SIZE] = raw[7..].to_array();
 
         let _ = SecretKey::from(derived[KEY_SIZE..].to_array())
             .aes256_ecb_decrypt_aligned(encrypted.as_mut_slice())
-            .expect("decrypt 32-bytes data should be ok");
+            .expect("`aes256_ecb_decrypt_aligned` should be ok");
 
         // secret-key
         let sk = xor_array::<KEY_SIZE>(&encrypted, &derived[..KEY_SIZE]);
