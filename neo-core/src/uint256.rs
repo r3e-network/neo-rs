@@ -1,11 +1,35 @@
 use std::cmp::Ordering;
 use std::fmt;
+use std::hash::Hasher;
+use std::io::Write;
 use std::str::FromStr;
+use byteorder::LittleEndian;
+use crate::io::iserializable::ISerializable;
 
 /// Represents a 256-bit unsigned integer.
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UInt256 {
     data: [u64; 4],
+}
+
+impl UInt256 {
+    /// Creates a new UInt256 from a slice of bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `slice` - A slice of bytes representing the UInt256 value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the slice length is not equal to `LENGTH`.
+    pub(crate) fn from_slice(slice: &[u8]) -> UInt256 {
+        assert_eq!(slice.len(), Self::LENGTH, "Invalid byte length for UInt256");
+        let mut data = [0u64; 4];
+        for (i, chunk) in slice.chunks_exact(8).enumerate() {
+            data[i] = u64::from_le_bytes(chunk.try_into().unwrap());
+        }
+        Self { data }
+    }
 }
 
 impl UInt256 {
@@ -39,7 +63,11 @@ impl UInt256 {
     }
 }
 
-impl Serializable for UInt256 {
+impl ISerializable for UInt256 {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
     fn serialize(&self, writer: &mut impl Write) -> IoResult<()> {
         for &value in &self.data {
             writer.write_u64::<LittleEndian>(value)?;

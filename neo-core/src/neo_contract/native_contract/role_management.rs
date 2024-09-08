@@ -29,7 +29,7 @@ impl RoleManagement {
     ///
     /// The public keys of the nodes.
     #[contract_method(cpu_fee = 1 << 15, required_flags = CallFlags::READ_STATES)]
-    pub fn get_designated_by_role(&self, role: Role, index: u32) -> Vec<ECPoint> {
+    pub fn get_designated_by_role(&self, role: Role, index: u32) -> Vec<Secp256r1PublicKey> {
         if !Role::is_valid(&role) {
             panic!("Invalid role");
         }
@@ -49,7 +49,7 @@ impl RoleManagement {
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = CallFlags::STATES | CallFlags::ALLOW_NOTIFY)]
-    fn designate_as_role(&mut self, role: Role, nodes: Vec<ECPoint>) {
+    fn designate_as_role(&mut self, role: Role, nodes: Vec<Secp256r1PublicKey>) {
         if nodes.is_empty() || nodes.len() > 32 {
             panic!("Invalid number of nodes");
         }
@@ -86,14 +86,14 @@ impl RoleManagement {
     }
 }
 
-struct NodeList(Vec<ECPoint>);
+struct NodeList(Vec<Secp256r1PublicKey>);
 
 impl NodeList {
     fn new() -> Self {
         NodeList(Vec::new())
     }
 
-    fn extend(&mut self, nodes: Vec<ECPoint>) {
+    fn extend(&mut self, nodes: Vec<Secp256r1PublicKey>) {
         self.0.extend(nodes);
     }
 
@@ -110,7 +110,7 @@ impl From<StorageItem> for NodeList {
     }
 }
 
-impl From<NodeList> for Vec<ECPoint> {
+impl From<NodeList> for Vec<Secp256r1PublicKey> {
     fn from(node_list: NodeList) -> Self {
         node_list.0
     }

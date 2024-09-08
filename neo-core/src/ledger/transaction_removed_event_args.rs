@@ -1,17 +1,7 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// transaction_removed_event_args.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
 
-use neo::prelude::Transaction;
 use std::collections::HashSet;
-use crate::TransactionRemovalReason;
+use NeoRust::builder::Transaction;
+use crate::ledger::transaction_removal_reason::TransactionRemovalReason;
 
 /// Represents the event data of `MemoryPool::transaction_removed`.
 pub struct TransactionRemovedEventArgs {

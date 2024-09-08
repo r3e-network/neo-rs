@@ -1,18 +1,7 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// header_cache.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
 
-use neo::prelude::*;
-use neo::sys::Header;
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
+use crate::block::Header;
 
 /// Used to cache the headers of the blocks that have not been received.
 pub struct HeaderCache {

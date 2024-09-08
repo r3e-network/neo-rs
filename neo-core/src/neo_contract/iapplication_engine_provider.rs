@@ -2,6 +2,12 @@ use neo_network_p2p_payloads::TriggerType;
 use neo_persistence::DataCache;
 use neo_vm::{ApplicationEngine, IDiagnostic, JumpTable};
 use crate::{Block, IVerifiable, ProtocolSettings};
+use crate::block::Block;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::idiagnostic::IDiagnostic;
+use crate::neo_contract::trigger_type::TriggerType;
+use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
 
 /// A provider for creating `ApplicationEngine` instances.
 pub trait IApplicationEngineProvider {
@@ -25,7 +31,7 @@ pub trait IApplicationEngineProvider {
     fn create(
         &self,
         trigger: TriggerType,
-        container: &dyn IVerifiable,
+        container: &dyn IIVerifiable,
         snapshot: DataCache,
         persisting_block: Option<Block>,
         settings: ProtocolSettings,

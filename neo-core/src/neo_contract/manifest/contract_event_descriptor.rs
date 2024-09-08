@@ -10,7 +10,7 @@ pub struct ContractEventDescriptor {
     pub parameters: Vec<ContractParameterDefinition>,
 }
 
-impl Interoperable for ContractEventDescriptor {
+impl IInteroperable for ContractEventDescriptor {
     fn from_stack_item(stack_item: &StackItem) -> Result<Self, Error> {
         if let StackItem::Struct(s) = stack_item {
             let name = s.get(0).ok_or(Error::InvalidFormat)?.as_string()?;

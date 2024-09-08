@@ -1,21 +1,10 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// binary_serializer.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
-use neo::prelude::*;
-use neo::vm::types::{Array, Boolean, Buffer, Map, PrimitiveType, StackItem, StackItemType, Struct};
-use neo::io::{MemoryReader, BinaryWriter};
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Write};
 use std::mem;
 use num_bigint::BigInt;
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use neo_vm::reference_counter::ReferenceCounter;
+use crate::io::memory_reader::MemoryReader;
 
 /// A binary serializer for `StackItem`.
 pub struct BinarySerializer;

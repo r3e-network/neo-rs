@@ -1,16 +1,6 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// contract_permission_descriptor.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
 
 use neo::prelude::*;
-use neo::crypto::ecc::{ECPoint, ECCurve};
+use neo::crypto::ecc::{Secp256r1PublicKey, ECCurve};
 use neo::io::*;
 use neo::types::*;
 use neo::vm::types::StackItem;
@@ -21,7 +11,7 @@ pub struct ContractPermissionDescriptor {
     /// The hash of the contract. It can't be set with `group`.
     pub hash: Option<UInt160>,
     /// The group of the contracts. It can't be set with `hash`.
-    pub group: Option<ECPoint>,
+    pub group: Option<Secp256r1PublicKey>,
 }
 
 impl ContractPermissionDescriptor {
@@ -34,7 +24,7 @@ impl ContractPermissionDescriptor {
     }
 
     /// Creates a new instance with the specified group.
-    pub fn new_with_group(group: ECPoint) -> Self {
+    pub fn new_with_group(group: Secp256r1PublicKey) -> Self {
         Self {
             hash: None,
             group: Some(group),
@@ -78,7 +68,7 @@ impl ContractPermissionDescriptor {
     pub fn from_bytes(span: &[u8]) -> Result<Self, Error> {
         match span.len() {
             20 => Ok(Self::new_with_hash(UInt160::from_slice(span)?)),
-            33 => Ok(Self::new_with_group(ECPoint::decode_point(span, ECCurve::Secp256r1)?)),
+            33 => Ok(Self::new_with_group(Secp256r1PublicKey::decode_point(span, ECCurve::Secp256r1)?)),
             _ => Err(Error::ArgumentError("Invalid byte length".into())),
         }
     }
@@ -87,7 +77,7 @@ impl ContractPermissionDescriptor {
     pub fn from_json(json: &str) -> Result<Self, Error> {
         match json.len() {
             42 => Ok(Self::new_with_hash(UInt160::from_str(json)?)),
-            66 => Ok(Self::new_with_group(ECPoint::from_str(json)?)),
+            66 => Ok(Self::new_with_group(Secp256r1PublicKey::from_str(json)?)),
             1 if json == "*" => Ok(Self::new_wildcard()),
             _ => Err(Error::FormatError("Invalid JSON format".into())),
         }

@@ -10,6 +10,8 @@ pub use neo_crypto::secp256r1::*;
 pub mod big_decimal;
 pub mod io;
 extern crate core;
+extern crate core;
+extern crate core;
 
 pub mod block;
 
@@ -42,6 +44,8 @@ mod event;
 pub mod tx;
 pub mod types;
 pub mod wallet;
+mod core_error;
+mod network;
 
 pub use neo_crypto::secp256r1::*;
 

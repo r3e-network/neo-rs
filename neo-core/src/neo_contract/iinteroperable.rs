@@ -1,8 +1,8 @@
-use neo::vm::StackItem;
-use neo::vm::ReferenceCounter;
+use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::stack_item::StackItem;
 
 /// Represents the object that can be converted to and from `StackItem`.
-pub trait IInteroperable {
+pub trait IInteroperable:Default {
     /// Convert a `StackItem` to the current object.
     ///
     /// # Arguments

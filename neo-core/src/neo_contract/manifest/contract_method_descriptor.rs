@@ -1,17 +1,6 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// contract_method_descriptor.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
-use neo::prelude::*;
-use neo::vm::types::{StackItem, Struct};
-use neo::json::Json;
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::contract_parameter::ContractParameterType;
+use crate::neo_contract::manifest::contract_parameter_definition::ContractParameterDefinition;
 
 /// Represents a method in a smart contract ABI.
 #[derive(Clone, Debug)]
@@ -29,7 +18,7 @@ pub struct ContractMethodDescriptor {
     pub safe: bool,
 }
 
-impl Interoperable for ContractMethodDescriptor {
+impl IInteroperable for ContractMethodDescriptor {
     fn from_stack_item(stack_item: &StackItem) -> Result<Self, Error> {
         if let StackItem::Struct(s) = stack_item {
             let name = s.get(0).ok_or(Error::InvalidFormat)?.as_string()?;

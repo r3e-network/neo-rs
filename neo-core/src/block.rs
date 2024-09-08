@@ -3,12 +3,11 @@
 
 
 use alloc::vec::Vec;
+use primitive_types::{H160, H256};
 use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::{bin::*, encode_hex_u64, decode_hex_u64};
-use crate::{PublicKey, tx::{Witnesses, Witness, Tx, StatedTx}};
-use crate::types::{H160, H256, Script, ToBftHash};
-
+use crate::tx::Witnesses;
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, InnerBinDecode)]
 pub struct Header {

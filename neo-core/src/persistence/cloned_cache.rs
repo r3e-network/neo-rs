@@ -1,4 +1,6 @@
-
+use crate::neo_contract::storage_item::StorageItem;
+use crate::neo_contract::storage_key::StorageKey;
+use crate::persistence::SeekDirection;
 
 pub struct ClonedCache {
     inner_cache: Box<dyn DataCache>,

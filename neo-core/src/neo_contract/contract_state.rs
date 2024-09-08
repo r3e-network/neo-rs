@@ -4,6 +4,12 @@ use neo::smart_contract::manifest::*;
 use neo::vm::*;
 use neo::vm::types::*;
 use std::convert::TryFrom;
+use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::iinteroperable_verifiable::InteroperableVerifiable;
+use crate::neo_contract::manifest::contract_manifest::ContractManifest;
+use crate::neo_contract::nef_file::NefFile;
+use crate::uint160::UInt160;
 
 pub struct ContractState {
     /// The id of the contract.

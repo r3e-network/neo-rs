@@ -1,12 +1,14 @@
-use neo::cryptography::ecc::{ECCurve, ECPoint};
-use neo::json::{JArray, JObject, JValue};
-use neo::types::{UInt160, UInt256};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt;
+use NeoRust::crypto::Secp256r1PublicKey;
 use num_bigint::BigInt;
+use crate::neo_contract::contract_parameter_type::ContractParameterType;
+use crate::uint160::UInt160;
+use crate::uint256::UInt256;
 
 /// Represents a parameter of a smart contract method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ContractParameter {
     /// The type of the parameter.
     pub param_type: ContractParameterType,
@@ -15,24 +17,8 @@ pub struct ContractParameter {
     pub value: Option<ContractParameterValue>,
 }
 
-/// Represents the possible types of smart contract parameters.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ContractParameterType {
-    Any,
-    Signature,
-    Boolean,
-    Integer,
-    Hash160,
-    Hash256,
-    ByteArray,
-    PublicKey,
-    String,
-    Array,
-    Map,
-}
-
 /// Represents the possible values of smart contract parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ContractParameterValue {
     Any,
     Signature(Vec<u8>),
@@ -41,7 +27,7 @@ pub enum ContractParameterValue {
     Hash160(UInt160),
     Hash256(UInt256),
     ByteArray(Vec<u8>),
-    PublicKey(ECPoint),
+    PublicKey(Secp256r1PublicKey),
     String(String),
     Array(Vec<ContractParameter>),
     Map(HashMap<ContractParameter, ContractParameter>),
@@ -100,7 +86,7 @@ impl ContractParameter {
             ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(UInt160::try_from(value.as_str().ok_or("Invalid Hash160 value")?).map_err(|e| e.to_string())?)),
             ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(UInt256::try_from(value.as_str().ok_or("Invalid Hash256 value")?).map_err(|e| e.to_string())?)),
             ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(hex::decode(value.as_str().ok_or("Invalid ByteArray value")?).map_err(|e| e.to_string())?)),
-            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECPoint::try_from(value.as_str().ok_or("Invalid PublicKey value")?).map_err(|e| e.to_string())?)),
+            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(Secp256r1PublicKey::try_from(value.as_str().ok_or("Invalid PublicKey value")?).map_err(|e| e.to_string())?)),
             ContractParameterType::String => Some(ContractParameterValue::String(value.as_str().ok_or("Invalid string value")?.to_string())),
             ContractParameterType::Array => {
                 let array = value.as_array().ok_or("Invalid array value")?;
@@ -135,7 +121,7 @@ impl ContractParameter {
             ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(UInt160::try_from(text).map_err(|e| e.to_string())?)),
             ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(UInt256::try_from(text).map_err(|e| e.to_string())?)),
             ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(hex::decode(text).map_err(|e| e.to_string())?)),
-            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECPoint::try_from(text).map_err(|e| e.to_string())?)),
+            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(Secp256r1PublicKey::try_from(text).map_err(|e| e.to_string())?)),
             ContractParameterType::String => Some(ContractParameterValue::String(text.to_string())),
             ContractParameterType::Array | ContractParameterType::Map => return Err("Cannot set Array or Map from string".to_string()),
         };

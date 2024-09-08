@@ -1,4 +1,4 @@
-use neo::cryptography::ecc::ECPoint;
+use neo::cryptography::ecc::Secp256r1PublicKey;
 use neo::io::*;
 use neo::json::*;
 use neo::network::p2p::payloads::*;
@@ -27,7 +27,7 @@ pub struct ContractParametersContext {
 struct ContextItem {
     script: Vec<u8>,
     parameters: Vec<ContractParameter>,
-    signatures: HashMap<ECPoint, Vec<u8>>,
+    signatures: HashMap<Secp256r1PublicKey, Vec<u8>>,
 }
 
 impl ContextItem {
@@ -59,7 +59,7 @@ impl ContextItem {
             .ok_or(Error::InvalidFormat)?;
         let signatures = signatures.iter()
             .map(|(k, v)| {
-                let public_key = ECPoint::try_from(k.as_str()).map_err(|_| Error::InvalidFormat)?;
+                let public_key = Secp256r1PublicKey::try_from(k.as_str()).map_err(|_| Error::InvalidFormat)?;
                 let signature = hex::decode(v.as_str().ok_or(Error::InvalidFormat)?).map_err(|_| Error::InvalidFormat)?;
                 Ok((public_key, signature))
             })
@@ -130,7 +130,7 @@ impl ContractParametersContext {
         true
     }
 
-    pub fn add_signature(&mut self, contract: Contract, public_key: ECPoint, signature: Vec<u8>) -> bool {
+    pub fn add_signature(&mut self, contract: Contract, public_key: Secp256r1PublicKey, signature: Vec<u8>) -> bool {
         if signature.len() != 64 {
             return false;
         }
@@ -153,7 +153,7 @@ impl ContractParametersContext {
         self.context_items.get(script_hash).map(|item| item.parameters.as_slice())
     }
 
-    pub fn get_signatures(&self, script_hash: &UInt160) -> Option<&HashMap<ECPoint, Vec<u8>>> {
+    pub fn get_signatures(&self, script_hash: &UInt160) -> Option<&HashMap<Secp256r1PublicKey, Vec<u8>>> {
         self.context_items.get(script_hash).map(|item| &item.signatures)
     }
 

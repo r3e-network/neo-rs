@@ -1,23 +1,12 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// ApplicationEngine.OpCodePrices.cs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
-use neo_vm::OpCode;
 use std::collections::HashMap;
+use neo_vm::op_code::OpCode;
 
 pub struct ApplicationEngine;
 
 impl ApplicationEngine {
     /// The prices of all the opcodes.
     #[deprecated(note = "You should use OP_CODE_PRICE_TABLE")]
-    pub static OP_CODE_PRICES: HashMap<OpCode, i64> = {
+    pub const  OP_CODE_PRICES: HashMap<OpCode, i64> = {
         let mut map = HashMap::new();
         map.insert(OpCode::PUSHINT8, 1 << 0);
         map.insert(OpCode::PUSHINT16, 1 << 0);
@@ -220,7 +209,7 @@ impl ApplicationEngine {
 
     /// The prices of all the opcodes.
     /// In the unit of datoshi, 1 datoshi = 1e-8 GAS
-    pub static OP_CODE_PRICE_TABLE: [i64; 256] = {
+    pub const OP_CODE_PRICE_TABLE: [i64; 256] = {
         let mut table = [0; 256];
         for (op_code, price) in Self::OP_CODE_PRICES.iter() {
             table[*op_code as usize] = *price;

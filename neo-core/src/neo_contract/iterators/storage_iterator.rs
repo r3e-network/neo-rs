@@ -1,5 +1,6 @@
 use std::iter::Iterator;
 use NeoRust::types::StackItem;
+use neo_vm::reference_counter::ReferenceCounter;
 use crate::neo_contract::find_options::FindOptions;
 use crate::neo_contract::storage_item::StorageItem;
 use crate::neo_contract::storage_key::StorageKey;
@@ -40,7 +41,7 @@ impl Iterator for StorageIterator {
     }
 }
 
-impl neo::vm::IIterator for StorageIterator {
+impl IIterator for StorageIterator {
     fn value(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
         let (key, value) = self.enumerator.peek().unwrap();
         let mut key_bytes = key.as_bytes();

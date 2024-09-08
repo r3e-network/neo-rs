@@ -1,10 +1,7 @@
-use neo_crypto::Crypto;
-use neo_io::{BinaryReader, BinaryWriter, ISerializable};
-use neo_json::JObject;
-use neo_vm::{ExecutionEngineLimits, MethodToken};
 use std::convert::TryInto;
 use std::io::{Cursor, Read, Write};
 use std::mem::size_of;
+use crate::neo_contract::method_token::MethodToken;
 
 /// Represents the structure of NEO Executable Format.
 pub struct NefFile {

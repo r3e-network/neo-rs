@@ -1,4 +1,4 @@
-use neo_vm::types::StackItem;
+use neo_vm::stack_item::StackItem;
 
 pub struct MaxLengthAttribute {
     pub max_length: usize,

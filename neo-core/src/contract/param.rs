@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use hashbrown::HashMap;
 
 use neo_base::{encoding::bin::*, math::U256};
-use crate::{PublicKey, types::{Bytes, H160, H256, Sign}};
-
+use neo_crypto::secp256r1::PublicKey;
+use crate::types::{Bytes, Sign, H160, H256};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, BinEncode, BinDecode)]
 pub enum ParamType {

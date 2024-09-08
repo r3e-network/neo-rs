@@ -10,9 +10,8 @@ use neo_base::errors;
 use neo_base::encoding::{base58::*, bin::*};
 use neo_base::hash::{Ripemd160, Sha256};
 use crate::PublicKey;
-
-pub use {bytes::*, check_sign::*, dbft::*, genesis::*, h160::*, h256::*, script::*, settings::*, verifying::*};
-
+use crate::types::h160::H160_SIZE;
+use crate::types::h256::H256_SIZE;
 
 pub mod bytes;
 pub mod check_sign;

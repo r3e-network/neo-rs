@@ -28,10 +28,3 @@ impl ReflectionCacheAttribute {
         self.type_id
     }
 }
-
-// Note: Rust doesn't have direct equivalents to C#'s attributes like [AttributeUsage].
-// The usage restrictions (AttributeTargets.Field, AllowMultiple = false) would be
-// enforced by the macro that applies this attribute in the Neo Rust SDK.
-
-// TODO: Implement a custom derive macro or attribute macro in the Neo Rust SDK
-// to replicate the behavior of [AttributeUsage(AttributeTargets.Field, AllowMultiple = false)]

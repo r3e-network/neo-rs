@@ -9,7 +9,7 @@ pub struct KeyPair {
     pub private_key: [u8; 32],
 
     /// The public key.
-    pub public_key: ECPoint,
+    pub public_key: Secp256r1PublicKey,
 }
 
 impl KeyPair {
@@ -29,9 +29,9 @@ impl KeyPair {
         
         let private_key = private_key[private_key.len() - 32..].try_into().unwrap();
         let public_key = if private_key.len() == 32 {
-            ECPoint::from_private_key(&private_key)
+            Secp256r1PublicKey::from_private_key(&private_key)
         } else {
-            ECPoint::from_bytes(&private_key, ECCurve::Secp256r1)?
+            Secp256r1PublicKey::from_bytes(&private_key, ECCurve::Secp256r1)?
         };
 
         Ok(Self { private_key, public_key })

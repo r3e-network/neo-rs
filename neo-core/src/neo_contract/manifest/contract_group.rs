@@ -5,20 +5,20 @@
 #[derive(Clone, Debug)]
 pub struct ContractGroup {
     /// The public key of the group.
-    pub pub_key: ECPoint,
+    pub pub_key: Secp256r1PublicKey,
 
     /// The signature of the contract hash which can be verified by `pub_key`.
     pub signature: Vec<u8>,
 }
 
-impl Serializable for ContractGroup {
+impl ISerializable for ContractGroup {
     fn from_stack_item(stack_item: &StackItem) -> Result<Self, Error> {
         if let StackItem::Struct(s) = stack_item {
             if s.len() != 2 {
                 return Err(Error::InvalidStructure);
             }
             Ok(ContractGroup {
-                pub_key: ECPoint::decode_point(&s[0].as_bytes()?, Secp256r1)?,
+                pub_key: Secp256r1PublicKey::decode_point(&s[0].as_bytes()?, Secp256r1)?,
                 signature: s[1].as_bytes()?.to_vec(),
             })
         } else {
@@ -45,7 +45,7 @@ impl ContractGroup {
     ///
     /// The converted group.
     pub fn from_json(json: &JsonValue) -> Result<Self, Error> {
-        let pub_key = ECPoint::parse(
+        let pub_key = Secp256r1PublicKey::parse(
             json["pubkey"].as_str().ok_or(Error::InvalidFormat)?,
             Secp256r1,
         )?;

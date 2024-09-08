@@ -1,7 +1,6 @@
-use neo_io::ISerializable;
-use neo_json::JObject;
-use neo_types::UInt160;
 use std::io::{Read, Write};
+use crate::neo_contract::call_flags::CallFlags;
+use crate::uint160::UInt160;
 
 /// Represents the methods that a contract will call statically.
 pub struct MethodToken {
@@ -23,7 +22,7 @@ pub struct MethodToken {
 
 impl MethodToken {
     pub fn size(&self) -> usize {
-        UInt160::len() +
+        UInt160::LEN +
         self.method.var_size() +
         std::mem::size_of::<u16>() +
         std::mem::size_of::<bool>() +

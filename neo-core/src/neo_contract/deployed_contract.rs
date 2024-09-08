@@ -1,8 +1,8 @@
-use crate::smart_contract::manifest::ContractState;
-use crate::smart_contract::Contract;
-use crate::types::UInt160;
-use crate::smart_contract::ContractMethodDescriptor;
-use crate::smart_contract::ContractBasicMethod;
+use crate::neo_contract::contract::Contract;
+use crate::neo_contract::contract_basic_method::ContractBasicMethod;
+use crate::neo_contract::contract_parameter_type::ContractParameterType;
+use crate::neo_contract::contract_state::ContractState;
+use crate::uint160::UInt160;
 
 /// Represents a deployed contract that can be invoked.
 pub struct DeployedContract {
@@ -27,8 +27,8 @@ impl DeployedContract {
 
         let script_hash = contract.hash.clone();
         let descriptor = contract.manifest.abi.get_method(
-            ContractBasicMethod::Verify,
-            ContractBasicMethod::VerifyPCount,
+            ContractBasicMethod::VERIFY,
+            ContractBasicMethod::VERIFY_P_COUNT,
         );
 
         if descriptor.is_none() {
@@ -47,6 +47,14 @@ impl DeployedContract {
 }
 
 impl Contract for DeployedContract {
+    fn script(&self) -> &Vec<u8> {
+        todo!()
+    }
+
+    fn parameter_list(&self) -> &Vec<ContractParameterType> {
+        todo!()
+    }
+
     fn script_hash(&self) -> &UInt160 {
         &self.script_hash
     }

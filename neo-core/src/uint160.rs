@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
-use std::fmt;
+use std::{fmt, io};
 use std::str::FromStr;
+use crate::io::iserializable::ISerializable;
 
 /// Represents a 160-bit unsigned integer.
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -31,14 +32,17 @@ impl UInt160 {
     }
 }
 
-impl Serializable for UInt160 {
-    type Error = io::Error;
+impl ISerializable for UInt160 {
+
+    fn size(&self) -> usize {
+        Self::LEN
+    }
 
     fn serialize(&self, writer: &mut impl io::Write) -> Result<(), Self::Error> {
         writer.write_all(&self.data)
     }
 
-    fn deserialize(reader: &mut impl io::Read) -> Result<Self, Self::Error> {
+    fn deserialize(&mut self, reader: &mut impl io::Read) -> Result<Self, Self::Error> {
         let mut data = [0u8; Self::LEN];
         reader.read_exact(&mut data)?;
         Ok(Self { data })

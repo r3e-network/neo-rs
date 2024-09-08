@@ -302,7 +302,7 @@ impl IdList {
     }
 }
 
-impl Interoperable for IdList {
+impl IInteroperable for IdList {
     fn from_stack_item(&mut self, item: StackItem) -> Result<(), String> {
         if let StackItem::Array(array) = item {
             self.0 = array.into_iter()

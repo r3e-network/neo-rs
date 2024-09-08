@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::io::Write;
 use std::convert::TryFrom;
 use serde_json::{Value as JsonValue, json};
+use neo_vm::stack_item::StackItem;
 
 /// A JSON serializer for `StackItem`.
 pub struct JsonSerializer;

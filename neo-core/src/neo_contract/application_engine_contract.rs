@@ -115,7 +115,7 @@ impl ApplicationEngine {
 
     /// The implementation of System.Contract.CreateStandardAccount.
     /// Calculates corresponding account scripthash for the given public key.
-    pub fn create_standard_account(&mut self, pub_key: &ECPoint) -> Result<H160, Error> {
+    pub fn create_standard_account(&mut self, pub_key: &Secp256r1PublicKey) -> Result<H160, Error> {
         let fee = if self.is_hardfork_enabled(Hardfork::HF_Aspidochelone) {
             self.check_sig_price
         } else {
@@ -127,7 +127,7 @@ impl ApplicationEngine {
 
     /// The implementation of System.Contract.CreateMultisigAccount.
     /// Calculates corresponding multisig account scripthash for the given public keys.
-    pub fn create_multisig_account(&mut self, m: i32, pub_keys: &[ECPoint]) -> Result<H160, Error> {
+    pub fn create_multisig_account(&mut self, m: i32, pub_keys: &[Secp256r1PublicKey]) -> Result<H160, Error> {
         let fee = if self.is_hardfork_enabled(Hardfork::HF_Aspidochelone) {
             self.check_sig_price * pub_keys.len() as i64
         } else {

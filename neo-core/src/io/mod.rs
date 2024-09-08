@@ -4,7 +4,8 @@ pub mod iserializable;
 pub mod memory_reader;
 pub mod byte_array_comparer;
 pub mod byte_array_equality_comparer;
-pub mod actors;
+pub mod binary_writer;
+pub mod binary_reader;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use neo_vm::stack_item::StackItem;
 use crate::neo_contract::manifest::contract_event_descriptor::ContractEventDescriptor;
 use crate::neo_contract::manifest::contract_method_descriptor::ContractMethodDescriptor;
 
@@ -7,8 +8,8 @@ use crate::neo_contract::manifest::contract_method_descriptor::ContractMethodDes
 /// For more details, see NEP-14.
 #[derive(Clone, Debug)]
 pub struct ContractAbi {
-    methods: Vec<ContractMethodDescriptor>,
-    events: Vec<ContractEventDescriptor>,
+    pub(crate) methods: Vec<ContractMethodDescriptor>,
+    pub(crate) events: Vec<ContractEventDescriptor>,
     method_dictionary: Option<HashMap<(String, usize), ContractMethodDescriptor>>,
 }
 
@@ -64,7 +65,7 @@ impl ContractAbi {
     }
 }
 
-impl Interoperable for ContractAbi {
+impl IInteroperable for ContractAbi {
     fn from_stack_item(stack_item: StackItem) -> Result<Self, Error> {
         if let StackItem::Struct(s) = stack_item {
             let methods = s.get(0)

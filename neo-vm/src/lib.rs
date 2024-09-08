@@ -1,33 +1,31 @@
-// Copyright @ 2023 - 2024, R3E Network
-// All Rights Reserved
+#![feature(associated_type_defaults)]
+#![feature(linked_list_remove)]
+#![feature(exclusive_range_pattern)]
 
+extern crate core;
 
-#![cfg_attr(not(feature = "std"), no_std)]
+pub mod exception;
+pub mod script;
+pub mod types;
 
-extern crate alloc;
+pub mod vm;
 
+pub use exception::*;
+pub use script::*;
+pub use types::*;
+pub use vm::*;
 
-pub mod builder;
-pub mod decode;
-pub mod program;
-pub mod interop;
-pub mod opcode;
-pub mod operand;
-pub mod stack;
-mod tables;
-
-use tables::*;
-pub use {builder::*, decode::*, interop::*, opcode::*, operand::*, program::*, stack::*};
-
-
-pub(crate) const MAX_STACK_ITEM_SIZE: usize = 65535 * 2;
-
-
-pub trait RunPrice {
-    fn price(&self) -> u64;
+pub fn add(left: usize, right: usize) -> usize {
+	left + right
 }
 
+#[cfg(test)]
+mod tests {
+	use super::*;
 
-pub struct NeoVm {
-    //
+	#[test]
+	fn it_works() {
+		let result = add(2, 2);
+		assert_eq!(result, 4);
+	}
 }

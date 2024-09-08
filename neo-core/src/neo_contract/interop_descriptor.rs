@@ -1,6 +1,6 @@
-use neo_crypto::sha256;
-use std::collections::HashMap;
 use std::sync::Once;
+use crate::neo_contract::call_flags::CallFlags;
+use crate::neo_contract::interop_parameter_descriptor::InteropParameterDescriptor;
 
 /// Represents a descriptor of an interoperable service.
 #[derive(Clone)]
@@ -48,6 +48,3 @@ impl From<&InteropDescriptor> for u32 {
         descriptor.hash()
     }
 }
-
-// Note: InteropParameterDescriptor and CallFlags are not defined here.
-// They would need to be implemented separately.

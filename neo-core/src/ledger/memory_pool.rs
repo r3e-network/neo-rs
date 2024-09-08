@@ -1,11 +1,15 @@
 use std::collections::{HashMap, HashSet, BTreeSet};
+use std::hash::Hash;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-
-use neo_types::{UInt256, UInt160};
-use neo_vm::types::Transaction;
-use neo_vm::types::Block;
-use neo_persistence::Store;
+use NeoRust::prelude::Transaction;
+use crate::ledger::pool_item::PoolItem;
+use crate::ledger::transaction_removed_event_args::TransactionRemovedEventArgs;
+use crate::ledger::transaction_verification_context::TransactionVerificationContext;
+use crate::ledger::verify_result::VerifyResult;
+use crate::neo_system::NeoSystem;
+use crate::store::Store;
+use crate::uint256::UInt256;
 
 pub struct MemoryPool {
     transaction_added: Option<Box<dyn Fn(&Transaction)>>,
@@ -106,7 +110,7 @@ impl MemoryPool {
             .map(|item| item.tx.clone())
             .collect()
     }
-    pub fn try_add(&self, tx: &Transaction, snapshot: &Store) -> VerifyResult {
+    pub fn try_add(&mut self, tx: &Transaction, snapshot: &Store) -> VerifyResult {
         let _guard = self.tx_rw_lock.write().unwrap();
         
         if self.contains_key(&tx.hash()) {
@@ -133,7 +137,7 @@ impl MemoryPool {
         VerifyResult::Succeed
     }
 
-    pub fn try_remove_unverified(&self, hash: &UInt256) -> Option<Transaction> {
+    pub fn try_remove_unverified(&mut self, hash: &UInt256) -> Option<Transaction> {
         let _guard = self.tx_rw_lock.write().unwrap();
         self.unverified_transactions.remove(hash).map(|item| {
             self.unverified_sorted_transactions.remove(&item);
@@ -141,7 +145,7 @@ impl MemoryPool {
         })
     }
 
-    pub fn reverify_transactions(&self, snapshot: &Store, max_time: Duration) -> usize {
+    pub fn reverify_transactions(&mut self, snapshot: &dyn Store<WriteBatch=()>, max_time: Duration) -> usize {
         let start_time = Instant::now();
         let mut verified_count = 0;
 

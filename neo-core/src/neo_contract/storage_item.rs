@@ -122,7 +122,7 @@ impl StorageItem {
     }
 }
 
-impl Serializable for StorageItem {
+impl ISerializable for StorageItem {
     fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(&self.value())?;
         Ok(())

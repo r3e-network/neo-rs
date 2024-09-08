@@ -1,20 +1,10 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// transaction_router.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
 
-use neo_core::network::p2p::payloads::Transaction;
-use neo_core::ledger::VerifyResult;
-use neo_core::system::NeoSystem;
 use std::sync::Arc;
 
 pub mod ledger {
+    use NeoRust::builder::Transaction;
+    use crate::ledger::verify_result::VerifyResult;
+    use crate::neo_system::NeoSystem;
     use super::*;
 
     pub struct TransactionRouter {

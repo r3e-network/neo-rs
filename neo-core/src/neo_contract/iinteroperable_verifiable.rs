@@ -1,8 +1,9 @@
-use neo_vm::types::StackItem;
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::iinteroperable::IInteroperable;
 
 /// Represents the object that can be converted to and from `StackItem`
 /// and allows you to specify whether a verification is required.
-pub trait InteroperableVerifiable: Interoperable {
+pub trait InteroperableVerifiable: IInteroperable {
     /// Convert a `StackItem` to the current object.
     ///
     /// # Arguments

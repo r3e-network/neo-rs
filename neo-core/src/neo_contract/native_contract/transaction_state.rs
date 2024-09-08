@@ -14,7 +14,7 @@ pub struct TransactionState {
     raw_transaction: Vec<u8>,
 }
 
-impl Interoperable for TransactionState {
+impl IInteroperable for TransactionState {
     fn clone(&self) -> Box<dyn Interoperable> {
         Box::new(Self {
             block_index: self.block_index,

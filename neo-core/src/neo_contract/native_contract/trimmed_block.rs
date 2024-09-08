@@ -1,6 +1,5 @@
+use neo_vm::stack_item::StackItem;
 use crate::block::Header;
-use crate::types::H256;
-
 /// Represents a block which the transactions are trimmed.
 #[derive(Clone)]
 pub struct TrimmedBlock {
@@ -27,7 +26,7 @@ impl TrimmedBlock {
     }
 }
 
-impl Serializable for TrimmedBlock {
+impl ISerializable for TrimmedBlock {
     fn deserialize(reader: &mut Reader) -> Result<Self, Error> {
         let header = Header::deserialize(reader)?;
         let hashes = reader.read_var_vec::<H256>(u16::MAX as usize)?;
@@ -41,7 +40,7 @@ impl Serializable for TrimmedBlock {
     }
 }
 
-impl Interoperable for TrimmedBlock {
+impl IInteroperable for TrimmedBlock {
     fn from_interface_object(_object: InterfaceObject) -> Result<Self, Error> {
         Err(Error::NotSupported)
     }

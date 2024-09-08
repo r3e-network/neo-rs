@@ -1,8 +1,11 @@
-use neo::io::IVerifiable;
-use neo::network::p2p::payloads::UInt160;
-use neo::vm::types::{Array, ReferenceCounter, StackItem};
-use neo::vm::ApplicationEngine;
 use std::rc::Rc;
+use neo_vm::item_trait::StackItemTrait;
+use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::stack_item::StackItem;
+use crate::hardfork::Hardfork;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::uint160::UInt160;
 
 pub struct NotifyEventArgs {
     /// The container that containing the executed script.
@@ -45,7 +48,7 @@ impl IInteroperable for NotifyEventArgs {
 
     fn to_stack_item_with_engine(&self, reference_counter: &mut ReferenceCounter, engine: &ApplicationEngine) -> StackItem {
         if engine.is_hardfork_enabled(Hardfork::HF_Domovoi) {
-            Array::new_with_items(reference_counter, vec![
+            Array::new(reference_counter, vec![
                 StackItem::from(self.script_hash.to_vec()),
                 StackItem::from(self.event_name.clone()),
                 if self.state.on_stack() {

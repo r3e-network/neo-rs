@@ -1,4 +1,5 @@
 use NeoRust::types::StackItem;
+use neo_vm::reference_counter::ReferenceCounter;
 
 /// Represents iterators in smart contracts.
 pub trait Iterator {

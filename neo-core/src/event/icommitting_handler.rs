@@ -7,6 +7,7 @@ use neo::persistence::DataCache;
 /// This module contains the ICommittingHandler trait.
 pub mod event_handlers {
     use crate::block::Block;
+    use crate::ledger::blockchain::Blockchain;
     use crate::neo_system::NeoSystem;
     use crate::persistence::DataCache;
     use super::*;

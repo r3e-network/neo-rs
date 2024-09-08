@@ -1,6 +1,9 @@
 
 use num_bigint::{BigInt, BigUint};
 use num_traits::One;
+use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::iinteroperable::IInteroperable;
 
 /// The base struct of account state for all native tokens.
 #[derive(Default)]
@@ -9,7 +12,7 @@ pub struct AccountState {
     pub balance: BigInt,
 }
 
-impl Interoperable for AccountState {
+impl IInteroperable for AccountState {
     fn from_stack_item(&mut self, stack_item: &StackItem) -> Result<(), Box<dyn std::error::Error>> {
         if let StackItem::Struct(s) = stack_item {
             self.balance = s[0].try_into()?;

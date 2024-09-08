@@ -338,7 +338,7 @@ impl Wallet {
     /// # Returns
     ///
     /// `true` if the signature is valid, `false` otherwise.
-    pub fn verify_signature(message: &[u8], signature: &[u8], pubkey: &ECPoint) -> bool {
+    pub fn verify_signature(message: &[u8], signature: &[u8], pubkey: &Secp256r1PublicKey) -> bool {
         // Implementation of signature verification
         unimplemented!()
     }

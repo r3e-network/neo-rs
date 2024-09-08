@@ -1,23 +1,25 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// ApplicationEngine.Runtime.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
-use neo::cryptography::ecc::ECPoint;
-use neo::io::*;
-use neo::network::p2p::payloads::*;
-use neo::smart_contract::native::*;
-use neo::vm::*;
-use neo::vm::types::*;
+use alloc::rc::Rc;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::num::BigInt;
+use NeoRust::crypto::Secp256r1PublicKey;
+use num_bigint::{BigInt, Sign};
+use neo_vm::execution_context::ExecutionContext;
+use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::stack_item::StackItem;
+use crate::block::Block;
+use crate::contract::Contract;
+use crate::hardfork::Hardfork;
+use crate::neo_contract::call_flags::CallFlags;
+use crate::neo_contract::contract_parameter_type::ContractParameterType;
+use crate::neo_contract::execution_context_state::ExecutionContextState;
+use crate::neo_contract::interop_descriptor::InteropDescriptor;
+use crate::neo_contract::log_event_args::LogEventArgs;
+use crate::neo_contract::native_contract::NativeContract;
+use crate::neo_contract::notify_event_args::NotifyEventArgs;
+use crate::persistence::SnapshotCache;
+use crate::protocol_settings::ProtocolSettings;
+use crate::uint160::UInt160;
 
 pub struct ApplicationEngine {
     // Fields and other struct members...
@@ -46,19 +48,19 @@ impl ApplicationEngine {
     pub const MAX_NOTIFICATION_SIZE: usize = 1024;
 
     // InteropDescriptor declarations
-    pub static SYSTEM_RUNTIME_PLATFORM: InteropDescriptor = InteropDescriptor::new("System.Runtime.Platform", get_platform, 1 << 3, CallFlags::None);
-    pub static SYSTEM_RUNTIME_GET_NETWORK: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetNetwork", get_network, 1 << 3, CallFlags::None);
-    pub static SYSTEM_RUNTIME_GET_ADDRESS_VERSION: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetAddressVersion", get_address_version, 1 << 3, CallFlags::None);
-    pub static SYSTEM_RUNTIME_GET_TIME: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetTime", get_time, 1 << 3, CallFlags::None);
-    pub static SYSTEM_RUNTIME_GET_SCRIPT_CONTAINER: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetScriptContainer", get_script_container, 1 << 3, CallFlags::None);
-    pub static SYSTEM_RUNTIME_LOAD_SCRIPT: InteropDescriptor = InteropDescriptor::new("System.Runtime.LoadScript", runtime_load_script, 1 << 15, CallFlags::None);
-    pub static SYSTEM_RUNTIME_CHECK_WITNESS: InteropDescriptor = InteropDescriptor::new("System.Runtime.CheckWitness", check_witness, 1 << 10, CallFlags::None);
-    pub static SYSTEM_RUNTIME_GET_INVOCATION_COUNTER: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetInvocationCounter", get_invocation_counter, 1 << 3, CallFlags::None);
-    pub static SYSTEM_RUNTIME_GET_RANDOM: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetRandom", get_random, 1 << 13, CallFlags::None);
-    pub static SYSTEM_RUNTIME_LOG: InteropDescriptor = InteropDescriptor::new("System.Runtime.Log", runtime_log, 1 << 15, CallFlags::None);
-    pub static SYSTEM_RUNTIME_NOTIFY: InteropDescriptor = InteropDescriptor::new("System.Runtime.Notify", runtime_notify, 1 << 15, CallFlags::None);
-    pub static SYSTEM_RUNTIME_GET_NOTIFICATIONS: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetNotifications", get_notifications, 1 << 15, CallFlags::None);
-    pub static SYSTEM_RUNTIME_BURN_GAS: InteropDescriptor = InteropDescriptor::new("System.Runtime.BurnGas", burn_gas, 1 << 4, CallFlags::None);
+    pub const  SYSTEM_RUNTIME_PLATFORM: InteropDescriptor = InteropDescriptor::new("System.Runtime.Platform", get_platform, 1 << 3, CallFlags::None);
+    pub const SYSTEM_RUNTIME_GET_NETWORK: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetNetwork", get_network, 1 << 3, CallFlags::None);
+    pub const SYSTEM_RUNTIME_GET_ADDRESS_VERSION: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetAddressVersion", get_address_version, 1 << 3, CallFlags::None);
+    pub const SYSTEM_RUNTIME_GET_TIME: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetTime", get_time, 1 << 3, CallFlags::None);
+    pub const SYSTEM_RUNTIME_GET_SCRIPT_CONTAINER: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetScriptContainer", get_script_container, 1 << 3, CallFlags::None);
+    pub const SYSTEM_RUNTIME_LOAD_SCRIPT: InteropDescriptor = InteropDescriptor::new("System.Runtime.LoadScript", runtime_load_script, 1 << 15, CallFlags::None);
+    pub const SYSTEM_RUNTIME_CHECK_WITNESS: InteropDescriptor = InteropDescriptor::new("System.Runtime.CheckWitness", check_witness, 1 << 10, CallFlags::None);
+    pub const SYSTEM_RUNTIME_GET_INVOCATION_COUNTER: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetInvocationCounter", get_invocation_counter, 1 << 3, CallFlags::None);
+    pub const SYSTEM_RUNTIME_GET_RANDOM: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetRandom", get_random, 1 << 13, CallFlags::None);
+    pub const SYSTEM_RUNTIME_LOG: InteropDescriptor = InteropDescriptor::new("System.Runtime.Log", runtime_log, 1 << 15, CallFlags::None);
+    pub const SYSTEM_RUNTIME_NOTIFY: InteropDescriptor = InteropDescriptor::new("System.Runtime.Notify", runtime_notify, 1 << 15, CallFlags::None);
+    pub const SYSTEM_RUNTIME_GET_NOTIFICATIONS: InteropDescriptor = InteropDescriptor::new("System.Runtime.GetNotifications", get_notifications, 1 << 15, CallFlags::None);
+    pub const SYSTEM_RUNTIME_BURN_GAS: InteropDescriptor = InteropDescriptor::new("System.Runtime.BurnGas", burn_gas, 1 << 4, CallFlags::None);
 
     /// The implementation of System.Runtime.Platform.
     /// Gets the name of the current platform.
@@ -98,14 +100,14 @@ impl ApplicationEngine {
     /// The implementation of System.Runtime.LoadScript.
     /// Loads a script at runtime.
     pub fn runtime_load_script(&mut self, script: Vec<u8>, call_flags: CallFlags, args: Array) -> Result<(), String> {
-        if (call_flags & !CallFlags::All) != CallFlags::None {
+        if (call_flags & !CallFlags::ALL) != CallFlags::NONE {
             return Err("Invalid call flags".to_string());
         }
 
         let state = self.current_context.get_state::<ExecutionContextState>();
         let context = self.load_script(Script::new(script, true), |p| {
             p.calling_context = Some(self.current_context.clone());
-            p.call_flags = call_flags & state.call_flags & CallFlags::ReadOnly;
+            p.call_flags = call_flags & state.call_flags & CallFlags::READ_ONLY;
             p.is_dynamic_call = true;
         })?;
 
@@ -122,7 +124,7 @@ impl ApplicationEngine {
         let hash = match hash_or_pubkey.len() {
             20 => UInt160::from_slice(hash_or_pubkey),
             33 => {
-                let point = ECPoint::decode_point(hash_or_pubkey, ECCurve::Secp256r1)?;
+                let point = Secp256r1PublicKey::decode_point(hash_or_pubkey, ECCurve::Secp256r1)?;
                 Contract::create_signature_redeem_script(&point).to_script_hash()
             },
             _ => return Err("Invalid hashOrPubkey".to_string()),
@@ -161,7 +163,7 @@ impl ApplicationEngine {
         }
 
         // Check allow state callflag
-        self.validate_call_flags(CallFlags::ReadStates)?;
+        self.validate_call_flags(CallFlags::READ_STATES)?;
 
         // only for non-Transaction types (Block, etc)
         Ok(self.script_container.as_ref().unwrap().get_script_hashes_for_verifying(&self.snapshot_cache)?.contains(hash))

@@ -1,30 +1,18 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// blockchain.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
 use std::collections::{HashMap, HashSet, LinkedList};
+use std::error::Error;
 use std::sync::Arc;
-use akka::actor::{Actor, ActorRef, Props};
-use neo_core::{
-    block::Block,
-    transaction::Transaction,
-    inventory::IInventory,
-    payload::ExtensiblePayload,
-    header::Header,
-};
-use neo_io::IoActor;
-use neo_network::p2p::{LocalNode, Tcp};
-use neo_persistence::Store;
-use neo_plugins::Plugin;
-use neo_smart_contract::{ApplicationEngine, NativeContract};
-use neo_vm::VMState;
+use NeoRust::builder::Transaction;
+use NeoRust::neo_types::{StackItem, VMState};
+use primitive_types::{H160, H256};
+use crate::block::Block;
+use crate::contract::event::TriggerType;
+use crate::contract::TriggerType;
+use crate::ledger::verify_result::VerifyResult;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::notify_event_args::NotifyEventArgs;
+use crate::neo_system::NeoSystem;
+use crate::store::Store;
+
 
 pub type CommittingHandler = fn(system: &NeoSystem, block: &Block, snapshot: &Store, application_executed_list: &[ApplicationExecuted]);
 pub type CommittedHandler = fn(system: &NeoSystem, block: &Block);

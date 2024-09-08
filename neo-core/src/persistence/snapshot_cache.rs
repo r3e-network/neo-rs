@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use crate::persistence::ISnapshot;
 use crate::store::ReadOnlyStore;
 
 /// Represents a cache for the snapshot or database of the NEO blockchain.
 pub struct SnapshotCache {
     store: Box<dyn ReadOnlyStore>,
-    snapshot: Option<Box<dyn Snapshot>>,
+    snapshot: Option<Box<dyn ISnapshot>>,
     cache: HashMap<Vec<u8>, Option<Vec<u8>>>,
 }
 
@@ -16,7 +17,7 @@ impl SnapshotCache {
     /// * `store` - A type that implements ReadOnlyStore to create a readonly cache,
     ///             or a type that implements Snapshot to create a snapshot cache.
     pub fn new<T: ReadOnlyStore + 'static>(store: T) -> Self {
-        let snapshot = store.as_any().downcast_ref::<dyn Snapshot>().map(|s| Box::new(s.clone()) as Box<dyn Snapshot>);
+        let snapshot = store.as_any().downcast_ref::<dyn ISnapshot>().map(|s| Box::new(s.clone()) as Box<dyn ISnapshot>);
         SnapshotCache {
             store: Box::new(store),
             snapshot,

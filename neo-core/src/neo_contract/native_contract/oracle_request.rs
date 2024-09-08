@@ -1,18 +1,8 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// oracle_request.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
-use neo_contract::prelude::*;
-use neo_types::primitives::{u160::UInt160, u256::UInt256};
-use neo_vm::types::{Array, StackItem};
-use neo_vm::ReferenceCounter;
+use serde::{Deserialize, Serialize};
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::uint160::UInt160;
+use crate::uint256::UInt256;
 
 /// Represents an Oracle request in smart contracts.
 #[derive(Serialize, Deserialize)]
@@ -39,7 +29,7 @@ pub struct OracleRequest {
     pub user_data: Vec<u8>,
 }
 
-impl Interoperable for OracleRequest {
+impl IInteroperable for OracleRequest {
     fn from_stack_item(&mut self, item: StackItem) -> Result<(), String> {
         if let StackItem::Array(array) = item {
             self.original_txid = UInt256::from_slice(&array[0].as_bytes()?)?;

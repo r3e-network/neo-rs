@@ -1,19 +1,19 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// native_contract.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
-use neo::io::*;
-use neo::smart_contract::manifest::*;
-use neo::vm::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use NeoRust::builder::ScriptBuilder;
+use crate::hardfork::Hardfork;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::contract_state::ContractState;
+use crate::neo_contract::execution_context_state::ExecutionContextState;
+use crate::neo_contract::key_builder::KeyBuilder;
+use crate::neo_contract::manifest::contract_abi::ContractAbi;
+use crate::neo_contract::manifest::contract_manifest::ContractManifest;
+use crate::neo_contract::manifest::contract_permission::ContractPermission;
+use crate::neo_contract::manifest::wild_card_container::WildcardContainer;
+use crate::neo_contract::native_contract::contract_method_metadata::ContractMethodMetadata;
+use crate::neo_contract::nef_file::NefFile;
+use crate::protocol_settings::ProtocolSettings;
+use crate::uint160::UInt160;
 
 /// The base struct of all native contracts.
 pub struct NativeContract {
@@ -118,6 +118,7 @@ impl NativeContract {
             source: String::new(),
             tokens: Vec::new(),
             script: allowed_methods.script.clone(),
+            checksum: 0,
         };
 
         let manifest = ContractManifest {
@@ -145,6 +146,7 @@ impl NativeContract {
             nef,
             hash: self.hash,
             manifest,
+            update_counter: 0,
         }
     }
 
@@ -279,59 +281,3 @@ pub trait HardforkActivable {
     fn active_in(&self) -> Option<Hardfork>;
     fn deprecated_in(&self) -> Option<Hardfork>;
 }
-
-#[derive(Clone, Debug)]
-pub struct ContractMethodMetadata {
-    pub name: String,
-    pub parameters: Vec<ContractParameterType>,
-    pub return_type: ContractParameterType,
-    pub cpu_fee: i64,
-    pub storage_fee: i64,
-    pub need_application_engine: bool,
-    pub need_snapshot: bool,
-    pub active_in: Option<Hardfork>,
-    pub deprecated_in: Option<Hardfork>,
-    pub handler: Arc<dyn Fn(&NativeContract, &[StackItem]) -> Result<StackItem, String> + Send + Sync>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ContractEventAttribute {
-    pub name: String,
-    pub parameters: Vec<ContractParameterType>,
-}
-
-pub struct ApplicationEngine {
-    pub snapshot_cache: StorageContext,
-    pub exec_fee_factor: i64,
-    pub storage_price: i64,
-    // Add other necessary fields
-}
-
-impl ApplicationEngine {
-    pub fn add_fee(&mut self, fee: i64) {
-        // Implementation for adding fee
-    }
-
-    pub fn convert(&self, item: StackItem, param_type: ContractParameterType) -> Result<StackItem, String> {
-        // Implementation for converting stack items
-        unimplemented!()
-    }
-
-    // Add other necessary methods
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Hardfork {
-    // Define hardfork variants
-}
-
-#[derive(Clone, Copy)]
-pub enum ContractParameterType {
-    // Define parameter types
-}
-
-pub struct StorageContext {
-    // Define storage context
-}
-
-// Additional implementations as needed

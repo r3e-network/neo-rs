@@ -1,4 +1,7 @@
 use neo::vm::{ApplicationEngine, ExecutionContext, Instruction};
+use neo_vm::execution_context::ExecutionContext;
+use neo_vm::instruction::Instruction;
+use crate::neo_contract::application_engine::ApplicationEngine;
 
 pub trait IDiagnostic {
     fn initialized(&self, engine: &ApplicationEngine);

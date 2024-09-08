@@ -1,13 +1,3 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// contract_method_metadata.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
 
 use neo_sdk::prelude::*;
 use std::fmt;
@@ -83,7 +73,7 @@ pub fn to_parameter_type(type_name: &str) -> ContractParameterType {
         "String" => ContractParameterType::String,
         "UInt160" => ContractParameterType::Hash160,
         "UInt256" => ContractParameterType::Hash256,
-        "ECPoint" => ContractParameterType::PublicKey,
+        "Secp256r1PublicKey" => ContractParameterType::PublicKey,
         "Boolean" => ContractParameterType::Boolean,
         "Integer" => ContractParameterType::Integer,
         "ByteString" | "Buffer" => ContractParameterType::ByteArray,

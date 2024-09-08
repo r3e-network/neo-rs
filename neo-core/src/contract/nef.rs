@@ -3,12 +3,12 @@
 
 
 use alloc::{string::String, vec::Vec};
+use primitive_types::H160;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr as DeserializeRepr, Serialize_repr as SerializeRepr};
 
 use neo_base::{errors, encoding::bin::*, hash::Sha256Checksum};
-use crate::types::{H160, Script, FixedBytes};
-
+use neo_vm::vm::script::Script;
 
 pub const NEF3_MAGIC: u32 = 0x3346454E;
 pub const MAX_METHOD_LENGTH: usize = 32;
@@ -149,6 +149,7 @@ impl Nef3 {
 mod test {
     use super::*;
     use alloc::vec;
+    use crate::neo_contract::call_flags::CallFlags;
 
     #[test]
     fn test_nef_serializing() {

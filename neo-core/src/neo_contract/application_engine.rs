@@ -5,21 +5,22 @@ use std::time::SystemTime;
 use std::rc::Rc;
 use std::cell::RefCell;
 use NeoRust::prelude::PolicyContract;
+use neo_vm::execution_context::ExecutionContext;
+use neo_vm::execution_engine::ExecutionEngine;
+use neo_vm::stack_item::StackItem;
 use crate::block::Block;
-use crate::contract::event::TriggerType;
-use crate::contract::nef::CallFlags;
-// Assume these types are defined elsewhere
 use crate::hardfork::Hardfork;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::contract_state::ContractState;
+use crate::neo_contract::contract_task::{ContractTask, ContractTaskAwaiter};
 use crate::neo_contract::execution_context_state::ExecutionContextState;
 use crate::neo_contract::interop_descriptor::InteropDescriptor;
 use crate::neo_contract::manifest::contract_method_descriptor::ContractMethodDescriptor;
 use crate::neo_contract::native_contract::NativeContract;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
+use crate::neo_contract::trigger_type::TriggerType;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
-use crate::types::Script;
 use crate::uint160::UInt160;
 
 const TEST_MODE_GAS: i64 = 20_00000000;
@@ -50,7 +51,7 @@ pub struct ApplicationEngine {
 impl ApplicationEngine {
     pub fn new(
         trigger: TriggerType,
-        container: Option<Box<dyn Verifiable>>,
+        container: Option<Box<dyn IVerifiable>>,
         snapshot: DataCache,
         persisting_block: Option<Block>,
         settings: Arc<ProtocolSettings>,
@@ -674,6 +675,7 @@ impl ApplicationEngine {
 
     pub fn notify(&mut self, script_hash: UInt160, event_name: String, state: StackItem) {
         let args = NotifyEventArgs {
+            script_container: Rc::new(()),
             script_hash,
             event_name,
             state,

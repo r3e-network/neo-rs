@@ -9,6 +9,14 @@ use std::convert::TryInto;
 
 /// A helper module related to smart contracts.
 pub mod helper {
+    use NeoRust::builder::ScriptBuilder;
+    use neo_vm::execution_context::ExecutionContext;
+    use neo_vm::op_code::OpCode;
+    use neo_vm::vm::script::Script;
+    use crate::neo_contract::application_engine::ApplicationEngine;
+    use crate::neo_contract::execution_context_state::ExecutionContextState;
+    use crate::neo_contract::manifest::contract_abi::ContractAbi;
+    use crate::uint160::UInt160;
     use super::*;
 
     /// The maximum GAS that can be consumed when `verify_witnesses` is called.

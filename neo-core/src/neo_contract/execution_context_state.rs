@@ -1,19 +1,9 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// execution_context_state.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
 
+use neo_vm::execution_context::ExecutionContext;
 use crate::neo_contract::contract_state::ContractState;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::uint160::UInt160;
 use crate::persistence::DataCache;
-use crate::vm::ExecutionContext;
 
 /// Represents the custom state in `ExecutionContext`.
 pub struct ExecutionContextState {
@@ -45,11 +35,11 @@ pub struct ExecutionContextState {
 impl ExecutionContextState {
     pub fn new() -> Self {
         Self {
-            script_hash: UInt160::zero(),
+            script_hash: UInt160::ZERO,
             calling_context: None,
             native_calling_script_hash: None,
             contract: None,
-            call_flags: CallFlags::All,
+            call_flags: CallFlags::ALL,
             snapshot_cache: None,
             notification_count: 0,
             is_dynamic_call: false,

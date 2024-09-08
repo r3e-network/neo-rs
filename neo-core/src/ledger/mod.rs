@@ -7,7 +7,7 @@ pub mod transaction_removed_event_args;
 pub mod transaction_router;
 pub mod transaction_verification_context;
 pub mod verify_result;
-
+pub mod blockchain_application_executed;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right

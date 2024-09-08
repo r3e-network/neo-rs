@@ -1,4 +1,4 @@
-use neo::cryptography::ecc::ECPoint;
+use neo::cryptography::ecc::Secp256r1PublicKey;
 use neo::vm::ScriptBuilder;
 use neo::types::{UInt160, ContractParameterType};
 use neo::sys_calls::ApplicationEngine;
@@ -43,7 +43,7 @@ impl StandardContract {
     }
 
     /// Creates a multi-sig contract.
-    pub fn multi_sig(m: usize, public_keys: &[ECPoint]) -> Self {
+    pub fn multi_sig(m: usize, public_keys: &[Secp256r1PublicKey]) -> Self {
         Self {
             script: Self::create_multi_sig_redeem_script(m, public_keys),
             parameter_list: vec![ContractParameterType::Signature; m],
@@ -52,7 +52,7 @@ impl StandardContract {
     }
 
     /// Creates the script of multi-sig contract.
-    pub fn create_multi_sig_redeem_script(m: usize, public_keys: &[ECPoint]) -> Vec<u8> {
+    pub fn create_multi_sig_redeem_script(m: usize, public_keys: &[Secp256r1PublicKey]) -> Vec<u8> {
         if !(1 <= m && m <= public_keys.len() && public_keys.len() <= 1024) {
             panic!("Invalid arguments for multi-sig contract");
         }
@@ -67,7 +67,7 @@ impl StandardContract {
     }
 
     /// Creates a signature contract.
-    pub fn signature(public_key: &ECPoint) -> Self {
+    pub fn signature(public_key: &Secp256r1PublicKey) -> Self {
         Self {
             script: Self::create_signature_redeem_script(public_key),
             parameter_list: vec![ContractParameterType::Signature],
@@ -76,7 +76,7 @@ impl StandardContract {
     }
 
     /// Creates the script of signature contract.
-    pub fn create_signature_redeem_script(public_key: &ECPoint) -> Vec<u8> {
+    pub fn create_signature_redeem_script(public_key: &Secp256r1PublicKey) -> Vec<u8> {
         let mut sb = ScriptBuilder::new();
         sb.emit_push(&public_key.encode_point(true));
         sb.emit_sys_call(ApplicationEngine::System_Crypto_CheckSig);
@@ -84,7 +84,7 @@ impl StandardContract {
     }
 
     /// Gets the BFT address for the specified public keys.
-    pub fn get_bft_address(pubkeys: &[ECPoint]) -> UInt160 {
+    pub fn get_bft_address(pubkeys: &[Secp256r1PublicKey]) -> UInt160 {
         let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
         UInt160::from_script(&Self::create_multi_sig_redeem_script(m, pubkeys))
     }

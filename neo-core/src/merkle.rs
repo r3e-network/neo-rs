@@ -3,10 +3,8 @@
 
 
 use alloc::{vec, vec::Vec};
-
+use primitive_types::H256;
 use neo_base::hash::{Sha256, SlicesSha256};
-use crate::types::H256;
-
 
 #[allow(dead_code)]
 pub struct MerkleTree {
@@ -132,8 +130,10 @@ impl<T: AsRef<[H256]>> MerkleSha256 for T {
 
 #[cfg(test)]
 mod test {
+    use primitive_types::H256;
     use super::*;
     use neo_base::{hash::Sha256, encoding::hex::{FromRevHex, ToHex}, bytes::ToArray};
+    use crate::merkle::inner_merkle_nodes;
     use crate::types::H256;
 
 

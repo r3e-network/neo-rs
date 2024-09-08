@@ -1,13 +1,3 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// application_engine.storage.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
 
 use neo::prelude::*;
 use neo::storage::{StorageContext, StorageKey, StorageItem};
@@ -15,6 +5,15 @@ use neo::vm::InteropDescriptor;
 use neo::vm::CallFlags;
 use neo::sys;
 use neo::io::*;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::call_flags::CallFlags;
+use crate::neo_contract::find_options::FindOptions;
+use crate::neo_contract::interop_descriptor::InteropDescriptor;
+use crate::neo_contract::iterators::storage_iterator::StorageIterator;
+use crate::neo_contract::storage_context::StorageContext;
+use crate::neo_contract::storage_item::StorageItem;
+use crate::neo_contract::storage_key::StorageKey;
+use crate::persistence::SeekDirection;
 
 /// The maximum size of storage keys.
 pub const MAX_STORAGE_KEY_SIZE: usize = 64;
@@ -22,14 +21,10 @@ pub const MAX_STORAGE_KEY_SIZE: usize = 64;
 /// The maximum size of storage values.
 pub const MAX_STORAGE_VALUE_SIZE: usize = u16::MAX as usize;
 
-pub struct ApplicationEngine {
-    // Other fields...
-}
-
 impl ApplicationEngine {
     /// The `InteropDescriptor` of System.Storage.GetContext.
     /// Gets the storage context for the current contract.
-    pub static SYSTEM_STORAGE_GET_CONTEXT: InteropDescriptor = register_interop(
+    pub const  SYSTEM_STORAGE_GET_CONTEXT: InteropDescriptor = register_interop(
         "System.Storage.GetContext",
         ApplicationEngine::get_storage_context,
         1 << 4,
@@ -38,7 +33,7 @@ impl ApplicationEngine {
 
     /// The `InteropDescriptor` of System.Storage.GetReadOnlyContext.
     /// Gets the readonly storage context for the current contract.
-    pub static SYSTEM_STORAGE_GET_READ_ONLY_CONTEXT: InteropDescriptor = register_interop(
+    pub const  SYSTEM_STORAGE_GET_READ_ONLY_CONTEXT: InteropDescriptor = register_interop(
         "System.Storage.GetReadOnlyContext",
         ApplicationEngine::get_read_only_context,
         1 << 4,
@@ -47,7 +42,7 @@ impl ApplicationEngine {
 
     /// The `InteropDescriptor` of System.Storage.AsReadOnly.
     /// Converts the specified storage context to a new readonly storage context.
-    pub static SYSTEM_STORAGE_AS_READ_ONLY: InteropDescriptor = register_interop(
+    pub const SYSTEM_STORAGE_AS_READ_ONLY: InteropDescriptor = register_interop(
         "System.Storage.AsReadOnly",
         ApplicationEngine::as_read_only,
         1 << 4,
@@ -56,7 +51,7 @@ impl ApplicationEngine {
 
     /// The `InteropDescriptor` of System.Storage.Get.
     /// Gets the entry with the specified key from the storage.
-    pub static SYSTEM_STORAGE_GET: InteropDescriptor = register_interop(
+    pub const SYSTEM_STORAGE_GET: InteropDescriptor = register_interop(
         "System.Storage.Get",
         ApplicationEngine::get,
         1 << 15,
@@ -65,7 +60,7 @@ impl ApplicationEngine {
 
     /// The `InteropDescriptor` of System.Storage.Find.
     /// Finds the entries from the storage.
-    pub static SYSTEM_STORAGE_FIND: InteropDescriptor = register_interop(
+    pub const SYSTEM_STORAGE_FIND: InteropDescriptor = register_interop(
         "System.Storage.Find",
         ApplicationEngine::find,
         1 << 15,
@@ -74,7 +69,7 @@ impl ApplicationEngine {
 
     /// The `InteropDescriptor` of System.Storage.Put.
     /// Puts a new entry into the storage.
-    pub static SYSTEM_STORAGE_PUT: InteropDescriptor = register_interop(
+    pub const SYSTEM_STORAGE_PUT: InteropDescriptor = register_interop(
         "System.Storage.Put",
         ApplicationEngine::put,
         1 << 15,
@@ -83,7 +78,7 @@ impl ApplicationEngine {
 
     /// The `InteropDescriptor` of System.Storage.Delete.
     /// Deletes an entry from the storage.
-    pub static SYSTEM_STORAGE_DELETE: InteropDescriptor = register_interop(
+    pub const SYSTEM_STORAGE_DELETE: InteropDescriptor = register_interop(
         "System.Storage.Delete",
         ApplicationEngine::delete,
         1 << 15,

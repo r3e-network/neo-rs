@@ -28,8 +28,8 @@ bitflags! {
         const BACKWARDS = 1 << 7;
 
         /// This value is only for internal use, and shouldn't be used in smart contracts.
-        const ALL = Self::KEYS_ONLY.bits | Self::REMOVE_PREFIX.bits | Self::VALUES_ONLY.bits | 
-                    Self::DESERIALIZE_VALUES.bits | Self::PICK_FIELD0.bits | Self::PICK_FIELD1.bits | 
-                    Self::BACKWARDS.bits;
+        const ALL = Self::KEYS_ONLY.bits() | Self::REMOVE_PREFIX.bits() | Self::VALUES_ONLY.bits() |
+                    Self::DESERIALIZE_VALUES.bits() | Self::PICK_FIELD0.bits() | Self::PICK_FIELD1.bits() |
+                    Self::BACKWARDS.bits();
     }
 }
