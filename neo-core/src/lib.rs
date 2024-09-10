@@ -44,6 +44,7 @@ pub mod types;
 pub mod wallet;
 mod core_error;
 mod network;
+mod cryptography;
 
 pub use neo_crypto::secp256r1::*;
 
