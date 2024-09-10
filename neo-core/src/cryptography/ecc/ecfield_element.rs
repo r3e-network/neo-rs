@@ -1,20 +1,33 @@
+use alloc::rc::Rc;
+use core::fmt::{Debug, Formatter};
 use std::cmp::Ordering;
+use std::fmt;
 use std::ops::{Add, Div, Mul, Neg, Sub};
-use num_bigint::BigInt;
+use num_bigint::{BigInt, BigUint};
 use neo_crypto::rand;
-use rand::Rng;
-
+use crate::{BigIntExt, BigUintExt};
 use crate::cryptography::ecc::ECCurve;
-use crate::vm::utility::get_bit_length;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ECFieldElement {
-    value: BigInt,
-    curve: ECCurve,
+    value: BigUint,
+    pub(crate) curve: Rc<ECCurve>,
+}
+
+impl Debug for ECFieldElement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "ECFieldElement {{ value: {}, curve: {:?} }}", self.value, self.curve)
+    }
 }
 
 impl ECFieldElement {
-    pub fn new(value: BigInt, curve: ECCurve) -> Result<Self, &'static str> {
+    fn new(value: BigUint, curve: Rc<ECCurve>) -> Self {
+        ECFieldElement { value, curve }
+    }
+}
+
+impl ECFieldElement {
+    pub fn new(value: BigUint, curve: Rc<ECCurve>) -> Result<Self, &'static str> {
         if value >= curve.q {
             return Err("x value too large in field element");
         }
@@ -23,7 +36,7 @@ impl ECFieldElement {
 
     pub fn from_bytes(bytes: &[u8], curve: ECCurve) -> Result<Self, &'static str> {
         let value = BigInt::from_bytes_be(num_bigint::Sign::Plus, bytes);
-        Self::new(value, curve)
+        Ok(Self::new(value, Rc::new(curve)))
     }
 
     pub fn sqrt(&self) -> Option<ECFieldElement> {
@@ -50,7 +63,7 @@ impl ECFieldElement {
             
             loop {
                 let p = loop {
-                    let p = rand::thread_rng().gen_bigint(get_bit_length(&self.curve.q) as u64);
+                    let p = rand::thread_rng().gen_bigint(&self.curve.q.get_bit_length());
                     if p < self.curve.q && (p.pow(2) - &four_q).modpow(&legendre_exponent, &self.curve.q) == q_minus_one {
                         break p;
                     }
@@ -79,7 +92,7 @@ impl ECFieldElement {
 
     pub fn square(&self) -> ECFieldElement {
         ECFieldElement::new(
-            (&self.value * &self.value).modpow(&BigInt::from(1), &self.curve.q),
+            (&self.value * &self.value).modpow(&BigUint::from(1), &self.curve.q),
             self.curve.clone(),
         ).unwrap()
     }
@@ -96,7 +109,7 @@ impl ECFieldElement {
     }
 
     fn fast_lucas_sequence(p: &BigInt, p_param: &BigInt, q: &BigInt, k: &BigInt) -> Vec<BigInt> {
-        let n = get_bit_length(k);
+        let n = k.get_bit_length();
         let s = k.trailing_zeros().unwrap();
 
         let mut uh = BigInt::from(1);
@@ -180,7 +193,7 @@ impl Sub for ECFieldElement {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        ECFieldElement::new((&self.value - &rhs.value).modpow(&BigInt::from(1), &self.curve.q), self.curve.clone()).unwrap()
+        ECFieldElement::new((&self.value - &rhs.value).modpow(&BigUint::from(1), &self.curve.q), self.curve.clone()).unwrap()
     }
 }
 
@@ -188,7 +201,7 @@ impl Mul for ECFieldElement {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        ECFieldElement::new((&self.value * &rhs.value).modpow(&BigInt::from(1), &self.curve.q), self.curve.clone()).unwrap()
+        ECFieldElement::new((&self.value * &rhs.value).modpow(&BigUint::from(1), &self.curve.q), self.curve.clone()).unwrap()
     }
 }
 

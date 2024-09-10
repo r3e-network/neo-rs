@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::persistence::IStore;
 
 /// A provider used to create `IStore` instances.
-pub trait IStoreProvider {
+pub trait StoreProviderTrait {
     /// Gets the name of the `IStoreProvider`.
     fn name(&self) -> &str;
 

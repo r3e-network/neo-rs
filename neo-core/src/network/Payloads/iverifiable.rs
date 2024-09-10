@@ -21,7 +21,7 @@ pub trait IVerifiable: ISerializable {
     fn deserialize_unsigned(&mut self, reader: &mut MemoryReader);
 
     /// Gets the script hashes that should be verified for this IVerifiable object.
-    fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160>;
+    fn get_script_hashes_for_verifying(&self, snapshot: &dyn DataCache) -> Vec<UInt160>;
 
     /// Serializes the part of the IVerifiable object other than Witnesses.
     fn serialize_unsigned<W: Write>(&self, writer: &mut W);

@@ -1,6 +1,4 @@
 
-use neo_sdk::prelude::*;
-
 /// Represents a pair of the named curve used in ECDSA and a hash algorithm used to hash message.
 #[repr(u8)]
 pub enum NamedCurveHash {

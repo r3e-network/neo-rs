@@ -1,6 +1,7 @@
-use std::io::{Read, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 use NeoRust::prelude::Secp256r1PublicKey;
 use serde::Deserialize;
+use neo_json::jtoken::JToken;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
@@ -18,12 +19,12 @@ pub struct ScriptHashCondition {
 }
 
 impl WitnessCondition for ScriptHashCondition {
-    fn size(&self) -> usize {
-        self.base_size() + UInt160::LEN
-    }
-
     fn condition_type(&self) -> WitnessConditionType {
         WitnessConditionType::ScriptHash
+    }
+
+    fn size(&self) -> usize {
+        self.base_size() + UInt160::LEN
     }
 
     fn deserialize_without_type(&mut self, reader: &mut MemoryReader, _max_nest_depth: i32) -> std::io::Result<()> {
@@ -39,13 +40,13 @@ impl WitnessCondition for ScriptHashCondition {
         self.hash.serialize(writer)
     }
 
-    fn parse_json(&mut self, json: &JObject, _max_nest_depth: i32) -> Result<(), Error> {
+    fn parse_json(&mut self, json: &JToken, _max_nest_depth: i32) -> Result<(), Error> {
         self.hash = UInt160::from_str(json["hash"].as_str().ok_or_else(|| Error::new(ErrorKind::InvalidData, "Missing 'hash' field"))?)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
         Ok(())
     }
 
-    fn to_json(&self) -> JObject {
+    fn to_json(&self) -> JToken {
         let mut json = self.base_to_json();
         json.insert("hash".to_string(), self.hash.to_string().into());
         json

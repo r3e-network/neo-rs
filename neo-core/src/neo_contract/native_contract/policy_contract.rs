@@ -1,9 +1,10 @@
 
 
 use std::collections::HashMap;
+use neo_proc_macros::contract;
 
 /// A native contract that manages the system policies.
-#[Contract]
+#[contract]
 pub struct PolicyContract {
     /// The default execution fee factor.
     pub const DEFAULT_EXEC_FEE_FACTOR: u32 = 30;
@@ -34,7 +35,7 @@ pub struct PolicyContract {
     const PREFIX_ATTRIBUTE_FEE: u8 = 20;
 }
 
-#[Contract]
+#[contract]
 impl PolicyContract {
     pub fn new() -> Self {
         Self {}

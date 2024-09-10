@@ -1,6 +1,8 @@
 use alloc::rc::Rc;
+use core::str::FromStr;
 use std::io::{Error, ErrorKind};
 use std::fmt;
+use neo_json::jtoken::JToken;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
@@ -55,17 +57,17 @@ pub trait WitnessCondition: fmt::Debug {
 
     fn serialize_without_type(&self, writer: &mut BinaryWriter) -> Result<(), Error>;
 
-    fn parse_json(&mut self, json: &JObject, max_nest_depth: i32) -> Result<(), Error>;
+    fn parse_json(&mut self, json: &JToken, max_nest_depth: i32) -> Result<(), Error>;
 
-    fn from_json(json: &JObject, max_nest_depth: i32) -> Result<Box<dyn WitnessCondition>, Error> {
+    fn from_json(json: &JToken, max_nest_depth: i32) -> Result<Box<dyn WitnessCondition>, Error> {
         let condition_type = WitnessConditionType::from_str(&json["type"].as_string().ok_or_else(|| Error::new(ErrorKind::InvalidData, "Invalid JSON format"))?)?;
         let mut condition = condition_type.create_instance()?;
         condition.parse_json(json, max_nest_depth)?;
         Ok(condition)
     }
 
-    fn to_json(&self) -> JObject {
-        let mut json = JObject::new();
+    fn to_json(&self) -> JToken {
+        let mut json = JToken::new_object();
         json.insert("type", self.condition_type().to_string());
         json
     }

@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use crate::persistence::{IReadOnlyStore, ISnapshot, IStore, MemorySnapshot, SeekDirection};
+use crate::persistence::{ReadOnlyStoreTrait, SnapshotTrait, IStore, MemorySnapshot, SeekDirection};
 
 /// An in-memory `IStore` implementation that uses HashMap as the underlying storage.
 pub struct MemoryStore {
@@ -20,7 +20,7 @@ impl MemoryStore {
     }
 }
 
-impl IReadOnlyStore for MemoryStore {
+impl ReadOnlyStoreTrait for MemoryStore {
     fn seek(&self, key: &[u8], direction: SeekDirection) -> Box<dyn Iterator<Item=(Vec<u8>, Vec<u8>)>> {
         todo!()
     }
@@ -40,7 +40,7 @@ impl IStore for MemoryStore {
         Ok(())
     }
 
-    fn get_snapshot(&self) -> Box<dyn ISnapshot> {
+    fn get_snapshot(&self) -> Box<dyn SnapshotTrait> {
         Box::new(MemorySnapshot::new(Arc::clone(&self.inner_data)))
     }
 

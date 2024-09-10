@@ -4,10 +4,10 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SeekDirection {
     /// Indicates that the search should be performed in ascending order.
-    Forward,
+    Forward = 1,
 
     /// Indicates that the search should be performed in descending order.
-    Backward,
+    Backward = -1,
 }
 
 impl SeekDirection {

@@ -2,6 +2,9 @@
 use neo_sdk::prelude::*;
 use neo_sdk::types::UInt256;
 use neo_sdk::vm::types::{StackItem, Struct};
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::uint256::UInt256;
 
 /// Represents a state that combines a hash and an index.
 #[derive(Default)]

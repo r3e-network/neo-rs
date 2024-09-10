@@ -1,6 +1,8 @@
 use neo_io::*;
 use std::io::{self, Write};
 use std::collections::VecDeque;
+use crate::io::iserializable::ISerializable;
+use crate::network::Payloads::InventoryType;
 use crate::uint256::UInt256;
 
 /// This message is sent to relay inventories.
@@ -31,6 +33,10 @@ impl InvPayload {
 }
 
 impl ISerializable for InvPayload {
+    fn size(&self) -> usize {
+        std::mem::size_of::<InventoryType>() + var_vec_size(&self.hashes)
+    }
+
     fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
         writer.write_u8(self.inv_type as u8)?;
         writer.write_var_vec(&self.hashes)?;
@@ -41,9 +47,5 @@ impl ISerializable for InvPayload {
         let inv_type = InventoryType::try_from(reader.read_u8()?).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid InventoryType"))?;
         let hashes = reader.read_var_vec(Self::MAX_HASHES_COUNT)?;
         Ok(Self::new(inv_type, hashes))
-    }
-
-    fn size(&self) -> usize {
-        std::mem::size_of::<InventoryType>() + var_vec_size(&self.hashes)
     }
 }

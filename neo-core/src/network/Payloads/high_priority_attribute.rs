@@ -1,5 +1,8 @@
 
 use std::io::Write;
+use crate::io::memory_reader::MemoryReader;
+use crate::network::Payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
+use crate::persistence::DataCache;
 
 /// Indicates that the transaction is of high priority.
 pub struct HighPriorityAttribute;
@@ -21,7 +24,7 @@ impl TransactionAttribute for HighPriorityAttribute {
         // Empty implementation
     }
 
-    fn verify(&self, snapshot: &DataCache, tx: &Transaction) -> bool {
+    fn verify(&self, snapshot: &dyn DataCache, tx: &Transaction) -> bool {
         let committee = NativeContract::NEO.get_committee_address(snapshot);
         tx.signers.iter().any(|p| p.account == committee)
     }

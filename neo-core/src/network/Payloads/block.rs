@@ -1,19 +1,22 @@
 use std::io::Write;
 use crate::network::Payloads::{Header, Transaction};
 use crate::uint256::UInt256;
+use getset::{CopyGetters, Getters, MutGetters, Setters};
 
 /// Represents a block.
-#[derive(Clone)]
+#[derive(Clone, Getters, Setters, MutGetters, CopyGetters, Default)]
 pub struct Block {
     /// The header of the block.
+    #[getset(get, set, get_mut)]
     pub header: Header,
 
     /// The transaction list of the block.
+    #[getset(get, set, get_mut)]
     pub transactions: Vec<Transaction>,
 }
 
 impl Block {
-    pub fn hash(&self) -> UInt256 {
+    pub fn hash(&mut self) -> UInt256 {
         self.header.hash()
     }
 

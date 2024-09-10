@@ -2,7 +2,7 @@ use NeoRust::types::StackItem;
 use neo_vm::reference_counter::ReferenceCounter;
 
 /// Represents iterators in smart contracts.
-pub trait Iterator {
+pub trait IIterator {
     /// Advances the iterator to the next element of the collection.
     ///
     /// # Returns

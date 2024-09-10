@@ -1,5 +1,6 @@
 
 use std::cmp::Ordering;
+use neo_proc_macros::contract;
 
 const MAX_INPUT_LENGTH: usize = 1024;
 

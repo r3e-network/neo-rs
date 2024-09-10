@@ -1,7 +1,8 @@
-use std::convert::TryFrom;
 use std::mem::size_of;
+use crate::cryptography::Murmur32;
 
 /// Represents the keys in contract storage.
+#[derive(Clone, Debug)]
 pub struct StorageKey {
     /// The id of the contract.
     pub id: i32,

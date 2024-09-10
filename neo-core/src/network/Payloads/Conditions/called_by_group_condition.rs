@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use NeoRust::codec::NeoSerializable;
 use NeoRust::prelude::Secp256r1PublicKey;
 use serde::{Deserialize, Serialize};
 use crate::neo_contract::application_engine::ApplicationEngine;
@@ -12,12 +13,12 @@ pub struct CalledByGroupCondition {
 }
 
 impl WitnessCondition for CalledByGroupCondition {
-    fn size(&self) -> usize {
-        self.base_size() + self.group.size()
-    }
-
     fn condition_type(&self) -> WitnessConditionType {
         WitnessConditionType::CalledByGroup
+    }
+
+    fn size(&self) -> usize {
+        self.base_size() + self.group.size()
     }
 
     fn deserialize_without_type(&mut self, reader: &mut dyn Read, max_nest_depth: usize) -> std::io::Result<()> {

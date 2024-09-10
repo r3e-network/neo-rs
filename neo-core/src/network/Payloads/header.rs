@@ -5,20 +5,62 @@ use crate::network::Payloads::Witness;
 use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
+use getset::{CopyGetters, Getters, MutGetters, Setters};
+use serde::Serialize;
+use neo_json::jtoken::JToken;
+use crate::ledger::header_cache::HeaderCache;
+use crate::persistence::DataCache;
+use crate::tx::Witnesses;
 
 /// Represents a block header.
-#[derive(Clone)]
+#[derive(Getters, Setters, MutGetters, CopyGetters, Clone, Default, Debug)]
 pub struct Header {
-    version: u32,
-    prev_hash: UInt256,
-    merkle_root: UInt256,
-    timestamp: u64,
-    nonce: u64,
-    index: u32,
-    primary_index: u8,
-    next_consensus: UInt160,
-    witness: Witness,
-    hash: Option<UInt256>,
+    /// the hash of this block header
+    #[getset(get = "pub", set = "pub", get_mut = "pub")]
+    #[bin(ignore)]
+    #[serde(rename = "hash")]
+    pub hash: Option<UInt256>,
+
+    /// the version of this block header
+    #[getset(get = "pub", set = "pub", get_mut = "pub")]
+    pub version: u32,
+
+    /// the hash of the previous block.
+    #[getset(get = "pub", set = "pub", get_mut = "pub")]
+    #[serde(rename = "previousblockhash")]
+    pub prev_hash: UInt256,
+
+    /// the root hash of a transaction list.
+    #[getset(get = "pub", set = "pub", get_mut = "pub")]
+    #[serde(rename = "merkleroot")]
+    pub merkle_root: UInt256,
+
+    /// unix timestamp in milliseconds, i.e. timestamp
+    #[getset(get = "pub", set = "pub", get_mut = "pub")]
+    #[serde(rename = "time")]
+    pub timestamp: u64,
+
+    /// a random number
+    #[getset(get = "pub", set = "pub", get_mut = "pub")]
+    #[serde(serialize_with = "encode_hex_u64", deserialize_with = "decode_hex_u64")]
+    pub nonce: u64,
+
+    /// index/height of the block
+    #[getset(get = "pub", set = "pub", get_mut = "pub")]
+    pub index: u32,
+
+    /// the index of the primary consensus node for this block.
+    #[getset(get = "pub", set = "pub", get_mut = "pub")]
+    pub primary: u8,
+
+    /// contract address of the next miner
+    #[getset(get = "pub", set = "pub", get_mut = "pub")]
+    #[serde(rename = "nextconsensus")]
+    pub next_consensus: UInt160,
+
+    /// Script used to validate the block. Only one is supported at now.
+    #[getset(get = "pub", set = "pub", get_mut = "pub")]
+    pub witnesses: Witnesses,
 }
 
 impl Header {
@@ -27,13 +69,13 @@ impl Header {
             version: 0,
             prev_hash: UInt256::default(),
             merkle_root: UInt256::default(),
-            timestamp: 0,
             nonce: 0,
             index: 0,
-            primary_index: 0,
             next_consensus: UInt160::default(),
-            witness: Witness::default(),
             hash: None,
+            timestamp: 0,
+            primary: 0,
+            witnesses: Default::default(),
         }
     }
 
@@ -46,7 +88,7 @@ impl Header {
         std::mem::size_of::<u32>() +
         std::mem::size_of::<u8>() +
         UInt160::LEN +
-        1 + self.witness.size()
+        1 + self.witnesses.size()
     }
 
     pub fn hash(&mut self) -> UInt256 {
@@ -62,7 +104,7 @@ impl Header {
         if witnesses.len() != 1 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid witness count"));
         }
-        self.witness = witnesses[0].clone();
+        self.witnesses = witnesses[0].clone();
         Ok(())
     }
 
@@ -77,7 +119,7 @@ impl Header {
         self.timestamp = reader.read_u64()?;
         self.nonce = reader.read_u64()?;
         self.index = reader.read_u32()?;
-        self.primary_index = reader.read_u8()?;
+        self.primary = reader.read_u8()?;
         self.next_consensus = reader.read_serializable()?;
         Ok(())
     }
@@ -85,7 +127,7 @@ impl Header {
     pub fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
         self.serialize_unsigned(writer)?;
         writer.write_all(&[1])?; // Write witness count
-        self.witness.serialize(writer)?;
+        self.witnesses.serialize(writer)?;
         Ok(())
     }
 
@@ -96,29 +138,40 @@ impl Header {
         writer.write_all(&self.timestamp.to_le_bytes())?;
         writer.write_all(&self.nonce.to_le_bytes())?;
         writer.write_all(&self.index.to_le_bytes())?;
-        writer.write_all(&[self.primary_index])?;
+        writer.write_all(&[self.primary])?;
         self.next_consensus.serialize(writer)?;
         Ok(())
     }
 
-    pub fn to_json(&self, settings: &ProtocolSettings) -> JObject {
-        let mut json = JObject::new();
-        json.insert("hash", self.hash().to_string());
-        json.insert("size", self.size() as i64);
-        json.insert("version", self.version as i64);
-        json.insert("previousblockhash", self.prev_hash.to_string());
-        json.insert("merkleroot", self.merkle_root.to_string());
-        json.insert("time", self.timestamp as i64);
-        json.insert("nonce", format!("{:016X}", self.nonce));
-        json.insert("index", self.index as i64);
-        json.insert("primary", self.primary_index as i64);
-        json.insert("nextconsensus", self.next_consensus.to_address(settings.address_version()));
-        json.insert("witnesses", JArray::from(vec![self.witness.to_json()]));
+    pub fn to_json(&self, settings: &ProtocolSettings) -> JToken {
+        let mut json = JToken::new_object();
+        json.insert("hash".to_string(), self.hash().to_string())
+        .unwrap()
+        .insert("size".to_string(), self.size() as i64)
+        .unwrap()
+        .insert("version".to_string(), self.version as i64)
+        .unwrap()
+        .insert("previousblockhash".to_string(), self.prev_hash.to_string())
+        .unwrap()
+        .insert("merkleroot".to_string(), self.merkle_root.to_string())
+        .unwrap()
+        .insert("time".to_string(), self.timestamp as i64)
+        .unwrap()
+        .insert("nonce".to_string(), format!("{:016X}", self.nonce))
+        .unwrap()
+        .insert("index".to_string(), self.index as i64)
+        .unwrap()
+        .insert("primary".to_string(), self.primary as i64)
+        .unwrap()
+        .insert("nextconsensus".to_string(), self.next_consensus.to_address(settings.address_version()))
+        .unwrap()
+        .insert("witnesses".to_string(), JArray::from(vec![self.witness.to_json()]))
+        .unwrap();
         json
     }
 
-    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &DataCache) -> bool {
-        if self.primary_index >= settings.validators_count() {
+    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache) -> bool {
+        if self.primary >= settings.validators_count() {
             return false;
         }
         let prev = NativeContract::ledger().get_trimmed_block(snapshot, &self.prev_hash);
@@ -141,13 +194,13 @@ impl Header {
         true
     }
 
-    pub fn verify_with_cache(&self, settings: &ProtocolSettings, snapshot: &DataCache, header_cache: &HeaderCache) -> bool {
+    pub fn verify_with_cache(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, header_cache: &HeaderCache) -> bool {
         let prev = header_cache.last();
         if prev.is_none() {
             return self.verify(settings, snapshot);
         }
         let prev = prev.unwrap();
-        if self.primary_index >= settings.validators_count() {
+        if self.primary >= settings.validators_count() {
             return false;
         }
         if prev.hash() != self.prev_hash {
@@ -159,7 +212,7 @@ impl Header {
         if prev.timestamp >= self.timestamp {
             return false;
         }
-        self.verify_witness(settings, snapshot, &prev.next_consensus, &self.witness, 3_00000000).is_ok()
+        self.verify_witness(settings, snapshot, &prev.next_consensus, &self.witnesses, 3_00000000).is_ok()
     }
 }
 

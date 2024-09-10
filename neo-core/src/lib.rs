@@ -10,6 +10,8 @@ pub use neo_crypto::secp256r1::*;
 pub mod big_decimal;
 pub mod io;
 extern crate core;
+extern crate core;
+extern crate core;
 
 pub mod block;
 
@@ -19,10 +21,8 @@ pub mod contains_transaction_type;
 pub mod contract;
 pub mod hardfork;
 
-pub mod contract;
 pub mod ledger;
 
-pub mod merkle;
 pub mod neo_system;
 pub mod merkle;
 pub mod mpt;
@@ -39,12 +39,11 @@ pub mod wallet;
 mod persistence;
 mod neo_contract;
 mod event;
-pub mod tx;
-pub mod types;
-pub mod wallet;
 mod core_error;
 mod network;
 mod cryptography;
+mod utility;
+pub use utility::*;
 
 pub use neo_crypto::secp256r1::*;
 

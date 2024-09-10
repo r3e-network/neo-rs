@@ -1,10 +1,7 @@
-use crate::network::payloads::transaction_attribute::TransactionAttribute;
-use crate::network::payloads::transaction_attribute_type::TransactionAttributeType;
-use crate::io::MemoryReader;
-use crate::json::JObject;
+use neo_json::jtoken::JToken;
+use crate::io::memory_reader::MemoryReader;
 use crate::persistence::DataCache;
-use crate::smart_contract::native::NativeContract;
-use crate::network::payloads::transaction::Transaction;
+use crate::network::Payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 
 pub struct NotValidBefore {
     /// Indicates that the transaction is not valid before this height.
@@ -32,13 +29,13 @@ impl TransactionAttribute for NotValidBefore {
         writer.write_all(&self.height.to_le_bytes()).unwrap();
     }
 
-    fn to_json(&self) -> JObject {
+    fn to_json(&self) -> JToken {
         let mut json = self.base_to_json();
         json.insert("height".to_string(), self.height.into());
         json
     }
 
-    fn verify(&self, snapshot: &DataCache, _tx: &Transaction) -> bool {
+    fn verify(&self, snapshot: &dyn DataCache, _tx: &Transaction) -> bool {
         let block_height = NativeContract::Ledger.current_index(snapshot);
         block_height >= self.height
     }

@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::manifest::contract_parameter_definition::ContractParameterDefinition;
 
 /// Represents an event in a smart contract ABI.

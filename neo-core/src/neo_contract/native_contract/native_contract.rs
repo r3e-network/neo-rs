@@ -18,6 +18,7 @@ use crate::uint160::UInt160;
 use std::sync::Mutex;
 use lazy_static::lazy_static;
 use std::sync::atomic::{AtomicI32, Ordering};
+use crate::cryptography::Helper;
 
 lazy_static! {
     static ref CONTRACTS_LIST: Mutex<Vec<Arc<dyn NativeContract>>> = Mutex::new(Vec::new());

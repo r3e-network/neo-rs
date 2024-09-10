@@ -1,4 +1,5 @@
 use std::io::{Error, ErrorKind};
+use neo_json::jtoken::JToken;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
@@ -43,7 +44,7 @@ impl WitnessCondition for AndCondition {
         // This might involve writing the length of expressions and then each expression
     }
 
-    fn parse_json(&mut self, json: &JObject, max_nest_depth: i32) -> Result<(), Error> {
+    fn parse_json(&mut self, json: &JToken, max_nest_depth: i32) -> Result<(), Error> {
         if max_nest_depth <= 0 {
             return Err(Error::new(ErrorKind::InvalidData, "Max nest depth exceeded"));
         }
@@ -52,13 +53,13 @@ impl WitnessCondition for AndCondition {
         Ok(())
     }
 
-    fn to_json(&self) -> JObject {
+    fn to_json(&self) -> JToken {
         // Implement JSON conversion logic here
-        JObject::new() // Placeholder
+        JToken::new_object() // Placeholder
     }
 
     fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
-        let mut result = Array::new(reference_counter);
+        let mut result =JToken::new_array(reference_counter);
         // Add base stack item
         // Add expressions as stack items
         StackItem::Array(result)

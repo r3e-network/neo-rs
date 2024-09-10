@@ -1,9 +1,4 @@
 
-use neo::prelude::*;
-use neo::ledger::Blockchain;
-use neo::network::p2p::payloads::Block;
-use neo::persistence::DataCache;
-
 /// This module contains the ICommittingHandler trait.
 pub mod event_handlers {
     use crate::block::Block;
@@ -28,7 +23,7 @@ pub mod event_handlers {
             &self,
             system: &NeoSystem,
             block: &Block,
-            snapshot: &DataCache,
+            snapshot: &dyn DataCache,
             application_executed_list: &[Blockchain::ApplicationExecuted],
         );
     }

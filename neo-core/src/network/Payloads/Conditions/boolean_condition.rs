@@ -1,4 +1,5 @@
 use core::fmt::{Debug, Formatter};
+use neo_json::jtoken::JToken;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
@@ -33,11 +34,11 @@ impl WitnessCondition for BooleanCondition {
         writer.write_bool(self.expression).unwrap();
     }
 
-    fn parse_json(&mut self, json: &JObject, _max_nest_depth: i32) {
+    fn parse_json(&mut self, json: &JToken, _max_nest_depth: i32) {
         self.expression = json["expression"].as_bool().unwrap();
     }
 
-    fn to_json(&self) -> JObject {
+    fn to_json(&self) -> JToken {
         let mut json = <Self as WitnessCondition>::to_json(self);
         json.insert("expression", self.expression.into());
         json

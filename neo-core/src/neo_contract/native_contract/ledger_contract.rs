@@ -6,6 +6,7 @@ use neo_sdk::{
     vm::VMState,
 };
 use std::collections::HashSet;
+use neo_proc_macros::contract;
 
 #[contract]
 pub struct LedgerContract {

@@ -6,6 +6,10 @@ use neo_smart_contract::native::*;
 use neo_vm::*;
 use std::convert::TryFrom;
 use std::io::{self, Write};
+use NeoRust::builder::ScriptBuilder;
+use NeoRust::codec::VarSizeTrait;
+use neo_json::jtoken::JToken;
+use crate::io::memory_reader::MemoryReader;
 use crate::network::Payloads::{OracleResponseCode, TransactionAttribute, TransactionAttributeType};
 
 pub struct OracleResponse {
@@ -24,9 +28,9 @@ impl OracleResponse {
     pub const MAX_RESULT_SIZE: usize = u16::MAX as usize;
 
     /// Represents the fixed value of the `Transaction.script` field of the oracle responding transaction.
-    pub static FIXED_SCRIPT: Vec<u8> = {
+    pub const FIXED_SCRIPT: Vec<u8> = {
         let mut sb = ScriptBuilder::new();
-        sb.emit_dynamic_call(NativeContract::Oracle.hash(), "finish");
+        sb.contract_call(NativeContract::Oracle.hash(), "finish");
         sb.to_vec()
     };
 }
@@ -65,8 +69,8 @@ impl TransactionAttribute for OracleResponse {
         Ok(())
     }
 
-    fn to_json(&self) -> JObject {
-        let mut json = JObject::new();
+    fn to_json(&self) -> JToken {
+        let mut json = JToken::new_object();
         json.insert("id", JValue::Number(self.id.into()));
         json.insert("code", JValue::Number(self.code as u8 as i64));
         json.insert("result", JValue::String(base64::encode(&self.result)));

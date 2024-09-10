@@ -1,3 +1,4 @@
+use crate::ledger::transaction_removed_event_args::TransactionRemovedEventArgs;
 
 /// Trait for handling TransactionRemoved events from the MemoryPool
 pub trait ITransactionRemovedHandler {

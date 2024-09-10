@@ -54,8 +54,10 @@ log = "0.4"
 bloomfilter = "1.0.14"
 sha2 = "0.10.8"
 aes-gcm = "0.11.0-pre.1"
+getset = "0.1.2"
 
-rand = "0.8"  # or the latest version
+rand = "0.8"
+sha3 = "0.10.8"  # or the latest version
 
 [features]
 default = ["neo-base/default", "neo-crypto/default", "thiserror-no-std"]

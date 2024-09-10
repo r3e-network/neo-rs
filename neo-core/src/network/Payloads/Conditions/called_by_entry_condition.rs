@@ -1,3 +1,4 @@
+use neo_json::jtoken::JToken;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::application_engine::ApplicationEngine;
@@ -25,5 +26,5 @@ impl WitnessCondition for CalledByEntryCondition {
 
     fn serialize_without_type(&self, _writer: &mut BinaryWriter) {}
 
-    fn parse_json(&mut self, _json: &JObject, _max_nest_depth: i32) {}
+    fn parse_json(&mut self, _json: &JToken, _max_nest_depth: i32) {}
 }

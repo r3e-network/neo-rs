@@ -1,8 +1,9 @@
 use std::io::{Read, Write};
-use NeoRust::prelude::Secp256r1PublicKey;
+use NeoRust::prelude::{Secp256r1PublicKey, VarSizeTrait};
 use serde::Deserialize;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
+use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::application_engine::ApplicationEngine;
@@ -16,12 +17,12 @@ pub struct OrCondition {
 }
 
 impl WitnessCondition for OrCondition {
-    fn size(&self) -> usize {
-        self.base_size() + self.expressions.var_size()
-    }
-
     fn condition_type(&self) -> WitnessConditionType {
         WitnessConditionType::Or
+    }
+
+    fn size(&self) -> usize {
+        self.base_size() + self.expressions.var_size()
     }
 
     fn deserialize_without_type(&mut self, reader: &mut BinaryReader, max_nest_depth: usize) -> std::io::Result<()> {

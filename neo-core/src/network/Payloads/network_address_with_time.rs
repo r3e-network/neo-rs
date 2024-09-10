@@ -42,7 +42,7 @@ impl NetworkAddressWithTime {
     }
 
     /// Creates a new instance with the current timestamp.
-    pub fn create(address: IpAddr, capabilities: Vec<NodeCapability>) -> Self {
+    pub fn create(address: IpAddr, capabilities: Vec<dyn NodeCapability>) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
@@ -52,6 +52,10 @@ impl NetworkAddressWithTime {
 }
 
 impl ISerializable for NetworkAddressWithTime {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
     fn serialize(&self, writer: &mut BinaryWriter) {
         writer.write_u32(self.timestamp);
         let ipv6 = match self.address {
@@ -62,7 +66,7 @@ impl ISerializable for NetworkAddressWithTime {
         writer.write_var_bytes(&self.capabilities);
     }
 
-    fn deserialize(reader: &mut BinaryReader) -> Result<Self, std::io::Error> {
+    fn deserialize(&mut self, reader: &mut BinaryReader) -> Result<Self, std::io::Error> {
         let timestamp = reader.read_u32()?;
         let ip_bytes = reader.read_fixed_bytes(16)?;
         let address = IpAddr::V6(Ipv6Addr::from(ip_bytes));

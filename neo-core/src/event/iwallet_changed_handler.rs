@@ -8,5 +8,5 @@ pub trait IWalletChangedHandler {
     ///
     /// * `sender` - The source of the event
     /// * `wallet` - The new wallet being assigned to the system.
-    fn iwallet_provider_wallet_changed_handler(&self, sender: &dyn std::any::Any, wallet: &Wallet);
+    fn iwallet_provider_wallet_changed_handler(&self, sender: &dyn std::any::Any, wallet: &dyn Wallet<CreateError=()>);
 }

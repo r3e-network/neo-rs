@@ -1,5 +1,7 @@
 
 use std::convert::TryInto;
+use NeoRust::prelude::Secp256r1PublicKey;
+use neo_proc_macros::contract;
 use crate::neo_contract::storage_item::StorageItem;
 
 /// A native contract for managing roles in NEO system.

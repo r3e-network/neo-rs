@@ -1,7 +1,7 @@
-
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use crate::persistence::{IReadOnlyStore, ISnapshot, SeekDirection};
+use crate::persistence::{ReadOnlyStoreTrait, SnapshotTrait, SeekDirection};
+use crate::persistence::persistence_error::PersistenceError;
 
 pub struct MemorySnapshot {
     inner_data: Arc<RwLock<HashMap<Vec<u8>, Vec<u8>>>>,
@@ -17,7 +17,7 @@ impl MemorySnapshot {
     }
 }
 
-impl IReadOnlyStore for MemorySnapshot {
+impl ReadOnlyStoreTrait for MemorySnapshot {
     fn seek(&self, key: &[u8], direction: SeekDirection) -> Box<dyn Iterator<Item=(Vec<u8>, Vec<u8>)>> {
         todo!()
     }
@@ -31,8 +31,8 @@ impl IReadOnlyStore for MemorySnapshot {
     }
 }
 
-impl ISnapshot for MemorySnapshot {
-    fn commit(&self) -> Result<(), Box<dyn std::error::Error>> {
+impl SnapshotTrait for MemorySnapshot {
+    fn commit(&self) -> Result<(), PersistenceError> {
         let mut inner_data = self.inner_data.write().map_err(|_| "Lock poisoned")?;
         let write_batch = self.write_batch.read().map_err(|_| "Lock poisoned")?;
 
@@ -49,13 +49,13 @@ impl ISnapshot for MemorySnapshot {
         Ok(())
     }
 
-    fn delete(&mut self, key: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    fn delete(&mut self, key: &[u8]) -> Result<(), PersistenceError> {
         let mut write_batch = self.write_batch.write().map_err(|_| "Lock poisoned")?;
         write_batch.insert(Vec::from(key), None);
         Ok(())
     }
 
-    fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), PersistenceError> {
         let mut write_batch = self.write_batch.write().map_err(|_| "Lock poisoned")?;
         write_batch.insert(Vec::from(key), Some(Vec::from(value)));
         Ok(())
@@ -94,7 +94,7 @@ impl ISnapshot for MemorySnapshot {
         Box::new(results.into_iter().map(|(k, v)| (k.to_vec(), v.to_vec())))
     }
 
-    fn try_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error>> {
+    fn try_get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, PersistenceError> {
         let write_batch = self.write_batch.read().map_err(|_| "Lock poisoned")?;
         if let Some(value_opt) = write_batch.get(&Vec::from(key)) {
             return Ok(value_opt.as_ref().map(|v| v.to_vec()));
@@ -104,7 +104,7 @@ impl ISnapshot for MemorySnapshot {
         Ok(inner_data.get(&Vec::from(key)).map(|v| v.to_vec()))
     }
 
-    fn contains(&self, key: &[u8]) -> Result<bool, Box<dyn std::error::Error>> {
+    fn contains(&self, key: &[u8]) -> Result<bool, PersistenceError> {
         let write_batch = self.write_batch.read().map_err(|_| "Lock poisoned")?;
         if let Some(value_opt) = write_batch.get(&Vec::from(key)) {
             return Ok(value_opt.is_some());

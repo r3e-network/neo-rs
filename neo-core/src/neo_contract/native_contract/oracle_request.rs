@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::uint160::UInt160;

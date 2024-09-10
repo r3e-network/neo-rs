@@ -1,6 +1,7 @@
-use std::io::{Read, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 use NeoRust::prelude::Secp256r1PublicKey;
 use serde::Deserialize;
+use neo_json::jtoken::JToken;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
@@ -40,7 +41,7 @@ impl WitnessCondition for NotCondition {
         self.expression.serialize(writer);
     }
 
-    fn parse_json(&mut self, json: &JObject, max_nest_depth: i32) -> Result<(), Error> {
+    fn parse_json(&mut self, json: &JToken, max_nest_depth: i32) -> Result<(), Error> {
         if max_nest_depth <= 0 {
             return Err(Error::new(ErrorKind::InvalidData, "Max nest depth exceeded"));
         }
@@ -48,8 +49,8 @@ impl WitnessCondition for NotCondition {
         Ok(())
     }
 
-    fn to_json(&self) -> JObject {
-        let mut json = JObject::new();
+    fn to_json(&self) -> JToken {
+        let mut json = JToken::new_object();
         json.insert("type", self.condition_type().to_string());
         json.insert("expression", self.expression.to_json());
         json

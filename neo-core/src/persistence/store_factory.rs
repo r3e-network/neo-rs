@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use std::sync::Once;
 use std::sync::RwLock;
 use lazy_static::lazy_static;
-use crate::persistence::{IStoreProvider, MemoryStoreProvider};
+use crate::persistence::{StoreProviderTrait, MemoryStoreProvider};
 
 pub struct StoreFactory;
 
 lazy_static! {
-    static ref PROVIDERS: RwLock<HashMap<String, Box<dyn IStoreProvider>>> = RwLock::new(HashMap::new());
+    static ref PROVIDERS: RwLock<HashMap<String, Box<dyn StoreProviderTrait >>> = RwLock::new(HashMap::new());
     static ref INIT: Once = Once::new();
 }
 
@@ -23,7 +23,7 @@ impl StoreFactory {
         });
     }
 
-    pub fn register_provider(provider: Box<dyn IStoreProvider>) {
+    pub fn register_provider(provider: Box<dyn StoreProviderTrait>) {
         Self::initialize();
         let mut providers = PROVIDERS.write().unwrap();
         providers.insert(provider.name().to_string(), provider);
@@ -38,7 +38,7 @@ impl StoreFactory {
     /// # Returns
     ///
     /// Option containing the store provider if found, None otherwise
-    pub fn get_store_provider(name: &str) -> Option<Box<dyn IStoreProvider>> {
+    pub fn get_store_provider(name: &str) -> Option<Box<dyn StoreProviderTrait>> {
         Self::initialize();
         let providers = PROVIDERS.read().unwrap();
         providers.get(name).cloned()

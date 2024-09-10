@@ -1,8 +1,11 @@
 
 use std::sync::Arc;
 use std::collections::HashSet;
+use NeoRust::contract::ContractManagement;
 use num_bigint::BigInt;
-use crate::neo_contract::native_contract::{NativeContract, BaseNativeContract};
+use neo_proc_macros::contract_method;
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::native_contract::{NativeContract};
 use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::contract_state::ContractState;
@@ -14,7 +17,6 @@ use crate::neo_contract::native_contract::contract_event_attribute::ContractEven
 use crate::neo_contract::manifest::contract_manifest::ContractManifest;
 use crate::neo_contract::storage_key::StorageKey;
 use crate::neo_contract::storage_item::StorageItem;
-use crate::vm::types::{StackItem, Array};
 use crate::persistence::DataCache;
 
 pub trait AccountState: Default {

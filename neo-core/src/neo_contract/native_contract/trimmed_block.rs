@@ -1,5 +1,8 @@
+use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::block::Header;
+use crate::io::iserializable::ISerializable;
+use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::uint256::UInt256;
 
 /// Represents a block which the transactions are trimmed.
@@ -29,16 +32,20 @@ impl TrimmedBlock {
 }
 
 impl ISerializable for TrimmedBlock {
-    fn deserialize(reader: &mut Reader) -> Result<Self, Error> {
-        let header = Header::deserialize(reader)?;
-        let hashes = reader.read_var_vec::<UInt256>(u16::MAX as usize)?;
-        Ok(Self { header, hashes })
+    fn size(&self) -> usize {
+        todo!()
     }
 
     fn serialize(&self, writer: &mut Writer) -> Result<(), Error> {
         self.header.serialize(writer)?;
         writer.write_var_vec(&self.hashes)?;
         Ok(())
+    }
+
+    fn deserialize(reader: &mut Reader) -> Result<Self, Error> {
+        let header = Header::deserialize(reader)?;
+        let hashes = reader.read_var_vec::<UInt256>(u16::MAX as usize)?;
+        Ok(Self { header, hashes })
     }
 }
 
@@ -60,5 +67,13 @@ impl IInteroperable for TrimmedBlock {
         array.push(StackItem::ByteString(self.header.next_consensus().to_vec()));
         array.push(StackItem::Integer(self.hashes.len().into()));
         InterfaceObject::Array(array)
+    }
+
+    fn from_stack_item(&mut self, stack_item: StackItem) {
+        todo!()
+    }
+
+    fn to_stack_item(&self, reference_counter: Option<&ReferenceCounter>) -> StackItem {
+        todo!()
     }
 }

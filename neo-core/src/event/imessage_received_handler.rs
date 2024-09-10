@@ -1,4 +1,5 @@
 use crate::neo_system::NeoSystem;
+use crate::network::Message;
 
 /// Trait for handling messages received from remote nodes in the Neo network.
 pub trait IMessageReceivedHandler {

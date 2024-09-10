@@ -1,81 +1,46 @@
-
-
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
 use crate::neo_contract::storage_item::StorageItem;
 use crate::neo_contract::storage_key::StorageKey;
+use crate::persistence::persistence_error::PersistenceError;
+use crate::persistence::SeekDirection;
 
-/// Represents a cache for the underlying storage of the NEO blockchain.
-pub struct DataCache {
-    dictionary: Arc<Mutex<HashMap<StorageKey, Trackable>>>,
-    change_set: Arc<Mutex<HashSet<StorageKey>>>,
-}
+pub trait DataCache {
+    fn new() -> Self where Self: Sized;
 
-/// Represents an entry in the cache.
-pub struct Trackable {
-    /// The key of the entry.
-    pub key: StorageKey,
-    /// The data of the entry.
-    pub item: StorageItem,
-    /// The state of the entry.
-    pub state: TrackState,
-}
-
-/// Represents the state of a trackable item.
-#[derive(PartialEq)]
-pub enum TrackState {
-    None,
-    Added,
-    Changed,
-    Deleted,
-    NotFound,
-}
-
-impl DataCache {
-    /// Creates a new DataCache instance.
-    pub fn new() -> Self {
-        DataCache {
-            dictionary: Arc::new(Mutex::new(HashMap::new())),
-            change_set: Arc::new(Mutex::new(HashSet::new())),
-        }
-    }
-
-    /// Reads a specified entry from the cache. If the entry is not in the cache, it will be automatically loaded from the underlying storage.
-    pub fn get(&self, key: &StorageKey) -> Result<StorageItem, Box<dyn std::error::Error>> {
-        let mut dictionary = self.dictionary.lock().unwrap();
-        if let Some(trackable) = dictionary.get(key) {
-            if trackable.state == TrackState::Deleted || trackable.state == TrackState::NotFound {
-                return Err("Key not found".into());
+    fn get(&self, key: &StorageKey) -> Result<StorageItem, PersistenceError> {
+        let mut dict = self.get_dictionary();
+        if let Some(trackable) = dict.get(key) {
+            match trackable.state {
+                TrackState::Deleted | TrackState::NotFound => Err(PersistenceError::KeyNotFound),
+                _ => Ok(trackable.item.clone().unwrap()),
             }
-            Ok(trackable.item.clone())
         } else {
             let item = self.get_internal(key)?;
-            let trackable = Trackable {
+            dict.insert(key.clone(), Trackable {
                 key: key.clone(),
-                item: item.clone(),
+                item: Some(item.clone()),
                 state: TrackState::None,
-            };
-            dictionary.insert(key.clone(), trackable);
+            });
             Ok(item)
         }
     }
 
-    /// Adds a new entry to the cache.
-    pub fn add(&self, key: StorageKey, value: StorageItem) -> Result<(), Box<dyn std::error::Error>> {
-        let mut dictionary = self.dictionary.lock().unwrap();
-        let mut change_set = self.change_set.lock().unwrap();
+    fn add(&self, key: StorageKey, value: StorageItem) -> Result<(), PersistenceError> {
+        let mut dict = self.get_dictionary();
+        let mut change_set = self.get_change_set();
 
-        if let Some(trackable) = dictionary.get_mut(&key) {
-            trackable.item = value;
+        if let Some(trackable) = dict.get_mut(&key) {
+            trackable.item = Some(value);
             trackable.state = match trackable.state {
                 TrackState::Deleted => TrackState::Changed,
                 TrackState::NotFound => TrackState::Added,
-                _ => return Err(format!("The element currently has state {:?}", trackable.state).into()),
+                _ => return Err(PersistenceError::InternalError("The element currently has an invalid state".to_string())),
             };
         } else {
-            dictionary.insert(key.clone(), Trackable {
+            dict.insert(key.clone(), Trackable {
                 key: key.clone(),
-                item: value,
+                item: Some(value),
                 state: TrackState::Added,
             });
         }
@@ -83,54 +48,35 @@ impl DataCache {
         Ok(())
     }
 
-    /// Commits all changes in the cache to the underlying storage.
-    pub fn commit(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut dictionary = self.dictionary.lock().unwrap();
-        let mut change_set = self.change_set.lock().unwrap();
+    fn commit(&self) -> Result<(), PersistenceError> {
+        let mut dict = self.get_dictionary();
+        let mut change_set = self.get_change_set();
         let mut deleted_items = Vec::new();
 
-        for trackable in self.get_change_set() {
+        for trackable in self.get_change_set_iter() {
             match trackable.state {
-                TrackState::Added => {
-                    self.add_internal(&trackable.key, &trackable.item)?;
-                    if let Some(t) = dictionary.get_mut(&trackable.key) {
-                        t.state = TrackState::None;
-                    }
-                },
-                TrackState::Changed => {
-                    self.update_internal(&trackable.key, &trackable.item)?;
-                    if let Some(t) = dictionary.get_mut(&trackable.key) {
-                        t.state = TrackState::None;
-                    }
-                },
+                TrackState::Added => self.add_internal(&trackable.key, &trackable.item)?,
+                TrackState::Changed => self.update_internal(&trackable.key, &trackable.item)?,
                 TrackState::Deleted => {
                     self.delete_internal(&trackable.key)?;
-                    deleted_items.push(trackable.key);
+                    deleted_items.push(trackable.key.clone());
                 },
                 _ => {}
             }
         }
 
         for key in deleted_items {
-            dictionary.remove(&key);
+            dict.remove(&key);
         }
         change_set.clear();
         Ok(())
     }
 
-    /// Creates a clone of the snapshot cache, which uses this instance as the underlying storage.
-    pub fn clone_cache(&self) -> DataCache {
-        // Implementation of ClonedCache would go here
-        // For simplicity, we're just returning a new DataCache
-        DataCache::new()
-    }
+    fn delete(&self, key: &StorageKey) -> Result<(), PersistenceError> {
+        let mut dict = self.get_dictionary();
+        let mut change_set = self.get_change_set();
 
-    /// Deletes an entry from the cache.
-    pub fn delete(&self, key: &StorageKey) -> Result<(), Box<dyn std::error::Error>> {
-        let mut dictionary = self.dictionary.lock().unwrap();
-        let mut change_set = self.change_set.lock().unwrap();
-
-        if let Some(trackable) = dictionary.get_mut(key) {
+        if let Some(trackable) = dict.get_mut(key) {
             match trackable.state {
                 TrackState::Added => {
                     trackable.state = TrackState::NotFound;
@@ -140,13 +86,13 @@ impl DataCache {
                 _ => {
                     trackable.state = TrackState::Deleted;
                     change_set.insert(key.clone());
-                }
+                },
             }
         } else {
             if let Some(item) = self.try_get_internal(key)? {
-                dictionary.insert(key.clone(), Trackable {
+                dict.insert(key.clone(), Trackable {
                     key: key.clone(),
-                    item,
+                    item: Some(item),
                     state: TrackState::Deleted,
                 });
                 change_set.insert(key.clone());
@@ -155,222 +101,198 @@ impl DataCache {
         Ok(())
     }
 
-    /// Checks if the cache contains a specific key.
-    pub fn contains(&self, key: &StorageKey) -> Result<bool, Box<dyn std::error::Error>> {
-        let dictionary = self.dictionary.lock().unwrap();
-        if let Some(trackable) = dictionary.get(key) {
-            Ok(trackable.state != TrackState::Deleted)
-        } else {
-            self.try_get_internal(key).map(|opt| opt.is_some())
+    fn find(&self, key_prefix: Option<&[u8]>, direction: SeekDirection)
+            -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+        let seek_prefix = match (key_prefix, direction) {
+            (Some(prefix), SeekDirection::Backward) if !prefix.is_empty() => {
+                let mut seek_prefix = prefix.to_vec();
+                for i in (0..seek_prefix.len()).rev() {
+                    if seek_prefix[i] < 0xff {
+                        seek_prefix[i] += 1;
+                        seek_prefix.truncate(i + 1);
+                        break;
+                    }
+                }
+                Some(seek_prefix)
+            },
+            _ => key_prefix.map(|p| p.to_vec()),
+        };
+
+        Box::new(self.find_internal(key_prefix.map(|p| p.to_vec()), seek_prefix, direction))
+    }
+
+    fn find_range(&self, start: &[u8], end: &[u8], direction: SeekDirection)
+                  -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+        let comparer = match direction {
+            SeekDirection::Forward => ByteArrayComparer::Default,
+            SeekDirection::Backward => ByteArrayComparer::Reverse,
+        };
+
+        Box::new(self.seek(Some(start), direction)
+            .take_while(move |(key, _)| comparer.compare(key.to_array(), end) < Ordering::Equal))
+    }
+
+    fn contains(&self, key: &StorageKey) -> bool {
+        let dict = self.get_dictionary();
+        match dict.get(key) {
+            Some(trackable) => trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound,
+            None => self.contains_internal(key),
         }
     }
 
-    /// Gets an entry from the cache.
-    pub fn get(&self, key: &StorageKey) -> Result<StorageItem, Box<dyn std::error::Error>> {
-        let dictionary = self.dictionary.lock().unwrap();
-        if let Some(trackable) = dictionary.get(key) {
-            match trackable.state {
-                TrackState::Deleted => Err("Key has been deleted".into()),
-                _ => Ok(trackable.item.clone()),
-            }
-        } else {
-            self.get_internal(key)
-        }
-    }
+    fn get_and_change(&self, key: &StorageKey, factory: Option<Box<dyn Fn() -> StorageItem>>)
+                      -> Result<Option<StorageItem>, PersistenceError> {
+        let mut dict = self.get_dictionary();
+        let mut change_set = self.get_change_set();
 
-    /// Tries to get an entry from the cache.
-    pub fn try_get(&self, key: &StorageKey) -> Result<Option<StorageItem>, Box<dyn std::error::Error>> {
-        let dictionary = self.dictionary.lock().unwrap();
-        if let Some(trackable) = dictionary.get(key) {
+        if let Some(trackable) = dict.get_mut(key) {
             match trackable.state {
-                TrackState::Deleted => Ok(None),
+                TrackState::Deleted | TrackState::NotFound => {
+                    if let Some(f) = factory {
+                        trackable.item = Some(f());
+                        trackable.state = if trackable.state == TrackState::Deleted {
+                            TrackState::Changed
+                        } else {
+                            TrackState::Added
+                        };
+                        change_set.insert(key.clone());
+                        Ok(Some(trackable.item.clone()))
+                    } else {
+                        Ok(None)
+                    }
+                },
+                TrackState::None => {
+                    trackable.state = TrackState::Changed;
+                    change_set.insert(key.clone());
+                    Ok(Some(trackable.item.clone()))
+                },
                 _ => Ok(Some(trackable.item.clone())),
             }
         } else {
-            self.try_get_internal(key)
+            let mut trackable = Trackable {
+                key: key.clone(),
+                item: self.try_get_internal(key)?,
+                state: TrackState::None,
+            };
+
+            if trackable.item.is_none() {
+                if let Some(f) = factory {
+                    trackable.item = Some(f());
+                    trackable.state = TrackState::Added;
+                } else {
+                    return Ok(None);
+                }
+            } else {
+                trackable.state = TrackState::Changed;
+            }
+
+            let item = trackable.item.clone();
+            dict.insert(key.clone(), trackable);
+            change_set.insert(key.clone());
+            Ok(item)
         }
     }
 
-    /// Updates an entry in the cache.
-    pub fn update(&self, key: &StorageKey, value: StorageItem) -> Result<(), Box<dyn std::error::Error>> {
-        let mut dictionary = self.dictionary.lock().unwrap();
-        let mut change_set = self.change_set.lock().unwrap();
+    fn get_or_add(&self, key: &StorageKey, factory: Box<dyn Fn() -> StorageItem>)
+                  -> Result<StorageItem, &'static str> {
+        let mut dict = self.get_dictionary();
+        let mut change_set = self.get_change_set();
 
-        if let Some(trackable) = dictionary.get_mut(key) {
-            trackable.item = value;
-            if trackable.state == TrackState::None {
-                trackable.state = TrackState::Changed;
+        if let Some(trackable) = dict.get_mut(key) {
+            match trackable.state {
+                TrackState::Deleted | TrackState::NotFound => {
+                    trackable.item = Some(factory());
+                    trackable.state = if trackable.state == TrackState::Deleted {
+                        TrackState::Changed
+                    } else {
+                        TrackState::Added
+                    };
+                    change_set.insert(key.clone());
+                },
+                _ => {},
+            }
+            Ok(trackable.item.clone().unwrap())
+        } else {
+            let mut trackable = Trackable {
+                key: key.clone(),
+                item: self.try_get_internal(key)?,
+                state: TrackState::None,
+            };
+
+            if trackable.item.is_none() {
+                trackable.item = Some(factory());
+                trackable.state = TrackState::Added;
                 change_set.insert(key.clone());
+            }
+
+            let item = trackable.item.clone().unwrap();
+            dict.insert(key.clone(), trackable);
+            Ok(item)
+        }
+    }
+
+    fn try_get(&self, key: &StorageKey) -> Result<Option<StorageItem>, PersistenceError> {
+        let mut dict = self.get_dictionary();
+
+        if let Some(trackable) = dict.get(key) {
+            match trackable.state {
+                TrackState::Deleted | TrackState::NotFound => Ok(None),
+                _ => Ok(Some(trackable.item.clone())),
             }
         } else {
-            if self.try_get_internal(key)?.is_some() {
-                dictionary.insert(key.clone(), Trackable {
+            let value = self.try_get_internal(key)?;
+            if let Some(item) = &value {
+                dict.insert(key.clone(), Trackable {
                     key: key.clone(),
-                    item: value,
-                    state: TrackState::Changed,
+                    item: Some(item.clone()),
+                    state: TrackState::None,
                 });
-                change_set.insert(key.clone());
-            } else {
-                return Err("Key not found".into());
             }
+            Ok(value)
         }
-        Ok(())
     }
 
-    /// Finds entries with keys starting with a given prefix.
-    pub fn find(&self, key_prefix: &[u8]) -> Result<Vec<(StorageKey, StorageItem)>, Box<dyn std::error::Error>> {
-        let dictionary = self.dictionary.lock().unwrap();
-        let mut results = Vec::new();
+    // Internal methods that need to be implemented by the concrete type
+    fn get_internal(&self, key: &StorageKey) -> Result<StorageItem, PersistenceError>;
+    fn add_internal(&self, key: &StorageKey, value: &StorageItem) -> Result<(), PersistenceError>;
+    fn delete_internal(&self, key: &StorageKey) -> Result<(), PersistenceError>;
+    fn contains_internal(&self, key: &StorageKey) -> bool;
+    fn try_get_internal(&self, key: &StorageKey) -> Result<Option<StorageItem>, &'static str>;
+    fn update_internal(&self, key: &StorageKey, value: &StorageItem) -> Result<(), PersistenceError>;
+    fn seek_internal(&self, key_or_prefix: &[u8], direction: SeekDirection)
+                     -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_>;
 
-        // First, check the cache
-        for (key, trackable) in dictionary.iter() {
-            if key.as_slice().starts_with(key_prefix) && trackable.state != TrackState::Deleted {
-                results.push((key.clone(), trackable.item.clone()));
-            }
-        }
-
-        // Then, check the underlying storage
-        let storage_results = self.find_internal(key_prefix)?;
-        for (key, item) in storage_results {
-            if !dictionary.contains_key(&key) {
-                results.push((key, item));
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// Finds entries in the underlying storage.
-    fn find_internal(&self, key_prefix: &[u8]) -> Result<Vec<(StorageKey, StorageItem)>, Box<dyn std::error::Error>> {
-        // This would be implemented based on the specific storage backend
-        unimplemented!("find_internal needs to be implemented")
-    }
-
-    /// Reads a specified entry from the underlying storage.
-    fn get_internal(&self, key: &StorageKey) -> Result<StorageItem, Box<dyn std::error::Error>> {
-        // This would be implemented based on the specific storage backend
-        unimplemented!("get_internal needs to be implemented")
-    }
-
-    /// Adds a new entry to the underlying storage.
-    fn add_internal(&self, key: &StorageKey, value: &StorageItem) -> Result<(), Box<dyn std::error::Error>> {
-        // This would be implemented based on the specific storage backend
-        unimplemented!("add_internal needs to be implemented")
-    }
-
-    /// Updates an entry in the underlying storage.
-    fn update_internal(&self, key: &StorageKey, value: &StorageItem) -> Result<(), Box<dyn std::error::Error>> {
-        // This would be implemented based on the specific storage backend
-        unimplemented!("update_internal needs to be implemented")
-    }
-
-    /// Deletes an entry from the underlying storage.
-    fn delete_internal(&self, key: &StorageKey) -> Result<(), Box<dyn std::error::Error>> {
-        // This would be implemented based on the specific storage backend
-        unimplemented!("delete_internal needs to be implemented")
-    }
-
-    /// Tries to read a specified entry from the underlying storage.
-    fn try_get_internal(&self, key: &StorageKey) -> Result<Option<StorageItem>, Box<dyn std::error::Error>> {
-        // This would be implemented based on the specific storage backend
-        unimplemented!("try_get_internal needs to be implemented")
-    }
-
-    /// Gets the change set in the cache.
-    fn get_change_set(&self) -> Vec<Trackable> {
-        let dictionary = self.dictionary.lock().unwrap();
-        let change_set = self.change_set.lock().unwrap();
-        change_set.iter()
-            .filter_map(|key| dictionary.get(key).cloned())
-            .collect()
-    }
+    // Helper methods for accessing internal state
+    fn get_dictionary(&self) -> std::sync::MutexGuard<'_, HashMap<StorageKey, Trackable>>;
+    fn get_change_set(&self) -> std::sync::MutexGuard<'_, HashSet<StorageKey>>;
+    fn get_change_set_iter(&self) -> Box<dyn Iterator<Item = Trackable> + '_>;
 }
 
-// Additional implementations and traits
-
-impl Default for DataCache {
-    fn default() -> Self {
-        Self::new()
-    }
+pub struct Trackable {
+    pub key: StorageKey,
+    pub item: Option<StorageItem>,
+    pub state: TrackState,
 }
 
-impl Clone for DataCache {
-    fn clone(&self) -> Self {
-        DataCache {
-            dictionary: Arc::clone(&self.dictionary),
-            change_set: Arc::clone(&self.change_set),
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum TrackState {
+    None,
+    Added,
+    Changed,
+    Deleted,
+    NotFound,
+}
+
+enum ByteArrayComparer {
+    Default,
+    Reverse,
+}
+
+impl ByteArrayComparer {
+    fn compare(&self, a: &[u8], b: &[u8]) -> std::cmp::Ordering {
+        match self {
+            ByteArrayComparer::Default => a.cmp(b),
+            ByteArrayComparer::Reverse => b.cmp(a),
         }
-    }
-}
-
-impl DataCache {
-    /// Commits all changes to the underlying storage.
-    pub fn commit(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let change_set = self.get_change_set();
-        for trackable in change_set {
-            match trackable.state {
-                TrackState::Added => self.add_internal(&trackable.key, &trackable.item)?,
-                TrackState::Changed => self.update_internal(&trackable.key, &trackable.item)?,
-                TrackState::Deleted => self.delete_internal(&trackable.key)?,
-                _ => {}
-            }
-        }
-        self.clear();
-        Ok(())
-    }
-
-    /// Clears all changes in the cache.
-    pub fn clear(&mut self) {
-        let mut dictionary = self.dictionary.lock().unwrap();
-        let mut change_set = self.change_set.lock().unwrap();
-        dictionary.clear();
-        change_set.clear();
-    }
-
-    /// Seeks entries in the cache based on a key prefix.
-    pub fn seek(&self, key_prefix: &[u8]) -> Result<Vec<(StorageKey, StorageItem)>, Box<dyn std::error::Error>> {
-        let dictionary = self.dictionary.lock().unwrap();
-        Ok(dictionary.iter()
-            .filter(|(k, v)| k.as_slice().starts_with(key_prefix) && v.state != TrackState::Deleted)
-            .map(|(k, v)| (k.clone(), v.item.clone()))
-            .collect())
-    }
-}
-
-// Implement the DataCache trait for DataCache struct
-impl crate::DataCache for DataCache {
-    fn add(&mut self, key: StorageKey, value: StorageItem) -> Result<(), Error> {
-        // Implementation using the existing methods
-        self.add(key, value).map_err(|e| Error::from(e))
-    }
-
-    fn delete(&mut self, key: &StorageKey) -> Result<(), Error> {
-        // Implementation using the existing methods
-        self.delete(key).map_err(|e| Error::from(e))
-    }
-
-    fn contains(&self, key: &StorageKey) -> Result<bool, Error> {
-        // Implementation using the existing methods
-        self.try_get(key).map(|opt| opt.is_some()).map_err(|e| Error::from(e))
-    }
-
-    fn get(&self, key: &StorageKey) -> Result<StorageItem, Error> {
-        // Implementation using the existing methods
-        self.get(key).map_err(|e| Error::from(e))
-    }
-
-    fn seek(&self, key_or_prefix: &[u8], direction: SeekDirection) -> Result<Vec<(StorageKey, StorageItem)>, Error> {
-        // Implementation using the existing methods
-        self.seek(key_or_prefix).map_err(|e| Error::from(e))
-    }
-
-    fn try_get(&self, key: &StorageKey) -> Result<Option<StorageItem>, Error> {
-        // Implementation using the existing methods
-        self.try_get(key).map_err(|e| Error::from(e))
-    }
-
-    fn update(&mut self, key: &StorageKey, value: StorageItem) -> Result<(), Error> {
-        // Implementation using the existing methods
-        self.update(key, value).map_err(|e| Error::from(e))
     }
 }

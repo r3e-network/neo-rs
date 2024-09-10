@@ -27,7 +27,7 @@ where
         self.inner.get(key)
     }
 
-    fn insert(&self, key: K, value: V) {
+    fn insert(&mut self, key: K, value: V) {
         if self.len() >= self.inner.max_capacity {
             if let Some(oldest_key) = self.order.pop_front() {
                 self.inner.remove(&oldest_key);
@@ -37,7 +37,7 @@ where
         self.inner.insert(key, value);
     }
 
-    fn remove(&self, key: &K) -> Option<V> {
+    fn remove(&mut self, key: &K) -> Option<V> {
         let result = self.inner.remove(key);
         if result.is_some() {
             self.order.retain(|k| k != key);
@@ -45,7 +45,7 @@ where
         result
     }
 
-    fn clear(&self) {
+    fn clear(&mut self) {
         self.inner.clear();
         self.order.clear();
     }

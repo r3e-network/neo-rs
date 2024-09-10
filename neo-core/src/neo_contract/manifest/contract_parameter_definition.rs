@@ -1,5 +1,7 @@
-
-
+use neo_vm::stack_item::StackItem;
+use crate::io::binary_writer::BinaryWriter;
+use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 
 /// Represents a parameter of an event or method in ABI.
@@ -31,6 +33,18 @@ impl ISerializable for ContractParameterDefinition {
             StackItem::String(self.name.clone()),
             StackItem::Integer((self.parameter_type as u8).into()),
         ])
+    }
+
+    fn size(&self) -> usize {
+        todo!()
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        todo!()
+    }
+
+    fn deserialize(&mut self, reader: &mut MemoryReader) {
+        todo!()
     }
 }
 

@@ -1,12 +1,7 @@
-
-/// Direction for seeking in the database.
-pub enum SeekDirection {
-    Forward,
-    Backward,
-}
+use crate::persistence::SeekDirection;
 
 /// This trait provides methods to read from the database.
-pub trait IReadOnlyStore {
+pub trait ReadOnlyStoreTrait {
     /// Seeks to the entry with the specified key.
     ///
     /// # Arguments

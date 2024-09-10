@@ -4,6 +4,13 @@ use neo::sys::{ContractTask, ApplicationEngine};
 use neo::types::{UInt160, Hardfork};
 use neo::vm::types::{ProtocolSettings, Transaction};
 use neo::smart_contract::{Contract, FungibleToken, AccountState};
+use neo_proc_macros::contract_method;
+use crate::contract::Contract;
+use crate::hardfork::Hardfork;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::contract_task::ContractTask;
+use crate::neo_contract::native_contract::{FungibleToken, NativeContract};
+use crate::neo_contract::native_contract::native_contract::NEO;
 
 /// Represents the GAS token in the NEO system.
 pub struct GasToken {

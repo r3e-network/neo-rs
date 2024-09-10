@@ -2,11 +2,17 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::mem;
+use NeoRust::prelude::VarSizeTrait;
+use neo_json::jtoken::JToken;
+use crate::cryptography::{Crypto, Helper};
+use crate::io::binary_writer::BinaryWriter;
+use crate::io::memory_reader::MemoryReader;
 use crate::network::Payloads::{Signer, TransactionAttribute, Witness};
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 
 /// Represents a transaction.
+#[derive(Clone)]
 pub struct Transaction {
     version: u8,
     nonce: u32,
@@ -241,10 +247,10 @@ impl Transaction {
     }
 }
 
-impl TryFrom<&JObject> for Transaction {
+impl TryFrom<&JToken> for Transaction {
     type Error = io::Error;
 
-    fn try_from(json: &JObject) -> Result<Self, Self::Error> {
+    fn try_from(json: &JToken) -> Result<Self, Self::Error> {
         let version = json.get_u8("version")?;
         let nonce = json.get_u32("nonce")?;
         let sysfee = json.get_i64("sysfee")?;

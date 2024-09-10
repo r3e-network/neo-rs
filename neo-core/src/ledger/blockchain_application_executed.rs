@@ -6,6 +6,8 @@ use neo_core::vm::types::NotifyEventArgs;
 use std::error::Error;
 
 pub mod ledger {
+    use crate::neo_contract::trigger_type::TriggerType;
+    use crate::network::Payloads::Transaction;
     use super::*;
 
     pub struct Blockchain;

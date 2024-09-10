@@ -1,9 +1,12 @@
+use core::str::FromStr;
 use std::io::Write;
+use neo_json::jtoken::JToken;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::network::Payloads::Conditions::{WitnessCondition, WitnessConditionType};
+use crate::uint160::UInt160;
 
 #[derive(Debug)]
 pub struct CalledByContractCondition {
@@ -32,11 +35,11 @@ impl WitnessCondition for CalledByContractCondition {
         writer.write_all(self.hash.as_bytes())
     }
 
-    fn parse_json(&mut self, json: &JObject, max_nest_depth: usize) {
+    fn parse_json(&mut self, json: &JToken, max_nest_depth: usize) {
         self.hash = UInt160::from_str(json["hash"].as_str().unwrap()).unwrap();
     }
 
-    fn to_json(&self) -> JObject {
+    fn to_json(&self) -> JToken {
         let mut json = self.base_to_json();
         json.insert("hash".to_string(), self.hash.to_string().into());
         json

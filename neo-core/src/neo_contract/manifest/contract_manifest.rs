@@ -5,6 +5,15 @@ use neo::vm::*;
 use neo::types::*;
 use neo::json::Json;
 use std::collections::HashMap;
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::neo_contract::manifest::contract_abi::ContractAbi;
+use crate::neo_contract::manifest::contract_group::ContractGroup;
+use crate::neo_contract::manifest::contract_permission::ContractPermission;
+use crate::neo_contract::manifest::contract_permission_descriptor::ContractPermissionDescriptor;
+use crate::neo_contract::manifest::wild_card_container::WildcardContainer;
+use crate::uint160::UInt160;
 
 /// Represents the manifest of a smart contract.
 /// When a smart contract is deployed, it must explicitly declare the features and permissions it will use.

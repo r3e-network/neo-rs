@@ -1,5 +1,6 @@
 use std::fmt;
 use std::io;
+use neo_json::jtoken::JToken;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
@@ -40,8 +41,8 @@ pub trait TransactionAttribute: ISerializable {
     fn deserialize_without_type(&mut self, reader: &mut MemoryReader) -> io::Result<()>;
 
     /// Converts the attribute to a JSON object.
-    fn to_json(&self) -> JObject {
-        JObject::new().set("type", self.get_type() as u8)
+    fn to_json(&self) -> JToken {
+        JToken::new_object().insert("type".to_string(), self.get_type() as u8)
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> io::Result<()> {
@@ -53,11 +54,11 @@ pub trait TransactionAttribute: ISerializable {
     fn serialize_without_type(&self, writer: &mut BinaryWriter) -> io::Result<()>;
 
     /// Verifies the attribute with the transaction.
-    fn verify(&self, snapshot: &DataCache, tx: &Transaction) -> bool {
+    fn verify(&self, snapshot: &dyn DataCache, tx: &Transaction) -> bool {
         true
     }
 
-    fn calculate_network_fee(&self, snapshot: &DataCache, tx: &Transaction) -> i64 {
+    fn calculate_network_fee(&self, snapshot: &dyn DataCache, tx: &Transaction) -> i64 {
         NativeContract::Policy.get_attribute_fee(snapshot, self.get_type() as u8)
     }
 }

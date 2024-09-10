@@ -1,3 +1,7 @@
+use NeoRust::crypto::Secp256r1PublicKey;
+use neo_base::encoding::base64;
+use neo_vm::stack_item::StackItem;
+use crate::io::iserializable::ISerializable;
 
 /// Represents a set of mutually trusted contracts.
 /// A contract will trust and allow any contract in the same group to invoke it, and the user interface will not give any warnings.

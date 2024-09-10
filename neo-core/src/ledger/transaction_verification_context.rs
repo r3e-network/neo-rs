@@ -36,7 +36,7 @@ impl TransactionVerificationContext {
     }
 
     /// Determine whether the specified `Transaction` conflicts with other transactions.
-    pub fn check_transaction(&self, tx: &Transaction, conflicting_txs: &[Transaction], snapshot: &Snapshot) -> bool {
+    pub fn check_transaction(&self, tx: &Transaction, conflicting_txs: &[Transaction], snapshot: &ISnapshot) -> bool {
         let balance = NativeContract::GAS.balance_of(snapshot, &tx.sender());
         let total_sender_fee_from_pool = self.sender_fee.get(&tx.sender()).cloned().unwrap_or(0);
 

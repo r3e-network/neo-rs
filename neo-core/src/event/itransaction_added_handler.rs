@@ -1,4 +1,5 @@
 use std::any::Any;
+use crate::network::Payloads::Transaction;
 
 /// Trait for handling TransactionAdded events from the MemoryPool.
 pub trait ITransactionAddedHandler {

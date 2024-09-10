@@ -5,6 +5,8 @@ use neo::vm::*;
 use neo::types::*;
 use neo::json::Json;
 use std::collections::HashSet;
+use crate::neo_contract::manifest::contract_permission_descriptor::ContractPermissionDescriptor;
+use crate::neo_contract::manifest::wild_card_container::WildcardContainer;
 
 /// Represents a permission of a contract. It describes which contracts may be
 /// invoked and which methods are called.

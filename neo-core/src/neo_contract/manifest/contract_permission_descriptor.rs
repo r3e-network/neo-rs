@@ -1,9 +1,11 @@
-
+use NeoRust::prelude::Secp256r1PublicKey;
 use neo::prelude::*;
 use neo::crypto::ecc::{Secp256r1PublicKey, ECCurve};
 use neo::io::*;
 use neo::types::*;
 use neo::vm::types::StackItem;
+use neo_vm::stack_item::StackItem;
+use crate::uint160::UInt160;
 
 /// Indicates which contracts are authorized to be called.
 #[derive(Clone, Debug, PartialEq, Eq)]

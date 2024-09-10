@@ -8,6 +8,7 @@ use crate::ledger::transaction_removed_event_args::TransactionRemovedEventArgs;
 use crate::ledger::transaction_verification_context::TransactionVerificationContext;
 use crate::ledger::verify_result::VerifyResult;
 use crate::neo_system::NeoSystem;
+use crate::persistence::IStore;
 use crate::store::Store;
 use crate::uint256::UInt256;
 
@@ -178,7 +179,7 @@ impl MemoryPool {
 
         verified_count
     }
-    fn verify_transaction(&self, tx: &Transaction, snapshot: &Store) -> VerifyResult {
+    fn verify_transaction(&self, tx: &Transaction, snapshot: &dyn IStore) -> VerifyResult {
         // Check if the transaction is already in the blockchain
         if NativeContract::Ledger::contains_transaction(snapshot, &tx.hash()) {
             return VerifyResult::AlreadyExists;

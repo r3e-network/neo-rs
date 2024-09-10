@@ -3,6 +3,9 @@ use neo::prelude::*;
 use neo::vm::types::{Array, StackItem};
 use std::collections::VecDeque;
 use std::marker::PhantomData;
+use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::iinteroperable::IInteroperable;
 
 /// A trait for types that can be converted to and from StackItems
 pub trait InteroperableElement {
@@ -69,7 +72,13 @@ impl<T: InteroperableElement> InteroperableList<T> {
     }
 }
 
-impl<T: InteroperableElement> Interoperable for InteroperableList<T> {
+impl<T: InteroperableElement> Default for InteroperableList<T> {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
+impl<T: InteroperableElement> IInteroperable for InteroperableList<T> {
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), String> {
         if let StackItem::Array(array) = stack_item {
             self.list.clear();

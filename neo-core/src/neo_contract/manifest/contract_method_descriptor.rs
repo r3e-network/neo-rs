@@ -1,5 +1,6 @@
 use neo_vm::stack_item::StackItem;
 use crate::neo_contract::contract_parameter::ContractParameterType;
+use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::manifest::contract_parameter_definition::ContractParameterDefinition;
 
 /// Represents a method in a smart contract ABI.

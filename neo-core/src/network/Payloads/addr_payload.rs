@@ -1,4 +1,3 @@
-use neo_io::{BinaryReader, BinaryWriter, Serializable};
 use std::io::{Error, ErrorKind};
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;

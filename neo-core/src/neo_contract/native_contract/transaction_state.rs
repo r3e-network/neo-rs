@@ -1,3 +1,4 @@
+use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use neo_vm::vm_state::VMState;
 use crate::neo_contract::iinteroperable::IInteroperable;
@@ -25,25 +26,6 @@ impl Default for TransactionState {
 }
 
 impl IInteroperable for TransactionState {
-    fn clone(&self) -> Box<dyn IInteroperable> {
-        Box::new(Self {
-            block_index: self.block_index,
-            transaction: self.transaction.clone(),
-            state: self.state,
-            raw_transaction: self.raw_transaction.clone(),
-        })
-    }
-
-    fn from_replica(&mut self, replica: &dyn IInteroperable) {
-        let from = replica.downcast_ref::<TransactionState>().unwrap();
-        self.block_index = from.block_index;
-        self.transaction = from.transaction.clone();
-        self.state = from.state;
-        if self.raw_transaction.is_empty() {
-            self.raw_transaction = from.raw_transaction.clone();
-        }
-    }
-
     fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), Error> {
         if let StackItem::Struct(struct_item) = stack_item {
             self.block_index = struct_item[0].as_u32()?;
@@ -78,5 +60,24 @@ impl IInteroperable for TransactionState {
             ],
             reference_counter,
         ))
+    }
+
+    fn clone(&self) -> Box<dyn IInteroperable> {
+        Box::new(Self {
+            block_index: self.block_index,
+            transaction: self.transaction.clone(),
+            state: self.state,
+            raw_transaction: self.raw_transaction.clone(),
+        })
+    }
+
+    fn from_replica(&mut self, replica: &dyn IInteroperable) {
+        let from = replica.downcast_ref::<TransactionState>().unwrap();
+        self.block_index = from.block_index;
+        self.transaction = from.transaction.clone();
+        self.state = from.state;
+        if self.raw_transaction.is_empty() {
+            self.raw_transaction = from.raw_transaction.clone();
+        }
     }
 }

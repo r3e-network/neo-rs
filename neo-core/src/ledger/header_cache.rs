@@ -30,7 +30,7 @@ impl HeaderCache {
             return None;
         }
         let first_index = headers[0].index();
-        if index < first_index {
+        if index < *first_index {
             return None;
         }
         let adjusted_index = (index - first_index) as usize;
@@ -52,7 +52,7 @@ impl HeaderCache {
 
     /// Indicates whether the cache is full.
     pub fn is_full(&self) -> bool {
-        self.len() >= 10000
+        self.len(pub (crate))pub(crate) >= 10000
     }
 
     /// Gets the last `Header` in the cache. Or `None` if the cache is empty.

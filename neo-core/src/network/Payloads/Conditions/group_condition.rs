@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use NeoRust::prelude::Secp256r1PublicKey;
+use NeoRust::prelude::{NeoSerializable, Secp256r1PublicKey};
 use serde::Deserialize;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;

@@ -1,4 +1,8 @@
 use std::collections::HashSet;
+use neo_proc_macros::{contract, event};
+use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::iinteroperable::IInteroperable;
 
 #[contract]
 pub struct OracleContract {
@@ -12,7 +16,7 @@ pub struct OracleContract {
     prefix_id_list: u8,
 }
 
-#[contract_event(0, name = "OracleRequest")]
+#[event(0, name = "OracleRequest")]
 pub struct OracleRequestEvent {
     id: u64,
     request_contract: UInt160,
@@ -20,7 +24,7 @@ pub struct OracleRequestEvent {
     filter: Option<String>,
 }
 
-#[contract_event(1, name = "OracleResponse")]
+#[event(1, name = "OracleResponse")]
 pub struct OracleResponseEvent {
     id: u64,
     original_tx: UInt256,
