@@ -3,6 +3,8 @@ use std::hash::Hasher;
 use std::io::{Read, Write};
 use crate::io::iserializable::ISerializable;
 use crate::network::Payloads::{IInventory, IVerifiable, InventoryType, Witness};
+use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 
@@ -46,9 +48,13 @@ impl IInventory for ExtensiblePayload {
 }
 
 impl ISerializable for ExtensiblePayload {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
     fn serialize(&self, writer: &mut impl Write) -> std::io::Result<()> {
         self.serialize_unsigned(writer)?;
-        writer.write_u8(1)?;
+        writer.write_u8(1);
         self.witness.serialize(writer)?;
         Ok(())
     }
@@ -85,8 +91,16 @@ impl IVerifiable for ExtensiblePayload {
         Ok(())
     }
 
-    fn get_script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
+    fn get_script_hashes_for_verifying(&self, _snapshot: &dyn DataCache) -> Vec<UInt160> {
         vec![self.sender]
+    }
+
+    fn witnesses(&self) -> &[Witness] {
+        todo!()
+    }
+
+    fn set_witnesses(&mut self, witnesses: Vec<Witness>) {
+        todo!()
     }
 }
 
@@ -100,7 +114,7 @@ impl ExtensiblePayload {
         1 + self.witness.size()
     }
 
-    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &DataCache, extensible_witness_white_list: &HashSet<UInt160>) -> bool {
+    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, extensible_witness_white_list: &HashSet<UInt160>) -> bool {
         let height = NativeContract::Ledger.current_index(snapshot);
         if height < self.valid_block_start || height >= self.valid_block_end {
             return false;

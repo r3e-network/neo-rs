@@ -1,5 +1,9 @@
 use neo_io::{BinaryReader, BinaryWriter};
 use std::io;
+use crate::io::binary_reader::BinaryReader;
+use crate::io::binary_writer::BinaryWriter;
+use crate::io::iserializable::ISerializable;
+use crate::network::Payloads::HeadersPayload;
 
 /// This message is sent to request for blocks by index.
 pub struct GetBlockByIndexPayload {
@@ -34,12 +38,22 @@ impl GetBlockByIndexPayload {
     }
 }
 
-impl neo_io::Serializable for GetBlockByIndexPayload {
-    fn deserialize<R: io::Read>(reader: &mut BinaryReader<R>) -> io::Result<Self> {
+impl ISerializable for GetBlockByIndexPayload {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> io::Result<()> {
+        writer.write_u32(self.index_start);
+        writer.write_i16(self.count);
+        Ok(())
+    }
+
+    fn deserialize(&mut self, reader: &mut BinaryReader) -> io::Result<Self> {
         let index_start = reader.read_u32()?;
         let count = reader.read_i16()?;
-        
-        if count < -1 || count == 0 || count > HeadersPayload::MAX_HEADERS_COUNT {
+
+        if count < -1 || count == 0 || count > HeadersPayload::MAX_HEADERS_COUNT as i16 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid count"));
         }
 
@@ -47,11 +61,5 @@ impl neo_io::Serializable for GetBlockByIndexPayload {
             index_start,
             count,
         })
-    }
-
-    fn serialize<W: io::Write>(&self, writer: &mut BinaryWriter<W>) -> io::Result<()> {
-        writer.write_u32(self.index_start)?;
-        writer.write_i16(self.count)?;
-        Ok(())
     }
 }

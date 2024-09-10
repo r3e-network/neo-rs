@@ -1,5 +1,7 @@
-use neo_core::io::{Serializable, MemoryReader, BinaryWriter};
 use std::borrow::Cow;
+use crate::io::binary_writer::BinaryWriter;
+use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 
 /// This message is sent to update the items for the BloomFilter.
 pub struct FilterAddPayload {
@@ -14,7 +16,7 @@ impl FilterAddPayload {
 }
 
 impl ISerializable for FilterAddPayload {
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+    fn deserialize(&mut self, reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let data = reader.read_var_bytes(520)?;
         Ok(FilterAddPayload { data: Cow::Owned(data) })
     }
@@ -22,5 +24,9 @@ impl ISerializable for FilterAddPayload {
     fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), std::io::Error> {
         writer.write_var_bytes(&self.data)?;
         Ok(())
+    }
+
+    fn size(&self) -> usize {
+        todo!()
     }
 }

@@ -7,11 +7,14 @@ use chrono::{DateTime, Utc};
 use NeoRust::builder::Transaction;
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
+use neo_vm::op_code::OpCode;
 use crate::block::{Block, Header};
+use crate::contract::Contract;
 use crate::ledger::header_cache::HeaderCache;
 use crate::ledger::memory_pool::MemoryPool;
 use crate::network::ChannelsConfig;
-use crate::persistence::MemoryStore;
+use crate::network::Payloads::Witness;
+use crate::persistence::{MemoryStore, SnapshotCache, StoreProviderTrait};
 use crate::protocol_settings::ProtocolSettings;
 use crate::store::Store;
 use crate::uint256::UInt256;
@@ -28,7 +31,7 @@ pub struct NeoSystem {
     pub relay_cache: Arc<TokioMutex<HashMap<UInt256, bool>>>,
     services: Arc<TokioMutex<Vec<Box<dyn Any + Send + Sync>>>>,
     store: Arc<dyn Store<WriteBatch=()>>,
-    storage_provider: Arc<dyn StoreProvider>,
+    storage_provider: Arc<dyn StoreProviderTrait>,
     start_message: Arc<TokioMutex<Option<ChannelsConfig>>>,
     suspend: Arc<AtomicI32>,
 }
@@ -87,10 +90,10 @@ enum TxRouterMessage {
 impl NeoSystem {
     pub async fn new(
         settings: Arc<ProtocolSettings>,
-        storage_provider: Option<Arc<dyn StoreProvider>>,
+        storage_provider: Option<Arc<dyn StoreProviderTrait>>,
         storage_path: Option<String>,
     ) -> Self {
-        let storage_provider = storage_provider.unwrap_or_else(|| Arc::new(MemoryStore::new()) as Arc<dyn StoreProvider>);
+        let storage_provider = storage_provider.unwrap_or_else(|| Arc::new(MemoryStore::new()) as Arc<dyn StoreProviderTrait>);
         let store = storage_provider.get_store(storage_path);
         let genesis_block = Self::create_genesis_block(&settings);
         let mempool = Arc::new(MemoryPool::new());
@@ -154,12 +157,11 @@ impl NeoSystem {
                 nonce: 2083236893,
                 index: 0,
                 primary_index: 0,
-                next_consensus: Contract::get_bft_address(&settings.standby_validators),
+                next_consensus: Contract::get_bft_address(&settings.standby_validators()),
                 witness: Witness {
                     invocation_script: Vec::new(),
-                    verification_script: vec![OpCode::PUSH1 as u8],
+                    verification_script: vec![OpCode::Push1 as u8],
                 },
-                unix_milli: 0,
                 primary: 0,
                 witnesses: Default::default(),
             },

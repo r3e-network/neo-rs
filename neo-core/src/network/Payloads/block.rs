@@ -2,6 +2,11 @@ use std::io::Write;
 use crate::network::Payloads::{Header, Transaction};
 use crate::uint256::UInt256;
 use getset::{CopyGetters, Getters, MutGetters, Setters};
+use crate::cryptography::MerkleTree;
+use crate::io::memory_reader::MemoryReader;
+use crate::ledger::header_cache::HeaderCache;
+use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
 
 /// Represents a block.
 #[derive(Clone, Getters, Setters, MutGetters, CopyGetters, Default)]
@@ -16,7 +21,7 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn hash(&mut self) -> UInt256 {
+    pub fn hash(&self) -> UInt256 {
         self.header.hash()
     }
 
@@ -91,17 +96,17 @@ impl Block {
         json
     }
 
-    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &DataCache) -> bool {
+    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache) -> bool {
         self.header.verify(settings, snapshot)
     }
 
-    pub fn verify_with_header_cache(&self, settings: &ProtocolSettings, snapshot: &DataCache, header_cache: &HeaderCache) -> bool {
+    pub fn verify_with_header_cache(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, header_cache: &HeaderCache) -> bool {
         self.header.verify_with_header_cache(settings, snapshot, header_cache)
     }
 }
 
 impl PartialEq for Block {
-    fn eq(&self, other: &Self) -> bool {
+    fn eq(&mut self, other: &mut Self) -> bool {
         self.hash() == other.hash()
     }
 }

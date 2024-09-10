@@ -88,7 +88,7 @@ impl Header {
         std::mem::size_of::<u32>() +
         std::mem::size_of::<u8>() +
         UInt160::LEN +
-        1 + self.witnesses.size()
+            1usize + self.witnesses.size() as usize
     }
 
     pub fn hash(&mut self) -> UInt256 {
@@ -165,7 +165,7 @@ impl Header {
         .unwrap()
         .insert("nextconsensus".to_string(), self.next_consensus.to_address(settings.address_version()))
         .unwrap()
-        .insert("witnesses".to_string(), JArray::from(vec![self.witness.to_json()]))
+        .insert("witnesses".to_string(),  JToken::from(vec![self.witnesses.to_json()]))
         .unwrap();
         json
     }

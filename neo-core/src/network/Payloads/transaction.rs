@@ -21,7 +21,7 @@ pub struct Transaction {
     // In the unit of datoshi, 1 datoshi = 1e-8 GAS
     net_fee: i64,
     valid_until_block: u32,
-    signers: Vec<Signer>,
+    pub(crate) signers: Vec<Signer>,
     attributes: Vec<Box<dyn TransactionAttribute>>,
     script: Vec<u8>,
     witnesses: Vec<Witness>,

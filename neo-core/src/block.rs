@@ -13,7 +13,7 @@ use crate::uint256::UInt256;
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, BinDecode)]
 pub struct Block {
-    header: Header,
+    pub(crate) header: Header,
 
     #[serde(rename = "tx")]
     txs: Vec<Tx>,

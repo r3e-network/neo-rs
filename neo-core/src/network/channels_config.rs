@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use crate::network::Peer;
 
 /// Represents the settings to start `LocalNode`.
+#[derive(Clone, Debug)]
 pub struct ChannelsConfig {
     /// Tcp configuration.
     pub tcp: SocketAddr,

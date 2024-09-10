@@ -1,6 +1,8 @@
 use neo_io::{MemoryReader, Serializable};
 use neo_types::UInt256;
 use std::io::{self, Write};
+use crate::io::binary_writer::BinaryWriter;
+use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::uint256::UInt256;
 
@@ -37,18 +39,22 @@ impl GetBlocksPayload {
 }
 
 impl ISerializable for GetBlocksPayload {
-    fn deserialize(reader: &mut MemoryReader) -> io::Result<Self> {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> io::Result<()> {
+        self.hash_start.serialize(writer)?;
+        writer.write_all(&self.count.to_le_bytes())?;
+        Ok(())
+    }
+
+    fn deserialize(&mut self, reader: &mut MemoryReader) -> io::Result<Self> {
         let hash_start = UInt256::deserialize(reader)?;
         let count = reader.read_i16()?;
         if count < -1 || count == 0 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid count"));
         }
         Ok(Self { hash_start, count })
-    }
-
-    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        self.hash_start.serialize(writer)?;
-        writer.write_all(&self.count.to_le_bytes())?;
-        Ok(())
     }
 }

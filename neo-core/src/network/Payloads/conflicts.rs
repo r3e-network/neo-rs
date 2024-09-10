@@ -1,4 +1,6 @@
 use std::io::Write;
+use crate::io::binary_writer::BinaryWriter;
+use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::Payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::DataCache;
@@ -7,6 +9,20 @@ use crate::uint256::UInt256;
 pub struct Conflicts {
     /// Indicates the conflict transaction hash.
     pub hash: UInt256,
+}
+
+impl ISerializable for Conflicts {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        todo!()
+    }
+
+    fn deserialize(&mut self, reader: &mut MemoryReader) {
+        todo!()
+    }
 }
 
 impl TransactionAttribute for Conflicts {
@@ -36,14 +52,18 @@ impl TransactionAttribute for Conflicts {
         json
     }
 
-    fn verify(&self, snapshot: &DataCache, tx: &Transaction) -> bool {
+    fn verify(&self, snapshot: &dyn DataCache, tx: &Transaction) -> bool {
         // Only check if conflicting transaction is on chain. It's OK if the
         // conflicting transaction was in the Conflicts attribute of some other
         // on-chain transaction.
         !NativeContract::Ledger.contains_transaction(snapshot, &self.hash)
     }
 
-    fn calculate_network_fee(&self, snapshot: &DataCache, tx: &Transaction) -> i64 {
+    fn calculate_network_fee(&self, snapshot: &dyn DataCache, tx: &Transaction) -> i64 {
         tx.signers.len() as i64 * self.base_calculate_network_fee(snapshot, tx)
+    }
+
+    fn get_type(&self) -> TransactionAttributeType {
+        todo!()
     }
 }
