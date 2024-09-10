@@ -146,7 +146,7 @@ impl ContractManifest {
     /// # Returns
     ///
     /// `true` if the manifest is valid; otherwise, `false`.
-    pub fn is_valid(&self, limits: &ExecutionEngineLimits, hash: &H160) -> bool {
+    pub fn is_valid(&self, limits: &ExecutionEngineLimits, hash: &UInt160) -> bool {
         // Ensure that is serializable
         if let Err(_) = self.to_stack_item().serialize(limits) {
             return false;

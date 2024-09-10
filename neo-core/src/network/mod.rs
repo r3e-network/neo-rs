@@ -9,7 +9,7 @@ mod peer;
 mod remote_node;
 mod task_manager;
 mod task_session;
-mod Payloads;
+pub(crate) mod Payloads;
 mod Capabilities;
 mod remote_node_protocol_handler;
 

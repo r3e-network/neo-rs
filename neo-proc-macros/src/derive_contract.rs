@@ -1,33 +1,77 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput};
+use quote::ToTokens;
+use syn::__private::TokenStream2;
+use syn::parse::Parse;
+use syn::{parse_macro_input, DeriveInput, ItemFn};
+use syn::{Lit, Meta};
 
-#[proc_macro_derive(Contract)]
-pub fn derive_contract(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = &input.ident;
+struct ContractMethodArgs {
+    name: Option<String>,
+    required_call_flags: Option<u32>,
+    cpu_fee: Option<u64>,
+    storage_fee: Option<u64>,
+    active_in: Option<String>,
+    deprecated_in: Option<String>,
+}
 
-    let expanded = quote! {
-        impl Contract for #name {
-            fn script(&self) -> &Vec<u8> {
-                &self.script
-            }
+impl Parse for ContractMethodArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut args = ContractMethodArgs {
+            name: None,
+            required_call_flags: None,
+            cpu_fee: None,
+            storage_fee: None,
+            active_in: None,
+            deprecated_in: None,
+        };
 
-            fn parameter_list(&self) -> &Vec<ContractParameterType> {
-                &self.parameter_list
-            }
-
-            fn script_hash(&mut self) -> UInt160 {
-                if let Some(hash) = self.script_hash {
-                    hash
-                } else {
-                    let hash = UInt160::from_script(&self.script);
-                    self.script_hash = Some(hash);
-                    hash
+        while !input.is_empty() {
+            let meta = input.parse::<Meta>()?;
+            match meta {
+                Meta::NameValue(nv) => {
+                    let ident = nv.path.get_ident().unwrap().to_string();
+                    match ident.as_str() {
+                        "name" => {
+                            if let Lit::Str(lit) = nv.value {
+                                args.name = Some(lit.value());
+                            }
+                        }
+                        "required_call_flags" => {
+                            if let Lit::Int(lit) = nv.value {
+                                args.required_call_flags = Some(lit.base10_parse()?);
+                            }
+                        }
+                        "cpu_fee" => {
+                            if let Lit::Int(lit) = nv.value {
+                                args.cpu_fee = Some(lit.base10_parse()?);
+                            }
+                        }
+                        "storage_fee" => {
+                            if let Lit::Int(lit) = nv.value {
+                                args.storage_fee = Some(lit.base10_parse()?);
+                            }
+                        }
+                        "active_in" => {
+                            if let Lit::Str(lit) = nv.value {
+                                args.active_in = Some(lit.value());
+                            }
+                        }
+                        "deprecated_in" => {
+                            if let Lit::Str(lit) = nv.value {
+                                args.deprecated_in = Some(lit.value());
+                            }
+                        }
+                        _ => {}
+                    }
                 }
+                _ => return Err(syn::Error::new_spanned(meta, "Unsupported attribute")),
+            }
+            if !input.is_empty() {
+                input.parse::<syn::Token![,]>()?;
             }
         }
-    };
 
-    TokenStream::from(expanded)
+        Ok(args)
+    }
 }

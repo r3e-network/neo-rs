@@ -5,8 +5,10 @@ use neo_vm::stack_item::StackItem;
 use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::network::Payloads::IVerifiable;
 use crate::uint160::UInt160;
 
+#[derive(Default)]
 pub struct NotifyEventArgs {
     /// The container that containing the executed script.
     pub script_container: Rc<dyn IVerifiable>,
@@ -18,12 +20,13 @@ pub struct NotifyEventArgs {
     pub event_name: String,
 
     /// The arguments of the event.
-    pub state: Array,
+    /// StackItem::Array
+    pub state: StackItem,
 }
 
 impl NotifyEventArgs {
     /// Initializes a new instance of the NotifyEventArgs struct.
-    pub fn new(container: Rc<dyn IVerifiable>, script_hash: UInt160, event_name: String, state: Array) -> Self {
+    pub fn new(container: Rc<dyn IVerifiable>, script_hash: UInt160, event_name: String, state: StackItem/*Array*/) -> Self {
         Self {
             script_container: container,
             script_hash,

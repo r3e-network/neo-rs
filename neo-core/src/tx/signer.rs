@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::bin::*;
-use crate::{PublicKey, tx::*, types::H160};
+use crate::{PublicKey, tx::*, types::UInt160};
 
 
 pub const MAX_ALLOWED_GROUPS: usize = 16;
@@ -23,13 +23,13 @@ pub enum SignerType {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Signer {
-    pub account: H160,
+    pub account: UInt160,
 
     pub scopes: WitnessScopes,
 
     #[serde(rename = "allowedcontracts")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub allowed_contract: Vec<H160>,
+    pub allowed_contract: Vec<UInt160>,
 
     #[serde(rename = "allowedgroups")]
     #[serde(skip_serializing_if = "Vec::is_empty")]

@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
-use crate::{block::Header, types::{H256, Bytes}};
+use crate::{block::Header, types::{UInt256, Bytes}};
 
 
 pub const MAX_HEADERS_ALLOWED: usize = 2000;
@@ -23,7 +23,7 @@ pub struct BlockIndexRange {
 /// i.e. GetBlocks
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct BlockHashRange {
-    pub start_hash: H256,
+    pub start_hash: UInt256,
     pub count: u16,
 }
 
@@ -37,6 +37,6 @@ pub struct Headers {
 pub struct MerkleBlock {
     pub header: Header,
     pub tx_count: u32,
-    pub hashes: Vec<H256>,
+    pub hashes: Vec<UInt256>,
     pub flags: Bytes,
 }

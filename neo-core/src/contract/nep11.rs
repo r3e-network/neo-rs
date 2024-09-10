@@ -4,7 +4,7 @@
 
 use neo_base::math::U256;
 
-use crate::{contract::ParamValue, types::{Bytes, H160}};
+use crate::{contract::ParamValue, types::{Bytes, UInt160}};
 
 
 pub trait Iter<T> {
@@ -39,22 +39,22 @@ pub trait Nep11 {
     /// `properties` is optional
     fn properties(&self) -> Bytes;
 
-    fn balance_of(&self, owner: &H160) -> U256;
+    fn balance_of(&self, owner: &UInt160) -> U256;
 
-    fn tokens_of<TokenIter: Iter<Bytes>>(&self, owner: &H160) -> TokenIter;
+    fn tokens_of<TokenIter: Iter<Bytes>>(&self, owner: &UInt160) -> TokenIter;
 
-    fn owner_of(&self, token_id: &Bytes) -> H160;
+    fn owner_of(&self, token_id: &Bytes) -> UInt160;
 
-    fn transfer(&self, to: &H160, token_id: &Bytes, data: &ParamValue) -> Result<bool, Self::TransferError>;
+    fn transfer(&self, to: &UInt160, token_id: &Bytes, data: &ParamValue) -> Result<bool, Self::TransferError>;
 
     /// `transfer_token` for divisible token
-    fn transfer_token(&self, from: &H160, to: &H160, amount: u64, token_id: &Bytes, data: &ParamValue) -> Result<bool, Self::TransferError>;
+    fn transfer_token(&self, from: &UInt160, to: &UInt160, amount: u64, token_id: &Bytes, data: &ParamValue) -> Result<bool, Self::TransferError>;
 
     /// `owner_of_token` returns multi owners if this NFT is divided
-    fn owners_of_token<OwnerIter: Iter<H160>>(&self, token_id: &Bytes) -> OwnerIter;
+    fn owners_of_token<OwnerIter: Iter<UInt160>>(&self, token_id: &Bytes) -> OwnerIter;
 
     /// `balance_of_token` is for divisible NFT
-    fn balance_of_token(&self, owner: &H160, token_id: &Bytes) -> u64;
+    fn balance_of_token(&self, owner: &UInt160, token_id: &Bytes) -> u64;
 
     /// `tokens` is optional
     fn tokens<TokenIter: Iter<Bytes>>(&self) -> TokenIter;
@@ -66,7 +66,7 @@ pub trait Nep11Receiver {
 
     type Error;
 
-    fn on_nep11_payment(&self, from: &H160, amount: u64, token_id: &Bytes, data: &ParamValue) -> Result<(), Self::Error>;
+    fn on_nep11_payment(&self, from: &UInt160, amount: u64, token_id: &Bytes, data: &ParamValue) -> Result<(), Self::Error>;
 }
 
 
@@ -75,5 +75,5 @@ pub trait Nep11Event {
 
     type EmitError;
 
-    fn emit_transfer(&self, from: &H160, to: &H160, amount: u64, token_id: &Bytes) -> Result<(), Self::EmitError>;
+    fn emit_transfer(&self, from: &UInt160, to: &UInt160, amount: u64, token_id: &Bytes) -> Result<(), Self::EmitError>;
 }

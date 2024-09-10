@@ -1,14 +1,12 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use neo_base::encoding::bin::*;
-use neo_core::types::{Bytes, H256, H256_SIZE, Sign};
 use crate::dbft_v2::*;
-
+use neo_base::encoding::bin::*;
+use neo_core::types::{Bytes, Sign, UInt256, H256_SIZE};
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct RecoveryRequest {
@@ -16,9 +14,8 @@ pub struct RecoveryRequest {
 
     /// Extensible hash that contains this PrepareRequest and zero means no such value.
     #[bin(ignore)]
-    pub payload_hash: H256,
+    pub payload_hash: UInt256,
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct RecoveryMessage {
@@ -31,40 +28,49 @@ pub struct RecoveryMessage {
 impl RecoveryMessage {
     pub fn prepare_request(&self, meta: MessageMeta) -> Option<Message<PrepareRequest>> {
         match &self.prepare_stage {
-            PrepareStage::Prepare(req) => Some(Message { meta, message: req.clone() }),
+            PrepareStage::Prepare(req) => Some(Message {
+                meta,
+                message: req.clone(),
+            }),
             _ => None,
         }
     }
 
-    pub fn prepare_responses(&self, block_index: u32, view_number: ViewNumber) -> Vec<Message<PrepareResponse>> {
+    pub fn prepare_responses(
+        &self,
+        block_index: u32,
+        view_number: ViewNumber,
+    ) -> Vec<Message<PrepareResponse>> {
         let PrepareStage::Preparation(Some(ref hash)) = self.prepare_stage else {
             return Vec::new();
         };
 
-        self.preparations.iter()
+        self.preparations
+            .iter()
             .map(|p| p.to_prepare_response(block_index, view_number, hash.clone()))
             .collect()
     }
 
     pub fn commits(&self, block_index: u32) -> Vec<Message<Commit>> {
-        self.commits.iter()
+        self.commits
+            .iter()
             .map(|cc| cc.to_commit(block_index))
             .collect()
     }
 
     pub fn change_views(&self, block_index: u32) -> Vec<Message<ChangeViewRequest>> {
-        self.change_views.iter()
+        self.change_views
+            .iter()
             .map(|cv| cv.to_change_view_request(block_index))
             .collect()
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub enum PrepareStage {
     Prepare(PrepareRequest),
 
-    Preparation(Option<H256>),
+    Preparation(Option<UInt256>),
 }
 
 impl BinEncoder for PrepareStage {
@@ -89,7 +95,13 @@ impl BinEncoder for PrepareStage {
     fn bin_size(&self) -> usize {
         match self {
             Self::Prepare(p) => p.bin_size(),
-            Self::Preparation(p) => if p.is_none() { 1 } else { 1 + H256_SIZE },
+            Self::Preparation(p) => {
+                if p.is_none() {
+                    1
+                } else {
+                    1 + H256_SIZE
+                }
+            }
         }
     }
 }
@@ -99,7 +111,11 @@ impl BinDecoder for PrepareStage {
         let offset = r.consumed();
         let prepare: u8 = BinDecoder::decode_bin(r)?;
         if prepare != 0x00 && prepare != 0x01 {
-            return Err(BinDecodeError::InvalidType("PrepareStage", offset, prepare as u64));
+            return Err(BinDecodeError::InvalidType(
+                "PrepareStage",
+                offset,
+                prepare as u64,
+            ));
         }
 
         if prepare == 0x00 {
@@ -111,7 +127,11 @@ impl BinDecoder for PrepareStage {
             return Err(BinDecodeError::InvalidValue("PrepareStage", offset + 1));
         }
 
-        Ok(Self::Preparation(if size == 0 { None } else { Some(BinDecoder::decode_bin(r)?) }))
+        Ok(Self::Preparation(if size == 0 {
+            None
+        } else {
+            Some(BinDecoder::decode_bin(r)?)
+        }))
     }
 }
 
@@ -140,7 +160,6 @@ impl ChangeViewCompact {
     }
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct CommitCompact {
     pub view_number: ViewNumber,
@@ -157,11 +176,12 @@ impl CommitCompact {
                 validator_index: self.validator_index,
                 view_number: self.view_number,
             },
-            message: Commit { sign: self.sign.clone() },
+            message: Commit {
+                sign: self.sign.clone(),
+            },
         }
     }
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct PreparationCompact {
@@ -170,10 +190,19 @@ pub struct PreparationCompact {
 }
 
 impl PreparationCompact {
-    pub fn to_prepare_response(&self, block_index: u32, view_number: ViewNumber, preparation: H256) -> Message<PrepareResponse> {
+    pub fn to_prepare_response(
+        &self,
+        block_index: u32,
+        view_number: ViewNumber,
+        preparation: UInt256,
+    ) -> Message<PrepareResponse> {
         let validator_index = self.validator_index;
         Message {
-            meta: MessageMeta { block_index, validator_index, view_number },
+            meta: MessageMeta {
+                block_index,
+                validator_index,
+                view_number,
+            },
             message: PrepareResponse { preparation },
         }
     }

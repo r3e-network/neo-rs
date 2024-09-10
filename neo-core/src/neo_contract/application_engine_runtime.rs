@@ -7,9 +7,11 @@ use num_bigint::{BigInt, Sign};
 use neo_vm::execution_context::ExecutionContext;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
+use neo_vm::vm::script::Script;
 use crate::block::Block;
 use crate::contract::Contract;
 use crate::hardfork::Hardfork;
+use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::execution_context_state::ExecutionContextState;
@@ -17,28 +19,10 @@ use crate::neo_contract::interop_descriptor::InteropDescriptor;
 use crate::neo_contract::log_event_args::LogEventArgs;
 use crate::neo_contract::native_contract::NativeContract;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
+use crate::network::Payloads::{OracleResponse, Signer};
 use crate::persistence::SnapshotCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;
-
-pub struct ApplicationEngine {
-    // Fields and other struct members...
-    protocol_settings: ProtocolSettings,
-    persisting_block: Block,
-    script_container: Option<Box<dyn ScriptContainer>>,
-    current_context: ExecutionContext,
-    calling_script_hash: UInt160,
-    current_script_hash: UInt160,
-    invocation_counter: HashMap<UInt160, i32>,
-    nonce_data: Vec<u8>,
-    random_times: u32,
-    exec_fee_factor: u64,
-    snapshot_cache: SnapshotCache,
-    reference_counter: Rc<RefCell<ReferenceCounter>>,
-    notifications: Option<Vec<NotifyEventArgs>>,
-    log: Option<Box<dyn Fn(LogEventArgs)>>,
-    notify: Option<Box<dyn Fn(NotifyEventArgs)>>,
-}
 
 impl ApplicationEngine {
     /// The maximum length of event name.
@@ -134,7 +118,7 @@ impl ApplicationEngine {
 
     /// Determines whether the specified account has witnessed the current transaction.
     pub fn check_witness_internal(&self, hash: &UInt160) -> Result<bool, String> {
-        if hash == &self.calling_script_hash {
+        if hash == &self.calling_script_hash() {
             return Ok(true);
         }
 
@@ -295,13 +279,34 @@ impl ApplicationEngine {
 
     // Helper function to check item type
     fn check_item_type(item: &StackItem, type_: ContractParameterType) -> bool {
-        match (item, type_) {
-            (StackItem::Any, _) => true,
-            (StackItem::Boolean(_), ContractParameterType::Boolean) => true,
-            (StackItem::Integer(_), ContractParameterType::Integer) => true,
-        // Implementation of type checking logic
-        // This would be a detailed match statement comparing StackItem types
-        // with ContractParameterType, similar to the C# version
-        todo!("Implement type checking logic")
+        match type_ {
+            ContractParameterType::Any => true,
+            ContractParameterType::Boolean => matches!(item, StackItem::Boolean(_)),
+            ContractParameterType::Integer => matches!(item, StackItem::Integer(_)),
+            ContractParameterType::ByteArray => matches!(item, StackItem::ByteString(_) | StackItem::Buffer(_)),
+            ContractParameterType::String => {
+                if let StackItem::ByteString(bytes) | StackItem::Buffer(bytes) = item {
+                    std::str::from_utf8(bytes).is_ok()
+                } else {
+                    false
+                }
+            },
+            ContractParameterType::Hash160 => {
+                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == UInt160::len())
+            },
+            ContractParameterType::Hash256 => {
+                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == UInt256::len())
+            },
+            ContractParameterType::PublicKey => {
+                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == 33)
+            },
+            ContractParameterType::Signature => {
+                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == 64)
+            },
+            ContractParameterType::Array => matches!(item, StackItem::Array(_) | StackItem::Struct(_)),
+            ContractParameterType::Map => matches!(item, StackItem::Map(_)),
+            ContractParameterType::InteropInterface => matches!(item, StackItem::InteropInterface(_)),
+            _ => false,
+        }
     }
 }

@@ -4,24 +4,36 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use std::rc::Rc;
 use std::cell::RefCell;
+use lazy_static::lazy_static;
 use NeoRust::prelude::PolicyContract;
+use num_bigint::BigInt;
 use neo_vm::execution_context::ExecutionContext;
 use neo_vm::execution_engine::ExecutionEngine;
+use neo_vm::instruction::Instruction;
+use neo_vm::interop_interface::InteropInterface;
+use neo_vm::op_code::OpCode;
 use neo_vm::stack_item::StackItem;
+use neo_vm::vm::script::Script;
 use crate::block::Block;
 use crate::hardfork::Hardfork;
+use crate::neo_contract::call_flags::CallFlags;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::contract_state::ContractState;
 use crate::neo_contract::contract_task::{ContractTask, ContractTaskAwaiter};
 use crate::neo_contract::execution_context_state::ExecutionContextState;
+use crate::neo_contract::idiagnostic::IDiagnostic;
 use crate::neo_contract::interop_descriptor::InteropDescriptor;
+use crate::neo_contract::manifest::contract_manifest::ContractManifest;
 use crate::neo_contract::manifest::contract_method_descriptor::ContractMethodDescriptor;
 use crate::neo_contract::native_contract::NativeContract;
+use crate::neo_contract::nef_file::NefFile;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
 use crate::neo_contract::trigger_type::TriggerType;
+use crate::network::Payloads::{IVerifiable, Transaction, Witness};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;
+use crate::uint256::UInt256;
 
 const TEST_MODE_GAS: i64 = 20_00000000;
 
@@ -30,20 +42,20 @@ pub struct ApplicationEngine {
     trigger: TriggerType,
     fee_consumed: i64,
     fee_amount: i64,
-    current_context: Option<Rc<RefCell<ExecutionContext>>>,
+    pub(crate) current_context: Option<Rc<RefCell<ExecutionContext>>>,
     invocation_counter: HashMap<UInt160, i32>,
     notifications: Vec<NotifyEventArgs>,
     state_cache: DataCache,
-    protocol_settings: Arc<ProtocolSettings>,
+    pub(crate) protocol_settings: Arc<ProtocolSettings>,
     snapshot: DataCache,
-    script_container: Option<Box<dyn Verifiable>>,
-    persisting_block: Option<Block>,
+    pub(crate) script_container: Option<Box<dyn IVerifiable>>,
+    pub(crate) persisting_block: Option<Block>,
     disposables: Vec<Box<dyn Drop>>,
     contract_tasks: HashMap<Rc<RefCell<ExecutionContext>>, ContractTaskAwaiter>,
     exec_fee_factor: u32,
     storage_price: u32,
     nonce_data: [u8; 16],
-    diagnostic: Option<Box<dyn Diagnostic>>,
+    diagnostic: Option<Box<dyn IDiagnostic>>,
     states: HashMap<String, Box<dyn Any>>,
     fault_exception: Option<Box<dyn std::error::Error>>,
 }
@@ -56,7 +68,7 @@ impl ApplicationEngine {
         persisting_block: Option<Block>,
         settings: Arc<ProtocolSettings>,
         gas: i64,
-        diagnostic: Option<Box<dyn Diagnostic>>,
+        diagnostic: Option<Box<dyn IDiagnostic>>,
         jump_table: Option<JumpTable>,
     ) -> Self {
         let exec_fee_factor = if snapshot.is_none() || persisting_block.as_ref().map_or(false, |b| b.index() == 0) {
@@ -158,7 +170,7 @@ impl ApplicationEngine {
         Ok(())
     }
 
-    fn add_fee(&mut self, amount: i64) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn add_fee(&mut self, amount: i64) -> Result<(), Box<dyn std::error::Error>> {
         self.fee_consumed = self.fee_consumed.checked_add(amount)
             .ok_or_else(|| "Fee overflow".to_string())?;
         if self.fee_consumed > self.fee_amount {
@@ -270,7 +282,7 @@ impl ApplicationEngine {
 
         // Adjust flags based on method safety
         if method.safe {
-            flags &= !(CallFlags::WriteStates | CallFlags::AllowNotify);
+            flags &= !(CallFlags::WRITE_STATES | CallFlags::ALLOW_NOTIFY);
         } else {
             let executing_contract = if self.is_hardfork_enabled(Hardfork::HF_Domovoi) {
                 state.contract.as_ref().ok_or_else(|| "No contract in current context".to_string())?
@@ -354,8 +366,6 @@ impl ApplicationEngine {
     }
 
 
-
-
     pub fn call_from_native_contract_async(
         &mut self,
         calling_script_hash: UInt160,
@@ -363,7 +373,7 @@ impl ApplicationEngine {
         method: &str,
         args: Vec<StackItem>,
     ) -> ContractTask {
-        let context_new = self.call_contract_internal(hash, method, CallFlags::All, false, args).unwrap();
+        let context_new = self.call_contract_internal(hash, method, CallFlags::ALL, false, args).unwrap();
         let mut state = context_new.borrow_mut().get_state_mut::<ExecutionContextState>();
         state.native_calling_script_hash = Some(calling_script_hash);
         let task = ContractTask::new();
@@ -557,8 +567,8 @@ impl ApplicationEngine {
 
     pub fn compose_default_jump_table() -> JumpTable {
         let mut table = JumpTable::new();
-        table.insert(OpCode::SYSCALL, ApplicationEngine::on_syscall);
-        table.insert(OpCode::CALLT, ApplicationEngine::on_call_t);
+        table.insert(OpCode::Syscall, ApplicationEngine::on_syscall);
+        table.insert(OpCode::CallT, ApplicationEngine::on_call_t);
         table
     }
 
@@ -569,7 +579,7 @@ impl ApplicationEngine {
 
     fn on_call_t(&mut self, instruction: &Instruction) -> Result<(), Box<dyn std::error::Error>> {
         let token_id = instruction.token_u16() as usize;
-        self.validate_call_flags(CallFlags::ReadStates | CallFlags::AllowCall)?;
+        self.validate_call_flags(CallFlags::READ_STATES | CallFlags::ALLOW_CALL)?;
 
         let contract = self.current_context.as_ref().unwrap().borrow().get_state::<ExecutionContextState>().contract.as_ref()
             .ok_or_else(|| "No contract in current context".to_string())?;
@@ -604,7 +614,7 @@ lazy_static! {
                     Ok(Some(StackItem::ByteString("NEO".as_bytes().to_vec())))
                 },
                 fixed_price: 1,
-                required_call_flags: CallFlags::None,
+                required_call_flags: CallFlags::NONE,
             });
         m.insert(0x87654321, InteropDescriptor {
             name: "System.Runtime.GetTrigger".to_string(),
@@ -612,7 +622,7 @@ lazy_static! {
                 Ok(Some(StackItem::Integer(engine.trigger as i64)))
             },
             fixed_price: 1,
-            required_call_flags: CallFlags::None,
+            required_call_flags: CallFlags::NONE,
         });
         // Add more system calls here
         m
@@ -620,15 +630,36 @@ lazy_static! {
 }
 
 impl ApplicationEngine {
+
+    fn calculate_hash(name: &str) -> u32 {
+        // Simple hash function for demonstration
+        // In practice, use a proper hashing algorithm
+        name.bytes().fold(0u32, |hash, byte| hash.wrapping_add(byte as u32))
+    }
+
+    fn register_syscall(&self, name: &str, handler: fn(&mut ApplicationEngine, Vec<StackItem>) -> Result<Option<StackItem>, Box<dyn std::error::Error>>, fixed_price: i64, required_call_flags: CallFlags) -> InteropDescriptor {
+        let descriptor = InteropDescriptor {
+            name: name.to_string(),
+            handler,
+            fixed_price,
+            required_call_flags,
+        };
+
+        let hash = self.calculate_hash(name);
+        SERVICES.lock().unwrap().insert(hash, descriptor.clone());
+
+        descriptor
+    }
+
     pub fn run(
         script: Vec<u8>,
         snapshot: DataCache,
-        container: Option<Box<dyn Verifiable>>,
+        container: Option<Box<dyn IVerifiable>>,
         persisting_block: Option<Block>,
         settings: Arc<ProtocolSettings>,
         offset: usize,
         max_gas: i64,
-        diagnostic: Option<Box<dyn Diagnostic>>,
+        diagnostic: Option<Box<dyn IDiagnostic>>,
     ) -> Result<ApplicationEngine, Box<dyn std::error::Error>> {
         let persisting_block = persisting_block.unwrap_or_else(|| Self::create_dummy_block(&snapshot, &settings));
         let mut engine = Self::new(
@@ -714,7 +745,7 @@ impl ApplicationEngine {
                 id: old_contract.id,
                 update_counter: old_contract.update_counter + 1,
                 hash: UInt160::from_slice(&script).unwrap(),
-                nef: NEF::new(script, self.protocol_settings.network)?,
+                nef: NefFile::new(script, self.protocol_settings.network)?,
                 manifest,
             }
         } else {

@@ -3,7 +3,7 @@
 
 
 use neo_base::{errors, math::U256, encoding::{bin::ToBinEncoded, hex::ToHex}};
-use crate::{store::{self, *}, types::H160};
+use crate::{store::{self, *}, types::UInt160};
 
 
 pub const NEO_CONTRACT_ID: u32 = 0xffff_fffb; // -5
@@ -17,7 +17,7 @@ const PREFIX_ACCOUNT: u8 = 20;
 #[derive(Debug, Copy, Clone, errors::Error)]
 pub enum TransferError {
     #[error("transfer: insufficient balance of '{0}' with '{1}'")]
-    InsufficientBalance(H160, U256),
+    InsufficientBalance(UInt160, U256),
 }
 
 
@@ -33,7 +33,7 @@ impl<Store: store::Store> Nep17Store<Store> {
     }
 
     /// `mint` initializes token supply, for native contract
-    pub(crate) fn mint(&self, account: &H160, amount: &U256) {
+    pub(crate) fn mint(&self, account: &UInt160, amount: &U256) {
         if amount.is_zero() {
             return;
         }
@@ -52,16 +52,16 @@ impl<Store: store::Store> Nep17Store<Store> {
         }
     }
 
-    pub fn balance_of(&self, account: &H160) -> U256 {
+    pub fn balance_of(&self, account: &UInt160) -> U256 {
         let key = StoreKey::new(self.contract_id, PREFIX_ACCOUNT, account);
         self.balance(&key.to_bin_encoded())
     }
 
-    // pub fn transfer(&self, key: &[u8], to: &H160, amount: &U256) -> Result<(), TransferError> {
+    // pub fn transfer(&self, key: &[u8], to: &UInt160, amount: &U256) -> Result<(), TransferError> {
     //     Ok(())
     // }
 
-    fn set_balance(&self, key: &StoreKey<H160>, action: impl FnOnce(&U256) -> U256) -> bool {
+    fn set_balance(&self, key: &StoreKey<UInt160>, action: impl FnOnce(&U256) -> U256) -> bool {
         let key = key.to_bin_encoded();
         let prev = self.balance(&key);
         let curr = action(&prev);

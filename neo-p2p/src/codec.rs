@@ -1,21 +1,18 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use std::io::{Error as IoError, ErrorKind::InvalidData};
 
 use tokio_util::bytes::{Buf, BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
 use neo_base::encoding::bin::*;
-use neo_core::payload::{self, P2pMessage, Lz4Compress, Lz4Decompress};
+use neo_core::payload::{self, Lz4Compress, Lz4Decompress, P2pMessage};
 use neo_core::types::Bytes;
-
 
 const MAX_BODY_LEN: usize = 0x02000000; // 32MiB
 
 const FLAG_COMPRESSED: u8 = 0x01;
-
 
 pub trait MessageWrite {
     fn write_message(&mut self, flags: u8, cmd: u8, data: &[u8]) -> Result<(), IoError>;
@@ -25,7 +22,10 @@ impl MessageWrite for BytesMut {
     #[inline]
     fn write_message(&mut self, flags: u8, cmd: u8, data: &[u8]) -> Result<(), IoError> {
         if data.len() > MAX_BODY_LEN {
-            return Err(IoError::new(InvalidData, format!("encoder: too large body {}-{}-{}", flags, cmd, data.len())));
+            return Err(IoError::new(
+                InvalidData,
+                format!("encoder: too large body {}-{}-{}", flags, cmd, data.len()),
+            ));
         }
 
         self.reserve(1 + 2 + 5 + data.len());
@@ -82,7 +82,6 @@ impl ToMessageEncoded for P2pMessage {
     }
 }
 
-
 pub struct MessageDecoder;
 
 impl Decoder for MessageDecoder {
@@ -100,13 +99,24 @@ impl Decoder for MessageDecoder {
             0x00..=0xfc => (3, prefix as u64),
             0xfd if d.len() >= 5 => (5, u16::from_le_bytes([d[3], d[4]]) as u64),
             0xfe if d.len() >= 7 => (7, u32::from_le_bytes([d[3], d[4], d[5], d[6]]) as u64),
-            0xff if d.len() >= 11 => (11, u64::from_le_bytes([d[3], d[4], d[5], d[6], d[7], d[8], d[9], d[10]])),
-            _ => return Err(IoError::new(InvalidData, format!("decoder: invalid prefix 0x{:x}", prefix))),
+            0xff if d.len() >= 11 => (
+                11,
+                u64::from_le_bytes([d[3], d[4], d[5], d[6], d[7], d[8], d[9], d[10]]),
+            ),
+            _ => {
+                return Err(IoError::new(
+                    InvalidData,
+                    format!("decoder: invalid prefix 0x{:x}", prefix),
+                ))
+            }
         };
 
         let body = body as usize;
         if body > MAX_BODY_LEN {
-            return Err(IoError::new(InvalidData, format!("decoder: too large body {}-{}-{}", d[0], d[1], body)));
+            return Err(IoError::new(
+                InvalidData,
+                format!("decoder: too large body {}-{}-{}", d[0], d[1], body),
+            ));
         }
 
         let total = head + body;
@@ -122,8 +132,10 @@ impl Decoder for MessageDecoder {
         };
 
         let body = if src[0] & FLAG_COMPRESSED != 0 {
-            let body: Vec<u8> = Lz4Decompress::lz4_decompress(&src[head..total])
-                .map_err(|err| IoError::new(InvalidData, format!("decoder: lz4_decompress {}", err)))?;
+            let body: Vec<u8> =
+                Lz4Decompress::lz4_decompress(&src[head..total]).map_err(|err| {
+                    IoError::new(InvalidData, format!("decoder: lz4_decompress {}", err))
+                })?;
             build(&body)
         } else {
             build(&src[head..total])

@@ -1,4 +1,3 @@
-
 /// Represents the types of tokens in a JSON Path expression.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JPathTokenType {

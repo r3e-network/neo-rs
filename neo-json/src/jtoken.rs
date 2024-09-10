@@ -1,8 +1,14 @@
+use crate::jpath_token::JPath;
+use crate::json_error::JsonError;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::jpath_token::{JPath};
-use crate::json_error::JsonError;
+use std::convert::{TryFrom, TryInto};
+/// Represents the largest safe integer in JSON.
+pub const MAX_SAFE_INTEGER: i64 = (1 << 53) - 1;
+
+/// Represents the smallest safe integer in JSON.
+pub const MIN_SAFE_INTEGER: i64 = -((1 << 53) - 1);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum JToken {
@@ -39,7 +45,13 @@ impl JToken {
     pub fn as_number(&self) -> f64 {
         match self {
             JToken::Number(n) => *n,
-            JToken::Boolean(b) => if *b { 1.0 } else { 0.0 },
+            JToken::Boolean(b) => {
+                if *b {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             JToken::String(s) => s.parse().unwrap_or(f64::NAN),
             _ => f64::NAN,
         }
@@ -80,10 +92,11 @@ impl JToken {
 
     pub fn get_int32(&self) -> Result<i32, JsonError> {
         let n = self.get_number()?;
-        if n.fract() != 0.0 {
-            return Err(JsonError::InvalidCast);
+        if n.is_finite() && n >= i32::MIN as f64 && n <= i32::MAX as f64 {
+            Ok(n as i32)
+        } else {
+            Err(JsonError::InvalidCast)
         }
-        n.try_into().map_err(|_| JsonError::InvalidCast)
     }
 
     pub fn get(&self, key: &str) -> Result<&JToken, JsonError> {
@@ -153,6 +166,53 @@ impl JToken {
     pub fn clone(&self) -> JToken {
         self.clone()
     }
+
+    pub fn new_object() -> Self {
+        JToken::Object(IndexMap::new())
+    }
+
+    pub fn new_array() -> Self {
+        JToken::Array(Vec::new())
+    }
+    pub fn insert(&mut self, key: String, value: JToken) -> Result<Self, JsonError> {
+        match self {
+            JToken::Object(map) => {
+                map.insert(key, value);
+                Ok(Self::clone(self))
+            }
+            _ => Err(JsonError::InvalidCast),
+        }
+    }
+
+    pub fn push(&mut self, value: JToken) -> Result<Self, JsonError> {
+        match self {
+            JToken::Array(vec) => {
+                vec.push(value);
+                Ok(Self::clone(self))
+            }
+            _ => Err(JsonError::InvalidCast),
+        }
+    }
+
+    pub fn remove(&mut self, key: &str) -> Result<JToken, JsonError> {
+        match self {
+            JToken::Object(map) => map.remove(key).ok_or(JsonError::KeyNotFound),
+            _ => Err(JsonError::InvalidCast),
+        }
+    }
+
+    pub fn remove_index(&mut self, index: usize) -> Result<JToken, JsonError> {
+        match self {
+            JToken::Array(vec) => {
+                if index < vec.len() {
+                    Ok(vec.remove(index))
+                } else {
+                    Err(JsonError::IndexOutOfBounds)
+                }
+            }
+            _ => Err(JsonError::InvalidCast),
+        }
+    }
 }
 
 impl std::fmt::Display for JToken {
@@ -165,19 +225,23 @@ impl std::fmt::Display for JToken {
             JToken::Array(a) => {
                 write!(f, "[")?;
                 for (i, item) in a.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", item)?;
                 }
                 write!(f, "]")
-            },
+            }
             JToken::Object(o) => {
                 write!(f, "{{")?;
                 for (i, (key, value)) in o.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "\"{}\": {}", key, value)?;
                 }
                 write!(f, "}}")
-            },
+            }
         }
     }
 }
@@ -190,7 +254,155 @@ impl From<Value> for JToken {
             Value::Number(n) => JToken::Number(n.as_f64().unwrap_or(f64::NAN)),
             Value::String(s) => JToken::String(s),
             Value::Array(a) => JToken::Array(a.into_iter().map(JToken::from).collect()),
-            Value::Object(o) => JToken::Object(o.into_iter().map(|(k, v)| (k, JToken::from(v))).collect()),
+            Value::Object(o) => {
+                JToken::Object(o.into_iter().map(|(k, v)| (k, JToken::from(v))).collect())
+            }
         }
+    }
+}
+
+// Implement TryFrom for various types
+impl TryFrom<JToken> for bool {
+    type Error = JsonError;
+
+    fn try_from(value: JToken) -> Result<Self, Self::Error> {
+        if let JToken::Boolean(b) = value {
+            Ok(b)
+        } else {
+            Err(JsonError::InvalidCast)
+        }
+    }
+}
+
+impl TryFrom<JToken> for f64 {
+    type Error = JsonError;
+
+    fn try_from(value: JToken) -> Result<Self, Self::Error> {
+        if let JToken::Number(n) = value {
+            Ok(n)
+        } else {
+            Err(JsonError::InvalidCast)
+        }
+    }
+}
+
+impl TryFrom<JToken> for String {
+    type Error = JsonError;
+
+    fn try_from(value: JToken) -> Result<Self, Self::Error> {
+        if let JToken::String(s) = value {
+            Ok(s)
+        } else {
+            Err(JsonError::InvalidCast)
+        }
+    }
+}
+
+impl TryFrom<JToken> for Vec<JToken> {
+    type Error = JsonError;
+
+    fn try_from(value: JToken) -> Result<Self, Self::Error> {
+        if let JToken::Array(a) = value {
+            Ok(a)
+        } else {
+            Err(JsonError::InvalidCast)
+        }
+    }
+}
+
+impl TryFrom<JToken> for IndexMap<String, JToken> {
+    type Error = JsonError;
+
+    fn try_from(value: JToken) -> Result<Self, Self::Error> {
+        if let JToken::Object(o) = value {
+            Ok(o)
+        } else {
+            Err(JsonError::InvalidCast)
+        }
+    }
+}
+
+// Implement From for various types
+impl From<bool> for JToken {
+    fn from(value: bool) -> Self {
+        JToken::Boolean(value)
+    }
+}
+
+impl From<f64> for JToken {
+    fn from(value: f64) -> Self {
+        JToken::Number(value)
+    }
+}
+
+impl From<i32> for JToken {
+    fn from(value: i32) -> Self {
+        JToken::Number(value as f64)
+    }
+}
+
+impl From<i64> for JToken {
+    fn from(value: i64) -> Self {
+        JToken::Number(value as f64)
+    }
+}
+
+impl From<u32> for JToken {
+    fn from(value: u32) -> Self {
+        JToken::Number(value as f64)
+    }
+}
+
+impl From<u64> for JToken {
+    fn from(value: u64) -> Self {
+        JToken::Number(value as f64)
+    }
+}
+
+impl From<i16> for JToken {
+    fn from(value: i16) -> Self {
+        JToken::Number(value as f64)
+    }
+}
+
+impl From<u16> for JToken {
+    fn from(value: u16) -> Self {
+        JToken::Number(value as f64)
+    }
+}
+
+impl From<i8> for JToken {
+    fn from(value: i8) -> Self {
+        JToken::Number(value as f64)
+    }
+}
+
+impl From<u8> for JToken {
+    fn from(value: u8) -> Self {
+        JToken::Number(value as f64)
+    }
+}
+
+impl From<String> for JToken {
+    fn from(value: String) -> Self {
+        JToken::String(value)
+    }
+}
+
+impl From<&str> for JToken {
+    fn from(value: &str) -> Self {
+        JToken::String(value.to_string())
+    }
+}
+
+impl From<Vec<JToken>> for JToken {
+    fn from(value: Vec<JToken>) -> Self {
+        JToken::Array(value)
+    }
+}
+
+impl From<IndexMap<String, JToken>> for JToken {
+    fn from(value: IndexMap<String, JToken>) -> Self {
+        JToken::Object(value)
     }
 }

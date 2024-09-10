@@ -1,17 +1,19 @@
 use std::collections::{HashMap, HashSet, LinkedList};
 use std::error::Error;
 use std::sync::Arc;
+use lazy_static::lazy_static;
 use NeoRust::builder::Transaction;
 use NeoRust::neo_types::{StackItem, VMState};
-use primitive_types::{H160, H256};
+use NeoRust::prelude::ScriptBuilder;
+use primitive_types::{UInt160, UInt256};
 use crate::block::Block;
-use crate::contract::event::TriggerType;
-use crate::contract::TriggerType;
 use crate::ledger::verify_result::VerifyResult;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
+use crate::neo_contract::trigger_type::TriggerType;
 use crate::neo_system::NeoSystem;
 use crate::store::Store;
+use crate::network::Payloads::{IInventory, IVerifiable, InventoryType, Witness};
 
 
 pub type CommittingHandler = fn(system: &NeoSystem, block: &Block, snapshot: &Store, application_executed_list: &[ApplicationExecuted]);
@@ -20,9 +22,9 @@ pub type CommittedHandler = fn(system: &NeoSystem, block: &Block);
 /// Actor used to verify and relay `IInventory`.
 pub struct Blockchain {
     system: Arc<NeoSystem>,
-    block_cache: HashMap<H256, Block>,
+    block_cache: HashMap<UInt256, Block>,
     block_cache_unverified: HashMap<u32, UnverifiedBlocksList>,
-    extensible_witness_white_list: Option<HashSet<H160>>,
+    extensible_witness_white_list: Option<HashSet<UInt160>>,
 }
 pub struct ApplicationExecuted {
     /// The transaction that contains the executed script. This field could be None if the contract is invoked by system.
@@ -121,10 +123,10 @@ impl Blockchain {
     fn on_import(&mut self, blocks: Vec<Block>, verify: bool) {
         let mut current_height = NativeContract::Ledger::current_index(&self.system.store_view());
         for block in blocks {
-            if block.index() <= current_height {
+            if block.header().index() <= current_height {
                 continue;
             }
-            if block.index() != current_height + 1 {
+            if block.header().index() != current_height + 1 {
                 // Handle error
                 return;
             }
@@ -235,7 +237,7 @@ impl Blockchain {
         self.system.event_bus.publish(RelayResultReason::new(inventory, result));
     }
 
-    fn update_extensible_witness_white_list(settings: &ProtocolSettings, snapshot: &Store) -> HashSet<H160> {
+    fn update_extensible_witness_white_list(settings: &ProtocolSettings, snapshot: &Store) -> HashSet<UInt160> {
         let committee = NativeContract::NEO.get_committee_members(snapshot);
         let validators = NativeContract::NEO.get_next_block_validators(snapshot);
         let mut white_list = HashSet::new();

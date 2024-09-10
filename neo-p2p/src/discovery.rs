@@ -1,21 +1,18 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc;
 
+use crate::{SeedState::*, *};
 use neo_base::math::LcgRand;
 use neo_base::time::UnixTime;
-use crate::{*, SeedState::*};
-
 
 const CONNECT_RETRY_TIMES: u32 = 3;
 const MAX_POOL_SIZE: usize = 1024;
-
 
 #[derive(Debug, Clone)]
 pub struct Discoveries {
@@ -43,13 +40,14 @@ pub(crate) struct Knew {
 impl Knew {
     #[inline]
     pub fn new() -> Self {
-        Knew { when: UnixTime::now(), remain_times: CONNECT_RETRY_TIMES }
+        Knew {
+            when: UnixTime::now(),
+            remain_times: CONNECT_RETRY_TIMES,
+        }
     }
 }
 
-
 pub type Discovery = Arc<Mutex<DiscoveryV1<mpsc::Sender<SocketAddr>>>>;
-
 
 // stages: seeds -> unconnected -> attempts -> connected -> goods or failures
 #[allow(dead_code)]
@@ -100,14 +98,19 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
 
     fn update_net_size(&mut self) {
         let net_size = self.connected.len() + self.unconnected.len() + 1; // +1 is itself
-        let fan_out = if net_size > 2 { 2.5 * ((net_size - 1) as f64).ln() } else { 1.0 };
+        let fan_out = if net_size > 2 {
+            2.5 * ((net_size - 1) as f64).ln()
+        } else {
+            1.0
+        };
 
         self.fan_out = (fan_out + 0.5) as u32;
         self.net_size = net_size as u32;
     }
 
     fn seed_mut(&mut self, addr: &SocketAddr) -> Option<&mut Seed> {
-        self.seeds.iter_mut()
+        self.seeds
+            .iter_mut()
             .find(|(_, x)| x.addr.eq(&addr))
             .map(|(_, x)| x)
     }
@@ -149,18 +152,17 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
         let mut select = |state: SeedState| {
             let mut addr = None;
             for (idx, (_, seed)) in self.seeds.iter().enumerate() {
-                if seed.state == state &&
-                    !self.attempts.contains_key(&seed.addr) &&
-                    (addr.is_none() || rand.next() % (idx as u64 + 1) == 0) {
+                if seed.state == state
+                    && !self.attempts.contains_key(&seed.addr)
+                    && (addr.is_none() || rand.next() % (idx as u64 + 1) == 0)
+                {
                     addr = Some(&seed.addr);
                 }
             }
             addr
         };
 
-        select(Reachable)
-            .or_else(|| select(Temporary))
-            .cloned()
+        select(Reachable).or_else(|| select(Temporary)).cloned()
     }
 }
 
@@ -168,9 +170,13 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
     // addrs should be service address list
     pub fn back_fill(&mut self, addrs: &[SocketAddr]) {
         for addr in addrs {
-            if self.failures.contains_key(addr) ||
-                self.connected.contains_key(addr) ||
-                self.unconnected.get(addr).is_some_and(|d| d.remain_times > 0) {
+            if self.failures.contains_key(addr)
+                || self.connected.contains_key(addr)
+                || self
+                    .unconnected
+                    .get(addr)
+                    .is_some_and(|d| d.remain_times > 0)
+            {
                 continue;
             }
             self.add_unconnected(addr.clone());
@@ -186,7 +192,9 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
         }
 
         for _ in 0..(nr_remotes - outstanding) {
-            let next = self.unconnected.iter()
+            let next = self
+                .unconnected
+                .iter()
                 .find(|(k, _)| !self.connected.contains_key(k) && !self.attempts.contains_key(k))
                 .map(|(k, _)| k.clone())
                 .or_else(|| self.request_seed());
@@ -201,7 +209,8 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
     pub fn on_incoming(&mut self, addr: SocketAddr, stage: u32) {
         self.unconnected.remove(&addr);
         self.attempts.remove(&addr); // removed only if `peer` is server socket addr
-        self.connected.entry(addr)
+        self.connected
+            .entry(addr)
             .and_modify(|x| x.add_stages(stage))
             .or_insert(Connected::new(addr, stage));
         self.update_net_size();
@@ -209,7 +218,9 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
 
     // `service` is the peer tcp-server socket addr
     pub fn on_good(&mut self, peer: TcpPeer) {
-        let Some(service) = peer.service_addr() else { return; };
+        let Some(service) = peer.service_addr() else {
+            return;
+        };
         self.unconnected.remove(&service);
         self.failures.remove(&service);
         self.attempts.remove(&service);
@@ -231,10 +242,14 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
             .filter(|seed| seed.state != Permanent)
             .map(|seed| seed.state = Temporary);
 
-        let Some(peer) = self.goods.remove(addr) else { return; };
+        let Some(peer) = self.goods.remove(addr) else {
+            return;
+        };
         self.nodes.remove(&peer.version.nonce);
 
-        let Some(service) = peer.service_addr() else { return; };
+        let Some(service) = peer.service_addr() else {
+            return;
+        };
         self.seed_mut(&service) // if peer is client socket addr
             .filter(|seed| seed.state != Permanent)
             .map(|seed| seed.state = Temporary);
@@ -265,17 +280,19 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
             self.unconnected.remove(&service);
             // log::info!("`on_failure` for {}", &service);
         } else {
-            self.unconnected.get_mut(&service)
+            self.unconnected
+                .get_mut(&service)
                 .filter(|v| v.remain_times > 0)
                 .map(|v| {
                     v.remain_times -= 1;
                     v.remain_times as i32 <= 0
                 })
                 .unwrap_or(true)
-                .then(|| { self.add_failure(service.clone()); });
+                .then(|| {
+                    self.add_failure(service.clone());
+                });
         }
     }
-
 
     // `addr` may be client or server socket addr
     #[inline]
@@ -294,12 +311,12 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
     }
 
     #[inline]
-    pub fn connected_peers(&self) -> impl Iterator<Item=&Connected> {
+    pub fn connected_peers(&self) -> impl Iterator<Item = &Connected> {
         self.connected.iter().map(|(_, peer)| peer)
     }
 
     #[inline]
-    pub fn good_peers(&self) -> impl Iterator<Item=&TcpPeer> {
+    pub fn good_peers(&self) -> impl Iterator<Item = &TcpPeer> {
         self.goods.iter().map(|(_, peer)| peer)
     }
 
@@ -315,13 +332,11 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
     }
 }
 
-
 #[cfg(test)]
 mod test {
+    use super::*;
     use neo_base::time::unix_seconds_now;
     use neo_core::payload::{Capability, Version};
-    use super::*;
-
 
     #[test]
     fn test_discovery_v1() {
@@ -332,11 +347,9 @@ mod test {
         let mut disc = DiscoveryV1::new(tx, dns);
         disc.request_remotes(2);
 
-        let addr = rx.try_recv()
-            .expect("`try_recv` should be ok");
+        let addr = rx.try_recv().expect("`try_recv` should be ok");
 
-        let _ = rx.try_recv()
-            .expect_err("`try_recv` should be failed");
+        let _ = rx.try_recv().expect_err("`try_recv` should be failed");
 
         assert!(disc.attempts.contains_key(&addr));
 
@@ -347,14 +360,17 @@ mod test {
         assert!(PeerStage::Connected.belongs(connected.stages()));
         assert!(!disc.attempts.contains_key(&addr));
 
-        disc.on_good(TcpPeer::new(addr, Version {
-            network: Network::DevNet.as_magic(),
-            version: 0,
-            unix_seconds: unix_seconds_now() as u32,
-            nonce: 12345,
-            user_agent: "x".into(),
-            capabilities: vec![Capability::TcpServer { port: addr.port() }],
-        }));
+        disc.on_good(TcpPeer::new(
+            addr,
+            Version {
+                network: Network::DevNet.as_magic(),
+                version: 0,
+                unix_seconds: unix_seconds_now() as u32,
+                nonce: 12345,
+                user_agent: "x".into(),
+                capabilities: vec![Capability::TcpServer { port: addr.port() }],
+            },
+        ));
 
         let Some(peer) = disc.good(&addr) else {
             panic!("should be exists");

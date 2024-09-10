@@ -1,7 +1,6 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 struct Defer<F: FnOnce()> {
     action: Option<F>,
 }
@@ -15,9 +14,10 @@ impl<F: FnOnce()> Drop for Defer<F> {
 
 /// defer a function call
 pub fn defer<F: FnOnce()>(action: F) -> impl Drop {
-    Defer { action: Some(action) }
+    Defer {
+        action: Some(action),
+    }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -10,7 +10,7 @@ const PREFIX_NEXT_AVAILABLE_ID: u8 = 15;
 const PREFIX_CONTRACT: u8 = 8;
 const PREFIX_CONTRACT_HASH: u8 = 12;
 
-#[events]
+#[event]
 pub enum Event {
     #[event("Deploy")]
     Deploy(Hash160),

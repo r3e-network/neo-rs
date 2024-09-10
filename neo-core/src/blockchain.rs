@@ -3,8 +3,7 @@
 
 
 use neo_base::errors;
-use crate::tx::{Tx, TxPool};
-
+use crate::network::Payloads::Transaction;
 
 #[allow(unused)]
 pub struct BlockChain {
@@ -13,11 +12,11 @@ pub struct BlockChain {
 
 
 impl BlockChain {
-    pub fn pool_tx(&self, _tx: Tx) -> Result<(), PoolTxError> {
+    pub fn pool_tx(&self, _tx: Transaction) -> Result<(), PoolTxError> {
         Ok(())
     }
 
-    pub fn verify_tx(&self, _tx: &Tx) -> Result<(), PoolTxError> {
+    pub fn verify_tx(&self, _tx: &Transaction) -> Result<(), PoolTxError> {
         Ok(())
     }
 }

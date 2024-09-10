@@ -10,13 +10,43 @@ use crate::neo_contract::manifest::contract_abi::ContractAbi;
 use crate::neo_contract::manifest::contract_manifest::ContractManifest;
 use crate::neo_contract::manifest::contract_permission::ContractPermission;
 use crate::neo_contract::manifest::wild_card_container::WildcardContainer;
+use crate::neo_contract::native_contract::contract_event_attribute::ContractEventAttribute;
 use crate::neo_contract::native_contract::contract_method_metadata::ContractMethodMetadata;
 use crate::neo_contract::nef_file::NefFile;
 use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;
+use std::sync::Mutex;
+use lazy_static::lazy_static;
+use std::sync::atomic::{AtomicI32, Ordering};
 
-/// The base struct of all native contracts.
-pub struct NativeContract {
+lazy_static! {
+    static ref CONTRACTS_LIST: Mutex<Vec<Arc<dyn NativeContract>>> = Mutex::new(Vec::new());
+    static ref CONTRACTS_DICTIONARY: Mutex<HashMap<UInt160, Arc<dyn NativeContract>>> = Mutex::new(HashMap::new());
+}
+
+pub trait NativeContract: Send + Sync {
+    fn name(&self) -> &str;
+    fn active_in(&self) -> Option<Hardfork>;
+    fn hash(&self) -> &UInt160;
+    fn id(&self) -> i32;
+    fn method_descriptors(&self) -> &[ContractMethodMetadata];
+    fn event_descriptors(&self) -> &[ContractEventAttribute];
+    fn used_hardforks(&self) -> &HashSet<Hardfork>;
+
+    fn get_allowed_methods(&self, hf_checker: &dyn Fn(Hardfork, u32) -> bool, block_height: u32) -> CacheEntry;
+    fn get_contract_state(&self, hf_checker: &dyn Fn(Hardfork, u32) -> bool, block_height: u32) -> ContractState;
+    fn on_manifest_compose(&self, manifest: &mut ContractManifest);
+    fn is_initialize_block(&self, settings: &ProtocolSettings, index: u32) -> (bool, Option<Vec<Hardfork>>);
+    fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool;
+    fn check_committee(engine: &ApplicationEngine) -> bool;
+    fn create_storage_key(&self, prefix: u8) -> KeyBuilder;
+    fn invoke(&self, engine: &mut ApplicationEngine, version: u8) -> Result<(), Box<dyn std::error::Error>>;
+    fn initialize(&self, engine: &mut ApplicationEngine, hard_fork: Option<Hardfork>) -> Result<(), Box<dyn std::error::Error>>;
+    fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<(), Box<dyn std::error::Error>>;
+    fn post_persist(&self, engine: &mut ApplicationEngine) -> Result<(), Box<dyn std::error::Error>>;
+}
+
+pub struct BaseNativeContract {
     name: String,
     active_in: Option<Hardfork>,
     hash: UInt160,
@@ -26,8 +56,9 @@ pub struct NativeContract {
     used_hardforks: HashSet<Hardfork>,
 }
 
-impl NativeContract {
-    pub fn new(name: String, active_in: Option<Hardfork>, id: i32) -> Self {
+impl BaseNativeContract {
+    pub fn new(name: String, active_in: Option<Hardfork>) -> Arc<Self> {
+        let id = Self::generate_id();
         let hash = Helper::get_contract_hash(&UInt160::zero(), 0, &name);
         
         let method_descriptors = Self::get_method_descriptors();
@@ -35,7 +66,7 @@ impl NativeContract {
         
         let used_hardforks = Self::calculate_used_hardforks(&method_descriptors, &event_descriptors, active_in);
         
-        NativeContract {
+        let contract = Arc::new(BaseNativeContract {
             name,
             active_in,
             hash,
@@ -43,7 +74,17 @@ impl NativeContract {
             method_descriptors,
             event_descriptors,
             used_hardforks,
-        }
+        });
+
+        CONTRACTS_LIST.lock().unwrap().push(contract.clone());
+        CONTRACTS_DICTIONARY.lock().unwrap().insert(hash, contract.clone());
+
+        contract
+    }
+
+    fn generate_id() -> i32 {
+        static ID_COUNTER: AtomicI32 = AtomicI32::new(0);
+        ID_COUNTER.fetch_sub(1, Ordering::SeqCst)
     }
 
     fn get_method_descriptors() -> Vec<ContractMethodMetadata> {
@@ -89,28 +130,58 @@ impl NativeContract {
 
         hardforks
     }
+}
 
-    pub fn get_allowed_methods(&self, hf_checker: &dyn Fn(Hardfork, u32) -> bool, block_height: u32) -> CacheEntry {
+impl NativeContract for BaseNativeContract {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn active_in(&self) -> Option<Hardfork> {
+        self.active_in
+    }
+
+    fn hash(&self) -> &UInt160 {
+        &self.hash
+    }
+
+    fn id(&self) -> i32 {
+        self.id
+    }
+
+    fn method_descriptors(&self) -> &[ContractMethodMetadata] {
+        &self.method_descriptors
+    }
+
+    fn event_descriptors(&self) -> &[ContractEventAttribute] {
+        &self.event_descriptors
+    }
+
+    fn used_hardforks(&self) -> &HashSet<Hardfork> {
+        &self.used_hardforks
+    }
+
+    fn get_allowed_methods(&self, hf_checker: &dyn Fn(Hardfork, u32) -> bool, block_height: u32) -> CacheEntry {
         let mut methods = HashMap::new();
         let mut script_builder = ScriptBuilder::new();
 
         for method in &self.method_descriptors {
             if Self::is_active(method, hf_checker, block_height) {
                 let offset = script_builder.len();
-                script_builder.emit_push(0); // version
+                script_builder.push_integer(BigInt::from(0)); // version
                 methods.insert(script_builder.len(), method.clone());
-                script_builder.emit_syscall(ApplicationEngine::SYSTEM_CONTRACT_CALL_NATIVE);
-                script_builder.emit(OpCode::RET);
+                script_builder.sys_call(ApplicationEngine::SYSTEM_CONTRACT_CALL_NATIVE);
+                script_builder.op_code(&[OpCode::Ret]);
             }
         }
 
         CacheEntry {
             methods,
-            script: script_builder.to_vec(),
+            script: script_builder.to_bytes(),
         }
     }
 
-    pub fn get_contract_state(&self, hf_checker: &dyn Fn(Hardfork, u32) -> bool, block_height: u32) -> ContractState {
+    fn get_contract_state(&self, hf_checker: &dyn Fn(Hardfork, u32) -> bool, block_height: u32) -> ContractState {
         let allowed_methods = self.get_allowed_methods(hf_checker, block_height);
 
         let nef = NefFile {
@@ -154,7 +225,7 @@ impl NativeContract {
         // Default implementation does nothing
     }
 
-    pub fn is_initialize_block(&self, settings: &ProtocolSettings, index: u32) -> (bool, Option<Vec<Hardfork>>) {
+    fn is_initialize_block(&self, settings: &ProtocolSettings, index: u32) -> (bool, Option<Vec<Hardfork>>) {
         let mut hfs = Vec::new();
 
         for &hf in &self.used_hardforks {
@@ -175,7 +246,7 @@ impl NativeContract {
         (false, None)
     }
 
-    pub fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
+    fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
         match self.active_in {
             None => true,
             Some(hf) => {
@@ -185,25 +256,16 @@ impl NativeContract {
         }
     }
 
-    fn is_active<T: HardforkActivable>(item: &T, hf_checker: &dyn Fn(Hardfork, u32) -> bool, block_height: u32) -> bool {
-        match (item.active_in(), item.deprecated_in()) {
-            (None, None) => true,
-            (None, Some(deprecated)) => !hf_checker(deprecated, block_height),
-            (Some(active), None) => hf_checker(active, block_height),
-            (Some(active), Some(deprecated)) => hf_checker(active, block_height) && !hf_checker(deprecated, block_height),
-        }
-    }
-
-    pub fn check_committee(engine: &ApplicationEngine) -> bool {
+    fn check_committee(engine: &ApplicationEngine) -> bool {
         let committee_multi_sig_addr = NEO::get_committee_address(engine.snapshot_cache());
         engine.check_witness_internal(&committee_multi_sig_addr)
     }
 
-    pub fn create_storage_key(&self, prefix: u8) -> KeyBuilder {
+    fn create_storage_key(&self, prefix: u8) -> KeyBuilder {
         KeyBuilder::new(self.id, prefix)
     }
 
-    pub async fn invoke(&self, engine: &mut ApplicationEngine, version: u8) -> Result<(), Box<dyn std::error::Error>> {
+    fn invoke(&self, engine: &mut ApplicationEngine, version: u8) -> Result<(), Box<dyn std::error::Error>> {
         if version != 0 {
             return Err(format!("The native contract of version {} is not active.", version).into());
         }
@@ -259,15 +321,15 @@ impl NativeContract {
         Ok(())
     }
 
-    pub async fn initialize(&self, _engine: &mut ApplicationEngine, _hard_fork: Option<Hardfork>) -> Result<(), Box<dyn std::error::Error>> {
+    fn initialize(&self, _engine: &mut ApplicationEngine, _hard_fork: Option<Hardfork>) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 
-    pub async fn on_persist(&self, _engine: &mut ApplicationEngine) -> Result<(), Box<dyn std::error::Error>> {
+    fn on_persist(&self, _engine: &mut ApplicationEngine) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 
-    pub async fn post_persist(&self, _engine: &mut ApplicationEngine) -> Result<(), Box<dyn std::error::Error>> {
+    fn post_persist(&self, _engine: &mut ApplicationEngine) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 }
@@ -280,4 +342,17 @@ pub struct CacheEntry {
 pub trait HardforkActivable {
     fn active_in(&self) -> Option<Hardfork>;
     fn deprecated_in(&self) -> Option<Hardfork>;
+}
+
+// Implement named native contracts
+lazy_static! {
+    pub static ref CONTRACT_MANAGEMENT: Arc<dyn NativeContract> = BaseNativeContract::new("ContractManagement".to_string(), None);
+    pub static ref STD_LIB: Arc<dyn NativeContract> = BaseNativeContract::new("StdLib".to_string(), None);
+    pub static ref CRYPTO_LIB: Arc<dyn NativeContract> = BaseNativeContract::new("CryptoLib".to_string(), None);
+    pub static ref LEDGER: Arc<dyn NativeContract> = BaseNativeContract::new("Ledger".to_string(), None);
+    pub static ref NEO: Arc<dyn NativeContract> = BaseNativeContract::new("NEO".to_string(), None);
+    pub static ref GAS: Arc<dyn NativeContract> = BaseNativeContract::new("GAS".to_string(), None);
+    pub static ref POLICY: Arc<dyn NativeContract> = BaseNativeContract::new("Policy".to_string(), None);
+    pub static ref ROLE_MANAGEMENT: Arc<dyn NativeContract> = BaseNativeContract::new("RoleManagement".to_string(), None);
+    pub static ref ORACLE: Arc<dyn NativeContract> = BaseNativeContract::new("Oracle".to_string(), None);
 }

@@ -1,9 +1,8 @@
-
-pub mod jtoken;
 pub mod jpath_token;
-pub mod utility;
 pub mod jpath_token_type;
 mod json_error;
+pub mod jtoken;
+pub mod utility;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right

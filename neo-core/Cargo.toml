@@ -16,6 +16,8 @@ edition = "2021"
 neo-base   = { path = "../neo-base", default-features = false }
 neo-crypto = { path = "../neo-crypto", default-features = false }
 neo-vm = { path = "../neo-vm", default-features = false }
+neo-proc-macros = {path = "../neo-proc-macros", default-features = false}
+neo-json = {path ="../neo-json", default-features = false}
 
 bytes     = { version = "1", default-features = false }
 subtle    = { version = "2", default-features = false }
@@ -49,6 +51,7 @@ tokio = { version = "1.0", features = ["full"] }
 actix = "0.13"
 futures = "0.3"
 log = "0.4"
+bloomfilter = "1.0.14"
 
 [features]
 default = ["neo-base/default", "neo-crypto/default", "thiserror-no-std"]

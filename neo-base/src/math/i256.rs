@@ -1,14 +1,11 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 // use alloc::string::{String, ToString};
 // use core::cmp::{Ord, PartialOrd, Ordering};
 use core::fmt::{Display, Formatter};
 
-
 const N: usize = 4;
-
 
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct I256 {
@@ -31,7 +28,9 @@ impl I256 {
 
     #[inline]
     pub fn from_le_bytes(buf: &[u8; 32]) -> Self {
-        Self { n: unsafe { core::mem::transmute_copy(buf) } }
+        Self {
+            n: unsafe { core::mem::transmute_copy(buf) },
+        }
     }
 
     #[inline]
@@ -47,12 +46,16 @@ impl I256 {
     }
 
     #[inline]
-    pub fn is_even(&self) -> bool { self.n[0] & 1u64 == 0 }
+    pub fn is_even(&self) -> bool {
+        self.n[0] & 1u64 == 0
+    }
 }
 
 impl Default for I256 {
     #[inline]
-    fn default() -> Self { Self { n: [0; N] } }
+    fn default() -> Self {
+        Self { n: [0; N] }
+    }
 }
 
 impl Display for I256 {
@@ -65,17 +68,96 @@ impl Display for I256 {
     }
 }
 
+impl From<u8> for I256 {
+    #[inline]
+    fn from(value: u8) -> Self {
+        Self {
+            n: [value as u64, 0, 0, 0],
+        }
+    }
+}
+
+impl From<u16> for I256 {
+    #[inline]
+    fn from(value: u16) -> Self {
+        Self {
+            n: [value as u64, 0, 0, 0],
+        }
+    }
+}
+
+impl From<u32> for I256 {
+    #[inline]
+    fn from(value: u32) -> Self {
+        Self {
+            n: [value as u64, 0, 0, 0],
+        }
+    }
+}
 
 impl From<u64> for I256 {
     #[inline]
     fn from(value: u64) -> Self {
-        Self { n: [value, 0, 0, 0] }
+        Self {
+            n: [value, 0, 0, 0],
+        }
     }
 }
 
 impl From<u128> for I256 {
     #[inline]
     fn from(value: u128) -> Self {
-        Self { n: [value as u64, (value >> 64) as u64, 0, 0] }
+        Self {
+            n: [value as u64, (value >> 64) as u64, 0, 0],
+        }
+    }
+}
+
+impl From<i8> for I256 {
+    #[inline]
+    fn from(value: i8) -> Self {
+        Self::from(value as i64)
+    }
+}
+
+impl From<i16> for I256 {
+    #[inline]
+    fn from(value: i16) -> Self {
+        Self::from(value as i64)
+    }
+}
+
+impl From<i32> for I256 {
+    #[inline]
+    fn from(value: i32) -> Self {
+        Self::from(value as i64)
+    }
+}
+
+impl From<i64> for I256 {
+    #[inline]
+    fn from(value: i64) -> Self {
+        let mut result = Self::default();
+        result.n[0] = value as u64;
+        if value < 0 {
+            result.n[1] = u64::MAX;
+            result.n[2] = u64::MAX;
+            result.n[3] = u64::MAX;
+        }
+        result
+    }
+}
+
+impl From<i128> for I256 {
+    #[inline]
+    fn from(value: i128) -> Self {
+        let mut result = Self::default();
+        result.n[0] = value as u64;
+        result.n[1] = (value >> 64) as u64;
+        if value < 0 {
+            result.n[2] = u64::MAX;
+            result.n[3] = u64::MAX;
+        }
+        result
     }
 }

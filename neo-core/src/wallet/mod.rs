@@ -2,7 +2,7 @@
 // All Rights Reserved
 
 
-use crate::types::{H160, Network};
+use crate::types::{UInt160, Network};
 
 mod asset_descriptor;
 mod helper;
@@ -27,7 +27,7 @@ mod nep6;
 pub type Account = nep6::Account;
 
 pub trait AccountHolder {
-    fn get_account(&self, script_hash: &H160) -> Option<Account>;
+    fn get_account(&self, script_hash: &UInt160) -> Option<Account>;
 }
 
 
@@ -38,7 +38,7 @@ pub trait Wallet: AccountHolder {
 
     fn create_account(&mut self, name: &str, passphrase: &[u8]) -> Result<&Account, Self::CreateError>;
 
-    fn delete_account(&self, script_hash: &H160) -> bool;
+    fn delete_account(&self, script_hash: &UInt160) -> bool;
 
     fn change_password(&mut self, old: &[u8], new: &[u8]) -> bool;
 }

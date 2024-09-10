@@ -3,9 +3,9 @@ use num_bigint::BigInt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
-	item_trait::{ObjectReferenceEntry, StackItemTrait},
-	item_type::ItemType,
-	vm::script::Script,
+    item_trait::{ObjectReferenceEntry, StackItemTrait},
+    item_type::StackItemType,
+    vm::script::Script,
 };
 use crate::compound_types::compound_trait::CompoundTrait;
 use crate::execution_engine_limits::ExecutionEngineLimits;
@@ -115,8 +115,8 @@ impl StackItemTrait for Pointer {
 		todo!()
 	}
 
-	fn get_type(&self) -> ItemType {
-		ItemType::Pointer
+	fn get_type(&self) -> StackItemType {
+		StackItemType::Pointer
 	}
 	fn get_boolean(&self) -> bool {
 		true

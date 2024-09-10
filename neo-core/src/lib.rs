@@ -10,8 +10,6 @@ pub use neo_crypto::secp256r1::*;
 pub mod big_decimal;
 pub mod io;
 extern crate core;
-extern crate core;
-extern crate core;
 
 pub mod block;
 

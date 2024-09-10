@@ -1,29 +1,112 @@
-
 use std::collections::{HashSet, LinkedList};
 use std::hash::Hash;
+use std::sync::{Arc, RwLock};
+use crate::io::caching::CacheInterface;
 
 pub struct HashSetCache<T>
 where
-    T: Eq + Hash,
+    T: Eq + Hash + Clone,
 {
-    /// Sets where the Hashes are stored
-    sets: LinkedList<HashSet<T>>,
-
-    /// Maximum capacity of each bucket inside each HashSet of `sets`.
+    inner: Arc<RwLock<InnerHashSetCache<T>>>,
     bucket_capacity: usize,
-
-    /// Maximum number of buckets for the LinkedList, meaning its maximum cardinality.
     max_bucket_count: usize,
+}
 
-    /// Entry count
+struct InnerHashSetCache<T>
+where
+    T: Eq + Hash + Clone,
+{
+    sets: LinkedList<HashSet<T>>,
     count: usize,
+}
+
+impl<T> CacheInterface<T, ()> for HashSetCache<T>
+where
+    T: Eq + Hash + Clone,
+{
+    fn new(max_capacity: usize) -> Self {
+        let bucket_capacity = max_capacity.max(1);
+        let max_bucket_count = 1;
+        let mut sets = LinkedList::new();
+        sets.push_front(HashSet::new());
+
+        HashSetCache {
+            inner: Arc::new(RwLock::new(InnerHashSetCache {
+                sets,
+                count: 0,
+            })),
+            bucket_capacity,
+            max_bucket_count,
+        }
+    }
+
+    fn get(&self, key: &T) -> Option<()> {
+        let inner = self.inner.read().unwrap();
+        if inner.sets.iter().any(|set| set.contains(key)) {
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    fn insert(&self, key: T, _value: ()) {
+        let mut inner = self.inner.write().unwrap();
+        if !inner.sets.iter().any(|set| set.contains(&key)) {
+            inner.count += 1;
+            if let Some(first) = inner.sets.front_mut() {
+                if first.len() < self.bucket_capacity {
+                    first.insert(key);
+                    return;
+                }
+            }
+            let mut new_set = HashSet::new();
+            new_set.insert(key);
+            inner.sets.push_front(new_set);
+            if inner.sets.len() > self.max_bucket_count {
+                if let Some(last) = inner.sets.pop_back() {
+                    inner.count -= last.len();
+                }
+            }
+        }
+    }
+
+    fn remove(&self, key: &T) -> Option<()> {
+        let mut inner = self.inner.write().unwrap();
+        for set in inner.sets.iter_mut() {
+            if set.remove(key) {
+                inner.count -= 1;
+                return Some(());
+            }
+        }
+        None
+    }
+
+    fn clear(&self) {
+        let mut inner = self.inner.write().unwrap();
+        inner.sets.clear();
+        inner.sets.push_front(HashSet::new());
+        inner.count = 0;
+    }
+
+    fn len(&self) -> usize {
+        let inner = self.inner.read().unwrap();
+        inner.count
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn contains_key(&self, key: &T) -> bool {
+        self.get(key).is_some()
+    }
 }
 
 impl<T> HashSetCache<T>
 where
-    T: Eq + Hash,
+    T: Eq + Hash + Clone,
 {
-    pub fn new(bucket_capacity: usize, max_bucket_count: usize) -> Self {
+    pub fn new_with_buckets(bucket_capacity: usize, max_bucket_count: usize) -> Self {
         if bucket_capacity == 0 {
             panic!("bucket_capacity should be greater than 0");
         }
@@ -34,116 +117,42 @@ where
         let mut sets = LinkedList::new();
         sets.push_front(HashSet::new());
 
-        Self {
-            sets,
+        HashSetCache {
+            inner: Arc::new(RwLock::new(InnerHashSetCache {
+                sets,
+                count: 0,
+            })),
             bucket_capacity,
             max_bucket_count,
-            count: 0,
         }
     }
 
-    pub fn add(&mut self, item: T) -> bool {
-        if self.contains(&item) {
-            return false;
-        }
-
-        self.count += 1;
-
-        if let Some(first) = self.sets.front_mut() {
-            if first.len() < self.bucket_capacity {
-                return first.insert(item);
-            }
-        }
-
-        let mut new_set = HashSet::new();
-        new_set.insert(item);
-        self.sets.push_front(new_set);
-
-        if self.sets.len() > self.max_bucket_count {
-            if let Some(last) = self.sets.pop_back() {
-                self.count -= last.len();
-            }
-        }
-
-        true
-    }
-
-    pub fn contains(&self, item: &T) -> bool {
-        self.sets.iter().any(|set| set.contains(item))
-    }
-
-    pub fn except_with<I>(&mut self, items: I)
+    pub fn except_with<I>(&self, items: I)
     where
         I: IntoIterator<Item = T>,
     {
-        let mut remove_list = Vec::new();
-
+        let mut inner = self.inner.write().unwrap();
         for item in items {
-            for (index, set) in self.sets.iter_mut().enumerate() {
+            for set in inner.sets.iter_mut() {
                 if set.remove(&item) {
-                    self.count -= 1;
-                    if set.is_empty() {
-                        remove_list.push(index);
-                    }
+                    inner.count -= 1;
                     break;
                 }
             }
         }
-
-        for index in remove_list.into_iter().rev() {
-            let mut cursor = self.sets.cursor_front_mut();
-            for _ in 0..index {
-                cursor.move_next();
-            }
-            cursor.remove_current();
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.count
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.count == 0
+        inner.sets.retain(|set| !set.is_empty());
     }
 }
 
-impl<T> IntoIterator for HashSetCache<T>
+impl<T> Clone for HashSetCache<T>
 where
-    T: Eq + Hash,
+    T: Eq + Hash + Clone,
 {
-    type Item = T;
-    type IntoIter = HashSetCacheIntoIter<T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        HashSetCacheIntoIter {
-            sets: self.sets.into_iter(),
-            current_set_iter: None,
-        }
-    }
-}
-
-pub struct HashSetCacheIntoIter<T> {
-    sets: std::collections::linked_list::IntoIter<HashSet<T>>,
-    current_set_iter: Option<std::collections::hash_set::IntoIter<T>>,
-}
-
-impl<T> Iterator for HashSetCacheIntoIter<T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(ref mut current_iter) = self.current_set_iter {
-                if let Some(item) = current_iter.next() {
-                    return Some(item);
-                }
-            }
-            
-            if let Some(next_set) = self.sets.next() {
-                self.current_set_iter = Some(next_set.into_iter());
-            } else {
-                return None;
-            }
+    fn clone(&self) -> Self {
+        HashSetCache {
+            inner: self.inner.clone(),
+            bucket_capacity: self.bucket_capacity,
+            max_bucket_count: self.max_bucket_count,
         }
     }
 }

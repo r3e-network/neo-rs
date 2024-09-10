@@ -1,9 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use crate::math::U256;
-
 
 pub trait ToArray<T: Copy, const N: usize> {
     /// slice to array. slice.len() must be constant
@@ -35,7 +33,6 @@ impl<T: Copy + Default, const N: usize> ToRevArray<T, N> for [T] {
     }
 }
 
-
 impl<T: Copy + Default, const N: usize> ToRevArray<T, N> for [T; N] {
     #[inline]
     fn to_rev_array(&self) -> [T; N] {
@@ -44,7 +41,6 @@ impl<T: Copy + Default, const N: usize> ToRevArray<T, N> for [T; N] {
         b
     }
 }
-
 
 pub fn xor_array<const N: usize>(left: &[u8], right: &[u8]) -> [u8; N] {
     let mut d = [0u8; N];
@@ -81,7 +77,6 @@ impl<T: AsRef<[u8]>> LeadingZeroBytes for T {
     }
 }
 
-
 pub trait PickU16 {
     fn pick_le_u16(&self) -> u16;
 }
@@ -111,7 +106,9 @@ pub trait PickU64 {
 impl<const N: usize> PickU64 for [u8; N] {
     #[inline]
     fn pick_le_u64(&self) -> u64 {
-        u64::from_le_bytes([self[0], self[1], self[2], self[3], self[4], self[5], self[6], self[7]])
+        u64::from_le_bytes([
+            self[0], self[1], self[2], self[3], self[4], self[5], self[6], self[7],
+        ])
     }
 }
 
@@ -135,7 +132,9 @@ impl PickU64 for [u8] {
     #[inline]
     fn pick_le_u64(&self) -> u64 {
         let _ = self[7];
-        u64::from_le_bytes([self[0], self[1], self[2], self[3], self[4], self[5], self[6], self[7]])
+        u64::from_le_bytes([
+            self[0], self[1], self[2], self[3], self[4], self[5], self[6], self[7],
+        ])
     }
 }
 
@@ -149,7 +148,6 @@ impl<const N: usize> PickU128 for [u8; N] {
         u128::from_le_bytes(self.to_array())
     }
 }
-
 
 impl PickU128 for [u8] {
     #[inline]
@@ -175,7 +173,6 @@ impl PickU256 for [u8] {
         U256::from_le_bytes(&self.to_array())
     }
 }
-
 
 pub trait PickAtMost<const N: usize> {
     fn pick_at_most(&self) -> [u8; N];

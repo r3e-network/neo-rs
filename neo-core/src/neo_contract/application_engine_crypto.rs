@@ -1,10 +1,7 @@
-
-use neo::prelude::*;
-use neo::sys;
-use neo::vm::{InteropDescriptor, CallFlags};
-use neo::crypto::{ECCurve, Crypto};
-use neo::types::UInt160;
 use std::convert::TryFrom;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::call_flags::CallFlags;
+use crate::neo_contract::interop_descriptor::InteropDescriptor;
 
 impl ApplicationEngine {
     /// The price of System.Crypto.CheckSig.
@@ -13,20 +10,20 @@ impl ApplicationEngine {
 
     /// The `InteropDescriptor` of System.Crypto.CheckSig.
     /// Checks the signature for the current script container.
-    pub static SYSTEM_CRYPTO_CHECK_SIG: InteropDescriptor = register_syscall(
+    pub const  SYSTEM_CRYPTO_CHECK_SIG: InteropDescriptor = register_syscall(
         "System.Crypto.CheckSig",
         ApplicationEngine::check_sig,
         Self::CHECK_SIG_PRICE,
-        CallFlags::None
+        CallFlags::NONE
     );
 
     /// The `InteropDescriptor` of System.Crypto.CheckMultisig.
     /// Checks the signatures for the current script container.
-    pub static SYSTEM_CRYPTO_CHECK_MULTISIG: InteropDescriptor = register_syscall(
+    pub const SYSTEM_CRYPTO_CHECK_MULTISIG: InteropDescriptor = register_syscall(
         "System.Crypto.CheckMultisig",
         ApplicationEngine::check_multisig,
         0,
-        CallFlags::None
+        CallFlags::NONE
     );
 
     /// The implementation of System.Crypto.CheckSig.

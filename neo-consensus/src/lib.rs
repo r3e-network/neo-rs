@@ -1,9 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 extern crate alloc;
-
 
 /// Terms in DBFT v2.0
 /// ConsensusNode:	Nodes that can propose a new block and vote for the proposed block.
@@ -19,13 +17,11 @@ pub mod dbft_v2;
 
 use neo_core::{block, payload::Extensible, tx::Tx, types::Sign};
 
-
 pub struct Block {
     pub network: u32,
     pub block: block::Block,
     pub sign: Sign,
 }
-
 
 pub trait Consensus {
     type OnTxError;
@@ -42,4 +38,3 @@ pub trait Consensus {
 
     fn on_payload(&mut self, payload: &Extensible) -> Result<(), Self::OnPayloadError>;
 }
-

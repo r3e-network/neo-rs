@@ -4,6 +4,7 @@ use std::mem;
 use num_bigint::BigInt;
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::stack_item::StackItem;
 use crate::io::memory_reader::MemoryReader;
 
 /// A binary serializer for `StackItem`.

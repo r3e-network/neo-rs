@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::bin::*;
-use crate::types::{Bytes, H256};
+use crate::types::{Bytes, UInt256};
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, BinEncode, BinDecode)]
@@ -50,7 +50,7 @@ pub struct NotValidBefore {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, BinEncode, BinDecode)]
 pub struct Conflicts {
-    pub hash: H256,
+    pub hash: UInt256,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, BinEncode, BinDecode)]

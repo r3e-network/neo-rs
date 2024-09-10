@@ -3,6 +3,7 @@ use crate::network::Payloads::{Header, Transaction};
 use crate::uint256::UInt256;
 
 /// Represents a block.
+#[derive(Clone)]
 pub struct Block {
     /// The header of the block.
     pub header: Header,

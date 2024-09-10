@@ -37,9 +37,10 @@ impl AssetDescriptor {
             .ok_or_else(|| "Invalid asset_id".to_string())?;
 
         let script = ScriptBuilder::new()
-            .contract_call(&asset_id, "decimals", CallFlags::READ_ONLY)
+            .contract_call(&asset_id, "decimals", CallFlags::READ_ONLY, CallFlags::all())
             .unwrap()
-            .contract_call(&asset_id, "symbol", CallFlags::READ_ONLY)
+            .contract_call(&asset_id, "symbol", CallFlags::READ_ONLY, CallFlags::all())
+
             .to_array();
 
         let engine = ApplicationEngine::run(&script, snapshot, settings, 30_000_000)?;

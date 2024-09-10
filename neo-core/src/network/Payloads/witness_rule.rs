@@ -1,8 +1,3 @@
-use neo_io::{ISerializable, MemoryReader, BinaryWriter};
-use neo_json::{JObject, JValue};
-use neo_network_p2p_payloads_conditions::WitnessCondition;
-use neo_vm::Types::StackItem;
-use neo_vm::ReferenceCounter;
 use std::convert::TryFrom;
 use std::io;
 use crate::io::binary_writer::BinaryWriter;

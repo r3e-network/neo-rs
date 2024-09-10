@@ -1,3 +1,7 @@
+use neo_vm::stack_item::StackItem;
+use neo_vm::vm_state::VMState;
+use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::network::Payloads::Transaction;
 
 /// Represents a transaction that has been included in a block.
 #[derive(Clone)]
@@ -14,8 +18,14 @@ pub struct TransactionState {
     raw_transaction: Vec<u8>,
 }
 
+impl Default for TransactionState {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
 impl IInteroperable for TransactionState {
-    fn clone(&self) -> Box<dyn Interoperable> {
+    fn clone(&self) -> Box<dyn IInteroperable> {
         Box::new(Self {
             block_index: self.block_index,
             transaction: self.transaction.clone(),
@@ -24,7 +34,7 @@ impl IInteroperable for TransactionState {
         })
     }
 
-    fn from_replica(&mut self, replica: &dyn Interoperable) {
+    fn from_replica(&mut self, replica: &dyn IInteroperable) {
         let from = replica.downcast_ref::<TransactionState>().unwrap();
         self.block_index = from.block_index;
         self.transaction = from.transaction.clone();

@@ -45,7 +45,7 @@ pub trait TransactionAttribute: ISerializable {
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> io::Result<()> {
-        writer.write_u8(self.get_type() as u8)?;
+        writer.write_u8(self.get_type() as u8);
         self.serialize_without_type(writer)
     }
 

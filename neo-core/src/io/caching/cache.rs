@@ -1,8 +1,22 @@
-
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+pub trait CacheInterface<K, V>
+where
+    K: Eq + Hash + Clone,
+    V: Clone,
+{
+    fn new(max_capacity: usize) -> Self;
+    fn get(&self, key: &K) -> Option<V>;
+    fn insert(&self, key: K, value: V);
+    fn remove(&self, key: &K) -> Option<V>;
+    fn clear(&self);
+    fn len(&self) -> usize;
+    fn is_empty(&self) -> bool;
+    fn contains_key(&self, key: &K) -> bool;
+}
 
 pub struct Cache<K, V>
 where
@@ -10,7 +24,7 @@ where
     V: Clone,
 {
     inner: Arc<RwLock<InnerCache<K, V>>>,
-    max_capacity: usize,
+    pub max_capacity: usize,
 }
 
 struct InnerCache<K, V>
@@ -31,12 +45,12 @@ where
     time: u64,
 }
 
-impl<K, V> Cache<K, V>
+impl<K, V> CacheInterface<K, V> for Cache<K, V>
 where
     K: Eq + Hash + Clone,
     V: Clone,
 {
-    pub fn new(max_capacity: usize) -> Self {
+    fn new(max_capacity: usize) -> Self {
         Cache {
             inner: Arc::new(RwLock::new(InnerCache {
                 map: HashMap::new(),
@@ -45,7 +59,7 @@ where
         }
     }
 
-    pub fn get(&self, key: &K) -> Option<V> {
+    fn get(&self, key: &K) -> Option<V> {
         let mut inner = self.inner.write().unwrap();
         if let Some(item) = inner.map.get_mut(key) {
             item.time = SystemTime::now()
@@ -58,7 +72,7 @@ where
         }
     }
 
-    pub fn insert(&self, key: K, value: V) {
+    fn insert(&self, key: K, value: V) {
         let mut inner = self.inner.write().unwrap();
         if inner.map.len() >= self.max_capacity {
             let oldest = inner
@@ -83,26 +97,26 @@ where
         );
     }
 
-    pub fn remove(&self, key: &K) -> Option<V> {
+    fn remove(&self, key: &K) -> Option<V> {
         let mut inner = self.inner.write().unwrap();
         inner.map.remove(key).map(|item| item.value)
     }
 
-    pub fn clear(&self) {
+    fn clear(&self) {
         let mut inner = self.inner.write().unwrap();
         inner.map.clear();
     }
 
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         let inner = self.inner.read().unwrap();
         inner.map.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn contains_key(&self, key: &K) -> bool {
+    fn contains_key(&self, key: &K) -> bool {
         let inner = self.inner.read().unwrap();
         inner.map.contains_key(key)
     }
@@ -120,26 +134,3 @@ where
         }
     }
 }
-
-// Note: The following traits are not implemented in this conversion
-// as they are not typically used in NEO smart contracts:
-// - ICollection<TValue>
-// - IDisposable
-// - IEnumerable
-
-// The parallel processing and LINQ operations have been removed
-// as they are not supported in NEO smart contracts.
-
-// The ReaderWriterLockSlim has been replaced with a simple RwLock
-// which is more idiomatic in Rust and suitable for NEO smart contracts.
-
-// The custom CacheItem struct has been simplified and the DateTime
-// has been replaced with a u64 timestamp for simplicity and compatibility.
-
-// The GetKeyForItem and OnAccess methods have been removed as they
-// were part of the abstract class implementation which is not
-// necessary in this Rust version.
-
-// Error handling has been simplified to use Option types instead of
-// exceptions, which is more idiomatic in Rust and suitable for
-// NEO smart contracts.

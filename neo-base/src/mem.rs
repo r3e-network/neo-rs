@@ -1,9 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::vec::Vec;
-
 
 pub trait ToReferences<R: ?Sized> {
     fn to_references(&self) -> Vec<&R>;
@@ -16,16 +14,17 @@ impl<R: ?Sized, T: AsRef<R>> ToReferences<R> for [T] {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
-    use alloc::{vec, string::ToString};
+    use alloc::{string::ToString, vec};
 
     #[test]
     fn test_to_references() {
         let s = vec!["a".to_string(), "b".to_string()];
-        let f = |f: &str| { assert_eq!(f.len(), 1); };
+        let f = |f: &str| {
+            assert_eq!(f.len(), 1);
+        };
 
         let r = s.to_references();
         f(r[0]);

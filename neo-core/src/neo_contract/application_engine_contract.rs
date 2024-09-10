@@ -1,10 +1,9 @@
-use std::ops::BitOr;
-use crate::contract::nef::CallFlags;
+use std::io::Error;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::call_flags::CallFlags;
 use crate::neo_contract::interop_descriptor::InteropDescriptor;
-
-pub struct ApplicationEngine {
-    // Fields and other implementation details...
-}
+use crate::neo_contract::trigger_type::TriggerType;
+use crate::uint160::UInt160;
 
 impl ApplicationEngine {
     /// The `InteropDescriptor` of System.Contract.Call.
@@ -13,7 +12,7 @@ impl ApplicationEngine {
         "System.Contract.Call",
         ApplicationEngine::call_contract,
         1 << 15,
-        CallFlags::ReadStates | CallFlags::AllowCall
+        CallFlags::READ_STATES | CallFlags::ALLOW_CALL
     );
 
     /// The `InteropDescriptor` of System.Contract.CallNative.
@@ -72,7 +71,7 @@ impl ApplicationEngine {
 
     /// The implementation of System.Contract.Call.
     /// Use it to call another contract dynamically.
-    pub fn call_contract(&mut self, contract_hash: &H160, method: &str, call_flags: CallFlags, args: Array) -> Result<(), Error> {
+    pub fn call_contract(&mut self, contract_hash: &UInt160, method: &str, call_flags: CallFlags, args: Array) -> Result<(), Error> {
         if method.starts_with('_') {
             return Err(Error::new(format!("Invalid Method Name: {}", method)));
         }
@@ -115,7 +114,7 @@ impl ApplicationEngine {
 
     /// The implementation of System.Contract.CreateStandardAccount.
     /// Calculates corresponding account scripthash for the given public key.
-    pub fn create_standard_account(&mut self, pub_key: &Secp256r1PublicKey) -> Result<H160, Error> {
+    pub fn create_standard_account(&mut self, pub_key: &Secp256r1PublicKey) -> Result<UInt160, Error> {
         let fee = if self.is_hardfork_enabled(Hardfork::HF_Aspidochelone) {
             self.check_sig_price
         } else {
@@ -127,7 +126,7 @@ impl ApplicationEngine {
 
     /// The implementation of System.Contract.CreateMultisigAccount.
     /// Calculates corresponding multisig account scripthash for the given public keys.
-    pub fn create_multisig_account(&mut self, m: i32, pub_keys: &[Secp256r1PublicKey]) -> Result<H160, Error> {
+    pub fn create_multisig_account(&mut self, m: i32, pub_keys: &[Secp256r1PublicKey]) -> Result<UInt160, Error> {
         let fee = if self.is_hardfork_enabled(Hardfork::HF_Aspidochelone) {
             self.check_sig_price * pub_keys.len() as i64
         } else {
@@ -140,7 +139,7 @@ impl ApplicationEngine {
     /// The implementation of System.Contract.NativeOnPersist.
     /// Calls to the `on_persist` of all native contracts.
     pub async fn native_on_persist_async(&mut self) -> Result<(), Error> {
-        if self.trigger != TriggerType::OnPersist {
+        if self.trigger != TriggerType::ON_PERSIST {
             return Err(Error::new("Invalid operation"));
         }
         for contract in NativeContract::contracts() {
@@ -154,7 +153,7 @@ impl ApplicationEngine {
     /// The implementation of System.Contract.NativePostPersist.
     /// Calls to the `post_persist` of all native contracts.
     pub async fn native_post_persist_async(&mut self) -> Result<(), Error> {
-        if self.trigger != TriggerType::PostPersist {
+        if self.trigger != TriggerType::POST_PERSIST {
             return Err(Error::new("Invalid operation"));
         }
         for contract in NativeContract::contracts() {

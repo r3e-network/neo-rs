@@ -7,7 +7,7 @@ use std::{
 };
 use crate::compound_types::compound_trait::CompoundTrait;
 use crate::item_trait::{ObjectReferenceEntry, StackItemTrait, StackItemTrait};
-use crate::item_type::ItemType;
+use crate::item_type::StackItemType;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default, Copy)]
 pub struct InteropInterface {
@@ -70,7 +70,7 @@ impl StackItemTrait for InteropInterface {
 		todo!()
 	}
 
-	fn convert_to(&self, ty: ItemType) -> StackItemTrait {
+	fn convert_to(&self, ty: StackItemType) -> StackItemTrait {
 		todo!()
 	}
 
@@ -88,8 +88,8 @@ impl StackItemTrait for InteropInterface {
 		todo!()
 	}
 
-	fn get_type(&self) -> ItemType {
-		ItemType::InteropInterface
+	fn get_type(&self) -> StackItemType {
+		StackItemType::InteropInterface
 	}
 
 	fn equals(&self, other: &Option<StackItemTrait>) -> bool {

@@ -1,23 +1,23 @@
 use crate::{
-	buffer::Buffer,
-	compound_types::{array::Array, compound_trait::CompoundTrait, map::Map, Struct::Struct},
-	evaluation_stack::EvaluationStack,
-	exception::{
+    buffer::Buffer,
+    compound_types::{array::Array, compound_trait::CompoundTrait, map::Map, Struct::Struct},
+    evaluation_stack::EvaluationStack,
+    exception::{
 		exception_handling_context::ExceptionHandlingContext,
 		exception_handling_state::ExceptionHandlingState,
 	},
-	execution_context::{ExecutionContext, SharedStates},
-	execution_engine_limits::ExecutionEngineLimits,
-	instruction::Instruction,
-	null::Null,
-	op_code::OpCode,
-	pointer::Pointer,
-	primitive_types::{byte_string::ByteString, primitive_trait::PrimitiveTrait},
-	reference_counter::ReferenceCounter,
-	slot::Slot,
-	item_type::ItemType,
-	vm::{script::Script, vm_error::VMError},
-	vm_state::VMState,
+    execution_context::{ExecutionContext, SharedStates},
+    execution_engine_limits::ExecutionEngineLimits,
+    instruction::Instruction,
+    null::Null,
+    op_code::OpCode,
+    pointer::Pointer,
+    primitive_types::{byte_string::ByteString, primitive_trait::PrimitiveTrait},
+    reference_counter::ReferenceCounter,
+    slot::Slot,
+    item_type::StackItemType,
+    vm::{script::Script, vm_error::VMError},
+    vm_state::VMState,
 };
 use num_bigint::{BigInt, Sign};
 use std::{
@@ -903,8 +903,8 @@ impl ExecutionEngine {
 			OpCode::Lt => {
 				let x2 = self.pop();
 				let x1 = self.pop();
-				if x1.get_item_type() == ItemType::Any
-					|| x2.get_item_type() == ItemType::Any
+				if x1.get_item_type() == StackItemType::Any
+					|| x2.get_item_type() == StackItemType::Any
 				{
 					self.push(StackItemTrait::from(false).into())
 				} else {
@@ -914,8 +914,8 @@ impl ExecutionEngine {
 			OpCode::Le => {
 				let x2 = self.pop().borrow();
 				let x1 = self.pop().borrow();
-				if x1.get_type() == ItemType::Any
-					|| x2.get_item_type() == ItemType::Any
+				if x1.get_type() == StackItemType::Any
+					|| x2.get_item_type() == StackItemType::Any
 				{
 					self.push(StackItemTrait::from(false).into())
 				} else {
@@ -926,8 +926,8 @@ impl ExecutionEngine {
 			OpCode::Gt => {
 				let x2 = self.pop().borrow();
 				let x1 = self.pop().borrow();
-				if x1.get_type() == ItemType::Any
-					|| x2.get_item_type() == ItemType::Any
+				if x1.get_type() == StackItemType::Any
+					|| x2.get_item_type() == StackItemType::Any
 				{
 					self.push(StackItemTrait::from(false).into())
 				} else {
@@ -938,8 +938,8 @@ impl ExecutionEngine {
 			OpCode::Ge => {
 				let x2 = self.pop();
 				let x1 = self.pop();
-				if x1.get_item_type() == ItemType::Any
-					|| x2.get_item_type() == ItemType::Any
+				if x1.get_item_type() == StackItemType::Any
+					|| x2.get_item_type() == StackItemType::Any
 				{
 					self.push(StackItemTrait::from(false).into())
 				} else {
@@ -1047,15 +1047,15 @@ impl ExecutionEngine {
 				let item:  StackItem;
 				if instr.opcode == OpCode::NewArrayT {
 					let _type = instr.token_u8();
-					if !ItemType::is_valid(_type) {
+					if !StackItemType::is_valid(_type) {
 						return Err(VMError::InvalidOpcode(
 							"Invalid type for {instr.OpCode}: {instr.token_u8()}".parse().unwrap(),
 						))
 					}
-					item = match _type as ItemType {
-						ItemType::Boolean => StackItemTrait::from(false),
-						ItemType::Integer => StackItemTrait::from(BigInt::zero()),
-						ItemType::ByteString => StackItemTrait::from(ByteString::new(Vec::new())),
+					item = match _type as StackItemType {
+						StackItemType::Boolean => StackItemTrait::from(false),
+						StackItemType::Integer => StackItemTrait::from(BigInt::zero()),
+						StackItemType::ByteString => StackItemTrait::from(ByteString::new(Vec::new())),
 						_ => StackItemTrait::from(Null::default()),
 					};
 				} else {
@@ -1171,7 +1171,7 @@ impl ExecutionEngine {
 				};
 				let mut new_array = Array::new(None, Some(self.reference_counter.clone()));
 				for item in values.array {
-					if item.get_item_type() == ItemType::Struct {
+					if item.get_item_type() == StackItemType::Struct {
 						let s: Struct = item.into();
 						new_array.add(s.clone(&self.limits).try_into().unwrap());
 
@@ -1249,7 +1249,7 @@ impl ExecutionEngine {
 			OpCode::Append => {
 				let mut new_item = self.pop();
 				let array: Array = self.pop().into();
-				if new_item.get_item_type() == ItemType::Struct {
+				if new_item.get_item_type() == StackItemType::Struct {
 					let s: Struct = new_item.into();
 					new_item = s.clone(&self.limits).try_into().unwrap();
 					// new_item = s.Clone(self.limits);
@@ -1258,7 +1258,7 @@ impl ExecutionEngine {
 			},
 			OpCode::SetItem => {
 				let mut value = self.pop();
-				if value.get_item_type() == ItemType::Struct {
+				if value.get_item_type() == StackItemType::Struct {
 					let s: Struct = value.into();
 					value = s.clone(&self.limits).try_into().unwrap();
 				}
@@ -1282,7 +1282,7 @@ impl ExecutionEngine {
 								"The value {index} is out of range.".parse().unwrap(),
 							))
 						}
-						if !ItemType::is_primitive(value.get_item_type() as u8) {
+						if !StackItemType::is_primitive(value.get_item_type() as u8) {
 							return Err(VMError::InvalidOpcode(
 								"Value must be a primitive type in {instr.OpCode}".parse().unwrap(),
 							))
@@ -1347,12 +1347,12 @@ impl ExecutionEngine {
 			//Types
 			OpCode::IsNull => {
 				let x = self.pop();
-				self.push(StackItemTrait::from(x.get_item_type() == ItemType::Any).into())
+				self.push(StackItemTrait::from(x.get_item_type() == StackItemType::Any).into())
 			},
 			OpCode::IsType => {
 				let x = self.pop();
-				let _type: ItemType = instr.token_u8() as ItemType;
-				if _type == ItemType::Any || !ItemType::is_valid(instr.token_u8()) {
+				let _type: StackItemType = instr.token_u8() as StackItemType;
+				if _type == StackItemType::Any || !StackItemType::is_valid(instr.token_u8()) {
 					return Err(VMError::InvalidOpcode("Invalid type: {type}".parse().unwrap()))
 				}
 				self.push(StackItemTrait::from(x.get_item_type() == _type).into())

@@ -1,8 +1,11 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 use neo_base::math::I256;
 use crate::buffer::Buffer;
+use crate::reference_counter::ReferenceCounter;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Interop {
     //
@@ -24,6 +27,11 @@ pub enum StackItem {
     InteropInterface(Interop),
 }
 
+impl Default for StackItem{
+    fn default() -> Self {
+        StackItem::Null
+    }
+}
 
 impl From<String> for StackItem{
     fn from(s: String) -> Self {
@@ -49,3 +57,28 @@ impl From<Vec<u8>> for StackItem{
     }
 }
 
+impl StackItem {
+    pub fn new_array(reference_counter: Option<Rc<RefCell<ReferenceCounter>>>, items: Vec<Rc<StackItem>>) -> Self {
+        let array = items.into_iter()
+            .map(|item| {
+                if let Some(rc) = &reference_counter {
+                    rc.borrow_mut().add_reference(Rc::clone(&item));
+                }
+                item
+            })
+            .collect();
+        StackItem::Array(array)
+    }
+
+    pub fn new_struct(reference_counter: Option<Rc<RefCell<ReferenceCounter>>>, items: Vec<Rc<StackItem>>) -> Self {
+        let struct_items = items.into_iter()
+            .map(|item| {
+                if let Some(rc) = &reference_counter {
+                    rc.borrow_mut().add_reference(Rc::clone(&item));
+                }
+                item
+            })
+            .collect();
+        StackItem::Struct(struct_items)
+    }
+}

@@ -27,7 +27,7 @@ pub struct NeoSystem {
     pub header_cache: Arc<HeaderCache>,
     pub relay_cache: Arc<TokioMutex<HashMap<UInt256, bool>>>,
     services: Arc<TokioMutex<Vec<Box<dyn Any + Send + Sync>>>>,
-    store: Arc<dyn Store>,
+    store: Arc<dyn Store<WriteBatch=()>>,
     storage_provider: Arc<dyn StoreProvider>,
     start_message: Arc<TokioMutex<Option<ChannelsConfig>>>,
     suspend: Arc<AtomicI32>,

@@ -200,7 +200,7 @@ impl<'a, Key: BinEncoder + Debug> StoreKey<'a, Key> {
 #[cfg(test)]
 mod test {
     use neo_base::{encoding::hex::ToHex, hash::Sha256};
-    use crate::types::H256;
+    use crate::types::UInt256;
     use super::*;
 
     #[test]
@@ -208,7 +208,7 @@ mod test {
         let key = StoreKey::new(
             0xffff_fffb,
             PREFIX_TX,
-            &H256::from("Hello".sha256()),
+            &UInt256::from("Hello".sha256()),
         ).to_bin_encoded();
         assert_eq!(&key.to_hex(), "fbffffff0b185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969");
     }

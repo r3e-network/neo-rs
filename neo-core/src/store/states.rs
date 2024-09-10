@@ -3,13 +3,13 @@
 
 
 use neo_base::math::U256;
-use crate::types::{H160, H256};
+use crate::types::{UInt160, UInt256};
 
 
 #[derive(Debug, Clone)]
 pub struct CurrentStates {
     pub block_index: u32,
-    pub block_hash: H256,
+    pub block_hash: UInt256,
 }
 
 pub trait BlockStates {
@@ -19,7 +19,7 @@ pub trait BlockStates {
     }
 
     #[inline]
-    fn current_block_hash(&self) -> H256 {
+    fn current_block_hash(&self) -> UInt256 {
         self.current_states().block_hash
     }
 
@@ -29,14 +29,14 @@ pub trait BlockStates {
 pub trait ChainStates: BlockStates {
     // type Error;
 
-    fn contains_tx(&self, tx: &H256) -> bool; // Result<bool, Self::Error>;
+    fn contains_tx(&self, tx: &UInt256) -> bool; // Result<bool, Self::Error>;
 
-    fn contains_conflict(&self, tx: &H256, account: &H160) -> bool; // Result<bool, Self::Error>;
+    fn contains_conflict(&self, tx: &UInt256, account: &UInt160) -> bool; // Result<bool, Self::Error>;
 }
 
 
 pub trait FeeStates {
     fn netfee_per_byte(&self) -> u64;
 
-    fn balance_of(&self, account: &H160) -> U256;
+    fn balance_of(&self, account: &UInt160) -> U256;
 }

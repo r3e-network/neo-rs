@@ -4,7 +4,7 @@
 
 use neo_base::encoding::bin::*;
 
-use crate::{store::{self, *}, tx::StatedTx, types::H256};
+use crate::{store::{self, *}, tx::StatedTx, types::UInt256};
 use crate::block::{IndexHash, StatedBlock, TrimmedBlock};
 
 
@@ -25,11 +25,11 @@ impl<Store: store::Store> TxStore<Store> {
     }
 
     #[inline]
-    fn tx_key(&self, hash: &H256) -> Vec<u8> {
+    fn tx_key(&self, hash: &UInt256) -> Vec<u8> {
         StoreKey::new(self.contract_id, PREFIX_TX, hash).to_bin_encoded()
     }
 
-    pub fn get_tx(&self, hash: &H256) -> Result<StatedTx, BinReadError> {
+    pub fn get_tx(&self, hash: &UInt256) -> Result<StatedTx, BinReadError> {
         let key = self.tx_key(hash);
         let mut tx = self.store.get_bin_encoded::<StatedTx>(&key)?;
 
@@ -53,7 +53,7 @@ impl<Store: store::Store> BlockStore<Store> {
         Self { contract_id, store }
     }
 
-    pub fn get_block_hash(&self, block_index: u32) -> Result<H256, BinReadError> {
+    pub fn get_block_hash(&self, block_index: u32) -> Result<UInt256, BinReadError> {
         let key = self.store_key(PREFIX_INDEX_TO_HASH, &big_endian::U32(block_index));
         self.store.get_bin_encoded(&key.to_bin_encoded())
     }
@@ -63,7 +63,7 @@ impl<Store: store::Store> BlockStore<Store> {
         StoreKey::new(self.contract_id, prefix, key).to_bin_encoded()
     }
 
-    pub fn get_block_with_hash(&self, hash: &H256) -> Result<TrimmedBlock, BinReadError> {
+    pub fn get_block_with_hash(&self, hash: &UInt256) -> Result<TrimmedBlock, BinReadError> {
         let key = self.store_key(PREFIX_BLOCK, hash);
         let mut block = self.store.get_bin_encoded::<TrimmedBlock>(&key)?;
 

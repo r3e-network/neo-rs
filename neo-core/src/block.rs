@@ -3,28 +3,28 @@
 
 
 use alloc::vec::Vec;
-use primitive_types::{H160, H256};
 use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::{bin::*, encode_hex_u64, decode_hex_u64};
-use crate::tx::Witnesses;
+use crate::uint160::UInt160;
+use crate::uint256::UInt256;
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, InnerBinDecode)]
 pub struct Header {
     /// the hash of this block header
     #[bin(ignore)]
-    pub hash: Option<H256>,
+    pub hash: Option<UInt256>,
 
     /// the version of this block header
     pub version: u32,
 
     /// the hash of the previous block.
     #[serde(rename = "previousblockhash")]
-    pub prev_hash: H256,
+    pub prev_hash: UInt256,
 
     /// the root hash of a transaction list.
     #[serde(rename = "merkleroot")]
-    pub merkle_root: H256,
+    pub merkle_root: UInt256,
 
     /// unix timestamp in milliseconds, i.e. timestamp
     #[serde(rename = "time")]
@@ -42,7 +42,7 @@ pub struct Header {
 
     /// contract address of the next miner
     #[serde(rename = "nextconsensus")]
-    pub next_consensus: H160,
+    pub next_consensus: UInt160,
 
     /// Script used to validate the block. Only one is supported at now.
     pub witnesses: Witnesses,
@@ -51,13 +51,13 @@ pub struct Header {
     // pub state_root_enabled: bool,
 
     // /// the state root of the previous block.
-    // #[serde(default, rename = "previousstateroot", skip_serializing_if = "H256::is_zero")]
-    // pub prev_state_root: H256,
+    // #[serde(default, rename = "previousstateroot", skip_serializing_if = "UInt256::is_zero")]
+    // pub prev_state_root: UInt256,
 }
 
 impl Header {
     #[inline]
-    pub fn hash(&self) -> H256 {
+    pub fn hash(&self) -> UInt256 {
         self.hash.unwrap_or_else(|| self.hash_fields_sha256().into())
     }
 
@@ -101,7 +101,7 @@ pub struct Block {
 impl Block {
     pub fn new(header: Header, txs: Vec<Tx>) -> Self { Self { header, txs } }
 
-    pub fn hash(&self) -> H256 { self.header.hash() }
+    pub fn hash(&self) -> UInt256 { self.header.hash() }
 
     pub fn header(&self) -> &Header { &self.header }
 
@@ -152,12 +152,12 @@ pub struct TrimmedBlock {
     pub header: Header,
 
     /// The hashes of the txs in this block.
-    pub hashes: Vec<H256>,
+    pub hashes: Vec<UInt256>,
 }
 
 
 impl TrimmedBlock {
-    pub fn hash(&self) -> H256 { self.header.hash() }
+    pub fn hash(&self) -> UInt256 { self.header.hash() }
 
     pub fn header(&self) -> &Header { &self.header }
 
@@ -173,7 +173,7 @@ pub struct StatedBlock {
 }
 
 impl StatedBlock {
-    pub fn hash(&self) -> H256 { self.header.hash() }
+    pub fn hash(&self) -> UInt256 { self.header.hash() }
 
     pub fn txs(&self) -> &[StatedTx] { &self.txs }
 
@@ -191,15 +191,15 @@ impl StatedBlock {
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 pub struct IndexHash {
     pub index: u32,
-    pub hash: H256,
+    pub hash: UInt256,
 }
 
 pub trait HashToIndex {
-    fn hash_to_index(&self, hash: &H256) -> Option<u32>;
+    fn hash_to_index(&self, hash: &UInt256) -> Option<u32>;
 }
 
 pub trait IndexToHash {
-    fn index_to_hash(&self, height: u32) -> Option<H256>;
+    fn index_to_hash(&self, height: u32) -> Option<UInt256>;
 }
 
 

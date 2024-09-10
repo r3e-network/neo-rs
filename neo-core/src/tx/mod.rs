@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::bin::*;
-use crate::types::{H160, H256, Script, VmState};
+use crate::types::{UInt160, UInt256, Script, VmState};
 
 
 #[derive(Debug, Clone, Deserialize, Serialize, BinEncode, InnerBinDecode)]
@@ -34,7 +34,7 @@ pub struct Tx {
     /// i.e. tx-id, None means no set. Set it to None if hash-fields changed
     #[bin(ignore)]
     #[serde(skip_serializing_if = "Option::is_none", skip_deserializing)]
-    hash: Option<H256>,
+    hash: Option<UInt256>,
 
     /// None means not-computed. Set it to None if hash-fields changed
     #[bin(ignore)]
@@ -83,7 +83,7 @@ impl BinDecoder for Tx {
 
 impl Tx {
     /// i.e. TxID
-    pub fn hash(&self) -> H256 {
+    pub fn hash(&self) -> UInt256 {
         self.hash.unwrap_or_else(|| self.calc_hash())
     }
 
@@ -99,11 +99,11 @@ impl Tx {
         self.netfee / self.size() as u64
     }
 
-    pub fn signers(&self) -> Vec<&H160> {
+    pub fn signers(&self) -> Vec<&UInt160> {
         self.signers.iter().map(|s| &s.account).collect()
     }
 
-    pub fn has_signer(&self, signer: &H160) -> bool {
+    pub fn has_signer(&self, signer: &UInt160) -> bool {
         self.signers.iter()
             .find(|s| s.account.eq(signer))
             .is_some()
@@ -123,7 +123,7 @@ impl Tx {
         self.hash = Some(self.calc_hash());
     }
 
-    fn calc_hash(&self) -> H256 {
+    fn calc_hash(&self) -> UInt256 {
         self.hash_fields_sha256().into()
     }
 }
@@ -139,7 +139,7 @@ pub struct StatedTx {
 
 impl StatedTx {
     #[inline]
-    pub fn hash(&self) -> H256 { self.tx.hash() }
+    pub fn hash(&self) -> UInt256 { self.tx.hash() }
 }
 
 

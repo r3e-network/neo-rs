@@ -3,6 +3,11 @@ use neo::io::*;
 use neo::network::p2p::capabilities::NodeCapability;
 use std::io::{Read, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
+use byteorder::LittleEndian;
+use NeoRust::prelude::{StringExt, VarSizeTrait};
+use crate::io::iserializable::ISerializable;
+use crate::network::Capabilities::NodeCapability;
+use crate::network::LocalNode;
 
 /// Sent when a connection is established.
 pub struct VersionPayload {
@@ -22,7 +27,7 @@ pub struct VersionPayload {
     pub user_agent: String,
 
     /// The capabilities of the node.
-    pub capabilities: Vec<NodeCapability>,
+    pub capabilities: Vec<dyn NodeCapability>,
 }
 
 /// Indicates the maximum number of capabilities contained in a VersionPayload.
@@ -31,8 +36,8 @@ pub const MAX_CAPABILITIES: usize = 32;
 impl VersionPayload {
     pub fn size(&self) -> usize {
         std::mem::size_of::<u32>() * 4 + // Network + Version + Timestamp + Nonce
-        self.user_agent.get_var_size() +
-        self.capabilities.get_var_size()
+        self.user_agent.var_size() +
+        self.capabilities.var_size()
     }
 
     /// Creates a new instance of the VersionPayload struct.
@@ -47,7 +52,7 @@ impl VersionPayload {
     /// # Returns
     ///
     /// The created payload.
-    pub fn create(network: u32, nonce: u32, user_agent: String, capabilities: Vec<NodeCapability>) -> Self {
+    pub fn create(network: u32, nonce: u32, user_agent: String, capabilities: Vec<dyn NodeCapability>) -> Self {
         Self {
             network,
             version: LocalNode::PROTOCOL_VERSION,
@@ -94,5 +99,9 @@ impl ISerializable for VersionPayload {
             capability.serialize(writer)?;
         }
         Ok(())
+    }
+
+    fn size(&self) -> usize {
+        todo!()
     }
 }

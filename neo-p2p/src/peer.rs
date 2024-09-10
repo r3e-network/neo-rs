@@ -1,17 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 use std::time::Duration;
 
 use trust_dns_resolver::Resolver;
 
+use crate::SeedState;
 use neo_base::time::{AtomicUnixTime, UnixTime};
 use neo_core::payload::Version;
-use crate::SeedState;
-
 
 #[derive(Debug, Copy, Clone)]
 #[repr(u32)]
@@ -26,7 +24,9 @@ pub enum PeerStage {
 
 impl PeerStage {
     #[inline]
-    pub const fn as_u32(self) -> u32 { self as u32 }
+    pub const fn as_u32(self) -> u32 {
+        self as u32
+    }
 
     #[inline]
     pub fn belongs(self, stages: u32) -> bool {
@@ -34,13 +34,11 @@ impl PeerStage {
     }
 }
 
-
 #[derive(Debug, Copy, Clone)]
 pub struct Timeouts {
     pub ping: bool,
     pub handshake: bool,
 }
-
 
 #[derive(Debug)]
 pub struct Connected {
@@ -66,12 +64,18 @@ impl Connected {
     }
 
     #[inline]
-    pub fn stages(&self) -> u32 { self.stages.load(Relaxed) }
+    pub fn stages(&self) -> u32 {
+        self.stages.load(Relaxed)
+    }
 
     #[inline]
     pub fn add_stages(&self, stages: u32) {
         let mut old = self.stages.load(Relaxed);
-        while self.stages.compare_exchange(old, old | stages, Relaxed, Relaxed).is_err() {
+        while self
+            .stages
+            .compare_exchange(old, old | stages, Relaxed, Relaxed)
+            .is_err()
+        {
             old = self.stages.load(Relaxed);
         }
     }
@@ -83,7 +87,8 @@ impl Connected {
 
     pub fn ping_timeout(&self, now: UnixTime, timeout: Duration) -> bool {
         let sent = self.ping_sent.load().unix_millis();
-        if sent == 0 { // not sent
+        if sent == 0 {
+            // not sent
             return false;
         }
 
@@ -105,7 +110,6 @@ impl Connected {
         now.unix_millis() - self.connected_at.unix_millis() >= timeout.as_millis() as i64
     }
 }
-
 
 #[derive(Debug)]
 pub struct TcpPeer {
@@ -138,11 +142,11 @@ impl TcpPeer {
 
     #[inline]
     pub fn service_addr(&self) -> Option<SocketAddr> {
-        self.version.port()
+        self.version
+            .port()
             .map(|x| SocketAddr::new(self.addr.ip(), x))
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct Seed {
@@ -153,15 +157,17 @@ pub struct Seed {
 impl Seed {
     #[inline]
     pub fn new(addr: SocketAddr) -> Self {
-        Self { addr, state: SeedState::Reachable } // initial SeedState is `Reachable`
+        Self {
+            addr,
+            state: SeedState::Reachable,
+        } // initial SeedState is `Reachable`
     }
 
     #[inline]
     pub fn temporary(&self) -> bool {
-        matches!(self.state , SeedState::Temporary)
+        matches!(self.state, SeedState::Temporary)
     }
 }
-
 
 pub struct DnsResolver {
     seeds: Vec<(String, u16)>,
@@ -170,13 +176,16 @@ pub struct DnsResolver {
 
 impl DnsResolver {
     pub fn new(seeds: &[String]) -> Self {
-        let resolver = Resolver::from_system_conf()
-            .expect("`Resolver::from_system_conf()` should be ok");
+        let resolver =
+            Resolver::from_system_conf().expect("`Resolver::from_system_conf()` should be ok");
 
-        let seeds = seeds.iter()
+        let seeds = seeds
+            .iter()
             .map(|x| {
                 let d = x.rfind(":").expect(&format!("Seed {} is invalid", x));
-                let port = x[d + 1..].parse().expect(&format!("Port in seed {} is invalid", x));
+                let port = x[d + 1..]
+                    .parse()
+                    .expect(&format!("Port in seed {} is invalid", x));
                 (x[..d].to_string(), port)
             })
             .collect();
@@ -187,17 +196,26 @@ impl DnsResolver {
     pub(crate) fn on_start(&self) -> Vec<(String, Seed)> {
         let seeds = self.resolves();
         if seeds.len() != self.seeds.len() {
-            panic!("`DnsResolver::on_start`: resolved {} != seeds {}", seeds.len(), self.seeds.len());
+            panic!(
+                "`DnsResolver::on_start`: resolved {} != seeds {}",
+                seeds.len(),
+                self.seeds.len()
+            );
         }
         seeds
     }
 
     // TODO: resolve seeds periodically
     pub fn resolves(&self) -> Vec<(String, Seed)> {
-        self.seeds.iter()
+        self.seeds
+            .iter()
             .filter_map(|(host, port)| {
-                self.resolve(host)
-                    .map(|x| (format!("{}:{}", host, port), Seed::new(SocketAddr::new(x, *port))))
+                self.resolve(host).map(|x| {
+                    (
+                        format!("{}:{}", host, port),
+                        Seed::new(SocketAddr::new(x, *port)),
+                    )
+                })
             })
             .collect()
     }
@@ -219,7 +237,6 @@ impl DnsResolver {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -231,7 +248,10 @@ mod test {
         assert_eq!(connected.is_accepted(), true);
 
         connected.add_stages(PeerStage::VersionSent.as_u32());
-        assert_eq!(connected.stages(), PeerStage::VersionSent.as_u32() | PeerStage::Accepted.as_u32());
+        assert_eq!(
+            connected.stages(),
+            PeerStage::VersionSent.as_u32() | PeerStage::Accepted.as_u32()
+        );
         assert_eq!(connected.is_accepted(), true);
 
         let now = UnixTime::now();

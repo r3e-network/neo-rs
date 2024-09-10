@@ -1,11 +1,13 @@
-use neo::json::{JToken, JNumber, JObject};
-use neo::vm::{StackItem, ReferenceCounter, ExecutionEngineLimits};
-use neo::vm::types::{Array, ByteString, Buffer, Integer, Boolean, Map, Null};
 use std::collections::VecDeque;
 use std::io::Write;
 use std::convert::TryFrom;
-use serde_json::{Value as JsonValue, json};
+use serde_json::{ json};
+use neo_json::jtoken::{JToken, MAX_SAFE_INTEGER, MIN_SAFE_INTEGER};
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
+use crate::hardfork::Hardfork;
+use crate::neo_contract::application_engine::ApplicationEngine;
 
 /// A JSON serializer for `StackItem`.
 pub struct JsonSerializer;
@@ -22,7 +24,7 @@ impl JsonSerializer {
             },
             StackItem::Integer(num) => {
                 let integer = num.get_integer()?;
-                if integer > JNumber::MAX_SAFE_INTEGER || integer < JNumber::MIN_SAFE_INTEGER {
+                if integer > MAX_SAFE_INTEGER || integer < MIN_SAFE_INTEGER {
                     return Err("Integer out of safe range".into());
                 }
                 Ok(JToken::Number(integer as f64))
@@ -31,14 +33,14 @@ impl JsonSerializer {
                 Ok(JToken::Boolean(boolean.get_boolean()?))
             },
             StackItem::Map(map) => {
-                let mut ret = JObject::new();
+                let mut ret = JToken::new_object();
                 for (key, value) in map.iter() {
                     if !matches!(key, StackItem::ByteString(_)) {
                         return Err("Map key must be ByteString".into());
                     }
                     let key_str = key.get_string()?;
                     let value_token = Self::serialize(value)?;
-                    ret.insert(key_str, value_token);
+                    ret.insert(key_str, value_token).expect("TODO: panic message");
                 }
                 Ok(JToken::Object(ret))
             },
@@ -70,7 +72,7 @@ impl JsonSerializer {
                 },
                 StackItem::Integer(num) => {
                     let integer = num.get_integer()?;
-                    if integer > JNumber::MAX_SAFE_INTEGER || integer < JNumber::MIN_SAFE_INTEGER {
+                    if integer > MAX_SAFE_INTEGER || integer < MIN_SAFE_INTEGER {
                         return Err("Integer out of safe range".into());
                     }
                     let value = json!(integer);
@@ -125,7 +127,7 @@ impl JsonSerializer {
         Self::deserialize_internal(engine, json, &mut max_stack_size, reference_counter)
     }
 
-    fn deserialize_internal(engine: &ApplicationEngine, json: &JToken, max_stack_size: &mut u32, reference_counter: Option<&ReferenceCounter>) -> Result<StackItem, String> {
+    fn deserialize_internal(engine: &ApplicationEngine, json: &JToken, max_stack_size: &mut usize, reference_counter: Option<&ReferenceCounter>) -> Result<StackItem, String> {
         if *max_stack_size == 0 {
             return Err("Max stack size exceeded".into());
         }
@@ -138,20 +140,20 @@ impl JsonSerializer {
                 for obj in array {
                     list.push(Self::deserialize_internal(engine, obj, max_stack_size, reference_counter)?);
                 }
-                Ok(StackItem::Array(Array::new(reference_counter, list)))
+                Ok(StackItem::new_array(reference_counter, list))
             },
-            JToken::String(str) => Ok(StackItem::ByteString(ByteString::from(str.as_bytes()))),
+            JToken::String(str) => Ok(StackItem::ByteString(str.as_bytes().to_vec())),
             JToken::Number(num) => {
                 if num.fract() != 0.0 {
                     return Err("Decimal value is not allowed".into());
                 }
                 if engine.is_hardfork_enabled(Hardfork::HF_Basilisk) {
-                    Ok(StackItem::Integer(Integer::try_from(num.to_string().parse::<i64>().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?))
+                    Ok(StackItem::Integer(num.to_string().parse::<i64>().map_err(|e| e.to_string())?))
                 } else {
                     Ok(StackItem::Integer(Integer::try_from(num.to_string().parse::<i64>().map_err(|e| e.to_string())?).map_err(|e| e.to_string())?))
                 }
             },
-            JToken::Boolean(boolean) => Ok(StackItem::Boolean(Boolean::from(*boolean))),
+            JToken::Boolean(boolean) => Ok(StackItem::Boolean(*boolean)),
             JToken::Object(obj) => {
                 let mut map = Map::new(reference_counter);
                 for (key, value) in obj {
@@ -160,7 +162,7 @@ impl JsonSerializer {
                     }
                     *max_stack_size -= 1;
 
-                    let key_item = StackItem::ByteString(ByteString::from(key.as_bytes()));
+                    let key_item = StackItem::ByteString(key.as_bytes());
                     let value_item = Self::deserialize_internal(engine, value, max_stack_size, reference_counter)?;
                     map.insert(key_item, value_item);
                 }

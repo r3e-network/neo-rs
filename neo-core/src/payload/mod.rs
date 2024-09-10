@@ -11,7 +11,7 @@ pub use {blocks::*, extensible::*, nodes::*, p2p::*};
 use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
-use crate::types::H256;
+use crate::types::UInt256;
 
 
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
@@ -27,16 +27,16 @@ pub enum MessageFlag {
 #[bin(repr = u8)]
 pub enum Inventory {
     #[bin(tag = 0x2b)]
-    Tx(Vec<H256>),
+    Tx(Vec<UInt256>),
 
     #[bin(tag = 0x2c)]
-    Block(Vec<H256>),
+    Block(Vec<UInt256>),
 
     #[bin(tag = 0x2e)]
-    Extensible(Vec<H256>),
+    Extensible(Vec<UInt256>),
 
     // #[bin(tag = 0x50)]
-    // P2pNotaryRequest(Vec<H256>),
+    // P2pNotaryRequest(Vec<UInt256>),
 }
 
 

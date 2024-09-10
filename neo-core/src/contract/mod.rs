@@ -25,7 +25,7 @@ pub const MIN_MULTI_CONTRACT_SIZE: usize = 42;
 pub struct Contract {
     pub script: Script,
     pub params: Vec<ParamType>,
-    pub script_hash: H160,
+    pub script_hash: UInt160,
 }
 
 
@@ -87,7 +87,7 @@ impl<T: AsRef<[PublicKey]>> ToMultiSignContract for T {
 }
 
 
-pub fn contract_hash(sender: &H160, name: &str, nef_checksum: u32) -> H160 {
+pub fn contract_hash(sender: &UInt160, name: &str, nef_checksum: u32) -> UInt160 {
     const OPCODE_ABORT: u8 = 0x38;
 
     // 1(Abort) + (2+20) + (2+name.len()) + 4

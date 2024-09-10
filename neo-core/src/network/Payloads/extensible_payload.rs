@@ -1,12 +1,7 @@
-use neo_io::*;
-use neo_persistence::*;
-use neo_smart_contract::*;
-use neo_smart_contract::native::*;
 use std::collections::HashSet;
 use std::hash::Hasher;
 use std::io::{Read, Write};
 use crate::io::iserializable::ISerializable;
-use crate::network::p2p::payloads::*;
 use crate::network::Payloads::{IInventory, IVerifiable, InventoryType, Witness};
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;

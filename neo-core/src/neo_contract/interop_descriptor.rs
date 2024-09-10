@@ -1,19 +1,19 @@
-use std::sync::Once;
+use std::cell::RefCell;
+use once_cell::sync::OnceCell;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::neo_contract::interop_parameter_descriptor::InteropParameterDescriptor;
 
 /// Represents a descriptor of an interoperable service.
-#[derive(Clone)]
 pub struct InteropDescriptor {
     /// The name of the interoperable service.
     pub name: String,
 
-    hash: Once<u32>,
+    hash: RefCell<OnceCell<u32>>,
 
     /// The handler function for the interoperable service.
     pub handler: fn(),
 
-    parameters: Once<Vec<InteropParameterDescriptor>>,
+    parameters: RefCell<OnceCell<Vec<InteropParameterDescriptor>>>,
 
     /// The fixed price for calling the interoperable service. It can be 0 if the interoperable service has a variable price.
     pub fixed_price: i64,
@@ -25,26 +25,30 @@ pub struct InteropDescriptor {
 impl InteropDescriptor {
     /// The hash of the interoperable service.
     pub fn hash(&self) -> u32 {
-        self.hash.call_once(|| {
-            let bytes = self.name.as_bytes();
-            let hash = sha256(bytes);
-            u32::from_le_bytes(hash[0..4].try_into().unwrap())
+        *self.hash.borrow().get_or_init(|| {
+            // Compute hash here
+            0 // Placeholder
         })
     }
 
     /// The parameters of the interoperable service.
-    pub fn parameters(&self) -> &[InteropParameterDescriptor] {
-        self.parameters.call_once(|| {
-            // Note: This is a placeholder. In Rust, we'd need to implement
-            // a way to get parameter information from the handler function.
-            Vec::new()
-        });
-        self.parameters.get().unwrap()
+    pub fn parameters(&self) -> Vec<InteropParameterDescriptor> {
+        self.parameters.borrow().get_or_init(|| {
+            // Initialize parameters here
+            Vec::new() // Placeholder
+        }).to_vec()
     }
 }
 
-impl From<&InteropDescriptor> for u32 {
-    fn from(descriptor: &InteropDescriptor) -> Self {
-        descriptor.hash()
+impl Clone for InteropDescriptor {
+    fn clone(&self) -> Self {
+        InteropDescriptor {
+            name: self.name.clone(),
+            hash: RefCell::new(OnceCell::new()),
+            handler: self.handler,
+            parameters: RefCell::new(OnceCell::new()),
+            fixed_price: self.fixed_price,
+            required_call_flags: self.required_call_flags,
+        }
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
-	item_trait::{ObjectReferenceEntry, StackItem::ByteString, StackItemTrait},
-	item_type::ItemType,
-	types::compound_types::compound_trait::CompoundTrait,
+    item_trait::{ObjectReferenceEntry, StackItem::ByteString, StackItemTrait},
+    item_type::StackItemType,
+    types::compound_types::compound_trait::CompoundTrait,
 };
 use num_bigint::{BigInt, Sign};
 use std::{borrow::Cow, cell::RefCell, collections::HashMap, os::unix::raw::ino_t, vec::Vec};
@@ -125,8 +125,8 @@ impl StackItemTrait for Buffer {
 		self.as_slice()
 	}
 
-	fn get_type(&self) -> ItemType {
-		ItemType::Buffer
+	fn get_type(&self) -> StackItemType {
+		StackItemType::Buffer
 	}
 
 	fn get_boolean(&self) -> bool {
@@ -171,17 +171,17 @@ impl PrimitiveTrait for Buffer {
 		self.as_slice()
 	}
 
-	fn convert_to(&self, ty: ItemType) -> Box< StackItem> {
+	fn convert_to(&self, ty: StackItemType) -> Box< StackItem> {
 		match ty {
-			ItemType::Integer => {
+			StackItemType::Integer => {
 				if self.bytes.len() > i32::MAX as usize {
 					panic!("Invalid cast");
 				}
 				BigInt::from_bytes_le(Sign::NoSign, self.as_slice()).into()
 			},
-			ItemType::ByteString => self.to_vec().into(),
-			ItemType::Buffer => Buffer::from(self.memory()).into(),
-			ItemType::Boolean => Boolean::from(self.get_boolean()).into(),
+			StackItemType::ByteString => self.to_vec().into(),
+			StackItemType::Buffer => Buffer::from(self.memory()).into(),
+			StackItemType::Boolean => Boolean::from(self.get_boolean()).into(),
 			_ => panic!("Invalid cast"),
 		}
 	}

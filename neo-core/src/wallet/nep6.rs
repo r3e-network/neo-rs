@@ -4,7 +4,7 @@
 use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
-use crate::{types::{Extra, H160}, contract::NamedParamType};
+use crate::{types::{Extra, UInt160}, contract::NamedParamType};
 
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -78,7 +78,7 @@ impl Nep6Wallet {
 pub struct Token {
     pub name: String,
 
-    pub script_hash: H160,
+    pub script_hash: UInt160,
 
     pub decimals: u64,
 

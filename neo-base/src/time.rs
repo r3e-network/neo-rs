@@ -1,18 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use std::ops::{Add, Sub};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering::Relaxed};
 use std::time::Duration;
 
 use chrono::TimeDelta;
 
-
 pub type LocalTime = chrono::DateTime<chrono::Local>;
 
 pub type UtcTime = chrono::DateTime<chrono::Utc>;
-
 
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct UnixTime(i64);
@@ -23,20 +20,27 @@ impl UnixTime {
         Self(utc_now().timestamp_micros())
     }
 
-    pub const fn from_millis(millis: i64) -> Self { Self(millis) }
+    pub const fn from_millis(millis: i64) -> Self {
+        Self(millis)
+    }
 
-    pub const fn unix_micros(&self) -> i64 { self.0 }
+    pub const fn unix_micros(&self) -> i64 {
+        self.0
+    }
 
-    pub const fn unix_millis(&self) -> i64 { self.0 / 1000 }
+    pub const fn unix_millis(&self) -> i64 {
+        self.0 / 1000
+    }
 
-    pub const fn unix_seconds(&self) -> i64 { self.0 / 1000 / 1000 }
+    pub const fn unix_seconds(&self) -> i64 {
+        self.0 / 1000 / 1000
+    }
 
     #[inline]
     pub fn since(u: UnixTime) -> TimeDelta {
         TimeDelta::microseconds(Self::now().0 - u.0)
     }
 }
-
 
 impl Sub for UnixTime {
     type Output = TimeDelta;
@@ -70,7 +74,12 @@ impl Add<TimeDelta> for UnixTime {
 
     #[inline]
     fn add(self, rhs: TimeDelta) -> Self::Output {
-        Self(self.unix_micros() + rhs.num_microseconds().unwrap_or_else(|| rhs.num_milliseconds() * 1000))
+        Self(
+            self.unix_micros()
+                + rhs
+                    .num_microseconds()
+                    .unwrap_or_else(|| rhs.num_milliseconds() * 1000),
+        )
     }
 }
 
@@ -79,10 +88,14 @@ impl Sub<TimeDelta> for UnixTime {
 
     #[inline]
     fn sub(self, rhs: TimeDelta) -> Self::Output {
-        Self(self.unix_micros() - rhs.num_microseconds().unwrap_or_else(|| rhs.num_milliseconds() * 1000))
+        Self(
+            self.unix_micros()
+                - rhs
+                    .num_microseconds()
+                    .unwrap_or_else(|| rhs.num_milliseconds() * 1000),
+        )
     }
 }
-
 
 #[derive(Debug, Default)]
 pub struct AtomicUnixTime(AtomicI64);
@@ -93,19 +106,30 @@ impl AtomicUnixTime {
         Self(AtomicI64::new(utc_now().timestamp_micros()))
     }
 
-    pub const fn from_millis(millis: i64) -> Self { Self(AtomicI64::new(millis)) }
+    pub const fn from_millis(millis: i64) -> Self {
+        Self(AtomicI64::new(millis))
+    }
 
-    pub fn unix_micros(&self) -> i64 { self.0.load(Relaxed) }
+    pub fn unix_micros(&self) -> i64 {
+        self.0.load(Relaxed)
+    }
 
-    pub fn unix_millis(&self) -> i64 { self.unix_micros() / 1000 }
+    pub fn unix_millis(&self) -> i64 {
+        self.unix_micros() / 1000
+    }
 
-    pub fn unix_seconds(&self) -> i64 { self.unix_micros() / 1000 / 1000 }
+    pub fn unix_seconds(&self) -> i64 {
+        self.unix_micros() / 1000 / 1000
+    }
 
-    pub fn load(&self) -> UnixTime { UnixTime(self.unix_micros()) }
+    pub fn load(&self) -> UnixTime {
+        UnixTime(self.unix_micros())
+    }
 
-    pub fn store(&self, new: UnixTime) { self.0.store(new.0, Relaxed) }
+    pub fn store(&self, new: UnixTime) {
+        self.0.store(new.0, Relaxed)
+    }
 }
-
 
 #[inline]
 pub fn unix_millis_now() -> u64 {
@@ -118,11 +142,14 @@ pub fn unix_seconds_now() -> u64 {
 }
 
 #[inline]
-pub fn utc_now() -> UtcTime { chrono::Utc::now() }
+pub fn utc_now() -> UtcTime {
+    chrono::Utc::now()
+}
 
 #[inline]
-pub fn local_now() -> LocalTime { chrono::Local::now() }
-
+pub fn local_now() -> LocalTime {
+    chrono::Local::now()
+}
 
 pub struct Tick {
     unix_millis: AtomicU64,
@@ -165,7 +192,6 @@ impl Tick {
         self.stopped.store(true, Relaxed)
     }
 }
-
 
 #[cfg(test)]
 mod test {

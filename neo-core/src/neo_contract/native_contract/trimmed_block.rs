@@ -1,5 +1,7 @@
 use neo_vm::stack_item::StackItem;
 use crate::block::Header;
+use crate::uint256::UInt256;
+
 /// Represents a block which the transactions are trimmed.
 #[derive(Clone)]
 pub struct TrimmedBlock {
@@ -7,12 +9,12 @@ pub struct TrimmedBlock {
     pub header: Header,
 
     /// The hashes of the transactions of the block.
-    pub hashes: Vec<H256>,
+    pub hashes: Vec<UInt256>,
 }
 
 impl TrimmedBlock {
     /// The hash of the block.
-    pub fn hash(&self) -> H256 {
+    pub fn hash(&self) -> UInt256 {
         self.header.hash()
     }
 
@@ -29,7 +31,7 @@ impl TrimmedBlock {
 impl ISerializable for TrimmedBlock {
     fn deserialize(reader: &mut Reader) -> Result<Self, Error> {
         let header = Header::deserialize(reader)?;
-        let hashes = reader.read_var_vec::<H256>(u16::MAX as usize)?;
+        let hashes = reader.read_var_vec::<UInt256>(u16::MAX as usize)?;
         Ok(Self { header, hashes })
     }
 

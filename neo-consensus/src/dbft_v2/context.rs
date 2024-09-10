@@ -1,7 +1,6 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{vec, vec::Vec};
 
 #[cfg(feature = "std")]
@@ -10,18 +9,17 @@ use std::collections::HashMap;
 #[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
 
-use neo_base::byzantine_honest_quorum;
-use neo_core::PublicKey;
-use neo_core::tx::{Tx, Witness};
-use neo_core::types::{H160, H256};
-use neo_core::contract::{ToMultiSignContract, context::MultiSignContext};
 use crate::dbft_v2::*;
-
+use neo_base::byzantine_honest_quorum;
+use neo_core::contract::{context::MultiSignContext, ToMultiSignContract};
+use neo_core::tx::{Tx, Witness};
+use neo_core::types::{UInt160, UInt256};
+use neo_core::PublicKey;
 
 #[derive(Debug, Default)]
 pub struct ConsensusStates {
     pub validators: Vec<PublicKey>,
-    pub prev_hash: H256,
+    pub prev_hash: UInt256,
     pub block_index: u32,
     pub view_number: ViewNumber,
 
@@ -36,7 +34,6 @@ pub struct ConsensusStates {
     pub received_unix_milli: u64,
     pub received_block_index: u32,
 }
-
 
 impl ConsensusStates {
     pub fn new() -> Self {
@@ -69,7 +66,10 @@ impl ConsensusStates {
     }
 
     pub fn height_view(&self) -> HView {
-        HView { height: self.block_index, view_number: self.view_number }
+        HView {
+            height: self.block_index,
+            view_number: self.view_number,
+        }
     }
 
     pub fn new_message_meta(&self) -> MessageMeta {
@@ -81,7 +81,6 @@ impl ConsensusStates {
     }
 }
 
-
 pub fn primary_index(block_index: u32, view_number: ViewNumber, nr_validators: u32) -> ViewIndex {
     let nr_validators = nr_validators as i64;
     let primary = (block_index as i64 - view_number as i64) % nr_validators;
@@ -92,19 +91,19 @@ pub fn primary_index(block_index: u32, view_number: ViewNumber, nr_validators: u
     }
 }
 
-
 #[derive(Debug, Default, Clone)]
 #[allow(dead_code)]
 pub struct VerificationContext {
-    pub senders_fee: HashMap<H160, u64>,
-    pub oracle_responses: HashMap<u64, H256>,
+    pub senders_fee: HashMap<UInt160, u64>,
+    pub oracle_responses: HashMap<u64, UInt256>,
 }
 
 impl VerificationContext {
     #[inline]
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
-
 
 #[derive(Debug, Default, Clone)]
 pub struct Prepares {
@@ -114,10 +113,14 @@ pub struct Prepares {
 
 impl Prepares {
     #[inline]
-    pub fn has_request(&self) -> bool { self.request.is_some() }
+    pub fn has_request(&self) -> bool {
+        self.request.is_some()
+    }
 
     #[inline]
-    pub fn has_response(&self) -> bool { self.response.is_some() }
+    pub fn has_response(&self) -> bool {
+        self.response.is_some()
+    }
 
     pub fn to_preparation_compact(&self) -> Option<PreparationCompact> {
         if let Some(res) = self.response.as_ref() {
@@ -130,10 +133,9 @@ impl Prepares {
     }
 }
 
-
 pub struct ConsensusContext {
-    pub tx_hashes: Vec<H256>,
-    pub txs: HashMap<H256, Tx>,
+    pub tx_hashes: Vec<UInt256>,
+    pub txs: HashMap<UInt256, Tx>,
 
     pub prepares: Vec<Prepares>,
     pub commits: Vec<Option<Message<Commit>>>,
@@ -143,7 +145,6 @@ pub struct ConsensusContext {
     pub last_seen_message: HashMap<PublicKey, HView>,
     pub verifications: VerificationContext,
 }
-
 
 impl ConsensusContext {
     pub fn new(nr_validators: u32) -> Self {
@@ -160,14 +161,16 @@ impl ConsensusContext {
         }
     }
 
-    pub(crate) fn on_prepare_received(&mut self, prepare: Message<PrepareRequest>) -> H256 {
+    pub(crate) fn on_prepare_received(&mut self, prepare: Message<PrepareRequest>) -> UInt256 {
         let message = &prepare.message;
 
         self.tx_hashes = message.tx_hashes.clone();
         self.txs = HashMap::new(); // TODO: log the rewritten txs
         self.verifications = VerificationContext::new();
         for prepares in self.prepares.iter_mut() {
-            let Some(r) = prepares.response.as_ref() else { continue; };
+            let Some(r) = prepares.response.as_ref() else {
+                continue;
+            };
             if r.message.preparation != message.payload_hash {
                 prepares.response = None;
             }
@@ -187,8 +190,8 @@ impl ConsensusContext {
 
     pub fn has_preparation(&self, primary: ViewIndex) -> bool {
         let index = primary as usize;
-        index < self.prepares.len() &&
-            (self.prepares[index].has_request() || self.prepares[index].has_response())
+        index < self.prepares.len()
+            && (self.prepares[index].has_request() || self.prepares[index].has_response())
     }
 
     pub fn commit_count(&self) -> usize {
@@ -197,14 +200,16 @@ impl ConsensusContext {
 
     /// NOTE: block_index must greater than 0
     pub fn failed_count(&self, block_index: u32, validators: &[PublicKey]) -> usize {
-        validators.iter()
+        validators
+            .iter()
             .filter_map(|key| self.last_seen_message.get(key).cloned())
             .filter(|hv| hv.height < block_index - 1)
             .count()
     }
 
     pub fn txs(&self) -> Vec<Tx> {
-        self.tx_hashes.iter()
+        self.tx_hashes
+            .iter()
             .map_while(|h| self.txs.get(h).cloned())
             .collect()
     }
@@ -213,36 +218,46 @@ impl ConsensusContext {
         self.tx_hashes.iter().all(|tx| self.txs.contains_key(tx))
     }
 
-    fn max_quorum_preparation(&self) -> Option<H256> {
+    fn max_quorum_preparation(&self) -> Option<UInt256> {
         let mut hashes = HashMap::new();
-        self.prepares.iter()
+        self.prepares
+            .iter()
             .filter_map(|p| p.response.as_ref())
             .for_each(|res| {
                 let hash = &res.message.preparation;
                 hashes.insert(hash, 1u32 + hashes.get(&hash).cloned().unwrap_or(0));
             });
-        hashes.into_iter()
+        hashes
+            .into_iter()
             .max_by(|x, y| x.1.cmp(&y.1))
             .map(|v| v.0.clone())
     }
 
     pub fn new_recovery_message(&self, meta: MessageMeta) -> Message<RecoveryMessage> {
         // let honest = byzantine_honest_quorum(self.nr_validators() as u32) as usize;
-        let change_views = self.last_change_views.iter()
+        let change_views = self
+            .last_change_views
+            .iter()
             .filter_map(|cv| cv.as_ref())
             .map(|cv| cv.to_change_view_compact())
             .collect();
 
-        let preparations = self.prepares.iter()
+        let preparations = self
+            .prepares
+            .iter()
             .filter_map(|p| p.to_preparation_compact())
             .collect();
 
-        let commits = self.commits.iter()
+        let commits = self
+            .commits
+            .iter()
             .filter_map(|c| c.as_ref())
             .map(|c| c.to_commit_compact())
             .collect();
 
-        let req = self.prepares.iter()
+        let req = self
+            .prepares
+            .iter()
             .filter_map(|p| p.request.as_ref())
             .find(|_req| true);
 
@@ -254,26 +269,43 @@ impl ConsensusContext {
 
         Message {
             meta,
-            message: RecoveryMessage { change_views, prepare_stage, preparations, commits },
+            message: RecoveryMessage {
+                change_views,
+                prepare_stage,
+                preparations,
+                commits,
+            },
         }
     }
 
-    pub fn new_change_view(&self, meta: MessageMeta, unix_milli: u64, reason: ChangeViewReason) -> Message<ChangeViewRequest> {
+    pub fn new_change_view(
+        &self,
+        meta: MessageMeta,
+        unix_milli: u64,
+        reason: ChangeViewReason,
+    ) -> Message<ChangeViewRequest> {
         let new_view_number = meta.view_number + 1;
         Message {
             meta,
-            message: ChangeViewRequest { new_view_number, unix_milli, reason },
+            message: ChangeViewRequest {
+                new_view_number,
+                unix_milli,
+                reason,
+            },
         }
     }
 
     pub fn new_block_witness(&self, view_number: ViewNumber, validators: &[PublicKey]) -> Witness {
         let signers = byzantine_honest_quorum(validators.len() as u32);
-        let contract = validators.to_multi_sign_contract(signers)
+        let contract = validators
+            .to_multi_sign_contract(signers)
             .expect("`validators` should be valid");
 
         let mut sign_cx = MultiSignContext::new(validators);
         for (idx, validator) in validators.iter().enumerate() {
-            let Some(commit) = self.commits[idx].as_ref() else { continue; };
+            let Some(commit) = self.commits[idx].as_ref() else {
+                continue;
+            };
             if commit.meta.view_number != view_number {
                 continue;
             }

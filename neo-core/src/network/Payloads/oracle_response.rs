@@ -43,7 +43,7 @@ impl TransactionAttribute for OracleResponse {
     fn size(&self) -> usize {
         std::mem::size_of::<u64>() +  // Id
         std::mem::size_of::<OracleResponseCode>() +  // ResponseCode
-        self.result.get_var_size()  // Result
+        self.result.var_size()  // Result
     }
 
     fn deserialize_without_type(&mut self, reader: &mut MemoryReader) -> io::Result<()> {

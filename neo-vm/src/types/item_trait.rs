@@ -1,5 +1,5 @@
 use crate::{
-	item_type::ItemType,
+    item_type::StackItemType,
 };
 use std::{
 	cell::RefCell,
@@ -67,10 +67,10 @@ pub trait StackItemTrait: Clone + Hash + Eq+PartialEq+Serialize+Deserialize {
 
 	fn cleanup(&mut self);
 
-	fn convert_to(&self, type_: ItemType) -> Result<Self, Err> {
+	fn convert_to(&self, type_: StackItemType) -> Result<Self, Err> {
 		if type_ == self.get_type() {
 			Ok(self.to_owned())
-		} else if type_ == ItemType::Boolean {
+		} else if type_ == StackItemType::Boolean {
 			Ok(self.get_boolean())
 		} else {
 			Err(())
@@ -90,7 +90,7 @@ pub trait StackItemTrait: Clone + Hash + Eq+PartialEq+Serialize+Deserialize {
 		hasher.finish()
 	}
 
-	fn get_type(&self) -> ItemType;
+	fn get_type(&self) -> StackItemType;
 
 	fn get_boolean(&self) -> bool;
 

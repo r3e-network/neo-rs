@@ -1,17 +1,16 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::sync::Arc;
-
-use neo_crypto::ecc::{ECCurve, Secp256r1PublicKey};
-use neo_types::{UInt160, UInt256};
+use NeoRust::crypto::Secp256r1PublicKey;
 use neo_vm::stack_item::StackItem;
-use neo_vm::types::{StackItem, InteropInterface, Pointer, Array};
-use crate::neo_contract::validator_attribute::ValidatorAttribute;
-use crate::smart_contract::ValidatorAttribute;
+use crate::neo_contract::validator_attribute::ValidatorTrait;
+use crate::uint160::UInt160;
+use crate::uint256::UInt256;
 
 /// Represents a descriptor of an interoperable service parameter.
+#[derive(Debug, Clone)]
 pub struct InteropParameterDescriptor {
-    validators: Vec<ValidatorAttribute>,
+    validators: Vec<dyn ValidatorTrait>,
     /// The name of the parameter.
     pub name: String,
     /// The type of the parameter.
@@ -20,7 +19,7 @@ pub struct InteropParameterDescriptor {
     pub converter: Arc<dyn Fn(&StackItem) -> Result<Box<dyn std::any::Any>, String>>,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum InteropParameterType {
     StackItem,
     Pointer,
@@ -46,7 +45,7 @@ pub enum InteropParameterType {
 }
 
 impl InteropParameterDescriptor {
-    pub fn new(name: String, param_type: InteropParameterType, validators: Vec<ValidatorAttribute>) -> Self {
+    pub fn new(name: String, param_type: InteropParameterType, validators: Vec<dyn ValidatorTrait>) -> Self {
         let converter = Arc::new(Self::get_converter(&param_type));
         Self {
             validators,
@@ -104,7 +103,7 @@ impl InteropParameterDescriptor {
                 if p.is_null() {
                     Ok(Box::new(None::<Secp256r1PublicKey>))
                 } else {
-                    Ok(Box::new(Some(Secp256r1PublicKey::decode_point(p.get_span()?, ECCurve::Secp256r1)?)))
+                    Ok(Box::new(Some(Secp256r1PublicKey::from_encoded(p.get_span()?))))
                 }
             },
             InteropParameterType::Enum(_) | InteropParameterType::CustomArray(_) => unimplemented!("Enum and CustomArray types are not yet implemented"),

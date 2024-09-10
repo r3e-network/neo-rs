@@ -1,4 +1,7 @@
 use std::io::{Read, Write};
+use NeoRust::prelude::StringExt;
+use neo_json::jtoken::JToken;
+use crate::io::iserializable::ISerializable;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::uint160::UInt160;
 
@@ -30,7 +33,7 @@ impl MethodToken {
     }
 
     /// Converts the token to a JSON object.
-    pub fn to_json(&self) -> JObject {
+    pub fn to_json(&self) -> JToken {
         JObject::new()
             .set("hash", self.hash.to_string())
             .set("method", self.method.clone())
@@ -63,5 +66,9 @@ impl ISerializable for MethodToken {
         writer.write_bool(self.has_return_value)?;
         writer.write_u8(self.call_flags.bits())?;
         Ok(())
+    }
+
+    fn size(&self) -> usize {
+        todo!()
     }
 }

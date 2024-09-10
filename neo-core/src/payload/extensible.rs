@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use neo_base::{encoding::bin::*, hash::Sha256};
 use neo_crypto::ecdsa::{Sign as EcdsaSign, SignError};
-use crate::{PrivateKey, tx::Witnesses, types::{Bytes, H160, Sign, ToSignData}};
+use crate::{PrivateKey, tx::Witnesses, types::{Bytes, UInt160, Sign, ToSignData}};
 
 
 pub const CONSENSUS_CATEGORY: &'static str = "dBFT";
@@ -20,7 +20,7 @@ pub struct Extensible {
     pub category: String,
     pub valid_block_start: u32,
     pub valid_block_end: u32,
-    pub sender: H160,
+    pub sender: UInt160,
     pub data: Bytes,
     pub witnesses: Witnesses,
 }

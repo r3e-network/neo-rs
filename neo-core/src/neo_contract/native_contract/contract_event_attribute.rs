@@ -2,6 +2,8 @@ use std::fmt;
 use crate::hardfork::Hardfork;
 use crate::neo_contract::contract_parameter::ContractParameterType;
 use crate::neo_contract::manifest::contract_event_descriptor::ContractEventDescriptor;
+use crate::neo_contract::manifest::contract_parameter_definition::ContractParameterDefinition;
+use crate::neo_contract::native_contract::ihardfork_activable::IHardforkActivable;
 
 #[derive(Clone, Debug)]
 pub struct ContractEventAttribute {

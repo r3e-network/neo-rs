@@ -1,5 +1,6 @@
-
 use std::convert::TryFrom;
+use std::str::FromStr;
+use std::fmt;
 
 /// Represents the type of WitnessCondition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,5 +55,41 @@ impl TryFrom<u8> for WitnessConditionType {
 impl From<WitnessConditionType> for u8 {
     fn from(condition_type: WitnessConditionType) -> Self {
         condition_type as u8
+    }
+}
+
+impl fmt::Display for WitnessConditionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            WitnessConditionType::Boolean => "Boolean",
+            WitnessConditionType::Not => "Not",
+            WitnessConditionType::And => "And",
+            WitnessConditionType::Or => "Or",
+            WitnessConditionType::ScriptHash => "ScriptHash",
+            WitnessConditionType::Group => "Group",
+            WitnessConditionType::CalledByEntry => "CalledByEntry",
+            WitnessConditionType::CalledByContract => "CalledByContract",
+            WitnessConditionType::CalledByGroup => "CalledByGroup",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+impl FromStr for WitnessConditionType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Boolean" => Ok(WitnessConditionType::Boolean),
+            "Not" => Ok(WitnessConditionType::Not),
+            "And" => Ok(WitnessConditionType::And),
+            "Or" => Ok(WitnessConditionType::Or),
+            "ScriptHash" => Ok(WitnessConditionType::ScriptHash),
+            "Group" => Ok(WitnessConditionType::Group),
+            "CalledByEntry" => Ok(WitnessConditionType::CalledByEntry),
+            "CalledByContract" => Ok(WitnessConditionType::CalledByContract),
+            "CalledByGroup" => Ok(WitnessConditionType::CalledByGroup),
+            _ => Err(()),
+        }
     }
 }

@@ -51,14 +51,14 @@ impl AsRef<[u8]> for ScriptHash {
     fn as_ref(&self) -> &[u8] { &self.0 }
 }
 
-impl From<H160> for ScriptHash {
+impl From<UInt160> for ScriptHash {
     #[inline]
-    fn from(value: H160) -> Self { Self(value.into()) }
+    fn from(value: UInt160) -> Self { Self(value.into()) }
 }
 
-impl Into<H160> for ScriptHash {
+impl Into<UInt160> for ScriptHash {
     #[inline]
-    fn into(self) -> H160 { H160::from(self.0) }
+    fn into(self) -> UInt160 { UInt160::from(self.0) }
 }
 
 pub trait ToScriptHash {

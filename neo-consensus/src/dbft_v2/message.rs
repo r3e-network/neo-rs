@@ -1,19 +1,16 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use neo_base::encoding::bin::*;
-use neo_core::types::{H256, Sign};
 use crate::dbft_v2::*;
-
+use neo_base::encoding::bin::*;
+use neo_core::types::{Sign, UInt256};
 
 pub type ViewNumber = u8;
 
 pub type ViewIndex = u8;
-
 
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 #[bin(repr = u8)]
@@ -26,7 +23,6 @@ pub enum MessageType {
     RecoveryMessage = 0x41,
 }
 
-
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 pub struct MessageMeta {
     pub block_index: u32,
@@ -37,10 +33,12 @@ pub struct MessageMeta {
 impl MessageMeta {
     #[inline]
     pub fn height_view(&self) -> HView {
-        HView { height: self.block_index, view_number: self.view_number }
+        HView {
+            height: self.block_index,
+            view_number: self.view_number,
+        }
     }
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct Message<M: Debug + Clone + BinEncoder + BinDecoder> {
@@ -110,7 +108,6 @@ pub enum Payload {
     RecoveryMessage(Message<RecoveryMessage>),
 }
 
-
 impl Payload {
     pub fn message_type(&self) -> MessageType {
         use MessageType::*;
@@ -136,35 +133,38 @@ impl Payload {
     }
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct PrepareRequest {
     pub version: u32,
-    pub prev_hash: H256,
+    pub prev_hash: UInt256,
     pub unix_milli: u64,
     pub nonce: u64,
-    pub tx_hashes: Vec<H256>,
+    pub tx_hashes: Vec<UInt256>,
 
     /// Extensible hash that contains this PrepareRequest
     #[bin(ignore)]
-    pub payload_hash: H256,
+    pub payload_hash: UInt256,
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct PrepareResponse {
-    pub preparation: H256,
+    pub preparation: UInt256,
 }
 
 impl PrepareResponse {
     #[inline]
-    pub fn new(prepare_request_hash: H256) -> Self {
-        Self { preparation: prepare_request_hash }
+    pub fn new(prepare_request_hash: UInt256) -> Self {
+        Self {
+            preparation: prepare_request_hash,
+        }
     }
 
     #[inline]
-    pub fn new_payload(meta: MessageMeta, prepare_request_hash: H256) -> Payload {
-        Payload::PrepareResponse(Message { meta, message: Self::new(prepare_request_hash) })
+    pub fn new_payload(meta: MessageMeta, prepare_request_hash: UInt256) -> Payload {
+        Payload::PrepareResponse(Message {
+            meta,
+            message: Self::new(prepare_request_hash),
+        })
     }
 }
 
@@ -180,12 +180,10 @@ pub enum ChangeViewReason {
     Unknown = 0xff,
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct Commit {
     pub sign: Sign,
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct ChangeViewRequest {
@@ -194,4 +192,3 @@ pub struct ChangeViewRequest {
     pub unix_milli: u64,
     pub reason: ChangeViewReason,
 }
-

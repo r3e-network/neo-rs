@@ -1,17 +1,11 @@
 use alloc::rc::Rc;
-use neo_io::{MemoryReader, BinaryWriter};
-use neo_json::JObject;
-use neo_smart_contract::ApplicationEngine;
-use neo_vm::{ReferenceCounter, StackItem};
 use std::io::{Error, ErrorKind};
 use std::fmt;
-use neo_base::math::I256;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::application_engine::ApplicationEngine;
-use crate::network::p2p::payloads::conditions::WitnessConditionType;
 use crate::network::Payloads::Conditions::WitnessConditionType;
 
 pub const MAX_SUBITEMS: usize = 16;

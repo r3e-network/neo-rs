@@ -91,10 +91,10 @@ pub mod helper {
 
         // base size for transaction: includes const_header + signers + attributes + script + hashes
         let mut size = Transaction::HEADER_SIZE
-            + tx.signers.get_var_size()
-            + tx.attributes.get_var_size()
-            + tx.script.get_var_size()
-            + io::helper::get_var_size(hashes.len() as u64);
+            + tx.signers.var_size()
+            + tx.attributes.var_size()
+            + tx.script.var_size()
+            + io::helper::var_size(hashes.len() as u64);
         let exec_fee_factor = Policy::get_exec_fee_factor(snapshot);
         let mut network_fee = 0;
 
@@ -128,8 +128,8 @@ pub mod helper {
                 }
 
                 // Empty verification and non-empty invocation scripts
-                let inv_size = invocation_script.as_ref().map_or(0, |s| s.get_var_size());
-                size += Vec::<u8>::new().get_var_size() + inv_size;
+                let inv_size = invocation_script.as_ref().map_or(0, |s| s.var_size());
+                size += Vec::<u8>::new().var_size() + inv_size;
 
                 // Check verify cost
                 let mut engine = ApplicationEngine::new(TriggerType::Verification, tx, snapshot.clone_cache(), settings, max_execution_cost);
@@ -150,11 +150,11 @@ pub mod helper {
                 }
                 network_fee += engine.fee_consumed;
             } else if is_signature_contract(witness_script.as_ref().unwrap()) {
-                size += 67 + witness_script.as_ref().unwrap().get_var_size();
+                size += 67 + witness_script.as_ref().unwrap().var_size();
                 network_fee += exec_fee_factor * signature_contract_cost();
             } else if let Some((m, n)) = is_multi_sig_contract(witness_script.as_ref().unwrap()) {
                 let size_inv = 66 * m;
-                size += io::helper::get_var_size(size_inv as u64) + size_inv + witness_script.as_ref().unwrap().get_var_size();
+                size += io::helper::var_size(size_inv as u64) + size_inv + witness_script.as_ref().unwrap().var_size();
                 network_fee += exec_fee_factor * multi_signature_contract_cost(m, n);
             }
             // We can support more contract types in the future.

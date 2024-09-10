@@ -6,6 +6,7 @@ use crate::block::Block;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::idiagnostic::IDiagnostic;
 use crate::neo_contract::trigger_type::TriggerType;
+use crate::network::Payloads::IVerifiable;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 
@@ -31,7 +32,7 @@ pub trait IApplicationEngineProvider {
     fn create(
         &self,
         trigger: TriggerType,
-        container: &dyn IIVerifiable,
+        container: &dyn IVerifiable,
         snapshot: DataCache,
         persisting_block: Option<Block>,
         settings: ProtocolSettings,

@@ -17,32 +17,32 @@ pub const H256_SIZE: usize = 32;
 
 /// little endian
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-pub struct H256([u8; H256_SIZE]);
+pub struct UInt256([u8; H256_SIZE]);
 
-impl H256 {
+impl UInt256 {
     pub fn is_zero(&self) -> bool { self.0 == [0u8; H256_SIZE] }
 
     pub fn as_le_bytes(&self) -> &[u8] { &self.0 }
 }
 
-impl AsRef<[u8; H256_SIZE]> for H256 {
+impl AsRef<[u8; H256_SIZE]> for UInt256 {
     #[inline]
     fn as_ref(&self) -> &[u8; H256_SIZE] { &self.0 }
 }
 
-impl AsRef<[u8]> for H256 {
+impl AsRef<[u8]> for UInt256 {
     #[inline]
     fn as_ref(&self) -> &[u8] { &self.0 }
 }
 
 
-impl From<[u8; H256_SIZE]> for H256 {
+impl From<[u8; H256_SIZE]> for UInt256 {
     /// NOTE: value is little endian.
-    ///  if H256 is from sha256-hash, and the `to_string` will output a reversed hex-string from sha256-hash.
+    ///  if UInt256 is from sha256-hash, and the `to_string` will output a reversed hex-string from sha256-hash.
     fn from(value: [u8; H256_SIZE]) -> Self { Self(value) }
 }
 
-impl Display for H256 {
+impl Display for UInt256 {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         f.write_str("0x")?;
@@ -50,7 +50,7 @@ impl Display for H256 {
     }
 }
 
-impl BinEncoder for H256 {
+impl BinEncoder for UInt256 {
     fn encode_bin(&self, w: &mut impl BinWriter) {
         w.write(&self.0);
     }
@@ -58,9 +58,9 @@ impl BinEncoder for H256 {
     fn bin_size(&self) -> usize { H256_SIZE }
 }
 
-impl BinDecoder for H256 {
+impl BinDecoder for UInt256 {
     fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
-        let mut h = H256([0u8; H256_SIZE]);
+        let mut h = UInt256([0u8; H256_SIZE]);
         r.read_full(h.0.as_mut_slice())?;
 
         Ok(h)
@@ -70,14 +70,14 @@ impl BinDecoder for H256 {
 
 #[derive(Debug, Clone, Copy, errors::Error)]
 pub enum ToH256Error {
-    #[error("to-h256: hex-encode H160's length must be 64(without '0x')")]
+    #[error("to-h256: hex-encode UInt160's length must be 64(without '0x')")]
     InvalidLength,
 
     #[error("to-h256: invalid character '{0}'")]
     InvalidChar(char),
 }
 
-impl TryFrom<&str> for H256 {
+impl TryFrom<&str> for UInt256 {
     type Error = ToH256Error;
 
     /// value must be big-endian
@@ -100,22 +100,22 @@ impl TryFrom<&str> for H256 {
 }
 
 
-impl Serialize for H256 {
+impl Serialize for UInt256 {
     #[inline]
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.to_string())
     }
 }
 
-impl<'de> Deserialize<'de> for H256 {
+impl<'de> Deserialize<'de> for UInt256 {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = String::deserialize(deserializer)?;
-        H256::try_from(value.as_str()).map_err(D::Error::custom)
+        UInt256::try_from(value.as_str()).map_err(D::Error::custom)
     }
 }
 
-impl Default for H256 {
+impl Default for UInt256 {
     #[inline]
     fn default() -> Self { Self([0u8; H256_SIZE]) }
 }
@@ -128,7 +128,7 @@ mod test {
     #[test]
     fn test_h256() {
         let h = "\"f037308fa0ab18155bccfc08485468c112409ea5064595699e98c545f245f32d\"";
-        let h1 = H256::try_from(h)
+        let h1 = UInt256::try_from(h)
             .expect("hex decode should be ok");
 
         let x = serde_json::to_string(&h1)
@@ -136,12 +136,12 @@ mod test {
         assert_eq!(&h[1..], &x[3..]);
         assert_eq!(&h1.to_string(), "0xf037308fa0ab18155bccfc08485468c112409ea5064595699e98c545f245f32d");
 
-        let h2: H256 = serde_json::from_str(h)
+        let h2: UInt256 = serde_json::from_str(h)
             .expect("json decode should be ok");
         assert_eq!(h2, h1);
 
         let x = "0x1230000000000000000000000000000000000000000000000000000000000000";
-        let h: H256 = x.try_into()
+        let h: UInt256 = x.try_into()
             .expect("try_into should be ok");
         assert_eq!(x, &h.to_string());
     }

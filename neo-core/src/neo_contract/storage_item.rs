@@ -3,7 +3,10 @@ use std::convert::TryFrom;
 use std::io::{Read, Write};
 use NeoRust::types::StackItem;
 use num_bigint::BigInt;
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use crate::io::iserializable::ISerializable;
 use crate::neo_contract::binary_serializer::BinarySerializer;
+use crate::neo_contract::iinteroperable::IInteroperable;
 
 /// Represents the values in contract storage.
 pub struct StorageItem {
@@ -13,7 +16,7 @@ pub struct StorageItem {
 
 enum StorageCache {
     BigInt(BigInt),
-    Interoperable(Box<dyn Interoperable>),
+    Interoperable(Box<dyn IInteroperable>),
 }
 
 impl StorageItem {
@@ -55,7 +58,7 @@ impl StorageItem {
             None => match &self.cache {
                 Some(StorageCache::BigInt(bi)) => bi.to_bytes_be().1,
                 Some(StorageCache::Interoperable(interoperable)) => {
-                    let stack_item = interoperable.to_stack_item();
+                    let stack_item = interoperable.to_stack_item(None);
                     BinarySerializer::serialize(&stack_item, &ExecutionEngineLimits::default())
                 }
                 None => Vec::new(),
@@ -123,6 +126,10 @@ impl StorageItem {
 }
 
 impl ISerializable for StorageItem {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
     fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(&self.value())?;
         Ok(())
@@ -161,6 +168,6 @@ impl TryFrom<StorageItem> for BigInt {
 trait Interoperable: Any {
     fn to_stack_item(&self) -> StackItem;
     fn from_stack_item(&mut self, item: &StackItem);
-    fn clone_box(&self) -> Box<dyn Interoperable>;
+    fn clone_box(&self) -> Box<dyn IInteroperable>;
     fn as_any(&self) -> &dyn Any;
 }

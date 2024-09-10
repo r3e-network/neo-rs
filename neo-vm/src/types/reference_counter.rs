@@ -49,7 +49,7 @@ impl ReferenceCounter {
 		}
 	}
 
-	fn add_reference(
+	pub(crate) fn add_reference(
 		&mut self,
 		item: Rc<RefCell< StackItem>>,
 		parent: &CompoundItem

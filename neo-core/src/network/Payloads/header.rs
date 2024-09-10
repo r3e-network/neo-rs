@@ -1,15 +1,13 @@
-use neo_io::*;
-use neo_json::*;
-use neo_ledger::*;
-use neo_persistence::*;
-use neo_smart_contract::*;
-use neo_smart_contract::native::*;
-use neo_wallets::*;
 use std::io::{self, Write};
+use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 use crate::network::Payloads::Witness;
+use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 
+/// Represents a block header.
+#[derive(Clone)]
 pub struct Header {
     version: u32,
     prev_hash: UInt256,
@@ -47,7 +45,7 @@ impl Header {
         std::mem::size_of::<u64>() +
         std::mem::size_of::<u32>() +
         std::mem::size_of::<u8>() +
-        UInt160::len() +
+        UInt160::LEN +
         1 + self.witness.size()
     }
 

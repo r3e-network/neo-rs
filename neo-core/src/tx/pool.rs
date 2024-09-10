@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use neo_base::{errors, math::U256};
 use crate::store::{FeeStates, BlockStates};
 use crate::tx::{Tx, TxAttr};
-use crate::types::{H160, H256};
+use crate::types::{UInt160, UInt256};
 
 
 #[derive(Debug, Copy, Clone)]
@@ -23,7 +23,7 @@ pub enum TxRemovalReason {
 #[derive(Debug, Clone, errors::Error)]
 pub enum AddTxError {
     #[error("add-tx: the '{1}' of the tx '{0}' is invalid")]
-    InvalidTx(H256, &'static str),
+    InvalidTx(UInt256, &'static str),
 
     #[error("add-tx: insufficient funds")]
     InsufficientFunds,
@@ -32,7 +32,7 @@ pub enum AddTxError {
     ConflictedTx,
 
     #[error("add-tx: tx '{0}' already in the tx pool")]
-    Duplicated(H256),
+    Duplicated(UInt256),
 
     #[error("add-tx: out of the tx pool capacity")]
     OutOfCapacity,
@@ -67,7 +67,7 @@ impl TxPool {
             .remove_stales(is_still_ok, states)
     }
 
-    pub fn remove_tx(&self, tx: &H256) -> Option<PooledTx> {
+    pub fn remove_tx(&self, tx: &UInt256) -> Option<PooledTx> {
         self.inner.lock()
             .unwrap()
             .remove_tx(tx)
@@ -166,11 +166,11 @@ pub(crate) struct InnerPool {
     netfee_per_byte: u64,
     tx_number: u64,
 
-    balances: HashMap<H160, BalanceFee>,
-    verified: HashMap<H256, PooledTx>,
-    sorted: BTreeMap<TxScore, H256>,
-    conflicts: HashMap<H256, Vec<H256>>,
-    oracles: HashMap<u64, H256>,
+    balances: HashMap<UInt160, BalanceFee>,
+    verified: HashMap<UInt256, PooledTx>,
+    sorted: BTreeMap<TxScore, UInt256>,
+    conflicts: HashMap<UInt256, Vec<UInt256>>,
+    oracles: HashMap<u64, UInt256>,
 
 }
 
@@ -248,7 +248,7 @@ impl InnerPool {
     }
 
     #[inline]
-    pub fn remove_tx(&mut self, tx: &H256) -> Option<PooledTx> {
+    pub fn remove_tx(&mut self, tx: &UInt256) -> Option<PooledTx> {
         let pooled = self.verified.get(tx).cloned();
         self.remove_inner(tx);
 
@@ -333,7 +333,7 @@ impl InnerPool {
         true
     }
 
-    fn remove_inner(&mut self, tx: &H256) {
+    fn remove_inner(&mut self, tx: &UInt256) {
         let Some(removed) = self.verified.remove(tx) else { return; };
         let score = TxScore::new(removed.tx_number, &removed.tx);
         let _ = self.sorted.remove(&score);
@@ -373,7 +373,7 @@ impl InnerPool {
         }
     }
 
-    fn check_capacity(&self, tx_number: u64, tx: &Tx) -> Result<Option<H256>, AddTxError> {
+    fn check_capacity(&self, tx_number: u64, tx: &Tx) -> Result<Option<UInt256>, AddTxError> {
         if self.sorted.len() >= self.capacity { //
             return Ok(None);
         }
@@ -389,7 +389,7 @@ impl InnerPool {
         Ok(None)
     }
 
-    fn check_oracle(&self, tx: &Tx) -> Result<Vec<H256>, AddTxError> {
+    fn check_oracle(&self, tx: &Tx) -> Result<Vec<UInt256>, AddTxError> {
         let mut evicted = Vec::new();
         let mut dedup = Vec::new();
         let oracles = tx.attributes.iter()
@@ -411,7 +411,7 @@ impl InnerPool {
         Ok(evicted)
     }
 
-    fn check_conflicts(&self, tx: &Tx, sender_fee: &BalanceFee) -> Result<Vec<H256>, AddTxError> {
+    fn check_conflicts(&self, tx: &Tx, sender_fee: &BalanceFee) -> Result<Vec<UInt256>, AddTxError> {
         let mut fees = 0u64;
         let mut conflicts = Vec::new();
 
@@ -424,7 +424,7 @@ impl InnerPool {
                 .collect();
         }
 
-        let find_signer = |who: &H160| {
+        let find_signer = |who: &UInt160| {
             tx.signers.iter().any(|x| x.account.eq(who))
         };
 

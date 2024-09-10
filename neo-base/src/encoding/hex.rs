@@ -1,7 +1,6 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
 pub use hex::{FromHex, FromHexError};
 
@@ -13,10 +12,14 @@ pub trait ToHex {
 
 impl<T: AsRef<[u8]>> ToHex for T {
     #[inline]
-    fn to_hex(&self) -> String { hex::encode(self) }
+    fn to_hex(&self) -> String {
+        hex::encode(self)
+    }
 
     #[inline]
-    fn to_hex_upper(&self) -> String { hex::encode_upper(self) }
+    fn to_hex_upper(&self) -> String {
+        hex::encode_upper(self)
+    }
 }
 
 pub trait ToRevHex {
@@ -58,7 +61,9 @@ impl<T: AsRef<[u8]>> DecodeHex for T {
     type Error = FromHexError;
 
     #[inline]
-    fn decode_hex(&self) -> Result<Vec<u8>, Self::Error> { Vec::from_hex(self) }
+    fn decode_hex(&self) -> Result<Vec<u8>, Self::Error> {
+        Vec::from_hex(self)
+    }
 }
 
 // big-endian hex-encoded
@@ -108,7 +113,6 @@ impl<T: AsRef<[u8]>> StartsWith0x for T {
         v.starts_with("0x".as_bytes()) || v.starts_with("0X".as_bytes())
     }
 }
-
 
 #[cfg(test)]
 mod test {

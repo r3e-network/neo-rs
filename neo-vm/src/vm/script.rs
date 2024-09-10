@@ -1,4 +1,4 @@
-use crate::{instruction::Instruction, op_code::OpCode, item_type::ItemType};
+use crate::{instruction::Instruction, op_code::OpCode, item_type::StackItemType};
 use std::{collections::HashMap, convert::TryFrom, ops::Index};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -83,11 +83,11 @@ impl Script {
 				},
 				OpCode::NewArrayT | OpCode::IsType | OpCode::Convert => {
 					let type_code = instruction.token_u8();
-					if !ItemType::is_valid(type_code) {
+					if !StackItemType::is_valid(type_code) {
 						panic!("Invalid type code: {}", type_code);
 					}
 					if instruction.opcode != OpCode::NewArrayT
-						&& type_code == ItemType::Any as u8
+						&& type_code == StackItemType::Any as u8
 					{
 						panic!("ip: {}, opcode: {:?} with Any type", ip, instruction.opcode);
 					}

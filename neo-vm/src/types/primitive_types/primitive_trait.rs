@@ -8,7 +8,7 @@ use crate::buffer::Buffer;
 use crate::primitive_types::boolean::Boolean;
 use crate::primitive_types::byte_string::ByteString;
 use crate::primitive_types::integer::Integer;
-use crate::item_type::ItemType;
+use crate::item_type::StackItemType;
 
 pub trait PrimitiveTrait: StackItemTrait + Clone {
 
@@ -21,12 +21,12 @@ pub trait PrimitiveTrait: StackItemTrait + Clone {
 		self.memory().len()
 	}
 
-	fn convert_to(&self, type_: ItemType) -> Result<Self, Err>  {
+	fn convert_to(&self, type_: StackItemType) -> Result<Self, Err>  {
 		match type_ {
-			ItemType::Integer => Ok(Integer::from(self.get_integer())),
-			ItemType::ByteString =>  Ok(ByteString::from( String::from_utf8(self.memory())?)),
-			ItemType::Buffer =>  Ok(Buffer::from(self.get_slice()).into()),
-			ItemType::Boolean =>  Ok(Boolean::from(self.get_boolean().into()).into()),
+			StackItemType::Integer => Ok(Integer::from(self.get_integer())),
+			StackItemType::ByteString =>  Ok(ByteString::from( String::from_utf8(self.memory())?)),
+			StackItemType::Buffer =>  Ok(Buffer::from(self.get_slice()).into()),
+			StackItemType::Boolean =>  Ok(Boolean::from(self.get_boolean().into()).into()),
 			_ => panic!(), //self.base_convert_to(ty),
 		}
 	}

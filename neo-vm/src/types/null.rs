@@ -1,6 +1,6 @@
 use crate::{
-	item_trait::{ObjectReferenceEntry, StackItemTrait},
-	item_type::ItemType,
+    item_trait::{ObjectReferenceEntry, StackItemTrait},
+    item_type::StackItemType,
 };
 use std::{
 	cell::RefCell,
@@ -98,8 +98,8 @@ impl StackItemTrait for Null {
 		todo!()
 	}
 
-	fn convert_to(&self, ty: ItemType) -> Result<StackItemTrait, Err()> {
-		if ty == ItemType::Any {
+	fn convert_to(&self, ty: StackItemType) -> Result<StackItemTrait, Err()> {
+		if ty == StackItemType::Any {
 			Ok(StackItem::Null(Self))
 		} else {
 			Err(())
@@ -118,8 +118,8 @@ impl StackItemTrait for Null {
 		0
 	}
 
-	fn get_type(&self) -> ItemType {
-		ItemType::Any
+	fn get_type(&self) -> StackItemType {
+		StackItemType::Any
 	}
 
 	fn get_boolean(&self) -> bool {

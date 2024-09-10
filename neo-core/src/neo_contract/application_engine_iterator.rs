@@ -1,25 +1,25 @@
-
-use neo::prelude::*;
-use neo::vm::types::StackItem;
-use neo::smart_contract::iterators::Iterator as NeoIterator;
+use neo_vm::stack_item::StackItem;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::call_flags::CallFlags;
+use crate::neo_contract::interop_descriptor::InteropDescriptor;
 
 impl ApplicationEngine {
     /// The `InteropDescriptor` of System.Iterator.Next.
     /// Advances the iterator to the next element of the collection.
-    pub static SYSTEM_ITERATOR_NEXT: InteropDescriptor = register_syscall(
+    pub const SYSTEM_ITERATOR_NEXT: InteropDescriptor = register_syscall(
         "System.Iterator.Next",
         ApplicationEngine::iterator_next,
         1 << 15,
-        CallFlags::None
+        CallFlags::NONE
     );
 
     /// The `InteropDescriptor` of System.Iterator.Value.
     /// Gets the element in the collection at the current position of the iterator.
-    pub static SYSTEM_ITERATOR_VALUE: InteropDescriptor = register_syscall(
+    pub const SYSTEM_ITERATOR_VALUE: InteropDescriptor = register_syscall(
         "System.Iterator.Value",
         ApplicationEngine::iterator_value,
         1 << 4,
-        CallFlags::None
+        CallFlags::NONE
     );
 
     /// The implementation of System.Iterator.Next.

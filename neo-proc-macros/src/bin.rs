@@ -3,22 +3,23 @@
 
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned, ToTokens};
-use syn::{spanned::Spanned, punctuated::Punctuated, Token, Meta};
-
+use syn::{punctuated::Punctuated, spanned::Spanned, Meta, Token};
 
 pub(crate) fn encode_bin(input: syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &input.ident;
     let (impls, types, wheres) = &input.generics.split_for_impl();
     encode_bin_recursive(&input)
-        .map(|(encoded, size)| quote! {
-            #[allow(non_snake_case)]
-            impl #impls BinEncoder for #name #types #wheres {
-                fn encode_bin(&self, w: &mut impl BinWriter) {
-                    #encoded
-                }
+        .map(|(encoded, size)| {
+            quote! {
+                #[allow(non_snake_case)]
+                impl #impls BinEncoder for #name #types #wheres {
+                    fn encode_bin(&self, w: &mut impl BinWriter) {
+                        #encoded
+                    }
 
-                fn bin_size(&self) -> usize {
-                    #size
+                    fn bin_size(&self) -> usize {
+                        #size
+                    }
                 }
             }
         })
@@ -30,10 +31,12 @@ pub(crate) fn decode_bin(input: syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &input.ident;
     let (impls, types, wheres) = &input.generics.split_for_impl();
     decode_bin_recursive(&input)
-        .map(|decoded| quote! {
-            impl #impls BinDecoder for #name #types #wheres {
-                fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
-                    #decoded
+        .map(|decoded| {
+            quote! {
+                impl #impls BinDecoder for #name #types #wheres {
+                    fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
+                        #decoded
+                    }
                 }
             }
         })
@@ -45,10 +48,12 @@ pub(crate) fn decode_bin_inner(input: syn::DeriveInput) -> proc_macro::TokenStre
     let name = &input.ident;
     let (impls, types, wheres) = &input.generics.split_for_impl();
     decode_bin_recursive(&input)
-        .map(|decoded| quote! {
-            impl #impls #name #types #wheres {
-                fn decode_bin_inner(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
-                    #decoded
+        .map(|decoded| {
+            quote! {
+                impl #impls #name #types #wheres {
+                    fn decode_bin_inner(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
+                        #decoded
+                    }
                 }
             }
         })
@@ -73,7 +78,10 @@ fn decode_bin_recursive(input: &syn::DeriveInput) -> Result<TokenStream, String>
     }
 }
 
-fn decode_struct_named(name: &syn::Ident, fields: &syn::FieldsNamed) -> Result<TokenStream, String> {
+fn decode_struct_named(
+    name: &syn::Ident,
+    fields: &syn::FieldsNamed,
+) -> Result<TokenStream, String> {
     let mut items = Vec::with_capacity(fields.named.len());
     for f in fields.named.iter() {
         let ignore = bin_ignore_attr(&f.attrs)?;
@@ -90,7 +98,10 @@ fn decode_struct_named(name: &syn::Ident, fields: &syn::FieldsNamed) -> Result<T
     Ok(quote! { #name { #( #items)* } })
 }
 
-fn decode_struct_unnamed(name: &syn::Ident, fields: &syn::FieldsUnnamed) -> Result<TokenStream, String> {
+fn decode_struct_unnamed(
+    name: &syn::Ident,
+    fields: &syn::FieldsUnnamed,
+) -> Result<TokenStream, String> {
     let mut items = Vec::with_capacity(fields.unnamed.len());
     for f in fields.unnamed.iter() {
         let ignore = bin_ignore_attr(&f.attrs)?;
@@ -106,8 +117,11 @@ fn decode_struct_unnamed(name: &syn::Ident, fields: &syn::FieldsUnnamed) -> Resu
     Ok(quote! { #name ( #( #items)* ) })
 }
 
-
-fn decode_enum(name: &syn::Ident, attrs: &[syn::Attribute], enum_: &syn::DataEnum) -> Result<TokenStream, String> {
+fn decode_enum(
+    name: &syn::Ident,
+    attrs: &[syn::Attribute],
+    enum_: &syn::DataEnum,
+) -> Result<TokenStream, String> {
     let repr = enum_repr_attr(attrs)?;
 
     let mut items = Vec::with_capacity(enum_.variants.len());
@@ -150,7 +164,10 @@ fn encode_bin_recursive(input: &syn::DeriveInput) -> Result<(TokenStream, TokenS
     }
 }
 
-fn encode_struct_named(_name: &syn::Ident, fields: &syn::FieldsNamed) -> Result<(TokenStream, TokenStream), String> {
+fn encode_struct_named(
+    _name: &syn::Ident,
+    fields: &syn::FieldsNamed,
+) -> Result<(TokenStream, TokenStream), String> {
     let mut items = Vec::with_capacity(fields.named.len());
     let mut sizes = Vec::with_capacity(fields.named.len());
     for f in fields.named.iter() {
@@ -165,7 +182,10 @@ fn encode_struct_named(_name: &syn::Ident, fields: &syn::FieldsNamed) -> Result<
     Ok((quote! {  #( #items)* }, quote! {  0 #(+ #sizes)* }))
 }
 
-fn encode_struct_unnamed(_name: &syn::Ident, fields: &syn::FieldsUnnamed) -> Result<(TokenStream, TokenStream), String> {
+fn encode_struct_unnamed(
+    _name: &syn::Ident,
+    fields: &syn::FieldsUnnamed,
+) -> Result<(TokenStream, TokenStream), String> {
     let mut items = Vec::with_capacity(fields.unnamed.len());
     let mut sizes = Vec::with_capacity(fields.unnamed.len());
     for (i, f) in fields.unnamed.iter().enumerate() {
@@ -180,8 +200,11 @@ fn encode_struct_unnamed(_name: &syn::Ident, fields: &syn::FieldsUnnamed) -> Res
     Ok((quote! {  #( #items)* }, quote! {  0 #(+ #sizes)*  }))
 }
 
-
-fn encode_enum(name: &syn::Ident, attrs: &[syn::Attribute], enum_: &syn::DataEnum) -> Result<(TokenStream, TokenStream), String> {
+fn encode_enum(
+    name: &syn::Ident,
+    attrs: &[syn::Attribute],
+    enum_: &syn::DataEnum,
+) -> Result<(TokenStream, TokenStream), String> {
     let repr = enum_repr_attr(attrs)?;
 
     let mut items = Vec::with_capacity(enum_.variants.len());
@@ -204,18 +227,26 @@ fn encode_enum(name: &syn::Ident, attrs: &[syn::Attribute], enum_: &syn::DataEnu
         sizes.push(size);
     }
 
-    Ok((quote! {
-        match self {
-            #( #items)*
-        }
-    }, quote! {
-        core::mem::size_of::<#repr>() + match self {
-            #( #sizes)*
-        }
-    }))
+    Ok((
+        quote! {
+            match self {
+                #( #items)*
+            }
+        },
+        quote! {
+            core::mem::size_of::<#repr>() + match self {
+                #( #sizes)*
+            }
+        },
+    ))
 }
 
-fn encode_enum_named(name: &syn::Ident, variant: &syn::Ident, typ: TokenStream, fields: &syn::FieldsNamed) -> Result<(TokenStream, TokenStream), String> {
+fn encode_enum_named(
+    name: &syn::Ident,
+    variant: &syn::Ident,
+    typ: TokenStream,
+    fields: &syn::FieldsNamed,
+) -> Result<(TokenStream, TokenStream), String> {
     let mut refs = Vec::with_capacity(fields.named.len());
     let mut items = Vec::with_capacity(fields.named.len());
     let mut sizes = Vec::with_capacity(fields.named.len());
@@ -232,19 +263,27 @@ fn encode_enum_named(name: &syn::Ident, variant: &syn::Ident, typ: TokenStream, 
         }
     }
 
-    Ok((quote! {
-        #name::#variant { #( #refs)* } => {
-            #typ
-            #( #items)*
-        }
-    }, quote! {
-        #name::#variant { #( #refs)* } => {
-            0 #(+ #sizes)*
-        }
-    }))
+    Ok((
+        quote! {
+            #name::#variant { #( #refs)* } => {
+                #typ
+                #( #items)*
+            }
+        },
+        quote! {
+            #name::#variant { #( #refs)* } => {
+                0 #(+ #sizes)*
+            }
+        },
+    ))
 }
 
-fn encode_enum_unnamed(name: &syn::Ident, variant: &syn::Ident, typ: TokenStream, fields: &syn::FieldsUnnamed) -> Result<(TokenStream, TokenStream), String> {
+fn encode_enum_unnamed(
+    name: &syn::Ident,
+    variant: &syn::Ident,
+    typ: TokenStream,
+    fields: &syn::FieldsUnnamed,
+) -> Result<(TokenStream, TokenStream), String> {
     let mut refs = Vec::with_capacity(fields.unnamed.len());
     let mut items = Vec::with_capacity(fields.unnamed.len());
     let mut sizes = Vec::with_capacity(fields.unnamed.len());
@@ -259,19 +298,26 @@ fn encode_enum_unnamed(name: &syn::Ident, variant: &syn::Ident, typ: TokenStream
         }
     }
 
-    Ok((quote! {
-        #name::#variant ( #( #refs)* ) => {
-            #typ
-            #( #items)*
-        }
-    }, quote! {
-        #name::#variant ( #( #refs)* ) => {
-            0 #(+ #sizes)*
-        }
-    }))
+    Ok((
+        quote! {
+            #name::#variant ( #( #refs)* ) => {
+                #typ
+                #( #items)*
+            }
+        },
+        quote! {
+            #name::#variant ( #( #refs)* ) => {
+                0 #(+ #sizes)*
+            }
+        },
+    ))
 }
 
-fn decode_enum_named(name: &syn::Ident, variant: &syn::Ident, fields: &syn::FieldsNamed) -> Result<TokenStream, String> {
+fn decode_enum_named(
+    name: &syn::Ident,
+    variant: &syn::Ident,
+    fields: &syn::FieldsNamed,
+) -> Result<TokenStream, String> {
     let mut items = Vec::with_capacity(fields.named.len());
     for f in fields.named.iter() {
         let ignore = bin_ignore_attr(&f.attrs)?;
@@ -288,7 +334,11 @@ fn decode_enum_named(name: &syn::Ident, variant: &syn::Ident, fields: &syn::Fiel
     Ok(quote! { #name::#variant { #( #items)* } })
 }
 
-fn decode_enum_unnamed(name: &syn::Ident, variant: &syn::Ident, fields: &syn::FieldsUnnamed) -> Result<TokenStream, String> {
+fn decode_enum_unnamed(
+    name: &syn::Ident,
+    variant: &syn::Ident,
+    fields: &syn::FieldsUnnamed,
+) -> Result<TokenStream, String> {
     let mut items = Vec::with_capacity(fields.unnamed.len());
     for f in fields.unnamed.iter() {
         let ignore = bin_ignore_attr(&f.attrs)?;
@@ -310,7 +360,9 @@ fn enum_variant_type(v: &syn::Variant) -> Result<TokenStream, String> {
         return Ok(tag);
     }
 
-    let (ref _eq, ref expr) = v.discriminant.as_ref()
+    let (ref _eq, ref expr) = v
+        .discriminant
+        .as_ref()
         .ok_or("enum variant must be set one of discriminant or type attribute".to_string())?;
 
     Ok(quote! { #expr })
@@ -331,9 +383,12 @@ fn enum_repr_attr(attrs: &[syn::Attribute]) -> Result<TokenStream, String> {
 
 fn bin_ignore_attr(attrs: &[syn::Attribute]) -> Result<bool, String> {
     for attr in attrs {
-        if !attr.path().is_ident("bin") { continue; }
+        if !attr.path().is_ident("bin") {
+            continue;
+        }
 
-        let metas = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+        let metas = attr
+            .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
             .map_err(|err| format!("invalid bin(ignore) attribute: {}", err))?;
 
         for meta in metas.iter() {
@@ -349,9 +404,12 @@ fn bin_ignore_attr(attrs: &[syn::Attribute]) -> Result<bool, String> {
 
 fn token_of_attr(attrs: &[syn::Attribute], name: &str) -> Result<TokenStream, String> {
     for attr in attrs {
-        if !attr.path().is_ident("bin") { continue; }
+        if !attr.path().is_ident("bin") {
+            continue;
+        }
 
-        let metas = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+        let metas = attr
+            .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
             .map_err(|err| format!("invalid bin({}) attribute: {}", name, err))?;
 
         for meta in metas.iter() {

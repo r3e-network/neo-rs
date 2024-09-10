@@ -1,5 +1,3 @@
-
-
 use std::io;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
@@ -26,7 +24,7 @@ pub trait NodeCapability {
         let capability_type = NodeCapabilityType::from(reader.read_u8()?);
         let mut capability: Box<dyn NodeCapability> = match capability_type {
             NodeCapabilityType::TcpServer | NodeCapabilityType::WsServer => {
-                Box::new(ServerCapability::new(capability_type))
+                Box::new(ServerCapability::new(capability_type, 0))
             }
             NodeCapabilityType::FullNode => Box::new(FullNodeCapability::new(0)),
             _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid capability type")),
@@ -42,6 +40,3 @@ pub trait NodeCapability {
         Ok(())
     }
 }
-
-// Note: ServerCapability and FullNodeCapability implementations are not shown here,
-// but they should be implemented separately.

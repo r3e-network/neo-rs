@@ -1,12 +1,10 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use neo_core::store::{self, *};
-
 
 struct Item {
     pub version: Version,
@@ -20,10 +18,11 @@ pub struct MockStore {
 
 impl MockStore {
     pub fn new() -> Self {
-        Self { inner: Arc::new(Mutex::new(MockInner::new())) }
+        Self {
+            inner: Arc::new(Mutex::new(MockInner::new())),
+        }
     }
 }
-
 
 #[derive(Clone)]
 pub struct WriteBatch {
@@ -55,15 +54,21 @@ impl store::WriteBatch for WriteBatch {
             }
         }
 
-        let deleted = self.deletes.iter()
-            .map(|(key, _)|
-                inner.store.remove(key)
+        let deleted = self
+            .deletes
+            .iter()
+            .map(|(key, _)| {
+                inner
+                    .store
+                    .remove(key)
                     .map(|v| v.version)
                     .unwrap_or(NOT_EXISTS)
-            )
+            })
             .collect();
 
-        let put = self.puts.into_iter()
+        let put = self
+            .puts
+            .into_iter()
             .map(|(key, value, _)| {
                 let version = inner.next_version();
                 inner.store.insert(key, Item { version, value });
@@ -75,7 +80,6 @@ impl store::WriteBatch for WriteBatch {
     }
 }
 
-
 struct MockInner {
     version: u64,
     store: BTreeMap<Vec<u8>, Item>,
@@ -83,7 +87,10 @@ struct MockInner {
 
 impl MockInner {
     fn new() -> Self {
-        Self { version: 0, store: BTreeMap::new() }
+        Self {
+            version: 0,
+            store: BTreeMap::new(),
+        }
     }
 
     fn next_version(&mut self) -> Version {
@@ -93,7 +100,8 @@ impl MockInner {
 
     fn can_put(&self, key: &[u8], version: Versions) -> bool {
         if let Versions::Expected(expected) = version {
-            self.store.get(key)
+            self.store
+                .get(key)
                 .map(|v| v.version == expected)
                 .unwrap_or(false)
         } else if let Versions::IfNotExist = version {
@@ -105,7 +113,8 @@ impl MockInner {
 
     fn can_delete(&self, key: &[u8], version: Versions) -> bool {
         if let Versions::Expected(expected) = version {
-            self.store.get(key)
+            self.store
+                .get(key)
                 .map(|v| v.version == expected)
                 .unwrap_or(false)
         } else {
@@ -114,23 +123,25 @@ impl MockInner {
     }
 }
 
-
 impl ReadOnlyStore for MockStore {
     fn get(&self, key: &[u8]) -> Result<(Vec<u8>, Version), ReadError> {
         let inner = self.inner.lock().unwrap();
-        inner.store.get(key)
+        inner
+            .store
+            .get(key)
             .map(|m| (m.value.clone(), m.version))
             .ok_or_else(|| ReadError::NoSuchKey)
     }
 
     fn contains(&self, key: &[u8]) -> Result<Version, ReadError> {
         let inner = self.inner.lock().unwrap();
-        inner.store.get(key)
+        inner
+            .store
+            .get(key)
             .map(|m| m.version)
             .ok_or_else(|| ReadError::NoSuchKey)
     }
 }
-
 
 impl Store for MockStore {
     type WriteBatch = WriteBatch;
@@ -141,13 +152,20 @@ impl Store for MockStore {
             return Err(WriteError::Conflicted);
         }
 
-        let v = inner.store.remove(key)
+        let v = inner
+            .store
+            .remove(key)
             .map(|v| v.version)
             .unwrap_or(NOT_EXISTS);
         Ok(v)
     }
 
-    fn put(&self, key: Vec<u8>, value: Vec<u8>, options: &WriteOptions) -> Result<Version, WriteError> {
+    fn put(
+        &self,
+        key: Vec<u8>,
+        value: Vec<u8>,
+        options: &WriteOptions,
+    ) -> Result<Version, WriteError> {
         let mut inner = self.inner.lock().unwrap();
         if !inner.can_put(&key, options.version) {
             return Err(WriteError::Conflicted);
@@ -159,6 +177,10 @@ impl Store for MockStore {
     }
 
     fn write_batch(&self) -> WriteBatch {
-        WriteBatch { deletes: Vec::new(), puts: Vec::new(), inner: self.inner.clone() }
+        WriteBatch {
+            deletes: Vec::new(),
+            puts: Vec::new(),
+            inner: self.inner.clone(),
+        }
     }
 }

@@ -3,7 +3,6 @@
 
 
 use alloc::{string::String, vec::Vec};
-use primitive_types::H160;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr as DeserializeRepr, Serialize_repr as SerializeRepr};
 
@@ -38,7 +37,7 @@ pub enum CallFlags {
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, BinDecode)]
 pub struct MethodToken {
-    pub hash: H160,
+    pub hash: UInt160,
 
     /// `method` cannot start with '_'
     pub method: String,

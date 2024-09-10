@@ -1,10 +1,11 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
+use crate::{
+    encoding::base58::{FromBase58Check, ToBase58Check},
+    errors,
+};
 use alloc::{string::String, vec::Vec};
-use crate::{errors, encoding::base58::{ToBase58Check, FromBase58Check}};
-
 
 #[derive(Debug, Clone)]
 pub struct Wif {
@@ -17,7 +18,9 @@ pub struct Wif {
 }
 
 impl Wif {
-    pub fn version(&self) -> u8 { self.version }
+    pub fn version(&self) -> u8 {
+        self.version
+    }
 
     pub fn data(&self) -> &[u8] {
         if self.compressed {
@@ -27,7 +30,9 @@ impl Wif {
         }
     }
 
-    pub fn compressed(&self) -> bool { self.compressed }
+    pub fn compressed(&self) -> bool {
+        self.compressed
+    }
 }
 
 pub trait WifEncode {
@@ -55,7 +60,6 @@ impl<T: AsRef<[u8]>> WifEncode for T {
     }
 }
 
-
 #[derive(Debug, PartialEq, Eq, Copy, Clone, errors::Error)]
 pub enum WifDecodeError {
     #[error("wif-decode: invalid base58 encoded")]
@@ -75,7 +79,9 @@ impl<T: AsRef<str>> WifDecode for T {
         let b58 = Vec::from_base58_check(self.as_ref(), None, None)
             .map_err(|_err| Self::Error::InvalidBase58Encoded)?;
 
-        if b58.len() <= 1 || (b58.len() != expected_data_size && b58.len() != expected_data_size + 1) {
+        if b58.len() <= 1
+            || (b58.len() != expected_data_size && b58.len() != expected_data_size + 1)
+        {
             return Err(Self::Error::InvalidWifLength(b58.len()));
         }
 
@@ -86,7 +92,10 @@ impl<T: AsRef<str>> WifDecode for T {
             return Err(Self::Error::InvalidCompressedFlag(last));
         }
 
-
-        Ok(Wif { version: b58[0], compressed, whole: b58 })
+        Ok(Wif {
+            version: b58[0],
+            compressed,
+            whole: b58,
+        })
     }
 }

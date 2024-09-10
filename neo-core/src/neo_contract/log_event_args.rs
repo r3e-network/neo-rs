@@ -1,5 +1,4 @@
-use crate::network::p2p::payloads::IVerifiable;
-use crate::types::UInt160;
+use crate::network::Payloads::IVerifiable;
 use crate::uint160::UInt160;
 
 /// The `EventArgs` of `ApplicationEngine.Log`.

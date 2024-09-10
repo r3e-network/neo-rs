@@ -1,10 +1,14 @@
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::mem;
+use NeoRust::prelude::VarSizeTrait;
+use neo_base::encoding::base64;
+use neo_json::jtoken::JToken;
 use crate::io::iserializable::ISerializable;
 use crate::uint160::UInt160;
 
 /// Represents a witness of an `IVerifiable` object.
+#[derive(Clone, Default)]
 pub struct Witness {
     /// The invocation script of the witness. Used to pass arguments for `verification_script`.
     pub invocation_script: Vec<u8>,
@@ -32,7 +36,7 @@ impl Witness {
     }
 
     pub fn size(&self) -> usize {
-        self.invocation_script.get_var_size() + self.verification_script.get_var_size()
+        self.invocation_script.var_size() + self.verification_script.var_size()
     }
 }
 
@@ -56,7 +60,7 @@ impl ISerializable for Witness {
 
 impl Witness {
     /// Converts the witness to a JSON object.
-    pub fn to_json(&self) -> JObject {
+    pub fn to_json(&self) -> JToken::Object {
         let mut json = JObject::new();
         json.insert("invocation", base64::encode(&self.invocation_script));
         json.insert("verification", base64::encode(&self.verification_script));

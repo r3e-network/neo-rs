@@ -13,7 +13,7 @@ use hashbrown::HashMap;
 
 use neo_base::{encoding::bin::*, math::U256};
 use neo_crypto::secp256r1::PublicKey;
-use crate::types::{Bytes, Sign, H160, H256};
+use crate::types::{Bytes, Sign, UInt160, UInt256};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, BinEncode, BinDecode)]
 pub enum ParamType {
@@ -22,8 +22,8 @@ pub enum ParamType {
     Integer = 0x11,
     ByteArray = 0x12,
     String = 0x13,
-    H160 = 0x14,
-    H256 = 0x15,
+    UInt160 = 0x14,
+    UInt256 = 0x15,
     PublicKey = 0x16,
     Signature = 0x17,
     Array = 0x20,
@@ -45,8 +45,8 @@ pub enum ParamValue {
     ByteArray(Bytes),
     String(String),
 
-    H160(H160),
-    H256(H256),
+    UInt160(UInt160),
+    UInt256(UInt256),
 
     PublicKey(PublicKey),
     Signature(Sign),
@@ -66,8 +66,8 @@ impl core::hash::Hash for ParamValue {
             Self::Integer(v) => v.hash(state),
             Self::ByteArray(v) => v.hash(state),
             Self::String(v) => v.hash(state),
-            Self::H160(v) => v.hash(state),
-            Self::H256(v) => v.hash(state),
+            Self::UInt160(v) => v.hash(state),
+            Self::UInt256(v) => v.hash(state),
             Self::PublicKey(v) => v.hash(state),
             Self::Signature(v) => v.hash(state),
             Self::Array(v) => v.hash(state),
@@ -91,8 +91,8 @@ pub enum Param {
     ByteArray(Bytes),
     String(String),
 
-    H160(H160),
-    H256(H256),
+    UInt160(UInt160),
+    UInt256(UInt256),
 
     PublicKey(PublicKey),
     Signature(Sign),
@@ -121,8 +121,8 @@ impl Param {
             Self::Integer(_) => Integer,
             Self::ByteArray(_) => ByteArray,
             Self::String(_) => String,
-            Self::H160(_) => H160,
-            Self::H256(_) => H256,
+            Self::UInt160(_) => UInt160,
+            Self::UInt256(_) => UInt256,
             Self::PublicKey(_) => PublicKey,
             Self::Signature(_) => Signature,
             Self::Array(_) => Array,

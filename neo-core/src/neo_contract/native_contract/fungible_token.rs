@@ -1,69 +1,42 @@
 
-use neo::prelude::*;
-use neo::sys::{ContractMethod, ContractEvent};
-use neo::vm::types::{Array, StackItem};
-use neo::io::*;
-use neo::persistence::*;
-use neo::smart_contract::manifest::*;
-use std::num::BigInt;
+use std::sync::Arc;
+use std::collections::HashSet;
+use num_bigint::BigInt;
+use crate::neo_contract::native_contract::{NativeContract, BaseNativeContract};
+use crate::hardfork::Hardfork;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::contract_state::ContractState;
+use crate::neo_contract::key_builder::KeyBuilder;
+use crate::protocol_settings::ProtocolSettings;
+use crate::uint160::UInt160;
+use crate::neo_contract::native_contract::contract_method_metadata::ContractMethodMetadata;
+use crate::neo_contract::native_contract::contract_event_attribute::ContractEventAttribute;
+use crate::neo_contract::manifest::contract_manifest::ContractManifest;
+use crate::neo_contract::storage_key::StorageKey;
+use crate::neo_contract::storage_item::StorageItem;
+use crate::vm::types::{StackItem, Array};
+use crate::persistence::DataCache;
 
-/// The base struct of all native tokens that are compatible with NEP-17.
-pub struct FungibleToken<TState>
-where
-    TState: AccountState + Default,
-{
-    /// The symbol of the token.
-    symbol: String,
-    /// The number of decimal places of the token.
-    decimals: u8,
-    /// The factor used when calculating the displayed value of the token value.
-    factor: BigInt,
+pub trait AccountState: Default {
+    fn balance(&self) -> BigInt;
+    fn set_balance(&mut self, balance: BigInt);
 }
 
-impl<TState> NativeContract for FungibleToken<TState>
-where
-    TState: AccountState + Default,
-{
-    fn on_manifest_compose(&self, manifest: &mut ContractManifest) {
-        manifest.supported_standards = vec!["NEP-17".to_string()];
-    }
-}
+pub trait FungibleToken: NativeContract {
+    type State: AccountState;
 
-impl<TState> FungibleToken<TState>
-where
-    TState: AccountState + Default,
-{
     const PREFIX_TOTAL_SUPPLY: u8 = 11;
     const PREFIX_ACCOUNT: u8 = 20;
 
-    #[contract_method]
-    pub fn symbol(&self) -> String {
-        self.symbol.clone()
-    }
+    fn factor(&self) -> &BigInt;
 
     #[contract_method]
-    pub fn decimals(&self) -> u8 {
-        self.decimals
-    }
+    fn symbol(&self) -> String;
 
-    #[contract_event(
-        name = "Transfer",
-        params = [
-            ("from", ContractParameterType::Hash160),
-            ("to", ContractParameterType::Hash160),
-            ("amount", ContractParameterType::Integer)
-        ]
-    )]
-    pub fn new(symbol: String, decimals: u8) -> Self {
-        let factor = BigInt::from(10).pow(decimals as u32);
-        Self {
-            symbol,
-            decimals,
-            factor,
-        }
-    }
+    #[contract_method]
+    fn decimals(&self) -> u8;
 
-    pub async fn mint(&self, engine: &mut ApplicationEngine, account: &Address, amount: BigInt, call_on_payment: bool) -> Result<(), String> {
+    async fn mint(&self, engine: &mut ApplicationEngine, account: &UInt160, amount: BigInt, call_on_payment: bool) -> Result<(), String> {
         if amount < BigInt::from(0) {
             return Err("Amount must be non-negative".into());
         }
@@ -71,12 +44,12 @@ where
             return Ok(());
         }
         let mut storage = engine.snapshot_cache.get_and_change(
-            &self.create_storage_key(Self::PREFIX_ACCOUNT).add(&account),
-            || StorageItem::new(TState::default()),
+            &self.create_storage_key(Self::PREFIX_ACCOUNT).add(account),
+            || StorageItem::new(Self::State::default()),
         );
-        let mut state: TState = storage.get_interoperable();
+        let mut state: Self::State = storage.get_interoperable();
         self.on_balance_changing(engine, account, &mut state, &amount);
-        state.balance += &amount;
+        state.set_balance(state.balance() + &amount);
         storage.set_interoperable(state);
 
         let mut total_supply = engine.snapshot_cache.get_and_change(
@@ -88,24 +61,24 @@ where
         self.post_transfer(engine, None, Some(account), amount, StackItem::Null, call_on_payment).await
     }
 
-    pub async fn burn(&self, engine: &mut ApplicationEngine, account: &Address, amount: BigInt) -> Result<(), String> {
+    async fn burn(&self, engine: &mut ApplicationEngine, account: &UInt160, amount: BigInt) -> Result<(), String> {
         if amount < BigInt::from(0) {
             return Err("Amount must be non-negative".into());
         }
         if amount == BigInt::from(0) {
             return Ok(());
         }
-        let key = self.create_storage_key(Self::PREFIX_ACCOUNT).add(&account);
+        let key = self.create_storage_key(Self::PREFIX_ACCOUNT).add(account);
         let mut storage = engine.snapshot_cache.get_and_change(&key);
-        let mut state: TState = storage.get_interoperable();
-        if state.balance < amount {
+        let mut state: Self::State = storage.get_interoperable();
+        if state.balance() < amount {
             return Err("Insufficient balance".into());
         }
         self.on_balance_changing(engine, account, &mut state, &(-amount));
-        if state.balance == amount {
+        if state.balance() == amount {
             engine.snapshot_cache.delete(&key);
         } else {
-            state.balance -= &amount;
+            state.set_balance(state.balance() - &amount);
             storage.set_interoperable(state);
         }
         let mut total_supply = engine.snapshot_cache.get_and_change(&self.create_storage_key(Self::PREFIX_TOTAL_SUPPLY));
@@ -115,56 +88,56 @@ where
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = CallFlags::READ_STATES)]
-    pub fn total_supply(&self, snapshot: &DataCache) -> BigInt {
+    fn total_supply(&self, snapshot: &dyn DataCache) -> BigInt {
         snapshot.try_get(&self.create_storage_key(Self::PREFIX_TOTAL_SUPPLY))
             .map(|storage| storage.into())
             .unwrap_or_else(BigInt::zero)
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = CallFlags::READ_STATES)]
-    pub fn balance_of(&self, snapshot: &DataCache, account: &Address) -> BigInt {
-        snapshot.try_get(&self.create_storage_key(Self::PREFIX_ACCOUNT).add(&account))
-            .map(|storage| storage.get_interoperable::<TState>().balance)
+    fn balance_of(&self, snapshot: &dyn DataCache, account: &UInt160) -> BigInt {
+        snapshot.try_get(&self.create_storage_key(Self::PREFIX_ACCOUNT).add(account))
+            .map(|storage| storage.get_interoperable::<Self::State>().balance())
             .unwrap_or_else(BigInt::zero)
     }
 
     #[contract_method(cpu_fee = 1 << 17, storage_fee = 50, required_flags = CallFlags::STATES | CallFlags::ALLOW_CALL | CallFlags::ALLOW_NOTIFY)]
-    pub async fn transfer(&self, engine: &mut ApplicationEngine, from: &Address, to: &Address, amount: BigInt, data: StackItem) -> Result<bool, String> {
+    async fn transfer(&self, engine: &mut ApplicationEngine, from: &UInt160, to: &UInt160, amount: BigInt, data: StackItem) -> Result<bool, String> {
         if amount < BigInt::from(0) {
             return Err("Amount must be non-negative".into());
         }
         if !from.equals(&engine.calling_script_hash) && !engine.check_witness_internal(from) {
             return Ok(false);
         }
-        let key_from = self.create_storage_key(Self::PREFIX_ACCOUNT).add(&from);
+        let key_from = self.create_storage_key(Self::PREFIX_ACCOUNT).add(from);
         let mut storage_from = engine.snapshot_cache.get_and_change(&key_from);
         
         if amount == BigInt::from(0) {
             if let Some(state_from) = storage_from.as_mut() {
-                let mut state: TState = state_from.get_interoperable();
+                let mut state: Self::State = state_from.get_interoperable();
                 self.on_balance_changing(engine, from, &mut state, &BigInt::from(0));
                 state_from.set_interoperable(state);
             }
         } else {
-            let mut state_from: TState = storage_from.get_interoperable();
-            if state_from.balance < amount {
+            let mut state_from: Self::State = storage_from.get_interoperable();
+            if state_from.balance() < amount {
                 return Ok(false);
             }
             if from == to {
                 self.on_balance_changing(engine, from, &mut state_from, &BigInt::from(0));
             } else {
                 self.on_balance_changing(engine, from, &mut state_from, &(-amount));
-                if state_from.balance == amount {
+                if state_from.balance() == amount {
                     engine.snapshot_cache.delete(&key_from);
                 } else {
-                    state_from.balance -= &amount;
+                    state_from.set_balance(state_from.balance() - &amount);
                     storage_from.set_interoperable(state_from);
                 }
-                let key_to = self.create_storage_key(Self::PREFIX_ACCOUNT).add(&to);
-                let mut storage_to = engine.snapshot_cache.get_and_change(&key_to, || StorageItem::new(TState::default()));
-                let mut state_to: TState = storage_to.get_interoperable();
+                let key_to = self.create_storage_key(Self::PREFIX_ACCOUNT).add(to);
+                let mut storage_to = engine.snapshot_cache.get_and_change(&key_to, || StorageItem::new(Self::State::default()));
+                let mut state_to: Self::State = storage_to.get_interoperable();
                 self.on_balance_changing(engine, to, &mut state_to, &amount);
-                state_to.balance += &amount;
+                state_to.set_balance(state_to.balance() + &amount);
                 storage_to.set_interoperable(state_to);
             }
         }
@@ -172,14 +145,14 @@ where
         Ok(true)
     }
 
-    fn on_balance_changing(&self, _engine: &mut ApplicationEngine, _account: &Address, _state: &mut TState, _amount: &BigInt) {
+    fn on_balance_changing(&self, _engine: &mut ApplicationEngine, _account: &UInt160, _state: &mut Self::State, _amount: &BigInt) {
         // Default implementation does nothing
     }
 
-    async fn post_transfer(&self, engine: &mut ApplicationEngine, from: Option<&Address>, to: Option<&Address>, amount: BigInt, data: StackItem, call_on_payment: bool) -> Result<(), String> {
+    async fn post_transfer(&self, engine: &mut ApplicationEngine, from: Option<&UInt160>, to: Option<&UInt160>, amount: BigInt, data: StackItem, call_on_payment: bool) -> Result<(), String> {
         // Send notification
         engine.send_notification(
-            &self.hash(),
+            self.hash(),
             "Transfer",
             Array::new(vec![
                 from.map(|a| a.to_array().into()).unwrap_or(StackItem::Null),
@@ -195,7 +168,7 @@ where
 
         // Call onNEP17Payment method
         engine.call_from_native_contract(
-            &self.hash(),
+            self.hash(),
             to.unwrap(),
             "onNEP17Payment",
             vec![

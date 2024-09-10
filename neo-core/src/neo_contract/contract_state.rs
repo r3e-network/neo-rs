@@ -1,9 +1,5 @@
-use neo::io::*;
-use neo::json::*;
-use neo::smart_contract::manifest::*;
-use neo::vm::*;
-use neo::vm::types::*;
 use std::convert::TryFrom;
+use neo_json::jtoken::JToken;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::neo_contract::iinteroperable_verifiable::InteroperableVerifiable;
@@ -40,7 +36,7 @@ impl ContractState {
     }
 
     /// Converts the contract to a JSON object.
-    pub fn to_json(&self) -> JObject {
+    pub fn to_json(&self) -> JToken::Object {
         let mut json = JObject::new();
         json.insert("id", JValue::from(self.id));
         json.insert("updatecounter", JValue::from(self.update_counter));

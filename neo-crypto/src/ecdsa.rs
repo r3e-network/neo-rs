@@ -3,17 +3,18 @@
 
 use alloc::string::{String, ToString};
 use p256::ecdsa::{
-    SigningKey, VerifyingKey, Signature,
     signature::{RandomizedSigner, Verifier as P256Verifier},
+    Signature, SigningKey, VerifyingKey,
 };
 
-use neo_base::{errors, bytes::{ToArray, ToRevArray}};
 use crate::secp256r1;
-
+use neo_base::{
+    bytes::{ToArray, ToRevArray},
+    errors,
+};
 
 // const ECC256_SIZE: usize = 32;
 pub const ECC256_SIGN_SIZE: usize = 32 * 2;
-
 
 pub trait Sign {
     type Sign;
@@ -32,7 +33,11 @@ pub trait Verify {
 pub trait DigestVerify {
     type Error;
 
-    fn verify_digest<T: AsRef<[u8]>, S: AsRef<[u8]>>(&self, message: T, sign: S) -> Result<(), Self::Error>;
+    fn verify_digest<T: AsRef<[u8]>, S: AsRef<[u8]>>(
+        &self,
+        message: T,
+        sign: S,
+    ) -> Result<(), Self::Error>;
 }
 
 pub struct Secp256r1Sign {
@@ -41,22 +46,30 @@ pub struct Secp256r1Sign {
 
 impl AsRef<[u8]> for Secp256r1Sign {
     #[inline]
-    fn as_ref(&self) -> &[u8] { self.sign.as_ref() }
+    fn as_ref(&self) -> &[u8] {
+        self.sign.as_ref()
+    }
 }
 
 impl AsRef<[u8; ECC256_SIGN_SIZE]> for Secp256r1Sign {
     #[inline]
-    fn as_ref(&self) -> &[u8; ECC256_SIGN_SIZE] { &self.sign }
+    fn as_ref(&self) -> &[u8; ECC256_SIGN_SIZE] {
+        &self.sign
+    }
 }
 
 impl From<[u8; ECC256_SIGN_SIZE]> for Secp256r1Sign {
     #[inline]
-    fn from(sign: [u8; ECC256_SIGN_SIZE]) -> Self { Secp256r1Sign { sign } }
+    fn from(sign: [u8; ECC256_SIGN_SIZE]) -> Self {
+        Secp256r1Sign { sign }
+    }
 }
 
 impl Into<[u8; ECC256_SIGN_SIZE]> for Secp256r1Sign {
     #[inline]
-    fn into(self) -> [u8; ECC256_SIGN_SIZE] { self.sign }
+    fn into(self) -> [u8; ECC256_SIGN_SIZE] {
+        self.sign
+    }
 }
 
 #[derive(Debug, Clone, errors::Error)]
@@ -81,15 +94,17 @@ impl Sign for secp256r1::PrivateKey {
             .map(|key| key.into())
             .map_err(|_| SignError::InvalidPrivateKey)?;
 
-
         let mut rnd = rand_core::OsRng;
-        let sign: Signature = sk.try_sign_with_rng(&mut rnd, message.as_ref())
+        let sign: Signature = sk
+            .try_sign_with_rng(&mut rnd, message.as_ref())
             .map_err(|err| SignError::SignError(err.to_string()))?;
 
         let sign = sign.to_bytes();
         // sign[0..32].reverse(); // use little endian
         // sign[32..64].reverse();
-        Ok(Secp256r1Sign { sign: sign.to_array() })
+        Ok(Secp256r1Sign {
+            sign: sign.to_array(),
+        })
     }
 }
 
@@ -115,13 +130,16 @@ impl Verify for secp256r1::PublicKey {
 impl DigestVerify for secp256r1::PublicKey {
     type Error = VerifyError;
 
-    fn verify_digest<T: AsRef<[u8]>, S: AsRef<[u8]>>(&self, message: T, sign: S) -> Result<(), Self::Error> {
+    fn verify_digest<T: AsRef<[u8]>, S: AsRef<[u8]>>(
+        &self,
+        message: T,
+        sign: S,
+    ) -> Result<(), Self::Error> {
         // let mut sign: [u8; ECC256_SIGN_SIZE] = sign.as_ref().clone().to_array();
         // sign[0..32].reverse();
         // sign[32..ECC256_SIGN_SIZE].reverse(); // little endian to big endian
 
-        let sign = Signature::try_from(sign.as_ref())
-            .map_err(|_| VerifyError::InvalidSignature)?;
+        let sign = Signature::try_from(sign.as_ref()).map_err(|_| VerifyError::InvalidSignature)?;
 
         VerifyingKey::from_sec1_bytes(&self.to_uncompressed())
             .map_err(|_| VerifyError::InvalidPublicKey)?
@@ -144,17 +162,13 @@ mod test {
             .decode_hex()
             .expect("hex decode ok");
 
-        let sk = PrivateKey::from_be_bytes(sk.as_slice())
-            .expect("from le-byte should be ok");
+        let sk = PrivateKey::from_be_bytes(sk.as_slice()).expect("from le-byte should be ok");
 
-        let sign = sk.sign(data).
-            expect("sign should be ok");
+        let sign = sk.sign(data).expect("sign should be ok");
 
-        let pk = PublicKey::try_from(&sk)
-            .expect("to public key should be ok");
+        let pk = PublicKey::try_from(&sk).expect("to public key should be ok");
 
-        let _ = pk.verify(data, &sign)
-            .expect("verify should be ok");
+        let _ = pk.verify(data, &sign).expect("verify should be ok");
     }
 
     #[test]
@@ -164,18 +178,19 @@ mod test {
             .decode_hex()
             .expect("hex decode should be ok");
 
-        let pk = PublicKey::from_compressed(pk.as_slice())
-            .expect("to public key should be ok");
+        let pk = PublicKey::from_compressed(pk.as_slice()).expect("to public key should be ok");
 
         let sign = "b1855cec16b6ebb372895d44c7be3832b81334394d80bec7c4f00a9c1d9c3237\
         541834638d11ad9c62792ed548c9602c1d8cd0ca92fdd5e68ceea40e7bcfbeb2"
             .decode_hex()
             .expect("hex decode should be ok");
 
-        let _ = pk.verify_digest(data, sign.as_slice())
+        let _ = pk
+            .verify_digest(data, sign.as_slice())
             .expect("verify should be ok");
 
-        let _ = pk.verify_digest(data, "b1855cec16b6ebb372895d44c7be3832")
+        let _ = pk
+            .verify_digest(data, "b1855cec16b6ebb372895d44c7be3832")
             .expect_err("verify should be fail");
     }
 }

@@ -1,5 +1,7 @@
 use std::fmt;
 use crate::contract::nef::CallFlags;
+use crate::hardfork::Hardfork;
+use crate::neo_contract::native_contract::ihardfork_activable::IHardforkActivable;
 
 /// Attribute for contract methods in Neo smart contracts.
 #[derive(Clone, Debug)]

@@ -1,13 +1,14 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
+use base64::{
+    engine::general_purpose::{STANDARD, URL_SAFE},
+    Engine,
+};
 use core::result::Result;
-use base64::{Engine, engine::general_purpose::{STANDARD, URL_SAFE}};
 
 use crate::errors;
-
 
 pub trait ToBase64 {
     fn to_base64_std(&self) -> String;
@@ -17,12 +18,15 @@ pub trait ToBase64 {
 
 impl<T: AsRef<[u8]>> ToBase64 for T {
     #[inline]
-    fn to_base64_std(&self) -> String { STANDARD.encode(self.as_ref()) }
+    fn to_base64_std(&self) -> String {
+        STANDARD.encode(self.as_ref())
+    }
 
     #[inline]
-    fn to_base64_url(&self) -> String { URL_SAFE.encode(self.as_ref()) }
+    fn to_base64_url(&self) -> String {
+        URL_SAFE.encode(self.as_ref())
+    }
 }
-
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, errors::Error)]
 pub enum FromBase64Error {
@@ -61,17 +65,14 @@ impl FromBase64 for Vec<u8> {
 
     #[inline]
     fn from_base64_std<T: AsRef<[u8]>>(src: T) -> Result<Vec<u8>, Self::Error> {
-        STANDARD.decode(src.as_ref())
-            .map_err(FromBase64Error::from)
+        STANDARD.decode(src.as_ref()).map_err(FromBase64Error::from)
     }
 
     #[inline]
     fn from_base64_url<T: AsRef<[u8]>>(src: T) -> Result<Vec<u8>, Self::Error> {
-        URL_SAFE.decode(src.as_ref())
-            .map_err(FromBase64Error::from)
+        URL_SAFE.decode(src.as_ref()).map_err(FromBase64Error::from)
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -80,13 +81,11 @@ mod test {
     #[test]
     fn test_base64() {
         let b = [0xfcu8, 0xfe, 0xfd, 0xfc];
-        let r = Vec::from_base64_std(&b)
-            .expect_err("decode should be failed");
+        let r = Vec::from_base64_std(&b).expect_err("decode should be failed");
         assert_eq!(r, FromBase64Error::InvalidChar(0xfcu8 as char));
 
         let b = [0x1, 0x2, 0x3, 0x4, 0x5, 0x6];
-        let d = Vec::from_base64_std(&b.to_base64_std())
-            .expect("decode shou be ok");
+        let d = Vec::from_base64_std(&b.to_base64_std()).expect("decode shou be ok");
         assert_eq!(b.as_slice(), d.as_slice());
     }
 }

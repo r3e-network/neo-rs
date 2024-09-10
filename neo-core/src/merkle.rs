@@ -3,18 +3,18 @@
 
 
 use alloc::{vec, vec::Vec};
-use primitive_types::H256;
 use neo_base::hash::{Sha256, SlicesSha256};
+use crate::uint256::UInt256;
 
 #[allow(dead_code)]
 pub struct MerkleTree {
-    root: H256,
-    nodes: Vec<H256>,
+    root: UInt256,
+    nodes: Vec<UInt256>,
     leaves_offset: usize,
 }
 
 impl MerkleTree {
-    pub fn new(hashes: &[H256]) -> Self {
+    pub fn new(hashes: &[UInt256]) -> Self {
         let nodes = build_merkle_nodes(&hashes);
 
         let root = nodes[0].clone();
@@ -23,12 +23,12 @@ impl MerkleTree {
         Self { nodes, root, leaves_offset }
     }
 
-    pub fn root(&self) -> &H256 { &self.root }
+    pub fn root(&self) -> &UInt256 { &self.root }
 }
 
-fn build_merkle_nodes(hashes: &[H256]) -> Vec<H256> {
+fn build_merkle_nodes(hashes: &[UInt256]) -> Vec<UInt256> {
     if hashes.len() == 0 {
-        return vec![H256::default()];
+        return vec![UInt256::default()];
     }
 
     if hashes.len() == 1 {
@@ -36,7 +36,7 @@ fn build_merkle_nodes(hashes: &[H256]) -> Vec<H256> {
     }
 
     let inners = inner_merkle_nodes(hashes.len());
-    let mut nodes = vec![H256::default(); 1 + inners + hashes.len()];
+    let mut nodes = vec![UInt256::default(); 1 + inners + hashes.len()];
 
     nodes[1 + inners..].copy_from_slice(hashes);
 
@@ -80,7 +80,7 @@ fn inner_merkle_nodes(nodes: usize) -> usize {
 }
 
 #[inline]
-fn children_sha256(off: usize, hashes: &[H256]) -> H256 {
+fn children_sha256(off: usize, hashes: &[UInt256]) -> UInt256 {
     let two = if off + 1 >= hashes.len() {
         [&hashes[off], &hashes[off]]
     } else {
@@ -93,21 +93,21 @@ fn children_sha256(off: usize, hashes: &[H256]) -> H256 {
 
 /// Calculating the sha256 merkle-root
 pub trait MerkleSha256 {
-    fn merkle_sha256(&self) -> H256;
+    fn merkle_sha256(&self) -> UInt256;
 }
 
-impl<T: AsRef<[H256]>> MerkleSha256 for T {
-    fn merkle_sha256(&self) -> H256 {
+impl<T: AsRef<[UInt256]>> MerkleSha256 for T {
+    fn merkle_sha256(&self) -> UInt256 {
         let hashes = self.as_ref();
         if hashes.len() == 0 {
-            return H256::default();
+            return UInt256::default();
         }
 
         if hashes.len() == 1 {
             return hashes[0].clone();
         }
 
-        let mut nodes = vec![H256::default(); (hashes.len() + 1) / 2];
+        let mut nodes = vec![UInt256::default(); (hashes.len() + 1) / 2];
         for k in 0..nodes.len() {
             nodes[k] = children_sha256(2 * k, hashes);
         }
@@ -130,12 +130,11 @@ impl<T: AsRef<[H256]>> MerkleSha256 for T {
 
 #[cfg(test)]
 mod test {
-    use primitive_types::H256;
     use super::*;
     use neo_base::{hash::Sha256, encoding::hex::{FromRevHex, ToHex}, bytes::ToArray};
+    use neo_base::encoding::hex::FromRevHex;
     use crate::merkle::inner_merkle_nodes;
-    use crate::types::H256;
-
+    use crate::uint256::UInt256;
 
     #[test]
     fn test_inner_merkle_nodes() {
@@ -159,11 +158,11 @@ mod test {
     }
 
     trait MerkleHash {
-        fn merkle_hash(&self) -> H256;
+        fn merkle_hash(&self) -> UInt256;
     }
 
-    impl MerkleHash for [H256; 2] {
-        fn merkle_hash(&self) -> H256 {
+    impl MerkleHash for [UInt256; 2] {
+        fn merkle_hash(&self) -> UInt256 {
             self.iter().slices_sha256().sha256().into()
         }
     }
@@ -173,9 +172,9 @@ mod test {
         let tree = MerkleTree::new(&[]);
         assert_eq!(tree.leaves_offset, 1);
         assert_eq!(tree.nodes.len(), 1);
-        assert_eq!(tree.root, H256::default());
-        assert_eq!(tree.root(), &H256::default());
-        assert_eq!([].merkle_sha256(), H256::default());
+        assert_eq!(tree.root, UInt256::default());
+        assert_eq!(tree.root(), &UInt256::default());
+        assert_eq!([].merkle_sha256(), UInt256::default());
 
         let one = "Hello world!".sha256().into();
         let tree = MerkleTree::new(core::array::from_ref(&one).as_slice());
@@ -223,7 +222,7 @@ mod test {
         ]
             .iter()
             .map(|v| Vec::from_rev_hex(v).expect("decode should be ok"))
-            .map(|v| H256::from(v.to_array()))
+            .map(|v| UInt256::from(v.to_array()))
             .collect::<Vec<_>>();
 
         let should = "6dbf2b2c9aceda3a307a4e74c4b5a2b271b3b16be5ace7a250c31088c8dbc209";
@@ -244,7 +243,7 @@ mod test {
         ]
             .iter()
             .map(|v| Vec::from_rev_hex(v).expect("decode should be ok"))
-            .map(|v| H256::from(v.to_array()))
+            .map(|v| UInt256::from(v.to_array()))
             .collect::<Vec<_>>();
 
         let should = "f41bc036e39b0d6b0579c851c6fde83af802fa4e57bec0bc3365eae3abf43f80";
@@ -273,7 +272,7 @@ mod test {
         ]
             .iter()
             .map(|v| Vec::from_rev_hex(v).expect("decode should be ok"))
-            .map(|v| H256::from(v.to_array()))
+            .map(|v| UInt256::from(v.to_array()))
             .collect::<Vec<_>>();
 
         let should = "d788595d0ba056b421e9f8a90c5aa01114c6906c408ecd4941833a04d89a4842";

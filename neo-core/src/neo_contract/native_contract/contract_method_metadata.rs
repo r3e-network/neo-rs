@@ -1,6 +1,12 @@
 
 use neo_sdk::prelude::*;
 use std::fmt;
+use neo_vm::stack_item::StackItem;
+use crate::hardfork::Hardfork;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::call_flags::CallFlags;
+use crate::neo_contract::interop_parameter_descriptor::InteropParameterDescriptor;
+use crate::neo_contract::manifest::contract_method_descriptor::ContractMethodDescriptor;
 
 #[derive(Debug)]
 pub struct ContractMethodMetadata {

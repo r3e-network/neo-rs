@@ -74,10 +74,10 @@ impl Transaction {
     /// The size of the transaction.
     pub fn size(&self) -> usize {
         Self::HEADER_SIZE +
-            self.signers.get_var_size() +
-            self.attributes.get_var_size() +
-            self.script.get_var_size() +
-            self.witnesses.get_var_size()
+            self.signers.var_size() +
+            self.attributes.var_size() +
+            self.script.var_size() +
+            self.witnesses.var_size()
     }
 
     /// The system fee of the transaction.

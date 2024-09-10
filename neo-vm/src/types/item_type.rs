@@ -1,6 +1,6 @@
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum ItemType {
+pub enum StackItemType {
 	Any = 0x00,
 	Pointer = 0x10,
 	Boolean = 0x20,
@@ -13,7 +13,7 @@ pub enum ItemType {
 	InteropInterface = 0x60,
 }
 
-impl ItemType {
+impl StackItemType {
 	pub fn is_valid(tp: u8) -> bool {
 		match tp {
 			0x00 | 0x10 | 0x20 | 0x21 | 0x28 | 0x30 | 0x40 | 0x41 | 0x48 | 0x60 => true,

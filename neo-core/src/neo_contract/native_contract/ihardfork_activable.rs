@@ -1,6 +1,4 @@
-
-use neo_sdk::prelude::*;
-use neo_sdk::types::Hardfork;
+use crate::hardfork::Hardfork;
 
 /// Trait for contracts that can be activated or deprecated in specific hardforks
 pub trait IHardforkActivable {
