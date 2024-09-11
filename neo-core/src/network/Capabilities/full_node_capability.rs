@@ -1,4 +1,6 @@
+use std::io::Error;
 use crate::io::binary_writer::BinaryWriter;
+use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use super::NodeCapability;
 use super::NodeCapabilityType;
@@ -17,6 +19,20 @@ impl FullNodeCapability {
     /// * `start_height` - The current block height of the node.
     pub fn new(start_height: u32) -> Self {
         Self { start_height }
+    }
+}
+
+impl ISerializable for FullNodeCapability {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        todo!()
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, Error> {
+        todo!()
     }
 }
 

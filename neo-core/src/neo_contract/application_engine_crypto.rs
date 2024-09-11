@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use crate::cryptography::{Crypto, ECCurve};
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::neo_contract::interop_descriptor::InteropDescriptor;
@@ -44,7 +45,7 @@ impl ApplicationEngine {
         let script_container = self.script_container()?;
         let network = self.protocol_settings.network_id;
 
-        match Crypto::verify_signature(&script_container.get_sign_data(network), &signature, &pubkey, ECCurve::Secp256r1) {
+        match Crypto::verify_signature(&script_container.get_sign_data(network), &signature, &pubkey, ECCurve::secp256r1) {
             Ok(result) => Ok(result),
             Err(_) => Ok(false),
         }
@@ -82,7 +83,7 @@ impl ApplicationEngine {
         let mut j = 0;
 
         while i < m && j < n {
-            if Crypto::verify_signature(&message, &signatures[i], &pubkeys[j], ECCurve::Secp256r1).unwrap_or(false) {
+            if Crypto::verify_signature(&message, &signatures[i], &pubkeys[j], ECCurve::secp256r1).unwrap_or(false) {
                 i += 1;
             }
             j += 1;

@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 use crate::network::Capabilities::{NodeCapability, NodeCapabilityType};
 
 /// Sent with an `AddrPayload` to respond to `MessageCommand::GetAddr` messages.
@@ -63,7 +64,7 @@ impl ISerializable for NetworkAddressWithTime {
         writer.write_var_bytes(&self.capabilities);
     }
 
-    fn deserialize(&mut self, reader: &mut BinaryReader) -> Result<Self, std::io::Error> {
+    fn deserialize(reader: &mut BinaryReader) -> Result<Self, std::io::Error> {
         let timestamp = reader.read_u32()?;
         let ip_bytes = reader.read_fixed_bytes(16)?;
         let address = IpAddr::V6(Ipv6Addr::from(ip_bytes));

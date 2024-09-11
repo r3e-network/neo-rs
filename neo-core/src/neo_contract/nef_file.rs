@@ -34,16 +34,6 @@ impl NefFile {
 
     const HEADER_SIZE: usize = size_of::<u32>() + 64;
 
-    pub fn size(&self) -> usize {
-        Self::HEADER_SIZE
-            + self.source.var_size()
-            + 1
-            + self.tokens.var_size()
-            + 2
-            + self.script.var_size()
-            + size_of::<u32>()
-    }
-
     /// Parse NefFile from bytes
     pub fn parse(data: &[u8], verify: bool) -> Result<Self, std::io::Error> {
         let mut reader = Cursor::new(data);
@@ -78,10 +68,16 @@ impl NefFile {
 
 impl ISerializable for NefFile {
     fn size(&self) -> usize {
-        todo!()
+        Self::HEADER_SIZE +
+            self.source.var_size() +
+            1 +
+            self.tokens.var_size() +
+            2 +
+            self.script.var_size() +
+            size_of::<u32>()
     }
 
-    fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), std::io::Error> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         writer.write_u32::<LittleEndian>(Self::MAGIC)?;
         writer.write_fixed_string(&self.compiler, 64)?;
         writer.write_var_string(&self.source)?;
@@ -93,33 +89,43 @@ impl ISerializable for NefFile {
         Ok(())
     }
 
-    fn deserialize<R: Read>(&mut self, reader: &mut R, verify: bool) -> Result<(), std::io::Error> {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let start_position = reader.stream_position()?;
-        if reader.read_u32::<LittleEndian>()? != Self::MAGIC {
+        let magic = reader.read_u32::<LittleEndian>()?;
+        if magic != Self::MAGIC {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Wrong magic"));
         }
-        self.compiler = reader.read_fixed_string(64)?;
-        self.source = reader.read_var_string(256)?;
+        let compiler = reader.read_fixed_string(64)?;
+        let source = reader.read_var_string(256)?;
         if reader.read_u8()? != 0 {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Reserved bytes must be 0"));
         }
-        self.tokens = reader.read_var_array(128)?;
+        let tokens = reader.read_var_array(128)?;
         if reader.read_u16::<LittleEndian>()? != 0 {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Reserved bytes must be 0"));
         }
-        self.script = reader.read_var_bytes(ExecutionEngineLimits::default().max_item_size as usize)?;
-        if self.script.is_empty() {
+        let script = reader.read_var_bytes(ExecutionEngineLimits::default().max_item_size as usize)?;
+        if script.is_empty() {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Script can't be empty"));
         }
-        self.checksum = reader.read_u32::<LittleEndian>()?;
-        if verify {
-            if self.checksum != self.compute_checksum() {
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "CRC verification fail"));
-            }
-            if reader.stream_position()? - start_position > ExecutionEngineLimits::default().max_item_size as u64 {
-                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Max vm item size exceed"));
-            }
+        let checksum = reader.read_u32::<LittleEndian>()?;
+        
+        let nef_file = Self {
+            compiler,
+            source,
+            tokens,
+            script,
+            checksum,
+        };
+
+        // Note: The `verify` parameter is not available in this context, so we'll always perform the verification
+        if nef_file.checksum != nef_file.compute_checksum() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "CRC verification fail"));
         }
-        Ok(())
+        if reader.stream_position()? - start_position > ExecutionEngineLimits::default().max_item_size as u64 {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Max vm item size exceed"));
+        }
+
+        Ok(nef_file)
     }
 }

@@ -1,7 +1,8 @@
-use neo_io::*;
 use std::io::{self, Write};
 use std::collections::VecDeque;
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 use crate::network::Payloads::InventoryType;
 use crate::uint256::UInt256;
 
@@ -37,13 +38,12 @@ impl ISerializable for InvPayload {
         std::mem::size_of::<InventoryType>() + &self.hashes.var_vec_size()
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         writer.write_u8(self.inv_type as u8)?;
         writer.write_var_vec(&self.hashes)?;
-        Ok(())
     }
 
-    fn deserialize(reader: &mut dyn io::Read) -> io::Result<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let inv_type = InventoryType::try_from(reader.read_u8()?).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "Invalid InventoryType"))?;
         let hashes = reader.read_var_vec(Self::MAX_HASHES_COUNT)?;
         Ok(Self::new(inv_type, hashes))

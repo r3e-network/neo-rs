@@ -6,7 +6,7 @@ use quote::quote;
 use quote::ToTokens;
 use syn::__private::TokenStream2;
 use syn::parse::Parse;
-use syn::{parse_macro_input, DeriveInput, Expr, ExprLit, ItemFn, PatLit};
+use syn::{parse_macro_input, DeriveInput, Expr, ExprLit, ItemFn, ItemImpl, PatLit};
 use syn::{Lit, Meta};
 
 mod bin;
@@ -65,11 +65,39 @@ pub fn event(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
-    // contract::generate(attr.into(), item.into()).into()
-    TokenStream::default()
+    let input = parse_macro_input!(item as DeriveInput);
+    let name = &input.ident;
+
+    let expanded = quote! {
+        #input
+
+        impl #name {
+            pub fn new() -> Self {
+                Self {}
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
 }
 
-// ... existing code ...
+#[proc_macro_attribute]
+pub fn contract_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as ItemImpl);
+    let ty = &input.self_ty;
+
+    let expanded = quote! {
+        #input
+
+        impl #ty {
+            pub fn contract_type() -> &'static str {
+                stringify!(#ty)
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
 
 struct ContractMethodArgs {
     name: Option<String>,

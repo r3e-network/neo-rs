@@ -54,10 +54,12 @@ impl ISerializable for MerkleBlockPayload {
         writer.write_var_bytes(&self.flags);
     }
 
-    fn deserialize(&mut self, reader: &mut BinaryReader) {
-        self.header = Header::deserialize(reader);
-        self.tx_count = reader.read_var_int(u16::MAX as u64) as u32;
-        self.hashes = reader.read_serializable_list(self.tx_count as usize);
-        self.flags = reader.read_var_bytes((self.tx_count.max(1) + 7) / 8);
+    fn deserialize(reader: &mut BinaryReader) -> Result<Self, std::io::Error> {
+        let header = Header::deserialize(reader, true)?;
+        let tx_count = reader.read_var_int(u16::MAX as u64) as u32;
+        let hashes = reader.read_serializable_list(tx_count as usize);
+        let flags = reader.read_var_bytes((tx_count.max(1) + 7) / 8);
+
+        Ok(MerkleBlockPayload { header, tx_count, hashes, flags })
     }
 }

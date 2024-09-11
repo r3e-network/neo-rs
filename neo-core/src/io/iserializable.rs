@@ -18,5 +18,5 @@ pub trait ISerializable {
     /// # Arguments
     ///
     /// * `reader` - The `MemoryReader` for reading data.
-    fn deserialize(&mut self, reader: &mut MemoryReader);
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error>;
 }

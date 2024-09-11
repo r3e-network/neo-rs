@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use neo_proc_macros::{contract, contract_method, event};
+use crate::neo_contract::contract::Contract;
 
 #[contract]
 pub struct ContractManagement {
@@ -138,7 +140,7 @@ impl ContractManagement {
         }
     }
 
-    pub fn list_contracts(&self) -> Vec<Contract> {
+    pub fn list_contracts(&self) -> Vec<dyn Contract> {
         self.storage_map
             .find(Self::create_storage_key(PREFIX_CONTRACT).as_slice())
             .filter_map(|(_, v)| v.try_into().ok())

@@ -1,4 +1,7 @@
+use std::io::Error;
 use neo_json::jtoken::JToken;
+use crate::io::binary_writer::BinaryWriter;
+use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::persistence::DataCache;
 use crate::network::Payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
@@ -8,8 +11,22 @@ pub struct NotValidBefore {
     pub height: u32,
 }
 
+impl ISerializable for NotValidBefore {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        todo!()
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, Error> {
+        todo!()
+    }
+}
+
 impl TransactionAttribute for NotValidBefore {
-    fn type_(&self) -> TransactionAttributeType {
+    fn get_type(&self) -> TransactionAttributeType {
         TransactionAttributeType::NotValidBefore
     }
 
@@ -25,14 +42,14 @@ impl TransactionAttribute for NotValidBefore {
         self.height = reader.read_u32();
     }
 
-    fn serialize_without_type(&self, writer: &mut dyn std::io::Write) {
-        writer.write_all(&self.height.to_le_bytes()).unwrap();
-    }
-
     fn to_json(&self) -> JToken {
         let mut json = self.base_to_json();
         json.insert("height".to_string(), self.height.into());
         json
+    }
+
+    fn serialize_without_type(&self, writer: &mut dyn std::io::Write) {
+        writer.write_all(&self.height.to_le_bytes()).unwrap();
     }
 
     fn verify(&self, snapshot: &dyn DataCache, _tx: &Transaction) -> bool {

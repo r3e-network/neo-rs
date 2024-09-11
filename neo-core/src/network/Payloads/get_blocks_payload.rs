@@ -16,9 +16,6 @@ pub struct GetBlocksPayload {
 }
 
 impl GetBlocksPayload {
-    pub fn size(&self) -> usize {
-        std::mem::size_of::<i16>() + self.hash_start.size()
-    }
 
     /// Creates a new instance of the GetBlocksPayload struct.
     ///
@@ -40,16 +37,15 @@ impl GetBlocksPayload {
 
 impl ISerializable for GetBlocksPayload {
     fn size(&self) -> usize {
-        todo!()
+        self.hash_start.size() + std::mem::size_of::<i16>()
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         self.hash_start.serialize(writer)?;
         writer.write_all(&self.count.to_le_bytes())?;
-        Ok(())
     }
 
-    fn deserialize(&mut self, reader: &mut MemoryReader) -> io::Result<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let hash_start = UInt256::deserialize(reader)?;
         let count = reader.read_i16()?;
         if count < -1 || count == 0 {

@@ -126,16 +126,23 @@ impl Message {
 }
 
 impl ISerializable for Message {
-    fn deserialize(&mut self, reader: &mut MemoryReader) -> io::Result<()> {
-        self.flags = MessageFlags::from(reader.read_u8()?);
-        self.command = MessageCommand::from(reader.read_u8()?);
-        self.payload_compressed = reader.read_var_bytes(Self::PAYLOAD_MAX_SIZE)?;
-        self.decompress_payload();
-        Ok(())
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+        let flags = MessageFlags::from(reader.read_u8()?);
+        let command = MessageCommand::from(reader.read_u8()?);
+        let payload_compressed = reader.read_var_bytes(Self::PAYLOAD_MAX_SIZE)?;
+        let mut msg = Message {
+            flags,
+            command,
+            payload: None,
+            payload_compressed,
+        };
+        msg.decompress_payload();
+        Ok(msg)
     }
 
-    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        writer.write_all(&[self.flags as u8, self.command as u8])?;
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        writer.write_u8(self.flags as u8)?;
+        writer.write_u8(self.command as u8)?;
         writer.write_var_bytes(&self.payload_compressed)?;
         Ok(())
     }

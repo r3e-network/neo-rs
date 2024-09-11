@@ -68,14 +68,14 @@ impl ISerializable for UInt256 {
         todo!()
     }
 
-    fn serialize(&self, writer: &mut impl Write) -> IoResult<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         for &value in &self.data {
             writer.write_u64::<LittleEndian>(value)?;
         }
         Ok(())
     }
 
-    fn deserialize(reader: &mut impl Read) -> IoResult<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let mut data = [0u64; 4];
         for value in &mut data {
             *value = reader.read_u64::<LittleEndian>()?;

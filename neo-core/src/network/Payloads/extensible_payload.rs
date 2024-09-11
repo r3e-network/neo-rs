@@ -52,20 +52,20 @@ impl ISerializable for ExtensiblePayload {
         todo!()
     }
 
-    fn serialize(&self, writer: &mut impl Write) -> std::io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         self.serialize_unsigned(writer)?;
         writer.write_u8(1);
         self.witness.serialize(writer)?;
         Ok(())
     }
 
-    fn deserialize(&mut self, reader: &mut impl Read) -> std::io::Result<()> {
-        self.deserialize_unsigned(reader)?;
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+        let mut payload = ExtensiblePayload::deserialize_unsigned(reader)?;
         if reader.read_u8()? != 1 {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid format"));
         }
-        self.witness = Witness::deserialize(reader)?;
-        Ok(())
+        payload.witness = Witness::deserialize(reader)?;
+        Ok(payload)
     }
 }
 

@@ -1,7 +1,9 @@
 use std::io::{Read, Write};
 use NeoRust::prelude::StringExt;
 use neo_json::jtoken::JToken;
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::uint160::UInt160;
 
@@ -24,13 +26,7 @@ pub struct MethodToken {
 }
 
 impl MethodToken {
-    pub fn size(&self) -> usize {
-        UInt160::LEN +
-        self.method.var_size() +
-        std::mem::size_of::<u16>() +
-        std::mem::size_of::<bool>() +
-        std::mem::size_of::<CallFlags>()
-    }
+
 
     /// Converts the token to a JSON object.
     pub fn to_json(&self) -> JToken {
@@ -51,22 +47,15 @@ impl MethodToken {
 }
 
 impl ISerializable for MethodToken {
-    fn deserialize<R: Read>(&mut self, reader: &mut R) -> Result<(), std::io::Error> {
-        self.hash = UInt160::deserialize(reader)?;
-        self.method = reader.read_var_string(32)?;
-        if self.method.starts_with('_') {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Method name cannot start with underscore"));
-        }
-        self.parameters_count = reader.read_u16()?;
-        self.has_return_value = reader.read_bool()?;
-        self.call_flags = CallFlags::from_u8(reader.read_u8()?);
-        if (self.call_flags & !CallFlags::ALL) != CallFlags::empty() {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid CallFlags"));
-        }
-        Ok(())
+    fn size(&self) -> usize {
+        UInt160::LEN +
+            self.method.var_size() +
+            std::mem::size_of::<u16>() +
+            std::mem::size_of::<bool>() +
+            std::mem::size_of::<CallFlags>()
     }
 
-    fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), std::io::Error> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         self.hash.serialize(writer)?;
         writer.write_var_string(&self.method)?;
         writer.write_u16(self.parameters_count)?;
@@ -75,7 +64,24 @@ impl ISerializable for MethodToken {
         Ok(())
     }
 
-    fn size(&self) -> usize {
-        todo!()
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+        let hash = UInt160::deserialize(reader)?;
+        let method = reader.read_var_string(32)?;
+        if method.starts_with('_') {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Method name cannot start with underscore"));
+        }
+        let parameters_count = reader.read_u16()?;
+        let has_return_value = reader.read_bool()?;
+        let call_flags = CallFlags::from_bits(reader.read_u8()?).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid CallFlags")
+        })?;
+
+        Ok(Self {
+            hash,
+            method,
+            parameters_count,
+            has_return_value,
+            call_flags,
+        })
     }
 }

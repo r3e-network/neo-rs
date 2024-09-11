@@ -29,27 +29,23 @@ impl AddrPayload {
         }
     }
 
-    /// Returns the size of the payload.
-    pub fn size(&self) -> usize {
-        // Assuming NetworkAddressWithTime implements Serializable
-        self.address_list.iter().map(|addr| addr.size()).sum()
-    }
 }
 
 impl ISerializable for AddrPayload {
     fn size(&self) -> usize {
-        todo!()
+        self.address_list.iter().map(|addr| addr.size()).sum()
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), Error> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         writer.write_serializable_list(&self.address_list)
     }
 
-    fn deserialize(&mut self, reader: &mut BinaryReader) -> Result<(), Error> {
-        self.address_list = reader.read_serializable_list(Self::MAX_COUNT_TO_SEND)?;
-        if self.address_list.is_empty() {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+        let address_list = reader.read_serializable_list(Self::MAX_COUNT_TO_SEND)?;
+        if address_list.is_empty() {
             return Err(Error::new(ErrorKind::InvalidData, "Empty address list"));
         }
-        Ok(())
+        Ok(AddrPayload { address_list })
     }
+
 }

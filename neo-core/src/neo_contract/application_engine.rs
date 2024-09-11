@@ -19,7 +19,8 @@ use crate::hardfork::Hardfork;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::contract_state::ContractState;
-use crate::neo_contract::contract_task::{ContractTask, ContractTaskAwaiter};
+use crate::neo_contract::contract_task::{ContractTask};
+use crate::neo_contract::contract_task_awaiter::ContractTaskAwaiter;
 use crate::neo_contract::execution_context_state::ExecutionContextState;
 use crate::neo_contract::idiagnostic::IDiagnostic;
 use crate::neo_contract::interop_descriptor::InteropDescriptor;
@@ -28,6 +29,7 @@ use crate::neo_contract::manifest::contract_method_descriptor::ContractMethodDes
 use crate::neo_contract::native_contract::NativeContract;
 use crate::neo_contract::nef_file::NefFile;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
+use crate::neo_contract::storage_key::StorageKey;
 use crate::neo_contract::trigger_type::TriggerType;
 use crate::network::Payloads::{IVerifiable, Transaction, Witness};
 use crate::persistence::DataCache;
@@ -45,9 +47,9 @@ pub struct ApplicationEngine {
     pub(crate) current_context: Option<Rc<RefCell<ExecutionContext>>>,
     invocation_counter: HashMap<UInt160, i32>,
     notifications: Vec<NotifyEventArgs>,
-    state_cache: DataCache,
+    state_cache: dyn DataCache,
     pub(crate) protocol_settings: Arc<ProtocolSettings>,
-    snapshot: DataCache,
+    snapshot: dyn DataCache,
     pub(crate) script_container: Option<Box<dyn IVerifiable>>,
     pub(crate) persisting_block: Option<Block>,
     disposables: Vec<Box<dyn Drop>>,
@@ -64,7 +66,7 @@ impl ApplicationEngine {
     pub fn new(
         trigger: TriggerType,
         container: Option<Box<dyn IVerifiable>>,
-        snapshot: DataCache,
+        snapshot: dyn DataCache,
         persisting_block: Option<Block>,
         settings: Arc<ProtocolSettings>,
         gas: i64,
@@ -754,7 +756,7 @@ impl ApplicationEngine {
                 id,
                 update_counter: 0,
                 hash: UInt160::from_slice(&script).unwrap(),
-                nef: NEF::new(script, self.protocol_settings.network)?,
+                nef: NefFile::new(script, self.protocol_settings.network)?,
                 manifest,
             }
         };

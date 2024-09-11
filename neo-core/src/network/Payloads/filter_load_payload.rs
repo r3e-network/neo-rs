@@ -36,14 +36,10 @@ impl FilterLoadPayload {
         }
     }
 
-    /// Returns the size of the payload in bytes.
-    pub fn size(&self) -> usize {
-        self.filter.len() + size_of::<u8>() + size_of::<u32>()
-    }
 }
 
 impl ISerializable for FilterLoadPayload {
-    fn deserialize<R: io::Read>(reader: &mut BinaryReader<R>) -> io::Result<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let filter = reader.read_var_bytes(36000)?;
         let k = reader.read_u8()?;
         if k > 50 {
@@ -53,10 +49,14 @@ impl ISerializable for FilterLoadPayload {
         Ok(FilterLoadPayload { filter, k, tweak })
     }
 
-    fn serialize<W: io::Write>(&self, writer: &mut BinaryWriter<W>) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         writer.write_var_bytes(&self.filter)?;
         writer.write_u8(self.k)?;
         writer.write_u32(self.tweak)?;
         Ok(())
+    }
+    
+    fn size(&self) -> usize {
+        self.filter.len() + size_of::<u8>() + size_of::<u32>()
     }
 }

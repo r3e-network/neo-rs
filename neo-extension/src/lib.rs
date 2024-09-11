@@ -1,9 +1,7 @@
-mod assembly_extensions;
 mod big_integer_extensions;
 mod byte_extensions;
 mod date_time_extensions;
 mod random_extensions;
-mod secure_string_extensions;
 mod string_extensions;
 mod utility;
 
@@ -21,8 +19,6 @@ pub use utility::*;
 
 pub mod log_level;
 pub use log_level::*;
-
-
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right

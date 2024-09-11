@@ -1,6 +1,6 @@
 use crate::network::message_command::MessageCommand;
 
-/// Represents the type of an inventory.
+/// Represents the type of inventory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum InventoryType {

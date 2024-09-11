@@ -1,12 +1,8 @@
-
-use neo_sdk::{
-    prelude::*,
-    storage::{StorageContext, StorageMap},
-    types::{Block, Header, Transaction, UInt160, UInt256},
-    vm::VMState,
-};
 use std::collections::HashSet;
-use neo_proc_macros::contract;
+use neo_proc_macros::{contract, contract_method};
+use crate::neo_contract::storage_context::StorageContext;
+use crate::uint160::UInt160;
+use crate::uint256::UInt256;
 
 #[contract]
 pub struct LedgerContract {

@@ -1,8 +1,8 @@
-
-use neo_sdk::prelude::*;
-use neo_sdk::crypto::{ripemd160, sha256, murmur32, keccak256};
-use neo_sdk::ecc::{ECCurve, Hasher, NamedCurveHash};
 use std::collections::HashMap;
+use lazy_static::lazy_static;
+use neo_proc_macros::contract;
+use crate::cryptography::{ECCurve, Hasher};
+use crate::neo_contract::native_contract::named_curve_hash::NamedCurveHash;
 
 /// A native contract library that provides cryptographic algorithms.
 #[contract]

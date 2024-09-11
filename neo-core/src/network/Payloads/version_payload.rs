@@ -1,11 +1,8 @@
-use neo::extensions::*;
-use neo::io::*;
-use neo::network::p2p::capabilities::NodeCapability;
-use std::io::{Read, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
-use byteorder::LittleEndian;
 use NeoRust::prelude::{StringExt, VarSizeTrait};
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 use crate::network::Capabilities::NodeCapability;
 use crate::network::LocalNode;
 
@@ -34,11 +31,7 @@ pub struct VersionPayload {
 pub const MAX_CAPABILITIES: usize = 32;
 
 impl VersionPayload {
-    pub fn size(&self) -> usize {
-        std::mem::size_of::<u32>() * 4 + // Network + Version + Timestamp + Nonce
-        self.user_agent.var_size() +
-        self.capabilities.var_size()
-    }
+
 
     /// Creates a new instance of the VersionPayload struct.
     ///
@@ -68,40 +61,48 @@ impl VersionPayload {
 }
 
 impl ISerializable for VersionPayload {
-    fn deserialize<R: Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.network = reader.read_u32::<LittleEndian>()?;
-        self.version = reader.read_u32::<LittleEndian>()?;
-        self.timestamp = reader.read_u32::<LittleEndian>()?;
-        self.nonce = reader.read_u32::<LittleEndian>()?;
-        self.user_agent = reader.read_var_string(1024)?;
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+        let network = reader.read_u32()?;
+        let version = reader.read_u32()?;
+        let timestamp = reader.read_u32()?;
+        let nonce = reader.read_u32()?;
+        let user_agent = reader.read_var_string(1024)?;
 
-        let cap_count = reader.read_var_int(MAX_CAPABILITIES)?;
-        self.capabilities = Vec::with_capacity(cap_count);
+        let cap_count = reader.read_var_int(MAX_CAPABILITIES as u64)?;
+        let mut capabilities = Vec::with_capacity(cap_count as usize);
         for _ in 0..cap_count {
-            self.capabilities.push(NodeCapability::deserialize_from(reader)?);
+            capabilities.push(NodeCapability::deserialize_from(reader)?);
         }
 
-        if self.capabilities.iter().map(|c| c.get_type()).collect::<std::collections::HashSet<_>>().len() != self.capabilities.len() {
+        if capabilities.iter().map(|c| c.get_type()).collect::<std::collections::HashSet<_>>().len() != capabilities.len() {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Duplicate capability types"));
         }
 
-        Ok(())
+        Ok(Self {
+            network,
+            version,
+            timestamp,
+            nonce,
+            user_agent,
+            capabilities,
+        })
     }
 
-    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writer.write_u32::<LittleEndian>(self.network)?;
-        writer.write_u32::<LittleEndian>(self.version)?;
-        writer.write_u32::<LittleEndian>(self.timestamp)?;
-        writer.write_u32::<LittleEndian>(self.nonce)?;
-        writer.write_var_string(&self.user_agent)?;
-        writer.write_var_int(self.capabilities.len() as u64)?;
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        writer.write_u32(self.network);
+        writer.write_u32(self.version);
+        writer.write_u32(self.timestamp);
+        writer.write_u32(self.nonce);
+        writer.write_var_string(&self.user_agent);
+        writer.write_var_int(self.capabilities.len() as u64);
         for capability in &self.capabilities {
-            capability.serialize(writer)?;
+            capability.serialize(writer);
         }
-        Ok(())
     }
 
     fn size(&self) -> usize {
-        todo!()
+        std::mem::size_of::<u32>() * 4 + // Network + Version + Timestamp + Nonce
+        self.user_agent.var_size() +
+        self.capabilities.var_size()
     }
 }

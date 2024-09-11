@@ -41,7 +41,7 @@ impl ISerializable for OracleResponse {
         todo!()
     }
 
-    fn deserialize(&mut self, reader: &mut MemoryReader) {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         todo!()
     }
 }
@@ -82,9 +82,9 @@ impl TransactionAttribute for OracleResponse {
 
     fn to_json(&self) -> JToken {
         let mut json = JToken::new_object();
-        json.insert("id", JValue::Number(self.id.into()));
-        json.insert("code", JValue::Number(self.code as u8 as i64));
-        json.insert("result", JValue::String(base64::encode(&self.result)));
+        json.insert("id".to_string(), JValue::Number(self.id.into()));
+        json.insert("code".to_string(), JValue::Number(self.code as u8 as i64));
+        json.insert("result".to_string(), JValue::String(base64::encode(&self.result)));
         json
     }
 

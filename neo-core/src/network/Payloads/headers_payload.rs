@@ -21,22 +21,18 @@ impl HeadersPayload {
         HeadersPayload { headers }
     }
 
-    /// Returns the size of the payload.
-    pub fn size(&self) -> usize {
-        self.headers.len() * std::mem::size_of::<Header>()
-    }
 }
 
 impl ISerializable for HeadersPayload {
     fn size(&self) -> usize {
-        todo!()
+        self.headers.len() * std::mem::size_of::<Header>()
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), io::Error> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         writer.write_serializable_list(&self.headers)
     }
 
-    fn deserialize(&mut self, reader: &mut MemoryReader) -> Result<Self, io::Error> {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let headers = reader.read_serializable_list::<Header>(Self::MAX_HEADERS_COUNT)?;
         if headers.is_empty() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Empty headers list"));

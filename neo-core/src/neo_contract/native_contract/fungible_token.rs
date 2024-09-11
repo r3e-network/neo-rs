@@ -1,4 +1,3 @@
-
 use std::sync::Arc;
 use std::collections::HashSet;
 use NeoRust::contract::ContractManagement;

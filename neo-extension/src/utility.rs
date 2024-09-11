@@ -1,14 +1,14 @@
-use std::sync::{Arc, Mutex};
-use tokio::sync::Mutex;
 use log::{Level, Record};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub type LogEventHandler = Arc<Mutex<dyn Fn(&str, Level, &str) + Send + Sync>>;
 
 /// A utility module that provides common functions.
 pub mod utility {
     use super::*;
-    use std::sync::Once;
     use encoding_rs::UTF_8;
+    use std::sync::Once;
 
     static LOGGING: Once = Once::new();
     static mut LOGGING_HANDLER: Option<LogEventHandler> = None;
@@ -37,10 +37,8 @@ pub mod utility {
 
     /// Sets the logging handler
     pub fn set_logging_handler(handler: LogEventHandler) {
-        LOGGING.call_once(|| {
-            unsafe {
-                LOGGING_HANDLER = Some(handler);
-            }
+        LOGGING.call_once(|| unsafe {
+            LOGGING_HANDLER = Some(handler);
         });
     }
 

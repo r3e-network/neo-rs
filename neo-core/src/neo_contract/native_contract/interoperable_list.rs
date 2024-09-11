@@ -1,6 +1,3 @@
-
-use neo::prelude::*;
-use neo::vm::types::{Array, StackItem};
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use neo_vm::reference_counter::ReferenceCounter;

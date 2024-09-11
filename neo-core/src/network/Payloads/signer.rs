@@ -1,15 +1,8 @@
-use neo_crypto::ecc::ECPoint;
-use neo_io::{BinaryReader, BinaryWriter, Serializable};
-use neo_json::json::{JObject, JArray};
-use neo_network::p2p::payloads::conditions::{WitnessRule, WitnessRuleAction, BooleanCondition, CalledByEntryCondition, ScriptHashCondition, GroupCondition};
-use neo_smart_contract::UInt160;
-use neo_vm::types::{StackItem, Array, ByteString};
-use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
-use NeoRust::crypto::ECPoint;
 use crate::cryptography::ECPoint;
-use crate::network::Payloads::WitnessRule;
+use crate::network::Payloads::{WitnessRule, WitnessRuleAction};
+use crate::network::Payloads::Conditions::{BooleanCondition, ScriptHashCondition};
 use crate::uint160::UInt160;
 
 const MAX_SUBITEMS: usize = 16;
@@ -42,7 +35,7 @@ impl Signer {
         if self.scopes.contains(WitnessScope::WitnessRules) { self.rules.iter().map(|r| r.size()).sum::<usize>() } else { 0 }
     }
 
-    pub fn deserialize<R: Read>(reader: &mut R) -> io::Result<Self> {
+    pub fn deserialize(reader: &mut MemoryReader) -> io::Result<Self, std::io::Error> {
         let account = UInt160::deserialize(reader)?;
         let scopes = WitnessScope::try_from(reader.read_u8()?)?;
 

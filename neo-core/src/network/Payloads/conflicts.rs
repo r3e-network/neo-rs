@@ -20,7 +20,7 @@ impl ISerializable for Conflicts {
         todo!()
     }
 
-    fn deserialize(&mut self, reader: &mut MemoryReader) {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         todo!()
     }
 }

@@ -6,7 +6,7 @@ use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
-use crate::network::Payloads::Conditions::WitnessCondition;
+use crate::network::Payloads::Conditions::{WitnessCondition, MAX_NESTING_DEPTH};
 use super::WitnessRuleAction;
 
 /// The rule used to describe the scope of the witness.
@@ -24,18 +24,18 @@ impl ISerializable for WitnessRule {
         std::mem::size_of::<WitnessRuleAction>() + self.condition.size()
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> io::Result<()> {
-        writer.write_u8(self.action as u8)?;
-        self.condition.serialize(writer)
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        writer.write_u8(self.action as u8);
+        self.condition.serialize(writer).expect("TODO: panic message");
     }
 
-    fn deserialize(&mut self, reader: &mut MemoryReader) -> io::Result<()> {
-        self.action = WitnessRuleAction::try_from(reader.read_u8()?)?;
-        if self.action != WitnessRuleAction::Allow && self.action != WitnessRuleAction::Deny {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+        let action = WitnessRuleAction::try_from(reader.read_u8()?)?;
+        if action != WitnessRuleAction::Allow && action != WitnessRuleAction::Deny {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid WitnessRuleAction"));
         }
-        self.condition = WitnessCondition::deserialize_from(reader, WitnessCondition::MAX_NESTING_DEPTH)?;
-        Ok(())
+        let condition = WitnessCondition::deserialize_from(reader, MAX_NESTING_DEPTH)?;
+        Ok(Self { action, condition })
     }
 }
 
@@ -57,9 +57,10 @@ impl WitnessRule {
     /// Converts the rule to a JSON object.
     pub fn to_json(&self) -> JToken {
         JToken::new_object()
-            .insert("action", JValue::from(self.action as u8))
+            .insert("action".to_string(), JValue::from(self.action as u8))
             .unwrap()
-            .insert("condition", self.condition.to_json())
+            .insert("condition".to_string(), self.condition.to_json())
+
     }
 
     pub fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {

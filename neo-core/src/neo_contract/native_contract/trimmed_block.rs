@@ -1,7 +1,10 @@
+use NeoRust::prelude::VarSizeTrait;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::block::Header;
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::uint256::UInt256;
 
@@ -26,23 +29,21 @@ impl TrimmedBlock {
         self.header.index()
     }
 
-    pub fn size(&self) -> usize {
-        self.header.size() + self.hashes.var_size()
-    }
+
 }
 
 impl ISerializable for TrimmedBlock {
-    fn size(&self) -> usize {
-        todo!()
+     fn size(&self) -> usize {
+        self.header.size() + self.hashes.var_size()
     }
 
-    fn serialize(&self, writer: &mut Writer) -> Result<(), Error> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         self.header.serialize(writer)?;
         writer.write_var_vec(&self.hashes)?;
         Ok(())
     }
 
-    fn deserialize(reader: &mut Reader) -> Result<Self, Error> {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let header = Header::deserialize(reader)?;
         let hashes = reader.read_var_vec::<UInt256>(u16::MAX as usize)?;
         Ok(Self { header, hashes })

@@ -1,15 +1,15 @@
-
 use std::convert::TryInto;
-use NeoRust::prelude::ECPoint;
-use neo_proc_macros::contract;
+use neo_proc_macros::{contract, contract_impl};
+use crate::cryptography::ECPoint;
 use crate::neo_contract::storage_item::StorageItem;
 
 /// A native contract for managing roles in NEO system.
+#[contract]
 pub struct RoleManagement {
     storage: StorageMap,
 }
 
-#[contract]
+#[contract_impl]
 impl RoleManagement {
     pub fn new() -> Self {
         Self {

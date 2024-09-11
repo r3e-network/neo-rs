@@ -39,7 +39,7 @@ impl ExecutionContextState {
             calling_context: None,
             native_calling_script_hash: None,
             contract: None,
-            call_flags: CallFlags::All,
+            call_flags: CallFlags::ALL,
             snapshot_cache: None,
             notification_count: 0,
             is_dynamic_call: false,

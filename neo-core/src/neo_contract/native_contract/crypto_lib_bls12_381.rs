@@ -3,6 +3,7 @@ use neo::prelude::*;
 use neo::sys::InteropInterface;
 use neo::types::{G1Affine, G1Projective, G2Affine, G2Projective, Gt, Scalar};
 use neo::vm_api::Bls12;
+use neo_proc_macros::contract_method;
 
 pub struct CryptoLib;
 

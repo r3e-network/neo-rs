@@ -1,42 +1,28 @@
-
-
 use std::collections::HashMap;
-use neo_proc_macros::contract;
+use neo_proc_macros::{contract, contract_method};
 
 /// A native contract that manages the system policies.
 #[contract]
 pub struct PolicyContract {
-    /// The default execution fee factor.
+
+}
+
+impl PolicyContract {
+
     pub const DEFAULT_EXEC_FEE_FACTOR: u32 = 30;
-
-    /// The default storage price.
     pub const DEFAULT_STORAGE_PRICE: u32 = 100000;
-
-    /// The default network fee per byte of transactions.
-    /// In the unit of datoshi, 1 datoshi = 1e-8 GAS
     pub const DEFAULT_FEE_PER_BYTE: u32 = 1000;
-
-    /// The default fee for attribute.
     pub const DEFAULT_ATTRIBUTE_FEE: u32 = 0;
-
-    /// The maximum execution fee factor that the committee can set.
     pub const MAX_EXEC_FEE_FACTOR: u32 = 100;
-
-    /// The maximum fee for attribute that the committee can set.
-    pub const MAX_ATTRIBUTE_FEE: u32 = 10_0000_0000;
-
-    /// The maximum storage price that the committee can set.
-    pub const MAX_STORAGE_PRICE: u32 = 10000000;
+    pub const MAX_ATTRIBUTE_FEE: u32 = 1_000_000_000;
+    pub const MAX_STORAGE_PRICE: u32 = 10_000_000;
 
     const PREFIX_BLOCKED_ACCOUNT: u8 = 15;
     const PREFIX_FEE_PER_BYTE: u8 = 10;
     const PREFIX_EXEC_FEE_FACTOR: u8 = 18;
     const PREFIX_STORAGE_PRICE: u8 = 19;
     const PREFIX_ATTRIBUTE_FEE: u8 = 20;
-}
 
-#[contract]
-impl PolicyContract {
     pub fn new() -> Self {
         Self {}
     }

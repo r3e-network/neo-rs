@@ -20,7 +20,7 @@ impl DeployedContract {
     /// # Panics
     ///
     /// Panics if the contract is null or if the smart contract doesn't have a verify method.
-    pub fn new(contract: &ContractState) -> Self {
+    pub fn new(contract: &mut ContractState) -> Self {
         if contract.is_none() {
             panic!("Contract is null");
         }

@@ -1,7 +1,7 @@
-use std::io::{Read, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
-use byteorder::LittleEndian;
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 
 /// Sent to detect whether the connection has been disconnected.
 pub struct PingPayload {
@@ -17,9 +17,6 @@ pub struct PingPayload {
 }
 
 impl PingPayload {
-    pub fn size(&self) -> usize {
-        std::mem::size_of::<u32>() * 3 // LastBlockIndex + Timestamp + Nonce
-    }
 
     /// Creates a new instance of the `PingPayload` struct.
     ///
@@ -59,20 +56,23 @@ impl PingPayload {
 
 impl ISerializable for PingPayload {
     fn size(&self) -> usize {
-        todo!()
+        std::mem::size_of::<u32>() * 3 // LastBlockIndex + Timestamp + Nonce
     }
 
-    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writer.write_u32::<LittleEndian>(self.last_block_index)?;
-        writer.write_u32::<LittleEndian>(self.timestamp)?;
-        writer.write_u32::<LittleEndian>(self.nonce)?;
-        Ok(())
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        writer.write_u32(self.last_block_index);
+        writer.write_u32(self.timestamp);
+        writer.write_u32(self.nonce);
     }
 
-    fn deserialize<R: Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.last_block_index = reader.read_u32::<LittleEndian>()?;
-        self.timestamp = reader.read_u32::<LittleEndian>()?;
-        self.nonce = reader.read_u32::<LittleEndian>()?;
-        Ok(())
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+        let last_block_index = reader.read_u32()?;
+        let timestamp = reader.read_u32()?;
+        let nonce = reader.read_u32()?;
+        Ok(Self {
+            last_block_index,
+            timestamp,
+            nonce,
+        })
     }
 }

@@ -9,23 +9,17 @@ pub struct FilterAddPayload {
     pub data: Cow<'static, [u8]>,
 }
 
-impl FilterAddPayload {
-    pub fn size(&self) -> usize {
-        self.data.len()
-    }
-}
 
 impl ISerializable for FilterAddPayload {
     fn size(&self) -> usize {
-        todo!()
+        self.data.len()
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), std::io::Error> {
-        writer.write_var_bytes(&self.data)?;
-        Ok(())
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        writer.write_var_bytes(&self.data)
     }
 
-    fn deserialize(&mut self, reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let data = reader.read_var_bytes(520)?;
         Ok(FilterAddPayload { data: Cow::Owned(data) })
     }

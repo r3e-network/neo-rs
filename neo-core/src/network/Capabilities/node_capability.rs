@@ -1,10 +1,11 @@
 use std::io;
 use crate::io::binary_writer::BinaryWriter;
+use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::Capabilities::{FullNodeCapability, NodeCapabilityType, ServerCapability};
 
 /// Represents the capabilities of a NEO node.
-pub trait NodeCapability {
+pub trait NodeCapability : ISerializable{
     /// Indicates the type of the NodeCapability.
     fn capability_type(&self) -> NodeCapabilityType;
 
@@ -38,5 +39,16 @@ pub trait NodeCapability {
         writer.write_u8(self.capability_type() as u8);
         self.serialize_without_type(writer);
         Ok(())
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> Result<Box<dyn NodeCapability>, std::io::Error> {
+        let capability_type = NodeCapabilityType::try_from(reader.read_u8()?)?;
+        let mut capability: Box<dyn NodeCapability> = match capability_type {
+            NodeCapabilityType::TcpServer | NodeCapabilityType::WsServer => Box::new(ServerCapability::new(capability_type)),
+            NodeCapabilityType::FullNode => Box::new(FullNodeCapability::new()),
+            _ => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid capability type")),
+        };
+        capability.deserialize_without_type(reader)?;
+        Ok(capability)
     }
 }

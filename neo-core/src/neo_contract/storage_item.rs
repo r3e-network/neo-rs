@@ -48,10 +48,6 @@ impl StorageItem {
         }
     }
 
-    pub fn size(&self) -> usize {
-        self.value().len()
-    }
-
     pub fn value(&self) -> Vec<u8> {
         match &self.value {
             Some(v) => v.clone(),
@@ -127,15 +123,14 @@ impl StorageItem {
 
 impl ISerializable for StorageItem {
     fn size(&self) -> usize {
-        todo!()
+        self.value().len()
     }
 
-    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         writer.write_all(&self.value())?;
-        Ok(())
     }
 
-    fn deserialize<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let mut buffer = Vec::new();
         reader.read_to_end(&mut buffer)?;
         Ok(StorageItem::from_bytes(buffer))

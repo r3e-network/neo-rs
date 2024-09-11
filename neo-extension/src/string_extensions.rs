@@ -21,8 +21,10 @@ impl StringExtensions for str {
         }
         (0..self.len())
             .step_by(2)
-            .map(|i| u8::from_str_radix(&self[i..i + 2], 16)
-                .map_err(|e| format!("Invalid hex character: {}", e)))
+            .map(|i| {
+                u8::from_str_radix(&self[i..i + 2], 16)
+                    .map_err(|e| format!("Invalid hex character: {}", e))
+            })
             .collect()
     }
 }

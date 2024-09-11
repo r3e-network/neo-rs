@@ -4,7 +4,10 @@ use std::mem;
 use NeoRust::prelude::VarSizeTrait;
 use neo_base::encoding::base64;
 use neo_json::jtoken::JToken;
+use crate::cryptography::Helper;
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 use crate::uint160::UInt160;
 
 /// Represents a witness of an `IVerifiable` object.
@@ -35,26 +38,26 @@ impl Witness {
         self.script_hash.unwrap()
     }
 
-    pub fn size(&self) -> usize {
-        self.invocation_script.var_size() + self.verification_script.var_size()
-    }
 }
 
 impl ISerializable for Witness {
     fn size(&self) -> usize {
-        todo!()
+        self.invocation_script.var_size() + self.verification_script.var_size()
     }
 
-    fn serialize<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         writer.write_var_bytes(&self.invocation_script)?;
         writer.write_var_bytes(&self.verification_script)?;
-        Ok(())
     }
 
-    fn deserialize<R: Read>(&mut self, reader: &mut R) -> io::Result<()> {
-        self.invocation_script = reader.read_var_bytes(Self::MAX_INVOCATION_SCRIPT)?;
-        self.verification_script = reader.read_var_bytes(Self::MAX_VERIFICATION_SCRIPT)?;
-        Ok(())
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+        let invocation_script = reader.read_var_bytes(Self::MAX_INVOCATION_SCRIPT)?;
+        let verification_script = reader.read_var_bytes(Self::MAX_VERIFICATION_SCRIPT)?;
+        Ok(Self {
+            invocation_script,
+            verification_script,
+            script_hash: None,
+        })
     }
 }
 

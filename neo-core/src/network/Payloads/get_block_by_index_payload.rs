@@ -31,25 +31,19 @@ impl GetBlockByIndexPayload {
             count,
         }
     }
-
-    /// Returns the size of the payload in bytes.
-    pub fn size(&self) -> usize {
-        std::mem::size_of::<u32>() + std::mem::size_of::<i16>()
-    }
 }
 
 impl ISerializable for GetBlockByIndexPayload {
     fn size(&self) -> usize {
-        todo!()
+        std::mem::size_of::<u32>() + std::mem::size_of::<i16>()
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) {
         writer.write_u32(self.index_start);
         writer.write_i16(self.count);
-        Ok(())
     }
 
-    fn deserialize(&mut self, reader: &mut BinaryReader) -> io::Result<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let index_start = reader.read_u32()?;
         let count = reader.read_i16()?;
 

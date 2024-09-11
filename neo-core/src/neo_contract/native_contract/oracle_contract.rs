@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use serde::{Deserialize, Serialize};
 use neo_proc_macros::{contract, event};
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
@@ -295,6 +296,12 @@ impl IdList {
 
     fn iter(&self) -> impl Iterator<Item = &u64> {
         self.0.iter()
+    }
+}
+
+impl Default for IdList {
+    fn default() -> Self {
+        todo!()
     }
 }
 

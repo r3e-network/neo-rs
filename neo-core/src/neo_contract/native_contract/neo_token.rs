@@ -1,7 +1,6 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use NeoRust::crypto::ECPoint;
 use neo_proc_macros::contract_method;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
