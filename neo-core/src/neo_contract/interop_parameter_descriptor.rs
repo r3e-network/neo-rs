@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::sync::Arc;
-use NeoRust::crypto::Secp256r1PublicKey;
 use neo_vm::stack_item::StackItem;
+use crate::cryptography::ECPoint;
 use crate::neo_contract::validator_attribute::ValidatorTrait;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
@@ -39,7 +38,7 @@ pub enum InteropParameterType {
     String,
     UInt160,
     UInt256,
-    Secp256r1PublicKey,
+    ECPoint,
     Enum(String),
     CustomArray(Box<InteropParameterType>),
 }
@@ -99,11 +98,11 @@ impl InteropParameterDescriptor {
                     Ok(Box::new(Some(UInt256::try_from(p.get_span()?)?)))
                 }
             },
-            InteropParameterType::Secp256r1PublicKey => |p| {
+            InteropParameterType::ECPoint => |p| {
                 if p.is_null() {
-                    Ok(Box::new(None::<Secp256r1PublicKey>))
+                    Ok(Box::new(None::<ECPoint>))
                 } else {
-                    Ok(Box::new(Some(Secp256r1PublicKey::from_encoded(p.get_span()?))))
+                    Ok(Box::new(Some(ECPoint::from_encoded(p.get_span()?))))
                 }
             },
             InteropParameterType::Enum(_) | InteropParameterType::CustomArray(_) => unimplemented!("Enum and CustomArray types are not yet implemented"),

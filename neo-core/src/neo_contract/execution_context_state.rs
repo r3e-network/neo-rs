@@ -23,7 +23,7 @@ pub struct ExecutionContextState {
     pub call_flags: CallFlags,
 
     /// The snapshot cache.
-    pub snapshot_cache: Option<DataCache>,
+    pub snapshot_cache: Option<dyn DataCache>,
 
     /// The notification count.
     pub notification_count: i32,
@@ -39,7 +39,7 @@ impl ExecutionContextState {
             calling_context: None,
             native_calling_script_hash: None,
             contract: None,
-            call_flags: CallFlags::ALL,
+            call_flags: CallFlags::All,
             snapshot_cache: None,
             notification_count: 0,
             is_dynamic_call: false,
@@ -47,7 +47,7 @@ impl ExecutionContextState {
     }
 
     #[deprecated(note = "Use snapshot_cache instead")]
-    pub fn snapshot(&self) -> Option<&DataCache> {
+    pub fn snapshot(&self) -> Option<&dyn DataCache> {
         self.snapshot_cache.as_ref()
     }
 }

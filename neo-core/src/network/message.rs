@@ -1,24 +1,12 @@
 use std::io::{self, Write};
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
+use crate::network::MessageCommand;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageFlags {
     None = 0,
     Compressed = 1,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MessageCommand {
-    Block,
-    Extensible,
-    Transaction,
-    Headers,
-    Addr,
-    MerkleBlock,
-    FilterLoad,
-    FilterAdd,
-    // Add other variants as needed
 }
 
 pub struct Message {

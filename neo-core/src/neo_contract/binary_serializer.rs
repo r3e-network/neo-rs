@@ -3,6 +3,7 @@ use std::io::{Cursor, Write};
 use std::mem;
 use num_bigint::BigInt;
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use neo_vm::item_type::StackItemType;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::io::memory_reader::MemoryReader;
@@ -39,7 +40,7 @@ impl BinarySerializer {
                 StackItemType::ByteString => deserialized.push(StackItem::ByteString(reader.read_var_bytes(max_size)?)),
                 StackItemType::Buffer => {
                     let bytes = reader.read_var_bytes(max_size)?;
-                    deserialized.push(StackItem::Buffer(Buffer::from(bytes)));
+                    deserialized.push(StackItem::Buffer(bytes));
                 },
                 StackItemType::Array | StackItemType::Struct => {
                     let count = reader.read_var_int(max_items as u64)? as usize;

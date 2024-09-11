@@ -75,26 +75,6 @@ impl<T> ContractTask<T> {
     }
 }
 
-pub struct ContractTaskAwaiter<T> {
-    _phantom: PhantomData<T>,
-}
-
-impl<T> ContractTaskAwaiter<T> {
-    pub fn new() -> Self {
-        Self {
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn set_exception(&mut self, _exception: Box<dyn std::error::Error>) {
-        // Implementation details omitted
-    }
-
-    pub fn set_result(&mut self, _result: T) {
-        // Implementation details omitted
-    }
-}
-
 pub trait NotifyCompletion {
     fn on_completed(&mut self, continuation: Box<dyn FnOnce()>);
 }

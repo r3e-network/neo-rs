@@ -1,4 +1,4 @@
-use NeoRust::crypto::Secp256r1PublicKey;
+use NeoRust::crypto::ECPoint;
 use neo_base::encoding::base64;
 use neo_vm::stack_item::StackItem;
 use crate::io::iserializable::ISerializable;
@@ -9,7 +9,7 @@ use crate::io::iserializable::ISerializable;
 #[derive(Clone, Debug)]
 pub struct ContractGroup {
     /// The public key of the group.
-    pub pub_key: Secp256r1PublicKey,
+    pub pub_key: ECPoint,
 
     /// The signature of the contract hash which can be verified by `pub_key`.
     pub signature: Vec<u8>,
@@ -22,7 +22,7 @@ impl ISerializable for ContractGroup {
                 return Err(Error::InvalidStructure);
             }
             Ok(ContractGroup {
-                pub_key: Secp256r1PublicKey::decode_point(&s[0].as_bytes()?, Secp256r1)?,
+                pub_key: ECPoint::decode_point(&s[0].as_bytes()?, Secp256r1)?,
                 signature: s[1].as_bytes()?.to_vec(),
             })
         } else {
@@ -49,7 +49,7 @@ impl ContractGroup {
     ///
     /// The converted group.
     pub fn from_json(json: &JsonValue) -> Result<Self, Error> {
-        let pub_key = Secp256r1PublicKey::parse(
+        let pub_key = ECPoint::parse(
             json["pubkey"].as_str().ok_or(Error::InvalidFormat)?,
             Secp256r1,
         )?;

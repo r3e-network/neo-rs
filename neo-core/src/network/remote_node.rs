@@ -1,12 +1,10 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, IpAddr};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use tokio::sync::mpsc;
-use tokio::time::interval;
+use std::time::{ Instant};
 use crate::io::caching::HashSetCache;
 use crate::neo_system::NeoSystem;
+use crate::network::{Message, MessageCommand};
 use crate::network::Payloads::VersionPayload;
 use crate::network::peer::Peer;
 use crate::uint256::UInt256;

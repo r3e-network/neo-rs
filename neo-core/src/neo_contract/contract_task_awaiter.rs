@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex};
 use std::cell::RefCell;
 use std::rc::Rc;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::interop_parameter_descriptor::InteropParameterDescriptor;
 
 pub struct ContractTaskAwaiter {
     continuation: RefCell<Option<Box<dyn FnOnce()>>>,

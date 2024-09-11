@@ -34,7 +34,7 @@ impl InvPayload {
 
 impl ISerializable for InvPayload {
     fn size(&self) -> usize {
-        std::mem::size_of::<InventoryType>() + var_vec_size(&self.hashes)
+        std::mem::size_of::<InventoryType>() + &self.hashes.var_vec_size()
     }
 
     fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {

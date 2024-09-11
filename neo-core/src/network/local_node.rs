@@ -2,12 +2,11 @@ use tokio::sync::{mpsc, oneshot, RwLock};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::time::SystemTime;
 use neo_crypto::rand;
 use crate::io::iserializable::ISerializable;
 use crate::neo_system::NeoSystem;
 use crate::network::Payloads::IInventory;
-use crate::network::{MessageCommand, RemoteNode};
+use crate::network::{Message, MessageCommand, RemoteNode};
 
 pub struct LocalNode {
     system: Arc<NeoSystem>,

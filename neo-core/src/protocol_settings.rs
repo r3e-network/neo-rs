@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
-use NeoRust::crypto::Secp256r1PublicKey;
+use NeoRust::crypto::ECPoint;
 use crate::hardfork::Hardfork;
 
 /// Represents the protocol settings of the NEO system.
@@ -13,7 +13,7 @@ pub struct ProtocolSettings {
     pub address_version: u8,
 
     /// The public keys of the standby committee members.
-    pub standby_committee: Vec<Secp256r1PublicKey>,
+    pub standby_committee: Vec<ECPoint>,
 
     /// The number of the validators in NEO system.
     pub validators_count: usize,
@@ -56,7 +56,7 @@ impl ProtocolSettings {
     }
 
     /// The public keys of the standby validators.
-    pub fn standby_validators(&self) -> Vec<Secp256r1PublicKey> {
+    pub fn standby_validators(&self) -> Vec<ECPoint> {
         self.standby_committee.iter().take(self.validators_count).cloned().collect()
     }
 

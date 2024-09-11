@@ -1,16 +1,13 @@
-use neo_io::*;
-use neo_json::*;
-use neo_persistence::*;
-use neo_smart_contract::*;
-use neo_smart_contract::native::*;
-use neo_vm::*;
 use std::convert::TryFrom;
 use std::io::{self, Write};
 use NeoRust::builder::ScriptBuilder;
 use NeoRust::codec::VarSizeTrait;
 use neo_json::jtoken::JToken;
+use crate::io::binary_writer::BinaryWriter;
+use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
-use crate::network::Payloads::{OracleResponseCode, TransactionAttribute, TransactionAttributeType};
+use crate::network::Payloads::{OracleResponseCode, Transaction, TransactionAttribute, TransactionAttributeType, WitnessScope};
+use crate::persistence::DataCache;
 
 pub struct OracleResponse {
     /// The ID of the oracle request.
@@ -33,6 +30,20 @@ impl OracleResponse {
         sb.contract_call(NativeContract::Oracle.hash(), "finish");
         sb.to_vec()
     };
+}
+
+impl ISerializable for OracleResponse {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        todo!()
+    }
+
+    fn deserialize(&mut self, reader: &mut MemoryReader) {
+        todo!()
+    }
 }
 
 impl TransactionAttribute for OracleResponse {
@@ -77,7 +88,7 @@ impl TransactionAttribute for OracleResponse {
         json
     }
 
-    fn verify(&self, snapshot: &DataCache, tx: &Transaction) -> bool {
+    fn verify(&self, snapshot: &dyn DataCache, tx: &Transaction) -> bool {
         if tx.signers.iter().any(|p| p.scopes != WitnessScope::None) {
             return false;
         }

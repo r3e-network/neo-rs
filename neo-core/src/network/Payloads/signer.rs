@@ -1,4 +1,4 @@
-use neo_crypto::ecc::Secp256r1PublicKey;
+use neo_crypto::ecc::ECPoint;
 use neo_io::{BinaryReader, BinaryWriter, Serializable};
 use neo_json::json::{JObject, JArray};
 use neo_network::p2p::payloads::conditions::{WitnessRule, WitnessRuleAction, BooleanCondition, CalledByEntryCondition, ScriptHashCondition, GroupCondition};
@@ -7,7 +7,8 @@ use neo_vm::types::{StackItem, Array, ByteString};
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
-use NeoRust::crypto::Secp256r1PublicKey;
+use NeoRust::crypto::ECPoint;
+use crate::cryptography::ECPoint;
 use crate::network::Payloads::WitnessRule;
 use crate::uint160::UInt160;
 
@@ -18,7 +19,7 @@ pub struct Signer {
     pub account: UInt160,
     pub scopes: WitnessScope,
     pub allowed_contracts: Vec<UInt160>,
-    pub allowed_groups: Vec<Secp256r1PublicKey>,
+    pub allowed_groups: Vec<ECPoint>,
     pub rules: Vec<WitnessRule>,
 }
 
@@ -37,7 +38,7 @@ impl Signer {
         UInt160::len() +
         std::mem::size_of::<WitnessScope>() +
         if self.scopes.contains(WitnessScope::CustomContracts) { self.allowed_contracts.len() * UInt160::len() } else { 0 } +
-        if self.scopes.contains(WitnessScope::CustomGroups) { self.allowed_groups.len() * Secp256r1PublicKey::len() } else { 0 } +
+        if self.scopes.contains(WitnessScope::CustomGroups) { self.allowed_groups.len() * ECPoint::len() } else { 0 } +
         if self.scopes.contains(WitnessScope::WitnessRules) { self.rules.iter().map(|r| r.size()).sum::<usize>() } else { 0 }
     }
 
@@ -66,7 +67,7 @@ impl Signer {
         let allowed_groups = if scopes.contains(WitnessScope::CustomGroups) {
             let mut groups = Vec::new();
             for _ in 0..MAX_SUBITEMS {
-                groups.push(Secp256r1PublicKey::deserialize(reader)?);
+                groups.push(ECPoint::deserialize(reader)?);
             }
             groups
         } else {
@@ -170,7 +171,7 @@ impl Signer {
             json.get("allowedgroups").ok_or("Missing allowedgroups")?
                 .as_array().ok_or("Invalid allowedgroups")?
                 .iter()
-                .map(|p| Secp256r1PublicKey::from_str(p.as_str().ok_or("Invalid group")?))
+                .map(|p| ECPoint::from_str(p.as_str().ok_or("Invalid group")?))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             Vec::new()

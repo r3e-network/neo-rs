@@ -1,4 +1,4 @@
-use core::fmt::{Debug, Formatter};
+use core::fmt::{Debug};
 use neo_json::jtoken::JToken;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
@@ -31,7 +31,7 @@ impl WitnessCondition for BooleanCondition {
     }
 
     fn serialize_without_type(&self, writer: &mut BinaryWriter) {
-        writer.write_bool(self.expression).unwrap();
+        writer.write_bool(self.expression);
     }
 
     fn parse_json(&mut self, json: &JToken, _max_nest_depth: i32) {
@@ -40,7 +40,7 @@ impl WitnessCondition for BooleanCondition {
 
     fn to_json(&self) -> JToken {
         let mut json = <Self as WitnessCondition>::to_json(self);
-        json.insert("expression", self.expression.into());
+        json.insert("expression".to_string(), self.expression.into()).expect("TODO: panic message");
         json
     }
 

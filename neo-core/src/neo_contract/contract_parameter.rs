@@ -1,14 +1,16 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt;
-use NeoRust::crypto::Secp256r1PublicKey;
+use NeoRust::crypto::ECPoint;
 use num_bigint::BigInt;
+use neo_json::jtoken::JToken;
+use crate::cryptography::ECCurve;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 
 /// Represents a parameter of a smart contract method.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContractParameter {
     /// The type of the parameter.
     pub param_type: ContractParameterType,
@@ -18,7 +20,7 @@ pub struct ContractParameter {
 }
 
 /// Represents the possible values of smart contract parameters.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone,Eq, PartialEq)]
 pub enum ContractParameterValue {
     Any,
     Signature(Vec<u8>),
@@ -27,7 +29,7 @@ pub enum ContractParameterValue {
     Hash160(UInt160),
     Hash256(UInt256),
     ByteArray(Vec<u8>),
-    PublicKey(Secp256r1PublicKey),
+    PublicKey(ECPoint),
     String(String),
     Array(Vec<ContractParameter>),
     Map(HashMap<ContractParameter, ContractParameter>),
@@ -57,7 +59,7 @@ impl ContractParameter {
     }
 
     /// Converts the parameter from a JSON object.
-    pub fn from_json(json: &JObject) -> Result<Self, String> {
+    pub fn from_json(json: &JToken) -> Result<Self, String> {
         let type_str = json.get("type")
             .and_then(|v| v.as_str())
             .ok_or("Missing or invalid 'type' field")?;
@@ -86,7 +88,7 @@ impl ContractParameter {
             ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(UInt160::try_from(value.as_str().ok_or("Invalid Hash160 value")?).map_err(|e| e.to_string())?)),
             ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(UInt256::try_from(value.as_str().ok_or("Invalid Hash256 value")?).map_err(|e| e.to_string())?)),
             ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(hex::decode(value.as_str().ok_or("Invalid ByteArray value")?).map_err(|e| e.to_string())?)),
-            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(Secp256r1PublicKey::try_from(value.as_str().ok_or("Invalid PublicKey value")?).map_err(|e| e.to_string())?)),
+            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECPoint::try_from(value.as_str().ok_or("Invalid PublicKey value")?).map_err(|e| e.to_string())?)),
             ContractParameterType::String => Some(ContractParameterValue::String(value.as_str().ok_or("Invalid string value")?.to_string())),
             ContractParameterType::Array => {
                 let array = value.as_array().ok_or("Invalid array value")?;
@@ -121,7 +123,7 @@ impl ContractParameter {
             ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(UInt160::try_from(text).map_err(|e| e.to_string())?)),
             ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(UInt256::try_from(text).map_err(|e| e.to_string())?)),
             ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(hex::decode(text).map_err(|e| e.to_string())?)),
-            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(Secp256r1PublicKey::try_from(text).map_err(|e| e.to_string())?)),
+            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECPoint::try_from(text).map_err(|e| e.to_string())?)),
             ContractParameterType::String => Some(ContractParameterValue::String(text.to_string())),
             ContractParameterType::Array | ContractParameterType::Map => return Err("Cannot set Array or Map from string".to_string()),
         };
@@ -129,7 +131,7 @@ impl ContractParameter {
     }
 
     /// Converts the parameter to a JSON object.
-    pub fn to_json(&self) -> JObject {
+    pub fn to_json(&self) -> JToken {
         let mut json = JObject::new();
         json.insert("type", JValue::from(format!("{:?}", self.param_type)));
         

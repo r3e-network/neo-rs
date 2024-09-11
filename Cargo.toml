@@ -17,7 +17,7 @@ members = [
     "neo-proc-macros",
     "neo-vm",
     "neo-json",
-    "neo-cli",
+    "neo-cli", "neo-extension",
 ]
 
 [workspace.dependencies]

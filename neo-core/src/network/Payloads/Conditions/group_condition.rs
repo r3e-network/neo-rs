@@ -1,6 +1,7 @@
 use std::io::{Read, Write};
-use NeoRust::prelude::{NeoSerializable, Secp256r1PublicKey};
+use NeoRust::prelude::{NeoSerializable};
 use serde::Deserialize;
+use crate::cryptography::ECPoint;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::network::Payloads::Conditions::{WitnessCondition, WitnessConditionType};
@@ -8,7 +9,7 @@ use crate::network::Payloads::Conditions::{WitnessCondition, WitnessConditionTyp
 #[derive(Debug)]
 pub struct GroupCondition {
     /// The group to be checked.
-    pub group: Secp256r1PublicKey,
+    pub group: ECPoint,
 }
 
 impl WitnessCondition for GroupCondition {
@@ -21,7 +22,7 @@ impl WitnessCondition for GroupCondition {
     }
 
     fn deserialize_without_type(&mut self, reader: &mut dyn Read, max_nest_depth: i32) -> std::io::Result<()> {
-        self.group = Secp256r1PublicKey::deserialize(reader)?;
+        self.group = ECPoint::deserialize(reader)?;
         Ok(())
     }
 
@@ -39,7 +40,7 @@ impl WitnessCondition for GroupCondition {
     }
 
     fn parse_json(&mut self, json: &JsonValue, max_nest_depth: i32) -> Result<(), json::Error> {
-        self.group = Secp256r1PublicKey::from_str(json["group"].as_str().ok_or(json::Error::WrongType)?)
+        self.group = ECPoint::from_str(json["group"].as_str().ok_or(json::Error::WrongType)?)
             .map_err(|_| json::Error::WrongType)?;
         Ok(())
     }
@@ -61,7 +62,7 @@ impl WitnessCondition for GroupCondition {
 }
 
 impl GroupCondition {
-    pub fn new(group: Secp256r1PublicKey) -> Self {
+    pub fn new(group: ECPoint) -> Self {
         Self { group }
     }
 }

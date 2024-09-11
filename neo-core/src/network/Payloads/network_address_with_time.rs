@@ -1,12 +1,9 @@
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::time::{SystemTime, UNIX_EPOCH};
-use neo_io::{BinaryReader, BinaryWriter, Serializable};
-use crate::io::add;
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::network::Capabilities::{NodeCapability, NodeCapabilityType};
-use crate::network::p2p::capabilities::{NodeCapability, NodeCapabilityType, ServerCapability};
 
 /// Sent with an `AddrPayload` to respond to `MessageCommand::GetAddr` messages.
 pub struct NetworkAddressWithTime {

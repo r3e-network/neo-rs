@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use NeoRust::crypto::Secp256r1PublicKey;
+use NeoRust::crypto::ECPoint;
 use neo_proc_macros::contract_method;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
@@ -119,7 +119,7 @@ impl NeoToken {
     }
 
     #[contract_method(cpu_fee = 1 << 17, storage_fee = 50)]
-    pub fn register_candidate(&self, engine: &mut ApplicationEngine, pubkey: Secp256r1PublicKey) -> bool {
+    pub fn register_candidate(&self, engine: &mut ApplicationEngine, pubkey: ECPoint) -> bool {
         if !pubkey.is_valid() {
             return false;
         }
@@ -139,7 +139,7 @@ impl NeoToken {
     }
 
     #[contract_method(cpu_fee = 1 << 16, storage_fee = 50)]
-    pub fn unregister_candidate(&self, engine: &mut ApplicationEngine, pubkey: Secp256r1PublicKey) -> bool {
+    pub fn unregister_candidate(&self, engine: &mut ApplicationEngine, pubkey: ECPoint) -> bool {
         if !pubkey.is_valid() {
             return false;
         }
@@ -159,7 +159,7 @@ impl NeoToken {
     }
 
     #[contract_method(cpu_fee = 1 << 16, storage_fee = 50)]
-    pub fn vote(&self, engine: &mut ApplicationEngine, account: UInt160, vote_to: Option<Secp256r1PublicKey>) -> bool {
+    pub fn vote(&self, engine: &mut ApplicationEngine, account: UInt160, vote_to: Option<ECPoint>) -> bool {
         if !engine.check_witness(&account) {
             return false;
         }
@@ -189,13 +189,13 @@ impl NeoToken {
         true
     }
 
-    pub fn get_candidates(&self, snapshot: &StorageContext) -> Vec<(Secp256r1PublicKey, Integer)> {
+    pub fn get_candidates(&self, snapshot: &StorageContext) -> Vec<(ECPoint, Integer)> {
         let prefix = self.create_storage_key(Self::PREFIX_CANDIDATE_STATE);
         snapshot.find(prefix.as_slice(), None)
             .filter_map(|(_, value)| {
                 let state: CandidateState = value.get_interoperable();
                 if state.registered {
-                    Some((Secp256r1PublicKey::decode_point(&value.key[1..], ECCurve::Secp256r1).unwrap(), state.votes))
+                    Some((ECPoint::decode_point(&value.key[1..], ECCurve::Secp256r1).unwrap(), state.votes))
                 } else {
                     None
                 }
@@ -203,17 +203,17 @@ impl NeoToken {
             .collect()
     }
 
-    pub fn get_all_candidates(&self, snapshot: &StorageContext) -> Vec<(Secp256r1PublicKey, bool, Integer)> {
+    pub fn get_all_candidates(&self, snapshot: &StorageContext) -> Vec<(ECPoint, bool, Integer)> {
         let prefix = self.create_storage_key(Self::PREFIX_CANDIDATE_STATE);
         snapshot.find(prefix.as_slice(), None)
             .map(|(_, value)| {
                 let state: CandidateState = value.get_interoperable();
-                (Secp256r1PublicKey::decode_point(&value.key[1..], ECCurve::Secp256r1).unwrap(), state.registered, state.votes)
+                (ECPoint::decode_point(&value.key[1..], ECCurve::Secp256r1).unwrap(), state.registered, state.votes)
             })
             .collect()
     }
 
-    pub fn get_committee(&self, snapshot: &StorageContext) -> Vec<Secp256r1PublicKey> {
+    pub fn get_committee(&self, snapshot: &StorageContext) -> Vec<ECPoint> {
         let key = self.create_storage_key(Self::PREFIX_COMMITTEE);
         snapshot.get(&key)
             .map(|value| value.get_interoperable())
@@ -243,7 +243,7 @@ impl NeoToken {
     }
 
     #[contract_method(cpu_fee = 1 << 15)]
-    pub fn get_candidate_vote(&self, snapshot: &StorageContext, pubkey: Secp256r1PublicKey) -> Integer {
+    pub fn get_candidate_vote(&self, snapshot: &StorageContext, pubkey: ECPoint) -> Integer {
         if !pubkey.is_valid() {
             return Integer::zero();
         }
@@ -260,7 +260,7 @@ impl NeoToken {
 pub struct NeoAccountState {
     pub balance: Integer,
     pub balance_height: u32,
-    pub vote_to: Option<Secp256r1PublicKey>,
+    pub vote_to: Option<ECPoint>,
     pub last_gas_per_vote: Integer,
 }
 
@@ -272,7 +272,7 @@ impl IInteroperable for NeoAccountState {
             self.vote_to = if s[2].is_null() {
                 None
             } else {
-                Some(Secp256r1PublicKey::decode_point(&s[2].get_span(), ECCurve::Secp256r1).unwrap())
+                Some(ECPoint::decode_point(&s[2].get_span(), ECCurve::Secp256r1).unwrap())
             };
             self.last_gas_per_vote = s[3].clone().into();
         }
@@ -313,15 +313,15 @@ impl IInteroperable for CandidateState {
 }
 
 pub struct CommitteeState {
-    pub members: Vec<Secp256r1PublicKey>,
-    pub standby_members: Vec<Secp256r1PublicKey>,
+    pub members: Vec<ECPoint>,
+    pub standby_members: Vec<ECPoint>,
 }
 
 impl IInteroperable for CommitteeState {
     fn from_stack_item(&mut self, item: StackItem) {
         if let StackItem::Struct(s) = item {
-            self.members = s[0].clone().into_iter().map(|i| Secp256r1PublicKey::decode_point(&i.get_span(), ECCurve::Secp256r1).unwrap()).collect();
-            self.standby_members = s[1].clone().into_iter().map(|i| Secp256r1PublicKey::decode_point(&i.get_span(), ECCurve::Secp256r1).unwrap()).collect();
+            self.members = s[0].clone().into_iter().map(|i| ECPoint::decode_point(&i.get_span(), ECCurve::Secp256r1).unwrap()).collect();
+            self.standby_members = s[1].clone().into_iter().map(|i| ECPoint::decode_point(&i.get_span(), ECCurve::Secp256r1).unwrap()).collect();
         }
     }
 
@@ -420,7 +420,7 @@ impl NeoToken {
         );
     }
 
-    pub fn register_candidate(&mut self, snapshot: &mut dyn DataCache, pubkey: &Secp256r1PublicKey) -> bool {
+    pub fn register_candidate(&mut self, snapshot: &mut dyn DataCache, pubkey: &ECPoint) -> bool {
         let key = self.create_storage_key(Self::PREFIX_CANDIDATE).add(pubkey);
         if snapshot.contains_key(&key) {
             return false;
@@ -441,7 +441,7 @@ impl NeoToken {
         true
     }
 
-    pub fn unregister_candidate(&mut self, snapshot: &mut dyn DataCache, pubkey: &Secp256r1PublicKey) -> bool {
+    pub fn unregister_candidate(&mut self, snapshot: &mut dyn DataCache, pubkey: &ECPoint) -> bool {
         let key = self.create_storage_key(Self::PREFIX_CANDIDATE).add(pubkey);
         if let Some(storage) = snapshot.try_get(&key) {
             let state: CandidateState = storage.get_interoperable();
@@ -455,7 +455,7 @@ impl NeoToken {
         }
     }
 
-    pub fn vote(&mut self, snapshot: &mut dyn DataCache, account: &UInt160, vote_to: Option<&Secp256r1PublicKey>) -> bool {
+    pub fn vote(&mut self, snapshot: &mut dyn DataCache, account: &UInt160, vote_to: Option<&ECPoint>) -> bool {
         let account_key = self.create_storage_key(Self::PREFIX_ACCOUNT).add(account);
         let mut state = if let Some(storage) = snapshot.try_get(&account_key) {
             storage.get_interoperable::<NeoAccountState>()
@@ -485,7 +485,7 @@ impl NeoToken {
         true
     }
 
-    fn update_candidate_votes(&mut self, snapshot: &mut dyn DataCache, pubkey: &Secp256r1PublicKey, amount: &Integer, increase: bool) {
+    fn update_candidate_votes(&mut self, snapshot: &mut dyn DataCache, pubkey: &ECPoint, amount: &Integer, increase: bool) {
         let key = self.create_storage_key(Self::PREFIX_CANDIDATE).add(pubkey);
         if let Some(storage) = snapshot.try_get(&key) {
             let mut state: CandidateState = storage.get_interoperable();
@@ -498,7 +498,7 @@ impl NeoToken {
         }
     }
 
-    fn is_candidate(&self, snapshot: &dyn DataCache, pubkey: &Secp256r1PublicKey) -> bool {
+    fn is_candidate(&self, snapshot: &dyn DataCache, pubkey: &ECPoint) -> bool {
         let key = self.create_storage_key(Self::PREFIX_CANDIDATE).add(pubkey);
         if let Some(storage) = snapshot.try_get(&key) {
             let state: CandidateState = storage.get_interoperable();

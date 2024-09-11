@@ -79,7 +79,7 @@ pub fn to_parameter_type(type_name: &str) -> ContractParameterType {
         "String" => ContractParameterType::String,
         "UInt160" => ContractParameterType::Hash160,
         "UInt256" => ContractParameterType::Hash256,
-        "Secp256r1PublicKey" => ContractParameterType::PublicKey,
+        "ECPoint" => ContractParameterType::PublicKey,
         "Boolean" => ContractParameterType::Boolean,
         "Integer" => ContractParameterType::Integer,
         "ByteString" | "Buffer" => ContractParameterType::ByteArray,

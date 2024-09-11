@@ -22,19 +22,19 @@ bitflags! {
         const ALLOW_NOTIFY = 0b00001000;
 
         /// Indicates that the called contract is allowed to read or write states.
-        const STATES = Self::READ_STATES.bits | Self::WRITE_STATES.bits;
+        const STATES = Self::READ_STATES.bits() | Self::WRITE_STATES.bits();
 
         /// Indicates that the called contract is allowed to read states or call another contract.
-        const READ_ONLY = Self::READ_STATES.bits | Self::ALLOW_CALL.bits;
+        const READ_ONLY = Self::READ_STATES.bits() | Self::ALLOW_CALL.bits();
 
         /// All flags are set.
-        const ALL = Self::STATES.bits | Self::ALLOW_CALL.bits | Self::ALLOW_NOTIFY.bits;
+        const ALL = Self::STATES.bits() | Self::ALLOW_CALL.bits() | Self::ALLOW_NOTIFY.bits();
     }
 }
 
 impl Default for CallFlags {
     fn default() -> Self {
-        CallFlags::None
+        CallFlags::NONE
     }
 }
 

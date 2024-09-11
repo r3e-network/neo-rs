@@ -16,9 +16,8 @@ impl FilterAddPayload {
 }
 
 impl ISerializable for FilterAddPayload {
-    fn deserialize(&mut self, reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
-        let data = reader.read_var_bytes(520)?;
-        Ok(FilterAddPayload { data: Cow::Owned(data) })
+    fn size(&self) -> usize {
+        todo!()
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), std::io::Error> {
@@ -26,7 +25,8 @@ impl ISerializable for FilterAddPayload {
         Ok(())
     }
 
-    fn size(&self) -> usize {
-        todo!()
+    fn deserialize(&mut self, reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+        let data = reader.read_var_bytes(520)?;
+        Ok(FilterAddPayload { data: Cow::Owned(data) })
     }
 }

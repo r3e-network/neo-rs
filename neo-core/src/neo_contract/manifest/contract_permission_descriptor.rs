@@ -1,4 +1,4 @@
-use NeoRust::prelude::Secp256r1PublicKey;
+use NeoRust::prelude::ECPoint;
 use neo_vm::stack_item::StackItem;
 use crate::uint160::UInt160;
 
@@ -8,7 +8,7 @@ pub struct ContractPermissionDescriptor {
     /// The hash of the contract. It can't be set with `group`.
     pub hash: Option<UInt160>,
     /// The group of the contracts. It can't be set with `hash`.
-    pub group: Option<Secp256r1PublicKey>,
+    pub group: Option<ECPoint>,
 }
 
 impl ContractPermissionDescriptor {
@@ -21,7 +21,7 @@ impl ContractPermissionDescriptor {
     }
 
     /// Creates a new instance with the specified group.
-    pub fn new_with_group(group: Secp256r1PublicKey) -> Self {
+    pub fn new_with_group(group: ECPoint) -> Self {
         Self {
             hash: None,
             group: Some(group),
@@ -65,7 +65,7 @@ impl ContractPermissionDescriptor {
     pub fn from_bytes(span: &[u8]) -> Result<Self, Error> {
         match span.len() {
             20 => Ok(Self::new_with_hash(UInt160::from_slice(span)?)),
-            33 => Ok(Self::new_with_group(Secp256r1PublicKey::decode_point(span, ECCurve::Secp256r1)?)),
+            33 => Ok(Self::new_with_group(ECPoint::decode_point(span, ECCurve::Secp256r1)?)),
             _ => Err(Error::ArgumentError("Invalid byte length".into())),
         }
     }
@@ -74,7 +74,7 @@ impl ContractPermissionDescriptor {
     pub fn from_json(json: &str) -> Result<Self, Error> {
         match json.len() {
             42 => Ok(Self::new_with_hash(UInt160::from_str(json)?)),
-            66 => Ok(Self::new_with_group(Secp256r1PublicKey::from_str(json)?)),
+            66 => Ok(Self::new_with_group(ECPoint::from_str(json)?)),
             1 if json == "*" => Ok(Self::new_wildcard()),
             _ => Err(Error::FormatError("Invalid JSON format".into())),
         }

@@ -1,13 +1,9 @@
-use std::io::{Read, Write};
-use NeoRust::prelude::{Secp256r1PublicKey, VarSizeTrait};
-use serde::Deserialize;
+use NeoRust::prelude::{ VarSizeTrait};
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::application_engine::ApplicationEngine;
-use crate::neo_contract::call_flags::CallFlags;
 use crate::network::Payloads::Conditions::{WitnessCondition, WitnessConditionType};
 
 #[derive(Debug)]

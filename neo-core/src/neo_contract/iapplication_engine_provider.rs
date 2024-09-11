@@ -1,7 +1,3 @@
-use neo_network_p2p_payloads::TriggerType;
-use neo_persistence::DataCache;
-use neo_vm::{ApplicationEngine, IDiagnostic, JumpTable};
-use crate::{Block, IVerifiable, ProtocolSettings};
 use crate::block::Block;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::idiagnostic::IDiagnostic;
@@ -33,7 +29,7 @@ pub trait IApplicationEngineProvider {
         &self,
         trigger: TriggerType,
         container: &dyn IVerifiable,
-        snapshot: DataCache,
+        snapshot: dyn DataCache,
         persisting_block: Option<Block>,
         settings: ProtocolSettings,
         gas: i64,

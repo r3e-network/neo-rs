@@ -1,5 +1,3 @@
-use neo::extensions::*;
-use neo::io::*;
 use std::io::{Read, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 use byteorder::LittleEndian;

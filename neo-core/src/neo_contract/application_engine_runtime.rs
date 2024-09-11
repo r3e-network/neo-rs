@@ -2,7 +2,7 @@ use alloc::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use NeoRust::crypto::Secp256r1PublicKey;
+use NeoRust::crypto::ECPoint;
 use num_bigint::{BigInt, Sign};
 use neo_vm::execution_context::ExecutionContext;
 use neo_vm::reference_counter::ReferenceCounter;
@@ -108,7 +108,7 @@ impl ApplicationEngine {
         let hash = match hash_or_pubkey.len() {
             20 => UInt160::from_slice(hash_or_pubkey),
             33 => {
-                let point = Secp256r1PublicKey::decode_point(hash_or_pubkey, ECCurve::Secp256r1)?;
+                let point = ECPoint::decode_point(hash_or_pubkey, ECCurve::Secp256r1)?;
                 Contract::create_signature_redeem_script(&point).to_script_hash()
             },
             _ => return Err("Invalid hashOrPubkey".to_string()),

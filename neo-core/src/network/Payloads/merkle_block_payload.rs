@@ -48,7 +48,7 @@ impl ISerializable for MerkleBlockPayload {
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) {
-        self.header.serialize(writer);
+        self.header.serialize(writer).expect("TODO: panic message");
         writer.write_var_int(self.tx_count as u64);
         writer.write_serializable_list(&self.hashes);
         writer.write_var_bytes(&self.flags);

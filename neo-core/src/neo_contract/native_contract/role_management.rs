@@ -1,6 +1,6 @@
 
 use std::convert::TryInto;
-use NeoRust::prelude::Secp256r1PublicKey;
+use NeoRust::prelude::ECPoint;
 use neo_proc_macros::contract;
 use crate::neo_contract::storage_item::StorageItem;
 
@@ -31,7 +31,7 @@ impl RoleManagement {
     ///
     /// The public keys of the nodes.
     #[contract_method(cpu_fee = 1 << 15, required_flags = CallFlags::READ_STATES)]
-    pub fn get_designated_by_role(&self, role: Role, index: u32) -> Vec<Secp256r1PublicKey> {
+    pub fn get_designated_by_role(&self, role: Role, index: u32) -> Vec<ECPoint> {
         if !Role::is_valid(&role) {
             panic!("Invalid role");
         }
@@ -51,7 +51,7 @@ impl RoleManagement {
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = CallFlags::STATES | CallFlags::ALLOW_NOTIFY)]
-    fn designate_as_role(&mut self, role: Role, nodes: Vec<Secp256r1PublicKey>) {
+    fn designate_as_role(&mut self, role: Role, nodes: Vec<ECPoint>) {
         if nodes.is_empty() || nodes.len() > 32 {
             panic!("Invalid number of nodes");
         }
@@ -88,14 +88,14 @@ impl RoleManagement {
     }
 }
 
-struct NodeList(Vec<Secp256r1PublicKey>);
+struct NodeList(Vec<ECPoint>);
 
 impl NodeList {
     fn new() -> Self {
         NodeList(Vec::new())
     }
 
-    fn extend(&mut self, nodes: Vec<Secp256r1PublicKey>) {
+    fn extend(&mut self, nodes: Vec<ECPoint>) {
         self.0.extend(nodes);
     }
 
@@ -112,7 +112,7 @@ impl From<StorageItem> for NodeList {
     }
 }
 
-impl From<NodeList> for Vec<Secp256r1PublicKey> {
+impl From<NodeList> for Vec<ECPoint> {
     fn from(node_list: NodeList) -> Self {
         node_list.0
     }

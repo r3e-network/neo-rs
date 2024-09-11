@@ -1,4 +1,3 @@
-use std::fmt;
 use std::io;
 use neo_json::jtoken::JToken;
 use crate::io::binary_writer::BinaryWriter;

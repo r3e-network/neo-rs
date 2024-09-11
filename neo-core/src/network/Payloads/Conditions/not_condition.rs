@@ -1,5 +1,5 @@
 use std::io::{Error, ErrorKind, Read, Write};
-use NeoRust::prelude::Secp256r1PublicKey;
+use NeoRust::prelude::ECPoint;
 use serde::Deserialize;
 use neo_json::jtoken::JToken;
 use neo_vm::reference_counter::ReferenceCounter;
@@ -50,10 +50,11 @@ impl WitnessCondition for NotCondition {
     }
 
     fn to_json(&self) -> JToken {
-        let mut json = JToken::new_object();
-        json.insert("type", self.condition_type().to_string());
-        json.insert("expression", self.expression.to_json());
-        json
+        JToken::new_object()
+            .insert("type".to_string(), self.condition_type().to_string().into())
+            .unwrap()
+        .insert("expression".to_string(), self.expression.to_json())
+            .unwrap()
     }
 
     fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {

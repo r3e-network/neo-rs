@@ -34,12 +34,19 @@ impl MethodToken {
 
     /// Converts the token to a JSON object.
     pub fn to_json(&self) -> JToken {
-        JObject::new()
-            .set("hash", self.hash.to_string())
-            .set("method", self.method.clone())
-            .set("paramcount", self.parameters_count)
-            .set("hasreturnvalue", self.has_return_value)
-            .set("callflags", self.call_flags)
+        JToken::new_object()
+            .insert("hash".to_string(), self.hash.to_string())
+            .unwrap()
+            .insert("method".to_string(), self.method.clone())
+            .unwrap()
+            .insert("paramcount".to_string(), self.parameters_count)
+            .unwrap()
+            .insert("hasreturnvalue".to_string(), self.has_return_value)
+            .unwrap()
+            .insert("callflags".to_string(), self.call_flags)
+            .unwrap()
+
+
     }
 }
 

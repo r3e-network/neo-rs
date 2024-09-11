@@ -65,31 +65,3 @@ impl<T> Default for ContractTask<T> {
         task
     }
 }
-
-pub struct ContractTaskAwaiter;
-
-impl ContractTaskAwaiter {
-    pub fn new() -> Self {
-        Self
-    }
-
-    pub fn set_result(&mut self) {}
-}
-
-pub struct ContractTaskAwaiter<T> {
-    _phantom: PhantomData<T>,
-}
-
-impl<T> ContractTaskAwaiter<T> {
-    pub fn new() -> Self {
-        Self {
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn set_result(&mut self) {}
-
-    pub fn get_result(&self) -> T {
-        unimplemented!("ContractTaskAwaiter<T>::get_result() is not implemented")
-    }
-}

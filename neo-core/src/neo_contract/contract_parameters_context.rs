@@ -1,13 +1,12 @@
-use neo::cryptography::ecc::Secp256r1PublicKey;
-use neo::io::*;
-use neo::json::*;
-use neo::network::p2p::payloads::*;
-use neo::persistence::*;
-use neo::vm::*;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-
-use crate::smart_contract::helper::*;
+use neo_vm::stack_item::StackItem;
+use crate::cryptography::ECPoint;
+use crate::neo_contract::contract::Contract;
+use crate::neo_contract::contract_parameter::ContractParameter;
+use crate::network::Payloads::{IVerifiable, Transaction};
+use crate::persistence::DataCache;
+use crate::uint160::UInt160;
 
 /// The context used to add witnesses for `IVerifiable`.
 pub struct ContractParametersContext {
@@ -15,7 +14,7 @@ pub struct ContractParametersContext {
     pub verifiable: Box<dyn IVerifiable>,
 
     /// The snapshotcache used to read data.
-    pub snapshot_cache: DataCache,
+    pub snapshot_cache: dyn DataCache,
 
     /// The magic number of the network.
     pub network: u32,
@@ -27,11 +26,11 @@ pub struct ContractParametersContext {
 struct ContextItem {
     script: Vec<u8>,
     parameters: Vec<ContractParameter>,
-    signatures: HashMap<Secp256r1PublicKey, Vec<u8>>,
+    signatures: HashMap<ECPoint, Vec<u8>>,
 }
 
 impl ContextItem {
-    fn new(contract: &Contract) -> Self {
+    fn new(contract: &dyn Contract) -> Self {
         Self {
             script: contract.script.clone(),
             parameters: contract.parameter_list.iter()
@@ -59,7 +58,7 @@ impl ContextItem {
             .ok_or(Error::InvalidFormat)?;
         let signatures = signatures.iter()
             .map(|(k, v)| {
-                let public_key = Secp256r1PublicKey::try_from(k.as_str()).map_err(|_| Error::InvalidFormat)?;
+                let public_key = ECPoint::try_from(k.as_str()).map_err(|_| Error::InvalidFormat)?;
                 let signature = hex::decode(v.as_str().ok_or(Error::InvalidFormat)?).map_err(|_| Error::InvalidFormat)?;
                 Ok((public_key, signature))
             })
@@ -130,7 +129,7 @@ impl ContractParametersContext {
         true
     }
 
-    pub fn add_signature(&mut self, contract: Contract, public_key: Secp256r1PublicKey, signature: Vec<u8>) -> bool {
+    pub fn add_signature(&mut self, contract: Contract, public_key: ECPoint, signature: Vec<u8>) -> bool {
         if signature.len() != 64 {
             return false;
         }
@@ -153,7 +152,7 @@ impl ContractParametersContext {
         self.context_items.get(script_hash).map(|item| item.parameters.as_slice())
     }
 
-    pub fn get_signatures(&self, script_hash: &UInt160) -> Option<&HashMap<Secp256r1PublicKey, Vec<u8>>> {
+    pub fn get_signatures(&self, script_hash: &UInt160) -> Option<&HashMap<ECPoint, Vec<u8>>> {
         self.context_items.get(script_hash).map(|item| &item.signatures)
     }
 
@@ -249,12 +248,3 @@ impl ContractParametersContext {
         unimplemented!("Storage access not implemented in this context")
     }
 }
-
-// Add a warning about unsupported features in Neo smart contracts
-// WARNING: The following C# features are not supported in Neo smart contracts:
-// - float, double, decimal types
-// - Multiple catch blocks in try-catch statements
-// - Threading and parallel processing
-// - unsafe keyword and unsafe contexts
-// - dynamic keyword
-// - File I/O operations
