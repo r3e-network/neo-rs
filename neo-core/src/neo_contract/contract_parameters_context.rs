@@ -4,7 +4,7 @@ use neo_vm::stack_item::StackItem;
 use crate::cryptography::ECPoint;
 use crate::neo_contract::contract::Contract;
 use crate::neo_contract::contract_parameter::ContractParameter;
-use crate::network::Payloads::{IVerifiable, Transaction};
+use crate::network::payloads::{IVerifiable, Transaction};
 use crate::persistence::DataCache;
 use crate::uint160::UInt160;
 

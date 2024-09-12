@@ -1,4 +1,3 @@
-
 use neo::prelude::*;
 use neo::io::*;
 use neo::vm::*;

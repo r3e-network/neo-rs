@@ -2,7 +2,7 @@ use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use neo_vm::vm_state::VMState;
 use crate::neo_contract::iinteroperable::IInteroperable;
-use crate::network::Payloads::Transaction;
+use crate::network::payloads::Transaction;
 
 /// Represents a transaction that has been included in a block.
 #[derive(Clone)]

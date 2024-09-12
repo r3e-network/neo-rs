@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use chrono::DateTime;
-use crate::network::Capabilities::FullNodeCapability;
-use crate::network::Payloads::{Block, VersionPayload};
+use crate::network::capabilities::FullNodeCapability;
+use crate::network::payloads::{Block, VersionPayload};
 use crate::uint256::UInt256;
 
 pub struct TaskSession {

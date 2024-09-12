@@ -1,4 +1,4 @@
-use crate::network::Payloads::IVerifiable;
+use crate::network::payloads::IVerifiable;
 use crate::uint160::UInt160;
 
 /// The `EventArgs` of `ApplicationEngine.Log`.

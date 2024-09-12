@@ -3,7 +3,7 @@
 
 
 use neo_base::errors;
-use crate::network::Payloads::Transaction;
+use crate::network::payloads::Transaction;
 
 #[allow(unused)]
 pub struct BlockChain {

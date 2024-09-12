@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::{bin::*, encode_hex_u64, decode_hex_u64};
-use crate::network::Payloads::Header;
+use crate::network::payloads::Header;
 use crate::tx::Tx;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;

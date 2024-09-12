@@ -14,7 +14,7 @@ use crate::neo_contract::trigger_type::TriggerType;
 use crate::neo_system::NeoSystem;
 use crate::network::LocalNode;
 use crate::store::Store;
-use crate::network::Payloads::{IInventory, IVerifiable, InventoryType, Witness};
+use crate::network::payloads::{IInventory, IVerifiable, InventoryType, Witness};
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 

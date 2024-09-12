@@ -1,8 +1,10 @@
 pub mod jpath_token;
 pub mod jpath_token_type;
-mod json_error;
+pub mod json_error;
 pub mod jtoken;
 pub mod utility;
+
+pub mod json_convert_trait;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right

@@ -13,7 +13,7 @@ use crate::contract::Contract;
 use crate::ledger::header_cache::HeaderCache;
 use crate::ledger::memory_pool::MemoryPool;
 use crate::network::ChannelsConfig;
-use crate::network::Payloads::Witness;
+use crate::network::payloads::Witness;
 use crate::persistence::{MemoryStore, SnapshotCache, StoreProviderTrait};
 use crate::protocol_settings::ProtocolSettings;
 use crate::store::Store;

@@ -1,7 +1,7 @@
 use tokio::io::AsyncWriteExt;
 use neo_base::hash::Sha256;
 use crate::io::binary_writer::BinaryWriter;
-use crate::network::Payloads::IVerifiable;
+use crate::network::payloads::IVerifiable;
 use crate::uint256::UInt256;
 
 /// A helper trait for `IVerifiable`.

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use neo_crypto::rand;
 use crate::io::iserializable::ISerializable;
 use crate::neo_system::NeoSystem;
-use crate::network::Payloads::IInventory;
+use crate::network::payloads::IInventory;
 use crate::network::{Message, MessageCommand, RemoteNode};
 
 pub struct LocalNode {

@@ -7,7 +7,7 @@ use std::error::Error;
 
 pub mod ledger {
     use crate::neo_contract::trigger_type::TriggerType;
-    use crate::network::Payloads::Transaction;
+    use crate::network::payloads::Transaction;
     use super::*;
 
     pub struct Blockchain;

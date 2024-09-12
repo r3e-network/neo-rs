@@ -31,7 +31,7 @@ use crate::neo_contract::nef_file::NefFile;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
 use crate::neo_contract::storage_key::StorageKey;
 use crate::neo_contract::trigger_type::TriggerType;
-use crate::network::Payloads::{IVerifiable, Transaction, Witness};
+use crate::network::payloads::{IVerifiable, Transaction, Witness};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;

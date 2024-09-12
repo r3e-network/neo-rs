@@ -2,7 +2,7 @@ use crate::block::Block;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::idiagnostic::IDiagnostic;
 use crate::neo_contract::trigger_type::TriggerType;
-use crate::network::Payloads::IVerifiable;
+use crate::network::payloads::IVerifiable;
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 

@@ -5,7 +5,7 @@ use std::time::{ Instant};
 use crate::io::caching::HashSetCache;
 use crate::neo_system::NeoSystem;
 use crate::network::{Message, MessageCommand};
-use crate::network::Payloads::VersionPayload;
+use crate::network::payloads::VersionPayload;
 use crate::network::peer::Peer;
 use crate::uint256::UInt256;
 

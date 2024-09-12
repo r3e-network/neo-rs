@@ -19,7 +19,7 @@ use crate::neo_contract::interop_descriptor::InteropDescriptor;
 use crate::neo_contract::log_event_args::LogEventArgs;
 use crate::neo_contract::native_contract::NativeContract;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
-use crate::network::Payloads::{OracleResponse, Signer};
+use crate::network::payloads::{OracleResponse, Signer};
 use crate::persistence::SnapshotCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;

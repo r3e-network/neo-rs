@@ -5,7 +5,7 @@ use neo_vm::stack_item::StackItem;
 use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::iinteroperable::IInteroperable;
-use crate::network::Payloads::IVerifiable;
+use crate::network::payloads::IVerifiable;
 use crate::uint160::UInt160;
 
 #[derive(Default)]

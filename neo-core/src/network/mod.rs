@@ -9,9 +9,10 @@ mod peer;
 mod remote_node;
 mod task_manager;
 mod task_session;
-pub(crate) mod Payloads;
-mod Capabilities;
+pub(crate) mod payloads;
+mod capabilities;
 mod remote_node_protocol_handler;
+mod transaction_attribute;
 
 pub use channels_config::*;
 pub use connection::*;

@@ -1,8 +1,10 @@
 use neo_vm::stack_item::StackItem;
-use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
-use crate::io::memory_reader::MemoryReader;
+use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::types::Struct;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
+use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::json::Json;
+use std::fmt;
 
 /// Represents a parameter of an event or method in ABI.
 #[derive(Clone, Debug)]
@@ -13,38 +15,28 @@ pub struct ContractParameterDefinition {
     pub parameter_type: ContractParameterType,
 }
 
-impl ISerializable for ContractParameterDefinition {
-    fn from_stack_item(stack_item: &StackItem) -> Result<Self, Error> {
+impl IInteroperable for ContractParameterDefinition {
+    type Error = std::io::Error;
+
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Struct(s) = stack_item {
             if s.len() != 2 {
-                return Err(Error::InvalidStructure);
+                return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid structure"));
             }
             Ok(Self {
                 name: s[0].as_string()?,
                 parameter_type: ContractParameterType::try_from(s[1].as_integer()? as u8)?,
             })
         } else {
-            Err(Error::InvalidStackItemType)
+            Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid stack item type"))
         }
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::Struct(vec![
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(Rc::new( StackItem::Struct(Struct::new(vec![
             StackItem::String(self.name.clone()),
             StackItem::Integer((self.parameter_type as u8).into()),
-        ])
-    }
-
-    fn size(&self) -> usize {
-        todo!()
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) {
-        todo!()
-    }
-
-    fn deserialize(&mut self, reader: &mut MemoryReader) {
-        todo!()
+        ], reference_counter))))
     }
 }
 
@@ -62,18 +54,18 @@ impl ContractParameterDefinition {
     /// # Errors
     ///
     /// Returns an error if the JSON is invalid or if the parameter type is unsupported.
-    pub fn from_json(json: &JsonValue) -> Result<Self, Error> {
-        let name = json["name"].as_str().ok_or(Error::InvalidFormat)?.to_string();
+    pub fn from_json(json: &Json) -> Result<Self, fmt::Error> {
+        let name = json["name"].as_str().ok_or(fmt::Error)?.to_string();
         if name.is_empty() {
-            return Err(Error::InvalidFormat);
+            return Err(fmt::Error);
         }
 
-        let type_str = json["type"].as_str().ok_or(Error::InvalidFormat)?;
+        let type_str = json["type"].as_str().ok_or(fmt::Error)?;
         let parameter_type = ContractParameterType::from_str(type_str)
-            .map_err(|_| Error::InvalidFormat)?;
+            .map_err(|_| fmt::Error)?;
 
         if parameter_type == ContractParameterType::Void {
-            return Err(Error::InvalidFormat);
+            return Err(fmt::Error);
         }
 
         Ok(Self {
@@ -87,11 +79,11 @@ impl ContractParameterDefinition {
     /// # Returns
     ///
     /// The parameter represented by a JSON object.
-    pub fn to_json(&self) -> JsonValue {
-        json!({
-            "name": self.name,
-            "type": self.parameter_type.to_string()
-        })
+    pub fn to_json(&self) -> Json {
+        let mut json = Json::new_object();
+        json.insert("name", Json::from(self.name.clone()));
+        json.insert("type", Json::from(self.parameter_type.to_string()));
+        json
     }
 }
 
@@ -106,7 +98,8 @@ mod tests {
             parameter_type: ContractParameterType::String,
         };
 
-        let stack_item = param.to_stack_item();
+        let mut reference_counter = ReferenceCounter::new();
+        let stack_item = param.to_stack_item(&mut reference_counter).unwrap();
         let deserialized = ContractParameterDefinition::from_stack_item(&stack_item).unwrap();
 
         assert_eq!(param.name, deserialized.name);
@@ -115,32 +108,29 @@ mod tests {
 
     #[test]
     fn test_contract_parameter_definition_json() {
-        let json = json!({
-            "name": "amount",
-            "type": "Integer"
-        });
+        let mut json = Json::new_object();
+        json.insert("name", Json::from("amount"));
+        json.insert("type", Json::from("Integer"));
 
         let param = ContractParameterDefinition::from_json(&json).unwrap();
         assert_eq!(param.name, "amount");
         assert_eq!(param.parameter_type, ContractParameterType::Integer);
 
         let json_out = param.to_json();
-        assert_eq!(json_out["name"], "amount");
-        assert_eq!(json_out["type"], "Integer");
+        assert_eq!(json_out["name"].as_str().unwrap(), "amount");
+        assert_eq!(json_out["type"].as_str().unwrap(), "Integer");
     }
 
     #[test]
     fn test_invalid_json() {
-        let json = json!({
-            "name": "",
-            "type": "Integer"
-        });
+        let mut json = Json::new_object();
+        json.insert("name", Json::from(""));
+        json.insert("type", Json::from("Integer"));
         assert!(ContractParameterDefinition::from_json(&json).is_err());
 
-        let json = json!({
-            "name": "test",
-            "type": "Void"
-        });
+        let mut json = Json::new_object();
+        json.insert("name", Json::from("test"));
+        json.insert("type", Json::from("Void"));
         assert!(ContractParameterDefinition::from_json(&json).is_err());
     }
 }
