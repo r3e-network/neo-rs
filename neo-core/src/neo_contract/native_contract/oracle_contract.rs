@@ -306,21 +306,26 @@ impl Default for IdList {
 }
 
 impl IInteroperable for IdList {
-    fn from_stack_item(&mut self, item: StackItem) -> Result<(), String> {
+    fn from_stack_item(item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Array(array) = item {
-            self.0 = array.into_iter()
-                .map(|item| item.as_integer().map(|i| i as u64))
-                .collect::<Result<HashSet<_>, _>>()?;
-            Ok(())
+            let mut set = HashSet::new();
+            for item in array {
+                if let StackItem::Integer(id) = item {
+                    set.insert(id as u64);
+                }
+            }
+            Ok(IdList(set))
         } else {
             Err("Expected Array".into())
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
-        StackItem::Array(Array::new_with_items(
+        fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(StackItem::Array(Array::new_with_items(
             self.0.iter().map(|&id| StackItem::Integer(id as i64)).collect(),
             reference_counter,
-        ))
+        )))
     }
+    
+    type Error = std::io::Error;
 }

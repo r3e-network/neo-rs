@@ -34,21 +34,8 @@ impl NotifyEventArgs {
             state,
         }
     }
-}
 
-impl IInteroperable for NotifyEventArgs {
-    fn from_stack_item(&mut self, _stack_item: StackItem) {
-        unimplemented!("FromStackItem is not supported for NotifyEventArgs");
-    }
-
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
-        Array::new_with_items(reference_counter, vec![
-            StackItem::from(self.script_hash.to_vec()),
-            StackItem::from(self.event_name.clone()),
-            self.state.clone(),
-        ])
-    }
-
+    
     fn to_stack_item_with_engine(&self, reference_counter: &mut ReferenceCounter, engine: &ApplicationEngine) -> StackItem {
         if engine.is_hardfork_enabled(Hardfork::HF_Domovoi) {
             Array::new(reference_counter, vec![
@@ -64,4 +51,22 @@ impl IInteroperable for NotifyEventArgs {
             self.to_stack_item(reference_counter)
         }
     }
+    
+}
+
+impl IInteroperable for NotifyEventArgs {
+
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Self::Error> {
+        unimplemented!("FromStackItem is not supported for NotifyEventArgs");
+    }
+
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(Array::new_with_items(reference_counter, vec![
+            StackItem::from(self.script_hash.to_vec()),
+            StackItem::from(self.event_name.clone()),
+            self.state.clone(),
+        ]))
+    }
+    
+    type Error = std::io::Error;
 }

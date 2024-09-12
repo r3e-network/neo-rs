@@ -10,7 +10,7 @@ pub struct HashIndexState {
 }
 
 impl IInteroperable for HashIndexState {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), String> {
+    fn from_stack_item(&mut self, stack_item: &Rc<StackItem>) -> Result<(), String> {
         if let StackItem::Struct(s) = stack_item {
             if s.len() != 2 {
                 return Err("Invalid struct length for HashIndexState".into());
@@ -23,10 +23,12 @@ impl IInteroperable for HashIndexState {
         }
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::Struct(vec![
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(StackItem::Struct(Struct::new(vec![
             StackItem::ByteString(self.hash.to_vec()),
             StackItem::Integer(self.index.into()),
-        ])
+        ])))
     }
+    
+    type Error = std::io::Error;
 }

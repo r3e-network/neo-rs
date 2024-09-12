@@ -20,7 +20,7 @@ pub struct ContractMethodDescriptor {
 }
 
 impl IInteroperable for ContractMethodDescriptor {
-    fn from_stack_item(stack_item: &StackItem) -> Result<Self, Error> {
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Error> {
         if let StackItem::Struct(s) = stack_item {
             let name = s.get(0).ok_or(Error::InvalidFormat)?.as_string()?;
             let parameters = s.get(1).ok_or(Error::InvalidFormat)?
@@ -37,15 +37,17 @@ impl IInteroperable for ContractMethodDescriptor {
         }
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::Struct(Struct::new(vec![
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(StackItem::Struct(Struct::new(vec![
             StackItem::String(self.name.clone()),
             StackItem::Array(self.parameters.iter().map(|p| p.to_stack_item()).collect()),
             StackItem::Integer(self.return_type as u8 as i32),
             StackItem::Integer(self.offset as i32),
             StackItem::Boolean(self.safe),
-        ]))
+        ])))
     }
+    
+    type Error = std::io::Error;
 }
 
 impl ContractMethodDescriptor {

@@ -26,26 +26,34 @@ impl Default for TransactionState {
 }
 
 impl IInteroperable for TransactionState {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), Error> {
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Struct(struct_item) = stack_item {
-            self.block_index = struct_item[0].as_u32()?;
-
             // Conflict record.
             if struct_item.len() == 1 {
-                return Ok(());
+                return Ok(Self {
+                    block_index: struct_item[0].as_u32()?,
+                    transaction: None,
+                    state: VMState::from_u8(struct_item[2].as_u8()?)?,
+                    raw_transaction: vec![],
+                });
             }
 
             // Fully-qualified transaction.
-            self.raw_transaction = struct_item[1].as_bytes()?.to_vec();
-            self.transaction = Some(Transaction::deserialize(&self.raw_transaction)?);
-            self.state = VMState::from_u8(struct_item[2].as_u8()?)?;
-            Ok(())
+            let raw_transaction = struct_item[1].as_bytes()?.to_vec();
+                let transaction = Some(Transaction::deserialize(&raw_transaction, &mut reference_counter)?);
+            let state = VMState::from_u8(struct_item[2].as_u8()?)?;
+            Ok(Self {
+                block_index: struct_item[0].as_u32()?,
+                transaction,
+                state,
+                raw_transaction,
+            })
         } else {
             Err(Error::InvalidStackItemType)
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
         if self.transaction.is_none() {
             return StackItem::Struct(Struct::new(vec![StackItem::Integer(self.block_index.into())], reference_counter));
         }
@@ -80,4 +88,6 @@ impl IInteroperable for TransactionState {
             self.raw_transaction = from.raw_transaction.clone();
         }
     }
+    
+    type Error = std::io::Error ;
 }

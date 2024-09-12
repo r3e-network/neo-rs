@@ -31,27 +31,29 @@ pub struct OracleRequest {
 }
 
 impl IInteroperable for OracleRequest {
-    fn from_stack_item(&mut self, item: StackItem) -> Result<(), String> {
+    fn from_stack_item(item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Array(array) = item {
-            self.original_txid = UInt256::from_slice(&array[0].as_bytes()?)?;
-            self.gas_for_response = array[1].as_integer()? as i64;
-            self.url = array[2].as_string()?;
-            self.filter = if array[3].is_null() {
-                None
-            } else {
-                Some(array[3].as_string()?)
+            let request = OracleRequest {
+                original_txid: UInt256::from_slice(&array[0].as_bytes()?)?,
+                gas_for_response: array[1].as_integer()? as i64,
+                url: array[2].as_string()?,
+                filter: if array[3].is_null() {
+                    None
+                } else {
+                    Some(array[3].as_string()?)
+                },
+                callback_contract: UInt160::from_slice(&array[4].as_bytes()?)?,
+                callback_method: array[5].as_string()?,
+                user_data: array[6].as_bytes()?.to_vec(),
             };
-            self.callback_contract = UInt160::from_slice(&array[4].as_bytes()?)?;
-            self.callback_method = array[5].as_string()?;
-            self.user_data = array[6].as_bytes()?.to_vec();
-            Ok(())
+            Ok(request)
         } else {
             Err("Expected Array".into())
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
-        StackItem::Array(Array::new_with_items(
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(StackItem::Array(Array::new_with_items(
             vec![
                 StackItem::ByteArray(self.original_txid.to_vec()),
                 StackItem::Integer(self.gas_for_response.into()),
@@ -65,6 +67,8 @@ impl IInteroperable for OracleRequest {
                 StackItem::ByteArray(self.user_data.clone()),
             ],
             reference_counter,
-        ))
+        )))
     }
+    
+    type Error = std::io::Error;
 }

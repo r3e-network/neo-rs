@@ -1,36 +1,56 @@
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
+use std::rc::Rc;
 
-/// Represents the object that can be converted to and from `StackItem`.
-pub trait IInteroperable:Default {
-    /// Convert a `StackItem` to the current object.
+/// Represents an object that can be converted to and from `StackItem`.
+// TODO: clone method need further check since its related to reference counter, can not directly derive from Clone
+pub trait IInteroperable: Default {
+    type Error;
+
+    /// Converts a `StackItem` to the current object.
     ///
     /// # Arguments
     ///
     /// * `stack_item` - The `StackItem` to convert.
-    fn from_stack_item(&mut self, stack_item: StackItem);
-
-    /// Convert the current object to a `StackItem`.
-    ///
-    /// # Arguments
-    ///
-    /// * `reference_counter` - The `ReferenceCounter` used by the `StackItem`.
     ///
     /// # Returns
     ///
-    /// The converted `StackItem`.
-    fn to_stack_item(&self, reference_counter: Option<&ReferenceCounter>) -> StackItem;
+    /// A `Result` containing the converted object or an error.
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Self::Error>;
 
-    fn clone(&self) -> Box<dyn IInteroperable>
+    /// Converts the current object to a `StackItem`.
+    ///
+    /// # Arguments
+    ///
+    /// * `reference_counter` - An optional `ReferenceCounter` used by the `StackItem`.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the converted `StackItem` or an error.
+    fn to_stack_item(&self, reference_counter: Option<&ReferenceCounter>) -> Result<Rc<StackItem>, Self::Error>;
+
+    /// Creates a clone of the current object.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the cloned object or an error.
+    fn clone(&self) -> Result<Self, Self::Error>
     where
         Self: Sized,
     {
-        let mut result = Box::new(Self::default());
-        result.from_stack_item(self.to_stack_item(None));
-        result
+        Self::from_stack_item(&self.to_stack_item(None)?)
     }
 
-    fn from_replica(&mut self, replica: &dyn IInteroperable) {
-        self.from_stack_item(replica.to_stack_item(None));
+    /// Creates a new instance from a replica of another `IInteroperable` object.
+    ///
+    /// # Arguments
+    ///
+    /// * `replica` - The `IInteroperable` object to replicate.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the new instance or an error.
+    fn from_replica(replica: &dyn IInteroperable) -> Result<Self, Self::Error> {
+        Self::from_stack_item(&replica.to_stack_item(None)?)
     }
 }

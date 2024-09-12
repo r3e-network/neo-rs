@@ -264,20 +264,24 @@ pub struct NeoAccountState {
 }
 
 impl IInteroperable for NeoAccountState {
-    fn from_stack_item(&mut self, item: StackItem) {
+    fn from_stack_item(item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Struct(s) = item {
-            self.balance = s[0].clone().into();
-            self.balance_height = s[1].clone().into();
-            self.vote_to = if s[2].is_null() {
+            let mut state = NeoAccountState::default();
+            state.balance = s[0].clone().into();
+            state.balance_height = s[1].clone().into();
+            state.vote_to = if s[2].is_null() {
                 None
             } else {
                 Some(ECPoint::decode_point(&s[2].get_span(), ECCurve::Secp256r1).unwrap())
             };
-            self.last_gas_per_vote = s[3].clone().into();
+                state.last_gas_per_vote = s[3].clone().into();
+            Ok(state)
+        } else {
+            Err("Invalid StackItem".into())
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
         let mut s = Struct::new(reference_counter);
         s.push(self.balance.clone().into());
         s.push(self.balance_height.into());
@@ -286,8 +290,10 @@ impl IInteroperable for NeoAccountState {
             None => StackItem::Null,
         });
         s.push(self.last_gas_per_vote.clone().into());
-        StackItem::Struct(s)
+        Ok(StackItem::Struct(s))
     }
+    
+    type Error = std::io::Error;
 }
 
 pub struct CandidateState {
@@ -296,19 +302,25 @@ pub struct CandidateState {
 }
 
 impl IInteroperable for CandidateState {
-    fn from_stack_item(&mut self, item: StackItem) {
+    fn from_stack_item(&mut self, item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Struct(s) = item {
-            self.registered = s[0].clone().into();
-            self.votes = s[1].clone().into();
+            let mut state = CandidateState::default();
+            state.registered = s[0].clone().into();
+            state.votes = s[1].clone().into();
+            Ok(state)
+        } else {
+            Err("Invalid StackItem".into())
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
         let mut s = Struct::new(reference_counter);
         s.push(self.registered.into());
         s.push(self.votes.clone().into());
-        StackItem::Struct(s)
+        Ok(StackItem::Struct(s))
     }
+    
+    type Error = std::io::Error;
 }
 
 pub struct CommitteeState {
@@ -317,19 +329,25 @@ pub struct CommitteeState {
 }
 
 impl IInteroperable for CommitteeState {
-    fn from_stack_item(&mut self, item: StackItem) {
+    fn from_stack_item(&mut self, item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Struct(s) = item {
-            self.members = s[0].clone().into_iter().map(|i| ECPoint::decode_point(&i.get_span(), ECCurve::Secp256r1).unwrap()).collect();
-            self.standby_members = s[1].clone().into_iter().map(|i| ECPoint::decode_point(&i.get_span(), ECCurve::Secp256r1).unwrap()).collect();
+            let mut state = CommitteeState::default();
+            state.members = s[0].clone().into_iter().map(|i| ECPoint::decode_point(&i.get_span(), ECCurve::Secp256r1).unwrap()).collect();
+            state.standby_members = s[1].clone().into_iter().map(|i| ECPoint::decode_point(&i.get_span(), ECCurve::Secp256r1).unwrap()).collect();
+            Ok(state)
+        } else {
+            Err("Invalid StackItem".into())
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
         let mut s = Struct::new(reference_counter);
         s.push(self.members.iter().map(|m| m.to_array().into()).collect::<Array>().into());
         s.push(self.standby_members.iter().map(|m| m.to_array().into()).collect::<Array>().into());
-        StackItem::Struct(s)
+        Ok(StackItem::Struct(s))
     }
+    
+    type Error = std::io::Error;
 }
 
 impl NeoToken {

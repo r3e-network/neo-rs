@@ -157,7 +157,7 @@ impl ContractManifest {
     /// `true` if the manifest is valid; otherwise, `false`.
     pub fn is_valid(&self, limits: &ExecutionEngineLimits, hash: &UInt160) -> bool {
         // Ensure that is serializable
-        if let Err(_) = self.to_stack_item().serialize(limits) {
+        if let Err(_) = self.to_stack_item(None).serialize(limits) {
             return false;
         }
         // Check groups
@@ -166,7 +166,7 @@ impl ContractManifest {
 }
 
 impl IInteroperable for ContractManifest {
-    fn from_stack_item(stack_item: &StackItem) -> Result<Self, Error> {
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Error> {
         let s = stack_item.as_struct()?;
         if s.len() != 8 {
             return Err(Error::InvalidStructure);
@@ -197,8 +197,8 @@ impl IInteroperable for ContractManifest {
         })
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::Struct(vec![
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(StackItem::Struct(Struct::new(vec![
             StackItem::String(self.name.clone()),
             StackItem::Array(self.groups.iter().map(|p| p.to_stack_item()).collect()),
             StackItem::Map(HashMap::new()),
@@ -211,6 +211,8 @@ impl IInteroperable for ContractManifest {
                 StackItem::Array(self.trusts.iter().map(|p| p.to_stack_item()).collect())
             },
             StackItem::String(self.extra.as_ref().map_or("null".to_string(), |e| e.to_string())),
-        ])
+        ])))
     }
+    
+    type Error = std::io::Error;
 }

@@ -13,7 +13,7 @@ pub struct AccountState {
 }
 
 impl IInteroperable for AccountState {
-    fn from_stack_item(&mut self, stack_item: &StackItem) -> Result<(), Box<dyn std::error::Error>> {
+    fn from_stack_item(&mut self, stack_item: &Rc<StackItem>) -> Result<(), Self::Error> {
         if let StackItem::Struct(s) = stack_item {
             self.balance = s[0].try_into()?;
             Ok(())
@@ -22,7 +22,9 @@ impl IInteroperable for AccountState {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &ReferenceCounter) -> Result<StackItem, Box<dyn std::error::Error>> {
+    fn to_stack_item(&self, reference_counter: &ReferenceCounter) -> Result<StackItem, Self::Error> {
         Ok(StackItem::Struct(Struct::new(vec![self.balance.clone().into()], reference_counter)))
     }
+    
+    type Error = std::io::Error;
 }

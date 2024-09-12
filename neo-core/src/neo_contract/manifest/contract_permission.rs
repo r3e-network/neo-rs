@@ -97,7 +97,9 @@ impl ContractPermission {
 }
 
 impl IInteroperable for ContractPermission {
-    fn from_stack_item(stack_item: &StackItem) -> Result<Self, Error> {
+    type Error = std::io::Error;
+
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Struct(s) = stack_item {
             let contract = match &s[0] {
                 StackItem::Null => ContractPermissionDescriptor::Wildcard,
@@ -116,8 +118,8 @@ impl IInteroperable for ContractPermission {
         }
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::Struct(vec![
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(StackItem::Struct(Struct::new(vec![
             match &self.contract {
                 ContractPermissionDescriptor::Wildcard => StackItem::Null,
                 ContractPermissionDescriptor::Hash(hash) => StackItem::ByteString(hash.to_vec()),
@@ -129,6 +131,6 @@ impl IInteroperable for ContractPermission {
                     methods.iter().map(|m| StackItem::String(m.clone())).collect(),
                 ),
             },
-        ])
+            ])))
     }
 }

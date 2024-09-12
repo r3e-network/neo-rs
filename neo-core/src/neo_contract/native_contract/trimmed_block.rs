@@ -1,4 +1,14 @@
-use NeoRust::prelude::VarSizeTrait;
+// Copyright (C) 2015-2024 The Neo Project.
+//
+// TrimmedBlock.rs file belongs to the neo project and is free
+// software distributed under the MIT software license, see the
+// accompanying file LICENSE in the main directory of the
+// repository or http://www.opensource.org/licenses/mit-license.php
+// for more details.
+//
+// Redistribution and use in source and binary forms with or without
+// modifications are permitted.
+
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 use crate::block::Header;
@@ -7,6 +17,7 @@ use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::uint256::UInt256;
+use crate::utils::var_size::VarSizeTrait;
 
 /// Represents a block which the transactions are trimmed.
 #[derive(Clone)]
@@ -28,22 +39,20 @@ impl TrimmedBlock {
     pub fn index(&self) -> u32 {
         self.header.index()
     }
-
-
 }
 
 impl ISerializable for TrimmedBlock {
-     fn size(&self) -> usize {
+    fn size(&self) -> usize {
         self.header.size() + self.hashes.var_size()
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) {
+    fn serialize(&self, writer: &mut BinaryWriter) -> std::io::Result<()> {
         self.header.serialize(writer)?;
         writer.write_var_vec(&self.hashes)?;
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+    fn deserialize(reader: &mut MemoryReader) -> std::io::Result<Self> {
         let header = Header::deserialize(reader)?;
         let hashes = reader.read_var_vec::<UInt256>(u16::MAX as usize)?;
         Ok(Self { header, hashes })
@@ -51,30 +60,45 @@ impl ISerializable for TrimmedBlock {
 }
 
 impl IInteroperable for TrimmedBlock {
-    fn from_interface_object(_object: InterfaceObject) -> Result<Self, Error> {
-        Err(Error::NotSupported)
+    fn clone(&self) -> Box<dyn IInteroperable> {
+        Box::new(TrimmedBlock {
+            header: self.header.clone(),
+            hashes: self.hashes.clone(),
+        })
     }
 
-    fn to_interface_object(&self) -> InterfaceObject {
-        let mut array = Vec::with_capacity(10);
-        array.push(StackItem::ByteString(self.header.hash().to_vec()));
-        array.push(StackItem::Integer(self.header.version().into()));
-        array.push(StackItem::ByteString(self.header.prev_hash().to_vec()));
-        array.push(StackItem::ByteString(self.header.merkle_root().to_vec()));
-        array.push(StackItem::Integer(self.header.timestamp().into()));
-        array.push(StackItem::Integer(self.header.nonce().into()));
-        array.push(StackItem::Integer(self.header.index().into()));
-        array.push(StackItem::Integer(self.header.primary_index().into()));
-        array.push(StackItem::ByteString(self.header.next_consensus().to_vec()));
-        array.push(StackItem::Integer(self.hashes.len().into()));
-        InterfaceObject::Array(array)
+    fn from_replica(&mut self, replica: &dyn IInteroperable) {
+        let from = replica.downcast_ref::<TrimmedBlock>().unwrap();
+        self.header = from.header.clone();
+        self.hashes = from.hashes.clone();
     }
 
-    fn from_stack_item(&mut self, stack_item: StackItem) {
-        todo!()
+    fn from_stack_item(_item: &StackItem) -> Result<Self, Self::Error> {
+        Err(std::io::Error::new(std::io::ErrorKind::Other, "Not supported"))
     }
 
-    fn to_stack_item(&self, reference_counter: Option<&ReferenceCounter>) -> StackItem {
-        todo!()
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<StackItem, Self::Error> {
+        Ok(StackItem::Array(neo_vm::types::Array::new_with_items(
+            vec![
+                // Computed properties
+                StackItem::ByteString(self.header.hash().to_vec()),
+
+                // BlockBase properties
+                StackItem::Integer(self.header.version().into()),
+                StackItem::ByteString(self.header.prev_hash().to_vec()),
+                StackItem::ByteString(self.header.merkle_root().to_vec()),
+                StackItem::Integer(self.header.timestamp().into()),
+                StackItem::Integer(self.header.nonce().into()),
+                StackItem::Integer(self.header.index().into()),
+                StackItem::Integer(self.header.primary_index().into()),
+                StackItem::ByteString(self.header.next_consensus().to_vec()),
+
+                // Block properties
+                StackItem::Integer(self.hashes.len().into()),
+            ],
+            reference_counter,
+        )))
     }
+    
+    type Error = std::io::Error;
 }

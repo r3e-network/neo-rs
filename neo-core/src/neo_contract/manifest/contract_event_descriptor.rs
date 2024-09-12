@@ -13,7 +13,7 @@ pub struct ContractEventDescriptor {
 }
 
 impl IInteroperable for ContractEventDescriptor {
-    fn from_stack_item(stack_item: &StackItem) -> Result<Self, Error> {
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Error> {
         if let StackItem::Struct(s) = stack_item {
             let name = s.get(0).ok_or(Error::InvalidFormat)?.as_string()?;
             let parameters = s.get(1).ok_or(Error::InvalidFormat)?
@@ -27,8 +27,8 @@ impl IInteroperable for ContractEventDescriptor {
         }
     }
 
-    fn to_stack_item(&self) -> StackItem {
-        StackItem::Struct(Struct::new(vec![
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(StackItem::Struct(Struct::new(vec![
             StackItem::String(self.name.clone()),
             StackItem::Array(Array::new(
                 self.parameters
@@ -36,8 +36,11 @@ impl IInteroperable for ContractEventDescriptor {
                     .map(|p| p.to_stack_item())
                     .collect(),
             )),
-        ]))
+        ])))
     }
+    
+    type Error = std::io::Error;
+
 }
 
 impl ContractEventDescriptor {

@@ -66,7 +66,7 @@ impl ContractAbi {
 }
 
 impl IInteroperable for ContractAbi {
-    fn from_stack_item(stack_item: StackItem) -> Result<Self, Error> {
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Error> {
         if let StackItem::Struct(s) = stack_item {
             let methods = s.get(0)
                 .and_then(|arr| arr.as_array())
@@ -88,10 +88,10 @@ impl IInteroperable for ContractAbi {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
-        StackItem::Struct(Struct::new(vec![
+    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(StackItem::Struct(Struct::new(vec![
             StackItem::Array(Array::new(self.methods.iter().map(|m| m.to_stack_item(reference_counter)).collect())),
             StackItem::Array(Array::new(self.events.iter().map(|e| e.to_stack_item(reference_counter)).collect())),
-        ]))
+        ])))
     }
 }
