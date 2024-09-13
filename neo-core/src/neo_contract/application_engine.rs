@@ -606,32 +606,78 @@ impl ApplicationEngine {
     }
 }
 
-lazy_static! {
-    static ref SERVICES: HashMap<u32, InteropDescriptor> = {
-        let mut m = HashMap::new();
-        // Register your system calls here
-        m.insert(0x12345678, InteropDescriptor {
-            name: "System.Runtime.Platform".to_string(),
-            handler: |engine, _args| {
-                    Ok(Some(StackItem::ByteString("NEO".as_bytes().to_vec())))
-                },
-                fixed_price: 1,
-                required_call_flags: CallFlags::NONE,
-            });
-        m.insert(0x87654321, InteropDescriptor {
-            name: "System.Runtime.GetTrigger".to_string(),
-            handler: |engine, _args| {
-                Ok(Some(StackItem::Integer(engine.trigger as i64)))
-            },
-            fixed_price: 1,
-            required_call_flags: CallFlags::NONE,
-        });
-        // Add more system calls here
-        m
-    };
+pub type Handler = fn(&mut ApplicationEngine, &[StackItem]) -> Result<StackItem, Box<dyn std::error::Error>>;
+
+#[macro_export]
+macro_rules! register_syscall {
+    ($name:expr, $handler:expr, $fixed_price:expr, $required_call_flags:expr) => {{
+        let descriptor = InteropDescriptor {
+            name: $name.to_string(),
+            handler: $handler,
+            fixed_price: $fixed_price,
+            required_call_flags: $required_call_flags,
+        };
+        register_interop_descriptor(descriptor.hash(), descriptor.clone());
+        descriptor
+    }};
 }
 
+lazy_static! {
+    static ref SERVICES: Mutex<HashMap<u32, InteropDescriptor>> = Mutex::new(HashMap::new());
+}
+
+pub fn register_interop_descriptor(hash: u32, descriptor: InteropDescriptor) {
+    let mut services = SERVICES.lock().unwrap();
+    services.entry(hash).or_insert(descriptor);
+}
+
+pub const INTEROP_DESCRIPTORS: &[InteropDescriptor] = &[
+    SYSTEM_CRYPTO_CHECK_SIG,
+    SYSTEM_CRYPTO_CHECK_MULTISIG,
+];
+
+
+pub const SYSTEM_CRYPTO_CHECK_SIG: InteropDescriptor = InteropDescriptor {
+    name: "System.Crypto.CheckSig".to_string(),
+    handler: ApplicationEngine::check_sig,
+    fixed_price: ApplicationEngine::CHECK_SIG_PRICE,
+    required_call_flags: CallFlags::NONE,
+};
+
+pub const SYSTEM_CRYPTO_CHECK_MULTISIG: InteropDescriptor = InteropDescriptor {
+    name: "System.Crypto.CheckMultisig",
+    handler: ApplicationEngine::check_multisig,
+    fixed_price: 0,
+    required_call_flags: CallFlags::NONE,
+};
+
+
 impl ApplicationEngine {
+
+    pub fn initialize_interop_descriptors() {
+        for descriptor in INTEROP_DESCRIPTORS {
+            register_interop_descriptor(descriptor.hash(), descriptor.clone());
+        }
+    }
+    pub fn register(name: &str, handler_name: &str, fixed_price: i64, required_call_flags: CallFlags) -> InteropDescriptor {
+        let method = METHOD_HANDLERS
+            .get(handler_name)
+            .expect("Handler not found")
+            .clone();
+
+        let descriptor = InteropDescriptor {
+            name: name.to_string(),
+            handler: method,
+            fixed_price,
+            required_call_flags,
+        };
+
+        let hash = descriptor.hash();
+
+        SERVICES.lock().unwrap().entry(hash).or_insert_with(|| descriptor.clone());
+
+        descriptor
+    }
 
     fn calculate_hash(name: &str) -> u32 {
         // Simple hash function for demonstration
@@ -665,7 +711,7 @@ impl ApplicationEngine {
     ) -> Result<ApplicationEngine, Box<dyn std::error::Error>> {
         let persisting_block = persisting_block.unwrap_or_else(|| Self::create_dummy_block(&snapshot, &settings));
         let mut engine = Self::new(
-            TriggerType::Application,
+            TriggerType::APPLICATION,
             container,
             snapshot,
             Some(persisting_block),
@@ -755,7 +801,7 @@ impl ApplicationEngine {
             ContractState {
                 id,
                 update_counter: 0,
-                hash: UInt160::from_slice(&script).unwrap(),
+                hash: UInt160::from(&script).unwrap(),
                 nef: NefFile::new(script, self.protocol_settings.network)?,
                 manifest,
             }

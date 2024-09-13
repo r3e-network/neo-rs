@@ -38,7 +38,7 @@ impl ApplicationEngine {
     /// # Returns
     ///
     /// `true` if the signature is valid; otherwise, `false`.
-    fn check_sig(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
+    pub(crate) fn check_sig(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
         let signature = self.pop_as::<Vec<u8>>()?;
         let pubkey = self.pop_as::<Vec<u8>>()?;
 
@@ -62,7 +62,7 @@ impl ApplicationEngine {
     /// # Returns
     ///
     /// `true` if the signatures are valid; otherwise, `false`.
-    fn check_multisig(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
+    pub(crate) fn check_multisig(&mut self) -> Result<bool, Box<dyn std::error::Error>> {
         let signatures = self.pop_as::<Vec<Vec<u8>>>()?;
         let pubkeys = self.pop_as::<Vec<Vec<u8>>>()?;
 

@@ -1,4 +1,3 @@
-
 use std::ops::BitOr;
 use bitflags::bitflags;
 

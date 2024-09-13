@@ -37,6 +37,7 @@ pub enum CoreError {
 
     #[error("Unknown error: {0}")]
     Unknown(String),
+    TypeError,
 }
 
 impl CoreError {

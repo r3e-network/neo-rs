@@ -2,6 +2,7 @@ use neo_vm::stack_item::StackItem;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::neo_contract::interop_descriptor::InteropDescriptor;
+use crate::register_syscall;
 
 impl ApplicationEngine {
     /// The `InteropDescriptor` of System.Iterator.Next.

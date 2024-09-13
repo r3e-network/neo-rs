@@ -10,8 +10,10 @@ use neo_vm::stack_item::StackItem;
 use neo_vm::vm::script::Script;
 use crate::block::Block;
 use crate::contract::Contract;
+use crate::cryptography::{ECCurve, ECPoint};
 use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::binary_serializer::BinarySerializer;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::execution_context_state::ExecutionContextState;
@@ -19,7 +21,7 @@ use crate::neo_contract::interop_descriptor::InteropDescriptor;
 use crate::neo_contract::log_event_args::LogEventArgs;
 use crate::neo_contract::native_contract::NativeContract;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
-use crate::network::payloads::{OracleResponse, Signer};
+use crate::network::payloads::{OracleResponse, Signer, WitnessRuleAction};
 use crate::persistence::SnapshotCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;
@@ -108,7 +110,7 @@ impl ApplicationEngine {
         let hash = match hash_or_pubkey.len() {
             20 => UInt160::from_slice(hash_or_pubkey),
             33 => {
-                let point = ECPoint::decode_point(hash_or_pubkey, ECCurve::Secp256r1)?;
+                let point = ECPoint::decode_point(hash_or_pubkey, ECCurve::secp256r1())?;
                 Contract::create_signature_redeem_script(&point).to_script_hash()
             },
             _ => return Err("Invalid hashOrPubkey".to_string()),

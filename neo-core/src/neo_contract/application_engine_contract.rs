@@ -1,6 +1,10 @@
 use std::io::Error;
+use crate::cryptography::ECPoint;
+use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;
+use crate::neo_contract::contract_parameter_type::ContractParameterType;
+use crate::neo_contract::execution_context_state::ExecutionContextState;
 use crate::neo_contract::interop_descriptor::InteropDescriptor;
 use crate::neo_contract::trigger_type::TriggerType;
 use crate::uint160::UInt160;

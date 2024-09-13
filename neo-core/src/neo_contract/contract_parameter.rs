@@ -1,10 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt;
-use NeoRust::crypto::ECPoint;
 use num_bigint::BigInt;
 use neo_json::jtoken::JToken;
-use crate::cryptography::ECCurve;
+use crate::cryptography::{ECCurve, ECPoint};
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
