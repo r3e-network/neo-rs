@@ -29,12 +29,18 @@ pub struct Op {
 
 // Neo VM Program
 pub struct Program {
-    // program counter
-    pc: usize,
     ops: Vec<Op>,
 }
 
 impl Program {
+    pub fn nop() -> Self {
+        Self { ops: Vec::new() }
+    }
+
+    #[inline]
+    pub fn ops(&self) -> &[Op] { &self.ops }
+
+
     pub fn build(script: &[u8]) -> Result<Program, ProgramError> {
         let mut decoder = ScriptDecoder::new(script);
         let mut ops = Vec::with_capacity(script.len() / 2);
@@ -70,7 +76,21 @@ impl Program {
             }
         }
 
-        Ok(Program { pc: 0, ops })
+        Ok(Program { ops })
+    }
+}
+
+
+pub struct Executing<'a> {
+    pc: usize,
+    ops: &'a [Op],
+}
+
+
+impl<'a> Executing<'a> {
+    #[inline]
+    pub fn new(ops: &'a [Op]) -> Executing<'a> {
+        Executing { pc: 0, ops }
     }
 
     // on abort or assert failed, etc.
@@ -109,10 +129,10 @@ mod test {
         let script = TEST_CODES_1.decode_hex()
             .expect("`decode_hex` should be ok");
 
-        let mut program = Program::build(&script)
+        let program = Program::build(&script)
             .expect("`Program::build` should be ok");
 
-        assert_eq!(program.change_pc(1024), false);
+        assert_eq!(program.ops().is_empty(), false);
         // for op in program.ops.iter() {
         //     std::println!("{:04}: {:?}, {:?}", op.ip, op.code, op.operand);
         // }

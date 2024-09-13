@@ -201,7 +201,7 @@ pub enum Role {
 }
 
 
-#[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, BinEncode, BinDecode)]
 #[bin(repr = u8)]
 pub enum VmState {
     None = 0,

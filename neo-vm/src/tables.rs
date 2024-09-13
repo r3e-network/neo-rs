@@ -6,22 +6,22 @@ use crate::{CodeAttr, OpCode, OpCode::*};
 
 
 pub(crate) const CODE_ATTRS: [CodeAttr; 256] = [
-    CodeAttr { price: 1, trailing: 1, unsigned: false }, // PushInt8, 0x0, 0
-    CodeAttr { price: 1, trailing: 2, unsigned: false }, // PushInt16, 0x1, 1
-    CodeAttr { price: 1, trailing: 4, unsigned: false }, // PushInt32, 0x2, 2
-    CodeAttr { price: 1, trailing: 8, unsigned: false }, // PushInt64, 0x3, 3
-    CodeAttr { price: 4, trailing: 16, unsigned: false }, // PushInt128, 0x4, 4
-    CodeAttr { price: 4, trailing: 32, unsigned: false }, // PushInt256, 0x5, 5
-    CodeAttr { price: 2, trailing: 0, unsigned: false }, // Reserved, 0x6, 6
-    CodeAttr { price: 2, trailing: 0, unsigned: false }, // Reserved, 0x7, 7
-    CodeAttr { price: 2, trailing: 0, unsigned: false }, // PushTrue, 0x8, 8
-    CodeAttr { price: 2, trailing: 0, unsigned: false }, // PushFalse, 0x9, 9
-    CodeAttr { price: 4, trailing: 4, unsigned: false }, // PushA, 0xA, 10
-    CodeAttr { price: 1, trailing: 0, unsigned: false }, // PushNull, 0xB, 11
-    CodeAttr { price: 8, trailing: 1, unsigned: true }, // PushData1, 0xC, 12
-    CodeAttr { price: 512, trailing: 2, unsigned: true }, // PushData2, 0xD, 13
-    CodeAttr { price: 4096, trailing: 4, unsigned: true }, // PushData4, 0xE, 14
-    CodeAttr { price: 1, trailing: 0, unsigned: false }, // PushM1, 0xF, 15
+    CodeAttr { price: 1, trailing: 1, unsigned: false }, // PushInt8, 0x00, 00
+    CodeAttr { price: 1, trailing: 2, unsigned: false }, // PushInt16, 0x01, 01
+    CodeAttr { price: 1, trailing: 4, unsigned: false }, // PushInt32, 0x02, 02
+    CodeAttr { price: 1, trailing: 8, unsigned: false }, // PushInt64, 0x03, 03
+    CodeAttr { price: 4, trailing: 16, unsigned: false }, // PushInt128, 0x04, 04
+    CodeAttr { price: 4, trailing: 32, unsigned: false }, // PushInt256, 0x05, 05
+    CodeAttr { price: 2, trailing: 0, unsigned: false }, // Reserved, 0x06, 06
+    CodeAttr { price: 2, trailing: 0, unsigned: false }, // Reserved, 0x07, 07
+    CodeAttr { price: 2, trailing: 0, unsigned: false }, // PushTrue, 0x08, 08
+    CodeAttr { price: 2, trailing: 0, unsigned: false }, // PushFalse, 0x09, 09
+    CodeAttr { price: 4, trailing: 4, unsigned: false }, // PushA, 0x0A, 10
+    CodeAttr { price: 1, trailing: 0, unsigned: false }, // PushNull, 0x0B, 11
+    CodeAttr { price: 8, trailing: 1, unsigned: true }, // PushData1, 0x0C, 12
+    CodeAttr { price: 512, trailing: 2, unsigned: true }, // PushData2, 0x0D, 13
+    CodeAttr { price: 4096, trailing: 4, unsigned: true }, // PushData4, 0x0E, 14
+    CodeAttr { price: 1, trailing: 0, unsigned: false }, // PushM1, 0x0F, 15
     CodeAttr { price: 1, trailing: 0, unsigned: false }, // Push0, 0x10, 16
     CodeAttr { price: 1, trailing: 0, unsigned: false }, // Push1, 0x11, 17
     CodeAttr { price: 1, trailing: 0, unsigned: false }, // Push2, 0x12, 18

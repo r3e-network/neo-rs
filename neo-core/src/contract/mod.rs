@@ -8,6 +8,8 @@ use ::bytes::{BufMut, BytesMut};
 use neo_base::{errors, encoding::bin::*};
 use crate::{PublicKey, PUBLIC_COMPRESSED_SIZE, types::*};
 
+pub use {context::*, event::*, manifest::*, nef::*, nep17::*, nep11::*, natives::*, param::*};
+
 pub mod context;
 pub mod event;
 pub mod manifest;
@@ -16,8 +18,6 @@ pub mod nep17;
 pub mod nep11;
 pub mod natives;
 pub mod param;
-
-pub use {context::*, event::*, manifest::*, nef::*, nep17::*, nep11::*, natives::*, param::*};
 
 
 pub const MIN_MULTI_CONTRACT_SIZE: usize = 42;

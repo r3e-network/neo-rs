@@ -1,17 +1,17 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-pub mod blocks;
-pub mod nodes;
-pub mod extensible;
-pub mod p2p;
-
-pub use {blocks::*, extensible::*, nodes::*, p2p::*};
-
 use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
 use crate::types::H256;
+
+pub use {blocks::*, extensible::*, nodes::*, p2p::*};
+
+pub mod blocks;
+pub mod nodes;
+pub mod extensible;
+pub mod p2p;
 
 
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
@@ -46,8 +46,9 @@ pub struct Null;
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use bytes::BytesMut;
+
+    use super::*;
 
     #[test]
     fn test_null() {

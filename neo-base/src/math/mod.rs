@@ -2,9 +2,7 @@
 // All Rights Reserved
 
 
-pub use u160::*;
-pub use u256::*;
-pub use i256::*;
+pub use {u160::*, u256::*, i256::*};
 
 pub mod i256;
 pub mod u256;

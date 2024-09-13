@@ -3,25 +3,34 @@
 
 use alloc::string::{String, ToString};
 use core::cmp::{Ord, PartialOrd, Ordering};
-use core::fmt::{Display, Formatter};
+use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Add, AddAssign, Sub, SubAssign, BitAnd, BitOr, BitXor, Not};
 
 use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
 
-use crate::{errors, cmp_elem};
-use crate::math::Widening;
+use crate::{errors, cmp_elem, math::Widening};
 use crate::encoding::{bin::*, hex::StartsWith0x};
 
 
 const N: usize = 4;
 
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Default, Hash, Eq, PartialEq)]
+#[repr(C)]
 pub struct U256 {
     n: [u64; N], // little endian
 }
 
 impl U256 {
+    pub const ZERO: Self = U256 { n: [0, 0, 0, 0] };
+
+    pub const ONE: Self = U256 { n: [1, 0, 0, 0] };
+
+    pub const MAX: Self = U256 { n: [u64::MAX, u64::MAX, u64::MAX, u64::MAX] };
+
+    pub const MIN: Self = U256 { n: [0, 0, 0, 0] };
+
+
     #[inline]
     pub fn to_le_bytes(&self) -> [u8; 32] {
         // NOTE: assume platform endian is little endian
@@ -48,17 +57,16 @@ impl U256 {
     }
 
     #[inline]
-    pub fn is_zero(&self) -> bool {
-        self.eq(&Self::default())
-    }
+    pub fn is_zero(&self) -> bool { self.eq(&U256::ZERO) }
 
     #[inline]
     pub fn is_even(&self) -> bool { self.n[0] & 1u64 == 0 }
 }
 
-impl Default for U256 {
-    #[inline]
-    fn default() -> Self { Self { n: [0; N] } }
+impl Debug for U256 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{self}")
+    }
 }
 
 impl Display for U256 {
@@ -118,11 +126,10 @@ pub enum ToU256Error {
 impl TryFrom<&str> for U256 {
     type Error = ToU256Error;
 
+    // FIXME: only hex string is supported now.
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         use hex::FromHexError as HexError;
-
         let value = if value.starts_with_0x() { &value[2..] } else { value };
-
         let mut buf = [0u8; 32];
         let _ = hex::decode_to_slice(value, &mut buf)
             .map_err(|e| match e {
@@ -300,7 +307,7 @@ mod test {
     use crate::math::U256;
 
     #[test]
-    fn test_uint256() {
+    fn test_u256_ops() {
         let u: U256 = u64::MAX.into();
         let v: U256 = u64::MAX.into();
 
