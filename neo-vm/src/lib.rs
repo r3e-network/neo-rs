@@ -138,19 +138,16 @@ pub struct NeoVm<Env: VmEnv> {
     gas_limit: u64,
     gas_consumed: u64,
     invocations: Vec<ExecContext>,
-    references: Rc<References>,
     env: Env,
 }
 
 impl<Env: VmEnv> NeoVm<Env> {
     pub fn new(gas_limit: u64, env: Env) -> Self {
-        let rfs = Rc::new(References::new());
         let limits = VmLimits::default();
         NeoVm {
             state: VmState::Break,
             limits,
             invocations: Vec::new(),
-            references: rfs,
             env,
             gas_limit,
             gas_consumed: 0,

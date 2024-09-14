@@ -33,6 +33,9 @@ impl ExecContext {
     }
 
     #[inline]
+    pub fn references(&self) -> &References { self.stack.references() }
+
+    #[inline]
     pub fn on_terminated(&mut self) {
         self.pc = self.program.ops().len()
     }

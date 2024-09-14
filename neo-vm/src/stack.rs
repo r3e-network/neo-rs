@@ -10,14 +10,17 @@ use crate::{StackItem, References};
 pub struct ExecStack {
     limit: usize,
     items: Vec<Rc<StackItem>>,
-    references: Rc<References>,
+    references: References,
 }
 
 
 impl ExecStack {
-    pub fn new(limit: usize, references: Rc<References>) -> Self {
+    pub fn new(limit: usize, references: References) -> Self {
         Self { limit, items: Vec::new(), references }
     }
+
+    #[inline]
+    pub fn references(&self) -> &References { &self.references }
 
     #[inline]
     pub fn len(&self) -> usize { self.items.len() }
