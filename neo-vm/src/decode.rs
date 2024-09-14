@@ -2,9 +2,7 @@
 // All Rights Reserved
 
 
-use neo_base::bytes::{PickAtMost, PickU32};
-use neo_base::errors;
-
+use neo_base::{errors, bytes::{PickAtMost, PickU32}};
 use crate::{*, OpCode::*};
 
 

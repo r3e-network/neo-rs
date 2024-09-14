@@ -2,47 +2,55 @@
 // All Rights Reserved
 
 
-use alloc::rc::Rc;
-
-use hashbrown::HashMap;
-use num_enum::TryFromPrimitive;
-
-use neo_base::math::I256;
+use alloc::{rc::Rc, vec::Vec};
+use crate::{StackItem, References};
 
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, TryFromPrimitive)]
-#[repr(u8)]
-pub enum StackItemType {
-    Any = 0x00,
-    Pointer = 0x10,
-    Boolean = 0x20,
-    Integer = 0x21,
-
-    // i.e. readonly bytes
-    ByteString = 0x28,
-
-    // i.e. bytes
-    Buffer = 0x30,
-    Array = 0x40,
-    Struct = 0x41,
-    Map = 0x48,
-    InteropInterface = 0x60,
+// i.e. EvaluationStack
+pub struct ExecStack {
+    limit: usize,
+    items: Vec<Rc<StackItem>>,
+    references: References,
 }
 
 
-pub struct Interop {
+impl ExecStack {
+    pub fn new(limit: usize, references: References) -> Self {
+        Self { limit, items: Vec::new(), references }
+    }
+
+    #[inline]
+    pub fn references(&self) -> &References { &self.references }
+
+    #[inline]
+    pub fn len(&self) -> usize { self.items.len() }
+
+    #[inline]
+    pub fn push(&mut self, item: Rc<StackItem>) -> bool {
+        if self.items.len() >= self.limit {
+            return false;
+        }
+
+        self.references.add(&item);
+        self.items.push(item);
+        true
+    }
+
+    #[inline]
+    pub fn pop(&mut self) -> Option<Rc<StackItem>> {
+        self.items.pop()
+            .inspect(|x| self.references.remove(x))
+    }
+
+    #[inline]
+    pub fn top(&self) -> Option<Rc<StackItem>> {
+        self.items.last().cloned()
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+
     //
-}
-
-
-pub enum StackItem {
-    Null,
-    Boolean(bool),
-    Integer(I256),
-    ByteString(Vec<u8>),
-    Buffer(Vec<u8>),
-    Array(Vec<Rc<StackItem>>),
-    Struct(Vec<Rc<StackItem>>),
-    Map(HashMap<StackItem, Rc<StackItem>>),
-    InteropInterface(Interop),
 }

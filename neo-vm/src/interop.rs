@@ -2,10 +2,33 @@
 // All Rights Reserved
 
 
+use core::hash::{Hash, Hasher};
+
 use strum::{Display, EnumIter, EnumString};
 
 use neo_core::contract::CallFlags;
-use crate::{interop::InteropCall::*, RunPrice};
+use crate::{InteropCall::*, RunPrice};
+
+
+#[derive(Debug, Clone)]
+pub struct Interop {
+    //
+}
+
+
+impl Hash for Interop {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u8(0xff);
+    }
+}
+
+
+impl PartialEq<Self> for Interop {
+    fn eq(&self, _other: &Self) -> bool { false } // TODO
+}
+
+impl Eq for Interop {}
 
 
 #[derive(Copy, Clone, PartialEq, Eq, EnumString, Display, EnumIter)]
