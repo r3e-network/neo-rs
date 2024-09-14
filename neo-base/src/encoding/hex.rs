@@ -4,7 +4,6 @@
 use alloc::{string::String, vec::Vec};
 pub use hex::{FromHex, FromHexError};
 
-
 pub trait ToHex {
     fn to_hex(&self) -> String;
 

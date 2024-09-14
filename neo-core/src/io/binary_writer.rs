@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-/// A binary writer that can write various data types to a byte array.
+/// A binary writer that can write various data vm_types to a byte array.
 ///
 /// # Examples
 ///
@@ -124,7 +124,7 @@ mod tests {
         let mut buffer = Vec::new();
         let mut writer = BinaryWriter::new(&mut buffer);
 
-        // Write various data types
+        // Write various data vm_types
         writer.write_bool(true);
         writer.write_u8(42);
         writer.write_i16(-1000);

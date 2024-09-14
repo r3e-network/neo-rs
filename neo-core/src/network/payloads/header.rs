@@ -81,8 +81,8 @@ impl Header {
 
     pub fn size(&self) -> usize {
         std::mem::size_of::<u32>() +
-        UInt256::LENGTH +
-        UInt256::LENGTH +
+        UInt256::LEN +
+        UInt256::LEN +
         std::mem::size_of::<u64>() +
         std::mem::size_of::<u64>() +
         std::mem::size_of::<u32>() +

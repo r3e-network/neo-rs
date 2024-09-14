@@ -1,23 +1,15 @@
-// Copyright (C) 2015-2024 The Neo Project.
-//
-// TrimmedBlock.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::stack_item::StackItem;
+use alloc::rc::Rc;
+use std::cell::RefCell;
+use NeoRust::codec::VarSizeTrait;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::block::Header;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::neo_contract::native_contract::native_contract_error::NativeContractError;
 use crate::uint256::UInt256;
-use crate::utils::var_size::VarSizeTrait;
 
 /// Represents a block which the transactions are trimmed.
 #[derive(Clone)]
@@ -59,26 +51,21 @@ impl ISerializable for TrimmedBlock {
     }
 }
 
-impl IInteroperable for TrimmedBlock {
-    fn clone(&self) -> Box<dyn IInteroperable> {
-        Box::new(TrimmedBlock {
-            header: self.header.clone(),
-            hashes: self.hashes.clone(),
-        })
+impl Default for TrimmedBlock {
+    fn default() -> Self {
+        todo!()
     }
+}
 
-    fn from_replica(&mut self, replica: &dyn IInteroperable) {
-        let from = replica.downcast_ref::<TrimmedBlock>().unwrap();
-        self.header = from.header.clone();
-        self.hashes = from.hashes.clone();
-    }
+impl IInteroperable for TrimmedBlock {
+    type Error = std::io::Error;
 
     fn from_stack_item(_item: &StackItem) -> Result<Self, Self::Error> {
         Err(std::io::Error::new(std::io::ErrorKind::Other, "Not supported"))
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<StackItem, Self::Error> {
-        Ok(StackItem::Array(neo_vm::types::Array::new_with_items(
+    fn to_stack_item(&self, reference_counter: &mut Rc<RefCell<ReferenceCounter>>) -> Result<StackItem, Self::Error> {
+        Ok(StackItem::new_array(reference_counter,
             vec![
                 // Computed properties
                 StackItem::ByteString(self.header.hash().to_vec()),
@@ -90,15 +77,19 @@ impl IInteroperable for TrimmedBlock {
                 StackItem::Integer(self.header.timestamp().into()),
                 StackItem::Integer(self.header.nonce().into()),
                 StackItem::Integer(self.header.index().into()),
-                StackItem::Integer(self.header.primary_index().into()),
+                StackItem::Integer(self.header.primary().into()),
                 StackItem::ByteString(self.header.next_consensus().to_vec()),
 
                 // Block properties
                 StackItem::Integer(self.hashes.len().into()),
-            ],
-            reference_counter,
-        )))
+            ]
+        ))
     }
-    
-    type Error = std::io::Error;
+
+    fn clone(&self) -> Box<dyn IInteroperable<Error=NativeContractError>> {
+        Box::new(TrimmedBlock {
+            header: self.header.clone(),
+            hashes: self.hashes.clone(),
+        })
+    }
 }

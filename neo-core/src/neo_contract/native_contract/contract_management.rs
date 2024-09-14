@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use neo_proc_macros::{contract, contract_method, event};
+use neo_proc_macros::{contract, contract_impl, contract_method, event, contract_events};
 use crate::neo_contract::contract::Contract;
 
 #[contract]
@@ -7,22 +7,17 @@ pub struct ContractManagement {
     storage_map: StorageMap,
 }
 
-const PREFIX_MINIMUM_DEPLOYMENT_FEE: u8 = 20;
-const PREFIX_NEXT_AVAILABLE_ID: u8 = 15;
-const PREFIX_CONTRACT: u8 = 8;
-const PREFIX_CONTRACT_HASH: u8 = 12;
-
-#[event]
-pub enum Event {
-    #[event("Deploy")]
-    Deploy(Hash160),
-    #[event("Update")]
-    Update(Hash160),
-    #[event("Destroy")]
-    Destroy(Hash160),
-}
-
+#[contract_impl]
 impl ContractManagement {
+
+    const PREFIX_MINIMUM_DEPLOYMENT_FEE: u8 = 20;
+    const PREFIX_NEXT_AVAILABLE_ID: u8 = 15;
+    const PREFIX_CONTRACT: u8 = 8;
+    const PREFIX_CONTRACT_HASH: u8 = 12;
+
+    #[contract_event(name = "Deploy", order = 0, Hash = "Hash160")]
+    #[contract_event(name = "Update", order = 1, Hash = "Hash160")]
+    #[contract_event(name = "Destroy", order = 2, Hash = "Hash160")]
     fn new() -> Self {
         Self {
             storage_map: StorageMap::new(Storage::get_context()),

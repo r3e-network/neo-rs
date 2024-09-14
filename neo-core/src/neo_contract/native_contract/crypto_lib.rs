@@ -1,6 +1,7 @@
+use alloc::rc::Rc;
 use std::collections::HashMap;
 use lazy_static::lazy_static;
-use neo_proc_macros::contract;
+use neo_proc_macros::{contract, contract_impl};
 use crate::cryptography::{ECCurve, Hasher};
 use crate::neo_contract::native_contract::named_curve_hash::NamedCurveHash;
 
@@ -9,12 +10,12 @@ use crate::neo_contract::native_contract::named_curve_hash::NamedCurveHash;
 pub struct CryptoLib;
 
 lazy_static! {
-    static ref CURVES: HashMap<NamedCurveHash, (ECCurve, Hasher)> = {
+    static ref CURVES: HashMap<NamedCurveHash, (Rc<ECCurve>, Hasher)> = {
         let mut m = HashMap::new();
-        m.insert(NamedCurveHash::Secp256k1SHA256, (ECCurve::Secp256k1, Hasher::SHA256));
-        m.insert(NamedCurveHash::Secp256r1SHA256, (ECCurve::Secp256r1, Hasher::SHA256));
-        m.insert(NamedCurveHash::Secp256k1Keccak256, (ECCurve::Secp256k1, Hasher::Keccak256));
-        m.insert(NamedCurveHash::Secp256r1Keccak256, (ECCurve::Secp256r1, Hasher::Keccak256));
+        m.insert(NamedCurveHash::Secp256k1SHA256, (ECCurve::secp256k1(), Hasher::SHA256));
+        m.insert(NamedCurveHash::Secp256r1SHA256, (ECCurve::secp256r1(), Hasher::SHA256));
+        m.insert(NamedCurveHash::Secp256k1Keccak256, (ECCurve::secp256k1(), Hasher::Keccak256));
+        m.insert(NamedCurveHash::Secp256r1Keccak256, (ECCurve::secp256r1(), Hasher::Keccak256));
         m
     };
 }

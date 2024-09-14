@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
-use crate::reference_counter::ReferenceCounter;
-use crate::item_trait::StackItemTrait;
-use crate::stack_item::StackItem;
+use crate::vm_types::item_trait::StackItemTrait;
+use crate::vm_types::reference_counter::ReferenceCounter;
+use crate::vm_types::stack_item::StackItem;
 
 pub struct EvaluationStack {
 	inner_list: VecDeque<Rc<RefCell< StackItem>>>,

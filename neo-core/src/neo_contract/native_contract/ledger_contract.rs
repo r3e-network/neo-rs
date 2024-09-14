@@ -1,6 +1,9 @@
 use std::collections::HashSet;
-use neo_proc_macros::{contract, contract_method};
+use NeoRust::neo_types::VMState;
+use serde::{Deserialize, Serialize};
+use neo_proc_macros::{contract, contract_impl, contract_method};
 use crate::neo_contract::storage_context::StorageContext;
+use crate::network::payloads::{Header, Transaction};
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 
@@ -9,12 +12,14 @@ pub struct LedgerContract {
     storage_map: StorageMap,
 }
 
-const PREFIX_BLOCK_HASH: u8 = 9;
-const PREFIX_CURRENT_BLOCK: u8 = 12;
-const PREFIX_BLOCK: u8 = 5;
-const PREFIX_TRANSACTION: u8 = 11;
-
+#[contract_impl]
 impl LedgerContract {
+
+    const PREFIX_BLOCK_HASH: u8 = 9;
+    const PREFIX_CURRENT_BLOCK: u8 = 12;
+    const PREFIX_BLOCK: u8 = 5;
+    const PREFIX_TRANSACTION: u8 = 11;
+
     pub fn new() -> Self {
         Self {
             storage_map: StorageMap::new(),

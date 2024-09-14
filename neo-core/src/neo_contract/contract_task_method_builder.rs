@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use crate::neo_contract::contract_task_awaiter::ContractTaskAwaiter;
 
 pub struct ContractTaskMethodBuilder<T = ()> {
     task: Option<ContractTask<T>>,

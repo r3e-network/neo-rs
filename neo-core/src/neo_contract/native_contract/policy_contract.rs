@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use neo_proc_macros::{contract, contract_method};
+use neo_proc_macros::{contract, contract_impl, contract_method};
 
 /// A native contract that manages the system policies.
 #[contract]
@@ -7,6 +7,7 @@ pub struct PolicyContract {
 
 }
 
+#[contract_impl]
 impl PolicyContract {
 
     pub const DEFAULT_EXEC_FEE_FACTOR: u32 = 30;

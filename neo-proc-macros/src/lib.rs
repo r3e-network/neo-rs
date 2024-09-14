@@ -3,11 +3,9 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use quote::ToTokens;
-use syn::__private::TokenStream2;
+use syn::{parse_macro_input, DeriveInput, Expr, ExprLit, ImplItem, ItemFn, ItemImpl, Lit, Meta};
+
 use syn::parse::Parse;
-use syn::{parse_macro_input, DeriveInput, Expr, ExprLit, ItemFn, ItemImpl, PatLit};
-use syn::{Lit, Meta};
 
 mod bin;
 mod derive_contract;
@@ -212,4 +210,103 @@ pub fn contract_method(args: TokenStream, input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+use syn::{Ident, LitInt, LitStr, Token};
+
+#[proc_macro_attribute]
+pub fn contract_events(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ItemImpl);
+
+    let mut events = Vec::new();
+
+    for item in &input.items {
+        if let ImplItem::Fn(method) = item {
+            for attr in &method.attrs {
+                if attr.path().is_ident("contract_event") {
+                    if let Ok(event) = attr.parse_args::<EventAttribute>() {
+                        events.push(event);
+                    }
+                }
+            }
+        }
+    }
+
+    let event_descriptors = events.iter().map(|event| {
+        let name = &event.name;
+        let order = &event.order;
+        let params = event.params.iter().map(|(name, ty)| {
+            quote! {
+                ContractParameterDefinition {
+                    name: #name.to_string(),
+                    ty: #ty.to_string(),
+                }
+            }
+        });
+
+        quote! {
+            ContractEventDescriptor {
+                name: #name.to_string(),
+                order: #order,
+                parameters: vec![#(#params),*],
+            }
+        }
+    });
+
+    let expanded = quote! {
+        #input
+
+        impl ContractEvents for #input.self_ty {
+            fn get_event_descriptors() -> Vec<ContractEventDescriptor> {
+                vec![
+                    #(#event_descriptors),*
+                ]
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
+struct EventAttribute {
+    name: LitStr,
+    order: LitInt,
+    params: Vec<(Ident, LitStr)>,
+}
+
+impl Parse for EventAttribute {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut name = None;
+        let mut order = None;
+        let mut params = Vec::new();
+
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+
+            match key.to_string().as_str() {
+                "name" => {
+                    name = Some(input.parse()?);
+                }
+                "order" => {
+                    order = Some(input.parse()?);
+                }
+                _ => {
+                    let value: LitStr = input.parse()?;
+                    params.push((key, value));
+                }
+            }
+
+            if !input.is_empty() {
+                input.parse::<Token![,]>()?;
+            }
+        }
+
+        Ok(EventAttribute {
+            name: name.ok_or_else(|| syn::Error::new(input.span(), "Missing 'name' parameter"))?,
+            order: order
+                .ok_or_else(|| syn::Error::new(input.span(), "Missing 'order' parameter"))?,
+            params,
+        })
+    }
 }

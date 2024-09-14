@@ -1,10 +1,11 @@
 use std::collections::VecDeque;
 use std::marker::PhantomData;
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::stack_item::StackItem;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::neo_contract::native_contract::native_contract_error::NativeContractError;
 
-/// A trait for types that can be converted to and from StackItems
+/// A trait for vm_types that can be converted to and from StackItems
 pub trait InteroperableElement {
     fn from_stack_item(item: StackItem) -> Result<Self, String> where Self: Sized;
     fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem;
@@ -76,7 +77,9 @@ impl<T: InteroperableElement> Default for InteroperableList<T> {
 }
 
 impl<T: InteroperableElement> IInteroperable for InteroperableList<T> {
-    fn from_stack_item(&mut self, stack_item: StackItem) -> Result<(), String> {
+    type Error = NativeContractError;
+
+    fn from_stack_item(stack_item: StackItem) -> Result<(), Self::Error> {
         if let StackItem::Array(array) = stack_item {
             self.list.clear();
             for item in array.into_iter() {

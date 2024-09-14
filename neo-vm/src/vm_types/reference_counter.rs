@@ -41,7 +41,7 @@ impl ReferenceCounter {
 	}
 
 	fn need_track(&self, item: Rc<RefCell< StackItem>>) -> bool {
-		// Track compound types and buffers
+		// Track compound vm_types and buffers
 		if let StackItemTrait::CompoundType(_) | StackItemTrait::Buffer(_) = item {
 			true
 		} else {

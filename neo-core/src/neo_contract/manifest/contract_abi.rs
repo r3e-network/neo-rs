@@ -1,7 +1,13 @@
+use alloc::rc::Rc;
 use std::collections::HashMap;
-use neo_vm::stack_item::StackItem;
+use neo_json::json_convert_trait::IJsonConvertible;
+use neo_json::jtoken::JToken;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::stack_item::StackItem;
+use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::manifest::contract_event_descriptor::ContractEventDescriptor;
 use crate::neo_contract::manifest::contract_method_descriptor::ContractMethodDescriptor;
+use crate::neo_contract::manifest::manifest_error::ManifestError;
 
 /// Represents the ABI of a smart contract.
 ///
@@ -15,7 +21,7 @@ pub struct ContractAbi {
 
 impl ContractAbi {
     /// Creates a new ContractAbi from JSON.
-    pub fn from_json(json: &Json) -> Result<Self, Error> {
+    pub fn from_json(json: &JToken) -> Result<Self, ManifestError> {
         let methods = json.get("methods")
             .and_then(|m| m.as_array())
             .map(|arr| arr.iter().filter_map(|u| ContractMethodDescriptor::from_json(u).ok()).collect())
@@ -27,7 +33,7 @@ impl ContractAbi {
             .unwrap_or_default();
 
         if methods.is_empty() {
-            return Err(Error::Format);
+            return Err(ManifestError::InvalidFormat("".to_string()));
         }
 
         Ok(Self {
@@ -57,16 +63,24 @@ impl ContractAbi {
     }
 
     /// Converts the ABI to a JSON object.
-    pub fn to_json(&self) -> Json {
-        let mut json = Json::new_object();
-        json.insert("methods", Json::from(self.methods.iter().map(|m| m.to_json()).collect::<Vec<_>>()));
-        json.insert("events", Json::from(self.events.iter().map(|e| e.to_json()).collect::<Vec<_>>()));
+    pub fn to_json(&self) -> JToken {
+        let mut json = JToken::new_object();
+        json.insert("methods".to_string(), JToken::from(self.methods.iter().map(|m| m.to_json()).collect::<Vec<_>>())).expect("TODO: panic message");
+        json.insert("events".to_string(), JToken::from(self.events.iter().map(|e| e.to_json()).collect::<Vec<_>>())).expect("TODO: panic message");
         json
     }
 }
 
+impl Default for ContractAbi {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
 impl IInteroperable for ContractAbi {
-    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Error> {
+    type Error = ManifestError;
+
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Struct(s) = stack_item {
             let methods = s.get(0)
                 .and_then(|arr| arr.as_array())
@@ -84,14 +98,14 @@ impl IInteroperable for ContractAbi {
                 method_dictionary: None,
             })
         } else {
-            Err(Error::InvalidStackItemType)
+            Err(ManifestError::InvalidStackItemType)
         }
     }
 
     fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
-        Ok(StackItem::Struct(Struct::new(vec![
-            StackItem::Array(Array::new(self.methods.iter().map(|m| m.to_stack_item(reference_counter)).collect())),
-            StackItem::Array(Array::new(self.events.iter().map(|e| e.to_stack_item(reference_counter)).collect())),
+        Ok(Rc::from(StackItem::Struct(vec![
+            Rc::from(StackItem::Array(self.methods.iter().map(|m| Rc::new(m.to_stack_item(reference_counter)?)).collect::<Vec<_>>())),
+            Rc::from(StackItem::Array(self.events.iter().map(|e| Rc::new(e.to_stack_item(reference_counter)?)).collect::<Vec<_>>())),
         ])))
     }
 }

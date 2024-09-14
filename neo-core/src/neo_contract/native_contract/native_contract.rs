@@ -30,21 +30,233 @@ pub trait NativeContract: Send + Sync {
     fn active_in(&self) -> Option<Hardfork>;
     fn hash(&self) -> &UInt160;
     fn id(&self) -> i32;
-    fn method_descriptors(&self) -> &[ContractMethodMetadata];
     fn event_descriptors(&self) -> &[ContractEventAttribute];
-    fn used_hardforks(&self) -> &HashSet<Hardfork>;
 
-    fn get_allowed_methods(&self, hf_checker: &dyn Fn(Hardfork, u32) -> bool, block_height: u32) -> CacheEntry;
-    fn get_contract_state(&self, hf_checker: &dyn Fn(Hardfork, u32) -> bool, block_height: u32) -> ContractState;
-    fn on_manifest_compose(&self, manifest: &mut ContractManifest);
-    fn is_initialize_block(&self, settings: &ProtocolSettings, index: u32) -> (bool, Option<Vec<Hardfork>>);
-    fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool;
-    fn check_committee(engine: &ApplicationEngine) -> bool;
-    fn create_storage_key(&self, prefix: u8) -> KeyBuilder;
-    fn invoke(&self, engine: &mut ApplicationEngine, version: u8) -> Result<(), Box<dyn std::error::Error>>;
     fn initialize(&self, engine: &mut ApplicationEngine, hard_fork: Option<Hardfork>) -> Result<(), Box<dyn std::error::Error>>;
     fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<(), Box<dyn std::error::Error>>;
     fn post_persist(&self, engine: &mut ApplicationEngine) -> Result<(), Box<dyn std::error::Error>>;
+
+    fn get_contract_state(&self, settings: &ProtocolSettings, block_height: u32) -> ContractState {
+        self.get_contract_state_with_checker(
+            |hf, height| settings.is_hardfork_enabled(hf, height),
+            block_height,
+        )
+    }
+
+    fn get_contract_state_with_checker(
+        &self,
+        hf_checker: impl Fn(Hardfork, u32) -> bool,
+        block_height: u32,
+    ) -> ContractState {
+        let allowed_methods = self.get_allowed_methods(&hf_checker, block_height);
+
+        // Compose NEF file
+        let nef = NefFile {
+            compiler: "neo-core-v3.0".to_string(),
+            source: String::new(),
+            tokens: Vec::new(),
+            script: allowed_methods.script.clone(),
+            checksum: 0,
+        };
+
+        // Compose manifest
+        let mut manifest = ContractManifest {
+            name: self.name().to_string(),
+            groups: Vec::new(),
+            supported_standards: Vec::new(),
+            abi: ContractAbi {
+                events: self
+                    .events_descriptors()
+                    .iter()
+                    .filter(|&e| Self::is_active(e, &hf_checker, block_height))
+                    .map(|e| e.descriptor.clone())
+                    .collect(),
+                methods: allowed_methods
+                    .methods
+                    .values()
+                    .map(|m| m.descriptor.clone())
+                    .collect(),
+            },
+            permissions: vec![ContractPermission::default()],
+            trusts: WildcardContainer::new(),
+            extra: None,
+        };
+
+        self.on_manifest_compose(&mut manifest);
+
+        ContractState {
+            id: self.id(),
+            nef,
+            hash: self.hash(),
+            manifest,
+            update_counter: 0,
+        }
+    }
+
+    fn is_initialize_block(
+        &self,
+        settings: &ProtocolSettings,
+        index: u32,
+    ) -> (bool, Vec<Hardfork>) {
+        let mut hfs = Vec::new();
+
+        for &hf in self.used_hardforks() {
+            let active_in = settings.hardforks.get(&hf).copied().unwrap_or(0);
+            if active_in == index {
+                hfs.push(hf);
+            }
+        }
+
+        if !hfs.is_empty() {
+            return (true, hfs);
+        }
+
+        if index == 0 && self.active_in().is_none() {
+            return (true, hfs);
+        }
+
+        (false, hfs)
+    }
+
+    fn is_active(&self, settings: &ProtocolSettings, block_height: u32) -> bool {
+        match self.active_in() {
+            None => true,
+            Some(active_in) => {
+                let active_height = settings.hardforks.get(&active_in).copied().unwrap_or(0);
+                active_height <= block_height
+            }
+        }
+    }
+
+    fn check_committee(engine: &ApplicationEngine) -> bool {
+        let committee_multi_sig_addr = NEO::get_committee_address(engine.snapshot_cache());
+        engine.check_witness_internal(&committee_multi_sig_addr)
+    }
+
+    fn create_storage_key(&self, prefix: u8) -> KeyBuilder {
+        KeyBuilder::new(self.id(), prefix)
+    }
+
+    fn invoke(&self, engine: &mut ApplicationEngine, version: u8) {
+        if version != 0 {
+            engine.throw_exception("InvalidOperationException", &format!("The native contract of version {} is not active.", version));
+            return;
+        }
+
+        let native_contracts = engine.get_state(|| NativeContractsCache::new());
+        let current_allowed_methods = native_contracts.get_allowed_methods(self, engine);
+        let context = engine.current_context();
+        let method = match current_allowed_methods.methods.get(&context.instruction_pointer()) {
+            Some(m) => m,
+            None => {
+                engine.throw_exception("InvalidOperationException", "Method not found");
+                return;
+            }
+        };
+
+        if let Some(active_in) = method.active_in {
+            if !engine.is_hardfork_enabled(active_in) {
+                engine.throw_exception("InvalidOperationException", &format!("Cannot call this method before hardfork {:?}", active_in));
+                return;
+            }
+        }
+
+        if let Some(deprecated_in) = method.deprecated_in {
+            if engine.is_hardfork_enabled(deprecated_in) {
+                engine.throw_exception("InvalidOperationException", &format!("Cannot call this method after hardfork {:?}", deprecated_in));
+                return;
+            }
+        }
+
+        let state = context.get_state::<ExecutionContextState>();
+        if !state.call_flags.contains(method.required_call_flags) {
+            engine.throw_exception("InvalidOperationException", &format!("Cannot call this method with the flag {:?}", state.call_flags));
+            return;
+        }
+
+        engine.add_fee(method.cpu_fee * engine.exec_fee_factor + method.storage_fee * engine.storage_price);
+
+        let mut parameters = Vec::new();
+        if method.need_application_engine {
+            parameters.push(engine as *mut ApplicationEngine as *mut std::ffi::c_void);
+        }
+        if method.need_snapshot {
+            parameters.push(engine.snapshot_cache() as *const _ as *mut std::ffi::c_void);
+        }
+        for i in 0..method.parameters.len() {
+            let value = engine.convert(context.evaluation_stack().peek(i), method.parameters[i]);
+            parameters.push(value as *mut std::ffi::c_void);
+        }
+
+        let result = unsafe { (method.handler)(parameters.as_ptr()) };
+
+        for _ in 0..method.parameters.len() {
+            context.evaluation_stack_mut().pop();
+        }
+
+        if !method.handler_return_type.is_void() {
+            context.evaluation_stack_mut().push(engine.convert(result));
+        }
+    }
+
+
+    fn initialize_async(&self, engine: &mut ApplicationEngine, hard_fork: Option<Hardfork>) {
+        // Default implementation
+    }
+
+    fn on_persist_async(&self, engine: &mut ApplicationEngine) {
+        // Default implementation
+    }
+
+    fn post_persist_async(&self, engine: &mut ApplicationEngine) {
+        // Default implementation
+    }
+
+    // Helper methods
+    fn method_descriptors(&self) -> &[ContractMethodMetadata];
+    fn events_descriptors(&self) -> &[ContractEventAttribute];
+    fn used_hardforks(&self) -> &HashSet<Hardfork>;
+
+    fn get_allowed_methods(
+        &self,
+        hf_checker: &impl Fn(Hardfork, u32) -> bool,
+        block_height: u32,
+    ) -> CacheEntry {
+        let mut methods = HashMap::new();
+        let mut script = Vec::new();
+
+        for method in self.method_descriptors() {
+            if Self::is_active(method, hf_checker, block_height) {
+                let offset = script.len();
+                script.extend_from_slice(&[0]); // version
+                methods.insert(offset, method.clone());
+                script.extend_from_slice(&[0xE0, 0x01]); // SYSCALL
+                script.extend_from_slice(&[0xC3]); // RET
+            }
+        }
+
+        CacheEntry { methods, script }
+    }
+
+    fn on_manifest_compose(&self, manifest: &mut ContractManifest) {
+        // Default implementation does nothing
+    }
+
+    fn is_active_method(
+        method: &impl HardforkActivable,
+        hf_checker: &impl Fn(Hardfork, u32) -> bool,
+        block_height: u32,
+    ) -> bool {
+        match (method.active_in(), method.deprecated_in()) {
+            (None, None) => true,
+            (None, Some(deprecated)) => !hf_checker(deprecated, block_height),
+            (Some(active), None) => hf_checker(active, block_height),
+            (Some(active), Some(deprecated)) => {
+                hf_checker(active, block_height) && !hf_checker(deprecated, block_height)
+            }
+        }
+    }
+
 }
 
 pub struct BaseNativeContract {

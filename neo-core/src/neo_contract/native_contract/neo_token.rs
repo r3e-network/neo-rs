@@ -1,9 +1,6 @@
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use neo_proc_macros::contract_method;
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::stack_item::StackItem;
 use crate::cryptography::ECCurve;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::storage_context::StorageContext;

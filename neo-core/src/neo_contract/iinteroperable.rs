@@ -1,6 +1,7 @@
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::stack_item::StackItem;
+use std::cell::RefCell;
 use std::rc::Rc;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::stack_item::StackItem;
 
 /// Represents an object that can be converted to and from `StackItem`.
 // TODO: clone method need further check since its related to reference counter, can not directly derive from Clone
@@ -27,7 +28,7 @@ pub trait IInteroperable: Default {
     /// # Returns
     ///
     /// A `Result` containing the converted `StackItem` or an error.
-    fn to_stack_item(&self, reference_counter: Option<&ReferenceCounter>) -> Result<Rc<StackItem>, Self::Error>;
+    fn to_stack_item(&self, reference_counter: Option<&mut Rc<RefCell<ReferenceCounter>>>) -> Result<Rc<StackItem>, Self::Error>;
 
     /// Creates a clone of the current object.
     ///
@@ -50,7 +51,7 @@ pub trait IInteroperable: Default {
     /// # Returns
     ///
     /// A `Result` containing the new instance or an error.
-    fn from_replica(replica: &dyn IInteroperable) -> Result<Self, Self::Error> {
+    fn from_replica(replica: &dyn IInteroperable<Error=Self::Error>) -> Result<Self, Self::Error> {
         Self::from_stack_item(&replica.to_stack_item(None)?)
     }
 }

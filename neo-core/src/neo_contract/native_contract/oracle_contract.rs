@@ -1,8 +1,9 @@
+use alloc::rc::Rc;
 use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use neo_proc_macros::{contract, event};
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::stack_item::StackItem;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 
 #[contract]

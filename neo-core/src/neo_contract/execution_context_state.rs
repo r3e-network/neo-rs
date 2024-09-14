@@ -1,5 +1,5 @@
 
-use neo_vm::execution_context::ExecutionContext;
+use neo_vm::vm::ExecutionContext;
 use crate::neo_contract::contract_state::ContractState;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::uint160::UInt160;

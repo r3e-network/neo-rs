@@ -1,7 +1,12 @@
+use alloc::rc::Rc;
 use NeoRust::crypto::ECPoint;
 use neo_base::encoding::base64;
 use neo_vm::stack_item::StackItem;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::{io::iserializable::ISerializable, neo_contract::iinteroperable::IInteroperable};
+use crate::cryptography::ECPoint;
+use crate::neo_contract::manifest::manifest_error::ManifestError;
 
 /// Represents a set of mutually trusted contracts.
 /// A contract will trust and allow any contract in the same group to invoke it, and the user interface will not give any warnings.
@@ -15,18 +20,26 @@ pub struct ContractGroup {
     pub signature: Vec<u8>,
 }
 
+impl Default for ContractGroup {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
 impl IInteroperable for ContractGroup {
-    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Error> {
+    type Error = ManifestError;
+
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Struct(s) = stack_item {
             if s.len() != 2 {
-                return Err(Error::InvalidStructure);
+                return Err(Self::Error::InvalidStructure);
             }
             Ok(ContractGroup {
                 pub_key: ECPoint::decode_point(&s[0].as_bytes()?, Secp256r1)?,
                 signature: s[1].as_bytes()?.to_vec(),
             })
         } else {
-            Err(Error::InvalidStackItem)
+            Err(Self::Error::InvalidStackItem)
         }
     }
 
@@ -36,11 +49,9 @@ impl IInteroperable for ContractGroup {
             StackItem::ByteArray(self.signature.clone()),
         ])))
     }
-    
-    type Error = std::io::Error;
 }
 
-impl ContractGroup {
+impl  ContractGroup {
     /// Converts the group from a JSON object.
     ///
     /// # Arguments

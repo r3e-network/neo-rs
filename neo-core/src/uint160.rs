@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::{fmt, io};
 use std::str::FromStr;
+use thiserror::Error;
 use crate::core_error::CoreError;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
@@ -79,7 +80,7 @@ impl FromStr for UInt160 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ParseUInt160Error {
     InvalidLength,
     InvalidHex,

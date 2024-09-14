@@ -1,7 +1,5 @@
-
-use neo_sdk::prelude::*;
 use std::fmt;
-use neo_vm::stack_item::StackItem;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;

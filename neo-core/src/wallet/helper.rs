@@ -157,7 +157,7 @@ pub mod helper {
                 size += io::helper::var_size(size_inv as u64) + size_inv + witness_script.as_ref().unwrap().var_size();
                 network_fee += exec_fee_factor * multi_signature_contract_cost(m, n);
             }
-            // We can support more contract types in the future.
+            // We can support more contract vm_types in the future.
         }
         network_fee += size as i64 * Policy::get_fee_per_byte(snapshot);
         for attr in &tx.attributes {

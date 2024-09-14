@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
-use neo_vm::stack_item::StackItem;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::cryptography::ECPoint;
 use crate::neo_contract::validator_attribute::ValidatorTrait;
 use crate::uint160::UInt160;

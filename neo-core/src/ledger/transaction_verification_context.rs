@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 use NeoRust::builder::Transaction;
+use crate::store::Snapshot;
 use crate::tx::OracleResponse;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
@@ -36,7 +37,7 @@ impl TransactionVerificationContext {
     }
 
     /// Determine whether the specified `Transaction` conflicts with other transactions.
-    pub fn check_transaction(&self, tx: &Transaction, conflicting_txs: &[Transaction], snapshot: &ISnapshot) -> bool {
+    pub fn check_transaction(&self, tx: &Transaction, conflicting_txs: &[Transaction], snapshot: &Snapshot) -> bool {
         let balance = NativeContract::GAS.balance_of(snapshot, &tx.sender());
         let total_sender_fee_from_pool = self.sender_fee.get(&tx.sender()).cloned().unwrap_or(0);
 

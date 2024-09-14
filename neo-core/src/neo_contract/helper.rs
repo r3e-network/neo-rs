@@ -10,8 +10,6 @@ use std::convert::TryInto;
 /// A helper module related to smart contracts.
 pub mod helper {
     use NeoRust::builder::ScriptBuilder;
-    use neo_vm::execution_context::ExecutionContext;
-    use neo_vm::op_code::OpCode;
     use neo_vm::vm::script::Script;
     use crate::neo_contract::application_engine::ApplicationEngine;
     use crate::neo_contract::execution_context_state::ExecutionContextState;

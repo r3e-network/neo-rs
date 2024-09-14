@@ -2,6 +2,8 @@ use std::convert::TryFrom;
 use neo_json::jtoken::JToken;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::neo_contract::iinteroperable_verifiable::InteroperableVerifiable;
 use crate::neo_contract::manifest::contract_manifest::ContractManifest;
 use crate::neo_contract::nef_file::NefFile;

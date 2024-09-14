@@ -1,4 +1,4 @@
-/// Represents the types of tokens in a JSON Path expression.
+/// Represents the vm_types of tokens in a JSON Path expression.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JPathTokenType {
     Root,

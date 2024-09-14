@@ -14,6 +14,19 @@ pub mod vm_error;
 pub mod vm_state;
 pub mod execution_engine_limits;
 
+
+pub use instruction::*;
+pub use op_code::*;
+pub use script::*;
+pub use evaluation_stack::*;
+pub use execution_context::*;
+pub use slot::*;
+pub use execution_engine::*;
+pub use vm_error::*;
+pub use vm_state::*;
+pub use execution_engine_limits::*;
+
+
 pub fn add(left: usize, right: usize) -> usize {
 	left + right
 }

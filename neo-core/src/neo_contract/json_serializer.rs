@@ -6,6 +6,9 @@ use neo_json::jtoken::{JToken, MAX_SAFE_INTEGER, MIN_SAFE_INTEGER};
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
+use neo_vm::vm::ExecutionEngineLimits;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
 

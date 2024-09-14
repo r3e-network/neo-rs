@@ -45,10 +45,11 @@ impl ContractParameter {
             ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(UInt160::default())),
             ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(UInt256::default())),
             ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(Vec::new())),
-            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECCurve::Secp256r1.g())),
+            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(&ECCurve::secp256r1().g.clone())),
             ContractParameterType::String => Some(ContractParameterValue::String(String::new())),
             ContractParameterType::Array => Some(ContractParameterValue::Array(Vec::new())),
             ContractParameterType::Map => Some(ContractParameterValue::Map(HashMap::new())),
+            _ => {}
         };
 
         ContractParameter {
@@ -104,6 +105,7 @@ impl ContractParameter {
                 }).collect::<Result<HashMap<_, _>, String>>()?;
                 Some(ContractParameterValue::Map(params))
             },
+            _ => {}
         };
 
         Ok(ContractParameter {
@@ -131,30 +133,30 @@ impl ContractParameter {
 
     /// Converts the parameter to a JSON object.
     pub fn to_json(&self) -> JToken {
-        let mut json = JObject::new();
-        json.insert("type", JValue::from(format!("{:?}", self.param_type)));
+        let mut json = JToken::new_object();
+        json.insert("type".to_string(), JToken::from(format!("{:?}", self.param_type)));
         
         if let Some(value) = &self.value {
             let value_json = match value {
-                ContractParameterValue::Any => JValue::Null,
-                ContractParameterValue::Signature(sig) => JValue::from(hex::encode(sig)),
-                ContractParameterValue::Boolean(b) => JValue::from(*b),
-                ContractParameterValue::Integer(i) => JValue::from(i.to_string()),
-                ContractParameterValue::Hash160(h) => JValue::from(h.to_string()),
-                ContractParameterValue::Hash256(h) => JValue::from(h.to_string()),
-                ContractParameterValue::ByteArray(b) => JValue::from(hex::encode(b)),
-                ContractParameterValue::PublicKey(pk) => JValue::from(pk.to_string()),
-                ContractParameterValue::String(s) => JValue::from(s.clone()),
-                ContractParameterValue::Array(arr) => JValue::from(arr.iter().map(|p| p.to_json()).collect::<Vec<_>>()),
+                ContractParameterValue::Any => JToken::Null,
+                ContractParameterValue::Signature(sig) => JToken::from(hex::encode(sig)),
+                ContractParameterValue::Boolean(b) => JToken::from(*b),
+                ContractParameterValue::Integer(i) => JToken::from(i.to_string()),
+                ContractParameterValue::Hash160(h) => JToken::from(h.to_string()),
+                ContractParameterValue::Hash256(h) => JToken::from(h.to_string()),
+                ContractParameterValue::ByteArray(b) => JToken::from(hex::encode(b)),
+                ContractParameterValue::PublicKey(pk) => JToken::from(pk.to_string()),
+                ContractParameterValue::String(s) => JToken::from(s.clone()),
+                ContractParameterValue::Array(arr) => JToken::from(arr.iter().map(|p| p.to_json()).collect::<Vec<_>>()),
                 ContractParameterValue::Map(map) => {
-                    let mut map_json = JObject::new();
+                    let mut map_json = JToken::new_object();
                     for (k, v) in map {
                         map_json.insert(k.to_string(), v.to_json());
                     }
-                    JValue::from(map_json)
+                    JToken::from(map_json)
                 },
             };
-            json.insert("value", value_json);
+            json.insert("value".to_string(), value_json);
         }
 
         json

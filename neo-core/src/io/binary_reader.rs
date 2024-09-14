@@ -1,6 +1,6 @@
 use std::io::{self, Read};
 
-/// A binary reader that can read various data types from a byte array.
+/// A binary reader that can read various data vm_types from a byte array.
 ///
 /// # Examples
 ///

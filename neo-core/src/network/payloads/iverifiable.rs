@@ -1,6 +1,8 @@
 use std::io::Write;
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
+use crate::network::calculate_hash;
 use crate::network::payloads::Witness;
 use crate::persistence::DataCache;
 use crate::uint160::UInt160;

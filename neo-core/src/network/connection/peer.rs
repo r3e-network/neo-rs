@@ -108,7 +108,7 @@ impl Peer {
         let mut unconnected = self.unconnected_peers.write().await;
         if unconnected.len() > self.unconnected_max {
             let to_remove = unconnected.len() - self.unconnected_max;
-            unconnected.retain(|_| rand::random::<f32>() > (to_remove as f32 / unconnected.len() as f32));
+            unconnected.retain(|_| rand::rand_bytes::<f32>() > (to_remove as f32 / unconnected.len() as f32));
         }
     }
 

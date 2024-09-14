@@ -1,5 +1,7 @@
-use NeoRust::prelude::ECPoint;
-use neo_vm::stack_item::StackItem;
+use core::str::FromStr;
+use neo_vm::vm_types::stack_item::StackItem;
+use crate::cryptography::{ECCurve, ECPoint};
+use crate::neo_contract::manifest::manifest_error::ManifestError;
 use crate::uint160::UInt160;
 
 /// Indicates which contracts are authorized to be called.
@@ -29,7 +31,7 @@ impl ContractPermissionDescriptor {
     }
 
     /// Creates a new instance with wildcard.
-    pub fn new_wildcard() -> Self {
+    pub fn create_wildcard() -> Self {
         Self {
             hash: None,
             group: None,
@@ -52,31 +54,45 @@ impl ContractPermissionDescriptor {
     }
 
     /// Creates a new instance from a StackItem.
-    pub fn from_stack_item(item: &StackItem) -> Result<Self, Error> {
+    pub fn from_stack_item(item: &StackItem) -> Result<Self, ManifestError> {
         if item.is_null() {
-            Ok(Self::new_wildcard())
+            Ok(Self::create_wildcard())
         } else {
             let span = item.get_span()?;
             Self::from_bytes(&span)
         }
     }
 
+    pub fn create(item: &StackItem) -> Result<Self, ManifestError>{
+        Self::from_stack_item(item)
+    }
+
+    /// Creates a new instance from a UInt160 hash.
+    pub fn from_hash(hash: UInt160) -> Self {
+        Self::new_with_hash(hash)
+    }
+
+    /// Creates a new instance from a ECPoint group.
+    pub fn from_group(group: ECPoint) -> Self {
+        Self::new_with_group(group)
+    }
+
     /// Creates a new instance from bytes.
-    pub fn from_bytes(span: &[u8]) -> Result<Self, Error> {
+    pub fn from_bytes(span: &[u8]) -> Result<Self, ManifestError> {
         match span.len() {
-            20 => Ok(Self::new_with_hash(UInt160::from_slice(span)?)),
-            33 => Ok(Self::new_with_group(ECPoint::decode_point(span, ECCurve::Secp256r1)?)),
-            _ => Err(Error::ArgumentError("Invalid byte length".into())),
+            20 => Ok(Self::new_with_hash(UInt160::from(span))),
+            33 => Ok(Self::new_with_group((*ECPoint::decode_point(span, ECCurve::secp256r1())).clone())),
+            _ => Err(ManifestError::InvalidFormat("Invalid byte length".into())),
         }
     }
 
     /// Converts the permission descriptor from a JSON string.
-    pub fn from_json(json: &str) -> Result<Self, Error> {
+    pub fn from_json(json: &str) -> Result<Self, ManifestError> {
         match json.len() {
             42 => Ok(Self::new_with_hash(UInt160::from_str(json)?)),
             66 => Ok(Self::new_with_group(ECPoint::from_str(json)?)),
-            1 if json == "*" => Ok(Self::new_wildcard()),
-            _ => Err(Error::FormatError("Invalid JSON format".into())),
+            1 if json == "*" => Ok(Self::create_wildcard()),
+            _ => Err(ManifestError::InvalidFormat("Invalid JSON format".into())),
         }
     }
 

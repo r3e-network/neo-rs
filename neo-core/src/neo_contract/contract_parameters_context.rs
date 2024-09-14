@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use neo_vm::stack_item::StackItem;
+use neo_json::json_convert_trait::IJsonConvertible;
+use neo_json::json_error::JsonError;
+use neo_json::jtoken::JToken;
 use crate::cryptography::ECPoint;
 use crate::neo_contract::contract::Contract;
+use crate::neo_contract::contract_error::ContractError;
 use crate::neo_contract::contract_parameter::ContractParameter;
 use crate::network::payloads::{IVerifiable, Transaction};
 use crate::persistence::DataCache;
@@ -11,7 +14,7 @@ use crate::uint160::UInt160;
 /// The context used to add witnesses for `IVerifiable`.
 pub struct ContractParametersContext {
     /// The `IVerifiable` to add witnesses.
-    pub verifiable: Box<dyn IVerifiable>,
+    pub verifiable: Box<dyn IVerifiable<Error=ContractError>>,
 
     /// The snapshotcache used to read data.
     pub snapshot_cache: dyn DataCache,
@@ -39,8 +42,21 @@ impl ContextItem {
             signatures: HashMap::new(),
         }
     }
+}
 
-    fn from_json(json: &JObject) -> Result<Self, Error> {
+impl IJsonConvertible for ContextItem {
+    fn to_json(&self) -> JToken {
+        todo!()
+    }
+
+    fn from_json(json: &JToken) -> Result<Self, JsonError>
+    where
+        Self: Sized
+    {
+        todo!()
+    }
+}
+    fn from_json(json: &JToken) -> Result<Self, Error> {
         let script = json.get("script")
             .and_then(|v| v.as_str())
             .ok_or(Error::InvalidFormat)?;

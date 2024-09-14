@@ -27,8 +27,8 @@ pub mod opcode;
 pub mod operand;
 pub mod stack;
 pub mod tables;
-pub mod types;
-
+pub mod vm_types;
+pub mod vm;
 
 pub(crate) const MAX_STACK_ITEM_SIZE: usize = 65535 * 2;
 

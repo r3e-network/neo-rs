@@ -7,6 +7,7 @@ use NeoRust::builder::Transaction;
 use NeoRust::neo_types::{StackItem, VMState};
 use NeoRust::prelude::ScriptBuilder;
 use crate::block::Block;
+use crate::ledger::blockchain_application_executed::ledger::ApplicationExecuted;
 use crate::ledger::verify_result::VerifyResult;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
@@ -18,7 +19,7 @@ use crate::network::payloads::{IInventory, IVerifiable, InventoryType, Witness};
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 
-pub type CommittingHandler = fn(system: &NeoSystem, block: &Block, snapshot: &Store, application_executed_list: &[ApplicationExecuted]);
+pub type CommittingHandler = fn(system: &NeoSystem, block: &Block, snapshot: &dyn Store<WriteBatch=()>, application_executed_list: &[ApplicationExecuted]);
 pub type CommittedHandler = fn(system: &NeoSystem, block: &Block);
 
 /// Actor used to verify and relay `IInventory`.
@@ -27,42 +28,6 @@ pub struct Blockchain {
     block_cache: HashMap<UInt256, Block>,
     block_cache_unverified: HashMap<u32, UnverifiedBlocksList>,
     extensible_witness_white_list: Option<HashSet<UInt160>>,
-}
-pub struct ApplicationExecuted {
-    /// The transaction that contains the executed script. This field could be None if the contract is invoked by system.
-    pub transaction: Option<Transaction>,
-
-    /// The trigger of the execution.
-    pub trigger: TriggerType,
-
-    /// The state of the virtual machine after the contract is executed.
-    pub vm_state: VMState,
-
-    /// The error that caused the execution to terminate abnormally. This field could be None if the execution ends normally.
-    pub error: Option<Box<dyn Error>>,
-
-    /// GAS spent to execute.
-    pub gas_consumed: i64,
-
-    /// Items on the stack of the virtual machine after execution.
-    pub stack: Vec<StackItem>,
-
-    /// The notifications sent during the execution.
-    pub notifications: Vec<NotifyEventArgs>,
-}
-
-impl ApplicationExecuted {
-    pub fn new(engine: &ApplicationEngine) -> Self {
-        Self {
-            transaction: engine.script_container().and_then(|container| container.downcast_ref::<Transaction>().cloned()),
-            trigger: engine.trigger(),
-            vm_state: engine.state(),
-            error: engine.exception().map(|e| Box::new(e) as Box<dyn Error>),
-            gas_consumed: engine.gas_consumed(),
-            stack: engine.result_stack().to_vec(),
-            notifications: engine.notifications().to_vec(),
-        }
-    }
 }
 
 pub struct PersistCompleted {
@@ -83,11 +48,11 @@ pub struct FillMemoryPool {
 pub struct FillCompleted;
 
 pub struct Reverify {
-    pub inventories: Vec<Box<dyn IInventory>>,
+    pub inventories: Vec<Box<dyn IInventory<Error=()>>>,
 }
 
 pub struct RelayResult {
-    pub inventory: Box<dyn IInventory>,
+    pub inventory: Box<dyn IInventory<Error=()>>,
     pub result: VerifyResult,
 }
 

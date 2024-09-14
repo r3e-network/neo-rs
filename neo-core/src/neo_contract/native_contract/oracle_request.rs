@@ -1,7 +1,9 @@
+use alloc::rc::Rc;
 use serde::{Deserialize, Serialize};
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::stack_item::StackItem;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::neo_contract::native_contract::native_contract_error::NativeContractError;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 
@@ -30,7 +32,15 @@ pub struct OracleRequest {
     pub user_data: Vec<u8>,
 }
 
+impl Default for OracleRequest {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
 impl IInteroperable for OracleRequest {
+    type Error = NativeContractError;
+
     fn from_stack_item(item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Array(array) = item {
             let request = OracleRequest {
@@ -69,6 +79,4 @@ impl IInteroperable for OracleRequest {
             reference_counter,
         )))
     }
-    
-    type Error = std::io::Error;
 }

@@ -10,8 +10,6 @@ pub use neo_crypto::secp256r1::*;
 pub mod big_decimal;
 pub mod io;
 extern crate core;
-extern crate core;
-extern crate core;
 
 pub mod block;
 
@@ -34,7 +32,9 @@ pub mod time_provider;
 pub mod tx;
 pub mod types;
 pub mod uint160;
+pub use uint160::*;
 pub mod uint256;
+pub use uint256::*;
 pub mod wallet;
 mod persistence;
 mod neo_contract;
@@ -54,3 +54,5 @@ pub use neo_crypto::secp256r1::*;
 // #[lang = "eh_personality"]
 // #[no_mangle]
 // pub extern fn eh_personality() {}
+
+

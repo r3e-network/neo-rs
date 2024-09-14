@@ -2,18 +2,16 @@
 // All Rights Reserved
 
 use alloc::string::{String, ToString};
-use core::cmp::{Ord, PartialOrd, Ordering};
+use core::cmp::{Ord, Ordering, PartialOrd};
 use core::fmt::{Debug, Display, Formatter};
-use core::ops::{Add, AddAssign, Sub, SubAssign, BitAnd, BitOr, BitXor, Not};
+use core::ops::{Add, AddAssign, BitAnd, BitOr, BitXor, Not, Sub, SubAssign};
 
-use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{errors, cmp_elem, math::Widening};
 use crate::encoding::{bin::*, hex::StartsWith0x};
-
+use crate::{cmp_elem, errors, math::Widening};
 
 const N: usize = 4;
-
 
 #[derive(Copy, Clone, Default, Hash, Eq, PartialEq)]
 #[repr(C)]
@@ -26,10 +24,11 @@ impl U256 {
 
     pub const ONE: Self = U256 { n: [1, 0, 0, 0] };
 
-    pub const MAX: Self = U256 { n: [u64::MAX, u64::MAX, u64::MAX, u64::MAX] };
+    pub const MAX: Self = U256 {
+        n: [u64::MAX, u64::MAX, u64::MAX, u64::MAX],
+    };
 
     pub const MIN: Self = U256 { n: [0, 0, 0, 0] };
-
 
     #[inline]
     pub fn to_le_bytes(&self) -> [u8; 32] {
@@ -46,7 +45,9 @@ impl U256 {
 
     #[inline]
     pub fn from_le_bytes(buf: &[u8; 32]) -> Self {
-        Self { n: unsafe { core::mem::transmute_copy(buf) } }
+        Self {
+            n: unsafe { core::mem::transmute_copy(buf) },
+        }
     }
 
     #[inline]
@@ -57,10 +58,14 @@ impl U256 {
     }
 
     #[inline]
-    pub fn is_zero(&self) -> bool { self.eq(&U256::ZERO) }
+    pub fn is_zero(&self) -> bool {
+        self.eq(&U256::ZERO)
+    }
 
     #[inline]
-    pub fn is_even(&self) -> bool { self.n[0] & 1u64 == 0 }
+    pub fn is_even(&self) -> bool {
+        self.n[0] & 1u64 == 0
+    }
 }
 
 impl Debug for U256 {
@@ -79,18 +84,21 @@ impl Display for U256 {
     }
 }
 
-
 impl From<u64> for U256 {
     #[inline]
     fn from(value: u64) -> Self {
-        Self { n: [value, 0, 0, 0] }
+        Self {
+            n: [value, 0, 0, 0],
+        }
     }
 }
 
 impl From<u128> for U256 {
     #[inline]
     fn from(value: u128) -> Self {
-        Self { n: [value as u64, (value >> 64) as u64, 0, 0] }
+        Self {
+            n: [value as u64, (value >> 64) as u64, 0, 0],
+        }
     }
 }
 
@@ -113,7 +121,6 @@ impl Ord for U256 {
     }
 }
 
-
 #[derive(Debug, Clone, Copy, errors::Error)]
 pub enum ToU256Error {
     #[error("to-u256: hex-encode u256's length must be 64")]
@@ -129,13 +136,16 @@ impl TryFrom<&str> for U256 {
     // FIXME: only hex string is supported now.
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         use hex::FromHexError as HexError;
-        let value = if value.starts_with_0x() { &value[2..] } else { value };
+        let value = if value.starts_with_0x() {
+            &value[2..]
+        } else {
+            value
+        };
         let mut buf = [0u8; 32];
-        let _ = hex::decode_to_slice(value, &mut buf)
-            .map_err(|e| match e {
-                HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
-                HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
-            })?;
+        let _ = hex::decode_to_slice(value, &mut buf).map_err(|e| match e {
+            HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
+            HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
+        })?;
 
         Ok(Self::from_be_bytes(&buf))
     }
@@ -161,7 +171,9 @@ impl BinEncoder for U256 {
         w.write(self.to_le_bytes().as_slice());
     }
 
-    fn bin_size(&self) -> usize { 32 }
+    fn bin_size(&self) -> usize {
+        32
+    }
 }
 
 impl BinDecoder for U256 {
@@ -182,7 +194,9 @@ impl Add for U256 {
         let (n2, carry2) = self.n[2].add_with_carrying(rhs.n[2], carry1);
         let (n3, _) = self.n[3].add_with_carrying(rhs.n[3], carry2);
 
-        Self { n: [n0, n1, n2, n3] }
+        Self {
+            n: [n0, n1, n2, n3],
+        }
     }
 }
 
@@ -218,7 +232,9 @@ impl Sub for U256 {
         let (n2, carry2) = self.n[2].sub_with_borrowing(rhs.n[2], carry1);
         let (n3, _) = self.n[3].sub_with_borrowing(rhs.n[3], carry2);
 
-        Self { n: [n0, n1, n2, n3] }
+        Self {
+            n: [n0, n1, n2, n3],
+        }
     }
 }
 
@@ -255,7 +271,9 @@ impl BitAnd for U256 {
         let n2 = self.n[2] & rhs.n[2];
         let n3 = self.n[3] & rhs.n[3];
 
-        Self { n: [n0, n1, n2, n3] }
+        Self {
+            n: [n0, n1, n2, n3],
+        }
     }
 }
 
@@ -269,7 +287,9 @@ impl BitOr for U256 {
         let n2 = self.n[2] | rhs.n[2];
         let n3 = self.n[3] | rhs.n[3];
 
-        Self { n: [n0, n1, n2, n3] }
+        Self {
+            n: [n0, n1, n2, n3],
+        }
     }
 }
 
@@ -283,7 +303,9 @@ impl BitXor for U256 {
         let n2 = self.n[2] ^ rhs.n[2];
         let n3 = self.n[3] ^ rhs.n[3];
 
-        Self { n: [n0, n1, n2, n3] }
+        Self {
+            n: [n0, n1, n2, n3],
+        }
     }
 }
 
@@ -297,14 +319,16 @@ impl Not for U256 {
         let n2 = !self.n[2];
         let n3 = !self.n[3];
 
-        Self { n: [n0, n1, n2, n3] }
+        Self {
+            n: [n0, n1, n2, n3],
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use core::cmp::Ordering;
     use crate::math::U256;
+    use core::cmp::Ordering;
 
     #[test]
     fn test_u256_ops() {

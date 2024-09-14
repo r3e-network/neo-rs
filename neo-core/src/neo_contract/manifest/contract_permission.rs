@@ -1,9 +1,7 @@
-use neo::prelude::*;
-use neo::io::*;
-use neo::vm::*;
-use neo::types::*;
-use neo::json::Json;
+use alloc::rc::Rc;
 use std::collections::HashSet;
+use neo_vm::vm_types::stack_item::StackItem;
+use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::manifest::contract_permission_descriptor::ContractPermissionDescriptor;
 use crate::neo_contract::manifest::wild_card_container::WildcardContainer;
 
@@ -92,6 +90,15 @@ impl ContractPermission {
             ContractPermissionDescriptor::Wildcard => {}
         }
         self.methods.is_wildcard() || self.methods.contains(target_method)
+    }
+}
+
+impl Default for ContractPermission {
+    fn default() -> Self {
+        Self{
+            contract: ContractPermissionDescriptor::create_wildcard(),
+            methods: WildcardContainer::<String>::create_wildcard(),
+        }
     }
 }
 

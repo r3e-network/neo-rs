@@ -4,7 +4,8 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 use num_bigint::{BigInt, BigUint};
-use neo_crypto::rand;
+use num_traits::One;
+use rand::Rng;
 use crate::{BigIntExt, BigUintExt};
 use crate::cryptography::ecc::ECCurve;
 
@@ -42,50 +43,55 @@ impl ECFieldElement {
     pub fn sqrt(&self) -> Option<ECFieldElement> {
         if self.curve.q.bit(1) {
             let z = ECFieldElement::new(
-                self.value.modpow(&((self.curve.q.clone() >> 2) + 1.into()), &self.curve.q),
+                self.value.modpow(&((&self.curve.q >> 2) + 1), &self.curve.q),
                 self.curve.clone(),
-            ).unwrap();
+            )
+                .unwrap();
             if z.square().eq(self) {
                 Some(z)
             } else {
                 None
             }
         } else {
-            let q_minus_one = self.curve.q.clone() - 1;
-            let legendre_exponent = q_minus_one >> 1;
-            if self.value.modpow(&legendre_exponent, &self.curve.q) != BigInt::from(1) {
+            let q_minus_one = &self.curve.q - 1;
+            let legendre_exponent = &q_minus_one >> 1;
+            if self.value.modpow(&legendre_exponent, &self.curve.q) != One::one() {
                 return None;
             }
-            let u = q_minus_one.clone() >> 2;
-            let k = (u << 1) + 1;
-            let q = self.value.clone();
-            let four_q = (q.clone() << 2).modpow(&BigInt::from(1), &self.curve.q);
-            
+            let u = &q_minus_one >> 2;
+            let k = (&u << 1) + 1;
+            let q = &self.value;
+            let four_q = (q << 2)%(&BigInt::one(), &self.curve.q);
+
             loop {
                 let p = loop {
-                    let p = rand::thread_rng().gen_bigint(&self.curve.q.get_bit_length());
-                    if p < self.curve.q && (p.pow(2) - &four_q).modpow(&legendre_exponent, &self.curve.q) == q_minus_one {
+                    let p = BigInt::from(rand::thread_rng().gen::<u64>());
+                    if p < self.curve.q
+                        && p.pow(2).sub(&four_q)%(&legendre_exponent, &self.curve.q)
+                        == q_minus_one
+                    {
                         break p;
                     }
                 };
-                
-                let result = Self::fast_lucas_sequence(&self.curve.q, &p, &q, &k);
-                let (u, v) = (result[0].clone(), result[1].clone());
-                
-                if v.pow(2).modpow(&BigInt::from(1), &self.curve.q) == four_q {
-                    let mut v = v;
+
+                let result = Self::fast_lucas_sequence(&self.curve.q, &p, q, &k);
+                let u = &result[0];
+                let v = &result[1];
+
+                if v.pow(2).modpow(&BigInt::one(), &self.curve.q) == four_q {
+                    let mut v = v.clone();
                     if v.bit(0) {
                         v += &self.curve.q;
                     }
                     v >>= 1;
-                    return Some(ECFieldElement::new(v, self.curve.clone()).unwrap());
+                    return ECFieldElement::new(v, self.curve.clone()).ok();
                 }
-                
-                if u == BigInt::from(1) || u == q_minus_one {
+
+                if u == &BigInt::one() || u == &q_minus_one {
                     continue;
                 }
-                
-                break None;
+
+                return None;
             }
         }
     }
@@ -98,7 +104,7 @@ impl ECFieldElement {
     }
 
     pub fn to_byte_array(&self) -> Vec<u8> {
-        let mut data = self.value.to_bytes_be().1;
+        let mut data = self.value.to_bytes_be();
         if data.len() == 32 {
             data
         } else {
@@ -152,7 +158,7 @@ impl ECFieldElement {
 
 impl PartialEq for ECFieldElement {
     fn eq(&self, other: &Self) -> bool {
-        self.value == other.value && self.curve == other.curve
+        self.value == other.value && self.curve.q == other.curve.q
     }
 }
 
@@ -185,7 +191,7 @@ impl Add for ECFieldElement {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        ECFieldElement::new((&self.value + &rhs.value).modpow(&BigInt::from(1), &self.curve.q), self.curve.clone()).unwrap()
+        ECFieldElement::new((&self.value + &rhs.value).modpow(&BigUint::from(1), &self.curve.q), self.curve.clone()).unwrap()
     }
 }
 
@@ -210,7 +216,7 @@ impl Div for ECFieldElement {
 
     fn div(self, rhs: Self) -> Self::Output {
         ECFieldElement::new(
-            (&self.value * rhs.value.modpow(&(&self.curve.q - 2), &self.curve.q)).modpow(&BigInt::from(1), &self.curve.q),
+            (&self.value * rhs.value.modpow(&(&self.curve.q - 2), &self.curve.q)).modpow(&BigUint::from(1), &self.curve.q),
             self.curve.clone()
         ).unwrap()
     }

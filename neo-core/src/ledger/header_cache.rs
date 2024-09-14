@@ -1,4 +1,3 @@
-
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 use crate::block::Header;
@@ -50,9 +49,13 @@ impl HeaderCache {
         self.headers.read().unwrap().is_empty()
     }
 
+    pub fn count(&self) -> usize {
+        self.headers.read().unwrap().len()
+    }
+
     /// Indicates whether the cache is full.
     pub fn is_full(&self) -> bool {
-        self.len(pub (crate))pub(crate) >= 10000
+        self.count() >= 10000
     }
 
     /// Gets the last `Header` in the cache. Or `None` if the cache is empty.

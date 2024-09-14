@@ -25,7 +25,7 @@ impl UInt256 {
     ///
     /// Panics if the slice length is not equal to `LENGTH`.
     pub(crate) fn from_slice(slice: &[u8]) -> UInt256 {
-        assert_eq!(slice.len(), Self::LENGTH, "Invalid byte length for UInt256");
+        assert_eq!(slice.len(), Self::LEN, "Invalid byte length for UInt256");
         let mut data = [0u64; 4];
         for (i, chunk) in slice.chunks_exact(8).enumerate() {
             data[i] = u64::from_le_bytes(chunk.try_into().unwrap());
@@ -36,7 +36,7 @@ impl UInt256 {
 
 impl UInt256 {
     /// The length of UInt256 values in bytes.
-    pub const LENGTH: usize = 32;
+    pub const LEN: usize = 32;
 
     /// Represents 0.
     pub const ZERO: Self = Self { data: [0; 4] };
@@ -47,7 +47,7 @@ impl UInt256 {
     ///
     /// Panics if the slice length is not equal to `LENGTH`.
     pub fn new(bytes: &[u8]) -> Self {
-        assert_eq!(bytes.len(), Self::LENGTH, "Invalid byte length for UInt256");
+        assert_eq!(bytes.len(), Self::LEN, "Invalid byte length for UInt256");
         let mut data = [0u64; 4];
         for (i, chunk) in bytes.chunks_exact(8).enumerate() {
             data[i] = u64::from_le_bytes(chunk.try_into().unwrap());
@@ -56,8 +56,8 @@ impl UInt256 {
     }
 
     /// Converts the UInt256 to a byte array.
-    pub fn to_array(&self) -> [u8; Self::LENGTH] {
-        let mut result = [0u8; Self::LENGTH];
+    pub fn to_array(&self) -> [u8; Self::LEN] {
+        let mut result = [0u8; Self::LEN];
         for (i, &value) in self.data.iter().enumerate() {
             result[i * 8..(i + 1) * 8].copy_from_slice(&value.to_le_bytes());
         }
@@ -102,7 +102,7 @@ impl FromStr for UInt256 {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.strip_prefix("0x").unwrap_or(s);
-        if s.len() != Self::LENGTH * 2 {
+        if s.len() != Self::LEN * 2 {
             return Err(ParseUInt256Error::InvalidLength);
         }
         let bytes = hex::decode(s).map_err(|_| ParseUInt256Error::InvalidHex)?;

@@ -1,17 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::string::{String, ToString};
-use core::cmp::{Ord, PartialOrd, Ordering};
+use core::cmp::{Ord, Ordering, PartialOrd};
 use core::fmt::{Debug, Display, Formatter};
 use core::ops::{BitAnd, BitOr, BitXor, Not};
 
-use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{errors, bytes::ToRevArray};
 use crate::encoding::{bin::*, hex::StartsWith0x};
-
+use crate::{bytes::ToRevArray, errors};
 
 #[derive(Copy, Clone, Default, Hash, Eq, PartialEq)]
 #[repr(C)]
@@ -25,11 +23,20 @@ impl I256 {
 
     pub const ONE: Self = I256 { low: 1, high: 0 };
 
-    pub const MINUS_ONE: Self = I256 { low: u128::MAX, high: -1 };
+    pub const MINUS_ONE: Self = I256 {
+        low: u128::MAX,
+        high: -1,
+    };
 
-    pub const MAX: Self = I256 { low: u128::MAX, high: i128::MAX };
+    pub const MAX: Self = I256 {
+        low: u128::MAX,
+        high: i128::MAX,
+    };
 
-    pub const MIN: Self = I256 { low: u128::MIN, high: i128::MIN };
+    pub const MIN: Self = I256 {
+        low: u128::MIN,
+        high: i128::MIN,
+    };
 
     // NOTE: assume platform endian is little endian
     #[inline]
@@ -53,13 +60,19 @@ impl I256 {
     }
 
     #[inline]
-    pub fn is_zero(&self) -> bool { self.eq(&I256::ZERO) }
+    pub fn is_zero(&self) -> bool {
+        self.eq(&I256::ZERO)
+    }
 
     #[inline]
-    pub fn is_even(&self) -> bool { self.low & 1u128 == 0 }
+    pub fn is_even(&self) -> bool {
+        self.low & 1u128 == 0
+    }
 
     #[inline]
-    pub fn is_negative(&self) -> bool { self.high.is_negative() }
+    pub fn is_negative(&self) -> bool {
+        self.high.is_negative()
+    }
 
     #[inline]
     pub fn is_postive(&self) -> bool {
@@ -91,7 +104,6 @@ impl Display for I256 {
     }
 }
 
-
 impl PartialOrd for I256 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -100,31 +112,42 @@ impl PartialOrd for I256 {
 
 impl Ord for I256 {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.high.cmp(&other.high)
-            .then(self.low.cmp(&other.low))
+        self.high.cmp(&other.high).then(self.low.cmp(&other.low))
     }
 }
 
 impl From<i8> for I256 {
-    fn from(value: i8) -> Self { Self::from(value as i128) }
+    fn from(value: i8) -> Self {
+        Self::from(value as i128)
+    }
 }
 
 impl From<i16> for I256 {
-    fn from(value: i16) -> Self { Self::from(value as i128) }
+    fn from(value: i16) -> Self {
+        Self::from(value as i128)
+    }
 }
 
 impl From<i32> for I256 {
-    fn from(value: i32) -> Self { Self::from(value as i128) }
+    fn from(value: i32) -> Self {
+        Self::from(value as i128)
+    }
 }
 
 impl From<i64> for I256 {
-    fn from(value: i64) -> Self { Self::from(value as i128) }
+    fn from(value: i64) -> Self {
+        Self::from(value as i128)
+    }
 }
 
 impl From<i128> for I256 {
-    fn from(value: i128) -> Self { Self { low: value as u128, high: value >> 127 } }
+    fn from(value: i128) -> Self {
+        Self {
+            low: value as u128,
+            high: value >> 127,
+        }
+    }
 }
-
 
 #[derive(Debug, Clone, Copy, errors::Error)]
 pub enum ToI256Error {
@@ -141,18 +164,20 @@ impl TryFrom<&str> for I256 {
     // FIXME: only hex string is supported now.
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         use hex::FromHexError as HexError;
-        let value = if value.starts_with_0x() { &value[2..] } else { value };
+        let value = if value.starts_with_0x() {
+            &value[2..]
+        } else {
+            value
+        };
         let mut buf = [0u8; 32];
-        let _ = hex::decode_to_slice(value, &mut buf)
-            .map_err(|e| match e {
-                HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
-                HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
-            })?;
+        let _ = hex::decode_to_slice(value, &mut buf).map_err(|e| match e {
+            HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
+            HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
+        })?;
 
         Ok(Self::from_be_bytes(&buf))
     }
 }
-
 
 impl Serialize for I256 {
     #[inline]
@@ -174,7 +199,9 @@ impl BinEncoder for I256 {
         w.write(self.to_le_bytes().as_slice());
     }
 
-    fn bin_size(&self) -> usize { 32 }
+    fn bin_size(&self) -> usize {
+        32
+    }
 }
 
 impl BinDecoder for I256 {
@@ -191,7 +218,10 @@ impl BitAnd for I256 {
 
     #[inline]
     fn bitand(self, rhs: Self) -> Self::Output {
-        Self { low: self.low & rhs.low, high: self.high & rhs.high }
+        Self {
+            low: self.low & rhs.low,
+            high: self.high & rhs.high,
+        }
     }
 }
 
@@ -200,7 +230,10 @@ impl BitOr for I256 {
 
     #[inline]
     fn bitor(self, rhs: Self) -> Self::Output {
-        Self { low: self.low | rhs.low, high: self.high | rhs.high }
+        Self {
+            low: self.low | rhs.low,
+            high: self.high | rhs.high,
+        }
     }
 }
 
@@ -209,7 +242,10 @@ impl BitXor for I256 {
 
     #[inline]
     fn bitxor(self, rhs: Self) -> Self::Output {
-        Self { low: self.low ^ rhs.low, high: self.high ^ rhs.high }
+        Self {
+            low: self.low ^ rhs.low,
+            high: self.high ^ rhs.high,
+        }
     }
 }
 
@@ -218,10 +254,12 @@ impl Not for I256 {
 
     #[inline]
     fn not(self) -> Self::Output {
-        Self { low: !self.low, high: !self.high }
+        Self {
+            low: !self.low,
+            high: !self.high,
+        }
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -231,10 +269,16 @@ mod test {
     fn test_i256_bitwise() {
         let buf = [1u8; 32];
         let n = I256::from_le_bytes(&buf);
-        assert_eq!(&n.to_string(), "0x0101010101010101010101010101010101010101010101010101010101010101");
+        assert_eq!(
+            &n.to_string(),
+            "0x0101010101010101010101010101010101010101010101010101010101010101"
+        );
 
         let n1 = !n;
-        assert_eq!(&n1.to_string(), "0xfefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe");
+        assert_eq!(
+            &n1.to_string(),
+            "0xfefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"
+        );
 
         assert_eq!(n & n1, I256::ZERO);
         assert_eq!(

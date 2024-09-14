@@ -11,6 +11,7 @@ use std::{
 };
 use std::fmt::Debug;
 use crate::instruction::Instruction;
+use crate::vm::slot::Slot;
 
 #[derive(Clone)]
 pub struct ExecutionContext {

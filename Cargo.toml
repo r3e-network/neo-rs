@@ -22,7 +22,7 @@ members = [
 
 #[workspace.dependencies]
 ##neorust = { git = "https://github.com/R3E-Network/NeoRust", branch = "master" }
-#primitive-types = "0.13.0"
+#primitive-vm_types = "0.13.0"
 
 [profile.release]
 lto           = "fat"

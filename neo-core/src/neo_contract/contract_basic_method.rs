@@ -29,6 +29,10 @@ impl ContractBasicMethod {
     /// These functions are executed first when loading the contract.
     /// Example:
     /// ```
+    /// use lazy_static::lazy::Lazy;    ///
+    ///
+    /// use neo_core::types::Address;
+    ///
     /// static OWNER: Lazy<Address> = Lazy::new(|| {
     ///     Address::from_str("NdUL5oDPD159KeFpD5A9zw5xNF1xLX6nLT").unwrap()
     /// });

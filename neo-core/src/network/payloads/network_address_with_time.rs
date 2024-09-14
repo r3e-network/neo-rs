@@ -80,7 +80,7 @@ impl ISerializable for NetworkAddressWithTime {
             .collect::<Result<_, _>>()?;
 
         if capabilities.iter().map(|c| c.capability_type()).collect::<std::collections::HashSet<_>>().len() != capabilities.len() {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Duplicate capability types"));
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Duplicate capability vm_types"));
         }
 
         Ok(Self {

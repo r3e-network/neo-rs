@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::hash::Hash;
 use std::time::{SystemTime, UNIX_EPOCH};
 use NeoRust::builder::Transaction;
 use NeoRust::neo_protocol::HighPriorityAttribute;

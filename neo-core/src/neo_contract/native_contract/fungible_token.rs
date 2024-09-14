@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use NeoRust::contract::ContractManagement;
 use num_bigint::BigInt;
 use neo_proc_macros::contract_method;
-use neo_vm::stack_item::StackItem;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::neo_contract::native_contract::{NativeContract};
 use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
@@ -14,17 +14,13 @@ use crate::uint160::UInt160;
 use crate::neo_contract::native_contract::contract_method_metadata::ContractMethodMetadata;
 use crate::neo_contract::native_contract::contract_event_attribute::ContractEventAttribute;
 use crate::neo_contract::manifest::contract_manifest::ContractManifest;
+use crate::neo_contract::native_contract::account_state::AccountStateTrait;
 use crate::neo_contract::storage_key::StorageKey;
 use crate::neo_contract::storage_item::StorageItem;
 use crate::persistence::DataCache;
 
-pub trait AccountState: Default {
-    fn balance(&self) -> BigInt;
-    fn set_balance(&mut self, balance: BigInt);
-}
-
 pub trait FungibleToken: NativeContract {
-    type State: AccountState;
+    type State: AccountStateTrait;
 
     const PREFIX_TOTAL_SUPPLY: u8 = 11;
     const PREFIX_ACCOUNT: u8 = 20;
@@ -37,6 +33,7 @@ pub trait FungibleToken: NativeContract {
     #[contract_method]
     fn decimals(&self) -> u8;
 
+    #[contract_method]
     async fn mint(&self, engine: &mut ApplicationEngine, account: &UInt160, amount: BigInt, call_on_payment: bool) -> Result<(), String> {
         if amount < BigInt::from(0) {
             return Err("Amount must be non-negative".into());
@@ -62,6 +59,7 @@ pub trait FungibleToken: NativeContract {
         self.post_transfer(engine, None, Some(account), amount, StackItem::Null, call_on_payment).await
     }
 
+    #[contract_method]
     async fn burn(&self, engine: &mut ApplicationEngine, account: &UInt160, amount: BigInt) -> Result<(), String> {
         if amount < BigInt::from(0) {
             return Err("Amount must be non-negative".into());

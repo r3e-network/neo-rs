@@ -2,11 +2,16 @@ use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, IpAddr};
 use std::sync::Arc;
 use std::time::{ Instant};
+use tokio::net::windows::named_pipe::PipeMode::Message;
 use crate::io::caching::HashSetCache;
 use crate::neo_system::NeoSystem;
 use crate::network::{Message, MessageCommand};
+use crate::network::capabilities::{FullNodeCapability, NodeCapabilityType, ServerCapability};
+use crate::network::NodeMessage::Relay;
 use crate::network::payloads::VersionPayload;
-use crate::network::peer::Peer;
+use crate::network::connection::peer::Peer;
+use crate::network::PeerMessage::Timer;
+use crate::payload::P2pMessage::Inventory;
 use crate::uint256::UInt256;
 
 pub struct RemoteNode {

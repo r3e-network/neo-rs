@@ -12,7 +12,6 @@ use neo_core::types::{Bytes, Network, DEFAULT_PER_BLOCK_MILLIS, SEED_LIST_DEV_NE
 
 pub use {codec::*, discovery::*, driver_v2::*, handle_v2::*, node::*, peer::*};
 
-
 pub mod codec;
 pub mod discovery;
 pub mod driver_v2;

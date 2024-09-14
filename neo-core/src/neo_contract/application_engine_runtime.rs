@@ -1,13 +1,6 @@
-use alloc::rc::Rc;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::io::{Read, Write};
-use NeoRust::crypto::ECPoint;
 use num_bigint::{BigInt, Sign};
-use neo_vm::execution_context::ExecutionContext;
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::stack_item::StackItem;
 use neo_vm::vm::script::Script;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::block::Block;
 use crate::contract::Contract;
 use crate::cryptography::{ECCurve, ECPoint};
@@ -25,6 +18,7 @@ use crate::network::payloads::{OracleResponse, Signer, WitnessRuleAction};
 use crate::persistence::SnapshotCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;
+use crate::uint256::UInt256;
 
 impl ApplicationEngine {
     /// The maximum length of event name.
@@ -151,7 +145,7 @@ impl ApplicationEngine {
         // Check allow state callflag
         self.validate_call_flags(CallFlags::READ_STATES)?;
 
-        // only for non-Transaction types (Block, etc)
+        // only for non-Transaction vm_types (Block, etc)
         Ok(self.script_container.as_ref().unwrap().get_script_hashes_for_verifying(&self.snapshot_cache)?.contains(hash))
     }
 
@@ -294,10 +288,10 @@ impl ApplicationEngine {
                 }
             },
             ContractParameterType::Hash160 => {
-                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == UInt160::len())
+                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == UInt160::LEN)
             },
             ContractParameterType::Hash256 => {
-                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == UInt256::len())
+                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == UInt256::LEN)
             },
             ContractParameterType::PublicKey => {
                 matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == 33)

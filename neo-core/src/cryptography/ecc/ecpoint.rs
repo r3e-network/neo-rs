@@ -7,6 +7,7 @@ use futures::TryFutureExt;
 use lazy_static::lazy_static;
 use num_traits::ToPrimitive;
 use crate::cryptography::{ECCurve, ECFieldElement};
+use crate::io::caching::ECPointCache;
 
 #[derive(Clone, Debug)]
 pub struct ECPoint {
@@ -24,7 +25,7 @@ lazy_static! {
 
 impl ECPoint {
     pub fn new(x: Option<ECFieldElement>, y: Option<ECFieldElement>, curve: Rc<ECCurve>) -> Self {
-        if (x.is_some() ^ y.is_some()) || curve.is_none() {
+        if (x.is_some() ^ y.is_some()) {
             panic!("Exactly one of the field elements is null");
         }
         ECPoint {
@@ -114,15 +115,16 @@ impl ECPoint {
         };
 
         let compressed_point = encoded.to_vec();
-        if let Some(p) = point_cache.lock().unwrap().try_get(&compressed_point) {
+        if let Some(p) = point_cache.lock().unwrap().get_ecpoint(&compressed_point) {
             return p;
         }
 
         let y_tilde = encoded[0] & 1;
         let x1 = BigUint::from_bytes_be(&encoded[1..]);
         let p = Self::decompress_point_internal(y_tilde, x1, Rc::clone(&curve));
+        point_cache.lock().unwrap().insert(p.clone());
         let point = Rc::new(p);
-        point_cache.lock().unwrap().add(Rc::clone(&point));
+
         point
     }
 
@@ -333,7 +335,7 @@ fn window_naf(width: i8, k: &BigUint) -> Vec<i8> {
         if k.bit(0) {
             let mut remainder = &k % &pow2w_b.clone();
             if remainder.bit(width as u64 - 1) {
-                wnaf[i] = -((pow2w_b - remainder).to_i8().unwrap());
+                wnaf[i] = -((pow2w_b.clone() - remainder).to_i8().unwrap());
             } else {
                 wnaf[i] = remainder.to_i8().unwrap();
             }

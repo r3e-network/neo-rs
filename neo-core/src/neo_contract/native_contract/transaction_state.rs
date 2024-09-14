@@ -1,7 +1,9 @@
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::stack_item::StackItem;
-use neo_vm::vm_state::VMState;
+use alloc::rc::Rc;
+use NeoRust::neo_types::VMState;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::neo_contract::native_contract::native_contract_error::NativeContractError;
 use crate::network::payloads::Transaction;
 
 /// Represents a transaction that has been included in a block.
@@ -26,6 +28,8 @@ impl Default for TransactionState {
 }
 
 impl IInteroperable for TransactionState {
+    type Error = NativeContractError;
+
     fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Struct(struct_item) = stack_item {
             // Conflict record.
@@ -88,6 +92,4 @@ impl IInteroperable for TransactionState {
             self.raw_transaction = from.raw_transaction.clone();
         }
     }
-    
-    type Error = std::io::Error ;
 }

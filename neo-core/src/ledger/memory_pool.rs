@@ -40,14 +40,14 @@ pub struct MemoryPool {
 impl MemoryPool {
     pub fn new(system: Arc<NeoSystem>) -> Self {
         let capacity = system.settings.memory_pool_max_transactions;
-        let max_milliseconds_to_reverify_tx = Duration::from_millis(system.settings.milliseconds_per_block / 3);
-        let max_milliseconds_to_reverify_tx_per_idle = Duration::from_millis(system.settings.milliseconds_per_block / 15);
+        let max_milliseconds_to_reverify_tx = Duration::from_millis((system.settings.milliseconds_per_block / 3) as u64);
+        let max_milliseconds_to_reverify_tx_per_idle = Duration::from_millis((system.settings.milliseconds_per_block / 15) as u64);
 
         MemoryPool {
             transaction_added: None,
             transaction_removed: None,
             blocks_till_rebroadcast: 10,
-            rebroadcast_multiplier_threshold: capacity / 10,
+            rebroadcast_multiplier_threshold: (capacity / 10) as u32,
             max_milliseconds_to_reverify_tx,
             max_milliseconds_to_reverify_tx_per_idle,
             system,
@@ -111,28 +111,43 @@ impl MemoryPool {
             .map(|item| item.tx.clone())
             .collect()
     }
-    pub fn try_add(&mut self, tx: &Transaction, snapshot: &Store) -> VerifyResult {
-        let _guard = self.tx_rw_lock.write().unwrap();
-        
-        if self.contains_key(&tx.hash()) {
-            return VerifyResult::AlreadyExists;
+    pub fn try_add(&self, tx: Arc<Transaction>, snapshot: &Snapshot) -> VerifyResult {
+        let pool_item = Arc::new(PoolItem {
+            tx: tx.clone(),
+            timestamp: Instant::now(),
+        });
+
+        if self.unsorted_transactions.read().unwrap().contains_key(&tx.hash) {
+            return VerifyResult::AlreadyInPool;
         }
 
-        if self.count() >= self.capacity {
-            return VerifyResult::OutOfMemory;
+        let mut unsorted_transactions = self.unsorted_transactions.write().unwrap();
+        let mut sorted_transactions = self.sorted_transactions.write().unwrap();
+        let mut conflicts = self.conflicts.write().unwrap();
+        let mut verification_context = self.verification_context.write().unwrap();
+
+        if !self.check_conflicts(&tx, &mut conflicts) {
+            return VerifyResult::HasConflicts;
         }
 
-        let verify_result = self.verify_transaction(tx, snapshot);
-        if verify_result != VerifyResult::Succeed {
-            return verify_result;
+        // Verify the transaction (assuming a verify_state_dependent method exists)
+        if !tx.verify_state_dependent(&self.blockchain.settings, snapshot, &verification_context) {
+            return VerifyResult::Invalid;
         }
 
-        let pool_item = PoolItem::new(tx.clone(), Instant::now());
-        self.unsorted_transactions.insert(tx.hash(), pool_item.clone());
-        self.sorted_transactions.insert(pool_item);
+        unsorted_transactions.insert(tx.hash.clone(), pool_item.clone());
+        verification_context.add_transaction(&tx);
+        sorted_transactions.insert(pool_item);
 
-        if let Some(handler) = &self.transaction_added {
-            handler(tx);
+        // Add conflicts
+        for attr in tx.get_conflict_attributes() {
+            conflicts.entry(attr.hash.clone())
+                .or_insert_with(HashSet::new)
+                .insert(tx.hash.clone());
+        }
+
+        if self.count() > self.capacity {
+            self.remove_over_capacity();
         }
 
         VerifyResult::Succeed

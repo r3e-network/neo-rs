@@ -261,7 +261,7 @@ impl From<Value> for JToken {
     }
 }
 
-// Implement TryFrom for various types
+// Implement TryFrom for various vm_types
 impl TryFrom<JToken> for bool {
     type Error = JsonError;
 
@@ -322,7 +322,7 @@ impl TryFrom<JToken> for IndexMap<String, JToken> {
     }
 }
 
-// Implement From for various types
+// Implement From for various vm_types
 impl From<bool> for JToken {
     fn from(value: bool) -> Self {
         JToken::Boolean(value)

@@ -77,7 +77,7 @@ impl ISerializable for VersionPayload {
         }
 
         if capabilities.iter().map(|c| c.get_type()).collect::<std::collections::HashSet<_>>().len() != capabilities.len() {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Duplicate capability types"));
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Duplicate capability vm_types"));
         }
 
         Ok(Self {

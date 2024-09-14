@@ -22,6 +22,7 @@ mod interoperable_list;
 mod ihardfork_activable;
 mod hash_index_state;
 mod contract_event_attribute;
+mod native_contract_error;
 
 pub use neo_token::NeoToken;
 pub use fungible_token::FungibleToken;
@@ -29,4 +30,5 @@ pub use gas_token::GasToken;
 pub use native_contract::NativeContract;
 pub use account_state::AccountState;
 pub use transaction_state::TransactionState;
-pub use role_management::RoleManagement;
+
+

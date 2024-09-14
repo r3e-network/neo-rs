@@ -1,4 +1,4 @@
-use crate::network::message_command::MessageCommand;
+use crate::network::connection::message_command::MessageCommand;
 
 /// Represents the type of inventory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

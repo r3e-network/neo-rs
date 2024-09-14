@@ -13,10 +13,12 @@ use neo_vm::instruction::Instruction;
 use neo_vm::interop_interface::InteropInterface;
 use neo_vm::op_code::OpCode;
 use neo_vm::stack_item::StackItem;
+use neo_vm::vm::{ExecutionContext, ExecutionEngine, Instruction};
 use neo_vm::vm::script::Script;
 use crate::block::Block;
 use crate::hardfork::Hardfork;
 use crate::neo_contract::call_flags::CallFlags;
+use crate::neo_contract::contract_error::ContractError;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::contract_state::ContractState;
 use crate::neo_contract::contract_task::{ContractTask};
@@ -31,7 +33,7 @@ use crate::neo_contract::nef_file::NefFile;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
 use crate::neo_contract::storage_key::StorageKey;
 use crate::neo_contract::trigger_type::TriggerType;
-use crate::network::payloads::{IVerifiable, Transaction, Witness};
+use crate::network::payloads::{Header, IVerifiable, Transaction, Witness};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;
@@ -50,7 +52,7 @@ pub struct ApplicationEngine {
     state_cache: dyn DataCache,
     pub(crate) protocol_settings: Arc<ProtocolSettings>,
     snapshot: dyn DataCache,
-    pub(crate) script_container: Option<Box<dyn IVerifiable>>,
+    pub(crate) script_container: Option<Box<dyn IVerifiable<Error=ContractError>>>,
     pub(crate) persisting_block: Option<Block>,
     disposables: Vec<Box<dyn Drop>>,
     contract_tasks: HashMap<Rc<RefCell<ExecutionContext>>, ContractTaskAwaiter>,
@@ -65,8 +67,8 @@ pub struct ApplicationEngine {
 impl ApplicationEngine {
     pub fn new(
         trigger: TriggerType,
-        container: Option<Box<dyn IVerifiable>>,
-        snapshot: dyn DataCache,
+        container: Option<Box<dyn IVerifiable<Error=ContractError>>>,
+        snapshot: Box<dyn DataCache>,
         persisting_block: Option<Block>,
         settings: Arc<ProtocolSettings>,
         gas: i64,
@@ -207,14 +209,14 @@ impl ApplicationEngine {
         let hash = NativeContract::Ledger.current_hash(snapshot);
         let current_block = NativeContract::Ledger.get_block(snapshot, &hash);
         Block {
-            header: BlockHeader {
+            header: Header {
                 version: 0,
                 prev_hash: hash,
                 merkle_root: UInt256::zero(),
                 timestamp: current_block.timestamp() + settings.milliseconds_per_block,
                 index: current_block.index() + 1,
                 next_consensus: current_block.next_consensus().clone(),
-                witness: Witness {
+                witnesses: Witness {
                     invocation_script: vec![],
                     verification_script: vec![],
                 },
