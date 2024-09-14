@@ -1,9 +1,6 @@
-use neo::cryptography::ecc::ECPoint;
-use neo::vm::ScriptBuilder;
-use neo::types::{UInt160, ContractParameterType};
-use neo::sys_calls::ApplicationEngine;
 use std::collections::HashSet;
 use NeoRust::builder::ScriptBuilder;
+use crate::cryptography::ECPoint;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::uint160::UInt160;

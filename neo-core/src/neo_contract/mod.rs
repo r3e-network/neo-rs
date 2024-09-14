@@ -52,6 +52,8 @@ pub mod helper;
 pub mod iapplication_engine_provider;
 mod native_contract;
 mod iterators;
+mod application_engine_error;
+mod contract_error;
 
 // Example function (you may want to remove this if it's not needed)
 pub fn add(left: usize, right: usize) -> usize {

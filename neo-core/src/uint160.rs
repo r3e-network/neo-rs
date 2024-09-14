@@ -4,6 +4,7 @@ use std::str::FromStr;
 use crate::core_error::CoreError;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 
 /// Represents a 160-bit unsigned integer.
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -19,7 +20,7 @@ impl UInt160 {
     pub const ZERO: Self = Self { data: [0; Self::LEN] };
 
     /// Creates a new UInt160 from a byte slice.
-    pub fn new(bytes: &[u8]) -> Result<Self, CoreError> {
+    pub fn new(bytes: &[u8]) -> Result<Self, CoreError::TypeError> {
         if bytes.len() != Self::LEN {
             return Err(CoreError::TypeError);
         }
@@ -41,12 +42,12 @@ impl ISerializable for UInt160 {
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) {
-        writer.write_all(&self.data)
+        writer.write_u32(&self.data)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let mut data = [0u8; Self::LEN];
-        reader.read_exact(&mut data)?;
+        reader.read_u32(&mut data)?;
         Ok(Self { data })
     }
 }
@@ -136,7 +137,7 @@ mod tests {
     fn test_uint160_serialization() {
         let uint = UInt160::from([1u8; UInt160::LEN]);
         let mut writer = Vec::new();
-        uint.serialize(&mut writer).unwrap();
+        uint.serialize(&mut writer);
         let deserialized = UInt160::deserialize(&mut &writer[..]).unwrap();
         assert_eq!(uint, deserialized);
     }

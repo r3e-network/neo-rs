@@ -1,7 +1,9 @@
+use std::cmp::Ordering;
 use std::fmt;
 use std::hash::Hasher;
 use std::io::Write;
 use std::str::FromStr;
+use byteorder::LittleEndian;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
@@ -65,7 +67,7 @@ impl UInt256 {
 
 impl ISerializable for UInt256 {
     fn size(&self) -> usize {
-        Self::LENGTH
+        todo!()
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) {
@@ -145,7 +147,7 @@ mod tests {
     fn test_uint256_serialization() {
         let uint = UInt256::new(&[1u8; 32]);
         let mut writer = Vec::new();
-        uint.serialize(&mut writer);
+        uint.serialize(&mut writer).unwrap();
         let deserialized = UInt256::deserialize(&mut &writer[..]).unwrap();
         assert_eq!(uint, deserialized);
     }
