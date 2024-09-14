@@ -20,9 +20,9 @@ members = [
     "neo-cli", "neo-extension",
 ]
 
-[workspace.dependencies]
-neorust = { git = "https://github.com/R3E-Network/NeoRust", branch = "master" }
-primitive-types = "0.12.1"
+#[workspace.dependencies]
+##neorust = { git = "https://github.com/R3E-Network/NeoRust", branch = "master" }
+#primitive-types = "0.13.0"
 
 [profile.release]
 lto           = "fat"

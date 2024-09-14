@@ -1,10 +1,10 @@
-use std::cmp::Ordering;
 use std::fmt;
 use std::hash::Hasher;
 use std::io::Write;
 use std::str::FromStr;
-use byteorder::LittleEndian;
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 
 /// Represents a 256-bit unsigned integer.
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -65,20 +65,19 @@ impl UInt256 {
 
 impl ISerializable for UInt256 {
     fn size(&self) -> usize {
-        todo!()
+        Self::LENGTH
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) {
         for &value in &self.data {
-            writer.write_u64::<LittleEndian>(value)?;
+            writer.write_u64(value);
         }
-        Ok(())
     }
 
     fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let mut data = [0u64; 4];
         for value in &mut data {
-            *value = reader.read_u64::<LittleEndian>()?;
+            *value = reader.read_u64()?;
         }
         Ok(Self { data })
     }
@@ -146,7 +145,7 @@ mod tests {
     fn test_uint256_serialization() {
         let uint = UInt256::new(&[1u8; 32]);
         let mut writer = Vec::new();
-        uint.serialize(&mut writer).unwrap();
+        uint.serialize(&mut writer);
         let deserialized = UInt256::deserialize(&mut &writer[..]).unwrap();
         assert_eq!(uint, deserialized);
     }

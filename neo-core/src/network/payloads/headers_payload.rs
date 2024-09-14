@@ -25,7 +25,7 @@ impl HeadersPayload {
 
 impl ISerializable for HeadersPayload {
     fn size(&self) -> usize {
-        self.headers.len() * std::mem::size_of::<Header>()
+        self.headers.var_vec_size()
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) {

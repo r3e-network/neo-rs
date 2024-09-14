@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::{fmt, io};
 use std::str::FromStr;
+use crate::core_error::CoreError;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 
@@ -18,9 +19,9 @@ impl UInt160 {
     pub const ZERO: Self = Self { data: [0; Self::LEN] };
 
     /// Creates a new UInt160 from a byte slice.
-    pub fn new(bytes: &[u8]) -> Result<Self, FormatError> {
+    pub fn new(bytes: &[u8]) -> Result<Self, CoreError> {
         if bytes.len() != Self::LEN {
-            return Err(FormatError);
+            return Err(CoreError::TypeError);
         }
         let mut data = [0u8; Self::LEN];
         data.copy_from_slice(bytes);

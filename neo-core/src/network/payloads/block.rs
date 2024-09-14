@@ -81,12 +81,11 @@ impl Block {
         Ok(())
     }
 
-    pub fn serialize<W: Write>(&self, writer: &mut W) -> Result<(), std::io::Error> {
+    pub fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), std::io::Error> {
         self.header.serialize(writer)?;
         for tx in &self.transactions {
             tx.serialize(writer)?;
         }
-        Ok(())
     }
 
     pub fn to_json(&self, settings: &ProtocolSettings) -> JObject {
@@ -104,6 +103,8 @@ impl Block {
         self.header.verify_with_header_cache(settings, snapshot, header_cache)
     }
 }
+
+
 
 impl PartialEq for Block {
     fn eq(&mut self, other: &mut Self) -> bool {

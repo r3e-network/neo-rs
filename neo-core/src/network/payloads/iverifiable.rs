@@ -8,9 +8,11 @@ use crate::uint256::UInt256;
 
 /// Represents an object that can be verified in the NEO network.
 pub trait IVerifiable: ISerializable {
+    type Error;
+
     /// The hash of the IVerifiable object.
     fn hash(&self) -> UInt256 {
-        self.calculate_hash()
+        calculate_hash(&self)
     }
 
     /// The witnesses of the IVerifiable object.
@@ -18,11 +20,11 @@ pub trait IVerifiable: ISerializable {
     fn set_witnesses(&mut self, witnesses: Vec<Witness>);
 
     /// Deserializes the part of the IVerifiable object other than Witnesses.
-    fn deserialize_unsigned(&mut self, reader: &mut MemoryReader);
+    fn deserialize_unsigned(reader: &mut MemoryReader) -> Result<Self, Self::Error>;
 
     /// Gets the script hashes that should be verified for this IVerifiable object.
     fn get_script_hashes_for_verifying(&self, snapshot: &dyn DataCache) -> Vec<UInt160>;
 
     /// Serializes the part of the IVerifiable object other than Witnesses.
-    fn serialize_unsigned<W: Write>(&self, writer: &mut W);
+    fn serialize_unsigned(&self, writer: &mut BinaryWriter);
 }
