@@ -1,11 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Write};
-use std::mem;
 use num_bigint::BigInt;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::item_type::StackItemType;
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::stack_item::StackItem;
 use neo_vm::vm::ExecutionEngineLimits;
 use neo_vm::vm_types::item_type::StackItemType;
 use neo_vm::vm_types::reference_counter::ReferenceCounter;
@@ -24,7 +19,7 @@ impl BinarySerializer {
     /// Deserializes a `StackItem` from byte array.
     pub fn deserialize(data: &[u8], limits: &ExecutionEngineLimits, reference_counter: Option<&ReferenceCounter>) -> Result<StackItem, String> {
         let mut reader = MemoryReader::new(data);
-        Self::deserialize_from_reader(&mut reader, limits.max_item_size.min(data.len() as u32) as usize, limits.max_stack_size as usize, reference_counter)
+        Self::deserialize_from_reader(&mut reader, limits.max_item_size.min(data.len()), limits.max_stack_size as usize, reference_counter)
     }
 
     /// Deserializes a `StackItem` from `MemoryReader`.

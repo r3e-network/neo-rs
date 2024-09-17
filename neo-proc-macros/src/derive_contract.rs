@@ -1,9 +1,4 @@
-use proc_macro::TokenStream;
-use quote::quote;
-use quote::ToTokens;
-use syn::__private::TokenStream2;
 use syn::parse::Parse;
-use syn::{parse_macro_input, DeriveInput, ItemFn};
 use syn::{Lit, Meta};
 
 struct ContractMethodArgs {

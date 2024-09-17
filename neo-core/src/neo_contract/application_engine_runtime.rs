@@ -1,7 +1,6 @@
 use num_bigint::{BigInt, Sign};
 use neo_vm::vm::script::Script;
 use neo_vm::vm_types::stack_item::StackItem;
-use crate::block::Block;
 use crate::contract::Contract;
 use crate::cryptography::{ECCurve, ECPoint};
 use crate::hardfork::Hardfork;
@@ -15,8 +14,6 @@ use crate::neo_contract::log_event_args::LogEventArgs;
 use crate::neo_contract::native_contract::NativeContract;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
 use crate::network::payloads::{OracleResponse, Signer, WitnessRuleAction};
-use crate::persistence::SnapshotCache;
-use crate::protocol_settings::ProtocolSettings;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 

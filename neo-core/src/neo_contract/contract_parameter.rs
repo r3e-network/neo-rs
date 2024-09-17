@@ -45,7 +45,7 @@ impl ContractParameter {
             ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(UInt160::default())),
             ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(UInt256::default())),
             ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(Vec::new())),
-            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(&ECCurve::secp256r1().g.clone())),
+            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECCurve::secp256r1().g.clone())),
             ContractParameterType::String => Some(ContractParameterValue::String(String::new())),
             ContractParameterType::Array => Some(ContractParameterValue::Array(Vec::new())),
             ContractParameterType::Map => Some(ContractParameterValue::Map(HashMap::new())),
@@ -134,7 +134,7 @@ impl ContractParameter {
     /// Converts the parameter to a JSON object.
     pub fn to_json(&self) -> JToken {
         let mut json = JToken::new_object();
-        json.insert("type".to_string(), JToken::from(format!("{:?}", self.param_type)));
+        json.insert("type".to_string(), JToken::from(format!("{:?}", self.param_type))).expect("TODO: panic message");
         
         if let Some(value) = &self.value {
             let value_json = match value {
