@@ -367,7 +367,8 @@ mod test {
         assert_eq!(ping.unix_seconds, 3);
         assert_eq!(ping.nonce, 4);
 
-        let local = stream.local_addr().expect("`local_addr` should be ok");
+        let local = stream.local_addr()
+            .expect("`local_addr` should be ok");
         driver.remove_net_handle(&local);
 
         cancel.cancel();

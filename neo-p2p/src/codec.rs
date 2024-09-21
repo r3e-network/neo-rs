@@ -130,8 +130,8 @@ impl Decoder for MessageDecoder {
         };
 
         let body = if src[0] & FLAG_COMPRESSED != 0 {
-            let body: Vec<u8> =
-                Lz4Decompress::lz4_decompress(&src[head..total]).map_err(|err| {
+            let body: Vec<u8> = Lz4Decompress::lz4_decompress(&src[head..total])
+                .map_err(|err| {
                     IoError::new(InvalidData, format!("decoder: lz4_decompress {}", err))
                 })?;
             build(&body)

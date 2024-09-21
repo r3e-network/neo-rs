@@ -261,12 +261,8 @@ impl MessageHandleV2 {
             FilterClear => Ok(()),                // just ignore
             MerkleBlock(_merkle_block) => Ok(()), // just ignore
             Alert => Ok(()),                      // just ignore
-            Version(_) => {
-                unreachable!("unexpected Version message");
-            }
-            VersionAck => {
-                unreachable!("unexpected VersionAck message");
-            }
+            Version(_) => unreachable!("unexpected Version message"),
+            VersionAck => unreachable!("unexpected VersionAck message"),
         }
     }
 
@@ -299,8 +295,11 @@ impl MessageHandleV2 {
         };
 
         let message = P2pMessage::VersionAck.to_bin_encoded();
-        let handle = self.net_handle(addr).ok_or(HandleError::NoSuchNetHandle)?;
-        handle.try_seed(message.into()).map_err(|err| HandleError::SendError("VersionAck", err))?;
+        let handle = self.net_handle(addr)
+            .ok_or(HandleError::NoSuchNetHandle)?;
+
+        handle.try_seed(message.into())
+            .map_err(|err| HandleError::SendError("VersionAck", err))?;
 
         handle.states.set_last_block_index(start_height);
         drop(handle);
@@ -310,7 +309,8 @@ impl MessageHandleV2 {
             return Err(HandleError::AlreadyConnected);
         }
 
-        let conn = discovery.connected(&addr).ok_or(HandleError::NoSuchAddress)?;
+        let conn = discovery.connected(&addr)
+            .ok_or(HandleError::NoSuchAddress)?;
         conn.add_stages(VersionReceived.as_u32() | VersionAckSent.as_u32());
         discovery.on_good(peer);
 
@@ -319,7 +319,8 @@ impl MessageHandleV2 {
 
     fn on_version_ack(&self, discovery: &Discovery, peer: &SocketAddr) -> Result<(), HandleError> {
         let discovery = discovery.lock().unwrap();
-        let conn = discovery.connected(peer).ok_or(HandleError::NoSuchAddress)?;
+        let conn = discovery.connected(peer)
+            .ok_or(HandleError::NoSuchAddress)?;
         if !VersionSent.belongs(conn.stages()) {
             return Err(HandleError::InvalidMessage("VersionAck", "no Version has received"));
         }
@@ -369,7 +370,9 @@ impl MessageHandleV2 {
             return Err(HandleError::InvalidMessage("Address", "no GetAddress for this node"));
         }
 
-        let nodes: Vec<_> = nodes.nodes.iter().filter_map(|node| node.service_addr()).collect();
+        let nodes: Vec<_> = nodes.nodes.iter()
+            .filter_map(|node| node.service_addr())
+            .collect();
         discovery.lock().unwrap().back_fill(&nodes);
         Ok(())
     }
@@ -430,9 +433,10 @@ impl MessageHandleV2 {
         Ok(())
     }
 
-    fn on_get_headers(&self,
-                      _peer: &SocketAddr,
-                      _range: BlockIndexRange,
+    fn on_get_headers(
+        &self,
+        _peer: &SocketAddr,
+        _range: BlockIndexRange,
     ) -> Result<(), HandleError> {
         Ok(())
     }
