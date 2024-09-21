@@ -28,22 +28,14 @@ pub struct Committee {
 
 impl Committee {
     pub fn new(nr_validators: u32, nr_committee: u32, members: Box<dyn MemberCache>) -> Self {
-        Self {
-            nr_validators,
-            nr_committee,
-            members,
-        }
+        Self { nr_validators, nr_committee, members }
     }
 
     pub fn next_block_validators(&self) -> Vec<PublicKey> {
         let mut members = self.next_committee();
         let nr_validators = self.nr_validators as usize;
         if members.len() < nr_validators {
-            core::panic!(
-                "invalid the number of validators {} > {}",
-                nr_validators,
-                members.len()
-            );
+            core::panic!("invalid the number of validators {} > {}", nr_validators, members.len());
         }
 
         members.truncate(nr_validators);
@@ -51,18 +43,12 @@ impl Committee {
     }
 
     pub fn next_committee_hash(&self) -> ScriptHash {
-        self.next_committee()
-            .to_bft_hash()
-            .expect("`to_bft_hash` should be ok")
+        self.next_committee().to_bft_hash().expect("`to_bft_hash` should be ok")
     }
 
     pub fn next_committee(&self) -> Vec<PublicKey> {
-        let mut keys = self
-            .members
-            .committee_members()
-            .iter()
-            .map(|p| p.key.clone())
-            .collect::<Vec<_>>();
+        let mut keys =
+            self.members.committee_members().iter().map(|p| p.key.clone()).collect::<Vec<_>>();
 
         keys.sort();
         keys
@@ -102,27 +88,16 @@ impl Committee {
                 .standby_committee()
                 .iter()
                 .take(nr_committee)
-                .map(|key| Member {
-                    key: key.clone(),
-                    votes: votes_of(key),
-                })
+                .map(|key| Member { key: key.clone(), votes: votes_of(key) })
                 .collect();
         }
 
         // select from candidates if satisfied
         candidates.sort_by(|lhs, rhs| {
             let ordering = lhs.votes.cmp(&rhs.votes);
-            if ordering != Ordering::Equal {
-                ordering
-            } else {
-                lhs.key.cmp(&rhs.key)
-            }
+            if ordering != Ordering::Equal { ordering } else { lhs.key.cmp(&rhs.key) }
         });
 
-        candidates
-            .iter()
-            .take(nr_committee)
-            .map(|member| member.clone())
-            .collect()
+        candidates.iter().take(nr_committee).map(|member| member.clone()).collect()
     }
 }

@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
+use neo_core::types::Bytes;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::error::TrySendError;
@@ -19,7 +20,6 @@ use tokio_util::codec::{Encoder, FramedRead};
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 use crate::{NetEvent::*, *};
-use neo_core::types::Bytes;
 
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -50,23 +50,14 @@ impl NetDriver {
         let (close_tx, close_rx) = mpsc::channel(CLOSE_CHAN_SIZE);
         let handles = Arc::new(DashMap::with_capacity(max_peers));
 
-        let driver = Self {
-            max_peers,
-            runtime,
-            listen,
-            handles,
-            close_tx,
-            net_tx,
-        };
+        let driver = Self { max_peers, runtime, listen, handles, close_tx, net_tx };
         driver.on_closing(close_rx);
 
         driver
     }
 
     #[inline]
-    pub fn net_handles(&self) -> NetHandles {
-        self.handles.clone()
-    }
+    pub fn net_handles(&self) -> NetHandles { self.handles.clone() }
 
     #[inline]
     fn remove_net_handle(&self, peer: &SocketAddr) -> Option<NetHandle> {
@@ -151,11 +142,7 @@ impl NetDriver {
     }
 
     async fn on_established(&self, peer: SocketAddr, event: NetEvent, stream: TcpStream) {
-        let source = if matches!(event, Accepted) {
-            "Accepted"
-        } else {
-            "Connected"
-        };
+        let source = if matches!(event, Accepted) { "Accepted" } else { "Connected" };
         log::info!("`on_established` for {} with {}", &peer, source);
 
         let canceler = CancellationToken::new();
@@ -164,27 +151,14 @@ impl NetDriver {
         {
             let handle = NetHandle::new(data_tx, canceler);
             if self.handles.len() >= self.max_peers {
-                log::warn!(
-                    "not established {} for {} because too many connections",
-                    source,
-                    &peer
-                );
+                log::warn!("not established {} for {} because too many connections", source, &peer);
                 return;
             }
             self.handles.insert(peer, handle);
         }
 
-        if let Err(err) = self
-            .net_tx
-            .send_timeout(event.with_peer(peer), SEND_TIMEOUT)
-            .await
-        {
-            log::error!(
-                "sent on_established '{}' for {} err: {}",
-                source,
-                &peer,
-                err
-            );
+        if let Err(err) = self.net_tx.send_timeout(event.with_peer(peer), SEND_TIMEOUT).await {
+            log::error!("sent on_established '{}' for {} err: {}", source, &peer, err);
             self.remove_net_handle(&peer);
             return;
         }
@@ -265,24 +239,18 @@ pub(crate) struct NetHandleStates {
 
 impl NetHandleStates {
     #[inline]
-    pub fn last_block_index(&self) -> u32 {
-        self.last_block_index.load(Relaxed)
-    }
+    pub fn last_block_index(&self) -> u32 { self.last_block_index.load(Relaxed) }
 
     #[inline]
     pub fn set_last_block_index(&self, new: u32) {
         let old = self.last_block_index();
         if new > old {
-            let _ = self
-                .last_block_index
-                .compare_exchange(old, new, Relaxed, Relaxed);
+            let _ = self.last_block_index.compare_exchange(old, new, Relaxed, Relaxed);
         }
     }
 
     #[inline]
-    pub fn on_sent_get_address(&self) {
-        self.sent_get_addrs.fetch_add(1, Relaxed);
-    }
+    pub fn on_sent_get_address(&self) { self.sent_get_addrs.fetch_add(1, Relaxed); }
 
     pub fn on_recv_address(&self) -> bool {
         loop {
@@ -291,11 +259,7 @@ impl NetHandleStates {
                 return false;
             }
 
-            if self
-                .sent_get_addrs
-                .compare_exchange(old, old - 1, Relaxed, Relaxed)
-                .is_ok()
-            {
+            if self.sent_get_addrs.compare_exchange(old, old - 1, Relaxed, Relaxed).is_ok() {
                 return true;
             }
         }
@@ -346,11 +310,12 @@ fn is_acceptable(err: &IoError) -> bool {
 #[cfg(test)]
 mod test {
     use std::{io::Write, net::TcpStream};
+
+    use neo_base::encoding::bin::*;
+    use neo_core::payload::{P2pMessage, Ping};
     use tokio::runtime::Runtime;
 
     use crate::{driver_v2::*, ToMessageEncoded};
-    use neo_base::encoding::bin::*;
-    use neo_core::payload::{P2pMessage, Ping};
 
     #[test]
     fn test_listen() {
@@ -367,28 +332,16 @@ mod test {
 
         let mut stream = TcpStream::connect(addr).expect("`connect` should be ok");
 
-        let ping = P2pMessage::Ping(Ping {
-            last_block_index: 2,
-            unix_seconds: 3,
-            nonce: 4,
-        });
-        let buf = ping
-            .to_message_encoded()
-            .expect("`to_message_encoded` should be ok");
+        let ping = P2pMessage::Ping(Ping { last_block_index: 2, unix_seconds: 3, nonce: 4 });
+        let buf = ping.to_message_encoded().expect("`to_message_encoded` should be ok");
 
-        stream
-            .write_all(buf.as_ref())
-            .expect("`write_all` should be ok");
+        stream.write_all(buf.as_ref()).expect("`write_all` should be ok");
         // stream.write_all(buf.as_ref()).expect("`write_all` should be ok");
 
-        let recv = net_rx
-            .blocking_recv()
-            .expect("`blocking_recv` should be Some");
+        let recv = net_rx.blocking_recv().expect("`blocking_recv` should be Some");
         assert_eq!(recv.event, Accepted);
 
-        let recv = net_rx
-            .blocking_recv()
-            .expect("`blocking_recv` should be Some");
+        let recv = net_rx.blocking_recv().expect("`blocking_recv` should be Some");
         assert!(matches!(recv.event, Message(_)));
 
         let Message(event) = recv.event else {

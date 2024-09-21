@@ -2,6 +2,7 @@
 // All Rights Reserved
 
 use alloc::{string::String, vec::Vec};
+
 pub use hex::{FromHex, FromHexError};
 
 pub trait ToHex {
@@ -12,14 +13,10 @@ pub trait ToHex {
 
 impl<T: AsRef<[u8]>> ToHex for T {
     #[inline]
-    fn to_hex(&self) -> String {
-        hex::encode(self)
-    }
+    fn to_hex(&self) -> String { hex::encode(self) }
 
     #[inline]
-    fn to_hex_upper(&self) -> String {
-        hex::encode_upper(self)
-    }
+    fn to_hex_upper(&self) -> String { hex::encode_upper(self) }
 }
 
 pub trait ToRevHex {
@@ -41,14 +38,10 @@ fn encode_hex(data: &[u8], table: &[u8; 16]) -> String {
 
 impl<T: AsRef<[u8]>> ToRevHex for T {
     #[inline]
-    fn to_rev_hex(&self) -> String {
-        encode_hex(self.as_ref(), b"0123456789abcdef")
-    }
+    fn to_rev_hex(&self) -> String { encode_hex(self.as_ref(), b"0123456789abcdef") }
 
     #[inline]
-    fn to_rev_hex_upper(&self) -> String {
-        encode_hex(self.as_ref(), b"0123456789ABCDEF")
-    }
+    fn to_rev_hex_upper(&self) -> String { encode_hex(self.as_ref(), b"0123456789ABCDEF") }
 }
 
 pub trait DecodeHex {
@@ -61,9 +54,7 @@ impl<T: AsRef<[u8]>> DecodeHex for T {
     type Error = FromHexError;
 
     #[inline]
-    fn decode_hex(&self) -> Result<Vec<u8>, Self::Error> {
-        Vec::from_hex(self)
-    }
+    fn decode_hex(&self) -> Result<Vec<u8>, Self::Error> { Vec::from_hex(self) }
 }
 
 // big-endian hex-encoded

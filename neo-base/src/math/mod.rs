@@ -78,16 +78,12 @@ pub struct LcgRand {
 
 impl LcgRand {
     #[inline]
-    pub fn new(seed: u64) -> LcgRand {
-        LcgRand { current: seed }
-    }
+    pub fn new(seed: u64) -> LcgRand { LcgRand { current: seed } }
 
     #[inline]
     pub fn next(&mut self) -> u64 {
-        self.current = self
-            .current
-            .wrapping_mul(6364136223846793005u64)
-            .wrapping_add(1442695040888963407u64);
+        self.current =
+            self.current.wrapping_mul(6364136223846793005u64).wrapping_add(1442695040888963407u64);
         self.current
     }
 }

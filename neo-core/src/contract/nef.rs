@@ -1,19 +1,20 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
+
+use neo_base::{encoding::bin::*, errors, hash::Sha256Checksum};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr as DeserializeRepr, Serialize_repr as SerializeRepr};
 
-use neo_base::{errors, encoding::bin::*, hash::Sha256Checksum};
-use neo_vm::vm::script::Script;
+use crate::types::{FixedBytes, Script, H160};
 
 pub const NEF3_MAGIC: u32 = 0x3346454E;
 pub const MAX_METHOD_LENGTH: usize = 32;
 
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, SerializeRepr, DeserializeRepr, BinEncode, BinDecode)]
+#[derive(
+    Debug, Copy, Clone, Eq, PartialEq, SerializeRepr, DeserializeRepr, BinEncode, BinDecode,
+)]
 #[repr(u8)]
 #[bin(repr = u8)]
 pub enum CallFlags {
@@ -37,7 +38,7 @@ pub enum CallFlags {
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, BinDecode)]
 pub struct MethodToken {
-    pub hash: UInt160,
+    pub hash: H160,
 
     /// `method` cannot start with '_'
     pub method: String,
@@ -50,7 +51,6 @@ pub struct MethodToken {
     #[serde(rename = "callflags")]
     pub call_flags: CallFlags,
 }
-
 
 /// Neo Executable File, Version 3. NEP16
 #[derive(Debug, Serialize, Deserialize, BinEncode, BinDecode)]
@@ -79,7 +79,6 @@ pub struct Nef3 {
 
     pub checksum: u32,
 }
-
 
 impl Nef3 {
     pub fn calc_checksum(&mut self) -> u32 {
@@ -146,22 +145,19 @@ impl Nef3 {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use alloc::vec;
-    use crate::neo_contract::call_flags::CallFlags;
+
+    use super::*;
 
     #[test]
     fn test_nef_serializing() {
-        let flag = serde_json::to_string(&CallFlags::AllowCall)
-            .expect("json encode should be ok");
+        let flag = serde_json::to_string(&CallFlags::AllowCall).expect("json encode should be ok");
         assert_eq!(&flag, "4");
 
-        let flag: CallFlags = serde_json::from_str(&flag)
-            .expect("json decode should be ok");
+        let flag: CallFlags = serde_json::from_str(&flag).expect("json decode should be ok");
         assert_eq!(flag, CallFlags::AllowCall);
 
-        let _ = serde_json::from_str::<CallFlags>("255")
-            .expect_err("json decode should be ok");
+        let _ = serde_json::from_str::<CallFlags>("255").expect_err("json decode should be ok");
     }
 
     #[test]
@@ -171,15 +167,13 @@ mod test {
             compiler: "v1".as_bytes().into(),
             source: "".into(),
             reserve1: 0,
-            tokens: vec![
-                MethodToken {
-                    hash: Default::default(),
-                    method: "method".into(),
-                    param_count: 3,
-                    has_return: true,
-                    call_flags: CallFlags::WriteStates,
-                }
-            ],
+            tokens: vec![MethodToken {
+                hash: H160::default(),
+                method: "method".into(),
+                param_count: 3,
+                has_return: true,
+                call_flags: CallFlags::WriteStates,
+            }],
             reserve2: 0,
             script: [12u8, 32, 84, 35, 14].as_slice().into(),
             checksum: 0,

@@ -1,17 +1,18 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
 
-use serde::{Deserialize, Serialize};
-
-use neo_base::errors;
 use neo_base::encoding::{base58::*, bin::*};
+use neo_base::errors;
 use neo_base::hash::{Ripemd160, Sha256};
+use serde::{Deserialize, Serialize};
+pub use {
+    bytes::*, check_sign::*, dbft::*, genesis::*, h160::*, h256::*, script::*, settings::*,
+    verifying::*,
+};
+
 use crate::PublicKey;
-use crate::types::h160::H160_SIZE;
-use crate::types::h256::H256_SIZE;
 
 pub mod bytes;
 pub mod check_sign;
@@ -33,13 +34,10 @@ pub const ADDRESS_NEO3: u8 = 0x35;
 /// network(u32) + SHA256
 pub const SIGN_DATA_SIZE: usize = 4 + H256_SIZE;
 
-
 pub type Fee = u64;
-
 
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
 pub struct ScriptHash(pub(crate) [u8; SCRIPT_HASH_SIZE]);
-
 
 impl AsRef<[u8; SCRIPT_HASH_SIZE]> for ScriptHash {
     #[inline]
@@ -51,14 +49,14 @@ impl AsRef<[u8]> for ScriptHash {
     fn as_ref(&self) -> &[u8] { &self.0 }
 }
 
-impl From<UInt160> for ScriptHash {
+impl From<H160> for ScriptHash {
     #[inline]
-    fn from(value: UInt160) -> Self { Self(value.into()) }
+    fn from(value: H160) -> Self { Self(value.into()) }
 }
 
-impl Into<UInt160> for ScriptHash {
+impl Into<H160> for ScriptHash {
     #[inline]
-    fn into(self) -> UInt160 { UInt160::from(self.0) }
+    fn into(self) -> H160 { H160::from(self.0) }
 }
 
 pub trait ToScriptHash {
@@ -77,11 +75,8 @@ impl ToScriptHash for CheckSign {
 
 impl ToScriptHash for PublicKey {
     #[inline]
-    fn to_script_hash(&self) -> ScriptHash {
-        self.to_compressed().as_slice().to_script_hash()
-    }
+    fn to_script_hash(&self) -> ScriptHash { self.to_compressed().as_slice().to_script_hash() }
 }
-
 
 pub struct Address {
     version: u8,
@@ -136,14 +131,14 @@ impl TryFrom<&str> for Address {
     type Error = ToAddressError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let check = Vec::from_base58_check(value, None, None)
-            .map_err(Self::Error::from)?;
+        let check = Vec::from_base58_check(value, None, None).map_err(Self::Error::from)?;
 
         if check.len() != 21 {
             return Err(Self::Error::InvalidLength);
         }
 
-        if check[0] != ADDRESS_NEO3 { // NEO2 is not supported at now.
+        if check[0] != ADDRESS_NEO3 {
+            // NEO2 is not supported at now.
             return Err(Self::Error::InvalidVersion(check[0]));
         }
 
@@ -162,34 +157,24 @@ impl ToNeo3Address for ScriptHash {
         addr[0] = ADDRESS_NEO3;
         addr[1..].copy_from_slice(self.0.as_ref());
 
-        Address {
-            version: ADDRESS_NEO3,
-            base58check: addr.to_base58_check(None, None),
-        }
+        Address { version: ADDRESS_NEO3, base58check: addr.to_base58_check(None, None) }
     }
 }
 
 impl ToNeo3Address for CheckSign {
     #[inline]
-    fn to_neo3_address(&self) -> Address {
-        self.to_script_hash().to_neo3_address()
-    }
+    fn to_neo3_address(&self) -> Address { self.to_script_hash().to_neo3_address() }
 }
 
 impl ToNeo3Address for MultiCheckSign {
     #[inline]
-    fn to_neo3_address(&self) -> Address {
-        self.to_script_hash().to_neo3_address()
-    }
+    fn to_neo3_address(&self) -> Address { self.to_script_hash().to_neo3_address() }
 }
 
 impl ToNeo3Address for PublicKey {
     #[inline]
-    fn to_neo3_address(&self) -> Address {
-        self.to_check_sign().to_script_hash().to_neo3_address()
-    }
+    fn to_neo3_address(&self) -> Address { self.to_check_sign().to_script_hash().to_neo3_address() }
 }
-
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Role {
@@ -199,7 +184,6 @@ pub enum Role {
     P2pNotary = 32,
 }
 
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq, BinEncode, BinDecode)]
 #[bin(repr = u8)]
 pub enum VmState {
@@ -208,7 +192,6 @@ pub enum VmState {
     Fault = 2,
     Break = 4,
 }
-
 
 #[allow(dead_code)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -234,12 +217,12 @@ impl AsRef<[u8]> for AccountId {
 
 pub type Extra = Option<serde_json::Map<String, serde_json::Value>>;
 
-
 #[cfg(test)]
 mod test {
     use neo_base::bytes::ToArray;
     use neo_base::encoding::base64::ToBase64;
     use neo_base::encoding::hex::DecodeHex;
+
     use super::*;
 
     #[test]

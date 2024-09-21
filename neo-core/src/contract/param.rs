@@ -1,19 +1,19 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
-use serde::{Deserialize, Serialize};
-
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
-
 use neo_base::{encoding::bin::*, math::U256};
-use neo_crypto::secp256r1::PublicKey;
-use crate::types::{Bytes, Sign, UInt160, UInt256};
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    types::{Bytes, Sign, H160, H256},
+    PublicKey,
+};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, BinEncode, BinDecode)]
 pub enum ParamType {
@@ -22,8 +22,8 @@ pub enum ParamType {
     Integer = 0x11,
     ByteArray = 0x12,
     String = 0x13,
-    UInt160 = 0x14,
-    UInt256 = 0x15,
+    H160 = 0x14,
+    H256 = 0x15,
     PublicKey = 0x16,
     Signature = 0x17,
     Array = 0x20,
@@ -32,9 +32,7 @@ pub enum ParamType {
     Void = 0xff,
 }
 
-
 pub type ParamMap = HashMap<ParamValue, ParamValue>;
-
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
@@ -45,8 +43,8 @@ pub enum ParamValue {
     ByteArray(Bytes),
     String(String),
 
-    UInt160(UInt160),
-    UInt256(UInt256),
+    H160(H160),
+    H256(H256),
 
     PublicKey(PublicKey),
     Signature(Sign),
@@ -58,7 +56,6 @@ pub enum ParamValue {
     Void,
 }
 
-
 impl core::hash::Hash for ParamValue {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         match self {
@@ -66,8 +63,8 @@ impl core::hash::Hash for ParamValue {
             Self::Integer(v) => v.hash(state),
             Self::ByteArray(v) => v.hash(state),
             Self::String(v) => v.hash(state),
-            Self::UInt160(v) => v.hash(state),
-            Self::UInt256(v) => v.hash(state),
+            Self::H160(v) => v.hash(state),
+            Self::H256(v) => v.hash(state),
             Self::PublicKey(v) => v.hash(state),
             Self::Signature(v) => v.hash(state),
             Self::Array(v) => v.hash(state),
@@ -77,7 +74,6 @@ impl core::hash::Hash for ParamValue {
         }
     }
 }
-
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
@@ -91,8 +87,8 @@ pub enum Param {
     ByteArray(Bytes),
     String(String),
 
-    UInt160(UInt160),
-    UInt256(UInt256),
+    H160(H160),
+    H256(H256),
 
     PublicKey(PublicKey),
     Signature(Sign),
@@ -121,8 +117,8 @@ impl Param {
             Self::Integer(_) => Integer,
             Self::ByteArray(_) => ByteArray,
             Self::String(_) => String,
-            Self::UInt160(_) => UInt160,
-            Self::UInt256(_) => UInt256,
+            Self::H160(_) => H160,
+            Self::H256(_) => H256,
             Self::PublicKey(_) => PublicKey,
             Self::Signature(_) => Signature,
             Self::Array(_) => Array,
@@ -143,7 +139,6 @@ pub struct NamedParam {
     pub value: Param,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NamedParamType {
     pub name: String,
@@ -151,7 +146,6 @@ pub struct NamedParamType {
     #[serde(rename = "type")]
     pub typ: ParamType,
 }
-
 
 #[cfg(test)]
 mod test {
@@ -162,13 +156,11 @@ mod test {
         let mut m = ParamMap::new();
         m.insert(ParamValue::Void, ParamValue::Boolean(false));
 
-        let v = m.get(&ParamValue::Void)
-            .expect("key should exist");
+        let v = m.get(&ParamValue::Void).expect("key should exist");
         assert_eq!(v, &ParamValue::Boolean(false));
 
         m.insert(ParamValue::Map(ParamMap::new()), ParamValue::Boolean(true));
-        let v = m.get(&ParamValue::Map(ParamMap::new()))
-            .expect("key should exist");
+        let v = m.get(&ParamValue::Map(ParamMap::new())).expect("key should exist");
         assert_eq!(v, &ParamValue::Boolean(true));
         assert_eq!(m.len(), 2);
     }
@@ -176,25 +168,18 @@ mod test {
     #[test]
     fn test_param_marshal() {
         let p = Param::Boolean(true);
-        let p = serde_json::to_string(&p)
-            .expect("json encode should be ok");
+        let p = serde_json::to_string(&p).expect("json encode should be ok");
         assert_eq!(&p, r#"{"type":"Boolean","value":true}"#);
 
-        let v: Param = serde_json::from_str(&p)
-            .expect("json decode should be ok");
+        let v: Param = serde_json::from_str(&p).expect("json decode should be ok");
         assert!(matches!(v, Param::Boolean(true)));
 
         let p = Param::Any(None);
-        let p = serde_json::to_string(&p)
-            .expect("json encode should be ok");
+        let p = serde_json::to_string(&p).expect("json encode should be ok");
         assert_eq!(&p, r#"{"type":"Any","value":null}"#);
 
-        let p = NamedParam {
-            name: "token".into(),
-            value: Param::String("abc".into()),
-        };
-        let p = serde_json::to_string(&p)
-            .expect("json encode should be ok");
+        let p = NamedParam { name: "token".into(), value: Param::String("abc".into()) };
+        let p = serde_json::to_string(&p).expect("json encode should be ok");
         assert_eq!(&p, r#"{"name":"token","type":"String","value":"abc"}"#);
     }
 }

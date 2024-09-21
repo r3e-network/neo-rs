@@ -1,14 +1,10 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
-use alloc::rc::Rc;
 use core::hash::{Hash, Hasher};
 use core::ops::Deref;
-use core::cell::Cell;
 
-use crate::StackItem;
-
+use crate::{StackItem::*, *};
 
 pub struct WrapItem {
     pub(crate) item: Rc<StackItem>,
@@ -27,9 +23,7 @@ impl Deref for WrapItem {
 
 impl PartialEq<Self> for WrapItem {
     #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        core::ptr::eq(self, other)
-    }
+    fn eq(&self, other: &Self) -> bool { core::ptr::eq(self, other) }
 }
 
 impl Eq for WrapItem {}
@@ -46,13 +40,11 @@ impl Hash for WrapItem {
 //     TooDepthNestedReference,
 // }
 
-
 pub struct References {
     // tracked: hashbrown::HashSet<WrapItem>,
     // zero_referred: hashbrown::HashSet<WrapItem>,
-    references: Cell<usize>,
+    references: usize,
 }
-
 
 impl References {
     #[inline]
@@ -60,33 +52,29 @@ impl References {
         Self {
             // tracked: Default::default(),
             // zero_referred: Default::default(),
-            references: Cell::new(0),
+            references: 0,
         }
     }
 
     // StackItem must add to References before any use
     #[inline]
-    pub fn add(&self, item: &Rc<StackItem>) {
-        self.recursive_add(item, 1)
-    }
+    pub fn add(&mut self, item: &StackItem) { self.recursive_add(item, 1) }
 
-    fn recursive_add(&self, item: &Rc<StackItem>, depth: u32) {
-        self.references.set(self.references() + 1);
-        let stage = item.clone();
-        if Rc::strong_count(&stage) <= 2 {
-            return;
-        }
-
-        match item.as_ref() {
-            StackItem::Array(items) => {
-                items.iter().for_each(|x| self.recursive_add(x, depth + 1));
+    fn recursive_add(&mut self, item: &StackItem, depth: u32) {
+        self.references += 1;
+        match &item {
+            Array(v) => {
+                if v.strong_count() <= 1 {
+                    v.items().iter().for_each(|x| self.recursive_add(x, depth + 1));
+                }
             }
-            StackItem::Struct(items) => {
-                items.iter().for_each(|x| self.recursive_add(x, depth + 1));
+            Struct(v) => {
+                v.items().iter().for_each(|x| self.recursive_add(x, depth + 1));
             }
-            StackItem::Map(items) => {
-                // TODO: reference for key
-                items.iter().for_each(|(_k, v)| self.recursive_add(v, depth + 1));
+            Map(v) => {
+                if v.strong_count() <= 1 {
+                    v.items().iter().for_each(|(_k, v)| self.recursive_add(v, depth + 1));
+                }
             }
             _ => {}
         }
@@ -94,35 +82,30 @@ impl References {
 
     // StackItem must remove from References before destroy
     #[inline]
-    pub fn remove(&self, item: &Rc<StackItem>) {
-        self.recursive_remove(item, 1);
-    }
+    pub fn remove(&mut self, item: &StackItem) { self.recursive_remove(item, 1); }
 
-    fn recursive_remove(&self, item: &Rc<StackItem>, depth: u32) {
-        self.references.set(self.references() - 1);
-        if Rc::strong_count(item) > 1 {
-            return;
-        }
-
-        match item.as_ref() {
-            StackItem::Array(items) => {
-                items.iter().for_each(|x| self.recursive_remove(x, depth + 1));
+    fn recursive_remove(&mut self, item: &StackItem, depth: u32) {
+        self.references -= 1;
+        match &item {
+            Array(v) => {
+                if v.strong_count() <= 1 {
+                    v.items().iter().for_each(|x| self.recursive_remove(x, depth + 1));
+                }
             }
-            StackItem::Struct(items) => {
-                items.iter().for_each(|x| self.recursive_remove(x, depth + 1));
+            Struct(v) => {
+                v.items().iter().for_each(|x| self.recursive_remove(x, depth + 1));
             }
-            StackItem::Map(items) => {
-                // TODO: reference for key
-                items.iter().for_each(|(_k, v)| self.recursive_remove(v, depth + 1));
+            Map(v) => {
+                if v.strong_count() <= 1 {
+                    v.items().iter().for_each(|(_k, v)| self.recursive_remove(v, depth + 1));
+                }
             }
             _ => {}
         }
     }
 
     #[inline]
-    pub fn references(&self) -> usize {
-        self.references.get()
-    }
+    pub fn references(&self) -> usize { self.references }
 }
 
 #[cfg(test)]

@@ -9,15 +9,14 @@ pub trait ToReferences<R: ?Sized> {
 
 impl<R: ?Sized, T: AsRef<R>> ToReferences<R> for [T] {
     #[inline]
-    fn to_references(&self) -> Vec<&R> {
-        self.iter().map(|f| f.as_ref()).collect()
-    }
+    fn to_references(&self) -> Vec<&R> { self.iter().map(|f| f.as_ref()).collect() }
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use alloc::{string::ToString, vec};
+
+    use super::*;
 
     #[test]
     fn test_to_references() {

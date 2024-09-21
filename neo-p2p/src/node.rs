@@ -5,12 +5,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crossbeam::atomic::AtomicCell;
+use neo_base::time::{unix_millis_now, Tick};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::*;
-use neo_base::time::{unix_millis_now, Tick};
 
 pub struct LocalNode {
     runtime: Option<Runtime>,
@@ -36,12 +36,8 @@ impl LocalNode {
             .expect("`runtime::Builder` should be ok");
 
         let (net_tx, net_rx) = mpsc::channel(MESSAGE_CHAN_SIZE);
-        let driver = NetDriver::new(
-            runtime.handle().clone(),
-            config.max_peers as usize,
-            local,
-            net_tx,
-        );
+        let driver =
+            NetDriver::new(runtime.handle().clone(), config.max_peers as usize, local, net_tx);
         Self {
             runtime: Some(runtime),
             net_rx: AtomicCell::new(Some(net_rx)),
@@ -51,25 +47,15 @@ impl LocalNode {
         }
     }
 
-    pub fn p2p_config(&self) -> &P2pConfig {
-        &self.config
-    }
+    pub fn p2p_config(&self) -> &P2pConfig { &self.config }
 
-    pub fn net_handles(&self) -> NetHandles {
-        self.driver.net_handles()
-    }
+    pub fn net_handles(&self) -> NetHandles { self.driver.net_handles() }
 
-    pub fn seeds(&self) -> &[String] {
-        &self.config.seeds
-    }
+    pub fn seeds(&self) -> &[String] { &self.config.seeds }
 
-    pub fn port(&self) -> u16 {
-        self.local.port()
-    }
+    pub fn port(&self) -> u16 { self.local.port() }
 
-    pub fn local_addr(&self) -> SocketAddr {
-        self.local
-    }
+    pub fn local_addr(&self) -> SocketAddr { self.local }
 
     // drop(NodeHandle) will close the listener
     pub fn run(&self, handle: MessageHandleV2) -> NodeHandle {
@@ -159,17 +145,11 @@ impl NodeHandle {
         }
     }
 
-    fn protocol_tick(&self) -> Arc<Tick> {
-        self.tick.clone()
-    }
+    fn protocol_tick(&self) -> Arc<Tick> { self.tick.clone() }
 
-    pub(crate) fn cancelee(&self) -> CancellationToken {
-        self.cancel.clone()
-    }
+    pub(crate) fn cancelee(&self) -> CancellationToken { self.cancel.clone() }
 
-    pub(crate) fn discovery(&self) -> Discovery {
-        self.discovery.clone()
-    }
+    pub(crate) fn discovery(&self) -> Discovery { self.discovery.clone() }
 }
 
 impl Drop for NodeHandle {
@@ -181,9 +161,11 @@ impl Drop for NodeHandle {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use neo_core::payload::{P2pMessage, Ping};
     use std::{io::Write, net::TcpStream};
+
+    use neo_core::payload::{P2pMessage, Ping};
+
+    use super::*;
 
     #[test]
     fn test_run_node() {
@@ -196,18 +178,10 @@ mod test {
 
         let mut stream = TcpStream::connect(addr).expect("`TcpStream::connect` should be ok");
 
-        let ping = P2pMessage::Ping(Ping {
-            last_block_index: 2,
-            unix_seconds: 3,
-            nonce: 4,
-        });
-        let buf = ping
-            .to_message_encoded()
-            .expect("`to_message_encoded` should be ok");
+        let ping = P2pMessage::Ping(Ping { last_block_index: 2, unix_seconds: 3, nonce: 4 });
+        let buf = ping.to_message_encoded().expect("`to_message_encoded` should be ok");
 
-        stream
-            .write_all(buf.as_ref())
-            .expect("`write_all` should be ok");
+        stream.write_all(buf.as_ref()).expect("`write_all` should be ok");
         std::thread::sleep(Duration::from_millis(200));
 
         drop(handle);

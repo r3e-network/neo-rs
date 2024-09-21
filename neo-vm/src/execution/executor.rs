@@ -1,9 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use crate::execution::*;
-
 
 // pub struct ExecOutput {
 //     // nothing
@@ -17,12 +15,12 @@ fn exec_invalid_opcode<const N: u8>(_cx: &mut ExecContext, op: &Op) -> Result<()
 
 #[allow(unused)]
 pub(crate) const EXECUTORS: [Executor; 256] = [
-    exec_invalid_opcode::<0x00>, // PushInt8, 0x00, 00
-    exec_invalid_opcode::<0x01>, // PushInt16, 0x01, 01
-    exec_invalid_opcode::<0x02>, // PushInt32, 0x02, 02
-    exec_invalid_opcode::<0x03>, // PushInt64, 0x03, 03
-    exec_invalid_opcode::<0x04>, // PushInt128, 0x04, 04
-    exec_invalid_opcode::<0x05>, // PushInt256, 0x05, 05
+    exec_push_int,               // PushInt8, 0x00, 00
+    exec_push_int,               // PushInt16, 0x01, 01
+    exec_push_int,               // PushInt32, 0x02, 02
+    exec_push_int,               // PushInt64, 0x03, 03
+    exec_push_int128,            // PushInt128, 0x04, 04
+    exec_push_int256,            // PushInt256, 0x05, 05
     exec_invalid_opcode::<0x06>, // Reserved, 0x06, 06
     exec_invalid_opcode::<0x07>, // Reserved, 0x07, 07
     exec_invalid_opcode::<0x08>, // PushTrue, 0x08, 08
@@ -50,8 +48,8 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0x1E>, // Push14, 0x1E, 30
     exec_invalid_opcode::<0x1F>, // Push15, 0x1F, 31
     exec_invalid_opcode::<0x20>, // Push16, 0x20, 32
-    |_cx, _op| { Ok(()) }, // Nop, 0x21, 33
-    exec_jmp, // Jmp, 0x22, 34
+    |_cx, _op| Ok(()),           // Nop, 0x21, 33
+    exec_jmp,                    // Jmp, 0x22, 34
     exec_invalid_opcode::<0x23>, // JmpL, 0x23, 35
     exec_invalid_opcode::<0x24>, // JmpIf, 0x24, 36
     exec_invalid_opcode::<0x25>, // JmpIfL, 0x25, 37
@@ -84,9 +82,9 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0x40>, // Return, 0x40, 64
     exec_invalid_opcode::<0x41>, // Syscall, 0x41, 65
     exec_invalid_opcode::<0x42>, // Reserved, 0x42, 66
-    exec_depth, // Depth, 0x43, 67
+    exec_depth,                  // Depth, 0x43, 67
     exec_invalid_opcode::<0x44>, // Reserved, 0x44, 68
-    exec_invalid_opcode::<0x45>, // Drop, 0x45, 69
+    exec_drop,                   // Drop, 0x45, 69
     exec_invalid_opcode::<0x46>, // Nip, 0x46, 70
     exec_invalid_opcode::<0x47>, // Reserved, 0x47, 71
     exec_invalid_opcode::<0x48>, // Xdrop, 0x48, 72
@@ -103,16 +101,16 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0x53>, // Reverse3, 0x53, 83
     exec_invalid_opcode::<0x54>, // Reverse4, 0x54, 84
     exec_invalid_opcode::<0x55>, // ReverseN, 0x55, 85
-    exec_init_sslot, // InitSSLot, 0x56, 86
-    exec_init_slot, // InitSlot, 0x57, 87
-    exec_load_static_n::<0x00>, // LdSFLd0, 0x58, 88
-    exec_load_static_n::<0x01>, // LdSFLd1, 0x59, 89
-    exec_load_static_n::<0x02>, // LdSFLd2, 0x5A, 90
-    exec_load_static_n::<0x03>, // LdSFLd3, 0x5B, 91
-    exec_load_static_n::<0x04>, // LdSFLd4, 0x5C, 92
-    exec_load_static_n::<0x05>, // LdSFLd5, 0x5D, 93
-    exec_load_static_n::<0x06>, // LdSFLd6, 0x5E, 94
-    exec_load_static, // LdSFLd, 0x5F, 95
+    exec_init_sslot,             // InitSSLot, 0x56, 86
+    exec_init_slot,              // InitSlot, 0x57, 87
+    exec_load_static_n::<0x00>,  // LdSFLd0, 0x58, 88
+    exec_load_static_n::<0x01>,  // LdSFLd1, 0x59, 89
+    exec_load_static_n::<0x02>,  // LdSFLd2, 0x5A, 90
+    exec_load_static_n::<0x03>,  // LdSFLd3, 0x5B, 91
+    exec_load_static_n::<0x04>,  // LdSFLd4, 0x5C, 92
+    exec_load_static_n::<0x05>,  // LdSFLd5, 0x5D, 93
+    exec_load_static_n::<0x06>,  // LdSFLd6, 0x5E, 94
+    exec_load_static,            // LdSFLd, 0x5F, 95
     exec_invalid_opcode::<0x60>, // StSFLd0, 0x60, 96
     exec_invalid_opcode::<0x61>, // StSFLd1, 0x61, 97
     exec_invalid_opcode::<0x62>, // StSFLd2, 0x62, 98
@@ -161,7 +159,7 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0x8D>, // Left, 0x8D, 141
     exec_invalid_opcode::<0x8E>, // Right, 0x8E, 142
     exec_invalid_opcode::<0x8F>, // Reserved, 0x8F, 143
-    exec_invert, // Invert, 0x90, 144
+    exec_invert,                 // Invert, 0x90, 144
     exec_invalid_opcode::<0x91>, // And, 0x91, 145
     exec_invalid_opcode::<0x92>, // Or, 0x92, 146
     exec_invalid_opcode::<0x93>, // Xor, 0x93, 147
@@ -170,7 +168,7 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0x96>, // Reserved, 0x96, 150
     exec_invalid_opcode::<0x97>, // Equal, 0x97, 151
     exec_invalid_opcode::<0x98>, // NotEqual, 0x98, 152
-    exec_sign, // Sign, 0x99, 153
+    exec_sign,                   // Sign, 0x99, 153
     exec_invalid_opcode::<0x9A>, // Abs, 0x9A, 154
     exec_invalid_opcode::<0x9B>, // Negate, 0x9B, 155
     exec_invalid_opcode::<0x9C>, // Inc, 0x9C, 156
@@ -207,7 +205,7 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0xBB>, // Within, 0xBB, 187
     exec_invalid_opcode::<0xBC>, // Reserved, 0xBC, 188
     exec_invalid_opcode::<0xBD>, // Reserved, 0xBD, 189
-    exec_pack_map, // PackMap, 0xBE, 190
+    exec_pack_map,               // PackMap, 0xBE, 190
     exec_invalid_opcode::<0xBF>, // PackStruct, 0xBF, 191
     exec_invalid_opcode::<0xC0>, // Pack, 0xC0, 192
     exec_invalid_opcode::<0xC1>, // Unpack, 0xC1, 193
@@ -233,7 +231,7 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0xD5>, // Reserved, 0xD5, 213
     exec_invalid_opcode::<0xD6>, // Reserved, 0xD6, 214
     exec_invalid_opcode::<0xD7>, // Reserved, 0xD7, 215
-    exec_is_null, // IsNull, 0xD8, 216
+    exec_is_null,                // IsNull, 0xD8, 216
     exec_invalid_opcode::<0xD9>, // IsType, 0xD9, 217
     exec_invalid_opcode::<0xDA>, // Reserved, 0xDA, 218
     exec_invalid_opcode::<0xDB>, // Convert, 0xDB, 219

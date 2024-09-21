@@ -2,16 +2,17 @@
 // All Rights Reserved
 
 use alloc::string::{String, ToString};
+
+use neo_base::{
+    bytes::{ToArray, ToRevArray},
+    errors,
+};
 use p256::ecdsa::{
     signature::{RandomizedSigner, Verifier as P256Verifier},
     Signature, SigningKey, VerifyingKey,
 };
 
 use crate::secp256r1;
-use neo_base::{
-    bytes::{ToArray, ToRevArray},
-    errors,
-};
 
 // const ECC256_SIZE: usize = 32;
 pub const ECC256_SIGN_SIZE: usize = 32 * 2;
@@ -46,30 +47,22 @@ pub struct Secp256r1Sign {
 
 impl AsRef<[u8]> for Secp256r1Sign {
     #[inline]
-    fn as_ref(&self) -> &[u8] {
-        self.sign.as_ref()
-    }
+    fn as_ref(&self) -> &[u8] { self.sign.as_ref() }
 }
 
 impl AsRef<[u8; ECC256_SIGN_SIZE]> for Secp256r1Sign {
     #[inline]
-    fn as_ref(&self) -> &[u8; ECC256_SIGN_SIZE] {
-        &self.sign
-    }
+    fn as_ref(&self) -> &[u8; ECC256_SIGN_SIZE] { &self.sign }
 }
 
 impl From<[u8; ECC256_SIGN_SIZE]> for Secp256r1Sign {
     #[inline]
-    fn from(sign: [u8; ECC256_SIGN_SIZE]) -> Self {
-        Secp256r1Sign { sign }
-    }
+    fn from(sign: [u8; ECC256_SIGN_SIZE]) -> Self { Secp256r1Sign { sign } }
 }
 
 impl Into<[u8; ECC256_SIGN_SIZE]> for Secp256r1Sign {
     #[inline]
-    fn into(self) -> [u8; ECC256_SIGN_SIZE] {
-        self.sign
-    }
+    fn into(self) -> [u8; ECC256_SIGN_SIZE] { self.sign }
 }
 
 #[derive(Debug, Clone, errors::Error)]
@@ -102,9 +95,7 @@ impl Sign for secp256r1::PrivateKey {
         let sign = sign.to_bytes();
         // sign[0..32].reverse(); // use little endian
         // sign[32..64].reverse();
-        Ok(Secp256r1Sign {
-            sign: sign.to_array(),
-        })
+        Ok(Secp256r1Sign { sign: sign.to_array() })
     }
 }
 
@@ -150,10 +141,10 @@ impl DigestVerify for secp256r1::PublicKey {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-
-    use crate::secp256r1::{PrivateKey, PublicKey};
     use neo_base::encoding::hex::DecodeHex;
+
+    use super::*;
+    use crate::secp256r1::{PrivateKey, PublicKey};
 
     #[test]
     fn test_p256_sign() {
@@ -185,9 +176,7 @@ mod test {
             .decode_hex()
             .expect("hex decode should be ok");
 
-        let _ = pk
-            .verify_digest(data, sign.as_slice())
-            .expect("verify should be ok");
+        let _ = pk.verify_digest(data, sign.as_slice()).expect("verify should be ok");
 
         let _ = pk
             .verify_digest(data, "b1855cec16b6ebb372895d44c7be3832")

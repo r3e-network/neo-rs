@@ -1,18 +1,19 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use neo_base::encoding::bin::*;
 
-use crate::{store::{self, *}, tx::StatedTx, UInt256};
 use crate::block::{IndexHash, StatedBlock, TrimmedBlock};
-
+use crate::{
+    store::{self, *},
+    tx::StatedTx,
+    types::H256,
+};
 
 pub const PREFIX_BLOCK: u8 = 5;
 pub const PREFIX_INDEX_TO_HASH: u8 = 9;
 pub const PREFIX_TX: u8 = 11;
 pub const PREFIX_CURRENT_BLOCK: u8 = 12;
-
 
 pub struct TxStore<Store: store::Store> {
     contract_id: u32,
@@ -20,16 +21,14 @@ pub struct TxStore<Store: store::Store> {
 }
 
 impl<Store: store::Store> TxStore<Store> {
-    pub fn new(contract_id: u32, store: Store) -> Self {
-        Self { contract_id, store }
-    }
+    pub fn new(contract_id: u32, store: Store) -> Self { Self { contract_id, store } }
 
     #[inline]
-    fn tx_key(&self, hash: &UInt256) -> Vec<u8> {
+    fn tx_key(&self, hash: &H256) -> Vec<u8> {
         StoreKey::new(self.contract_id, PREFIX_TX, hash).to_bin_encoded()
     }
 
-    pub fn get_tx(&self, hash: &UInt256) -> Result<StatedTx, BinReadError> {
+    pub fn get_tx(&self, hash: &H256) -> Result<StatedTx, BinReadError> {
         let key = self.tx_key(hash);
         let mut tx = self.store.get_bin_encoded::<StatedTx>(&key)?;
 
@@ -42,18 +41,15 @@ impl<Store: store::Store> TxStore<Store> {
     }
 }
 
-
 pub struct BlockStore<Store: store::Store> {
     contract_id: u32,
     store: Store,
 }
 
 impl<Store: store::Store> BlockStore<Store> {
-    pub fn new(contract_id: u32, store: Store) -> Self {
-        Self { contract_id, store }
-    }
+    pub fn new(contract_id: u32, store: Store) -> Self { Self { contract_id, store } }
 
-    pub fn get_block_hash(&self, block_index: u32) -> Result<UInt256, BinReadError> {
+    pub fn get_block_hash(&self, block_index: u32) -> Result<H256, BinReadError> {
         let key = self.store_key(PREFIX_INDEX_TO_HASH, &big_endian::U32(block_index));
         self.store.get_bin_encoded(&key.to_bin_encoded())
     }
@@ -63,7 +59,7 @@ impl<Store: store::Store> BlockStore<Store> {
         StoreKey::new(self.contract_id, prefix, key).to_bin_encoded()
     }
 
-    pub fn get_block_with_hash(&self, hash: &UInt256) -> Result<TrimmedBlock, BinReadError> {
+    pub fn get_block_with_hash(&self, hash: &H256) -> Result<TrimmedBlock, BinReadError> {
         let key = self.store_key(PREFIX_BLOCK, hash);
         let mut block = self.store.get_bin_encoded::<TrimmedBlock>(&key)?;
 
@@ -133,10 +129,8 @@ impl<Store: store::Store> BlockStore<Store> {
         );
 
         // Commit all, must be all succeed or all failed
-        batch.commit()
-            .map(|_written| ())
-            .map_err(|err| match err {
-                CommitError::Conflicted => BinWriteError::AlreadyExists,
-            })
+        batch.commit().map(|_written| ()).map_err(|err| match err {
+            CommitError::Conflicted => BinWriteError::AlreadyExists,
+        })
     }
 }

@@ -18,7 +18,6 @@ use neo_base::{encoding::bin::*, errors, time::unix_millis_now};
 use neo_core::payload::{Extensible, CONSENSUS_CATEGORY};
 use neo_core::store::ChainStates;
 use neo_core::{tx, types::*, Keypair};
-
 pub use {committee::*, context::*, message::*, recovery::*, state_machine::*, timer::*};
 
 #[derive(Debug, Copy, Clone)]
@@ -41,9 +40,7 @@ pub struct HView {
 
 impl HView {
     #[inline]
-    pub fn zero(&self) -> bool {
-        self.eq(&Self::default())
-    }
+    pub fn zero(&self) -> bool { self.eq(&Self::default()) }
 
     #[inline]
     pub fn is_previous(&self, other: &HView) -> bool {
@@ -139,9 +136,7 @@ impl DbftConsensus {
     fn check_payload(&self, payload: &Extensible) -> Result<(), OnPayloadError> {
         // 1. Ignore the payload if ValidBlockStart is lower than ValidBlockEnd.
         if payload.valid_block_start >= payload.valid_block_end {
-            return Err(OnPayloadError::InvalidPayload(
-                "valid_block_start >= valid_block_end",
-            ));
+            return Err(OnPayloadError::InvalidPayload("valid_block_start >= valid_block_end"));
         }
 
         // 2. Ignore the payload if current block height is out of [ValidBlockStart, ValidBlockEnd).
@@ -158,16 +153,14 @@ impl DbftConsensus {
 
         // 4. Ignore the payload if the verification script failed or Category is not "dBFT"
         if !payload.category.eq(CONSENSUS_CATEGORY) {
-            return Err(OnPayloadError::InvalidPayload(
-                "only 'dBFT' is supported at now",
-            ));
+            return Err(OnPayloadError::InvalidPayload("only 'dBFT' is supported at now"));
         }
 
         // 5. Ignore the message if the node has sent out the new block
         Ok(())
     }
 
-    fn check_message(&self, sender: &UInt160, meta: MessageMeta) -> Result<(), OnPayloadError> {
+    fn check_message(&self, sender: &H160, meta: MessageMeta) -> Result<(), OnPayloadError> {
         // 7. Ignore the message if the message.BlockIndex is lower than the current block height
         let states = self.state_machine.states();
         if meta.block_index != states.block_index {
@@ -194,10 +187,7 @@ impl DbftConsensus {
         // 8.2. Ignore the message if the payload.Sender is different from the correct hash
         let validator = validators[index].to_script_hash().into();
         if !sender.eq(&validator) {
-            return Err(OnPayloadError::InvalidSender(
-                sender.clone(),
-                meta.validator_index,
-            ));
+            return Err(OnPayloadError::InvalidSender(sender.clone(), meta.validator_index));
         }
         Ok(())
     }
@@ -238,7 +228,7 @@ pub enum OnPayloadError {
     InvalidMessageMeta(&'static str, u32, MessageMeta),
 
     #[error("on-payload: invalid sender '{0}' index {1}")]
-    InvalidSender(UInt160, ViewIndex),
+    InvalidSender(H160, ViewIndex),
 }
 
 pub trait ToPayload {

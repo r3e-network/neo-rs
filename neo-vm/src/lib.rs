@@ -1,39 +1,33 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 #![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
 
 use alloc::{rc::Rc, vec::Vec};
 
-use neo_core::types::VmState;
 use neo_base::errors;
-
-use tables::*;
+use neo_core::types::VmState;
 pub use {builder::*, context::*, decode::*, execution::*, interop::*};
 pub use {opcode::*, operand::*, program::*, reference::*, stack::*, types::*};
-use crate::vm_types::item_type::StackItemType;
-use crate::vm_types::stack_item::StackItem;
+use {slots::*, tables::*};
 
 pub mod builder;
 pub mod context;
 pub mod decode;
 pub mod execution;
-pub mod program;
 pub mod interop;
-pub mod reference;
 pub mod opcode;
 pub mod operand;
+pub mod program;
+pub mod reference;
+pub mod slots;
 pub mod stack;
 pub mod tables;
-pub mod vm_types;
-pub mod vm;
-pub mod exception;
+pub mod types;
 
 pub(crate) const MAX_STACK_ITEM_SIZE: usize = 65535 * 2;
-
 
 pub trait RunPrice {
     fn price(&self) -> u64;
@@ -64,7 +58,6 @@ pub struct VmLimits {
     pub catch_exceptions: bool,
 }
 
-
 impl Default for VmLimits {
     fn default() -> Self {
         Self {
@@ -85,17 +78,19 @@ pub enum SyscallError {
     NoSuchSyscall(u32),
 }
 
-
 pub trait VmEnv {
     fn price_of(&self, opcode: OpCode, operand_len: usize) -> u64;
 
     // i.e. on interop call
-    fn on_syscall(&self, syscall: u32, params: &[StackItem]) -> Result<Vec<StackItem>, SyscallError>;
+    fn on_syscall(
+        &self,
+        syscall: u32,
+        params: &[StackItem],
+    ) -> Result<Vec<StackItem>, SyscallError>;
 
     // i.e. on CALL_T, call token
     fn on_token_call(&self, token: u32);
 }
-
 
 #[derive(Debug, errors::Error)]
 pub enum ExecError {
@@ -109,7 +104,7 @@ pub enum ExecError {
     InvalidExecution(u32, OpCode, &'static str),
 
     #[error("exec: invalid cast to type {1:?} on {1:?} at {0:x}")]
-    InvalidCast(u32, OpCode, StackItemType),
+    InvalidCast(u32, OpCode, ItemType),
 
     #[error("exec: invalid jump target if {1:?} at {0} to {2}")]
     InvalidJumpTarget(u32, OpCode, u32),
@@ -127,7 +122,6 @@ impl ExecError {
         //  match self { _ => VmState::Halt }
     }
 }
-
 
 // struct Invocation {
 //     program: Program,
@@ -156,8 +150,6 @@ impl<Env: VmEnv> NeoVm<Env> {
         }
     }
 
-    pub fn vm_state(&self) -> VmState { self.state }
-
     pub fn execute(&mut self) -> Result<(), ExecError> {
         if self.state == VmState::Break {
             self.state = VmState::None;
@@ -169,15 +161,15 @@ impl<Env: VmEnv> NeoVm<Env> {
                 continue; // TODO: return Err
             };
 
-            let _ = cx.execute()
-                .inspect_err(|err| self.state = err.as_vm_state())?;
+            let _ = cx.execute().inspect_err(|err| self.state = err.as_vm_state())?;
         }
 
         Ok(())
     }
 
     #[inline]
-    fn current_cx(&mut self) -> Option<&mut ExecContext> {
-        self.invocations.last_mut()
-    }
+    pub fn vm_state(&self) -> VmState { self.state }
+
+    #[inline]
+    fn current_cx(&mut self) -> Option<&mut ExecContext> { self.invocations.last_mut() }
 }

@@ -4,9 +4,10 @@
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use crate::dbft_v2::*;
 use neo_base::encoding::bin::*;
-use neo_core::types::{Bytes, Sign, UInt256, H256_SIZE};
+use neo_core::types::{Bytes, Sign, H256, H256_SIZE};
+
+use crate::dbft_v2::*;
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct RecoveryRequest {
@@ -14,7 +15,7 @@ pub struct RecoveryRequest {
 
     /// Extensible hash that contains this PrepareRequest and zero means no such value.
     #[bin(ignore)]
-    pub payload_hash: UInt256,
+    pub payload_hash: H256,
 }
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
@@ -28,10 +29,7 @@ pub struct RecoveryMessage {
 impl RecoveryMessage {
     pub fn prepare_request(&self, meta: MessageMeta) -> Option<Message<PrepareRequest>> {
         match &self.prepare_stage {
-            PrepareStage::Prepare(req) => Some(Message {
-                meta,
-                message: req.clone(),
-            }),
+            PrepareStage::Prepare(req) => Some(Message { meta, message: req.clone() }),
             _ => None,
         }
     }
@@ -52,17 +50,11 @@ impl RecoveryMessage {
     }
 
     pub fn commits(&self, block_index: u32) -> Vec<Message<Commit>> {
-        self.commits
-            .iter()
-            .map(|cc| cc.to_commit(block_index))
-            .collect()
+        self.commits.iter().map(|cc| cc.to_commit(block_index)).collect()
     }
 
     pub fn change_views(&self, block_index: u32) -> Vec<Message<ChangeViewRequest>> {
-        self.change_views
-            .iter()
-            .map(|cv| cv.to_change_view_request(block_index))
-            .collect()
+        self.change_views.iter().map(|cv| cv.to_change_view_request(block_index)).collect()
     }
 }
 
@@ -70,7 +62,7 @@ impl RecoveryMessage {
 pub enum PrepareStage {
     Prepare(PrepareRequest),
 
-    Preparation(Option<UInt256>),
+    Preparation(Option<H256>),
 }
 
 impl BinEncoder for PrepareStage {
@@ -111,11 +103,7 @@ impl BinDecoder for PrepareStage {
         let offset = r.consumed();
         let prepare: u8 = BinDecoder::decode_bin(r)?;
         if prepare != 0x00 && prepare != 0x01 {
-            return Err(BinDecodeError::InvalidType(
-                "PrepareStage",
-                offset,
-                prepare as u64,
-            ));
+            return Err(BinDecodeError::InvalidType("PrepareStage", offset, prepare as u64));
         }
 
         if prepare == 0x00 {
@@ -127,11 +115,7 @@ impl BinDecoder for PrepareStage {
             return Err(BinDecodeError::InvalidValue("PrepareStage", offset + 1));
         }
 
-        Ok(Self::Preparation(if size == 0 {
-            None
-        } else {
-            Some(BinDecoder::decode_bin(r)?)
-        }))
+        Ok(Self::Preparation(if size == 0 { None } else { Some(BinDecoder::decode_bin(r)?) }))
     }
 }
 
@@ -176,9 +160,7 @@ impl CommitCompact {
                 validator_index: self.validator_index,
                 view_number: self.view_number,
             },
-            message: Commit {
-                sign: self.sign.clone(),
-            },
+            message: Commit { sign: self.sign.clone() },
         }
     }
 }
@@ -194,15 +176,11 @@ impl PreparationCompact {
         &self,
         block_index: u32,
         view_number: ViewNumber,
-        preparation: UInt256,
+        preparation: H256,
     ) -> Message<PrepareResponse> {
         let validator_index = self.validator_index;
         Message {
-            meta: MessageMeta {
-                block_index,
-                validator_index,
-                view_number,
-            },
+            meta: MessageMeta { block_index, validator_index, view_number },
             message: PrepareResponse { preparation },
         }
     }

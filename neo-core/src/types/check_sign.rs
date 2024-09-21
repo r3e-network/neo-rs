@@ -4,12 +4,11 @@
 use alloc::vec::Vec;
 
 use bytes::{BufMut, BytesMut};
-
-use neo_base::{byzantine_honest_quorum, errors};
 use neo_base::hash::{Ripemd160, Sha256};
-use crate::{PUBLIC_COMPRESSED_SIZE, PublicKey};
-use crate::types::{Bytes, MAX_SIGNERS, Script, ScriptHash, ToScriptHash, Varint};
+use neo_base::{byzantine_honest_quorum, errors};
 
+use crate::types::{Bytes, Script, ScriptHash, ToScriptHash, Varint, MAX_SIGNERS};
+use crate::{PublicKey, PUBLIC_COMPRESSED_SIZE};
 
 // 40 bytes = 1-byte CHECK_SIG_PUSH_DATA1 + 1-byte length + 33-bytes key + 1-byte OpCode + 4-bytes suffix
 pub const CHECK_SIG_SIZE: usize = 1 + 1 + 33 + 1 + 4;
@@ -20,9 +19,7 @@ pub const CHECK_SIG_OP_CODE: u8 = 0x41; // i.e syscall opcode
 pub const CHECK_SIG_HASH_SUFFIX: [u8; 4] = [0x56, 0xe7, 0xb3, 0x27];
 pub const CHECK_MULTI_SIG_HASH_SUFFIX: [u8; 4] = [0x9e, 0xd0, 0xdc, 0x3a];
 
-
 pub struct CheckSign(pub(crate) [u8; CHECK_SIG_SIZE]);
-
 
 impl CheckSign {
     #[inline]
@@ -48,7 +45,6 @@ impl Into<Script> for CheckSign {
     #[inline]
     fn into(self) -> Script { Script::from(self.as_bytes()) }
 }
-
 
 pub struct MultiCheckSign {
     /// the number of public keys
@@ -83,9 +79,7 @@ impl AsRef<[u8]> for MultiCheckSign {
 
 impl ToScriptHash for MultiCheckSign {
     #[inline]
-    fn to_script_hash(&self) -> ScriptHash {
-        ScriptHash(self.sign.sha256().ripemd160())
-    }
+    fn to_script_hash(&self) -> ScriptHash { ScriptHash(self.sign.sha256().ripemd160()) }
 }
 
 impl Into<Bytes> for MultiCheckSign {
@@ -140,12 +134,11 @@ impl<T: AsRef<[PublicKey]>> ToCheckMultiSign for T {
         keys.sort_by(|lhs, rhs| lhs.cmp(rhs));
 
         buf.put_varint(signers as u64);
-        keys.into_iter()
-            .for_each(|k| {
-                buf.put_u8(PUSH_DATA1);
-                buf.put_u8(SIZE as u8);
-                buf.put_slice(k.to_compressed().as_slice());
-            });
+        keys.into_iter().for_each(|k| {
+            buf.put_u8(PUSH_DATA1);
+            buf.put_u8(SIZE as u8);
+            buf.put_slice(k.to_compressed().as_slice());
+        });
 
         buf.put_varint(n as u64);
         buf.put_u8(CHECK_SIG_OP_CODE);
@@ -155,11 +148,10 @@ impl<T: AsRef<[PublicKey]>> ToCheckMultiSign for T {
     }
 }
 
-
 #[derive(Debug, Copy, Clone, errors::Error)]
 pub enum ToBftHashError {
     #[error("to-bft-address: invalid members '{0}'")]
-    InvalidMembers(usize)
+    InvalidMembers(usize),
 }
 
 pub trait ToBftHash {
@@ -179,7 +171,6 @@ impl<T: AsRef<[PublicKey]>> ToBftHash for T {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use alloc::vec::Vec;
@@ -195,12 +186,9 @@ mod test {
             .decode_hex()
             .expect("decode hex should be ok");
 
-        let pk = PublicKey::from_compressed(pk.as_slice())
-            .expect("decode key should be ok");
+        let pk = PublicKey::from_compressed(pk.as_slice()).expect("decode key should be ok");
 
-        let addr = pk.to_check_sign()
-            .to_script_hash()
-            .to_neo3_address();
+        let addr = pk.to_check_sign().to_script_hash().to_neo3_address();
         assert_eq!(addr.as_str(), "NMBfzaEq2c5zodiNbLPoohVENARMbJim1r");
 
         let addr = pk.to_check_sign().to_neo3_address();
@@ -212,10 +200,11 @@ mod test {
         let keys = [
             "03cdb067d930fd5adaa6c68545016044aaddec64ba39e548250eaea551172e535c",
             "036c8431cc78b33177a60b4bcc02baf60d05fee5038e7339d3a688e394c2cbd843",
-        ].into_iter()
-            .map(|x| x.decode_hex().expect("decode hex should be ok"))
-            .map(|x| PublicKey::from_compressed(&x).expect("decode key should be ok"))
-            .collect::<Vec<_>>();
+        ]
+        .into_iter()
+        .map(|x| x.decode_hex().expect("decode hex should be ok"))
+        .map(|x| PublicKey::from_compressed(&x).expect("decode key should be ok"))
+        .collect::<Vec<_>>();
 
         let addr = keys.to_check_multi_sign(1).to_neo3_address();
         assert_eq!(addr.as_str(), "NVz3NkQQGGhjM1HxHp6ZpXL3EKCHeKvarv");
@@ -227,8 +216,7 @@ mod test {
             .decode_hex()
             .expect("decode hex should be ok");
 
-        let pk = PublicKey::from_compressed(pk.as_slice())
-            .expect("decode key should be ok");
+        let pk = PublicKey::from_compressed(pk.as_slice()).expect("decode key should be ok");
 
         let addr = pk.to_neo3_address();
         assert_eq!(addr.as_str(), "NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs");

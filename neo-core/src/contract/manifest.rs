@@ -1,12 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
+
 use serde::{Deserialize, Serialize};
 
-use crate::{PublicKey, contract::{NamedParamType, ParamType}, types::{Sign, Extra}};
-
+use crate::{
+    contract::{NamedParamType, ParamType},
+    types::{Extra, Sign},
+    PublicKey,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Group {
@@ -17,11 +20,9 @@ pub struct Group {
     pub sign: Sign,
 }
 
-
 /// Empty at now.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Features {}
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Permission {
@@ -38,20 +39,17 @@ pub struct Method {
     pub safe: bool,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub name: String,
     pub parameters: Vec<NamedParamType>,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Abi {
     pub methods: Vec<Method>,
     pub events: Vec<Event>,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {

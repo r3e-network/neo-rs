@@ -1,8 +1,9 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use crate::key::SecretKey;
 use neo_base::errors;
+
+use crate::key::SecretKey;
 
 #[derive(Debug, Clone, errors::Error)]
 pub enum Error {
@@ -25,14 +26,7 @@ pub struct Params {
 impl core::fmt::Display for Params {
     #[inline]
     fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        core::write!(
-            f,
-            "Params{{n:{},r:{},p:{},len:{}}}",
-            self.n,
-            self.r,
-            self.p,
-            self.len
-        )
+        core::write!(f, "Params{{n:{},r:{},p:{},len:{}}}", self.n, self.r, self.p, self.len)
     }
 }
 
@@ -60,13 +54,9 @@ impl<T: AsRef<[u8]>> DeriveKey for T {
         }
 
         let key = self.as_ref();
-        let params = scrypt::Params::new(
-            params.n.ilog2() as u8,
-            params.r,
-            params.p,
-            params.len as usize,
-        )
-        .map_err(|_| Error::InvalidParams)?;
+        let params =
+            scrypt::Params::new(params.n.ilog2() as u8, params.r, params.p, params.len as usize)
+                .map_err(|_| Error::InvalidParams)?;
 
         let mut derived = [0u8; N];
         let _ = scrypt::scrypt(key, salt, &params, derived.as_mut_slice())
@@ -78,8 +68,9 @@ impl<T: AsRef<[u8]>> DeriveKey for T {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use neo_base::encoding::hex::{DecodeHex, ToHex};
+
+    use super::*;
 
     #[test]
     fn test_derive_key() {
@@ -88,12 +79,7 @@ mod test {
             .decode_hex()
             .expect("decode hex should be ok");
 
-        let params = Params {
-            n: 2,
-            r: 8,
-            p: 1,
-            len: 10,
-        };
+        let params = Params { n: 2, r: 8, p: 1, len: 10 };
         let key: SecretKey<64> = password
             .derive_key(salt.as_slice(), params)
             .expect("A 64-bytes derived-key should be ok");

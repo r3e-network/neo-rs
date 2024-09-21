@@ -1,11 +1,9 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use strum::EnumIter;
 
 use crate::*;
-
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumIter)]
 #[repr(u8)]
@@ -234,7 +232,6 @@ pub enum OpCode {
     AssertMsg = 0xE1,
 }
 
-
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct CodeAttr {
     pub price: u64,
@@ -243,29 +240,21 @@ pub(crate) struct CodeAttr {
     pub trailing: u32,
 
     pub unsigned: bool,
-
     // pub may_jump: bool,
 }
-
 
 impl OpCode {
     #[inline]
     pub const fn as_u8(&self) -> u8 { *self as u8 }
 
     #[inline]
-    pub const fn from_u8(code: u8) -> Option<OpCode> {
-        OP_CODES[code as usize]
-    }
+    pub const fn from_u8(code: u8) -> Option<OpCode> { OP_CODES[code as usize] }
 
     #[inline]
-    pub const fn is_valid(code: u8) -> bool {
-        OP_CODES[code as usize].is_some()
-    }
+    pub const fn is_valid(code: u8) -> bool { OP_CODES[code as usize].is_some() }
 
     #[inline]
-    pub(crate) const fn attr(&self) -> CodeAttr {
-        CODE_ATTRS[*self as usize]
-    }
+    pub(crate) const fn attr(&self) -> CodeAttr { CODE_ATTRS[*self as usize] }
 
     #[inline]
     pub(crate) fn as_op(&self, ip: u32) -> Op {
@@ -282,7 +271,6 @@ impl RunPrice for OpCode {
     #[inline]
     fn price(&self) -> u64 { self.attr().price }
 }
-
 
 // #[derive(Debug, Clone, EnumIter)]
 // #[repr(u8)]

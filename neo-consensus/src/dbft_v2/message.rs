@@ -4,9 +4,10 @@
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use crate::dbft_v2::*;
 use neo_base::encoding::bin::*;
-use neo_core::types::{Sign, UInt256};
+use neo_core::types::{Sign, H256};
+
+use crate::dbft_v2::*;
 
 pub type ViewNumber = u8;
 
@@ -33,10 +34,7 @@ pub struct MessageMeta {
 impl MessageMeta {
     #[inline]
     pub fn height_view(&self) -> HView {
-        HView {
-            height: self.block_index,
-            view_number: self.view_number,
-        }
+        HView { height: self.block_index, view_number: self.view_number }
     }
 }
 
@@ -136,35 +134,28 @@ impl Payload {
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct PrepareRequest {
     pub version: u32,
-    pub prev_hash: UInt256,
+    pub prev_hash: H256,
     pub unix_milli: u64,
     pub nonce: u64,
-    pub tx_hashes: Vec<UInt256>,
+    pub tx_hashes: Vec<H256>,
 
     /// Extensible hash that contains this PrepareRequest
     #[bin(ignore)]
-    pub payload_hash: UInt256,
+    pub payload_hash: H256,
 }
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct PrepareResponse {
-    pub preparation: UInt256,
+    pub preparation: H256,
 }
 
 impl PrepareResponse {
     #[inline]
-    pub fn new(prepare_request_hash: UInt256) -> Self {
-        Self {
-            preparation: prepare_request_hash,
-        }
-    }
+    pub fn new(prepare_request_hash: H256) -> Self { Self { preparation: prepare_request_hash } }
 
     #[inline]
-    pub fn new_payload(meta: MessageMeta, prepare_request_hash: UInt256) -> Payload {
-        Payload::PrepareResponse(Message {
-            meta,
-            message: Self::new(prepare_request_hash),
-        })
+    pub fn new_payload(meta: MessageMeta, prepare_request_hash: H256) -> Payload {
+        Payload::PrepareResponse(Message { meta, message: Self::new(prepare_request_hash) })
     }
 }
 

@@ -1,9 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use crate::*;
-
 
 pub(crate) fn exec_init_sslot(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
     if cx.statics.is_some() {
@@ -18,7 +16,6 @@ pub(crate) fn exec_init_sslot(cx: &mut ExecContext, op: &Op) -> Result<(), ExecE
     cx.statics = Some(Slots::new(n as usize));
     Ok(())
 }
-
 
 pub(crate) fn exec_init_slot(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
     let locals = op.operand.first;
@@ -41,7 +38,10 @@ pub(crate) fn exec_init_slot(cx: &mut ExecContext, op: &Op) -> Result<(), ExecEr
     Ok(())
 }
 
-pub(crate) fn exec_load_static_n<const N: usize>(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_load_static_n<const N: usize>(
+    cx: &mut ExecContext,
+    op: &Op,
+) -> Result<(), ExecError> {
     load_static(cx, op, N)
 }
 
@@ -54,10 +54,9 @@ fn load_static(cx: &mut ExecContext, op: &Op, n: usize) -> Result<(), ExecError>
         return Err(ExecError::InvalidExecution(op.ip, op.code, "static slots not initialized"));
     };
 
-    let Some(item) = statics.get(n).cloned() else {
+    let Some(item) = statics.get(n) else {
         return Err(ExecError::IndexOutOfBound(op.ip, op.code, n, statics.len()));
     };
 
-    cx.stack.push(item);
-    Ok(())
+    push_checked!(cx, op, item.clone())
 }

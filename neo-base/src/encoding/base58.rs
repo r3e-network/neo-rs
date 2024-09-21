@@ -1,10 +1,11 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use crate::{errors, hash::Sha256Twice};
 use alloc::{string::String, vec::Vec};
 
 pub use base58::{FromBase58, FromBase58Error, ToBase58};
+
+use crate::{errors, hash::Sha256Twice};
 
 pub trait ToBase58Check {
     fn to_base58_check(&self, prefix: Option<u8>, suffix: Option<u8>) -> String;
@@ -72,11 +73,7 @@ impl FromBase58Check for Vec<u8> {
 
         let src = src.as_ref();
         let min_size: usize = if prefix.is_some() {
-            if suffix.is_some() {
-                7
-            } else {
-                6
-            }
+            if suffix.is_some() { 7 } else { 6 }
         } else {
             5
         };
@@ -150,8 +147,4 @@ mod test {
 
         assert_eq!(addr.to_hex(), "17e4f124b1c3b23553f07cebfb852b2a60aa6c6d94");
     }
-}
-
-pub fn encode_check(p0: &[u8; 34]) -> String {
-    todo!()
 }

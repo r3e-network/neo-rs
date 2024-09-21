@@ -4,16 +4,16 @@
 use alloc::string::{String, ToString};
 use core::{convert::TryFrom, result::Result};
 
-use p256::elliptic_curve::sec1::ToEncodedPoint;
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-
-use crate::{key::SecretKey, rand};
 use neo_base::{
     bytes::{ToArray, ToRevArray},
     encoding::bin::*,
     encoding::hex::{FromHex, ToHex},
     errors,
 };
+use p256::elliptic_curve::sec1::ToEncodedPoint;
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::{key::SecretKey, rand};
 
 pub const KEY_SIZE: usize = 32;
 pub const PUBLIC_COMPRESSED_SIZE: usize = KEY_SIZE + 1;
@@ -30,9 +30,7 @@ pub struct Keypair {
 
 impl Keypair {
     // NOTE: `secret` and `public` must be a keypair
-    pub fn new(secret: PrivateKey, public: PublicKey) -> Self {
-        Self { secret, public }
-    }
+    pub fn new(secret: PrivateKey, public: PublicKey) -> Self { Self { secret, public } }
 }
 
 /// little endian. PrivateKey i.e. SecretKey. sk -> SecretKey, pk -> PublicKey
@@ -49,9 +47,7 @@ pub enum DecodePrivateKeyError {
 
 impl PrivateKey {
     #[inline]
-    pub fn as_le_bytes(&self) -> &[u8] {
-        self.key.as_ref()
-    }
+    pub fn as_le_bytes(&self) -> &[u8] { self.key.as_ref() }
 
     pub fn from_le_bytes(sk: &[u8]) -> Result<Self, DecodePrivateKeyError> {
         use DecodePrivateKeyError as Error;
@@ -64,9 +60,7 @@ impl PrivateKey {
         let point =
             p256::SecretKey::from_slice(sk.as_slice()).map_err(|_| Error::InvalidPrivateKey)?;
 
-        Ok(Self {
-            key: point.to_bytes().as_slice().to_rev_array().into(),
-        })
+        Ok(Self { key: point.to_bytes().as_slice().to_rev_array().into() })
     }
 
     pub fn from_be_bytes(sk: &[u8]) -> Result<Self, DecodePrivateKeyError> {
@@ -80,9 +74,7 @@ impl PrivateKey {
         let point =
             p256::SecretKey::from_slice(sk.as_slice()).map_err(|_| Error::InvalidPrivateKey)?;
 
-        Ok(Self {
-            key: point.to_bytes().as_slice().to_rev_array().into(),
-        })
+        Ok(Self { key: point.to_bytes().as_slice().to_rev_array().into() })
     }
 }
 
@@ -113,10 +105,7 @@ impl TryFrom<&PrivateKey> for PublicKey {
 
         let x = point.x().ok_or(Error::InvalidPrivateKey)?;
         let y = point.y().ok_or(Error::InvalidPrivateKey)?;
-        Ok(PublicKey {
-            gx: x.as_slice().to_rev_array(),
-            gy: y.as_slice().to_rev_array(),
-        })
+        Ok(PublicKey { gx: x.as_slice().to_rev_array(), gy: y.as_slice().to_rev_array() })
     }
 }
 
@@ -128,9 +117,7 @@ pub enum DecodePublicKeyError {
 
 impl PublicKey {
     #[inline]
-    pub fn as_le_bytes(&self) -> (&[u8], &[u8]) {
-        (self.gx.as_slice(), self.gy.as_slice())
-    }
+    pub fn as_le_bytes(&self) -> (&[u8], &[u8]) { (self.gx.as_slice(), self.gy.as_slice()) }
 
     pub fn to_uncompressed(&self) -> [u8; 2 * KEY_SIZE + 1] {
         let mut buf = [0u8; 65];
@@ -150,11 +137,7 @@ impl PublicKey {
         let mut buf = [0u8; 33];
         let (gx, gy) = self.as_le_bytes();
 
-        buf[0] = if gy[0] & 0x01 == 0 {
-            EVEN_PREFIX
-        } else {
-            ODD_PREFIX
-        };
+        buf[0] = if gy[0] & 0x01 == 0 { EVEN_PREFIX } else { ODD_PREFIX };
         buf[1..].copy_from_slice(gx);
         buf[1..].reverse();
 
@@ -182,10 +165,7 @@ impl PublicKey {
             return Err(Error::InvalidPublicKey);
         }
 
-        Ok(PublicKey {
-            gx: x.as_slice().to_rev_array(),
-            gy: y.as_slice().to_rev_array(),
-        })
+        Ok(PublicKey { gx: x.as_slice().to_rev_array(), gy: y.as_slice().to_rev_array() })
     }
 }
 
@@ -222,9 +202,7 @@ impl BinEncoder for PublicKey {
         w.write(pk.as_slice());
     }
 
-    fn bin_size(&self) -> usize {
-        PUBLIC_COMPRESSED_SIZE
-    }
+    fn bin_size(&self) -> usize { PUBLIC_COMPRESSED_SIZE }
 }
 
 impl BinDecoder for PublicKey {
@@ -288,12 +266,8 @@ impl<T: rand::CryptoRand> GenKeypair for T {
         let sk = gen_private_key(self)?;
 
         let pk = sk.public_key().to_encoded_point(false);
-        let gx = pk
-            .x()
-            .ok_or(GenKeyError::GenRandomError("unexpected x".into()))?;
-        let gy = pk
-            .y()
-            .ok_or(GenKeyError::GenRandomError("unexpected y".into()))?;
+        let gx = pk.x().ok_or(GenKeyError::GenRandomError("unexpected x".into()))?;
+        let gy = pk.y().ok_or(GenKeyError::GenRandomError("unexpected y".into()))?;
 
         let sk = sk.to_bytes();
         if sk.len() != KEY_SIZE || gx.len() != KEY_SIZE || gy.len() != KEY_SIZE {
@@ -310,9 +284,10 @@ impl<T: rand::CryptoRand> GenKeypair for T {
 
 #[cfg(test)]
 mod test {
+    use neo_base::encoding::hex::{DecodeHex, ToHex};
+
     use super::*;
     use crate::rand::OsRand;
-    use neo_base::encoding::hex::{DecodeHex, ToHex};
 
     #[test]
     fn test_from_compressed() {

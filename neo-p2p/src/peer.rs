@@ -5,11 +5,11 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 use std::time::Duration;
 
+use neo_base::time::{AtomicUnixTime, UnixTime};
+use neo_core::payload::Version;
 use trust_dns_resolver::Resolver;
 
 use crate::SeedState;
-use neo_base::time::{AtomicUnixTime, UnixTime};
-use neo_core::payload::Version;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(u32)]
@@ -24,14 +24,10 @@ pub enum PeerStage {
 
 impl PeerStage {
     #[inline]
-    pub const fn as_u32(self) -> u32 {
-        self as u32
-    }
+    pub const fn as_u32(self) -> u32 { self as u32 }
 
     #[inline]
-    pub fn belongs(self, stages: u32) -> bool {
-        (self.as_u32() & stages) != 0
-    }
+    pub fn belongs(self, stages: u32) -> bool { (self.as_u32() & stages) != 0 }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -64,18 +60,12 @@ impl Connected {
     }
 
     #[inline]
-    pub fn stages(&self) -> u32 {
-        self.stages.load(Relaxed)
-    }
+    pub fn stages(&self) -> u32 { self.stages.load(Relaxed) }
 
     #[inline]
     pub fn add_stages(&self, stages: u32) {
         let mut old = self.stages.load(Relaxed);
-        while self
-            .stages
-            .compare_exchange(old, old | stages, Relaxed, Relaxed)
-            .is_err()
-        {
+        while self.stages.compare_exchange(old, old | stages, Relaxed, Relaxed).is_err() {
             old = self.stages.load(Relaxed);
         }
     }
@@ -142,9 +132,7 @@ impl TcpPeer {
 
     #[inline]
     pub fn service_addr(&self) -> Option<SocketAddr> {
-        self.version
-            .port()
-            .map(|x| SocketAddr::new(self.addr.ip(), x))
+        self.version.port().map(|x| SocketAddr::new(self.addr.ip(), x))
     }
 }
 
@@ -157,16 +145,11 @@ pub struct Seed {
 impl Seed {
     #[inline]
     pub fn new(addr: SocketAddr) -> Self {
-        Self {
-            addr,
-            state: SeedState::Reachable,
-        } // initial SeedState is `Reachable`
+        Self { addr, state: SeedState::Reachable } // initial SeedState is `Reachable`
     }
 
     #[inline]
-    pub fn temporary(&self) -> bool {
-        matches!(self.state, SeedState::Temporary)
-    }
+    pub fn temporary(&self) -> bool { matches!(self.state, SeedState::Temporary) }
 }
 
 pub struct DnsResolver {
@@ -183,9 +166,7 @@ impl DnsResolver {
             .iter()
             .map(|x| {
                 let d = x.rfind(":").expect(&format!("Seed {} is invalid", x));
-                let port = x[d + 1..]
-                    .parse()
-                    .expect(&format!("Port in seed {} is invalid", x));
+                let port = x[d + 1..].parse().expect(&format!("Port in seed {} is invalid", x));
                 (x[..d].to_string(), port)
             })
             .collect();
@@ -210,12 +191,8 @@ impl DnsResolver {
         self.seeds
             .iter()
             .filter_map(|(host, port)| {
-                self.resolve(host).map(|x| {
-                    (
-                        format!("{}:{}", host, port),
-                        Seed::new(SocketAddr::new(x, *port)),
-                    )
-                })
+                self.resolve(host)
+                    .map(|x| (format!("{}:{}", host, port), Seed::new(SocketAddr::new(x, *port))))
             })
             .collect()
     }

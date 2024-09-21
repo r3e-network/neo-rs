@@ -52,9 +52,7 @@ pub fn xor_array<const N: usize>(left: &[u8], right: &[u8]) -> [u8; N] {
         core::panic!("source length {} != dest length {}", left.len(), N);
     }
 
-    left.into_iter()
-        .enumerate()
-        .for_each(|(idx, v)| d[idx] = v ^ right[idx]);
+    left.into_iter().enumerate().for_each(|(idx, v)| d[idx] = v ^ right[idx]);
     d
 }
 
@@ -83,9 +81,7 @@ pub trait PickU16 {
 
 impl<const N: usize> PickU16 for [u8; N] {
     #[inline]
-    fn pick_le_u16(&self) -> u16 {
-        u16::from_le_bytes([self[0], self[1]])
-    }
+    fn pick_le_u16(&self) -> u16 { u16::from_le_bytes([self[0], self[1]]) }
 }
 
 pub trait PickU32 {
@@ -94,9 +90,7 @@ pub trait PickU32 {
 
 impl<const N: usize> PickU32 for [u8; N] {
     #[inline]
-    fn pick_le_u32(&self) -> u32 {
-        u32::from_le_bytes([self[0], self[1], self[2], self[3]])
-    }
+    fn pick_le_u32(&self) -> u32 { u32::from_le_bytes([self[0], self[1], self[2], self[3]]) }
 }
 
 pub trait PickU64 {
@@ -144,16 +138,12 @@ pub trait PickU128 {
 
 impl<const N: usize> PickU128 for [u8; N] {
     #[inline]
-    fn pick_le_u128(&self) -> u128 {
-        u128::from_le_bytes(self.to_array())
-    }
+    fn pick_le_u128(&self) -> u128 { u128::from_le_bytes(self.to_array()) }
 }
 
 impl PickU128 for [u8] {
     #[inline]
-    fn pick_le_u128(&self) -> u128 {
-        u128::from_le_bytes(self.to_array())
-    }
+    fn pick_le_u128(&self) -> u128 { u128::from_le_bytes(self.to_array()) }
 }
 
 pub trait PickU256 {
@@ -162,16 +152,12 @@ pub trait PickU256 {
 
 impl<const N: usize> PickU256 for [u8; N] {
     #[inline]
-    fn pick_le_u256(&self) -> U256 {
-        U256::from_le_bytes(&self.to_array())
-    }
+    fn pick_le_u256(&self) -> U256 { U256::from_le_bytes(&self.to_array()) }
 }
 
 impl PickU256 for [u8] {
     #[inline]
-    fn pick_le_u256(&self) -> U256 {
-        U256::from_le_bytes(&self.to_array())
-    }
+    fn pick_le_u256(&self) -> U256 { U256::from_le_bytes(&self.to_array()) }
 }
 
 pub trait PickAtMost<const N: usize> {

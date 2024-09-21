@@ -5,11 +5,11 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
+use neo_base::math::LcgRand;
+use neo_base::time::UnixTime;
 use tokio::sync::mpsc;
 
 use crate::{SeedState::*, *};
-use neo_base::math::LcgRand;
-use neo_base::time::UnixTime;
 
 const CONNECT_RETRY_TIMES: u32 = 3;
 const MAX_POOL_SIZE: usize = 1024;
@@ -39,12 +39,7 @@ pub(crate) struct Knew {
 
 impl Knew {
     #[inline]
-    pub fn new() -> Self {
-        Knew {
-            when: UnixTime::now(),
-            remain_times: CONNECT_RETRY_TIMES,
-        }
-    }
+    pub fn new() -> Self { Knew { when: UnixTime::now(), remain_times: CONNECT_RETRY_TIMES } }
 }
 
 pub type Discovery = Arc<Mutex<DiscoveryV1<mpsc::Sender<SocketAddr>>>>;
@@ -98,21 +93,14 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
 
     fn update_net_size(&mut self) {
         let net_size = self.connected.len() + self.unconnected.len() + 1; // +1 is itself
-        let fan_out = if net_size > 2 {
-            2.5 * ((net_size - 1) as f64).ln()
-        } else {
-            1.0
-        };
+        let fan_out = if net_size > 2 { 2.5 * ((net_size - 1) as f64).ln() } else { 1.0 };
 
         self.fan_out = (fan_out + 0.5) as u32;
         self.net_size = net_size as u32;
     }
 
     fn seed_mut(&mut self, addr: &SocketAddr) -> Option<&mut Seed> {
-        self.seeds
-            .iter_mut()
-            .find(|(_, x)| x.addr.eq(&addr))
-            .map(|(_, x)| x)
+        self.seeds.iter_mut().find(|(_, x)| x.addr.eq(&addr)).map(|(_, x)| x)
     }
 
     #[inline]
@@ -172,10 +160,7 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
         for addr in addrs {
             if self.failures.contains_key(addr)
                 || self.connected.contains_key(addr)
-                || self
-                    .unconnected
-                    .get(addr)
-                    .is_some_and(|d| d.remain_times > 0)
+                || self.unconnected.get(addr).is_some_and(|d| d.remain_times > 0)
             {
                 continue;
             }
@@ -296,14 +281,10 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
 
     // `addr` may be client or server socket addr
     #[inline]
-    pub fn connected(&self, addr: &SocketAddr) -> Option<&Connected> {
-        self.connected.get(addr)
-    }
+    pub fn connected(&self, addr: &SocketAddr) -> Option<&Connected> { self.connected.get(addr) }
 
     #[inline]
-    pub fn good(&self, addr: &SocketAddr) -> Option<&TcpPeer> {
-        self.goods.get(addr)
-    }
+    pub fn good(&self, addr: &SocketAddr) -> Option<&TcpPeer> { self.goods.get(addr) }
 
     #[inline]
     pub fn has_peer(&self, service: &SocketAddr, nonce: u32) -> bool {
@@ -334,9 +315,10 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use neo_base::time::unix_seconds_now;
     use neo_core::payload::{Capability, Version};
+
+    use super::*;
 
     #[test]
     fn test_discovery_v1() {

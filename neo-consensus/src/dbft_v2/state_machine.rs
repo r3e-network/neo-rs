@@ -2,23 +2,22 @@
 // All Rights Reserved
 
 use alloc::boxed::Box;
-
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
-
-use crate::dbft_v2::*;
 use neo_base::{byzantine_failure_quorum, byzantine_honest_quorum};
 use neo_core::block::{self, Header};
 use neo_core::merkle::MerkleSha256;
 use neo_core::store::ChainStates;
-use neo_core::types::{Sign, ToSignData, UInt256};
+use neo_core::types::{Sign, ToSignData, H256};
 use neo_crypto::{
     ecdsa::{DigestVerify, Sign as EcdsaSign},
     rand,
 };
+
+use crate::dbft_v2::*;
 
 const MAX_ADVANCED_BLOCKS: u64 = 8;
 
@@ -38,19 +37,13 @@ pub struct StateMachine {
 
 impl StateMachine {
     #[inline]
-    pub fn states(&self) -> &ConsensusStates {
-        &self.states
-    }
+    pub fn states(&self) -> &ConsensusStates { &self.states }
 
     #[inline]
-    pub fn context(&self) -> &ConsensusContext {
-        &self.context
-    }
+    pub fn context(&self) -> &ConsensusContext { &self.context }
 
     #[inline]
-    pub fn unix_milli_now(&self) -> u64 {
-        (self.unix_milli_now)()
-    }
+    pub fn unix_milli_now(&self) -> u64 { (self.unix_milli_now)() }
 
     pub fn is_view_changing(&self) -> bool {
         if self.states.watch_only {
@@ -75,17 +68,13 @@ impl StateMachine {
         let quorum = byzantine_failure_quorum(nr_validators) as usize;
 
         let block_index = self.states.block_index;
-        let fails = self
-            .context
-            .failed_count(block_index, &self.states.validators);
+        let fails = self.context.failed_count(block_index, &self.states.validators);
         self.context.commit_count() + fails <= quorum
     }
 
     pub(crate) fn make_header(&self, version: u32, view_number: ViewNumber) -> Option<Header> {
         let validators = self.states.validators.as_slice();
-        let next_consensus = validators
-            .to_bft_hash()
-            .expect("`next_validators` should be valid");
+        let next_consensus = validators.to_bft_hash().expect("`next_validators` should be valid");
 
         let primary = self.states.primary_index as usize;
         let Some(r) = self.context.prepares[primary].request.as_ref() else {
@@ -101,10 +90,7 @@ impl StateMachine {
             index: self.states.block_index,
             primary: self.states.primary_index,
             next_consensus: next_consensus.into(),
-            witnesses: self
-                .context
-                .new_block_witness(view_number, validators)
-                .into(),
+            witnesses: self.context.new_block_witness(view_number, validators).into(),
         };
 
         head.calc_hash();
@@ -138,10 +124,7 @@ impl StateMachine {
             self.states.block_index = current.block_index + 1;
         } else {
             for (idx, cv) in old.change_views.into_iter().enumerate() {
-                if cv
-                    .as_ref()
-                    .is_some_and(|v| v.message.new_view_number >= view_number)
-                {
+                if cv.as_ref().is_some_and(|v| v.message.new_view_number >= view_number) {
                     self.context.change_views[idx] = cv;
                 } // else {  self.context.change_views[idx] = None; }
             }
@@ -162,10 +145,7 @@ impl StateMachine {
             }
         }
 
-        let view = HView {
-            height: block_index,
-            view_number,
-        };
+        let view = HView { height: block_index, view_number };
         if !self.states.not_validator {
             self.context.last_seen_message.insert(self_pk.clone(), view);
         }
@@ -190,16 +170,11 @@ impl StateMachine {
             0
         };
 
-        if millis > diff {
-            millis - diff
-        } else {
-            0
-        }
+        if millis > diff { millis - diff } else { 0 }
     }
 
     fn reset_timeout_millis(&self, timeout_millis: u64) {
-        self.timer
-            .reset_timeout(self.states.height_view(), timeout_millis);
+        self.timer.reset_timeout(self.states.height_view(), timeout_millis);
     }
 
     fn extend_timeout_millis(&self, max_in_blocks: u32, per_block_millis: u64) {
@@ -210,8 +185,7 @@ impl StateMachine {
             let honest = byzantine_honest_quorum(self.states.nr_validators() as u32);
 
             let extend_millis = blocks_millis / honest as u64;
-            self.timer
-                .extend_timeout(self.states.height_view(), extend_millis);
+            self.timer.extend_timeout(self.states.height_view(), extend_millis);
         }
     }
 
@@ -232,12 +206,8 @@ impl StateMachine {
 
         if self.states.is_primary() && !sent {
             self.context.txs = HashMap::new(); // TODO: from tx-pool
-            self.context.tx_hashes = self
-                .context
-                .txs
-                .iter()
-                .map(|(hash, _)| hash.clone())
-                .collect();
+            self.context.tx_hashes =
+                self.context.txs.iter().map(|(hash, _)| hash.clone()).collect();
 
             let meta = self.states.new_message_meta();
             let message =
@@ -285,9 +255,7 @@ impl StateMachine {
             let validator = &self.states.validators[validator];
             let existed = self.context.last_seen_message.get(validator);
             if existed.is_some_and(|v| v.is_previous(&current)) || existed.is_none() {
-                self.context
-                    .last_seen_message
-                    .insert(validator.clone(), current);
+                self.context.last_seen_message.insert(validator.clone(), current);
             }
         }
 
@@ -325,7 +293,7 @@ impl StateMachine {
                 unix_milli,
                 nonce,
                 tx_hashes: self.context.tx_hashes.clone(),
-                payload_hash: UInt256::default(), // just ignore
+                payload_hash: H256::default(), // just ignore
             },
         }
     }
@@ -381,11 +349,7 @@ impl StateMachine {
 
         // 6.0 Ignore if any proposed transaction has already been included in the blockchain
         let message = &prepare.message;
-        if message
-            .tx_hashes
-            .iter()
-            .any(|tx| self.chain.contains_tx(tx))
-        {
+        if message.tx_hashes.iter().any(|tx| self.chain.contains_tx(tx)) {
             return;
         }
 
@@ -418,10 +382,7 @@ impl StateMachine {
             }
 
             let pk = &self.states.validators[validator];
-            if pk
-                .verify_digest(&sign_data, m.message.sign.as_bytes())
-                .is_err()
-            {
+            if pk.verify_digest(&sign_data, m.message.sign.as_bytes()).is_err() {
                 *commit = None;
             }
         }
@@ -446,7 +407,7 @@ impl StateMachine {
         // 12. Broadcast a `GetData` message with transaction hashes if they were missed in the block
     }
 
-    fn response_prepare_if_needed(&mut self, settings: &DbftConfig, payload_hash: UInt256) {
+    fn response_prepare_if_needed(&mut self, settings: &DbftConfig, payload_hash: H256) {
         if !self.context.has_all_txs() {
             return;
         }
@@ -477,9 +438,7 @@ impl StateMachine {
 
         let message = Message {
             meta: self.states.new_message_meta(),
-            message: PrepareResponse {
-                preparation: payload_hash,
-            },
+            message: PrepareResponse { preparation: payload_hash },
         };
         self.broadcast_tx
             .send(Payload::PrepareResponse(message))
@@ -499,16 +458,14 @@ impl StateMachine {
         let nr_validators = self.states.nr_validators() as u32;
         let quorum = byzantine_failure_quorum(nr_validators) as usize;
 
-        let fails = self
-            .context
-            .failed_count(self.states.block_index, &self.states.validators);
+        let fails = self.context.failed_count(self.states.block_index, &self.states.validators);
         if self.context.commit_count() + fails > quorum {
             // TODO: log
             let message = Message {
                 meta: self.states.new_message_meta(),
                 message: RecoveryRequest {
                     unix_milli: self.unix_milli_now(),
-                    payload_hash: UInt256::default(),
+                    payload_hash: H256::default(),
                 },
             };
             self.broadcast_tx
@@ -592,12 +549,8 @@ impl StateMachine {
     }
 
     fn commit_if_needed(&mut self, network: u32, per_block_millis: u64) {
-        let prepares = self
-            .context
-            .prepares
-            .iter()
-            .filter(|p| p.has_request() || p.has_response())
-            .count();
+        let prepares =
+            self.context.prepares.iter().filter(|p| p.has_request() || p.has_response()).count();
 
         let honest = byzantine_honest_quorum(self.states.nr_validators() as u32);
         if prepares < honest as usize || !self.context.has_all_txs() {
@@ -608,17 +561,11 @@ impl StateMachine {
             return; // TODO: log
         };
         let sign_data = head.to_sign_data(network);
-        let sign = self
-            .self_keypair
-            .secret
-            .sign(&sign_data)
-            .expect("`sign(header)` should be ok");
+        let sign = self.self_keypair.secret.sign(&sign_data).expect("`sign(header)` should be ok");
 
         let commit = Message {
             meta: self.states.new_message_meta(),
-            message: Commit {
-                sign: Sign::from(sign),
-            },
+            message: Commit { sign: Sign::from(sign) },
         };
         self.broadcast_tx
             .send(Payload::Commit(commit))
@@ -636,9 +583,7 @@ impl StateMachine {
             .commits
             .iter()
             .filter(|commit| {
-                commit
-                    .as_ref()
-                    .is_some_and(|m| m.meta.view_number == self.states.view_number)
+                commit.as_ref().is_some_and(|m| m.meta.view_number == self.states.view_number)
             })
             .count();
 
@@ -683,10 +628,7 @@ impl StateMachine {
         };
         let sign_data = head.to_sign_data(settings.network);
         let pk = &self.states.validators[validator];
-        if pk
-            .verify_digest(&sign_data, commit.message.sign.as_bytes())
-            .is_err()
-        {
+        if pk.verify_digest(&sign_data, commit.message.sign.as_bytes()).is_err() {
             return; // TODO: log
         }
 
@@ -704,10 +646,8 @@ impl StateMachine {
         // 1. Send RecoveryMessage if the new view number in the message is less than or equal
         //   to the view number in current context
         if new_view_number <= self.states.view_number {
-            let message = RecoveryRequest {
-                unix_milli: message.unix_milli,
-                payload_hash: UInt256::default(),
-            };
+            let message =
+                RecoveryRequest { unix_milli: message.unix_milli, payload_hash: H256::default() };
             self.on_recovery_request(Message { meta, message });
             return false;
         }
@@ -765,9 +705,7 @@ impl StateMachine {
             .change_views
             .iter()
             .filter(|change_view| {
-                change_view
-                    .as_ref()
-                    .is_some_and(|cv| cv.message.new_view_number >= new_view_number)
+                change_view.as_ref().is_some_and(|cv| cv.message.new_view_number >= new_view_number)
             })
             .count();
 

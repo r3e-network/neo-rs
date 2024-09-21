@@ -5,12 +5,12 @@ use std::io::Read;
 use std::net::TcpStream;
 use std::time::Duration;
 
+use neo_base::encoding::bin::*;
+use neo_core::payload::P2pMessage;
 use tokio_util::bytes::BytesMut;
 use tokio_util::codec::Decoder;
 
 use crate::*;
-use neo_base::encoding::bin::*;
-use neo_core::payload::P2pMessage;
 
 #[test]
 fn test_message_handle() {
@@ -24,11 +24,8 @@ fn test_message_handle() {
     let service: SocketAddr = config.listen.parse().unwrap();
 
     let local = LocalNode::new(config);
-    let handle = MessageHandleV2::new(
-        local.port(),
-        local.p2p_config().clone(),
-        local.net_handles(),
-    );
+    let handle =
+        MessageHandleV2::new(local.port(), local.p2p_config().clone(), local.net_handles());
 
     let node = local.run(handle);
     std::thread::sleep(Duration::from_millis(200));
@@ -54,9 +51,7 @@ fn test_message_handle() {
     let message: P2pMessage = BinDecoder::decode_bin(&mut buf).expect("`decode_bin` should be ok");
     // println!("message {:?}", &message);
 
-    let P2pMessage::Version(version) = message else {
-        panic!("should be Version")
-    };
+    let P2pMessage::Version(version) = message else { panic!("should be Version") };
     assert_eq!(version.version, 0);
     assert_eq!(version.network, Network::DevNet.as_magic());
 
@@ -72,9 +67,7 @@ fn test_message_handle() {
     let mut buf = RefBuffer::from(message.as_bytes());
     let message: P2pMessage = BinDecoder::decode_bin(&mut buf).expect("`decode_bin` should be ok");
 
-    let P2pMessage::Ping(ping) = message else {
-        panic!("should be Ping")
-    };
+    let P2pMessage::Ping(ping) = message else { panic!("should be Ping") };
     assert_eq!(ping.nonce, version.nonce);
 
     drop(node);

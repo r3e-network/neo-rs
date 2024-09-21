@@ -35,11 +35,7 @@ mod test {
     use super::*;
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub struct Foo(
-        String,
-        u64,
-        #[serde(skip_serializing_if = "String::is_empty")] String,
-    );
+    pub struct Foo(String, u64, #[serde(skip_serializing_if = "String::is_empty")] String);
 
     #[test]
     fn test_serde_tuple() {

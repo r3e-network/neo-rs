@@ -1,8 +1,9 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use crate::bytes::ToArray;
 use sha2::Digest;
+
+use crate::bytes::ToArray;
 
 pub const SHA256_HASH_SIZE: usize = 32;
 pub const RIPEMD160_HASH_SIZE: usize = 20;
@@ -45,9 +46,7 @@ pub trait Sha256Twice {
 
 impl<T: Sha256> Sha256Twice for T {
     #[inline]
-    fn sha256_twice(&self) -> [u8; SHA256_HASH_SIZE] {
-        self.sha256().sha256()
-    }
+    fn sha256_twice(&self) -> [u8; SHA256_HASH_SIZE] { self.sha256().sha256() }
 }
 
 pub trait Ripemd160 {
@@ -71,9 +70,7 @@ pub trait NetSha256 {
 impl<T: Sha256> NetSha256 for T {
     #[inline]
     fn net_sha256(&self, network: u32) -> [u8; SHA256_HASH_SIZE] {
-        [network.to_le_bytes().as_slice(), &self.sha256().as_slice()]
-            .iter()
-            .slices_sha256()
+        [network.to_le_bytes().as_slice(), &self.sha256().as_slice()].iter().slices_sha256()
     }
 }
 
@@ -144,9 +141,7 @@ mod test {
 
     #[test]
     fn test_sha256_slices() {
-        let hash = [b"Hello world!".as_ref(), b"".as_ref()]
-            .iter()
-            .slices_sha256();
+        let hash = [b"Hello world!".as_ref(), b"".as_ref()].iter().slices_sha256();
         assert_eq!(
             hash.to_hex(),
             "c0535e4be2b79ffd93291305436bf889314e4a3faec05ecffcbb7df31ad9e51a"

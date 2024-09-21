@@ -1,12 +1,10 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use neo_base::{encoding::bin::*, errors};
-
 pub use {chain::*, contract::*, dbft::*, policy::*, snapshot::*, states::*};
 
 pub mod chain;
@@ -15,7 +13,6 @@ pub mod dbft;
 pub mod policy;
 pub mod snapshot;
 pub mod states;
-
 
 pub const VOTER_REWARD_FACTOR: u64 = 100_000_000;
 
@@ -26,21 +23,17 @@ pub const EXEC_TX: u8 = 2;
 
 pub const NOT_EXISTS: Version = 0;
 
-
 /// Data Access Layer Config
 #[derive(Debug, Clone)]
 pub struct DalConfig {
     pub network: u32,
-
     // pub p2p_sign: bool,
     // pub p2p_state_exchange: bool,
     // pub keep_latest_state_only: bool,
     // pub state_root_in_header: bool,
 }
 
-
 pub type Version = u64;
-
 
 #[derive(Debug, Copy, Clone)]
 pub enum Versions {
@@ -49,16 +42,13 @@ pub enum Versions {
     Expected(Version),
 }
 
-
 pub struct WriteOptions {
     pub version: Versions,
 }
 
 impl WriteOptions {
     #[inline]
-    pub fn with_if_not_exists() -> Self {
-        WriteOptions { version: Versions::IfNotExist }
-    }
+    pub fn with_if_not_exists() -> Self { WriteOptions { version: Versions::IfNotExist } }
 
     #[inline]
     pub fn with_expected(version: Version) -> Self {
@@ -66,16 +56,13 @@ impl WriteOptions {
     }
 
     #[inline]
-    pub fn with_always() -> Self {
-        WriteOptions { version: Versions::Always }
-    }
+    pub fn with_always() -> Self { WriteOptions { version: Versions::Always } }
 }
 
 impl Default for WriteOptions {
     #[inline]
     fn default() -> Self { Self { version: Versions::Always } }
 }
-
 
 #[derive(Debug, Clone, errors::Error)]
 pub enum ReadError {
@@ -93,7 +80,6 @@ pub trait ReadOnlyStore: Clone + Sync + Send {
     fn contains(&self, key: &[u8]) -> Result<Version, ReadError>;
 }
 
-
 #[derive(Debug, Clone, errors::Error)]
 pub enum WriteError {
     #[error("store-write: conflicted")]
@@ -105,17 +91,20 @@ pub trait Store: ReadOnlyStore {
 
     fn delete(&self, key: &[u8], options: &WriteOptions) -> Result<Version, WriteError>;
 
-    fn put(&self, key: Vec<u8>, value: Vec<u8>, options: &WriteOptions) -> Result<Version, WriteError>;
+    fn put(
+        &self,
+        key: Vec<u8>,
+        value: Vec<u8>,
+        options: &WriteOptions,
+    ) -> Result<Version, WriteError>;
 
     fn write_batch(&self) -> Self::WriteBatch;
 }
-
 
 pub struct BatchWritten {
     pub deleted: Vec<Version>,
     pub put: Vec<Version>,
 }
-
 
 #[derive(Debug, Clone, errors::Error)]
 pub enum CommitError {
@@ -131,7 +120,6 @@ pub trait WriteBatch {
     fn commit(self) -> Result<BatchWritten, CommitError>;
 }
 
-
 #[derive(Debug, errors::Error)]
 pub enum BinWriteError {
     #[error("chain-write: already exists")]
@@ -141,7 +129,9 @@ pub enum BinWriteError {
 impl From<WriteError> for BinWriteError {
     #[inline]
     fn from(value: WriteError) -> Self {
-        match value { WriteError::Conflicted => Self::AlreadyExists }
+        match value {
+            WriteError::Conflicted => Self::AlreadyExists,
+        }
     }
 }
 
@@ -161,10 +151,11 @@ impl BinReadError {
 impl From<ReadError> for BinReadError {
     #[inline]
     fn from(value: ReadError) -> Self {
-        match value { ReadError::NoSuchKey => Self::NoSuchKey }
+        match value {
+            ReadError::NoSuchKey => Self::NoSuchKey,
+        }
     }
 }
-
 
 pub trait GetBinEncoded {
     fn get_bin_encoded<T: BinDecoder>(&self, key: &[u8]) -> Result<T, BinReadError>;
@@ -172,15 +163,12 @@ pub trait GetBinEncoded {
 
 impl<Store: ReadOnlyStore> GetBinEncoded for Store {
     fn get_bin_encoded<T: BinDecoder>(&self, key: &[u8]) -> Result<T, BinReadError> {
-        let (data, _version) = self.get(key)
-            .map_err(|err| BinReadError::from(err))?;
+        let (data, _version) = self.get(key).map_err(|err| BinReadError::from(err))?;
 
         let mut rb = RefBuffer::from(data.as_slice());
-        BinDecoder::decode_bin(&mut rb)
-            .map_err(|err| BinReadError::BinDecodeError(err))
+        BinDecoder::decode_bin(&mut rb).map_err(|err| BinReadError::BinDecodeError(err))
     }
 }
-
 
 #[derive(Debug, BinEncode)]
 pub struct StoreKey<'a, Key: BinEncoder + Debug> {
@@ -196,20 +184,20 @@ impl<'a, Key: BinEncoder + Debug> StoreKey<'a, Key> {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use neo_base::{encoding::hex::ToHex, hash::Sha256};
-    use crate::types::UInt256;
+
     use super::*;
+    use crate::types::H256;
 
     #[test]
     fn test_store_key() {
-        let key = StoreKey::new(
-            0xffff_fffb,
-            PREFIX_TX,
-            &UInt256::from("Hello".sha256()),
-        ).to_bin_encoded();
-        assert_eq!(&key.to_hex(), "fbffffff0b185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969");
+        let key =
+            StoreKey::new(0xffff_fffb, PREFIX_TX, &H256::from("Hello".sha256())).to_bin_encoded();
+        assert_eq!(
+            &key.to_hex(),
+            "fbffffff0b185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969"
+        );
     }
 }

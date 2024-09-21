@@ -2,6 +2,7 @@
 // All Rights Reserved
 
 use alloc::string::String;
+
 use serde::{de::Error, Deserialize, Deserializer, Serializer};
 
 pub mod base58;

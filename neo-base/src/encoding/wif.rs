@@ -1,11 +1,12 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+use alloc::{string::String, vec::Vec};
+
 use crate::{
     encoding::base58::{FromBase58Check, ToBase58Check},
     errors,
 };
-use alloc::{string::String, vec::Vec};
 
 #[derive(Debug, Clone)]
 pub struct Wif {
@@ -18,21 +19,13 @@ pub struct Wif {
 }
 
 impl Wif {
-    pub fn version(&self) -> u8 {
-        self.version
-    }
+    pub fn version(&self) -> u8 { self.version }
 
     pub fn data(&self) -> &[u8] {
-        if self.compressed {
-            &self.whole[1..self.whole.len() - 1]
-        } else {
-            &self.whole[1..]
-        }
+        if self.compressed { &self.whole[1..self.whole.len() - 1] } else { &self.whole[1..] }
     }
 
-    pub fn compressed(&self) -> bool {
-        self.compressed
-    }
+    pub fn compressed(&self) -> bool { self.compressed }
 }
 
 pub trait WifEncode {
@@ -92,10 +85,6 @@ impl<T: AsRef<str>> WifDecode for T {
             return Err(Self::Error::InvalidCompressedFlag(last));
         }
 
-        Ok(Wif {
-            version: b58[0],
-            compressed,
-            whole: b58,
-        })
+        Ok(Wif { version: b58[0], compressed, whole: b58 })
     }
 }

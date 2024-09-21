@@ -1,9 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use crate::*;
-
 
 pub(crate) fn exec_jmp(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
     let target = op.ip + op.operand.first as i8 as u32;

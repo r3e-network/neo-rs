@@ -1,11 +1,9 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use serde::{Deserialize, Serialize};
 
 use crate::tx::Tx;
-
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum TxEventType {
@@ -15,7 +13,6 @@ pub enum TxEventType {
     #[serde(rename = "removed")]
     TxRemoved,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct TxEvent {

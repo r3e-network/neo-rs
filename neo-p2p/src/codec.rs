@@ -3,12 +3,11 @@
 
 use std::io::{Error as IoError, ErrorKind::InvalidData};
 
-use tokio_util::bytes::{Buf, BufMut, BytesMut};
-use tokio_util::codec::{Decoder, Encoder};
-
 use neo_base::encoding::bin::*;
 use neo_core::payload::{self, Lz4Compress, Lz4Decompress, P2pMessage};
 use neo_core::types::Bytes;
+use tokio_util::bytes::{Buf, BufMut, BytesMut};
+use tokio_util::codec::{Decoder, Encoder};
 
 const MAX_BODY_LEN: usize = 0x02000000; // 32MiB
 
@@ -99,15 +98,14 @@ impl Decoder for MessageDecoder {
             0x00..=0xfc => (3, prefix as u64),
             0xfd if d.len() >= 5 => (5, u16::from_le_bytes([d[3], d[4]]) as u64),
             0xfe if d.len() >= 7 => (7, u32::from_le_bytes([d[3], d[4], d[5], d[6]]) as u64),
-            0xff if d.len() >= 11 => (
-                11,
-                u64::from_le_bytes([d[3], d[4], d[5], d[6], d[7], d[8], d[9], d[10]]),
-            ),
+            0xff if d.len() >= 11 => {
+                (11, u64::from_le_bytes([d[3], d[4], d[5], d[6], d[7], d[8], d[9], d[10]]))
+            }
             _ => {
                 return Err(IoError::new(
                     InvalidData,
                     format!("decoder: invalid prefix 0x{:x}", prefix),
-                ))
+                ));
             }
         };
 

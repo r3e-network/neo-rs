@@ -1,13 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
-use crate::{PublicKey, store::{self, *}};
-use crate::types::{Member, ToBftHash, NEO_TOTAL_SUPPLY};
 
+use crate::types::{Member, ToBftHash, NEO_TOTAL_SUPPLY};
+use crate::{
+    store::{self, *},
+    PublicKey,
+};
 
 pub const PREFIX_VOTERS_COUNT: u8 = 1;
 pub const PREFIX_CANDIDATE: u8 = 33;
@@ -18,7 +20,6 @@ pub const PREFIX_GAS_PER_BLOCK: u8 = 29;
 
 pub const PREFIX_VOTER_REWARD_PER_COMMITTEE: u8 = 23;
 
-
 pub struct NeoBalance {
     pub balance: u64,
     pub last_gas_per_vote: u64,
@@ -26,12 +27,10 @@ pub struct NeoBalance {
     pub vote_to: PublicKey,
 }
 
-
 pub struct Candidate {
     pub registered: bool,
     pub votes: u64,
 }
-
 
 pub struct DbftStore<Store: store::Store> {
     contract_id: u32,
@@ -45,14 +44,21 @@ pub struct DbftStore<Store: store::Store> {
 }
 
 impl<Store: store::Store> DbftStore<Store> {
-    pub fn new(nr_committee: u32, nr_validators: u32, standbys: Vec<PublicKey>, store: Store) -> Self {
+    pub fn new(
+        nr_committee: u32,
+        nr_validators: u32,
+        standbys: Vec<PublicKey>,
+        store: Store,
+    ) -> Self {
         if standbys.is_empty() || standbys.len() < nr_validators as usize {
-            core::panic!("store::dbft: invalid standbys.len({}) or nr_validators({})", standbys.len(), nr_validators);
+            core::panic!(
+                "store::dbft: invalid standbys.len({}) or nr_validators({})",
+                standbys.len(),
+                nr_validators
+            );
         }
 
-        let committee = standbys.iter()
-            .map(|key| Member { key: key.clone(), votes: 0 })
-            .collect();
+        let committee = standbys.iter().map(|key| Member { key: key.clone(), votes: 0 }).collect();
         let dbft = Self {
             contract_id: NEO_CONTRACT_ID,
             nr_committee,
@@ -69,11 +75,13 @@ impl<Store: store::Store> DbftStore<Store> {
 
     fn on_initial(&self) {
         let key = StoreKey::new(self.contract_id, PREFIX_COMMITTEE, &());
-        self.store.put(
-            key.to_bin_encoded(),
-            self.committee.to_bin_encoded(),
-            &WriteOptions::with_always(),
-        ).expect("`store.put` committee should be ok");
+        self.store
+            .put(
+                key.to_bin_encoded(),
+                self.committee.to_bin_encoded(),
+                &WriteOptions::with_always(),
+            )
+            .expect("`store.put` committee should be ok");
 
         let standbys_hash = (&self.standbys[0..self.nr_validators as usize])
             .to_bft_hash()
@@ -95,7 +103,6 @@ impl<Store: store::Store> DbftStore<Store> {
             &WriteOptions::with_always(),
         );
 
-        let _ = batch.commit()
-            .expect("`batch.commit()` should be ok on_initial");
+        let _ = batch.commit().expect("`batch.commit()` should be ok on_initial");
     }
 }

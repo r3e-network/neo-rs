@@ -1,12 +1,10 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
 use core::fmt::Debug;
 
 use crate::PublicKey;
-
 
 /// constants
 pub const CURRENT_TX_VERSION: u8 = 0;
@@ -39,19 +37,13 @@ pub const SEED_LIST_TEST_NET: &[&'static str] = &[
     "seed5t5.neo.org:20333",
 ];
 
-
 /// neo seed endpoints of dev-net
-pub const SEED_LIST_DEV_NET: &[&'static str] = &[
-    "127.0.0.1:10234",
-    "127.0.0.1:10235",
-    "127.0.0.1:10236",
-    "127.0.0.1:10237",
-];
+pub const SEED_LIST_DEV_NET: &[&'static str] =
+    &["127.0.0.1:10234", "127.0.0.1:10235", "127.0.0.1:10236", "127.0.0.1:10237"];
 
 pub const NEP_HEADER_1: u8 = 0x01;
 pub const NEP_HEADER_2: u8 = 0x42;
 pub const NEP_FLAG: u8 = 0xe0;
-
 
 pub const MAX_SIGNERS: usize = 1024;
 pub const DEFAULT_MAX_PENDING_BROADCASTS: u32 = 128;
@@ -72,7 +64,6 @@ pub const DEFAULT_COMMITTEE_NUM: u32 = 21;
 pub const ADDRESS_V3: u8 = 0x35;
 pub const VALID_UNTIL_BLOCK_INCREMENT_BASE: u64 = 86_400_000;
 
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(u32)]
 pub enum Network {
@@ -85,7 +76,6 @@ impl Network {
     pub const fn as_magic(self) -> u32 { self as u32 }
 }
 
-
 #[derive(Debug, Copy, Clone)]
 pub enum HardFork {
     Aspidochelone,
@@ -93,13 +83,11 @@ pub enum HardFork {
     Cockatrice,
 }
 
-
 #[derive(Debug, Copy, Clone)]
 pub struct HardForkHeight {
     pub hard_fork: HardFork,
     pub height: u32,
 }
-
 
 #[derive(Debug)]
 pub struct NeoConfig {
@@ -158,12 +146,10 @@ impl NeoConfig {
     }
 }
 
-
 #[inline]
 pub const fn max_block_timestamp_increment(per_block_millis: u64) -> u64 {
     VALID_UNTIL_BLOCK_INCREMENT_BASE / per_block_millis
 }
-
 
 #[derive(Debug)]
 pub struct WalletConfig {
@@ -171,17 +157,14 @@ pub struct WalletConfig {
     pub password: String,
 }
 
-
 #[derive(Debug)]
 pub struct ConsensusConfig {
     pub enabled: bool,
     pub unlock_wallet: WalletConfig,
 }
 
-
 #[derive(Debug)]
 pub struct AppConfig {
     pub log_level: String,
     pub log_path: String,
 }
-

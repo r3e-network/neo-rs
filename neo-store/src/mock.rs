@@ -17,11 +17,7 @@ pub struct MockStore {
 }
 
 impl MockStore {
-    pub fn new() -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(MockInner::new())),
-        }
-    }
+    pub fn new() -> Self { Self { inner: Arc::new(Mutex::new(MockInner::new())) } }
 }
 
 #[derive(Clone)]
@@ -57,13 +53,7 @@ impl store::WriteBatch for WriteBatch {
         let deleted = self
             .deletes
             .iter()
-            .map(|(key, _)| {
-                inner
-                    .store
-                    .remove(key)
-                    .map(|v| v.version)
-                    .unwrap_or(NOT_EXISTS)
-            })
+            .map(|(key, _)| inner.store.remove(key).map(|v| v.version).unwrap_or(NOT_EXISTS))
             .collect();
 
         let put = self
@@ -86,12 +76,7 @@ struct MockInner {
 }
 
 impl MockInner {
-    fn new() -> Self {
-        Self {
-            version: 0,
-            store: BTreeMap::new(),
-        }
-    }
+    fn new() -> Self { Self { version: 0, store: BTreeMap::new() } }
 
     fn next_version(&mut self) -> Version {
         self.version += 1;
@@ -100,10 +85,7 @@ impl MockInner {
 
     fn can_put(&self, key: &[u8], version: Versions) -> bool {
         if let Versions::Expected(expected) = version {
-            self.store
-                .get(key)
-                .map(|v| v.version == expected)
-                .unwrap_or(false)
+            self.store.get(key).map(|v| v.version == expected).unwrap_or(false)
         } else if let Versions::IfNotExist = version {
             self.store.get(key).is_none()
         } else {
@@ -113,10 +95,7 @@ impl MockInner {
 
     fn can_delete(&self, key: &[u8], version: Versions) -> bool {
         if let Versions::Expected(expected) = version {
-            self.store
-                .get(key)
-                .map(|v| v.version == expected)
-                .unwrap_or(false)
+            self.store.get(key).map(|v| v.version == expected).unwrap_or(false)
         } else {
             true
         }
@@ -135,11 +114,7 @@ impl ReadOnlyStore for MockStore {
 
     fn contains(&self, key: &[u8]) -> Result<Version, ReadError> {
         let inner = self.inner.lock().unwrap();
-        inner
-            .store
-            .get(key)
-            .map(|m| m.version)
-            .ok_or_else(|| ReadError::NoSuchKey)
+        inner.store.get(key).map(|m| m.version).ok_or_else(|| ReadError::NoSuchKey)
     }
 }
 
@@ -152,11 +127,7 @@ impl Store for MockStore {
             return Err(WriteError::Conflicted);
         }
 
-        let v = inner
-            .store
-            .remove(key)
-            .map(|v| v.version)
-            .unwrap_or(NOT_EXISTS);
+        let v = inner.store.remove(key).map(|v| v.version).unwrap_or(NOT_EXISTS);
         Ok(v)
     }
 
@@ -177,10 +148,6 @@ impl Store for MockStore {
     }
 
     fn write_batch(&self) -> WriteBatch {
-        WriteBatch {
-            deletes: Vec::new(),
-            puts: Vec::new(),
-            inner: self.inner.clone(),
-        }
+        WriteBatch { deletes: Vec::new(), puts: Vec::new(), inner: self.inner.clone() }
     }
 }

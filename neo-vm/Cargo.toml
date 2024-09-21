@@ -10,6 +10,7 @@ edition = "2021"
 [dependencies]
 neo-base     = { path = "../neo-base", default-features = false }
 
+indexmap     = { version = "2", default-features = false }
 tinyvec      = { version = "1", features = ["alloc"] }
 bytes        = { version = "1", default-features = false }
 

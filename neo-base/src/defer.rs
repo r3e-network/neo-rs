@@ -7,17 +7,11 @@ struct Defer<F: FnOnce()> {
 
 /// impl Drop for Defer
 impl<F: FnOnce()> Drop for Defer<F> {
-    fn drop(&mut self) {
-        self.action.take().map(|action| action());
-    }
+    fn drop(&mut self) { self.action.take().map(|action| action()); }
 }
 
 /// defer a function call
-pub fn defer<F: FnOnce()>(action: F) -> impl Drop {
-    Defer {
-        action: Some(action),
-    }
-}
+pub fn defer<F: FnOnce()>(action: F) -> impl Drop { Defer { action: Some(action) } }
 
 #[cfg(test)]
 mod tests {
