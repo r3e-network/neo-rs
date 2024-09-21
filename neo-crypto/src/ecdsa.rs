@@ -3,14 +3,13 @@
 
 use alloc::string::{String, ToString};
 
-use neo_base::{
-    bytes::{ToArray, ToRevArray},
-    errors,
-};
 use p256::ecdsa::{
     signature::{RandomizedSigner, Verifier as P256Verifier},
-    Signature, SigningKey, VerifyingKey,
+    Signature, VerifyingKey, SigningKey,
 };
+
+use neo_base::bytes::{ToArray, ToRevArray};
+use neo_base::errors;
 
 use crate::secp256r1;
 
@@ -130,7 +129,8 @@ impl DigestVerify for secp256r1::PublicKey {
         // sign[0..32].reverse();
         // sign[32..ECC256_SIGN_SIZE].reverse(); // little endian to big endian
 
-        let sign = Signature::try_from(sign.as_ref()).map_err(|_| VerifyError::InvalidSignature)?;
+        let sign = Signature::try_from(sign.as_ref())
+            .map_err(|_| VerifyError::InvalidSignature)?;
 
         VerifyingKey::from_sec1_bytes(&self.to_uncompressed())
             .map_err(|_| VerifyError::InvalidPublicKey)?
@@ -143,8 +143,8 @@ impl DigestVerify for secp256r1::PublicKey {
 mod test {
     use neo_base::encoding::hex::DecodeHex;
 
-    use super::*;
     use crate::secp256r1::{PrivateKey, PublicKey};
+    use super::*;
 
     #[test]
     fn test_p256_sign() {
@@ -153,13 +153,17 @@ mod test {
             .decode_hex()
             .expect("hex decode ok");
 
-        let sk = PrivateKey::from_be_bytes(sk.as_slice()).expect("from le-byte should be ok");
+        let sk = PrivateKey::from_be_bytes(sk.as_slice())
+            .expect("from le-byte should be ok");
 
-        let sign = sk.sign(data).expect("sign should be ok");
+        let sign = sk.sign(data)
+            .expect("sign should be ok");
 
-        let pk = PublicKey::try_from(&sk).expect("to public key should be ok");
+        let pk = PublicKey::try_from(&sk)
+            .expect("to public key should be ok");
 
-        let _ = pk.verify(data, &sign).expect("verify should be ok");
+        let _ = pk.verify(data, &sign)
+            .expect("verify should be ok");
     }
 
     #[test]
@@ -169,17 +173,18 @@ mod test {
             .decode_hex()
             .expect("hex decode should be ok");
 
-        let pk = PublicKey::from_compressed(pk.as_slice()).expect("to public key should be ok");
+        let pk = PublicKey::from_compressed(pk.as_slice())
+            .expect("to public key should be ok");
 
         let sign = "b1855cec16b6ebb372895d44c7be3832b81334394d80bec7c4f00a9c1d9c3237\
         541834638d11ad9c62792ed548c9602c1d8cd0ca92fdd5e68ceea40e7bcfbeb2"
             .decode_hex()
             .expect("hex decode should be ok");
 
-        let _ = pk.verify_digest(data, sign.as_slice()).expect("verify should be ok");
+        let _ = pk.verify_digest(data, sign.as_slice())
+            .expect("verify should be ok");
 
-        let _ = pk
-            .verify_digest(data, "b1855cec16b6ebb372895d44c7be3832")
+        let _ = pk.verify_digest(data, "b1855cec16b6ebb372895d44c7be3832")
             .expect_err("verify should be fail");
     }
 }

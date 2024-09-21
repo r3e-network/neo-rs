@@ -276,7 +276,7 @@ impl MessageHandleV2 {
         addr: &SocketAddr,
         version: Version,
     ) -> Result<(), HandleError> {
-        let once = version.nonce;
+        let nonce = version.nonce;
         if nonce == self.config.nonce {
             version.port()
                 .map(|port| SocketAddr::new(addr.ip(), port))
@@ -397,9 +397,10 @@ impl MessageHandleV2 {
             nonce: self.config.nonce,
         });
 
-        let handle = self.net_handle(peer).ok_or(HandleError::NoSuchNetHandle)?;
-        handle
-            .try_seed(pong.to_bin_encoded().into())
+        let handle = self.net_handle(peer)
+            .ok_or(HandleError::NoSuchNetHandle)?;
+
+        handle.try_seed(pong.to_bin_encoded().into())
             .map_err(|err| HandleError::SendError("Pong", err))?;
 
         handle.states.set_last_block_index(ping.last_block_index);
@@ -422,15 +423,16 @@ impl MessageHandleV2 {
                 .ok_or(HandleError::NoSuchAddress)?;
         }
 
-        let handle = self.net_handle(peer).ok_or(HandleError::NoSuchNetHandle)?;
+        let handle = self.net_handle(peer)
+            .ok_or(HandleError::NoSuchNetHandle)?;
+
         handle.states.set_last_block_index(pong.last_block_index);
         Ok(())
     }
 
-    fn on_get_headers(
-        &self,
-        _peer: &SocketAddr,
-        _range: BlockIndexRange,
+    fn on_get_headers(&self,
+                      _peer: &SocketAddr,
+                      _range: BlockIndexRange,
     ) -> Result<(), HandleError> {
         Ok(())
     }
