@@ -17,13 +17,17 @@ pub struct Operand {
 }
 
 impl Operand {
-    fn with_unary(first: i64) -> Self { Self { first, second: 0, data: Default::default() } }
+    fn with_unary(first: i64) -> Self {
+        Self { first, second: 0, data: Default::default() }
+    }
 
     pub fn with_dual(first: i64, second: i64) -> Self {
         Self { first, second, data: Default::default() }
     }
 
-    pub fn with_data(data: &[u8]) -> Self { Self { first: 0, second: 0, data: data.into() } }
+    pub fn with_data(data: &[u8]) -> Self {
+        Self { first: 0, second: 0, data: data.into() }
+    }
 
     pub(crate) fn with_signed(operand: &[u8]) -> Self {
         let first = match operand.len() {

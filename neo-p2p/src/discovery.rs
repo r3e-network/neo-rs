@@ -5,11 +5,12 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use neo_base::math::LcgRand;
-use neo_base::time::UnixTime;
 use tokio::sync::mpsc;
 
-use crate::{SeedState::*, *};
+use neo_base::math::LcgRand;
+use neo_base::time::UnixTime;
+
+use crate::{*, SeedState::*};
 
 const CONNECT_RETRY_TIMES: u32 = 3;
 const MAX_POOL_SIZE: usize = 1024;
@@ -329,9 +330,11 @@ mod test {
         let mut disc = DiscoveryV1::new(tx, dns);
         disc.request_remotes(2);
 
-        let addr = rx.try_recv().expect("`try_recv` should be ok");
+        let addr = rx.try_recv()
+            .expect("`try_recv` should be ok");
 
-        let _ = rx.try_recv().expect_err("`try_recv` should be failed");
+        let _ = rx.try_recv()
+            .expect_err("`try_recv` should be failed");
 
         assert!(disc.attempts.contains_key(&addr));
 

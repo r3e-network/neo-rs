@@ -197,8 +197,8 @@ impl DbftConsensus {
 
         // 6. Ignore the message if the consensus message data is in a wrong format
         let mut buffer = RefBuffer::from(payload.data.as_bytes());
-        let mut message: Payload =
-            BinDecoder::decode_bin(&mut buffer).map_err(|err| OnPayloadError::DecodeError(err))?;
+        let mut message: Payload = BinDecoder::decode_bin(&mut buffer)
+            .map_err(|err| OnPayloadError::DecodeError(err))?;
 
         match &mut message {
             Payload::PrepareRequest(r) => {

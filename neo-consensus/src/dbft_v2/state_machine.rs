@@ -189,7 +189,7 @@ impl StateMachine {
         }
     }
 
-    pub fn on_timeout(&mut self, settings: &DbftConfig, view: HView) {
+    pub fn on_timeout(&mut self, config: &DbftConfig, view: HView) {
         // TODO: log
         if self.states.watch_only
             || view.height != self.states.block_index
@@ -199,25 +199,23 @@ impl StateMachine {
             return;
         }
 
-        let per_block_millis = settings.per_block_millis;
+        let per_block_millis = config.per_block_millis;
         let primary = self.states.primary_index as usize;
         let sent =
             primary < self.context.prepares.len() && self.context.prepares[primary].has_request();
 
         if self.states.is_primary() && !sent {
             self.context.txs = HashMap::new(); // TODO: from tx-pool
-            self.context.tx_hashes =
-                self.context.txs.iter().map(|(hash, _)| hash.clone()).collect();
+            self.context.tx_hashes = self.context.txs.iter().map(|(x, _)| x.clone()).collect();
 
             let meta = self.states.new_message_meta();
-            let message =
-                self.new_prepare_request(settings.version, settings.milli_increment, meta);
+            let message = self.new_prepare_request(config.version, config.milli_increment, meta);
             self.broadcast_tx
                 .send(Payload::PrepareRequest(message))
                 .expect("`broadcast_tx.send(PrepareRequest)` should be ok");
 
             if self.states.nr_validators() == 1 {
-                self.commit_if_needed(settings.network, per_block_millis);
+                self.commit_if_needed(config.network, per_block_millis);
             }
 
             if self.context.tx_hashes.len() > 0 {

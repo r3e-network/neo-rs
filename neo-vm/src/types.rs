@@ -155,17 +155,14 @@ impl TryInto<bool> for &StackItem {
     type Error = CastError;
 
     fn try_into(self) -> Result<bool, Self::Error> {
+        use CastError::*;
         match self {
             Null => Ok(false),
             Boolean(v) => Ok(*v),
             Integer(v) => Ok(!v.is_zero()),
             ByteString(v) => {
                 if v.len() > MAX_INTEGER_SIZE {
-                    Err(CastError::InvalidCast(
-                        ItemType::ByteString,
-                        "Bool",
-                        "exceed MAX_INTEGER_SIZE",
-                    ))
+                    Err(InvalidCast(ItemType::ByteString, "Bool", "exceed MAX_INTEGER_SIZE"))
                 } else {
                     Ok(v.iter().find(|x| **x != 0).is_some())
                 }

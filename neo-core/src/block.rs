@@ -4,7 +4,7 @@
 use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
-use neo_base::encoding::{encode_hex_u64, decode_hex_u64};
+use neo_base::encoding::{decode_hex_u64, encode_hex_u64};
 use serde::{Deserialize, Serialize};
 
 use crate::tx::{StatedTx, Tx, Witness, Witnesses};

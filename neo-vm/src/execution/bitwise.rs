@@ -16,18 +16,23 @@ mod test {
 
     #[test]
     fn test_exec_invert() {
-        let mut cx =
-            ExecContext::new(ExecStack::new(1024, References::new()), Rc::new(Program::nop()));
+        let mut cx = ExecContext::new(
+            ExecStack::new(1024, References::new()),
+            Rc::new(Program::nop()),
+        );
 
         let op = Op { ip: 1, code: OpCode::Invert, operand: Default::default() };
-        let _ = exec_invert(&mut cx, &op).expect_err("empty stack should be failed");
+        let _ = exec_invert(&mut cx, &op)
+            .expect_err("empty stack should be failed");
 
         cx.stack.push(StackItem::with_integer(1.into()));
 
-        let _ = exec_invert(&mut cx, &op).expect("invent -1 should be ok");
+        let _ = exec_invert(&mut cx, &op)
+            .expect("invent -1 should be ok");
         assert_eq!(cx.stack.len(), 1);
 
-        let item = cx.stack.top().expect("`top()` should be exists");
+        let item = cx.stack.top()
+            .expect("`top()` should be exists");
 
         if let Integer(value) = item {
             assert_eq!(*value, I256::from(!1i32));

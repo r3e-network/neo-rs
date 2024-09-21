@@ -356,10 +356,7 @@ impl InnerPool {
 
         self.remove_conflicts(&removed.tx);
 
-        removed
-            .tx
-            .attributes
-            .iter()
+        removed.tx.attributes.iter()
             .filter_map(|attr| if let TxAttr::OracleResponse(r) = attr { Some(r) } else { None })
             .for_each(|oracle| {
                 self.oracles.remove(&oracle.id);
@@ -370,9 +367,7 @@ impl InnerPool {
 
     fn remove_conflicts(&mut self, tx: &Tx) {
         let hash = tx.hash();
-        let conflicted_txs = tx
-            .attributes
-            .iter()
+        let conflicted_txs = tx.attributes.iter()
             .filter_map(|attr| if let TxAttr::Conflicts(x) = attr { Some(x) } else { None });
         for conflicted_tx in conflicted_txs {
             let Some(conflicts) = self.conflicts.get_mut(&conflicted_tx.hash) else {
@@ -409,9 +404,7 @@ impl InnerPool {
     fn check_oracle(&self, tx: &Tx) -> Result<Vec<H256>, AddTxError> {
         let mut evicted = Vec::new();
         let mut dedup = Vec::new();
-        let oracles = tx
-            .attributes
-            .iter()
+        let oracles = tx.attributes.iter()
             .filter_map(|attr| if let TxAttr::OracleResponse(r) = attr { Some(r) } else { None });
         for oracle in oracles {
             if dedup.iter().find(|&&x| x == oracle.id).is_some() {

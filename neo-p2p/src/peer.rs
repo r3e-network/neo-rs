@@ -143,10 +143,9 @@ pub struct Seed {
 }
 
 impl Seed {
+    // initial SeedState is `Reachable`
     #[inline]
-    pub fn new(addr: SocketAddr) -> Self {
-        Self { addr, state: SeedState::Reachable } // initial SeedState is `Reachable`
-    }
+    pub fn new(addr: SocketAddr) -> Self { Self { addr, state: SeedState::Reachable } }
 
     #[inline]
     pub fn temporary(&self) -> bool { matches!(self.state, SeedState::Temporary) }
@@ -159,14 +158,16 @@ pub struct DnsResolver {
 
 impl DnsResolver {
     pub fn new(seeds: &[String]) -> Self {
-        let resolver =
-            Resolver::from_system_conf().expect("`Resolver::from_system_conf()` should be ok");
+        let resolver = Resolver::from_system_conf()
+            .expect("`Resolver::from_system_conf()` should be ok");
 
         let seeds = seeds
             .iter()
             .map(|x| {
-                let d = x.rfind(":").expect(&format!("Seed {} is invalid", x));
-                let port = x[d + 1..].parse().expect(&format!("Port in seed {} is invalid", x));
+                let d = x.rfind(":")
+                    .expect(&format!("Seed {} is invalid", x));
+                let port = x[d + 1..].parse()
+                    .expect(&format!("Port in seed {} is invalid", x));
                 (x[..d].to_string(), port)
             })
             .collect();
@@ -176,12 +177,9 @@ impl DnsResolver {
 
     pub(crate) fn on_start(&self) -> Vec<(String, Seed)> {
         let seeds = self.resolves();
-        if seeds.len() != self.seeds.len() {
-            panic!(
-                "`DnsResolver::on_start`: resolved {} != seeds {}",
-                seeds.len(),
-                self.seeds.len()
-            );
+        let n = seeds.len();
+        if n != self.seeds.len() {
+            panic!("`DnsResolver::on_start`: resolved {} != seeds {}", n, self.seeds.len());
         }
         seeds
     }

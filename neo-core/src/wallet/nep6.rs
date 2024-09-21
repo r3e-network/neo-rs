@@ -118,13 +118,15 @@ mod test {
     "extra": null
 }"#;
 
-        let nep6: Nep6Wallet = serde_json::from_str(src).expect("serde-json from_str should be ok");
+        let nep6: Nep6Wallet = serde_json::from_str(src)
+            .expect("serde-json from_str should be ok");
 
         assert_eq!(&nep6.version, "3.0");
         assert!(nep6.name.is_none());
         assert!(nep6.extra.is_none());
 
-        let contract = nep6.accounts[0].contract.as_ref().expect("contract should exist");
+        let contract = nep6.accounts[0].contract.as_ref()
+            .expect("contract should exist");
         assert_eq!(contract.parameters[0].name, "signature");
         assert_eq!(
             nep6.accounts[0].key,
@@ -132,9 +134,12 @@ mod test {
         );
 
         let sk =
-            "city of zion".decrypt_nep2_key(&nep6.accounts[0].key).expect("decrypt should be ok");
+            "city of zion".decrypt_nep2_key(&nep6.accounts[0].key)
+                .expect("decrypt should be ok");
 
-        let addr = PublicKey::try_from(&sk).expect("to public key should be ok").to_neo3_address();
+        let addr = PublicKey::try_from(&sk)
+            .expect("to public key should be ok")
+            .to_neo3_address();
 
         assert_eq!(addr.as_str(), &nep6.accounts[0].address);
     }

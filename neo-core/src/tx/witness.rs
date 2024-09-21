@@ -142,18 +142,21 @@ mod test {
     fn test_witness_scope() {
         let cond = WitnessCondition::Boolean { expression: true };
 
-        let cond = serde_json::to_string(&cond).expect("json encode should be ok");
+        let cond = serde_json::to_string(&cond)
+            .expect("json encode should be ok");
         assert_eq!(&cond, r#"{"type":"Boolean","expression":true}"#);
 
         let entry = WitnessCondition::CalledByEntry {};
-        let entry = serde_json::to_string(&entry).expect("json encode should be ok");
+        let entry = serde_json::to_string(&entry)
+            .expect("json encode should be ok");
         assert_eq!(&entry, r#"{"type":"CalledByEntry"}"#);
 
         let rule = WitnessRule {
             action: Action::Allow,
             condition: WitnessCondition::Boolean { expression: true },
         };
-        let rule = serde_json::to_string(&rule).expect("json encode should be ok");
+        let rule = serde_json::to_string(&rule)
+            .expect("json encode should be ok");
         assert_eq!(&rule, r#"{"action":"Allow","condition":{"type":"Boolean","expression":true}}"#);
 
         let attr = TxAttr::OracleResponse(OracleResponse {
@@ -161,22 +164,28 @@ mod test {
             code: OracleCode::Success,
             result: Default::default(),
         });
-        let attr = serde_json::to_string(&attr).expect("json encode should be ok");
+        let attr = serde_json::to_string(&attr)
+            .expect("json encode should be ok");
         assert_eq!(&attr, r#"{"type":"OracleResponse","id":0,"code":"Success","result":""}"#);
 
-        let got =
-            serde_json::from_str::<WitnessRule>(rule.as_str()).expect("json decode should be ok");
+        let got = serde_json::from_str::<WitnessRule>(rule.as_str())
+            .expect("json decode should be ok");
         assert_eq!(got.action, Action::Allow);
         assert_eq!(got.condition, WitnessCondition::Boolean { expression: true });
 
         let data = r#"{"action":"404","condition":{"type":"Boolean","expression":true}}"#;
-        let _ = serde_json::from_str::<WitnessRule>(data).expect_err("json decode should be fail");
+        let _ = serde_json::from_str::<WitnessRule>(data)
+            .expect_err("json decode should be fail");
     }
 
     #[test]
     fn test_witnesses() {
-        let wit = Witnesses::from(Witness::new(b"hello".as_ref().into(), b"world".as_ref().into()));
-        let wit = serde_json::to_string(&wit).expect("json encode should be ok");
+        let wit = Witnesses::from(Witness::new(
+            b"hello".as_ref().into(),
+            b"world".as_ref().into(),
+        ));
+        let wit = serde_json::to_string(&wit)
+            .expect("json encode should be ok");
 
         let expected = r#"[{"invocation_script":"aGVsbG8=","verification_script":"d29ybGQ="}]"#;
         assert_eq!(&wit, expected);

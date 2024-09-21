@@ -38,7 +38,11 @@ impl ExecContext {
 
     #[inline]
     pub fn change_pc(&mut self, to: u32) -> bool {
-        self.program.ops().binary_search_by(|x| x.ip.cmp(&to)).map(|x| self.pc = x).is_ok()
+        self.program
+            .ops()
+            .binary_search_by(|x| x.ip.cmp(&to))
+            .map(|x| self.pc = x)
+            .is_ok()
     }
 
     #[inline]

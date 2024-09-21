@@ -99,7 +99,8 @@ mod test {
     fn test_tx_attr_json() {
         let attr = TxAttr::NotValidBefore(NotValidBefore { height: 123 });
 
-        let attr = serde_json::to_string(&attr).expect("json encode should be ok");
+        let attr = serde_json::to_string(&attr)
+            .expect("json encode should be ok");
 
         assert_eq!(&attr, r#"{"type":"NotValidBefore","height":123}"#);
     }
