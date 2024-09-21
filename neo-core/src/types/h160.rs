@@ -1,13 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::string::{String, ToString};
 use core::fmt::{Display, Formatter};
-use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
 
-use neo_base::{errors, encoding::bin::*, encoding::hex::{ToRevHex, StartsWith0x}};
-
+use neo_base::{
+    encoding::bin::*,
+    encoding::hex::{StartsWith0x, ToRevHex},
+    errors,
+};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 pub const H160_SIZE: usize = 20;
 
@@ -85,11 +87,10 @@ impl TryFrom<&str> for H160 {
         let value = if value.starts_with_0x() { &value[2..] } else { value };
 
         let mut buf = [0u8; H160_SIZE];
-        let _ = hex::decode_to_slice(value, &mut buf)
-            .map_err(|e| match e {
-                HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
-                HexError::InvalidHexCharacter { c, index: _ } => Self::Error::InvalidChar(c),
-            })?;
+        let _ = hex::decode_to_slice(value, &mut buf).map_err(|e| match e {
+            HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
+            HexError::InvalidHexCharacter { c, index: _ } => Self::Error::InvalidChar(c),
+        })?;
 
         buf.reverse();
         Ok(Self(buf))
@@ -116,7 +117,6 @@ impl Default for H160 {
     fn default() -> Self { Self([0u8; H160_SIZE]) }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -124,16 +124,13 @@ mod test {
     #[test]
     fn test_h160() {
         let h = "\"0263c1de100292813b5e075e585acc1bae963b2d\"";
-        let h1 = H160::try_from(h)
-            .expect("hex decode should be ok");
+        let h1 = H160::try_from(h).expect("hex decode should be ok");
 
-        let x = serde_json::to_string(&h1)
-            .expect("json encode should be ok");
+        let x = serde_json::to_string(&h1).expect("json encode should be ok");
         assert_eq!(&h[1..], &x[3..]);
         assert_eq!(&h1.to_string(), "0x0263c1de100292813b5e075e585acc1bae963b2d");
 
-        let h2: H160 = serde_json::from_str(h)
-            .expect("json decode should be ok");
+        let h2: H160 = serde_json::from_str(h).expect("json decode should be ok");
         assert_eq!(h2, h1);
     }
 }

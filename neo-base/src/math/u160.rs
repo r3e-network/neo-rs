@@ -2,16 +2,15 @@
 // All Rights Reserved
 
 use alloc::string::{String, ToString};
-use core::cmp::{Ord, PartialOrd, Ordering};
+use core::cmp::{Ord, Ordering, PartialOrd};
 use core::fmt::{Display, Formatter};
-use core::ops::{Add, Sub, BitAnd, BitOr, BitXor, Not};
+use core::ops::{Add, BitAnd, BitOr, BitXor, Not, Sub};
 
-use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{errors, cmp_elem};
-use crate::math::Widening;
 use crate::encoding::hex::StartsWith0x;
-
+use crate::math::Widening;
+use crate::{cmp_elem, errors};
 
 const N: usize = 3;
 const MASK: u64 = 0xFFffFFff;
@@ -56,7 +55,6 @@ impl U160 {
     }
 }
 
-
 impl Display for U160 {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
@@ -69,23 +67,17 @@ impl Display for U160 {
 
 impl From<u64> for U160 {
     #[inline]
-    fn from(value: u64) -> Self {
-        Self { n: [value, 0, 0] }
-    }
+    fn from(value: u64) -> Self { Self { n: [value, 0, 0] } }
 }
 
 impl From<u128> for U160 {
     #[inline]
-    fn from(value: u128) -> Self {
-        Self { n: [value as u64, (value >> 64) as u64, 0] }
-    }
+    fn from(value: u128) -> Self { Self { n: [value as u64, (value >> 64) as u64, 0] } }
 }
 
 impl PartialOrd for U160 {
     #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
 }
 
 impl Ord for U160 {
@@ -118,11 +110,10 @@ impl TryFrom<&str> for U160 {
         let value = if value.starts_with_0x() { &value[2..] } else { value };
 
         let mut buf = [0u8; 20];
-        let _ = hex::decode_to_slice(value, &mut buf)
-            .map_err(|e| match e {
-                HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
-                HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
-            })?;
+        let _ = hex::decode_to_slice(value, &mut buf).map_err(|e| match e {
+            HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
+            HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
+        })?;
 
         Ok(Self::from_be_bytes(&buf))
     }
@@ -223,7 +214,6 @@ impl Not for U160 {
         Self { n: [n0, n1, n2 & MASK] }
     }
 }
-
 
 #[cfg(test)]
 mod test {

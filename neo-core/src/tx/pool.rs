@@ -1,16 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use std::cmp::Ordering;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
 use neo_base::{errors, math::U256};
-use crate::store::{FeeStates, BlockStates};
+
+use crate::store::{BlockStates, FeeStates};
 use crate::tx::{Tx, TxAttr};
 use crate::types::{H160, H256};
-
 
 #[derive(Debug, Copy, Clone)]
 pub enum TxRemovalReason {
@@ -18,7 +17,6 @@ pub enum TxRemovalReason {
     NoLongerValid,
     Conflict,
 }
-
 
 #[derive(Debug, Clone, errors::Error)]
 pub enum AddTxError {
@@ -44,7 +42,6 @@ pub enum AddTxError {
     ConflictedOracleResponse,
 }
 
-
 #[derive(Clone)]
 pub struct TxPool {
     inner: Arc<Mutex<InnerPool>>,
@@ -56,27 +53,27 @@ impl TxPool {
     }
 
     pub fn get_verified_txs(&self, limits: usize) -> Vec<Arc<Tx>> {
-        self.inner.lock()
-            .unwrap()
-            .get_verified_txs(limits)
+        self.inner.lock().unwrap().get_verified_txs(limits)
     }
 
-    pub fn remove_stales(&self, is_still_ok: fn(&Tx) -> bool, states: &(impl FeeStates + BlockStates)) -> Vec<PooledTx> {
-        self.inner.lock()
-            .unwrap()
-            .remove_stales(is_still_ok, states)
+    pub fn remove_stales(
+        &self,
+        is_still_ok: fn(&Tx) -> bool,
+        states: &(impl FeeStates + BlockStates),
+    ) -> Vec<PooledTx> {
+        self.inner.lock().unwrap().remove_stales(is_still_ok, states)
     }
 
     pub fn remove_tx(&self, tx: &H256) -> Option<PooledTx> {
-        self.inner.lock()
-            .unwrap()
-            .remove_tx(tx)
+        self.inner.lock().unwrap().remove_tx(tx)
     }
 
-    pub fn add_tx(&self, tx: Tx, states: &(impl FeeStates + BlockStates)) -> Result<(), AddTxError> {
-        self.inner.lock()
-            .unwrap()
-            .add_tx(tx, states)
+    pub fn add_tx(
+        &self,
+        tx: Tx,
+        states: &(impl FeeStates + BlockStates),
+    ) -> Result<(), AddTxError> {
+        self.inner.lock().unwrap().add_tx(tx, states)
     }
 }
 
@@ -88,9 +85,7 @@ pub struct BalanceFee {
 
 impl BalanceFee {
     #[inline]
-    pub fn new(balance: U256) -> Self {
-        Self { balance, fees: U256::default() }
-    }
+    pub fn new(balance: U256) -> Self { Self { balance, fees: U256::default() } }
 
     #[inline]
     pub fn check_balance(&self, tx: &Tx) -> Result<U256, AddTxError> {
@@ -114,7 +109,6 @@ pub struct PooledTx {
     pub tx: Arc<Tx>,
 }
 
-
 #[derive(Debug, Eq, PartialEq)]
 struct TxScore {
     pub high_priority: bool,
@@ -126,17 +120,10 @@ struct TxScore {
 impl TxScore {
     #[inline]
     pub fn new(tx_number: u64, tx: &Tx) -> Self {
-        let high_priority = tx.attributes.iter()
-            .any(|attr| matches!(attr, TxAttr::HighPriority));
-        Self {
-            high_priority,
-            netfee_per_byte: tx.netfee_per_byte(),
-            netfee: tx.netfee,
-            tx_number,
-        }
+        let high_priority = tx.attributes.iter().any(|attr| matches!(attr, TxAttr::HighPriority));
+        Self { high_priority, netfee_per_byte: tx.netfee_per_byte(), netfee: tx.netfee, tx_number }
     }
 }
-
 
 impl PartialOrd for TxScore {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
@@ -152,11 +139,13 @@ impl Ord for TxScore {
             return Ordering::Less;
         }
 
-        (self.netfee_per_byte, self.netfee, self.tx_number)
-            .cmp(&(other.netfee_per_byte, other.netfee, other.tx_number))
+        (self.netfee_per_byte, self.netfee, self.tx_number).cmp(&(
+            other.netfee_per_byte,
+            other.netfee,
+            other.tx_number,
+        ))
     }
 }
-
 
 #[allow(dead_code)]
 pub(crate) struct InnerPool {
@@ -171,7 +160,6 @@ pub(crate) struct InnerPool {
     sorted: BTreeMap<TxScore, H256>,
     conflicts: HashMap<H256, Vec<H256>>,
     oracles: HashMap<u64, H256>,
-
 }
 
 impl InnerPool {
@@ -198,7 +186,8 @@ impl InnerPool {
 
     pub fn get_verified_txs(&self, limits: usize) -> Vec<Arc<Tx>> {
         let limits = if limits == 0 { usize::MAX } else { limits };
-        self.sorted.iter()
+        self.sorted
+            .iter()
             .rev()
             .filter_map(|(_, x)| self.verified.get(x))
             .take(limits)
@@ -206,7 +195,11 @@ impl InnerPool {
             .collect()
     }
 
-    pub fn remove_stales(&mut self, is_still_ok: fn(&Tx) -> bool, states: &(impl FeeStates + BlockStates)) -> Vec<PooledTx> {
+    pub fn remove_stales(
+        &mut self,
+        is_still_ok: fn(&Tx) -> bool,
+        states: &(impl FeeStates + BlockStates),
+    ) -> Vec<PooledTx> {
         let block_index = states.current_block_index();
 
         let sorted = core::mem::replace(&mut self.sorted, BTreeMap::new());
@@ -222,19 +215,24 @@ impl InnerPool {
         }
 
         let mut stales = Vec::new();
-        let pooled_txs = sorted.iter()
-            .filter_map(|(_, x)| verified.get(x).cloned());
+        let pooled_txs = sorted.iter().filter_map(|(_, x)| verified.get(x).cloned());
         for pooled in pooled_txs {
-            if (!netfee_changed || pooled.tx.netfee_per_byte() >= self.netfee_per_byte) &&
-                is_still_ok(&pooled.tx) &&
-                self.try_add_sender_fee(&pooled.tx, states) { // try_add_sender_fee must be the latest condition
+            if (!netfee_changed || pooled.tx.netfee_per_byte() >= self.netfee_per_byte)
+                && is_still_ok(&pooled.tx)
+                && self.try_add_sender_fee(&pooled.tx, states)
+            {
+                // try_add_sender_fee must be the latest condition
 
                 let block_stamp = pooled.block_stamp;
                 let threshold = self.resend_threshold;
                 let diff = block_index - block_stamp;
 
                 // resent at threshold, 2*threshold, 4*threshold ...
-                if block_index > block_stamp && threshold > 0 && diff % threshold == 0 && (diff / threshold).count_ones() == 1 {
+                if block_index > block_stamp
+                    && threshold > 0
+                    && diff % threshold == 0
+                    && (diff / threshold).count_ones() == 1
+                {
                     stales.push(pooled.clone());
                 }
 
@@ -255,7 +253,11 @@ impl InnerPool {
         pooled
     }
 
-    pub fn add_tx(&mut self, mut tx: Tx, states: &(impl FeeStates + BlockStates)) -> Result<(), AddTxError> {
+    pub fn add_tx(
+        &mut self,
+        mut tx: Tx,
+        states: &(impl FeeStates + BlockStates),
+    ) -> Result<(), AddTxError> {
         if tx.hash.is_none() {
             tx.calc_hash_and_size();
         }
@@ -277,7 +279,9 @@ impl InnerPool {
         }
 
         let payer = tx.signers[0].account;
-        let mut balance = self.balances.entry(payer.clone())
+        let mut balance = self
+            .balances
+            .entry(payer.clone())
             .or_insert_with(|| BalanceFee::new(states.balance_of(&payer)))
             .clone();
 
@@ -288,8 +292,9 @@ impl InnerPool {
         evicts.iter().for_each(|x| self.remove_inner(x));
 
         // check_capacity will be ok if conflicts or evicts not empty.
-        let _ = self.check_capacity(pooled.tx_number, tx)?
-            .map(|evicted| { self.remove_inner(&evicted); });
+        let _ = self.check_capacity(pooled.tx_number, tx)?.map(|evicted| {
+            self.remove_inner(&evicted);
+        });
 
         self.add_tx_inner(pooled);
 
@@ -304,17 +309,19 @@ impl InnerPool {
         let tx = &pooled.tx;
         let hash = tx.hash();
         let score = TxScore::new(pooled.tx_number, tx);
-        tx.attributes.iter()
+        tx.attributes
+            .iter()
             .filter_map(|attr| if let TxAttr::Conflicts(x) = attr { Some(x) } else { None })
             .for_each(|attr| {
-                self.conflicts.entry(attr.hash.clone())
-                    .or_insert_with(|| Vec::new())
-                    .push(hash)
+                self.conflicts.entry(attr.hash.clone()).or_insert_with(|| Vec::new()).push(hash)
             });
 
-        tx.attributes.iter()
+        tx.attributes
+            .iter()
             .filter_map(|attr| if let TxAttr::OracleResponse(r) = attr { Some(r) } else { None })
-            .for_each(|attr| { self.oracles.insert(attr.id, hash.clone()); });
+            .for_each(|attr| {
+                self.oracles.insert(attr.id, hash.clone());
+            });
 
         self.verified.insert(hash, pooled);
         self.sorted.insert(score, hash);
@@ -322,7 +329,9 @@ impl InnerPool {
 
     fn try_add_sender_fee(&mut self, tx: &Tx, states: &impl FeeStates) -> bool {
         let payer = &tx.signers[self.payer_index].account;
-        let fee = self.balances.entry(payer.clone())
+        let fee = self
+            .balances
+            .entry(payer.clone())
             .or_insert_with(|| BalanceFee::new(states.balance_of(payer)));
 
         if fee.check_balance(tx).is_err() {
@@ -334,7 +343,9 @@ impl InnerPool {
     }
 
     fn remove_inner(&mut self, tx: &H256) {
-        let Some(removed) = self.verified.remove(tx) else { return; };
+        let Some(removed) = self.verified.remove(tx) else {
+            return;
+        };
         let score = TxScore::new(removed.tx_number, &removed.tx);
         let _ = self.sorted.remove(&score);
 
@@ -345,24 +356,29 @@ impl InnerPool {
 
         self.remove_conflicts(&removed.tx);
 
-        removed.tx.attributes.iter()
+        removed
+            .tx
+            .attributes
+            .iter()
             .filter_map(|attr| if let TxAttr::OracleResponse(r) = attr { Some(r) } else { None })
-            .for_each(|oracle| { self.oracles.remove(&oracle.id); });
+            .for_each(|oracle| {
+                self.oracles.remove(&oracle.id);
+            });
 
         // TODO: tx removed event
     }
 
     fn remove_conflicts(&mut self, tx: &Tx) {
         let hash = tx.hash();
-        let conflicted_txs = tx.attributes.iter()
+        let conflicted_txs = tx
+            .attributes
+            .iter()
             .filter_map(|attr| if let TxAttr::Conflicts(x) = attr { Some(x) } else { None });
         for conflicted_tx in conflicted_txs {
             let Some(conflicts) = self.conflicts.get_mut(&conflicted_tx.hash) else {
                 continue;
             };
-            let found = conflicts.iter()
-                .enumerate()
-                .find(|(_index, x)| hash.eq(x));
+            let found = conflicts.iter().enumerate().find(|(_index, x)| hash.eq(x));
             if let Some((index, _)) = found {
                 conflicts.remove(index);
             }
@@ -374,7 +390,8 @@ impl InnerPool {
     }
 
     fn check_capacity(&self, tx_number: u64, tx: &Tx) -> Result<Option<H256>, AddTxError> {
-        if self.sorted.len() >= self.capacity { //
+        if self.sorted.len() >= self.capacity {
+            //
             return Ok(None);
         }
 
@@ -392,7 +409,9 @@ impl InnerPool {
     fn check_oracle(&self, tx: &Tx) -> Result<Vec<H256>, AddTxError> {
         let mut evicted = Vec::new();
         let mut dedup = Vec::new();
-        let oracles = tx.attributes.iter()
+        let oracles = tx
+            .attributes
+            .iter()
             .filter_map(|attr| if let TxAttr::OracleResponse(r) = attr { Some(r) } else { None });
         for oracle in oracles {
             if dedup.iter().find(|&&x| x == oracle.id).is_some() {
@@ -418,21 +437,25 @@ impl InnerPool {
         let hash = tx.hash();
         let payer = &tx.signers[self.payer_index].account;
         if let Some(hashes) = self.conflicts.get(&hash) {
-            conflicts = hashes.iter()
+            conflicts = hashes
+                .iter()
                 .filter_map(|x| self.verified.get(x))
-                .inspect(|x| if x.tx.has_signer(payer) { fees += x.tx.netfee })
+                .inspect(|x| {
+                    if x.tx.has_signer(payer) {
+                        fees += x.tx.netfee
+                    }
+                })
                 .collect();
         }
 
-        let find_signer = |who: &H160| {
-            tx.signers.iter().any(|x| x.account.eq(who))
-        };
+        let find_signer = |who: &H160| tx.signers.iter().any(|x| x.account.eq(who));
 
-        let conflicted_txs = tx.attributes.iter()
-            .filter_map(|attr| {
-                let TxAttr::Conflicts(x) = attr else { return None; };
-                self.verified.get(&x.hash)
-            });
+        let conflicted_txs = tx.attributes.iter().filter_map(|attr| {
+            let TxAttr::Conflicts(x) = attr else {
+                return None;
+            };
+            self.verified.get(&x.hash)
+        });
         for conflicted in conflicted_txs {
             if !conflicted.tx.signers.iter().any(|x| find_signer(&x.account)) {
                 return Err(AddTxError::ConflictsAttribute);
@@ -447,7 +470,8 @@ impl InnerPool {
         }
 
         let mut balance = sender_fee.clone();
-        conflicts.iter()
+        conflicts
+            .iter()
             .filter(|&x| x.tx.signers[self.payer_index].account.eq(payer))
             .for_each(|x| balance.fees -= x.tx.fee());
 

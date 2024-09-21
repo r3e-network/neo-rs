@@ -1,10 +1,8 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
-use tinyvec::TinyVec;
 use neo_base::bytes::{PickU16, PickU32, PickU64};
-
+use tinyvec::TinyVec;
 
 #[derive(Debug, Default, Clone)]
 pub struct Operand {
@@ -19,17 +17,13 @@ pub struct Operand {
 }
 
 impl Operand {
-    pub fn with_unary(first: i64) -> Self {
-        Self { first, second: 0, data: Default::default() }
-    }
+    fn with_unary(first: i64) -> Self { Self { first, second: 0, data: Default::default() } }
 
     pub fn with_dual(first: i64, second: i64) -> Self {
         Self { first, second, data: Default::default() }
     }
 
-    pub fn with_data(data: &[u8]) -> Self {
-        Self { first: 0, second: 0, data: data.into() }
-    }
+    pub fn with_data(data: &[u8]) -> Self { Self { first: 0, second: 0, data: data.into() } }
 
     pub(crate) fn with_signed(operand: &[u8]) -> Self {
         let first = match operand.len() {
@@ -37,7 +31,7 @@ impl Operand {
             2 => operand.pick_le_u16() as i16 as i64,
             4 => operand.pick_le_u32() as i32 as i64,
             8 => operand.pick_le_u64() as i64,
-            _ => unreachable!("unexpected signed operand")
+            _ => unreachable!("unexpected signed operand"),
         };
         Self::with_unary(first)
     }
@@ -47,7 +41,7 @@ impl Operand {
             1 => operand[0] as i64,
             2 => operand.pick_le_u16() as i64,
             4 => operand.pick_le_u32() as i64,
-            _ => unreachable!("unexpected unsigned operand")
+            _ => unreachable!("unexpected unsigned operand"),
         };
         Self::with_unary(first)
     }
@@ -56,7 +50,8 @@ impl Operand {
 #[cfg(test)]
 mod test {
     use strum::IntoEnumIterator;
-    use crate::{OP_CODES, OpCode};
+
+    use crate::{OpCode, OP_CODES};
 
     #[test]
     fn test_opcode_valid() {

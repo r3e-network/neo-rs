@@ -1,15 +1,12 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec, vec::Vec};
 use core::net::IpAddr;
 
-use bytes::{BytesMut, BufMut};
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-
+use bytes::{BufMut, BytesMut};
 use neo_base::encoding::{base64::*, bin::*};
-
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct FixedBytes<const N: usize>(pub(crate) [u8; N]);
@@ -17,9 +14,7 @@ pub struct FixedBytes<const N: usize>(pub(crate) [u8; N]);
 impl<const N: usize> FixedBytes<N> {
     pub fn as_bytes(&self) -> &[u8] { &self.0 }
 
-    pub fn is_zero(&self) -> bool {
-        self.0.iter().all(|x| *x == 0)
-    }
+    pub fn is_zero(&self) -> bool { self.0.iter().all(|x| *x == 0) }
 }
 
 impl<const N: usize> From<[u8; N]> for FixedBytes<N> {
@@ -53,9 +48,7 @@ impl<const N: usize> Default for FixedBytes<N> {
 }
 
 impl<const N: usize> BinEncoder for FixedBytes<N> {
-    fn encode_bin(&self, w: &mut impl BinWriter) {
-        w.write(self.0.as_ref())
-    }
+    fn encode_bin(&self, w: &mut impl BinWriter) { w.write(self.0.as_ref()) }
 
     fn bin_size(&self) -> usize { N }
 }
@@ -80,12 +73,9 @@ impl<'de, const N: usize> Deserialize<'de> for FixedBytes<N> {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = String::deserialize(deserializer)?;
-        Vec::from_base64_std(value.as_str())
-            .map(|v| v.as_slice().into())
-            .map_err(D::Error::custom)
+        Vec::from_base64_std(value.as_str()).map(|v| v.as_slice().into()).map_err(D::Error::custom)
     }
 }
-
 
 impl From<IpAddr> for FixedBytes<16> {
     #[inline]
@@ -96,7 +86,6 @@ impl From<IpAddr> for FixedBytes<16> {
         }
     }
 }
-
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Bytes(pub(crate) Vec<u8>);
@@ -160,9 +149,7 @@ impl<'de> Deserialize<'de> for Bytes {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = String::deserialize(deserializer)?;
-        Vec::from_base64_std(value.as_str())
-            .map(|v| v.into())
-            .map_err(D::Error::custom)
+        Vec::from_base64_std(value.as_str()).map(|v| v.into()).map_err(D::Error::custom)
     }
 }
 
@@ -203,26 +190,32 @@ pub(crate) trait Varint {
 impl Varint for BytesMut {
     fn put_varint(&mut self, n: u64) {
         match n {
-            0..=16 => { // PUSH0
+            0..=16 => {
+                // PUSH0
                 self.put_u8(0x10 + (n as u8));
             }
-            17..=127 => { // PUSH8
+            17..=127 => {
+                // PUSH8
                 self.put_u8(0x00);
                 self.put_u8(n as u8);
             }
-            128..=32_767 => { // PUSH16
+            128..=32_767 => {
+                // PUSH16
                 self.put_u8(0x01);
                 self.put_u16_le(n as u16);
             }
-            32_768..=2_147_483_647 => { // PUSH32
+            32_768..=2_147_483_647 => {
+                // PUSH32
                 self.put_u8(0x02);
                 self.put_u32_le(n as u32);
             }
-            2_147_483_648..=9_223_372_036_854_775_807 => { // PUSH64
+            2_147_483_648..=9_223_372_036_854_775_807 => {
+                // PUSH64
                 self.put_u8(0x3);
                 self.put_u64_le(n);
             }
-            _ => { // PUSH128, 9_223_372_036_854_775_808..=18_446_744_073_709_551_615
+            _ => {
+                // PUSH128, 9_223_372_036_854_775_808..=18_446_744_073_709_551_615
                 self.put_u8(0x04);
                 self.put_u128_le(n as u128);
             } // no PUSH256

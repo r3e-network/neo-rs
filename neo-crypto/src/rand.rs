@@ -2,6 +2,7 @@
 // All Rights Reserved
 
 use alloc::string::ToString;
+
 use neo_base::errors;
 
 pub trait CryptoRand {
@@ -18,7 +19,6 @@ pub trait CryptoRand {
     }
 }
 
-
 #[derive(Debug, PartialEq, Eq, Copy, Clone, errors::Error)]
 pub enum RandError {
     #[error("crypto-rand: gen random error {0}")]
@@ -32,20 +32,17 @@ impl CryptoRand for OsRand {
 
     #[inline]
     fn read_full(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
-        use rand_core::{RngCore, OsRng};
+        use rand_core::{OsRng, RngCore};
 
-        OsRng.try_fill_bytes(buf)
+        OsRng
+            .try_fill_bytes(buf)
             .map_err(|e| RandError::GenRandomError(e.raw_os_error().unwrap_or(0)))
     }
 }
 
 /// NOTE: buf length cannot too long.
 #[inline]
-pub fn rand_bytes(buf: &mut [u8]) -> Result<(), RandError> {
-    OsRand.read_full(buf)
-}
+pub fn rand_bytes(buf: &mut [u8]) -> Result<(), RandError> { OsRand.read_full(buf) }
 
 #[inline]
-pub fn read_u64() -> Result<u64, RandError> {
-    OsRand.read_u64()
-}
+pub fn read_u64() -> Result<u64, RandError> { OsRand.read_u64() }

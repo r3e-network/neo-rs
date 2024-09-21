@@ -1,7 +1,6 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 pub mod committee;
 pub mod context;
 pub mod message;
@@ -16,12 +15,10 @@ use alloc::string::String;
 use std::sync::mpsc;
 
 use neo_base::{encoding::bin::*, errors, time::unix_millis_now};
-use neo_core::{Keypair, tx, types::*};
+use neo_core::payload::{Extensible, CONSENSUS_CATEGORY};
 use neo_core::store::ChainStates;
-use neo_core::payload::{CONSENSUS_CATEGORY, Extensible};
-
+use neo_core::{tx, types::*, Keypair};
 pub use {committee::*, context::*, message::*, recovery::*, state_machine::*, timer::*};
-
 
 #[derive(Debug, Copy, Clone)]
 pub enum Broadcasts {
@@ -31,7 +28,6 @@ pub enum Broadcasts {
     Block,
     RecoveryRequest,
 }
-
 
 #[derive(Debug, Copy, Clone, Default, Hash, Eq, PartialEq)]
 pub struct HView {
@@ -48,10 +44,10 @@ impl HView {
 
     #[inline]
     pub fn is_previous(&self, other: &HView) -> bool {
-        self.height < other.height || (self.height == other.height && self.view_number < other.view_number)
+        self.height < other.height
+            || (self.height == other.height && self.view_number < other.view_number)
     }
 }
-
 
 #[derive(Debug)]
 pub struct DbftConfig {
@@ -71,7 +67,6 @@ pub struct DbftConfig {
     pub ignore_recovery_logs: bool,
 }
 
-
 impl Default for DbftConfig {
     fn default() -> Self {
         Self {
@@ -89,14 +84,12 @@ impl Default for DbftConfig {
     }
 }
 
-
 #[inline]
 pub fn next_block_unix_milli(now: u64, milli_increment: u64, prev_block_unix_milli: u64) -> u64 {
     let timestamp = milli_increment + prev_block_unix_milli;
     let now = now / milli_increment * milli_increment;
     core::cmp::max(now, timestamp)
 }
-
 
 pub struct DbftConsensus {
     settings: DbftConfig,
@@ -105,9 +98,13 @@ pub struct DbftConsensus {
     broadcast_rx: mpsc::Receiver<Payload>,
 }
 
-
 impl DbftConsensus {
-    pub fn new(settings: DbftConfig, self_keypair: Keypair, committee: Committee, chain: Box<dyn ChainStates>) -> Self {
+    pub fn new(
+        settings: DbftConfig,
+        self_keypair: Keypair,
+        committee: Committee,
+        chain: Box<dyn ChainStates>,
+    ) -> Self {
         let nr_validators = committee.nr_validators;
         let per_block_millis = settings.per_block_millis;
         let max_pending = settings.max_pending_broadcasts as usize;
@@ -144,8 +141,12 @@ impl DbftConsensus {
 
         // 2. Ignore the payload if current block height is out of [ValidBlockStart, ValidBlockEnd).
         let states = self.state_machine.states();
-        if states.block_index < payload.valid_block_start || states.block_index >= payload.valid_block_end {
-            return Err(OnPayloadError::InvalidPayload("current block index out of valid block range"));
+        if states.block_index < payload.valid_block_start
+            || states.block_index >= payload.valid_block_end
+        {
+            return Err(OnPayloadError::InvalidPayload(
+                "current block index out of valid block range",
+            ));
         }
 
         // 3. Ignore the payload if sender is not listed in the consensus allow list
@@ -159,13 +160,16 @@ impl DbftConsensus {
         Ok(())
     }
 
-
     fn check_message(&self, sender: &H160, meta: MessageMeta) -> Result<(), OnPayloadError> {
         // 7. Ignore the message if the message.BlockIndex is lower than the current block height
         let states = self.state_machine.states();
         if meta.block_index != states.block_index {
             // TODO: add to cached message if  meta.block_index > states.block_index
-            return Err(OnPayloadError::InvalidMessageMeta("block_index", states.block_index, meta));
+            return Err(OnPayloadError::InvalidMessageMeta(
+                "block_index",
+                states.block_index,
+                meta,
+            ));
         }
 
         let index = meta.validator_index as usize;
@@ -173,7 +177,11 @@ impl DbftConsensus {
 
         // 8.1. Ignore the message if the `validator_index` is out of the current consensus nodes.
         if index >= validators.len() {
-            return Err(OnPayloadError::InvalidMessageMeta("validator_index", validators.len() as u32, meta));
+            return Err(OnPayloadError::InvalidMessageMeta(
+                "validator_index",
+                validators.len() as u32,
+                meta,
+            ));
         }
 
         // 8.2. Ignore the message if the payload.Sender is different from the correct hash
@@ -189,12 +197,16 @@ impl DbftConsensus {
 
         // 6. Ignore the message if the consensus message data is in a wrong format
         let mut buffer = RefBuffer::from(payload.data.as_bytes());
-        let mut message: Payload = BinDecoder::decode_bin(&mut buffer)
-            .map_err(|err| OnPayloadError::DecodeError(err))?;
+        let mut message: Payload =
+            BinDecoder::decode_bin(&mut buffer).map_err(|err| OnPayloadError::DecodeError(err))?;
 
         match &mut message {
-            Payload::PrepareRequest(r) => r.message.payload_hash = payload.hash_fields_sha256().into(),
-            Payload::RecoveryRequest(r) => r.message.payload_hash = payload.hash_fields_sha256().into(),
+            Payload::PrepareRequest(r) => {
+                r.message.payload_hash = payload.hash_fields_sha256().into()
+            }
+            Payload::RecoveryRequest(r) => {
+                r.message.payload_hash = payload.hash_fields_sha256().into()
+            }
             _ => {}
         }
 
@@ -203,7 +215,6 @@ impl DbftConsensus {
         Ok(())
     }
 }
-
 
 #[derive(Debug, errors::Error)]
 pub enum OnPayloadError {
@@ -237,7 +248,8 @@ impl ToPayload for Payload {
             witnesses: tx::Witnesses::default(),
         };
 
-        let invocation = ext.sign(network, &sender.secret)
+        let invocation = ext
+            .sign(network, &sender.secret)
             .expect("`sign` payload should be ok")
             .to_invocation_script();
 

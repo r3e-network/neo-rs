@@ -2,10 +2,13 @@
 // All Rights Reserved
 
 use alloc::{string::String, vec::Vec};
+
 use serde::{Deserialize, Serialize};
 
-use crate::{types::{Extra, H160}, contract::NamedParamType};
-
+use crate::{
+    contract::NamedParamType,
+    types::{Extra, H160},
+};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Scrypt {
@@ -27,7 +30,6 @@ pub struct Contract {
 pub struct Account {
     // #[serde(skip)]
     // script_hash: ScriptHash,
-
     pub address: String,
 
     pub label: Option<String>,
@@ -55,7 +57,6 @@ impl Account {
 pub struct Nep6Wallet {
     // #[serde(skip)]
     // network: u32,
-
     pub name: Option<String>,
 
     pub version: String,
@@ -87,11 +88,10 @@ pub struct Token {
     pub standard: String,
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{PublicKey, types::ToNeo3Address, wallet::nep2::Nep2KeyDecrypt};
+    use crate::{types::ToNeo3Address, wallet::nep2::Nep2KeyDecrypt, PublicKey};
 
     #[test]
     #[ignore = "It is too time-consuming"]
@@ -118,8 +118,7 @@ mod test {
     "extra": null
 }"#;
 
-        let nep6: Nep6Wallet = serde_json::from_str(src)
-            .expect("serde-json from_str should be ok");
+        let nep6: Nep6Wallet = serde_json::from_str(src).expect("serde-json from_str should be ok");
 
         assert_eq!(&nep6.version, "3.0");
         assert!(nep6.name.is_none());
@@ -127,14 +126,15 @@ mod test {
 
         let contract = nep6.accounts[0].contract.as_ref().expect("contract should exist");
         assert_eq!(contract.parameters[0].name, "signature");
-        assert_eq!(nep6.accounts[0].key, "6PYUUUFei9PBBfVkSn8q7hFCnewWFRBKPxcn6Kz6Bmk3FqWyLyuTQE2XFH");
+        assert_eq!(
+            nep6.accounts[0].key,
+            "6PYUUUFei9PBBfVkSn8q7hFCnewWFRBKPxcn6Kz6Bmk3FqWyLyuTQE2XFH"
+        );
 
-        let sk = "city of zion".decrypt_nep2_key(&nep6.accounts[0].key)
-            .expect("decrypt should be ok");
+        let sk =
+            "city of zion".decrypt_nep2_key(&nep6.accounts[0].key).expect("decrypt should be ok");
 
-        let addr = PublicKey::try_from(&sk)
-            .expect("to public key should be ok")
-            .to_neo3_address();
+        let addr = PublicKey::try_from(&sk).expect("to public key should be ok").to_neo3_address();
 
         assert_eq!(addr.as_str(), &nep6.accounts[0].address);
     }

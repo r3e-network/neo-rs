@@ -1,8 +1,8 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use neo_base::math::U256;
+
 use crate::{contract::Param, types::H160};
 
 /// NEP-17 is a Fungible-Token Contract
@@ -21,7 +21,13 @@ pub trait Nep17 {
 
     fn balance_of(&self, account: &H160) -> U256;
 
-    fn transfer(&self, from: &H160, to: &H160, amount: &U256, data: &Param) -> Result<bool, Self::TransferError>;
+    fn transfer(
+        &self,
+        from: &H160,
+        to: &H160,
+        amount: &U256,
+        data: &Param,
+    ) -> Result<bool, Self::TransferError>;
 }
 
 /// A triggered event when the `transfer` of a Nep17 contract is called.

@@ -1,19 +1,17 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use neo_base::encoding::bin::*;
-use neo_core::types::{H256, Sign};
-use crate::dbft_v2::*;
+use neo_core::types::{Sign, H256};
 
+use crate::dbft_v2::*;
 
 pub type ViewNumber = u8;
 
 pub type ViewIndex = u8;
-
 
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 #[bin(repr = u8)]
@@ -25,7 +23,6 @@ pub enum MessageType {
     RecoveryRequest = 0x40,
     RecoveryMessage = 0x41,
 }
-
 
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 pub struct MessageMeta {
@@ -40,7 +37,6 @@ impl MessageMeta {
         HView { height: self.block_index, view_number: self.view_number }
     }
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct Message<M: Debug + Clone + BinEncoder + BinDecoder> {
@@ -110,7 +106,6 @@ pub enum Payload {
     RecoveryMessage(Message<RecoveryMessage>),
 }
 
-
 impl Payload {
     pub fn message_type(&self) -> MessageType {
         use MessageType::*;
@@ -136,7 +131,6 @@ impl Payload {
     }
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct PrepareRequest {
     pub version: u32,
@@ -150,7 +144,6 @@ pub struct PrepareRequest {
     pub payload_hash: H256,
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct PrepareResponse {
     pub preparation: H256,
@@ -158,9 +151,7 @@ pub struct PrepareResponse {
 
 impl PrepareResponse {
     #[inline]
-    pub fn new(prepare_request_hash: H256) -> Self {
-        Self { preparation: prepare_request_hash }
-    }
+    pub fn new(prepare_request_hash: H256) -> Self { Self { preparation: prepare_request_hash } }
 
     #[inline]
     pub fn new_payload(meta: MessageMeta, prepare_request_hash: H256) -> Payload {
@@ -180,12 +171,10 @@ pub enum ChangeViewReason {
     Unknown = 0xff,
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct Commit {
     pub sign: Sign,
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct ChangeViewRequest {
@@ -194,4 +183,3 @@ pub struct ChangeViewRequest {
     pub unix_milli: u64,
     pub reason: ChangeViewReason,
 }
-

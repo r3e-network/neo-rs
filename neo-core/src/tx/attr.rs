@@ -1,11 +1,10 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+use neo_base::encoding::bin::*;
 use serde::{Deserialize, Serialize};
 
-use neo_base::encoding::bin::*;
 use crate::types::{Bytes, H256};
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, BinEncode, BinDecode)]
 #[bin(repr = u8)]
@@ -87,7 +86,7 @@ impl TxAttr {
     pub fn allow_multiple(&self) -> bool {
         match self {
             TxAttr::Conflicts(_) => true,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -100,8 +99,7 @@ mod test {
     fn test_tx_attr_json() {
         let attr = TxAttr::NotValidBefore(NotValidBefore { height: 123 });
 
-        let attr = serde_json::to_string(&attr)
-            .expect("json encode should be ok");
+        let attr = serde_json::to_string(&attr).expect("json encode should be ok");
 
         assert_eq!(&attr, r#"{"type":"NotValidBefore","height":123}"#);
     }

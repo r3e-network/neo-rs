@@ -1,15 +1,14 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use bytes::BytesMut;
-
 use neo_base::encoding::bin::HashFieldsSha256;
-use neo_crypto::ecdsa::{DigestVerify, ECC256_SIGN_SIZE, Secp256r1Sign, Sign as EcdsaSign, SignError};
+use neo_crypto::ecdsa::{
+    DigestVerify, Secp256r1Sign, Sign as EcdsaSign, SignError, ECC256_SIGN_SIZE,
+};
 
+use crate::types::{FixedBytes, Script, Varbytes, SIGN_DATA_SIZE};
 use crate::{PrivateKey, PublicKey};
-use crate::types::{FixedBytes, Script, SIGN_DATA_SIZE, Varbytes};
-
 
 pub type Sign = FixedBytes<ECC256_SIGN_SIZE>;
 
@@ -20,9 +19,7 @@ impl Sign {
         buf.into()
     }
 
-    pub fn as_secp256r1_sign(&self) -> Secp256r1Sign {
-        Secp256r1Sign::from(self.0.clone())
-    }
+    pub fn as_secp256r1_sign(&self) -> Secp256r1Sign { Secp256r1Sign::from(self.0.clone()) }
 }
 
 impl Into<Secp256r1Sign> for Sign {
@@ -51,7 +48,6 @@ impl AsRef<[u8; SIGN_DATA_SIZE]> for SignData {
     fn as_ref(&self) -> &[u8; SIGN_DATA_SIZE] { &self.0 }
 }
 
-
 pub trait ToSignData {
     fn to_sign_data(&self, network: u32) -> SignData;
 }
@@ -67,7 +63,6 @@ impl<T: HashFieldsSha256> ToSignData for T {
     }
 }
 
-
 pub trait ToSign {
     fn to_sign(&self, network: u32, key: &PrivateKey) -> Result<Sign, SignError>;
 }
@@ -75,11 +70,9 @@ pub trait ToSign {
 impl<T: ToSignData> ToSign for T {
     fn to_sign(&self, network: u32, key: &PrivateKey) -> Result<Sign, SignError> {
         let data = self.to_sign_data(network);
-        key.sign(data.as_bytes())
-            .map(|sign| Sign::from(sign))
+        key.sign(data.as_bytes()).map(|sign| Sign::from(sign))
     }
 }
-
 
 pub trait SignVerify {
     type Sign: ?Sized;
@@ -125,7 +118,6 @@ impl<T: HashFieldsSha256> MultiSignVerify for T {
         true
     }
 }
-
 
 #[cfg(test)]
 mod test {

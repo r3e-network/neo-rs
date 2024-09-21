@@ -4,15 +4,14 @@
 use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
-use crate::types::H256;
-
 pub use {blocks::*, extensible::*, nodes::*, p2p::*};
 
-pub mod blocks;
-pub mod nodes;
-pub mod extensible;
-pub mod p2p;
+use crate::types::H256;
 
+pub mod blocks;
+pub mod extensible;
+pub mod nodes;
+pub mod p2p;
 
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 #[bin(repr = u8)]
@@ -20,7 +19,6 @@ pub enum MessageFlag {
     None = 0x00,
     Compressed = 0x01,
 }
-
 
 /// i.e InvPayload
 #[derive(Debug, Clone, BinEncode, BinDecode)]
@@ -34,15 +32,12 @@ pub enum Inventory {
 
     #[bin(tag = 0x2e)]
     Extensible(Vec<H256>),
-
     // #[bin(tag = 0x50)]
     // P2pNotaryRequest(Vec<H256>),
 }
 
-
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 pub struct Null;
-
 
 #[cfg(test)]
 mod test {
@@ -59,7 +54,6 @@ mod test {
         assert_eq!(w.len(), 0);
 
         let mut r = Buffer::from(w);
-        let _ = Null::decode_bin(&mut r)
-            .expect("`decode_bin` should be ok");
+        let _ = Null::decode_bin(&mut r).expect("`decode_bin` should be ok");
     }
 }

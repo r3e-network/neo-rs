@@ -1,17 +1,14 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::vec::Vec;
 
+use neo_base::encoding::bin::*;
 use serde::{Deserialize, Serialize};
 
-use neo_base::encoding::bin::*;
-use crate::{PublicKey, tx::*, types::H160};
-
+use crate::{tx::*, types::H160, PublicKey};
 
 pub const MAX_ALLOWED_GROUPS: usize = 16;
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignerType {
@@ -19,7 +16,6 @@ pub enum SignerType {
     Contract = 0x01,
     Tx = 0x02,
 }
-
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Signer {
@@ -100,4 +96,3 @@ impl BinDecoder for Signer {
         Ok(signer)
     }
 }
-

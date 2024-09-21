@@ -1,14 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::vec::Vec;
+
+use neo_base::encoding::bin::*;
+use neo_base::encoding::{encode_hex_u64, decode_hex_u64};
 use serde::{Deserialize, Serialize};
 
-use neo_base::encoding::{bin::*, encode_hex_u64, decode_hex_u64};
-use crate::{PublicKey, tx::{Witnesses, Witness, Tx, StatedTx}};
-use crate::types::{H160, H256, Script, ToBftHash};
-
+use crate::tx::{StatedTx, Tx, Witness, Witnesses};
+use crate::types::{Script, ToBftHash, H160, H256};
+use crate::PublicKey;
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, InnerBinDecode)]
 pub struct Header {
@@ -47,7 +48,6 @@ pub struct Header {
 
     /// Script used to validate the block. Only one is supported at now.
     pub witnesses: Witnesses,
-
     // #[serde(skip)]
     // pub state_root_enabled: bool,
 
@@ -58,13 +58,9 @@ pub struct Header {
 
 impl Header {
     #[inline]
-    pub fn hash(&self) -> H256 {
-        self.hash.unwrap_or_else(|| self.hash_fields_sha256().into())
-    }
+    pub fn hash(&self) -> H256 { self.hash.unwrap_or_else(|| self.hash_fields_sha256().into()) }
 
-    pub fn calc_hash(&mut self) {
-        self.hash = Some(self.hash_fields_sha256().into());
-    }
+    pub fn calc_hash(&mut self) { self.hash = Some(self.hash_fields_sha256().into()); }
 }
 
 impl EncodeHashFields for Header {
@@ -74,7 +70,7 @@ impl EncodeHashFields for Header {
         self.merkle_root.encode_bin(w); // 32
         self.unix_milli.encode_bin(w); // 8
         self.nonce.encode_bin(w); // 8
-        self.index.encode_bin(w);  // 4
+        self.index.encode_bin(w); // 4
         self.primary.encode_bin(w); // 1
         self.next_consensus.encode_bin(w); // 20
         // if self.state_root_enabled {
@@ -111,8 +107,7 @@ impl Block {
     pub fn block_index(&self) -> u32 { self.header.index }
 
     pub fn new_genesis_block(validators: &[PublicKey]) -> Self {
-        let next_consensus = validators.to_bft_hash()
-            .expect("`to_bft_hash` should be ok");
+        let next_consensus = validators.to_bft_hash().expect("`to_bft_hash` should be ok");
 
         // 0x11 is op-code PUSH1
         let witness = Witness::new(Script::default(), Script::from(&b"\x11"[..]));
@@ -142,11 +137,8 @@ impl Block {
 }
 
 impl EncodeHashFields for Block {
-    fn encode_hash_fields(&self, w: &mut impl BinWriter) {
-        self.header.encode_hash_fields(w);
-    }
+    fn encode_hash_fields(&self, w: &mut impl BinWriter) { self.header.encode_hash_fields(w); }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, BinDecode)]
 pub struct TrimmedBlock {
@@ -156,7 +148,6 @@ pub struct TrimmedBlock {
     pub hashes: Vec<H256>,
 }
 
-
 impl TrimmedBlock {
     pub fn hash(&self) -> H256 { self.header.hash() }
 
@@ -164,7 +155,6 @@ impl TrimmedBlock {
 
     pub fn block_index(&self) -> u32 { self.header.index }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct StatedBlock {
@@ -203,13 +193,12 @@ pub trait IndexToHash {
     fn index_to_hash(&self, height: u32) -> Option<H256>;
 }
 
-
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::tx::Witness;
     use neo_crypto::{rand::OsRand, secp256r1::GenKeypair};
 
+    use super::*;
+    use crate::tx::Witness;
 
     #[test]
     fn test_header_encoding() {
@@ -227,11 +216,9 @@ mod test {
         };
 
         head.calc_hash();
-        let encoded = serde_json::to_string(&head)
-            .expect("json encode should be ok");
+        let encoded = serde_json::to_string(&head).expect("json encode should be ok");
 
-        let got: Header = serde_json::from_str(&encoded)
-            .expect("json decode should be ok");
+        let got: Header = serde_json::from_str(&encoded).expect("json decode should be ok");
 
         assert_eq!(head.hash, got.hash);
         assert_eq!(head.version, got.version);
@@ -244,8 +231,7 @@ mod test {
 
     #[test]
     fn test_genesis_block() {
-        let (_, pk1) = OsRand::gen_keypair(&mut OsRand)
-            .expect("gen_keypair should be ok");
+        let (_, pk1) = OsRand::gen_keypair(&mut OsRand).expect("gen_keypair should be ok");
 
         let genesis = Block::new_genesis_block(core::array::from_ref(&pk1));
         assert_eq!(genesis.header.index, 0);

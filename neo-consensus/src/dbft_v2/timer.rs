@@ -1,11 +1,10 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use std::ops::DerefMut;
 use std::sync::{mpsc, Mutex};
-use crate::dbft_v2::{HView, ViewNumber};
 
+use crate::dbft_v2::{HView, ViewNumber};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Timer {
@@ -36,11 +35,8 @@ pub struct ViewTimer {
 
 impl ViewTimer {
     pub fn new(unix_milli_now: fn() -> u64, tx: mpsc::SyncSender<Timer>) -> Self {
-        let timer = Timer {
-            view: HView::default(),
-            start_unix_milli: unix_milli_now(),
-            delay_millis: 0,
-        };
+        let timer =
+            Timer { view: HView::default(), start_unix_milli: unix_milli_now(), delay_millis: 0 };
         Self {
             driver: timer::Timer::new(),
             unix_milli_now,
@@ -83,7 +79,6 @@ impl ViewTimer {
     }
 }
 
-
 #[inline]
 pub fn millis_on_setting(view_number: ViewNumber, per_block_millis: u64) -> u64 {
     per_block_millis << core::cmp::min(32, view_number + 1)
@@ -98,7 +93,6 @@ pub fn millis_on_resetting(primary: bool, view_number: ViewNumber, per_block_mil
     }
 }
 
-
 #[inline]
 pub fn millis_on_timeout(view_number: ViewNumber, per_block_millis: u64) -> u64 {
     if view_number == 0 {
@@ -111,6 +105,7 @@ pub fn millis_on_timeout(view_number: ViewNumber, per_block_millis: u64) -> u64 
 #[cfg(test)]
 mod test {
     use neo_base::time::unix_millis_now;
+
     use super::*;
 
     #[test]

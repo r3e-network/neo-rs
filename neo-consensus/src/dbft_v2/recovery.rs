@@ -1,14 +1,13 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use neo_base::encoding::bin::*;
-use neo_core::types::{Bytes, H256, H256_SIZE, Sign};
-use crate::dbft_v2::*;
+use neo_core::types::{Bytes, Sign, H256, H256_SIZE};
 
+use crate::dbft_v2::*;
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct RecoveryRequest {
@@ -18,7 +17,6 @@ pub struct RecoveryRequest {
     #[bin(ignore)]
     pub payload_hash: H256,
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct RecoveryMessage {
@@ -36,29 +34,29 @@ impl RecoveryMessage {
         }
     }
 
-    pub fn prepare_responses(&self, block_index: u32, view_number: ViewNumber) -> Vec<Message<PrepareResponse>> {
+    pub fn prepare_responses(
+        &self,
+        block_index: u32,
+        view_number: ViewNumber,
+    ) -> Vec<Message<PrepareResponse>> {
         let PrepareStage::Preparation(Some(ref hash)) = self.prepare_stage else {
             return Vec::new();
         };
 
-        self.preparations.iter()
+        self.preparations
+            .iter()
             .map(|p| p.to_prepare_response(block_index, view_number, hash.clone()))
             .collect()
     }
 
     pub fn commits(&self, block_index: u32) -> Vec<Message<Commit>> {
-        self.commits.iter()
-            .map(|cc| cc.to_commit(block_index))
-            .collect()
+        self.commits.iter().map(|cc| cc.to_commit(block_index)).collect()
     }
 
     pub fn change_views(&self, block_index: u32) -> Vec<Message<ChangeViewRequest>> {
-        self.change_views.iter()
-            .map(|cv| cv.to_change_view_request(block_index))
-            .collect()
+        self.change_views.iter().map(|cv| cv.to_change_view_request(block_index)).collect()
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub enum PrepareStage {
@@ -89,7 +87,13 @@ impl BinEncoder for PrepareStage {
     fn bin_size(&self) -> usize {
         match self {
             Self::Prepare(p) => p.bin_size(),
-            Self::Preparation(p) => if p.is_none() { 1 } else { 1 + H256_SIZE },
+            Self::Preparation(p) => {
+                if p.is_none() {
+                    1
+                } else {
+                    1 + H256_SIZE
+                }
+            }
         }
     }
 }
@@ -140,7 +144,6 @@ impl ChangeViewCompact {
     }
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct CommitCompact {
     pub view_number: ViewNumber,
@@ -162,7 +165,6 @@ impl CommitCompact {
     }
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct PreparationCompact {
     pub validator_index: ViewIndex,
@@ -170,7 +172,12 @@ pub struct PreparationCompact {
 }
 
 impl PreparationCompact {
-    pub fn to_prepare_response(&self, block_index: u32, view_number: ViewNumber, preparation: H256) -> Message<PrepareResponse> {
+    pub fn to_prepare_response(
+        &self,
+        block_index: u32,
+        view_number: ViewNumber,
+        preparation: H256,
+    ) -> Message<PrepareResponse> {
         let validator_index = self.validator_index;
         Message {
             meta: MessageMeta { block_index, validator_index, view_number },

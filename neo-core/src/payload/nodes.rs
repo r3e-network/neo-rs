@@ -1,19 +1,17 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
 use core::net::SocketAddr;
 
 use neo_base::encoding::bin::*;
-use crate::types::{Bytes, FixedBytes};
 
+use crate::types::{Bytes, FixedBytes};
 
 const MAX_CAPABILITIES: usize = 32;
 const MAX_USER_AGENT_SIZE: usize = 1024;
 const MAX_IP_ADDR_SIZE: usize = 16;
 // const MAX_FILTER_SIZE: usize = 520;
-
 
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 #[bin(repr = u8)]
@@ -25,7 +23,6 @@ pub enum Capability {
     FullNode { start_height: u32 },
 }
 
-
 pub(crate) trait NodeCapability {
     fn port(&self) -> Option<u16>;
 
@@ -34,19 +31,17 @@ pub(crate) trait NodeCapability {
 
 impl NodeCapability for Vec<Capability> {
     fn port(&self) -> Option<u16> {
-        self.iter()
-            .find_map(|x| match x {
-                Capability::TcpServer { port } => Some(*port),
-                Capability::FullNode { .. } => None,
-            })
+        self.iter().find_map(|x| match x {
+            Capability::TcpServer { port } => Some(*port),
+            Capability::FullNode { .. } => None,
+        })
     }
 
     fn start_height(&self) -> Option<u32> {
-        self.iter()
-            .find_map(|x| match x {
-                Capability::TcpServer { .. } => None,
-                Capability::FullNode { start_height } => Some(*start_height),
-            })
+        self.iter().find_map(|x| match x {
+            Capability::TcpServer { .. } => None,
+            Capability::FullNode { start_height } => Some(*start_height),
+        })
     }
 }
 
@@ -64,21 +59,14 @@ pub struct Version {
 
 impl Version {
     #[inline]
-    pub fn port(&self) -> Option<u16> {
-        self.capabilities.port()
-    }
+    pub fn port(&self) -> Option<u16> { self.capabilities.port() }
 
     #[inline]
-    pub fn full_node(&self) -> bool {
-        self.start_height().is_some()
-    }
+    pub fn full_node(&self) -> bool { self.start_height().is_some() }
 
     #[inline]
-    pub fn start_height(&self) -> Option<u32> {
-        self.capabilities.start_height()
-    }
+    pub fn start_height(&self) -> Option<u32> { self.capabilities.start_height() }
 }
-
 
 impl BinDecoder for Version {
     fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
@@ -97,7 +85,6 @@ impl BinDecoder for Version {
     }
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct NodeAddr {
     /// i.e unix timestamp in second, UTC
@@ -110,27 +97,20 @@ impl NodeAddr {
     #[inline]
     pub fn service_addr(&self) -> Option<SocketAddr> {
         let ip: [u8; MAX_IP_ADDR_SIZE] = self.ip.clone().into();
-        self.capabilities.port()
-            .map(|port| SocketAddr::new(ip.into(), port))
+        self.capabilities.port().map(|port| SocketAddr::new(ip.into(), port))
     }
 
     #[inline]
-    pub fn full_node(&self) -> bool {
-        self.capabilities.start_height().is_some()
-    }
+    pub fn full_node(&self) -> bool { self.capabilities.start_height().is_some() }
 
     #[inline]
-    pub fn start_height(&self) -> Option<u32> {
-        self.capabilities.start_height()
-    }
+    pub fn start_height(&self) -> Option<u32> { self.capabilities.start_height() }
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct NodeList {
     pub nodes: Vec<NodeAddr>,
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct Ping {
@@ -142,7 +122,6 @@ pub struct Ping {
 }
 
 pub type Pong = Ping;
-
 
 // #[derive(Debug, Clone, BinEncode, BinDecode)]
 // pub struct NotaryRequest {
@@ -159,12 +138,10 @@ pub type Pong = Ping;
 //     }
 // }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct FilterAdd {
     pub data: Bytes,
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct FilterLoad {

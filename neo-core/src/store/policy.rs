@@ -1,7 +1,6 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 pub const DEFAULT_EXEC_FEE_FACTOR: u64 = 30;
 pub const DEFAULT_FEE_PER_BYTE: u64 = 1000;
 pub const DEFAULT_ATTR_FEE: u64 = 0;
@@ -19,11 +18,9 @@ pub const KEY_STORAGE_PRICE: u8 = 19;
 pub const PREFIX_ATTR_FEE: u8 = 20;
 pub const PREFIX_BLOCKED_ACCOUNTS: u8 = 15;
 
-
 pub struct Policy {
     //
 }
-
 
 #[cfg(test)]
 mod test {

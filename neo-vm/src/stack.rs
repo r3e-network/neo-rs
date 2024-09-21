@@ -1,18 +1,16 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+use alloc::vec::Vec;
 
-use alloc::{rc::Rc, vec::Vec};
-use crate::{StackItem, References};
-
+use crate::{References, StackItem};
 
 // i.e. EvaluationStack
 pub struct ExecStack {
     limit: usize,
-    items: Vec<Rc<StackItem>>,
+    items: Vec<StackItem>,
     references: References,
 }
-
 
 impl ExecStack {
     pub fn new(limit: usize, references: References) -> Self {
@@ -26,7 +24,7 @@ impl ExecStack {
     pub fn len(&self) -> usize { self.items.len() }
 
     #[inline]
-    pub fn push(&mut self, item: Rc<StackItem>) -> bool {
+    pub fn push(&mut self, item: StackItem) -> bool {
         if self.items.len() >= self.limit {
             return false;
         }
@@ -37,17 +35,13 @@ impl ExecStack {
     }
 
     #[inline]
-    pub fn pop(&mut self) -> Option<Rc<StackItem>> {
-        self.items.pop()
-            .inspect(|x| self.references.remove(x))
+    pub fn pop(&mut self) -> Option<StackItem> {
+        self.items.pop().inspect(|x| self.references.remove(x))
     }
 
     #[inline]
-    pub fn top(&self) -> Option<Rc<StackItem>> {
-        self.items.last().cloned()
-    }
+    pub fn top(&self) -> Option<&StackItem> { self.items.last() }
 }
-
 
 #[cfg(test)]
 mod test {

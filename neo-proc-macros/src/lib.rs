@@ -3,7 +3,6 @@
 
 mod bin;
 
-
 #[proc_macro_derive(BinEncode, attributes(bin))]
 pub fn derive_bin_encode(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     bin::encode_bin(syn::parse_macro_input!(input as syn::DeriveInput))

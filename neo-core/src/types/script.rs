@@ -4,9 +4,9 @@
 use alloc::vec::Vec;
 
 use bytes::BytesMut;
+use neo_base::encoding::bin::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use neo_base::encoding::bin::*;
 use crate::types::{Bytes, CheckSign, ToCheckSign};
 
 // The maximum length of invocation-script.
@@ -15,7 +15,6 @@ pub const MAX_INVOCATION_SCRIPT: usize = 1024;
 
 // The maximum length of verification-script.
 pub const MAX_VERIFICATION_SCRIPT: usize = 1024;
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScriptType {
@@ -47,7 +46,6 @@ impl From<BytesMut> for Script {
     fn from(value: BytesMut) -> Self { Self { script: Bytes(value.into()) } }
 }
 
-
 impl AsRef<[u8]> for Script {
     fn as_ref(&self) -> &[u8] { self.script.as_ref() }
 }
@@ -70,8 +68,6 @@ pub trait ToVerificationScript {
     fn to_verification_script(&self) -> CheckSign;
 }
 
-
 impl<T: ToCheckSign> ToVerificationScript for T {
     fn to_verification_script(&self) -> CheckSign { self.to_check_sign() }
 }
-

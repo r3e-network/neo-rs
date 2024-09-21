@@ -1,12 +1,11 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{vec, vec::Vec};
 
 use neo_base::hash::{Sha256, SlicesSha256};
-use crate::types::H256;
 
+use crate::types::H256;
 
 #[allow(dead_code)]
 pub struct MerkleTree {
@@ -65,7 +64,6 @@ fn build_merkle_nodes(hashes: &[H256]) -> Vec<H256> {
     nodes
 }
 
-
 fn inner_merkle_nodes(nodes: usize) -> usize {
     if nodes == 0 || nodes == 1 {
         return 1;
@@ -91,7 +89,6 @@ fn children_sha256(off: usize, hashes: &[H256]) -> H256 {
 
     two.iter().slices_sha256().sha256().into()
 }
-
 
 /// Calculating the sha256 merkle-root
 pub trait MerkleSha256 {
@@ -129,13 +126,16 @@ impl<T: AsRef<[H256]>> MerkleSha256 for T {
     }
 }
 
-
 #[cfg(test)]
 mod test {
-    use super::*;
-    use neo_base::{hash::Sha256, encoding::hex::{FromRevHex, ToHex}, bytes::ToArray};
-    use crate::types::H256;
+    use neo_base::{
+        bytes::ToArray,
+        encoding::hex::{FromRevHex, ToHex},
+        hash::Sha256,
+    };
 
+    use super::*;
+    use crate::types::H256;
 
     #[test]
     fn test_inner_merkle_nodes() {
@@ -163,9 +163,7 @@ mod test {
     }
 
     impl MerkleHash for [H256; 2] {
-        fn merkle_hash(&self) -> H256 {
-            self.iter().slices_sha256().sha256().into()
-        }
+        fn merkle_hash(&self) -> H256 { self.iter().slices_sha256().sha256().into() }
     }
 
     #[test]
@@ -196,14 +194,20 @@ mod test {
         let tree = MerkleTree::new(&[one, two, three]);
         assert_eq!(tree.nodes.len(), 7);
         assert_eq!(tree.leaves_offset, 4);
-        assert_eq!(tree.root, [[one, two].merkle_hash(), [three, three].merkle_hash()].merkle_hash());
+        assert_eq!(
+            tree.root,
+            [[one, two].merkle_hash(), [three, three].merkle_hash()].merkle_hash()
+        );
         assert_eq!([one, two, three].merkle_sha256(), tree.root);
 
         let four = "Ok".sha256().into();
         let tree = MerkleTree::new(&[one, two, three, four]);
         assert_eq!(tree.nodes.len(), 8);
         assert_eq!(tree.leaves_offset, 4);
-        assert_eq!(tree.root, [[one, two].merkle_hash(), [three, four].merkle_hash()].merkle_hash());
+        assert_eq!(
+            tree.root,
+            [[one, two].merkle_hash(), [three, four].merkle_hash()].merkle_hash()
+        );
     }
 
     #[test]
@@ -221,10 +225,10 @@ mod test {
             "c9d251abfc20a0d6eeac2d5a93b77a6a0632a679a07decea2c809aead89bb503",
             "d92c72873f2929c621ec06433da3053db25ee396b70c83d53abd40801823f66c",
         ]
-            .iter()
-            .map(|v| Vec::from_rev_hex(v).expect("decode should be ok"))
-            .map(|v| H256::from(v.to_array()))
-            .collect::<Vec<_>>();
+        .iter()
+        .map(|v| Vec::from_rev_hex(v).expect("decode should be ok"))
+        .map(|v| H256::from(v.to_array()))
+        .collect::<Vec<_>>();
 
         let should = "6dbf2b2c9aceda3a307a4e74c4b5a2b271b3b16be5ace7a250c31088c8dbc209";
         let tree = MerkleTree::new(&hashes);
@@ -242,10 +246,10 @@ mod test {
             "602c79718b16e442de58778e148d0b1084e3b2dffd5de6b7b16cee7969282de7",
             "3631f66024ca6f5b033d7e0809eb993443374830025af904fb51b0334f127cda",
         ]
-            .iter()
-            .map(|v| Vec::from_rev_hex(v).expect("decode should be ok"))
-            .map(|v| H256::from(v.to_array()))
-            .collect::<Vec<_>>();
+        .iter()
+        .map(|v| Vec::from_rev_hex(v).expect("decode should be ok"))
+        .map(|v| H256::from(v.to_array()))
+        .collect::<Vec<_>>();
 
         let should = "f41bc036e39b0d6b0579c851c6fde83af802fa4e57bec0bc3365eae3abf43f80";
         let tree = MerkleTree::new(&hashes);
@@ -271,10 +275,10 @@ mod test {
             "6ef2237b6c8683f626269027050c45cc4be89042ee99e4e89bfd9d9fbd24da19",
             "6fd5154af55b4a1e4a1a5272e33238b2a2da12a30fa06af4f740d207e54ed495",
         ]
-            .iter()
-            .map(|v| Vec::from_rev_hex(v).expect("decode should be ok"))
-            .map(|v| H256::from(v.to_array()))
-            .collect::<Vec<_>>();
+        .iter()
+        .map(|v| Vec::from_rev_hex(v).expect("decode should be ok"))
+        .map(|v| H256::from(v.to_array()))
+        .collect::<Vec<_>>();
 
         let should = "d788595d0ba056b421e9f8a90c5aa01114c6906c408ecd4941833a04d89a4842";
         let tree = MerkleTree::new(&hashes);

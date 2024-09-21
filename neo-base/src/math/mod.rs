@@ -1,13 +1,11 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
-pub use {u160::*, u256::*, i256::*};
+pub use {i256::*, u160::*, u256::*};
 
 pub mod i256;
-pub mod u256;
 pub mod u160;
-
+pub mod u256;
 
 pub trait Widening: Sized {
     const BITS: u8;
@@ -52,8 +50,7 @@ impl Widening for u64 {
 
     #[inline]
     fn mul_with_carrying(self, rhs: Self, carry: Self) -> (Self, Self) {
-        let r = carry as Self::DoubleWidth +
-            self as Self::DoubleWidth * rhs as Self::DoubleWidth;
+        let r = carry as Self::DoubleWidth + self as Self::DoubleWidth * rhs as Self::DoubleWidth;
         (r as Self, (r >> Self::BITS) as Self)
     }
 
@@ -63,7 +60,6 @@ impl Widening for u64 {
         (r as Self, (r >> Self::BITS) as Self)
     }
 }
-
 
 #[macro_export]
 macro_rules! cmp_elem {
@@ -75,28 +71,22 @@ macro_rules! cmp_elem {
     };
 }
 
-
 /// Linear Congruential Generator
 pub struct LcgRand {
     current: u64,
 }
 
-
 impl LcgRand {
     #[inline]
-    pub fn new(seed: u64) -> LcgRand {
-        LcgRand { current: seed }
-    }
+    pub fn new(seed: u64) -> LcgRand { LcgRand { current: seed } }
 
     #[inline]
     pub fn next(&mut self) -> u64 {
-        self.current = self.current
-            .wrapping_mul(6364136223846793005u64)
-            .wrapping_add(1442695040888963407u64);
+        self.current =
+            self.current.wrapping_mul(6364136223846793005u64).wrapping_add(1442695040888963407u64);
         self.current
     }
 }
-
 
 #[cfg(test)]
 mod test {

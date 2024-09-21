@@ -1,20 +1,23 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
-use alloc::{rc::Rc, vec, vec::Vec};
+use alloc::{rc::Rc, vec::Vec};
+use core::cell::{Ref, RefCell, RefMut};
 use core::hash::{Hash, Hasher};
 
-use hashbrown::HashMap;
+use hashbrown::hash_map::DefaultHashBuilder;
+use neo_base::{errors, math::I256};
 use num_enum::TryFromPrimitive;
 
-use neo_base::math::I256;
-use crate::Interop;
+use crate::{Interop, StackItem::*};
 
+pub const MAX_INTEGER_SIZE: usize = 32;
+
+pub type IndexMap = indexmap::IndexMap<StackItem, StackItem, DefaultHashBuilder>;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
-pub enum StackItemType {
+pub enum ItemType {
     Any = 0x00,
     Pointer = 0x10,
     Boolean = 0x20,
@@ -27,48 +30,168 @@ pub enum StackItemType {
     InteropInterface = 0x60,
 }
 
+/// Array is a reference type
+#[derive(Default, Clone, Eq, PartialEq)]
+pub struct Array {
+    items: Rc<RefCell<Vec<StackItem>>>,
+}
+
+impl Array {
+    #[inline]
+    pub fn items(&self) -> Ref<'_, Vec<StackItem>> { self.items.borrow() }
+
+    #[inline]
+    pub fn items_mut(&self) -> RefMut<'_, Vec<StackItem>> { self.items.borrow_mut() }
+
+    #[inline]
+    pub fn strong_count(&self) -> usize { Rc::strong_count(&self.items) }
+}
+
+impl Hash for Array {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.items.borrow().iter().for_each(|x| x.hash(state));
+    }
+}
+
+/// Struct is a value type
+#[derive(Default, Clone, Hash, Eq, PartialEq)]
+pub struct Struct {
+    items: Vec<StackItem>,
+}
+
+impl Struct {
+    #[inline]
+    pub fn items(&self) -> &[StackItem] { &self.items }
+}
+
+/// Map is a reference type
+#[derive(Default, Clone, Eq, PartialEq)]
+pub struct Map {
+    items: Rc<RefCell<IndexMap>>,
+}
+
+impl Map {
+    #[inline]
+    pub fn with_capacity(n: usize) -> Self {
+        Map { items: Rc::new(RefCell::new(IndexMap::with_capacity_and_hasher(n, <_>::default()))) }
+    }
+
+    #[inline]
+    pub fn items(&self) -> Ref<'_, IndexMap> { self.items.borrow() }
+
+    #[inline]
+    pub fn items_mut(&self) -> RefMut<'_, IndexMap> { self.items.borrow_mut() }
+
+    #[inline]
+    pub fn strong_count(&self) -> usize { Rc::strong_count(&self.items) }
+}
 
 #[derive(Clone)]
 pub enum StackItem {
     Null,
     Boolean(bool),
+
+    // TODO: use same struct to represent U265/I256, like `go-ethereum`
     Integer(I256),
     ByteString(Vec<u8>),
     Buffer(Vec<u8>),
-    Array(Vec<Rc<StackItem>>),
-    Struct(Vec<Rc<StackItem>>),
 
-    // TODO: key is a Rc?
-    Map(HashMap<StackItem, Rc<StackItem>>),
+    // TODO: cyclic reference
+    Array(Array),
+    Struct(Struct),
+    Map(Map),
     InteropInterface(Interop),
 }
 
-
 impl StackItem {
-    #[inline]
-    pub fn track_reference(&self) -> bool {
-        use StackItem::*;
-        matches!(self, Buffer(_) | Array(_) | Struct(_) | Map(_))
+    pub fn item_type(&self) -> ItemType {
+        match &self {
+            Null => ItemType::Any,
+            Boolean(_) => ItemType::Boolean,
+            Integer(_) => ItemType::Integer,
+            ByteString(_) => ItemType::ByteString,
+            Buffer(_) => ItemType::Buffer,
+            Array(_) => ItemType::Array,
+            Struct(_) => ItemType::Struct,
+            Map(_) => ItemType::Map,
+            InteropInterface(_) => ItemType::InteropInterface,
+        }
     }
 
-    pub fn item_type(&self) -> StackItemType {
-        use StackItem::*;
-        match self {
-            Null => StackItemType::Any,
-            Boolean(_) => StackItemType::Boolean,
-            Integer(_) => StackItemType::Integer,
-            ByteString(_) => StackItemType::ByteString,
-            Buffer(_) => StackItemType::Buffer,
-            Array(_) => StackItemType::Array,
-            Struct(_) => StackItemType::Struct,
-            Map(_) => StackItemType::Map,
-            InteropInterface(_) => StackItemType::InteropInterface,
-        }
+    #[inline]
+    pub fn is_null(&self) -> bool { matches!(self, Self::Null) }
+
+    #[inline]
+    pub fn with_null() -> Self { Null }
+
+    #[inline]
+    pub fn with_boolean(value: bool) -> Self { Boolean(value) }
+
+    #[inline]
+    pub fn with_integer(value: I256) -> Self { Integer(value) }
+
+    #[inline]
+    pub fn primitive_type(&self) -> bool { matches!(self, Boolean(_) | Integer(_) | ByteString(_)) }
+
+    #[inline]
+    pub fn track_reference(&self) -> bool {
+        matches!(self, Buffer(_) | Array(_) | Struct(_) | Map(_)) // why Buffer?
     }
 }
 
 impl Default for StackItem {
-    fn default() -> Self { Self::Null }
+    #[inline]
+    fn default() -> Self { Null }
+}
+
+#[derive(Debug, errors::Error)]
+pub enum CastError {
+    #[error("cast: from {0:?} to {1} invalid: {2}")]
+    InvalidCast(ItemType, &'static str, &'static str),
+}
+
+impl TryInto<bool> for &StackItem {
+    type Error = CastError;
+
+    fn try_into(self) -> Result<bool, Self::Error> {
+        match self {
+            Null => Ok(false),
+            Boolean(v) => Ok(*v),
+            Integer(v) => Ok(!v.is_zero()),
+            ByteString(v) => {
+                if v.len() > MAX_INTEGER_SIZE {
+                    Err(CastError::InvalidCast(
+                        ItemType::ByteString,
+                        "Bool",
+                        "exceed MAX_INTEGER_SIZE",
+                    ))
+                } else {
+                    Ok(v.iter().find(|x| **x != 0).is_some())
+                }
+            }
+            _ => Ok(true),
+        }
+    }
+}
+
+impl TryInto<I256> for &StackItem {
+    type Error = CastError;
+
+    fn try_into(self) -> Result<I256, Self::Error> {
+        match self {
+            Boolean(v) => {
+                if *v {
+                    Ok(I256::ONE)
+                } else {
+                    Ok(I256::ZERO)
+                }
+            }
+            Integer(v) => Ok(*v),
+            // ByteString(_) => {} TODO
+            _ => Err(CastError::InvalidCast(self.item_type(), "Int", "cannot cast")),
+        }
+    }
 }
 
 impl PartialEq<Self> for StackItem {
@@ -77,8 +200,7 @@ impl PartialEq<Self> for StackItem {
             return true;
         }
 
-        use StackItem::*;
-        match (self, other) {
+        match (&self, &other) {
             (Null, Null) => true,
             (Boolean(l), Boolean(r)) => l == r,
             (Integer(l), Integer(r)) => l == r,
@@ -97,7 +219,6 @@ impl Eq for StackItem {}
 
 impl Hash for StackItem {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        use StackItem::*;
         match self {
             Null => state.write_u8(0),
             Boolean(v) => v.hash(state),
@@ -110,32 +231,4 @@ impl Hash for StackItem {
             InteropInterface(v) => v.hash(state),
         }
     }
-}
-
-
-pub(crate) struct Slots {
-    items: Vec<Rc<StackItem>>,
-}
-
-impl Slots {
-    pub fn new(slots: usize) -> Self {
-        Self { items: vec![Default::default(); slots] }
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize { self.items.len() }
-
-    #[inline]
-    pub fn get(&self, index: usize) -> Option<&Rc<StackItem>> { self.items.get(index) }
-}
-
-
-impl core::ops::Index<usize> for Slots {
-    type Output = Rc<StackItem>;
-
-    fn index(&self, index: usize) -> &Self::Output { &self.items[index] }
-}
-
-impl core::ops::IndexMut<usize> for Slots {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output { &mut self.items[index] }
 }

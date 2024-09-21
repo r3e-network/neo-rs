@@ -1,18 +1,19 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use neo_base::encoding::bin::*;
 
-use crate::{store::{self, *}, tx::StatedTx, types::H256};
 use crate::block::{IndexHash, StatedBlock, TrimmedBlock};
-
+use crate::{
+    store::{self, *},
+    tx::StatedTx,
+    types::H256,
+};
 
 pub const PREFIX_BLOCK: u8 = 5;
 pub const PREFIX_INDEX_TO_HASH: u8 = 9;
 pub const PREFIX_TX: u8 = 11;
 pub const PREFIX_CURRENT_BLOCK: u8 = 12;
-
 
 pub struct TxStore<Store: store::Store> {
     contract_id: u32,
@@ -20,9 +21,7 @@ pub struct TxStore<Store: store::Store> {
 }
 
 impl<Store: store::Store> TxStore<Store> {
-    pub fn new(contract_id: u32, store: Store) -> Self {
-        Self { contract_id, store }
-    }
+    pub fn new(contract_id: u32, store: Store) -> Self { Self { contract_id, store } }
 
     #[inline]
     fn tx_key(&self, hash: &H256) -> Vec<u8> {
@@ -42,16 +41,13 @@ impl<Store: store::Store> TxStore<Store> {
     }
 }
 
-
 pub struct BlockStore<Store: store::Store> {
     contract_id: u32,
     store: Store,
 }
 
 impl<Store: store::Store> BlockStore<Store> {
-    pub fn new(contract_id: u32, store: Store) -> Self {
-        Self { contract_id, store }
-    }
+    pub fn new(contract_id: u32, store: Store) -> Self { Self { contract_id, store } }
 
     pub fn get_block_hash(&self, block_index: u32) -> Result<H256, BinReadError> {
         let key = self.store_key(PREFIX_INDEX_TO_HASH, &big_endian::U32(block_index));
@@ -133,10 +129,8 @@ impl<Store: store::Store> BlockStore<Store> {
         );
 
         // Commit all, must be all succeed or all failed
-        batch.commit()
-            .map(|_written| ())
-            .map_err(|err| match err {
-                CommitError::Conflicted => BinWriteError::AlreadyExists,
-            })
+        batch.commit().map(|_written| ()).map_err(|err| match err {
+            CommitError::Conflicted => BinWriteError::AlreadyExists,
+        })
     }
 }

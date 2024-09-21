@@ -11,4 +11,3 @@ pub mod key;
 pub mod rand;
 pub mod scrypt;
 pub mod secp256r1;
-

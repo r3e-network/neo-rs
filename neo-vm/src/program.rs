@@ -4,8 +4,8 @@
 use alloc::vec::Vec;
 
 use neo_base::errors;
-use crate::{*, OpCode::*};
 
+use crate::{OpCode::*, *};
 
 #[derive(Debug, errors::Error)]
 pub enum ProgramError {
@@ -18,7 +18,6 @@ pub enum ProgramError {
     #[error("program: invalid StackItemType({2:0x}) for {0:?} at {1}")]
     InvalidStackItemType(OpCode, u32, u8),
 }
-
 
 #[derive(Debug, Clone)]
 pub struct Op {
@@ -33,13 +32,10 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn nop() -> Self {
-        Self { ops: Vec::new() }
-    }
+    pub fn nop() -> Self { Self { ops: Vec::new() } }
 
     #[inline]
     pub fn ops(&self) -> &[Op] { &self.ops }
-
 
     pub fn build(script: &[u8]) -> Result<Program, ProgramError> {
         let mut decoder = ScriptDecoder::new(script);
@@ -56,7 +52,7 @@ impl Program {
 
         for op in ops.iter() {
             match op.code {
-                _  if op.code.as_u8() >= Jmp.as_u8() && op.code.as_u8() <= CallL.as_u8() => {
+                _ if op.code.as_u8() >= Jmp.as_u8() && op.code.as_u8() <= CallL.as_u8() => {
                     let _ = search(op, op.operand.first)?;
                 }
                 PushA | EndTry | EndTryL => {
@@ -68,7 +64,7 @@ impl Program {
                 }
                 NewArrayT | IsType | Convert => {
                     let typ = op.operand.first as u8;
-                    let _ = StackItemType::try_from(typ)
+                    let _ = ItemType::try_from(typ)
                         .map_err(|_| ProgramError::InvalidStackItemType(op.code, op.ip, typ))?;
                 }
                 // Syscall => {}
@@ -80,24 +76,18 @@ impl Program {
     }
 }
 
-
 pub struct Executing<'a> {
     pc: usize,
     ops: &'a [Op],
 }
 
-
 impl<'a> Executing<'a> {
     #[inline]
-    pub fn new(ops: &'a [Op]) -> Executing<'a> {
-        Executing { pc: 0, ops }
-    }
+    pub fn new(ops: &'a [Op]) -> Executing<'a> { Executing { pc: 0, ops } }
 
     // on abort or assert failed, etc.
     #[inline]
-    pub fn on_terminated(&mut self) {
-        self.pc = self.ops.len()
-    }
+    pub fn on_terminated(&mut self) { self.pc = self.ops.len() }
 
     #[inline]
     pub fn change_pc(&mut self, to: u32) -> bool {
@@ -117,20 +107,18 @@ impl<'a> Executing<'a> {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use neo_base::encoding::hex::DecodeHex;
-    use crate::decode::test::TEST_CODES_1;
+
     use super::*;
+    use crate::decode::test::TEST_CODES_1;
 
     #[test]
     fn test_program_build() {
-        let script = TEST_CODES_1.decode_hex()
-            .expect("`decode_hex` should be ok");
+        let script = TEST_CODES_1.decode_hex().expect("`decode_hex` should be ok");
 
-        let program = Program::build(&script)
-            .expect("`Program::build` should be ok");
+        let program = Program::build(&script).expect("`Program::build` should be ok");
 
         assert_eq!(program.ops().is_empty(), false);
         // for op in program.ops.iter() {

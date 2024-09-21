@@ -1,19 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::string::{String, ToString};
 use core::fmt::{Display, Formatter};
 
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-
-use neo_base::errors;
 use neo_base::encoding::bin::*;
 use neo_base::encoding::hex::{StartsWith0x, ToRevHex};
-
+use neo_base::errors;
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 pub const H256_SIZE: usize = 32;
-
 
 /// little endian
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
@@ -35,7 +31,6 @@ impl AsRef<[u8]> for H256 {
     fn as_ref(&self) -> &[u8] { &self.0 }
 }
 
-
 impl From<[u8; H256_SIZE]> for H256 {
     /// NOTE: value is little endian.
     ///  if H256 is from sha256-hash, and the `to_string` will output a reversed hex-string from sha256-hash.
@@ -51,9 +46,7 @@ impl Display for H256 {
 }
 
 impl BinEncoder for H256 {
-    fn encode_bin(&self, w: &mut impl BinWriter) {
-        w.write(&self.0);
-    }
+    fn encode_bin(&self, w: &mut impl BinWriter) { w.write(&self.0); }
 
     fn bin_size(&self) -> usize { H256_SIZE }
 }
@@ -66,7 +59,6 @@ impl BinDecoder for H256 {
         Ok(h)
     }
 }
-
 
 #[derive(Debug, Clone, Copy, errors::Error)]
 pub enum ToH256Error {
@@ -88,17 +80,15 @@ impl TryFrom<&str> for H256 {
         let value = if value.starts_with_0x() { &value[2..] } else { value };
 
         let mut buf = [0u8; H256_SIZE];
-        let _ = hex::decode_to_slice(value, &mut buf)
-            .map_err(|e| match e {
-                HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
-                HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
-            })?;
+        let _ = hex::decode_to_slice(value, &mut buf).map_err(|e| match e {
+            HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
+            HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
+        })?;
 
         buf.reverse();
         Ok(Self(buf))
     }
 }
-
 
 impl Serialize for H256 {
     #[inline]
@@ -120,7 +110,6 @@ impl Default for H256 {
     fn default() -> Self { Self([0u8; H256_SIZE]) }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -128,21 +117,20 @@ mod test {
     #[test]
     fn test_h256() {
         let h = "\"f037308fa0ab18155bccfc08485468c112409ea5064595699e98c545f245f32d\"";
-        let h1 = H256::try_from(h)
-            .expect("hex decode should be ok");
+        let h1 = H256::try_from(h).expect("hex decode should be ok");
 
-        let x = serde_json::to_string(&h1)
-            .expect("json encode should be ok");
+        let x = serde_json::to_string(&h1).expect("json encode should be ok");
         assert_eq!(&h[1..], &x[3..]);
-        assert_eq!(&h1.to_string(), "0xf037308fa0ab18155bccfc08485468c112409ea5064595699e98c545f245f32d");
+        assert_eq!(
+            &h1.to_string(),
+            "0xf037308fa0ab18155bccfc08485468c112409ea5064595699e98c545f245f32d"
+        );
 
-        let h2: H256 = serde_json::from_str(h)
-            .expect("json decode should be ok");
+        let h2: H256 = serde_json::from_str(h).expect("json decode should be ok");
         assert_eq!(h2, h1);
 
         let x = "0x1230000000000000000000000000000000000000000000000000000000000000";
-        let h: H256 = x.try_into()
-            .expect("try_into should be ok");
+        let h: H256 = x.try_into().expect("try_into should be ok");
         assert_eq!(x, &h.to_string());
     }
 }

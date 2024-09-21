@@ -1,14 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
-use bytes::{BytesMut, BufMut, Bytes, Buf};
 
-use crate::{errors, hash::{Sha256, SHA256_HASH_SIZE}};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+pub use neo_proc_macros::{BinDecode, BinEncode, InnerBinDecode};
 
-pub use neo_proc_macros::{BinEncode, BinDecode, InnerBinDecode};
-
+use crate::{
+    errors,
+    hash::{Sha256, SHA256_HASH_SIZE},
+};
 
 pub trait BinWriter {
     fn write_varint_le(&mut self, value: u64);
@@ -18,20 +19,16 @@ pub trait BinWriter {
     fn len(&self) -> usize;
 }
 
-
 impl BinWriter for BytesMut {
     fn write_varint_le(&mut self, value: u64) {
         let (size, buf) = to_varint_le(value);
         self.put_slice(&buf[..size as usize]); // size field
     }
 
-    fn write<T: AsRef<[u8]>>(&mut self, value: T) {
-        self.put_slice(value.as_ref());
-    }
+    fn write<T: AsRef<[u8]>>(&mut self, value: T) { self.put_slice(value.as_ref()); }
 
     fn len(&self) -> usize { self.len() }
 }
-
 
 pub trait BinReader {
     fn read_varint_le(&mut self) -> Result<u64, BinDecodeError> {
@@ -54,7 +51,7 @@ pub trait BinReader {
                 self.read_full(buf.as_mut_slice())?;
                 Ok(u64::from_le_bytes(buf))
             }
-            n => Ok(n as u64) // just one byte
+            n => Ok(n as u64), // just one byte
         }
     }
 
@@ -127,7 +124,6 @@ impl BinReader for Buffer {
     }
 }
 
-
 pub struct RefBuffer<'a> {
     consumed: usize,
     buf: &'a [u8],
@@ -170,23 +166,18 @@ impl<'a> BinReader for RefBuffer<'a> {
     }
 }
 
-
 pub trait BinEncoder {
     fn encode_bin(&self, w: &mut impl BinWriter);
 
     fn bin_size(&self) -> usize;
 }
 
-
 pub trait BinDecoder: Sized {
     fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError>;
 }
 
-
 impl BinEncoder for bool {
-    fn encode_bin(&self, w: &mut impl BinWriter) {
-        w.write(if *self { [1u8] } else { [0u8] });
-    }
+    fn encode_bin(&self, w: &mut impl BinWriter) { w.write(if *self { [1u8] } else { [0u8] }); }
 
     fn bin_size(&self) -> usize { core::mem::size_of::<Self>() }
 }
@@ -279,7 +270,6 @@ impl<T1: BinEncoder, T2: BinEncoder, T3: BinEncoder> BinEncoder for (&T1, &T2, &
     fn bin_size(&self) -> usize { self.0.bin_size() + self.1.bin_size() + self.2.bin_size() }
 }
 
-
 pub trait ToBinEncoded {
     fn to_bin_encoded(&self) -> Vec<u8>;
 }
@@ -294,7 +284,6 @@ impl<T: BinEncoder> ToBinEncoded for T {
     }
 }
 
-
 /// Bin-encoding and then computing the SHA256
 pub trait BinSha256 {
     fn bin_sha256(&self) -> [u8; SHA256_HASH_SIZE];
@@ -304,7 +293,6 @@ impl<T: BinEncoder> BinSha256 for T {
     #[inline]
     fn bin_sha256(&self) -> [u8; SHA256_HASH_SIZE] { self.to_bin_encoded().sha256() }
 }
-
 
 impl BinDecoder for bool {
     fn decode_bin(r: &mut impl BinReader) -> Result<bool, BinDecodeError> {
@@ -389,7 +377,6 @@ impl<T1: BinDecoder, T2: BinDecoder, T3: BinDecoder> BinDecoder for (T1, T2, T3)
     }
 }
 
-
 pub trait EncodeHashFields {
     fn encode_hash_fields(&self, w: &mut impl BinWriter);
 }
@@ -405,7 +392,6 @@ impl<T: EncodeHashFields> HashFieldsSha256 for T {
         w.sha256()
     }
 }
-
 
 pub fn to_varint_le(value: u64) -> (u8, [u8; 9]) {
     let mut le = [0u8; 9];
@@ -426,7 +412,6 @@ pub fn to_varint_le(value: u64) -> (u8, [u8; 9]) {
         (9, le)
     }
 }
-
 
 pub mod big_endian {
     use super::*;
@@ -451,11 +436,11 @@ pub mod big_endian {
     }
 }
 
-
 #[cfg(test)]
 mod test {
-    use super::*;
     use alloc::vec;
+
+    use super::*;
     use crate::encoding::hex::ToHex;
 
     #[test]
@@ -519,14 +504,17 @@ mod test {
         assert_eq!(r.remaining(), 0usize);
     }
 
-
     #[derive(Debug, BinEncode, BinDecode, PartialEq, Eq)]
     #[bin(repr = u8)]
     pub enum BinMatch {
-        #[bin(tag = 0x00)] X { x: u64, x2: u32 },
-        #[bin(tag = 0x01)] Y(u32, #[bin(ignore)] u64),
-        #[bin(tag = 0x02)] Z,
-        #[bin(tag = 0x03)] A {},
+        #[bin(tag = 0x00)]
+        X { x: u64, x2: u32 },
+        #[bin(tag = 0x01)]
+        Y(u32, #[bin(ignore)] u64),
+        #[bin(tag = 0x02)]
+        Z,
+        #[bin(tag = 0x03)]
+        A {},
     }
 
     #[test]
@@ -576,16 +564,12 @@ mod test {
     }
 
     #[derive(Debug, BinEncode, BinDecode, PartialEq, Eq)]
-    struct BinUnnamed(u64, u32, String, #[bin(ignore)]u64);
+    struct BinUnnamed(u64, u32, String, #[bin(ignore)] u64);
 
     #[test]
     fn test_bin_encode_struct() {
-        let b = Bin {
-            x: 0x1122334455667788,
-            y: 0x01020304,
-            z: "Hello world".into(),
-            hash: 0x90919203,
-        };
+        let b =
+            Bin { x: 0x1122334455667788, y: 0x01020304, z: "Hello world".into(), hash: 0x90919203 };
 
         let mut w = BytesMut::with_capacity(128);
         b.encode_bin(&mut w);
@@ -600,12 +584,7 @@ mod test {
         assert_eq!(k.y, b.y);
         assert_eq!(k.z, b.z);
 
-        let b = BinUnnamed(
-            0x1122334455667788,
-            0x01020304,
-            "Hello world".into(),
-            0x90919203,
-        );
+        let b = BinUnnamed(0x1122334455667788, 0x01020304, "Hello world".into(), 0x90919203);
 
         let mut w = BytesMut::with_capacity(128);
         b.encode_bin(&mut w);

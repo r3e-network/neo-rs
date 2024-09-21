@@ -2,18 +2,16 @@
 // All Rights Reserved
 
 use alloc::string::{String, ToString};
-use core::cmp::{Ord, PartialOrd, Ordering};
+use core::cmp::{Ord, Ordering, PartialOrd};
 use core::fmt::{Debug, Display, Formatter};
-use core::ops::{Add, AddAssign, Sub, SubAssign, BitAnd, BitOr, BitXor, Not};
+use core::ops::{Add, AddAssign, BitAnd, BitOr, BitXor, Not, Sub, SubAssign};
 
-use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{errors, cmp_elem, math::Widening};
 use crate::encoding::{bin::*, hex::StartsWith0x};
-
+use crate::{cmp_elem, errors, math::Widening};
 
 const N: usize = 4;
-
 
 #[derive(Copy, Clone, Default, Hash, Eq, PartialEq)]
 #[repr(C)]
@@ -29,7 +27,6 @@ impl U256 {
     pub const MAX: Self = U256 { n: [u64::MAX, u64::MAX, u64::MAX, u64::MAX] };
 
     pub const MIN: Self = U256 { n: [0, 0, 0, 0] };
-
 
     #[inline]
     pub fn to_le_bytes(&self) -> [u8; 32] {
@@ -64,9 +61,7 @@ impl U256 {
 }
 
 impl Debug for U256 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{self}")
-    }
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result { write!(f, "{self}") }
 }
 
 impl Display for U256 {
@@ -79,26 +74,19 @@ impl Display for U256 {
     }
 }
 
-
 impl From<u64> for U256 {
     #[inline]
-    fn from(value: u64) -> Self {
-        Self { n: [value, 0, 0, 0] }
-    }
+    fn from(value: u64) -> Self { Self { n: [value, 0, 0, 0] } }
 }
 
 impl From<u128> for U256 {
     #[inline]
-    fn from(value: u128) -> Self {
-        Self { n: [value as u64, (value >> 64) as u64, 0, 0] }
-    }
+    fn from(value: u128) -> Self { Self { n: [value as u64, (value >> 64) as u64, 0, 0] } }
 }
 
 impl PartialOrd for U256 {
     #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
 }
 
 impl Ord for U256 {
@@ -112,7 +100,6 @@ impl Ord for U256 {
         Ordering::Equal
     }
 }
-
 
 #[derive(Debug, Clone, Copy, errors::Error)]
 pub enum ToU256Error {
@@ -131,11 +118,10 @@ impl TryFrom<&str> for U256 {
         use hex::FromHexError as HexError;
         let value = if value.starts_with_0x() { &value[2..] } else { value };
         let mut buf = [0u8; 32];
-        let _ = hex::decode_to_slice(value, &mut buf)
-            .map_err(|e| match e {
-                HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
-                HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
-            })?;
+        let _ = hex::decode_to_slice(value, &mut buf).map_err(|e| match e {
+            HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
+            HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
+        })?;
 
         Ok(Self::from_be_bytes(&buf))
     }
@@ -157,9 +143,7 @@ impl<'de> Deserialize<'de> for U256 {
 }
 
 impl BinEncoder for U256 {
-    fn encode_bin(&self, w: &mut impl BinWriter) {
-        w.write(self.to_le_bytes().as_slice());
-    }
+    fn encode_bin(&self, w: &mut impl BinWriter) { w.write(self.to_le_bytes().as_slice()); }
 
     fn bin_size(&self) -> usize { 32 }
 }
@@ -190,23 +174,17 @@ impl Add<u64> for U256 {
     type Output = Self;
 
     #[inline]
-    fn add(self, rhs: u64) -> Self::Output {
-        self + U256::from(rhs)
-    }
+    fn add(self, rhs: u64) -> Self::Output { self + U256::from(rhs) }
 }
 
 impl AddAssign for U256 {
     #[inline]
-    fn add_assign(&mut self, rhs: Self) {
-        *self = *self + rhs;
-    }
+    fn add_assign(&mut self, rhs: Self) { *self = *self + rhs; }
 }
 
 impl AddAssign<u64> for U256 {
     #[inline]
-    fn add_assign(&mut self, rhs: u64) {
-        *self = *self + U256::from(rhs)
-    }
+    fn add_assign(&mut self, rhs: u64) { *self = *self + U256::from(rhs) }
 }
 
 impl Sub for U256 {
@@ -226,23 +204,17 @@ impl Sub<u64> for U256 {
     type Output = Self;
 
     #[inline]
-    fn sub(self, rhs: u64) -> Self::Output {
-        self - U256::from(rhs)
-    }
+    fn sub(self, rhs: u64) -> Self::Output { self - U256::from(rhs) }
 }
 
 impl SubAssign for U256 {
     #[inline]
-    fn sub_assign(&mut self, rhs: Self) {
-        *self = *self - rhs;
-    }
+    fn sub_assign(&mut self, rhs: Self) { *self = *self - rhs; }
 }
 
 impl SubAssign<u64> for U256 {
     #[inline]
-    fn sub_assign(&mut self, rhs: u64) {
-        *self = *self - U256::from(rhs);
-    }
+    fn sub_assign(&mut self, rhs: u64) { *self = *self - U256::from(rhs); }
 }
 
 impl BitAnd for U256 {
@@ -304,6 +276,7 @@ impl Not for U256 {
 #[cfg(test)]
 mod test {
     use core::cmp::Ordering;
+
     use crate::math::U256;
 
     #[test]

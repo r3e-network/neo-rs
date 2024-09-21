@@ -1,18 +1,16 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crossbeam::atomic::AtomicCell;
+use neo_base::time::{unix_millis_now, Tick};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use neo_base::time::{Tick, unix_millis_now};
 use crate::*;
-
 
 pub struct LocalNode {
     runtime: Option<Runtime>,
@@ -25,7 +23,9 @@ pub struct LocalNode {
 
 impl LocalNode {
     pub fn new(/* ledger: Arc<dyn Ledger>,*/ config: P2pConfig) -> Self {
-        let local: SocketAddr = config.listen.parse()
+        let local: SocketAddr = config
+            .listen
+            .parse()
             .expect(&format!("SocketAddr::parse({}) is not ok", &config.listen));
 
         // let n = std::thread::available_parallelism().unwrap_or(8.into()).get();
@@ -36,11 +36,8 @@ impl LocalNode {
             .expect("`runtime::Builder` should be ok");
 
         let (net_tx, net_rx) = mpsc::channel(MESSAGE_CHAN_SIZE);
-        let driver = NetDriver::new(
-            runtime.handle().clone(),
-            config.max_peers as usize,
-            local, net_tx,
-        );
+        let driver =
+            NetDriver::new(runtime.handle().clone(), config.max_peers as usize, local, net_tx);
         Self {
             runtime: Some(runtime),
             net_rx: AtomicCell::new(Some(net_rx)),
@@ -72,11 +69,15 @@ impl LocalNode {
         let Some(net_rx) = self.net_rx.take() else {
             panic!("`net_rx` has been token");
         };
-        std::thread::spawn(move || { to_recv.on_received(net_rx, discovery); });
+        std::thread::spawn(move || {
+            to_recv.on_received(net_rx, discovery);
+        });
 
         let discovery = node.discovery();
         let tick = node.protocol_tick();
-        std::thread::spawn(move || { handle.on_protocol_tick(tick, discovery); });
+        std::thread::spawn(move || {
+            handle.on_protocol_tick(tick, discovery);
+        });
 
         self.driver.on_connecting(connect_rx);
         self.driver.on_accepting(node.cancelee());
@@ -93,7 +94,9 @@ impl LocalNode {
         let factor = self.config.discovery_factor as u64;
         let broadcast = factor * per_block_millis;
 
-        let Some(runtime) = self.runtime.as_ref() else { return; };
+        let Some(runtime) = self.runtime.as_ref() else {
+            return;
+        };
         let _discovering = runtime.spawn(async move {
             let mut broadcast_at = unix_millis_now();
             let mut ticker = tokio::time::interval(Duration::from_millis(check_millis));
@@ -119,7 +122,6 @@ impl Drop for LocalNode {
     }
 }
 
-
 #[allow(dead_code)]
 pub struct NodeHandle {
     // connect_tx: mpsc::Sender<SocketAddr>,
@@ -129,7 +131,11 @@ pub struct NodeHandle {
 }
 
 impl NodeHandle {
-    pub fn new(connect_tx: mpsc::Sender<SocketAddr>, protocol_tick: Duration, seeds: &[String]) -> Self {
+    pub fn new(
+        connect_tx: mpsc::Sender<SocketAddr>,
+        protocol_tick: Duration,
+        seeds: &[String],
+    ) -> Self {
         let resolver = DnsResolver::new(seeds);
         Self {
             // connect_tx: connect_tx.clone(),
@@ -153,36 +159,29 @@ impl Drop for NodeHandle {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use std::{io::Write, net::TcpStream};
-    use neo_core::payload::{P2pMessage, Ping};
-    use super::*;
 
+    use neo_core::payload::{P2pMessage, Ping};
+
+    use super::*;
 
     #[test]
     fn test_run_node() {
         let node = LocalNode::new(P2pConfig::default());
         let addr = node.local_addr();
 
-        let message = MessageHandleV2::new(
-            node.port(),
-            node.config.clone(),
-            node.net_handles(),
-        );
+        let message = MessageHandleV2::new(node.port(), node.config.clone(), node.net_handles());
         let handle = node.run(message);
         std::thread::sleep(Duration::from_secs(1));
 
-        let mut stream = TcpStream::connect(addr)
-            .expect("`TcpStream::connect` should be ok");
+        let mut stream = TcpStream::connect(addr).expect("`TcpStream::connect` should be ok");
 
         let ping = P2pMessage::Ping(Ping { last_block_index: 2, unix_seconds: 3, nonce: 4 });
-        let buf = ping.to_message_encoded()
-            .expect("`to_message_encoded` should be ok");
+        let buf = ping.to_message_encoded().expect("`to_message_encoded` should be ok");
 
-        stream.write_all(buf.as_ref())
-            .expect("`write_all` should be ok");
+        stream.write_all(buf.as_ref()).expect("`write_all` should be ok");
         std::thread::sleep(Duration::from_millis(200));
 
         drop(handle);

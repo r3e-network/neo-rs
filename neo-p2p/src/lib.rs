@@ -1,18 +1,14 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use serde::{Serialize, Deserialize};
-use tokio::sync::mpsc;
-
 use neo_base::errors;
-use neo_core::types::{Bytes, DEFAULT_PER_BLOCK_MILLIS, Network, SEED_LIST_DEV_NET};
-
+use neo_core::types::{Bytes, Network, DEFAULT_PER_BLOCK_MILLIS, SEED_LIST_DEV_NET};
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 pub use {codec::*, discovery::*, driver_v2::*, handle_v2::*, node::*, peer::*};
-
 
 pub mod codec;
 pub mod discovery;
@@ -23,7 +19,6 @@ pub mod peer;
 
 #[cfg(test)]
 mod handle_v2_test;
-
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum NetEvent {
@@ -37,11 +32,8 @@ pub enum NetEvent {
 
 impl NetEvent {
     #[inline]
-    pub fn with_peer(self, peer: SocketAddr) -> NetMessage {
-        NetMessage { peer, event: self }
-    }
+    pub fn with_peer(self, peer: SocketAddr) -> NetMessage { NetMessage { peer, event: self } }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct NetMessage {
@@ -49,11 +41,9 @@ pub struct NetMessage {
     pub event: NetEvent,
 }
 
-
 // pub trait MessageHandle: Send + 'static {
 //     fn on_received(self, net_rx: mpsc::Receiver<NetMessage>, discovery: Discovery);
 // }
-
 
 #[derive(Debug, Clone, errors::Error)]
 pub enum SendError {
@@ -66,7 +56,6 @@ pub enum SendError {
     #[error("send: channel has closed")]
     Closed,
 }
-
 
 #[derive(Debug, errors::Error)]
 pub enum DialError {
@@ -81,8 +70,7 @@ pub trait Dial {
 impl Dial for mpsc::Sender<SocketAddr> {
     #[inline]
     fn dial(&self, peer: SocketAddr) -> Result<(), DialError> {
-        self.try_send(peer)
-            .map_err(|_err| DialError::TooManyDials)
+        self.try_send(peer).map_err(|_err| DialError::TooManyDials)
     }
 }
 
@@ -116,11 +104,9 @@ pub struct P2pConfig {
     pub per_block_millis: u64,
 }
 
-
 impl Default for P2pConfig {
     fn default() -> Self {
-        let nonce = neo_crypto::rand::read_u64()
-            .expect("`rand::read_u64()` should be ok");
+        let nonce = neo_crypto::rand::read_u64().expect("`rand::read_u64()` should be ok");
         Self {
             nonce: nonce as u32,
             min_peers: 3,
@@ -140,7 +126,6 @@ impl Default for P2pConfig {
         }
     }
 }
-
 
 // #[cfg(test)]
 // #[ctor::ctor]
