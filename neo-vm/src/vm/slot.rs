@@ -1,6 +1,7 @@
-use crate::{null::Null, reference_counter::ReferenceCounter, item_trait::StackItemTrait};
-use std::{cell::RefCell, rc::Rc};
-use crate::stack_item::StackItem;
+use alloc::rc::Rc;
+use std::cell::RefCell;
+use crate::vm_types::reference_counter::ReferenceCounter;
+use crate::vm_types::stack_item::StackItem;
 
 #[derive(Debug, Clone, Default)]
 pub struct Slot {

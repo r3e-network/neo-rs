@@ -1,7 +1,6 @@
-use neo::prelude::*;
-use neo::json::{Json, JsonValue};
-use base64::{Engine as _, engine::general_purpose};
 use std::convert::TryFrom;
+use neo_json::jtoken::JToken;
+use crate::neo_contract::contract_parameter_type::ContractParameterType;
 
 #[derive(Clone, Debug)]
 pub struct NEP6Contract {
@@ -12,7 +11,7 @@ pub struct NEP6Contract {
 }
 
 impl NEP6Contract {
-    pub fn from_json(json: &Json) -> Option<Self> {
+    pub fn from_json(json: &JToken) -> Option<Self> {
         if json.is_null() {
             return None;
         }
@@ -37,22 +36,22 @@ impl NEP6Contract {
         })
     }
 
-    pub fn to_json(&self) -> Json {
-        let mut contract = Json::new_object();
-        contract["script"] = JsonValue::String(general_purpose::STANDARD.encode(&self.script));
-        contract["parameters"] = JsonValue::Array(
+    pub fn to_json(&self) -> JToken {
+        let mut contract = JToken::new_object();
+        contract["script"] = JToken::String(general_purpose::STANDARD.encode(&self.script));
+        contract["parameters"] = JToken::Array(
             self.parameter_list
                 .iter()
                 .zip(&self.parameter_names)
                 .map(|(type_, name)| {
-                    let mut parameter = Json::new_object();
-                    parameter["name"] = JsonValue::String(name.clone());
-                    parameter["type"] = JsonValue::Number((*type_ as u8).into());
+                    let mut parameter = JToken::new_object();
+                    parameter["name"] = JToken::String(name.clone());
+                    parameter["type"] = JToken::Number((*type_ as u8).into());
                     parameter
                 })
                 .collect(),
         );
-        contract["deployed"] = JsonValue::Boolean(self.deployed);
+        contract["deployed"] = JToken::Boolean(self.deployed);
         contract
     }
 }

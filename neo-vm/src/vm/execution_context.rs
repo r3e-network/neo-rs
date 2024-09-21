@@ -1,8 +1,3 @@
-use crate::{
-	evaluation_stack::EvaluationStack,
-	exception::exception_handling_context::ExceptionHandlingContext,
-	reference_counter::ReferenceCounter, slot::Slot, item_trait::StackItemTrait, vm::script::Script,
-};
 use std::{
 	any::{Any, TypeId},
 	cell::{Ref, RefCell},
@@ -10,8 +5,9 @@ use std::{
 	rc::Rc,
 };
 use std::fmt::Debug;
-use crate::instruction::Instruction;
+use crate::vm::{EvaluationStack, Instruction, Script};
 use crate::vm::slot::Slot;
+use crate::vm_types::reference_counter::ReferenceCounter;
 
 #[derive(Clone)]
 pub struct ExecutionContext {

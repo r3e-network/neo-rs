@@ -7,7 +7,6 @@ use chrono::{DateTime, Utc};
 use NeoRust::builder::Transaction;
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
-use neo_vm::op_code::OpCode;
 use crate::block::{Block, Header};
 use crate::contract::Contract;
 use crate::ledger::header_cache::HeaderCache;

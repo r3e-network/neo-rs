@@ -1,5 +1,3 @@
-
-use neo::prelude::*;
 use serde::{Serialize, Deserialize};
 
 /// Represents the parameters of the SCrypt algorithm.
@@ -13,6 +11,12 @@ pub struct ScryptParameters {
 
     /// Parallelization parameter. Must be a positive integer less than or equal to u32::MAX / (128 * r * 8).
     pub p: u32,
+}
+
+impl Default for ScryptParameters {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
 }
 
 impl ScryptParameters {

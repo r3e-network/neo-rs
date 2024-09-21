@@ -1,5 +1,4 @@
 use std::{collections::HashMap, fmt::Error};
-use lazy_static::lazy_static;
 use num_enum::FromPrimitive;
 use crate::vm::vm_error::VMError;
 

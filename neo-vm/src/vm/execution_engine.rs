@@ -1,25 +1,3 @@
-use crate::{
-    buffer::Buffer,
-    compound_types::{array::Array, compound_trait::CompoundTrait, map::Map, Struct::Struct},
-    evaluation_stack::EvaluationStack,
-    exception::{
-		exception_handling_context::ExceptionHandlingContext,
-		exception_handling_state::ExceptionHandlingState,
-	},
-    execution_context::{ExecutionContext, SharedStates},
-    execution_engine_limits::ExecutionEngineLimits,
-    instruction::Instruction,
-    null::Null,
-    op_code::OpCode,
-    pointer::Pointer,
-    primitive_types::{byte_string::ByteString, primitive_trait::PrimitiveTrait},
-    reference_counter::ReferenceCounter,
-    slot::Slot,
-    item_type::StackItemType,
-    vm::{script::Script, vm_error::VMError},
-    vm_state::VMState,
-};
-use num_bigint::{BigInt, Sign};
 use std::{
 	cell::{Ref, RefCell},
 	convert::TryInto,
@@ -27,12 +5,9 @@ use std::{
 	ops::Neg,
 	rc::Rc,
 };
-use std::ops::Deref;
-use serde::Serialize;
-use crate::primitive_types::boolean::Boolean;
-use crate::primitive_types::integer::Integer;
-use crate::item_trait::StackItemTrait;
-use crate::stack_item::StackItem;
+use crate::vm::{EvaluationStack, ExecutionContext, ExecutionEngineLimits, Instruction, OpCode, VMError, VMState};
+use crate::vm_types::reference_counter::ReferenceCounter;
+use crate::vm_types::stack_item::StackItem;
 
 /// Represents the VM used to execute the script.
 #[derive(Clone)]

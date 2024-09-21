@@ -64,9 +64,9 @@ impl ISerializable for Witness {
 impl Witness {
     /// Converts the witness to a JSON object.
     pub fn to_json(&self) -> JToken::Object {
-        let mut json = JObject::new();
-        json.insert("invocation", base64::encode(&self.invocation_script));
-        json.insert("verification", base64::encode(&self.verification_script));
+        let mut json = JToken::new_object();
+        json.insert("invocation".to_string(), base64::encode(&self.invocation_script));
+        json.insert("verification".to_string(), base64::encode(&self.verification_script));
         json
     }
 }

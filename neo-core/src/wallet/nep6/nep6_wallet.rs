@@ -1,12 +1,11 @@
-use neo::prelude::*;
-use neo::crypto::{KeyPair, ScryptParameters};
-use neo::wallet::{Account, Wallet};
-use neo::types::{UInt160, ContractParameterType};
-use neo::vm::Contract;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use crate::protocol_settings::ProtocolSettings;
+use crate::UInt160;
+use crate::wallet::KeyPair;
+use crate::wallet::nep6::{NEP6Account, ScryptParameters};
 
 /// An implementation of the NEP-6 wallet standard.
 ///

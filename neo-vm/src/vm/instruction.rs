@@ -1,5 +1,5 @@
-use crate::op_code::OpCode;
 use std::convert::TryFrom;
+use crate::vm::OpCode;
 
 #[derive(Debug,Clone, PartialEq, Eq, Hash)]
 pub struct Instruction {

@@ -145,13 +145,13 @@ impl Header {
 
     pub fn to_json(&self, settings: &ProtocolSettings) -> JToken {
         let mut json = JToken::new_object();
-        json.insert("hash".to_string(), self.hash().to_string())
+        json.insert("hash".to_string(), self.hash().to_string().into())
         .unwrap()
-        .insert("size".to_string(), self.size() as i64)
+        .insert("size".to_string(), self.size().into())
         .unwrap()
-        .insert("version".to_string(), self.version as i64)
+        .insert("version".to_string(), self.version.into())
         .unwrap()
-        .insert("previousblockhash".to_string(), self.prev_hash.to_string())
+        .insert("previousblockhash".to_string(), self.prev_hash.to_string().into())
         .unwrap()
         .insert("merkleroot".to_string(), self.merkle_root.to_string())
         .unwrap()

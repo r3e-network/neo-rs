@@ -1,7 +1,6 @@
 use std::iter::Iterator;
 use NeoRust::types::StackItem;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::vm_types::reference_counter::ReferenceCounter;
 use crate::io::binary_reader::BinaryReader;
 use crate::neo_contract::find_options::FindOptions;
 use crate::neo_contract::iterators::iiterator::IIterator;
@@ -45,6 +44,10 @@ impl Iterator for StorageIterator {
 }
 
 impl IIterator for StorageIterator {
+    fn next(&mut self) -> bool {
+        todo!()
+    }
+
     fn value(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
         let (key, value) = self.enumerator.peek().unwrap();
         let mut key_bytes = key.as_bytes();
@@ -82,10 +85,10 @@ impl IIterator for StorageIterator {
         } else if self.options.contains(FindOptions::VALUES_ONLY) {
             item
         } else {
-            StackItem::Struct(Struct::new(vec![
+            StackItem::Struct(vec![
                 StackItem::ByteString(key_bytes.to_vec()),
                 item,
-            ]))
+            ])
         }
     }
 }

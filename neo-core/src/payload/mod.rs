@@ -4,7 +4,6 @@
 use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
-use crate::types::UInt256;
 
 pub use {blocks::*, extensible::*, nodes::*, p2p::*};
 

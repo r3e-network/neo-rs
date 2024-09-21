@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
-use NeoRust::crypto::ECPoint;
+use crate::cryptography::ECPoint;
 use crate::hardfork::Hardfork;
 
 /// Represents the protocol settings of the NEO system.

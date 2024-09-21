@@ -3,6 +3,7 @@ use NeoRust::prelude::VMState;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::protocol_settings::ProtocolSettings;
+use crate::store::Snapshot;
 use crate::uint160::UInt160;
 
 /// Represents the descriptor of an asset.

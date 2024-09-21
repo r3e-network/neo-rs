@@ -1,5 +1,9 @@
+use std::fmt;
+use aes_gcm::aes::Aes256;
+use sha2::{Digest, Sha256};
 use neo_base::encoding::base58;
 use crate::contract::Contract;
+use crate::cryptography::ECPoint;
 use crate::uint160::UInt160;
 
 /// Represents a private/public key pair in wallets.

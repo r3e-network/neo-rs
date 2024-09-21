@@ -5,9 +5,6 @@ use std::{
 	fmt::{Debug, Formatter},
 	hash::{Hash, Hasher},
 };
-use crate::compound_types::compound_trait::CompoundTrait;
-use crate::item_trait::{ObjectReferenceEntry, StackItemTrait, StackItemTrait};
-use crate::item_type::StackItemType;
 use crate::vm_types::compound_types::compound_trait::CompoundTrait;
 use crate::vm_types::item_trait::{ObjectReferenceEntry, StackItemTrait};
 

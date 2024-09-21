@@ -1,14 +1,16 @@
-
-use neo::prelude::*;
-use neo::json::Json;
 use std::sync::atomic::{AtomicPtr, Ordering};
+use neo_json::jtoken::JToken;
+use crate::UInt160;
+use crate::wallet::KeyPair;
+use crate::wallet::nep6::{NEP6Contract, NEP6Wallet};
+use crate::wallet::wallet::Wallet;
 
 pub struct NEP6Account {
     wallet: NEP6Wallet,
     nep2key: Option<String>,
     nep2key_new: AtomicPtr<String>,
     key: Option<KeyPair>,
-    pub extra: Option<Json>,
+    pub extra: Option<JToken>,
 }
 
 impl WalletAccount for NEP6Account {
@@ -59,7 +61,7 @@ impl NEP6Account {
         }
     }
 
-    pub fn from_json(json: &Json, wallet: NEP6Wallet) -> Result<Self, Error> {
+    pub fn from_json(json: &JToken, wallet: NEP6Wallet) -> Result<Self, Error> {
         let script_hash = json["address"].as_str()
             .ok_or(Error::InvalidFormat("Missing address"))?
             .to_script_hash(wallet.protocol_settings().address_version)?;
@@ -93,13 +95,13 @@ impl NEP6Account {
         Ok(self.key.as_ref())
     }
 
-    pub fn to_json(&self) -> Json {
-        let mut account = Json::new_object();
-        account["address"] = Json::from(self.script_hash.to_address(self.wallet.protocol_settings().address_version));
-        account["label"] = Json::from(self.label.clone());
-        account["isDefault"] = Json::from(self.is_default);
-        account["lock"] = Json::from(self.lock);
-        account["key"] = Json::from(self.nep2key.clone());
+    pub fn to_json(&self) -> JToken {
+        let mut account = JToken::new_object();
+        account["address"] = JToken::from(self.script_hash.to_address(self.wallet.protocol_settings().address_version));
+        account["label"] = JToken::from(self.label.clone());
+        account["isDefault"] = JToken::from(self.is_default);
+        account["lock"] = JToken::from(self.lock);
+        account["key"] = JToken::from(self.nep2key.clone());
         if let Some(contract) = &self.contract {
             account["contract"] = contract.to_json();
         }

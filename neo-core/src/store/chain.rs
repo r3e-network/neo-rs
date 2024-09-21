@@ -4,7 +4,7 @@
 
 use neo_base::encoding::bin::*;
 
-use crate::{store::{self, *}, tx::StatedTx, types::UInt256};
+use crate::{store::{self, *}, tx::StatedTx, UInt256};
 use crate::block::{IndexHash, StatedBlock, TrimmedBlock};
 
 

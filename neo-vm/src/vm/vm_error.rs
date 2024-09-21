@@ -1,7 +1,6 @@
 use std::fmt::Error;
-use crate::vm_state::VMState;
 use thiserror::Error;
-use crate::op_code::OpCode;
+use crate::vm::OpCode;
 
 /// Represents errors during VM execution.
 #[derive(Debug, Error, PartialEq, Eq, Clone)]

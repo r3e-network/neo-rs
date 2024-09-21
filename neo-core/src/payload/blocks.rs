@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
-use crate::{block::Header, types::{UInt256, Bytes}};
+use crate::{block::Header, UInt256};
 
 
 pub const MAX_HEADERS_ALLOWED: usize = 2000;

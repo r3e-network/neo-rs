@@ -3,6 +3,18 @@ use std::convert::TryInto;
 
 /// A helper module related to wallets.
 pub mod helper {
+    use NeoRust::prelude::VarSizeTrait;
+    use neo_vm::vm::VMState;
+    use crate::contract::Policy;
+    use crate::cryptography::{Base58, Crypto};
+    use crate::neo_contract::application_engine::ApplicationEngine;
+    use crate::neo_contract::call_flags::CallFlags;
+    use crate::neo_contract::helper::helper::{multi_signature_contract_cost, signature_contract_cost};
+    use crate::neo_contract::trigger_type::TriggerType;
+    use crate::network::payloads::{IVerifiable, Transaction};
+    use crate::persistence::DataCache;
+    use crate::protocol_settings::ProtocolSettings;
+    use crate::UInt160;
     use crate::wallet::KeyPair;
     use super::*;
 
@@ -82,7 +94,7 @@ pub mod helper {
     /// The network fee of the transaction.
     pub fn calculate_network_fee(
         tx: &Transaction,
-        snapshot: &DataCache,
+        snapshot: &dyn DataCache,
         settings: &ProtocolSettings,
         account_script: impl Fn(&UInt160) -> Option<Vec<u8>>,
         max_execution_cost: i64,
@@ -132,12 +144,12 @@ pub mod helper {
                 size += Vec::<u8>::new().var_size() + inv_size;
 
                 // Check verify cost
-                let mut engine = ApplicationEngine::new(TriggerType::Verification, tx, snapshot.clone_cache(), settings, max_execution_cost);
+                let mut engine = ApplicationEngine::new(TriggerType::VERIFICATION, tx, snapshot.clone_cache(), settings, max_execution_cost);
                 engine.load_contract(&contract, md, CallFlags::READ_ONLY);
                 if let Some(script) = invocation_script {
                     engine.load_script(&script, |s| s.call_flags = CallFlags::NONE);
                 }
-                if engine.execute()? == VMState::FAULT {
+                if engine.execute()? == VMState::Fault {
                     return Err(format!("Smart contract {} verification fault.", contract.hash));
                 }
                 if !engine.result_stack.pop().unwrap().get_boolean()? {

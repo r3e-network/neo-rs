@@ -2,8 +2,6 @@
 // All Rights Reserved
 
 
-use crate::types::{UInt160, Network};
-
 mod asset_descriptor;
 mod helper;
 mod iwallet_factory;
@@ -19,9 +17,9 @@ pub use iwallet_provider::IWalletProvider;
 pub use key_pair::KeyPair;
 pub use transfer_output::TransferOutput;
 pub use wallet_account::WalletAccount;
+use crate::types::settings::Network;
+use crate::UInt160;
 
-pub mod nep2;
-pub mod nep6;
 mod nep6;
 
 pub type Account = nep6::Account;

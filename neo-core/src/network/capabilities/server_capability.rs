@@ -1,7 +1,8 @@
-
+use std::io::Error;
 use super::NodeCapability;
 use super::NodeCapabilityType;
 use crate::io::binary_writer::BinaryWriter;
+use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 
 /// Indicates that the node is a server.
@@ -29,6 +30,20 @@ impl ServerCapability {
         }
 
         Self { port, capability_type }
+    }
+}
+
+impl ISerializable for ServerCapability {
+    fn size(&self) -> usize {
+        todo!()
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        todo!()
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, Error> {
+        todo!()
     }
 }
 

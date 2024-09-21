@@ -1,7 +1,7 @@
 use std::path::Path;
-use std::fs;
-use neo::prelude::*;
-use crate::NEP6::NEP6Wallet;
+use crate::protocol_settings::ProtocolSettings;
+use crate::wallet::IWalletFactory;
+use crate::wallet::nep6::NEP6Wallet;
 
 pub struct NEP6WalletFactory;
 

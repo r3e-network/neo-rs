@@ -1,6 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::MutexGuard;
 use bytes::BufMut;
-use crate::persistence::SnapshotTrait;
+use crate::neo_contract::storage_item::StorageItem;
+use crate::neo_contract::storage_key::StorageKey;
+use crate::persistence::{DataCache, SeekDirection, SnapshotTrait, Trackable};
+use crate::persistence::persistence_error::PersistenceError;
 use crate::store::ReadOnlyStore;
 
 /// Represents a cache for the snapshot or database of the NEO blockchain.
@@ -103,6 +107,53 @@ impl DataCache for SnapshotCache {
 
     fn update(&mut self, key: &[u8], value: &[u8]) {
         self.update_internal(key, value);
+    }
+
+    fn new() -> Self
+    where
+        Self: Sized
+    {
+        todo!()
+    }
+
+    fn get_internal(&self, key: &StorageKey) -> Result<StorageItem, PersistenceError> {
+        todo!()
+    }
+
+    fn add_internal(&self, key: &StorageKey, value: &StorageItem) -> Result<(), PersistenceError> {
+        todo!()
+    }
+
+    fn delete_internal(&self, key: &StorageKey) -> Result<(), PersistenceError> {
+        todo!()
+    }
+
+    fn contains_internal(&self, key: &StorageKey) -> bool {
+        todo!()
+    }
+
+    fn try_get_internal(&self, key: &StorageKey) -> Result<Option<StorageItem>, &'static str> {
+        todo!()
+    }
+
+    fn update_internal(&self, key: &StorageKey, value: &StorageItem) -> Result<(), PersistenceError> {
+        todo!()
+    }
+
+    fn seek_internal(&self, key_or_prefix: &[u8], direction: SeekDirection) -> Box<dyn Iterator<Item=(StorageKey, StorageItem)> + '_> {
+        todo!()
+    }
+
+    fn get_dictionary(&self) -> MutexGuard<'_, HashMap<StorageKey, Trackable>> {
+        todo!()
+    }
+
+    fn get_change_set(&self) -> MutexGuard<'_, HashSet<StorageKey>> {
+        todo!()
+    }
+
+    fn get_change_set_iter(&self) -> Box<dyn Iterator<Item=Trackable> + '_> {
+        todo!()
     }
 }
 

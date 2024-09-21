@@ -4,6 +4,7 @@
 
 use neo_base::errors;
 use crate::network::payloads::Transaction;
+use crate::tx::TxPool;
 
 #[allow(unused)]
 pub struct BlockChain {

@@ -1,16 +1,9 @@
-use crate::{
-    item_trait::{ObjectReferenceEntry, StackItem::ByteString, StackItemTrait},
-    item_type::StackItemType,
-    types::compound_types::compound_trait::CompoundTrait,
-};
-use num_bigint::{BigInt, Sign};
-use std::{borrow::Cow, cell::RefCell, collections::HashMap, os::unix::raw::ino_t, vec::Vec};
-use crate::compound_types::CompoundItem;
-use crate::execution_engine_limits::ExecutionEngineLimits;
-use crate::primitive_types::boolean::Boolean;
-use crate::primitive_types::byte_string::ByteString;
-use crate::primitive_types::primitive_trait::PrimitiveTrait;
-use crate::stack_item::StackItem;
+use alloc::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use crate::vm_types::item_trait::{ObjectReferenceEntry, StackItemTrait};
+use crate::vm_types::item_type::StackItemType;
+use crate::vm_types::stack_item::StackItem;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
 pub struct Buffer {

@@ -1,5 +1,6 @@
-use crate::{instruction::Instruction, op_code::OpCode, item_type::StackItemType};
 use std::{collections::HashMap, convert::TryFrom, ops::Index};
+use crate::vm::{Instruction, OpCode};
+use crate::vm_types::item_type::StackItemType;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Script {

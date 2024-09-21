@@ -14,7 +14,8 @@ use neo_base::errors;
 use tables::*;
 pub use {builder::*, context::*, decode::*, execution::*, interop::*};
 pub use {opcode::*, operand::*, program::*, reference::*, stack::*, types::*};
-
+use crate::vm_types::item_type::StackItemType;
+use crate::vm_types::stack_item::StackItem;
 
 pub mod builder;
 pub mod context;
@@ -29,6 +30,7 @@ pub mod stack;
 pub mod tables;
 pub mod vm_types;
 pub mod vm;
+pub mod exception;
 
 pub(crate) const MAX_STACK_ITEM_SIZE: usize = 65535 * 2;
 
