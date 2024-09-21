@@ -5,8 +5,10 @@ use byteorder::LittleEndian;
 use NeoRust::prelude::{StringExt, VarSizeTrait};
 use neo_base::encoding::base64;
 use neo_json::jtoken::JToken;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use neo_vm::vm::ExecutionEngineLimits;
+use crate::cryptography::Crypto;
 use crate::io::iserializable::ISerializable;
+use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::method_token::MethodToken;
 
 /// Represents the structure of NEO Executable Format.

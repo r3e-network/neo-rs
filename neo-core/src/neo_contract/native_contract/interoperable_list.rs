@@ -93,12 +93,12 @@ impl<T: InteroperableElement> IInteroperable for InteroperableList<T> {
 
     fn to_stack_item(&self) -> StackItem {
         let mut reference_counter = ReferenceCounter::new();
-        StackItem::Array(Array::new(
+        StackItem::Array(
             self.list
                 .iter()
                 .map(|item| item.to_stack_item(&mut reference_counter))
                 .collect(),
-        ))
+        )
     }
 }
 

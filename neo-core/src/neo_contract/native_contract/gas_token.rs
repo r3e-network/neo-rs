@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::error::Error;
 use async_trait::async_trait;
-use num_bigint::BigInt;
 use neo_proc_macros::contract_method;
 use crate::contract::Contract;
 use crate::hardfork::Hardfork;
@@ -153,6 +152,10 @@ impl NativeContract for GasToken {
     }
 
     fn post_persist(&self, engine: &mut ApplicationEngine) -> Result<(), Box<dyn Error>> {
+        todo!()
+    }
+
+    fn events_descriptors(&self) -> &[ContractEventAttribute] {
         todo!()
     }
 }

@@ -1,4 +1,5 @@
 use alloc::rc::Rc;
+use std::cell::RefCell;
 use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use neo_proc_macros::{contract, event};
@@ -321,11 +322,11 @@ impl IInteroperable for IdList {
         }
     }
 
-        fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
-        Ok(StackItem::Array(Array::new_with_items(
-            self.0.iter().map(|&id| StackItem::Integer(id as i64)).collect(),
-            reference_counter,
-        )))
+        fn to_stack_item(&self, reference_counter: Rc<RefCell<ReferenceCounter>> ) -> Result<Rc<StackItem>, Self::Error> {
+        Ok(StackItem::new_array(
+            Some(reference_counter),
+            self.0.iter().map(|&id| StackItem::Integer(id)).collect(),
+        ))
     }
     
     type Error = std::io::Error;

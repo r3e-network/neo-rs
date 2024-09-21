@@ -1,5 +1,6 @@
 use neo_vm::execution_context::ExecutionContext;
 use neo_vm::instruction::Instruction;
+use neo_vm::vm::{ExecutionContext, Instruction};
 use crate::neo_contract::application_engine::ApplicationEngine;
 
 pub trait IDiagnostic {

@@ -1,4 +1,5 @@
 use neo_vm::stack_item::StackItem;
+use neo_vm::vm_types::stack_item::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 
 /// Represents the object that can be converted to and from `StackItem`

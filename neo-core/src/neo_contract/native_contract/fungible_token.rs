@@ -153,7 +153,7 @@ pub trait FungibleToken: NativeContract {
         engine.send_notification(
             self.hash(),
             "Transfer",
-            Array::new(vec![
+            StackItem::Array(vec![
                 from.map(|a| a.to_array().into()).unwrap_or(StackItem::Null),
                 to.map(|a| a.to_array().into()).unwrap_or(StackItem::Null),
                 amount.into(),
