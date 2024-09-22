@@ -4,6 +4,7 @@
 use alloc::vec::Vec;
 
 use neo_base::errors;
+use neo_core::types::{ScriptHash, ToScriptHash};
 
 use crate::{OpCode::*, *};
 
@@ -28,11 +29,16 @@ pub struct Op {
 
 // Neo VM Program
 pub struct Program {
+    script_hash: ScriptHash,
     ops: Vec<Op>,
 }
 
 impl Program {
-    pub fn nop() -> Self { Self { ops: Vec::new() } }
+    #[inline]
+    pub fn nop() -> Self { Self { script_hash: [].to_script_hash(), ops: Vec::new() } }
+
+    #[inline]
+    pub fn script_hash(&self) -> &ScriptHash { &self.script_hash }
 
     #[inline]
     pub fn ops(&self) -> &[Op] { &self.ops }
@@ -67,12 +73,12 @@ impl Program {
                     let _ = ItemType::try_from(typ)
                         .map_err(|_| ProgramError::InvalidStackItemType(op.code, op.ip, typ))?;
                 }
-                // Syscall => {}
-                _ => {}
+                _ => { /* Syscall => {} */ }
             }
         }
 
-        Ok(Program { ops })
+        // TODO: optimize script hash
+        Ok(Program { script_hash: script.to_script_hash(), ops })
     }
 }
 
@@ -111,8 +117,7 @@ impl<'a> Executing<'a> {
 mod test {
     use neo_base::encoding::hex::DecodeHex;
 
-    use super::*;
-    use crate::decode::test::TEST_CODES_1;
+    use crate::{decode::test::TEST_CODES_1, *};
 
     #[test]
     fn test_program_build() {

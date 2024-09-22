@@ -143,10 +143,10 @@ impl<Env: VmEnv> NeoVm<Env> {
         NeoVm {
             state: VmState::Break,
             limits,
-            invocations: Vec::new(),
-            env,
             gas_limit,
             gas_consumed: 0,
+            invocations: Vec::new(),
+            env,
         }
     }
 

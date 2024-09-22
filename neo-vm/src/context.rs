@@ -4,10 +4,12 @@
 use crate::*;
 
 pub struct ExecContext {
-    pub(crate) stack: ExecStack,
     pub(crate) statics: Option<Slots>,
     pub(crate) locals: Option<Slots>,
     pub(crate) arguments: Option<Slots>,
+
+    // stack should be declare after than statics, locals and arguments
+    pub(crate) stack: ExecStack,
 
     pc: usize,
     program: Rc<Program>,

@@ -36,7 +36,7 @@ pub const SIGN_DATA_SIZE: usize = 4 + H256_SIZE;
 
 pub type Fee = u64;
 
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Hash, Copy, Clone, Eq, PartialEq)]
 pub struct ScriptHash(pub(crate) [u8; SCRIPT_HASH_SIZE]);
 
 impl AsRef<[u8; SCRIPT_HASH_SIZE]> for ScriptHash {

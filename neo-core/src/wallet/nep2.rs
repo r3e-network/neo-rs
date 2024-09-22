@@ -114,11 +114,11 @@ impl<T: AsRef<[u8]>> Nep2KeyDecrypt for T {
         // secret-key
         let sk = xor_array::<KEY_SIZE>(&encrypted, &derived[..KEY_SIZE]);
 
-        let sk =
-            PrivateKey::from_be_bytes(sk.as_slice()).map_err(|_err| Nep2VerifyError::InvalidKey)?;
+        let sk = PrivateKey::from_be_bytes(sk.as_slice())
+            .map_err(|_err| Nep2VerifyError::InvalidKey)?;
 
-        let addr =
-            PublicKey::try_from(&sk).map_err(|_err| Nep2VerifyError::InvalidKey)?.to_neo3_address();
+        let addr = PublicKey::try_from(&sk)
+            .map_err(|_err| Nep2VerifyError::InvalidKey)?.to_neo3_address();
 
         let hash = addr.as_str().sha256_twice();
         if hash[..4].ct_eq(&raw[3..7]).into() { Ok(sk) } else { Err(Nep2VerifyError::InvalidHash) }
@@ -138,9 +138,11 @@ mod test {
             .decode_hex()
             .expect("hex decode should be ok");
 
-        let sk = PrivateKey::from_be_bytes(sk.as_slice()).expect("from le-bytes should be ok ");
+        let sk = PrivateKey::from_be_bytes(sk.as_slice())
+            .expect("from le-bytes should be ok ");
 
-        let pk = PublicKey::try_from(&sk).expect("from private key should be ok");
+        let pk = PublicKey::try_from(&sk)
+            .expect("from private key should be ok");
         assert_eq!(
             "02028a99826edc0c97d18e22b6932373d908d323aa7f92656a77ec26e8861699ef",
             pk.to_compressed().to_hex(),
@@ -154,8 +156,8 @@ mod test {
 
         assert_eq!(key.as_str(), "6PYUUUFei9PBBfVkSn8q7hFCnewWFRBKPxcn6Kz6Bmk3FqWyLyuTQE2XFH");
 
-        let got = pwd.decrypt_nep2_key(key.as_str()).expect("decrypt should be ok");
-
+        let got = pwd.decrypt_nep2_key(key.as_str())
+            .expect("decrypt should be ok");
         assert_eq!(got.as_le_bytes(), sk.as_le_bytes());
     }
 }
