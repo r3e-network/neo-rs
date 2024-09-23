@@ -29,7 +29,9 @@ pub struct Contract {
 
 impl Contract {
     #[inline]
-    pub fn as_bytes(&self) -> &[u8] { self.script.as_bytes() }
+    pub fn as_bytes(&self) -> &[u8] {
+        self.script.as_bytes()
+    }
 }
 
 pub trait ToSignContract {
@@ -85,12 +87,10 @@ impl<T: AsRef<[PublicKey]>> ToMultiSignContract for T {
 }
 
 pub fn contract_hash(sender: &H160, name: &str, nef_checksum: u32) -> H160 {
-    const OPCODE_ABORT: u8 = 0x38;
-
     // 1(Abort) + (2+20) + (2+name.len()) + 4
     let mut buf = BytesMut::with_capacity(1 + (2 + 20) + (2 + name.len()) + 4);
 
-    buf.put_u8(OPCODE_ABORT);
+    buf.put_u8(OpCode::Abort.as_u8());
     buf.put_varbytes(sender.as_le_bytes());
     buf.put_varint(nef_checksum as u64);
     buf.put_varbytes(name);
@@ -106,16 +106,18 @@ impl<T: AsRef<[u8]>> IsSignContract for T {
     fn is_sign_contract(&self) -> bool {
         let bytes = self.as_ref();
         bytes.len() == CHECK_SIG_SIZE
-            && bytes[0] == PUSH_DATA1
+            && bytes[0] == OpCode::PushData1.as_u8()
             && bytes[1] == PUBLIC_COMPRESSED_SIZE as u8
-            && bytes[35] == CHECK_SIG_OP_CODE
+            && bytes[35] == OpCode::Syscall.as_u8()
             && bytes.ends_with(&CHECK_SIG_HASH_SUFFIX)
     }
 }
 
 impl IsSignContract for Contract {
     #[inline]
-    fn is_sign_contract(&self) -> bool { self.as_bytes().is_sign_contract() }
+    fn is_sign_contract(&self) -> bool {
+        self.as_bytes().is_sign_contract()
+    }
 }
 
 pub trait IsMultiSignContract {
@@ -144,7 +146,7 @@ impl<T: AsRef<[u8]>> IsMultiSignContract for T {
         }
 
         let mut keys = 0usize;
-        while u8::decode_bin(&mut r).ok()? == PUSH_DATA1 {
+        while u8::decode_bin(&mut r).ok()? == OpCode::PushData1.as_u8() {
             let size = u8::decode_bin(&mut r).ok()?;
             if size != PUBLIC_COMPRESSED_SIZE as u8 {
                 return None;
@@ -172,7 +174,7 @@ impl<T: AsRef<[u8]>> IsMultiSignContract for T {
             return None;
         }
 
-        if u8::decode_bin(&mut r).ok()? != CHECK_SIG_OP_CODE {
+        if u8::decode_bin(&mut r).ok()? != OpCode::Syscall.as_u8() {
             return None;
         }
 
@@ -206,14 +208,11 @@ mod test {
     #[test]
     fn test_multi_sig_contract() {
         let (_, pk1) = OsRand::gen_keypair(&mut OsRand).expect("gen_keypair should be ok");
-
         let (_, pk2) = OsRand::gen_keypair(&mut OsRand).expect("gen_keypair should be ok");
 
         let keys = [pk1, pk2];
         let _ = keys.to_multi_sign_contract(0).expect_err("cannot be zero signer");
-
         let _ = keys.to_multi_sign_contract(3).expect_err("cannot be zero signer");
-
         let _ = keys.to_multi_sign_contract(1).expect("to_multi_sign_contract should be ok");
     }
 }

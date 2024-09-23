@@ -27,6 +27,24 @@ pub struct Op {
     pub operand: Operand,
 }
 
+pub trait AsOp {
+    fn as_op(&self, ip: u32) -> Op;
+
+    fn as_operand_op(&self, ip: u32, operand: Operand) -> Op;
+}
+
+impl AsOp for OpCode {
+    #[inline]
+    fn as_op(&self, ip: u32) -> Op {
+        Op { ip, code: *self, operand: Operand::default() }
+    }
+
+    #[inline]
+    fn as_operand_op(&self, ip: u32, operand: Operand) -> Op {
+        Op { ip, code: *self, operand }
+    }
+}
+
 // Neo VM Program
 pub struct Program {
     script_hash: ScriptHash,
@@ -82,36 +100,6 @@ impl Program {
     }
 }
 
-pub struct Executing<'a> {
-    pc: usize,
-    ops: &'a [Op],
-}
-
-impl<'a> Executing<'a> {
-    #[inline]
-    pub fn new(ops: &'a [Op]) -> Executing<'a> { Executing { pc: 0, ops } }
-
-    // on abort or assert failed, etc.
-    #[inline]
-    pub fn on_terminated(&mut self) { self.pc = self.ops.len() }
-
-    #[inline]
-    pub fn change_pc(&mut self, to: u32) -> bool {
-        if let Ok(next) = self.ops.binary_search_by(|x| x.ip.cmp(&to)) {
-            self.pc = next;
-            return true;
-        }
-        false
-    }
-
-    #[inline]
-    pub fn next_op(&mut self) -> Option<&Op> {
-        if self.pc < self.ops.len() {
-            return Some(&self.ops[self.pc]);
-        }
-        None
-    }
-}
 
 #[cfg(test)]
 mod test {

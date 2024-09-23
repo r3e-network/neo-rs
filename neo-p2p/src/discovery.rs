@@ -293,12 +293,12 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
     }
 
     #[inline]
-    pub fn connected_peers(&self) -> impl Iterator<Item = &Connected> {
+    pub fn connected_peers(&self) -> impl Iterator<Item=&Connected> {
         self.connected.iter().map(|(_, peer)| peer)
     }
 
     #[inline]
-    pub fn good_peers(&self) -> impl Iterator<Item = &TcpPeer> {
+    pub fn good_peers(&self) -> impl Iterator<Item=&TcpPeer> {
         self.goods.iter().map(|(_, peer)| peer)
     }
 
@@ -330,12 +330,9 @@ mod test {
         let mut disc = DiscoveryV1::new(tx, dns);
         disc.request_remotes(2);
 
-        let addr = rx.try_recv()
-            .expect("`try_recv` should be ok");
+        let addr = rx.try_recv().expect("`try_recv` should be ok");
 
-        let _ = rx.try_recv()
-            .expect_err("`try_recv` should be failed");
-
+        let _ = rx.try_recv().expect_err("`try_recv` should be failed");
         assert!(disc.attempts.contains_key(&addr));
 
         disc.on_incoming(addr, PeerStage::Connected.as_u32());

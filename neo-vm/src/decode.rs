@@ -45,7 +45,7 @@ impl Iterator for ScriptDecoder<'_> {
             return Some(Err(OpError::InvalidOpCode(ip as u32, next)));
         };
 
-        let attr = opcode.attr();
+        let attr =  &CODE_ATTRS[next as usize];
         let trailing = attr.trailing as usize;
         if trailing <= 0 {
             return Some(Ok(opcode.as_op(ip as u32)));

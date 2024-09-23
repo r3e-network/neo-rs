@@ -32,6 +32,7 @@ lz4_flex         = { version = "0.11", default-features = false }
 thiserror        = { version = "1", optional = true }
 thiserror-no-std = { version = "2", optional = true }
 
+strum            = { version = "0", default-features = false, features = ["derive"] }
 
 [features]
 default = ["neo-base/default", "neo-crypto/default", "thiserror-no-std"]

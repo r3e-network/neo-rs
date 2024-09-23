@@ -139,11 +139,8 @@ impl Ord for TxScore {
             return Ordering::Less;
         }
 
-        (self.netfee_per_byte, self.netfee, self.tx_number).cmp(&(
-            other.netfee_per_byte,
-            other.netfee,
-            other.tx_number,
-        ))
+        (self.netfee_per_byte, self.netfee, self.tx_number)
+            .cmp(&(other.netfee_per_byte, other.netfee, other.tx_number))
     }
 }
 

@@ -8,9 +8,10 @@ extern crate alloc;
 use alloc::{rc::Rc, vec::Vec};
 
 use neo_base::errors;
-use neo_core::types::VmState;
+use neo_core::types::{VmState, OpCode};
+
 pub use {builder::*, context::*, decode::*, execution::*, interop::*};
-pub use {opcode::*, operand::*, program::*, reference::*, stack::*, types::*};
+pub use {operand::*, program::*, reference::*, stack::*, types::*};
 use {slots::*, tables::*};
 
 pub mod builder;
@@ -18,7 +19,6 @@ pub mod context;
 pub mod decode;
 pub mod execution;
 pub mod interop;
-pub mod opcode;
 pub mod operand;
 pub mod program;
 pub mod reference;
@@ -32,6 +32,12 @@ pub(crate) const MAX_STACK_ITEM_SIZE: usize = 65535 * 2;
 pub trait RunPrice {
     fn price(&self) -> u64;
 }
+
+impl RunPrice for OpCode {
+    #[inline]
+    fn price(&self) -> u64 { CODE_ATTRS[self.as_u8() as usize].price }
+}
+
 
 #[derive(Debug)]
 pub struct VmLimits {

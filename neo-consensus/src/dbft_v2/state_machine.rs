@@ -2,11 +2,13 @@
 // All Rights Reserved
 
 use alloc::boxed::Box;
+
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
+
 use neo_base::{byzantine_failure_quorum, byzantine_honest_quorum};
 use neo_core::block::{self, Header};
 use neo_core::merkle::MerkleSha256;

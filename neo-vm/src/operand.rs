@@ -4,6 +4,18 @@
 use neo_base::bytes::{PickU16, PickU32, PickU64};
 use tinyvec::TinyVec;
 
+
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct CodeAttr {
+    pub price: u64,
+
+    // data/address size after this OpCode
+    pub trailing: u32,
+
+    pub unsigned: bool,
+    // pub may_jump: bool,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Operand {
     // The first operand, may convert from i8, i16, i32, i64, u8, u32
@@ -53,9 +65,8 @@ impl Operand {
 
 #[cfg(test)]
 mod test {
+    use neo_core::types::{OpCode, OP_CODES};
     use strum::IntoEnumIterator;
-
-    use crate::{OpCode, OP_CODES};
 
     #[test]
     fn test_opcode_valid() {

@@ -33,11 +33,7 @@ pub trait Verify {
 pub trait DigestVerify {
     type Error;
 
-    fn verify_digest<T: AsRef<[u8]>, S: AsRef<[u8]>>(
-        &self,
-        message: T,
-        sign: S,
-    ) -> Result<(), Self::Error>;
+    fn verify_digest<T: AsRef<[u8]>, S: AsRef<[u8]>>(&self, message: T, sign: S) -> Result<(), Self::Error>;
 }
 
 pub struct Secp256r1Sign {
@@ -120,11 +116,7 @@ impl Verify for secp256r1::PublicKey {
 impl DigestVerify for secp256r1::PublicKey {
     type Error = VerifyError;
 
-    fn verify_digest<T: AsRef<[u8]>, S: AsRef<[u8]>>(
-        &self,
-        message: T,
-        sign: S,
-    ) -> Result<(), Self::Error> {
+    fn verify_digest<T: AsRef<[u8]>, S: AsRef<[u8]>>(&self, message: T, sign: S) -> Result<(), Self::Error> {
         // let mut sign: [u8; ECC256_SIGN_SIZE] = sign.as_ref().clone().to_array();
         // sign[0..32].reverse();
         // sign[32..ECC256_SIGN_SIZE].reverse(); // little endian to big endian
