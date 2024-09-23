@@ -30,11 +30,11 @@ use crate::uint256::UInt256;
 const TEST_MODE_GAS: i64 = 20_00000000;
 
 pub struct ApplicationEngine {
-    execution_engine: ExecutionEngine,
+    execution_engine: NeoVm,
     trigger: TriggerType,
     fee_consumed: i64,
     fee_amount: i64,
-    pub(crate) current_context: Option<Rc<RefCell<ExecutionContext>>>,
+    pub(crate) current_context: Option<Rc<RefCell<ExecContext>>>,
     invocation_counter: HashMap<UInt160, i32>,
     notifications: Vec<NotifyEventArgs>,
     state_cache: dyn DataCache,
@@ -43,7 +43,7 @@ pub struct ApplicationEngine {
     pub(crate) script_container: Option<Box<dyn IVerifiable<Error=ContractError>>>,
     pub(crate) persisting_block: Option<Block>,
     disposables: Vec<Box<dyn Drop>>,
-    contract_tasks: HashMap<Rc<RefCell<ExecutionContext>>, ContractTaskAwaiter>,
+    contract_tasks: HashMap<Rc<RefCell<ExecContext>>, ContractTaskAwaiter>,
     exec_fee_factor: u32,
     storage_price: u32,
     nonce_data: [u8; 16],
@@ -87,7 +87,7 @@ impl ApplicationEngine {
         }
 
         let mut engine = Self {
-            execution_engine: ExecutionEngine::new(jump_table.unwrap_or_else(|| Self::compose_default_jump_table())),
+            execution_engine: NeoVm::new(jump_table.unwrap_or_else(|| Self::compose_default_jump_table())),
             trigger,
             fee_consumed: 0,
             fee_amount: gas,
@@ -116,13 +116,13 @@ impl ApplicationEngine {
         engine
     }
 
-    pub fn load_script(&mut self, script: Script, rvcount: i32, initial_position: i32) -> Rc<RefCell<ExecutionContext>> {
-        let context = Rc::new(RefCell::new(ExecutionContext::new(script, rvcount, initial_position)));
+    pub fn load_script(&mut self, script: Script, rvcount: i32, initial_position: i32) -> Rc<RefCell<ExecContext>> {
+        let context = Rc::new(RefCell::new(ExecContext::new(script, rvcount, initial_position)));
         self.load_context(Rc::clone(&context));
         context
     }
 
-    pub fn load_context(&mut self, context: Rc<RefCell<ExecutionContext>>) {
+    pub fn load_context(&mut self, context: Rc<RefCell<ExecContext>>) {
         let mut ctx = context.borrow_mut();
         let state = ctx.get_state_mut::<ExecutionContextState>();
         state.script_hash = state.script_hash.or_else(|| Some(ctx.script().to_script_hash()));
@@ -247,7 +247,7 @@ impl ApplicationEngine {
         flags: CallFlags,
         has_return_value: bool,
         args: Vec<StackItem>,
-    ) -> Result<Rc<RefCell<ExecutionContext>>, Box<dyn std::error::Error>> {
+    ) -> Result<Rc<RefCell<ExecContext>>, Box<dyn std::error::Error>> {
         let contract = NativeContract::ContractManagement.get_contract(&self.snapshot, &contract_hash)
             .ok_or_else(|| format!("Called Contract Does Not Exist: {}", contract_hash))?;
         let md = contract.manifest.abi.get_method(method, args.len() as u32)
@@ -262,7 +262,7 @@ impl ApplicationEngine {
         mut flags: CallFlags,
         has_return_value: bool,
         args: Vec<StackItem>,
-    ) -> Result<Rc<RefCell<ExecutionContext>>, Box<dyn std::error::Error>> {
+    ) -> Result<Rc<RefCell<ExecContext>>, Box<dyn std::error::Error>> {
         // Check if the contract is blocked
         if NativeContract::Policy.is_blocked(&self.snapshot, &contract.hash) {
             return Err(format!("The contract {} has been blocked.", contract.hash).into());
@@ -350,7 +350,7 @@ impl ApplicationEngine {
         1000 * self.exec_fee_factor as i64
     }
 
-    fn execute_context(&mut self, context: &Rc<RefCell<ExecutionContext>>) -> Result<(), Box<dyn std::error::Error>> {
+    fn execute_context(&mut self, context: &Rc<RefCell<ExecContext>>) -> Result<(), Box<dyn std::error::Error>> {
         self.load_context(Rc::clone(context));
         let result = self.execute();
         self.unload_context(Rc::clone(context));
@@ -388,7 +388,7 @@ impl ApplicationEngine {
         task
     }
 
-    fn unload_context(&mut self, context: Rc<RefCell<ExecutionContext>>) {
+    fn unload_context(&mut self, context: Rc<RefCell<ExecContext>>) {
         self.execution_engine.unload_context(Rc::clone(&context));
         if !Rc::ptr_eq(context.borrow().script(), self.current_context.as_ref().unwrap().borrow().script()) {
             let state = context.borrow().get_state::<ExecutionContextState>();
@@ -429,7 +429,7 @@ impl ApplicationEngine {
         contract: &ContractState,
         method: &ContractMethodDescriptor,
         call_flags: CallFlags,
-    ) -> Result<Rc<RefCell<ExecutionContext>>, Box<dyn std::error::Error>> {
+    ) -> Result<Rc<RefCell<ExecContext>>, Box<dyn std::error::Error>> {
         let context = self.load_script(
             contract.script.clone(),
             if method.return_type == ContractParameterType::Void { 0 } else { 1 },

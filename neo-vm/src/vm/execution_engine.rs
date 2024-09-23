@@ -5,13 +5,13 @@ use std::{
 	ops::Neg,
 	rc::Rc,
 };
-use crate::vm::{EvaluationStack, ExecutionContext, ExecutionEngineLimits, Instruction, OpCode, VMError, VMState};
+use crate::vm::{EvaluationStack, ExecContext, ExecutionEngineLimits, Instruction, OpCode, VMError, VMState};
 use crate::vm_types::reference_counter::ReferenceCounter;
 use crate::vm_types::stack_item::StackItem;
 
 /// Represents the VM used to execute the script.
 #[derive(Clone)]
-pub struct ExecutionEngine {
+pub struct NeoVm {
 	/// Restrictions on the VM.
 	pub limits: ExecutionEngineLimits,
 
@@ -19,13 +19,13 @@ pub struct ExecutionEngine {
 	pub reference_counter: Rc<RefCell<ReferenceCounter>>,
 
 	/// The invocation stack of the VM.
-	pub invocation_stack: Vec<Rc<RefCell<ExecutionContext>>>,
+	pub invocation_stack: Vec<Rc<RefCell<ExecContext>>>,
 
 	/// The top frame of the invocation stack.
-	pub current_context: Option<Rc<RefCell<ExecutionContext>>>,
+	pub current_context: Option<Rc<RefCell<ExecContext>>>,
 
 	/// The bottom frame of the invocation stack.
-	pub entry_context: Option<Rc<RefCell<ExecutionContext>>>,
+	pub entry_context: Option<Rc<RefCell<ExecContext>>>,
 
 	/// The stack to store the return values.
 	pub result_stack: Rc<RefCell<EvaluationStack>>,
@@ -59,7 +59,7 @@ where
 	fn free(&mut self) {}
 }
 
-impl ExecutionEngine {
+impl NeoVm {
 	/// Constructs a new VM engine with default options.
 	pub fn new() -> Self {
 		Self::with_options(ExecutionEngineLimits::default())
@@ -1385,7 +1385,7 @@ impl ExecutionEngine {
 		self.uncaught_exception = Some(StackItemTrait::from(Null::default()).into());
 	}
 
-	fn load_context(&mut self, context: &Rc<RefCell<ExecutionContext>>) {
+	fn load_context(&mut self, context: &Rc<RefCell<ExecContext>>) {
 		self.invocation_stack.push(context.clone());
 		self.current_context = Some(self.invocation_stack.last().unwrap().clone());
 		if self.entry_context.is_none() {
@@ -1393,7 +1393,7 @@ impl ExecutionEngine {
 		}
 	}
 
-	fn unload_context(&mut self, mut context: Rc<RefCell<ExecutionContext>>) {
+	fn unload_context(&mut self, mut context: Rc<RefCell<ExecContext>>) {
 		if self.invocation_stack.is_empty() {
 			self.current_context = None;
 			self.entry_context = None;
@@ -1417,7 +1417,7 @@ impl ExecutionEngine {
 		script: Script,
 		rvcount: i32,
 		initial_position: usize,
-	) -> ExecutionContext {
+	) -> ExecContext {
 		let share = SharedStates {
 			script,
 			evaluation_stack: Default::default(),
@@ -1425,7 +1425,7 @@ impl ExecutionEngine {
 			states: Default::default(),
 		};
 
-		ExecutionContext {
+		ExecContext {
 			shared_states,
 			instruction_pointer: initial_position,
 			rv_count: rvcount,
@@ -1440,7 +1440,7 @@ impl ExecutionEngine {
 		script: Script,
 		rvcount: i32,
 		initial_position: usize,
-	) -> Rc<RefCell<ExecutionContext>> {
+	) -> Rc<RefCell<ExecContext>> {
 		let context = Rc::new(RefCell::new(self.create_context(script, rvcount, initial_position)));
 
 		self.load_context(&context);
@@ -1580,7 +1580,7 @@ impl ExecutionEngine {
 		}
 	}
 
-	fn load_token(&mut self, token: u16) -> Result<ExecutionContext, &'static str> {
+	fn load_token(&mut self, token: u16) -> Result<ExecContext, &'static str> {
 		panic!("Not implemented");
 	}
 

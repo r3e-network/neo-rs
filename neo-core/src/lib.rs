@@ -23,6 +23,11 @@ pub mod store;
 pub mod tx;
 pub mod types;
 pub mod wallet;
+pub mod neo_contract;
+pub mod network;
+pub mod persistence;
+pub mod uint256;
+pub mod uint160;
 
 pub use neo_crypto::secp256r1::*;
 

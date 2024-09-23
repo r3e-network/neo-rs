@@ -21,7 +21,7 @@ pub struct ExecutionEngineLimits {
 	/// The maximum nesting depth of `try` blocks.
 	pub max_try_nesting_depth: usize,
 
-	/// Allow catching the ExecutionEngine Exceptions
+	/// Allow catching the NeoVm Exceptions
 	pub catch_engine_exceptions: bool,
 }
 

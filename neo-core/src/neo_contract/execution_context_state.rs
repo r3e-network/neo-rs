@@ -1,17 +1,17 @@
 
-use neo_vm::vm::ExecutionContext;
+use neo_vm::vm::ExecContext;
 use crate::neo_contract::contract_state::ContractState;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::uint160::UInt160;
 use crate::persistence::DataCache;
 
-/// Represents the custom state in `ExecutionContext`.
+/// Represents the custom state in `ExecContext`.
 pub struct ExecutionContextState {
     /// The script hash of the current context.
     pub script_hash: UInt160,
 
     /// The calling context.
-    pub calling_context: Option<Box<ExecutionContext>>,
+    pub calling_context: Option<Box<ExecContext>>,
 
     /// The script hash of the calling native contract. Used in native contracts only.
     pub(crate) native_calling_script_hash: Option<UInt160>,

@@ -26,6 +26,9 @@ pub mod slots;
 pub mod stack;
 pub mod tables;
 pub mod types;
+pub mod vm;
+pub mod script;
+pub mod exception;
 
 pub(crate) const MAX_STACK_ITEM_SIZE: usize = 65535 * 2;
 

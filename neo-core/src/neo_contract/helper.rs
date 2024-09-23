@@ -4,7 +4,7 @@ use neo_persistence::DataCache;
 use neo_smart_contract::manifest::{ContractAbi, ContractMethodDescriptor};
 use neo_smart_contract::native::NativeContract;
 use neo_vm::{OpCode, Script, ScriptBuilder, StackItem, VMState};
-use neo_vm::types::{ExecutionContext, ExecutionContextState};
+use neo_vm::types::{ExecContext, ExecutionContextState};
 use std::convert::TryInto;
 
 /// A helper module related to smart contracts.
@@ -71,8 +71,8 @@ pub mod helper {
         UInt160::from_script_hash(&sb.to_array())
     }
 
-    /// Gets the script hash of the specified `ExecutionContext`.
-    pub fn get_script_hash(context: &ExecutionContext) -> UInt160 {
+    /// Gets the script hash of the specified `ExecContext`.
+    pub fn get_script_hash(context: &ExecContext) -> UInt160 {
         context.get_state::<ExecutionContextState>().script_hash
     }
 
