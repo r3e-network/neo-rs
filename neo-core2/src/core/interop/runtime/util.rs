@@ -1,123 +1,100 @@
-package runtime
+use std::collections::HashMap;
+use std::error::Error;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::convert::TryInto;
+use std::cmp::min;
 
-import (
-	"encoding/binary"
-	"errors"
-	"math/big"
-	"slices"
+use bigdecimal::BigDecimal;
+use byteorder::{ByteOrder, LittleEndian};
+use murmur3::murmur3_x64_128;
+use neo_core::config::Config;
+use neo_core::interop::Context;
+use neo_core::state::NotificationEvent;
+use neo_core::util::Uint160;
+use neo_core::vm::{self, stackitem::{StackItem, StackItemType}};
+use neo_core::encoding::address::NEO3_PREFIX;
 
-	"github.com/nspcc-dev/neo-go/pkg/config"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/core/state"
-	"github.com/nspcc-dev/neo-go/pkg/encoding/address"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-	"github.com/nspcc-dev/neo-go/pkg/vm"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-	"github.com/twmb/murmur3"
-)
-
-// GasLeft returns the remaining amount of GAS.
-func GasLeft(ic *interop.Context) error {
-	if ic.VM.GasLimit == -1 {
-		ic.VM.Estack().PushItem(stackitem.NewBigInteger(big.NewInt(ic.VM.GasLimit)))
-	} else {
-		ic.VM.Estack().PushItem(stackitem.NewBigInteger(big.NewInt(ic.VM.GasLimit - ic.VM.GasConsumed())))
-	}
-	return nil
+pub fn gas_left(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    let gas_limit = ic.vm.gas_limit;
+    let gas_left = if gas_limit == -1 {
+        BigDecimal::from(gas_limit)
+    } else {
+        BigDecimal::from(gas_limit - ic.vm.gas_consumed())
+    };
+    ic.vm.estack().push_item(StackItem::BigInteger(gas_left));
+    Ok(())
 }
 
-// GetNotifications returns notifications emitted in the current execution context.
-func GetNotifications(ic *interop.Context) error {
-	item := ic.VM.Estack().Pop().Item()
-	notifications := ic.Notifications
-	if _, ok := item.(stackitem.Null); !ok {
-		b, err := item.TryBytes()
-		if err != nil {
-			return err
-		}
-		u, err := util.Uint160DecodeBytesBE(b)
-		if err != nil {
-			return err
-		}
-		notifications = []state.NotificationEvent{}
-		for i := range ic.Notifications {
-			if ic.Notifications[i].ScriptHash.Equals(u) {
-				notifications = append(notifications, ic.Notifications[i])
-			}
-		}
-	}
-	if len(notifications) > vm.MaxStackSize {
-		return errors.New("too many notifications")
-	}
-	arr := stackitem.NewArray(make([]stackitem.Item, 0, len(notifications)))
-	for i := range notifications {
-		ev := stackitem.NewArray([]stackitem.Item{
-			stackitem.NewByteArray(notifications[i].ScriptHash.BytesBE()),
-			stackitem.Make(notifications[i].Name),
-			notifications[i].Item,
-		})
-		arr.Append(ev)
-	}
-	ic.VM.Estack().PushItem(arr)
-	return nil
+pub fn get_notifications(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    let item = ic.vm.estack().pop().item();
+    let mut notifications = ic.notifications.clone();
+    if item.item_type() != StackItemType::Null {
+        let b = item.try_bytes()?;
+        let u = Uint160::from_bytes_be(&b)?;
+        notifications = ic.notifications.iter()
+            .filter(|n| n.script_hash == u)
+            .cloned()
+            .collect();
+    }
+    if notifications.len() > vm::MAX_STACK_SIZE {
+        return Err("too many notifications".into());
+    }
+    let arr = StackItem::Array(notifications.iter().map(|n| {
+        StackItem::Array(vec![
+            StackItem::ByteArray(n.script_hash.to_bytes_be()),
+            StackItem::from(n.name.clone()),
+            n.item.clone(),
+        ])
+    }).collect());
+    ic.vm.estack().push_item(arr);
+    Ok(())
 }
 
-// GetInvocationCounter returns how many times the current contract has been invoked during the current tx execution.
-func GetInvocationCounter(ic *interop.Context) error {
-	currentScriptHash := ic.VM.GetCurrentScriptHash()
-	count, ok := ic.Invocations[currentScriptHash]
-	if !ok {
-		count = 1
-		ic.Invocations[currentScriptHash] = count
-	}
-	ic.VM.Estack().PushItem(stackitem.NewBigInteger(big.NewInt(int64(count))))
-	return nil
+pub fn get_invocation_counter(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    let current_script_hash = ic.vm.get_current_script_hash();
+    let count = ic.invocations.entry(current_script_hash).or_insert(1);
+    ic.vm.estack().push_item(StackItem::BigInteger(BigDecimal::from(*count)));
+    Ok(())
 }
 
-// GetAddressVersion returns the address version of the current protocol.
-func GetAddressVersion(ic *interop.Context) error {
-	ic.VM.Estack().PushItem(stackitem.NewBigInteger(big.NewInt(int64(address.NEO3Prefix))))
-	return nil
+pub fn get_address_version(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    ic.vm.estack().push_item(StackItem::BigInteger(BigDecimal::from(NEO3_PREFIX)));
+    Ok(())
 }
 
-// GetNetwork returns chain network number.
-func GetNetwork(ic *interop.Context) error {
-	m := ic.Chain.GetConfig().Magic
-	ic.VM.Estack().PushItem(stackitem.NewBigInteger(big.NewInt(int64(m))))
-	return nil
+pub fn get_network(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    let m = ic.chain.get_config().magic;
+    ic.vm.estack().push_item(StackItem::BigInteger(BigDecimal::from(m)));
+    Ok(())
 }
 
-// GetRandom returns pseudo-random number which depends on block nonce and transaction hash.
-func GetRandom(ic *interop.Context) error {
-	var (
-		price int64
-		seed  = ic.Network
-	)
-	isHF := ic.IsHardforkEnabled(config.HFAspidochelone)
-	if isHF {
-		price = 1 << 13
-		seed += ic.GetRandomCounter
-		ic.GetRandomCounter++
-	} else {
-		price = 1 << 4
-	}
-	res := murmur128(ic.NonceData[:], seed)
-	if !isHF {
-		ic.NonceData = [interop.ContextNonceDataLen]byte(res)
-	}
-	if !ic.VM.AddGas(ic.BaseExecFee() * price) {
-		return errors.New("gas limit exceeded")
-	}
-	// Resulting data is interpreted as an unsigned LE integer.
-	slices.Reverse(res)
-	ic.VM.Estack().PushItem(stackitem.NewBigInteger(new(big.Int).SetBytes(res)))
-	return nil
+pub fn get_random(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    let price: i64;
+    let mut seed = ic.network;
+    let is_hf = ic.is_hardfork_enabled(Config::HFAspidochelone);
+    if is_hf {
+        price = 1 << 13;
+        seed += ic.get_random_counter.load(Ordering::SeqCst);
+        ic.get_random_counter.fetch_add(1, Ordering::SeqCst);
+    } else {
+        price = 1 << 4;
+    }
+    let res = murmur128(&ic.nonce_data, seed)?;
+    if !is_hf {
+        ic.nonce_data.copy_from_slice(&res);
+    }
+    if !ic.vm.add_gas(ic.base_exec_fee() * price) {
+        return Err("gas limit exceeded".into());
+    }
+    let mut res_le = res.to_vec();
+    res_le.reverse();
+    ic.vm.estack().push_item(StackItem::BigInteger(BigDecimal::from_bytes_le(&res_le)));
+    Ok(())
 }
 
-func murmur128(data []byte, seed uint32) []byte {
-	h1, h2 := murmur3.SeedSum128(uint64(seed), uint64(seed), data)
-	result := make([]byte, 16)
-	binary.LittleEndian.PutUint64(result, h1)
-	binary.LittleEndian.PutUint64(result[8:], h2)
-	return result
+fn murmur128(data: &[u8], seed: u32) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut result = vec![0; 16];
+    murmur3_x64_128(data, seed as u64, &mut result)?;
+    Ok(result)
 }

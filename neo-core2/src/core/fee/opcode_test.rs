@@ -1,19 +1,17 @@
-package fee
+use test::Bencher;
+use neo_core::vm::opcode::Opcode;
 
-import (
-	"testing"
-
-	"github.com/nspcc-dev/neo-go/pkg/vm/opcode"
-)
-
-const feeFactor = 30
+const FEE_FACTOR: u32 = 30;
 
 // The most common Opcode() use case is to get price for a single opcode.
-func BenchmarkOpcode1(t *testing.B) {
-	// Just so that we don't always test the same opcode.
-	script := []opcode.Opcode{opcode.NOP, opcode.ADD, opcode.SYSCALL, opcode.APPEND}
-	l := len(script)
-	for n := range t.N {
-		_ = Opcode(feeFactor, script[n%l])
-	}
+#[bench]
+fn benchmark_opcode1(b: &mut Bencher) {
+    // Just so that we don't always test the same opcode.
+    let script = [Opcode::NOP, Opcode::ADD, Opcode::SYSCALL, Opcode::APPEND];
+    let l = script.len();
+    b.iter(|| {
+        for n in 0..b.iterations() {
+            let _ = opcode(FEE_FACTOR, script[n as usize % l]);
+        }
+    });
 }

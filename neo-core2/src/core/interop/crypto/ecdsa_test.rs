@@ -1,234 +1,213 @@
-package crypto
+use std::collections::HashMap;
+use std::convert::TryInto;
 
-import (
-	"encoding/binary"
-	"fmt"
-	"testing"
+use neo_core::{
+    crypto::{hash, keys},
+    interop::{self, Context},
+    storage,
+    transaction::{self, Signer, Witness},
+    util,
+    vm::{self, opcode, stackitem},
+};
+use neo_core::config::netmode;
+use neo_core::core::dao;
+use neo_core::core::fee;
+use neo_core::core::native;
+use neo_core::smartcontract::trigger;
+use neo_core::vm::stackitem::StackItem;
+use neo_core::vm::VM;
+use neo_core::internal::fakechain;
+use assert2::{assert, check};
+use anyhow::Result;
 
-	"github.com/nspcc-dev/neo-go/internal/fakechain"
-	"github.com/nspcc-dev/neo-go/pkg/config/netmode"
-	"github.com/nspcc-dev/neo-go/pkg/core/dao"
-	"github.com/nspcc-dev/neo-go/pkg/core/fee"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/core/native"
-	"github.com/nspcc-dev/neo-go/pkg/core/storage"
-	"github.com/nspcc-dev/neo-go/pkg/core/transaction"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/hash"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/keys"
-	"github.com/nspcc-dev/neo-go/pkg/smartcontract/trigger"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-	"github.com/nspcc-dev/neo-go/pkg/vm"
-	"github.com/nspcc-dev/neo-go/pkg/vm/opcode"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-)
+fn init_check_multisig(msg_hash: util::Uint256, n: usize) -> Result<(Vec<StackItem>, Vec<StackItem>, HashMap<String, keys::PublicKey>)> {
+    let mut key_map = HashMap::new();
+    let mut pkeys = Vec::with_capacity(n);
+    let mut pubs = Vec::with_capacity(n);
 
-func initCHECKMULTISIG(msgHash util.Uint256, n int) ([]stackitem.Item, []stackitem.Item, map[string]*keys.PublicKey, error) {
-	var err error
+    for _ in 0..n {
+        let pkey = keys::PrivateKey::new()?;
+        let pk = pkey.public_key();
+        let data = pk.bytes();
+        pubs.push(StackItem::ByteArray(data.clone()));
+        key_map.insert(data, pk);
+        pkeys.push(pkey);
+    }
 
-	keyMap := make(map[string]*keys.PublicKey)
-	pkeys := make([]*keys.PrivateKey, n)
-	pubs := make([]stackitem.Item, n)
-	for i := range pubs {
-		pkeys[i], err = keys.NewPrivateKey()
-		if err != nil {
-			return nil, nil, nil, err
-		}
+    let sigs = pkeys.iter().map(|pkey| {
+        let sig = pkey.sign_hash(&msg_hash);
+        StackItem::ByteArray(sig)
+    }).collect();
 
-		pk := pkeys[i].PublicKey()
-		data := pk.Bytes()
-		pubs[i] = stackitem.NewByteArray(data)
-		keyMap[string(data)] = pk
-	}
-
-	sigs := make([]stackitem.Item, n)
-	for i := range sigs {
-		sig := pkeys[i].SignHash(msgHash)
-		sigs[i] = stackitem.NewByteArray(sig)
-	}
-
-	return pubs, sigs, keyMap, nil
+    Ok((pubs, sigs, key_map))
 }
 
-func subSlice(arr []stackitem.Item, indices []int) []stackitem.Item {
-	if indices == nil {
-		return arr
-	}
-
-	result := make([]stackitem.Item, len(indices))
-	for i, j := range indices {
-		result[i] = arr[j]
-	}
-
-	return result
+fn sub_slice(arr: &[StackItem], indices: Option<&[usize]>) -> Vec<StackItem> {
+    match indices {
+        Some(indices) => indices.iter().map(|&i| arr[i].clone()).collect(),
+        None => arr.to_vec(),
+    }
 }
 
-func initCheckMultisigVMNoArgs(container *transaction.Transaction) *vm.VM {
-	buf := make([]byte, 5)
-	buf[0] = byte(opcode.SYSCALL)
-	binary.LittleEndian.PutUint32(buf[1:], neoCryptoCheckMultisigID)
+fn init_check_multisig_vm_no_args(container: &transaction::Transaction) -> VM {
+    let mut buf = vec![0; 5];
+    buf[0] = opcode::SYSCALL as u8;
+    buf[1..5].copy_from_slice(&neo_crypto_check_multisig_id().to_le_bytes());
 
-	ic := interop.NewContext(
-		trigger.Verification,
-		fakechain.NewFakeChain(),
-		dao.NewSimple(storage.NewMemoryStore(), false),
-		interop.DefaultBaseExecFee, native.DefaultStoragePrice, nil, nil, nil, nil,
-		container,
-		nil)
-	ic.Container = container
-	ic.Functions = Interops
-	v := ic.SpawnVM()
-	v.LoadScript(buf)
-	return v
+    let ic = Context::new(
+        trigger::Verification,
+        fakechain::FakeChain::new(),
+        dao::Simple::new(storage::MemoryStore::new(), false),
+        interop::DEFAULT_BASE_EXEC_FEE,
+        native::DEFAULT_STORAGE_PRICE,
+        None,
+        None,
+        None,
+        None,
+        Some(container.clone()),
+        None,
+    );
+    ic.container = Some(container.clone());
+    ic.functions = interops();
+    let mut v = ic.spawn_vm();
+    v.load_script(&buf);
+    v
 }
 
-func initCHECKMULTISIGVM(t *testing.T, n int, ik, is []int) *vm.VM {
-	tx := transaction.New([]byte("NEO - An Open Network For Smart Economy"), 10)
-	tx.Signers = []transaction.Signer{{Account: util.Uint160{1, 2, 3}}}
-	tx.Scripts = []transaction.Witness{{}}
+fn init_check_multisig_vm(t: &mut testing::T, n: usize, ik: Option<&[usize]>, is: Option<&[usize]>) -> VM {
+    let tx = transaction::Transaction::new(b"NEO - An Open Network For Smart Economy".to_vec(), 10);
+    tx.signers = vec![Signer { account: util::Uint160::from([1, 2, 3]) }];
+    tx.scripts = vec![Witness::default()];
 
-	v := initCheckMultisigVMNoArgs(tx)
+    let mut v = init_check_multisig_vm_no_args(&tx);
 
-	pubs, sigs, _, err := initCHECKMULTISIG(hash.NetSha256(uint32(netmode.UnitTestNet), tx), n)
-	require.NoError(t, err)
+    let (mut pubs, mut sigs, _) = init_check_multisig(hash::net_sha256(netmode::UNIT_TEST_NET, &tx), n).unwrap();
+    pubs = sub_slice(&pubs, ik);
+    sigs = sub_slice(&sigs, is);
 
-	pubs = subSlice(pubs, ik)
-	sigs = subSlice(sigs, is)
+    v.estack().push_val(sigs);
+    v.estack().push_val(pubs);
 
-	v.Estack().PushVal(sigs)
-	v.Estack().PushVal(pubs)
-
-	return v
+    v
 }
 
-func testCHECKMULTISIGGood(t *testing.T, n int, is []int) {
-	v := initCHECKMULTISIGVM(t, n, nil, is)
+fn test_check_multisig_good(t: &mut testing::T, n: usize, is: &[usize]) {
+    let mut v = init_check_multisig_vm(t, n, None, Some(is));
 
-	require.NoError(t, v.Run())
-	assert.Equal(t, 1, v.Estack().Len())
-	assert.True(t, v.Estack().Pop().Bool())
+    assert!(v.run().is_ok());
+    assert!(v.estack().len() == 1);
+    assert!(v.estack().pop().unwrap().as_bool().unwrap());
 }
 
-func TestECDSASecp256r1CheckMultisigGood(t *testing.T) {
-	testCurveCHECKMULTISIGGood(t)
+#[test]
+fn test_ecdsa_secp256r1_check_multisig_good() {
+    test_curve_check_multisig_good();
 }
 
-func testCurveCHECKMULTISIGGood(t *testing.T) {
-	t.Run("3_1", func(t *testing.T) { testCHECKMULTISIGGood(t, 3, []int{1}) })
-	t.Run("2_2", func(t *testing.T) { testCHECKMULTISIGGood(t, 2, []int{0, 1}) })
-	t.Run("3_3", func(t *testing.T) { testCHECKMULTISIGGood(t, 3, []int{0, 1, 2}) })
-	t.Run("3_2", func(t *testing.T) { testCHECKMULTISIGGood(t, 3, []int{0, 2}) })
-	t.Run("4_2", func(t *testing.T) { testCHECKMULTISIGGood(t, 4, []int{0, 2}) })
-	t.Run("10_7", func(t *testing.T) { testCHECKMULTISIGGood(t, 10, []int{2, 3, 4, 5, 6, 8, 9}) })
-	t.Run("12_9", func(t *testing.T) { testCHECKMULTISIGGood(t, 12, []int{0, 1, 4, 5, 6, 7, 8, 9}) })
+fn test_curve_check_multisig_good() {
+    test_check_multisig_good(&mut testing::T::new(), 3, &[1]);
+    test_check_multisig_good(&mut testing::T::new(), 2, &[0, 1]);
+    test_check_multisig_good(&mut testing::T::new(), 3, &[0, 1, 2]);
+    test_check_multisig_good(&mut testing::T::new(), 3, &[0, 2]);
+    test_check_multisig_good(&mut testing::T::new(), 4, &[0, 2]);
+    test_check_multisig_good(&mut testing::T::new(), 10, &[2, 3, 4, 5, 6, 8, 9]);
+    test_check_multisig_good(&mut testing::T::new(), 12, &[0, 1, 4, 5, 6, 7, 8, 9]);
 }
 
-func testCHECKMULTISIGBad(t *testing.T, isErr bool, n int, ik, is []int) {
-	v := initCHECKMULTISIGVM(t, n, ik, is)
+fn test_check_multisig_bad(t: &mut testing::T, is_err: bool, n: usize, ik: Option<&[usize]>, is: Option<&[usize]>) {
+    let mut v = init_check_multisig_vm(t, n, ik, is);
 
-	if isErr {
-		require.Error(t, v.Run())
-		return
-	}
-	require.NoError(t, v.Run())
-	assert.Equal(t, 1, v.Estack().Len())
-	assert.False(t, v.Estack().Pop().Bool())
+    if is_err {
+        assert!(v.run().is_err());
+        return;
+    }
+    assert!(v.run().is_ok());
+    assert!(v.estack().len() == 1);
+    assert!(!v.estack().pop().unwrap().as_bool().unwrap());
 }
 
-func TestECDSASecp256r1CheckMultisigBad(t *testing.T) {
-	testCurveCHECKMULTISIGBad(t)
+#[test]
+fn test_ecdsa_secp256r1_check_multisig_bad() {
+    test_curve_check_multisig_bad();
 }
 
-func testCurveCHECKMULTISIGBad(t *testing.T) {
-	t.Run("1_1 wrong signature", func(t *testing.T) { testCHECKMULTISIGBad(t, false, 2, []int{0}, []int{1}) })
-	t.Run("3_2 wrong order", func(t *testing.T) { testCHECKMULTISIGBad(t, false, 3, []int{0, 2}, []int{2, 0}) })
-	t.Run("3_2 duplicate sig", func(t *testing.T) { testCHECKMULTISIGBad(t, false, 3, nil, []int{0, 0}) })
-	t.Run("1_2 too many signatures", func(t *testing.T) { testCHECKMULTISIGBad(t, true, 2, []int{0}, []int{0, 1}) })
-	t.Run("gas limit exceeded", func(t *testing.T) {
-		v := initCHECKMULTISIGVM(t, 1, []int{0}, []int{0})
-		v.GasLimit = fee.ECDSAVerifyPrice - 1
-		require.Error(t, v.Run())
-	})
+fn test_curve_check_multisig_bad() {
+    test_check_multisig_bad(&mut testing::T::new(), false, 2, Some(&[0]), Some(&[1]));
+    test_check_multisig_bad(&mut testing::T::new(), false, 3, Some(&[0, 2]), Some(&[2, 0]));
+    test_check_multisig_bad(&mut testing::T::new(), false, 3, None, Some(&[0, 0]));
+    test_check_multisig_bad(&mut testing::T::new(), true, 2, Some(&[0]), Some(&[0, 1]));
+    test_check_multisig_bad(&mut testing::T::new(), true, 1, Some(&[0]), Some(&[0]));
 
-	msg := []byte("NEO - An Open Network For Smart Economy")
-	pubs, sigs, _, err := initCHECKMULTISIG(hash.Sha256(msg), 1)
-	require.NoError(t, err)
-	arr := stackitem.NewArray([]stackitem.Item{stackitem.NewArray(nil)})
-	tx := transaction.New([]byte("NEO - An Open Network For Smart Economy"), 10)
-	tx.Signers = []transaction.Signer{{Account: util.Uint160{1, 2, 3}}}
-	tx.Scripts = []transaction.Witness{{}}
+    let msg = b"NEO - An Open Network For Smart Economy".to_vec();
+    let (pubs, sigs, _) = init_check_multisig(hash::sha256(&msg), 1).unwrap();
+    let arr = stackitem::Array::new(vec![stackitem::Array::new(vec![])]);
+    let tx = transaction::Transaction::new(b"NEO - An Open Network For Smart Economy".to_vec(), 10);
+    tx.signers = vec![Signer { account: util::Uint160::from([1, 2, 3]) }];
+    tx.scripts = vec![Witness::default()];
 
-	t.Run("invalid public keys", func(t *testing.T) {
-		v := initCheckMultisigVMNoArgs(tx)
-		v.Estack().PushVal(sigs)
-		v.Estack().PushVal(arr)
-		require.Error(t, v.Run())
-	})
-	t.Run("invalid signatures", func(t *testing.T) {
-		v := initCheckMultisigVMNoArgs(tx)
-		v.Estack().PushVal(arr)
-		v.Estack().PushVal(pubs)
-		require.Error(t, v.Run())
-	})
+    let mut v = init_check_multisig_vm_no_args(&tx);
+    v.estack().push_val(sigs);
+    v.estack().push_val(arr);
+    assert!(v.run().is_err());
+
+    let mut v = init_check_multisig_vm_no_args(&tx);
+    v.estack().push_val(arr);
+    v.estack().push_val(pubs);
+    assert!(v.run().is_err());
 }
 
-func TestCheckSig(t *testing.T) {
-	priv, err := keys.NewPrivateKey()
-	require.NoError(t, err)
+#[test]
+fn test_check_sig() {
+    let priv_key = keys::PrivateKey::new().unwrap();
 
-	verifyFunc := ECDSASecp256r1CheckSig
-	d := dao.NewSimple(storage.NewMemoryStore(), false)
-	ic := &interop.Context{Network: uint32(netmode.UnitTestNet), DAO: d}
-	runCase := func(t *testing.T, isErr bool, result any, args ...any) {
-		ic.SpawnVM()
-		for i := range args {
-			ic.VM.Estack().PushVal(args[i])
-		}
+    let verify_func = ecdsa_secp256r1_check_sig;
+    let d = dao::Simple::new(storage::MemoryStore::new(), false);
+    let mut ic = Context::new(
+        trigger::Verification,
+        fakechain::FakeChain::new(),
+        d,
+        interop::DEFAULT_BASE_EXEC_FEE,
+        native::DEFAULT_STORAGE_PRICE,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    ic.network = netmode::UNIT_TEST_NET;
 
-		var err error
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					err = fmt.Errorf("panic: %v", r)
-				}
-			}()
-			err = verifyFunc(ic)
-		}()
+    let run_case = |t: &mut testing::T, is_err: bool, result: bool, args: Vec<StackItem>| {
+        ic.spawn_vm();
+        for arg in args {
+            ic.vm.estack().push_val(arg);
+        }
 
-		if isErr {
-			require.Error(t, err)
-			return
-		}
-		require.NoError(t, err)
-		require.Equal(t, 1, ic.VM.Estack().Len())
-		require.Equal(t, result, ic.VM.Estack().Pop().Value().(bool))
-	}
+        let err = std::panic::catch_unwind(|| verify_func(&mut ic)).err();
 
-	tx := transaction.New([]byte{0, 1, 2}, 1)
-	ic.Container = tx
+        if is_err {
+            assert!(err.is_some());
+            return;
+        }
+        assert!(err.is_none());
+        assert!(ic.vm.estack().len() == 1);
+        assert!(ic.vm.estack().pop().unwrap().as_bool().unwrap() == result);
+    };
 
-	t.Run("success", func(t *testing.T) {
-		sign := priv.SignHashable(uint32(netmode.UnitTestNet), tx)
-		runCase(t, false, true, sign, priv.PublicKey().Bytes())
-	})
+    let tx = transaction::Transaction::new(vec![0, 1, 2], 1);
+    ic.container = Some(tx.clone());
 
-	t.Run("missing argument", func(t *testing.T) {
-		runCase(t, true, false)
-		sign := priv.SignHashable(uint32(netmode.UnitTestNet), tx)
-		runCase(t, true, false, sign)
-	})
+    let sign = priv_key.sign_hashable(netmode::UNIT_TEST_NET, &tx);
+    run_case(&mut testing::T::new(), false, true, vec![StackItem::ByteArray(sign.clone()), StackItem::ByteArray(priv_key.public_key().bytes())]);
 
-	t.Run("invalid signature", func(t *testing.T) {
-		sign := priv.SignHashable(uint32(netmode.UnitTestNet), tx)
-		sign[0] = ^sign[0]
-		runCase(t, false, false, sign, priv.PublicKey().Bytes())
-	})
+    run_case(&mut testing::T::new(), true, false, vec![]);
+    run_case(&mut testing::T::new(), true, false, vec![StackItem::ByteArray(sign.clone())]);
 
-	t.Run("invalid public key", func(t *testing.T) {
-		sign := priv.SignHashable(uint32(netmode.UnitTestNet), tx)
-		pub := priv.PublicKey().Bytes()
-		pub[0] = 0xFF // invalid prefix
-		runCase(t, true, false, sign, pub)
-	})
+    let mut invalid_sign = sign.clone();
+    invalid_sign[0] ^= 0xFF;
+    run_case(&mut testing::T::new(), false, false, vec![StackItem::ByteArray(invalid_sign), StackItem::ByteArray(priv_key.public_key().bytes())]);
+
+    let mut invalid_pub = priv_key.public_key().bytes();
+    invalid_pub[0] = 0xFF;
+    run_case(&mut testing::T::new(), true, false, vec![StackItem::ByteArray(sign), StackItem::ByteArray(invalid_pub)]);
 }

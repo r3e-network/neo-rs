@@ -1,35 +1,77 @@
-package interop
+use std::collections::HashMap;
+use crate::config;
+use crate::core::block;
+use crate::core::interop::Context;
+use assert_matches::assert_matches;
 
-import (
-	"testing"
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-	"github.com/nspcc-dev/neo-go/pkg/config"
-	"github.com/nspcc-dev/neo-go/pkg/core/block"
-	"github.com/stretchr/testify/require"
-)
+    #[test]
+    fn test_is_hardfork_enabled() {
+        // not configured
+        {
+            let ic = Context {
+                hardforks: HashMap::from([
+                    (config::HFAspidochelone.to_string(), 0),
+                    (config::HFBasilisk.to_string(), 0),
+                ]),
+                block: block::Block {
+                    header: block::Header { index: 10 },
+                },
+            };
+            assert!(ic.is_hardfork_enabled(&config::HFAspidochelone));
+            assert!(ic.is_hardfork_enabled(&config::HFBasilisk));
+        }
 
-func TestIsHardforkEnabled(t *testing.T) {
-	t.Run("not configured", func(t *testing.T) {
-		ic := &Context{Hardforks: map[string]uint32{config.HFAspidochelone.String(): 0, config.HFBasilisk.String(): 0}, Block: &block.Block{Header: block.Header{Index: 10}}}
-		require.True(t, ic.IsHardforkEnabled(config.HFAspidochelone))
-		require.True(t, ic.IsHardforkEnabled(config.HFBasilisk))
-	})
-	t.Run("new disabled", func(t *testing.T) {
-		ic := &Context{Hardforks: map[string]uint32{config.HFAspidochelone.String(): 5}, Block: &block.Block{Header: block.Header{Index: 10}}}
-		require.True(t, ic.IsHardforkEnabled(config.HFAspidochelone))
-		require.False(t, ic.IsHardforkEnabled(config.HFBasilisk))
-	})
-	t.Run("old enabled", func(t *testing.T) {
-		ic := &Context{Hardforks: map[string]uint32{config.HFAspidochelone.String(): 0, config.HFBasilisk.String(): 10}, Block: &block.Block{Header: block.Header{Index: 5}}}
-		require.True(t, ic.IsHardforkEnabled(config.HFAspidochelone))
-		require.False(t, ic.IsHardforkEnabled(config.HFBasilisk))
-	})
-	t.Run("not yet enabled", func(t *testing.T) {
-		ic := &Context{Hardforks: map[string]uint32{config.HFAspidochelone.String(): 10}, Block: &block.Block{Header: block.Header{Index: 5}}}
-		require.False(t, ic.IsHardforkEnabled(config.HFAspidochelone))
-	})
-	t.Run("already enabled", func(t *testing.T) {
-		ic := &Context{Hardforks: map[string]uint32{config.HFAspidochelone.String(): 10}, Block: &block.Block{Header: block.Header{Index: 15}}}
-		require.True(t, ic.IsHardforkEnabled(config.HFAspidochelone))
-	})
+        // new disabled
+        {
+            let ic = Context {
+                hardforks: HashMap::from([(config::HFAspidochelone.to_string(), 5)]),
+                block: block::Block {
+                    header: block::Header { index: 10 },
+                },
+            };
+            assert!(ic.is_hardfork_enabled(&config::HFAspidochelone));
+            assert!(!ic.is_hardfork_enabled(&config::HFBasilisk));
+        }
+
+        // old enabled
+        {
+            let ic = Context {
+                hardforks: HashMap::from([
+                    (config::HFAspidochelone.to_string(), 0),
+                    (config::HFBasilisk.to_string(), 10),
+                ]),
+                block: block::Block {
+                    header: block::Header { index: 5 },
+                },
+            };
+            assert!(ic.is_hardfork_enabled(&config::HFAspidochelone));
+            assert!(!ic.is_hardfork_enabled(&config::HFBasilisk));
+        }
+
+        // not yet enabled
+        {
+            let ic = Context {
+                hardforks: HashMap::from([(config::HFAspidochelone.to_string(), 10)]),
+                block: block::Block {
+                    header: block::Header { index: 5 },
+                },
+            };
+            assert!(!ic.is_hardfork_enabled(&config::HFAspidochelone));
+        }
+
+        // already enabled
+        {
+            let ic = Context {
+                hardforks: HashMap::from([(config::HFAspidochelone.to_string(), 10)]),
+                block: block::Block {
+                    header: block::Header { index: 15 },
+                },
+            };
+            assert!(ic.is_hardfork_enabled(&config::HFAspidochelone));
+        }
+    }
 }

@@ -1,51 +1,53 @@
-package crypto
+use std::error::Error;
+use std::fmt;
 
-import (
-	"crypto/elliptic"
-	"errors"
-	"fmt"
+use elliptic_curve::sec1::ToEncodedPoint;
+use k256::ecdsa::{signature::Verifier, VerifyingKey};
+use k256::elliptic_curve::sec1::FromEncodedPoint;
+use k256::elliptic_curve::FieldBytes;
+use k256::elliptic_curve::sec1::EncodedPoint;
+use sha2::{Digest, Sha256};
 
-	"github.com/nspcc-dev/neo-go/pkg/core/fee"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/hash"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/keys"
-	"github.com/nspcc-dev/neo-go/pkg/vm"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-)
+use crate::core::fee;
+use crate::core::interop::Context;
+use crate::crypto::hash;
+use crate::vm::{self, stackitem::StackItem};
+
+#[derive(Debug)]
+struct GasLimitExceeded;
+
+impl fmt::Display for GasLimitExceeded {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "gas limit exceeded")
+    }
+}
+
+impl Error for GasLimitExceeded {}
 
 // ECDSASecp256r1CheckMultisig checks multiple ECDSA signatures at once using
 // Secp256r1 elliptic curve.
-func ECDSASecp256r1CheckMultisig(ic *interop.Context) error {
-	pkeys, err := ic.VM.Estack().PopSigElements()
-	if err != nil {
-		return fmt.Errorf("wrong key parameters: %w", err)
-	}
-	if !ic.VM.AddGas(ic.BaseExecFee() * fee.ECDSAVerifyPrice * int64(len(pkeys))) {
-		return errors.New("gas limit exceeded")
-	}
-	sigs, err := ic.VM.Estack().PopSigElements()
-	if err != nil {
-		return fmt.Errorf("wrong signature parameters: %w", err)
-	}
-	// It's ok to have more keys than there are signatures (it would
-	// just mean that some keys didn't sign), but not the other way around.
-	if len(pkeys) < len(sigs) {
-		return errors.New("more signatures than there are keys")
-	}
-	sigok := vm.CheckMultisigPar(elliptic.P256(), hash.NetSha256(ic.Network, ic.Container).BytesBE(), pkeys, sigs)
-	ic.VM.Estack().PushItem(stackitem.Bool(sigok))
-	return nil
+pub fn ecdsa_secp256r1_check_multisig(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    let pkeys = ic.vm.estack().pop_sig_elements().map_err(|e| format!("wrong key parameters: {}", e))?;
+    if !ic.vm.add_gas(ic.base_exec_fee() * fee::ECDSA_VERIFY_PRICE * pkeys.len() as i64) {
+        return Err(Box::new(GasLimitExceeded));
+    }
+    let sigs = ic.vm.estack().pop_sig_elements().map_err(|e| format!("wrong signature parameters: {}", e))?;
+    if pkeys.len() < sigs.len() {
+        return Err("more signatures than there are keys".into());
+    }
+    let hash = hash::net_sha256(ic.network, &ic.container).to_bytes_be();
+    let sigok = vm::check_multisig_par(&k256::Secp256r1, &hash, &pkeys, &sigs);
+    ic.vm.estack().push_item(StackItem::Bool(sigok));
+    Ok(())
 }
 
 // ECDSASecp256r1CheckSig checks ECDSA signature using Secp256r1 elliptic curve.
-func ECDSASecp256r1CheckSig(ic *interop.Context) error {
-	keyb := ic.VM.Estack().Pop().Bytes()
-	signature := ic.VM.Estack().Pop().Bytes()
-	pkey, err := keys.NewPublicKeyFromBytes(keyb, elliptic.P256())
-	if err != nil {
-		return err
-	}
-	res := pkey.VerifyHashable(signature, ic.Network, ic.Container)
-	ic.VM.Estack().PushItem(stackitem.Bool(res))
-	return nil
+pub fn ecdsa_secp256r1_check_sig(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    let keyb = ic.vm.estack().pop().bytes();
+    let signature = ic.vm.estack().pop().bytes();
+    let pkey = VerifyingKey::from_encoded_point(&EncodedPoint::from_bytes(&keyb).map_err(|_| "invalid public key")?)
+        .map_err(|_| "invalid public key")?;
+    let res = pkey.verify_hashable(&signature, ic.network, &ic.container).is_ok();
+    ic.vm.estack().push_item(StackItem::Bool(res));
+    Ok(())
 }

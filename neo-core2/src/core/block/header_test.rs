@@ -1,54 +1,48 @@
-package block
+use std::time::{SystemTime, UNIX_EPOCH};
+use rand::Rng;
+use crate::core::transaction::Witness;
+use crate::crypto::hash;
+use crate::util::Uint160;
+use crate::core::block::Header;
+use crate::testserdes;
+use assert_eq::assert_eq;
 
-import (
-	"testing"
-	"time"
+fn test_header_encode_decode(state_root_enabled: bool) {
+    let header = Header {
+        version: 0,
+        prev_hash: hash::sha256(b"prevhash"),
+        merkle_root: hash::sha256(b"merkleroot"),
+        timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+        index: 3445,
+        next_consensus: Uint160::default(),
+        script: Witness {
+            invocation_script: vec![0x10],
+            verification_script: vec![0x11],
+        },
+        state_root_enabled,
+        prev_state_root: if state_root_enabled { Some(rand::thread_rng().gen()) } else { None },
+    };
 
-	"github.com/nspcc-dev/neo-go/internal/random"
-	"github.com/nspcc-dev/neo-go/internal/testserdes"
-	"github.com/nspcc-dev/neo-go/pkg/core/transaction"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/hash"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-	"github.com/stretchr/testify/assert"
-)
+    let _ = header.hash();
+    let mut header_decode = Header { state_root_enabled, ..Default::default() };
+    testserdes::encode_decode_binary(&header, &mut header_decode);
 
-func testHeaderEncodeDecode(t *testing.T, stateRootEnabled bool) {
-	header := Header{
-		Version:       0,
-		PrevHash:      hash.Sha256([]byte("prevhash")),
-		MerkleRoot:    hash.Sha256([]byte("merkleroot")),
-		Timestamp:     uint64(time.Now().UTC().Unix() * 1000),
-		Index:         3445,
-		NextConsensus: util.Uint160{},
-		Script: transaction.Witness{
-			InvocationScript:   []byte{0x10},
-			VerificationScript: []byte{0x11},
-		},
-	}
-	if stateRootEnabled {
-		header.StateRootEnabled = stateRootEnabled
-		header.PrevStateRoot = random.Uint256()
-	}
-
-	_ = header.Hash()
-	headerDecode := &Header{StateRootEnabled: stateRootEnabled}
-	testserdes.EncodeDecodeBinary(t, &header, headerDecode)
-
-	assert.Equal(t, header.Version, headerDecode.Version, "expected both versions to be equal")
-	assert.Equal(t, header.PrevHash, headerDecode.PrevHash, "expected both prev hashes to be equal")
-	assert.Equal(t, header.MerkleRoot, headerDecode.MerkleRoot, "expected both merkle roots to be equal")
-	assert.Equal(t, header.Index, headerDecode.Index, "expected both indexes to be equal")
-	assert.Equal(t, header.NextConsensus, headerDecode.NextConsensus, "expected both next consensus fields to be equal")
-	assert.Equal(t, header.Script.InvocationScript, headerDecode.Script.InvocationScript, "expected equal invocation scripts")
-	assert.Equal(t, header.Script.VerificationScript, headerDecode.Script.VerificationScript, "expected equal verification scripts")
-	assert.Equal(t, header.PrevStateRoot, headerDecode.PrevStateRoot, "expected equal state roots")
+    assert_eq!(header.version, header_decode.version, "expected both versions to be equal");
+    assert_eq!(header.prev_hash, header_decode.prev_hash, "expected both prev hashes to be equal");
+    assert_eq!(header.merkle_root, header_decode.merkle_root, "expected both merkle roots to be equal");
+    assert_eq!(header.index, header_decode.index, "expected both indexes to be equal");
+    assert_eq!(header.next_consensus, header_decode.next_consensus, "expected both next consensus fields to be equal");
+    assert_eq!(header.script.invocation_script, header_decode.script.invocation_script, "expected equal invocation scripts");
+    assert_eq!(header.script.verification_script, header_decode.script.verification_script, "expected equal verification scripts");
+    assert_eq!(header.prev_state_root, header_decode.prev_state_root, "expected equal state roots");
 }
 
-func TestHeaderEncodeDecode(t *testing.T) {
-	t.Run("NoStateRoot", func(t *testing.T) {
-		testHeaderEncodeDecode(t, false)
-	})
-	t.Run("WithStateRoot", func(t *testing.T) {
-		testHeaderEncodeDecode(t, true)
-	})
+#[test]
+fn test_header_encode_decode_no_state_root() {
+    test_header_encode_decode(false);
+}
+
+#[test]
+fn test_header_encode_decode_with_state_root() {
+    test_header_encode_decode(true);
 }

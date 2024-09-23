@@ -1,104 +1,114 @@
-package mpt
+use std::error::Error;
+use std::fmt;
+use std::fmt::Formatter;
+use std::fmt::Result as FmtResult;
+use serde::{Serialize, Deserialize};
+use crate::io::{BinWriter, BinReader, Serializable};
+use crate::util::{self, Uint256};
+use super::{Node, NodeType, BaseNode, EmptyNode, NodeObject, BranchT, is_empty, encode_binary_as_child};
 
-import (
-	"encoding/json"
-	"errors"
+const CHILDREN_COUNT: usize = 17;
+const LAST_CHILD: usize = CHILDREN_COUNT - 1;
 
-	"github.com/nspcc-dev/neo-go/pkg/io"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-)
-
-const (
-	// childrenCount represents the number of children of a branch node.
-	childrenCount = 17
-	// lastChild is the index of the last child.
-	lastChild = childrenCount - 1
-)
-
-// BranchNode represents an MPT's branch node.
-type BranchNode struct {
-	BaseNode
-	Children [childrenCount]Node
+#[derive(Clone, Serialize, Deserialize)]
+pub struct BranchNode {
+    base: BaseNode,
+    children: [Box<dyn Node>; CHILDREN_COUNT],
 }
 
-var _ Node = (*BranchNode)(nil)
+impl BranchNode {
+    pub fn new() -> Self {
+        let mut children: [Box<dyn Node>; CHILDREN_COUNT] = Default::default();
+        for child in children.iter_mut() {
+            *child = Box::new(EmptyNode {});
+        }
+        BranchNode {
+            base: BaseNode::default(),
+            children,
+        }
+    }
 
-// NewBranchNode returns a new branch node.
-func NewBranchNode() *BranchNode {
-	b := new(BranchNode)
-	for i := range childrenCount {
-		b.Children[i] = EmptyNode{}
-	}
-	return b
+    pub fn split_path(path: &[u8]) -> (u8, &[u8]) {
+        if !path.is_empty() {
+            (path[0], &path[1..])
+        } else {
+            (LAST_CHILD as u8, path)
+        }
+    }
 }
 
-// Type implements the Node interface.
-func (b *BranchNode) Type() NodeType { return BranchT }
+impl Node for BranchNode {
+    fn node_type(&self) -> NodeType {
+        BranchT
+    }
 
-// Hash implements the BaseNode interface.
-func (b *BranchNode) Hash() util.Uint256 {
-	return b.getHash(b)
+    fn size(&self) -> usize {
+        let mut sz = CHILDREN_COUNT;
+        for child in &self.children {
+            if !is_empty(child.as_ref()) {
+                sz += Uint256::size();
+            }
+        }
+        sz
+    }
+
+    fn clone_node(&self) -> Box<dyn Node> {
+        Box::new(self.clone())
+    }
 }
 
-// Bytes implements the BaseNode interface.
-func (b *BranchNode) Bytes() []byte {
-	return b.getBytes(b)
+impl BaseNode for BranchNode {
+    fn hash(&self) -> Uint256 {
+        self.get_hash(self)
+    }
+
+    fn bytes(&self) -> Vec<u8> {
+        self.get_bytes(self)
+    }
 }
 
-// Size implements the Node interface.
-func (b *BranchNode) Size() int {
-	sz := childrenCount
-	for i := range b.Children {
-		if !isEmpty(b.Children[i]) {
-			sz += util.Uint256Size
-		}
-	}
-	return sz
+impl Serializable for BranchNode {
+    fn encode_binary(&self, writer: &mut BinWriter) {
+        for child in &self.children {
+            encode_binary_as_child(child.as_ref(), writer);
+        }
+    }
+
+    fn decode_binary(&mut self, reader: &mut BinReader) {
+        for child in &mut self.children {
+            let mut no = NodeObject::default();
+            no.decode_binary(reader);
+            *child = no.node;
+        }
+    }
 }
 
-// EncodeBinary implements io.Serializable.
-func (b *BranchNode) EncodeBinary(w *io.BinWriter) {
-	for i := range childrenCount {
-		encodeBinaryAsChild(b.Children[i], w)
-	}
+impl fmt::Debug for BranchNode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "BranchNode {{ children: {:?} }}", self.children)
+    }
 }
 
-// DecodeBinary implements io.Serializable.
-func (b *BranchNode) DecodeBinary(r *io.BinReader) {
-	for i := range childrenCount {
-		no := new(NodeObject)
-		no.DecodeBinary(r)
-		b.Children[i] = no.Node
-	}
+impl fmt::Display for BranchNode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "BranchNode")
+    }
 }
 
-// MarshalJSON implements the json.Marshaler.
-func (b *BranchNode) MarshalJSON() ([]byte, error) {
-	return json.Marshal(b.Children)
-}
+impl std::error::Error for BranchNode {}
 
-// UnmarshalJSON implements the json.Unmarshaler.
-func (b *BranchNode) UnmarshalJSON(data []byte) error {
-	var obj NodeObject
-	if err := obj.UnmarshalJSON(data); err != nil {
-		return err
-	} else if u, ok := obj.Node.(*BranchNode); ok {
-		*b = *u
-		return nil
-	}
-	return errors.New("expected branch node")
-}
+impl BranchNode {
+    pub fn marshal_json(&self) -> Result<String, Box<dyn Error>> {
+        serde_json::to_string(&self.children).map_err(|e| e.into())
+    }
 
-// Clone implements Node interface.
-func (b *BranchNode) Clone() Node {
-	res := *b
-	return &res
-}
-
-// splitPath splits path for a branch node.
-func splitPath(path []byte) (byte, []byte) {
-	if len(path) != 0 {
-		return path[0], path[1:]
-	}
-	return lastChild, path
+    pub fn unmarshal_json(&mut self, data: &str) -> Result<(), Box<dyn Error>> {
+        let obj: NodeObject = serde_json::from_str(data)?;
+        if let Some(u) = obj.node.downcast_ref::<BranchNode>() {
+            *self = u.clone();
+            Ok(())
+        } else {
+            Err("expected branch node".into())
+        }
+    }
 }

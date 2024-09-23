@@ -1,213 +1,211 @@
-package fee
-
-import (
-	"github.com/nspcc-dev/neo-go/pkg/vm/opcode"
-)
+use crate::vm::opcode::Opcode;
 
 // Opcode returns the deployment coefficients of the specified opcodes.
-func Opcode(base int64, opcodes ...opcode.Opcode) int64 {
-	var result int64
-	for _, op := range opcodes {
-		result += int64(coefficients[op])
-	}
-	return result * base
+pub fn opcode(base: i64, opcodes: &[Opcode]) -> i64 {
+    let mut result: i64 = 0;
+    for &op in opcodes {
+        result += coefficients[op as usize] as i64;
+    }
+    result * base
 }
 
-var coefficients = [256]uint16{
-	opcode.PUSHINT8:     1 << 0,
-	opcode.PUSHINT16:    1 << 0,
-	opcode.PUSHINT32:    1 << 0,
-	opcode.PUSHINT64:    1 << 0,
-	opcode.PUSHINT128:   1 << 2,
-	opcode.PUSHINT256:   1 << 2,
-	opcode.PUSHT:        1 << 0,
-	opcode.PUSHF:        1 << 0,
-	opcode.PUSHA:        1 << 2,
-	opcode.PUSHNULL:     1 << 0,
-	opcode.PUSHDATA1:    1 << 3,
-	opcode.PUSHDATA2:    1 << 9,
-	opcode.PUSHDATA4:    1 << 12,
-	opcode.PUSHM1:       1 << 0,
-	opcode.PUSH0:        1 << 0,
-	opcode.PUSH1:        1 << 0,
-	opcode.PUSH2:        1 << 0,
-	opcode.PUSH3:        1 << 0,
-	opcode.PUSH4:        1 << 0,
-	opcode.PUSH5:        1 << 0,
-	opcode.PUSH6:        1 << 0,
-	opcode.PUSH7:        1 << 0,
-	opcode.PUSH8:        1 << 0,
-	opcode.PUSH9:        1 << 0,
-	opcode.PUSH10:       1 << 0,
-	opcode.PUSH11:       1 << 0,
-	opcode.PUSH12:       1 << 0,
-	opcode.PUSH13:       1 << 0,
-	opcode.PUSH14:       1 << 0,
-	opcode.PUSH15:       1 << 0,
-	opcode.PUSH16:       1 << 0,
-	opcode.NOP:          1 << 0,
-	opcode.JMP:          1 << 1,
-	opcode.JMPL:         1 << 1,
-	opcode.JMPIF:        1 << 1,
-	opcode.JMPIFL:       1 << 1,
-	opcode.JMPIFNOT:     1 << 1,
-	opcode.JMPIFNOTL:    1 << 1,
-	opcode.JMPEQ:        1 << 1,
-	opcode.JMPEQL:       1 << 1,
-	opcode.JMPNE:        1 << 1,
-	opcode.JMPNEL:       1 << 1,
-	opcode.JMPGT:        1 << 1,
-	opcode.JMPGTL:       1 << 1,
-	opcode.JMPGE:        1 << 1,
-	opcode.JMPGEL:       1 << 1,
-	opcode.JMPLT:        1 << 1,
-	opcode.JMPLTL:       1 << 1,
-	opcode.JMPLE:        1 << 1,
-	opcode.JMPLEL:       1 << 1,
-	opcode.CALL:         1 << 9,
-	opcode.CALLL:        1 << 9,
-	opcode.CALLA:        1 << 9,
-	opcode.CALLT:        1 << 15,
-	opcode.ABORT:        0,
-	opcode.ASSERT:       1 << 0,
-	opcode.ABORTMSG:     0,      // TODO
-	opcode.ASSERTMSG:    1 << 0, // TODO
-	opcode.THROW:        1 << 9,
-	opcode.TRY:          1 << 2,
-	opcode.TRYL:         1 << 2,
-	opcode.ENDTRY:       1 << 2,
-	opcode.ENDTRYL:      1 << 2,
-	opcode.ENDFINALLY:   1 << 2,
-	opcode.RET:          0,
-	opcode.SYSCALL:      0,
-	opcode.DEPTH:        1 << 1,
-	opcode.DROP:         1 << 1,
-	opcode.NIP:          1 << 1,
-	opcode.XDROP:        1 << 4,
-	opcode.CLEAR:        1 << 4,
-	opcode.DUP:          1 << 1,
-	opcode.OVER:         1 << 1,
-	opcode.PICK:         1 << 1,
-	opcode.TUCK:         1 << 1,
-	opcode.SWAP:         1 << 1,
-	opcode.ROT:          1 << 1,
-	opcode.ROLL:         1 << 4,
-	opcode.REVERSE3:     1 << 1,
-	opcode.REVERSE4:     1 << 1,
-	opcode.REVERSEN:     1 << 4,
-	opcode.INITSSLOT:    1 << 4,
-	opcode.INITSLOT:     1 << 6,
-	opcode.LDSFLD0:      1 << 1,
-	opcode.LDSFLD1:      1 << 1,
-	opcode.LDSFLD2:      1 << 1,
-	opcode.LDSFLD3:      1 << 1,
-	opcode.LDSFLD4:      1 << 1,
-	opcode.LDSFLD5:      1 << 1,
-	opcode.LDSFLD6:      1 << 1,
-	opcode.LDSFLD:       1 << 1,
-	opcode.STSFLD0:      1 << 1,
-	opcode.STSFLD1:      1 << 1,
-	opcode.STSFLD2:      1 << 1,
-	opcode.STSFLD3:      1 << 1,
-	opcode.STSFLD4:      1 << 1,
-	opcode.STSFLD5:      1 << 1,
-	opcode.STSFLD6:      1 << 1,
-	opcode.STSFLD:       1 << 1,
-	opcode.LDLOC0:       1 << 1,
-	opcode.LDLOC1:       1 << 1,
-	opcode.LDLOC2:       1 << 1,
-	opcode.LDLOC3:       1 << 1,
-	opcode.LDLOC4:       1 << 1,
-	opcode.LDLOC5:       1 << 1,
-	opcode.LDLOC6:       1 << 1,
-	opcode.LDLOC:        1 << 1,
-	opcode.STLOC0:       1 << 1,
-	opcode.STLOC1:       1 << 1,
-	opcode.STLOC2:       1 << 1,
-	opcode.STLOC3:       1 << 1,
-	opcode.STLOC4:       1 << 1,
-	opcode.STLOC5:       1 << 1,
-	opcode.STLOC6:       1 << 1,
-	opcode.STLOC:        1 << 1,
-	opcode.LDARG0:       1 << 1,
-	opcode.LDARG1:       1 << 1,
-	opcode.LDARG2:       1 << 1,
-	opcode.LDARG3:       1 << 1,
-	opcode.LDARG4:       1 << 1,
-	opcode.LDARG5:       1 << 1,
-	opcode.LDARG6:       1 << 1,
-	opcode.LDARG:        1 << 1,
-	opcode.STARG0:       1 << 1,
-	opcode.STARG1:       1 << 1,
-	opcode.STARG2:       1 << 1,
-	opcode.STARG3:       1 << 1,
-	opcode.STARG4:       1 << 1,
-	opcode.STARG5:       1 << 1,
-	opcode.STARG6:       1 << 1,
-	opcode.STARG:        1 << 1,
-	opcode.NEWBUFFER:    1 << 8,
-	opcode.MEMCPY:       1 << 11,
-	opcode.CAT:          1 << 11,
-	opcode.SUBSTR:       1 << 11,
-	opcode.LEFT:         1 << 11,
-	opcode.RIGHT:        1 << 11,
-	opcode.INVERT:       1 << 2,
-	opcode.AND:          1 << 3,
-	opcode.OR:           1 << 3,
-	opcode.XOR:          1 << 3,
-	opcode.EQUAL:        1 << 5,
-	opcode.NOTEQUAL:     1 << 5,
-	opcode.SIGN:         1 << 2,
-	opcode.ABS:          1 << 2,
-	opcode.NEGATE:       1 << 2,
-	opcode.INC:          1 << 2,
-	opcode.DEC:          1 << 2,
-	opcode.ADD:          1 << 3,
-	opcode.SUB:          1 << 3,
-	opcode.MUL:          1 << 3,
-	opcode.DIV:          1 << 3,
-	opcode.MOD:          1 << 3,
-	opcode.POW:          1 << 6,
-	opcode.SQRT:         1 << 6,
-	opcode.MODMUL:       1 << 5,
-	opcode.MODPOW:       1 << 11,
-	opcode.SHL:          1 << 3,
-	opcode.SHR:          1 << 3,
-	opcode.NOT:          1 << 2,
-	opcode.BOOLAND:      1 << 3,
-	opcode.BOOLOR:       1 << 3,
-	opcode.NZ:           1 << 2,
-	opcode.NUMEQUAL:     1 << 3,
-	opcode.NUMNOTEQUAL:  1 << 3,
-	opcode.LT:           1 << 3,
-	opcode.LE:           1 << 3,
-	opcode.GT:           1 << 3,
-	opcode.GE:           1 << 3,
-	opcode.MIN:          1 << 3,
-	opcode.MAX:          1 << 3,
-	opcode.WITHIN:       1 << 3,
-	opcode.PACKMAP:      1 << 11,
-	opcode.PACKSTRUCT:   1 << 11,
-	opcode.PACK:         1 << 11,
-	opcode.UNPACK:       1 << 11,
-	opcode.NEWARRAY0:    1 << 4,
-	opcode.NEWARRAY:     1 << 9,
-	opcode.NEWARRAYT:    1 << 9,
-	opcode.NEWSTRUCT0:   1 << 4,
-	opcode.NEWSTRUCT:    1 << 9,
-	opcode.NEWMAP:       1 << 3,
-	opcode.SIZE:         1 << 2,
-	opcode.HASKEY:       1 << 6,
-	opcode.KEYS:         1 << 4,
-	opcode.VALUES:       1 << 13,
-	opcode.PICKITEM:     1 << 6,
-	opcode.APPEND:       1 << 13,
-	opcode.SETITEM:      1 << 13,
-	opcode.REVERSEITEMS: 1 << 13,
-	opcode.REMOVE:       1 << 4,
-	opcode.CLEARITEMS:   1 << 4,
-	opcode.POPITEM:      1 << 4,
-	opcode.ISNULL:       1 << 1,
-	opcode.ISTYPE:       1 << 1,
-	opcode.CONVERT:      1 << 13,
-}
+const COEFFICIENTS: [u16; 256] = {
+    let mut coefficients = [0u16; 256];
+    coefficients[Opcode::PUSHINT8 as usize] = 1 << 0;
+    coefficients[Opcode::PUSHINT16 as usize] = 1 << 0;
+    coefficients[Opcode::PUSHINT32 as usize] = 1 << 0;
+    coefficients[Opcode::PUSHINT64 as usize] = 1 << 0;
+    coefficients[Opcode::PUSHINT128 as usize] = 1 << 2;
+    coefficients[Opcode::PUSHINT256 as usize] = 1 << 2;
+    coefficients[Opcode::PUSHT as usize] = 1 << 0;
+    coefficients[Opcode::PUSHF as usize] = 1 << 0;
+    coefficients[Opcode::PUSHA as usize] = 1 << 2;
+    coefficients[Opcode::PUSHNULL as usize] = 1 << 0;
+    coefficients[Opcode::PUSHDATA1 as usize] = 1 << 3;
+    coefficients[Opcode::PUSHDATA2 as usize] = 1 << 9;
+    coefficients[Opcode::PUSHDATA4 as usize] = 1 << 12;
+    coefficients[Opcode::PUSHM1 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH0 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH1 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH2 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH3 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH4 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH5 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH6 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH7 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH8 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH9 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH10 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH11 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH12 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH13 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH14 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH15 as usize] = 1 << 0;
+    coefficients[Opcode::PUSH16 as usize] = 1 << 0;
+    coefficients[Opcode::NOP as usize] = 1 << 0;
+    coefficients[Opcode::JMP as usize] = 1 << 1;
+    coefficients[Opcode::JMPL as usize] = 1 << 1;
+    coefficients[Opcode::JMPIF as usize] = 1 << 1;
+    coefficients[Opcode::JMPIFL as usize] = 1 << 1;
+    coefficients[Opcode::JMPIFNOT as usize] = 1 << 1;
+    coefficients[Opcode::JMPIFNOTL as usize] = 1 << 1;
+    coefficients[Opcode::JMPEQ as usize] = 1 << 1;
+    coefficients[Opcode::JMPEQL as usize] = 1 << 1;
+    coefficients[Opcode::JMPNE as usize] = 1 << 1;
+    coefficients[Opcode::JMPNEL as usize] = 1 << 1;
+    coefficients[Opcode::JMPGT as usize] = 1 << 1;
+    coefficients[Opcode::JMPGTL as usize] = 1 << 1;
+    coefficients[Opcode::JMPGE as usize] = 1 << 1;
+    coefficients[Opcode::JMPGEL as usize] = 1 << 1;
+    coefficients[Opcode::JMPLT as usize] = 1 << 1;
+    coefficients[Opcode::JMPLTL as usize] = 1 << 1;
+    coefficients[Opcode::JMPLE as usize] = 1 << 1;
+    coefficients[Opcode::JMPLEL as usize] = 1 << 1;
+    coefficients[Opcode::CALL as usize] = 1 << 9;
+    coefficients[Opcode::CALLL as usize] = 1 << 9;
+    coefficients[Opcode::CALLA as usize] = 1 << 9;
+    coefficients[Opcode::CALLT as usize] = 1 << 15;
+    coefficients[Opcode::ABORT as usize] = 0;
+    coefficients[Opcode::ASSERT as usize] = 1 << 0;
+    coefficients[Opcode::ABORTMSG as usize] = 0;      // TODO
+    coefficients[Opcode::ASSERTMSG as usize] = 1 << 0; // TODO
+    coefficients[Opcode::THROW as usize] = 1 << 9;
+    coefficients[Opcode::TRY as usize] = 1 << 2;
+    coefficients[Opcode::TRYL as usize] = 1 << 2;
+    coefficients[Opcode::ENDTRY as usize] = 1 << 2;
+    coefficients[Opcode::ENDTRYL as usize] = 1 << 2;
+    coefficients[Opcode::ENDFINALLY as usize] = 1 << 2;
+    coefficients[Opcode::RET as usize] = 0;
+    coefficients[Opcode::SYSCALL as usize] = 0;
+    coefficients[Opcode::DEPTH as usize] = 1 << 1;
+    coefficients[Opcode::DROP as usize] = 1 << 1;
+    coefficients[Opcode::NIP as usize] = 1 << 1;
+    coefficients[Opcode::XDROP as usize] = 1 << 4;
+    coefficients[Opcode::CLEAR as usize] = 1 << 4;
+    coefficients[Opcode::DUP as usize] = 1 << 1;
+    coefficients[Opcode::OVER as usize] = 1 << 1;
+    coefficients[Opcode::PICK as usize] = 1 << 1;
+    coefficients[Opcode::TUCK as usize] = 1 << 1;
+    coefficients[Opcode::SWAP as usize] = 1 << 1;
+    coefficients[Opcode::ROT as usize] = 1 << 1;
+    coefficients[Opcode::ROLL as usize] = 1 << 4;
+    coefficients[Opcode::REVERSE3 as usize] = 1 << 1;
+    coefficients[Opcode::REVERSE4 as usize] = 1 << 1;
+    coefficients[Opcode::REVERSEN as usize] = 1 << 4;
+    coefficients[Opcode::INITSSLOT as usize] = 1 << 4;
+    coefficients[Opcode::INITSLOT as usize] = 1 << 6;
+    coefficients[Opcode::LDSFLD0 as usize] = 1 << 1;
+    coefficients[Opcode::LDSFLD1 as usize] = 1 << 1;
+    coefficients[Opcode::LDSFLD2 as usize] = 1 << 1;
+    coefficients[Opcode::LDSFLD3 as usize] = 1 << 1;
+    coefficients[Opcode::LDSFLD4 as usize] = 1 << 1;
+    coefficients[Opcode::LDSFLD5 as usize] = 1 << 1;
+    coefficients[Opcode::LDSFLD6 as usize] = 1 << 1;
+    coefficients[Opcode::LDSFLD as usize] = 1 << 1;
+    coefficients[Opcode::STSFLD0 as usize] = 1 << 1;
+    coefficients[Opcode::STSFLD1 as usize] = 1 << 1;
+    coefficients[Opcode::STSFLD2 as usize] = 1 << 1;
+    coefficients[Opcode::STSFLD3 as usize] = 1 << 1;
+    coefficients[Opcode::STSFLD4 as usize] = 1 << 1;
+    coefficients[Opcode::STSFLD5 as usize] = 1 << 1;
+    coefficients[Opcode::STSFLD6 as usize] = 1 << 1;
+    coefficients[Opcode::STSFLD as usize] = 1 << 1;
+    coefficients[Opcode::LDLOC0 as usize] = 1 << 1;
+    coefficients[Opcode::LDLOC1 as usize] = 1 << 1;
+    coefficients[Opcode::LDLOC2 as usize] = 1 << 1;
+    coefficients[Opcode::LDLOC3 as usize] = 1 << 1;
+    coefficients[Opcode::LDLOC4 as usize] = 1 << 1;
+    coefficients[Opcode::LDLOC5 as usize] = 1 << 1;
+    coefficients[Opcode::LDLOC6 as usize] = 1 << 1;
+    coefficients[Opcode::LDLOC as usize] = 1 << 1;
+    coefficients[Opcode::STLOC0 as usize] = 1 << 1;
+    coefficients[Opcode::STLOC1 as usize] = 1 << 1;
+    coefficients[Opcode::STLOC2 as usize] = 1 << 1;
+    coefficients[Opcode::STLOC3 as usize] = 1 << 1;
+    coefficients[Opcode::STLOC4 as usize] = 1 << 1;
+    coefficients[Opcode::STLOC5 as usize] = 1 << 1;
+    coefficients[Opcode::STLOC6 as usize] = 1 << 1;
+    coefficients[Opcode::STLOC as usize] = 1 << 1;
+    coefficients[Opcode::LDARG0 as usize] = 1 << 1;
+    coefficients[Opcode::LDARG1 as usize] = 1 << 1;
+    coefficients[Opcode::LDARG2 as usize] = 1 << 1;
+    coefficients[Opcode::LDARG3 as usize] = 1 << 1;
+    coefficients[Opcode::LDARG4 as usize] = 1 << 1;
+    coefficients[Opcode::LDARG5 as usize] = 1 << 1;
+    coefficients[Opcode::LDARG6 as usize] = 1 << 1;
+    coefficients[Opcode::LDARG as usize] = 1 << 1;
+    coefficients[Opcode::STARG0 as usize] = 1 << 1;
+    coefficients[Opcode::STARG1 as usize] = 1 << 1;
+    coefficients[Opcode::STARG2 as usize] = 1 << 1;
+    coefficients[Opcode::STARG3 as usize] = 1 << 1;
+    coefficients[Opcode::STARG4 as usize] = 1 << 1;
+    coefficients[Opcode::STARG5 as usize] = 1 << 1;
+    coefficients[Opcode::STARG6 as usize] = 1 << 1;
+    coefficients[Opcode::STARG as usize] = 1 << 1;
+    coefficients[Opcode::NEWBUFFER as usize] = 1 << 8;
+    coefficients[Opcode::MEMCPY as usize] = 1 << 11;
+    coefficients[Opcode::CAT as usize] = 1 << 11;
+    coefficients[Opcode::SUBSTR as usize] = 1 << 11;
+    coefficients[Opcode::LEFT as usize] = 1 << 11;
+    coefficients[Opcode::RIGHT as usize] = 1 << 11;
+    coefficients[Opcode::INVERT as usize] = 1 << 2;
+    coefficients[Opcode::AND as usize] = 1 << 3;
+    coefficients[Opcode::OR as usize] = 1 << 3;
+    coefficients[Opcode::XOR as usize] = 1 << 3;
+    coefficients[Opcode::EQUAL as usize] = 1 << 5;
+    coefficients[Opcode::NOTEQUAL as usize] = 1 << 5;
+    coefficients[Opcode::SIGN as usize] = 1 << 2;
+    coefficients[Opcode::ABS as usize] = 1 << 2;
+    coefficients[Opcode::NEGATE as usize] = 1 << 2;
+    coefficients[Opcode::INC as usize] = 1 << 2;
+    coefficients[Opcode::DEC as usize] = 1 << 2;
+    coefficients[Opcode::ADD as usize] = 1 << 3;
+    coefficients[Opcode::SUB as usize] = 1 << 3;
+    coefficients[Opcode::MUL as usize] = 1 << 3;
+    coefficients[Opcode::DIV as usize] = 1 << 3;
+    coefficients[Opcode::MOD as usize] = 1 << 3;
+    coefficients[Opcode::POW as usize] = 1 << 6;
+    coefficients[Opcode::SQRT as usize] = 1 << 6;
+    coefficients[Opcode::MODMUL as usize] = 1 << 5;
+    coefficients[Opcode::MODPOW as usize] = 1 << 11;
+    coefficients[Opcode::SHL as usize] = 1 << 3;
+    coefficients[Opcode::SHR as usize] = 1 << 3;
+    coefficients[Opcode::NOT as usize] = 1 << 2;
+    coefficients[Opcode::BOOLAND as usize] = 1 << 3;
+    coefficients[Opcode::BOOLOR as usize] = 1 << 3;
+    coefficients[Opcode::NZ as usize] = 1 << 2;
+    coefficients[Opcode::NUMEQUAL as usize] = 1 << 3;
+    coefficients[Opcode::NUMNOTEQUAL as usize] = 1 << 3;
+    coefficients[Opcode::LT as usize] = 1 << 3;
+    coefficients[Opcode::LE as usize] = 1 << 3;
+    coefficients[Opcode::GT as usize] = 1 << 3;
+    coefficients[Opcode::GE as usize] = 1 << 3;
+    coefficients[Opcode::MIN as usize] = 1 << 3;
+    coefficients[Opcode::MAX as usize] = 1 << 3;
+    coefficients[Opcode::WITHIN as usize] = 1 << 3;
+    coefficients[Opcode::PACKMAP as usize] = 1 << 11;
+    coefficients[Opcode::PACKSTRUCT as usize] = 1 << 11;
+    coefficients[Opcode::PACK as usize] = 1 << 11;
+    coefficients[Opcode::UNPACK as usize] = 1 << 11;
+    coefficients[Opcode::NEWARRAY0 as usize] = 1 << 4;
+    coefficients[Opcode::NEWARRAY as usize] = 1 << 9;
+    coefficients[Opcode::NEWARRAYT as usize] = 1 << 9;
+    coefficients[Opcode::NEWSTRUCT0 as usize] = 1 << 4;
+    coefficients[Opcode::NEWSTRUCT as usize] = 1 << 9;
+    coefficients[Opcode::NEWMAP as usize] = 1 << 3;
+    coefficients[Opcode::SIZE as usize] = 1 << 2;
+    coefficients[Opcode::HASKEY as usize] = 1 << 6;
+    coefficients[Opcode::KEYS as usize] = 1 << 4;
+    coefficients[Opcode::VALUES as usize] = 1 << 13;
+    coefficients[Opcode::PICKITEM as usize] = 1 << 6;
+    coefficients[Opcode::APPEND as usize] = 1 << 13;
+    coefficients[Opcode::SETITEM as usize] = 1 << 13;
+    coefficients[Opcode::REVERSEITEMS as usize] = 1 << 13;
+    coefficients[Opcode::REMOVE as usize] = 1 << 4;
+    coefficients[Opcode::CLEARITEMS as usize] = 1 << 4;
+    coefficients[Opcode::POPITEM as usize] = 1 << 4;
+    coefficients[Opcode::ISNULL as usize] = 1 << 1;
+    coefficients[Opcode::ISTYPE as usize] = 1 << 1;
+    coefficients[Opcode::CONVERT as usize] = 1 << 13;
+    coefficients
+};

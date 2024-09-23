@@ -1,93 +1,67 @@
-package chaindump
+use std::fmt;
+use std::io::{self, Read, Write};
 
-import (
-	"fmt"
+use crate::config::BlockchainConfig;
+use crate::core::block::Block;
+use crate::util::Uint256;
 
-	"github.com/nspcc-dev/neo-go/pkg/config"
-	"github.com/nspcc-dev/neo-go/pkg/core/block"
-	"github.com/nspcc-dev/neo-go/pkg/io"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-)
-
-// DumperRestorer is an interface to get/add blocks from/to.
-type DumperRestorer interface {
-	AddBlock(block *block.Block) error
-	GetBlock(hash util.Uint256) (*block.Block, error)
-	GetConfig() config.Blockchain
-	GetHeaderHash(uint32) util.Uint256
+// DumperRestorer is a trait to get/add blocks from/to.
+pub trait DumperRestorer {
+    fn add_block(&self, block: &Block) -> Result<(), Box<dyn std::error::Error>>;
+    fn get_block(&self, hash: Uint256) -> Result<Block, Box<dyn std::error::Error>>;
+    fn get_config(&self) -> BlockchainConfig;
+    fn get_header_hash(&self, index: u32) -> Uint256;
 }
 
 // Dump writes count blocks from start to the provided writer.
 // Note: header needs to be written separately by a client.
-func Dump(bc DumperRestorer, w *io.BinWriter, start, count uint32) error {
-	var buf = io.NewBufBinWriter()
+pub fn dump<D: DumperRestorer, W: Write>(bc: &D, w: &mut W, start: u32, count: u32) -> Result<(), Box<dyn std::error::Error>> {
+    let mut buf = Vec::new();
 
-	for i := start; i < start+count; i++ {
-		bh := bc.GetHeaderHash(i)
-		b, err := bc.GetBlock(bh)
-		if err != nil {
-			return err
-		}
-		b.EncodeBinary(buf.BinWriter)
-		bytes := buf.Bytes()
-		w.WriteU32LE(uint32(len(bytes)))
-		w.WriteBytes(bytes)
-		if w.Err != nil {
-			return w.Err
-		}
-		buf.Reset()
-	}
-	return nil
+    for i in start..start + count {
+        let bh = bc.get_header_hash(i);
+        let b = bc.get_block(bh)?;
+        b.encode_binary(&mut buf)?;
+        let bytes = buf.clone();
+        w.write_all(&(bytes.len() as u32).to_le_bytes())?;
+        w.write_all(&bytes)?;
+        buf.clear();
+    }
+    Ok(())
 }
 
 // Restore restores blocks from the provided reader.
 // f is called after addition of every block.
-func Restore(bc DumperRestorer, r *io.BinReader, skip, count uint32, f func(b *block.Block) error) error {
-	var buf []byte
+pub fn restore<D: DumperRestorer, R: Read, F>(bc: &D, r: &mut R, skip: u32, count: u32, f: F) -> Result<(), Box<dyn std::error::Error>>
+where
+    F: Fn(&Block) -> Result<(), Box<dyn std::error::Error>>,
+{
+    let mut buf = Vec::new();
 
-	readBlock := func(r *io.BinReader) ([]byte, error) {
-		var size = r.ReadU32LE()
-		if uint32(cap(buf)) < size {
-			buf = make([]byte, size)
-		} else {
-			buf = buf[:size]
-		}
-		r.ReadBytes(buf)
-		return buf, r.Err
-	}
+    let mut read_block = |r: &mut R| -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let mut size_buf = [0u8; 4];
+        r.read_exact(&mut size_buf)?;
+        let size = u32::from_le_bytes(size_buf) as usize;
+        buf.resize(size, 0);
+        r.read_exact(&mut buf)?;
+        Ok(buf.clone())
+    };
 
-	i := uint32(0)
-	for ; i < skip; i++ {
-		_, err := readBlock(r)
-		if err != nil {
-			return err
-		}
-	}
+    for _ in 0..skip {
+        read_block(r)?;
+    }
 
-	stateRootInHeader := bc.GetConfig().StateRootInHeader
+    let state_root_in_header = bc.get_config().state_root_in_header;
 
-	for ; i < skip+count; i++ {
-		buf, err := readBlock(r)
-		if err != nil {
-			return err
-		}
-		b := block.New(stateRootInHeader)
-		r := io.NewBinReaderFromBuf(buf)
-		b.DecodeBinary(r)
-		if r.Err != nil {
-			return r.Err
-		}
-		if b.Index != 0 || i != 0 || skip != 0 {
-			err = bc.AddBlock(b)
-			if err != nil {
-				return fmt.Errorf("failed to add block %d: %w", i, err)
-			}
-		}
-		if f != nil {
-			if err := f(b); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+    for i in skip..skip + count {
+        let buf = read_block(r)?;
+        let mut b = Block::new(state_root_in_header);
+        let mut r = io::Cursor::new(buf);
+        b.decode_binary(&mut r)?;
+        if b.index != 0 || i != 0 || skip != 0 {
+            bc.add_block(&b)?;
+        }
+        f(&b)?;
+    }
+    Ok(())
 }

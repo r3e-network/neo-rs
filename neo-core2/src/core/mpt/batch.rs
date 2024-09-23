@@ -1,288 +1,239 @@
-package mpt
+use std::cmp::Ordering;
+use std::collections::HashMap;
 
-import (
-	"bytes"
-	"slices"
-)
-
-// Batch is a batch of storage changes.
-// It stores key-value pairs in a sorted state.
-type Batch struct {
-	kv []keyValue
+#[derive(Default)]
+pub struct Batch {
+    kv: Vec<KeyValue>,
 }
 
-type keyValue struct {
-	key   []byte
-	value []byte
+#[derive(Clone)]
+struct KeyValue {
+    key: Vec<u8>,
+    value: Vec<u8>,
 }
 
-// MapToMPTBatch makes a Batch from an unordered set of storage changes.
-func MapToMPTBatch(m map[string][]byte) Batch {
-	var b Batch
-
-	b.kv = make([]keyValue, 0, len(m))
-
-	for k, v := range m {
-		b.kv = append(b.kv, keyValue{strToNibbles(k), v}) // Strip storage prefix.
-	}
-	slices.SortFunc(b.kv, func(a, b keyValue) int {
-		return bytes.Compare(a.key, b.key)
-	})
-	return b
+impl Batch {
+    // MapToMPTBatch makes a Batch from an unordered set of storage changes.
+    pub fn map_to_mpt_batch(m: HashMap<String, Vec<u8>>) -> Batch {
+        let mut b = Batch::default();
+        b.kv = m.into_iter()
+            .map(|(k, v)| KeyValue { key: str_to_nibbles(&k), value: v })
+            .collect();
+        b.kv.sort_by(|a, b| a.key.cmp(&b.key));
+        b
+    }
 }
 
-// PutBatch puts a batch to a trie.
-// It is not atomic (and probably cannot be without substantial slow-down)
-// and returns the number of elements processed.
-// If an error is returned, the trie may be in the inconsistent state in case of storage failures.
-// This is due to the fact that we can remove multiple children from the branch node simultaneously
-// and won't strip the resulting branch node.
-// However, it is used mostly after block processing to update MPT, and error is not expected.
-func (t *Trie) PutBatch(b Batch) (int, error) {
-	if len(b.kv) == 0 {
-		return 0, nil
-	}
-	r, n, err := t.putBatch(b.kv)
-	t.root = r
-	return n, err
+impl Trie {
+    // PutBatch puts a batch to a trie.
+    pub fn put_batch(&mut self, b: Batch) -> Result<usize, String> {
+        if b.kv.is_empty() {
+            return Ok(0);
+        }
+        let (r, n, err) = self.put_batch_internal(b.kv)?;
+        self.root = r;
+        Ok(n)
+    }
+
+    fn put_batch_internal(&mut self, kv: Vec<KeyValue>) -> Result<(Node, usize, String), String> {
+        self.put_batch_into_node(self.root.clone(), kv)
+    }
+
+    fn put_batch_into_node(&mut self, curr: Node, kv: Vec<KeyValue>) -> Result<(Node, usize, String), String> {
+        match curr {
+            Node::LeafNode(n) => self.put_batch_into_leaf(n, kv),
+            Node::BranchNode(n) => self.put_batch_into_branch(n, kv),
+            Node::ExtensionNode(n) => self.put_batch_into_extension(n, kv),
+            Node::HashNode(n) => self.put_batch_into_hash(n, kv),
+            Node::EmptyNode => self.put_batch_into_empty(kv),
+            _ => panic!("invalid MPT node type"),
+        }
+    }
+
+    fn put_batch_into_leaf(&mut self, curr: LeafNode, kv: Vec<KeyValue>) -> Result<(Node, usize, String), String> {
+        self.remove_ref(&curr.hash(), &curr.bytes());
+        self.new_sub_trie_many(None, kv, Some(curr.value))
+    }
+
+    fn put_batch_into_branch(&mut self, curr: BranchNode, kv: Vec<KeyValue>) -> Result<(Node, usize, String), String> {
+        self.add_to_branch(curr, kv, true)
+    }
+
+    fn merge_extension(&mut self, prefix: Vec<u8>, sub: Node) -> Result<Node, String> {
+        match sub {
+            Node::ExtensionNode(mut sn) => {
+                self.remove_ref(&sn.hash(), &sn.bytes);
+                sn.key.extend(prefix);
+                sn.invalidate_cache();
+                self.add_ref(&sn.hash(), &sn.bytes);
+                Ok(Node::ExtensionNode(sn))
+            }
+            Node::EmptyNode => Ok(Node::EmptyNode),
+            Node::HashNode(sn) => {
+                let n = self.get_from_store(&sn.hash)?;
+                self.merge_extension(prefix, n)
+            }
+            _ => {
+                if !prefix.is_empty() {
+                    let e = ExtensionNode::new(prefix, sub);
+                    self.add_ref(&e.hash(), &e.bytes);
+                    Ok(Node::ExtensionNode(e))
+                } else {
+                    Ok(sub)
+                }
+            }
+        }
+    }
+
+    fn put_batch_into_extension(&mut self, curr: ExtensionNode, kv: Vec<KeyValue>) -> Result<(Node, usize, String), String> {
+        self.remove_ref(&curr.hash(), &curr.bytes);
+
+        let common = lcp_many(&kv);
+        let pref = lcp(&common, &curr.key);
+        if pref.len() == curr.key.len() {
+            strip_prefix(curr.key.len(), &mut kv);
+            let (sub, n, err) = self.put_batch_into_node(curr.next, kv)?;
+            let sub = self.merge_extension(pref, sub)?;
+            return Ok((sub, n, err));
+        }
+
+        if !pref.is_empty() {
+            strip_prefix(pref.len(), &mut kv);
+            let (sub, n, err) = self.put_batch_into_extension_no_prefix(curr.key[pref.len()..].to_vec(), curr.next, kv)?;
+            let sub = self.merge_extension(pref, sub)?;
+            return Ok((sub, n, err));
+        }
+        self.put_batch_into_extension_no_prefix(curr.key, curr.next, kv)
+    }
+
+    fn put_batch_into_extension_no_prefix(&mut self, key: Vec<u8>, next: Node, kv: Vec<KeyValue>) -> Result<(Node, usize, String), String> {
+        let mut b = BranchNode::new();
+        if key.len() > 1 {
+            b.children[key[0] as usize] = self.new_sub_trie(Some(key[1..].to_vec()), next, false);
+        } else {
+            b.children[key[0] as usize] = next;
+        }
+        self.add_to_branch(b, kv, false)
+    }
+
+    fn add_to_branch(&mut self, mut b: BranchNode, kv: Vec<KeyValue>, in_trie: bool) -> Result<(Node, usize, String), String> {
+        if in_trie {
+            self.remove_ref(&b.hash(), &b.bytes);
+        }
+
+        let (n, err) = self.iterate_batch(kv, |c, kv| {
+            let (child, n, err) = self.put_batch_into_node(b.children[c as usize].clone(), kv)?;
+            b.children[c as usize] = child;
+            Ok((n, err))
+        })?;
+        if in_trie && n != 0 {
+            b.invalidate_cache();
+        }
+
+        let (nd, b_err) = self.strip_branch(b)?;
+        if err.is_none() {
+            return Ok((nd, n, b_err));
+        }
+        Ok((nd, n, err))
+    }
+
+    fn strip_branch(&mut self, b: BranchNode) -> Result<(Node, String), String> {
+        let mut n = 0;
+        let mut last_index = 0;
+        for (i, child) in b.children.iter().enumerate() {
+            if !child.is_empty() {
+                n += 1;
+                last_index = i;
+            }
+        }
+        match n {
+            0 => Ok((Node::EmptyNode, String::new())),
+            1 => {
+                if last_index != LAST_CHILD {
+                    return self.merge_extension(vec![last_index as u8], b.children[last_index].clone());
+                }
+                Ok((b.children[last_index].clone(), String::new()))
+            }
+            _ => {
+                self.add_ref(&b.hash(), &b.bytes);
+                Ok((Node::BranchNode(b), String::new()))
+            }
+        }
+    }
+
+    fn iterate_batch<F>(&mut self, mut kv: Vec<KeyValue>, mut f: F) -> Result<(usize, String), String>
+    where
+        F: FnMut(u8, Vec<KeyValue>) -> Result<(usize, String), String>,
+    {
+        let mut n = 0;
+        while !kv.is_empty() {
+            let (c, i) = get_last_index(&kv);
+            if c != LAST_CHILD {
+                strip_prefix(1, &mut kv[..i]);
+            }
+            let (sub, err) = f(c, kv[..i].to_vec())?;
+            n += sub;
+            if err.is_some() {
+                return Ok((n, err));
+            }
+            kv = kv[i..].to_vec();
+        }
+        Ok((n, String::new()))
+    }
+
+    fn put_batch_into_empty(&mut self, kv: Vec<KeyValue>) -> Result<(Node, usize, String), String> {
+        let common = lcp_many(&kv);
+        strip_prefix(common.len(), &mut kv);
+        self.new_sub_trie_many(Some(common), kv, None)
+    }
+
+    fn put_batch_into_hash(&mut self, curr: HashNode, kv: Vec<KeyValue>) -> Result<(Node, usize, String), String> {
+        let result = self.get_from_store(&curr.hash)?;
+        self.put_batch_into_node(result, kv)
+    }
+
+    fn new_sub_trie_many(&mut self, prefix: Option<Vec<u8>>, mut kv: Vec<KeyValue>, value: Option<Vec<u8>>) -> Result<(Node, usize, String), String> {
+        if kv[0].key.is_empty() {
+            if kv[0].value.is_none() {
+                if kv.len() == 1 {
+                    return Ok((Node::EmptyNode, 1, String::new()));
+                }
+                let (node, n, err) = self.new_sub_trie_many(prefix, kv[1..].to_vec(), None)?;
+                return Ok((node, n + 1, err));
+            }
+            if kv.len() == 1 {
+                return Ok((self.new_sub_trie(prefix, Node::LeafNode(LeafNode::new(kv[0].value.clone())), true), 1, String::new()));
+            }
+            value = kv[0].value.clone();
+        }
+
+        let mut b = BranchNode::new();
+        if let Some(value) = value {
+            let leaf = LeafNode::new(value);
+            self.add_ref(&leaf.hash(), &leaf.bytes);
+            b.children[LAST_CHILD] = Node::LeafNode(leaf);
+        }
+        let (nd, n, err) = self.add_to_branch(b, kv, false)?;
+        let nd = self.merge_extension(prefix.unwrap_or_default(), nd)?;
+        Ok((nd, n, err))
+    }
 }
 
-func (t *Trie) putBatch(kv []keyValue) (Node, int, error) {
-	return t.putBatchIntoNode(t.root, kv)
+fn strip_prefix(n: usize, kv: &mut [KeyValue]) {
+    for kv in kv.iter_mut() {
+        kv.key = kv.key[n..].to_vec();
+    }
 }
 
-func (t *Trie) putBatchIntoNode(curr Node, kv []keyValue) (Node, int, error) {
-	switch n := curr.(type) {
-	case *LeafNode:
-		return t.putBatchIntoLeaf(n, kv)
-	case *BranchNode:
-		return t.putBatchIntoBranch(n, kv)
-	case *ExtensionNode:
-		return t.putBatchIntoExtension(n, kv)
-	case *HashNode:
-		return t.putBatchIntoHash(n, kv)
-	case EmptyNode:
-		return t.putBatchIntoEmpty(kv)
-	default:
-		panic("invalid MPT node type")
-	}
-}
-
-func (t *Trie) putBatchIntoLeaf(curr *LeafNode, kv []keyValue) (Node, int, error) {
-	t.removeRef(curr.Hash(), curr.Bytes())
-	return t.newSubTrieMany(nil, kv, curr.value)
-}
-
-func (t *Trie) putBatchIntoBranch(curr *BranchNode, kv []keyValue) (Node, int, error) {
-	return t.addToBranch(curr, kv, true)
-}
-
-func (t *Trie) mergeExtension(prefix []byte, sub Node) (Node, error) {
-	switch sn := sub.(type) {
-	case *ExtensionNode:
-		t.removeRef(sn.Hash(), sn.bytes)
-		sn.key = append(prefix, sn.key...)
-		sn.invalidateCache()
-		t.addRef(sn.Hash(), sn.bytes)
-		return sn, nil
-	case EmptyNode:
-		return sn, nil
-	case *HashNode:
-		n, err := t.getFromStore(sn.Hash())
-		if err != nil {
-			return sn, err
-		}
-		return t.mergeExtension(prefix, n)
-	default:
-		if len(prefix) != 0 {
-			e := NewExtensionNode(prefix, sub)
-			t.addRef(e.Hash(), e.bytes)
-			return e, nil
-		}
-		return sub, nil
-	}
-}
-
-func (t *Trie) putBatchIntoExtension(curr *ExtensionNode, kv []keyValue) (Node, int, error) {
-	t.removeRef(curr.Hash(), curr.bytes)
-
-	common := lcpMany(kv)
-	pref := lcp(common, curr.key)
-	if len(pref) == len(curr.key) {
-		// Extension must be split into new nodes.
-		stripPrefix(len(curr.key), kv)
-		sub, n, err := t.putBatchIntoNode(curr.next, kv)
-		if err == nil {
-			sub, err = t.mergeExtension(pref, sub)
-		}
-		return sub, n, err
-	}
-
-	if len(pref) != 0 {
-		stripPrefix(len(pref), kv)
-		sub, n, err := t.putBatchIntoExtensionNoPrefix(curr.key[len(pref):], curr.next, kv)
-		if err == nil {
-			sub, err = t.mergeExtension(pref, sub)
-		}
-		return sub, n, err
-	}
-	return t.putBatchIntoExtensionNoPrefix(curr.key, curr.next, kv)
-}
-
-func (t *Trie) putBatchIntoExtensionNoPrefix(key []byte, next Node, kv []keyValue) (Node, int, error) {
-	b := NewBranchNode()
-	if len(key) > 1 {
-		b.Children[key[0]] = t.newSubTrie(key[1:], next, false)
-	} else {
-		b.Children[key[0]] = next
-	}
-	return t.addToBranch(b, kv, false)
-}
-
-func isEmpty(n Node) bool {
-	_, ok := n.(EmptyNode)
-	return ok
-}
-
-// addToBranch puts items into the branch node assuming b is not yet in trie.
-func (t *Trie) addToBranch(b *BranchNode, kv []keyValue, inTrie bool) (Node, int, error) {
-	if inTrie {
-		t.removeRef(b.Hash(), b.bytes)
-	}
-
-	// An error during iterate means some storage failure (i.e. some hash node cannot be
-	// retrieved from storage). This can leave the trie in an inconsistent state because
-	// it can be impossible to strip the branch node after it has been changed.
-	// Consider a branch with 10 children, first 9 of which are deleted and the remaining one
-	// is a leaf node replaced by a hash node missing from the storage.
-	// This can't be fixed easily because we need to _revert_ changes in the reference counts
-	// for children which have been updated successfully. But storage access errors means we are
-	// in a bad state anyway.
-	n, err := t.iterateBatch(kv, func(c byte, kv []keyValue) (int, error) {
-		child, n, err := t.putBatchIntoNode(b.Children[c], kv)
-		b.Children[c] = child
-		return n, err
-	})
-	if inTrie && n != 0 {
-		b.invalidateCache()
-	}
-
-	// Even if some of the children can't be put, we need to try to strip the branch
-	// and possibly update the refcounts.
-	nd, bErr := t.stripBranch(b)
-	if err == nil {
-		err = bErr
-	}
-	return nd, n, err
-}
-
-// stripsBranch strips the branch node after incomplete batch put.
-// It assumes there is no reference to b in the trie.
-func (t *Trie) stripBranch(b *BranchNode) (Node, error) {
-	var n int
-	var lastIndex byte
-	for i := range b.Children {
-		if !isEmpty(b.Children[i]) {
-			n++
-			lastIndex = byte(i)
-		}
-	}
-	switch {
-	case n == 0:
-		return EmptyNode{}, nil
-	case n == 1:
-		if lastIndex != lastChild {
-			return t.mergeExtension([]byte{lastIndex}, b.Children[lastIndex])
-		}
-		return b.Children[lastIndex], nil
-	default:
-		t.addRef(b.Hash(), b.bytes)
-		return b, nil
-	}
-}
-
-func (t *Trie) iterateBatch(kv []keyValue, f func(c byte, kv []keyValue) (int, error)) (int, error) {
-	var n int
-	for len(kv) != 0 {
-		c, i := getLastIndex(kv)
-		if c != lastChild {
-			stripPrefix(1, kv[:i])
-		}
-		sub, err := f(c, kv[:i])
-		n += sub
-		if err != nil {
-			return n, err
-		}
-		kv = kv[i:]
-	}
-	return n, nil
-}
-
-func (t *Trie) putBatchIntoEmpty(kv []keyValue) (Node, int, error) {
-	common := lcpMany(kv)
-	stripPrefix(len(common), kv)
-	return t.newSubTrieMany(common, kv, nil)
-}
-
-func (t *Trie) putBatchIntoHash(curr *HashNode, kv []keyValue) (Node, int, error) {
-	result, err := t.getFromStore(curr.hash)
-	if err != nil {
-		return curr, 0, err
-	}
-	return t.putBatchIntoNode(result, kv)
-}
-
-// Creates a new subtrie from the provided key-value pairs.
-// Items in kv must have no common prefix.
-// If there are any deletions in kv, error is returned.
-// kv is not empty.
-// kv is sorted by key.
-// value is the current value stored by prefix.
-func (t *Trie) newSubTrieMany(prefix []byte, kv []keyValue, value []byte) (Node, int, error) {
-	if len(kv[0].key) == 0 {
-		if kv[0].value == nil {
-			if len(kv) == 1 {
-				return EmptyNode{}, 1, nil
-			}
-			node, n, err := t.newSubTrieMany(prefix, kv[1:], nil)
-			return node, n + 1, err
-		}
-		if len(kv) == 1 {
-			return t.newSubTrie(prefix, NewLeafNode(kv[0].value), true), 1, nil
-		}
-		value = kv[0].value
-	}
-
-	// Prefix is empty and we have at least 2 children.
-	b := NewBranchNode()
-	if value != nil {
-		// Empty key is always first.
-		leaf := NewLeafNode(value)
-		t.addRef(leaf.Hash(), leaf.bytes)
-		b.Children[lastChild] = leaf
-	}
-	nd, n, err := t.addToBranch(b, kv, false)
-	if err == nil {
-		nd, err = t.mergeExtension(prefix, nd)
-	}
-	return nd, n, err
-}
-
-func stripPrefix(n int, kv []keyValue) {
-	for i := range kv {
-		kv[i].key = kv[i].key[n:]
-	}
-}
-
-func getLastIndex(kv []keyValue) (byte, int) {
-	if len(kv[0].key) == 0 {
-		return lastChild, 1
-	}
-	c := kv[0].key[0]
-	for i := range kv[1:] {
-		if kv[i+1].key[0] != c {
-			return c, i + 1
-		}
-	}
-	return c, len(kv)
+fn get_last_index(kv: &[KeyValue]) -> (u8, usize) {
+    if kv[0].key.is_empty() {
+        return (LAST_CHILD, 1);
+    }
+    let c = kv[0].key[0];
+    for (i, kv) in kv.iter().enumerate().skip(1) {
+        if kv.key[0] != c {
+            return (c, i);
+        }
+    }
+    (c, kv.len())
 }

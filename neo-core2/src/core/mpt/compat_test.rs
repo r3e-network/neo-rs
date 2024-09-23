@@ -1,11 +1,392 @@
-package mpt
+use std::collections::HashMap;
+use std::sync::Arc;
+use parking_lot::RwLock;
+use crate::mpt::{Trie, Node, BranchNode, ExtensionNode, LeafNode, HashNode, Mode, new_test_store, MaxKeyLength, MaxValueLength};
+use crate::mpt::verify_proof::VerifyProof;
+use crate::mpt::proof::GetProof;
+use crate::mpt::find::Find;
+use crate::mpt::put::Put;
+use crate::mpt::delete::Delete;
+use crate::mpt::flush::Flush;
+use crate::mpt::copy::CopyTrie;
+use crate::mpt::check_batch_size::CheckBatchSize;
+use crate::mpt::new_filled_trie::NewFilledTrie;
+use crate::mpt::test_get_proof::TestGetProof;
 
-import (
-	"testing"
+fn prepare_mpt_compat() -> Trie {
+    let b = BranchNode::new();
+    let r = ExtensionNode::new(vec![0x0a, 0x0c], b.clone());
+    let v1 = LeafNode::new(vec![0xab, 0xcd]); // key=ac01
+    let v2 = LeafNode::new(vec![0x22, 0x22]); // key=ac
+    let v3 = LeafNode::new(b"existing".to_vec()); // key=acae
+    let v4 = LeafNode::new(b"missing".to_vec());
+    let h3 = HashNode::new(v3.hash());
+    let e1 = ExtensionNode::new(vec![0x01], v1.clone());
+    let e3 = ExtensionNode::new(vec![0x0e], h3.clone());
+    let e4 = ExtensionNode::new(vec![0x01], v4.clone());
+    b.children[0] = Some(e1.clone());
+    b.children[10] = Some(e3.clone());
+    b.children[16] = Some(v2.clone());
+    b.children[15] = Some(HashNode::new(e4.hash()));
 
-	"github.com/stretchr/testify/require"
-)
+    let mut tr = Trie::new(r.clone(), Mode::Latest, new_test_store());
+    tr.put_to_store(r);
+    tr.put_to_store(b);
+    tr.put_to_store(e1);
+    tr.put_to_store(e3);
+    tr.put_to_store(v1);
+    tr.put_to_store(v2);
+    tr.put_to_store(v3);
 
+    tr
+}
+
+#[test]
+fn test_compatibility() {
+    let main_trie = prepare_mpt_compat();
+
+    #[test]
+    fn try_get() {
+        let tr = main_trie.copy();
+        tr.test_has(vec![0xac, 0x01], vec![0xab, 0xcd]);
+        tr.test_has(vec![0xac], vec![0x22, 0x22]);
+        tr.test_has(vec![0xab, 0x99], None);
+        tr.test_has(vec![0xac, 0x39], None);
+        tr.test_has(vec![0xac, 0x02], None);
+        tr.test_has(vec![0xac, 0x01, 0x00], None);
+        tr.test_has(vec![0xac, 0x99, 0x10], None);
+        tr.test_has(vec![0xac, 0xf1], None);
+        tr.test_has(vec![0; MaxKeyLength], None);
+    }
+
+    #[test]
+    fn try_get_resolve() {
+        let tr = main_trie.copy();
+        tr.test_has(vec![0xac, 0xae], b"existing".to_vec());
+    }
+
+    #[test]
+    fn try_put() {
+        let tr = new_filled_trie(
+            vec![0xac, 0x01], vec![0xab, 0xcd],
+            vec![0xac], vec![0x22, 0x22],
+            vec![0xac, 0xae], b"existing".to_vec(),
+            vec![0xac, 0xf1], b"missing".to_vec()
+        );
+
+        assert_eq!(main_trie.root.hash(), tr.root.hash());
+        assert!(tr.put(None, vec![0x01]).is_err());
+        assert!(tr.put(vec![0x01], None).is_err());
+        assert!(tr.put(vec![0; MaxKeyLength + 1], None).is_err());
+        assert!(tr.put(vec![0x01], vec![0; MaxValueLength + 1]).is_err());
+        assert_eq!(main_trie.root.hash(), tr.root.hash());
+        assert!(tr.put(vec![0x01], vec![]).is_ok());
+        assert!(tr.put(vec![0xac, 0x01], vec![0xab]).is_ok());
+    }
+
+    #[test]
+    fn put_cant_resolve() {
+        let tr = main_trie.copy();
+        assert!(tr.put(vec![0xac, 0xf1, 0x11], vec![1]).is_err());
+    }
+
+    #[test]
+    fn try_delete() {
+        let tr = main_trie.copy();
+        tr.test_has(vec![0xac], vec![0x22, 0x22]);
+        assert!(tr.delete(vec![0x0c, 0x99]).is_ok());
+        assert!(tr.delete(None).is_ok());
+        assert!(tr.delete(vec![0xac, 0x20]).is_ok());
+
+        assert!(tr.delete(vec![0xac, 0xf1]).is_err()); // error for can't resolve
+        assert!(tr.delete(vec![0; MaxKeyLength + 1]).is_err()); // error for too big key
+
+        // In our implementation missing keys are ignored.
+        assert!(tr.delete(vec![0xac]).is_ok());
+        assert!(tr.delete(vec![0xac, 0xae, 0x01]).is_ok());
+        assert!(tr.delete(vec![0xac, 0xae]).is_ok());
+
+        assert_eq!("cb06925428b7c727375c7fdd943a302fe2c818cf2e2eaf63a7932e3fd6cb3408",
+            tr.root.hash().to_string());
+    }
+
+    #[test]
+    fn delete_remain_can_resolve() {
+        let tr = new_filled_trie(
+            vec![0xac, 0x00], vec![0xab, 0xcd],
+            vec![0xac, 0x10], vec![0xab, 0xcd]
+        );
+        tr.flush(0);
+
+        let tr2 = tr.copy();
+        assert!(tr2.delete(vec![0xac, 0x00]).is_ok());
+
+        tr2.flush(0);
+        assert!(tr2.delete(vec![0xac, 0x10]).is_ok());
+    }
+
+    #[test]
+    fn delete_remain_cant_resolve() {
+        let b = BranchNode::new();
+        let r = ExtensionNode::new(vec![0x0a, 0x0c], b.clone());
+        let v1 = LeafNode::new(vec![0xab, 0xcd]);
+        let v4 = LeafNode::new(b"missing".to_vec());
+        let e1 = ExtensionNode::new(vec![0x01], v1.clone());
+        let e4 = ExtensionNode::new(vec![0x01], v4.clone());
+        b.children[0] = Some(e1.clone());
+        b.children[15] = Some(HashNode::new(e4.hash()));
+
+        let mut tr = Trie::new(HashNode::new(r.hash()), Mode::All, new_test_store());
+        tr.put_to_store(r);
+        tr.put_to_store(b);
+        tr.put_to_store(e1);
+        tr.put_to_store(v1);
+
+        assert!(tr.delete(vec![0xac, 0x01]).is_err());
+    }
+
+    #[test]
+    fn delete_same_value() {
+        let tr = new_filled_trie(
+            vec![0xac, 0x01], vec![0xab, 0xcd],
+            vec![0xac, 0x02], vec![0xab, 0xcd]
+        );
+        tr.test_has(vec![0xac, 0x01], vec![0xab, 0xcd]);
+        tr.test_has(vec![0xac, 0x02], vec![0xab, 0xcd]);
+
+        assert!(tr.delete(vec![0xac, 0x01]).is_ok());
+        tr.test_has(vec![0xac, 0x02], vec![0xab, 0xcd]);
+        tr.flush(0);
+
+        let tr2 = Trie::new(HashNode::new(tr.root.hash()), Mode::All, tr.store.clone());
+        tr2.test_has(vec![0xac, 0x02], vec![0xab, 0xcd]);
+    }
+
+    #[test]
+    fn branch_node_remain_value() {
+        let tr = new_filled_trie(
+            vec![0xac, 0x11], vec![0xac, 0x11],
+            vec![0xac, 0x22], vec![0xac, 0x22],
+            vec![0xac], vec![0xac]
+        );
+        tr.flush(0);
+        check_batch_size(tr, 7);
+
+        assert!(tr.delete(vec![0xac, 0x11]).is_ok());
+        tr.flush(0);
+        check_batch_size(tr, 5);
+
+        assert!(tr.delete(vec![0xac, 0x22]).is_ok());
+        tr.flush(0);
+        check_batch_size(tr, 2);
+    }
+
+    #[test]
+    fn get_proof() {
+        let b = BranchNode::new();
+        let r = ExtensionNode::new(vec![0x0a, 0x0c], b.clone());
+        let v1 = LeafNode::new(vec![0xab, 0xcd]); // key=ac01
+        let v2 = LeafNode::new(vec![0x22, 0x22]); // key=ac
+        let v3 = LeafNode::new(b"existing".to_vec()); // key=acae
+        let v4 = LeafNode::new(b"missing".to_vec());
+        let h3 = HashNode::new(v3.hash());
+        let e1 = ExtensionNode::new(vec![0x01], v1.clone());
+        let e3 = ExtensionNode::new(vec![0x0e], h3.clone());
+        let e4 = ExtensionNode::new(vec![0x01], v4.clone());
+        b.children[0] = Some(e1.clone());
+        b.children[10] = Some(e3.clone());
+        b.children[16] = Some(v2.clone());
+        b.children[15] = Some(HashNode::new(e4.hash()));
+
+        let tr = Trie::new(HashNode::new(r.hash()), Mode::Latest, main_trie.store.clone());
+        assert_eq!(r.hash(), tr.root.hash());
+
+        let proof = test_get_proof(tr, vec![0xac, 0x01], 4);
+        assert_eq!(r.bytes(), proof[0]);
+        assert_eq!(b.bytes(), proof[1]);
+        assert_eq!(e1.bytes(), proof[2]);
+        assert_eq!(v1.bytes(), proof[3]);
+
+        test_get_proof(tr, vec![0xac], 3);
+        test_get_proof(tr, vec![0xac, 0x10], 0);
+        test_get_proof(tr, vec![0xac, 0xae], 4);
+        test_get_proof(tr, None, 0);
+        test_get_proof(tr, vec![0xac, 0x01, 0x00], 0);
+        test_get_proof(tr, vec![0xac, 0xf1], 0);
+        test_get_proof(tr, vec![0; MaxKeyLength], 0);
+    }
+
+    #[test]
+    fn verify_proof() {
+        let tr = main_trie.copy();
+        let proof = test_get_proof(tr, vec![0xac, 0x01], 4);
+        let (value, ok) = verify_proof(tr.root.hash(), vec![0xac, 0x01], proof);
+        assert!(ok);
+        assert_eq!(vec![0xab, 0xcd], value);
+    }
+
+    #[test]
+    fn add_longer_key() {
+        let tr = new_filled_trie(
+            vec![0xab], vec![0x01],
+            vec![0xab, 0xcd], vec![0x02]
+        );
+        tr.test_has(vec![0xab], vec![0x01]);
+    }
+
+    #[test]
+    fn split_key() {
+        let tr = new_filled_trie(
+            vec![0xab, 0xcd], vec![0x01],
+            vec![0xab], vec![0x02]
+        );
+        test_get_proof(tr, vec![0xab, 0xcd], 4);
+
+        let tr2 = new_filled_trie(
+            vec![0xab], vec![0x02],
+            vec![0xab, 0xcd], vec![0x01]
+        );
+        test_get_proof(tr, vec![0xab, 0xcd], 4);
+
+        assert_eq!(tr.root.hash(), tr2.root.hash());
+    }
+
+    #[test]
+    fn reference() {
+        let tr = new_filled_trie(
+            vec![0xa1, 0x01], vec![0x01],
+            vec![0xa2, 0x01], vec![0x01],
+            vec![0xa3, 0x01], vec![0x01]
+        );
+        tr.flush(0);
+
+        let tr2 = tr.copy();
+        assert!(tr2.delete(vec![0xa3, 0x01]).is_ok());
+        tr2.flush(0);
+
+        let tr3 = tr2.copy();
+        assert!(tr3.delete(vec![0xa2, 0x01]).is_ok());
+        tr3.test_has(vec![0xa1, 0x01], vec![0x01]);
+    }
+
+    #[test]
+    fn reference2() {
+        let tr = new_filled_trie(
+            vec![0xa1, 0x01], vec![0x01],
+            vec![0xa2, 0x01], vec![0x01],
+            vec![0xa3, 0x01], vec![0x01]
+        );
+        tr.flush(0);
+        check_batch_size(tr, 4);
+
+        assert!(tr.delete(vec![0xa3, 0x01]).is_ok());
+        tr.flush(0);
+        check_batch_size(tr, 4);
+
+        assert!(tr.delete(vec![0xa2, 0x01]).is_ok());
+        tr.flush(0);
+        check_batch_size(tr, 2);
+        tr.test_has(vec![0xa1, 0x01], vec![0x01]);
+    }
+
+    #[test]
+    fn extension_delete_dirty() {
+        let tr = new_filled_trie(
+            vec![0xa1], vec![0x01],
+            vec![0xa2], vec![0x02]
+        );
+        tr.flush(0);
+        check_batch_size(tr, 4);
+
+        let tr1 = tr.copy();
+        assert!(tr1.delete(vec![0xa1]).is_ok());
+        tr1.flush(0);
+        assert_eq!(2, tr1.store.get_batch().put.len());
+
+        let tr2 = tr1.copy();
+        assert!(tr2.delete(vec![0xa2]).is_ok());
+        tr2.flush(0);
+        assert_eq!(0, tr2.store.get_batch().put.len());
+    }
+
+    #[test]
+    fn branch_delete_dirty() {
+        let tr = new_filled_trie(
+            vec![0x10], vec![0x01],
+            vec![0x20], vec![0x02],
+            vec![0x30], vec![0x03]
+        );
+        tr.flush(0);
+        check_batch_size(tr, 7);
+
+        let tr1 = tr.copy();
+        assert!(tr1.delete(vec![0x10]).is_ok());
+        tr1.flush(0);
+
+        let tr2 = tr1.copy();
+        assert!(tr2.delete(vec![0x20]).is_ok());
+        tr2.flush(0);
+        assert_eq!(2, tr2.store.get_batch().put.len());
+
+        let tr3 = tr2.copy();
+        assert!(tr3.delete(vec![0x30]).is_ok());
+        tr3.flush(0);
+        assert_eq!(0, tr3.store.get_batch().put.len());
+    }
+
+    #[test]
+    fn extension_put_dirty() {
+        let tr = new_filled_trie(
+            vec![0xa1], vec![0x01],
+            vec![0xa2], vec![0x02]
+        );
+        tr.flush(0);
+        check_batch_size(tr, 4);
+
+        let tr1 = tr.copy();
+        assert!(tr1.put(vec![0xa3], vec![0x03]).is_ok());
+        tr1.flush(0);
+        assert_eq!(5, tr1.store.get_batch().put.len());
+    }
+
+    #[test]
+    fn branch_put_dirty() {
+        let tr = new_filled_trie(
+            vec![0x10], vec![0x01],
+            vec![0x20], vec![0x02]
+        );
+        tr.flush(0);
+        check_batch_size(tr, 5);
+
+        let tr1 = tr.copy();
+        assert!(tr1.put(vec![0x30], vec![0x03]).is_ok());
+        tr1.flush(0);
+        check_batch_size(tr1, 7);
+    }
+
+    #[test]
+    fn empty_value_issue633() {
+        let tr = new_filled_trie(
+            vec![0x01], vec![]
+        );
+        tr.flush(0);
+        check_batch_size(tr, 2);
+
+        let proof = test_get_proof(tr, vec![0x01], 2);
+        let (value, ok) = verify_proof(tr.root.hash(), vec![0x01], proof);
+        assert!(ok);
+        assert_eq!(vec![], value);
+    }
+}
+
+#[test]
+fn test_compatibility_find() {
+    fn check(from: Option<Vec<u8>>, expected_res_len: usize) {
+        let tr = Trie::new(None, Mode::All, new_test_store());
+        assert!(tr.put(b"aa".to_vec(), b"02".to_vec()).is_ok());
+        assert!(tr.put(b"aa10".to_vec(), b"03".to_vec()).is_ok());
+        assert!(tr.put(b"aa50".to_vec(), b"04".to_vec()).is_ok());
+        let res = tr.find(b"aa".to_vec(), from, 10).unwrap();
 func prepareMPTCompat() *Trie {
 	b := NewBranchNode()
 	r := NewExtensionNode([]byte{0x0a, 0x0c}, b)

@@ -1,71 +1,79 @@
-package contract
+use std::error::Error;
+use std::fmt;
+use std::convert::TryInto;
+use elliptic_curve::sec1::ToEncodedPoint;
+use k256::elliptic_curve::sec1::FromEncodedPoint;
+use k256::PublicKey;
+use crate::config;
+use crate::core::fee;
+use crate::core::interop::Context;
+use crate::crypto::hash;
+use crate::crypto::keys;
+use crate::smartcontract;
+use crate::vm::stackitem::{StackItem, ByteArray};
 
-import (
-	"crypto/elliptic"
-	"errors"
-	"math"
+#[derive(Debug)]
+struct ContractError {
+    details: String,
+}
 
-	"github.com/nspcc-dev/neo-go/pkg/config"
-	"github.com/nspcc-dev/neo-go/pkg/core/fee"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/hash"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/keys"
-	"github.com/nspcc-dev/neo-go/pkg/smartcontract"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-)
+impl ContractError {
+    fn new(msg: &str) -> ContractError {
+        ContractError{details: msg.to_string()}
+    }
+}
+
+impl fmt::Display for ContractError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+impl Error for ContractError {
+    fn description(&self) -> &str {
+        &self.details
+    }
+}
 
 // CreateMultisigAccount calculates multisig contract scripthash for a
 // given m and a set of public keys.
-func CreateMultisigAccount(ic *interop.Context) error {
-	m := ic.VM.Estack().Pop().BigInt()
-	mu64 := m.Uint64()
-	if !m.IsUint64() || mu64 > math.MaxInt32 {
-		return errors.New("m must be positive and fit int32")
-	}
-	arr := ic.VM.Estack().Pop().Array()
-	pubs := make(keys.PublicKeys, len(arr))
-	for i, pk := range arr {
-		p, err := keys.NewPublicKeyFromBytes(pk.Value().([]byte), elliptic.P256())
-		if err != nil {
-			return err
-		}
-		pubs[i] = p
-	}
-	var invokeFee int64
-	if ic.IsHardforkEnabled(config.HFAspidochelone) {
-		invokeFee = fee.ECDSAVerifyPrice * int64(len(pubs))
-	} else {
-		invokeFee = 1 << 8
-	}
-	invokeFee *= ic.BaseExecFee()
-	if !ic.VM.AddGas(invokeFee) {
-		return errors.New("gas limit exceeded")
-	}
-	script, err := smartcontract.CreateMultiSigRedeemScript(int(mu64), pubs)
-	if err != nil {
-		return err
-	}
-	ic.VM.Estack().PushItem(stackitem.NewByteArray(hash.Hash160(script).BytesBE()))
-	return nil
+pub fn create_multisig_account(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    let m = ic.vm.estack().pop().bigint();
+    let mu64 = m.to_u64().ok_or_else(|| ContractError::new("m must be positive and fit int32"))?;
+    if mu64 > i32::MAX as u64 {
+        return Err(Box::new(ContractError::new("m must be positive and fit int32")));
+    }
+    let arr = ic.vm.estack().pop().array();
+    let mut pubs = Vec::with_capacity(arr.len());
+    for pk in arr {
+        let p = PublicKey::from_sec1_bytes(pk.value().as_slice())?;
+        pubs.push(p);
+    }
+    let invoke_fee = if ic.is_hardfork_enabled(config::HFAspidochelone) {
+        fee::ECDSA_VERIFY_PRICE * pubs.len() as i64
+    } else {
+        1 << 8
+    } * ic.base_exec_fee();
+    if !ic.vm.add_gas(invoke_fee) {
+        return Err(Box::new(ContractError::new("gas limit exceeded")));
+    }
+    let script = smartcontract::create_multisig_redeem_script(mu64 as usize, &pubs)?;
+    ic.vm.estack().push_item(ByteArray::new(hash::hash160(&script).as_bytes().to_vec()));
+    Ok(())
 }
 
 // CreateStandardAccount calculates contract scripthash for a given public key.
-func CreateStandardAccount(ic *interop.Context) error {
-	h := ic.VM.Estack().Pop().Bytes()
-	p, err := keys.NewPublicKeyFromBytes(h, elliptic.P256())
-	if err != nil {
-		return err
-	}
-	var invokeFee int64
-	if ic.IsHardforkEnabled(config.HFAspidochelone) {
-		invokeFee = fee.ECDSAVerifyPrice
-	} else {
-		invokeFee = 1 << 8
-	}
-	invokeFee *= ic.BaseExecFee()
-	if !ic.VM.AddGas(invokeFee) {
-		return errors.New("gas limit exceeded")
-	}
-	ic.VM.Estack().PushItem(stackitem.NewByteArray(p.GetScriptHash().BytesBE()))
-	return nil
+pub fn create_standard_account(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    let h = ic.vm.estack().pop().bytes();
+    let p = PublicKey::from_sec1_bytes(&h)?;
+    let invoke_fee = if ic.is_hardfork_enabled(config::HFAspidochelone) {
+        fee::ECDSA_VERIFY_PRICE
+    } else {
+        1 << 8
+    } * ic.base_exec_fee();
+    if !ic.vm.add_gas(invoke_fee) {
+        return Err(Box::new(ContractError::new("gas limit exceeded")));
+    }
+    ic.vm.estack().push_item(ByteArray::new(p.to_encoded_point(false).as_bytes().to_vec()));
+    Ok(())
 }

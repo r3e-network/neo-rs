@@ -1,39 +1,38 @@
-package mpt
+use test::Bencher;
+use crate::core::mpt::{Node, NewExtensionNode, NewLeafNode, NewHashNode, NewBranchNode};
+use crate::internal::random;
 
-import (
-	"testing"
-
-	"github.com/nspcc-dev/neo-go/internal/random"
-)
-
-func benchmarkBytes(b *testing.B, n Node) {
-	inv := n.(interface{ invalidateCache() })
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		inv.invalidateCache()
-		_ = n.Bytes()
-	}
+fn benchmark_bytes(b: &mut Bencher, n: &mut dyn Node) {
+    b.iter(|| {
+        n.invalidate_cache();
+        let _ = n.bytes();
+    });
 }
 
-func BenchmarkBytes(b *testing.B) {
-	b.Run("extension", func(b *testing.B) {
-		n := NewExtensionNode(random.Bytes(10), NewLeafNode(random.Bytes(10)))
-		benchmarkBytes(b, n)
-	})
-	b.Run("leaf", func(b *testing.B) {
-		n := NewLeafNode(make([]byte, 15))
-		benchmarkBytes(b, n)
-	})
-	b.Run("hash", func(b *testing.B) {
-		n := NewHashNode(random.Uint256())
-		benchmarkBytes(b, n)
-	})
-	b.Run("branch", func(b *testing.B) {
-		n := NewBranchNode()
-		n.Children[0] = NewLeafNode(random.Bytes(10))
-		n.Children[4] = NewLeafNode(random.Bytes(10))
-		n.Children[7] = NewLeafNode(random.Bytes(10))
-		n.Children[8] = NewLeafNode(random.Bytes(10))
-	})
+#[bench]
+fn benchmark_bytes_extension(b: &mut Bencher) {
+    let mut n = NewExtensionNode(random::bytes(10), NewLeafNode(random::bytes(10)));
+    benchmark_bytes(b, &mut n);
+}
+
+#[bench]
+fn benchmark_bytes_leaf(b: &mut Bencher) {
+    let mut n = NewLeafNode(vec![0; 15]);
+    benchmark_bytes(b, &mut n);
+}
+
+#[bench]
+fn benchmark_bytes_hash(b: &mut Bencher) {
+    let mut n = NewHashNode(random::uint256());
+    benchmark_bytes(b, &mut n);
+}
+
+#[bench]
+fn benchmark_bytes_branch(b: &mut Bencher) {
+    let mut n = NewBranchNode();
+    n.children[0] = Some(Box::new(NewLeafNode(random::bytes(10))));
+    n.children[4] = Some(Box::new(NewLeafNode(random::bytes(10))));
+    n.children[7] = Some(Box::new(NewLeafNode(random::bytes(10))));
+    n.children[8] = Some(Box::new(NewLeafNode(random::bytes(10))));
+    benchmark_bytes(b, &mut n);
 }

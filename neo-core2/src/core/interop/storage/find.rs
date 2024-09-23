@@ -1,134 +1,129 @@
-package storage
+use std::sync::mpsc::Receiver;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+use std::thread;
+use std::fmt;
 
-import (
-	"bytes"
-	"context"
-	"fmt"
-	"slices"
+use crate::core::interop::Context;
+use crate::core::storage::{self, KeyValue};
+use crate::vm::stackitem::{self, StackItem};
 
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/core/storage"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-)
+const FIND_DEFAULT: i64 = 0;
+const FIND_KEYS_ONLY: i64 = 1 << 0;
+const FIND_REMOVE_PREFIX: i64 = 1 << 1;
+const FIND_VALUES_ONLY: i64 = 1 << 2;
+const FIND_DESERIALIZE: i64 = 1 << 3;
+const FIND_PICK0: i64 = 1 << 4;
+const FIND_PICK1: i64 = 1 << 5;
+const FIND_BACKWARDS: i64 = 1 << 7;
 
-// Storage iterator options.
-const (
-	FindDefault      = 0
-	FindKeysOnly     = 1 << 0
-	FindRemovePrefix = 1 << 1
-	FindValuesOnly   = 1 << 2
-	FindDeserialize  = 1 << 3
-	FindPick0        = 1 << 4
-	FindPick1        = 1 << 5
-	FindBackwards    = 1 << 7
+const FIND_ALL: i64 = FIND_DEFAULT | FIND_KEYS_ONLY | FIND_REMOVE_PREFIX | FIND_VALUES_ONLY |
+    FIND_DESERIALIZE | FIND_PICK0 | FIND_PICK1 | FIND_BACKWARDS;
 
-	FindAll = FindDefault | FindKeysOnly | FindRemovePrefix | FindValuesOnly |
-		FindDeserialize | FindPick0 | FindPick1 | FindBackwards
-)
-
-// Iterator is an iterator state representation.
-type Iterator struct {
-	seekCh chan storage.KeyValue
-	curr   storage.KeyValue
-	next   bool
-	opts   int64
-	// prefix is the storage item key prefix Find is performed with. It must be
-	// copied if no FindRemovePrefix option specified since it's shared between all
-	// iterator items.
-	prefix []byte
+pub struct Iterator {
+    seek_rx: Receiver<KeyValue>,
+    curr: Option<KeyValue>,
+    next: bool,
+    opts: i64,
+    prefix: Vec<u8>,
 }
 
-// NewIterator creates a new Iterator with the given options for the given channel of store.Seek results.
-func NewIterator(seekCh chan storage.KeyValue, prefix []byte, opts int64) *Iterator {
-	return &Iterator{
-		seekCh: seekCh,
-		opts:   opts,
-		prefix: bytes.Clone(prefix),
-	}
+impl Iterator {
+    pub fn new(seek_rx: Receiver<KeyValue>, prefix: Vec<u8>, opts: i64) -> Self {
+        Self {
+            seek_rx,
+            curr: None,
+            next: false,
+            opts,
+            prefix,
+        }
+    }
+
+    pub fn next(&mut self) -> bool {
+        match self.seek_rx.recv() {
+            Ok(kv) => {
+                self.curr = Some(kv);
+                self.next = true;
+            }
+            Err(_) => {
+                self.next = false;
+            }
+        }
+        self.next
+    }
+
+    pub fn value(&self) -> StackItem {
+        if !self.next {
+            panic!("iterator index out of range");
+        }
+        let mut key = self.curr.as_ref().unwrap().key.clone();
+        if self.opts & FIND_REMOVE_PREFIX == 0 {
+            key = [self.prefix.clone(), key].concat();
+        }
+        if self.opts & FIND_KEYS_ONLY != 0 {
+            return StackItem::ByteArray(key);
+        }
+        let mut value = StackItem::ByteArray(self.curr.as_ref().unwrap().value.clone());
+        if self.opts & FIND_DESERIALIZE != 0 {
+            value = stackitem::deserialize(&self.curr.as_ref().unwrap().value).unwrap();
+        }
+        if self.opts & FIND_PICK0 != 0 {
+            value = value.value().as_array().unwrap()[0].clone();
+        } else if self.opts & FIND_PICK1 != 0 {
+            value = value.value().as_array().unwrap()[1].clone();
+        }
+        if self.opts & FIND_VALUES_ONLY != 0 {
+            return value;
+        }
+        StackItem::Struct(vec![StackItem::ByteArray(key), value])
+    }
 }
 
-// Next advances the iterator and returns true if Value can be called at the
-// current position.
-func (s *Iterator) Next() bool {
-	s.curr, s.next = <-s.seekCh
-	return s.next
-}
+pub fn find(ic: &mut Context) -> Result<(), Box<dyn std::error::Error>> {
+    let stc_interface = ic.vm.estack().pop().value();
+    let stc = stc_interface.downcast_ref::<Context>().ok_or_else(|| {
+        format!("{} is not a storage::Context", stc_interface.type_id())
+    })?;
+    let prefix = ic.vm.estack().pop().bytes();
+    let opts = ic.vm.estack().pop().bigint().to_i64().unwrap();
+    if opts & !FIND_ALL != 0 {
+        return Err(Box::new(fmt::Error::new(fmt::ErrorKind::InvalidInput, "unknown flag")));
+    }
+    if opts & FIND_KEYS_ONLY != 0 && opts & (FIND_DESERIALIZE | FIND_PICK0 | FIND_PICK1) != 0 {
+        return Err(Box::new(fmt::Error::new(fmt::ErrorKind::InvalidInput, "KeysOnly conflicts with other options")));
+    }
+    if opts & FIND_VALUES_ONLY != 0 && opts & (FIND_KEYS_ONLY | FIND_REMOVE_PREFIX) != 0 {
+        return Err(Box::new(fmt::Error::new(fmt::ErrorKind::InvalidInput, "KeysOnly conflicts with ValuesOnly")));
+    }
+    if opts & FIND_PICK0 != 0 && opts & FIND_PICK1 != 0 {
+        return Err(Box::new(fmt::Error::new(fmt::ErrorKind::InvalidInput, "Pick0 conflicts with Pick1")));
+    }
+    if opts & FIND_DESERIALIZE == 0 && (opts & FIND_PICK0 != 0 || opts & FIND_PICK1 != 0) {
+        return Err(Box::new(fmt::Error::new(fmt::ErrorKind::InvalidInput, "PickN is specified without Deserialize")));
+    }
+    let bkwrds = opts & FIND_BACKWARDS != 0;
+    let (seek_tx, seek_rx) = std::sync::mpsc::channel();
+    let ctx = Arc::new(Mutex::new(Some(seek_tx)));
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let cancel_flag_clone = cancel_flag.clone();
+    let ctx_clone = ctx.clone();
+    thread::spawn(move || {
+        let seekres = ic.dao.seek_async(ctx_clone, stc.id, storage::SeekRange { prefix: prefix.clone(), backwards: bkwrds });
+        for kv in seekres {
+            if cancel_flag_clone.load(Ordering::Relaxed) {
+                break;
+            }
+            ctx.lock().unwrap().as_ref().unwrap().send(kv).unwrap();
+        }
+    });
+    let item = Iterator::new(seek_rx, prefix, opts);
+    ic.vm.estack().push_item(StackItem::Interop(Box::new(item)));
+    ic.register_cancel_func(move || {
+        cancel_flag.store(true, Ordering::Relaxed);
+        for _ in seek_rx {}
+    });
 
-// Value returns current iterators value (exact type depends on options this
-// iterator was created with).
-func (s *Iterator) Value() stackitem.Item {
-	if !s.next {
-		panic("iterator index out of range")
-	}
-	key := s.curr.Key
-	if s.opts&FindRemovePrefix == 0 {
-		key = slices.Concat(s.prefix, key)
-	}
-	if s.opts&FindKeysOnly != 0 {
-		return stackitem.NewByteArray(key)
-	}
-	value := stackitem.Item(stackitem.NewByteArray(s.curr.Value))
-	if s.opts&FindDeserialize != 0 {
-		bs := s.curr.Value
-		var err error
-		value, err = stackitem.Deserialize(bs)
-		if err != nil {
-			panic(err)
-		}
-	}
-	if s.opts&FindPick0 != 0 {
-		value = value.Value().([]stackitem.Item)[0]
-	} else if s.opts&FindPick1 != 0 {
-		value = value.Value().([]stackitem.Item)[1]
-	}
-	if s.opts&FindValuesOnly != 0 {
-		return value
-	}
-	return stackitem.NewStruct([]stackitem.Item{
-		stackitem.NewByteArray(key),
-		value,
-	})
-}
-
-// Find finds stored key-value pair.
-func Find(ic *interop.Context) error {
-	stcInterface := ic.VM.Estack().Pop().Value()
-	stc, ok := stcInterface.(*Context)
-	if !ok {
-		return fmt.Errorf("%T is not a storage,Context", stcInterface)
-	}
-	prefix := ic.VM.Estack().Pop().Bytes()
-	opts := ic.VM.Estack().Pop().BigInt().Int64()
-	if opts&^FindAll != 0 {
-		return fmt.Errorf("%w: unknown flag", errFindInvalidOptions)
-	}
-	if opts&FindKeysOnly != 0 &&
-		opts&(FindDeserialize|FindPick0|FindPick1) != 0 {
-		return fmt.Errorf("%w KeysOnly conflicts with other options", errFindInvalidOptions)
-	}
-	if opts&FindValuesOnly != 0 &&
-		opts&(FindKeysOnly|FindRemovePrefix) != 0 {
-		return fmt.Errorf("%w: KeysOnly conflicts with ValuesOnly", errFindInvalidOptions)
-	}
-	if opts&FindPick0 != 0 && opts&FindPick1 != 0 {
-		return fmt.Errorf("%w: Pick0 conflicts with Pick1", errFindInvalidOptions)
-	}
-	if opts&FindDeserialize == 0 && (opts&FindPick0 != 0 || opts&FindPick1 != 0) {
-		return fmt.Errorf("%w: PickN is specified without Deserialize", errFindInvalidOptions)
-	}
-	bkwrds := opts&FindBackwards != 0
-	ctx, cancel := context.WithCancel(context.Background())
-	seekres := ic.DAO.SeekAsync(ctx, stc.ID, storage.SeekRange{Prefix: prefix, Backwards: bkwrds})
-	item := NewIterator(seekres, prefix, opts)
-	ic.VM.Estack().PushItem(stackitem.NewInterop(item))
-	ic.RegisterCancelFunc(func() {
-		cancel()
-		// Underlying persistent store is likely to be a private MemCachedStore. Thus,
-		// to avoid concurrent map iteration and map write we need to wait until internal
-		// seek goroutine is finished, because it can access underlying persistent store.
-		for range seekres { //nolint:revive //empty-block
-		}
-	})
-
-	return nil
+    Ok(())
 }

@@ -1,59 +1,70 @@
-package mpt
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::error::Error;
+use std::fmt;
 
-import (
-	"encoding/json"
-	"errors"
-
-	"github.com/nspcc-dev/neo-go/pkg/io"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-)
+use crate::io::{BinReader, BinWriter};
+use crate::util::Uint256;
+use crate::core::mpt::{Node, NodeType, EmptyT};
 
 // EmptyNode represents an empty node.
-type EmptyNode struct{}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmptyNode;
 
-// DecodeBinary implements the io.Serializable interface.
-func (e EmptyNode) DecodeBinary(*io.BinReader) {
+// Implementing the io::Serializable trait for EmptyNode
+impl EmptyNode {
+    pub fn decode_binary(&self, _reader: &mut BinReader) {
+        // No-op
+    }
+
+    pub fn encode_binary(&self, _writer: &mut BinWriter) {
+        // No-op
+    }
 }
 
-// EncodeBinary implements the io.Serializable interface.
-func (e EmptyNode) EncodeBinary(*io.BinWriter) {
+// Implementing the Node trait for EmptyNode
+impl Node for EmptyNode {
+    fn size(&self) -> usize {
+        0
+    }
+
+    fn marshal_json(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+        Ok(b"{}".to_vec())
+    }
+
+    fn unmarshal_json(&self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
+        let m: Value = serde_json::from_slice(bytes)?;
+        if !m.as_object().unwrap().is_empty() {
+            return Err(Box::new(EmptyNodeError));
+        }
+        Ok(())
+    }
+
+    fn hash(&self) -> Uint256 {
+        panic!("can't get hash of an EmptyNode")
+    }
+
+    fn node_type(&self) -> NodeType {
+        EmptyT
+    }
+
+    fn bytes(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn clone_node(&self) -> Box<dyn Node> {
+        Box::new(self.clone())
+    }
 }
 
-// Size implements Node interface.
-func (EmptyNode) Size() int { return 0 }
+// Custom error for EmptyNode
+#[derive(Debug)]
+struct EmptyNodeError;
 
-// MarshalJSON implements Node interface.
-func (e EmptyNode) MarshalJSON() ([]byte, error) {
-	return []byte(`{}`), nil
+impl fmt::Display for EmptyNodeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "expected empty node")
+    }
 }
 
-// UnmarshalJSON implements Node interface.
-func (e EmptyNode) UnmarshalJSON(bytes []byte) error {
-	var m map[string]any
-	err := json.Unmarshal(bytes, &m)
-	if err != nil {
-		return err
-	}
-	if len(m) != 0 {
-		return errors.New("expected empty node")
-	}
-	return nil
-}
-
-// Hash implements Node interface.
-func (e EmptyNode) Hash() util.Uint256 {
-	panic("can't get hash of an EmptyNode")
-}
-
-// Type implements Node interface.
-func (e EmptyNode) Type() NodeType {
-	return EmptyT
-}
-
-// Bytes implements Node interface.
-func (e EmptyNode) Bytes() []byte {
-	return nil
-}
-
-// Clone implements Node interface.
-func (EmptyNode) Clone() Node { return EmptyNode{} }
+impl Error for EmptyNodeError {}

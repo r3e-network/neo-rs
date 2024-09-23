@@ -1,135 +1,115 @@
-package runtime
+use std::collections::HashMap;
+use hex;
+use rand::Rng;
+use neo_core::interop::{self, Context};
+use neo_core::state::NotificationEvent;
+use neo_core::util::Uint160;
+use neo_core::vm::{self, stackitem::{self, StackItem}};
+use neo_core::smartcontract::callflag;
+use neo_core::internal::random;
+use neo_core::murmur128;
+use neo_core::require;
 
-import (
-	"encoding/hex"
-	"testing"
+#[test]
+fn test_gas_left() {
+    let mut ic = Context { vm: vm::VM::new(), ..Default::default() };
+    ic.vm.gas_limit = -1;
+    ic.vm.add_gas(58);
+    require::no_error(gas_left(&mut ic));
+    check_stack(&ic.vm, -1);
 
-	"github.com/nspcc-dev/neo-go/internal/random"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/core/state"
-	"github.com/nspcc-dev/neo-go/pkg/smartcontract/callflag"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-	"github.com/nspcc-dev/neo-go/pkg/vm"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-	"github.com/stretchr/testify/require"
-)
-
-func TestGasLeft(t *testing.T) {
-	t.Run("no limit", func(t *testing.T) {
-		ic := &interop.Context{VM: vm.New()}
-		ic.VM.GasLimit = -1
-		ic.VM.AddGas(58)
-		require.NoError(t, GasLeft(ic))
-		checkStack(t, ic.VM, -1)
-	})
-	t.Run("with limit", func(t *testing.T) {
-		ic := &interop.Context{VM: vm.New()}
-		ic.VM.GasLimit = 100
-		ic.VM.AddGas(58)
-		require.NoError(t, GasLeft(ic))
-		checkStack(t, ic.VM, 42)
-	})
+    let mut ic = Context { vm: vm::VM::new(), ..Default::default() };
+    ic.vm.gas_limit = 100;
+    ic.vm.add_gas(58);
+    require::no_error(gas_left(&mut ic));
+    check_stack(&ic.vm, 42);
 }
 
-func TestRuntimeGetNotifications(t *testing.T) {
-	v := vm.New()
-	ic := &interop.Context{
-		VM: v,
-		Notifications: []state.NotificationEvent{
-			{ScriptHash: util.Uint160{1}, Name: "Event1", Item: stackitem.NewArray([]stackitem.Item{stackitem.NewByteArray([]byte{11})})},
-			{ScriptHash: util.Uint160{2}, Name: "Event2", Item: stackitem.NewArray([]stackitem.Item{stackitem.NewByteArray([]byte{22})})},
-			{ScriptHash: util.Uint160{1}, Name: "Event1", Item: stackitem.NewArray([]stackitem.Item{stackitem.NewByteArray([]byte{33})})},
-		},
-	}
+#[test]
+fn test_runtime_get_notifications() {
+    let v = vm::VM::new();
+    let ic = Context {
+        vm: v,
+        notifications: vec![
+            NotificationEvent { script_hash: Uint160::new([1; 20]), name: "Event1".to_string(), item: stackitem::Array::new(vec![stackitem::ByteArray::new(vec![11])]) },
+            NotificationEvent { script_hash: Uint160::new([2; 20]), name: "Event2".to_string(), item: stackitem::Array::new(vec![stackitem::ByteArray::new(vec![22])]) },
+            NotificationEvent { script_hash: Uint160::new([1; 20]), name: "Event1".to_string(), item: stackitem::Array::new(vec![stackitem::ByteArray::new(vec![33])]) },
+        ],
+        ..Default::default()
+    };
 
-	t.Run("NoFilter", func(t *testing.T) {
-		v.Estack().PushVal(stackitem.Null{})
-		require.NoError(t, GetNotifications(ic))
+    v.estack().push_val(stackitem::Null::new());
+    require::no_error(get_notifications(&ic));
 
-		arr := v.Estack().Pop().Array()
-		require.Equal(t, len(ic.Notifications), len(arr))
-		for i := range arr {
-			elem := arr[i].Value().([]stackitem.Item)
-			require.Equal(t, ic.Notifications[i].ScriptHash.BytesBE(), elem[0].Value())
-			name, err := stackitem.ToString(elem[1])
-			require.NoError(t, err)
-			require.Equal(t, ic.Notifications[i].Name, name)
-			ic.Notifications[i].Item.MarkAsReadOnly() // tiny hack for test to be able to compare object references.
-			require.Equal(t, ic.Notifications[i].Item, elem[2])
-		}
-	})
+    let arr = v.estack().pop().array();
+    require::equal(ic.notifications.len(), arr.len());
+    for (i, elem) in arr.iter().enumerate() {
+        let elem = elem.value().as_array().unwrap();
+        require::equal(ic.notifications[i].script_hash.bytes_be(), elem[0].value());
+        let name = stackitem::to_string(&elem[1]).unwrap();
+        require::equal(ic.notifications[i].name, name);
+        ic.notifications[i].item.mark_as_read_only();
+        require::equal(ic.notifications[i].item, elem[2]);
+    }
 
-	t.Run("WithFilter", func(t *testing.T) {
-		h := util.Uint160{2}.BytesBE()
-		v.Estack().PushVal(h)
-		require.NoError(t, GetNotifications(ic))
+    let h = Uint160::new([2; 20]).bytes_be();
+    v.estack().push_val(h.clone());
+    require::no_error(get_notifications(&ic));
 
-		arr := v.Estack().Pop().Array()
-		require.Equal(t, 1, len(arr))
-		elem := arr[0].Value().([]stackitem.Item)
-		require.Equal(t, h, elem[0].Value())
-		name, err := stackitem.ToString(elem[1])
-		require.NoError(t, err)
-		require.Equal(t, ic.Notifications[1].Name, name)
-		require.Equal(t, ic.Notifications[1].Item, elem[2])
-	})
+    let arr = v.estack().pop().array();
+    require::equal(1, arr.len());
+    let elem = arr[0].value().as_array().unwrap();
+    require::equal(h, elem[0].value());
+    let name = stackitem::to_string(&elem[1]).unwrap();
+    require::equal(ic.notifications[1].name, name);
+    require::equal(ic.notifications[1].item, elem[2]);
 
-	t.Run("Bad", func(t *testing.T) {
-		t.Run("not bytes", func(t *testing.T) {
-			v.Estack().PushVal(stackitem.NewInterop(util.Uint160{1}))
-			require.Error(t, GetNotifications(ic))
-		})
-		t.Run("not uint160", func(t *testing.T) {
-			v.Estack().PushVal([]byte{1, 2, 3})
-			require.Error(t, GetNotifications(ic))
-		})
-		t.Run("too many notifications", func(t *testing.T) {
-			for range vm.MaxStackSize + 1 {
-				ic.Notifications = append(ic.Notifications, state.NotificationEvent{
-					ScriptHash: util.Uint160{3},
-					Name:       "Event3",
-					Item:       stackitem.NewArray(nil),
-				})
-			}
-			v.Estack().PushVal(stackitem.Null{})
-			require.Error(t, GetNotifications(ic))
-		})
-	})
+    v.estack().push_val(stackitem::Interop::new(Uint160::new([1; 20])));
+    require::error(get_notifications(&ic));
+
+    v.estack().push_val(vec![1, 2, 3]);
+    require::error(get_notifications(&ic));
+
+    for _ in 0..vm::MAX_STACK_SIZE + 1 {
+        ic.notifications.push(NotificationEvent {
+            script_hash: Uint160::new([3; 20]),
+            name: "Event3".to_string(),
+            item: stackitem::Array::new(vec![]),
+        });
+    }
+    v.estack().push_val(stackitem::Null::new());
+    require::error(get_notifications(&ic));
 }
 
-func TestRuntimeGetInvocationCounter(t *testing.T) {
-	ic := &interop.Context{VM: vm.New(), Invocations: make(map[util.Uint160]int)}
-	h := random.Uint160()
-	ic.Invocations[h] = 42
+#[test]
+fn test_runtime_get_invocation_counter() {
+    let mut ic = Context { vm: vm::VM::new(), invocations: HashMap::new(), ..Default::default() };
+    let h = random::uint160();
+    ic.invocations.insert(h.clone(), 42);
 
-	t.Run("No invocations", func(t *testing.T) {
-		h1 := h
-		h1[0] ^= 0xFF
-		ic.VM.LoadScriptWithHash([]byte{1}, h1, callflag.NoneFlag)
-		// do not return an error in this case.
-		require.NoError(t, GetInvocationCounter(ic))
-		checkStack(t, ic.VM, 1)
-	})
-	t.Run("NonZero", func(t *testing.T) {
-		ic.VM.LoadScriptWithHash([]byte{1}, h, callflag.NoneFlag)
-		require.NoError(t, GetInvocationCounter(ic))
-		checkStack(t, ic.VM, 42)
-	})
+    let mut h1 = h.clone();
+    h1[0] ^= 0xFF;
+    ic.vm.load_script_with_hash(vec![1], h1, callflag::NONE_FLAG);
+    require::no_error(get_invocation_counter(&ic));
+    check_stack(&ic.vm, 1);
+
+    ic.vm.load_script_with_hash(vec![1], h, callflag::NONE_FLAG);
+    require::no_error(get_invocation_counter(&ic));
+    check_stack(&ic.vm, 42);
 }
 
-// Test compatibility with C# implementation.
-// https://github.com/neo-project/neo/blob/master/tests/neo.UnitTests/Cryptography/UT_Murmur128.cs
-func TestMurmurCompat(t *testing.T) {
-	res := murmur128([]byte("hello"), 123)
-	require.Equal(t, "0bc59d0ad25fde2982ed65af61227a0e", hex.EncodeToString(res))
+#[test]
+fn test_murmur_compat() {
+    let res = murmur128(b"hello", 123);
+    require::equal("0bc59d0ad25fde2982ed65af61227a0e", hex::encode(res));
 
-	res = murmur128([]byte("world"), 123)
-	require.Equal(t, "3d3810fed480472bd214a14023bb407f", hex.EncodeToString(res))
+    let res = murmur128(b"world", 123);
+    require::equal("3d3810fed480472bd214a14023bb407f", hex::encode(res));
 
-	res = murmur128([]byte("hello world"), 123)
-	require.Equal(t, "e0a0632d4f51302c55e3b3e48d28795d", hex.EncodeToString(res))
+    let res = murmur128(b"hello world", 123);
+    require::equal("e0a0632d4f51302c55e3b3e48d28795d", hex::encode(res));
 
-	bs, _ := hex.DecodeString("718f952132679baa9c5c2aa0d329fd2a")
-	res = murmur128(bs, 123)
-	require.Equal(t, "9b4aa747ff0cf4e41b3d96251551c8ae", hex.EncodeToString(res))
+    let bs = hex::decode("718f952132679baa9c5c2aa0d329fd2a").unwrap();
+    let res = murmur128(&bs, 123);
+    require::equal("9b4aa747ff0cf4e41b3d96251551c8ae", hex::encode(res));
 }

@@ -1,5 +1,436 @@
-package dao
+use std::sync::Arc;
+use std::sync::Mutex;
+use rand::Rng;
+use neo_core::block::Block;
+use neo_core::state::{AppExecResult, Execution, NotificationEvent, StorageItem};
+use neo_core::storage::{MemoryStore, Store};
+use neo_core::transaction::{Transaction, Witness, Signer, Attribute, Conflicts, ConflictsT};
+use neo_core::trigger::Trigger;
+use neo_core::util::{Uint256, Uint160};
+use neo_core::vm::opcode;
+use neo_core::vm::stackitem::Item;
+use neo_core::io::{BinWriter, BinReader, BufBinWriter};
+use neo_core::dao::Dao;
+use neo_core::version::Version;
+use neo_core::errors::Error;
+use neo_core::errors::Error::AlreadyExists;
+use neo_core::errors::Error::HasConflicts;
+use neo_core::errors::Error::NoVersion;
+use neo_core::errors::Error::NotFound;
 
+#[derive(Debug, PartialEq)]
+struct TestSerializable {
+    field: String,
+}
+
+impl TestSerializable {
+    fn encode_binary(&self, writer: &mut BinWriter) {
+        writer.write_string(&self.field);
+    }
+
+    fn decode_binary(&mut self, reader: &mut BinReader) {
+        self.field = reader.read_string();
+    }
+}
+
+#[test]
+fn test_put_get_and_decode() {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let serializable = TestSerializable { field: random_string(4) };
+    let hash = vec![1];
+    dao.put_with_buffer(&serializable, &hash, &mut BufBinWriter::new()).unwrap();
+
+    let mut got_and_decoded = TestSerializable { field: String::new() };
+    dao.get_and_decode(&mut got_and_decoded, &hash).unwrap();
+    assert_eq!(serializable, got_and_decoded);
+}
+
+#[test]
+fn test_put_get_storage_item() {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let id = rand::thread_rng().gen_range(0..1024) as i32;
+    let key = vec![0];
+    let storage_item = StorageItem::default();
+    dao.put_storage_item(id, &key, storage_item.clone());
+    let got_storage_item = dao.get_storage_item(id, &key);
+    assert_eq!(storage_item, got_storage_item);
+}
+
+#[test]
+fn test_delete_storage_item() {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let id = rand::thread_rng().gen_range(0..1024) as i32;
+    let key = vec![0];
+    let storage_item = StorageItem::default();
+    dao.put_storage_item(id, &key, storage_item);
+    dao.delete_storage_item(id, &key);
+    let got_storage_item = dao.get_storage_item(id, &key);
+    assert!(got_storage_item.is_none());
+}
+
+#[test]
+fn test_get_block_not_exists() {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let hash = random_uint256();
+    let (block, err) = dao.get_block(&hash);
+    assert!(err.is_some());
+    assert!(block.is_none());
+}
+
+#[test]
+fn test_put_get_block() {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let b = Block {
+        header: block::Header {
+            script: Witness {
+                verification_script: vec![opcode::PUSH1 as u8],
+                invocation_script: vec![opcode::NOP as u8],
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let hash = b.hash();
+    let app_exec_result1 = AppExecResult {
+        container: hash.clone(),
+        execution: Execution {
+            trigger: Trigger::OnPersist,
+            events: vec![],
+            stack: vec![],
+        },
+    };
+    let app_exec_result2 = AppExecResult {
+        container: hash.clone(),
+        execution: Execution {
+            trigger: Trigger::PostPersist,
+            events: vec![],
+            stack: vec![],
+        },
+    };
+    dao.store_as_block(&b, &app_exec_result1, &app_exec_result2).unwrap();
+    let (got_block, err) = dao.get_block(&hash);
+    assert!(err.is_none());
+    assert!(got_block.is_some());
+    let got_app_exec_result = dao.get_app_exec_results(&hash, Trigger::All).unwrap();
+    assert_eq!(2, got_app_exec_result.len());
+    assert_eq!(app_exec_result1, got_app_exec_result[0]);
+    assert_eq!(app_exec_result2, got_app_exec_result[1]);
+}
+
+#[test]
+fn test_get_version_no_version() {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let (version, err) = dao.get_version();
+    assert!(err.is_some());
+    assert_eq!(Version::default(), version);
+}
+
+#[test]
+fn test_get_version() {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let expected = Version {
+        storage_prefix: 0x42,
+        p2p_sig_extensions: true,
+        state_root_in_header: true,
+        value: "testVersion".to_string(),
+    };
+    dao.put_version(&expected);
+    let (actual, err) = dao.get_version();
+    assert!(err.is_none());
+    assert_eq!(expected, actual);
+
+    // Invalid version
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    dao.store.put(&[storage::SYS_VERSION], b"0.1.2\x00x").unwrap();
+    let (version, err) = dao.get_version();
+    assert!(err.is_some());
+
+    // Old format version
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    dao.store.put(&[storage::SYS_VERSION], b"0.1.2").unwrap();
+    let (version, err) = dao.get_version();
+    assert!(err.is_none());
+    assert_eq!("0.1.2", version.value);
+}
+
+#[test]
+fn test_get_current_header_height_no_header() {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let (height, err) = dao.get_current_block_height();
+    assert!(err.is_some());
+    assert_eq!(0, height);
+}
+
+#[test]
+fn test_get_current_header_height_store() {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let b = Block {
+        header: block::Header {
+            script: Witness {
+                verification_script: vec![opcode::PUSH1 as u8],
+                invocation_script: vec![opcode::NOP as u8],
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    dao.store_as_current_block(&b).unwrap();
+    let (height, err) = dao.get_current_block_height();
+    assert!(err.is_none());
+    assert_eq!(0, height);
+}
+
+#[test]
+fn test_store_as_transaction() {
+    // No conflicts
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let mut tx = Transaction::new(vec![opcode::PUSH1 as u8], 1);
+    tx.signers.push(Signer::default());
+    tx.scripts.push(Witness::default());
+    let hash = tx.hash();
+    let aer = AppExecResult {
+        container: hash.clone(),
+        execution: Execution {
+            trigger: Trigger::Application,
+            events: vec![],
+            stack: vec![],
+        },
+    };
+    dao.store_as_transaction(&tx, 0, &aer).unwrap();
+    let err = dao.has_transaction(&hash, None, 0, 0);
+    assert_eq!(err, Err(AlreadyExists));
+    let got_app_exec_result = dao.get_app_exec_results(&hash, Trigger::All).unwrap();
+    assert_eq!(1, got_app_exec_result.len());
+    assert_eq!(aer, got_app_exec_result[0]);
+
+    // With conflicts
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let conflicts_h = Uint256::from([1, 2, 3]);
+    let signer1 = Uint160::from([1, 2, 3]);
+    let signer2 = Uint160::from([4, 5, 6]);
+    let signer3 = Uint160::from([7, 8, 9]);
+    let signer_malicious = Uint160::from([10, 11, 12]);
+    let mut tx1 = Transaction::new(vec![opcode::PUSH1 as u8], 1);
+    tx1.signers.push(Signer { account: signer1 });
+    tx1.signers.push(Signer { account: signer2 });
+    tx1.scripts.push(Witness::default());
+    tx1.scripts.push(Witness::default());
+    tx1.attributes.push(Attribute {
+        attr_type: ConflictsT,
+        value: Conflicts { hash: conflicts_h.clone() },
+    });
+    let hash1 = tx1.hash();
+    let mut tx2 = Transaction::new(vec![opcode::PUSH1 as u8], 1);
+    tx2.signers.push(Signer { account: signer3 });
+    tx2.scripts.push(Witness::default());
+    tx2.attributes.push(Attribute {
+        attr_type: ConflictsT,
+        value: Conflicts { hash: conflicts_h.clone() },
+    });
+    let hash2 = tx2.hash();
+    let aer1 = AppExecResult {
+        container: hash1.clone(),
+        execution: Execution {
+            trigger: Trigger::Application,
+            events: vec![],
+            stack: vec![],
+        },
+    };
+    const BLOCK_INDEX: u32 = 5;
+    dao.store_as_transaction(&tx1, BLOCK_INDEX, &aer1).unwrap();
+    let aer2 = AppExecResult {
+        container: hash2.clone(),
+        execution: Execution {
+            trigger: Trigger::Application,
+            events: vec![],
+            stack: vec![],
+        },
+    };
+    dao.store_as_transaction(&tx2, BLOCK_INDEX, &aer2).unwrap();
+
+    // A special transaction that conflicts with genesis block.
+    let genesis = Block {
+        header: block::Header {
+            version: 0,
+            timestamp: 123,
+            nonce: 1,
+            index: 0,
+            next_consensus: Uint160::from([1, 2, 3]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let genesis_aer1 = AppExecResult {
+        container: genesis.hash(),
+        execution: Execution {
+            trigger: Trigger::OnPersist,
+            events: vec![],
+            stack: vec![],
+        },
+    };
+    let genesis_aer2 = AppExecResult {
+        container: genesis.hash(),
+        execution: Execution {
+            trigger: Trigger::PostPersist,
+            events: vec![],
+            stack: vec![],
+        },
+    };
+    dao.store_as_block(&genesis, &genesis_aer1, &genesis_aer2).unwrap();
+    let mut tx3 = Transaction::new(vec![opcode::PUSH1 as u8], 1);
+    tx3.signers.push(Signer { account: signer1 });
+    tx3.scripts.push(Witness::default());
+    tx3.attributes.push(Attribute {
+        attr_type: ConflictsT,
+        value: Conflicts { hash: genesis.hash() },
+    });
+    let hash3 = tx3.hash();
+    let aer3 = AppExecResult {
+        container: hash3.clone(),
+        execution: Execution {
+            trigger: Trigger::Application,
+            events: vec![],
+            stack: vec![],
+        },
+    };
+
+    let err = dao.has_transaction(&hash1, None, 0, 0);
+    assert_eq!(err, Err(AlreadyExists));
+    let err = dao.has_transaction(&hash2, None, 0, 0);
+    assert_eq!(err, Err(AlreadyExists));
+
+    // Conflicts: unimportant payer.
+    let err = dao.has_transaction(&conflicts_h, None, 0, 0);
+    assert_eq!(err, Err(HasConflicts));
+
+    // Conflicts: payer is important, conflict isn't malicious, test signer #1.
+    let err = dao.has_transaction(&conflicts_h, Some(&[Signer { account: signer1 }]), BLOCK_INDEX + 1, 5);
+    assert_eq!(err, Err(HasConflicts));
+
+    // Conflicts: payer is important, conflict isn't malicious, test signer #2.
+    let err = dao.has_transaction(&conflicts_h, Some(&[Signer { account: signer2 }]), BLOCK_INDEX + 1, 5);
+    assert_eq!(err, Err(HasConflicts));
+
+    // Conflicts: payer is important, conflict isn't malicious, test signer #3.
+    let err = dao.has_transaction(&conflicts_h, Some(&[Signer { account: signer3 }]), BLOCK_INDEX + 1, 5);
+    assert_eq!(err, Err(HasConflicts));
+
+    // Conflicts: payer is important, conflict isn't malicious, but the conflict is far away than MTB.
+    let err = dao.has_transaction(&conflicts_h, Some(&[Signer { account: signer3 }]), BLOCK_INDEX + 10, 5);
+    assert!(err.is_none());
+
+    // Conflicts: payer is important, conflict is malicious.
+    let err = dao.has_transaction(&conflicts_h, Some(&[Signer { account: signer_malicious }]), BLOCK_INDEX + 1, 5);
+    assert!(err.is_none());
+
+    let got_app_exec_result = dao.get_app_exec_results(&hash1, Trigger::All).unwrap();
+    assert_eq!(1, got_app_exec_result.len());
+    assert_eq!(aer1, got_app_exec_result[0]);
+
+    let got_app_exec_result = dao.get_app_exec_results(&hash2, Trigger::All).unwrap();
+    assert_eq!(1, got_app_exec_result.len());
+    assert_eq!(aer2, got_app_exec_result[0]);
+
+    // Ensure block is not treated as transaction.
+    let err = dao.has_transaction(&genesis.hash(), None, 0, 0);
+    assert!(err.is_none());
+
+    // Store tx3 and ensure genesis executable record is not corrupted.
+    dao.store_as_transaction(&tx3, 0, &aer3).unwrap();
+    let err = dao.has_transaction(&hash3, None, 0, 0);
+    assert_eq!(err, Err(AlreadyExists));
+    let actual_aer = dao.get_app_exec_results(&hash3, Trigger::All).unwrap();
+    assert_eq!(1, actual_aer.len());
+    assert_eq!(aer3, actual_aer[0]);
+    let actual_genesis_aer = dao.get_app_exec_results(&genesis.hash(), Trigger::All).unwrap();
+    assert_eq!(2, actual_genesis_aer.len());
+    assert_eq!(genesis_aer1, actual_genesis_aer[0]);
+    assert_eq!(genesis_aer2, actual_genesis_aer[1]);
+
+    // A special requirement for transactions that conflict with block: they should
+    // not produce conflict record stub, ref. #3427.
+    let err = dao.has_transaction(&genesis.hash(), None, 0, 0);
+    assert!(err.is_none());
+}
+
+#[bench]
+fn benchmark_store_as_transaction(b: &mut test::Bencher) {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, false);
+    let mut tx = Transaction::new(vec![opcode::PUSH1 as u8], 1);
+    tx.attributes.push(Attribute {
+        attr_type: ConflictsT,
+        value: Conflicts { hash: Uint256::from([1, 2, 3]) },
+    });
+    tx.attributes.push(Attribute {
+        attr_type: ConflictsT,
+        value: Conflicts { hash: Uint256::from([4, 5, 6]) },
+    });
+    tx.attributes.push(Attribute {
+        attr_type: ConflictsT,
+        value: Conflicts { hash: Uint256::from([7, 8, 9]) },
+    });
+    let hash = tx.hash();
+    let aer = AppExecResult {
+        container: hash.clone(),
+        execution: Execution {
+            trigger: Trigger::Application,
+            events: vec![],
+            stack: vec![],
+        },
+    };
+
+    b.iter(|| {
+        dao.store_as_transaction(&tx, 1, &aer).unwrap();
+    });
+}
+
+#[test]
+fn test_make_storage_item_key() {
+    let id: i32 = 5;
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, true);
+
+    let mut expected = vec![storage::ST_STORAGE as u8, 0, 0, 0, 0, 1, 2, 3];
+    let id_bytes = (id as u32).to_le_bytes();
+    expected[1..5].copy_from_slice(&id_bytes);
+    let actual = dao.make_storage_item_key(id, &[1, 2, 3]);
+    assert_eq!(expected, actual);
+
+    expected.truncate(5);
+    let actual = dao.make_storage_item_key(id, &[]);
+    assert_eq!(expected, actual);
+
+    expected = vec![storage::ST_TEMP_STORAGE as u8, 0, 0, 0, 0, 1, 2, 3];
+    expected[1..5].copy_from_slice(&id_bytes);
+    dao.version.storage_prefix = storage::ST_TEMP_STORAGE;
+    let actual = dao.make_storage_item_key(id, &[1, 2, 3]);
+    assert_eq!(expected, actual);
+}
+
+#[test]
+fn test_put_get_state_sync_point() {
+    let store = Arc::new(Mutex::new(MemoryStore::new()));
+    let dao = Dao::new(store, true);
+
+    // Empty store
+    let err = dao.get_state_sync_point();
+    assert!(err.is_err());
+
+    // Non-empty store
 import (
 	"encoding/binary"
 	"testing"

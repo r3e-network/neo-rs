@@ -1,39 +1,33 @@
-package storage_test
+use std::any::Any;
+use std::collections::HashMap;
+use std::panic::Location;
 
-import (
-	"reflect"
-	"runtime"
-	"testing"
+use crate::core::interop;
+use crate::core::interop::storage;
+use crate::core::interop::Context;
+use crate::test_helpers::create_vm;
+use rstest::rstest;
+use rstest_reuse::{self, *};
 
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop/storage"
-	"github.com/stretchr/testify/require"
-)
+#[rstest]
+#[case("int", Box::new(1) as Box<dyn Any>)]
+#[case("bool", Box::new(false) as Box<dyn Any>)]
+#[case("string", Box::new("smth") as Box<dyn Any>)]
+#[case("array", Box::new(vec![1, 2, 3]) as Box<dyn Any>)]
+fn test_unexpected_non_interops(#[case] key: &str, #[case] value: Box<dyn Any>) {
+    let funcs: Vec<fn(&mut Context) -> Result<(), String>> = vec![
+        storage::context_as_read_only,
+        storage::delete,
+        storage::find,
+        storage::get,
+        storage::put,
+    ];
 
-func TestUnexpectedNonInterops(t *testing.T) {
-	vals := map[string]any{
-		"int":    1,
-		"bool":   false,
-		"string": "smth",
-		"array":  []int{1, 2, 3},
-	}
-
-	// All of these functions expect an interop item on the stack.
-	funcs := []func(*interop.Context) error{
-		storage.ContextAsReadOnly,
-		storage.Delete,
-		storage.Find,
-		storage.Get,
-		storage.Put,
-	}
-	for _, f := range funcs {
-		for k, v := range vals {
-			fname := runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
-			t.Run(k+"/"+fname, func(t *testing.T) {
-				vm, ic, _ := createVM(t)
-				vm.Estack().PushVal(v)
-				require.Error(t, f(ic))
-			})
-		}
-	}
+    for f in funcs {
+        let fname = Location::caller().to_string();
+        let test_name = format!("{}/{}", key, fname);
+        let (mut vm, mut ic, _) = create_vm();
+        vm.estack().push_val(value);
+        assert!(f(&mut ic).is_err(), "{}", test_name);
+    }
 }

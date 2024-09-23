@@ -1,25 +1,33 @@
-package interopnames
+use sha2::{Sha256, Digest};
+use std::convert::TryInto;
+use std::error::Error;
+use std::fmt;
 
-import (
-	"crypto/sha256"
-	"encoding/binary"
-	"errors"
-)
+#[derive(Debug)]
+struct NotFoundError;
 
-var errNotFound = errors.New("interop not found")
+impl fmt::Display for NotFoundError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "interop not found")
+    }
+}
 
-// ToID returns an identificator of the method based on its name.
-func ToID(name []byte) uint32 {
-	h := sha256.Sum256(name)
-	return binary.LittleEndian.Uint32(h[:4])
+impl Error for NotFoundError {}
+
+// ToID returns an identifier of the method based on its name.
+fn to_id(name: &[u8]) -> u32 {
+    let mut hasher = Sha256::new();
+    hasher.update(name);
+    let result = hasher.finalize();
+    u32::from_le_bytes(result[0..4].try_into().expect("slice with incorrect length"))
 }
 
 // FromID returns interop name from its id.
-func FromID(id uint32) (string, error) {
-	for i := range names {
-		if id == ToID([]byte(names[i])) {
-			return names[i], nil
-		}
-	}
-	return "", errNotFound
+fn from_id(id: u32, names: &[&str]) -> Result<String, Box<dyn Error>> {
+    for &name in names {
+        if id == to_id(name.as_bytes()) {
+            return Ok(name.to_string());
+        }
+    }
+    Err(Box::new(NotFoundError))
 }

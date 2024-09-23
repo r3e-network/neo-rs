@@ -1,219 +1,218 @@
-package block
+use serde::{Deserialize, Serialize};
+use serde_json::{self, json};
+use std::fmt;
+use std::str::FromStr;
 
-import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"strconv"
-
-	"github.com/nspcc-dev/neo-go/pkg/core/transaction"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/hash"
-	"github.com/nspcc-dev/neo-go/pkg/encoding/address"
-	"github.com/nspcc-dev/neo-go/pkg/io"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-)
+use crate::core::transaction::Witness;
+use crate::crypto::hash;
+use crate::encoding::address;
+use crate::io::{BinReader, BinWriter};
+use crate::util::{Uint160, Uint256};
 
 // VersionInitial is the default Neo block version.
-const VersionInitial uint32 = 0
+pub const VERSION_INITIAL: u32 = 0;
 
 // Header holds the base info of a block.
-type Header struct {
-	// Version of the block.
-	Version uint32
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Header {
+    // Version of the block.
+    pub version: u32,
 
-	// hash of the previous block.
-	PrevHash util.Uint256
+    // hash of the previous block.
+    pub prev_hash: Uint256,
 
-	// Root hash of a transaction list.
-	MerkleRoot util.Uint256
+    // Root hash of a transaction list.
+    pub merkle_root: Uint256,
 
-	// Timestamp is a millisecond-precision timestamp.
-	// The time stamp of each block must be later than the previous block's time stamp.
-	// Generally, the difference between two block's time stamps is about 15 seconds and imprecision is allowed.
-	// The height of the block must be exactly equal to the height of the previous block plus 1.
-	Timestamp uint64
+    // Timestamp is a millisecond-precision timestamp.
+    // The time stamp of each block must be later than the previous block's time stamp.
+    // Generally, the difference between two block's time stamps is about 15 seconds and imprecision is allowed.
+    // The height of the block must be exactly equal to the height of the previous block plus 1.
+    pub timestamp: u64,
 
-	// Nonce is block random number.
-	Nonce uint64
+    // Nonce is block random number.
+    pub nonce: u64,
 
-	// index/height of the block
-	Index uint32
+    // index/height of the block
+    pub index: u32,
 
-	// Contract address of the next miner
-	NextConsensus util.Uint160
+    // Contract address of the next miner
+    pub next_consensus: Uint160,
 
-	// Script used to validate the block
-	Script transaction.Witness
+    // Script used to validate the block
+    pub script: Witness,
 
-	// StateRootEnabled specifies if the header contains state root.
-	StateRootEnabled bool
-	// PrevStateRoot is the state root of the previous block.
-	PrevStateRoot util.Uint256
-	// PrimaryIndex is the index of the primary consensus node for this block.
-	PrimaryIndex byte
+    // StateRootEnabled specifies if the header contains state root.
+    pub state_root_enabled: bool,
+    // PrevStateRoot is the state root of the previous block.
+    pub prev_state_root: Option<Uint256>,
+    // PrimaryIndex is the index of the primary consensus node for this block.
+    pub primary_index: u8,
 
-	// Hash of this block, created when binary encoded (double SHA256).
-	hash util.Uint256
+    // Hash of this block, created when binary encoded (double SHA256).
+    pub hash: Option<Uint256>,
 }
 
 // baseAux is used to marshal/unmarshal to/from JSON, it's almost the same
 // as original Base, but with Nonce and NextConsensus fields differing and
 // Hash added.
-type baseAux struct {
-	Hash          util.Uint256          `json:"hash"`
-	Version       uint32                `json:"version"`
-	PrevHash      util.Uint256          `json:"previousblockhash"`
-	MerkleRoot    util.Uint256          `json:"merkleroot"`
-	Timestamp     uint64                `json:"time"`
-	Nonce         string                `json:"nonce"`
-	Index         uint32                `json:"index"`
-	NextConsensus string                `json:"nextconsensus"`
-	PrimaryIndex  byte                  `json:"primary"`
-	PrevStateRoot *util.Uint256         `json:"previousstateroot,omitempty"`
-	Witnesses     []transaction.Witness `json:"witnesses"`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct BaseAux {
+    hash: Uint256,
+    version: u32,
+    previousblockhash: Uint256,
+    merkleroot: Uint256,
+    time: u64,
+    nonce: String,
+    index: u32,
+    nextconsensus: String,
+    primary: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previousstateroot: Option<Uint256>,
+    witnesses: Vec<Witness>,
 }
 
-// Hash returns the hash of the block.
-func (b *Header) Hash() util.Uint256 {
-	if b.hash.Equals(util.Uint256{}) {
-		b.createHash()
-	}
-	return b.hash
-}
+impl Header {
+    // Hash returns the hash of the block.
+    pub fn hash(&mut self) -> Uint256 {
+        if self.hash.is_none() {
+            self.create_hash();
+        }
+        self.hash.unwrap()
+    }
 
-// DecodeBinary implements the Serializable interface.
-func (b *Header) DecodeBinary(br *io.BinReader) {
-	b.decodeHashableFields(br)
-	witnessCount := br.ReadVarUint()
-	if br.Err == nil && witnessCount != 1 {
-		br.Err = errors.New("wrong witness count")
-		return
-	}
+    // DecodeBinary implements the Serializable interface.
+    pub fn decode_binary(&mut self, br: &mut BinReader) {
+        self.decode_hashable_fields(br);
+        let witness_count = br.read_var_uint();
+        if br.err.is_none() && witness_count != 1 {
+            br.err = Some("wrong witness count".to_string());
+            return;
+        }
 
-	b.Script.DecodeBinary(br)
-}
+        self.script.decode_binary(br);
+    }
 
-// EncodeBinary implements the Serializable interface.
-func (b *Header) EncodeBinary(bw *io.BinWriter) {
-	b.encodeHashableFields(bw)
-	bw.WriteVarUint(1)
-	b.Script.EncodeBinary(bw)
-}
+    // EncodeBinary implements the Serializable interface.
+    pub fn encode_binary(&self, bw: &mut BinWriter) {
+        self.encode_hashable_fields(bw);
+        bw.write_var_uint(1);
+        self.script.encode_binary(bw);
+    }
 
-// createHash creates the hash of the block.
-// When calculating the hash value of the block, instead of processing the entire block,
-// only the header (without the signatures) is added as an input for the hash. It differs
-// from the complete block only in that it doesn't contain transactions, but their hashes
-// are used for MerkleRoot hash calculation. Therefore, adding/removing/changing any
-// transaction affects the header hash and there is no need to use the complete block for
-// hash calculation.
-func (b *Header) createHash() {
-	buf := io.NewBufBinWriter()
-	// No error can occur while encoding hashable fields.
-	b.encodeHashableFields(buf.BinWriter)
+    // createHash creates the hash of the block.
+    // When calculating the hash value of the block, instead of processing the entire block,
+    // only the header (without the signatures) is added as an input for the hash. It differs
+    // from the complete block only in that it doesn't contain transactions, but their hashes
+    // are used for MerkleRoot hash calculation. Therefore, adding/removing/changing any
+    // transaction affects the header hash and there is no need to use the complete block for
+    // hash calculation.
+    fn create_hash(&mut self) {
+        let mut buf = Vec::new();
+        let mut bw = BinWriter::new(&mut buf);
+        // No error can occur while encoding hashable fields.
+        self.encode_hashable_fields(&mut bw);
 
-	b.hash = hash.Sha256(buf.Bytes())
-}
+        self.hash = Some(hash::sha256(&buf));
+    }
 
-// encodeHashableFields will only encode the fields used for hashing.
-// see Hash() for more information about the fields.
-func (b *Header) encodeHashableFields(bw *io.BinWriter) {
-	bw.WriteU32LE(b.Version)
-	bw.WriteBytes(b.PrevHash[:])
-	bw.WriteBytes(b.MerkleRoot[:])
-	bw.WriteU64LE(b.Timestamp)
-	bw.WriteU64LE(b.Nonce)
-	bw.WriteU32LE(b.Index)
-	bw.WriteB(b.PrimaryIndex)
-	bw.WriteBytes(b.NextConsensus[:])
-	if b.StateRootEnabled {
-		bw.WriteBytes(b.PrevStateRoot[:])
-	}
-}
+    // encodeHashableFields will only encode the fields used for hashing.
+    // see Hash() for more information about the fields.
+    fn encode_hashable_fields(&self, bw: &mut BinWriter) {
+        bw.write_u32_le(self.version);
+        bw.write_bytes(&self.prev_hash.0);
+        bw.write_bytes(&self.merkle_root.0);
+        bw.write_u64_le(self.timestamp);
+        bw.write_u64_le(self.nonce);
+        bw.write_u32_le(self.index);
+        bw.write_u8(self.primary_index);
+        bw.write_bytes(&self.next_consensus.0);
+        if self.state_root_enabled {
+            if let Some(prev_state_root) = &self.prev_state_root {
+                bw.write_bytes(&prev_state_root.0);
+            }
+        }
+    }
 
-// decodeHashableFields decodes the fields used for hashing.
-// see Hash() for more information about the fields.
-func (b *Header) decodeHashableFields(br *io.BinReader) {
-	b.Version = br.ReadU32LE()
-	br.ReadBytes(b.PrevHash[:])
-	br.ReadBytes(b.MerkleRoot[:])
-	b.Timestamp = br.ReadU64LE()
-	b.Nonce = br.ReadU64LE()
-	b.Index = br.ReadU32LE()
-	b.PrimaryIndex = br.ReadB()
-	br.ReadBytes(b.NextConsensus[:])
-	if b.StateRootEnabled {
-		br.ReadBytes(b.PrevStateRoot[:])
-	}
+    // decodeHashableFields decodes the fields used for hashing.
+    // see Hash() for more information about the fields.
+    fn decode_hashable_fields(&mut self, br: &mut BinReader) {
+        self.version = br.read_u32_le();
+        br.read_bytes(&mut self.prev_hash.0);
+        br.read_bytes(&mut self.merkle_root.0);
+        self.timestamp = br.read_u64_le();
+        self.nonce = br.read_u64_le();
+        self.index = br.read_u32_le();
+        self.primary_index = br.read_u8();
+        br.read_bytes(&mut self.next_consensus.0);
+        if self.state_root_enabled {
+            let mut prev_state_root = [0u8; 32];
+            br.read_bytes(&mut prev_state_root);
+            self.prev_state_root = Some(Uint256(prev_state_root));
+        }
 
-	// Make the hash of the block here so we dont need to do this
-	// again.
-	if br.Err == nil {
-		b.createHash()
-	}
-}
+        // Make the hash of the block here so we dont need to do this
+        // again.
+        if br.err.is_none() {
+            self.create_hash();
+        }
+    }
 
-// MarshalJSON implements the json.Marshaler interface.
-func (b Header) MarshalJSON() ([]byte, error) {
-	aux := baseAux{
-		Hash:          b.Hash(),
-		Version:       b.Version,
-		PrevHash:      b.PrevHash,
-		MerkleRoot:    b.MerkleRoot,
-		Timestamp:     b.Timestamp,
-		Nonce:         fmt.Sprintf("%016X", b.Nonce),
-		Index:         b.Index,
-		PrimaryIndex:  b.PrimaryIndex,
-		NextConsensus: address.Uint160ToString(b.NextConsensus),
-		Witnesses:     []transaction.Witness{b.Script},
-	}
-	if b.StateRootEnabled {
-		aux.PrevStateRoot = &b.PrevStateRoot
-	}
-	return json.Marshal(aux)
-}
+    // MarshalJSON implements the json.Marshaler interface.
+    pub fn marshal_json(&self) -> Result<String, serde_json::Error> {
+        let aux = BaseAux {
+            hash: self.hash.unwrap_or_default(),
+            version: self.version,
+            previousblockhash: self.prev_hash,
+            merkleroot: self.merkle_root,
+            time: self.timestamp,
+            nonce: format!("{:016X}", self.nonce),
+            index: self.index,
+            primary: self.primary_index,
+            nextconsensus: address::uint160_to_string(&self.next_consensus),
+            witnesses: vec![self.script.clone()],
+            previousstateroot: if self.state_root_enabled {
+                self.prev_state_root.clone()
+            } else {
+                None
+            },
+        };
+        serde_json::to_string(&aux)
+    }
 
-// UnmarshalJSON implements the json.Unmarshaler interface.
-func (b *Header) UnmarshalJSON(data []byte) error {
-	var aux = new(baseAux)
-	var nextC util.Uint160
+    // UnmarshalJSON implements the json.Unmarshaler interface.
+    pub fn unmarshal_json(&mut self, data: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let aux: BaseAux = serde_json::from_str(data)?;
+        let next_consensus = address::string_to_uint160(&aux.nextconsensus)?;
 
-	err := json.Unmarshal(data, aux)
-	if err != nil {
-		return err
-	}
+        let nonce = if !aux.nonce.is_empty() {
+            u64::from_str_radix(&aux.nonce, 16)?
+        } else {
+            0
+        };
 
-	var nonce uint64
-	if len(aux.Nonce) != 0 {
-		nonce, err = strconv.ParseUint(aux.Nonce, 16, 64)
-		if err != nil {
-			return err
-		}
-	}
-	nextC, err = address.StringToUint160(aux.NextConsensus)
-	if err != nil {
-		return err
-	}
-	if len(aux.Witnesses) != 1 {
-		return errors.New("wrong number of witnesses")
-	}
-	b.Version = aux.Version
-	b.PrevHash = aux.PrevHash
-	b.MerkleRoot = aux.MerkleRoot
-	b.Timestamp = aux.Timestamp
-	b.Nonce = nonce
-	b.Index = aux.Index
-	b.PrimaryIndex = aux.PrimaryIndex
-	b.NextConsensus = nextC
-	b.Script = aux.Witnesses[0]
-	if b.StateRootEnabled {
-		if aux.PrevStateRoot == nil {
-			return errors.New("'previousstateroot' is empty")
-		}
-		b.PrevStateRoot = *aux.PrevStateRoot
-	}
-	if !aux.Hash.Equals(b.Hash()) {
-		return errors.New("json 'hash' doesn't match block hash")
-	}
-	return nil
+        if aux.witnesses.len() != 1 {
+            return Err("wrong number of witnesses".into());
+        }
+
+        self.version = aux.version;
+        self.prev_hash = aux.previousblockhash;
+        self.merkle_root = aux.merkleroot;
+        self.timestamp = aux.time;
+        self.nonce = nonce;
+        self.index = aux.index;
+        self.primary_index = aux.primary;
+        self.next_consensus = next_consensus;
+        self.script = aux.witnesses[0].clone();
+        if self.state_root_enabled {
+            if aux.previousstateroot.is_none() {
+                return Err("'previousstateroot' is empty".into());
+            }
+            self.prev_state_root = aux.previousstateroot;
+        }
+        if aux.hash != self.hash() {
+            return Err("json 'hash' doesn't match block hash".into());
+        }
+        Ok(())
+    }
 }

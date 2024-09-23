@@ -1,95 +1,115 @@
-package mempool
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Receiver};
+use std::time::Duration;
+use std::thread;
 
-import (
-	"testing"
-	"time"
+use crate::core::mempoolevent::{self, Event};
+use crate::core::transaction::{self, Transaction, Signer};
+use crate::util;
+use crate::vm::opcode;
+use crate::mempool::{Mempool, FeerStub};
+use assert_matches::assert_matches;
 
-	"github.com/nspcc-dev/neo-go/pkg/core/mempoolevent"
-	"github.com/nspcc-dev/neo-go/pkg/core/transaction"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-	"github.com/nspcc-dev/neo-go/pkg/vm/opcode"
-	"github.com/stretchr/testify/require"
-)
+#[test]
+fn test_subscriptions() {
+    let mut mp = Mempool::new(5, 0, false, None);
+    assert!(std::panic::catch_unwind(|| mp.run_subscriptions()).is_err());
+    assert!(std::panic::catch_unwind(|| mp.stop_subscriptions()).is_err());
 
-func TestSubscriptions(t *testing.T) {
-	t.Run("disabled subscriptions", func(t *testing.T) {
-		mp := New(5, 0, false, nil)
-		require.Panics(t, func() {
-			mp.RunSubscriptions()
-		})
-		require.Panics(t, func() {
-			mp.StopSubscriptions()
-		})
-	})
+    let fs = FeerStub { balance: 100 };
+    let mut mp = Mempool::new(2, 0, true, None);
+    mp.run_subscriptions();
+    let (sub_tx1, sub_rx1): (std::sync::mpsc::Sender<Event>, Receiver<Event>) = channel();
+    let (sub_tx2, sub_rx2): (std::sync::mpsc::Sender<Event>, Receiver<Event>) = channel();
+    mp.subscribe_for_transactions(sub_tx1.clone());
+    let mp_arc = Arc::new(Mutex::new(mp));
+    let mp_clone = Arc::clone(&mp_arc);
+    let handle = thread::spawn(move || {
+        let mut mp = mp_clone.lock().unwrap();
+        mp.stop_subscriptions();
+    });
 
-	t.Run("enabled subscriptions", func(t *testing.T) {
-		fs := &FeerStub{balance: 100}
-		mp := New(2, 0, true, nil)
-		mp.RunSubscriptions()
-		subChan1 := make(chan mempoolevent.Event, 3)
-		subChan2 := make(chan mempoolevent.Event, 3)
-		mp.SubscribeForTransactions(subChan1)
-		t.Cleanup(mp.StopSubscriptions)
+    let mut txs: Vec<Transaction> = Vec::with_capacity(4);
+    for i in 0..4 {
+        let mut tx = Transaction::new(vec![opcode::PUSH1 as u8], 0);
+        tx.nonce = i as u32;
+        tx.signers = vec![Signer { account: util::Uint160::new([1, 2, 3]) }];
+        tx.network_fee = i as i64;
+        txs.push(tx);
+    }
 
-		txs := make([]*transaction.Transaction, 4)
-		for i := range txs {
-			txs[i] = transaction.New([]byte{byte(opcode.PUSH1)}, 0)
-			txs[i].Nonce = uint32(i)
-			txs[i].Signers = []transaction.Signer{{Account: util.Uint160{1, 2, 3}}}
-			txs[i].NetworkFee = int64(i)
-		}
+    // add tx
+    assert!(mp_arc.lock().unwrap().add(&txs[0], &fs).is_ok());
+    assert!(wait_for_event(&sub_rx1, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionAdded { tx } if tx == &txs[0])
+    }));
 
-		// add tx
-		require.NoError(t, mp.Add(txs[0], fs))
-		require.Eventually(t, func() bool { return len(subChan1) == 1 }, time.Second, time.Millisecond*100)
-		event := <-subChan1
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionAdded, Tx: txs[0]}, event)
+    // several subscribers
+    mp_arc.lock().unwrap().subscribe_for_transactions(sub_tx2.clone());
+    assert!(mp_arc.lock().unwrap().add(&txs[1], &fs).is_ok());
+    assert!(wait_for_event(&sub_rx1, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionAdded { tx } if tx == &txs[1])
+    }));
+    assert!(wait_for_event(&sub_rx2, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionAdded { tx } if tx == &txs[1])
+    }));
 
-		// severak subscribers
-		mp.SubscribeForTransactions(subChan2)
-		require.NoError(t, mp.Add(txs[1], fs))
-		require.Eventually(t, func() bool { return len(subChan1) == 1 && len(subChan2) == 1 }, time.Second, time.Millisecond*100)
-		event1 := <-subChan1
-		event2 := <-subChan2
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionAdded, Tx: txs[1]}, event1)
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionAdded, Tx: txs[1]}, event2)
+    // reach capacity
+    assert!(mp_arc.lock().unwrap().add(&txs[2], &FeerStub {}).is_ok());
+    assert!(wait_for_event(&sub_rx1, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionRemoved { tx } if tx == &txs[0])
+    }));
+    assert!(wait_for_event(&sub_rx2, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionRemoved { tx } if tx == &txs[0])
+    }));
+    assert!(wait_for_event(&sub_rx1, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionAdded { tx } if tx == &txs[2])
+    }));
+    assert!(wait_for_event(&sub_rx2, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionAdded { tx } if tx == &txs[2])
+    }));
 
-		// reach capacity
-		require.NoError(t, mp.Add(txs[2], &FeerStub{}))
-		require.Eventually(t, func() bool { return len(subChan1) == 2 && len(subChan2) == 2 }, time.Second, time.Millisecond*100)
-		event1 = <-subChan1
-		event2 = <-subChan2
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionRemoved, Tx: txs[0]}, event1)
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionRemoved, Tx: txs[0]}, event2)
-		event1 = <-subChan1
-		event2 = <-subChan2
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionAdded, Tx: txs[2]}, event1)
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionAdded, Tx: txs[2]}, event2)
+    // remove tx
+    mp_arc.lock().unwrap().remove(&txs[1].hash());
+    assert!(wait_for_event(&sub_rx1, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionRemoved { tx } if tx == &txs[1])
+    }));
+    assert!(wait_for_event(&sub_rx2, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionRemoved { tx } if tx == &txs[1])
+    }));
 
-		// remove tx
-		mp.Remove(txs[1].Hash())
-		require.Eventually(t, func() bool { return len(subChan1) == 1 && len(subChan2) == 1 }, time.Second, time.Millisecond*100)
-		event1 = <-subChan1
-		event2 = <-subChan2
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionRemoved, Tx: txs[1]}, event1)
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionRemoved, Tx: txs[1]}, event2)
+    // remove stale
+    mp_arc.lock().unwrap().remove_stale(|tx| !tx.hash().eq(&txs[2].hash()), &fs);
+    assert!(wait_for_event(&sub_rx1, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionRemoved { tx } if tx == &txs[2])
+    }));
+    assert!(wait_for_event(&sub_rx2, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionRemoved { tx } if tx == &txs[2])
+    }));
 
-		// remove stale
-		mp.RemoveStale(func(tx *transaction.Transaction) bool {
-			return !tx.Hash().Equals(txs[2].Hash())
-		}, fs)
-		require.Eventually(t, func() bool { return len(subChan1) == 1 && len(subChan2) == 1 }, time.Second, time.Millisecond*100)
-		event1 = <-subChan1
-		event2 = <-subChan2
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionRemoved, Tx: txs[2]}, event1)
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionRemoved, Tx: txs[2]}, event2)
+    // unsubscribe
+    mp_arc.lock().unwrap().unsubscribe_from_transactions(&sub_tx1);
+    assert!(mp_arc.lock().unwrap().add(&txs[3], &fs).is_ok());
+    assert!(wait_for_event(&sub_rx2, Duration::from_secs(1), Duration::from_millis(100), |event| {
+        matches!(event, Event::TransactionAdded { tx } if tx == &txs[3])
+    }));
+    assert_eq!(sub_rx1.try_recv().is_err(), true);
 
-		// unsubscribe
-		mp.UnsubscribeFromTransactions(subChan1)
-		require.NoError(t, mp.Add(txs[3], fs))
-		require.Eventually(t, func() bool { return len(subChan2) == 1 }, time.Second, time.Millisecond*100)
-		event2 = <-subChan2
-		require.Equal(t, 0, len(subChan1))
-		require.Equal(t, mempoolevent.Event{Type: mempoolevent.TransactionAdded, Tx: txs[3]}, event2)
-	})
+    handle.join().unwrap();
+}
+
+fn wait_for_event<F>(rx: &Receiver<Event>, timeout: Duration, interval: Duration, predicate: F) -> bool
+where
+    F: Fn(&Event) -> bool,
+{
+    let start = std::time::Instant::now();
+    while start.elapsed() < timeout {
+        if let Ok(event) = rx.try_recv() {
+            if predicate(&event) {
+                return true;
+            }
+        }
+        thread::sleep(interval);
+    }
+    false
 }

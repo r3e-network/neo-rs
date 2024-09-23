@@ -1,241 +1,197 @@
-package block
+use std::error::Error;
+use std::fmt;
+use std::sync::Arc;
+use std::sync::RwLock;
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use serde_json::Value;
+use crate::core::transaction::Transaction;
+use crate::crypto::hash;
+use crate::io::{BinReader, BinWriter};
+use crate::util::{self, Uint256};
+use crate::vm::stackitem::{self, StackItem};
 
-import (
-	"encoding/json"
-	"errors"
-	"math"
-	"math/big"
+const MAX_TRANSACTIONS_PER_BLOCK: u16 = u16::MAX;
 
-	"github.com/nspcc-dev/neo-go/pkg/core/transaction"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/hash"
-	"github.com/nspcc-dev/neo-go/pkg/io"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-)
+#[derive(Debug, Clone)]
+pub struct MaxContentsPerBlockError;
 
-const (
-	// MaxTransactionsPerBlock is the maximum number of transactions per block.
-	MaxTransactionsPerBlock = math.MaxUint16
-)
-
-// ErrMaxContentsPerBlock is returned when the maximum number of contents per block is reached.
-var ErrMaxContentsPerBlock = errors.New("the number of contents exceeds the maximum number of contents per block")
-
-var expectedHeaderSizeWithEmptyWitness int
-
-func init() {
-	expectedHeaderSizeWithEmptyWitness = io.GetVarSize(new(Header))
+impl fmt::Display for MaxContentsPerBlockError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "the number of contents exceeds the maximum number of contents per block")
+    }
 }
 
-// Block represents one block in the chain.
-type Block struct {
-	// The base of the block.
-	Header
+impl Error for MaxContentsPerBlockError {}
 
-	// Transaction list.
-	Transactions []*transaction.Transaction
-
-	// True if this block is created from trimmed data.
-	Trimmed bool
+lazy_static! {
+    static ref EXPECTED_HEADER_SIZE_WITH_EMPTY_WITNESS: usize = {
+        let header = Header::default();
+        io::get_var_size(&header)
+    };
 }
 
-// auxBlockOut is used for JSON i/o.
-type auxBlockOut struct {
-	Transactions []*transaction.Transaction `json:"tx"`
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Block {
+    pub header: Header,
+    pub transactions: Vec<Transaction>,
+    pub trimmed: bool,
 }
 
-// auxBlockIn is used for JSON i/o.
-type auxBlockIn struct {
-	Transactions []json.RawMessage `json:"tx"`
+#[derive(Serialize, Deserialize)]
+struct AuxBlockOut {
+    transactions: Vec<Transaction>,
 }
 
-// ComputeMerkleRoot computes Merkle tree root hash based on actual block's data.
-func (b *Block) ComputeMerkleRoot() util.Uint256 {
-	hashes := make([]util.Uint256, len(b.Transactions))
-	for i, tx := range b.Transactions {
-		hashes[i] = tx.Hash()
-	}
-
-	return hash.CalcMerkleRoot(hashes)
+#[derive(Serialize, Deserialize)]
+struct AuxBlockIn {
+    transactions: Vec<Value>,
 }
 
-// RebuildMerkleRoot rebuilds the merkleroot of the block.
-func (b *Block) RebuildMerkleRoot() {
-	b.MerkleRoot = b.ComputeMerkleRoot()
-}
+impl Block {
+    pub fn compute_merkle_root(&self) -> Uint256 {
+        let hashes: Vec<Uint256> = self.transactions.iter().map(|tx| tx.hash()).collect();
+        hash::calc_merkle_root(&hashes)
+    }
 
-// NewTrimmedFromReader returns a new block from trimmed data.
-// This is commonly used to create a block from stored data.
-// Blocks created from trimmed data will have their Trimmed field
-// set to true.
-func NewTrimmedFromReader(stateRootEnabled bool, br *io.BinReader) (*Block, error) {
-	block := &Block{
-		Header: Header{
-			StateRootEnabled: stateRootEnabled,
-		},
-		Trimmed: true,
-	}
+    pub fn rebuild_merkle_root(&mut self) {
+        self.header.merkle_root = self.compute_merkle_root();
+    }
 
-	block.Header.DecodeBinary(br)
-	lenHashes := br.ReadVarUint()
-	if lenHashes > MaxTransactionsPerBlock {
-		return nil, ErrMaxContentsPerBlock
-	}
-	if lenHashes > 0 {
-		block.Transactions = make([]*transaction.Transaction, lenHashes)
-		for i := range lenHashes {
-			var hash util.Uint256
-			hash.DecodeBinary(br)
-			block.Transactions[i] = transaction.NewTrimmedTX(hash)
-		}
-	}
+    pub fn new_trimmed_from_reader(state_root_enabled: bool, br: &mut BinReader) -> Result<Block, Box<dyn Error>> {
+        let mut block = Block {
+            header: Header {
+                state_root_enabled,
+                ..Default::default()
+            },
+            transactions: Vec::new(),
+            trimmed: true,
+        };
 
-	return block, br.Err
-}
+        block.header.decode_binary(br)?;
+        let len_hashes = br.read_var_uint()?;
+        if len_hashes > MAX_TRANSACTIONS_PER_BLOCK as u64 {
+            return Err(Box::new(MaxContentsPerBlockError));
+        }
+        if len_hashes > 0 {
+            block.transactions = Vec::with_capacity(len_hashes as usize);
+            for _ in 0..len_hashes {
+                let mut hash = Uint256::default();
+                hash.decode_binary(br)?;
+                block.transactions.push(Transaction::new_trimmed_tx(hash));
+            }
+        }
 
-// New creates a new blank block with proper state root setting.
-func New(stateRootEnabled bool) *Block {
-	return &Block{
-		Header: Header{
-			StateRootEnabled: stateRootEnabled,
-		},
-	}
-}
+        Ok(block)
+    }
 
-// EncodeTrimmed writes trimmed representation of the block data into w. Trimmed blocks
-// do not store complete transactions, instead they only store their hashes.
-func (b *Block) EncodeTrimmed(w *io.BinWriter) {
-	b.Header.EncodeBinary(w)
+    pub fn new(state_root_enabled: bool) -> Block {
+        Block {
+            header: Header {
+                state_root_enabled,
+                ..Default::default()
+            },
+            transactions: Vec::new(),
+            trimmed: false,
+        }
+    }
 
-	w.WriteVarUint(uint64(len(b.Transactions)))
-	for _, tx := range b.Transactions {
-		h := tx.Hash()
-		h.EncodeBinary(w)
-	}
-}
+    pub fn encode_trimmed(&self, w: &mut BinWriter) {
+        self.header.encode_binary(w);
+        w.write_var_uint(self.transactions.len() as u64);
+        for tx in &self.transactions {
+            let h = tx.hash();
+            h.encode_binary(w);
+        }
+    }
 
-// DecodeBinary decodes the block from the given BinReader, implementing
-// Serializable interface.
-func (b *Block) DecodeBinary(br *io.BinReader) {
-	b.Header.DecodeBinary(br)
-	contentsCount := br.ReadVarUint()
-	if contentsCount > MaxTransactionsPerBlock {
-		br.Err = ErrMaxContentsPerBlock
-		return
-	}
-	txes := make([]*transaction.Transaction, contentsCount)
-	for i := range txes {
-		tx := &transaction.Transaction{}
-		tx.DecodeBinary(br)
-		txes[i] = tx
-	}
-	b.Transactions = txes
-	if br.Err != nil {
-		return
-	}
-}
+    pub fn decode_binary(&mut self, br: &mut BinReader) -> Result<(), Box<dyn Error>> {
+        self.header.decode_binary(br)?;
+        let contents_count = br.read_var_uint()?;
+        if contents_count > MAX_TRANSACTIONS_PER_BLOCK as u64 {
+            return Err(Box::new(MaxContentsPerBlockError));
+        }
+        self.transactions = Vec::with_capacity(contents_count as usize);
+        for _ in 0..contents_count {
+            let mut tx = Transaction::default();
+            tx.decode_binary(br)?;
+            self.transactions.push(tx);
+        }
+        Ok(())
+    }
 
-// EncodeBinary encodes the block to the given BinWriter, implementing
-// Serializable interface.
-func (b *Block) EncodeBinary(bw *io.BinWriter) {
-	b.Header.EncodeBinary(bw)
-	bw.WriteVarUint(uint64(len(b.Transactions)))
-	for i := range b.Transactions {
-		b.Transactions[i].EncodeBinary(bw)
-	}
-}
+    pub fn encode_binary(&self, bw: &mut BinWriter) {
+        self.header.encode_binary(bw);
+        bw.write_var_uint(self.transactions.len() as u64);
+        for tx in &self.transactions {
+            tx.encode_binary(bw);
+        }
+    }
 
-// MarshalJSON implements the json.Marshaler interface.
-func (b Block) MarshalJSON() ([]byte, error) {
-	abo := auxBlockOut{
-		Transactions: b.Transactions,
-	}
-	// `"tx": []` (C#) vs `"tx": null` (default Go when missing any transactions)
-	if abo.Transactions == nil {
-		abo.Transactions = []*transaction.Transaction{}
-	}
-	auxb, err := json.Marshal(abo)
-	if err != nil {
-		return nil, err
-	}
-	baseBytes, err := json.Marshal(b.Header)
-	if err != nil {
-		return nil, err
-	}
+    pub fn marshal_json(&self) -> Result<String, Box<dyn Error>> {
+        let abo = AuxBlockOut {
+            transactions: self.transactions.clone(),
+        };
+        let auxb = serde_json::to_string(&abo)?;
+        let base_bytes = serde_json::to_string(&self.header)?;
 
-	// Stitch them together.
-	if baseBytes[len(baseBytes)-1] != '}' || auxb[0] != '{' {
-		return nil, errors.New("can't merge internal jsons")
-	}
-	baseBytes[len(baseBytes)-1] = ','
-	baseBytes = append(baseBytes, auxb[1:]...)
-	return baseBytes, nil
-}
+        // Stitch them together.
+        if !base_bytes.ends_with('}') || !auxb.starts_with('{') {
+            return Err(Box::new(fmt::Error));
+        }
+        let mut base_bytes = base_bytes;
+        base_bytes.pop();
+        base_bytes.push(',');
+        base_bytes.push_str(&auxb[1..]);
+        Ok(base_bytes)
+    }
 
-// UnmarshalJSON implements the json.Unmarshaler interface.
-func (b *Block) UnmarshalJSON(data []byte) error {
-	// As Base and auxb are at the same level in json,
-	// do unmarshalling separately for both structs.
-	auxb := new(auxBlockIn)
-	err := json.Unmarshal(data, auxb)
-	if err != nil {
-		return err
-	}
-	err = json.Unmarshal(data, &b.Header)
-	if err != nil {
-		return err
-	}
-	if len(auxb.Transactions) != 0 {
-		b.Transactions = make([]*transaction.Transaction, 0, len(auxb.Transactions))
-		for _, txBytes := range auxb.Transactions {
-			tx := &transaction.Transaction{}
-			err = tx.UnmarshalJSON(txBytes)
-			if err != nil {
-				return err
-			}
-			b.Transactions = append(b.Transactions, tx)
-		}
-	}
-	return nil
-}
+    pub fn unmarshal_json(&mut self, data: &str) -> Result<(), Box<dyn Error>> {
+        let auxb: AuxBlockIn = serde_json::from_str(data)?;
+        self.header = serde_json::from_str(data)?;
+        if !auxb.transactions.is_empty() {
+            self.transactions = Vec::with_capacity(auxb.transactions.len());
+            for tx_bytes in auxb.transactions {
+                let tx: Transaction = serde_json::from_value(tx_bytes)?;
+                self.transactions.push(tx);
+            }
+        }
+        Ok(())
+    }
 
-// GetExpectedBlockSize returns the expected block size which should be equal to io.GetVarSize(b).
-func (b *Block) GetExpectedBlockSize() int {
-	var transactionsSize int
-	for _, tx := range b.Transactions {
-		transactionsSize += tx.Size()
-	}
-	return b.GetExpectedBlockSizeWithoutTransactions(len(b.Transactions)) + transactionsSize
-}
+    pub fn get_expected_block_size(&self) -> usize {
+        let transactions_size: usize = self.transactions.iter().map(|tx| tx.size()).sum();
+        self.get_expected_block_size_without_transactions(self.transactions.len()) + transactions_size
+    }
 
-// GetExpectedBlockSizeWithoutTransactions returns the expected block size without transactions size.
-func (b *Block) GetExpectedBlockSizeWithoutTransactions(txCount int) int {
-	size := expectedHeaderSizeWithEmptyWitness - 1 - 1 + // 1 is for the zero-length (new(Header)).Script.Invocation/Verification
-		io.GetVarSize(&b.Script) +
-		io.GetVarSize(txCount)
-	if b.StateRootEnabled {
-		size += util.Uint256Size
-	}
-	return size
-}
+    pub fn get_expected_block_size_without_transactions(&self, tx_count: usize) -> usize {
+        let size = *EXPECTED_HEADER_SIZE_WITH_EMPTY_WITNESS - 1 - 1 + // 1 is for the zero-length (new(Header)).script.invocation/verification
+            io::get_var_size(&self.header.script) +
+            io::get_var_size(&tx_count);
+        if self.header.state_root_enabled {
+            size + Uint256::size()
+        } else {
+            size
+        }
+    }
 
-// ToStackItem converts Block to stackitem.Item.
-func (b *Block) ToStackItem() stackitem.Item {
-	items := []stackitem.Item{
-		stackitem.NewByteArray(b.Hash().BytesBE()),
-		stackitem.NewBigInteger(big.NewInt(int64(b.Version))),
-		stackitem.NewByteArray(b.PrevHash.BytesBE()),
-		stackitem.NewByteArray(b.MerkleRoot.BytesBE()),
-		stackitem.NewBigInteger(big.NewInt(int64(b.Timestamp))),
-		stackitem.NewBigInteger(new(big.Int).SetUint64(b.Nonce)),
-		stackitem.NewBigInteger(big.NewInt(int64(b.Index))),
-		stackitem.NewBigInteger(big.NewInt(int64(b.PrimaryIndex))),
-		stackitem.NewByteArray(b.NextConsensus.BytesBE()),
-		stackitem.NewBigInteger(big.NewInt(int64(len(b.Transactions)))),
-	}
-	if b.StateRootEnabled {
-		items = append(items, stackitem.NewByteArray(b.PrevStateRoot.BytesBE()))
-	}
+    pub fn to_stack_item(&self) -> StackItem {
+        let mut items = vec![
+            stackitem::new_byte_array(self.header.hash().to_bytes_be()),
+            stackitem::new_big_integer(self.header.version.into()),
+            stackitem::new_byte_array(self.header.prev_hash.to_bytes_be()),
+            stackitem::new_byte_array(self.header.merkle_root.to_bytes_be()),
+            stackitem::new_big_integer(self.header.timestamp.into()),
+            stackitem::new_big_integer(self.header.nonce.into()),
+            stackitem::new_big_integer(self.header.index.into()),
+            stackitem::new_big_integer(self.header.primary_index.into()),
+            stackitem::new_byte_array(self.header.next_consensus.to_bytes_be()),
+            stackitem::new_big_integer(self.transactions.len().into()),
+        ];
+        if self.header.state_root_enabled {
+            items.push(stackitem::new_byte_array(self.header.prev_state_root.to_bytes_be()));
+        }
 
-	return stackitem.NewArray(items)
+        stackitem::new_array(items)
+    }
 }

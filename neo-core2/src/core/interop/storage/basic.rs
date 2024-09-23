@@ -1,139 +1,135 @@
-package storage
+use std::error::Error;
+use std::fmt;
 
-import (
-	"errors"
-	"fmt"
+use crate::config::limits;
+use crate::core::interop;
+use crate::vm::stackitem;
 
-	"github.com/nspcc-dev/neo-go/pkg/config/limits"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-)
+#[derive(Debug)]
+pub struct GasLimitExceededError;
 
-var (
-	// ErrGasLimitExceeded is returned from interops when there is not enough
-	// GAS left in the execution context to complete the action.
-	ErrGasLimitExceeded   = errors.New("gas limit exceeded")
-	errFindInvalidOptions = errors.New("invalid Find options")
-)
-
-// Context contains contract ID and read/write flag, it's used as
-// a context for storage manipulation functions.
-type Context struct {
-	ID       int32
-	ReadOnly bool
+impl fmt::Display for GasLimitExceededError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "gas limit exceeded")
+    }
 }
 
-// storageDelete deletes stored key-value pair.
-func Delete(ic *interop.Context) error {
-	stcInterface := ic.VM.Estack().Pop().Value()
-	stc, ok := stcInterface.(*Context)
-	if !ok {
-		return fmt.Errorf("%T is not a storage.Context", stcInterface)
-	}
-	if stc.ReadOnly {
-		return errors.New("storage.Context is read only")
-	}
-	key := ic.VM.Estack().Pop().Bytes()
-	ic.DAO.DeleteStorageItem(stc.ID, key)
-	return nil
+impl Error for GasLimitExceededError {}
+
+#[derive(Debug)]
+pub struct FindInvalidOptionsError;
+
+impl fmt::Display for FindInvalidOptionsError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid Find options")
+    }
 }
 
-// Get returns stored key-value pair.
-func Get(ic *interop.Context) error {
-	stcInterface := ic.VM.Estack().Pop().Value()
-	stc, ok := stcInterface.(*Context)
-	if !ok {
-		return fmt.Errorf("%T is not a storage.Context", stcInterface)
-	}
-	key := ic.VM.Estack().Pop().Bytes()
-	si := ic.DAO.GetStorageItem(stc.ID, key)
-	if si != nil {
-		ic.VM.Estack().PushItem(stackitem.NewByteArray([]byte(si)))
-	} else {
-		ic.VM.Estack().PushItem(stackitem.Null{})
-	}
-	return nil
+impl Error for FindInvalidOptionsError {}
+
+#[derive(Debug)]
+pub struct Context {
+    id: i32,
+    read_only: bool,
 }
 
-// GetContext returns storage context for the currently executing contract.
-func GetContext(ic *interop.Context) error {
-	return getContextInternal(ic, false)
+pub fn delete(ic: &mut interop::Context) -> Result<(), Box<dyn Error>> {
+    let stc_interface = ic.vm.estack().pop().value();
+    let stc = stc_interface.downcast_ref::<Context>().ok_or_else(|| {
+        format!("{} is not a storage::Context", stc_interface.type_id())
+    })?;
+    if stc.read_only {
+        return Err("storage::Context is read only".into());
+    }
+    let key = ic.vm.estack().pop().bytes();
+    ic.dao.delete_storage_item(stc.id, &key);
+    Ok(())
 }
 
-// GetReadOnlyContext returns read-only storage context for the currently executing contract.
-func GetReadOnlyContext(ic *interop.Context) error {
-	return getContextInternal(ic, true)
+pub fn get(ic: &mut interop::Context) -> Result<(), Box<dyn Error>> {
+    let stc_interface = ic.vm.estack().pop().value();
+    let stc = stc_interface.downcast_ref::<Context>().ok_or_else(|| {
+        format!("{} is not a storage::Context", stc_interface.type_id())
+    })?;
+    let key = ic.vm.estack().pop().bytes();
+    let si = ic.dao.get_storage_item(stc.id, &key);
+    if let Some(si) = si {
+        ic.vm.estack().push_item(stackitem::StackItem::ByteArray(si.to_vec()));
+    } else {
+        ic.vm.estack().push_item(stackitem::StackItem::Null);
+    }
+    Ok(())
 }
 
-// getContextInternal is internal version of storageGetContext and
-// storageGetReadOnlyContext which allows to specify ReadOnly context flag.
-func getContextInternal(ic *interop.Context, isReadOnly bool) error {
-	contract, err := ic.GetContract(ic.VM.GetCurrentScriptHash())
-	if err != nil {
-		return fmt.Errorf("storage context can not be retrieved in dynamic scripts: %w", err)
-	}
-	sc := &Context{
-		ID:       contract.ID,
-		ReadOnly: isReadOnly,
-	}
-	ic.VM.Estack().PushItem(stackitem.NewInterop(sc))
-	return nil
+pub fn get_context(ic: &mut interop::Context) -> Result<(), Box<dyn Error>> {
+    get_context_internal(ic, false)
 }
 
-func putWithContext(ic *interop.Context, stc *Context, key []byte, value []byte) error {
-	if len(key) > limits.MaxStorageKeyLen {
-		return errors.New("key is too big")
-	}
-	if len(value) > limits.MaxStorageValueLen {
-		return errors.New("value is too big")
-	}
-	if stc.ReadOnly {
-		return errors.New("storage.Context is read only")
-	}
-	si := ic.DAO.GetStorageItem(stc.ID, key)
-	sizeInc := len(value)
-	if si == nil {
-		sizeInc = len(key) + len(value)
-	} else if len(value) != 0 {
-		if len(value) <= len(si) {
-			sizeInc = (len(value)-1)/4 + 1
-		} else if len(si) != 0 {
-			sizeInc = (len(si)-1)/4 + 1 + len(value) - len(si)
-		}
-	}
-	if !ic.VM.AddGas(int64(sizeInc) * ic.BaseStorageFee()) {
-		return ErrGasLimitExceeded
-	}
-	ic.DAO.PutStorageItem(stc.ID, key, value)
-	return nil
+pub fn get_read_only_context(ic: &mut interop::Context) -> Result<(), Box<dyn Error>> {
+    get_context_internal(ic, true)
 }
 
-// Put puts key-value pair into the storage.
-func Put(ic *interop.Context) error {
-	stcInterface := ic.VM.Estack().Pop().Value()
-	stc, ok := stcInterface.(*Context)
-	if !ok {
-		return fmt.Errorf("%T is not a storage.Context", stcInterface)
-	}
-	key := ic.VM.Estack().Pop().Bytes()
-	value := ic.VM.Estack().Pop().Bytes()
-	return putWithContext(ic, stc, key, value)
+fn get_context_internal(ic: &mut interop::Context, is_read_only: bool) -> Result<(), Box<dyn Error>> {
+    let contract = ic.get_contract(ic.vm.get_current_script_hash())?;
+    let sc = Context {
+        id: contract.id,
+        read_only: is_read_only,
+    };
+    ic.vm.estack().push_item(stackitem::StackItem::Interop(Box::new(sc)));
+    Ok(())
 }
 
-// ContextAsReadOnly sets given context to read-only mode.
-func ContextAsReadOnly(ic *interop.Context) error {
-	stcInterface := ic.VM.Estack().Pop().Value()
-	stc, ok := stcInterface.(*Context)
-	if !ok {
-		return fmt.Errorf("%T is not a storage.Context", stcInterface)
-	}
-	if !stc.ReadOnly {
-		stx := &Context{
-			ID:       stc.ID,
-			ReadOnly: true,
-		}
-		stc = stx
-	}
-	ic.VM.Estack().PushItem(stackitem.NewInterop(stc))
-	return nil
+fn put_with_context(ic: &mut interop::Context, stc: &Context, key: &[u8], value: &[u8]) -> Result<(), Box<dyn Error>> {
+    if key.len() > limits::MAX_STORAGE_KEY_LEN {
+        return Err("key is too big".into());
+    }
+    if value.len() > limits::MAX_STORAGE_VALUE_LEN {
+        return Err("value is too big".into());
+    }
+    if stc.read_only {
+        return Err("storage::Context is read only".into());
+    }
+    let si = ic.dao.get_storage_item(stc.id, key);
+    let mut size_inc = value.len();
+    if si.is_none() {
+        size_inc = key.len() + value.len();
+    } else if !value.is_empty() {
+        if value.len() <= si.unwrap().len() {
+            size_inc = (value.len() - 1) / 4 + 1;
+        } else if !si.unwrap().is_empty() {
+            size_inc = (si.unwrap().len() - 1) / 4 + 1 + value.len() - si.unwrap().len();
+        }
+    }
+    if !ic.vm.add_gas((size_inc as i64) * ic.base_storage_fee()) {
+        return Err(Box::new(GasLimitExceededError));
+    }
+    ic.dao.put_storage_item(stc.id, key, value);
+    Ok(())
+}
+
+pub fn put(ic: &mut interop::Context) -> Result<(), Box<dyn Error>> {
+    let stc_interface = ic.vm.estack().pop().value();
+    let stc = stc_interface.downcast_ref::<Context>().ok_or_else(|| {
+        format!("{} is not a storage::Context", stc_interface.type_id())
+    })?;
+    let key = ic.vm.estack().pop().bytes();
+    let value = ic.vm.estack().pop().bytes();
+    put_with_context(ic, stc, &key, &value)
+}
+
+pub fn context_as_read_only(ic: &mut interop::Context) -> Result<(), Box<dyn Error>> {
+    let stc_interface = ic.vm.estack().pop().value();
+    let stc = stc_interface.downcast_ref::<Context>().ok_or_else(|| {
+        format!("{} is not a storage::Context", stc_interface.type_id())
+    })?;
+    if !stc.read_only {
+        let stx = Context {
+            id: stc.id,
+            read_only: true,
+        };
+        ic.vm.estack().push_item(stackitem::StackItem::Interop(Box::new(stx)));
+    } else {
+        ic.vm.estack().push_item(stackitem::StackItem::Interop(Box::new(stc.clone())));
+    }
+    Ok(())
 }

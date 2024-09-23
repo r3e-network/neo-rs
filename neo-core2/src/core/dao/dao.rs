@@ -1,351 +1,347 @@
-package dao
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::error::Error;
+use std::fmt;
 
-import (
-	"bytes"
-	"context"
-	"encoding/binary"
-	"errors"
-	"fmt"
-	iocore "io"
-	"math/big"
-	"sync"
-
-	"github.com/nspcc-dev/neo-go/pkg/config/limits"
-	"github.com/nspcc-dev/neo-go/pkg/core/block"
-	"github.com/nspcc-dev/neo-go/pkg/core/state"
-	"github.com/nspcc-dev/neo-go/pkg/core/storage"
-	"github.com/nspcc-dev/neo-go/pkg/core/transaction"
-	"github.com/nspcc-dev/neo-go/pkg/encoding/address"
-	"github.com/nspcc-dev/neo-go/pkg/encoding/bigint"
-	"github.com/nspcc-dev/neo-go/pkg/io"
-	"github.com/nspcc-dev/neo-go/pkg/smartcontract/trigger"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-)
+use crate::config::limits;
+use crate::core::block;
+use crate::core::state;
+use crate::core::storage;
+use crate::core::transaction;
+use crate::encoding::address;
+use crate::encoding::bigint;
+use crate::io;
+use crate::smartcontract::trigger;
+use crate::util;
+use crate::vm::stackitem;
 
 // HasTransaction errors.
-var (
-	// ErrAlreadyExists is returned when the transaction exists in dao.
-	ErrAlreadyExists = errors.New("transaction already exists")
-	// ErrHasConflicts is returned when the transaction is in the list of conflicting
-	// transactions which are already in dao.
-	ErrHasConflicts = errors.New("transaction has conflicts")
-	// ErrInternalDBInconsistency is returned when the format of the retrieved DAO
-	// record is unexpected.
-	ErrInternalDBInconsistency = errors.New("internal DB inconsistency")
-)
+#[derive(Debug)]
+pub enum DaoError {
+    AlreadyExists,
+    HasConflicts,
+    InternalDBInconsistency,
+}
+
+impl fmt::Display for DaoError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DaoError::AlreadyExists => write!(f, "transaction already exists"),
+            DaoError::HasConflicts => write!(f, "transaction has conflicts"),
+            DaoError::InternalDBInconsistency => write!(f, "internal DB inconsistency"),
+        }
+    }
+}
+
+impl Error for DaoError {}
 
 // conflictRecordValueLen is the length of value of transaction conflict record.
 // It consists of 1-byte [storage.ExecTransaction] prefix and 4-bytes block index
 // in the LE form.
-const conflictRecordValueLen = 1 + 4
+const CONFLICT_RECORD_VALUE_LEN: usize = 1 + 4;
 
 // Simple is memCached wrapper around DB, simple DAO implementation.
-type Simple struct {
-	Version Version
-	Store   *storage.MemCachedStore
+pub struct Simple {
+    version: Version,
+    store: Arc<storage::MemCachedStore>,
 
-	nativeCacheLock sync.RWMutex
-	nativeCache     map[int32]NativeContractCache
-	// nativeCachePS is the backend store that provides functionality to store
-	// and retrieve multi-tier native contract cache. The lowest Simple has its
-	// nativeCachePS set to nil.
-	nativeCachePS *Simple
+    native_cache_lock: RwLock<()>,
+    native_cache: HashMap<i32, Box<dyn NativeContractCache>>,
+    native_cache_ps: Option<Arc<Simple>>,
 
-	private bool
-	serCtx  *stackitem.SerializationContext
-	keyBuf  []byte
-	dataBuf *io.BufBinWriter
+    private: AtomicBool,
+    ser_ctx: Mutex<Option<stackitem::SerializationContext>>,
+    key_buf: Mutex<Vec<u8>>,
+    data_buf: Mutex<io::BufBinWriter>,
 }
 
 // NativeContractCache is an interface representing cache for a native contract.
 // Cache can be copied to create a wrapper around current DAO layer. Wrapped cache
 // can be persisted to the underlying DAO native cache.
-type NativeContractCache interface {
-	// Copy returns a copy of native cache item that can safely be changed within
-	// the subsequent DAO operations.
-	Copy() NativeContractCache
+pub trait NativeContractCache: Send + Sync {
+    // Copy returns a copy of native cache item that can safely be changed within
+    // the subsequent DAO operations.
+    fn copy(&self) -> Box<dyn NativeContractCache>;
 }
 
 // NewSimple creates a new simple dao using the provided backend store.
-func NewSimple(backend storage.Store, stateRootInHeader bool) *Simple {
-	st := storage.NewMemCachedStore(backend)
-	return newSimple(st, stateRootInHeader)
+pub fn new_simple(backend: Arc<dyn storage::Store>, state_root_in_header: bool) -> Arc<Simple> {
+    let st = storage::new_mem_cached_store(backend);
+    new_simple_with_store(st, state_root_in_header)
 }
 
-func newSimple(st *storage.MemCachedStore, stateRootInHeader bool) *Simple {
-	return &Simple{
-		Version: Version{
-			StoragePrefix:     storage.STStorage,
-			StateRootInHeader: stateRootInHeader,
-		},
-		Store:       st,
-		nativeCache: make(map[int32]NativeContractCache),
-	}
+fn new_simple_with_store(st: Arc<storage::MemCachedStore>, state_root_in_header: bool) -> Arc<Simple> {
+    Arc::new(Simple {
+        version: Version {
+            storage_prefix: storage::KeyPrefix::STStorage,
+            state_root_in_header,
+        },
+        store: st,
+        native_cache: HashMap::new(),
+        native_cache_ps: None,
+        private: AtomicBool::new(false),
+        ser_ctx: Mutex::new(None),
+        key_buf: Mutex::new(Vec::new()),
+        data_buf: Mutex::new(io::BufBinWriter::new()),
+    })
 }
 
 // GetBatch returns the currently accumulated DB changeset.
-func (dao *Simple) GetBatch() *storage.MemBatch {
-	return dao.Store.GetBatch()
+pub fn get_batch(dao: &Simple) -> Arc<storage::MemBatch> {
+    dao.store.get_batch()
 }
 
 // GetWrapped returns a new DAO instance with another layer of wrapped
 // MemCachedStore around the current DAO Store.
-func (dao *Simple) GetWrapped() *Simple {
-	d := NewSimple(dao.Store, dao.Version.StateRootInHeader)
-	d.Version = dao.Version
-	d.nativeCachePS = dao
-	return d
+pub fn get_wrapped(dao: &Simple) -> Arc<Simple> {
+    let d = new_simple(dao.store.clone(), dao.version.state_root_in_header);
+    d.version = dao.version.clone();
+    d.native_cache_ps = Some(Arc::clone(dao));
+    d
 }
 
 // GetPrivate returns a new DAO instance with another layer of private
 // MemCachedStore around the current DAO Store.
-func (dao *Simple) GetPrivate() *Simple {
-	d := &Simple{
-		Version: dao.Version,
-		keyBuf:  dao.keyBuf,
-		dataBuf: dao.dataBuf,
-		serCtx:  dao.serCtx,
-	} // Inherit everything...
-	d.Store = storage.NewPrivateMemCachedStore(dao.Store) // except storage, wrap another layer.
-	d.private = true
-	d.nativeCachePS = dao
-	// Do not inherit cache from nativeCachePS; instead should create clear map:
-	// GetRWCache and GetROCache will retrieve cache from the underlying
-	// nativeCache if requested. The lowest underlying DAO MUST have its native
-	// cache initialized before access it, otherwise GetROCache and GetRWCache
-	// won't work properly.
-	d.nativeCache = make(map[int32]NativeContractCache)
-	return d
+pub fn get_private(dao: &Simple) -> Arc<Simple> {
+    let d = Arc::new(Simple {
+        version: dao.version.clone(),
+        key_buf: dao.key_buf.lock().unwrap().clone(),
+        data_buf: Mutex::new(io::BufBinWriter::new()),
+        ser_ctx: Mutex::new(None),
+        store: storage::new_private_mem_cached_store(dao.store.clone()),
+        private: AtomicBool::new(true),
+        native_cache_ps: Some(Arc::clone(dao)),
+        native_cache: HashMap::new(),
+    });
+    d
 }
 
 // GetAndDecode performs get operation and decoding with serializable structures.
-func (dao *Simple) GetAndDecode(entity io.Serializable, key []byte) error {
-	entityBytes, err := dao.Store.Get(key)
-	if err != nil {
-		return err
-	}
-	reader := io.NewBinReaderFromBuf(entityBytes)
-	entity.DecodeBinary(reader)
-	return reader.Err
+pub fn get_and_decode(dao: &Simple, entity: &mut dyn io::Serializable, key: &[u8]) -> Result<(), Box<dyn Error>> {
+    let entity_bytes = dao.store.get(key)?;
+    let mut reader = io::BinReader::new(&entity_bytes);
+    entity.decode_binary(&mut reader)?;
+    Ok(())
 }
 
 // putWithBuffer performs put operation using buf as a pre-allocated buffer for serialization.
-func (dao *Simple) putWithBuffer(entity io.Serializable, key []byte, buf *io.BufBinWriter) error {
-	entity.EncodeBinary(buf.BinWriter)
-	if buf.Err != nil {
-		return buf.Err
-	}
-	dao.Store.Put(key, buf.Bytes())
-	return nil
+pub fn put_with_buffer(dao: &Simple, entity: &dyn io::Serializable, key: &[u8], buf: &mut io::BufBinWriter) -> Result<(), Box<dyn Error>> {
+    entity.encode_binary(buf)?;
+    if buf.has_error() {
+        return Err(Box::new(buf.get_error().unwrap()));
+    }
+    dao.store.put(key, buf.bytes());
+    Ok(())
 }
 
 // -- start NEP-17 transfer info.
 
-func (dao *Simple) makeTTIKey(acc util.Uint160) []byte {
-	key := dao.getKeyBuf(1 + util.Uint160Size)
-	key[0] = byte(storage.STTokenTransferInfo)
-	copy(key[1:], acc.BytesBE())
-	return key
+pub fn make_tti_key(dao: &Simple, acc: &util::Uint160) -> Vec<u8> {
+    let mut key = dao.get_key_buf(1 + util::UINT160_SIZE);
+    key[0] = storage::KeyPrefix::STTokenTransferInfo as u8;
+    key[1..].copy_from_slice(&acc.bytes_be());
+    key
 }
 
 // GetTokenTransferInfo retrieves NEP-17 transfer info from the cache.
-func (dao *Simple) GetTokenTransferInfo(acc util.Uint160) (*state.TokenTransferInfo, error) {
-	key := dao.makeTTIKey(acc)
-	bs := state.NewTokenTransferInfo()
-	err := dao.GetAndDecode(bs, key)
-	if err != nil && !errors.Is(err, storage.ErrKeyNotFound) {
-		return nil, err
-	}
-	return bs, nil
+pub fn get_token_transfer_info(dao: &Simple, acc: &util::Uint160) -> Result<state::TokenTransferInfo, Box<dyn Error>> {
+    let key = make_tti_key(dao, acc);
+    let mut bs = state::TokenTransferInfo::new();
+    match get_and_decode(dao, &mut bs, &key) {
+        Ok(_) => Ok(bs),
+        Err(e) if e.downcast_ref::<storage::StorageError>() == Some(&storage::StorageError::KeyNotFound) => Ok(bs),
+        Err(e) => Err(e),
+    }
 }
 
 // PutTokenTransferInfo saves NEP-17 transfer info in the cache.
-func (dao *Simple) PutTokenTransferInfo(acc util.Uint160, bs *state.TokenTransferInfo) error {
-	return dao.putTokenTransferInfo(acc, bs, dao.getDataBuf())
+pub fn put_token_transfer_info(dao: &Simple, acc: &util::Uint160, bs: &state::TokenTransferInfo) -> Result<(), Box<dyn Error>> {
+    put_token_transfer_info_with_buf(dao, acc, bs, &mut dao.get_data_buf())
 }
 
-func (dao *Simple) putTokenTransferInfo(acc util.Uint160, bs *state.TokenTransferInfo, buf *io.BufBinWriter) error {
-	return dao.putWithBuffer(bs, dao.makeTTIKey(acc), buf)
+fn put_token_transfer_info_with_buf(dao: &Simple, acc: &util::Uint160, bs: &state::TokenTransferInfo, buf: &mut io::BufBinWriter) -> Result<(), Box<dyn Error>> {
+    put_with_buffer(dao, bs, &make_tti_key(dao, acc), buf)
 }
 
 // -- end NEP-17 transfer info.
 
 // -- start transfer log.
 
-func (dao *Simple) getTokenTransferLogKey(acc util.Uint160, newestTimestamp uint64, index uint32, isNEP11 bool) []byte {
-	key := dao.getKeyBuf(1 + util.Uint160Size + 8 + 4)
-	if isNEP11 {
-		key[0] = byte(storage.STNEP11Transfers)
-	} else {
-		key[0] = byte(storage.STNEP17Transfers)
-	}
-	copy(key[1:], acc.BytesBE())
-	binary.BigEndian.PutUint64(key[1+util.Uint160Size:], newestTimestamp)
-	binary.BigEndian.PutUint32(key[1+util.Uint160Size+8:], index)
-	return key
+pub fn get_token_transfer_log_key(dao: &Simple, acc: &util::Uint160, newest_timestamp: u64, index: u32, is_nep11: bool) -> Vec<u8> {
+    let mut key = dao.get_key_buf(1 + util::UINT160_SIZE + 8 + 4);
+    key[0] = if is_nep11 { storage::KeyPrefix::STNEP11Transfers as u8 } else { storage::KeyPrefix::STNEP17Transfers as u8 };
+    key[1..1 + util::UINT160_SIZE].copy_from_slice(&acc.bytes_be());
+    key[1 + util::UINT160_SIZE..1 + util::UINT160_SIZE + 8].copy_from_slice(&newest_timestamp.to_be_bytes());
+    key[1 + util::UINT160_SIZE + 8..].copy_from_slice(&index.to_be_bytes());
+    key
 }
 
 // SeekNEP17TransferLog executes f for each NEP-17 transfer in log starting from
 // the transfer with the newest timestamp up to the oldest transfer. It continues
 // iteration until false is returned from f. The last non-nil error is returned.
-func (dao *Simple) SeekNEP17TransferLog(acc util.Uint160, newestTimestamp uint64, f func(*state.NEP17Transfer) (bool, error)) error {
-	key := dao.getTokenTransferLogKey(acc, newestTimestamp, 0, false)
-	prefixLen := 1 + util.Uint160Size
-	var seekErr error
-	dao.Store.Seek(storage.SeekRange{
-		Prefix:    key[:prefixLen],
-		Start:     key[prefixLen : prefixLen+8],
-		Backwards: true,
-	}, func(k, v []byte) bool {
-		lg := &state.TokenTransferLog{Raw: v}
-		cont, err := lg.ForEachNEP17(f)
-		if err != nil {
-			seekErr = err
-		}
-		return cont
-	})
-	return seekErr
+pub fn seek_nep17_transfer_log<F>(dao: &Simple, acc: &util::Uint160, newest_timestamp: u64, mut f: F) -> Result<(), Box<dyn Error>>
+where
+    F: FnMut(&state::NEP17Transfer) -> Result<bool, Box<dyn Error>>,
+{
+    let key = get_token_transfer_log_key(dao, acc, newest_timestamp, 0, false);
+    let prefix_len = 1 + util::UINT160_SIZE;
+    let mut seek_err: Option<Box<dyn Error>> = None;
+    dao.store.seek(storage::SeekRange {
+        prefix: &key[..prefix_len],
+        start: &key[prefix_len..prefix_len + 8],
+        backwards: true,
+    }, |k, v| {
+        let mut lg = state::TokenTransferLog::new(v);
+        match lg.for_each_nep17(&mut f) {
+            Ok(cont) => cont,
+            Err(err) => {
+                seek_err = Some(err);
+                false
+            }
+        }
+    });
+    if let Some(err) = seek_err {
+        Err(err)
+    } else {
+        Ok(())
+    }
 }
 
 // SeekNEP11TransferLog executes f for each NEP-11 transfer in log starting from
 // the transfer with the newest timestamp up to the oldest transfer. It continues
 // iteration until false is returned from f. The last non-nil error is returned.
-func (dao *Simple) SeekNEP11TransferLog(acc util.Uint160, newestTimestamp uint64, f func(*state.NEP11Transfer) (bool, error)) error {
-	key := dao.getTokenTransferLogKey(acc, newestTimestamp, 0, true)
-	prefixLen := 1 + util.Uint160Size
-	var seekErr error
-	dao.Store.Seek(storage.SeekRange{
-		Prefix:    key[:prefixLen],
-		Start:     key[prefixLen : prefixLen+8],
-		Backwards: true,
-	}, func(k, v []byte) bool {
-		lg := &state.TokenTransferLog{Raw: v}
-		cont, err := lg.ForEachNEP11(f)
-		if err != nil {
-			seekErr = err
-		}
-		return cont
-	})
-	return seekErr
+pub fn seek_nep11_transfer_log<F>(dao: &Simple, acc: &util::Uint160, newest_timestamp: u64, mut f: F) -> Result<(), Box<dyn Error>>
+where
+    F: FnMut(&state::NEP11Transfer) -> Result<bool, Box<dyn Error>>,
+{
+    let key = get_token_transfer_log_key(dao, acc, newest_timestamp, 0, true);
+    let prefix_len = 1 + util::UINT160_SIZE;
+    let mut seek_err: Option<Box<dyn Error>> = None;
+    dao.store.seek(storage::SeekRange {
+        prefix: &key[..prefix_len],
+        start: &key[prefix_len..prefix_len + 8],
+        backwards: true,
+    }, |k, v| {
+        let mut lg = state::TokenTransferLog::new(v);
+        match lg.for_each_nep11(&mut f) {
+            Ok(cont) => cont,
+            Err(err) => {
+                seek_err = Some(err);
+                false
+            }
+        }
+    });
+    if let Some(err) = seek_err {
+        Err(err)
+    } else {
+        Ok(())
+    }
 }
 
 // GetTokenTransferLog retrieves transfer log from the cache.
-func (dao *Simple) GetTokenTransferLog(acc util.Uint160, newestTimestamp uint64, index uint32, isNEP11 bool) (*state.TokenTransferLog, error) {
-	key := dao.getTokenTransferLogKey(acc, newestTimestamp, index, isNEP11)
-	value, err := dao.Store.Get(key)
-	if err != nil {
-		if errors.Is(err, storage.ErrKeyNotFound) {
-			return new(state.TokenTransferLog), nil
-		}
-		return nil, err
-	}
-	return &state.TokenTransferLog{Raw: value}, nil
+pub fn get_token_transfer_log(dao: &Simple, acc: &util::Uint160, newest_timestamp: u64, index: u32, is_nep11: bool) -> Result<state::TokenTransferLog, Box<dyn Error>> {
+    let key = get_token_transfer_log_key(dao, acc, newest_timestamp, index, is_nep11);
+    match dao.store.get(&key) {
+        Ok(value) => Ok(state::TokenTransferLog::new(&value)),
+        Err(e) if e.downcast_ref::<storage::StorageError>() == Some(&storage::StorageError::KeyNotFound) => Ok(state::TokenTransferLog::new_empty()),
+        Err(e) => Err(e),
+    }
 }
 
 // PutTokenTransferLog saves the given transfer log in the cache.
-func (dao *Simple) PutTokenTransferLog(acc util.Uint160, start uint64, index uint32, isNEP11 bool, lg *state.TokenTransferLog) {
-	key := dao.getTokenTransferLogKey(acc, start, index, isNEP11)
-	dao.Store.Put(key, lg.Raw)
+pub fn put_token_transfer_log(dao: &Simple, acc: &util::Uint160, start: u64, index: u32, is_nep11: bool, lg: &state::TokenTransferLog) {
+    let key = get_token_transfer_log_key(dao, acc, start, index, is_nep11);
+    dao.store.put(&key, lg.raw());
 }
 
 // -- end transfer log.
 
 // -- start notification event.
 
-func (dao *Simple) makeExecutableKey(hash util.Uint256) []byte {
-	key := dao.getKeyBuf(1 + util.Uint256Size)
-	key[0] = byte(storage.DataExecutable)
-	copy(key[1:], hash.BytesBE())
-	return key
+pub fn make_executable_key(dao: &Simple, hash: &util::Uint256) -> Vec<u8> {
+    let mut key = dao.get_key_buf(1 + util::UINT256_SIZE);
+    key[0] = storage::KeyPrefix::DataExecutable as u8;
+    key[1..].copy_from_slice(&hash.bytes_be());
+    key
 }
 
 // GetAppExecResults gets application execution results with the specified trigger from the
 // given store.
-func (dao *Simple) GetAppExecResults(hash util.Uint256, trig trigger.Type) ([]state.AppExecResult, error) {
-	key := dao.makeExecutableKey(hash)
-	bs, err := dao.Store.Get(key)
-	if err != nil {
-		return nil, err
-	}
-	if len(bs) == 0 {
-		return nil, fmt.Errorf("%w: empty execution log", ErrInternalDBInconsistency)
-	}
-	switch bs[0] {
-	case storage.ExecBlock:
-		r := io.NewBinReaderFromBuf(bs)
-		_ = r.ReadB()
-		_, err = block.NewTrimmedFromReader(dao.Version.StateRootInHeader, r)
-		if err != nil {
-			return nil, err
-		}
-		result := make([]state.AppExecResult, 0, 2)
-		for {
-			aer := new(state.AppExecResult)
-			aer.DecodeBinary(r)
-			if r.Err != nil {
-				if errors.Is(r.Err, iocore.EOF) {
-					break
-				}
-				return nil, r.Err
-			}
-			if aer.Trigger&trig != 0 {
-				result = append(result, *aer)
-			}
-		}
-		return result, nil
-	case storage.ExecTransaction:
-		_, _, aer, err := decodeTxAndExecResult(bs)
-		if err != nil {
-			return nil, err
-		}
-		if aer.Trigger&trig != 0 {
-			return []state.AppExecResult{*aer}, nil
-		}
-		return nil, nil
-	default:
-		return nil, fmt.Errorf("%w: unexpected executable prefix %d", ErrInternalDBInconsistency, bs[0])
-	}
+pub fn get_app_exec_results(dao: &Simple, hash: &util::Uint256, trig: trigger::Type) -> Result<Vec<state::AppExecResult>, Box<dyn Error>> {
+    let key = make_executable_key(dao, hash);
+    let bs = dao.store.get(&key)?;
+    if bs.is_empty() {
+        return Err(Box::new(DaoError::InternalDBInconsistency));
+    }
+    match bs[0] {
+        storage::ExecBlock => {
+            let mut r = io::BinReader::new(&bs);
+            r.read_u8()?;
+            block::new_trimmed_from_reader(dao.version.state_root_in_header, &mut r)?;
+            let mut result = Vec::new();
+            loop {
+                let mut aer = state::AppExecResult::new();
+                aer.decode_binary(&mut r)?;
+                if r.has_error() {
+                    if r.get_error().unwrap().downcast_ref::<std::io::Error>() == Some(&std::io::Error::from(std::io::ErrorKind::UnexpectedEof)) {
+                        break;
+                    }
+                    return Err(Box::new(r.get_error().unwrap()));
+                }
+                if aer.trigger & trig != 0 {
+                    result.push(aer);
+                }
+            }
+            Ok(result)
+        }
+        storage::ExecTransaction => {
+            let (_, _, aer) = decode_tx_and_exec_result(&bs)?;
+            if aer.trigger & trig != 0 {
+                Ok(vec![aer])
+            } else {
+                Ok(Vec::new())
+            }
+        }
+        _ => Err(Box::new(DaoError::InternalDBInconsistency)),
+    }
 }
 
 // GetTxExecResult gets application execution result of the specified transaction
 // and returns the transaction itself, its height and its AppExecResult.
-func (dao *Simple) GetTxExecResult(hash util.Uint256) (uint32, *transaction.Transaction, *state.AppExecResult, error) {
-	key := dao.makeExecutableKey(hash)
-	bs, err := dao.Store.Get(key)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	if len(bs) == 0 {
-		return 0, nil, nil, fmt.Errorf("%w: empty execution log", ErrInternalDBInconsistency)
-	}
-	if bs[0] != storage.ExecTransaction {
-		return 0, nil, nil, storage.ErrKeyNotFound
-	}
-	return decodeTxAndExecResult(bs)
+pub fn get_tx_exec_result(dao: &Simple, hash: &util::Uint256) -> Result<(u32, transaction::Transaction, state::AppExecResult), Box<dyn Error>> {
+    let key = make_executable_key(dao, hash);
+    let bs = dao.store.get(&key)?;
+    if bs.is_empty() {
+        return Err(Box::new(DaoError::InternalDBInconsistency));
+    }
+    if bs[0] != storage::ExecTransaction {
+        return Err(Box::new(storage::StorageError::KeyNotFound));
+    }
+    decode_tx_and_exec_result(&bs)
 }
 
 // decodeTxAndExecResult decodes transaction, its height and execution result from
 // the given executable bytes. It performs no executable prefix check.
-func decodeTxAndExecResult(buf []byte) (uint32, *transaction.Transaction, *state.AppExecResult, error) {
-	if len(buf) == conflictRecordValueLen { // conflict record stub.
-		return 0, nil, nil, storage.ErrKeyNotFound
-	}
-	r := io.NewBinReaderFromBuf(buf)
-	_ = r.ReadB()
-	h := r.ReadU32LE()
-	tx := &transaction.Transaction{}
-	tx.DecodeBinary(r)
-	if r.Err != nil {
-		return 0, nil, nil, r.Err
-	}
-	aer := new(state.AppExecResult)
-	aer.DecodeBinary(r)
-	if r.Err != nil {
-		return 0, nil, nil, r.Err
-	}
-
-	return h, tx, aer, nil
+fn decode_tx_and_exec_result(buf: &[u8]) -> Result<(u32, transaction::Transaction, state::AppExecResult), Box<dyn Error>> {
+    if buf.len() == CONFLICT_RECORD_VALUE_LEN {
+        return Err(Box::new(storage::StorageError::KeyNotFound));
+    }
+    let mut r = io::BinReader::new(buf);
+    r.read_u8()?;
+    let h = r.read_u32_le()?;
+    let mut tx = transaction::Transaction::new();
+    tx.decode_binary(&mut r)?;
+    if r.has_error() {
+        return Err(Box::new(r.get_error().unwrap()));
+    }
+    let mut aer = state::AppExecResult::new();
+    aer.decode_binary(&mut r)?;
+    if r.has_error() {
+        return Err(Box::new(r.get_error().unwrap()));
+    }
+    Ok((h, tx, aer))
 }
 
 // -- end notification event.
@@ -353,63 +349,64 @@ func decodeTxAndExecResult(buf []byte) (uint32, *transaction.Transaction, *state
 // -- start storage item.
 
 // GetStorageItem returns StorageItem if it exists in the given store.
-func (dao *Simple) GetStorageItem(id int32, key []byte) state.StorageItem {
-	b, err := dao.Store.Get(dao.makeStorageItemKey(id, key))
-	if err != nil {
-		return nil
-	}
-	return b
+pub fn get_storage_item(dao: &Simple, id: i32, key: &[u8]) -> Option<state::StorageItem> {
+    match dao.store.get(&make_storage_item_key(dao, id, key)) {
+        Ok(b) => Some(b),
+        Err(_) => None,
+    }
 }
 
 // PutStorageItem puts the given StorageItem for the given id with the given
 // key into the given store.
-func (dao *Simple) PutStorageItem(id int32, key []byte, si state.StorageItem) {
-	stKey := dao.makeStorageItemKey(id, key)
-	dao.Store.Put(stKey, si)
+pub fn put_storage_item(dao: &Simple, id: i32, key: &[u8], si: &state::StorageItem) {
+    let st_key = make_storage_item_key(dao, id, key);
+    dao.store.put(&st_key, si);
 }
 
-// PutBigInt serializaed and puts the given integer for the given id with the given
+// PutBigInt serializes and puts the given integer for the given id with the given
 // key into the given store.
-func (dao *Simple) PutBigInt(id int32, key []byte, n *big.Int) {
-	var buf [bigint.MaxBytesLen]byte
-	stData := bigint.ToPreallocatedBytes(n, buf[:])
-	dao.PutStorageItem(id, key, stData)
+pub fn put_big_int(dao: &Simple, id: i32, key: &[u8], n: &bigint::BigInt) {
+    let mut buf = [0u8; bigint::MAX_BYTES_LEN];
+    let st_data = bigint::to_preallocated_bytes(n, &mut buf);
+    put_storage_item(dao, id, key, &st_data);
 }
 
 // DeleteStorageItem drops a storage item for the given id with the
 // given key from the store.
-func (dao *Simple) DeleteStorageItem(id int32, key []byte) {
-	stKey := dao.makeStorageItemKey(id, key)
-	dao.Store.Delete(stKey)
+pub fn delete_storage_item(dao: &Simple, id: i32, key: &[u8]) {
+    let st_key = make_storage_item_key(dao, id, key);
+    dao.store.delete(&st_key);
 }
 
 // Seek executes f for all storage items matching the given `rng` (matching the given prefix and
 // starting from the point specified). If the key or the value is to be used outside of f, they
 // may not be copied. Seek continues iterating until false is returned from f. A requested prefix
 // (if any non-empty) is trimmed before passing to f.
-func (dao *Simple) Seek(id int32, rng storage.SeekRange, f func(k, v []byte) bool) {
-	rng.Prefix = bytes.Clone(dao.makeStorageItemKey(id, rng.Prefix)) // f() can use dao too.
-	dao.Store.Seek(rng, func(k, v []byte) bool {
-		return f(k[len(rng.Prefix):], v)
-	})
+pub fn seek<F>(dao: &Simple, id: i32, rng: storage::SeekRange, mut f: F)
+where
+    F: FnMut(&[u8], &[u8]) -> bool,
+{
+    let mut rng = rng.clone();
+    rng.prefix = make_storage_item_key(dao, id, &rng.prefix);
+    dao.store.seek(rng, |k, v| f(&k[rng.prefix.len()..], v));
 }
 
 // SeekAsync sends all storage items matching the given `rng` (matching the given prefix and
 // starting from the point specified) to a channel and returns the channel.
 // Resulting keys and values may not be copied.
-func (dao *Simple) SeekAsync(ctx context.Context, id int32, rng storage.SeekRange) chan storage.KeyValue {
-	rng.Prefix = bytes.Clone(dao.makeStorageItemKey(id, rng.Prefix))
-	return dao.Store.SeekAsync(ctx, rng, true)
+pub fn seek_async(dao: &Simple, ctx: &std::sync::Arc<std::sync::Mutex<()>>, id: i32, rng: storage::SeekRange) -> std::sync::mpsc::Receiver<storage::KeyValue> {
+    let mut rng = rng.clone();
+    rng.prefix = make_storage_item_key(dao, id, &rng.prefix);
+    dao.store.seek_async(ctx, rng, true)
 }
 
 // makeStorageItemKey returns the key used to store the StorageItem in the DB.
-func (dao *Simple) makeStorageItemKey(id int32, key []byte) []byte {
-	// 1 for prefix + 4 for Uint32 + len(key) for key
-	buf := dao.getKeyBuf(5 + len(key))
-	buf[0] = byte(dao.Version.StoragePrefix)
-	binary.LittleEndian.PutUint32(buf[1:], uint32(id))
-	copy(buf[5:], key)
-	return buf
+fn make_storage_item_key(dao: &Simple, id: i32, key: &[u8]) -> Vec<u8> {
+    let mut buf = dao.get_key_buf(5 + key.len());
+    buf[0] = dao.version.storage_prefix as u8;
+    buf[1..5].copy_from_slice(&id.to_le_bytes());
+    buf[5..].copy_from_slice(key);
+    buf
 }
 
 // -- end storage item.
@@ -417,276 +414,252 @@ func (dao *Simple) makeStorageItemKey(id int32, key []byte) []byte {
 // -- other.
 
 // GetBlock returns Block by the given hash if it exists in the store.
-func (dao *Simple) GetBlock(hash util.Uint256) (*block.Block, error) {
-	return dao.getBlock(dao.makeExecutableKey(hash))
+pub fn get_block(dao: &Simple, hash: &util::Uint256) -> Result<block::Block, Box<dyn Error>> {
+    get_block_with_key(dao, &make_executable_key(dao, hash))
 }
 
-func (dao *Simple) getBlock(key []byte) (*block.Block, error) {
-	b, err := dao.Store.Get(key)
-	if err != nil {
-		return nil, err
-	}
-
-	r := io.NewBinReaderFromBuf(b)
-	if r.ReadB() != storage.ExecBlock {
-		// It may be a transaction.
-		return nil, storage.ErrKeyNotFound
-	}
-	block, err := block.NewTrimmedFromReader(dao.Version.StateRootInHeader, r)
-	if err != nil {
-		return nil, err
-	}
-	return block, nil
+fn get_block_with_key(dao: &Simple, key: &[u8]) -> Result<block::Block, Box<dyn Error>> {
+    let b = dao.store.get(key)?;
+    let mut r = io::BinReader::new(&b);
+    if r.read_u8()? != storage::ExecBlock {
+        return Err(Box::new(storage::StorageError::KeyNotFound));
+    }
+    block::new_trimmed_from_reader(dao.version.state_root_in_header, &mut r)
 }
 
 // Version represents the current dao version.
-type Version struct {
-	StoragePrefix              storage.KeyPrefix
-	StateRootInHeader          bool
-	P2PSigExtensions           bool
-	P2PStateExchangeExtensions bool
-	KeepOnlyLatestState        bool
-	Magic                      uint32
-	Value                      string
+#[derive(Clone)]
+pub struct Version {
+    storage_prefix: storage::KeyPrefix,
+    state_root_in_header: bool,
+    p2p_sig_extensions: bool,
+    p2p_state_exchange_extensions: bool,
+    keep_only_latest_state: bool,
+    magic: u32,
+    value: String,
 }
 
-const (
-	stateRootInHeaderBit = 1 << iota
-	p2pSigExtensionsBit
-	p2pStateExchangeExtensionsBit
-	keepOnlyLatestStateBit
-)
+const STATE_ROOT_IN_HEADER_BIT: u8 = 1 << 0;
+const P2P_SIG_EXTENSIONS_BIT: u8 = 1 << 1;
+const P2P_STATE_EXCHANGE_EXTENSIONS_BIT: u8 = 1 << 2;
+const KEEP_ONLY_LATEST_STATE_BIT: u8 = 1 << 3;
 
 // FromBytes decodes v from a byte-slice.
-func (v *Version) FromBytes(data []byte) error {
-	if len(data) == 0 {
-		return errors.New("missing version")
-	}
-	i := 0
-	for i < len(data) && data[i] != '\x00' {
-		i++
-	}
+impl Version {
+    pub fn from_bytes(data: &[u8]) -> Result<Self, Box<dyn Error>> {
+        if data.is_empty() {
+            return Err(Box::new(DaoError::InternalDBInconsistency));
+        }
+        let mut i = 0;
+        while i < data.len() && data[i] != 0 {
+            i += 1;
+        }
+        if i == data.len() {
+            return Ok(Version {
+                value: String::from_utf8(data.to_vec())?,
+                storage_prefix: storage::KeyPrefix::STStorage,
+                state_root_in_header: false,
+                p2p_sig_extensions: false,
+                p2p_state_exchange_extensions: false,
+                keep_only_latest_state: false,
+                magic: 0,
+            });
+        }
+        if data.len() < i + 3 {
+            return Err(Box::new(DaoError::InternalDBInconsistency));
+        }
+        let value = String::from_utf8(data[..i].to_vec())?;
+        let storage_prefix = storage::KeyPrefix::from(data[i + 1]);
+        let state_root_in_header = data[i + 2] & STATE_ROOT_IN_HEADER_BIT != 0;
+        let p2p_sig_extensions = data[i + 2] & P2P_SIG_EXTENSIONS_BIT != 0;
+        let p2p_state_exchange_extensions = data[i + 2] & P2P_STATE_EXCHANGE_EXTENSIONS_BIT != 0;
+        let keep_only_latest_state = data[i + 2] & KEEP_ONLY_LATEST_STATE_BIT != 0;
+        let magic = if data.len() == i + 3 + 4 {
+            u32::from_le_bytes(data[i + 3..].try_into()?)
+        } else {
+            0
+        };
+        Ok(Version {
+            value,
+            storage_prefix,
+            state_root_in_header,
+            p2p_sig_extensions,
+            p2p_state_exchange_extensions,
+            keep_only_latest_state,
+            magic,
+        })
+    }
 
-	if i == len(data) {
-		v.Value = string(data)
-		return nil
-	}
-
-	if len(data) < i+3 {
-		return errors.New("version is invalid")
-	}
-
-	v.Value = string(data[:i])
-	v.StoragePrefix = storage.KeyPrefix(data[i+1])
-	v.StateRootInHeader = data[i+2]&stateRootInHeaderBit != 0
-	v.P2PSigExtensions = data[i+2]&p2pSigExtensionsBit != 0
-	v.P2PStateExchangeExtensions = data[i+2]&p2pStateExchangeExtensionsBit != 0
-	v.KeepOnlyLatestState = data[i+2]&keepOnlyLatestStateBit != 0
-
-	m := i + 3
-	if len(data) == m+4 {
-		v.Magic = binary.LittleEndian.Uint32(data[m:])
-	}
-	return nil
+    // Bytes encodes v to a byte-slice.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut mask = 0;
+        if self.state_root_in_header {
+            mask |= STATE_ROOT_IN_HEADER_BIT;
+        }
+        if self.p2p_sig_extensions {
+            mask |= P2P_SIG_EXTENSIONS_BIT;
+        }
+        if self.p2p_state_exchange_extensions {
+            mask |= P2P_STATE_EXCHANGE_EXTENSIONS_BIT;
+        }
+        if self.keep_only_latest_state {
+            mask |= KEEP_ONLY_LATEST_STATE_BIT;
+        }
+        let mut res = Vec::from(self.value.as_bytes());
+        res.push(0);
+        res.push(self.storage_prefix as u8);
+        res.push(mask);
+        res.extend_from_slice(&self.magic.to_le_bytes());
+        res
+    }
 }
 
-// Bytes encodes v to a byte-slice.
-func (v *Version) Bytes() []byte {
-	var mask byte
-	if v.StateRootInHeader {
-		mask |= stateRootInHeaderBit
-	}
-	if v.P2PSigExtensions {
-		mask |= p2pSigExtensionsBit
-	}
-	if v.P2PStateExchangeExtensions {
-		mask |= p2pStateExchangeExtensionsBit
-	}
-	if v.KeepOnlyLatestState {
-		mask |= keepOnlyLatestStateBit
-	}
-	res := append([]byte(v.Value), '\x00', byte(v.StoragePrefix), mask)
-	res = binary.LittleEndian.AppendUint32(res, v.Magic)
-	return res
-}
-
-func (dao *Simple) mkKeyPrefix(k storage.KeyPrefix) []byte {
-	b := dao.getKeyBuf(1)
-	b[0] = byte(k)
-	return b
+pub fn mk_key_prefix(dao: &Simple, k: storage::KeyPrefix) -> Vec<u8> {
+    let mut b = dao.get_key_buf(1);
+    b[0] = k as u8;
+    b
 }
 
 // GetVersion attempts to get the current version stored in the
 // underlying store.
-func (dao *Simple) GetVersion() (Version, error) {
-	var version Version
-
-	data, err := dao.Store.Get(dao.mkKeyPrefix(storage.SYSVersion))
-	if err == nil {
-		err = version.FromBytes(data)
-	}
-	return version, err
+pub fn get_version(dao: &Simple) -> Result<Version, Box<dyn Error>> {
+    let data = dao.store.get(&mk_key_prefix(dao, storage::KeyPrefix::SYSVersion))?;
+    Version::from_bytes(&data)
 }
 
 // GetCurrentBlockHeight returns the current block height found in the
 // underlying store.
-func (dao *Simple) GetCurrentBlockHeight() (uint32, error) {
-	b, err := dao.Store.Get(dao.mkKeyPrefix(storage.SYSCurrentBlock))
-	if err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(b[32:36]), nil
+pub fn get_current_block_height(dao: &Simple) -> Result<u32, Box<dyn Error>> {
+    let b = dao.store.get(&mk_key_prefix(dao, storage::KeyPrefix::SYSCurrentBlock))?;
+    Ok(u32::from_le_bytes(b[32..36].try_into()?))
 }
 
 // GetCurrentHeaderHeight returns the current header height and hash from
 // the underlying store.
-func (dao *Simple) GetCurrentHeaderHeight() (i uint32, h util.Uint256, err error) {
-	var b []byte
-	b, err = dao.Store.Get(dao.mkKeyPrefix(storage.SYSCurrentHeader))
-	if err != nil {
-		return
-	}
-	i = binary.LittleEndian.Uint32(b[32:36])
-	h, err = util.Uint256DecodeBytesLE(b[:32])
-	return
+pub fn get_current_header_height(dao: &Simple) -> Result<(u32, util::Uint256), Box<dyn Error>> {
+    let b = dao.store.get(&mk_key_prefix(dao, storage::KeyPrefix::SYSCurrentHeader))?;
+    let i = u32::from_le_bytes(b[32..36].try_into()?);
+    let h = util::Uint256::decode_bytes_le(&b[..32])?;
+    Ok((i, h))
 }
 
 // GetStateSyncPoint returns current state synchronization point P.
-func (dao *Simple) GetStateSyncPoint() (uint32, error) {
-	b, err := dao.Store.Get(dao.mkKeyPrefix(storage.SYSStateSyncPoint))
-	if err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(b), nil
+pub fn get_state_sync_point(dao: &Simple) -> Result<u32, Box<dyn Error>> {
+    let b = dao.store.get(&mk_key_prefix(dao, storage::KeyPrefix::SYSStateSyncPoint))?;
+    Ok(u32::from_le_bytes(b.try_into()?))
 }
 
 // GetStateSyncCurrentBlockHeight returns the current block height stored during state
 // synchronization process.
-func (dao *Simple) GetStateSyncCurrentBlockHeight() (uint32, error) {
-	b, err := dao.Store.Get(dao.mkKeyPrefix(storage.SYSStateSyncCurrentBlockHeight))
-	if err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(b), nil
+pub fn get_state_sync_current_block_height(dao: &Simple) -> Result<u32, Box<dyn Error>> {
+    let b = dao.store.get(&mk_key_prefix(dao, storage::KeyPrefix::SYSStateSyncCurrentBlockHeight))?;
+    Ok(u32::from_le_bytes(b.try_into()?))
 }
 
 // GetHeaderHashes returns a page of header hashes retrieved from
 // the given underlying store.
-func (dao *Simple) GetHeaderHashes(height uint32) ([]util.Uint256, error) {
-	var hashes []util.Uint256
-
-	key := dao.mkHeaderHashKey(height)
-	b, err := dao.Store.Get(key)
-	if err != nil {
-		return nil, err
-	}
-
-	br := io.NewBinReaderFromBuf(b)
-	br.ReadArray(&hashes)
-	if br.Err != nil {
-		return nil, br.Err
-	}
-	return hashes, nil
+pub fn get_header_hashes(dao: &Simple, height: u32) -> Result<Vec<util::Uint256>, Box<dyn Error>> {
+    let key = mk_header_hash_key(dao, height);
+    let b = dao.store.get(&key)?;
+    let mut br = io::BinReader::new(&b);
+    let hashes = br.read_array()?;
+    if br.has_error() {
+        return Err(Box::new(br.get_error().unwrap()));
+    }
+    Ok(hashes)
 }
 
 // DeleteHeaderHashes removes batches of header hashes starting from the one that
 // contains header with index `since` up to the most recent batch. It assumes that
-// all stored batches contain `batchSize` hashes.
-func (dao *Simple) DeleteHeaderHashes(since uint32, batchSize int) {
-	dao.Store.Seek(storage.SeekRange{
-		Prefix:    dao.mkKeyPrefix(storage.IXHeaderHashList),
-		Backwards: true,
-	}, func(k, _ []byte) bool {
-		first := binary.BigEndian.Uint32(k[1:])
-		if first >= since {
-			dao.Store.Delete(k)
-			return first != since
-		}
-		if first+uint32(batchSize)-1 >= since {
-			dao.Store.Delete(k)
-		}
-		return false
-	})
+// all stored batches contain `batch_size` hashes.
+pub fn delete_header_hashes(dao: &Simple, since: u32, batch_size: usize) {
+    dao.store.seek(storage::SeekRange {
+        prefix: &mk_key_prefix(dao, storage::KeyPrefix::IXHeaderHashList),
+        backwards: true,
+    }, |k, _| {
+        let first = u32::from_be_bytes(k[1..5].try_into().unwrap());
+        if first >= since {
+            dao.store.delete(k);
+            first != since
+        } else if first + batch_size as u32 - 1 >= since {
+            dao.store.delete(k);
+            false
+        } else {
+            false
+        }
+    });
 }
 
 // GetTransaction returns Transaction and its height by the given hash
 // if it exists in the store. It does not return conflict record stubs.
-func (dao *Simple) GetTransaction(hash util.Uint256) (*transaction.Transaction, uint32, error) {
-	key := dao.makeExecutableKey(hash)
-	b, err := dao.Store.Get(key)
-	if err != nil {
-		return nil, 0, err
-	}
-	if len(b) < 1 {
-		return nil, 0, errors.New("bad transaction bytes")
-	}
-	if b[0] != storage.ExecTransaction {
-		// It may be a block.
-		return nil, 0, storage.ErrKeyNotFound
-	}
-	if len(b) == conflictRecordValueLen {
-		// It's a conflict record stub.
-		return nil, 0, storage.ErrKeyNotFound
-	}
-	r := io.NewBinReaderFromBuf(b)
-	_ = r.ReadB()
-
-	var height = r.ReadU32LE()
-
-	tx := &transaction.Transaction{}
-	tx.DecodeBinary(r)
-	if r.Err != nil {
-		return nil, 0, r.Err
-	}
-
-	return tx, height, nil
+pub fn get_transaction(dao: &Simple, hash: &util::Uint256) -> Result<(transaction::Transaction, u32), Box<dyn Error>> {
+    let key = make_executable_key(dao, hash);
+    let b = dao.store.get(&key)?;
+    if b.len() < 1 {
+        return Err(Box::new(DaoError::InternalDBInconsistency));
+    }
+    if b[0] != storage::ExecTransaction {
+        return Err(Box::new(storage::StorageError::KeyNotFound));
+    }
+    if b.len() == CONFLICT_RECORD_VALUE_LEN {
+        return Err(Box::new(storage::StorageError::KeyNotFound));
+    }
+    let mut r = io::BinReader::new(&b);
+    r.read_u8()?;
+    let height = r.read_u32_le()?;
+    let mut tx = transaction::Transaction::new();
+    tx.decode_binary(&mut r)?;
+    if r.has_error() {
+        return Err(Box::new(r.get_error().unwrap()));
+    }
+    Ok((tx, height))
 }
 
 // PutVersion stores the given version in the underlying store.
-func (dao *Simple) PutVersion(v Version) {
-	dao.Version = v
-	dao.Store.Put(dao.mkKeyPrefix(storage.SYSVersion), v.Bytes())
+pub fn put_version(dao: &Simple, v: Version) {
+    dao.version = v.clone();
+    dao.store.put(&mk_key_prefix(dao, storage::KeyPrefix::SYSVersion), &v.to_bytes());
 }
 
 // PutCurrentHeader stores the current header.
-func (dao *Simple) PutCurrentHeader(h util.Uint256, index uint32) {
-	buf := dao.getDataBuf()
-	buf.WriteBytes(h.BytesLE())
-	buf.WriteU32LE(index)
-	dao.Store.Put(dao.mkKeyPrefix(storage.SYSCurrentHeader), buf.Bytes())
+pub fn put_current_header(dao: &Simple, h: &util::Uint256, index: u32) {
+    let mut buf = dao.get_data_buf();
+    buf.write_bytes(&h.bytes_le());
+    buf.write_u32_le(index);
+    dao.store.put(&mk_key_prefix(dao, storage::KeyPrefix::SYSCurrentHeader), buf.bytes());
 }
 
 // PutStateSyncPoint stores the current state synchronization point P.
-func (dao *Simple) PutStateSyncPoint(p uint32) {
-	buf := dao.getDataBuf()
-	buf.WriteU32LE(p)
-	dao.Store.Put(dao.mkKeyPrefix(storage.SYSStateSyncPoint), buf.Bytes())
+pub fn put_state_sync_point(dao: &Simple, p: u32) {
+    let mut buf = dao.get_data_buf();
+    buf.write_u32_le(p);
+    dao.store.put(&mk_key_prefix(dao, storage::KeyPrefix::SYSStateSyncPoint), buf.bytes());
 }
 
 // PutStateSyncCurrentBlockHeight stores the current block height during state synchronization process.
-func (dao *Simple) PutStateSyncCurrentBlockHeight(h uint32) {
-	buf := dao.getDataBuf()
-	buf.WriteU32LE(h)
-	dao.Store.Put(dao.mkKeyPrefix(storage.SYSStateSyncCurrentBlockHeight), buf.Bytes())
+pub fn put_state_sync_current_block_height(dao: &Simple, h: u32) {
+    let mut buf = dao.get_data_buf();
+    buf.write_u32_le(h);
+    dao.store.put(&mk_key_prefix(dao, storage::KeyPrefix::SYSStateSyncCurrentBlockHeight), buf.bytes());
 }
 
-func (dao *Simple) mkHeaderHashKey(h uint32) []byte {
-	b := dao.getKeyBuf(1 + 4)
-	b[0] = byte(storage.IXHeaderHashList)
-	binary.BigEndian.PutUint32(b[1:], h)
-	return b
+fn mk_header_hash_key(dao: &Simple, h: u32) -> Vec<u8> {
+    let mut b = dao.get_key_buf(1 + 4);
+    b[0] = storage::KeyPrefix::IXHeaderHashList as u8;
+    b[1..5].copy_from_slice(&h.to_be_bytes());
+    b
 }
 
 // StoreHeaderHashes pushes a batch of header hashes into the store.
-func (dao *Simple) StoreHeaderHashes(hashes []util.Uint256, height uint32) error {
-	key := dao.mkHeaderHashKey(height)
-	buf := dao.getDataBuf()
-	buf.WriteArray(hashes)
-	if buf.Err != nil {
-		return buf.Err
-	}
-	dao.Store.Put(key, buf.Bytes())
-	return nil
+pub fn store_header_hashes(dao: &Simple, hashes: &[util::Uint256], height: u32) -> Result<(), Box<dyn Error>> {
+    let key = mk_header_hash_key(dao, height);
+    let mut buf = dao.get_data_buf();
+    buf.write_array(hashes)?;
+    if buf.has_error() {
+        return Err(Box::new(buf.get_error().unwrap()));
+    }
+    dao.store.put(&key, buf.bytes());
+    Ok(())
 }
 
 // HasTransaction returns nil if the given store does not contain the given
@@ -697,330 +670,272 @@ func (dao *Simple) StoreHeaderHashes(hashes []util.Uint256, height uint32) error
 // of a supposedly conflicting on-chain transaction. The retrieved conflict isn't
 // checked against the maxTraceableBlocks setting if signers are omitted.
 // HasTransaction does not consider the case of block executable.
-func (dao *Simple) HasTransaction(hash util.Uint256, signers []transaction.Signer, currentIndex uint32, maxTraceableBlocks uint32) error {
-	key := dao.makeExecutableKey(hash)
-	bytes, err := dao.Store.Get(key)
-	if err != nil {
-		return nil
-	}
-
-	if len(bytes) < conflictRecordValueLen { // (storage.ExecTransaction + index) for conflict record
-		return nil
-	}
-	if bytes[0] != storage.ExecTransaction {
-		// It's a block, thus no conflict. This path is needed since there's a transaction accepted on mainnet
-		// that conflicts with block. This transaction was declined by Go nodes, but accepted by C# nodes, and hence
-		// we need to adjust Go behaviour post-factum. Ref. #3427 and 0x289c235dcdab8be7426d05f0fbb5e86c619f81481ea136493fa95deee5dbb7cc.
-		return nil
-	}
-	if len(bytes) != conflictRecordValueLen {
-		return ErrAlreadyExists // fully-qualified transaction
-	}
-	if len(signers) == 0 {
-		return ErrHasConflicts
-	}
-
-	if !isTraceableBlock(bytes[1:], currentIndex, maxTraceableBlocks) {
-		// The most fresh conflict record is already outdated.
-		return nil
-	}
-
-	for _, s := range signers {
-		v, err := dao.Store.Get(append(key, s.Account.BytesBE()...))
-		if err == nil {
-			if isTraceableBlock(v[1:], currentIndex, maxTraceableBlocks) {
-				return ErrHasConflicts
-			}
-		}
-	}
-
-	return nil
+pub fn has_transaction(dao: &Simple, hash: &util::Uint256, signers: &[transaction::Signer], current_index: u32, max_traceable_blocks: u32) -> Result<(), Box<dyn Error>> {
+    let key = make_executable_key(dao, hash);
+    let bytes = match dao.store.get(&key) {
+        Ok(bytes) => bytes,
+        Err(_) => return Ok(()),
+    };
+    if bytes.len() < CONFLICT_RECORD_VALUE_LEN {
+        return Ok(());
+    }
+    if bytes[0] != storage::ExecTransaction {
+        return Ok(());
+    }
+    if bytes.len() != CONFLICT_RECORD_VALUE_LEN {
+        return Err(Box::new(DaoError::AlreadyExists));
+    }
+    if signers.is_empty() {
+        return Err(Box::new(DaoError::HasConflicts));
+    }
+    if !is_traceable_block(&bytes[1..], current_index, max_traceable_blocks) {
+        return Ok(());
+    }
+    for s in signers {
+        let v = match dao.store.get(&[key.clone(), s.account.bytes_be()].concat()) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if is_traceable_block(&v[1..], current_index, max_traceable_blocks) {
+            return Err(Box::new(DaoError::HasConflicts));
+        }
+    }
+    Ok(())
 }
 
-func isTraceableBlock(indexBytes []byte, height, maxTraceableBlocks uint32) bool {
-	index := binary.LittleEndian.Uint32(indexBytes)
-	return index <= height && index+maxTraceableBlocks > height
+fn is_traceable_block(index_bytes: &[u8], height: u32, max_traceable_blocks: u32) -> bool {
+    let index = u32::from_le_bytes(index_bytes.try_into().unwrap());
+    index <= height && index + max_traceable_blocks > height
 }
 
 // StoreAsBlock stores given block as DataBlock. It can reuse given buffer for
 // the purpose of value serialization.
-func (dao *Simple) StoreAsBlock(block *block.Block, aer1 *state.AppExecResult, aer2 *state.AppExecResult) error {
-	var (
-		key = dao.makeExecutableKey(block.Hash())
-		buf = dao.getDataBuf()
-	)
-	buf.WriteB(storage.ExecBlock)
-	block.EncodeTrimmed(buf.BinWriter)
-	if aer1 != nil {
-		aer1.EncodeBinaryWithContext(buf.BinWriter, dao.GetItemCtx())
-	}
-	if aer2 != nil {
-		aer2.EncodeBinaryWithContext(buf.BinWriter, dao.GetItemCtx())
-	}
-	if buf.Err != nil {
-		return buf.Err
-	}
-	dao.Store.Put(key, buf.Bytes())
-	return nil
+pub fn store_as_block(dao: &Simple, block: &block::Block, aer1: Option<&state::AppExecResult>, aer2: Option<&state::AppExecResult>) -> Result<(), Box<dyn Error>> {
+    let key = make_executable_key(dao, &block.hash());
+    let mut buf = dao.get_data_buf();
+    buf.write_u8(storage::ExecBlock as u8);
+    block.encode_trimmed(&mut buf)?;
+    if let Some(aer1) = aer1 {
+        aer1.encode_binary_with_context(&mut buf, &dao.get_item_ctx());
+    }
+    if let Some(aer2) = aer2 {
+        aer2.encode_binary_with_context(&mut buf, &dao.get_item_ctx());
+    }
+    if buf.has_error() {
+        return Err(Box::new(buf.get_error().unwrap()));
+    }
+    dao.store.put(&key, buf.bytes());
+    Ok(())
 }
 
 // DeleteBlock removes the block from dao. It's not atomic, so make sure you're
 // using private MemCached instance here.
-func (dao *Simple) DeleteBlock(h util.Uint256) error {
-	key := dao.makeExecutableKey(h)
-
-	b, err := dao.getBlock(key)
-	if err != nil {
-		return err
-	}
-	err = dao.storeHeader(key, &b.Header)
-	if err != nil {
-		return err
-	}
-
-	for _, tx := range b.Transactions {
-		copy(key[1:], tx.Hash().BytesBE())
-		dao.Store.Delete(key)
-		for _, attr := range tx.GetAttributes(transaction.ConflictsT) {
-			hash := attr.Value.(*transaction.Conflicts).Hash
-			copy(key[1:], hash.BytesBE())
-
-			v, err := dao.Store.Get(key)
-			if err != nil {
-				return fmt.Errorf("failed to retrieve conflict record stub for %s (height %d, conflict %s): %w", tx.Hash().StringLE(), b.Index, hash.StringLE(), err)
-			}
-			// It might be a block since we allow transactions to have block hash in the Conflicts attribute.
-			if v[0] != storage.ExecTransaction {
-				continue
-			}
-			index := binary.LittleEndian.Uint32(v[1:])
-			// We can check for `<=` here, but use equality comparison to be more precise
-			// and do not touch earlier conflict records (if any). Their removal must be triggered
-			// by the caller code.
-			if index == b.Index {
-				dao.Store.Delete(key)
-			}
-
-			for _, s := range tx.Signers {
-				sKey := append(key, s.Account.BytesBE()...)
-				v, err := dao.Store.Get(sKey)
-				if err != nil {
-					return fmt.Errorf("failed to retrieve conflict record for %s (height %d, conflict %s, signer %s): %w", tx.Hash().StringLE(), b.Index, hash.StringLE(), address.Uint160ToString(s.Account), err)
-				}
-				index = binary.LittleEndian.Uint32(v[1:])
-				if index == b.Index {
-					dao.Store.Delete(sKey)
-				}
-			}
-		}
-	}
-
-	return nil
+pub fn delete_block(dao: &Simple, h: &util::Uint256) -> Result<(), Box<dyn Error>> {
+    let key = make_executable_key(dao, h);
+    let b = get_block_with_key(dao, &key)?;
+    store_header(dao, &key, &b.header)?;
+    for tx in &b.transactions {
+        let mut key = key.clone();
+        key[1..].copy_from_slice(&tx.hash().bytes_be());
+        dao.store.delete(&key);
+        for attr in tx.get_attributes(transaction::ConflictsT) {
+            let hash = attr.value().as_conflicts().hash();
+            key[1..].copy_from_slice(&hash.bytes_be());
+            let v = dao.store.get(&key)?;
+            if v[0] != storage::ExecTransaction {
+                continue;
+            }
+            let index = u32::from_le_bytes(v[1..5].try_into().unwrap());
+            if index == b.index {
+                dao.store.delete(&key);
+            }
+            for s in &tx.signers {
+                let s_key = [key.clone(), s.account.bytes_be()].concat();
+                let v = dao.store.get(&s_key)?;
+                let index = u32::from_le_bytes(v[1..5].try_into().unwrap());
+                if index == b.index {
+                    dao.store.delete(&s_key);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 // PurgeHeader completely removes specified header from dao. It differs from
 // DeleteBlock in that it removes header anyway and does nothing except removing
 // header. It does no checks for header existence.
-func (dao *Simple) PurgeHeader(h util.Uint256) {
-	key := dao.makeExecutableKey(h)
-	dao.Store.Delete(key)
+pub fn purge_header(dao: &Simple, h: &util::Uint256) {
+    let key = make_executable_key(dao, h);
+    dao.store.delete(&key);
 }
 
 // StoreHeader saves the block header into the store.
-func (dao *Simple) StoreHeader(h *block.Header) error {
-	return dao.storeHeader(dao.makeExecutableKey(h.Hash()), h)
-}
-
-func (dao *Simple) storeHeader(key []byte, h *block.Header) error {
-	buf := dao.getDataBuf()
-	buf.WriteB(storage.ExecBlock)
-	h.EncodeBinary(buf.BinWriter)
-	buf.BinWriter.WriteB(0)
-	if buf.Err != nil {
-		return buf.Err
-	}
-	dao.Store.Put(key, buf.Bytes())
-	return nil
+pub fn store_header(dao: &Simple, key: &[u8], h: &block::Header) -> Result<(), Box<dyn Error>> {
+    let mut buf = dao.get_data_buf();
+    buf.write_u8(storage::ExecBlock as u8);
+    h.encode_binary(&mut buf)?;
+    buf.write_u8(0);
+    if buf.has_error() {
+        return Err(Box::new(buf.get_error().unwrap()));
+    }
+    dao.store.put(key, buf.bytes());
+    Ok(())
 }
 
 // StoreAsCurrentBlock stores the hash of the given block with prefix
 // SYSCurrentBlock.
-func (dao *Simple) StoreAsCurrentBlock(block *block.Block) {
-	buf := dao.getDataBuf()
-	h := block.Hash()
-	h.EncodeBinary(buf.BinWriter)
-	buf.WriteU32LE(block.Index)
-	dao.Store.Put(dao.mkKeyPrefix(storage.SYSCurrentBlock), buf.Bytes())
+pub fn store_as_current_block(dao: &Simple, block: &block::Block) {
+    let mut buf = dao.get_data_buf();
+    let h = block.hash();
+    h.encode_binary(&mut buf);
+    buf.write_u32_le(block.index);
+    dao.store.put(&mk_key_prefix(dao, storage::KeyPrefix::SYSCurrentBlock), buf.bytes());
 }
 
 // StoreAsTransaction stores the given TX as DataTransaction. It also stores conflict records
 // (hashes of transactions the given tx has conflicts with) as DataTransaction with value containing
 // only five bytes: 1-byte [storage.ExecTransaction] executable prefix + 4-bytes-LE block index. It can reuse the given
 // buffer for the purpose of value serialization.
-func (dao *Simple) StoreAsTransaction(tx *transaction.Transaction, index uint32, aer *state.AppExecResult) error {
-	key := dao.makeExecutableKey(tx.Hash())
-	buf := dao.getDataBuf()
-
-	buf.WriteB(storage.ExecTransaction)
-	buf.WriteU32LE(index)
-	tx.EncodeBinary(buf.BinWriter)
-	if aer != nil {
-		aer.EncodeBinaryWithContext(buf.BinWriter, dao.GetItemCtx())
-	}
-	if buf.Err != nil {
-		return buf.Err
-	}
-	val := buf.Bytes()
-	dao.Store.Put(key, val)
-
-	val = val[:conflictRecordValueLen] // storage.ExecTransaction (1 byte) + index (4 bytes)
-	attrs := tx.GetAttributes(transaction.ConflictsT)
-	for _, attr := range attrs {
-		// Conflict record stub.
-		hash := attr.Value.(*transaction.Conflicts).Hash
-		copy(key[1:], hash.BytesBE())
-
-		// A short path if there's a block with the matching hash. If it's there, then
-		// don't store the conflict record stub and conflict signers since it's a
-		// useless record, no transaction with the same hash is possible.
-		exec, err := dao.Store.Get(key)
-		if err == nil {
-			if len(exec) > 0 && exec[0] != storage.ExecTransaction {
-				continue
-			}
-		}
-
-		dao.Store.Put(key, val)
-
-		// Conflicting signers.
-		sKey := make([]byte, len(key)+util.Uint160Size)
-		copy(sKey, key)
-		for _, s := range tx.Signers {
-			copy(sKey[len(key):], s.Account.BytesBE())
-			dao.Store.Put(sKey, val)
-		}
-	}
-	return nil
+pub fn store_as_transaction(dao: &Simple, tx: &transaction::Transaction, index: u32, aer: Option<&state::AppExecResult>) -> Result<(), Box<dyn Error>> {
+    let key = make_executable_key(dao, &tx.hash());
+    let mut buf = dao.get_data_buf();
+    buf.write_u8(storage::ExecTransaction as u8);
+    buf.write_u32_le(index);
+    tx.encode_binary(&mut buf)?;
+    if let Some(aer) = aer {
+        aer.encode_binary_with_context(&mut buf, &dao.get_item_ctx());
+    }
+    if buf.has_error() {
+        return Err(Box::new(buf.get_error().unwrap()));
+    }
+    let val = buf.bytes().to_vec();
+    dao.store.put(&key, &val);
+    let val = &val[..CONFLICT_RECORD_VALUE_LEN];
+    for attr in tx.get_attributes(transaction::ConflictsT) {
+        let hash = attr.value().as_conflicts().hash();
+        let mut key = key.clone();
+        key[1..].copy_from_slice(&hash.bytes_be());
+        if let Ok(exec) = dao.store.get(&key) {
+            if !exec.is_empty() && exec[0] != storage::ExecTransaction {
+                continue;
+            }
+        }
+        dao.store.put(&key, val);
+        let s_key = [key.clone(), vec![0; util::UINT160_SIZE]].concat();
+        for s in &tx.signers {
+            let mut s_key = s_key.clone();
+            s_key[key.len()..].copy_from_slice(&s.account.bytes_be());
+            dao.store.put(&s_key, val);
+        }
+    }
+    Ok(())
 }
 
-func (dao *Simple) getKeyBuf(l int) []byte {
-	if dao.private {
-		if dao.keyBuf == nil {
-			dao.keyBuf = make([]byte, 0, 1+4+limits.MaxStorageKeyLen) // Prefix, uint32, key.
-		}
-		return dao.keyBuf[:l] // Should have enough capacity.
-	}
-	return make([]byte, l)
-}
+impl Simple {
+    fn get_key_buf(&self, l: usize) -> Vec<u8> {
+        if self.private.load(Ordering::Relaxed) {
+            let mut key_buf = self.key_buf.lock().unwrap();
+            if key_buf.is_empty() {
+                *key_buf = vec![0; 1 + 4 + limits::MAX_STORAGE_KEY_LEN];
+            }
+            key_buf[..l].to_vec()
+        } else {
+            vec![0; l]
+        }
+    }
 
-func (dao *Simple) getDataBuf() *io.BufBinWriter {
-	if dao.private {
-		if dao.dataBuf == nil {
-			dao.dataBuf = io.NewBufBinWriter()
-		}
-		dao.dataBuf.Reset()
-		return dao.dataBuf
-	}
-	return io.NewBufBinWriter()
-}
+    fn get_data_buf(&self) -> io::BufBinWriter {
+        if self.private.load(Ordering::Relaxed) {
+            let mut data_buf = self.data_buf.lock().unwrap();
+            data_buf.reset();
+            data_buf.clone()
+        } else {
+            io::BufBinWriter::new()
+        }
+    }
 
-func (dao *Simple) GetItemCtx() *stackitem.SerializationContext {
-	if dao.private {
-		if dao.serCtx == nil {
-			dao.serCtx = stackitem.NewSerializationContext()
-		}
-		return dao.serCtx
-	}
-	return stackitem.NewSerializationContext()
-}
+    fn get_item_ctx(&self) -> stackitem::SerializationContext {
+        if self.private.load(Ordering::Relaxed) {
+            let mut ser_ctx = self.ser_ctx.lock().unwrap();
+            if ser_ctx.is_none() {
+                *ser_ctx = Some(stackitem::SerializationContext::new());
+            }
+            ser_ctx.clone().unwrap()
+        } else {
+            stackitem::SerializationContext::new()
+        }
+    }
 
-// Persist flushes all the changes made into the (supposedly) persistent
-// underlying store. It doesn't block accesses to DAO from other threads.
-func (dao *Simple) Persist() (int, error) {
-	if dao.nativeCachePS != nil {
-		dao.nativeCacheLock.Lock()
-		dao.nativeCachePS.nativeCacheLock.Lock()
-		defer func() {
-			dao.nativeCachePS.nativeCacheLock.Unlock()
-			dao.nativeCacheLock.Unlock()
-		}()
+    // Persist flushes all the changes made into the (supposedly) persistent
+    // underlying store. It doesn't block accesses to DAO from other threads.
+    pub fn persist(&self) -> Result<i32, Box<dyn Error>> {
+        if let Some(ref native_cache_ps) = self.native_cache_ps {
+            let _lock1 = self.native_cache_lock.write().unwrap();
+            let _lock2 = native_cache_ps.native_cache_lock.write().unwrap();
+            self.persist_native_cache();
+        }
+        self.store.persist()
+    }
 
-		dao.persistNativeCache()
-	}
-	return dao.Store.Persist()
-}
+    // PersistSync flushes all the changes made into the (supposedly) persistent
+    // underlying store. It's a synchronous version of Persist that doesn't allow
+    // other threads to work with DAO while flushing the Store.
+    pub fn persist_sync(&self) -> Result<i32, Box<dyn Error>> {
+        if let Some(ref native_cache_ps) = self.native_cache_ps {
+            let _lock1 = self.native_cache_lock.write().unwrap();
+            let _lock2 = native_cache_ps.native_cache_lock.write().unwrap();
+            self.persist_native_cache();
+        }
+        self.store.persist_sync()
+    }
 
-// PersistSync flushes all the changes made into the (supposedly) persistent
-// underlying store. It's a synchronous version of Persist that doesn't allow
-// other threads to work with DAO while flushing the Store.
-func (dao *Simple) PersistSync() (int, error) {
-	if dao.nativeCachePS != nil {
-		dao.nativeCacheLock.Lock()
-		dao.nativeCachePS.nativeCacheLock.Lock()
-		defer func() {
-			dao.nativeCachePS.nativeCacheLock.Unlock()
-			dao.nativeCacheLock.Unlock()
-		}()
-		dao.persistNativeCache()
-	}
-	return dao.Store.PersistSync()
-}
+    // persistNativeCache is internal unprotected method for native cache persisting.
+    // It does NO checks for nativeCachePS is not nil.
+    fn persist_native_cache(&self) {
+        if let Some(ref lower) = self.native_cache_ps {
+            for (id, native_cache) in &self.native_cache {
+                lower.native_cache.insert(*id, native_cache.copy());
+            }
+        }
+        self.native_cache.clear();
+    }
 
-// persistNativeCache is internal unprotected method for native cache persisting.
-// It does NO checks for nativeCachePS is not nil.
-func (dao *Simple) persistNativeCache() {
-	lower := dao.nativeCachePS
-	for id, nativeCache := range dao.nativeCache {
-		lower.nativeCache[id] = nativeCache
-	}
-	dao.nativeCache = nil
-}
+    // GetROCache returns native contact cache. The cache CAN NOT be modified by
+    // the caller. It's the caller's duty to keep it unmodified.
+    pub fn get_ro_cache(&self, id: i32) -> Option<Box<dyn NativeContractCache>> {
+        let _lock = self.native_cache_lock.read().unwrap();
+        self.get_cache(id, true)
+    }
 
-// GetROCache returns native contact cache. The cache CAN NOT be modified by
-// the caller. It's the caller's duty to keep it unmodified.
-func (dao *Simple) GetROCache(id int32) NativeContractCache {
-	dao.nativeCacheLock.RLock()
-	defer dao.nativeCacheLock.RUnlock()
+    // GetRWCache returns native contact cache. The cache CAN BE safely modified
+    // by the caller.
+    pub fn get_rw_cache(&self, id: i32) -> Option<Box<dyn NativeContractCache>> {
+        let _lock = self.native_cache_lock.write().unwrap();
+        self.get_cache(id, false)
+    }
 
-	return dao.getCache(id, true)
-}
+    // getCache is an internal unlocked representation of GetROCache and GetRWCache.
+    fn get_cache(&self, k: i32, ro: bool) -> Option<Box<dyn NativeContractCache>> {
+        if let Some(itm) = self.native_cache.get(&k) {
+            return Some(itm.copy());
+        }
+        if let Some(ref native_cache_ps) = self.native_cache_ps {
+            if ro {
+                return native_cache_ps.get_ro_cache(k);
+            }
+            if let Some(v) = native_cache_ps.get_rw_cache(k) {
+                let cp = v.copy();
+                self.native_cache.insert(k, cp.copy());
+                return Some(cp);
+            }
+        }
+        None
+    }
 
-// GetRWCache returns native contact cache. The cache CAN BE safely modified
-// by the caller.
-func (dao *Simple) GetRWCache(id int32) NativeContractCache {
-	dao.nativeCacheLock.Lock()
-	defer dao.nativeCacheLock.Unlock()
-
-	return dao.getCache(id, false)
-}
-
-// getCache is an internal unlocked representation of GetROCache and GetRWCache.
-func (dao *Simple) getCache(k int32, ro bool) NativeContractCache {
-	if itm, ok := dao.nativeCache[k]; ok {
-		// Don't need to create itm copy, because its value was already copied
-		// the first time it was retrieved from lower ps.
-		return itm
-	}
-
-	if dao.nativeCachePS != nil {
-		if ro {
-			return dao.nativeCachePS.GetROCache(k)
-		}
-		v := dao.nativeCachePS.GetRWCache(k)
-		if v != nil {
-			// Create a copy here in order not to modify the existing cache.
-			cp := v.Copy()
-			dao.nativeCache[k] = cp
-			return cp
-		}
-	}
-	return nil
-}
-
-// SetCache adds native contract cache to the cache map.
-func (dao *Simple) SetCache(id int32, v NativeContractCache) {
-	dao.nativeCacheLock.Lock()
-	defer dao.nativeCacheLock.Unlock()
-
-	dao.nativeCache[id] = v
+    // SetCache adds native contract cache to the cache map.
+    pub fn set_cache(&self, id: i32, v: Box<dyn NativeContractCache>) {
+        let _lock = self.native_cache_lock.write().unwrap();
+        self.native_cache.insert(id, v);
+    }
 }

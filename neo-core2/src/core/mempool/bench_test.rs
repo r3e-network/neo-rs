@@ -1,62 +1,72 @@
-package mempool
+use std::collections::HashMap;
+use test::Bencher;
 
-import (
-	"testing"
+use crate::core::transaction::{Transaction, Signer};
+use crate::util::Uint160;
 
-	"github.com/nspcc-dev/neo-go/pkg/core/transaction"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-)
+const POOL_SIZE: usize = 10000;
 
-const (
-	poolSize = 10000
-)
+struct FeerStub {
+    fee_per_byte: u64,
+    block_height: u64,
+    balance: u64,
+}
 
-func BenchmarkPool(b *testing.B) {
-	fe := &FeerStub{
-		feePerByte:  1,
-		blockHeight: 1,
-		balance:     100_0000_0000,
-	}
-	txesSimple := make([]*transaction.Transaction, poolSize)
-	for i := range txesSimple {
-		txesSimple[i] = transaction.New([]byte{1, 2, 3}, 100500)
-		txesSimple[i].Signers = []transaction.Signer{{Account: util.Uint160{1, 2, 3}}}
-	}
-	txesIncFee := make([]*transaction.Transaction, poolSize)
-	for i := range txesIncFee {
-		txesIncFee[i] = transaction.New([]byte{1, 2, 3}, 100500)
-		txesIncFee[i].NetworkFee = 10 * int64(i)
-		txesIncFee[i].Signers = []transaction.Signer{{Account: util.Uint160{1, 2, 3}}}
-	}
-	txesMulti := make([]*transaction.Transaction, poolSize)
-	for i := range txesMulti {
-		txesMulti[i] = transaction.New([]byte{1, 2, 3}, 100500)
-		txesMulti[i].Signers = []transaction.Signer{{Account: util.Uint160{1, 2, 3, byte(i % 256), byte(i / 256)}}}
-	}
-	txesMultiInc := make([]*transaction.Transaction, poolSize)
-	for i := range txesMultiInc {
-		txesMultiInc[i] = transaction.New([]byte{1, 2, 3}, 100500)
-		txesMultiInc[i].NetworkFee = 10 * int64(i)
-		txesMultiInc[i].Signers = []transaction.Signer{{Account: util.Uint160{1, 2, 3, byte(i % 256), byte(i / 256)}}}
-	}
+#[bench]
+fn benchmark_pool(b: &mut Bencher) {
+    let fe = FeerStub {
+        fee_per_byte: 1,
+        block_height: 1,
+        balance: 100_0000_0000,
+    };
 
-	senders := make(map[string][]*transaction.Transaction)
-	senders["one, same fee"] = txesSimple
-	senders["one, incr fee"] = txesIncFee
-	senders["many, same fee"] = txesMulti
-	senders["many, incr fee"] = txesMultiInc
-	for name, txes := range senders {
-		b.Run(name, func(b *testing.B) {
-			p := New(poolSize, 0, false, nil)
-			b.ResetTimer()
-			for range b.N {
-				for j := range txes {
-					if p.Add(txes[j], fe) != nil {
-						b.Fail()
-					}
-				}
-				p.RemoveStale(func(*transaction.Transaction) bool { return false }, fe)
-			}
-		})
-	}
+    let mut txes_simple = Vec::with_capacity(POOL_SIZE);
+    for _ in 0..POOL_SIZE {
+        let mut tx = Transaction::new(vec![1, 2, 3], 100500);
+        tx.signers = vec![Signer { account: Uint160([1, 2, 3]) }];
+        txes_simple.push(tx);
+    }
+
+    let mut txes_inc_fee = Vec::with_capacity(POOL_SIZE);
+    for i in 0..POOL_SIZE {
+        let mut tx = Transaction::new(vec![1, 2, 3], 100500);
+        tx.network_fee = 10 * i as i64;
+        tx.signers = vec![Signer { account: Uint160([1, 2, 3]) }];
+        txes_inc_fee.push(tx);
+    }
+
+    let mut txes_multi = Vec::with_capacity(POOL_SIZE);
+    for i in 0..POOL_SIZE {
+        let mut tx = Transaction::new(vec![1, 2, 3], 100500);
+        tx.signers = vec![Signer { account: Uint160([1, 2, 3, (i % 256) as u8, (i / 256) as u8]) }];
+        txes_multi.push(tx);
+    }
+
+    let mut txes_multi_inc = Vec::with_capacity(POOL_SIZE);
+    for i in 0..POOL_SIZE {
+        let mut tx = Transaction::new(vec![1, 2, 3], 100500);
+        tx.network_fee = 10 * i as i64;
+        tx.signers = vec![Signer { account: Uint160([1, 2, 3, (i % 256) as u8, (i / 256) as u8]) }];
+        txes_multi_inc.push(tx);
+    }
+
+    let mut senders: HashMap<&str, Vec<Transaction>> = HashMap::new();
+    senders.insert("one, same fee", txes_simple);
+    senders.insert("one, incr fee", txes_inc_fee);
+    senders.insert("many, same fee", txes_multi);
+    senders.insert("many, incr fee", txes_multi_inc);
+
+    for (name, txes) in senders {
+        b.bench_function(name, |b| {
+            let mut p = Pool::new(POOL_SIZE, 0, false, None);
+            b.iter(|| {
+                for tx in &txes {
+                    if p.add(tx, &fe).is_err() {
+                        b.fail();
+                    }
+                }
+                p.remove_stale(|_| false, &fe);
+            });
+        });
+    }
 }

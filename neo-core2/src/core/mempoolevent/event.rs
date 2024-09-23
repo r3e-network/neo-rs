@@ -1,70 +1,78 @@
-package mempoolevent
+use serde::{Deserialize, Serialize};
+use serde_json;
+use std::fmt;
+use std::str::FromStr;
+use thiserror::Error;
 
-import (
-	"encoding/json"
-	"errors"
-
-	"github.com/nspcc-dev/neo-go/pkg/core/transaction"
-)
+use crate::core::transaction::Transaction;
 
 // Type represents mempool event type.
-type Type byte
-
-const (
-	// TransactionAdded marks transaction addition mempool event.
-	TransactionAdded Type = 0x01
-	// TransactionRemoved marks transaction removal mempool event.
-	TransactionRemoved Type = 0x02
-)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum Type {
+    // TransactionAdded marks transaction addition mempool event.
+    #[serde(rename = "added")]
+    TransactionAdded = 0x01,
+    // TransactionRemoved marks transaction removal mempool event.
+    #[serde(rename = "removed")]
+    TransactionRemoved = 0x02,
+}
 
 // Event represents one of mempool events: transaction was added or removed from the mempool.
-type Event struct {
-	Type Type
-	Tx   *transaction.Transaction
-	Data any
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Event {
+    #[serde(rename = "type")]
+    pub event_type: Type,
+    pub tx: Option<Transaction>,
+    pub data: serde_json::Value,
 }
 
-// String is a Stringer implementation.
-func (e Type) String() string {
-	switch e {
-	case TransactionAdded:
-		return "added"
-	case TransactionRemoved:
-		return "removed"
-	default:
-		return "unknown"
-	}
+// Implementing Display trait for Type
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::TransactionAdded => write!(f, "added"),
+            Type::TransactionRemoved => write!(f, "removed"),
+            _ => write!(f, "unknown"),
+        }
+    }
 }
 
-// GetEventTypeFromString converts the input string into the Type if it's possible.
-func GetEventTypeFromString(s string) (Type, error) {
-	switch s {
-	case "added":
-		return TransactionAdded, nil
-	case "removed":
-		return TransactionRemoved, nil
-	default:
-		return 0, errors.New("invalid event type name")
-	}
+// Custom error type for invalid event type name
+#[derive(Debug, Error)]
+#[error("invalid event type name")]
+pub struct InvalidEventTypeName;
+
+// Implementing FromStr trait for Type
+impl FromStr for Type {
+    type Err = InvalidEventTypeName;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "added" => Ok(Type::TransactionAdded),
+            "removed" => Ok(Type::TransactionRemoved),
+            _ => Err(InvalidEventTypeName),
+        }
+    }
 }
 
-// MarshalJSON implements the json.Marshaler interface.
-func (e Type) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
+// Implementing custom serialization for Type
+impl Serialize for Type {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
 }
 
-// UnmarshalJSON implements the json.Unmarshaler interface.
-func (e *Type) UnmarshalJSON(b []byte) error {
-	var s string
-
-	err := json.Unmarshal(b, &s)
-	if err != nil {
-		return err
-	}
-	id, err := GetEventTypeFromString(s)
-	if err != nil {
-		return err
-	}
-	*e = id
-	return nil
+// Implementing custom deserialization for Type
+impl<'de> Deserialize<'de> for Type {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
 }
