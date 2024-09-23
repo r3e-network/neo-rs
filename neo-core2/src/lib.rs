@@ -1,14 +1,17 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod config;
+pub mod consensus;
+pub mod core;
+pub mod crypto;
+pub mod encoding;
+pub mod interop;
+pub mod io;
+pub mod neorpc;
+pub mod neotest;
+pub mod network;
+pub mod rename.sh;
+pub mod rpcclient;
+pub mod services;
+pub mod smartcontract;
+pub mod util;
+pub mod vm;
+pub mod wallet;
