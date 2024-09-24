@@ -123,7 +123,7 @@ impl MessageHandleV2 {
         let handshake_timeout = self.config.ping_timeout;
 
         let now = UnixTime::now();
-        let should_ping = |x: &crate::Connected| {
+        let should = |x: &crate::Connected| {
             let ping = x.ping_timeout(now, ping_timeout);
             if !ping {
                 x.ping_sent.store(now);
@@ -131,10 +131,8 @@ impl MessageHandleV2 {
             (x.addr, Timeouts { ping, handshake: x.handshake_timeout(now, handshake_timeout) })
         };
 
-        //let dsc = discovery.lock().unwrap();
-        let peers: Vec<_> =
-            { discovery.lock().unwrap().connected_peers().map(should_ping).collect() };
-
+        // let dsc = discovery.lock().unwrap();
+        let peers: Vec<_> = { discovery.lock().unwrap().connected_peers().map(should).collect() };
         for (peer, timeouts) in peers.iter().filter(|(_, x)| x.ping || x.handshake) {
             self.on_handle_err(
                 &discovery,
@@ -211,9 +209,7 @@ impl MessageHandleV2 {
         }
 
         self.remove_net_handle(&net.peer);
-        {
-            discovery.lock().unwrap().on_disconnected(&net.peer);
-        }
+        { discovery.lock().unwrap().on_disconnected(&net.peer); }
 
         log::error!("handle NetEvent from {} err: {}", net.peer, &err);
     }
@@ -251,16 +247,16 @@ impl MessageHandleV2 {
             Inventory(inventory) => self.on_inventory(&peer, inventory),
             GetData(inventory) => self.on_get_data(&peer, inventory),
             GetBlockByIndex(range) => self.on_get_block_by_index(&peer, range),
-            NotFound(_inventory) => Ok(()), // just ignore
+            NotFound(_inventory) => Ok(()),          // just ignore
             Tx(tx) => self.on_tx(&peer, tx),
             Block(block) => self.on_block(&peer, block),
             Extensible(extensible) => self.on_extensible(&peer, extensible),
-            Reject => Ok(()),                     // just ignore
-            FilterLoad(_filter_load) => Ok(()),   // just ignore
-            FilterAdd(_filter_add) => Ok(()),     // just ignore
-            FilterClear => Ok(()),                // just ignore
-            MerkleBlock(_merkle_block) => Ok(()), // just ignore
-            Alert => Ok(()),                      // just ignore
+            Reject => Ok(()),                                   // just ignore
+            FilterLoad(_filter_load) => Ok(()),     // just ignore
+            FilterAdd(_filter_add) => Ok(()),        // just ignore
+            FilterClear => Ok(()),                              // just ignore
+            MerkleBlock(_merkle_block) => Ok(()),  // just ignore
+            Alert => Ok(()),                                    // just ignore
             Version(_) => unreachable!("unexpected Version message"),
             VersionAck => unreachable!("unexpected VersionAck message"),
         }
@@ -433,11 +429,7 @@ impl MessageHandleV2 {
         Ok(())
     }
 
-    fn on_get_headers(
-        &self,
-        _peer: &SocketAddr,
-        _range: BlockIndexRange,
-    ) -> Result<(), HandleError> {
+    fn on_get_headers(&self, _peer: &SocketAddr, _range: BlockIndexRange) -> Result<(), HandleError> {
         Ok(())
     }
 
@@ -455,11 +447,7 @@ impl MessageHandleV2 {
 
     fn on_block(&self, _peer: &SocketAddr, _block: Block) -> Result<(), HandleError> { Ok(()) }
 
-    fn on_extensible(
-        &self,
-        _peer: &SocketAddr,
-        _extensible: Extensible,
-    ) -> Result<(), HandleError> {
+    fn on_extensible(&self, _peer: &SocketAddr, _ext: Extensible) -> Result<(), HandleError> {
         Ok(())
     }
 
@@ -474,11 +462,7 @@ impl MessageHandleV2 {
 
     fn on_get_data(&self, _peer: &SocketAddr, _inv: Inventory) -> Result<(), HandleError> { Ok(()) }
 
-    fn on_get_block_by_index(
-        &self,
-        _peer: &SocketAddr,
-        _range: BlockIndexRange,
-    ) -> Result<(), HandleError> {
+    fn on_get_block_by_index(&self, _peer: &SocketAddr, _range: BlockIndexRange) -> Result<(), HandleError> {
         Ok(())
     }
 }
