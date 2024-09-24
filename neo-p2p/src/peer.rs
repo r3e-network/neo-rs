@@ -5,9 +5,10 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 use std::time::Duration;
 
+use trust_dns_resolver::Resolver;
+
 use neo_base::time::{AtomicUnixTime, UnixTime};
 use neo_core::payload::Version;
-use trust_dns_resolver::Resolver;
 
 use crate::SeedState;
 

@@ -5,10 +5,11 @@ use std::io::Read;
 use std::net::TcpStream;
 use std::time::Duration;
 
-use neo_base::encoding::bin::*;
-use neo_core::payload::P2pMessage;
 use tokio_util::bytes::BytesMut;
 use tokio_util::codec::Decoder;
+
+use neo_base::encoding::bin::*;
+use neo_core::payload::P2pMessage;
 
 use crate::*;
 

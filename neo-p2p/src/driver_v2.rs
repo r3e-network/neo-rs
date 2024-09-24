@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
-use neo_core::types::Bytes;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::error::TrySendError;
@@ -18,6 +17,8 @@ use tokio_stream::StreamExt;
 use tokio_util::bytes::BytesMut;
 use tokio_util::codec::{Encoder, FramedRead};
 use tokio_util::sync::{CancellationToken, DropGuard};
+
+use neo_core::types::Bytes;
 
 use crate::{NetEvent::*, *};
 

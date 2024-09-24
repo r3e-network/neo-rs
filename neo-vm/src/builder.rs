@@ -36,7 +36,6 @@ impl ScriptBuilder {
         self.buf.put_u8(opcode.as_u8());
     }
 
-    #[inline]
     pub fn emit_jmp(&mut self, jump: Jump, offset: i32) {
         if offset >= i8::MIN as i32 && offset <= i8::MAX as i32 {
             self.buf.put_u8(jump as u8);
@@ -47,7 +46,7 @@ impl ScriptBuilder {
         }
     }
 
-    pub fn emit_try(&mut self, catch: i32, finally: i32, try_end: i32) {
+    pub fn emit_try(&mut self, catch: i32, finally: i32) {
         if (catch >= i8::MIN as i32 && catch <= i8::MAX as i32)
             && (finally >= i8::MIN as i32 && finally <= i8::MAX as i32) {
             self.buf.put_u8(Try.as_u8());
@@ -58,7 +57,9 @@ impl ScriptBuilder {
             self.buf.put_i32_le(catch);
             self.buf.put_i32_le(finally);
         }
+    }
 
+    pub fn emit_try_end(&mut self, try_end: i32) {
         if try_end >= i8::MIN as i32 && try_end <= i8::MAX as i32 {
             self.buf.put_u8(EndTry.as_u8());
             self.buf.put_i8(try_end as i8);
@@ -68,7 +69,6 @@ impl ScriptBuilder {
         }
     }
 
-    #[inline]
     pub fn emit_call(&mut self, offset: i32) {
         if offset >= i8::MIN as i32 && offset <= i8::MAX as i32 {
             self.buf.put_u8(Call.as_u8());

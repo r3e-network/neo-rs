@@ -5,11 +5,12 @@ use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use tokio::sync::mpsc;
+
 use neo_base::encoding::bin::*;
 use neo_base::time::{unix_seconds_now, Tick, UnixTime};
 use neo_core::payload::{Capability::*, *};
 use neo_core::{block::Block, tx::Tx};
-use tokio::sync::mpsc;
 
 use crate::{PeerStage::*, *};
 
@@ -262,12 +263,7 @@ impl MessageHandleV2 {
         }
     }
 
-    fn on_version(
-        &self,
-        discovery: &Discovery,
-        addr: &SocketAddr,
-        version: Version,
-    ) -> Result<(), HandleError> {
+    fn on_version(&self, discovery: &Discovery, addr: &SocketAddr, version: Version) -> Result<(), HandleError> {
         let nonce = version.nonce;
         if nonce == self.config.nonce {
             version.port()
@@ -373,12 +369,7 @@ impl MessageHandleV2 {
         Ok(())
     }
 
-    fn on_ping(
-        &self,
-        discovery: &Discovery,
-        peer: &SocketAddr,
-        ping: Ping,
-    ) -> Result<(), HandleError> {
+    fn on_ping(&self, discovery: &Discovery, peer: &SocketAddr, ping: Ping) -> Result<(), HandleError> {
         {
             let now = UnixTime::now();
             discovery
@@ -406,12 +397,7 @@ impl MessageHandleV2 {
         Ok(())
     }
 
-    fn on_pong(
-        &self,
-        discovery: &Discovery,
-        peer: &SocketAddr,
-        pong: Pong,
-    ) -> Result<(), HandleError> {
+    fn on_pong(&self, discovery: &Discovery, peer: &SocketAddr, pong: Pong) -> Result<(), HandleError> {
         {
             let now = UnixTime::now();
             discovery

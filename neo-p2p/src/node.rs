@@ -5,10 +5,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crossbeam::atomic::AtomicCell;
-use neo_base::time::{unix_millis_now, Tick};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+
+use neo_base::time::{unix_millis_now, Tick};
 
 use crate::*;
 

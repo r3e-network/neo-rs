@@ -3,11 +3,12 @@
 
 use std::io::{Error as IoError, ErrorKind::InvalidData};
 
+use tokio_util::bytes::{Buf, BufMut, BytesMut};
+use tokio_util::codec::{Decoder, Encoder};
+
 use neo_base::encoding::bin::*;
 use neo_core::payload::{self, Lz4Compress, Lz4Decompress, P2pMessage};
 use neo_core::types::Bytes;
-use tokio_util::bytes::{Buf, BufMut, BytesMut};
-use tokio_util::codec::{Decoder, Encoder};
 
 const MAX_BODY_LEN: usize = 0x02000000; // 32MiB
 
