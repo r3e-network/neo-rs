@@ -11,7 +11,6 @@ pub(crate) enum TrackItem {
     Map(Map),
 }
 
-
 impl TrackItem {
     #[inline]
     pub fn with_array(item: Array) -> Self { TrackItem::Array(item) }
@@ -25,8 +24,8 @@ impl PartialEq<Self> for TrackItem {
     fn eq(&self, other: &Self) -> bool {
         use TrackItem::*;
         match (self, other) {
-            (Array(l), Array(r)) => core::ptr::eq(l.as_ptr(), r.as_ptr()),
-            (Map(l), Map(r)) => core::ptr::eq(l.as_ptr(), r.as_ptr()),
+            (Array(l), Array(r)) => l == r,
+            (Map(l), Map(r)) => l == r,
             _ => false,
         }
     }
@@ -38,8 +37,8 @@ impl Hash for TrackItem {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            TrackItem::Array(v) => v.as_ptr().hash(state),
-            TrackItem::Map(v) => v.as_ptr().hash(state),
+            TrackItem::Array(v) => v.hash(state),
+            TrackItem::Map(v) => v.hash(state),
         }
     }
 }

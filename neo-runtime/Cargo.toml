@@ -8,11 +8,9 @@ edition = "2021"
 
 
 [dependencies]
-neo-core = { path = "../neo-core", default-features = false }
-neo-vm   = { path = "../neo-vm", default-features = false }
+neo-core = { path = "../neo-core"}
+neo-vm   = { path = "../neo-vm" }
+neo-p2p = { path = "../neo-p2p"}
 
 
 [features]
-default = ["neo-core/default", "neo-vm/default"]
-
-std     = ["neo-core/std", "neo-vm/std"]

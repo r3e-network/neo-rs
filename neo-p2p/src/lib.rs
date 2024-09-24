@@ -4,10 +4,12 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use neo_base::errors;
-use neo_core::types::{Bytes, Network, DEFAULT_PER_BLOCK_MILLIS, SEED_LIST_DEV_NET};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+
+use neo_base::errors;
+use neo_core::types::{Bytes, Network, DEFAULT_PER_BLOCK_MILLIS, SEED_LIST_DEV_NET};
+
 pub use {codec::*, discovery::*, driver_v2::*, handle_v2::*, node::*, peer::*};
 
 pub mod codec;
@@ -32,7 +34,9 @@ pub enum NetEvent {
 
 impl NetEvent {
     #[inline]
-    pub fn with_peer(self, peer: SocketAddr) -> NetMessage { NetMessage { peer, event: self } }
+    pub fn with_peer(self, peer: SocketAddr) -> NetMessage {
+        NetMessage { peer, event: self }
+    }
 }
 
 #[derive(Debug, Clone)]

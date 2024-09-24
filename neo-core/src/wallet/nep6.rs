@@ -5,10 +5,8 @@ use alloc::{string::String, vec::Vec};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    contract::NamedParamType,
-    types::{Extra, H160},
-};
+use crate::contract::NamedParamType;
+use crate::types::{Extra, H160};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Scrypt {

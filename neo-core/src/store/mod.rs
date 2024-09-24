@@ -4,7 +4,9 @@
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use neo_base::{encoding::bin::*, errors};
+use neo_base::encoding::bin::*;
+use neo_base::errors;
+
 pub use {chain::*, contract::*, dbft::*, policy::*, snapshot::*, states::*};
 
 pub mod chain;

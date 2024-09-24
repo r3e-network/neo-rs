@@ -1,11 +1,9 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use neo_base::{
-    encoding::{bin::ToBinEncoded, hex::ToHex},
-    errors,
-    math::U256,
-};
+use neo_base::encoding::{bin::ToBinEncoded, hex::ToHex};
+use neo_base::errors;
+use neo_base::math::U256;
 
 use crate::{store::{self, *}, types::H160};
 
