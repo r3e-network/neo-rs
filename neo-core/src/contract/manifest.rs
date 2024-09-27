@@ -11,6 +11,15 @@ use crate::{
     PublicKey,
 };
 
+pub const NEP11_NAME: &'static str = "NEP-11";
+pub const NEP17_NAME: &'static str = "NEP-17";
+
+pub const NEP11_PAYABLE: &'static str = "NEP-11-Payable";
+pub const NEP17_PAYABLE: &'static str = "NEP-17-Payable";
+
+pub const EMPTY_FEATURES: &'static str = "{}";
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Group {
     #[serde(rename = "pubKey")]

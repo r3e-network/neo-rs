@@ -100,13 +100,7 @@ impl P2pMessage {
         use P2pMessage::*;
         matches!(
             self,
-            Alert
-                | Extensible(_)
-                | FilterAdd(_)
-                | FilterClear
-                | FilterLoad(_)
-                | GetAddress
-                | TxPool
+            Alert | Extensible(_) | FilterAdd(_) | FilterClear | FilterLoad(_) | GetAddress | TxPool
         )
     }
 
@@ -115,14 +109,7 @@ impl P2pMessage {
         use P2pMessage::*;
         matches!(
             self,
-            Address(_)
-                | Block(_)
-                | Extensible(_)
-                | Tx(_)
-                | Headers(_)
-                | MerkleBlock(_)
-                | FilterLoad(_)
-                | FilterAdd(_)
+            Address(_) | Block(_) | Extensible(_) | Tx(_) | Headers(_) | MerkleBlock(_) | FilterLoad(_) | FilterAdd(_)
         )
     }
 }

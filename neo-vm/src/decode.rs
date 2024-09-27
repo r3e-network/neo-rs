@@ -1,10 +1,8 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use neo_base::{
-    bytes::{PickAtMost, PickU32},
-    errors,
-};
+use neo_base::bytes::{PickAtMost, PickU32};
+use neo_base::errors;
 
 use crate::{OpCode::*, *};
 
@@ -47,7 +45,7 @@ impl Iterator for ScriptDecoder<'_> {
             return Some(Err(OpError::InvalidOpCode(ip as u32, next)));
         };
 
-        let attr = opcode.attr();
+        let attr =  &CODE_ATTRS[next as usize];
         let trailing = attr.trailing as usize;
         if trailing <= 0 {
             return Some(Ok(opcode.as_op(ip as u32)));
@@ -91,24 +89,22 @@ pub(crate) mod test {
 
     use crate::{OpCode::*, ScriptDecoder};
 
-    pub(crate) const TEST_CODES_1: &str = "57020004ffffffffffffffff0000000000000000701071223d6801ff00a34a7045694a9c4a020000\
+    pub(crate) const TEST_CODES_1: &str =
+        "57020004ffffffffffffffff0000000000000000701071223d6801ff00a34a7045694a9c4a020000\
         00802e04220a4a02ffffff7f321e03ffffffff00000000914a02ffffff7f320c03000000000100000\
         09f714569010004b524c068220240";
 
     #[test]
     fn test_op_iter() {
-        let script = TEST_CODES_1.decode_hex().expect("`decode_hex` should be ok");
+        let script = TEST_CODES_1.decode_hex()
+            .expect("`decode_hex` should be ok");
 
         let mut decoder = ScriptDecoder::new(&script);
         while let Some(op) = decoder.next() {
             let op = op.expect("`op` should be ok");
             match op.code {
-                PushInt128 | PushData1 | PushData2 | PushData4 => {
-                    assert_eq!(op.operand.first, 0);
-                }
-                _ => {
-                    assert!(op.operand.data.is_empty());
-                }
+                PushInt128 | PushData1 | PushData2 => { assert_eq!(op.operand.first, 0); }
+                _ => { assert!(op.operand.data.is_empty()); }
             }
             // std::println!("{:04}: {:?}, {:?}", op.ip, op.code, op.operand);
         }

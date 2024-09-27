@@ -23,6 +23,8 @@ pub enum ScriptType {
     Verification,
 }
 
+// pub struct HashedScript(ScriptHash, Script);
+
 #[derive(Debug, Clone, Default, Eq, PartialEq, BinDecode, BinEncode)]
 pub struct Script {
     script: Bytes,

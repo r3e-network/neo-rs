@@ -3,6 +3,7 @@
 
 use crate::store::{BlockStates, ChainStates};
 
+// Ledger for Stored Chain States
 pub trait Ledger: BlockStates + ChainStates {
     //
 }

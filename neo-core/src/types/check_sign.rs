@@ -7,14 +7,11 @@ use bytes::{BufMut, BytesMut};
 use neo_base::hash::{Ripemd160, Sha256};
 use neo_base::{byzantine_honest_quorum, errors};
 
-use crate::types::{Bytes, Script, ScriptHash, ToScriptHash, Varint, MAX_SIGNERS};
+use crate::types::{Bytes, OpCode, Script, ScriptHash, ToScriptHash, Varint, MAX_SIGNERS};
 use crate::{PublicKey, PUBLIC_COMPRESSED_SIZE};
 
 // 40 bytes = 1-byte CHECK_SIG_PUSH_DATA1 + 1-byte length + 33-bytes key + 1-byte OpCode + 4-bytes suffix
 pub const CHECK_SIG_SIZE: usize = 1 + 1 + 33 + 1 + 4;
-
-pub const PUSH_DATA1: u8 = 0x0c;
-pub const CHECK_SIG_OP_CODE: u8 = 0x41; // i.e syscall opcode
 
 pub const CHECK_SIG_HASH_SUFFIX: [u8; 4] = [0x56, 0xe7, 0xb3, 0x27];
 pub const CHECK_MULTI_SIG_HASH_SUFFIX: [u8; 4] = [0x9e, 0xd0, 0xdc, 0x3a];
@@ -101,12 +98,12 @@ impl ToCheckSign for PublicKey {
         let mut buf = [0u8; CHECK_SIG_SIZE];
 
         const SIZE: usize = PUBLIC_COMPRESSED_SIZE;
-        buf[0] = PUSH_DATA1;
+        buf[0] = OpCode::PushData1.as_u8();
         buf[1] = SIZE as u8;
 
         buf[2..2 + SIZE].copy_from_slice(self.to_compressed().as_slice());
 
-        buf[2 + SIZE] = CHECK_SIG_OP_CODE;
+        buf[2 + SIZE] = OpCode::Syscall.as_u8();
         buf[3 + SIZE..].copy_from_slice(&CHECK_SIG_HASH_SUFFIX);
 
         CheckSign(buf)
@@ -135,13 +132,13 @@ impl<T: AsRef<[PublicKey]>> ToCheckMultiSign for T {
 
         buf.put_varint(signers as u64);
         keys.into_iter().for_each(|k| {
-            buf.put_u8(PUSH_DATA1);
+            buf.put_u8(OpCode::PushData1.as_u8());
             buf.put_u8(SIZE as u8);
             buf.put_slice(k.to_compressed().as_slice());
         });
 
         buf.put_varint(n as u64);
-        buf.put_u8(CHECK_SIG_OP_CODE);
+        buf.put_u8(OpCode::Syscall.as_u8());
         buf.put_slice(&CHECK_MULTI_SIG_HASH_SUFFIX);
 
         MultiCheckSign::new(n, signers, Vec::from(buf))

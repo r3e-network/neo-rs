@@ -5,11 +5,12 @@ use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use tokio::sync::mpsc;
+
 use neo_base::encoding::bin::*;
 use neo_base::time::{unix_seconds_now, Tick, UnixTime};
 use neo_core::payload::{Capability::*, *};
 use neo_core::{block::Block, tx::Tx};
-use tokio::sync::mpsc;
 
 use crate::{PeerStage::*, *};
 
@@ -72,27 +73,15 @@ impl MessageHandleV2 {
                     let mut buf = RefBuffer::from(message.as_bytes());
                     let _ = BinDecoder::decode_bin(&mut buf)
                         .map(|message| {
-                            let _ =
-                                self.on_message(&discovery, &net.peer, message).map_err(|err| {
-                                    self.on_handle_err(&discovery, &net, err);
-                                });
+                            let _ = self.on_message(&discovery, &net.peer, message)
+                                .map_err(|err| { self.on_handle_err(&discovery, &net, err); });
                         })
-                        .map_err(|err| {
-                            self.on_handle_err(&discovery, &net, err);
-                        });
+                        .map_err(|err| { self.on_handle_err(&discovery, &net, err); });
                 }
-                Connected | Accepted => {
-                    self.on_incoming(&discovery, &net.event, &net.peer);
-                }
-                Disconnected => {
-                    discovery.lock().unwrap().on_disconnected(&net.peer);
-                }
-                NotConnected => {
-                    discovery.lock().unwrap().on_failure(&net.peer);
-                }
-                Timeout => {
-                    self.on_handle_err(&discovery, &net, HandleError::Timeout("net_rx"));
-                }
+                Connected | Accepted => { self.on_incoming(&discovery, &net.event, &net.peer); }
+                Disconnected => { discovery.lock().unwrap().on_disconnected(&net.peer); }
+                NotConnected => { discovery.lock().unwrap().on_failure(&net.peer); }
+                Timeout => { self.on_handle_err(&discovery, &net, HandleError::Timeout("net_rx")); }
             }
         }
         log::warn!("`on_received` exited");
@@ -135,7 +124,7 @@ impl MessageHandleV2 {
         let handshake_timeout = self.config.ping_timeout;
 
         let now = UnixTime::now();
-        let should_ping = |x: &crate::Connected| {
+        let should = |x: &crate::Connected| {
             let ping = x.ping_timeout(now, ping_timeout);
             if !ping {
                 x.ping_sent.store(now);
@@ -143,10 +132,8 @@ impl MessageHandleV2 {
             (x.addr, Timeouts { ping, handshake: x.handshake_timeout(now, handshake_timeout) })
         };
 
-        //let dsc = discovery.lock().unwrap();
-        let peers: Vec<_> =
-            { discovery.lock().unwrap().connected_peers().map(should_ping).collect() };
-
+        // let dsc = discovery.lock().unwrap();
+        let peers: Vec<_> = { discovery.lock().unwrap().connected_peers().map(should).collect() };
         for (peer, timeouts) in peers.iter().filter(|(_, x)| x.ping || x.handshake) {
             self.on_handle_err(
                 &discovery,
@@ -172,16 +159,11 @@ impl MessageHandleV2 {
                 .net_handle(peer)
                 .ok_or(HandleError::NoSuchNetHandle)
                 .and_then(|handle| {
-                    handle
-                        .try_seed(message.clone())
-                        .map(|()| {
-                            log::info!("send {:?} to {}", &ping, peer);
-                        })
+                    handle.try_seed(message.clone())
+                        .map(|()| { log::info!("send {:?} to {}", &ping, peer); })
                         .map_err(|err| HandleError::SendError("Ping", err))
                 })
-                .map_err(|err| {
-                    self.on_handle_err(discovery, &Disconnected.with_peer(*peer), err);
-                });
+                .map_err(|err| { self.on_handle_err(discovery, &Disconnected.with_peer(*peer), err); });
         }
     }
 }
@@ -228,9 +210,7 @@ impl MessageHandleV2 {
         }
 
         self.remove_net_handle(&net.peer);
-        {
-            discovery.lock().unwrap().on_disconnected(&net.peer);
-        }
+        { discovery.lock().unwrap().on_disconnected(&net.peer); }
 
         log::error!("handle NetEvent from {} err: {}", net.peer, &err);
     }
@@ -268,45 +248,31 @@ impl MessageHandleV2 {
             Inventory(inventory) => self.on_inventory(&peer, inventory),
             GetData(inventory) => self.on_get_data(&peer, inventory),
             GetBlockByIndex(range) => self.on_get_block_by_index(&peer, range),
-            NotFound(_inventory) => Ok(()), // just ignore
+            NotFound(_inventory) => Ok(()),          // just ignore
             Tx(tx) => self.on_tx(&peer, tx),
             Block(block) => self.on_block(&peer, block),
             Extensible(extensible) => self.on_extensible(&peer, extensible),
-            Reject => Ok(()),                     // just ignore
-            FilterLoad(_filter_load) => Ok(()),   // just ignore
-            FilterAdd(_filter_add) => Ok(()),     // just ignore
-            FilterClear => Ok(()),                // just ignore
-            MerkleBlock(_merkle_block) => Ok(()), // just ignore
-            Alert => Ok(()),                      // just ignore
-            Version(_) => {
-                unreachable!("unexpected Version message");
-            }
-            VersionAck => {
-                unreachable!("unexpected VersionAck message");
-            }
+            Reject => Ok(()),                                   // just ignore
+            FilterLoad(_filter_load) => Ok(()),     // just ignore
+            FilterAdd(_filter_add) => Ok(()),        // just ignore
+            FilterClear => Ok(()),                              // just ignore
+            MerkleBlock(_merkle_block) => Ok(()),  // just ignore
+            Alert => Ok(()),                                    // just ignore
+            Version(_) => unreachable!("unexpected Version message"),
+            VersionAck => unreachable!("unexpected VersionAck message"),
         }
     }
 
-    fn on_version(
-        &self,
-        discovery: &Discovery,
-        addr: &SocketAddr,
-        version: Version,
-    ) -> Result<(), HandleError> {
-        if version.nonce == self.config.nonce {
-            version.port().map(|port| SocketAddr::new(addr.ip(), port)).map(|service| {
-                // TODO: log
-                {
-                    discovery.lock().unwrap().on_failure_always(service);
-                }
-                log::error!(
-                    "`on_failure_always` for {},{}, nonce {}",
-                    addr,
-                    &service,
-                    version.nonce
-                );
-            });
-            return Err(HandleError::IdenticalNonce(version.nonce));
+    fn on_version(&self, discovery: &Discovery, addr: &SocketAddr, version: Version) -> Result<(), HandleError> {
+        let nonce = version.nonce;
+        if nonce == self.config.nonce {
+            version.port()
+                .map(|port| SocketAddr::new(addr.ip(), port))
+                .map(|service| {
+                    { discovery.lock().unwrap().on_failure_always(service); }
+                    log::error!("`on_failure_always` for {},{}, nonce {}", addr, &service, nonce);
+                });
+            return Err(HandleError::IdenticalNonce(nonce));
         }
 
         if version.network != self.config.network {
@@ -321,8 +287,11 @@ impl MessageHandleV2 {
         };
 
         let message = P2pMessage::VersionAck.to_bin_encoded();
-        let handle = self.net_handle(addr).ok_or(HandleError::NoSuchNetHandle)?;
-        handle.try_seed(message.into()).map_err(|err| HandleError::SendError("VersionAck", err))?;
+        let handle = self.net_handle(addr)
+            .ok_or(HandleError::NoSuchNetHandle)?;
+
+        handle.try_seed(message.into())
+            .map_err(|err| HandleError::SendError("VersionAck", err))?;
 
         handle.states.set_last_block_index(start_height);
         drop(handle);
@@ -332,7 +301,8 @@ impl MessageHandleV2 {
             return Err(HandleError::AlreadyConnected);
         }
 
-        let conn = discovery.connected(&addr).ok_or(HandleError::NoSuchAddress)?;
+        let conn = discovery.connected(&addr)
+            .ok_or(HandleError::NoSuchAddress)?;
         conn.add_stages(VersionReceived.as_u32() | VersionAckSent.as_u32());
         discovery.on_good(peer);
 
@@ -341,7 +311,8 @@ impl MessageHandleV2 {
 
     fn on_version_ack(&self, discovery: &Discovery, peer: &SocketAddr) -> Result<(), HandleError> {
         let discovery = discovery.lock().unwrap();
-        let conn = discovery.connected(peer).ok_or(HandleError::NoSuchAddress)?;
+        let conn = discovery.connected(peer)
+            .ok_or(HandleError::NoSuchAddress)?;
         if !VersionSent.belongs(conn.stages()) {
             return Err(HandleError::InvalidMessage("VersionAck", "no Version has received"));
         }
@@ -369,8 +340,11 @@ impl MessageHandleV2 {
         let message = P2pMessage::Address(NodeList { nodes });
         let message = message.to_bin_encoded(); // for less critical section
 
-        let handle = self.net_handle(peer).ok_or(HandleError::NoSuchNetHandle)?;
-        handle.try_seed(message.into()).map_err(|err| HandleError::SendError("Address", err))?;
+        let handle = self.net_handle(peer)
+            .ok_or(HandleError::NoSuchNetHandle)?;
+
+        handle.try_seed(message.into())
+            .map_err(|err| HandleError::SendError("Address", err))?;
 
         handle.states.on_sent_get_address();
         Ok(())
@@ -382,24 +356,20 @@ impl MessageHandleV2 {
         peer: &SocketAddr,
         nodes: NodeList,
     ) -> Result<(), HandleError> {
-        let handle = self.net_handle(peer).ok_or(HandleError::NoSuchNetHandle)?;
+        let handle = self.net_handle(peer)
+            .ok_or(HandleError::NoSuchNetHandle)?;
         if !handle.states.on_recv_address() {
             return Err(HandleError::InvalidMessage("Address", "no GetAddress for this node"));
         }
 
-        let nodes: Vec<SocketAddr> =
-            nodes.nodes.iter().filter_map(|node| node.service_addr()).collect();
-
+        let nodes: Vec<_> = nodes.nodes.iter()
+            .filter_map(|node| node.service_addr())
+            .collect();
         discovery.lock().unwrap().back_fill(&nodes);
         Ok(())
     }
 
-    fn on_ping(
-        &self,
-        discovery: &Discovery,
-        peer: &SocketAddr,
-        ping: Ping,
-    ) -> Result<(), HandleError> {
+    fn on_ping(&self, discovery: &Discovery, peer: &SocketAddr, ping: Ping) -> Result<(), HandleError> {
         {
             let now = UnixTime::now();
             discovery
@@ -417,21 +387,17 @@ impl MessageHandleV2 {
             nonce: self.config.nonce,
         });
 
-        let handle = self.net_handle(peer).ok_or(HandleError::NoSuchNetHandle)?;
-        handle
-            .try_seed(pong.to_bin_encoded().into())
+        let handle = self.net_handle(peer)
+            .ok_or(HandleError::NoSuchNetHandle)?;
+
+        handle.try_seed(pong.to_bin_encoded().into())
             .map_err(|err| HandleError::SendError("Pong", err))?;
 
         handle.states.set_last_block_index(ping.last_block_index);
         Ok(())
     }
 
-    fn on_pong(
-        &self,
-        discovery: &Discovery,
-        peer: &SocketAddr,
-        pong: Pong,
-    ) -> Result<(), HandleError> {
+    fn on_pong(&self, discovery: &Discovery, peer: &SocketAddr, pong: Pong) -> Result<(), HandleError> {
         {
             let now = UnixTime::now();
             discovery
@@ -442,16 +408,14 @@ impl MessageHandleV2 {
                 .ok_or(HandleError::NoSuchAddress)?;
         }
 
-        let handle = self.net_handle(peer).ok_or(HandleError::NoSuchNetHandle)?;
+        let handle = self.net_handle(peer)
+            .ok_or(HandleError::NoSuchNetHandle)?;
+
         handle.states.set_last_block_index(pong.last_block_index);
         Ok(())
     }
 
-    fn on_get_headers(
-        &self,
-        _peer: &SocketAddr,
-        _range: BlockIndexRange,
-    ) -> Result<(), HandleError> {
+    fn on_get_headers(&self, _peer: &SocketAddr, _range: BlockIndexRange) -> Result<(), HandleError> {
         Ok(())
     }
 
@@ -469,11 +433,7 @@ impl MessageHandleV2 {
 
     fn on_block(&self, _peer: &SocketAddr, _block: Block) -> Result<(), HandleError> { Ok(()) }
 
-    fn on_extensible(
-        &self,
-        _peer: &SocketAddr,
-        _extensible: Extensible,
-    ) -> Result<(), HandleError> {
+    fn on_extensible(&self, _peer: &SocketAddr, _ext: Extensible) -> Result<(), HandleError> {
         Ok(())
     }
 
@@ -488,11 +448,7 @@ impl MessageHandleV2 {
 
     fn on_get_data(&self, _peer: &SocketAddr, _inv: Inventory) -> Result<(), HandleError> { Ok(()) }
 
-    fn on_get_block_by_index(
-        &self,
-        _peer: &SocketAddr,
-        _range: BlockIndexRange,
-    ) -> Result<(), HandleError> {
+    fn on_get_block_by_index(&self, _peer: &SocketAddr, _range: BlockIndexRange) -> Result<(), HandleError> {
         Ok(())
     }
 }

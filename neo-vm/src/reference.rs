@@ -2,77 +2,94 @@
 // All Rights Reserved
 
 use core::hash::{Hash, Hasher};
-use core::ops::Deref;
 
-use crate::{StackItem::*, *};
+use crate::*;
 
-pub struct WrapItem {
-    pub(crate) item: Rc<StackItem>,
+
+pub(crate) enum TrackItem {
+    Array(Array),
+    Map(Map),
 }
 
-impl WrapItem {
+impl TrackItem {
     #[inline]
-    pub fn new(item: Rc<StackItem>) -> Self { Self { item } }
-}
+    pub fn with_array(item: Array) -> Self { TrackItem::Array(item) }
 
-impl Deref for WrapItem {
-    type Target = StackItem;
-
-    fn deref(&self) -> &Self::Target { self.item.deref() }
-}
-
-impl PartialEq<Self> for WrapItem {
     #[inline]
-    fn eq(&self, other: &Self) -> bool { core::ptr::eq(self, other) }
+    pub fn with_map(item: Map) -> Self { TrackItem::Map(item) }
 }
 
-impl Eq for WrapItem {}
+impl PartialEq<Self> for TrackItem {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        use TrackItem::*;
+        match (self, other) {
+            (Array(l), Array(r)) => l == r,
+            (Map(l), Map(r)) => l == r,
+            _ => false,
+        }
+    }
+}
 
-impl Hash for WrapItem {
+impl Eq for TrackItem {}
+
+impl Hash for TrackItem {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (self.item.as_ref() as *const StackItem as usize).hash(state)
+        match self {
+            TrackItem::Array(v) => v.hash(state),
+            TrackItem::Map(v) => v.hash(state),
+        }
     }
 }
 
 // #[derive(Debug, errors::Error)]
 // pub enum ReferenceError {
-//     TooDepthNestedReference,
+//     #[error("reference: too depth nested {}, max {}")]
+//     TooDepthNested(u32, u32),
 // }
 
+
+// NOTE: References must drop after Vm existed.
 pub struct References {
-    // tracked: hashbrown::HashSet<WrapItem>,
-    // zero_referred: hashbrown::HashSet<WrapItem>,
-    references: usize,
+    tracked: hashbrown::HashSet<TrackItem>,
+    // zero_referred: hashbrown::HashSet<TrackItem>,
+    references: isize,
 }
 
 impl References {
     #[inline]
     pub fn new() -> Self {
         Self {
-            // tracked: Default::default(),
+            tracked: Default::default(),
             // zero_referred: Default::default(),
             references: 0,
         }
     }
 
-    // StackItem must add to References before any use
+    // StackItem must add to References before Push to Stack or Slots
     #[inline]
-    pub fn add(&mut self, item: &StackItem) { self.recursive_add(item, 1) }
+    pub fn add(&mut self, item: &StackItem) { self.recursive_add(item, 1); }
+
+    // StackItem must remove from References after Pop from Stack or Slots
+    #[inline]
+    pub fn remove(&mut self, item: &StackItem) { self.recursive_remove(item, 1); }
 
     fn recursive_add(&mut self, item: &StackItem, depth: u32) {
         self.references += 1;
-        match &item {
-            Array(v) => {
-                if v.strong_count() <= 1 {
+        match item {
+            StackItem::Array(v) => {
+                if v.strong_count() == 1 {
+                    self.tracked.insert(TrackItem::Array(v.clone()));
                     v.items().iter().for_each(|x| self.recursive_add(x, depth + 1));
                 }
             }
-            Struct(v) => {
+            StackItem::Struct(v) => {
                 v.items().iter().for_each(|x| self.recursive_add(x, depth + 1));
             }
-            Map(v) => {
-                if v.strong_count() <= 1 {
+            StackItem::Map(v) => {
+                if v.strong_count() == 1 {
+                    self.tracked.insert(TrackItem::Map(v.clone()));
                     v.items().iter().for_each(|(_k, v)| self.recursive_add(v, depth + 1));
                 }
             }
@@ -80,24 +97,22 @@ impl References {
         }
     }
 
-    // StackItem must remove from References before destroy
-    #[inline]
-    pub fn remove(&mut self, item: &StackItem) { self.recursive_remove(item, 1); }
-
     fn recursive_remove(&mut self, item: &StackItem, depth: u32) {
         self.references -= 1;
-        match &item {
-            Array(v) => {
-                if v.strong_count() <= 1 {
+        match item {
+            StackItem::Array(v) => {
+                if v.strong_count() == 2 { // 2 == item + another one in self.tracked
                     v.items().iter().for_each(|x| self.recursive_remove(x, depth + 1));
+                    self.tracked.remove(&TrackItem::Array(v.clone()));
                 }
             }
-            Struct(v) => {
+            StackItem::Struct(v) => {
                 v.items().iter().for_each(|x| self.recursive_remove(x, depth + 1));
             }
-            Map(v) => {
-                if v.strong_count() <= 1 {
+            StackItem::Map(v) => {
+                if v.strong_count() == 2 { // 2 == item + another one in self.tracked
                     v.items().iter().for_each(|(_k, v)| self.recursive_remove(v, depth + 1));
+                    self.tracked.remove(&TrackItem::Map(v.clone()));
                 }
             }
             _ => {}
@@ -105,13 +120,51 @@ impl References {
     }
 
     #[inline]
-    pub fn references(&self) -> usize { self.references }
+    pub fn references(&self) -> isize { self.references }
+}
+
+
+impl Drop for References {
+    fn drop(&mut self) {
+        for item in &self.tracked {
+            match item {
+                TrackItem::Array(v) if v.strong_count() > 1 => v.items_mut().clear(),
+                TrackItem::Map(v) if v.strong_count() > 1 => v.items_mut().clear(),
+                _ => {}
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::*;
+
     #[test]
     fn test_references() {
-        //
+        let mut rf = References::new();
+
+        let item = StackItem::with_boolean(false);
+        rf.add(&item);
+        assert_eq!(rf.references(), 1);
+
+        rf.remove(&item);
+        assert_eq!(rf.references(), 0);
+
+        let s = StackItem::Array(Array::new(0));
+        rf.add(&s);
+
+        let m = StackItem::Map(Map::with_capacity(2));
+        rf.add(&m);
+
+        if let StackItem::Array(s) = &s {
+            s.items_mut().push(m.clone());
+        }
+
+        if let StackItem::Map(m) = &m {
+            m.items_mut().insert(StackItem::Integer(1.into()), s.clone());
+        }
+
+        assert_eq!(rf.references(), 2);
     }
 }

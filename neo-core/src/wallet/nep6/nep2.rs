@@ -4,23 +4,18 @@
 use alloc::{string::String, vec::Vec};
 
 use bytes::{BufMut, BytesMut};
-use neo_base::{
-    bytes::{xor_array, ToArray, ToRevArray},
-    encoding::base58::{FromBase58Check, ToBase58Check},
-    errors,
-    hash::Sha256Twice,
-};
-use neo_crypto::{
-    aes::Aes256EcbCipher,
-    key::SecretKey,
-    scrypt::{DeriveKey, Params},
-};
 use subtle::ConstantTimeEq;
 
-use crate::{
-    types::{Address, ToNeo3Address},
-    PrivateKey, PublicKey, KEY_SIZE,
-};
+use neo_base::bytes::{xor_array, ToArray, ToRevArray};
+use neo_base::encoding::base58::{FromBase58Check, ToBase58Check};
+use neo_base::errors;
+use neo_base::hash::Sha256Twice;
+use neo_crypto::aes::Aes256EcbCipher;
+use neo_crypto::key::SecretKey;
+use neo_crypto::scrypt::{DeriveKey, Params};
+
+use crate::types::{Address, ToNeo3Address};
+use crate::{PrivateKey, PublicKey, KEY_SIZE};
 
 const NEP2_KEY_SIZE: usize = 39;
 const DERIVED_KEY_SIZE: usize = 2 * KEY_SIZE;
@@ -32,14 +27,18 @@ pub struct Nep2Key {
 
 impl Nep2Key {
     #[inline]
-    pub fn as_str(&self) -> &str { self.key.as_str() }
+    pub fn as_str(&self) -> &str {
+        self.key.as_str()
+    }
 }
 
 pub trait ToNep2Key {
     fn to_nep2_key(&self, addr: &Address, password: &[u8]) -> Nep2Key;
 }
 
-pub const fn scrypt_params() -> Params { Params { n: 16384, p: 8, r: 8, len: 64 } }
+pub const fn scrypt_params() -> Params {
+    Params { n: 16384, p: 8, r: 8, len: 64 }
+}
 
 impl ToNep2Key for PrivateKey {
     /// NOTE: there is no normalization for password
@@ -121,7 +120,11 @@ impl<T: AsRef<[u8]>> Nep2KeyDecrypt for T {
             PublicKey::try_from(&sk).map_err(|_err| Nep2VerifyError::InvalidKey)?.to_neo3_address();
 
         let hash = addr.as_str().sha256_twice();
-        if hash[..4].ct_eq(&raw[3..7]).into() { Ok(sk) } else { Err(Nep2VerifyError::InvalidHash) }
+        if hash[..4].ct_eq(&raw[3..7]).into() {
+            Ok(sk)
+        } else {
+            Err(Nep2VerifyError::InvalidHash)
+        }
     }
 }
 
@@ -155,7 +158,6 @@ mod test {
         assert_eq!(key.as_str(), "6PYUUUFei9PBBfVkSn8q7hFCnewWFRBKPxcn6Kz6Bmk3FqWyLyuTQE2XFH");
 
         let got = pwd.decrypt_nep2_key(key.as_str()).expect("decrypt should be ok");
-
         assert_eq!(got.as_le_bytes(), sk.as_le_bytes());
     }
 }

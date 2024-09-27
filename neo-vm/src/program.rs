@@ -4,6 +4,7 @@
 use alloc::vec::Vec;
 
 use neo_base::errors;
+use neo_core::types::{ScriptHash, ToScriptHash};
 
 use crate::{OpCode::*, *};
 
@@ -26,13 +27,36 @@ pub struct Op {
     pub operand: Operand,
 }
 
+pub trait AsOp {
+    fn as_op(&self, ip: u32) -> Op;
+
+    fn as_operand_op(&self, ip: u32, operand: Operand) -> Op;
+}
+
+impl AsOp for OpCode {
+    #[inline]
+    fn as_op(&self, ip: u32) -> Op {
+        Op { ip, code: *self, operand: Operand::default() }
+    }
+
+    #[inline]
+    fn as_operand_op(&self, ip: u32, operand: Operand) -> Op {
+        Op { ip, code: *self, operand }
+    }
+}
+
 // Neo VM Program
 pub struct Program {
+    script_hash: ScriptHash,
     ops: Vec<Op>,
 }
 
 impl Program {
-    pub fn nop() -> Self { Self { ops: Vec::new() } }
+    #[inline]
+    pub fn nop() -> Self { Self { script_hash: [].to_script_hash(), ops: Vec::new() } }
+
+    #[inline]
+    pub fn script_hash(&self) -> &ScriptHash { &self.script_hash }
 
     #[inline]
     pub fn ops(&self) -> &[Op] { &self.ops }
@@ -67,52 +91,21 @@ impl Program {
                     let _ = ItemType::try_from(typ)
                         .map_err(|_| ProgramError::InvalidStackItemType(op.code, op.ip, typ))?;
                 }
-                // Syscall => {}
-                _ => {}
+                _ => { /* Syscall => {} */ }
             }
         }
 
-        Ok(Program { ops })
+        // TODO: optimize script hash
+        Ok(Program { script_hash: script.to_script_hash(), ops })
     }
 }
 
-pub struct Executing<'a> {
-    pc: usize,
-    ops: &'a [Op],
-}
-
-impl<'a> Executing<'a> {
-    #[inline]
-    pub fn new(ops: &'a [Op]) -> Executing<'a> { Executing { pc: 0, ops } }
-
-    // on abort or assert failed, etc.
-    #[inline]
-    pub fn on_terminated(&mut self) { self.pc = self.ops.len() }
-
-    #[inline]
-    pub fn change_pc(&mut self, to: u32) -> bool {
-        if let Ok(next) = self.ops.binary_search_by(|x| x.ip.cmp(&to)) {
-            self.pc = next;
-            return true;
-        }
-        false
-    }
-
-    #[inline]
-    pub fn next_op(&mut self) -> Option<&Op> {
-        if self.pc < self.ops.len() {
-            return Some(&self.ops[self.pc]);
-        }
-        None
-    }
-}
 
 #[cfg(test)]
 mod test {
     use neo_base::encoding::hex::DecodeHex;
 
-    use super::*;
-    use crate::decode::test::TEST_CODES_1;
+    use crate::{decode::test::TEST_CODES_1, *};
 
     #[test]
     fn test_program_build() {

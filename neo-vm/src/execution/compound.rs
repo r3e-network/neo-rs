@@ -13,7 +13,7 @@ pub(crate) fn exec_pack_map(cx: &mut ExecContext, op: &Op) -> Result<(), ExecErr
     }
 
     let n = size.as_i128() as usize;
-    if n > cx.stack.len() {
+    if n * 2 > cx.stack.len() {
         return Err(ExecError::StackOutOfBound(op.ip, op.code, cx.stack.len()));
     }
 
@@ -22,11 +22,7 @@ pub(crate) fn exec_pack_map(cx: &mut ExecContext, op: &Op) -> Result<(), ExecErr
     for _ in 0..n {
         let key = pop!(cx, op);
         if !key.primitive_type() {
-            return Err(ExecError::InvalidExecution(
-                op.ip,
-                op.code,
-                "Map key must be primitive type",
-            ));
+            return Err(ExecError::InvalidExecution(op.ip, op.code, "Key must be primitive type"));
         }
 
         let value = pop!(cx, op);

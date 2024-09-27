@@ -3,9 +3,10 @@
 
 use alloc::vec::Vec;
 
-use neo_base::encoding::bin::*;
-use neo_base::encoding::{encode_hex_u64, decode_hex_u64};
 use serde::{Deserialize, Serialize};
+
+use neo_base::encoding::bin::*;
+use neo_base::encoding::{decode_hex_u64, encode_hex_u64};
 
 use crate::tx::{StatedTx, Tx, Witness, Witnesses};
 use crate::types::{Script, ToBftHash, H160, H256};

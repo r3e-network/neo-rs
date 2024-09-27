@@ -11,6 +11,15 @@ pub struct BlockChain {
 }
 
 impl BlockChain {
+    pub fn new() -> Self {
+        Self {
+            // TODO: config
+            txpool: TxPool::new(1000, 0),
+        }
+    }
+}
+
+impl BlockChain {
     pub fn pool_tx(&self, _tx: Tx) -> Result<(), PoolTxError> { Ok(()) }
 
     pub fn verify_tx(&self, _tx: &Tx) -> Result<(), PoolTxError> { Ok(()) }

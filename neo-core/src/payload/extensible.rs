@@ -3,15 +3,15 @@
 
 use alloc::string::String;
 
-use neo_base::{encoding::bin::*, hash::Sha256};
-use neo_crypto::ecdsa::{Sign as EcdsaSign, SignError};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    tx::Witnesses,
-    types::{Bytes, Sign, ToSignData, H160},
-    PrivateKey,
-};
+use neo_base::encoding::bin::*;
+use neo_base::hash::Sha256;
+use neo_crypto::ecdsa::{Sign as EcdsaSign, SignError};
+
+use crate::PrivateKey;
+use crate::tx::Witnesses;
+use crate::types::{Bytes, H160, Sign, ToSignData};
 
 pub const CONSENSUS_CATEGORY: &'static str = "dBFT";
 pub const MAX_CATEGORY_SIZE: usize = 32;
@@ -64,10 +64,12 @@ impl BinDecoder for Extensible {
 #[cfg(test)]
 mod test {
     use bytes::BytesMut;
+
     use neo_base::hash::{Ripemd160, Sha256};
 
-    use super::*;
     use crate::tx::Witness;
+
+    use super::*;
 
     #[test]
     fn test_extensible() {

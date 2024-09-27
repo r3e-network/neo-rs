@@ -6,10 +6,7 @@ use alloc::vec::Vec;
 use neo_base::encoding::bin::*;
 
 use crate::types::{Member, ToBftHash, NEO_TOTAL_SUPPLY};
-use crate::{
-    store::{self, *},
-    PublicKey,
-};
+use crate::{store::{self, *}, PublicKey};
 
 pub const PREFIX_VOTERS_COUNT: u8 = 1;
 pub const PREFIX_CANDIDATE: u8 = 33;

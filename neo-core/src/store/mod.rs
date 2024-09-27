@@ -4,7 +4,9 @@
 use alloc::vec::Vec;
 use core::fmt::Debug;
 
-use neo_base::{encoding::bin::*, errors};
+use neo_base::encoding::bin::*;
+use neo_base::errors;
+
 pub use {chain::*, contract::*, dbft::*, policy::*, snapshot::*, states::*};
 
 pub mod chain;
@@ -91,12 +93,7 @@ pub trait Store: ReadOnlyStore {
 
     fn delete(&self, key: &[u8], options: &WriteOptions) -> Result<Version, WriteError>;
 
-    fn put(
-        &self,
-        key: Vec<u8>,
-        value: Vec<u8>,
-        options: &WriteOptions,
-    ) -> Result<Version, WriteError>;
+    fn put(&self, key: Vec<u8>, value: Vec<u8>, options: &WriteOptions) -> Result<Version, WriteError>;
 
     fn write_batch(&self) -> Self::WriteBatch;
 }
@@ -163,10 +160,12 @@ pub trait GetBinEncoded {
 
 impl<Store: ReadOnlyStore> GetBinEncoded for Store {
     fn get_bin_encoded<T: BinDecoder>(&self, key: &[u8]) -> Result<T, BinReadError> {
-        let (data, _version) = self.get(key).map_err(|err| BinReadError::from(err))?;
+        let (data, _version) = self.get(key)
+            .map_err(|err| BinReadError::from(err))?;
 
         let mut rb = RefBuffer::from(data.as_slice());
-        BinDecoder::decode_bin(&mut rb).map_err(|err| BinReadError::BinDecodeError(err))
+        BinDecoder::decode_bin(&mut rb)
+            .map_err(|err| BinReadError::BinDecodeError(err))
     }
 }
 

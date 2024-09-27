@@ -4,6 +4,18 @@
 use neo_base::bytes::{PickU16, PickU32, PickU64};
 use tinyvec::TinyVec;
 
+
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct CodeAttr {
+    pub price: u64,
+
+    // data/address size after this OpCode
+    pub trailing: u32,
+
+    pub unsigned: bool,
+    // pub may_jump: bool,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Operand {
     // The first operand, may convert from i8, i16, i32, i64, u8, u32
@@ -17,13 +29,17 @@ pub struct Operand {
 }
 
 impl Operand {
-    fn with_unary(first: i64) -> Self { Self { first, second: 0, data: Default::default() } }
+    fn with_unary(first: i64) -> Self {
+        Self { first, second: 0, data: Default::default() }
+    }
 
     pub fn with_dual(first: i64, second: i64) -> Self {
         Self { first, second, data: Default::default() }
     }
 
-    pub fn with_data(data: &[u8]) -> Self { Self { first: 0, second: 0, data: data.into() } }
+    pub fn with_data(data: &[u8]) -> Self {
+        Self { first: 0, second: 0, data: data.into() }
+    }
 
     pub(crate) fn with_signed(operand: &[u8]) -> Self {
         let first = match operand.len() {
@@ -49,9 +65,8 @@ impl Operand {
 
 #[cfg(test)]
 mod test {
+    use neo_core::types::{OpCode, OP_CODES};
     use strum::IntoEnumIterator;
-
-    use crate::{OpCode, OP_CODES};
 
     #[test]
     fn test_opcode_valid() {

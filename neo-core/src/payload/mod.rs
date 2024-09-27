@@ -4,14 +4,16 @@
 use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
-pub use {blocks::*, extensible::*, nodes::*, p2p::*};
 
 use crate::types::H256;
+pub use {blocks::*, extensible::*, nodes::*, p2p::*};
+
 
 pub mod blocks;
 pub mod extensible;
 pub mod nodes;
 pub mod p2p;
+
 
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 #[bin(repr = u8)]

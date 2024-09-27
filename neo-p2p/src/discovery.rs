@@ -5,11 +5,12 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use neo_base::math::LcgRand;
-use neo_base::time::UnixTime;
 use tokio::sync::mpsc;
 
-use crate::{SeedState::*, *};
+use neo_base::math::LcgRand;
+use neo_base::time::UnixTime;
+
+use crate::{*, SeedState::*};
 
 const CONNECT_RETRY_TIMES: u32 = 3;
 const MAX_POOL_SIZE: usize = 1024;
@@ -292,12 +293,12 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
     }
 
     #[inline]
-    pub fn connected_peers(&self) -> impl Iterator<Item = &Connected> {
+    pub fn connected_peers(&self) -> impl Iterator<Item=&Connected> {
         self.connected.iter().map(|(_, peer)| peer)
     }
 
     #[inline]
-    pub fn good_peers(&self) -> impl Iterator<Item = &TcpPeer> {
+    pub fn good_peers(&self) -> impl Iterator<Item=&TcpPeer> {
         self.goods.iter().map(|(_, peer)| peer)
     }
 
@@ -332,7 +333,6 @@ mod test {
         let addr = rx.try_recv().expect("`try_recv` should be ok");
 
         let _ = rx.try_recv().expect_err("`try_recv` should be failed");
-
         assert!(disc.attempts.contains_key(&addr));
 
         disc.on_incoming(addr, PeerStage::Connected.as_u32());

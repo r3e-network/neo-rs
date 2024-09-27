@@ -40,7 +40,8 @@ mod test {
     #[test]
     fn test_serde_tuple() {
         let foo = Foo("hello".into(), 1, "".into());
-        let json = serde_json::to_string(&foo).expect("`to_string` should be ok");
+        let json = serde_json::to_string(&foo)
+            .expect("`to_string` should be ok");
         assert_eq!(&json, r#"["hello",1]"#); // skipped as expected
     }
 }

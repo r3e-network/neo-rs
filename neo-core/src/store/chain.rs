@@ -4,11 +4,9 @@
 use neo_base::encoding::bin::*;
 
 use crate::block::{IndexHash, StatedBlock, TrimmedBlock};
-use crate::{
-    store::{self, *},
-    tx::StatedTx,
-    types::H256,
-};
+use crate::store::{self, *};
+use crate::tx::StatedTx;
+use crate::types::H256;
 
 pub const PREFIX_BLOCK: u8 = 5;
 pub const PREFIX_INDEX_TO_HASH: u8 = 9;

@@ -5,10 +5,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crossbeam::atomic::AtomicCell;
-use neo_base::time::{unix_millis_now, Tick};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+
+use neo_base::time::{unix_millis_now, Tick};
 
 use crate::*;
 
@@ -35,9 +36,9 @@ impl LocalNode {
             .build()
             .expect("`runtime::Builder` should be ok");
 
+        let handle = runtime.handle().clone();
         let (net_tx, net_rx) = mpsc::channel(MESSAGE_CHAN_SIZE);
-        let driver =
-            NetDriver::new(runtime.handle().clone(), config.max_peers as usize, local, net_tx);
+        let driver = NetDriver::new(handle, config.max_peers as usize, local, net_tx);
         Self {
             runtime: Some(runtime),
             net_rx: AtomicCell::new(Some(net_rx)),
@@ -176,12 +177,15 @@ mod test {
         let handle = node.run(message);
         std::thread::sleep(Duration::from_secs(1));
 
-        let mut stream = TcpStream::connect(addr).expect("`TcpStream::connect` should be ok");
+        let mut stream = TcpStream::connect(addr)
+            .expect("`TcpStream::connect` should be ok");
 
         let ping = P2pMessage::Ping(Ping { last_block_index: 2, unix_seconds: 3, nonce: 4 });
-        let buf = ping.to_message_encoded().expect("`to_message_encoded` should be ok");
+        let buf = ping.to_message_encoded()
+            .expect("`to_message_encoded` should be ok");
 
-        stream.write_all(buf.as_ref()).expect("`write_all` should be ok");
+        stream.write_all(buf.as_ref())
+            .expect("`write_all` should be ok");
         std::thread::sleep(Duration::from_millis(200));
 
         drop(handle);

@@ -4,10 +4,12 @@
 use crate::*;
 
 pub struct ExecContext {
-    pub(crate) stack: ExecStack,
     pub(crate) statics: Option<Slots>,
     pub(crate) locals: Option<Slots>,
     pub(crate) arguments: Option<Slots>,
+
+    // stack should be declare after than statics, locals and arguments
+    pub(crate) stack: ExecStack,
 
     pc: usize,
     program: Rc<Program>,
@@ -38,7 +40,11 @@ impl ExecContext {
 
     #[inline]
     pub fn change_pc(&mut self, to: u32) -> bool {
-        self.program.ops().binary_search_by(|x| x.ip.cmp(&to)).map(|x| self.pc = x).is_ok()
+        self.program
+            .ops()
+            .binary_search_by(|x| x.ip.cmp(&to))
+            .map(|x| self.pc = x)
+            .is_ok()
     }
 
     #[inline]

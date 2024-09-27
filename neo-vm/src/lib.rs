@@ -8,9 +8,10 @@ extern crate alloc;
 use alloc::{rc::Rc, vec::Vec};
 
 use neo_base::errors;
-use neo_core::types::VmState;
+use neo_core::types::{VmState, OpCode};
+
 pub use {builder::*, context::*, decode::*, execution::*, interop::*};
-pub use {opcode::*, operand::*, program::*, reference::*, stack::*, types::*};
+pub use {operand::*, program::*, reference::*, stack::*, types::*};
 use {slots::*, tables::*};
 
 pub mod builder;
@@ -18,7 +19,6 @@ pub mod context;
 pub mod decode;
 pub mod execution;
 pub mod interop;
-pub mod opcode;
 pub mod operand;
 pub mod program;
 pub mod reference;
@@ -30,49 +30,17 @@ pub mod vm;
 pub mod script;
 pub mod exception;
 
-pub(crate) const MAX_STACK_ITEM_SIZE: usize = 65535 * 2;
+pub const MAX_STACK_SIZE: usize = 2048;  
+pub const MAX_STACK_ITEM_SIZE: usize = 65535 * 2;
+pub const MAX_COMPARABLE_SIZE: usize = 65536;
 
 pub trait RunPrice {
     fn price(&self) -> u64;
 }
 
-#[derive(Debug)]
-pub struct VmLimits {
-    /// The maximum number of bits that `OpCode::Shl` and `OpCode::Shr` can shift.
-    pub max_shift: usize,
-
-    /// The maximum number of items that can be contained in the vm's evaluation stacks and slots.
-    pub max_stack_size: usize,
-
-    /// The maximum size of an item in the vm.
-    pub max_item_size: usize,
-
-    /// The largest comparable size. If a `ByteString` or `Struct` exceeds this size,
-    /// comparison operations on it cannot be performed in the vm.
-    pub max_comparable_size: usize,
-
-    /// The maximum number of frames in the invocation stack of the vm.
-    pub max_invocation_stack_size: usize,
-
-    /// The maximum nesting depth of `try` blocks.
-    pub max_try_nesting_depth: usize,
-
-    /// Allow catching the vm exceptions
-    pub catch_exceptions: bool,
-}
-
-impl Default for VmLimits {
-    fn default() -> Self {
-        Self {
-            max_shift: 256,
-            max_stack_size: 2048,
-            max_item_size: MAX_STACK_ITEM_SIZE,
-            max_comparable_size: 65536,
-            max_invocation_stack_size: 1024,
-            max_try_nesting_depth: 16,
-            catch_exceptions: true,
-        }
-    }
+impl RunPrice for OpCode {
+    #[inline]
+    fn price(&self) -> u64 { CODE_ATTRS[self.as_u8() as usize].price }
 }
 
 #[derive(Debug, errors::Error)]
@@ -117,6 +85,9 @@ pub enum ExecError {
 
     #[error("exec: stack {2} not in boundary on {1:?} at {0:x}")]
     StackOutOfBound(u32, OpCode, usize),
+
+    #[error("exec: exceed execution limits: {0}")]
+    ExceedExecutionLimits(&'static str),
 }
 
 impl ExecError {
@@ -133,7 +104,6 @@ impl ExecError {
 
 pub struct NeoVm<Env: VmEnv> {
     state: VmState,
-    limits: VmLimits,
     gas_limit: u64,
     gas_consumed: u64,
     invocations: Vec<ExecContext>,
@@ -142,14 +112,12 @@ pub struct NeoVm<Env: VmEnv> {
 
 impl<Env: VmEnv> NeoVm<Env> {
     pub fn new(gas_limit: u64, env: Env) -> Self {
-        let limits = VmLimits::default();
         NeoVm {
             state: VmState::Break,
-            limits,
-            invocations: Vec::new(),
-            env,
             gas_limit,
             gas_consumed: 0,
+            invocations: Vec::new(),
+            env,
         }
     }
 

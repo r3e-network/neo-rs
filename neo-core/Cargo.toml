@@ -38,6 +38,7 @@ num-bigint = "0.4.6"
 
 NeoRust = { git = "https://github.com/R3E-Network/NeoRust", branch = "master" }
 
+strum            = { version = "0", default-features = false, features = ["derive"] }
 primitive-types = "0.13.0"
 bitflags = "2.6.0"
 lazy_static = "1.5.0"
