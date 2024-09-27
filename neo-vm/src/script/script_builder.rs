@@ -1,6 +1,6 @@
-use crate::op_code::OpCode;
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
+use crate::vm::OpCode;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash,Serialize,Deserialize)]
 pub struct ScriptBuilder {

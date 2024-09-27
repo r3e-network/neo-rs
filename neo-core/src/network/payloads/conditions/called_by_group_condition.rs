@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use NeoRust::codec::NeoSerializable;
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use crate::cryptography::ECPoint;
 use crate::neo_contract::application_engine::ApplicationEngine;
@@ -49,7 +49,7 @@ impl WitnessCondition for CalledByGroupCondition {
         json
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         let mut result = self.base_to_stack_item(reference_counter);
         if let StackItem::Array(array) = &mut result {
             array.push(StackItem::ByteString(self.group.to_bytes()));

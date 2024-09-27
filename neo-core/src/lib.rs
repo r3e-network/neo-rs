@@ -26,8 +26,16 @@ pub mod wallet;
 pub mod neo_contract;
 pub mod network;
 pub mod persistence;
-pub mod uint256;
-pub mod uint160;
+pub mod core_error;
+pub mod big_decimal;
+pub mod io;
+pub mod neo_system;
+pub mod protocol_settings;
+pub mod utility;
+pub mod hardfork;
+pub mod contains_transaction_type;
+pub mod cryptography;
+pub mod time_provider;
 
 pub use neo_crypto::secp256r1::*;
 

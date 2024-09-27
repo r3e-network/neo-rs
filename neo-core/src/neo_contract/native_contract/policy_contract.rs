@@ -60,7 +60,7 @@ impl PolicyContract {
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = CallFlags::READ_STATES)]
-    pub fn is_blocked(&self, snapshot: &dyn DataCache, account: &UInt160) -> bool {
+    pub fn is_blocked(&self, snapshot: &dyn DataCache, account: &H160) -> bool {
         snapshot.contains(&self.create_storage_key(Self::PREFIX_BLOCKED_ACCOUNT).add(account))
     }
 
@@ -118,14 +118,14 @@ impl PolicyContract {
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = CallFlags::STATES)]
-    fn block_account(&mut self, engine: &mut ApplicationEngine, account: UInt160) -> Result<bool, String> {
+    fn block_account(&mut self, engine: &mut ApplicationEngine, account: H160) -> Result<bool, String> {
         if !self.check_committee(engine) {
             return Err("Not authorized".into());
         }
         self.block_account_internal(engine.snapshot_cache(), account)
     }
 
-    fn block_account_internal(&self, snapshot: &mut dyn DataCache, account: UInt160) -> Result<bool, String> {
+    fn block_account_internal(&self, snapshot: &mut dyn DataCache, account: H160) -> Result<bool, String> {
         if self.is_native(&account) {
             return Err("It's impossible to block a native contract".into());
         }
@@ -140,7 +140,7 @@ impl PolicyContract {
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = CallFlags::STATES)]
-    fn unblock_account(&mut self, engine: &mut ApplicationEngine, account: UInt160) -> Result<bool, String> {
+    fn unblock_account(&mut self, engine: &mut ApplicationEngine, account: H160) -> Result<bool, String> {
         if !self.check_committee(engine) {
             return Err("Not authorized".into());
         }

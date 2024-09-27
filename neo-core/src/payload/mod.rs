@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
 
-use crate::types::H256;
+use neo_type::H256;
 pub use {blocks::*, extensible::*, nodes::*, p2p::*};
 
 

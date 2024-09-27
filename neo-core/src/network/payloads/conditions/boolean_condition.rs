@@ -1,6 +1,6 @@
 use core::fmt::{Debug};
 use neo_json::jtoken::JToken;
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
@@ -44,7 +44,7 @@ impl WitnessCondition for BooleanCondition {
         json
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         let mut result = <Self as WitnessCondition>::to_stack_item(self, reference_counter);
         if let StackItem::Array(array) = &mut result {
             array.add(StackItem::Boolean(self.expression));

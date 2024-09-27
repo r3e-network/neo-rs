@@ -28,7 +28,7 @@ impl HeaderCache {
         if headers.is_empty() {
             return None;
         }
-        let first_index = headers[0].index();
+        let first_index = headers[0].index;
         if index < *first_index {
             return None;
         }

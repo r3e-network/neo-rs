@@ -4,12 +4,12 @@ use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::protocol_settings::ProtocolSettings;
 use crate::store::Snapshot;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 /// Represents the descriptor of an asset.
 pub struct AssetDescriptor {
     /// The id of the asset.
-    pub asset_id: UInt160,
+    pub asset_id: H160,
 
     /// The name of the asset.
     pub asset_name: String,
@@ -33,7 +33,7 @@ impl AssetDescriptor {
     /// # Returns
     ///
     /// A Result containing the new AssetDescriptor instance or an error.
-    pub fn new(snapshot: &Snapshot, settings: &ProtocolSettings, asset_id: UInt160) -> Result<Self, String> {
+    pub fn new(snapshot: &Snapshot, settings: &ProtocolSettings, asset_id: H160) -> Result<Self, String> {
         let contract = ContractManagement::get_contract(snapshot, &asset_id)
             .ok_or_else(|| "Invalid asset_id".to_string())?;
 

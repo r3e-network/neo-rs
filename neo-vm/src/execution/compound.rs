@@ -5,7 +5,7 @@ use neo_base::math::I256;
 
 use crate::{StackItem::Integer, *};
 
-pub(crate) fn exec_pack_map(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_pack_map(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let size = pop_as_typed!(cx, op, Integer);
     if size.is_negative() || size > I256::I32_MAX {
         // TODO: better error

@@ -3,7 +3,7 @@
 
 use crate::*;
 
-pub(crate) fn exec_init_sslot(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_init_sslot(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     if cx.statics.is_some() {
         return Err(ExecError::InvalidExecution(op.ip, op.code, "it can only be executed once"));
     }
@@ -17,7 +17,7 @@ pub(crate) fn exec_init_sslot(cx: &mut ExecContext, op: &Op) -> Result<(), ExecE
     Ok(())
 }
 
-pub(crate) fn exec_init_slot(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_init_slot(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let locals = op.operand.first;
     let arguments = op.operand.second;
     if cx.locals.is_some() || cx.arguments.is_some() {
@@ -39,17 +39,17 @@ pub(crate) fn exec_init_slot(cx: &mut ExecContext, op: &Op) -> Result<(), ExecEr
 }
 
 pub(crate) fn exec_load_static_n<const N: usize>(
-    cx: &mut ExecContext,
+    cx: &mut ExecutionContext,
     op: &Op,
 ) -> Result<(), ExecError> {
     load_static(cx, op, N)
 }
 
-pub(crate) fn exec_load_static(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_load_static(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     load_static(cx, op, op.operand.first as usize)
 }
 
-fn load_static(cx: &mut ExecContext, op: &Op, n: usize) -> Result<(), ExecError> {
+fn load_static(cx: &mut ExecutionContext, op: &Op, n: usize) -> Result<(), ExecError> {
     let Some(statics) = cx.statics.as_ref() else {
         return Err(ExecError::InvalidExecution(op.ip, op.code, "static slots not initialized"));
     };

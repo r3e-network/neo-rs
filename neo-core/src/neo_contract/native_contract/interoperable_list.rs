@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 use std::marker::PhantomData;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::References;
+use neo_vm::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::native_contract::native_contract_error::NativeContractError;
 
 /// A trait for vm_types that can be converted to and from StackItems
 pub trait InteroperableElement {
     fn from_stack_item(item: StackItem) -> Result<Self, String> where Self: Sized;
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem;
+    fn to_stack_item(&self, reference_counter: &mut References) -> StackItem;
 }
 
 /// An abstract list that implements interoperability with Neo VM stack items
@@ -92,7 +92,7 @@ impl<T: InteroperableElement> IInteroperable for InteroperableList<T> {
     }
 
     fn to_stack_item(&self) -> StackItem {
-        let mut reference_counter = ReferenceCounter::new();
+        let mut reference_counter = References::new();
         StackItem::Array(
             self.list
                 .iter()

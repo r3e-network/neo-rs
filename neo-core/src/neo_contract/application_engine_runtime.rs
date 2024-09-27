@@ -1,6 +1,6 @@
 use num_bigint::{BigInt, Sign};
 use neo_vm::vm::script::Script;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::StackItem;
 use crate::contract::Contract;
 use crate::cryptography::{ECCurve, ECPoint};
 use crate::hardfork::Hardfork;
@@ -14,8 +14,8 @@ use crate::neo_contract::log_event_args::LogEventArgs;
 use crate::neo_contract::native_contract::NativeContract;
 use crate::neo_contract::notify_event_args::NotifyEventArgs;
 use crate::network::payloads::{OracleResponse, Signer, WitnessRuleAction};
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 
 impl ApplicationEngine {
     /// The maximum length of event name.
@@ -99,7 +99,7 @@ impl ApplicationEngine {
     /// Determines whether the specified account has witnessed the current transaction.
     pub fn check_witness(&self, hash_or_pubkey: &[u8]) -> Result<bool, String> {
         let hash = match hash_or_pubkey.len() {
-            20 => UInt160::from_slice(hash_or_pubkey),
+            20 => H160::from_slice(hash_or_pubkey),
             33 => {
                 let point = ECPoint::decode_point(hash_or_pubkey, ECCurve::secp256r1())?;
                 Contract::create_signature_redeem_script(&point).to_script_hash()
@@ -110,7 +110,7 @@ impl ApplicationEngine {
     }
 
     /// Determines whether the specified account has witnessed the current transaction.
-    pub fn check_witness_internal(&self, hash: &UInt160) -> Result<bool, String> {
+    pub fn check_witness_internal(&self, hash: &H160) -> Result<bool, String> {
         if hash == &self.calling_script_hash() {
             return Ok(true);
         }
@@ -220,7 +220,7 @@ impl ApplicationEngine {
     }
 
     /// Sends a notification for the specified contract.
-    pub fn send_notification(&mut self, hash: UInt160, event_name: String, state: Array) -> Result<(), String> {
+    pub fn send_notification(&mut self, hash: H160, event_name: String, state: Array) -> Result<(), String> {
         let notification = NotifyEventArgs::new(
             self.script_container.clone(),
             hash,
@@ -237,7 +237,7 @@ impl ApplicationEngine {
 
     /// The implementation of System.Runtime.GetNotifications.
     /// Gets the notifications sent by the specified contract during the execution.
-    pub fn get_notifications(&self, hash: Option<&UInt160>) -> Result<Array, String> {
+    pub fn get_notifications(&self, hash: Option<&H160>) -> Result<Array, String> {
         let notifications = self.notifications.as_ref()
             .map(|n| n.iter())
             .unwrap_or_else(|| [].iter());
@@ -285,10 +285,10 @@ impl ApplicationEngine {
                 }
             },
             ContractParameterType::Hash160 => {
-                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == UInt160::LEN)
+                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == H160::LEN)
             },
             ContractParameterType::Hash256 => {
-                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == UInt256::LEN)
+                matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == H256::LEN)
             },
             ContractParameterType::PublicKey => {
                 matches!(item, StackItem::ByteString(bytes) | StackItem::Buffer(bytes) if bytes.len() == 33)

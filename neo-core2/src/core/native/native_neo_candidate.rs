@@ -1,45 +1,57 @@
-package native
+use std::panic;
+use num_bigint::BigInt;
+use crate::vm::stackitem::{Item, Struct, Convertible};
 
-import (
-	"math/big"
-
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-)
-
-type candidate struct {
-	Registered bool
-	Votes      big.Int
+pub struct Candidate {
+    registered: bool,
+    votes: BigInt,
 }
 
-// FromBytes unmarshals a candidate from the byte array.
-func (c *candidate) FromBytes(data []byte) *candidate {
-	err := stackitem.DeserializeConvertible(data, c)
-	if err != nil {
-		panic(err)
-	}
-	return c
+impl Candidate {
+    // FromBytes unmarshals a candidate from the byte array.
+    pub fn from_bytes(data: &[u8]) -> Self {
+        let mut candidate = Self {
+            registered: false,
+            votes: BigInt::from(0),
+        };
+        if let Err(e) = Convertible::from_bytes(data, &mut candidate) {
+            panic!("{}", e);
+        }
+        candidate
+    }
+
+    // ToStackItem implements stackitem::Convertible. It never returns an error.
+    pub fn to_stack_item(&self) -> Item {
+        Item::Struct(Struct::new(vec![
+            Item::Boolean(self.registered),
+            Item::Integer(self.votes.clone()),
+        ]))
+    }
+
+    // FromStackItem implements stackitem::Convertible.
+    pub fn from_stack_item(&mut self, item: &Item) -> Result<(), Box<dyn std::error::Error>> {
+        if let Item::Struct(s) = item {
+            let arr = s.value();
+            if arr.len() != 2 {
+                return Err("Invalid number of items in struct".into());
+            }
+            self.registered = arr[0].try_bool()?;
+            self.votes = arr[1].try_integer()?;
+            Ok(())
+        } else {
+            Err("Expected Struct item".into())
+        }
+    }
 }
 
-// ToStackItem implements stackitem.Convertible. It never returns an error.
-func (c *candidate) ToStackItem() (stackitem.Item, error) {
-	return stackitem.NewStruct([]stackitem.Item{
-		stackitem.NewBool(c.Registered),
-		stackitem.NewBigInteger(&c.Votes),
-	}), nil
-}
+impl Convertible for Candidate {
+    fn from_bytes(data: &[u8], target: &mut Self) -> Result<(), Box<dyn std::error::Error>> {
+        // Implement deserialization logic here
+        unimplemented!()
+    }
 
-// FromStackItem implements stackitem.Convertible.
-func (c *candidate) FromStackItem(item stackitem.Item) error {
-	arr := item.(*stackitem.Struct).Value().([]stackitem.Item)
-	vs, err := arr[1].TryInteger()
-	if err != nil {
-		return err
-	}
-	reg, err := arr[0].TryBool()
-	if err != nil {
-		return err
-	}
-	c.Registered = reg
-	c.Votes = *vs
-	return nil
+    fn to_bytes(&self) -> Vec<u8> {
+        // Implement serialization logic here
+        unimplemented!()
+    }
 }

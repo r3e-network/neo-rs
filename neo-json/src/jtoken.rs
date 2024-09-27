@@ -406,3 +406,11 @@ impl From<IndexMap<String, JToken>> for JToken {
         JToken::Object(value)
     }
 }
+
+
+// impl from json to JToken
+impl From<Value> for JToken {
+    fn from(value: Value) -> Self {
+        JToken::from(value)
+    }
+}

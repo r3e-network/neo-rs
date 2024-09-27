@@ -1,7 +1,6 @@
 use std::sync::atomic::{AtomicPtr, Ordering};
 use neo_json::jtoken::JToken;
-use crate::UInt160;
-use crate::wallet::KeyPair;
+use crate::wallet::key_pair::KeyPair;
 use crate::wallet::nep6::{NEP6Contract, NEP6Wallet};
 use crate::wallet::wallet::Wallet;
 
@@ -34,7 +33,7 @@ impl WalletAccount for NEP6Account {
 }
 
 impl NEP6Account {
-    pub fn new(wallet: NEP6Wallet, script_hash: UInt160, nep2key: Option<String>) -> Self {
+    pub fn new(wallet: NEP6Wallet, script_hash: H160, nep2key: Option<String>) -> Self {
         Self {
             wallet,
             nep2key,
@@ -44,7 +43,7 @@ impl NEP6Account {
         }
     }
 
-    pub fn new_with_key(wallet: NEP6Wallet, script_hash: UInt160, key: KeyPair, password: &str) -> Self {
+    pub fn new_with_key(wallet: NEP6Wallet, script_hash: H160, key: KeyPair, password: &str) -> Self {
         let nep2key = key.export(
             password,
             wallet.protocol_settings().address_version,

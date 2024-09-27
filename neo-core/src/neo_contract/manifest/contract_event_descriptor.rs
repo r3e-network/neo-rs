@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use neo_json::json_convert_trait::IJsonConvertible;
 use neo_json::json_error::JsonError;
 use neo_json::jtoken::JToken;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::References;
+use neo_vm::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::manifest::contract_parameter_definition::ContractParameterDefinition;
 use crate::neo_contract::manifest::manifest_error::ManifestError;
@@ -41,7 +41,7 @@ impl IInteroperable for ContractEventDescriptor {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         Ok(Rc::from(StackItem::Struct(vec![
             Rc::from(self.name.clone()),
             Rc::from(StackItem::Array(

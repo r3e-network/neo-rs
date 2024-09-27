@@ -1,6 +1,6 @@
 use std::io::Write;
 use crate::network::payloads::{Header, Transaction};
-use crate::uint256::UInt256;
+use neo_type::H256;
 use getset::{CopyGetters, Getters, MutGetters, Setters};
 use crate::cryptography::MerkleTree;
 use crate::io::memory_reader::MemoryReader;
@@ -21,7 +21,7 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn hash(&self) -> UInt256 {
+    pub fn hash(&self) -> H256 {
         self.header.hash()
     }
 
@@ -29,11 +29,11 @@ impl Block {
         self.header.version()
     }
 
-    pub fn prev_hash(&self) -> UInt256 {
+    pub fn prev_hash(&self) -> H256 {
         self.header.prev_hash()
     }
 
-    pub fn merkle_root(&self) -> UInt256 {
+    pub fn merkle_root(&self) -> H256 {
         self.header.merkle_root()
     }
 
@@ -53,7 +53,7 @@ impl Block {
         self.header.primary_index()
     }
 
-    pub fn next_consensus(&self) -> UInt160 {
+    pub fn next_consensus(&self) -> H160 {
         self.header.next_consensus()
     }
 
@@ -131,7 +131,7 @@ impl IVerifiable for Block {
         self.header.witnesses()
     }
 
-    fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
+    fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<H160> {
         self.header.get_script_hashes_for_verifying(snapshot)
     }
 }

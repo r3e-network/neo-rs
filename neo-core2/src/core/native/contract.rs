@@ -1,136 +1,125 @@
-package native
+use std::collections::HashMap;
+use std::sync::Arc;
 
-import (
-	"strings"
-
-	"github.com/nspcc-dev/neo-go/pkg/config"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop/interopnames"
-	"github.com/nspcc-dev/neo-go/pkg/io"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-	"github.com/nspcc-dev/neo-go/pkg/vm/emit"
-)
+use crate::config::ProtocolConfiguration;
+use crate::core::interop::{Contract, InteropInterface};
+use crate::core::interop::interopnames;
+use crate::io::BufBinWriter;
+use crate::util::Uint160;
+use crate::vm::emit;
 
 // Contracts is a set of registered native contracts.
-type Contracts struct {
-	Management *Management
-	Ledger     *Ledger
-	NEO        *NEO
-	GAS        *GAS
-	Policy     *Policy
-	Oracle     *Oracle
-	Designate  *Designate
-	Notary     *Notary
-	Crypto     *Crypto
-	Std        *Std
-	Contracts  []interop.Contract
-	// persistScript is a vm script which executes "onPersist" method of every native contract.
-	persistScript []byte
-	// postPersistScript is a vm script which executes "postPersist" method of every native contract.
-	postPersistScript []byte
+pub struct Contracts {
+    management: Arc<Management>,
+    ledger: Arc<Ledger>,
+    neo: Arc<NEO>,
+    gas: Arc<GAS>,
+    policy: Arc<Policy>,
+    oracle: Arc<Oracle>,
+    designate: Arc<Designate>,
+    notary: Option<Arc<Notary>>,
+    crypto: Arc<Crypto>,
+    std: Arc<Std>,
+    contracts: Vec<Arc<dyn Contract>>,
+    // persistScript is a vm script which executes "onPersist" method of every native contract.
+    persist_script: Option<Vec<u8>>,
+    // postPersistScript is a vm script which executes "postPersist" method of every native contract.
+    post_persist_script: Option<Vec<u8>>,
 }
 
-// ByHash returns a native contract with the specified hash.
-func (cs *Contracts) ByHash(h util.Uint160) interop.Contract {
-	for _, ctr := range cs.Contracts {
-		if ctr.Metadata().Hash.Equals(h) {
-			return ctr
-		}
-	}
-	return nil
-}
+impl Contracts {
+    // ByHash returns a native contract with the specified hash.
+    pub fn by_hash(&self, h: &Uint160) -> Option<Arc<dyn Contract>> {
+        self.contracts.iter().find(|ctr| ctr.metadata().hash == *h).cloned()
+    }
 
-// ByName returns a native contract with the specified name.
-func (cs *Contracts) ByName(name string) interop.Contract {
-	name = strings.ToLower(name)
-	for _, ctr := range cs.Contracts {
-		if strings.ToLower(ctr.Metadata().Name) == name {
-			return ctr
-		}
-	}
-	return nil
-}
+    // ByName returns a native contract with the specified name.
+    pub fn by_name(&self, name: &str) -> Option<Arc<dyn Contract>> {
+        let name = name.to_lowercase();
+        self.contracts.iter().find(|ctr| ctr.metadata().name.to_lowercase() == name).cloned()
+    }
 
-// NewContracts returns a new set of native contracts with new GAS, NEO, Policy, Oracle,
-// Designate and (optional) Notary contracts.
-func NewContracts(cfg config.ProtocolConfiguration) *Contracts {
-	cs := new(Contracts)
+    // NewContracts returns a new set of native contracts with new GAS, NEO, Policy, Oracle,
+    // Designate and (optional) Notary contracts.
+    pub fn new(cfg: &ProtocolConfiguration) -> Self {
+        let mut cs = Contracts {
+            management: Arc::new(Management::new()),
+            ledger: Arc::new(Ledger::new()),
+            neo: Arc::new(NEO::new(cfg)),
+            gas: Arc::new(GAS::new(cfg.initial_gas_supply as i64, cfg.p2p_sig_extensions)),
+            policy: Arc::new(Policy::new(cfg.p2p_sig_extensions)),
+            oracle: Arc::new(Oracle::new()),
+            designate: Arc::new(Designate::new(&cfg.genesis.roles)),
+            notary: None,
+            crypto: Arc::new(Crypto::new()),
+            std: Arc::new(Std::new()),
+            contracts: Vec::new(),
+            persist_script: None,
+            post_persist_script: None,
+        };
 
-	mgmt := newManagement()
-	cs.Management = mgmt
-	cs.Contracts = append(cs.Contracts, mgmt)
+        // Set up cross-references
+        Arc::get_mut(&mut cs.neo).unwrap().gas = Arc::clone(&cs.gas);
+        Arc::get_mut(&mut cs.neo).unwrap().policy = Arc::clone(&cs.policy);
+        Arc::get_mut(&mut cs.gas).unwrap().neo = Arc::clone(&cs.neo);
+        Arc::get_mut(&mut cs.gas).unwrap().policy = Arc::clone(&cs.policy);
+        Arc::get_mut(&mut cs.management).unwrap().neo = Arc::clone(&cs.neo);
+        Arc::get_mut(&mut cs.management).unwrap().policy = Arc::clone(&cs.policy);
+        Arc::get_mut(&mut cs.policy).unwrap().neo = Arc::clone(&cs.neo);
 
-	s := newStd()
-	cs.Std = s
-	cs.Contracts = append(cs.Contracts, s)
+        Arc::get_mut(&mut cs.designate).unwrap().neo = Arc::clone(&cs.neo);
+        Arc::get_mut(&mut cs.oracle).unwrap().gas = Arc::clone(&cs.gas);
+        Arc::get_mut(&mut cs.oracle).unwrap().neo = Arc::clone(&cs.neo);
+        Arc::get_mut(&mut cs.oracle).unwrap().designate = Arc::clone(&cs.designate);
 
-	c := newCrypto()
-	cs.Crypto = c
-	cs.Contracts = append(cs.Contracts, c)
+        if cfg.p2p_sig_extensions {
+            let notary = Arc::new(Notary::new());
+            Arc::get_mut(&mut notary).unwrap().gas = Arc::clone(&cs.gas);
+            Arc::get_mut(&mut notary).unwrap().neo = Arc::clone(&cs.neo);
+            Arc::get_mut(&mut notary).unwrap().designate = Arc::clone(&cs.designate);
+            Arc::get_mut(&mut notary).unwrap().policy = Arc::clone(&cs.policy);
+            cs.notary = Some(notary.clone());
+            cs.contracts.push(notary);
+        }
 
-	ledger := newLedger()
-	cs.Ledger = ledger
-	cs.Contracts = append(cs.Contracts, ledger)
+        cs.contracts.extend_from_slice(&[
+            cs.management.clone(),
+            cs.std.clone(),
+            cs.crypto.clone(),
+            cs.ledger.clone(),
+            cs.gas.clone(),
+            cs.neo.clone(),
+            cs.policy.clone(),
+            cs.designate.clone(),
+            cs.oracle.clone(),
+        ]);
 
-	gas := newGAS(int64(cfg.InitialGASSupply), cfg.P2PSigExtensions)
-	neo := newNEO(cfg)
-	policy := newPolicy(cfg.P2PSigExtensions)
-	neo.GAS = gas
-	neo.Policy = policy
-	gas.NEO = neo
-	gas.Policy = policy
-	mgmt.NEO = neo
-	mgmt.Policy = policy
-	policy.NEO = neo
+        cs
+    }
 
-	cs.GAS = gas
-	cs.NEO = neo
-	cs.Policy = policy
-	cs.Contracts = append(cs.Contracts, neo, gas, policy)
+    // GetPersistScript returns a VM script calling "onPersist" syscall for native contracts.
+    pub fn get_persist_script(&mut self) -> Vec<u8> {
+        if let Some(script) = &self.persist_script {
+            script.clone()
+        } else {
+            let mut w = BufBinWriter::new();
+            emit::syscall(&mut w, interopnames::SYSTEM_CONTRACT_NATIVE_ON_PERSIST);
+            let script = w.to_vec();
+            self.persist_script = Some(script.clone());
+            script
+        }
+    }
 
-	desig := newDesignate(cfg.Genesis.Roles)
-	desig.NEO = neo
-	cs.Designate = desig
-	cs.Contracts = append(cs.Contracts, desig)
-
-	oracle := newOracle()
-	oracle.GAS = gas
-	oracle.NEO = neo
-	oracle.Desig = desig
-	cs.Oracle = oracle
-	cs.Contracts = append(cs.Contracts, oracle)
-
-	if cfg.P2PSigExtensions {
-		notary := newNotary()
-		notary.GAS = gas
-		notary.NEO = neo
-		notary.Desig = desig
-		notary.Policy = policy
-		cs.Notary = notary
-		cs.Contracts = append(cs.Contracts, notary)
-	}
-
-	return cs
-}
-
-// GetPersistScript returns a VM script calling "onPersist" syscall for native contracts.
-func (cs *Contracts) GetPersistScript() []byte {
-	if cs.persistScript != nil {
-		return cs.persistScript
-	}
-	w := io.NewBufBinWriter()
-	emit.Syscall(w.BinWriter, interopnames.SystemContractNativeOnPersist)
-	cs.persistScript = w.Bytes()
-	return cs.persistScript
-}
-
-// GetPostPersistScript returns a VM script calling "postPersist" syscall for native contracts.
-func (cs *Contracts) GetPostPersistScript() []byte {
-	if cs.postPersistScript != nil {
-		return cs.postPersistScript
-	}
-	w := io.NewBufBinWriter()
-	emit.Syscall(w.BinWriter, interopnames.SystemContractNativePostPersist)
-	cs.postPersistScript = w.Bytes()
-	return cs.postPersistScript
+    // GetPostPersistScript returns a VM script calling "postPersist" syscall for native contracts.
+    pub fn get_post_persist_script(&mut self) -> Vec<u8> {
+        if let Some(script) = &self.post_persist_script {
+            script.clone()
+        } else {
+            let mut w = BufBinWriter::new();
+            emit::syscall(&mut w, interopnames::SYSTEM_CONTRACT_NATIVE_POST_PERSIST);
+            let script = w.to_vec();
+            self.post_persist_script = Some(script.clone());
+            script
+        }
+    }
 }

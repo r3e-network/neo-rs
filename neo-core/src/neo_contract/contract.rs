@@ -3,12 +3,12 @@ use NeoRust::builder::ScriptBuilder;
 use crate::cryptography::ECPoint;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 pub trait Contract {
     fn script(&self) -> &Vec<u8>;
     fn parameter_list(&self) -> &Vec<ContractParameterType>;
-    fn script_hash(&mut self) -> UInt160;
+    fn script_hash(&mut self) -> H160;
 }
 
 #[derive(Clone, Debug)]
@@ -19,7 +19,7 @@ pub struct StandardContract {
     /// The parameters of the contract.
     pub parameter_list: Vec<ContractParameterType>,
 
-    script_hash: Option<UInt160>,
+    script_hash: Option<H160>,
 }
 
 impl StandardContract {
@@ -33,7 +33,7 @@ impl StandardContract {
     }
 
     /// Constructs a special contract with empty script, will get the script with script_hash from blockchain when doing the verification.
-    pub fn with_hash(script_hash: UInt160, parameter_list: Vec<ContractParameterType>) -> Self {
+    pub fn with_hash(script_hash: H160, parameter_list: Vec<ContractParameterType>) -> Self {
         Self {
             script: Vec::new(),
             parameter_list,
@@ -83,9 +83,9 @@ impl StandardContract {
     }
 
     /// Gets the BFT address for the specified public keys.
-    pub fn get_bft_address(pubkeys: &[ECPoint]) -> UInt160 {
+    pub fn get_bft_address(pubkeys: &[ECPoint]) -> H160 {
         let m = pubkeys.len() - (pubkeys.len() - 1) / 3;
-        UInt160::from_script(&Self::create_multi_sig_redeem_script(m, pubkeys))
+        H160::from_script(&Self::create_multi_sig_redeem_script(m, pubkeys))
     }
 }
 
@@ -98,11 +98,11 @@ impl Contract for StandardContract {
         &self.parameter_list
     }
 
-    fn script_hash(&mut self) -> UInt160 {
+    fn script_hash(&mut self) -> H160 {
         if let Some(hash) = self.script_hash {
             hash
         } else {
-            let hash = UInt160::from_script(&self.script);
+            let hash = H160::from_script(&self.script);
             self.script_hash = Some(hash);
             hash
         }

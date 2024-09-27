@@ -1,13 +1,13 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use alloc::string::{String, ToString};
 use core::fmt::{Display, Formatter};
 
 use neo_base::encoding::bin::*;
 use neo_base::encoding::hex::{StartsWith0x, ToRevHex};
 use neo_base::errors;
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+use crate::ToH160Error;
 
 pub const H256_SIZE: usize = 32;
 
@@ -16,6 +16,15 @@ pub const H256_SIZE: usize = 32;
 pub struct H256([u8; H256_SIZE]);
 
 impl H256 {
+    pub fn from_script(p0: &Vec<u8>) -> H256 {
+        let mut buf = [0u8; H256_SIZE];
+        buf.copy_from_slice(p0);
+        buf.reverse();
+        H256::from(buf)
+    }
+
+    pub fn zero() -> Self { Self([0u8; H256_SIZE]) }
+    
     pub fn is_zero(&self) -> bool { self.0 == [0u8; H256_SIZE] }
 
     pub fn as_le_bytes(&self) -> &[u8] { &self.0 }
@@ -36,6 +45,24 @@ impl From<[u8; H256_SIZE]> for H256 {
     ///  if H256 is from sha256-hash, and the `to_string` will output a reversed hex-string from sha256-hash.
     fn from(value: [u8; H256_SIZE]) -> Self { Self(value) }
 }
+
+impl From<&[u8]> for H256 {
+    fn from(value: &[u8]) -> Self {
+        let mut buf = [0u8; H256_SIZE];
+        buf.copy_from_slice(value);
+        buf.reverse();
+        H256::from(buf)
+    }
+}
+
+impl From<&str> for H256 {
+    fn from(value: &str) -> Self {
+        let value = value.trim_matches('"');
+        let value = if value.starts_with_0x() { &value[2..] } else { value };
+        H256::try_from(value).expect("hex decode should be ok")
+    }
+}
+
 
 impl Display for H256 {
     #[inline]
@@ -81,8 +108,8 @@ impl TryFrom<&str> for H256 {
 
         let mut buf = [0u8; H256_SIZE];
         let _ = hex::decode_to_slice(value, &mut buf).map_err(|e| match e {
-            HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
-            HexError::InvalidHexCharacter { c: ch, index: _ } => Self::Error::InvalidChar(ch),
+            HexError::OddLength | HexError::InvalidStringLength => ToH160Error::InvalidLength,
+            HexError::InvalidHexCharacter { c: ch, index: _ } => ToH160Error::InvalidChar(ch),
         })?;
 
         buf.reverse();

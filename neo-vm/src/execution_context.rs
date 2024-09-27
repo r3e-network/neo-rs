@@ -3,21 +3,21 @@
 
 use crate::*;
 
-pub struct ExecContext {
+pub struct ExecutionContext {
     pub(crate) statics: Option<Slots>,
     pub(crate) locals: Option<Slots>,
     pub(crate) arguments: Option<Slots>,
 
     // stack should be declare after than statics, locals and arguments
-    pub(crate) stack: ExecStack,
+    pub(crate) stack: EvaluationStack,
 
     pc: usize,
     program: Rc<Program>,
 }
 
-impl ExecContext {
-    pub fn new(stack: ExecStack, program: Rc<Program>) -> Self {
-        ExecContext { stack, statics: None, locals: None, arguments: None, pc: 0, program }
+impl ExecutionContext {
+    pub fn new(stack: EvaluationStack, program: Rc<Program>) -> Self {
+        ExecutionContext { stack, statics: None, locals: None, arguments: None, pc: 0, program }
     }
 
     pub fn execute(&mut self) -> Result<(), ExecError> {

@@ -7,7 +7,7 @@ use crate::core::transaction::{self, Transaction};
 use crate::encoding::address;
 use crate::rpcclient::{self, invoker, neo, unwrap};
 use crate::util::Uint160;
-use crate::vm::vmstate::VmState;
+use crate::vm::vmstate::VMState;
 
 fn example_invoker() -> Result<(), Box<dyn Error>> {
     // No error checking done at all, intentionally.
@@ -27,7 +27,7 @@ fn example_invoker() -> Result<(), Box<dyn Error>> {
 
     // Test-invoke transfer call.
     let res = inv.call(neo::HASH, "transfer", &[acc.clone(), Uint160::new([1, 2, 3]), 1.into(), None])?;
-    if res.state == VmState::Halt.to_string() {
+    if res.state == VMState::Halt.to_string() {
         panic!("NEO is broken!"); // inv has no signers and transfer requires a witness to be performed.
     } else {
         println!("ok"); // this actually should fail
@@ -51,7 +51,7 @@ fn example_invoker() -> Result<(), Box<dyn Error>> {
 
     // Now test invocation should be fine (if NVTiAjNgagDkTr5HTzDmQP9kPwPHN5BgVq has 1 NEO of course).
     let res = inv.call(neo::HASH, "transfer", &[acc.clone(), Uint160::new([1, 2, 3]), 1.into(), None])?;
-    if res.state == VmState::Halt.to_string() {
+    if res.state == VMState::Halt.to_string() {
         // transfer actually returns a value, so check it too.
         let ok = unwrap::bool(res, None)?;
         if ok {

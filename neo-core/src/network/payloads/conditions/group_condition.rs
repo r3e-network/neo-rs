@@ -53,7 +53,7 @@ impl WitnessCondition for GroupCondition {
         json
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         let mut result = Array::new(reference_counter);
         result.push(StackItem::Integer(self.condition_type() as i32));
         result.push(StackItem::ByteString(self.group.to_array()));

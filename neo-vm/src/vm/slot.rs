@@ -1,18 +1,17 @@
 use alloc::rc::Rc;
 use std::cell::RefCell;
-use crate::vm_types::reference_counter::ReferenceCounter;
-use crate::vm_types::stack_item::StackItem;
+use crate::{References, StackItem};
 
 #[derive(Debug, Clone, Default)]
 pub struct Slot {
 	items: Vec<Rc<RefCell< StackItem>>>,
-	reference_counter: Rc<RefCell<ReferenceCounter>>,
+	reference_counter: Rc<RefCell<References>>,
 }
 
 impl Slot {
 	pub fn new(
         items: Vec<Rc<RefCell< StackItem>>>,
-        reference_counter: Rc<RefCell<ReferenceCounter>>,
+        reference_counter: Rc<RefCell<References>>,
 	) -> Self {
 		let mut slot = Self { items, reference_counter };
 		for item in &slot.items {
@@ -21,7 +20,7 @@ impl Slot {
 		slot
 	}
 
-	pub fn new_with_count(count: i32, reference_counter: Rc<RefCell<ReferenceCounter>>) -> Self {
+	pub fn new_with_count(count: i32, reference_counter: Rc<RefCell<References>>) -> Self {
 		let mut items = Vec::new();
 		for _ in 0..count {
 			items.push(StackItemTrait::from(Null::default()).into());
@@ -32,7 +31,7 @@ impl Slot {
 
 	pub fn with_capacity(
 		capacity: usize,
-		reference_counter: Rc<RefCell<ReferenceCounter>>,
+		reference_counter: Rc<RefCell<References>>,
 	) -> Self {
 		Self { items: Vec::with_capacity(capacity), reference_counter }
 	}

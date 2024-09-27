@@ -1,293 +1,170 @@
-package native
+use std::any::Any;
+use std::error::Error;
+use std::fmt;
+use num_bigint::BigInt;
 
-import (
-	"errors"
-	"fmt"
-	"math/big"
+use bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Gt};
+use crate::vm::stackitem::{Equatable, Interop};
 
-	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-)
-
-// blsPoint is a wrapper around bls12381 point types that must be used as
-// stackitem.Interop values and implement stackitem.Equatable interface.
-type blsPoint struct {
-	point any
+// BlsPoint is a wrapper around bls12_381 point types that must be used as
+// Interop values and implement Equatable trait.
+#[derive(Clone)]
+pub struct BlsPoint {
+    point: Box<dyn Any>,
 }
 
-var _ = stackitem.Equatable(blsPoint{})
-
-// Equals implements stackitem.Equatable interface.
-func (p blsPoint) Equals(other stackitem.Equatable) bool {
-	res, err := p.EqualsCheckType(other)
-	return err == nil && res
+impl Equatable for BlsPoint {
+    fn equals(&self, other: &dyn Equatable) -> bool {
+        if let Some(other) = other.as_any().downcast_ref::<BlsPoint>() {
+            self.equals_check_type(other).unwrap_or(false)
+        } else {
+            false
+        }
+    }
 }
 
-// EqualsCheckType checks whether other is of the same type as p and returns an error if not.
-// It also returns whether other and p are equal.
-func (p blsPoint) EqualsCheckType(other stackitem.Equatable) (bool, error) {
-	b, ok := other.(blsPoint)
-	if !ok {
-		return false, errors.New("not a bls12-381 point")
-	}
-	var (
-		res bool
-		err error
-	)
-	switch x := p.point.(type) {
-	case *bls12381.G1Affine:
-		y, ok := b.point.(*bls12381.G1Affine)
-		if !ok {
-			err = fmt.Errorf("equal: unexpected y bls12381 point type: %T vs G1Affine", y)
-			break
-		}
-		res = x.Equal(y)
-	case *bls12381.G1Jac:
-		y, ok := b.point.(*bls12381.G1Jac)
-		if !ok {
-			err = fmt.Errorf("equal: unexpected y bls12381 point type: %T vs G1Jac", y)
-			break
-		}
-		res = x.Equal(y)
-	case *bls12381.G2Affine:
-		y, ok := b.point.(*bls12381.G2Affine)
-		if !ok {
-			err = fmt.Errorf("equal: unexpected y bls12381 point type: %T vs G2Affine", y)
-			break
-		}
-		res = x.Equal(y)
-	case *bls12381.G2Jac:
-		y, ok := b.point.(*bls12381.G2Jac)
-		if !ok {
-			err = fmt.Errorf("equal: unexpected y bls12381 point type: %T vs G2Jac", y)
-			break
-		}
-		res = x.Equal(y)
-	case *bls12381.GT:
-		y, ok := b.point.(*bls12381.GT)
-		if !ok {
-			err = fmt.Errorf("equal: unexpected y bls12381 point type: %T vs GT", y)
-			break
-		}
-		res = x.Equal(y)
-	default:
-		err = fmt.Errorf("equal: unexpected x bls12381 point type: %T", x)
-	}
+impl BlsPoint {
+    fn equals_check_type(&self, other: &BlsPoint) -> Result<bool, Box<dyn Error>> {
+        match (self.point.downcast_ref::<G1Affine>(), other.point.downcast_ref::<G1Affine>()) {
+            (Some(x), Some(y)) => Ok(x == y),
+            _ => match (self.point.downcast_ref::<G1Projective>(), other.point.downcast_ref::<G1Projective>()) {
+                (Some(x), Some(y)) => Ok(x == y),
+                _ => match (self.point.downcast_ref::<G2Affine>(), other.point.downcast_ref::<G2Affine>()) {
+                    (Some(x), Some(y)) => Ok(x == y),
+                    _ => match (self.point.downcast_ref::<G2Projective>(), other.point.downcast_ref::<G2Projective>()) {
+                        (Some(x), Some(y)) => Ok(x == y),
+                        _ => match (self.point.downcast_ref::<Gt>(), other.point.downcast_ref::<Gt>()) {
+                            (Some(x), Some(y)) => Ok(x == y),
+                            _ => Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, "Mismatched BLS12-381 point types"))),
+                        },
+                    },
+                },
+            },
+        }
+    }
 
-	return res, err
+    pub fn to_bytes(&self) -> Vec<u8> {
+        if let Some(p) = self.point.downcast_ref::<G1Affine>() {
+            p.to_compressed().to_vec()
+        } else if let Some(p) = self.point.downcast_ref::<G1Projective>() {
+            p.to_affine().to_compressed().to_vec()
+        } else if let Some(p) = self.point.downcast_ref::<G2Affine>() {
+            p.to_compressed().to_vec()
+        } else if let Some(p) = self.point.downcast_ref::<G2Projective>() {
+            p.to_affine().to_compressed().to_vec()
+        } else if let Some(p) = self.point.downcast_ref::<Gt>() {
+            p.to_bytes().to_vec()
+        } else {
+            panic!("Unknown BLS12-381 point type")
+        }
+    }
+
+    pub fn from_bytes(buf: &[u8]) -> Result<Self, Box<dyn Error>> {
+        match buf.len() {
+            48 => {
+                let g1 = G1Affine::from_compressed(buf.try_into()?)?;
+                Ok(BlsPoint { point: Box::new(g1) })
+            },
+            96 => {
+                let g2 = G2Affine::from_compressed(buf.try_into()?)?;
+                Ok(BlsPoint { point: Box::new(g2) })
+            },
+            576 => {
+                let gt = Gt::from_bytes(buf.try_into()?)?;
+                Ok(BlsPoint { point: Box::new(gt) })
+            },
+            _ => Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, "Invalid buffer length for BLS12-381 point"))),
+        }
+    }
 }
 
-// Bytes returns serialized representation of the provided point in compressed form.
-func (p blsPoint) Bytes() []byte {
-	switch p := p.point.(type) {
-	case *bls12381.G1Affine:
-		compressed := p.Bytes()
-		return compressed[:]
-	case *bls12381.G1Jac:
-		g1Affine := new(bls12381.G1Affine)
-		g1Affine.FromJacobian(p)
-		compressed := g1Affine.Bytes()
-		return compressed[:]
-	case *bls12381.G2Affine:
-		compressed := p.Bytes()
-		return compressed[:]
-	case *bls12381.G2Jac:
-		g2Affine := new(bls12381.G2Affine)
-		g2Affine.FromJacobian(p)
-		compressed := g2Affine.Bytes()
-		return compressed[:]
-	case *bls12381.GT:
-		compressed := p.Bytes()
-		return compressed[:]
-	default:
-		panic(errors.New("unknown bls12381 point type"))
-	}
+pub fn bls_point_add(a: &BlsPoint, b: &BlsPoint) -> Result<BlsPoint, Box<dyn Error>> {
+    match (a.point.downcast_ref::<G1Affine>(), b.point.downcast_ref::<G1Affine>()) {
+        (Some(x), Some(y)) => {
+            let res = G1Projective::from(x) + y;
+            Ok(BlsPoint { point: Box::new(res) })
+        },
+        _ => match (a.point.downcast_ref::<G1Projective>(), b.point.downcast_ref::<G1Projective>()) {
+            (Some(x), Some(y)) => {
+                let res = x + y;
+                Ok(BlsPoint { point: Box::new(res) })
+            },
+            _ => match (a.point.downcast_ref::<G2Affine>(), b.point.downcast_ref::<G2Affine>()) {
+                (Some(x), Some(y)) => {
+                    let res = G2Projective::from(x) + y;
+                    Ok(BlsPoint { point: Box::new(res) })
+                },
+                _ => match (a.point.downcast_ref::<G2Projective>(), b.point.downcast_ref::<G2Projective>()) {
+                    (Some(x), Some(y)) => {
+                        let res = x + y;
+                        Ok(BlsPoint { point: Box::new(res) })
+                    },
+                    _ => match (a.point.downcast_ref::<Gt>(), b.point.downcast_ref::<Gt>()) {
+                        (Some(x), Some(y)) => {
+                            let res = x * y;
+                            Ok(BlsPoint { point: Box::new(res) })
+                        },
+                        _ => Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, "Inconsistent BLS12-381 point types for addition"))),
+                    },
+                },
+            },
+        },
+    }
 }
 
-// FromBytes deserializes BLS12-381 point from the given byte slice in compressed form.
-func (p *blsPoint) FromBytes(buf []byte) error {
-	switch l := len(buf); l {
-	case bls12381.SizeOfG1AffineCompressed:
-		g1Affine := new(bls12381.G1Affine)
-		_, err := g1Affine.SetBytes(buf)
-		if err != nil {
-			return fmt.Errorf("failed to decode bls12381 G1Affine point: %w", err)
-		}
-		p.point = g1Affine
-	case bls12381.SizeOfG2AffineCompressed:
-		g2Affine := new(bls12381.G2Affine)
-		_, err := g2Affine.SetBytes(buf)
-		if err != nil {
-			return fmt.Errorf("failed to decode bls12381 G2Affine point: %w", err)
-		}
-		p.point = g2Affine
-	case bls12381.SizeOfGT:
-		gt := new(bls12381.GT)
-		err := gt.SetBytes(buf)
-		if err != nil {
-			return fmt.Errorf("failed to decode GT point: %w", err)
-		}
-		p.point = gt
-	}
-
-	return nil
+pub fn bls_point_mul(a: &BlsPoint, alpha: &BigInt) -> Result<BlsPoint, Box<dyn Error>> {
+    let scalar = bls12_381::Scalar::from_be_bytes(alpha.to_bytes_be().1.try_into()?)?;
+    
+    match a.point.downcast_ref::<G1Affine>() {
+        Some(x) => {
+            let res = G1Projective::from(x) * scalar;
+            Ok(BlsPoint { point: Box::new(res) })
+        },
+        None => match a.point.downcast_ref::<G1Projective>() {
+            Some(x) => {
+                let res = x * scalar;
+                Ok(BlsPoint { point: Box::new(res) })
+            },
+            None => match a.point.downcast_ref::<G2Affine>() {
+                Some(x) => {
+                    let res = G2Projective::from(x) * scalar;
+                    Ok(BlsPoint { point: Box::new(res) })
+                },
+                None => match a.point.downcast_ref::<G2Projective>() {
+                    Some(x) => {
+                        let res = x * scalar;
+                        Ok(BlsPoint { point: Box::new(res) })
+                    },
+                    None => match a.point.downcast_ref::<Gt>() {
+                        Some(x) => {
+                            let res = x.pow(scalar);
+                            Ok(BlsPoint { point: Box::new(res) })
+                        },
+                        None => Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, "Unexpected BLS12-381 point type for multiplication"))),
+                    },
+                },
+            },
+        },
+    }
 }
 
-// blsPointAdd performs addition of two BLS12-381 points.
-func blsPointAdd(a, b blsPoint) (blsPoint, error) {
-	var (
-		res any
-		err error
-	)
-	switch x := a.point.(type) {
-	case *bls12381.G1Affine:
-		switch y := b.point.(type) {
-		case *bls12381.G1Affine:
-			xJac := new(bls12381.G1Jac)
-			xJac.FromAffine(x)
-			xJac.AddMixed(y)
-			res = xJac
-		case *bls12381.G1Jac:
-			yJac := new(bls12381.G1Jac)
-			yJac.Set(y)
-			yJac.AddMixed(x)
-			res = yJac
-		default:
-			err = fmt.Errorf("add: inconsistent bls12381 point types: %T and %T", x, y)
-		}
-	case *bls12381.G1Jac:
-		resJac := new(bls12381.G1Jac)
-		resJac.Set(x)
-		switch y := b.point.(type) {
-		case *bls12381.G1Affine:
-			resJac.AddMixed(y)
-		case *bls12381.G1Jac:
-			resJac.AddAssign(y)
-		default:
-			err = fmt.Errorf("add: inconsistent bls12381 point types: %T and %T", x, y)
-		}
-		res = resJac
-	case *bls12381.G2Affine:
-		switch y := b.point.(type) {
-		case *bls12381.G2Affine:
-			xJac := new(bls12381.G2Jac)
-			xJac.FromAffine(x)
-			xJac.AddMixed(y)
-			res = xJac
-		case *bls12381.G2Jac:
-			yJac := new(bls12381.G2Jac)
-			yJac.Set(y)
-			yJac.AddMixed(x)
-			res = yJac
-		default:
-			err = fmt.Errorf("add: inconsistent bls12381 point types: %T and %T", x, y)
-		}
-	case *bls12381.G2Jac:
-		resJac := new(bls12381.G2Jac)
-		resJac.Set(x)
-		switch y := b.point.(type) {
-		case *bls12381.G2Affine:
-			resJac.AddMixed(y)
-		case *bls12381.G2Jac:
-			resJac.AddAssign(y)
-		default:
-			err = fmt.Errorf("add: inconsistent bls12381 point types: %T and %T", x, y)
-		}
-		res = resJac
-	case *bls12381.GT:
-		resGT := new(bls12381.GT)
-		resGT.Set(x)
-		switch y := b.point.(type) {
-		case *bls12381.GT:
-			// It's multiplication, see https://github.com/neo-project/Neo.Cryptography.BLS12_381/issues/4.
-			resGT.Mul(x, y)
-		default:
-			err = fmt.Errorf("add: inconsistent bls12381 point types: %T and %T", x, y)
-		}
-		res = resGT
-	default:
-		err = fmt.Errorf("add: unexpected bls12381 point type: %T", x)
-	}
+pub fn bls_point_pairing(a: &BlsPoint, b: &BlsPoint) -> Result<BlsPoint, Box<dyn Error>> {
+    let g1 = match a.point.downcast_ref::<G1Affine>() {
+        Some(x) => *x,
+        None => match a.point.downcast_ref::<G1Projective>() {
+            Some(x) => x.to_affine(),
+            None => return Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, "Unexpected BLS12-381 point type for G1 in pairing"))),
+        },
+    };
 
-	return blsPoint{point: res}, err
-}
+    let g2 = match b.point.downcast_ref::<G2Affine>() {
+        Some(x) => *x,
+        None => match b.point.downcast_ref::<G2Projective>() {
+            Some(x) => x.to_affine(),
+            None => return Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, "Unexpected BLS12-381 point type for G2 in pairing"))),
+        },
+    };
 
-// blsPointAdd performs scalar multiplication of two BLS12-381 points.
-func blsPointMul(a blsPoint, alphaBi *big.Int) (blsPoint, error) {
-	var (
-		res any
-		err error
-	)
-	switch x := a.point.(type) {
-	case *bls12381.G1Affine:
-		// The result is in Jacobian form in the reference implementation.
-		g1Jac := new(bls12381.G1Jac)
-		g1Jac.FromAffine(x)
-		g1Jac.ScalarMultiplication(g1Jac, alphaBi)
-		res = g1Jac
-	case *bls12381.G1Jac:
-		g1Jac := new(bls12381.G1Jac)
-		g1Jac.ScalarMultiplication(x, alphaBi)
-		res = g1Jac
-	case *bls12381.G2Affine:
-		// The result is in Jacobian form in the reference implementation.
-		g2Jac := new(bls12381.G2Jac)
-		g2Jac.FromAffine(x)
-		g2Jac.ScalarMultiplication(g2Jac, alphaBi)
-		res = g2Jac
-	case *bls12381.G2Jac:
-		g2Jac := new(bls12381.G2Jac)
-		g2Jac.ScalarMultiplication(x, alphaBi)
-		res = g2Jac
-	case *bls12381.GT:
-		gt := new(bls12381.GT)
-
-		// C# implementation differs a bit from go's. They use double-and-add algorithm, see
-		// https://github.com/neo-project/Neo.Cryptography.BLS12_381/blob/844bc3a4f7d8ba2c545ace90ca124f8ada4c8d29/src/Neo.Cryptography.BLS12_381/Gt.cs#L102
-		// and https://en.wikipedia.org/wiki/Elliptic_curve_point_multiplication#Double-and-add,
-		// Pay attention that C#'s Gt.Double() squares (not doubles!) the initial GT point.
-		// Thus.C#'s scalar multiplication operation over Gt and Scalar is effectively an exponent.
-		// Go's exponent algorithm differs a bit from the C#'s double-and-add in that go's one
-		// uses 2-bits windowed method for multiplication. However, the resulting GT point is
-		// absolutely the same between two implementations.
-		gt.Exp(*x, alphaBi)
-
-		res = gt
-	default:
-		err = fmt.Errorf("mul: unexpected bls12381 point type: %T", x)
-	}
-
-	return blsPoint{point: res}, err
-}
-
-func blsPointPairing(a, b blsPoint) (blsPoint, error) {
-	var (
-		x *bls12381.G1Affine
-		y *bls12381.G2Affine
-	)
-	switch p := a.point.(type) {
-	case *bls12381.G1Affine:
-		x = p
-	case *bls12381.G1Jac:
-		x = new(bls12381.G1Affine)
-		x.FromJacobian(p)
-	default:
-		return blsPoint{}, fmt.Errorf("pairing: unexpected bls12381 point type (g1): %T", p)
-	}
-	switch p := b.point.(type) {
-	case *bls12381.G2Affine:
-		y = p
-	case *bls12381.G2Jac:
-		y = new(bls12381.G2Affine)
-		y.FromJacobian(p)
-	default:
-		return blsPoint{}, fmt.Errorf("pairing: unexpected bls12381 point type (g2): %T", p)
-	}
-
-	gt, err := bls12381.Pair([]bls12381.G1Affine{*x}, []bls12381.G2Affine{*y})
-	if err != nil {
-		return blsPoint{}, fmt.Errorf("failed to perform pairing operation: %w", err)
-	}
-
-	return blsPoint{&gt}, nil
+    let gt = bls12_381::pairing(&g1, &g2);
+    Ok(BlsPoint { point: Box::new(gt) })
 }

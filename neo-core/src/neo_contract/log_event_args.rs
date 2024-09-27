@@ -1,6 +1,6 @@
 use crate::neo_contract::contract_error::ContractError;
 use crate::network::payloads::IVerifiable;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 /// The `EventArgs` of `ApplicationEngine.Log`.
 pub struct LogEventArgs {
@@ -8,7 +8,7 @@ pub struct LogEventArgs {
     pub script_container: Box<dyn IVerifiable<Error=ContractError>>,
 
     /// The script hash of the contract that sends the log.
-    pub script_hash: UInt160,
+    pub script_hash: H160,
 
     /// The message of the log.
     pub message: String,
@@ -22,7 +22,7 @@ impl LogEventArgs {
     /// * `container` - The container that containing the executed script.
     /// * `script_hash` - The script hash of the contract that sends the log.
     /// * `message` - The message of the log.
-    pub fn new(container: Box<dyn IVerifiable<Error=ContractError>>, script_hash: UInt160, message: String) -> Self {
+    pub fn new(container: Box<dyn IVerifiable<Error=ContractError>>, script_hash: H160, message: String) -> Self {
         Self {
             script_container: container,
             script_hash,

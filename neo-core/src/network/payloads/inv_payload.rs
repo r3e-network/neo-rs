@@ -4,7 +4,7 @@ use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::InventoryType;
-use crate::uint256::UInt256;
+use neo_type::H256;
 
 /// This message is sent to relay inventories.
 #[derive(Debug, Clone)]
@@ -13,7 +13,7 @@ pub struct InvPayload {
     pub inv_type: InventoryType,
 
     /// The hashes of the inventories.
-    pub hashes: Vec<UInt256>,
+    pub hashes: Vec<H256>,
 }
 
 impl InvPayload {
@@ -21,12 +21,12 @@ impl InvPayload {
     pub const MAX_HASHES_COUNT: usize = 500;
 
     /// Creates a new instance of the InvPayload struct.
-    pub fn new(inv_type: InventoryType, hashes: Vec<UInt256>) -> Self {
+    pub fn new(inv_type: InventoryType, hashes: Vec<H256>) -> Self {
         Self { inv_type, hashes }
     }
 
     /// Creates a group of InvPayload instances.
-    pub fn create_group(inv_type: InventoryType, hashes: Vec<UInt256>) -> VecDeque<Self> {
+    pub fn create_group(inv_type: InventoryType, hashes: Vec<H256>) -> VecDeque<Self> {
         hashes.chunks(Self::MAX_HASHES_COUNT)
             .map(|chunk| Self::new(inv_type, chunk.to_vec()))
             .collect()

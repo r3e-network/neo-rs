@@ -15,7 +15,7 @@ use crate::neo_contract::native_contract::contract_event_attribute::ContractEven
 use crate::neo_contract::native_contract::contract_method_metadata::ContractMethodMetadata;
 use crate::neo_contract::native_contract::native_contract::{CacheEntry, NEO};
 use crate::protocol_settings::ProtocolSettings;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 /// Represents the GAS token in the NEO system.
 pub struct GasToken;
@@ -91,7 +91,7 @@ impl NativeContract for GasToken {
         todo!()
     }
 
-    fn hash(&self) -> &UInt160 {
+    fn hash(&self) -> &H160 {
         todo!()
     }
 

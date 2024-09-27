@@ -9,7 +9,7 @@ use crate::neo_contract::contract_error::ContractError;
 use crate::neo_contract::contract_parameter::ContractParameter;
 use crate::network::payloads::{IVerifiable, Transaction};
 use crate::persistence::DataCache;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 /// The context used to add witnesses for `IVerifiable`.
 pub struct ContractParametersContext {
@@ -22,8 +22,8 @@ pub struct ContractParametersContext {
     /// The magic number of the network.
     pub network: u32,
 
-    context_items: HashMap<UInt160, ContextItem>,
-    script_hashes: Option<Vec<UInt160>>,
+    context_items: HashMap<H160, ContextItem>,
+    script_hashes: Option<Vec<H160>>,
 }
 
 struct ContextItem {
@@ -111,7 +111,7 @@ impl ContractParametersContext {
         })
     }
 
-    pub fn script_hashes(&self) -> &[UInt160] {
+    pub fn script_hashes(&self) -> &[H160] {
         if self.script_hashes.is_none() {
             let hashes = self.verifiable.get_script_hashes_for_verifying(&self.snapshot_cache);
             self.script_hashes = Some(hashes);
@@ -156,15 +156,15 @@ impl ContractParametersContext {
         true
     }
 
-    pub fn get_parameters(&self, script_hash: &UInt160) -> Option<&[ContractParameter]> {
+    pub fn get_parameters(&self, script_hash: &H160) -> Option<&[ContractParameter]> {
         self.context_items.get(script_hash).map(|item| item.parameters.as_slice())
     }
 
-    pub fn get_signatures(&self, script_hash: &UInt160) -> Option<&HashMap<ECPoint, Vec<u8>>> {
+    pub fn get_signatures(&self, script_hash: &H160) -> Option<&HashMap<ECPoint, Vec<u8>>> {
         self.context_items.get(script_hash).map(|item| &item.signatures)
     }
 
-    pub fn get_script(&self, script_hash: &UInt160) -> Option<&[u8]> {
+    pub fn get_script(&self, script_hash: &H160) -> Option<&[u8]> {
         self.context_items.get(script_hash).map(|item| item.script.as_slice())
     }
 
@@ -188,7 +188,7 @@ impl ContractParametersContext {
             .ok_or(Error::InvalidFormat)?;
         let context_items = items.iter()
             .map(|(k, v)| {
-                let script_hash = UInt160::try_from(k.as_str()).map_err(|_| Error::InvalidFormat)?;
+                let script_hash = H160::try_from(k.as_str()).map_err(|_| Error::InvalidFormat)?;
                 let item = ContextItem::from_json(v.as_object().ok_or(Error::InvalidFormat)?)?;
                 Ok((script_hash, item))
             })
@@ -246,12 +246,12 @@ impl Default for ContractParametersContext {
 
 // Add methods for interacting with other contracts
 impl ContractParametersContext {
-    pub fn call_contract(&self, script_hash: UInt160, method: &str, args: Vec<StackItem>) -> Result<StackItem, Error> {
+    pub fn call_contract(&self, script_hash: H160, method: &str, args: Vec<StackItem>) -> Result<StackItem, Error> {
         // Implementation for calling other contracts
         unimplemented!("Contract interaction not implemented in this context")
     }
 
-    pub fn get_storage(&self, script_hash: UInt160, key: &[u8]) -> Option<Vec<u8>> {
+    pub fn get_storage(&self, script_hash: H160, key: &[u8]) -> Option<Vec<u8>> {
         // Implementation for accessing contract storage
         unimplemented!("Storage access not implemented in this context")
     }

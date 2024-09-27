@@ -2,7 +2,7 @@ use tokio::io::AsyncWriteExt;
 use neo_base::hash::Sha256;
 use crate::io::binary_writer::BinaryWriter;
 use crate::network::payloads::IVerifiable;
-use crate::uint256::UInt256;
+use neo_type::H256;
 
 /// Calculates the hash of an `IVerifiable`.
 ///
@@ -13,12 +13,12 @@ use crate::uint256::UInt256;
 /// # Returns
 ///
 /// The hash of the object.
-pub fn calculate_hash(verifiable: &dyn IVerifiable) -> UInt256 {
+pub fn calculate_hash(verifiable: &dyn IVerifiable) -> H256 {
     let mut buffer = Vec::new();
     let mut writer = BinaryWriter::new(&mut buffer);
     verifiable.serialize_unsigned(&mut writer);
     let _ = writer.flush();
-    UInt256::new(&buffer.to_vec().sha256())
+    H256::new(&buffer.to_vec().sha256())
 }
 
 /// Gets the data of an `IVerifiable` object to be hashed.

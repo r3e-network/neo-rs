@@ -3,7 +3,7 @@
 
 use crate::*;
 
-pub(crate) fn exec_jmp(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_jmp(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let target = op.ip + op.operand.first as i8 as u32;
     if !cx.change_pc(target) {
         return Err(ExecError::InvalidJumpTarget(op.ip, op.code, target));

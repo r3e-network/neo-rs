@@ -1,17 +1,17 @@
 use alloc::rc::Rc;
 use serde::{Deserialize, Serialize};
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::References;
+use neo_vm::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::native_contract::native_contract_error::NativeContractError;
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 
 /// Represents an Oracle request in smart contracts.
 #[derive(Serialize, Deserialize)]
 pub struct OracleRequest {
     /// The original transaction that sent the related request.
-    pub original_txid: UInt256,
+    pub original_txid: H256,
 
     /// The maximum amount of GAS that can be used when executing response callback.
     pub gas_for_response: i64,
@@ -23,7 +23,7 @@ pub struct OracleRequest {
     pub filter: Option<String>,
 
     /// The hash of the callback contract.
-    pub callback_contract: UInt160,
+    pub callback_contract: H160,
 
     /// The name of the callback method.
     pub callback_method: String,
@@ -44,7 +44,7 @@ impl IInteroperable for OracleRequest {
     fn from_stack_item(item: &Rc<StackItem>) -> Result<Self, Self::Error> {
         if let StackItem::Array(array) = item {
             let request = OracleRequest {
-                original_txid: UInt256::from_slice(&array[0].as_bytes()?)?,
+                original_txid: H256::from_slice(&array[0].as_bytes()?)?,
                 gas_for_response: array[1].as_integer()? as i64,
                 url: array[2].as_string()?,
                 filter: if array[3].is_null() {
@@ -52,7 +52,7 @@ impl IInteroperable for OracleRequest {
                 } else {
                     Some(array[3].as_string()?)
                 },
-                callback_contract: UInt160::from_slice(&array[4].as_bytes()?)?,
+                callback_contract: H160::from_slice(&array[4].as_bytes()?)?,
                 callback_method: array[5].as_string()?,
                 user_data: array[6].as_bytes()?.to_vec(),
             };
@@ -62,7 +62,7 @@ impl IInteroperable for OracleRequest {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         Ok(StackItem::Array(Array::new_with_items(
             vec![
                 StackItem::ByteArray(self.original_txid.to_vec()),

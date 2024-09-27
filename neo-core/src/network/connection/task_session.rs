@@ -2,12 +2,12 @@ use std::collections::{HashMap, HashSet};
 use chrono::DateTime;
 use crate::network::capabilities::FullNodeCapability;
 use crate::network::payloads::{Block, VersionPayload};
-use crate::uint256::UInt256;
+use neo_type::H256;
 
 pub struct TaskSession {
-    pub inv_tasks: HashMap<UInt256, DateTime<chrono::Utc>>,
+    pub inv_tasks: HashMap<H256, DateTime<chrono::Utc>>,
     pub index_tasks: HashMap<u32, DateTime<chrono::Utc>>,
-    pub available_tasks: HashSet<UInt256>,
+    pub available_tasks: HashSet<H256>,
     pub received_block: HashMap<u32, Block>,
     pub is_full_node: bool,
     pub last_block_index: u32,

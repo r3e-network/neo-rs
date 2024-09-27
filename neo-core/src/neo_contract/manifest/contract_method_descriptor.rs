@@ -37,7 +37,7 @@ impl IInteroperable for ContractMethodDescriptor {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         Ok(StackItem::Struct(Struct::new(vec![
             StackItem::String(self.name.clone()),
             StackItem::Array(self.parameters.iter().map(|p| p.to_stack_item()).collect()),

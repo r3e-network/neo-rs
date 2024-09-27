@@ -1,6 +1,6 @@
 use crate::contract::Contract;
 use crate::protocol_settings::ProtocolSettings;
-use crate::uint160::UInt160;
+use neo_type::H160;
 use crate::wallet::KeyPair;
 
 /// Represents an account in a wallet.
@@ -9,7 +9,7 @@ pub struct WalletAccount {
     protocol_settings: ProtocolSettings,
 
     /// The hash of the account.
-    pub script_hash: UInt160,
+    pub script_hash: H160,
 
     /// The label of the account.
     pub label: String,
@@ -31,7 +31,7 @@ impl WalletAccount {
     ///
     /// * `script_hash` - The hash of the account.
     /// * `settings` - The `ProtocolSettings` to be used by the wallet.
-    pub fn new(script_hash: UInt160, settings: ProtocolSettings) -> Self {
+    pub fn new(script_hash: H160, settings: ProtocolSettings) -> Self {
         Self {
             protocol_settings: settings,
             script_hash,

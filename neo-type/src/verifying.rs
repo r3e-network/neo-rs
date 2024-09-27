@@ -6,9 +6,8 @@ use neo_base::encoding::bin::HashFieldsSha256;
 use neo_crypto::ecdsa::{
     DigestVerify, Secp256r1Sign, Sign as EcdsaSign, SignError, ECC256_SIGN_SIZE,
 };
-
-use crate::types::{FixedBytes, Script, Varbytes, SIGN_DATA_SIZE};
-use crate::{PrivateKey, PublicKey};
+use neo_crypto::secp256r1::{PrivateKey, PublicKey};
+use crate::{FixedBytes, Script, Varbytes, SIGN_DATA_SIZE};
 
 pub type Sign = FixedBytes<ECC256_SIGN_SIZE>;
 

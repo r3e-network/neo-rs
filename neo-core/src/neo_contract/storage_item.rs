@@ -16,7 +16,7 @@ pub struct StorageItem {
 
 enum StorageCache {
     BigInt(BigInt),
-    Interoperable(Box<dyn IInteroperable>),
+    Interoperable(Box<dyn IInteroperable<Error=()>>),
 }
 
 impl StorageItem {

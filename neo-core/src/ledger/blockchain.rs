@@ -16,8 +16,8 @@ use crate::neo_system::NeoSystem;
 use crate::network::LocalNode;
 use crate::store::Store;
 use crate::network::payloads::{IInventory, IVerifiable, InventoryType, Witness};
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 
 pub type CommittingHandler = fn(system: &NeoSystem, block: &Block, snapshot: &dyn Store<WriteBatch=()>, application_executed_list: &[ApplicationExecuted]);
 pub type CommittedHandler = fn(system: &NeoSystem, block: &Block);
@@ -25,9 +25,9 @@ pub type CommittedHandler = fn(system: &NeoSystem, block: &Block);
 /// Actor used to verify and relay `IInventory`.
 pub struct Blockchain {
     system: Arc<NeoSystem>,
-    block_cache: HashMap<UInt256, Block>,
+    block_cache: HashMap<H256, Block>,
     block_cache_unverified: HashMap<u32, UnverifiedBlocksList>,
-    extensible_witness_white_list: Option<HashSet<UInt160>>,
+    extensible_witness_white_list: Option<HashSet<H160>>,
 }
 
 pub struct PersistCompleted {
@@ -204,7 +204,7 @@ impl Blockchain {
         self.system.event_bus.publish(RelayResultReason::new(inventory, result));
     }
 
-    fn update_extensible_witness_white_list(settings: &ProtocolSettings, snapshot: &Store) -> HashSet<UInt160> {
+    fn update_extensible_witness_white_list(settings: &ProtocolSettings, snapshot: &Store) -> HashSet<H160> {
         let committee = NativeContract::NEO.get_committee_members(snapshot);
         let validators = NativeContract::NEO.get_next_block_validators(snapshot);
         let mut white_list = HashSet::new();

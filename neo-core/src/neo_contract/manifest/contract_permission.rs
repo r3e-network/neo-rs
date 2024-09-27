@@ -1,6 +1,6 @@
 use alloc::rc::Rc;
 use std::collections::HashSet;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::manifest::contract_permission_descriptor::ContractPermissionDescriptor;
 use crate::neo_contract::manifest::wild_card_container::WildcardContainer;
@@ -124,7 +124,7 @@ impl IInteroperable for ContractPermission {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         Ok(StackItem::Struct(Struct::new(vec![
             match &self.contract {
                 ContractPermissionDescriptor::Wildcard => StackItem::Null,

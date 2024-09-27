@@ -7,19 +7,20 @@ use core::hash::{Hash, Hasher};
 
 use hashbrown::hash_map::DefaultHashBuilder;
 use num_enum::TryFromPrimitive;
-
+use primitive_types::H160;
 use neo_base::{errors, math::I256};
-use neo_core::types::ScriptHash;
 
 use crate::{CastError::*, StackItem::*, *};
 
 pub const MAX_INT_SIZE: usize = 32;
 
+pub type ScriptHash = H160;
+
 pub type IndexMap = indexmap::IndexMap<StackItem, StackItem, DefaultHashBuilder>;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
-pub enum ItemType {
+pub enum StackItemType {
     Any = 0x00,
     Pointer = 0x10,
     Boolean = 0x20,
@@ -30,6 +31,29 @@ pub enum ItemType {
     Struct = 0x41,
     Map = 0x48,
     InteropInterface = 0x60,
+}
+
+impl StackItemType {
+    pub fn is_valid(tp: u8) -> bool {
+        match tp {
+            0x00 | 0x10 | 0x20 | 0x21 | 0x28 | 0x30 | 0x40 | 0x41 | 0x48 | 0x60 => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_primitive(tp: u8) -> bool {
+        match tp {
+            0x20 | 0x21 | 0x28 => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_compound(tp: u8) -> bool {
+        match tp {
+            0x40 | 0x41 | 0x48 => true,
+            _ => false,
+        }
+    }
 }
 
 /// Array is a reference type
@@ -204,18 +228,18 @@ impl Default for StackItem {
 }
 
 impl StackItem {
-    pub fn item_type(&self) -> ItemType {
+    pub fn item_type(&self) -> StackItemType {
         match &self {
-            Null => ItemType::Any,
-            Pointer(_) => ItemType::Pointer,
-            Boolean(_) => ItemType::Boolean,
-            Integer(_) => ItemType::Integer,
-            ByteString(_) => ItemType::ByteString,
-            Buffer(_) => ItemType::Buffer,
-            Array(_) => ItemType::Array,
-            Struct(_) => ItemType::Struct,
-            Map(_) => ItemType::Map,
-            InteropInterface(_) => ItemType::InteropInterface,
+            Null => StackItemType::Any,
+            Pointer(_) => StackItemType::Pointer,
+            Boolean(_) => StackItemType::Boolean,
+            Integer(_) => StackItemType::Integer,
+            ByteString(_) => StackItemType::ByteString,
+            Buffer(_) => StackItemType::Buffer,
+            Array(_) => StackItemType::Array,
+            Struct(_) => StackItemType::Struct,
+            Map(_) => StackItemType::Map,
+            InteropInterface(_) => StackItemType::InteropInterface,
         }
     }
 
@@ -274,7 +298,7 @@ impl StackItem {
             Integer(v) => Ok(!v.is_zero()),
             ByteString(v) => {
                 if v.len() > MAX_INT_SIZE {
-                    Err(InvalidCast(ItemType::ByteString, "Bool", "exceed MaxIntSize"))
+                    Err(InvalidCast(StackItemType::ByteString, "Bool", "exceed MaxIntSize"))
                 } else {
                     Ok(v.iter().find(|&&x| x != 0).is_some())
                 }
@@ -300,7 +324,7 @@ impl StackItem {
 
         *limits -= 1;
         if *limits < 0 {
-            return Err(CheckedEqError::ExceedMaxComparableSize(ItemType::ByteString));
+            return Err(CheckedEqError::ExceedMaxComparableSize(StackItemType::ByteString));
         }
         match (self, other) {
             (Null, Null) => Ok(true),
@@ -310,7 +334,7 @@ impl StackItem {
             (ByteString(l), ByteString(r)) => {
                 *limits -= 1.max(l.len().max(r.len()) as isize - 1);
                 if *limits < 0 {
-                    return Err(CheckedEqError::ExceedMaxComparableSize(ItemType::ByteString));
+                    return Err(CheckedEqError::ExceedMaxComparableSize(StackItemType::ByteString));
                 }
                 Ok(l == r)
             }
@@ -322,7 +346,7 @@ impl StackItem {
                 }
 
                 if *limits - (l.items().len() as isize) < 0 {
-                    return Err(CheckedEqError::ExceedMaxComparableSize(ItemType::Struct));
+                    return Err(CheckedEqError::ExceedMaxComparableSize(StackItemType::Struct));
                 }
 
                 for (lz, rz) in l.items().iter().zip(r.items().iter()) {
@@ -342,7 +366,7 @@ impl StackItem {
 #[derive(Debug, errors::Error)]
 pub enum CheckedEqError {
     #[error("checked_eq: {0:?} exceed max comparable size")]
-    ExceedMaxComparableSize(ItemType),
+    ExceedMaxComparableSize(StackItemType),
 
     #[error("checked_eq: exceed max nest limit: {0}")]
     ExceedMaxNestLimit(usize),
@@ -351,12 +375,12 @@ pub enum CheckedEqError {
 #[derive(Debug, errors::Error)]
 pub enum CastError {
     #[error("cast: from {0:?} to {1} invalid: {2}")]
-    InvalidCast(ItemType, &'static str, &'static str),
+    InvalidCast(StackItemType, &'static str, &'static str),
 }
 
 impl CastError {
     #[inline]
-    pub fn item_type(&self) -> ItemType {
+    pub fn item_type(&self) -> StackItemType {
         match self {
             InvalidCast(item_type, _, _) => *item_type,
         }
@@ -366,7 +390,7 @@ impl CastError {
 pub(crate) fn to_i256(v: &[u8]) -> Result<I256, CastError> {
     let n = v.len();
     if n > MAX_INT_SIZE {
-        return Err(InvalidCast(ItemType::ByteString, "Bool", "exceed MaxIntSize"));
+        return Err(InvalidCast(StackItemType::ByteString, "Bool", "exceed MaxIntSize"));
     }
 
     let mut buf = if v.last().map(|&b| (b as i8) < 0).unwrap_or(false) {

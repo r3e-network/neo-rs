@@ -2,7 +2,7 @@ use std::error::Error;
 
 pub mod ledger {
     use NeoRust::neo_types::VMState;
-    use neo_vm::vm_types::stack_item::StackItem;
+    use neo_vm::StackItem;
     use crate::neo_contract::application_engine::ApplicationEngine;
     use crate::neo_contract::notify_event_args::NotifyEventArgs;
     use crate::neo_contract::trigger_type::TriggerType;

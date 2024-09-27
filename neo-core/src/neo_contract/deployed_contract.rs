@@ -2,11 +2,11 @@ use crate::neo_contract::contract::Contract;
 use crate::neo_contract::contract_basic_method::ContractBasicMethod;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::contract_state::ContractState;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 /// Represents a deployed contract that can be invoked.
 pub struct DeployedContract {
-    pub script_hash: UInt160,
+    pub script_hash: H160,
     pub parameter_list: Vec<ContractParameterType>,
 }
 
@@ -55,7 +55,7 @@ impl Contract for DeployedContract {
         todo!()
     }
 
-    fn script_hash(&self) -> &UInt160 {
+    fn script_hash(&self) -> &H160 {
         &self.script_hash
     }
 }

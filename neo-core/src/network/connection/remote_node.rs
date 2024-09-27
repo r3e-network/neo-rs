@@ -12,7 +12,7 @@ use crate::network::payloads::VersionPayload;
 use crate::network::connection::peer::Peer;
 use crate::network::PeerMessage::Timer;
 use crate::payload::P2pMessage::Inventory;
-use crate::uint256::UInt256;
+use neo_type::H256;
 
 pub struct RemoteNode {
     system: Arc<NeoSystem>,
@@ -29,8 +29,8 @@ pub struct RemoteNode {
     pub(crate) version: Option<VersionPayload>,
     pub(crate) last_block_index: u32,
     is_full_node: bool,
-    known_hashes: HashSetCache<UInt256>,
-    sent_hashes: HashSetCache<UInt256>,
+    known_hashes: HashSetCache<H256>,
+    sent_hashes: HashSetCache<H256>,
 }
 
 impl RemoteNode {

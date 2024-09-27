@@ -14,7 +14,7 @@ use crate::neo_contract::native_contract::contract_event_attribute::ContractEven
 use crate::neo_contract::native_contract::contract_method_metadata::ContractMethodMetadata;
 use crate::neo_contract::nef_file::NefFile;
 use crate::protocol_settings::ProtocolSettings;
-use crate::uint160::UInt160;
+use neo_type::H160;
 use std::sync::Mutex;
 use lazy_static::lazy_static;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -22,13 +22,13 @@ use crate::cryptography::Helper;
 
 lazy_static! {
     static ref CONTRACTS_LIST: Mutex<Vec<Arc<dyn NativeContract>>> = Mutex::new(Vec::new());
-    static ref CONTRACTS_DICTIONARY: Mutex<HashMap<UInt160, Arc<dyn NativeContract>>> = Mutex::new(HashMap::new());
+    static ref CONTRACTS_DICTIONARY: Mutex<HashMap<H160, Arc<dyn NativeContract>>> = Mutex::new(HashMap::new());
 }
 
 pub trait NativeContract: Send + Sync {
     fn name(&self) -> &str;
     fn active_in(&self) -> Option<Hardfork>;
-    fn hash(&self) -> &UInt160;
+    fn hash(&self) -> &H160;
     fn id(&self) -> i32;
     fn event_descriptors(&self) -> &[ContractEventAttribute];
 
@@ -262,7 +262,7 @@ pub trait NativeContract: Send + Sync {
 pub struct BaseNativeContract {
     name: String,
     active_in: Option<Hardfork>,
-    hash: UInt160,
+    hash: H160,
     id: i32,
     method_descriptors: Vec<ContractMethodMetadata>,
     event_descriptors: Vec<ContractEventAttribute>,
@@ -272,7 +272,7 @@ pub struct BaseNativeContract {
 impl BaseNativeContract {
     pub fn new(name: String, active_in: Option<Hardfork>) -> Arc<Self> {
         let id = Self::generate_id();
-        let hash = Helper::get_contract_hash(&UInt160::zero(), 0, &name);
+        let hash = Helper::get_contract_hash(&H160::zero(), 0, &name);
         
         let method_descriptors = Self::get_method_descriptors();
         let event_descriptors = Self::get_event_descriptors();
@@ -354,7 +354,7 @@ impl NativeContract for BaseNativeContract {
         self.active_in
     }
 
-    fn hash(&self) -> &UInt160 {
+    fn hash(&self) -> &H160 {
         &self.hash
     }
 

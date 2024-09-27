@@ -20,8 +20,8 @@ use crate::network::transaction_attribute::transaction_attribute::TransactionAtt
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use crate::store::Snapshot;
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 
 /// Represents a transaction.
 #[derive(Clone)]
@@ -60,7 +60,7 @@ impl Transaction {
     }
 
     /// The hash of the transaction.
-    pub fn hash(&self) -> UInt256 {
+    pub fn hash(&self) -> H256 {
         self.calculate_hash()
     }
 
@@ -80,7 +80,7 @@ impl Transaction {
     }
 
     /// The sender is the first signer of the transaction, regardless of its WitnessScope.
-    pub fn sender(&self) -> UInt160 {
+    pub fn sender(&self) -> H160 {
         self.signers[0].account.clone()
     }
 
@@ -245,8 +245,8 @@ impl Transaction {
         true
     }
 
-    pub fn get_script_hash(&self) -> UInt160 {
-        UInt160::from(&Crypto::hash160(&self.script))
+    pub fn get_script_hash(&self) -> H160 {
+        H160::from(&Crypto::hash160(&self.script))
     }
 }
 
@@ -430,11 +430,11 @@ impl Transaction {
         VerifyResult::Succeed
     }
 
-    fn get_script_hashes_for_verifying(&self, _snapshot: Option<&dyn DataCache>) -> Vec<UInt160> {
+    fn get_script_hashes_for_verifying(&self, _snapshot: Option<&dyn DataCache>) -> Vec<H160> {
         self.signers.iter().map(|signer| signer.account.clone()).collect()
     }
 
-    fn verify_witness(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, hash: &UInt160, witness: &Witness, gas: i64) -> Result<i64, ()> {
+    fn verify_witness(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, hash: &H160, witness: &Witness, gas: i64) -> Result<i64, ()> {
         // Implement witness verification logic
         // This is a placeholder implementation
         Ok(gas / 2)
@@ -470,11 +470,11 @@ fn get_multi_signatures(script: &[u8]) -> Option<Vec<Vec<u8>>> {
 }
 
 impl Transaction {
-    fn get_script_hashes_for_verifying(&self, snapshot: Option<&dyn DataCache>) -> Vec<UInt160> {
+    fn get_script_hashes_for_verifying(&self, snapshot: Option<&dyn DataCache>) -> Vec<H160> {
         self.signers.iter().map(|signer| signer.account.clone()).collect()
     }
 
-    fn verify_witness(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, hash: &UInt160, witness: &Witness, gas: i64) -> Result<i64, ()> {
+    fn verify_witness(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, hash: &H160, witness: &Witness, gas: i64) -> Result<i64, ()> {
         let engine = ScriptBuilder::new()
             .emit_push(self.get_sign_data(settings.network))
             .emit_push(&witness.invocation_script)

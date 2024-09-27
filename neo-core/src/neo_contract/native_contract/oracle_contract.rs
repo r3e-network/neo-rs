@@ -3,8 +3,8 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use neo_proc_macros::{contract, event};
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::References;
+use neo_vm::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 
 #[contract]
@@ -22,7 +22,7 @@ pub struct OracleContract {
 #[event(0, name = "OracleRequest")]
 pub struct OracleRequestEvent {
     id: u64,
-    request_contract: UInt160,
+    request_contract: H160,
     url: String,
     filter: Option<String>,
 }
@@ -30,7 +30,7 @@ pub struct OracleRequestEvent {
 #[event(1, name = "OracleResponse")]
 pub struct OracleResponseEvent {
     id: u64,
-    original_tx: UInt256,
+    original_tx: H256,
 }
 
 #[contract]
@@ -99,7 +99,7 @@ impl OracleContract {
         )
     }
 
-    fn get_original_txid(&self, engine: &ApplicationEngine) -> UInt256 {
+    fn get_original_txid(&self, engine: &ApplicationEngine) -> H256 {
         let tx = engine.script_container().as_transaction().unwrap();
         match tx.get_attribute::<OracleResponse>() {
             Some(response) => {
@@ -155,7 +155,7 @@ impl OracleContract {
 
     #[contract_method]
     async fn post_persist(&mut self, engine: &mut ApplicationEngine) -> Result<(), String> {
-        let mut nodes: Option<Vec<(UInt160, u64)>> = None;
+        let mut nodes: Option<Vec<(H160, u64)>> = None;
 
         for tx in engine.persisting_block().transactions() {
             let response = match tx.get_attribute::<OracleResponse>() {
@@ -322,7 +322,7 @@ impl IInteroperable for IdList {
         }
     }
 
-        fn to_stack_item(&self, reference_counter: Rc<RefCell<ReferenceCounter>> ) -> Result<Rc<StackItem>, Self::Error> {
+        fn to_stack_item(&self, reference_counter: Rc<RefCell<References>> ) -> Result<Rc<StackItem>, Self::Error> {
         Ok(StackItem::new_array(
             Some(reference_counter),
             self.0.iter().map(|&id| StackItem::Integer(id)).collect(),

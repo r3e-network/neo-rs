@@ -4,7 +4,7 @@ use neo_persistence::DataCache;
 use neo_smart_contract::manifest::{ContractAbi, ContractMethodDescriptor};
 use neo_smart_contract::native::NativeContract;
 use neo_vm::{OpCode, Script, ScriptBuilder, StackItem, VMState};
-use neo_vm::types::{ExecContext, ExecutionContextState};
+use neo_vm::stackitem_type::{ExecutionContext, ExecutionContextState};
 use std::convert::TryInto;
 
 /// A helper module related to smart contracts.
@@ -14,7 +14,7 @@ pub mod helper {
     use crate::neo_contract::application_engine::ApplicationEngine;
     use crate::neo_contract::execution_context_state::ExecutionContextState;
     use crate::neo_contract::manifest::contract_abi::ContractAbi;
-    use crate::uint160::UInt160;
+    use neo_type::H160;
     use super::*;
 
     /// The maximum GAS that can be consumed when `verify_witnesses` is called.
@@ -61,18 +61,18 @@ pub mod helper {
     }
 
     /// Computes the hash of a deployed contract.
-    pub fn get_contract_hash(sender: &UInt160, nef_check_sum: u32, name: &str) -> UInt160 {
+    pub fn get_contract_hash(sender: &H160, nef_check_sum: u32, name: &str) -> H160 {
         let mut sb = ScriptBuilder::new();
         sb.emit(OpCode::ABORT);
         sb.emit_push(sender);
         sb.emit_push(nef_check_sum);
         sb.emit_push(name);
 
-        UInt160::from_script_hash(&sb.to_array())
+        H160::from_script_hash(&sb.to_array())
     }
 
     /// Gets the script hash of the specified `ExecContext`.
-    pub fn get_script_hash(context: &ExecContext) -> UInt160 {
+    pub fn get_script_hash(context: &ExecContext) -> H160 {
         context.get_state::<ExecutionContextState>().script_hash
     }
 

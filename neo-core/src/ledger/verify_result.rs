@@ -1,5 +1,4 @@
 
-
 /// Represents a verifying result of an inventory item.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

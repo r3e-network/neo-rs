@@ -2,9 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Write};
 use num_bigint::BigInt;
 use neo_vm::vm::ExecutionEngineLimits;
-use neo_vm::vm_types::item_type::StackItemType;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::{References, StackItemType};
+use neo_vm::StackItem;
 use crate::io::memory_reader::MemoryReader;
 
 /// A binary serializer for `StackItem`.
@@ -17,13 +16,13 @@ struct ContainerPlaceholder {
 
 impl BinarySerializer {
     /// Deserializes a `StackItem` from byte array.
-    pub fn deserialize(data: &[u8], limits: &ExecutionEngineLimits, reference_counter: Option<&ReferenceCounter>) -> Result<StackItem, String> {
+    pub fn deserialize(data: &[u8], limits: &ExecutionEngineLimits, reference_counter: Option<&References>) -> Result<StackItem, String> {
         let mut reader = MemoryReader::new(data);
         Self::deserialize_from_reader(&mut reader, limits.max_item_size.min(data.len()), limits.max_stack_size as usize, reference_counter)
     }
 
     /// Deserializes a `StackItem` from `MemoryReader`.
-    pub fn deserialize_from_reader(reader: &mut MemoryReader, max_size: usize, max_items: usize, reference_counter: Option<&ReferenceCounter>) -> Result<StackItem, String> {
+    pub fn deserialize_from_reader(reader: &mut MemoryReader, max_size: usize, max_items: usize, reference_counter: Option<&References>) -> Result<StackItem, String> {
         let mut deserialized = Vec::new();
         let mut undeserialized = 1;
         while undeserialized > 0 {

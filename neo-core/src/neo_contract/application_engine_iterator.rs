@@ -1,12 +1,14 @@
 use neo_vm::stack_item::StackItem;
+use neo_vm::StackItem;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;
 use crate::neo_contract::interop_descriptor::InteropDescriptor;
+use crate::register_syscall;
 
 impl ApplicationEngine {
     /// The `InteropDescriptor` of System.Iterator.Next.
     /// Advances the iterator to the next element of the collection.
-    pub const SYSTEM_ITERATOR_NEXT: InteropDescriptor = register_syscall(
+    pub const SYSTEM_ITERATOR_NEXT: InteropDescriptor = register_syscall!(
         "System.Iterator.Next",
         ApplicationEngine::iterator_next,
         1 << 15,
@@ -15,7 +17,7 @@ impl ApplicationEngine {
 
     /// The `InteropDescriptor` of System.Iterator.Value.
     /// Gets the element in the collection at the current position of the iterator.
-    pub const SYSTEM_ITERATOR_VALUE: InteropDescriptor = register_syscall(
+    pub const SYSTEM_ITERATOR_VALUE: InteropDescriptor = register_syscall!(
         "System.Iterator.Value",
         ApplicationEngine::iterator_value,
         1 << 4,

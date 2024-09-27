@@ -9,8 +9,8 @@ use crate::ledger::transaction_verification_context::TransactionVerificationCont
 use crate::ledger::verify_result::VerifyResult;
 use crate::neo_system::NeoSystem;
 use crate::persistence::IStore;
-use crate::store::Store;
-use crate::uint256::UInt256;
+use crate::store::{Snapshot, Store};
+use neo_type::H256;
 
 pub struct MemoryPool {
     transaction_added: Option<Box<dyn Fn(&Transaction)>>,
@@ -26,11 +26,11 @@ pub struct MemoryPool {
 
     tx_rw_lock: RwLock<()>,
 
-    unsorted_transactions: HashMap<UInt256, PoolItem>,
-    conflicts: HashMap<UInt256, HashSet<UInt256>>,
+    unsorted_transactions: HashMap<H256, PoolItem>,
+    conflicts: HashMap<H256, HashSet<H256>>,
     sorted_transactions: BTreeSet<PoolItem>,
 
-    unverified_transactions: HashMap<UInt256, PoolItem>,
+    unverified_transactions: HashMap<H256, PoolItem>,
     unverified_sorted_transactions: BTreeSet<PoolItem>,
 
     capacity: usize,
@@ -75,12 +75,12 @@ impl MemoryPool {
         self.unverified_transactions.len()
     }
 
-    pub fn contains_key(&self, hash: &UInt256) -> bool {
+    pub fn contains_key(&self, hash: &H256) -> bool {
         let _guard = self.tx_rw_lock.read().unwrap();
         self.unsorted_transactions.contains_key(hash) || self.unverified_transactions.contains_key(hash)
     }
 
-    pub fn try_get_value(&self, hash: &UInt256) -> Option<Transaction> {
+    pub fn try_get_value(&self, hash: &H256) -> Option<Transaction> {
         let _guard = self.tx_rw_lock.read().unwrap();
         self.unsorted_transactions.get(hash)
             .or_else(|| self.unverified_transactions.get(hash))
@@ -153,7 +153,7 @@ impl MemoryPool {
         VerifyResult::Succeed
     }
 
-    pub fn try_remove_unverified(&mut self, hash: &UInt256) -> Option<Transaction> {
+    pub fn try_remove_unverified(&mut self, hash: &H256) -> Option<Transaction> {
         let _guard = self.tx_rw_lock.write().unwrap();
         self.unverified_transactions.remove(hash).map(|item| {
             self.unverified_sorted_transactions.remove(&item);

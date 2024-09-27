@@ -4,7 +4,7 @@ use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::merkle::MerkleTree;
 use crate::network::payloads::{Block, Header};
-use crate::uint256::UInt256;
+use neo_type::H256;
 
 /// Represents a block that is filtered by a BloomFilter.
 pub struct MerkleBlockPayload {
@@ -15,7 +15,7 @@ pub struct MerkleBlockPayload {
     pub tx_count: u32,
 
     /// The nodes of the transactions hash tree.
-    pub hashes: Vec<UInt256>,
+    pub hashes: Vec<H256>,
 
     /// The data in the BloomFilter that filtered the block.
     pub flags: Vec<u8>,

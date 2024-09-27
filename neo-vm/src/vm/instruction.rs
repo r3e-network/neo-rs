@@ -1,5 +1,5 @@
 use std::convert::TryFrom;
-use crate::vm::OpCode;
+use crate::vm::{OpCode, VMError};
 
 #[derive(Debug,Clone, PartialEq, Eq, Hash)]
 pub struct Instruction {
@@ -63,7 +63,7 @@ impl Instruction {
 	pub fn token_string(&self) -> String {
 		String::from_utf8(self.operand.clone()).unwrap()
 	}
-	pub fn from_script(script: &[u8], ip: usize) -> Result<Self, Error> {
+	pub fn from_script(script: &[u8], ip: usize) -> Result<Self, VMError> {
 		let opcode = OpCode::try_from(script[ip]).unwrap();
 		let mut ip = ip + 1;
 
@@ -90,7 +90,7 @@ impl Instruction {
 				]) as usize;
 				ip += 4;
 			},
-			_ => return Err(Error::InvalidPrefixSize(prefix_size)),
+			_ => return Err(VMError::InvalidPrefixSize(prefix_size)),
 		}
 
 		let operand = script[ip..ip + operand_size].to_vec();

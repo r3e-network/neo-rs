@@ -2,8 +2,7 @@ use alloc::rc::Rc;
 use std::collections::HashMap;
 use neo_json::json_convert_trait::IJsonConvertible;
 use neo_json::jtoken::JToken;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::{References, StackItem};
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::manifest::contract_event_descriptor::ContractEventDescriptor;
 use crate::neo_contract::manifest::contract_method_descriptor::ContractMethodDescriptor;
@@ -102,7 +101,7 @@ impl IInteroperable for ContractAbi {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         Ok(Rc::from(StackItem::Struct(vec![
             Rc::from(StackItem::Array(self.methods.iter().map(|m| Rc::new(m.to_stack_item(reference_counter)?)).collect::<Vec<_>>())),
             Rc::from(StackItem::Array(self.events.iter().map(|e| Rc::new(e.to_stack_item(reference_counter)?)).collect::<Vec<_>>())),

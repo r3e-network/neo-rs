@@ -1,7 +1,7 @@
-use crate::types::UInt256;
+use neo_type::H256;
 
 pub struct MerkleTreeNode {
-    pub hash: UInt256,
+    pub hash: H256,
     pub parent: Option<Box<MerkleTreeNode>>,
     pub left_child: Option<Box<MerkleTreeNode>>,
     pub right_child: Option<Box<MerkleTreeNode>>,

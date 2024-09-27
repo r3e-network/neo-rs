@@ -5,8 +5,8 @@ use num_bigint::BigInt;
 use neo_json::jtoken::JToken;
 use crate::cryptography::{ECCurve, ECPoint};
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 
 /// Represents a parameter of a smart contract method.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,8 +25,8 @@ pub enum ContractParameterValue {
     Signature(Vec<u8>),
     Boolean(bool),
     Integer(BigInt),
-    Hash160(UInt160),
-    Hash256(UInt256),
+    Hash160(H160),
+    Hash256(H256),
     ByteArray(Vec<u8>),
     PublicKey(ECPoint),
     String(String),
@@ -42,8 +42,8 @@ impl ContractParameter {
             ContractParameterType::Signature => Some(ContractParameterValue::Signature(vec![0; 64])),
             ContractParameterType::Boolean => Some(ContractParameterValue::Boolean(false)),
             ContractParameterType::Integer => Some(ContractParameterValue::Integer(BigInt::from(0))),
-            ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(UInt160::default())),
-            ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(UInt256::default())),
+            ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(H160::default())),
+            ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(H256::default())),
             ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(Vec::new())),
             ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECCurve::secp256r1().g.clone())),
             ContractParameterType::String => Some(ContractParameterValue::String(String::new())),
@@ -85,8 +85,8 @@ impl ContractParameter {
             ContractParameterType::Signature => Some(ContractParameterValue::Signature(hex::decode(value.as_str().ok_or("Invalid signature value")?).map_err(|e| e.to_string())?)),
             ContractParameterType::Boolean => Some(ContractParameterValue::Boolean(value.as_bool().ok_or("Invalid boolean value")?)),
             ContractParameterType::Integer => Some(ContractParameterValue::Integer(BigInt::parse_bytes(value.as_str().ok_or("Invalid integer value")?.as_bytes(), 10).ok_or("Failed to parse integer")?)),
-            ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(UInt160::try_from(value.as_str().ok_or("Invalid Hash160 value")?).map_err(|e| e.to_string())?)),
-            ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(UInt256::try_from(value.as_str().ok_or("Invalid Hash256 value")?).map_err(|e| e.to_string())?)),
+            ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(H160::try_from(value.as_str().ok_or("Invalid Hash160 value")?).map_err(|e| e.to_string())?)),
+            ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(H256::try_from(value.as_str().ok_or("Invalid Hash256 value")?).map_err(|e| e.to_string())?)),
             ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(hex::decode(value.as_str().ok_or("Invalid ByteArray value")?).map_err(|e| e.to_string())?)),
             ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECPoint::try_from(value.as_str().ok_or("Invalid PublicKey value")?).map_err(|e| e.to_string())?)),
             ContractParameterType::String => Some(ContractParameterValue::String(value.as_str().ok_or("Invalid string value")?.to_string())),
@@ -119,10 +119,10 @@ impl ContractParameter {
         self.value = match self.param_type {
             ContractParameterType::Any => None,
             ContractParameterType::Signature => Some(ContractParameterValue::Signature(hex::decode(text).map_err(|e| e.to_string())?)),
-            ContractParameterType::Boolean => Some(ContractParameterValue::Boolean(text.parse().map_err(|e| e.to_string())?)),
+            ContractParameterType::Boolean => Some(ContractParameterValue::Boolean(text.parse().map_err(|e| e)?)),
             ContractParameterType::Integer => Some(ContractParameterValue::Integer(BigInt::parse_bytes(text.as_bytes(), 10).ok_or("Failed to parse integer")?)),
-            ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(UInt160::try_from(text).map_err(|e| e.to_string())?)),
-            ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(UInt256::try_from(text).map_err(|e| e.to_string())?)),
+            ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(H160::try_from(text).map_err(|e| e.to_string())?)),
+            ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(H256::try_from(text).map_err(|e| e.to_string())?)),
             ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(hex::decode(text).map_err(|e| e.to_string())?)),
             ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECPoint::try_from(text).map_err(|e| e.to_string())?)),
             ContractParameterType::String => Some(ContractParameterValue::String(text.to_string())),

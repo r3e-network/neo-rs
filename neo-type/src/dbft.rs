@@ -1,11 +1,9 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use alloc::vec::Vec;
-
 use neo_base::encoding::bin::*;
 
-use crate::PublicKey;
+use neo_crypto::secp256r1::PublicKey;
 
 pub const NEO_TOTAL_SUPPLY: u64 = 1000_000_000; // 0.1 Billion
 

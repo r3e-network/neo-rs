@@ -5,9 +5,8 @@ use std::{
 	ops::Neg,
 	rc::Rc,
 };
-use crate::vm::{EvaluationStack, ExecContext, ExecutionEngineLimits, Instruction, OpCode, VMError, VMState};
-use crate::vm_types::reference_counter::ReferenceCounter;
-use crate::vm_types::stack_item::StackItem;
+use crate::{References, StackItem};
+use crate::vm::{EvaluationStack, ExecutionContext, ExecutionEngineLimits, Instruction, OpCode, VMError, VMState};
 
 /// Represents the VM used to execute the script.
 #[derive(Clone)]
@@ -16,16 +15,16 @@ pub struct NeoVm {
 	pub limits: ExecutionEngineLimits,
 
 	/// Used for reference counting of objects in the VM.
-	pub reference_counter: Rc<RefCell<ReferenceCounter>>,
+	pub reference_counter: Rc<RefCell<References>>,
 
 	/// The invocation stack of the VM.
-	pub invocation_stack: Vec<Rc<RefCell<ExecContext>>>,
+	pub invocation_stack: Vec<Rc<RefCell<ExecutionContext>>>,
 
 	/// The top frame of the invocation stack.
-	pub current_context: Option<Rc<RefCell<ExecContext>>>,
+	pub current_context: Option<Rc<RefCell<ExecutionContext>>>,
 
 	/// The bottom frame of the invocation stack.
-	pub entry_context: Option<Rc<RefCell<ExecContext>>>,
+	pub entry_context: Option<Rc<RefCell<ExecutionContext>>>,
 
 	/// The stack to store the return values.
 	pub result_stack: Rc<RefCell<EvaluationStack>>,
@@ -69,12 +68,12 @@ impl NeoVm {
 	pub fn with_options(limits: ExecutionEngineLimits) -> Self {
 		Self {
 			limits,
-			reference_counter: Rc::new(RefCell::new(ReferenceCounter::new())),
+			reference_counter: Rc::new(RefCell::new(References::new())),
 			invocation_stack: Vec::new(),
 			current_context: None,
 			entry_context: None,
 			result_stack: Rc::new(RefCell::new(EvaluationStack::new(Rc::new(RefCell::new(
-				ReferenceCounter::new(),
+				References::new(),
 			))))),
 			uncaught_exception: None,
 			state: VMState::Break,
@@ -1385,7 +1384,7 @@ impl NeoVm {
 		self.uncaught_exception = Some(StackItemTrait::from(Null::default()).into());
 	}
 
-	fn load_context(&mut self, context: &Rc<RefCell<ExecContext>>) {
+	fn load_context(&mut self, context: &Rc<RefCell<ExecutionContext>>) {
 		self.invocation_stack.push(context.clone());
 		self.current_context = Some(self.invocation_stack.last().unwrap().clone());
 		if self.entry_context.is_none() {
@@ -1393,7 +1392,7 @@ impl NeoVm {
 		}
 	}
 
-	fn unload_context(&mut self, mut context: Rc<RefCell<ExecContext>>) {
+	fn unload_context(&mut self, mut context: Rc<RefCell<ExecutionContext>>) {
 		if self.invocation_stack.is_empty() {
 			self.current_context = None;
 			self.entry_context = None;
@@ -1417,7 +1416,7 @@ impl NeoVm {
 		script: Script,
 		rvcount: i32,
 		initial_position: usize,
-	) -> ExecContext {
+	) -> ExecutionContext {
 		let share = SharedStates {
 			script,
 			evaluation_stack: Default::default(),
@@ -1425,7 +1424,7 @@ impl NeoVm {
 			states: Default::default(),
 		};
 
-		ExecContext {
+		ExecutionContext {
 			shared_states,
 			instruction_pointer: initial_position,
 			rv_count: rvcount,
@@ -1440,7 +1439,7 @@ impl NeoVm {
 		script: Script,
 		rvcount: i32,
 		initial_position: usize,
-	) -> Rc<RefCell<ExecContext>> {
+	) -> Rc<RefCell<ExecutionContext>> {
 		let context = Rc::new(RefCell::new(self.create_context(script, rvcount, initial_position)));
 
 		self.load_context(&context);
@@ -1580,7 +1579,7 @@ impl NeoVm {
 		}
 	}
 
-	fn load_token(&mut self, token: u16) -> Result<ExecContext, &'static str> {
+	fn load_token(&mut self, token: u16) -> Result<ExecutionContext, &'static str> {
 		panic!("Not implemented");
 	}
 

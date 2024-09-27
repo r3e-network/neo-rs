@@ -5,16 +5,16 @@ use std::sync::Arc;
 use NeoRust::builder::Transaction;
 use crate::store::Snapshot;
 use crate::tx::OracleResponse;
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 
 /// The context used to verify the transaction.
 pub struct TransactionVerificationContext {
     /// Store all verified unsorted transactions' senders' fee currently in the memory pool.
-    sender_fee: HashMap<UInt160, u64>,
+    sender_fee: HashMap<H160, u64>,
 
     /// Store oracle responses
-    oracle_responses: HashMap<u64, UInt256>,
+    oracle_responses: HashMap<u64, H256>,
 }
 
 impl TransactionVerificationContext {

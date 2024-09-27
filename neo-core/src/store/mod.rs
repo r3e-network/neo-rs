@@ -188,7 +188,7 @@ mod test {
     use neo_base::{encoding::hex::ToHex, hash::Sha256};
 
     use super::*;
-    use crate::types::H256;
+    use neo_type::H256;
 
     #[test]
     fn test_store_key() {

@@ -2,7 +2,7 @@ use std::io::{Error, ErrorKind, Read, Write};
 use NeoRust::prelude::ECPoint;
 use serde::Deserialize;
 use neo_json::jtoken::JToken;
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
@@ -57,7 +57,7 @@ impl WitnessCondition for NotCondition {
             .unwrap()
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         let mut result = StackItem::new_array();
         result.push(StackItem::new_integer(self.condition_type() as i32));
         result.push(self.expression.to_stack_item(reference_counter));

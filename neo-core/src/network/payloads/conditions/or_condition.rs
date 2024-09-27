@@ -1,5 +1,5 @@
 use NeoRust::prelude::{ VarSizeTrait};
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
@@ -65,7 +65,7 @@ impl WitnessCondition for OrCondition {
         json
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         let mut result = self.base_to_stack_item(reference_counter);
         if let StackItem::Array(array) = &mut result {
             let expressions = Array::new(reference_counter);

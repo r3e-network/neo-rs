@@ -7,6 +7,7 @@ use neo_base::encoding::base64;
 use neo_json::jtoken::JToken;
 use neo_vm::vm::ExecutionEngineLimits;
 use crate::cryptography::Crypto;
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::method_token::MethodToken;
@@ -80,14 +81,14 @@ impl ISerializable for NefFile {
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) {
-        writer.write_u32::<LittleEndian>(Self::MAGIC)?;
+        writer.write_u32(Self::MAGIC)?;
         writer.write_fixed_string(&self.compiler, 64)?;
         writer.write_var_string(&self.source)?;
         writer.write_u8(0)?;
         writer.write_var_array(&self.tokens)?;
-        writer.write_u16::<LittleEndian>(0)?;
+        writer.write_u16(0)?;
         writer.write_var_bytes(&self.script)?;
-        writer.write_u32::<LittleEndian>(self.checksum)?;
+        writer.write_u32(self.checksum)?;
         Ok(())
     }
 

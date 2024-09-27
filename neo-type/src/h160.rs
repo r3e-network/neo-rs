@@ -1,7 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use alloc::string::{String, ToString};
+use std::{string::String, vec::Vec};
 use core::fmt::{Display, Formatter};
 
 use neo_base::{
@@ -18,7 +18,16 @@ pub const H160_SIZE: usize = 20;
 pub struct H160([u8; H160_SIZE]);
 
 impl H160 {
+    pub fn from_script(p0: &Vec<u8>) -> H160 {
+        let mut buf = [0u8; H160_SIZE];
+        buf.copy_from_slice(p0);
+        buf.reverse();
+        H160::from(buf)
+    }
+
     pub fn is_zero(&self) -> bool { self.0 == [0u8; H160_SIZE] }
+
+    pub fn zero() -> Self { Self([0u8; H160_SIZE]) }
 
     pub fn as_le_bytes(&self) -> &[u8] { &self.0 }
 }
@@ -42,6 +51,32 @@ impl From<[u8; H160_SIZE]> for H160 {
 impl Into<[u8; H160_SIZE]> for H160 {
     #[inline]
     fn into(self) -> [u8; H160_SIZE] { self.0 }
+}
+
+impl From<&[u8]> for H160 {
+    fn from(value: &[u8]) -> Self {
+        let mut buf = [0u8; H160_SIZE];
+        buf.copy_from_slice(value);
+        buf.reverse();
+        H160::from(buf)
+    }
+}
+
+impl From<&str> for H160 {
+    fn from(value: &str) -> Self {
+        let value = value.trim_matches('"');
+        let value = if value.starts_with_0x() { &value[2..] } else { value };
+        H160::try_from(value).expect("hex decode should be ok")
+    }
+}
+
+impl From<&[u8]> for H160 {
+    fn from(value: &[u8]) -> Self {
+        let mut buf = [0u8; H160_SIZE];
+        buf.copy_from_slice(value);
+        buf.reverse();
+        H160::from(buf)
+    }
 }
 
 impl Display for H160 {
@@ -88,8 +123,8 @@ impl TryFrom<&str> for H160 {
 
         let mut buf = [0u8; H160_SIZE];
         let _ = hex::decode_to_slice(value, &mut buf).map_err(|e| match e {
-            HexError::OddLength | HexError::InvalidStringLength => Self::Error::InvalidLength,
-            HexError::InvalidHexCharacter { c, index: _ } => Self::Error::InvalidChar(c),
+            HexError::OddLength | HexError::InvalidStringLength => ToH160Error::InvalidLength,
+            HexError::InvalidHexCharacter { c, index: _ } => ToH160Error::InvalidChar(c),
         })?;
 
         buf.reverse();

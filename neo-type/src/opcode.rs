@@ -1,10 +1,8 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use strum::EnumIter;
-
-use crate::types::OpCode::*;
-
+use strum_macros::EnumIter;
+use crate::OpCode::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumIter)]
 #[repr(u8)]

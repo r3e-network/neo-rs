@@ -21,7 +21,7 @@ where
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ReferenceCounter {
+pub struct References {
 	tracked_items: HashSet<Rc<RefCell<StackItem>>>,
 	zero_referred: HashSet<Rc<RefCell<StackItem>>>,
 	cached_components: Option<LinkedList<HashSet<Rc<RefCell<StackItem>>>>>,
@@ -29,7 +29,7 @@ pub struct ReferenceCounter {
 	phantom: PhantomData<Rc<RefCell<StackItem>>>,
 }
 
-impl ReferenceCounter {
+impl References {
 	pub fn new() -> Self {
 		Self {
 			tracked_items: HashSet::new(),

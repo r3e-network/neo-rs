@@ -71,7 +71,7 @@ impl ApplicationEngine {
         map.insert(OpCode::EndTry, 1 << 2);
         map.insert(OpCode::EndTryL, 1 << 2);
         map.insert(OpCode::EndFinally, 1 << 2);
-        map.insert(OpCode::Return, 0);
+        map.insert(OpCode::Ret, 0);
         map.insert(OpCode::Syscall, 0);
         map.insert(OpCode::Depth, 1 << 1);
         map.insert(OpCode::Drop, 1 << 1);
@@ -83,7 +83,7 @@ impl ApplicationEngine {
         map.insert(OpCode::Pick, 1 << 1);
         map.insert(OpCode::Tuck, 1 << 1);
         map.insert(OpCode::Swap, 1 << 1);
-        map.insert(OpCode::Rotate, 1 << 1);
+        map.insert(OpCode::Rot, 1 << 1);
         map.insert(OpCode::Roll, 1 << 4);
         map.insert(OpCode::Reverse3, 1 << 1);
         map.insert(OpCode::Reverse4, 1 << 1);
@@ -141,7 +141,7 @@ impl ApplicationEngine {
         map.insert(OpCode::NewBuffer, 1 << 8);
         map.insert(OpCode::MemCpy, 1 << 11);
         map.insert(OpCode::Cat, 1 << 11);
-        map.insert(OpCode::SubStr, 1 << 11);
+        map.insert(OpCode::Substr, 1 << 11);
         map.insert(OpCode::Left, 1 << 11);
         map.insert(OpCode::Right, 1 << 11);
         map.insert(OpCode::Invert, 1 << 2);

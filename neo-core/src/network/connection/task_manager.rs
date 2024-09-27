@@ -5,12 +5,12 @@ use crate::io::caching::HashSetCache;
 use crate::neo_system::NeoSystem;
 use crate::network::PeerMessage::Timer;
 use crate::network::TaskSession;
-use crate::uint256::UInt256;
+use neo_type::H256;
 
 pub struct TaskManager {
     system: NeoSystem,
-    known_hashes: HashSetCache<UInt256>,
-    global_inv_tasks: HashMap<UInt256, i32>,
+    known_hashes: HashSetCache<H256>,
+    global_inv_tasks: HashMap<H256, i32>,
     global_index_tasks: HashMap<u32, i32>,
     sessions: HashMap<ActorRef, TaskSession>,
     timer: Cancelable,
@@ -20,7 +20,7 @@ pub struct TaskManager {
 impl TaskManager {
     const TIMER_INTERVAL: Duration = Duration::from_secs(30);
     const TASK_TIMEOUT: Duration = Duration::from_mins(1);
-    const HEADER_TASK_HASH: UInt256 = UInt256::zero();
+    const HEADER_TASK_HASH: H256 = H256::zero();
     const MAX_CONCURRENT_TASKS: i32 = 3;
 
     pub fn new(system: NeoSystem) -> Self {

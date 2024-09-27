@@ -1,4 +1,6 @@
 use serde::{Serialize, Deserialize};
+use serde_json::json;
+use neo_json::jtoken::JToken;
 
 /// Represents the parameters of the SCrypt algorithm.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +35,7 @@ impl ScryptParameters {
     }
 
     /// Converts the parameters from a JSON object.
-    pub fn from_json(json: &JsonValue) -> Option<Self> {
+    pub fn from_json(json: &JToken) -> Option<Self> {
         Some(Self {
             n: json["n"].as_u64()? as u32,
             r: json["r"].as_u64()? as u32,
@@ -42,11 +44,11 @@ impl ScryptParameters {
     }
 
     /// Converts the parameters to a JSON object.
-    pub fn to_json(&self) -> JsonValue {
+    pub fn to_json(&self) -> JToken {
         json!({
             "n": self.n,
             "r": self.r,
             "p": self.p,
-        })
+        }).into()
     }
 }

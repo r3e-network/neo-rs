@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 use neo_json::jtoken::JToken;
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
@@ -58,7 +58,7 @@ impl WitnessCondition for AndCondition {
         JToken::new_object() // Placeholder
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         let mut result =JToken::new_array(reference_counter);
         // Add base stack item
         // Add expressions as stack items

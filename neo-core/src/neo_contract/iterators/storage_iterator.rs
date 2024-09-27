@@ -1,6 +1,5 @@
 use std::iter::Iterator;
-use NeoRust::types::StackItem;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::{References, StackItem};
 use crate::io::binary_reader::BinaryReader;
 use crate::neo_contract::find_options::FindOptions;
 use crate::neo_contract::iterators::iiterator::IIterator;
@@ -48,7 +47,7 @@ impl IIterator for StorageIterator {
         todo!()
     }
 
-    fn value(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn value(&self, reference_counter: &mut References) -> StackItem {
         let (key, value) = self.enumerator.peek().unwrap();
         let mut key_bytes = key.as_bytes();
         let value_bytes = value.as_bytes();

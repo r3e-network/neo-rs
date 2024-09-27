@@ -1,6 +1,6 @@
 use std::{collections::HashMap, convert::TryFrom, ops::Index};
-use crate::vm::{Instruction, OpCode};
-use crate::vm_types::item_type::StackItemType;
+use crate::StackItemType;
+use crate::vm::{Instruction, OpCode, VMError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Script {
@@ -18,7 +18,7 @@ impl Script {
 		OpCode::try_from(self.value[index]).unwrap()
 	}
 
-	pub fn new(bytes: Vec<u8>, strict_mode: bool) -> Result<Self, ScriptError> {
+	pub fn new(bytes: Vec<u8>, strict_mode: bool) -> Result<Self, VMError> {
 		let mut script = Self { value: bytes, strict_mode, instructions: HashMap::new() };
 
 		if strict_mode {
@@ -28,7 +28,7 @@ impl Script {
 		Ok(script)
 	}
 
-	pub fn validate(&mut self) -> Result<(), ScriptError> {
+	pub fn validate(&mut self) -> Result<(), VMError> {
 		let mut ip = 0;
 		while ip < self.len() {
 			let instruction = self.get_instruction(ip)?;
@@ -48,7 +48,7 @@ impl Script {
 				| OpCode::JmpLe
 				| OpCode::Call
 				| OpCode::EndTry =>
-					if !self.instructions.contains_key(&(ip + instruction.token_i8())) {
+					if !self.instructions.contains_key(&(ip + instruction.token_i8() as usize)) {
 						panic!("ip: {}, opcode: {:?}", ip, instruction.opcode);
 					},
 				OpCode::PushA
@@ -100,13 +100,13 @@ impl Script {
 		Ok(())
 	}
 
-	pub fn get_instruction(&mut self, ip: usize) -> Result<&Instruction, ScriptError> {
+	pub fn get_instruction(&mut self, ip: usize) -> Result<&Instruction, VMError> {
 		if !self.instructions.contains_key(&ip) {
 			if self.strict_mode {
-				return Err(ScriptError::InvalidInstrPointer(ip))
+				return Err(VMError::InvalidInstrPointer(ip))
 			}
 
-			let instr = Instruction::parse(&self.value, ip)?;
+			let instr = Instruction::from_script(&self.value, ip)?;
 			self.instructions.insert(ip, instr);
 		}
 
@@ -123,15 +123,9 @@ impl Index<usize> for Script {
 }
 
 impl TryFrom<Vec<u8>> for Script {
-	type Error = ScriptError;
+	type Error = VMError;
 
 	fn try_from(script: Vec<u8>) -> Result<Self, Self::Error> {
 		Self::new(script, false)
 	}
-}
-
-#[derive(Debug)]
-enum ScriptError {
-	InvalidInstrPointer(usize),
-	// other errors
 }

@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use NeoRust::builder::Transaction;
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
+use neo_type::{H160, H256};
 use crate::block::{Block, Header};
 use crate::contract::Contract;
 use crate::ledger::header_cache::HeaderCache;
@@ -16,7 +17,6 @@ use crate::network::payloads::Witness;
 use crate::persistence::{MemoryStore, SnapshotCache, StoreProviderTrait};
 use crate::protocol_settings::ProtocolSettings;
 use crate::store::Store;
-use crate::uint256::UInt256;
 
 pub struct NeoSystem {
     pub settings: Arc<ProtocolSettings>,
@@ -27,7 +27,7 @@ pub struct NeoSystem {
     pub tx_router: TxRouterHandle,
     pub mem_pool: Arc<MemoryPool>,
     pub header_cache: Arc<HeaderCache>,
-    pub relay_cache: Arc<TokioMutex<HashMap<UInt256, bool>>>,
+    pub relay_cache: Arc<TokioMutex<HashMap<H256, bool>>>,
     services: Arc<TokioMutex<Vec<Box<dyn Any + Send + Sync>>>>,
     store: Arc<dyn Store<WriteBatch=()>>,
     storage_provider: Arc<dyn StoreProviderTrait>,
@@ -57,7 +57,7 @@ struct TxRouterHandle {
 enum BlockchainMessage {
     Initialize,
     AddBlock(Block),
-    GetBlock(UInt256),
+    GetBlock(H256),
     GetHeight,
     ValidateTransaction(Transaction),
     Persist(Block),
@@ -68,7 +68,7 @@ enum LocalNodeMessage {
     Start(ChannelsConfig),
     ConnectToPeer(String),
     BroadcastTransaction(Transaction),
-    RequestBlockByHash(UInt256),
+    RequestBlockByHash(H256),
     RequestBlockByIndex(u32),
     Shutdown,
 }
@@ -82,7 +82,7 @@ enum TaskManagerMessage {
 
 enum TxRouterMessage {
     RouteTransaction(Transaction),
-    GetTransactionStatus(UInt256),
+    GetTransactionStatus(H256),
     Shutdown,
 }
 
@@ -150,8 +150,8 @@ impl NeoSystem {
             header: Header {
                 hash: None,
                 version: 0,
-                prev_hash: UInt256::zero(),
-                merkle_root: UInt256::zero(),
+                prev_hash: H256::zero(),
+                merkle_root: H256::zero(),
                 timestamp,
                 nonce: 2083236893,
                 index: 0,
@@ -223,7 +223,7 @@ impl NeoSystem {
         SnapshotCache::new(self.store.get_snapshot())
     }
 
-    pub async fn contains_transaction(&self, hash: &UInt256) -> ContainsTransactionType {
+    pub async fn contains_transaction(&self, hash: &H256) -> ContainsTransactionType {
         if self.mem_pool.contains_key(hash) {
             ContainsTransactionType::ExistsInPool
         } else if NativeContract::Ledger.contains_transaction(&self.store, hash).await {
@@ -233,7 +233,7 @@ impl NeoSystem {
         }
     }
 
-    pub async fn contains_conflict_hash(&self, hash: &UInt256, signers: &[UInt160]) -> bool {
+    pub async fn contains_conflict_hash(&self, hash: &H256, signers: &[H160]) -> bool {
         NativeContract::Ledger.contains_conflict_hash(
             &self.store,
             hash,

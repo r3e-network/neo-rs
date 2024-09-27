@@ -4,11 +4,11 @@ use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::DataCache;
-use crate::uint256::UInt256;
+use neo_type::H256;
 
 pub struct Conflicts {
     /// Indicates the conflict transaction hash.
-    pub hash: UInt256,
+    pub hash: H256,
 }
 
 impl ISerializable for Conflicts {
@@ -39,7 +39,7 @@ impl TransactionAttribute for Conflicts {
     }
 
     fn deserialize_without_type(&mut self, reader: &mut MemoryReader) {
-        self.hash = UInt256::deserialize(reader).unwrap();
+        self.hash = H256::deserialize(reader).unwrap();
     }
 
     fn serialize_without_type<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {

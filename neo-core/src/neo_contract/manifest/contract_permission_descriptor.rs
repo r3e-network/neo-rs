@@ -1,21 +1,21 @@
 use core::str::FromStr;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::StackItem;
 use crate::cryptography::{ECCurve, ECPoint};
 use crate::neo_contract::manifest::manifest_error::ManifestError;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 /// Indicates which contracts are authorized to be called.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ContractPermissionDescriptor {
     /// The hash of the contract. It can't be set with `group`.
-    pub hash: Option<UInt160>,
+    pub hash: Option<H160>,
     /// The group of the contracts. It can't be set with `hash`.
     pub group: Option<ECPoint>,
 }
 
 impl ContractPermissionDescriptor {
     /// Creates a new instance with the specified contract hash.
-    pub fn new_with_hash(hash: UInt160) -> Self {
+    pub fn new_with_hash(hash: H160) -> Self {
         Self {
             hash: Some(hash),
             group: None,
@@ -67,8 +67,8 @@ impl ContractPermissionDescriptor {
         Self::from_stack_item(item)
     }
 
-    /// Creates a new instance from a UInt160 hash.
-    pub fn from_hash(hash: UInt160) -> Self {
+    /// Creates a new instance from a H160 hash.
+    pub fn from_hash(hash: H160) -> Self {
         Self::new_with_hash(hash)
     }
 
@@ -80,7 +80,7 @@ impl ContractPermissionDescriptor {
     /// Creates a new instance from bytes.
     pub fn from_bytes(span: &[u8]) -> Result<Self, ManifestError> {
         match span.len() {
-            20 => Ok(Self::new_with_hash(UInt160::from(span))),
+            20 => Ok(Self::new_with_hash(H160::from(span))),
             33 => Ok(Self::new_with_group((*ECPoint::decode_point(span, ECCurve::secp256r1())).clone())),
             _ => Err(ManifestError::InvalidFormat("Invalid byte length".into())),
         }
@@ -89,7 +89,7 @@ impl ContractPermissionDescriptor {
     /// Converts the permission descriptor from a JSON string.
     pub fn from_json(json: &str) -> Result<Self, ManifestError> {
         match json.len() {
-            42 => Ok(Self::new_with_hash(UInt160::from_str(json)?)),
+            42 => Ok(Self::new_with_hash(H160::from_str(json)?)),
             66 => Ok(Self::new_with_group(ECPoint::from_str(json)?)),
             1 if json == "*" => Ok(Self::create_wildcard()),
             _ => Err(ManifestError::InvalidFormat("Invalid JSON format".into())),

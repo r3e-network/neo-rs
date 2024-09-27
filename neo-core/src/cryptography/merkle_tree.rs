@@ -1,8 +1,7 @@
-use crate::cryptography::{Crypto, UInt256};
+use crate::cryptography::{Crypto};
 use crate::io::Crypto;
-use std::collections::BitVec;
 use bloomfilter::reexports::bit_vec::BitVec;
-use crate::uint256::UInt256;
+use neo_type::H256;
 
 /// Represents a merkle tree.
 pub struct MerkleTree {
@@ -12,13 +11,13 @@ pub struct MerkleTree {
 
 #[derive(Clone)]
 struct MerkleTreeNode {
-    hash: UInt256,
+    hash: H256,
     left_child: Option<Box<MerkleTreeNode>>,
     right_child: Option<Box<MerkleTreeNode>>,
 }
 
 impl MerkleTree {
-    pub fn new(hashes: &[UInt256]) -> Self {
+    pub fn new(hashes: &[H256]) -> Self {
         let root = Self::build(hashes.iter().map(|&h| MerkleTreeNode {
             hash: h,
             left_child: None,
@@ -59,17 +58,17 @@ impl MerkleTree {
         }
     }
 
-    fn concat(hash1: &UInt256, hash2: &UInt256) -> UInt256 {
+    fn concat(hash1: &H256, hash2: &H256) -> H256 {
         let mut buffer = [0u8; 64];
         buffer[..32].copy_from_slice(&hash1.to_vec());
         buffer[32..].copy_from_slice(&hash2.to_vec());
-        UInt256::from_slice(&Crypto::hash256(&buffer))
+        H256::from_slice(&Crypto::hash256(&buffer))
     }
 
     /// Computes the root of the hash tree.
-    pub fn compute_root(hashes: &[UInt256]) -> UInt256 {
+    pub fn compute_root(hashes: &[H256]) -> H256 {
         match hashes.len() {
-            0 => UInt256::ZERO,
+            0 => H256::zero(),
             1 => hashes[0],
             _ => {
                 let tree = MerkleTree::new(hashes);
@@ -79,7 +78,7 @@ impl MerkleTree {
     }
 
     /// Gets all nodes of the hash tree in depth-first order.
-    pub fn to_hash_array(&self) -> Vec<UInt256> {
+    pub fn to_hash_array(&self) -> Vec<H256> {
         let mut hashes = Vec::new();
         if let Some(root) = &self.root {
             Self::depth_first_search(root, &mut hashes);
@@ -87,7 +86,7 @@ impl MerkleTree {
         hashes
     }
 
-    fn depth_first_search(node: &MerkleTreeNode, hashes: &mut Vec<UInt256>) {
+    fn depth_first_search(node: &MerkleTreeNode, hashes: &mut Vec<H256>) {
         if node.left_child.is_none() {
             hashes.push(node.hash);
         } else {

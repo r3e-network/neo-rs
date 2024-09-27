@@ -1,121 +1,112 @@
-package native
+use std::error::Error;
+use std::fmt;
 
-import (
-	"errors"
-	"fmt"
+use crate::config::{Config, Hardfork};
+use crate::core::interop::{Context, Contract};
+use crate::smartcontract::{self, CallFlag};
+use crate::vm::stackitem::Item;
 
-	"github.com/nspcc-dev/neo-go/pkg/config"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/smartcontract"
-	"github.com/nspcc-dev/neo-go/pkg/smartcontract/callflag"
-	"github.com/nspcc-dev/neo-go/pkg/smartcontract/trigger"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-)
+/// Call calls the specified native contract method.
+pub fn call(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    let version = ic.vm.estack().pop().big_int().to_i64();
+    if version != 0 {
+        return Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, 
+            format!("native contract of version {} is not active", version))));
+    }
 
-// Call calls the specified native contract method.
-func Call(ic *interop.Context) error {
-	version := ic.VM.Estack().Pop().BigInt().Int64()
-	if version != 0 {
-		return fmt.Errorf("native contract of version %d is not active", version)
-	}
-	var (
-		c    interop.Contract
-		curr = ic.VM.GetCurrentScriptHash()
-	)
-	for _, ctr := range ic.Natives {
-		if ctr.Metadata().Hash == curr {
-			c = ctr
-			break
-		}
-	}
-	if c == nil {
-		return fmt.Errorf("native contract %s (version %d) not found", curr.StringLE(), version)
-	}
-	var (
-		genericMeta = c.Metadata()
-		activeIn    = c.ActiveIn()
-	)
-	if activeIn != nil {
-		height, ok := ic.Hardforks[activeIn.String()]
-		// Persisting block must not be taken into account, native contract can be called
-		// only AFTER its initialization block persist, thus, can't use ic.IsHardforkEnabled.
-		if !ok || ic.BlockHeight() < height {
-			return fmt.Errorf("native contract %s is active after hardfork %s", genericMeta.Name, activeIn.String())
-		}
-	}
-	var current config.Hardfork
-	for _, hf := range config.Hardforks {
-		if !ic.IsHardforkEnabled(hf) {
-			break
-		}
-		current = hf
-	}
-	meta := genericMeta.HFSpecificContractMD(&current)
-	m, ok := meta.GetMethodByOffset(ic.VM.Context().IP())
-	if !ok {
-		return fmt.Errorf("method not found")
-	}
-	reqFlags := m.RequiredFlags
-	if !ic.IsHardforkEnabled(config.HFAspidochelone) && meta.ID == ManagementContractID &&
-		(m.MD.Name == "deploy" || m.MD.Name == "update") {
-		reqFlags &= callflag.States | callflag.AllowNotify
-	}
-	if !ic.VM.Context().GetCallFlags().Has(reqFlags) {
-		return fmt.Errorf("missing call flags for native %d `%s` operation call: %05b vs %05b",
-			version, m.MD.Name, ic.VM.Context().GetCallFlags(), reqFlags)
-	}
-	invokeFee := m.CPUFee*ic.BaseExecFee() +
-		m.StorageFee*ic.BaseStorageFee()
-	if !ic.VM.AddGas(invokeFee) {
-		return errors.New("gas limit exceeded")
-	}
-	ctx := ic.VM.Context()
-	args := make([]stackitem.Item, len(m.MD.Parameters))
-	for i := range args {
-		args[i] = ic.VM.Estack().Peek(i).Item()
-	}
-	result := m.Func(ic, args)
-	for range m.MD.Parameters {
-		ic.VM.Estack().Pop()
-	}
-	if m.MD.ReturnType != smartcontract.VoidType {
-		ctx.Estack().PushItem(result)
-	}
-	return nil
+    let curr = ic.vm.get_current_script_hash();
+    let c = ic.natives.iter().find(|ctr| ctr.metadata().hash == curr)
+        .ok_or_else(|| fmt::Error::new(fmt::ErrorKind::Other, 
+            format!("native contract {} (version {}) not found", curr.to_string_le(), version)))?;
+
+    let generic_meta = c.metadata();
+    if let Some(active_in) = c.active_in() {
+        let height = ic.hardforks.get(&active_in.to_string())
+            .ok_or_else(|| fmt::Error::new(fmt::ErrorKind::Other, 
+                format!("native contract {} is active after hardfork {}", generic_meta.name, active_in)))?;
+        if ic.block_height() < *height {
+            return Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, 
+                format!("native contract {} is active after hardfork {}", generic_meta.name, active_in))));
+        }
+    }
+
+    let current = Config::hardforks().iter()
+        .take_while(|&hf| ic.is_hardfork_enabled(*hf))
+        .last()
+        .copied()
+        .unwrap_or_default();
+
+    let meta = generic_meta.hf_specific_contract_md(&current);
+    let m = meta.get_method_by_offset(ic.vm.context().ip())
+        .ok_or_else(|| fmt::Error::new(fmt::ErrorKind::Other, "method not found"))?;
+
+    let mut req_flags = m.required_flags;
+    if !ic.is_hardfork_enabled(Hardfork::Aspidochelone) && meta.id == ManagementContractID &&
+        (m.md.name == "deploy" || m.md.name == "update") {
+        req_flags &= CallFlag::STATES | CallFlag::ALLOW_NOTIFY;
+    }
+
+    if !ic.vm.context().get_call_flags().has(req_flags) {
+        return Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, 
+            format!("missing call flags for native {} `{}` operation call: {:05b} vs {:05b}",
+                version, m.md.name, ic.vm.context().get_call_flags(), req_flags))));
+    }
+
+    let invoke_fee = m.cpu_fee * ic.base_exec_fee() + m.storage_fee * ic.base_storage_fee();
+    if !ic.vm.add_gas(invoke_fee) {
+        return Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, "gas limit exceeded")));
+    }
+
+    let ctx = ic.vm.context();
+    let args: Vec<Item> = (0..m.md.parameters.len())
+        .map(|i| ic.vm.estack().peek(i).item().clone())
+        .collect();
+
+    let result = (m.func)(ic, &args);
+
+    for _ in &m.md.parameters {
+        ic.vm.estack().pop();
+    }
+
+    if m.md.return_type != smartcontract::VoidType {
+        ctx.estack().push_item(result);
+    }
+
+    Ok(())
 }
 
-// OnPersist calls OnPersist methods for all native contracts.
-func OnPersist(ic *interop.Context) error {
-	if ic.Trigger != trigger.OnPersist {
-		return errors.New("onPersist must be trigered by system")
-	}
-	for _, c := range ic.Natives {
-		activeIn := c.ActiveIn()
-		if !(activeIn == nil || ic.IsHardforkEnabled(*activeIn)) {
-			continue
-		}
-		err := c.OnPersist(ic)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+/// OnPersist calls OnPersist methods for all native contracts.
+pub fn on_persist(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    if ic.trigger != Trigger::OnPersist {
+        return Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, "onPersist must be triggered by system")));
+    }
+
+    for c in &ic.natives {
+        if let Some(active_in) = c.active_in() {
+            if !ic.is_hardfork_enabled(*active_in) {
+                continue;
+            }
+        }
+        c.on_persist(ic)?;
+    }
+
+    Ok(())
 }
 
-// PostPersist calls PostPersist methods for all native contracts.
-func PostPersist(ic *interop.Context) error {
-	if ic.Trigger != trigger.PostPersist {
-		return errors.New("postPersist must be trigered by system")
-	}
-	for _, c := range ic.Natives {
-		activeIn := c.ActiveIn()
-		if !(activeIn == nil || ic.IsHardforkEnabled(*activeIn)) {
-			continue
-		}
-		err := c.PostPersist(ic)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+/// PostPersist calls PostPersist methods for all native contracts.
+pub fn post_persist(ic: &mut Context) -> Result<(), Box<dyn Error>> {
+    if ic.trigger != Trigger::PostPersist {
+        return Err(Box::new(fmt::Error::new(fmt::ErrorKind::Other, "postPersist must be triggered by system")));
+    }
+
+    for c in &ic.natives {
+        if let Some(active_in) = c.active_in() {
+            if !ic.is_hardfork_enabled(*active_in) {
+                continue;
+            }
+        }
+        c.post_persist(ic)?;
+    }
+
+    Ok(())
 }

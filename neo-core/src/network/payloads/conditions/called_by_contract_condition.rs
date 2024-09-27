@@ -1,17 +1,17 @@
 use core::str::FromStr;
 use std::io::Write;
 use neo_json::jtoken::JToken;
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::network::payloads::conditions::{WitnessCondition, WitnessConditionType};
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 #[derive(Debug)]
 pub struct CalledByContractCondition {
     /// The script hash to be checked.
-    pub hash: UInt160,
+    pub hash: H160,
 }
 
 impl WitnessCondition for CalledByContractCondition {
@@ -20,11 +20,11 @@ impl WitnessCondition for CalledByContractCondition {
     }
 
     fn size(&self) -> usize {
-        self.base_size() + UInt160::LEN
+        self.base_size() + H160::LEN
     }
 
     fn deserialize_without_type(&mut self, reader: &mut MemoryReader, max_nest_depth: usize) {
-        self.hash = UInt160::read_from(reader);
+        self.hash = H160::read_from(reader);
     }
 
     fn match_condition(&self, engine: &ApplicationEngine) -> bool {
@@ -36,7 +36,7 @@ impl WitnessCondition for CalledByContractCondition {
     }
 
     fn parse_json(&mut self, json: &JToken, max_nest_depth: usize) {
-        self.hash = UInt160::from_str(json["hash"].as_str().unwrap()).unwrap();
+        self.hash = H160::from_str(json["hash"].as_str().unwrap()).unwrap();
     }
 
     fn to_json(&self) -> JToken {
@@ -45,7 +45,7 @@ impl WitnessCondition for CalledByContractCondition {
         json
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         let mut result = self.base_to_stack_item(reference_counter);
         if let StackItem::Array(array) = &mut result {
             array.push(StackItem::ByteString(self.hash.to_vec()));

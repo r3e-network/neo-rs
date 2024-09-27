@@ -1,14 +1,11 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use alloc::vec::Vec;
-
 use bytes::{BufMut, BytesMut};
 use neo_base::hash::{Ripemd160, Sha256};
 use neo_base::{byzantine_honest_quorum, errors};
-
-use crate::types::{Bytes, OpCode, Script, ScriptHash, ToScriptHash, Varint, MAX_SIGNERS};
-use crate::{PublicKey, PUBLIC_COMPRESSED_SIZE};
+use neo_crypto::secp256r1::{PublicKey, PUBLIC_COMPRESSED_SIZE};
+use crate::{Bytes, OpCode, Script, ScriptHash, ToScriptHash, Varint, MAX_SIGNERS};
 
 // 40 bytes = 1-byte CHECK_SIG_PUSH_DATA1 + 1-byte length + 33-bytes key + 1-byte OpCode + 4-bytes suffix
 pub const CHECK_SIG_SIZE: usize = 1 + 1 + 33 + 1 + 4;
@@ -16,7 +13,7 @@ pub const CHECK_SIG_SIZE: usize = 1 + 1 + 33 + 1 + 4;
 pub const CHECK_SIG_HASH_SUFFIX: [u8; 4] = [0x56, 0xe7, 0xb3, 0x27];
 pub const CHECK_MULTI_SIG_HASH_SUFFIX: [u8; 4] = [0x9e, 0xd0, 0xdc, 0x3a];
 
-pub struct CheckSign(pub(crate) [u8; CHECK_SIG_SIZE]);
+pub struct CheckSign(pub [u8; CHECK_SIG_SIZE]);
 
 impl CheckSign {
     #[inline]
@@ -55,7 +52,7 @@ pub struct MultiCheckSign {
 
 impl MultiCheckSign {
     #[inline]
-    pub(crate) fn new(keys: usize, signers: usize, sign: Vec<u8>) -> Self {
+    pub fn new(keys: usize, signers: usize, sign: Vec<u8>) -> Self {
         Self { keys, signers, sign }
     }
 
@@ -170,12 +167,12 @@ impl<T: AsRef<[PublicKey]>> ToBftHash for T {
 
 #[cfg(test)]
 mod test {
-    use alloc::vec::Vec;
 
     use neo_base::encoding::hex::DecodeHex;
     use neo_crypto::secp256r1::PublicKey;
 
-    use crate::types::{ToCheckMultiSign, ToCheckSign, ToNeo3Address, ToScriptHash};
+    use crate::{ToCheckMultiSign, ToCheckSign, ToNeo3Address, ToScriptHash};
+    use crate::{ToCheckSign, ToNeo3Address, ToScriptHash};
 
     #[test]
     fn test_one_key_address() {

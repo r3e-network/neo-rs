@@ -22,7 +22,7 @@ pub use {attr::*, signer::*, witness::*};
 #[cfg(any(feature = "std", test))]
 pub use {pool::*, pool_event::*};
 
-use crate::types::{Script, VmState, H160, H256};
+use crate::types::{Script, VMState, H160, H256};
 
 #[derive(Debug, Clone, Deserialize, Serialize, BinEncode, InnerBinDecode)]
 pub struct Tx {
@@ -114,7 +114,7 @@ impl Tx {
 pub struct StatedTx {
     pub block_index: u32,
     pub tx: Tx,
-    pub state: VmState,
+    pub state: VMState,
 }
 
 impl StatedTx {

@@ -8,7 +8,7 @@ use crate::cryptography::Helper;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 /// Represents a witness of an `IVerifiable` object.
 #[derive(Clone, Default)]
@@ -19,7 +19,7 @@ pub struct Witness {
     /// The verification script of the witness. It can be empty if the contract is deployed.
     pub verification_script: Vec<u8>,
 
-    script_hash: Option<UInt160>,
+    script_hash: Option<H160>,
 }
 
 impl Witness {
@@ -31,7 +31,7 @@ impl Witness {
     const MAX_VERIFICATION_SCRIPT: usize = 1024;
 
     /// The hash of the `verification_script`.
-    pub fn script_hash(&mut self) -> UInt160 {
+    pub fn script_hash(&mut self) -> H160 {
         if self.script_hash.is_none() {
             self.script_hash = Some(Helper::to_script_hash(&self.verification_script));
         }

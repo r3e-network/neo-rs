@@ -5,8 +5,8 @@ use crate::io::iserializable::ISerializable;
 use crate::network::payloads::{IInventory, IVerifiable, InventoryType, Witness};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 
 /// Represents an extensible message that can be relayed.
 pub struct ExtensiblePayload {
@@ -20,7 +20,7 @@ pub struct ExtensiblePayload {
     pub valid_block_end: u32,
 
     /// The sender of the payload.
-    pub sender: UInt160,
+    pub sender: H160,
 
     /// The data of the payload.
     pub data: Vec<u8>,
@@ -28,7 +28,7 @@ pub struct ExtensiblePayload {
     /// The witness of the payload. It must match the `sender`.
     pub witness: Witness,
 
-    hash: Option<UInt256>,
+    hash: Option<H256>,
 }
 
 impl IInventory for ExtensiblePayload {
@@ -36,7 +36,7 @@ impl IInventory for ExtensiblePayload {
         InventoryType::Extensible
     }
 
-    fn hash(&self) -> UInt256 {
+    fn hash(&self) -> H256 {
         if let Some(hash) = self.hash {
             hash
         } else {
@@ -77,7 +77,7 @@ impl IVerifiable for ExtensiblePayload {
         if self.valid_block_start >= self.valid_block_end {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid block range"));
         }
-        self.sender = UInt160::deserialize(reader)?;
+        self.sender = H160::deserialize(reader)?;
         self.data = read_var_bytes(reader)?;
         Ok(())
     }
@@ -91,7 +91,7 @@ impl IVerifiable for ExtensiblePayload {
         Ok(())
     }
 
-    fn get_script_hashes_for_verifying(&self, _snapshot: &dyn DataCache) -> Vec<UInt160> {
+    fn get_script_hashes_for_verifying(&self, _snapshot: &dyn DataCache) -> Vec<H160> {
         vec![self.sender]
     }
 
@@ -109,12 +109,12 @@ impl ExtensiblePayload {
         var_size(&self.category) +
         std::mem::size_of::<u32>() +
         std::mem::size_of::<u32>() +
-        UInt160::len() +
+        H160::len() +
         var_size(&self.data) +
         1 + self.witness.size()
     }
 
-    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, extensible_witness_white_list: &HashSet<UInt160>) -> bool {
+    pub fn verify(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, extensible_witness_white_list: &HashSet<H160>) -> bool {
         let height = NativeContract::Ledger.current_index(snapshot);
         if height < self.valid_block_start || height >= self.valid_block_end {
             return false;

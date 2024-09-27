@@ -4,9 +4,8 @@
 use alloc::{string::String, vec::Vec};
 
 use serde::{Deserialize, Serialize};
-
+use neo_type::{Extra, H160};
 use crate::contract::NamedParamType;
-use crate::types::{Extra, H160};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Scrypt {
@@ -88,8 +87,10 @@ pub struct Token {
 
 #[cfg(test)]
 mod test {
+    use neo_type::ToNeo3Address;
     use super::*;
-    use crate::{types::ToNeo3Address, wallet::nep2::Nep2KeyDecrypt, PublicKey};
+    use crate::{ PublicKey};
+    use crate::wallet::nep6::nep2::Nep2KeyDecrypt;
 
     #[test]
     #[ignore = "It is too time-consuming"]

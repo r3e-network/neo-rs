@@ -3,8 +3,8 @@ use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::Witness;
 use crate::protocol_settings::ProtocolSettings;
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 use getset::{CopyGetters, Getters, MutGetters, Setters};
 use serde::Serialize;
 use neo_json::jtoken::JToken;
@@ -19,7 +19,7 @@ pub struct Header {
     #[getset(get = "pub", set = "pub", get_mut = "pub")]
     #[bin(ignore)]
     #[serde(rename = "hash")]
-    pub hash: Option<UInt256>,
+    pub hash: Option<H256>,
 
     /// the version of this block header
     #[getset(get = "pub", set = "pub", get_mut = "pub")]
@@ -28,12 +28,12 @@ pub struct Header {
     /// the hash of the previous block.
     #[getset(get = "pub", set = "pub", get_mut = "pub")]
     #[serde(rename = "previousblockhash")]
-    pub prev_hash: UInt256,
+    pub prev_hash: H256,
 
     /// the root hash of a transaction list.
     #[getset(get = "pub", set = "pub", get_mut = "pub")]
     #[serde(rename = "merkleroot")]
-    pub merkle_root: UInt256,
+    pub merkle_root: H256,
 
     /// unix timestamp in milliseconds, i.e. timestamp
     #[getset(get = "pub", set = "pub", get_mut = "pub")]
@@ -56,7 +56,7 @@ pub struct Header {
     /// contract address of the next miner
     #[getset(get = "pub", set = "pub", get_mut = "pub")]
     #[serde(rename = "nextconsensus")]
-    pub next_consensus: UInt160,
+    pub next_consensus: H160,
 
     /// Script used to validate the block. Only one is supported at now.
     #[getset(get = "pub", set = "pub", get_mut = "pub")]
@@ -67,11 +67,11 @@ impl Header {
     pub fn new() -> Self {
         Header {
             version: 0,
-            prev_hash: UInt256::default(),
-            merkle_root: UInt256::default(),
+            prev_hash: H256::default(),
+            merkle_root: H256::default(),
             nonce: 0,
             index: 0,
-            next_consensus: UInt160::default(),
+            next_consensus: H160::default(),
             hash: None,
             timestamp: 0,
             primary: 0,
@@ -81,17 +81,17 @@ impl Header {
 
     pub fn size(&self) -> usize {
         std::mem::size_of::<u32>() +
-        UInt256::LEN +
-        UInt256::LEN +
+        H256::LEN +
+        H256::LEN +
         std::mem::size_of::<u64>() +
         std::mem::size_of::<u64>() +
         std::mem::size_of::<u32>() +
         std::mem::size_of::<u8>() +
-        UInt160::LEN +
+        H160::LEN +
             1usize + self.witnesses.size() as usize
     }
 
-    pub fn hash(&mut self) -> UInt256 {
+    pub fn hash(&mut self) -> H256 {
         if self.hash.is_none() {
             self.hash = Some(self.calculate_hash());
         }

@@ -7,7 +7,7 @@ use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::execution_context_state::ExecutionContextState;
 use crate::neo_contract::interop_descriptor::InteropDescriptor;
 use crate::neo_contract::trigger_type::TriggerType;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 impl ApplicationEngine {
     /// The `InteropDescriptor` of System.Contract.Call.
@@ -75,7 +75,7 @@ impl ApplicationEngine {
 
     /// The implementation of System.Contract.Call.
     /// Use it to call another contract dynamically.
-    pub fn call_contract(&mut self, contract_hash: &UInt160, method: &str, call_flags: CallFlags, args: Array) -> Result<(), Error> {
+    pub fn call_contract(&mut self, contract_hash: &H160, method: &str, call_flags: CallFlags, args: Array) -> Result<(), Error> {
         if method.starts_with('_') {
             return Err(Error::new(format!("Invalid Method Name: {}", method)));
         }
@@ -118,7 +118,7 @@ impl ApplicationEngine {
 
     /// The implementation of System.Contract.CreateStandardAccount.
     /// Calculates corresponding account scripthash for the given public key.
-    pub fn create_standard_account(&mut self, pub_key: &ECPoint) -> Result<UInt160, Error> {
+    pub fn create_standard_account(&mut self, pub_key: &ECPoint) -> Result<H160, Error> {
         let fee = if self.is_hardfork_enabled(Hardfork::HF_Aspidochelone) {
             self.check_sig_price
         } else {
@@ -130,7 +130,7 @@ impl ApplicationEngine {
 
     /// The implementation of System.Contract.CreateMultisigAccount.
     /// Calculates corresponding multisig account scripthash for the given public keys.
-    pub fn create_multisig_account(&mut self, m: i32, pub_keys: &[ECPoint]) -> Result<UInt160, Error> {
+    pub fn create_multisig_account(&mut self, m: i32, pub_keys: &[ECPoint]) -> Result<H160, Error> {
         let fee = if self.is_hardfork_enabled(Hardfork::HF_Aspidochelone) {
             self.check_sig_price * pub_keys.len() as i64
         } else {

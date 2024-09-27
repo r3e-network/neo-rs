@@ -17,8 +17,8 @@ pub enum VMError {
     #[error("Item size exceeds limit: {0}")]
     ItemTooLarge(String),
 
-    #[error("Encountered invalid opcode: {0}")]
-    InvalidOpcode(String),
+    #[error("Encountered invalid opcode: {0:?}")]
+    InvalidOpcode(OpCode),
 
     #[error("Tried to divide by zero: {0}")]
     DivisionByZero(String),
@@ -32,6 +32,12 @@ pub enum VMError {
     #[error("Invalid parameter for operation: {0}")]
     InvalidParameter(String),
 
+    #[error("Invalid prefix size: {0}")]
+    InvalidPrefixSize(String),
+
+    #[error("Invalid OpCode: {0:?}")]
+    InvalidOpCode(OpCode),
+
     #[error("Item not found in collection: {0}")]
     ItemNotFound(String),
 
@@ -40,10 +46,7 @@ pub enum VMError {
 
     #[error("Custom VM error: {0}")]
     Custom(String),
-}
 
-impl VMError {
-    pub(crate) fn InvalidOpCode(p0: OpCode) -> Error {
-        todo!()
-    }
+    #[error("Invalid instruction pointer: {0}")]
+    InvalidInstrPointer(usize),
 }

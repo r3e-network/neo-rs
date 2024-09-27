@@ -1,14 +1,14 @@
 use alloc::rc::Rc;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::References;
+use neo_vm::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::native_contract::native_contract_error::NativeContractError;
-use crate::uint256::UInt256;
+use neo_type::H256;
 
 /// Represents a state that combines a hash and an index.
 #[derive(Default)]
 pub struct HashIndexState {
-    pub hash: UInt256,
+    pub hash: H256,
     pub index: u32,
 }
 
@@ -20,7 +20,7 @@ impl IInteroperable for HashIndexState {
             if s.len() != 2 {
                 return Err("Invalid struct length for HashIndexState".into());
             }
-            self.hash = UInt256::from_slice(&s[0].as_bytes()?)?;
+            self.hash = H256::from_slice(&s[0].as_bytes()?)?;
             self.index = s[1].as_u32()?;
             Ok(())
         } else {
@@ -28,7 +28,7 @@ impl IInteroperable for HashIndexState {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         Ok(StackItem::Struct(vec![
             StackItem::ByteString(self.hash.to_vec()),
             StackItem::Integer(self.index.into()),

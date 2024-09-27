@@ -11,7 +11,7 @@ use crate::util::{self, Uint160, Uint256};
 use crate::vm::stackitem::Item;
 use crate::neorpc::result::{self, Invoke, Iterator};
 use crate::smartcontract::{self, Parameter};
-use crate::vm::vmstate::VmState;
+use crate::vm::vmstate::VMState;
 use crate::smartcontract::manifest::Manifest;
 use crate::smartcontract::nef::NefFile;
 use crate::vm::stackitem::StackItem;

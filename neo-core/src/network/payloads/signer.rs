@@ -6,15 +6,15 @@ use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::network::payloads::{WitnessRule, WitnessRuleAction};
 use crate::network::payloads::conditions::{BooleanCondition, ScriptHashCondition};
 use crate::tx::WitnessScope;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 const MAX_SUBITEMS: usize = 16;
 
 #[derive(Clone, Debug)]
 pub struct Signer {
-    pub account: UInt160,
+    pub account: H160,
     pub scopes: WitnessScope,
-    pub allowed_contracts: Vec<UInt160>,
+    pub allowed_contracts: Vec<H160>,
     pub allowed_groups: Vec<ECPoint>,
     pub rules: Vec<WitnessRule>,
 }
@@ -68,7 +68,7 @@ impl IInteroperable for Signer {
         todo!()
     }
 
-    fn to_stack_item(&self, reference_counter: Option<&ReferenceCounter>) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: Option<&References>) -> Result<Rc<StackItem>, Self::Error> {
 
             Array::new(vec![
                 ByteString::new(self.account.to_vec()),
@@ -96,9 +96,9 @@ impl IInteroperable for Signer {
 
 impl ISerializable for Signer {
      fn size(&self) -> usize {
-        UInt160::len() +
+        H160::len() +
         std::mem::size_of::<WitnessScope>() +
-        if self.scopes.contains(WitnessScope::CustomContracts) { self.allowed_contracts.len() * UInt160::len() } else { 0 } +
+        if self.scopes.contains(WitnessScope::CustomContracts) { self.allowed_contracts.len() * H160::len() } else { 0 } +
         if self.scopes.contains(WitnessScope::CustomGroups) { self.allowed_groups.len() * ECPoint::len() } else { 0 } +
         if self.scopes.contains(WitnessScope::WitnessRules) { self.rules.iter().map(|r| r.size()).sum::<usize>() } else { 0 }
     }
@@ -125,7 +125,7 @@ self.account.serialize(writer)?;
     }
 
      fn deserialize(reader: &mut MemoryReader) -> io::Result<Self, std::io::Error> {
-        let account = UInt160::deserialize(reader)?;
+        let account = H160::deserialize(reader)?;
         let scopes = WitnessScope::try_from(reader.read_u8()?)?;
 
         if (scopes as u8 & !(WitnessScope::CalledByEntry as u8 | WitnessScope::CustomContracts as u8 | WitnessScope::CustomGroups as u8 | WitnessScope::WitnessRules as u8 | WitnessScope::Global as u8)) != 0 {
@@ -139,7 +139,7 @@ self.account.serialize(writer)?;
         let allowed_contracts = if scopes.contains(WitnessScope::CustomContracts) {
             let mut contracts = Vec::new();
             for _ in 0..MAX_SUBITEMS {
-                contracts.push(UInt160::deserialize(reader)?);
+                contracts.push(H160::deserialize(reader)?);
             }
             contracts
         } else {
@@ -180,14 +180,14 @@ self.account.serialize(writer)?;
 
 impl IJsonConvertible for Signer {
      fn from_json(json: &JObject) -> Result<Self, String> {
-        let account = UInt160::from_str(json.get("account").ok_or("Missing account")?.as_str().ok_or("Invalid account")?)?;
+        let account = H160::from_str(json.get("account").ok_or("Missing account")?.as_str().ok_or("Invalid account")?)?;
         let scopes = WitnessScope::try_from(json.get("scopes").ok_or("Missing scopes")?.as_u64().ok_or("Invalid scopes")? as u8)?;
 
         let allowed_contracts = if scopes.contains(WitnessScope::CustomContracts) {
             json.get("allowedcontracts").ok_or("Missing allowedcontracts")?
                 .as_array().ok_or("Invalid allowedcontracts")?
                 .iter()
-                .map(|p| UInt160::from_str(p.as_str().ok_or("Invalid contract")?))
+                .map(|p| H160::from_str(p.as_str().ok_or("Invalid contract")?))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             Vec::new()

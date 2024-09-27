@@ -3,14 +3,14 @@
 
 use crate::*;
 
-pub(crate) fn exec_invert(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_invert(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let item = pop!(cx, op)
         .as_int()
         .map_err(|err| ExecError::InvalidCast(op.ip, op.code, err.item_type()))?;
     push_checked!(cx, op, StackItem::with_integer(!item))
 }
 
-pub(crate) fn exec_and(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_and(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let first = pop!(cx, op)
         .as_int()
         .map_err(|err| ExecError::InvalidCast(op.ip, op.code, err.item_type()))?;
@@ -21,7 +21,7 @@ pub(crate) fn exec_and(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
     push_checked!(cx, op, StackItem::with_integer(first & second))
 }
 
-pub(crate) fn exec_or(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_or(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let first = pop!(cx, op)
         .as_int()
         .map_err(|err| ExecError::InvalidCast(op.ip, op.code, err.item_type()))?;
@@ -32,7 +32,7 @@ pub(crate) fn exec_or(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
     push_checked!(cx, op, StackItem::with_integer(first | second))
 }
 
-pub(crate) fn exec_xor(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_xor(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let first = pop!(cx, op)
         .as_int()
         .map_err(|err| ExecError::InvalidCast(op.ip, op.code, err.item_type()))?;
@@ -44,7 +44,7 @@ pub(crate) fn exec_xor(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
 }
 
 // Equal
-pub(crate) fn exec_equal(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_equal(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let first = pop!(cx, op);
     let second = pop!(cx, op);
 
@@ -55,7 +55,7 @@ pub(crate) fn exec_equal(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError>
 }
 
 // NotEqual
-pub(crate) fn exec_not_equal(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_not_equal(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let first = pop!(cx, op);
     let second = pop!(cx, op);
 
@@ -74,7 +74,7 @@ mod test {
     #[test]
     fn test_exec_invert() {
         let mut cx =
-            ExecContext::new(ExecStack::new(1024, References::new()), Rc::new(Program::nop()));
+            ExecutionContext::new(EvaluationStack::new(1024, References::new()), Rc::new(Program::nop()));
 
         let op = Op { ip: 1, code: OpCode::Invert, operand: Default::default() };
         let _ = exec_invert(&mut cx, &op).expect_err("empty stack should be failed");

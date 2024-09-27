@@ -1,18 +1,18 @@
 use std::io::{Error, ErrorKind, Read, Write};
 use neo_json::jtoken::JToken;
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::network::payloads::conditions::{WitnessCondition, WitnessConditionType};
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 #[derive(Debug)]
 pub struct ScriptHashCondition {
     /// The script hash to be checked.
-    pub hash: UInt160,
+    pub hash: H160,
 }
 
 impl WitnessCondition for ScriptHashCondition {
@@ -21,11 +21,11 @@ impl WitnessCondition for ScriptHashCondition {
     }
 
     fn size(&self) -> usize {
-        self.base_size() + UInt160::LEN
+        self.base_size() + H160::LEN
     }
 
     fn deserialize_without_type(&mut self, reader: &mut MemoryReader, _max_nest_depth: i32) -> std::io::Result<()> {
-        self.hash = UInt160::deserialize(reader)?;
+        self.hash = H160::deserialize(reader)?;
         Ok(())
     }
 
@@ -38,7 +38,7 @@ impl WitnessCondition for ScriptHashCondition {
     }
 
     fn parse_json(&mut self, json: &JToken, _max_nest_depth: i32) -> Result<(), Error> {
-        self.hash = UInt160::from_str(json["hash"].as_str().ok_or_else(|| Error::new(ErrorKind::InvalidData, "Missing 'hash' field"))?)
+        self.hash = H160::from_str(json["hash"].as_str().ok_or_else(|| Error::new(ErrorKind::InvalidData, "Missing 'hash' field"))?)
             .map_err(|e| Error::new(ErrorKind::InvalidData, e.to_string()))?;
         Ok(())
     }
@@ -49,7 +49,7 @@ impl WitnessCondition for ScriptHashCondition {
         json
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         let mut result = self.base_to_stack_item(reference_counter);
         if let StackItem::Array(array) = &mut result {
             array.add(StackItem::ByteString(self.hash.to_vec()));

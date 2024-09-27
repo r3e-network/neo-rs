@@ -4,6 +4,7 @@ use std::convert::TryInto;
 /// A helper module related to wallets.
 pub mod helper {
     use NeoRust::prelude::VarSizeTrait;
+    use neo_type::H160;
     use neo_vm::vm::VMState;
     use crate::contract::Policy;
     use crate::cryptography::{Base58, Crypto};
@@ -14,9 +15,7 @@ pub mod helper {
     use crate::network::payloads::{IVerifiable, Transaction};
     use crate::persistence::DataCache;
     use crate::protocol_settings::ProtocolSettings;
-    use crate::UInt160;
-    use crate::wallet::KeyPair;
-    use super::*;
+    use crate::wallet::key_pair::KeyPair;
 
     /// Signs an `IVerifiable` with the specified private key.
     ///
@@ -43,7 +42,7 @@ pub mod helper {
     /// # Returns
     ///
     /// The converted address.
-    pub fn to_address(script_hash: &UInt160, version: u8) -> String {
+    pub fn to_address(script_hash: &H160, version: u8) -> String {
         let mut data = vec![version];
         data.extend_from_slice(script_hash.to_array());
         Base58::base58_check_encode(&data)
@@ -59,7 +58,7 @@ pub mod helper {
     /// # Returns
     ///
     /// The converted script hash.
-    pub fn to_script_hash(address: &str, version: u8) -> Result<UInt160, String> {
+    pub fn to_script_hash(address: &str, version: u8) -> Result<H160, String> {
         let data = Base58::base58_check_decode(address).map_err(|e| e.to_string())?;
         if data.len() != 21 {
             return Err("Invalid address length".into());
@@ -67,7 +66,7 @@ pub mod helper {
         if data[0] != version {
             return Err("Invalid address version".into());
         }
-        Ok(UInt160::try_from(&data[1..]).unwrap())
+        Ok(H160::try_from(&data[1..]).unwrap())
     }
 
     /// XOR operation on two byte arrays.
@@ -96,7 +95,7 @@ pub mod helper {
         tx: &Transaction,
         snapshot: &dyn DataCache,
         settings: &ProtocolSettings,
-        account_script: impl Fn(&UInt160) -> Option<Vec<u8>>,
+        account_script: impl Fn(&H160) -> Option<Vec<u8>>,
         max_execution_cost: i64,
     ) -> Result<i64, String> {
         let hashes = tx.get_script_hashes_for_verifying(snapshot)?;

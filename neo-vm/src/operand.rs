@@ -65,13 +65,13 @@ impl Operand {
 
 #[cfg(test)]
 mod test {
-    use neo_core::types::{OpCode, OP_CODES};
     use strum::IntoEnumIterator;
+    use crate::vm::{OpCode, OP_CODES};
 
     #[test]
     fn test_opcode_valid() {
         let mut codes = [false; 256];
-        for code in OpCode::iter() {
+        for code in OpCode::enum_iter() {
             assert_eq!(OpCode::is_valid(code.as_u8()), true);
             codes[code.as_u8() as usize] = true;
         }

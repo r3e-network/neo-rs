@@ -13,8 +13,7 @@ use neo_base::hash::Sha256Twice;
 use neo_crypto::aes::Aes256EcbCipher;
 use neo_crypto::key::SecretKey;
 use neo_crypto::scrypt::{DeriveKey, Params};
-
-use crate::types::{Address, ToNeo3Address};
+use neo_type::{Address, ToNeo3Address};
 use crate::{PrivateKey, PublicKey, KEY_SIZE};
 
 const NEP2_KEY_SIZE: usize = 39;

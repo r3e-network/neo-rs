@@ -3,14 +3,14 @@ use std::collections::HashSet;
 use NeoRust::contract::ContractManagement;
 use num_bigint::BigInt;
 use neo_proc_macros::contract_method;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::StackItem;
 use crate::neo_contract::native_contract::{NativeContract};
 use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::contract_state::ContractState;
 use crate::neo_contract::key_builder::KeyBuilder;
 use crate::protocol_settings::ProtocolSettings;
-use crate::uint160::UInt160;
+use neo_type::H160;
 use crate::neo_contract::native_contract::contract_method_metadata::ContractMethodMetadata;
 use crate::neo_contract::native_contract::contract_event_attribute::ContractEventAttribute;
 use crate::neo_contract::manifest::contract_manifest::ContractManifest;
@@ -34,7 +34,7 @@ pub trait FungibleToken: NativeContract {
     fn decimals(&self) -> u8;
 
     #[contract_method]
-    async fn mint(&self, engine: &mut ApplicationEngine, account: &UInt160, amount: BigInt, call_on_payment: bool) -> Result<(), String> {
+    async fn mint(&self, engine: &mut ApplicationEngine, account: &H160, amount: BigInt, call_on_payment: bool) -> Result<(), String> {
         if amount < BigInt::from(0) {
             return Err("Amount must be non-negative".into());
         }
@@ -60,7 +60,7 @@ pub trait FungibleToken: NativeContract {
     }
 
     #[contract_method]
-    async fn burn(&self, engine: &mut ApplicationEngine, account: &UInt160, amount: BigInt) -> Result<(), String> {
+    async fn burn(&self, engine: &mut ApplicationEngine, account: &H160, amount: BigInt) -> Result<(), String> {
         if amount < BigInt::from(0) {
             return Err("Amount must be non-negative".into());
         }
@@ -94,14 +94,14 @@ pub trait FungibleToken: NativeContract {
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = CallFlags::READ_STATES)]
-    fn balance_of(&self, snapshot: &dyn DataCache, account: &UInt160) -> BigInt {
+    fn balance_of(&self, snapshot: &dyn DataCache, account: &H160) -> BigInt {
         snapshot.try_get(&self.create_storage_key(Self::PREFIX_ACCOUNT).add(account))
             .map(|storage| storage.get_interoperable::<Self::State>().balance())
             .unwrap_or_else(BigInt::zero)
     }
 
     #[contract_method(cpu_fee = 1 << 17, storage_fee = 50, required_flags = CallFlags::STATES | CallFlags::ALLOW_CALL | CallFlags::ALLOW_NOTIFY)]
-    async fn transfer(&self, engine: &mut ApplicationEngine, from: &UInt160, to: &UInt160, amount: BigInt, data: StackItem) -> Result<bool, String> {
+    async fn transfer(&self, engine: &mut ApplicationEngine, from: &H160, to: &H160, amount: BigInt, data: StackItem) -> Result<bool, String> {
         if amount < BigInt::from(0) {
             return Err("Amount must be non-negative".into());
         }
@@ -144,11 +144,11 @@ pub trait FungibleToken: NativeContract {
         Ok(true)
     }
 
-    fn on_balance_changing(&self, _engine: &mut ApplicationEngine, _account: &UInt160, _state: &mut Self::State, _amount: &BigInt) {
+    fn on_balance_changing(&self, _engine: &mut ApplicationEngine, _account: &H160, _state: &mut Self::State, _amount: &BigInt) {
         // Default implementation does nothing
     }
 
-    async fn post_transfer(&self, engine: &mut ApplicationEngine, from: Option<&UInt160>, to: Option<&UInt160>, amount: BigInt, data: StackItem, call_on_payment: bool) -> Result<(), String> {
+    async fn post_transfer(&self, engine: &mut ApplicationEngine, from: Option<&H160>, to: Option<&H160>, amount: BigInt, data: StackItem, call_on_payment: bool) -> Result<(), String> {
         // Send notification
         engine.send_notification(
             self.hash(),

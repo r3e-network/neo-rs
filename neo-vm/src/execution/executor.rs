@@ -7,9 +7,9 @@ use crate::execution::*;
 //     // nothing
 // }
 
-pub type Executor = fn(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError>;
+pub type Executor = fn(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError>;
 
-fn exec_invalid_opcode<const N: u8>(_cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+fn exec_invalid_opcode<const N: u8>(_cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     Err(ExecError::InvalidOpCode(op.ip, N))
 }
 

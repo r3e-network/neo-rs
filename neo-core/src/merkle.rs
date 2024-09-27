@@ -5,7 +5,7 @@ use alloc::{vec, vec::Vec};
 
 use neo_base::hash::{Sha256, SlicesSha256};
 
-use crate::types::H256;
+use neo_type::H256;
 
 #[allow(dead_code)]
 pub struct MerkleTree {
@@ -135,7 +135,7 @@ mod test {
     };
 
     use super::*;
-    use crate::types::H256;
+    use neo_type::H256;
 
     #[test]
     fn test_inner_merkle_nodes() {

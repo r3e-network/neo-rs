@@ -3,7 +3,7 @@ use core::str::FromStr;
 use std::io::{Error, ErrorKind};
 use std::fmt;
 use neo_json::jtoken::JToken;
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
@@ -72,7 +72,7 @@ pub trait WitnessCondition: fmt::Debug {
         json
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> StackItem {
+    fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         StackItem::Array(vec![Rc::new(StackItem::Integer(self.condition_type()))])
     }
 }

@@ -5,12 +5,12 @@ use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::call_flags::CallFlags;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 /// Represents the methods that a contract will call statically.
 pub struct MethodToken {
     /// The hash of the contract to be called.
-    pub hash: UInt160,
+    pub hash: H160,
 
     /// The name of the method to be called.
     pub method: String,
@@ -48,7 +48,7 @@ impl MethodToken {
 
 impl ISerializable for MethodToken {
     fn size(&self) -> usize {
-        UInt160::LEN +
+        H160::LEN +
             self.method.var_size() +
             std::mem::size_of::<u16>() +
             std::mem::size_of::<bool>() +
@@ -65,7 +65,7 @@ impl ISerializable for MethodToken {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
-        let hash = UInt160::deserialize(reader)?;
+        let hash = H160::deserialize(reader)?;
         let method = reader.read_var_string(32)?;
         if method.starts_with('_') {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Method name cannot start with underscore"));

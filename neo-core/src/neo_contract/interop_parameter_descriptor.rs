@@ -1,10 +1,10 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::StackItem;
 use crate::cryptography::ECPoint;
 use crate::neo_contract::validator_attribute::ValidatorTrait;
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 
 /// Represents a descriptor of an interoperable service parameter.
 #[derive(Debug, Clone)]
@@ -36,8 +36,8 @@ pub enum InteropParameterType {
     BigInt,
     ByteArray,
     String,
-    UInt160,
-    UInt256,
+    H160,
+    H256,
     ECPoint,
     Enum(String),
     CustomArray(Box<InteropParameterType>),
@@ -84,18 +84,18 @@ impl InteropParameterDescriptor {
                     Ok(Box::new(Some(p.get_string()?)))
                 }
             },
-            InteropParameterType::UInt160 => |p| {
+            InteropParameterType::H160 => |p| {
                 if p.is_null() {
-                    Ok(Box::new(None::<UInt160>))
+                    Ok(Box::new(None::<H160>))
                 } else {
-                    Ok(Box::new(Some(UInt160::try_from(p.get_span()?)?)))
+                    Ok(Box::new(Some(H160::try_from(p.get_span()?)?)))
                 }
             },
-            InteropParameterType::UInt256 => |p| {
+            InteropParameterType::H256 => |p| {
                 if p.is_null() {
-                    Ok(Box::new(None::<UInt256>))
+                    Ok(Box::new(None::<H256>))
                 } else {
-                    Ok(Box::new(Some(UInt256::try_from(p.get_span()?)?)))
+                    Ok(Box::new(Some(H256::try_from(p.get_span()?)?)))
                 }
             },
             InteropParameterType::ECPoint => |p| {

@@ -3,10 +3,10 @@
 
 use core::hash::{Hash, Hasher};
 
-use neo_core::contract::CallFlags;
-use strum::{Display, EnumIter, EnumString};
+use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 
 use crate::{InteropCall::*, RunPrice};
+use crate::call_flags::CallFlags;
 
 #[derive(Debug, Clone)]
 pub struct Interop {
@@ -197,46 +197,50 @@ impl InteropCall {
     pub const fn as_u8(&self) -> u8 { *self as u8 }
 
     pub fn attr(&self) -> CallAttr {
-        use CallFlags::*;
+
         match self {
-            SystemContractCall => CallAttr { price: 1 << 15, call_flags: ReadOnly, nr_params: 4 },
-            SystemContractCallNative => CallAttr { price: 0, call_flags: None, nr_params: 1 },
-            SystemContractCreateMultiSigAccount => { CallAttr { price: 0, call_flags: None, nr_params: 2 } }
-            SystemContractCreateStandardAccount => { CallAttr { price: 0, call_flags: None, nr_params: 1 } }
-            SystemContractGetCallFlags => { CallAttr { price: 1 << 10, call_flags: None, nr_params: 0 } }
-            SystemContractNativeOnPersist => { CallAttr { price: 0, call_flags: States, nr_params: 0 } }
-            SystemContractNativePostPersist => { CallAttr { price: 0, call_flags: States, nr_params: 0 } }
-            SystemCryptoCheckMultiSig => CallAttr { price: 0, call_flags: None, nr_params: 2 },
-            SystemCryptoCheckSig => CallAttr { price: 1 << 15, call_flags: None, nr_params: 2 },
-            SystemIteratorNext => CallAttr { price: 1 << 15, call_flags: None, nr_params: 1 },
-            SystemIteratorValue => CallAttr { price: 1 << 4, call_flags: None, nr_params: 1 },
-            SystemRuntimeBurnGas => CallAttr { price: 1 << 4, call_flags: None, nr_params: 1 },
-            SystemRuntimeCheckWitness => { CallAttr { price: 1 << 10, call_flags: None, nr_params: 1 } }
-            SystemRuntimeCurrentSigners => { CallAttr { price: 1 << 4, call_flags: None, nr_params: 0 } }
-            SystemRuntimeGasLeft => CallAttr { price: 1 << 4, call_flags: None, nr_params: 0 },
-            SystemRuntimeGetAddressVersion => { CallAttr { price: 1 << 3, call_flags: None, nr_params: 0 } }
-            SystemRuntimeGetCallingScriptHash => { CallAttr { price: 1 << 4, call_flags: None, nr_params: 0 } }
-            SystemRuntimeGetEntryScriptHash => { CallAttr { price: 1 << 4, call_flags: None, nr_params: 0 } }
-            SystemRuntimeGetExecutingScriptHash => { CallAttr { price: 1 << 4, call_flags: None, nr_params: 0 } }
-            SystemRuntimeGetInvocationCounter => { CallAttr { price: 1 << 4, call_flags: None, nr_params: 0 } }
-            SystemRuntimeGetNetwork => CallAttr { price: 1 << 3, call_flags: None, nr_params: 0 },
-            SystemRuntimeGetNotifications => { CallAttr { price: 1 << 12, call_flags: None, nr_params: 1 } }
-            SystemRuntimeGetRandom => CallAttr { price: 0, call_flags: None, nr_params: 0 },
-            SystemRuntimeGetScriptContainer => { CallAttr { price: 1 << 3, call_flags: None, nr_params: 0 } }
-            SystemRuntimeGetTime => { CallAttr { price: 1 << 3, call_flags: ReadStates, nr_params: 0 } }
-            SystemRuntimeGetTrigger => CallAttr { price: 1 << 3, call_flags: None, nr_params: 0 },
-            SystemRuntimeLoadScript => { CallAttr { price: 1 << 15, call_flags: AllowCall, nr_params: 3 } }
-            SystemRuntimeLog => CallAttr { price: 1 << 15, call_flags: AllowNotify, nr_params: 1 },
-            SystemRuntimeNotify => { CallAttr { price: 1 << 15, call_flags: AllowNotify, nr_params: 2 } }
-            SystemRuntimePlatform => CallAttr { price: 1 << 3, call_flags: None, nr_params: 0 },
-            SystemStorageDelete => { CallAttr { price: 1 << 15, call_flags: WriteStates, nr_params: 2 } }
-            SystemStorageFind => CallAttr { price: 1 << 15, call_flags: ReadStates, nr_params: 3 },
-            SystemStorageGet => CallAttr { price: 1 << 15, call_flags: ReadStates, nr_params: 2 },
-            SystemStorageGetContext => { CallAttr { price: 1 << 4, call_flags: ReadStates, nr_params: 0 } }
-            SystemStorageGetReadOnlyContext => { CallAttr { price: 1 << 4, call_flags: ReadStates, nr_params: 0 } }
-            SystemStoragePut => CallAttr { price: 1 << 15, call_flags: WriteStates, nr_params: 3 },
-            SystemStorageAsReadOnly => { CallAttr { price: 1 << 4, call_flags: ReadStates, nr_params: 1 } }
+            SystemContractCall => CallAttr { price: 1 << 15, call_flags: CallFlags::READ_ONLY, nr_params: 4 },
+            SystemContractCallNative => CallAttr { price: 0, call_flags: CallFlags::NONE, nr_params: 1 },
+            SystemContractCreateMultiSigAccount => CallAttr { price: 0, call_flags: CallFlags::NONE, nr_params: 2 },
+            SystemContractCreateStandardAccount => CallAttr { price: 0, call_flags: CallFlags::NONE, nr_params: 1 },
+            SystemContractGetCallFlags => CallAttr { price: 1 << 10, call_flags: CallFlags::NONE, nr_params: 0 },
+            SystemContractNativeOnPersist => CallAttr { price: 0, call_flags: CallFlags::STATES, nr_params: 0 },
+            SystemContractNativePostPersist => CallAttr { price: 0, call_flags: CallFlags::STATES, nr_params: 0 },
+            SystemCryptoCheckMultiSig => CallAttr { price: 0, call_flags: CallFlags::NONE, nr_params: 2 },
+            SystemCryptoCheckSig => CallAttr { price: 1 << 15, call_flags: CallFlags::NONE, nr_params: 2 },
+            SystemIteratorNext => CallAttr { price: 1 << 15, call_flags: CallFlags::NONE, nr_params: 1 },
+            SystemIteratorValue => CallAttr { price: 1 << 4, call_flags: CallFlags::NONE, nr_params: 1 },
+            SystemRuntimeBurnGas => CallAttr { price: 1 << 4, call_flags: CallFlags::NONE, nr_params: 1 },
+            SystemRuntimeCheckWitness => { CallAttr { price: 1 << 10, call_flags: CallFlags::NONE, nr_params: 1 } }
+            SystemRuntimeCurrentSigners => { CallAttr { price: 1 << 4, call_flags: CallFlags::NONE, nr_params: 0 } }
+            SystemRuntimeGasLeft => CallAttr { price: 1 << 4, call_flags: CallFlags::NONE, nr_params: 0 },
+            SystemRuntimeGetAddressVersion => { CallAttr { price: 1 << 3, call_flags: CallFlags::NONE, nr_params: 0 } }
+            SystemRuntimeGetCallingScriptHash => { CallAttr { price: 1 << 4, call_flags: CallFlags::NONE, nr_params: 0 } }
+            SystemRuntimeGetEntryScriptHash => { CallAttr { price: 1 << 4, call_flags: CallFlags::NONE, nr_params: 0 } }
+            SystemRuntimeGetExecutingScriptHash => { CallAttr { price: 1 << 4, call_flags: CallFlags::NONE, nr_params: 0 } }
+            SystemRuntimeGetInvocationCounter => { CallAttr { price: 1 << 4, call_flags: CallFlags::NONE, nr_params: 0 } }
+            SystemRuntimeGetNetwork => CallAttr { price: 1 << 3, call_flags: CallFlags::NONE, nr_params: 0 },
+            SystemRuntimeGetNotifications => { CallAttr { price: 1 << 12, call_flags: CallFlags::NONE, nr_params: 1 } }
+            SystemRuntimeGetRandom => CallAttr { price: 0, call_flags: CallFlags::NONE, nr_params: 0 },
+            SystemRuntimeGetScriptContainer => { CallAttr { price: 1 << 3, call_flags: CallFlags::NONE, nr_params: 0 } }
+            SystemRuntimeGetTime => { CallAttr { price: 1 << 3, call_flags: CallFlags::READ_STATES, nr_params: 0 } }
+            SystemRuntimeGetTrigger => CallAttr { price: 1 << 3, call_flags: CallFlags::NONE, nr_params: 0 },
+            SystemRuntimeLoadScript => { CallAttr { price: 1 << 15, call_flags: CallFlags::ALLOW_CALL, nr_params: 3 } }
+            SystemRuntimeLog => CallAttr { price: 1 << 15, call_flags: CallFlags::ALLOW_NOTIFY, nr_params: 1 },
+            SystemRuntimeNotify => { CallAttr { price: 1 << 15, call_flags: CallFlags::ALLOW_NOTIFY, nr_params: 2 } }
+            SystemRuntimePlatform => CallAttr { price: 1 << 3, call_flags: CallFlags::NONE, nr_params: 0 },
+            SystemStorageDelete => { CallAttr { price: 1 << 15, call_flags: CallFlags::WRITE_STATES, nr_params: 2 } }
+            SystemStorageFind => CallAttr { price: 1 << 15, call_flags: CallFlags::READ_STATES, nr_params: 3 },
+            SystemStorageGet => CallAttr { price: 1 << 15, call_flags: CallFlags::READ_STATES, nr_params: 2 },
+            SystemStorageGetContext => { CallAttr { price: 1 << 4, call_flags: CallFlags::READ_STATES, nr_params: 0 } }
+            SystemStorageGetReadOnlyContext => { CallAttr { price: 1 << 4, call_flags: CallFlags::READ_STATES, nr_params: 0 } }
+            SystemStoragePut => CallAttr { price: 1 << 15, call_flags: CallFlags::WRITE_STATES, nr_params: 3 },
+            SystemStorageAsReadOnly => { CallAttr { price: 1 << 4, call_flags: CallFlags::READ_STATES, nr_params: 1 } }
         }
+    }
+
+    pub fn iter() -> impl Iterator<Item = InteropCall> {
+        <InteropCall as IntoEnumIterator>::iter()
     }
 }
 

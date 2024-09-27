@@ -6,7 +6,7 @@ use crate::contract::Contract;
 use crate::neo_contract::contract_parameters_context::ContractParametersContext;
 use crate::payload::Version;
 use crate::protocol_settings::ProtocolSettings;
-use crate::uint160::UInt160;
+use neo_type::H160;
 use crate::wallet::{KeyPair, TransferOutput, WalletAccount};
 
 /// The base struct of wallets.
@@ -49,7 +49,7 @@ impl Wallet {
     /// # Returns
     ///
     /// `true` if the account is included in the wallet; otherwise, `false`.
-    pub fn contains(&self, script_hash: &UInt160) -> bool {
+    pub fn contains(&self, script_hash: &H160) -> bool {
         // Implementation depends on the specific wallet type
         unimplemented!()
     }
@@ -92,7 +92,7 @@ impl Wallet {
     /// # Returns
     ///
     /// The created account.
-    pub fn create_watch_only_account(&mut self, script_hash: UInt160) -> WalletAccount {
+    pub fn create_watch_only_account(&mut self, script_hash: H160) -> WalletAccount {
         // Implementation depends on the specific wallet type
         unimplemented!()
     }
@@ -112,7 +112,7 @@ impl Wallet {
     /// # Returns
     ///
     /// `true` if the account is removed; otherwise, `false`.
-    pub fn delete_account(&mut self, script_hash: &UInt160) -> bool {
+    pub fn delete_account(&mut self, script_hash: &H160) -> bool {
         // Implementation depends on the specific wallet type
         unimplemented!()
     }
@@ -126,7 +126,7 @@ impl Wallet {
     /// # Returns
     ///
     /// The account with the specified hash.
-    pub fn get_account(&self, script_hash: &UInt160) -> Option<WalletAccount> {
+    pub fn get_account(&self, script_hash: &H160) -> Option<WalletAccount> {
         // Implementation depends on the specific wallet type
         unimplemented!()
     }
@@ -184,7 +184,7 @@ impl Wallet {
     /// # Returns
     ///
     /// The created transaction.
-    pub fn make_transaction(&self, snapshot: &Snapshot, outputs: &[TransferOutput], from: Option<&UInt160>, cosigners: Option<&[Signer]>, persisting_block: Option<&Block>) -> Result<Transaction, String> {
+    pub fn make_transaction(&self, snapshot: &Snapshot, outputs: &[TransferOutput], from: Option<&H160>, cosigners: Option<&[Signer]>, persisting_block: Option<&Block>) -> Result<Transaction, String> {
         // Implementation of make_transaction
         unimplemented!()
     }
@@ -204,7 +204,7 @@ impl Wallet {
     /// # Returns
     ///
     /// The created transaction.
-    pub fn make_transaction_with_script(&self, snapshot: &Snapshot, script: &[u8], sender: Option<&UInt160>, cosigners: Option<&[Signer]>, attributes: Option<&[TransactionAttribute]>, max_gas: i64, persisting_block: Option<&Block>) -> Result<Transaction, String> {
+    pub fn make_transaction_with_script(&self, snapshot: &Snapshot, script: &[u8], sender: Option<&H160>, cosigners: Option<&[Signer]>, attributes: Option<&[TransactionAttribute]>, max_gas: i64, persisting_block: Option<&Block>) -> Result<Transaction, String> {
         // Implementation of make_transaction_with_script
         unimplemented!()
     }

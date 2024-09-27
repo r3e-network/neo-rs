@@ -2,8 +2,8 @@ use alloc::rc::Rc;
 use NeoRust::crypto::ECPoint;
 use neo_base::encoding::base64;
 use neo_vm::stack_item::StackItem;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::References;
+use neo_vm::StackItem;
 use crate::{io::iserializable::ISerializable, neo_contract::iinteroperable::IInteroperable};
 use crate::cryptography::ECPoint;
 use crate::neo_contract::manifest::manifest_error::ManifestError;
@@ -43,7 +43,7 @@ impl IInteroperable for ContractGroup {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         Ok(StackItem::Struct(Struct::new(vec![
             StackItem::ByteArray(self.pub_key.to_array().to_vec()),
             StackItem::ByteArray(self.signature.clone()),
@@ -87,7 +87,7 @@ impl  ContractGroup {
     /// # Returns
     ///
     /// `true` if the signature is valid; otherwise, `false`.
-    pub fn is_valid(&self, hash: &UInt160) -> bool {
+    pub fn is_valid(&self, hash: &H160) -> bool {
         crypto::verify_signature(&hash.to_array(), &self.signature, &self.pub_key)
     }
 

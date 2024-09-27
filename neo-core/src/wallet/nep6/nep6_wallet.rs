@@ -2,9 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use crate::protocol_settings::ProtocolSettings;
-use crate::UInt160;
-use crate::wallet::KeyPair;
+use neo_type::H160;
 use crate::wallet::nep6::{NEP6Account, ScryptParameters};
 
 /// An implementation of the NEP-6 wallet standard.
@@ -14,7 +12,7 @@ pub struct NEP6Wallet {
     password: String, // Note: In production, use a more secure way to store passwords
     name: String,
     version: String,
-    accounts: Arc<Mutex<HashMap<UInt160, NEP6Account>>>,
+    accounts: Arc<Mutex<HashMap<H160, NEP6Account>>>,
     extra: Option<serde_json::Value>,
     scrypt: ScryptParameters,
     path: String,
@@ -80,7 +78,7 @@ impl NEP6Wallet {
         }
     }
 
-    pub fn contains(&self, script_hash: &UInt160) -> bool {
+    pub fn contains(&self, script_hash: &H160) -> bool {
         let accounts = self.accounts.lock().unwrap();
         accounts.contains_key(script_hash)
     }
@@ -99,7 +97,7 @@ impl NEP6Wallet {
         Ok(account)
     }
 
-    pub fn delete_account(&self, script_hash: &UInt160) -> Result<(), Error> {
+    pub fn delete_account(&self, script_hash: &H160) -> Result<(), Error> {
         let mut accounts = self.accounts.lock().unwrap();
         if accounts.remove(script_hash).is_none() {
             return Err(Error::AccountNotFound);
@@ -108,7 +106,7 @@ impl NEP6Wallet {
         Ok(())
     }
 
-    pub fn get_account(&self, script_hash: &UInt160) -> Option<NEP6Account> {
+    pub fn get_account(&self, script_hash: &H160) -> Option<NEP6Account> {
         let accounts = self.accounts.lock().unwrap();
         accounts.get(script_hash).cloned()
     }
@@ -190,7 +188,7 @@ impl Wallet for NEP6Wallet {
         &self.version
     }
 
-    fn get_account(&self, script_hash: &UInt160) -> Option<&dyn WalletAccount> {
+    fn get_account(&self, script_hash: &H160) -> Option<&dyn WalletAccount> {
         self.accounts.lock().unwrap().get(script_hash).map(|a| a as &dyn WalletAccount)
     }
 
@@ -198,7 +196,7 @@ impl Wallet for NEP6Wallet {
         self.accounts.lock().unwrap().values().map(|a| a as &dyn WalletAccount).collect()
     }
 
-    fn get_balance(&self, asset_id: &UInt160) -> Fixed8 {
+    fn get_balance(&self, asset_id: &H160) -> Fixed8 {
         // Implement balance calculation logic
         unimplemented!()
     }
@@ -215,7 +213,7 @@ impl Wallet for NEP6Wallet {
         Ok(key_pair)
     }
 
-    fn delete_account(&mut self, script_hash: &UInt160) -> bool {
+    fn delete_account(&mut self, script_hash: &H160) -> bool {
         let mut accounts = self.accounts.lock().unwrap();
         accounts.remove(script_hash).is_some()
     }

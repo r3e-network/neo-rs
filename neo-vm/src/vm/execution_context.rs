@@ -6,11 +6,12 @@ use std::{
 };
 use std::fmt::Debug;
 use crate::exception::exception_handling_context::ExceptionHandlingContext;
+use crate::References;
 use crate::vm::{EvaluationStack, Instruction, Script};
 use crate::vm::slot::Slot;
 
 #[derive(Clone)]
-pub struct ExecContext {
+pub struct ExecutionContext {
 	pub shared_states: Rc<RefCell<SharedStates>>,
 	pub instruction_pointer: usize,
 
@@ -27,7 +28,7 @@ pub struct ExecContext {
 	pub try_stack: Option<Vec<ExceptionHandlingContext>>,
 }
 
-impl Debug for ExecContext {
+impl Debug for ExecutionContext {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("ExecContext")
 			.field("instruction_pointer", &self.instruction_pointer)
@@ -46,8 +47,8 @@ pub struct SharedStates {
 	pub(crate) states: HashMap<TypeId, Box<dyn Any>>,
 }
 
-impl ExecContext {
-	pub fn new(script: Script, reference_counter: Rc<RefCell<ReferenceCounter>>) -> Self {
+impl ExecutionContext {
+	pub fn new(script: Script, reference_counter: Rc<RefCell<References>>) -> Self {
 		let shared_states = SharedStates {
 			script,
 			evaluation_stack: Rc::new(RefCell::new(EvaluationStack::new(reference_counter))),

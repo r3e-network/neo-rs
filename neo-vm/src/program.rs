@@ -4,8 +4,7 @@
 use alloc::vec::Vec;
 
 use neo_base::errors;
-use neo_core::types::{ScriptHash, ToScriptHash};
-
+use neo_type::ToScriptHash;
 use crate::{OpCode::*, *};
 
 #[derive(Debug, errors::Error)]
@@ -88,7 +87,7 @@ impl Program {
                 }
                 NewArrayT | IsType | Convert => {
                     let typ = op.operand.first as u8;
-                    let _ = ItemType::try_from(typ)
+                    let _ = StackItemType::try_from(typ)
                         .map_err(|_| ProgramError::InvalidStackItemType(op.code, op.ip, typ))?;
                 }
                 _ => { /* Syscall => {} */ }

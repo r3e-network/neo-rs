@@ -1,7 +1,7 @@
 use alloc::rc::Rc;
 use num_bigint::{BigInt, BigUint};
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::References;
+use neo_vm::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 
 pub trait AccountStateTrait: Default {
@@ -38,7 +38,7 @@ impl IInteroperable for AccountState {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &ReferenceCounter) -> Result<StackItem, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &References) -> Result<StackItem, Self::Error> {
         Ok(StackItem::new_struct(reference_counter, vec![self.balance.clone().into()]))
     }
 }

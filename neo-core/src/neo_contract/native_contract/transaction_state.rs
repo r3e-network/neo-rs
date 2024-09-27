@@ -1,7 +1,7 @@
 use alloc::rc::Rc;
 use NeoRust::neo_types::VMState;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::References;
+use neo_vm::StackItem;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::native_contract::native_contract_error::NativeContractError;
 use crate::network::payloads::Transaction;
@@ -57,7 +57,7 @@ impl IInteroperable for TransactionState {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         if self.transaction.is_none() {
             return StackItem::Struct(Struct::new(vec![StackItem::Integer(self.block_index.into())], reference_counter));
         }

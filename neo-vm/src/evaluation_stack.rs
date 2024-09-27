@@ -6,13 +6,13 @@ use alloc::vec::Vec;
 use crate::{References, StackItem};
 
 // i.e. EvaluationStack
-pub struct ExecStack {
+pub struct EvaluationStack {
     limit: usize,
     items: Vec<StackItem>,
     references: References,
 }
 
-impl ExecStack {
+impl EvaluationStack {
     pub fn new(limit: usize, references: References) -> Self {
         Self { limit, items: Vec::new(), references }
     }

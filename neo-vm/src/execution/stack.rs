@@ -3,11 +3,11 @@
 
 use crate::*;
 
-pub(crate) fn exec_depth(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_depth(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     push_checked!(cx, op, StackItem::with_integer(cx.stack.len().into()))
 }
 
-pub(crate) fn exec_drop(cx: &mut ExecContext, op: &Op) -> Result<(), ExecError> {
+pub(crate) fn exec_drop(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let _dropped = pop!(cx, op);
     Ok(())
 }

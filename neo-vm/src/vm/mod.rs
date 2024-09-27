@@ -10,7 +10,6 @@ pub mod execution_context;
 pub mod slot;
 
 pub mod execution_engine;
-pub mod vm_error;
 pub mod vm_state;
 pub mod execution_engine_limits;
 
@@ -22,7 +21,7 @@ pub use evaluation_stack::*;
 pub use execution_context::*;
 pub use slot::*;
 pub use execution_engine::*;
-pub use vm_error::*;
+pub use crate::vm_error::*;
 pub use vm_state::*;
 pub use execution_engine_limits::*;
 

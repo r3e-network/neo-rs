@@ -1,5 +1,5 @@
 use std::fmt;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::StackItem;
 use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::call_flags::CallFlags;
@@ -77,8 +77,8 @@ pub fn to_parameter_type(type_name: &str) -> ContractParameterType {
         "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64" | "BigInteger" => ContractParameterType::Integer,
         "Vec<u8>" => ContractParameterType::ByteArray,
         "String" => ContractParameterType::String,
-        "UInt160" => ContractParameterType::Hash160,
-        "UInt256" => ContractParameterType::Hash256,
+        "H160" => ContractParameterType::Hash160,
+        "H256" => ContractParameterType::Hash256,
         "ECPoint" => ContractParameterType::PublicKey,
         "Boolean" => ContractParameterType::Boolean,
         "Integer" => ContractParameterType::Integer,

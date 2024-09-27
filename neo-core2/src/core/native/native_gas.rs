@@ -1,165 +1,157 @@
-package native
+use std::sync::Arc;
+use std::collections::HashMap;
+use std::error::Error;
+use num_bigint::BigInt;
 
-import (
-	"errors"
-	"math/big"
-
-	"github.com/nspcc-dev/neo-go/pkg/config"
-	"github.com/nspcc-dev/neo-go/pkg/core/dao"
-	"github.com/nspcc-dev/neo-go/pkg/core/interop"
-	"github.com/nspcc-dev/neo-go/pkg/core/native/nativenames"
-	"github.com/nspcc-dev/neo-go/pkg/core/state"
-	"github.com/nspcc-dev/neo-go/pkg/core/transaction"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/hash"
-	"github.com/nspcc-dev/neo-go/pkg/crypto/keys"
-	"github.com/nspcc-dev/neo-go/pkg/smartcontract"
-	"github.com/nspcc-dev/neo-go/pkg/util"
-)
+use crate::config::Hardfork;
+use crate::core::dao::Simple as SimpleDAO;
+use crate::core::interop::{Context, HFSpecificContractMD};
+use crate::core::native::nativenames;
+use crate::core::state::StorageItem;
+use crate::core::transaction::Transaction;
+use crate::crypto::hash;
+use crate::crypto::keys::PublicKey;
+use crate::smartcontract;
+use crate::util::Uint160;
 
 // GAS represents GAS native contract.
-type GAS struct {
-	nep17TokenNative
-	NEO    *NEO
-	Policy *Policy
+pub struct GAS {
+    nep17_token_native: NEP17TokenNative,
+    neo: Arc<NEO>,
+    policy: Arc<Policy>,
 
-	initialSupply           int64
-	p2pSigExtensionsEnabled bool
+    initial_supply: i64,
+    p2p_sig_extensions_enabled: bool,
 }
 
-const gasContractID = -6
+const GAS_CONTRACT_ID: i32 = -6;
 
 // GASFactor is a divisor for finding GAS integral value.
-const GASFactor = NEOTotalSupply
+const GAS_FACTOR: i64 = NEO_TOTAL_SUPPLY;
 
-// newGAS returns GAS native contract.
-func newGAS(init int64, p2pSigExtensionsEnabled bool) *GAS {
-	g := &GAS{
-		initialSupply:           init,
-		p2pSigExtensionsEnabled: p2pSigExtensionsEnabled,
-	}
-	defer g.BuildHFSpecificMD(g.ActiveIn())
+impl GAS {
+    // new_gas returns GAS native contract.
+    pub fn new(init: i64, p2p_sig_extensions_enabled: bool) -> Arc<Self> {
+        let gas = Arc::new(Self {
+            nep17_token_native: NEP17TokenNative::new(nativenames::GAS, GAS_CONTRACT_ID),
+            neo: Arc::new(NEO::default()),
+            policy: Arc::new(Policy::default()),
+            initial_supply: init,
+            p2p_sig_extensions_enabled,
+        });
 
-	nep17 := newNEP17Native(nativenames.Gas, gasContractID)
-	nep17.symbol = "GAS"
-	nep17.decimals = 8
-	nep17.factor = GASFactor
-	nep17.incBalance = g.increaseBalance
-	nep17.balFromBytes = g.balanceFromBytes
+        {
+            let gas_ref = Arc::get_mut(&mut gas).unwrap();
+            gas_ref.nep17_token_native.symbol = "GAS".to_string();
+            gas_ref.nep17_token_native.decimals = 8;
+            gas_ref.nep17_token_native.factor = GAS_FACTOR;
+            gas_ref.nep17_token_native.inc_balance = Arc::new(gas_ref.increase_balance);
+            gas_ref.nep17_token_native.bal_from_bytes = Arc::new(gas_ref.balance_from_bytes);
+        }
 
-	g.nep17TokenNative = *nep17
+        gas.build_hf_specific_md(gas.active_in());
+        gas
+    }
 
-	return g
+    fn increase_balance(&self, _: &Context, _: Uint160, si: &mut StorageItem, amount: &BigInt, check_bal: Option<&BigInt>) -> Result<(), Box<dyn Error>> {
+        let mut acc = state::nep17_balance_from_bytes(si)?;
+        match amount.sign() {
+            num_bigint::Sign::NoSign => {
+                if let Some(check) = check_bal {
+                    if acc.balance < *check {
+                        return Err("insufficient funds".into());
+                    }
+                }
+            },
+            num_bigint::Sign::Minus => {
+                if acc.balance.abs() < amount.abs() {
+                    return Err("insufficient funds".into());
+                }
+            },
+            _ => {}
+        }
+        acc.balance += amount;
+        if !acc.balance.is_zero() {
+            *si = acc.to_bytes();
+        } else {
+            *si = Vec::new();
+        }
+        Ok(())
+    }
+
+    fn balance_from_bytes(&self, si: &StorageItem) -> Result<BigInt, Box<dyn Error>> {
+        let acc = state::nep17_balance_from_bytes(si)?;
+        Ok(acc.balance)
+    }
+
+    // Initialize initializes a GAS contract.
+    pub fn initialize(&self, ic: &Context, hf: &Hardfork, new_md: &HFSpecificContractMD) -> Result<(), Box<dyn Error>> {
+        if hf != &self.active_in() {
+            return Ok(());
+        }
+
+        self.nep17_token_native.initialize(ic)?;
+        let (_, total_supply) = self.nep17_token_native.get_total_supply(&ic.dao);
+        if !total_supply.is_zero() {
+            return Err("already initialized".into());
+        }
+        let h = get_standby_validators_hash(ic)?;
+        self.mint(ic, h, BigInt::from(self.initial_supply), false);
+        Ok(())
+    }
+
+    // initialize_cache implements the Contract interface.
+    pub fn initialize_cache(&self, _block_height: u32, _d: &SimpleDAO) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+
+    // on_persist implements the Contract interface.
+    pub fn on_persist(&self, ic: &Context) -> Result<(), Box<dyn Error>> {
+        if ic.block.transactions.is_empty() {
+            return Ok(());
+        }
+        for tx in &ic.block.transactions {
+            let abs_amount = BigInt::from(tx.system_fee + tx.network_fee);
+            self.burn(ic, tx.sender(), abs_amount);
+        }
+        let validators = self.neo.get_next_block_validators_internal(&ic.dao);
+        let primary = validators[ic.block.primary_index].get_script_hash();
+        let mut net_fee = 0i64;
+        for tx in &ic.block.transactions {
+            net_fee += tx.network_fee;
+            if self.p2p_sig_extensions_enabled {
+                if let Some(attr) = tx.get_attribute(transaction::NotaryAssistedT) {
+                    if let transaction::AttributeValue::NotaryAssisted(na) = attr.value {
+                        net_fee -= (na.n_keys as i64 + 1) * self.policy.get_attribute_fee_internal(&ic.dao, transaction::NotaryAssistedT);
+                    }
+                }
+            }
+        }
+        self.mint(ic, primary, BigInt::from(net_fee), false);
+        Ok(())
+    }
+
+    // post_persist implements the Contract interface.
+    pub fn post_persist(&self, _ic: &Context) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+
+    // active_in implements the Contract interface.
+    pub fn active_in(&self) -> Hardfork {
+        Hardfork::default()
+    }
+
+    // balance_of returns native GAS token balance for the acc.
+    pub fn balance_of(&self, d: &SimpleDAO, acc: Uint160) -> BigInt {
+        self.balance_of_internal(d, acc)
+    }
 }
 
-func (g *GAS) increaseBalance(_ *interop.Context, _ util.Uint160, si *state.StorageItem, amount *big.Int, checkBal *big.Int) (func(), error) {
-	acc, err := state.NEP17BalanceFromBytes(*si)
-	if err != nil {
-		return nil, err
-	}
-	if sign := amount.Sign(); sign == 0 {
-		// Requested self-transfer amount can be higher than actual balance.
-		if checkBal != nil && acc.Balance.Cmp(checkBal) < 0 {
-			err = errors.New("insufficient funds")
-		}
-		return nil, err
-	} else if sign == -1 && acc.Balance.CmpAbs(amount) == -1 {
-		return nil, errors.New("insufficient funds")
-	}
-	acc.Balance.Add(&acc.Balance, amount)
-	if acc.Balance.Sign() != 0 {
-		*si = acc.Bytes(nil)
-	} else {
-		*si = nil
-	}
-	return nil, nil
-}
-
-func (g *GAS) balanceFromBytes(si *state.StorageItem) (*big.Int, error) {
-	acc, err := state.NEP17BalanceFromBytes(*si)
-	if err != nil {
-		return nil, err
-	}
-	return &acc.Balance, err
-}
-
-// Initialize initializes a GAS contract.
-func (g *GAS) Initialize(ic *interop.Context, hf *config.Hardfork, newMD *interop.HFSpecificContractMD) error {
-	if hf != g.ActiveIn() {
-		return nil
-	}
-
-	if err := g.nep17TokenNative.Initialize(ic); err != nil {
-		return err
-	}
-	_, totalSupply := g.nep17TokenNative.getTotalSupply(ic.DAO)
-	if totalSupply.Sign() != 0 {
-		return errors.New("already initialized")
-	}
-	h, err := getStandbyValidatorsHash(ic)
-	if err != nil {
-		return err
-	}
-	g.mint(ic, h, big.NewInt(g.initialSupply), false)
-	return nil
-}
-
-// InitializeCache implements the Contract interface.
-func (g *GAS) InitializeCache(blockHeight uint32, d *dao.Simple) error {
-	return nil
-}
-
-// OnPersist implements the Contract interface.
-func (g *GAS) OnPersist(ic *interop.Context) error {
-	if len(ic.Block.Transactions) == 0 {
-		return nil
-	}
-	for _, tx := range ic.Block.Transactions {
-		absAmount := big.NewInt(tx.SystemFee + tx.NetworkFee)
-		g.burn(ic, tx.Sender(), absAmount)
-	}
-	validators := g.NEO.GetNextBlockValidatorsInternal(ic.DAO)
-	primary := validators[ic.Block.PrimaryIndex].GetScriptHash()
-	var netFee int64
-	for _, tx := range ic.Block.Transactions {
-		netFee += tx.NetworkFee
-		if g.p2pSigExtensionsEnabled {
-			// Reward for NotaryAssisted attribute will be minted to designated notary nodes
-			// by Notary contract.
-			attrs := tx.GetAttributes(transaction.NotaryAssistedT)
-			if len(attrs) != 0 {
-				na := attrs[0].Value.(*transaction.NotaryAssisted)
-				netFee -= (int64(na.NKeys) + 1) * g.Policy.GetAttributeFeeInternal(ic.DAO, transaction.NotaryAssistedT)
-			}
-		}
-	}
-	g.mint(ic, primary, big.NewInt(int64(netFee)), false)
-	return nil
-}
-
-// PostPersist implements the Contract interface.
-func (g *GAS) PostPersist(ic *interop.Context) error {
-	return nil
-}
-
-// ActiveIn implements the Contract interface.
-func (g *GAS) ActiveIn() *config.Hardfork {
-	return nil
-}
-
-// BalanceOf returns native GAS token balance for the acc.
-func (g *GAS) BalanceOf(d *dao.Simple, acc util.Uint160) *big.Int {
-	return g.balanceOfInternal(d, acc)
-}
-
-func getStandbyValidatorsHash(ic *interop.Context) (util.Uint160, error) {
-	cfg := ic.Chain.GetConfig()
-	committee, err := keys.NewPublicKeysFromStrings(cfg.StandbyCommittee)
-	if err != nil {
-		return util.Uint160{}, err
-	}
-	s, err := smartcontract.CreateDefaultMultiSigRedeemScript(committee[:cfg.GetNumOfCNs(0)])
-	if err != nil {
-		return util.Uint160{}, err
-	}
-	return hash.Hash160(s), nil
+fn get_standby_validators_hash(ic: &Context) -> Result<Uint160, Box<dyn Error>> {
+    let cfg = ic.chain.get_config();
+    let committee: Vec<PublicKey> = cfg.standby_committee.iter()
+        .map(|s| PublicKey::from_str(s))
+        .collect::<Result<_, _>>()?;
+    let s = smartcontract::create_default_multi_sig_redeem_script(&committee[..cfg.get_num_of_cns(0)])?;
+    Ok(hash::hash160(&s))
 }

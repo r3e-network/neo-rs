@@ -8,14 +8,14 @@ extern crate alloc;
 use alloc::{rc::Rc, vec::Vec};
 
 use neo_base::errors;
-use neo_core::types::{VmState, OpCode};
 
-pub use {builder::*, context::*, decode::*, execution::*, interop::*};
-pub use {operand::*, program::*, reference::*, stack::*, types::*};
+pub use {decode::*, execution::*, execution_context::*, interop::*, script_builder::*};
+pub use {evaluation_stack::*, operand::*, program::*, reference::*, stackitem_type::*};
 use {slots::*, tables::*};
+use crate::vm::{OpCode, VMState};
 
-pub mod builder;
-pub mod context;
+pub mod script_builder;
+pub mod execution_context;
 pub mod decode;
 pub mod execution;
 pub mod interop;
@@ -23,14 +23,16 @@ pub mod operand;
 pub mod program;
 pub mod reference;
 pub mod slots;
-pub mod stack;
+pub mod evaluation_stack;
 pub mod tables;
-pub mod types;
+pub mod stackitem_type;
 pub mod vm;
 pub mod script;
 pub mod exception;
+mod call_flags;
+pub mod vm_error;
 
-pub const MAX_STACK_SIZE: usize = 2048;  
+pub const MAX_STACK_SIZE: usize = 2048;
 pub const MAX_STACK_ITEM_SIZE: usize = 65535 * 2;
 pub const MAX_COMPARABLE_SIZE: usize = 65536;
 
@@ -75,7 +77,7 @@ pub enum ExecError {
     InvalidExecution(u32, OpCode, &'static str),
 
     #[error("exec: invalid cast to type {1:?} on {1:?} at {0:x}")]
-    InvalidCast(u32, OpCode, ItemType),
+    InvalidCast(u32, OpCode, StackItemType),
 
     #[error("exec: invalid jump target if {1:?} at {0} to {2}")]
     InvalidJumpTarget(u32, OpCode, u32),
@@ -91,9 +93,9 @@ pub enum ExecError {
 }
 
 impl ExecError {
-    pub fn as_vm_state(&self) -> VmState {
-        VmState::Halt // Halt on all ExecError now
-        //  match self { _ => VmState::Halt }
+    pub fn as_vm_state(&self) -> VMState {
+        VMState::Halt // Halt on all ExecError now
+        //  match self { _ => VMState::Halt }
     }
 }
 
@@ -103,17 +105,17 @@ impl ExecError {
 // }
 
 pub struct NeoVm<Env: VmEnv> {
-    state: VmState,
+    state: VMState,
     gas_limit: u64,
     gas_consumed: u64,
-    invocations: Vec<ExecContext>,
+    invocations: Vec<ExecutionContext>,
     env: Env,
 }
 
 impl<Env: VmEnv> NeoVm<Env> {
     pub fn new(gas_limit: u64, env: Env) -> Self {
         NeoVm {
-            state: VmState::Break,
+            state: VMState::Break,
             gas_limit,
             gas_consumed: 0,
             invocations: Vec::new(),
@@ -122,13 +124,13 @@ impl<Env: VmEnv> NeoVm<Env> {
     }
 
     pub fn execute(&mut self) -> Result<(), ExecError> {
-        if self.state == VmState::Break {
-            self.state = VmState::None;
+        if self.state == VMState::Break {
+            self.state = VMState::None;
         }
 
-        while self.state != VmState::Halt && self.state != VmState::Fault {
+        while self.state != VMState::Halt && self.state != VMState::Fault {
             let Some(cx) = self.current_cx() else {
-                self.state = VmState::Halt;
+                self.state = VMState::Halt;
                 continue; // TODO: return Err
             };
 
@@ -139,8 +141,8 @@ impl<Env: VmEnv> NeoVm<Env> {
     }
 
     #[inline]
-    pub fn vm_state(&self) -> VmState { self.state }
+    pub fn vm_state(&self) -> VMState { self.state }
 
     #[inline]
-    fn current_cx(&mut self) -> Option<&mut ExecContext> { self.invocations.last_mut() }
+    fn current_cx(&mut self) -> Option<&mut ExecutionContext> { self.invocations.last_mut() }
 }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 use neo_base::math::I256;
-use crate::vm_types::reference_counter::ReferenceCounter;
+use crate::vm_types::reference_counter::References;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Interop {
@@ -57,7 +57,7 @@ impl From<Vec<u8>> for StackItem{
 }
 
 impl StackItem {
-    pub fn new_array(reference_counter: Rc<RefCell<ReferenceCounter>>, items: Vec<Rc<StackItem>>) -> Self {
+    pub fn new_array(reference_counter: Rc<RefCell<References>>, items: Vec<Rc<StackItem>>) -> Self {
         let array = items.into_iter()
             .map(|item| {
                     reference_counter.borrow_mut().add_reference(Rc::clone(&item));
@@ -67,7 +67,7 @@ impl StackItem {
         StackItem::Array(array)
     }
 
-    pub fn new_struct(reference_counter: Option<Rc<RefCell<ReferenceCounter>>>, items: Vec<Rc<StackItem>>) -> Self {
+    pub fn new_struct(reference_counter: Option<Rc<RefCell<References>>>, items: Vec<Rc<StackItem>>) -> Self {
         let struct_items = items.into_iter()
             .map(|item| {
                 if let Some(rc) = &reference_counter {

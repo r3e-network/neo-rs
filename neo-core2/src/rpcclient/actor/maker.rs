@@ -4,7 +4,7 @@ use std::fmt;
 use crate::core::transaction::{self, Transaction};
 use crate::neorpc::result::Invoke;
 use crate::util::Uint160;
-use crate::vm::vmstate::VmState;
+use crate::vm::vmstate::VMState;
 
 // TransactionCheckerModifier is a callback that receives the result of
 // test-invocation and the transaction that can perform the same invocation
@@ -37,7 +37,7 @@ fn default_modifier(tx: &mut Transaction) -> Result<(), Box<dyn Error>> {
 // DefaultCheckerModifier is the default TransactionCheckerModifier, it checks
 // for HALT state in the invocation result given to it and does nothing else.
 fn default_checker_modifier(r: &Invoke, tx: &mut Transaction) -> Result<(), Box<dyn Error>> {
-    if r.state != VmState::Halt.to_string() {
+    if r.state != VMState::Halt.to_string() {
         return Err(Box::new(fmt::Error::new(
             fmt::ErrorKind::Other,
             format!("script failed ({} state) due to an error: {}", r.state, r.fault_exception),

@@ -9,7 +9,7 @@ use neo_core2::rpcclient::policy::PolicyContract;
 use neo_core2::smartcontract::context::ParameterContext;
 use neo_core2::transaction::{Transaction, Attribute, Signer, HighPriority, None};
 use neo_core2::util::Uint160;
-use neo_core2::vm::vmstate::VmState;
+use neo_core2::vm::vmstate::VMState;
 use neo_core2::wallet::Wallet;
 
 fn example_actor() {
@@ -27,7 +27,7 @@ fn example_actor() {
     // Actor has an Invoker inside, so we can perform test invocations, it will
     // have a signer with the first wallet account and CalledByEntry scope.
     let res = a.call(&custom_contract, "method", &[1.into(), 2.into(), 3.into()]).unwrap();
-    if res.state != VmState::Halt.to_string() {
+    if res.state != VMState::Halt.to_string() {
         panic!("failed");
     }
     // All of the side-effects in res can be analyzed.

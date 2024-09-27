@@ -1,5 +1,5 @@
 use core::fmt::{Debug, Formatter};
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::StackItem;
 
 pub trait ValidatorTrait:Clone+Debug {
     fn validate(&self, item: &StackItem);

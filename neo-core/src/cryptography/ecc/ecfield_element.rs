@@ -6,8 +6,8 @@ use std::ops::{Add, Div, Mul, Neg, Sub};
 use num_bigint::{BigInt, BigUint};
 use num_traits::One;
 use rand::Rng;
-use crate::{BigIntExt, BigUintExt};
 use crate::cryptography::ecc::ECCurve;
+use crate::utility::BigIntExt;
 
 #[derive(Clone)]
 pub struct ECFieldElement {

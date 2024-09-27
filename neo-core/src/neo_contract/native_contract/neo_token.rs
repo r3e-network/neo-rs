@@ -5,7 +5,7 @@ use crate::cryptography::ECCurve;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::storage_context::StorageContext;
 use crate::persistence::{DataCache, SeekDirection};
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 pub struct NeoToken {
     total_amount: Integer,
@@ -41,7 +41,7 @@ impl NeoToken {
         self.total_amount.clone()
     }
 
-    pub fn unclaimed_gas(&self, snapshot: &dyn DataCache, account: &UInt160, end: u32) -> Integer {
+    pub fn unclaimed_gas(&self, snapshot: &dyn DataCache, account: &H160, end: u32) -> Integer {
         let storage_key = self.create_storage_key(Self::PREFIX_ACCOUNT).add(account);
         if let Some(storage) = snapshot.try_get(&storage_key) {
             let state: NeoAccountState = storage.get_interoperable();
@@ -106,7 +106,7 @@ impl NeoToken {
     }
 
     #[contract_method(cpu_fee = 1 << 15, storage_fee = 50, name = "unclaimedGas")]
-    pub fn unclaimed_gas(&self, snapshot: &dyn DataCache, account: &UInt160, end: u32) -> Integer {
+    pub fn unclaimed_gas(&self, snapshot: &dyn DataCache, account: &H160, end: u32) -> Integer {
         let state = self.get_account_state(snapshot, account);
         if state.balance.is_zero() {
             return Integer::zero();
@@ -155,7 +155,7 @@ impl NeoToken {
     }
 
     #[contract_method(cpu_fee = 1 << 16, storage_fee = 50)]
-    pub fn vote(&self, engine: &mut ApplicationEngine, account: UInt160, vote_to: Option<ECPoint>) -> bool {
+    pub fn vote(&self, engine: &mut ApplicationEngine, account: H160, vote_to: Option<ECPoint>) -> bool {
         if !engine.check_witness(&account) {
             return false;
         }
@@ -231,7 +231,7 @@ impl NeoToken {
     }
 
     #[contract_method(cpu_fee = 1 << 15, storage_fee = 50)]
-    pub fn get_account_state(&self, snapshot: &StorageContext, account: &UInt160) -> NeoAccountState {
+    pub fn get_account_state(&self, snapshot: &StorageContext, account: &H160) -> NeoAccountState {
         let key = self.create_storage_key(Self::PREFIX_ACCOUNT).add(account);
         snapshot.get(&key)
             .map(|value| value.get_interoperable())
@@ -278,7 +278,7 @@ impl IInteroperable for NeoAccountState {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         let mut s = Struct::new(reference_counter);
         s.push(self.balance.clone().into());
         s.push(self.balance_height.into());
@@ -310,7 +310,7 @@ impl IInteroperable for CandidateState {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         let mut s = Struct::new(reference_counter);
         s.push(self.registered.into());
         s.push(self.votes.clone().into());
@@ -337,7 +337,7 @@ impl IInteroperable for CommitteeState {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         let mut s = Struct::new(reference_counter);
         s.push(self.members.iter().map(|m| m.to_array().into()).collect::<Array>().into());
         s.push(self.standby_members.iter().map(|m| m.to_array().into()).collect::<Array>().into());
@@ -348,7 +348,7 @@ impl IInteroperable for CommitteeState {
 }
 
 impl NeoToken {
-    pub fn balance_of(&self, snapshot: &dyn DataCache, account: &UInt160) -> Integer {
+    pub fn balance_of(&self, snapshot: &dyn DataCache, account: &H160) -> Integer {
         let storage_key = self.create_storage_key(Self::PREFIX_ACCOUNT).add(account);
         if let Some(storage) = snapshot.try_get(&storage_key) {
             let state: NeoAccountState = storage.get_interoperable();
@@ -358,7 +358,7 @@ impl NeoToken {
         }
     }
 
-    pub fn transfer(&mut self, snapshot: &mut dyn DataCache, from: &UInt160, to: &UInt160, amount: &Integer, data: Option<&[u8]>) -> bool {
+    pub fn transfer(&mut self, snapshot: &mut dyn DataCache, from: &H160, to: &H160, amount: &Integer, data: Option<&[u8]>) -> bool {
         if amount.sign() < 0 {
             return false;
         }
@@ -396,7 +396,7 @@ impl NeoToken {
         true
     }
 
-    fn update_account(&self, snapshot: &mut dyn DataCache, account: &UInt160, amount: &Integer, is_reduction: bool) {
+    fn update_account(&self, snapshot: &mut dyn DataCache, account: &H160, amount: &Integer, is_reduction: bool) {
         let storage_key = self.create_storage_key(Self::PREFIX_ACCOUNT).add(account);
         let mut state = if let Some(storage) = snapshot.try_get(&storage_key) {
             storage.get_interoperable::<NeoAccountState>()
@@ -422,7 +422,7 @@ impl NeoToken {
         }
     }
 
-    fn emit_transfer(&self, snapshot: &dyn DataCache, from: &UInt160, to: &UInt160, amount: &Integer) {
+    fn emit_transfer(&self, snapshot: &dyn DataCache, from: &H160, to: &H160, amount: &Integer) {
         let runtime = Runtime::current(snapshot);
         runtime.notify(
             "Transfer",
@@ -469,7 +469,7 @@ impl NeoToken {
         }
     }
 
-    pub fn vote(&mut self, snapshot: &mut dyn DataCache, account: &UInt160, vote_to: Option<&ECPoint>) -> bool {
+    pub fn vote(&mut self, snapshot: &mut dyn DataCache, account: &H160, vote_to: Option<&ECPoint>) -> bool {
         let account_key = self.create_storage_key(Self::PREFIX_ACCOUNT).add(account);
         let mut state = if let Some(storage) = snapshot.try_get(&account_key) {
             storage.get_interoperable::<NeoAccountState>()
@@ -532,7 +532,7 @@ impl NeoToken {
         snapshot.get(&key).unwrap_or_else(Integer::zero)
     }
 
-    fn burn(&mut self, snapshot: &mut dyn DataCache, account: &UInt160, amount: &Integer) {
+    fn burn(&mut self, snapshot: &mut dyn DataCache, account: &H160, amount: &Integer) {
         self.update_account(snapshot, account, amount, true);
         self.total_amount -= amount;
     }

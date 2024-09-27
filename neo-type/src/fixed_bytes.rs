@@ -1,7 +1,7 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use alloc::{string::String, vec, vec::Vec};
+use std::{string::String, vec::Vec};
 use core::net::IpAddr;
 
 use bytes::{BufMut, BytesMut};
@@ -9,7 +9,7 @@ use neo_base::encoding::{base64::*, bin::*};
 use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct FixedBytes<const N: usize>(pub(crate) [u8; N]);
+pub struct FixedBytes<const N: usize>(pub [u8; N]);
 
 impl<const N: usize> FixedBytes<N> {
     pub fn as_bytes(&self) -> &[u8] { &self.0 }
@@ -88,7 +88,7 @@ impl From<IpAddr> for FixedBytes<16> {
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct Bytes(pub(crate) Vec<u8>);
+pub struct Bytes(pub Vec<u8>);
 
 impl Bytes {
     pub fn len(&self) -> usize { self.0.len() }
@@ -153,7 +153,7 @@ impl<'de> Deserialize<'de> for Bytes {
     }
 }
 
-pub(crate) trait Varbytes {
+pub trait Varbytes {
     fn put_varbytes<T: AsRef<[u8]>>(&mut self, bytes: T);
 }
 
@@ -183,7 +183,7 @@ impl Varbytes for BytesMut {
     }
 }
 
-pub(crate) trait Varint {
+pub trait Varint {
     fn put_varint(&mut self, n: u64);
 }
 

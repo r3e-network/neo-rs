@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::io;
 use neo_json::jtoken::JToken;
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
@@ -74,7 +74,7 @@ impl IInteroperable for WitnessRule {
         Ok(Self { action, condition })  
     }
 
-    fn to_stack_item(&self, reference_counter: Option<&ReferenceCounter>) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: Option<&References>) -> Result<Rc<StackItem>, Self::Error> {
         Ok(StackItem::Array(vec![
             StackItem::Integer((self.action as u8).into()),
             self.condition.to_stack_item(reference_counter),

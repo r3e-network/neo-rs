@@ -1,6 +1,6 @@
 use neo_vm::stack_item::StackItem;
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::types::Struct;
+use neo_vm::References;
+use neo_vm::stackitem_type::Struct;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::json::Json;
@@ -32,7 +32,7 @@ impl IInteroperable for ContractParameterDefinition {
         }
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         Ok(Rc::new( StackItem::Struct(Struct::new(vec![
             StackItem::String(self.name.clone()),
             StackItem::Integer((self.parameter_type as u8).into()),
@@ -98,7 +98,7 @@ mod tests {
             parameter_type: ContractParameterType::String,
         };
 
-        let mut reference_counter = ReferenceCounter::new();
+        let mut reference_counter = References::new();
         let stack_item = param.to_stack_item(&mut reference_counter).unwrap();
         let deserialized = ContractParameterDefinition::from_stack_item(&stack_item).unwrap();
 

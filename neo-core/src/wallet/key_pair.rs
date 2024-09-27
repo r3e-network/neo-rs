@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use neo_base::encoding::base58;
 use crate::contract::Contract;
 use crate::cryptography::ECPoint;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 /// Represents a private/public key pair in wallets.
 #[derive(Clone)]
@@ -42,7 +42,7 @@ impl KeyPair {
     }
 
     /// The hash of the public key.
-    pub fn public_key_hash(&self) -> UInt160 {
+    pub fn public_key_hash(&self) -> H160 {
         self.public_key.to_script_hash()
     }
 

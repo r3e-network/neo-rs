@@ -4,11 +4,11 @@ use std::convert::TryFrom;
 use serde_json::{ json};
 use neo_json::jtoken::{JToken, MAX_SAFE_INTEGER, MIN_SAFE_INTEGER};
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::reference_counter::ReferenceCounter;
+use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use neo_vm::vm::ExecutionEngineLimits;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::References;
+use neo_vm::StackItem;
 use crate::hardfork::Hardfork;
 use crate::neo_contract::application_engine::ApplicationEngine;
 
@@ -125,12 +125,12 @@ impl JsonSerializer {
     }
 
     /// Deserializes a `StackItem` from `JToken`.
-    pub fn deserialize(engine: &ApplicationEngine, json: &JToken, limits: &ExecutionEngineLimits, reference_counter: Option<&ReferenceCounter>) -> Result<StackItem, String> {
+    pub fn deserialize(engine: &ApplicationEngine, json: &JToken, limits: &ExecutionEngineLimits, reference_counter: Option<&References>) -> Result<StackItem, String> {
         let mut max_stack_size = limits.max_stack_size;
         Self::deserialize_internal(engine, json, &mut max_stack_size, reference_counter)
     }
 
-    fn deserialize_internal(engine: &ApplicationEngine, json: &JToken, max_stack_size: &mut usize, reference_counter: Option<&ReferenceCounter>) -> Result<StackItem, String> {
+    fn deserialize_internal(engine: &ApplicationEngine, json: &JToken, max_stack_size: &mut usize, reference_counter: Option<&References>) -> Result<StackItem, String> {
         if *max_stack_size == 0 {
             return Err("Max stack size exceeded".into());
         }

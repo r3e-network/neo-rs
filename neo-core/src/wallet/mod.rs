@@ -1,10 +1,17 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use crate::types::{Network, H160};
+use neo_type::{Network, H160};
 
-pub mod nep2;
 pub mod nep6;
+mod helper;
+mod iwallet_factory;
+mod iwallet_provider;
+mod key_pair;
+mod transfer_output;
+mod wallet;
+mod wallet_account;
+mod asset_descriptor;
 
 pub type Account = nep6::Account;
 

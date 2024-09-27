@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use neo_proc_macros::{contract, contract_impl, contract_method};
 use crate::neo_contract::storage_context::StorageContext;
 use crate::network::payloads::{Header, Transaction};
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 
 #[contract]
 pub struct LedgerContract {
@@ -55,7 +55,7 @@ impl LedgerContract {
                 &tx.to_vec(),
             )?;
 
-            let conflicting_signers: HashSet<UInt160> = tx.transaction.signers().iter().map(|s| s.account()).collect();
+            let conflicting_signers: HashSet<H160> = tx.transaction.signers().iter().map(|s| s.account()).collect();
             for attr in tx.transaction.get_attributes::<Conflicts>() {
                 self.storage_map.put(
                     &Self::create_storage_key(PREFIX_TRANSACTION, &attr.hash().to_vec()),
@@ -117,14 +117,14 @@ impl LedgerContract {
         index + max_traceable_blocks > current_index
     }
 
-    pub fn get_block_hash(&self, snapshot: &StorageContext, index: u32) -> Option<UInt256> {
+    pub fn get_block_hash(&self, snapshot: &StorageContext, index: u32) -> Option<H256> {
         self.storage_map
             .get(&Self::create_storage_key(PREFIX_BLOCK_HASH, &index.to_be_bytes()))
-            .map(|data| UInt256::from_slice(&data))
+            .map(|data| H256::from_slice(&data))
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = "read_states")]
-    pub fn current_hash(&self, snapshot: &StorageContext) -> UInt256 {
+    pub fn current_hash(&self, snapshot: &StorageContext) -> H256 {
         self.storage_map
             .get(&Self::create_storage_key(PREFIX_CURRENT_BLOCK, &[]))
             .map(|data| HashIndexState::from_vec(&data).hash)
@@ -139,20 +139,20 @@ impl LedgerContract {
             .unwrap_or_default()
     }
 
-    pub fn contains_block(&self, snapshot: &StorageContext, hash: &UInt256) -> bool {
+    pub fn contains_block(&self, snapshot: &StorageContext, hash: &H256) -> bool {
         self.storage_map
             .contains_key(&Self::create_storage_key(PREFIX_BLOCK, &hash.to_vec()))
     }
 
-    pub fn contains_transaction(&self, snapshot: &StorageContext, hash: &UInt256) -> bool {
+    pub fn contains_transaction(&self, snapshot: &StorageContext, hash: &H256) -> bool {
         self.get_transaction_state(snapshot, hash).is_some()
     }
 
     pub fn contains_conflict_hash(
         &self,
         snapshot: &StorageContext,
-        hash: &UInt256,
-        signers: &[UInt160],
+        hash: &H256,
+        signers: &[H160],
         max_traceable_blocks: u32,
     ) -> bool {
         let stub = match self
@@ -179,7 +179,7 @@ impl LedgerContract {
         false
     }
 
-    pub fn get_trimmed_block(&self, snapshot: &StorageContext, hash: &UInt256) -> Option<TrimmedBlock> {
+    pub fn get_trimmed_block(&self, snapshot: &StorageContext, hash: &H256) -> Option<TrimmedBlock> {
         self.storage_map
             .get(&Self::create_storage_key(PREFIX_BLOCK, &hash.to_vec()))
             .map(|data| TrimmedBlock::from_vec(&data))
@@ -187,10 +187,10 @@ impl LedgerContract {
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = "read_states")]
     pub fn get_block(&self, engine: &ApplicationEngine, index_or_hash: &[u8]) -> Option<TrimmedBlock> {
-        let hash = if index_or_hash.len() < UInt256::len() {
+        let hash = if index_or_hash.len() < H256::len() {
             self.get_block_hash(&engine.snapshot_cache, u32::from_be_bytes(index_or_hash.try_into().unwrap()))?
-        } else if index_or_hash.len() == UInt256::len() {
-            UInt256::from_slice(index_or_hash)
+        } else if index_or_hash.len() == H256::len() {
+            H256::from_slice(index_or_hash)
         } else {
             return None;
         };
@@ -202,7 +202,7 @@ impl LedgerContract {
         Some(block)
     }
 
-    pub fn get_block_full(&self, snapshot: &StorageContext, hash: &UInt256) -> Option<Block> {
+    pub fn get_block_full(&self, snapshot: &StorageContext, hash: &H256) -> Option<Block> {
         let state = self.get_trimmed_block(snapshot, hash)?;
         Some(Block {
             header: state.header,
@@ -219,7 +219,7 @@ impl LedgerContract {
         self.get_block_full(snapshot, &hash)
     }
 
-    pub fn get_header(&self, snapshot: &StorageContext, hash: &UInt256) -> Option<Header> {
+    pub fn get_header(&self, snapshot: &StorageContext, hash: &H256) -> Option<Header> {
         self.get_trimmed_block(snapshot, hash).map(|b| b.header)
     }
 
@@ -228,7 +228,7 @@ impl LedgerContract {
         self.get_header(snapshot, &hash)
     }
 
-    pub fn get_transaction_state(&self, snapshot: &StorageContext, hash: &UInt256) -> Option<TransactionState> {
+    pub fn get_transaction_state(&self, snapshot: &StorageContext, hash: &H256) -> Option<TransactionState> {
         self.storage_map
             .get(&Self::create_storage_key(PREFIX_TRANSACTION, &hash.to_vec()))
             .and_then(|data| {
@@ -241,12 +241,12 @@ impl LedgerContract {
             })
     }
 
-    pub fn get_transaction(&self, snapshot: &StorageContext, hash: &UInt256) -> Option<Transaction> {
+    pub fn get_transaction(&self, snapshot: &StorageContext, hash: &H256) -> Option<Transaction> {
         self.get_transaction_state(snapshot, hash).map(|state| state.transaction)
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = "read_states", name = "getTransaction")]
-    pub fn get_transaction_for_contract(&self, engine: &ApplicationEngine, hash: UInt256) -> Option<Transaction> {
+    pub fn get_transaction_for_contract(&self, engine: &ApplicationEngine, hash: H256) -> Option<Transaction> {
         let state = self.get_transaction_state(&engine.snapshot_cache, &hash)?;
         if !self.is_traceable_block(&engine.snapshot_cache, state.block_index, engine.protocol_settings.max_traceable_blocks) {
             return None;
@@ -255,7 +255,7 @@ impl LedgerContract {
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = "read_states")]
-    pub fn get_transaction_signers(&self, engine: &ApplicationEngine, hash: UInt256) -> Option<Vec<Signer>> {
+    pub fn get_transaction_signers(&self, engine: &ApplicationEngine, hash: H256) -> Option<Vec<Signer>> {
         let state = self.get_transaction_state(&engine.snapshot_cache, &hash)?;
         if !self.is_traceable_block(&engine.snapshot_cache, state.block_index, engine.protocol_settings.max_traceable_blocks) {
             return None;
@@ -264,7 +264,7 @@ impl LedgerContract {
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = "read_states")]
-    pub fn get_transaction_vm_state(&self, engine: &ApplicationEngine, hash: UInt256) -> VMState {
+    pub fn get_transaction_vm_state(&self, engine: &ApplicationEngine, hash: H256) -> VMState {
         let state = match self.get_transaction_state(&engine.snapshot_cache, &hash) {
             Some(state) if self.is_traceable_block(&engine.snapshot_cache, state.block_index, engine.protocol_settings.max_traceable_blocks) => state,
             _ => return VMState::NONE,
@@ -273,7 +273,7 @@ impl LedgerContract {
     }
 
     #[contract_method(cpu_fee = 1 << 15, required_flags = "read_states")]
-    pub fn get_transaction_height(&self, engine: &ApplicationEngine, hash: UInt256) -> i32 {
+    pub fn get_transaction_height(&self, engine: &ApplicationEngine, hash: H256) -> i32 {
         let state = match self.get_transaction_state(&engine.snapshot_cache, &hash) {
             Some(state) if self.is_traceable_block(&engine.snapshot_cache, state.block_index, engine.protocol_settings.max_traceable_blocks) => state,
             _ => return -1,
@@ -283,10 +283,10 @@ impl LedgerContract {
 
     #[contract_method(cpu_fee = 1 << 16, required_flags = "read_states")]
     pub fn get_transaction_from_block(&self, engine: &ApplicationEngine, block_index_or_hash: &[u8], tx_index: i32) -> Option<Transaction> {
-        let hash = if block_index_or_hash.len() < UInt256::len() {
+        let hash = if block_index_or_hash.len() < H256::len() {
             self.get_block_hash(&engine.snapshot_cache, u32::from_be_bytes(block_index_or_hash.try_into().unwrap()))?
-        } else if block_index_or_hash.len() == UInt256::len() {
-            UInt256::from_slice(block_index_or_hash)
+        } else if block_index_or_hash.len() == H256::len() {
+            H256::from_slice(block_index_or_hash)
         } else {
             return None;
         };
@@ -317,7 +317,7 @@ impl LedgerContract {
 
 #[derive(Default, Clone, Serialize, Deserialize)]
 struct HashIndexState {
-    hash: UInt256,
+    hash: H256,
     index: u32,
 }
 
@@ -331,5 +331,5 @@ struct TransactionState {
 #[derive(Clone, Serialize, Deserialize)]
 struct TrimmedBlock {
     header: Header,
-    hashes: Vec<UInt256>,
+    hashes: Vec<H256>,
 }

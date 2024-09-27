@@ -1,19 +1,13 @@
-
-use neo::prelude::*;
-use neo::io::*;
-use neo::vm::*;
-use neo::types::*;
-use neo::json::Json;
 use std::collections::HashMap;
-use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use neo_vm::stack_item::StackItem;
+use neo_json::jtoken::JToken;
+use crate::core_error::CoreError::ContractError;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::manifest::contract_abi::ContractAbi;
 use crate::neo_contract::manifest::contract_group::ContractGroup;
 use crate::neo_contract::manifest::contract_permission::ContractPermission;
 use crate::neo_contract::manifest::contract_permission_descriptor::ContractPermissionDescriptor;
 use crate::neo_contract::manifest::wild_card_container::WildcardContainer;
-use crate::uint160::UInt160;
+use neo_type::H160;
 
 /// Represents the manifest of a smart contract.
 /// When a smart contract is deployed, it must explicitly declare the features and permissions it will use.
@@ -42,7 +36,7 @@ pub struct ContractManifest {
     pub trusts: WildcardContainer<ContractPermissionDescriptor>,
 
     /// Custom user data.
-    pub extra: Option<Json>,
+    pub extra: Option<JToken>,
 }
 
 impl ContractManifest {
@@ -75,7 +69,7 @@ impl ContractManifest {
             .unwrap_or_else(|| Ok(vec![]))?;
 
         if supported_standards.iter().any(|s| s.is_empty()) {
-            return Err(Error::Format);
+            return Err(ContractError::Format);
         }
 
         let abi = ContractAbi::from_json(&json["abi"])?;
@@ -155,7 +149,7 @@ impl ContractManifest {
     /// # Returns
     ///
     /// `true` if the manifest is valid; otherwise, `false`.
-    pub fn is_valid(&self, limits: &ExecutionEngineLimits, hash: &UInt160) -> bool {
+    pub fn is_valid(&self, limits: &ExecutionEngineLimits, hash: &H160) -> bool {
         // Ensure that is serializable
         if let Err(_) = self.to_stack_item(None).serialize(limits) {
             return false;
@@ -197,7 +191,7 @@ impl IInteroperable for ContractManifest {
         })
     }
 
-    fn to_stack_item(&self, reference_counter: &mut ReferenceCounter) -> Result<Rc<StackItem>, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         Ok(StackItem::Struct(Struct::new(vec![
             StackItem::String(self.name.clone()),
             StackItem::Array(self.groups.iter().map(|p| p.to_stack_item()).collect()),

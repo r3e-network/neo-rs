@@ -4,9 +4,11 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use std::rc::Rc;
 use std::cell::RefCell;
+use neo_vm::StackItem;
+use neo_vm::vm::{ExecutionContext, Instruction, NeoVm, Script};
 use crate::block::Block;
 use crate::contract::TriggerType;
-use crate::hardfork::Hardfork;
+use crate::neo_contract::call_flags::CallFlags;
 use crate::neo_contract::contract_error::ContractError;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::contract_state::ContractState;
@@ -24,8 +26,8 @@ use crate::neo_contract::storage_key::StorageKey;
 use crate::network::payloads::{Header, IVerifiable, Transaction, Witness};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
-use crate::uint160::UInt160;
-use crate::uint256::UInt256;
+use neo_type::H160;
+use neo_type::H256;
 
 const TEST_MODE_GAS: i64 = 20_00000000;
 
@@ -34,8 +36,8 @@ pub struct ApplicationEngine {
     trigger: TriggerType,
     fee_consumed: i64,
     fee_amount: i64,
-    pub(crate) current_context: Option<Rc<RefCell<ExecContext>>>,
-    invocation_counter: HashMap<UInt160, i32>,
+    pub(crate) current_context: Option<Rc<RefCell<ExecutionContext>>>,
+    invocation_counter: HashMap<H160, i32>,
     notifications: Vec<NotifyEventArgs>,
     state_cache: dyn DataCache,
     pub(crate) protocol_settings: Arc<ProtocolSettings>,
@@ -43,7 +45,7 @@ pub struct ApplicationEngine {
     pub(crate) script_container: Option<Box<dyn IVerifiable<Error=ContractError>>>,
     pub(crate) persisting_block: Option<Block>,
     disposables: Vec<Box<dyn Drop>>,
-    contract_tasks: HashMap<Rc<RefCell<ExecContext>>, ContractTaskAwaiter>,
+    contract_tasks: HashMap<Rc<RefCell<ExecutionContext>>, ContractTaskAwaiter>,
     exec_fee_factor: u32,
     storage_price: u32,
     nonce_data: [u8; 16],
@@ -116,13 +118,13 @@ impl ApplicationEngine {
         engine
     }
 
-    pub fn load_script(&mut self, script: Script, rvcount: i32, initial_position: i32) -> Rc<RefCell<ExecContext>> {
-        let context = Rc::new(RefCell::new(ExecContext::new(script, rvcount, initial_position)));
+    pub fn load_script(&mut self, script: Script, rvcount: i32, initial_position: i32) -> Rc<RefCell<ExecutionContext>> {
+        let context = Rc::new(RefCell::new(ExecutionContext::new(script, rvcount, initial_position)));
         self.load_context(Rc::clone(&context));
         context
     }
 
-    pub fn load_context(&mut self, context: Rc<RefCell<ExecContext>>) {
+    pub fn load_context(&mut self, context: Rc<RefCell<ExecutionContext>>) {
         let mut ctx = context.borrow_mut();
         let state = ctx.get_state_mut::<ExecutionContextState>();
         state.script_hash = state.script_hash.or_else(|| Some(ctx.script().to_script_hash()));
@@ -172,11 +174,11 @@ impl ApplicationEngine {
         }
     }
 
-    pub fn current_script_hash(&self) -> Option<UInt160> {
+    pub fn current_script_hash(&self) -> Option<H160> {
         self.current_context.as_ref().map(|ctx| ctx.borrow().get_script_hash())
     }
 
-    pub fn calling_script_hash(&self) -> Option<UInt160> {
+    pub fn calling_script_hash(&self) -> Option<H160> {
         if let Some(ctx) = &self.current_context {
             let state = ctx.borrow().get_state::<ExecutionContextState>();
             state.native_calling_script_hash.or_else(|| {
@@ -189,7 +191,7 @@ impl ApplicationEngine {
         }
     }
 
-    pub fn entry_script_hash(&self) -> Option<UInt160> {
+    pub fn entry_script_hash(&self) -> Option<H160> {
         self.execution_engine.entry_context().map(|ctx| ctx.borrow().get_script_hash())
     }
 
@@ -200,7 +202,7 @@ impl ApplicationEngine {
             header: Header {
                 version: 0,
                 prev_hash: hash,
-                merkle_root: UInt256::zero(),
+                merkle_root: H256::zero(),
                 timestamp: current_block.timestamp() + settings.milliseconds_per_block,
                 index: current_block.index() + 1,
                 next_consensus: current_block.next_consensus().clone(),
@@ -242,12 +244,12 @@ impl ApplicationEngine {
 
     pub fn call_contract_internal(
         &mut self,
-        contract_hash: UInt160,
+        contract_hash: H160,
         method: &str,
         flags: CallFlags,
         has_return_value: bool,
         args: Vec<StackItem>,
-    ) -> Result<Rc<RefCell<ExecContext>>, Box<dyn std::error::Error>> {
+    ) -> Result<Rc<RefCell<ExecutionContext>>, Box<dyn std::error::Error>> {
         let contract = NativeContract::ContractManagement.get_contract(&self.snapshot, &contract_hash)
             .ok_or_else(|| format!("Called Contract Does Not Exist: {}", contract_hash))?;
         let md = contract.manifest.abi.get_method(method, args.len() as u32)
@@ -262,7 +264,7 @@ impl ApplicationEngine {
         mut flags: CallFlags,
         has_return_value: bool,
         args: Vec<StackItem>,
-    ) -> Result<Rc<RefCell<ExecContext>>, Box<dyn std::error::Error>> {
+    ) -> Result<Rc<RefCell<ExecutionContext>>, Box<dyn std::error::Error>> {
         // Check if the contract is blocked
         if NativeContract::Policy.is_blocked(&self.snapshot, &contract.hash) {
             return Err(format!("The contract {} has been blocked.", contract.hash).into());
@@ -350,7 +352,7 @@ impl ApplicationEngine {
         1000 * self.exec_fee_factor as i64
     }
 
-    fn execute_context(&mut self, context: &Rc<RefCell<ExecContext>>) -> Result<(), Box<dyn std::error::Error>> {
+    fn execute_context(&mut self, context: &Rc<RefCell<ExecutionContext>>) -> Result<(), Box<dyn std::error::Error>> {
         self.load_context(Rc::clone(context));
         let result = self.execute();
         self.unload_context(Rc::clone(context));
@@ -360,8 +362,8 @@ impl ApplicationEngine {
 
     pub fn call_from_native_contract_async(
         &mut self,
-        calling_script_hash: UInt160,
-        hash: UInt160,
+        calling_script_hash: H160,
+        hash: H160,
         method: &str,
         args: Vec<StackItem>,
     ) -> ContractTask {
@@ -375,8 +377,8 @@ impl ApplicationEngine {
 
     pub fn call_from_native_contract_async_with_return<T: 'static>(
         &mut self,
-        calling_script_hash: UInt160,
-        hash: UInt160,
+        calling_script_hash: H160,
+        hash: H160,
         method: &str,
         args: Vec<StackItem>,
     ) -> ContractTask<T> {
@@ -388,7 +390,7 @@ impl ApplicationEngine {
         task
     }
 
-    fn unload_context(&mut self, context: Rc<RefCell<ExecContext>>) {
+    fn unload_context(&mut self, context: Rc<RefCell<ExecutionContext>>) {
         self.execution_engine.unload_context(Rc::clone(&context));
         if !Rc::ptr_eq(context.borrow().script(), self.current_context.as_ref().unwrap().borrow().script()) {
             let state = context.borrow().get_state::<ExecutionContextState>();
@@ -429,7 +431,7 @@ impl ApplicationEngine {
         contract: &ContractState,
         method: &ContractMethodDescriptor,
         call_flags: CallFlags,
-    ) -> Result<Rc<RefCell<ExecContext>>, Box<dyn std::error::Error>> {
+    ) -> Result<Rc<RefCell<ExecutionContext>>, Box<dyn std::error::Error>> {
         let context = self.load_script(
             contract.script.clone(),
             if method.return_type == ContractParameterType::Void { 0 } else { 1 },
@@ -476,8 +478,8 @@ impl ApplicationEngine {
             v if v.is::<Vec<u8>>() => Ok(StackItem::ByteString(v.downcast_ref::<Vec<u8>>().unwrap().clone())),
             v if v.is::<String>() => Ok(StackItem::ByteString(v.downcast_ref::<String>().unwrap().as_bytes().to_vec())),
             v if v.is::<BigInt>() => Ok(StackItem::Integer(v.downcast_ref::<BigInt>().unwrap().clone())),
-            v if v.is::<UInt160>() => Ok(StackItem::ByteString(v.downcast_ref::<UInt160>().unwrap().to_vec())),
-            v if v.is::<UInt256>() => Ok(StackItem::ByteString(v.downcast_ref::<UInt256>().unwrap().to_vec())),
+            v if v.is::<H160>() => Ok(StackItem::ByteString(v.downcast_ref::<H160>().unwrap().to_vec())),
+            v if v.is::<H256>() => Ok(StackItem::ByteString(v.downcast_ref::<H256>().unwrap().to_vec())),
             v if v.is::<InteropInterface>() => Ok(StackItem::InteropInterface(v.downcast_ref::<InteropInterface>().unwrap().clone())),
             v if v.is::<StackItem>() => Ok(v.downcast_ref::<StackItem>().unwrap().clone()),
             _ => Err("Unsupported type for conversion".into()),
@@ -516,10 +518,10 @@ impl ApplicationEngine {
                     Ok(bytes)
                 } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<String>() {
                     Ok(String::from_utf8(bytes)?)
-                } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<UInt160>() {
-                    Ok(UInt160::from_slice(&bytes)?)
-                } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<UInt256>() {
-                    Ok(UInt256::from_slice(&bytes)?)
+                } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<H160>() {
+                    Ok(H160::from_slice(&bytes)?)
+                } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<H256>() {
+                    Ok(H256::from_slice(&bytes)?)
                 } else {
                     Err("Unsupported byte string type for conversion".into())
                 }
@@ -742,7 +744,7 @@ impl ApplicationEngine {
         Ok(())
     }
 
-    pub fn notify(&mut self, script_hash: UInt160, event_name: String, state: StackItem) {
+    pub fn notify(&mut self, script_hash: H160, event_name: String, state: StackItem) {
         let args = NotifyEventArgs {
             script_container: Rc::new(()),
             script_hash,
@@ -756,7 +758,7 @@ impl ApplicationEngine {
         println!("[Log] {}", message);
     }
 
-    pub fn check_witness(&self, hash: &UInt160) -> bool {
+    pub fn check_witness(&self, hash: &H160) -> bool {
         if let Some(container) = &self.script_container {
             container.witnesses().iter().any(|w| w.verification_script_hash() == *hash)
         } else {
@@ -782,7 +784,7 @@ impl ApplicationEngine {
             ContractState {
                 id: old_contract.id,
                 update_counter: old_contract.update_counter + 1,
-                hash: UInt160::from_slice(&script).unwrap(),
+                hash: H160::from_slice(&script).unwrap(),
                 nef: NefFile::new(script, self.protocol_settings.network)?,
                 manifest,
             }
@@ -791,7 +793,7 @@ impl ApplicationEngine {
             ContractState {
                 id,
                 update_counter: 0,
-                hash: UInt160::from(&script).unwrap(),
+                hash: H160::from(&script).unwrap(),
                 nef: NefFile::new(script, self.protocol_settings.network)?,
                 manifest,
             }
@@ -801,7 +803,7 @@ impl ApplicationEngine {
         Ok(contract)
     }
 
-    pub fn destroy_contract(&mut self, hash: &UInt160) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn destroy_contract(&mut self, hash: &H160) -> Result<(), Box<dyn std::error::Error>> {
         let contract = self.snapshot.get_contract(hash)?;
         self.snapshot.delete::<ContractManagement>(hash)?;
         self.snapshot.delete::<ContractStorage>(&contract.id.to_be_bytes())?;
@@ -810,7 +812,7 @@ impl ApplicationEngine {
 
     pub fn call_contract(
         &mut self,
-        hash: &UInt160,
+        hash: &H160,
         method: &str,
         args: Vec<StackItem>,
     ) -> Result<StackItem, Box<dyn std::error::Error>> {

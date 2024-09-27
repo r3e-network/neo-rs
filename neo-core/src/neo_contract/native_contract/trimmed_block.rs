@@ -1,15 +1,15 @@
 use alloc::rc::Rc;
 use std::cell::RefCell;
 use NeoRust::codec::VarSizeTrait;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
-use neo_vm::vm_types::stack_item::StackItem;
+use neo_vm::References;
+use neo_vm::StackItem;
 use crate::block::Header;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::iserializable::ISerializable;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::native_contract::native_contract_error::NativeContractError;
-use crate::uint256::UInt256;
+use neo_type::H256;
 
 /// Represents a block which the transactions are trimmed.
 #[derive(Clone)]
@@ -18,12 +18,12 @@ pub struct TrimmedBlock {
     pub header: Header,
 
     /// The hashes of the transactions of the block.
-    pub hashes: Vec<UInt256>,
+    pub hashes: Vec<H256>,
 }
 
 impl TrimmedBlock {
     /// The hash of the block.
-    pub fn hash(&self) -> UInt256 {
+    pub fn hash(&self) -> H256 {
         self.header.hash()
     }
 
@@ -46,7 +46,7 @@ impl ISerializable for TrimmedBlock {
 
     fn deserialize(reader: &mut MemoryReader) -> std::io::Result<Self> {
         let header = Header::deserialize(reader)?;
-        let hashes = reader.read_var_vec::<UInt256>(u16::MAX as usize)?;
+        let hashes = reader.read_var_vec::<H256>(u16::MAX as usize)?;
         Ok(Self { header, hashes })
     }
 }
@@ -64,7 +64,7 @@ impl IInteroperable for TrimmedBlock {
         Err(std::io::Error::new(std::io::ErrorKind::Other, "Not supported"))
     }
 
-    fn to_stack_item(&self, reference_counter: &mut Rc<RefCell<ReferenceCounter>>) -> Result<StackItem, Self::Error> {
+    fn to_stack_item(&self, reference_counter: &mut Rc<RefCell<References>>) -> Result<StackItem, Self::Error> {
         Ok(StackItem::new_array(reference_counter,
             vec![
                 // Computed properties

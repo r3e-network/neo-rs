@@ -1,5 +1,5 @@
 use NeoRust::types::StackItem;
-use neo_vm::vm_types::reference_counter::ReferenceCounter;
+use neo_vm::References;
 
 /// Represents iterators in smart contracts.
 pub trait IIterator {
@@ -20,5 +20,5 @@ pub trait IIterator {
     /// # Returns
     ///
     /// The element in the collection at the current position of the iterator.
-    fn value(&self, reference_counter: &mut ReferenceCounter) -> StackItem;
+    fn value(&self, reference_counter: &mut References) -> StackItem;
 }
