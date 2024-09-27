@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::bin::*;
 use neo_base::encoding::{decode_hex_u64, encode_hex_u64};
-use neo_type::{Script, H160, H256};
+use neo_type::{Script, ToBftHash, H160, H256};
 use crate::tx::{StatedTx, Tx, Witness, Witnesses};
 use crate::PublicKey;
 

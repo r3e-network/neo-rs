@@ -2,11 +2,9 @@
 // All Rights Reserved
 
 use alloc::vec::Vec;
-
 use neo_base::encoding::bin::*;
-
+use neo_type::{Bytes, H256};
 use crate::block::Header;
-use crate::types::{Bytes, H256};
 
 pub const MAX_HEADERS_ALLOWED: usize = 2000;
 pub const MAX_HASH_COUNT: usize = 500;

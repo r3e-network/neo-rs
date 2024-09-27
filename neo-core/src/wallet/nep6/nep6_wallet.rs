@@ -2,8 +2,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use serde_json::json;
 use neo_type::H160;
+use crate::protocol_settings::ProtocolSettings;
+use crate::wallet::key_pair::KeyPair;
 use crate::wallet::nep6::{NEP6Account, ScryptParameters};
+use crate::wallet::nep6::nep6_error::Nep6Error;
 
 /// An implementation of the NEP-6 wallet standard.
 ///
@@ -97,10 +101,10 @@ impl NEP6Wallet {
         Ok(account)
     }
 
-    pub fn delete_account(&self, script_hash: &H160) -> Result<(), Error> {
+    pub fn delete_account(&self, script_hash: &H160) -> Result<(), Nep6Error> {
         let mut accounts = self.accounts.lock().unwrap();
         if accounts.remove(script_hash).is_none() {
-            return Err(Error::AccountNotFound);
+            return Err(Nep6Error::AccountNotFound);
         }
         self.save()?;
         Ok(())
@@ -116,12 +120,12 @@ impl NEP6Wallet {
         accounts.values().cloned().collect()
     }
 
-    pub fn import_from_wif(&self, wif: &str) -> Result<NEP6Account, Error> {
+    pub fn import_from_wif(&self, wif: &str) -> Result<NEP6Account, Nep6Error> {
         let private_key = KeyPair::from_wif(wif)?;
         self.create_account(&private_key.private_key())
     }
 
-    pub fn import_from_nep2(&self, nep2: &str, passphrase: &str) -> Result<NEP6Account, Error> {
+    pub fn import_from_nep2(&self, nep2: &str, passphrase: &str) -> Result<NEP6Account, Nep6Error> {
         let private_key = KeyPair::from_nep2(nep2, passphrase, &self.scrypt)?;
         self.create_account(&private_key.private_key())
     }
@@ -154,9 +158,9 @@ impl NEP6Wallet {
         }
     }
 
-    pub fn change_password(&mut self, old_password: &str, new_password: &str) -> Result<(), Error> {
+    pub fn change_password(&mut self, old_password: &str, new_password: &str) -> Result<(), Nep6Error> {
         if !self.verify_password(old_password) {
-            return Err(Error::InvalidPassword);
+            return Err(Nep6Error::InvalidPassword);
         }
 
         let mut accounts = self.accounts.lock().unwrap();
@@ -201,13 +205,13 @@ impl Wallet for NEP6Wallet {
         unimplemented!()
     }
 
-    fn create_key(&mut self) -> Result<KeyPair, Error> {
+    fn create_key(&mut self) -> Result<KeyPair, Nep6Error> {
         let key_pair = KeyPair::new()?;
         self.create_account(key_pair.private_key())?;
         Ok(key_pair)
     }
 
-    fn import_key(&mut self, wif: &str) -> Result<KeyPair, Error> {
+    fn import_key(&mut self, wif: &str) -> Result<KeyPair, Nep6Error> {
         let key_pair = KeyPair::from_wif(wif)?;
         self.create_account(key_pair.private_key())?;
         Ok(key_pair)

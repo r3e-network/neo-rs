@@ -21,7 +21,6 @@ pub mod nns;
 pub mod payload;
 pub mod store;
 pub mod tx;
-pub mod types;
 pub mod wallet;
 pub mod neo_contract;
 pub mod network;

@@ -5,6 +5,7 @@ mod nep6_wallet_factory;
 mod scrypt_parameters;
 mod nep2;
 mod nep6;
+mod nep6_error;
 
 pub use nep6_account::NEP6Account;
 pub use nep6_contract::NEP6Contract;

@@ -20,7 +20,7 @@ neo-vm = { path = "../neo-vm", default-features = false }
 neo-proc-macros = {path = "../neo-proc-macros", default-features = false}
 neo-json = {path ="../neo-json", default-features = false}
 
-bytes     = { version = "1", default-features = false }
+#bytes     = { version = "1", default-features = false }
 subtle    = { version = "2", default-features = false }
 
 hex              = { version = "0.4", default-features = false, features = ["alloc"] }
@@ -60,7 +60,9 @@ getset = "0.1.2"
 rand = "0.8.5"
 
 sha3 = "0.10.8"
-async-trait = "0.1.81"  # or the latest version
+async-trait = "0.1.81"
+tempfile = "3.12.0"
+tempdir = "0.3.7"  # or the latest version
 
 [features]
 default = ["neo-base/default", "neo-crypto/default", "thiserror-no-std"]
