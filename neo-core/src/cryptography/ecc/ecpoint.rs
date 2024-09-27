@@ -18,6 +18,12 @@ pub struct ECPoint {
     uncompressed_point: Option<Vec<u8>>,
 }
 
+impl ECPoint {
+    pub(crate) fn from_encoded(p0: _) -> T {
+        todo!()
+    }
+}
+
 lazy_static! {
     static ref POINT_CACHE_K1: Mutex<ECPointCache> = Mutex::new(ECPointCache::new(1000));
     static ref POINT_CACHE_R1: Mutex<ECPointCache> = Mutex::new(ECPointCache::new(1000));

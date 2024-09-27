@@ -9,9 +9,9 @@ use neo_crypto::ecdsa::{
 use neo_crypto::secp256r1::{PrivateKey, PublicKey};
 use crate::{FixedBytes, Script, Varbytes, SIGN_DATA_SIZE};
 
-pub type Sign = FixedBytes<ECC256_SIGN_SIZE>;
+pub type Signature = FixedBytes<ECC256_SIGN_SIZE>;
 
-impl Sign {
+impl Signature {
     pub fn to_invocation_script(&self) -> Script {
         let mut buf = BytesMut::with_capacity(4 + ECC256_SIGN_SIZE);
         buf.put_varbytes(self.as_bytes());
@@ -21,11 +21,11 @@ impl Sign {
     pub fn as_secp256r1_sign(&self) -> Secp256r1Sign { Secp256r1Sign::from(self.0.clone()) }
 }
 
-impl Into<Secp256r1Sign> for Sign {
+impl Into<Secp256r1Sign> for Signature {
     fn into(self) -> Secp256r1Sign { Secp256r1Sign::from(self.0) }
 }
 
-impl From<Secp256r1Sign> for Sign {
+impl From<Secp256r1Sign> for Signature {
     fn from(sign: Secp256r1Sign) -> Self { Self(sign.into()) }
 }
 
@@ -63,13 +63,13 @@ impl<T: HashFieldsSha256> ToSignData for T {
 }
 
 pub trait ToSign {
-    fn to_sign(&self, network: u32, key: &PrivateKey) -> Result<Sign, SignError>;
+    fn to_sign(&self, network: u32, key: &PrivateKey) -> Result<Signature, SignError>;
 }
 
 impl<T: ToSignData> ToSign for T {
-    fn to_sign(&self, network: u32, key: &PrivateKey) -> Result<Sign, SignError> {
+    fn to_sign(&self, network: u32, key: &PrivateKey) -> Result<Signature, SignError> {
         let data = self.to_sign_data(network);
-        key.sign(data.as_bytes()).map(|sign| Sign::from(sign))
+        key.sign(data.as_bytes()).map(|sign| Signature::from(sign))
     }
 }
 

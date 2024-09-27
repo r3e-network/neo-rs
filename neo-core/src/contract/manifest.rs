@@ -4,10 +4,9 @@
 use alloc::{string::String, vec::Vec};
 
 use serde::{Deserialize, Serialize};
-
+use neo_type::Signature;
 use crate::{
     contract::{NamedParamType, ParamType},
-    types::{Extra, Sign},
     PublicKey,
 };
 
@@ -26,7 +25,7 @@ pub struct Group {
     pub public_key: PublicKey,
 
     #[serde(rename = "signature")]
-    pub sign: Sign,
+    pub sign: Signature,
 }
 
 /// Empty at now.

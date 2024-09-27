@@ -17,6 +17,7 @@ pub mod nef;
 pub mod nep11;
 pub mod nep17;
 pub mod param;
+mod contract_error;
 
 pub const MIN_MULTI_CONTRACT_SIZE: usize = 42;
 

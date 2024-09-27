@@ -8,6 +8,8 @@
 // const COMMITTEE_REWARD_RATIO: u64 = 10;
 // const VOTER_REWARD_RATIO: u64 = 80;
 
+mod native_error;
+
 pub struct NeoContract {
     //
 }

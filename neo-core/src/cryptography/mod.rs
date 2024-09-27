@@ -9,6 +9,7 @@ mod murmur128;
 mod murmur32;
 mod ripemd160_managed;
 mod ecc;
+mod crypto_error;
 
 pub use base58::*;
 pub use bloom_filter::*;

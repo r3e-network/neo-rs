@@ -36,6 +36,7 @@ pub mod hardfork;
 pub mod contains_transaction_type;
 pub mod cryptography;
 pub mod time_provider;
+pub mod event;
 
 pub use neo_crypto::secp256r1::*;
 

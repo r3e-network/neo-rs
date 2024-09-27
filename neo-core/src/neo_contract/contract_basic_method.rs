@@ -31,7 +31,9 @@ impl ContractBasicMethod {
     /// ```
     /// use lazy_static::lazy::Lazy;    ///
     ///
-    /// use neo_core::types::Address;
+    /// use neo_core::types::Address;    ///
+    ///
+    /// use neo_type::Address;
     ///
     /// static OWNER: Lazy<Address> = Lazy::new(|| {
     ///     Address::from_str("NdUL5oDPD159KeFpD5A9zw5xNF1xLX6nLT").unwrap()

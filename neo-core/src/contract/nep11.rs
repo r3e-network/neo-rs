@@ -2,9 +2,8 @@
 // All Rights Reserved
 
 use neo_base::math::U256;
-
+use neo_type::{Bytes, H160};
 use crate::contract::ParamValue;
-use crate::types::{Bytes, H160};
 
 pub trait Iter<T> {
     type Item;

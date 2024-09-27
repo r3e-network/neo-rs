@@ -8,15 +8,14 @@ use std::collections::HashMap;
 use bytes::BytesMut;
 #[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
-
+use neo_type::{Script, Signature, Varbytes};
 use crate::{
-    types::{Script, Sign, Varbytes},
     PublicKey,
 };
 
 pub struct MultiSignContext<'a> {
     validators: &'a [PublicKey],
-    arguments: Vec<Sign>,
+    arguments: Vec<Signature>,
     signs: HashMap<&'a PublicKey, usize>,
 }
 
@@ -31,7 +30,7 @@ impl<'a> MultiSignContext<'a> {
 
     pub fn signs_count(&self) -> usize { self.signs.len() }
 
-    pub fn add_sign(&mut self, key: &'a PublicKey, sign: &Sign) -> bool {
+    pub fn add_sign(&mut self, key: &'a PublicKey, sign: &Signature) -> bool {
         if self.signs.get(key).is_some() {
             return false;
         }

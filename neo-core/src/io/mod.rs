@@ -6,6 +6,7 @@ pub mod byte_array_comparer;
 pub mod byte_array_equality_comparer;
 pub mod binary_writer;
 pub mod binary_reader;
+mod io_error;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right

@@ -28,7 +28,7 @@ pub trait IApplicationEngineProvider {
     fn create(
         &self,
         trigger: TriggerType,
-        container: &dyn IVerifiable,
+        container: &dyn IVerifiable<Error=()>,
         snapshot: dyn DataCache,
         persisting_block: Option<Block>,
         settings: ProtocolSettings,

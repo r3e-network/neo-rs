@@ -10,9 +10,9 @@ use std::collections::HashMap;
 use hashbrown::HashMap;
 
 use serde::{Deserialize, Serialize};
-
 use neo_base::{encoding::bin::*, math::U256};
-use crate::{types::*, PublicKey};
+use neo_crypto::secp256r1::PublicKey;
+use neo_type::{Bytes, Signature, H160, H256};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, BinEncode, BinDecode)]
 pub enum ParamType {
@@ -46,7 +46,7 @@ pub enum ParamValue {
     H256(H256),
 
     PublicKey(PublicKey),
-    Signature(Sign),
+    Signature(Signature),
 
     Array(Vec<ParamValue>),
     Map(ParamMap),
@@ -90,7 +90,7 @@ pub enum Param {
     H256(H256),
 
     PublicKey(PublicKey),
-    Signature(Sign),
+    Signature(Signature),
 
     Array(Vec<Param>),
     Map(ParamMap),
