@@ -7,9 +7,8 @@ use core::hash::{Hash, Hasher};
 
 use hashbrown::hash_map::DefaultHashBuilder;
 use num_enum::TryFromPrimitive;
-use primitive_types::H160;
 use neo_base::{errors, math::I256};
-
+use neo_type::H160;
 use crate::{CastError::*, StackItem::*, *};
 
 pub const MAX_INT_SIZE: usize = 32;
