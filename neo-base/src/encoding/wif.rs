@@ -19,13 +19,21 @@ pub struct Wif {
 }
 
 impl Wif {
-    pub fn version(&self) -> u8 { self.version }
-
-    pub fn data(&self) -> &[u8] {
-        if self.compressed { &self.whole[1..self.whole.len() - 1] } else { &self.whole[1..] }
+    pub fn version(&self) -> u8 {
+        self.version
     }
 
-    pub fn compressed(&self) -> bool { self.compressed }
+    pub fn data(&self) -> &[u8] {
+        if self.compressed {
+            &self.whole[1..self.whole.len() - 1]
+        } else {
+            &self.whole[1..]
+        }
+    }
+
+    pub fn compressed(&self) -> bool {
+        self.compressed
+    }
 }
 
 pub trait WifEncode {

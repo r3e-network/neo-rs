@@ -2,6 +2,7 @@
 // All Rights Reserved
 
 use strum_macros::EnumIter;
+
 use crate::OpCode::*;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, EnumIter)]
@@ -233,13 +234,19 @@ pub enum OpCode {
 
 impl OpCode {
     #[inline]
-    pub const fn as_u8(&self) -> u8 { *self as u8 }
+    pub const fn as_u8(&self) -> u8 {
+        *self as u8
+    }
 
     #[inline]
-    pub const fn from_u8(code: u8) -> Option<OpCode> { OP_CODES[code as usize] }
+    pub const fn from_u8(code: u8) -> Option<OpCode> {
+        OP_CODES[code as usize]
+    }
 
     #[inline]
-    pub const fn is_valid(code: u8) -> bool { OP_CODES[code as usize].is_some() }
+    pub const fn is_valid(code: u8) -> bool {
+        OP_CODES[code as usize].is_some()
+    }
 }
 
 pub const OP_CODES: [Option<OpCode>; 256] = [

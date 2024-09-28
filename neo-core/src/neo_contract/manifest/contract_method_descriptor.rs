@@ -2,15 +2,17 @@ use neo_vm::stack_item::StackItem;
 use crate::neo_contract::contract_parameter::ContractParameterType;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::manifest::contract_parameter_definition::ContractParameterDefinition;
+use serde::{Serialize, Deserialize};
 
 /// Represents a method in a smart contract ABI.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContractMethodDescriptor {
     /// The name of the method.
     pub name: String,
     /// The parameters of the method.
     pub parameters: Vec<ContractParameterDefinition>,
     /// Indicates the return type of the method.
+    #[serde(rename = "returntype")]
     pub return_type: ContractParameterType,
     /// The position of the method in the contract script.
     pub offset: i32,
@@ -40,7 +42,7 @@ impl IInteroperable for ContractMethodDescriptor {
     fn to_stack_item(&self, reference_counter: &mut References) -> Result<Rc<StackItem>, Self::Error> {
         Ok(StackItem::Struct(Struct::new(vec![
             StackItem::String(self.name.clone()),
-            StackItem::Array(self.parameters.iter().map(|p| p.to_stack_item()).collect()),
+            StackItem::Array(self.parameters.iter().map(|p| p.to_stack_item(reference_counter)).collect::<Result<Vec<_>, _>>()?),
             StackItem::Integer(self.return_type as u8 as i32),
             StackItem::Integer(self.offset as i32),
             StackItem::Boolean(self.safe),
@@ -61,59 +63,7 @@ impl ContractMethodDescriptor {
     ///
     /// The converted method.
     pub fn from_json(json: &Json) -> Result<Self, Error> {
-        let name = json.get("name")
-            .ok_or(Error::InvalidFormat)?
-            .as_string()
-            .ok_or(Error::InvalidFormat)?;
-        
-        if name.is_empty() {
-            return Err(Error::InvalidFormat);
-        }
-
-        let parameters = json.get("parameters")
-            .ok_or(Error::InvalidFormat)?
-            .as_array()
-            .ok_or(Error::InvalidFormat)?
-            .iter()
-            .map(|u| ContractParameterDefinition::from_json(u))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // Validate that parameter names are unique
-        let mut param_names = std::collections::HashSet::new();
-        for param in &parameters {
-            if !param_names.insert(param.name.clone()) {
-                return Err(Error::InvalidFormat);
-            }
-        }
-
-        let return_type = ContractParameterType::from_str(
-            json.get("returntype")
-                .ok_or(Error::InvalidFormat)?
-                .as_string()
-                .ok_or(Error::InvalidFormat)?
-        )?;
-
-        let offset = json.get("offset")
-            .ok_or(Error::InvalidFormat)?
-            .as_i64()
-            .ok_or(Error::InvalidFormat)? as i32;
-
-        if offset < 0 {
-            return Err(Error::InvalidFormat);
-        }
-
-        let safe = json.get("safe")
-            .ok_or(Error::InvalidFormat)?
-            .as_bool()
-            .ok_or(Error::InvalidFormat)?;
-
-        Ok(Self {
-            name: name.to_string(),
-            parameters,
-            return_type,
-            offset,
-            safe,
-        })
+        serde_json::from_value(json.clone()).map_err(|_| Error::InvalidFormat)
     }
 
     /// Converts the method to a JSON object.
@@ -122,12 +72,6 @@ impl ContractMethodDescriptor {
     ///
     /// The method represented by a JSON object.
     pub fn to_json(&self) -> Json {
-        let mut json = Json::new_object();
-        json.insert("name", Json::from(self.name.clone()));
-        json.insert("parameters", Json::from(self.parameters.iter().map(|u| u.to_json()).collect::<Vec<_>>()));
-        json.insert("returntype", Json::from(self.return_type.to_string()));
-        json.insert("offset", Json::from(self.offset));
-        json.insert("safe", Json::from(self.safe));
-        json
+        serde_json::to_value(self).unwrap_or_default()
     }
 }

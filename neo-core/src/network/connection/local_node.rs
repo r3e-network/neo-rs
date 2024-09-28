@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use neo_crypto::rand;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::neo_system::NeoSystem;
 use crate::network::payloads::IInventory;
 use crate::network::{Message, MessageCommand, RemoteNode};
+use crate::network::network_error::NetworkError;
 
 pub struct LocalNode {
     system: Arc<NeoSystem>,
@@ -17,15 +18,15 @@ pub struct LocalNode {
 }
 
 pub enum LocalNodeMessage {
-    Relay(Box<dyn IInventory>),
-    Send(Box<dyn IInventory>),
+    Relay(Box<dyn IInventory<Error=NetworkError>>),
+    Send(Box<dyn IInventory<Error=NetworkError>>),
     GetInstance(oneshot::Sender<Arc<LocalNode>>),
     TcpConnected(mpsc::Sender<NodeMessage>),
 }
 
 pub enum NodeMessage {
     StartProtocol,
-    Relay { inventory: Box<dyn IInventory> },
+    Relay { inventory: Box<dyn IInventory<Error=NetworkError>> },
 }
 
 impl LocalNode {
@@ -87,7 +88,7 @@ impl LocalNode {
         &USER_AGENT
     }
 
-    async fn broadcast_message(&self, command: MessageCommand, payload: Option<&dyn ISerializable>) {
+    async fn broadcast_message(&self, command: MessageCommand, payload: Option<&dyn SerializableTrait>) {
         let message = Message::create(command, payload);
         self.send_to_remote_nodes(message).await;
     }

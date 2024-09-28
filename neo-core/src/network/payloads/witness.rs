@@ -6,7 +6,7 @@ use neo_base::encoding::base64;
 use neo_json::jtoken::JToken;
 use crate::cryptography::Helper;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use neo_type::H160;
 
@@ -40,7 +40,7 @@ impl Witness {
 
 }
 
-impl ISerializable for Witness {
+impl SerializableTrait for Witness {
     fn size(&self) -> usize {
         self.invocation_script.var_size() + self.verification_script.var_size()
     }

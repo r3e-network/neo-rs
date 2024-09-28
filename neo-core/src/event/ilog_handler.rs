@@ -1,9 +1,9 @@
 use std::any::Any;
 use crate::neo_contract::log_event_args::LogEventArgs;
 
-/// The `ILogHandler` trait defines the interface for handling Log events
+/// The `LogHandlerTrait` trait defines the interface for handling Log events
 /// from the ApplicationEngine in the NEO blockchain.
-pub trait ILogHandler {
+pub trait LogHandlerTrait {
     /// Handles the Log event from the ApplicationEngine.
     ///
     /// This method is triggered when a contract calls System.Runtime.Log.

@@ -33,9 +33,11 @@ impl ScryptParameters {
     pub fn new(n: u32, r: u32, p: u32) -> Self {
         Self { n, r, p }
     }
+}
 
+impl JsonConvertibleTrait for ScryptParameters {
     /// Converts the parameters from a JSON object.
-    pub fn from_json(json: &JToken) -> Option<Self> {
+    fn from_json(json: &serde_json::Value) -> Option<Self> {
         Some(Self {
             n: json["n"].as_u64()? as u32,
             r: json["r"].as_u64()? as u32,
@@ -44,7 +46,7 @@ impl ScryptParameters {
     }
 
     /// Converts the parameters to a JSON object.
-    pub fn to_json(&self) -> JToken {
+    fn to_json(&self) -> serde_json::Value {
         json!({
             "n": self.n,
             "r": self.r,

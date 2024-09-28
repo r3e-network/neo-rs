@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use std::collections::VecDeque;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::InventoryType;
 use neo_type::H256;
@@ -33,7 +33,7 @@ impl InvPayload {
     }
 }
 
-impl ISerializable for InvPayload {
+impl SerializableTrait for InvPayload {
     fn size(&self) -> usize {
         std::mem::size_of::<InventoryType>() + &self.hashes.var_vec_size()
     }

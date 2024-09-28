@@ -1,6 +1,5 @@
-
 pub mod caching;
-pub mod iserializable;
+pub mod serializable_trait;
 pub mod memory_reader;
 pub mod byte_array_comparer;
 pub mod byte_array_equality_comparer;

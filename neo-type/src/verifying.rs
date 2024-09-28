@@ -4,10 +4,11 @@
 use bytes::BytesMut;
 use neo_base::encoding::bin::HashFieldsSha256;
 use neo_crypto::ecdsa::{
-    DigestVerify, Secp256r1Sign, Sign as EcdsaSign, SignError, ECC256_SIGN_SIZE,
+    DigestVerify, ECC256_SIGN_SIZE, Secp256r1Sign, Sign as EcdsaSign, SignError,
 };
 use neo_crypto::secp256r1::{PrivateKey, PublicKey};
-use crate::{FixedBytes, Script, Varbytes, SIGN_DATA_SIZE};
+
+use crate::{FixedBytes, SIGN_DATA_SIZE, Script, Varbytes};
 
 pub type Signature = FixedBytes<ECC256_SIGN_SIZE>;
 
@@ -18,15 +19,21 @@ impl Signature {
         buf.into()
     }
 
-    pub fn as_secp256r1_sign(&self) -> Secp256r1Sign { Secp256r1Sign::from(self.0.clone()) }
+    pub fn as_secp256r1_sign(&self) -> Secp256r1Sign {
+        Secp256r1Sign::from(self.0.clone())
+    }
 }
 
 impl Into<Secp256r1Sign> for Signature {
-    fn into(self) -> Secp256r1Sign { Secp256r1Sign::from(self.0) }
+    fn into(self) -> Secp256r1Sign {
+        Secp256r1Sign::from(self.0)
+    }
 }
 
 impl From<Secp256r1Sign> for Signature {
-    fn from(sign: Secp256r1Sign) -> Self { Self(sign.into()) }
+    fn from(sign: Secp256r1Sign) -> Self {
+        Self(sign.into())
+    }
 }
 
 pub struct SignData([u8; SIGN_DATA_SIZE]);
@@ -36,15 +43,21 @@ impl SignData {
         u32::from_le_bytes([self.0[0], self.0[1], self.0[2], self.0[3]])
     }
 
-    pub fn as_bytes(&self) -> &[u8] { &self.0 }
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl AsRef<[u8]> for SignData {
-    fn as_ref(&self) -> &[u8] { &self.0 }
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl AsRef<[u8; SIGN_DATA_SIZE]> for SignData {
-    fn as_ref(&self) -> &[u8; SIGN_DATA_SIZE] { &self.0 }
+    fn as_ref(&self) -> &[u8; SIGN_DATA_SIZE] {
+        &self.0
+    }
 }
 
 pub trait ToSignData {
@@ -120,14 +133,16 @@ impl<T: HashFieldsSha256> MultiSignVerify for T {
 
 #[cfg(test)]
 mod test {
-    use neo_base::hash::{Sha256, SHA256_HASH_SIZE};
+    use neo_base::hash::{SHA256_HASH_SIZE, Sha256};
 
     use super::*;
 
     struct MockHashFields;
 
     impl HashFieldsSha256 for MockHashFields {
-        fn hash_fields_sha256(&self) -> [u8; SHA256_HASH_SIZE] { "hello".sha256() }
+        fn hash_fields_sha256(&self) -> [u8; SHA256_HASH_SIZE] {
+            "hello".sha256()
+        }
     }
 
     #[test]

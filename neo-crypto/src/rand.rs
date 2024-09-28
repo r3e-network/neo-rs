@@ -42,7 +42,11 @@ impl CryptoRand for OsRand {
 
 /// NOTE: buf length cannot too long.
 #[inline]
-pub fn rand_bytes(buf: &mut [u8]) -> Result<(), RandError> { OsRand.read_full(buf) }
+pub fn rand_bytes(buf: &mut [u8]) -> Result<(), RandError> {
+    OsRand.read_full(buf)
+}
 
 #[inline]
-pub fn read_u64() -> Result<u64, RandError> { OsRand.read_u64() }
+pub fn read_u64() -> Result<u64, RandError> {
+    OsRand.read_u64()
+}

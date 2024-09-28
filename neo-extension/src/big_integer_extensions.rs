@@ -1,7 +1,8 @@
-use num_bigint::BigInt;
-use num_traits::{One, Signed, Zero};
 use std::collections::HashSet;
 use std::ops::{BitAnd, Shl};
+
+use num_bigint::BigInt;
+use num_traits::{One, Signed, Zero};
 
 pub trait BigIntegerExtensions {
     fn get_lowest_set_bit(&self) -> i32;

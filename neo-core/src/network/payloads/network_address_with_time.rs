@@ -2,7 +2,7 @@ use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::capabilities::{NodeCapability, NodeCapabilityType};
 
@@ -49,7 +49,7 @@ impl NetworkAddressWithTime {
     }
 }
 
-impl ISerializable for NetworkAddressWithTime {
+impl SerializableTrait for NetworkAddressWithTime {
     fn size(&self) -> usize {
         todo!()
     }

@@ -5,7 +5,7 @@ pub use executor::*;
 pub(crate) use {bitwise::*, compound::*, control::*, push::*};
 pub(crate) use {numeric::*, slot::*, stack::*, types::*};
 
-use crate::{ExecutionContext, ExecError, Op};
+use crate::{ExecError, ExecutionContext, Op};
 
 pub mod bitwise;
 pub mod compound;

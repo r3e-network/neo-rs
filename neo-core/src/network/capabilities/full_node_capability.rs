@@ -1,6 +1,6 @@
 use std::io::Error;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use super::NodeCapability;
 use super::NodeCapabilityType;
@@ -22,7 +22,7 @@ impl FullNodeCapability {
     }
 }
 
-impl ISerializable for FullNodeCapability {
+impl SerializableTrait for FullNodeCapability {
     fn size(&self) -> usize {
         todo!()
     }

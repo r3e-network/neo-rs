@@ -5,10 +5,9 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 use std::time::Duration;
 
-use trust_dns_resolver::Resolver;
-
 use neo_base::time::{AtomicUnixTime, UnixTime};
 use neo_core::payload::Version;
+use trust_dns_resolver::Resolver;
 
 use crate::SeedState;
 
@@ -16,7 +15,7 @@ use crate::SeedState;
 #[repr(u32)]
 pub enum PeerStage {
     Connected = 0x01,
-    Accepted = 0x02,
+    Accepted  = 0x02,
     VersionSent = 0x04,
     VersionReceived = 0x08,
     VersionAckSent = 0x10,
@@ -25,26 +24,30 @@ pub enum PeerStage {
 
 impl PeerStage {
     #[inline]
-    pub const fn as_u32(self) -> u32 { self as u32 }
+    pub const fn as_u32(self) -> u32 {
+        self as u32
+    }
 
     #[inline]
-    pub fn belongs(self, stages: u32) -> bool { (self.as_u32() & stages) != 0 }
+    pub fn belongs(self, stages: u32) -> bool {
+        (self.as_u32() & stages) != 0
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
 pub struct Timeouts {
-    pub ping: bool,
+    pub ping:      bool,
     pub handshake: bool,
 }
 
 #[derive(Debug)]
 pub struct Connected {
-    pub addr: SocketAddr,
+    pub addr:         SocketAddr,
     pub connected_at: UnixTime,
-    pub stages: AtomicU32,
-    pub ping_sent: AtomicUnixTime,
-    pub ping_recv: AtomicUnixTime,
-    pub pong_recv: AtomicUnixTime,
+    pub stages:       AtomicU32,
+    pub ping_sent:    AtomicUnixTime,
+    pub ping_recv:    AtomicUnixTime,
+    pub pong_recv:    AtomicUnixTime,
 }
 
 impl Connected {
@@ -61,7 +64,9 @@ impl Connected {
     }
 
     #[inline]
-    pub fn stages(&self) -> u32 { self.stages.load(Relaxed) }
+    pub fn stages(&self) -> u32 {
+        self.stages.load(Relaxed)
+    }
 
     #[inline]
     pub fn add_stages(&self, stages: u32) {
@@ -105,14 +110,14 @@ impl Connected {
 #[derive(Debug)]
 pub struct TcpPeer {
     // `addr` is the connection socket address
-    pub addr: SocketAddr,
+    pub addr:         SocketAddr,
     pub handshake_at: UnixTime,
     // pub ping_sent: AtomicUnixTime,
     // pub ping_recv: AtomicUnixTime,
     // pub pong_recv: AtomicUnixTime,
     // pub last_block_index: AtomicU32,
-    pub score: u64,
-    pub version: Version,
+    pub score:        u64,
+    pub version:      Version,
 }
 
 impl TcpPeer {
@@ -139,36 +144,38 @@ impl TcpPeer {
 
 #[derive(Debug, Clone)]
 pub struct Seed {
-    pub addr: SocketAddr,
+    pub addr:  SocketAddr,
     pub state: SeedState,
 }
 
 impl Seed {
     // initial SeedState is `Reachable`
     #[inline]
-    pub fn new(addr: SocketAddr) -> Self { Self { addr, state: SeedState::Reachable } }
+    pub fn new(addr: SocketAddr) -> Self {
+        Self { addr, state: SeedState::Reachable }
+    }
 
     #[inline]
-    pub fn temporary(&self) -> bool { matches!(self.state, SeedState::Temporary) }
+    pub fn temporary(&self) -> bool {
+        matches!(self.state, SeedState::Temporary)
+    }
 }
 
 pub struct DnsResolver {
-    seeds: Vec<(String, u16)>,
+    seeds:    Vec<(String, u16)>,
     resolver: Resolver,
 }
 
 impl DnsResolver {
     pub fn new(seeds: &[String]) -> Self {
-        let resolver = Resolver::from_system_conf()
-            .expect("`Resolver::from_system_conf()` should be ok");
+        let resolver =
+            Resolver::from_system_conf().expect("`Resolver::from_system_conf()` should be ok");
 
         let seeds = seeds
             .iter()
             .map(|x| {
-                let d = x.rfind(":")
-                    .expect(&format!("Seed {} is invalid", x));
-                let port = x[d + 1..].parse()
-                    .expect(&format!("Port in seed {} is invalid", x));
+                let d = x.rfind(":").expect(&format!("Seed {} is invalid", x));
+                let port = x[d + 1..].parse().expect(&format!("Port in seed {} is invalid", x));
                 (x[..d].to_string(), port)
             })
             .collect();

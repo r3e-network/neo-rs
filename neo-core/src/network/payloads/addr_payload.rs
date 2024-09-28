@@ -1,7 +1,8 @@
 use std::io::{Error, ErrorKind};
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
+use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::NetworkAddressWithTime;
 
 /// This message is sent to respond to `MessageCommand::GetAddr` messages.
@@ -31,7 +32,7 @@ impl AddrPayload {
 
 }
 
-impl ISerializable for AddrPayload {
+impl SerializableTrait for AddrPayload {
     fn size(&self) -> usize {
         self.address_list.iter().map(|addr| addr.size()).sum()
     }

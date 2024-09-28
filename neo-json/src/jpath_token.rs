@@ -1,8 +1,9 @@
-use crate::json_error::JsonError;
-use crate::jtoken::JToken;
 use std::collections::VecDeque;
 use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
+
+use crate::json_error::JsonError;
+use crate::jtoken::JToken;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JPathTokenType {
@@ -21,15 +22,12 @@ pub enum JPathTokenType {
 #[derive(Debug, Clone, PartialEq)]
 pub struct JPathToken {
     token_type: JPathTokenType,
-    content: Option<String>,
+    content:    Option<String>,
 }
 
 impl JPathToken {
     fn new(token_type: JPathTokenType, content: Option<String>) -> Self {
-        JPathToken {
-            token_type,
-            content,
-        }
+        JPathToken { token_type, content }
     }
 
     fn parse(expr: &str) -> Result<Vec<JPathToken>, JsonError> {
@@ -280,21 +278,14 @@ impl JPath {
         max_objects: usize,
     ) -> Result<(), JsonError> {
         let end = match tokens.pop_front() {
-            Some(JPathToken {
-                token_type: JPathTokenType::Number,
-                content: Some(content),
-            }) => content.parse::<i32>().map_err(|_| JsonError::FormatError)?,
-            Some(JPathToken {
-                token_type: JPathTokenType::RightBracket,
-                ..
-            }) => 0,
+            Some(JPathToken { token_type: JPathTokenType::Number, content: Some(content) }) => {
+                content.parse::<i32>().map_err(|_| JsonError::FormatError)?
+            }
+            Some(JPathToken { token_type: JPathTokenType::RightBracket, .. }) => 0,
             _ => return Err(JsonError::FormatError),
         };
 
-        if tokens
-            .pop_front()
-            .map_or(false, |t| t.token_type != JPathTokenType::RightBracket)
-        {
+        if tokens.pop_front().map_or(false, |t| t.token_type != JPathTokenType::RightBracket) {
             return Err(JsonError::FormatError);
         }
 
@@ -311,11 +302,8 @@ impl JPath {
                 } else {
                     arr.len().saturating_sub((-end) as usize)
                 };
-                new_objects.extend(
-                    arr[i_start.min(arr.len())..i_end.min(arr.len())]
-                        .iter()
-                        .cloned(),
-                );
+                new_objects
+                    .extend(arr[i_start.min(arr.len())..i_end.min(arr.len())].iter().cloned());
             }
         }
         *objects = new_objects;

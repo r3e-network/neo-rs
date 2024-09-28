@@ -1,9 +1,12 @@
 use std::convert::TryFrom;
 use std::io::{self, Write};
+use neo_vm::ScriptBuilder;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
-use crate::network::payloads::{OracleResponseCode, Transaction};
+use crate::network::payloads::{OracleResponseCode, Transaction, WitnessScope};
+use crate::network::transaction_attribute::transaction_attribute::TransactionAttribute;
+use crate::network::transaction_attribute_type::TransactionAttributeType;
 use crate::persistence::DataCache;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,7 +34,7 @@ impl OracleResponse {
     };
 }
 
-impl ISerializable for OracleResponse {
+impl SerializableTrait for OracleResponse {
     fn size(&self) -> usize {
         std::mem::size_of::<u64>() +  // Id
         std::mem::size_of::<OracleResponseCode>() +  // ResponseCode
@@ -78,7 +81,7 @@ impl TransactionAttribute for OracleResponse {
     }
 
     fn verify(&self, snapshot: &dyn DataCache, tx: &Transaction) -> bool {
-        if tx.signers.iter().any(|p| p.scopes != WitnessScope::None) {
+        if tx.signers.iter().any(|p| p.scopes != WitnessScope::NONE) {
             return false;
         }
         if tx.script != Self::FIXED_SCRIPT {

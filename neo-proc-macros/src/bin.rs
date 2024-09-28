@@ -2,8 +2,8 @@
 // All Rights Reserved
 
 use proc_macro2::TokenStream;
-use quote::{quote, quote_spanned, ToTokens};
-use syn::{punctuated::Punctuated, spanned::Spanned, Meta, Token};
+use quote::{ToTokens, quote, quote_spanned};
+use syn::{Meta, Token, punctuated::Punctuated, spanned::Spanned};
 
 pub(crate) fn encode_bin(input: syn::DeriveInput) -> proc_macro::TokenStream {
     let name = &input.ident;

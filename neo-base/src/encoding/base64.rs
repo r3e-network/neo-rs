@@ -5,8 +5,8 @@ use alloc::{string::String, vec::Vec};
 use core::result::Result;
 
 use base64::{
-    engine::general_purpose::{STANDARD, URL_SAFE},
     Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE},
 };
 
 use crate::errors;
@@ -19,10 +19,14 @@ pub trait ToBase64 {
 
 impl<T: AsRef<[u8]>> ToBase64 for T {
     #[inline]
-    fn to_base64_std(&self) -> String { STANDARD.encode(self.as_ref()) }
+    fn to_base64_std(&self) -> String {
+        STANDARD.encode(self.as_ref())
+    }
 
     #[inline]
-    fn to_base64_url(&self) -> String { URL_SAFE.encode(self.as_ref()) }
+    fn to_base64_url(&self) -> String {
+        URL_SAFE.encode(self.as_ref())
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, errors::Error)]

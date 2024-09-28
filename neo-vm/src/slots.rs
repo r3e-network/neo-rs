@@ -10,21 +10,31 @@ pub(crate) struct Slots {
 }
 
 impl Slots {
-    pub fn new(slots: usize) -> Self { Self { items: vec![StackItem::with_null(); slots] } }
+    pub fn new(slots: usize) -> Self {
+        Self { items: vec![StackItem::with_null(); slots] }
+    }
 
     #[inline]
-    pub fn len(&self) -> usize { self.items.len() }
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
 
     #[inline]
-    pub fn get(&self, index: usize) -> Option<&StackItem> { self.items.get(index) }
+    pub fn get(&self, index: usize) -> Option<&StackItem> {
+        self.items.get(index)
+    }
 }
 
 impl core::ops::Index<usize> for Slots {
     type Output = StackItem;
 
-    fn index(&self, index: usize) -> &Self::Output { &self.items[index] }
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.items[index]
+    }
 }
 
 impl core::ops::IndexMut<usize> for Slots {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output { &mut self.items[index] }
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.items[index]
+    }
 }

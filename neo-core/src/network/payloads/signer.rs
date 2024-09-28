@@ -1,12 +1,12 @@
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use crate::cryptography::ECPoint;
-use crate::io::iserializable::ISerializable;
+use crate::io::iserializ, Debugable::ISerializable;
 use crate::neo_contract::iinteroperable::IInteroperable;
-use crate::network::payloads::{WitnessRule, WitnessRuleAction};
+use crate::network::payloads::{WitnessRule, WitnessRuleAction, WitnessScope};
 use crate::network::payloads::conditions::{BooleanCondition, ScriptHashCondition};
-use crate::tx::WitnessScope;
 use neo_type::H160;
+use crate::io::memory_reader::MemoryReader;
 
 const MAX_SUBITEMS: usize = 16;
 
@@ -23,19 +23,19 @@ impl Signer {
     pub fn get_all_rules(&self) -> Vec<WitnessRule> {
         let mut rules = Vec::new();
 
-        if self.scopes == WitnessScope::Global {
+        if self.scopes == WitnessScope::GLOBAL {
             rules.push(WitnessRule {
                 action: WitnessRuleAction::Allow,
                 condition: Box::new(BooleanCondition { expression: true }),
             });
         } else {
-            if self.scopes.contains(WitnessScope::CalledByEntry) {
+            if self.scopes.contains(WitnessScope::CALLED_BY_ENTRY) {
                 rules.push(WitnessRule {
                     action: WitnessRuleAction::Allow,
                     condition: Box::new(CalledByEntryCondition {}),
                 });
             }
-            if self.scopes.contains(WitnessScope::CustomContracts) {
+            if self.scopes.contains(WitnessScope::CUSTOM_CONTRACTS) {
                 for hash in &self.allowed_contracts {
                     rules.push(WitnessRule {
                         action: WitnessRuleAction::Allow,
@@ -43,7 +43,7 @@ impl Signer {
                     });
                 }
             }
-            if self.scopes.contains(WitnessScope::CustomGroups) {
+            if self.scopes.contains(WitnessScope::CUSTOM_GROUPS) {
                 for group in &self.allowed_groups {
                     rules.push(WitnessRule {
                         action: WitnessRuleAction::Allow,
@@ -51,7 +51,7 @@ impl Signer {
                     });
                 }
             }
-            if self.scopes.contains(WitnessScope::WitnessRules) {
+            if self.scopes.contains(WitnessScope::WITNESS_RULES) {
                 rules.extend_from_slice(&self.rules);
             }
         }
@@ -222,7 +222,7 @@ impl IJsonConvertible for Signer {
         })
     }
 
-     fn to_json(&self) -> JObject {
+     fn to_json(&self) -> serde_json::Value { {
         let mut json = JObject::new();
         json.insert("account", self.account.to_string().into());
         json.insert("scopes", (self.scopes as u8).into());

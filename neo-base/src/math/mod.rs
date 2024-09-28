@@ -78,7 +78,9 @@ pub struct LcgRand {
 
 impl LcgRand {
     #[inline]
-    pub fn new(seed: u64) -> LcgRand { LcgRand { current: seed } }
+    pub fn new(seed: u64) -> LcgRand {
+        LcgRand { current: seed }
+    }
 
     #[inline]
     pub fn next(&mut self) -> u64 {

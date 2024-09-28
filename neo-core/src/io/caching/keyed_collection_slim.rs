@@ -1,13 +1,11 @@
+#![feature(linked_list_retain)]
 
-
-use std::collections::{LinkedList, HashMap};
 use std::hash::Hash;
 use std::cmp::Eq;
 
 pub mod neo_io_caching {
-    use std::collections::LinkedList;
+    use std::collections::{HashMap, LinkedList};
     use std::hash::Hash;
-    use hashbrown::HashMap;
 
     pub trait KeyedCollectionSlim<K, V>
 where

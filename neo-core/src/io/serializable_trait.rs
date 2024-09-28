@@ -2,7 +2,7 @@ use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
 
 /// Represents NEO objects that can be serialized.
-pub trait ISerializable {
+pub trait SerializableTrait {
     /// The size of the object in bytes after serialization.
     fn size(&self) -> usize;
 

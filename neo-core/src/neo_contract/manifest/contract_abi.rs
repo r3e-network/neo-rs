@@ -1,46 +1,26 @@
 use alloc::rc::Rc;
 use std::collections::HashMap;
-use neo_json::json_convert_trait::IJsonConvertible;
+use neo_json::json_convert_trait::JsonConvertibleTrait;
 use neo_json::jtoken::JToken;
 use neo_vm::{References, StackItem};
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::manifest::contract_event_descriptor::ContractEventDescriptor;
 use crate::neo_contract::manifest::contract_method_descriptor::ContractMethodDescriptor;
 use crate::neo_contract::manifest::manifest_error::ManifestError;
+use serde::{Serialize, Deserialize};
 
 /// Represents the ABI of a smart contract.
 ///
 /// For more details, see NEP-14.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContractAbi {
     pub(crate) methods: Vec<ContractMethodDescriptor>,
     pub(crate) events: Vec<ContractEventDescriptor>,
+    #[serde(default)]
     method_dictionary: Option<HashMap<(String, usize), ContractMethodDescriptor>>,
 }
 
 impl ContractAbi {
-    /// Creates a new ContractAbi from JSON.
-    pub fn from_json(json: &JToken) -> Result<Self, ManifestError> {
-        let methods = json.get("methods")
-            .and_then(|m| m.as_array())
-            .map(|arr| arr.iter().filter_map(|u| ContractMethodDescriptor::from_json(u).ok()).collect())
-            .unwrap_or_default();
-        
-        let events = json.get("events")
-            .and_then(|e| e.as_array())
-            .map(|arr| arr.iter().filter_map(|u| ContractEventDescriptor::from_json(u).ok()).collect())
-            .unwrap_or_default();
-
-        if methods.is_empty() {
-            return Err(ManifestError::InvalidFormat("".to_string()));
-        }
-
-        Ok(Self {
-            methods,
-            events,
-            method_dictionary: None,
-        })
-    }
 
     /// Gets the method with the specified name and parameter count.
     pub fn get_method(&mut self, name: &str, pcount: i32) -> Option<&ContractMethodDescriptor> {
@@ -61,18 +41,15 @@ impl ContractAbi {
         }
     }
 
-    /// Converts the ABI to a JSON object.
-    pub fn to_json(&self) -> JToken {
-        let mut json = JToken::new_object();
-        json.insert("methods".to_string(), JToken::from(self.methods.iter().map(|m| m.to_json()).collect::<Vec<_>>())).expect("TODO: panic message");
-        json.insert("events".to_string(), JToken::from(self.events.iter().map(|e| e.to_json()).collect::<Vec<_>>())).expect("TODO: panic message");
-        json
-    }
 }
 
 impl Default for ContractAbi {
     fn default() -> Self {
-        todo!()
+        Self {
+            methods: Vec::new(),
+            events: Vec::new(),
+            method_dictionary: None,
+        }
     }
 }
 
@@ -106,5 +83,36 @@ impl IInteroperable for ContractAbi {
             Rc::from(StackItem::Array(self.methods.iter().map(|m| Rc::new(m.to_stack_item(reference_counter)?)).collect::<Vec<_>>())),
             Rc::from(StackItem::Array(self.events.iter().map(|e| Rc::new(e.to_stack_item(reference_counter)?)).collect::<Vec<_>>())),
         ])))
+    }
+}
+
+
+impl JsonConvertibleTrait for ContractAbi {
+    /// Creates a new ContractAbi from JSON.
+    fn from_json(json: &serde_json::Value) -> Result<Self, ManifestError> {
+        let methods = json.get("methods")
+            .and_then(|m| m.as_array())
+            .map(|arr| arr.iter().filter_map(|u| ContractMethodDescriptor::from_json(u).ok()).collect())
+            .unwrap_or_default();
+        
+        let events = json.get("events")
+            .and_then(|e| e.as_array())
+            .map(|arr| arr.iter().filter_map(|u| ContractEventDescriptor::from_json(u).ok()).collect())
+            .unwrap_or_default();
+
+        if methods.is_empty() {
+            return Err(ManifestError::InvalidFormat("Contract ABI must contain at least one method".to_string()));
+        }
+
+        Ok(Self {
+            methods,
+            events,
+            method_dictionary: None,
+        })
+    }
+
+    /// Converts the ABI to a JSON object.
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap()
     }
 }

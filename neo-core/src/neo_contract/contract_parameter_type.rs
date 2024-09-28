@@ -1,8 +1,8 @@
-
 use std::convert::TryFrom;
+use serde::{Serialize, Deserialize};
 
 /// Represents the type of ContractParameter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ContractParameterType {
     /// Indicates that the parameter can be of any type.

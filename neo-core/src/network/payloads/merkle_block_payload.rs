@@ -1,7 +1,7 @@
 use std::mem;
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::merkle::MerkleTree;
 use crate::network::payloads::{Block, Header};
 use neo_type::H256;
@@ -39,7 +39,7 @@ impl MerkleBlockPayload {
     }
 }
 
-impl ISerializable for MerkleBlockPayload {
+impl SerializableTrait for MerkleBlockPayload {
     fn size(&self) -> usize {
         self.header.size()
             + mem::size_of::<u32>()

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fmt;
+use neo_json::json_convert_trait::JsonConvertibleTrait;
 use num_bigint::BigInt;
 use neo_json::jtoken::JToken;
 use crate::cryptography::{ECCurve, ECPoint};
@@ -58,62 +59,6 @@ impl ContractParameter {
         }
     }
 
-    /// Converts the parameter from a JSON object.
-    pub fn from_json(json: &JToken) -> Result<Self, String> {
-        let type_str = json.get("type")
-            .and_then(|v| v.as_str())
-            .ok_or("Missing or invalid 'type' field")?;
-
-        let param_type = match type_str {
-            "Any" => ContractParameterType::Any,
-            "Signature" => ContractParameterType::Signature,
-            "Boolean" => ContractParameterType::Boolean,
-            "Integer" => ContractParameterType::Integer,
-            "Hash160" => ContractParameterType::Hash160,
-            "Hash256" => ContractParameterType::Hash256,
-            "ByteArray" => ContractParameterType::ByteArray,
-            "PublicKey" => ContractParameterType::PublicKey,
-            "String" => ContractParameterType::String,
-            "Array" => ContractParameterType::Array,
-            "Map" => ContractParameterType::Map,
-            _ => return Err(format!("Invalid parameter type: {}", type_str)),
-        };
-
-        let value = json.get("value").ok_or("Missing 'value' field")?;
-        let param_value = match param_type {
-            ContractParameterType::Any => None,
-            ContractParameterType::Signature => Some(ContractParameterValue::Signature(hex::decode(value.as_str().ok_or("Invalid signature value")?).map_err(|e| e.to_string())?)),
-            ContractParameterType::Boolean => Some(ContractParameterValue::Boolean(value.as_bool().ok_or("Invalid boolean value")?)),
-            ContractParameterType::Integer => Some(ContractParameterValue::Integer(BigInt::parse_bytes(value.as_str().ok_or("Invalid integer value")?.as_bytes(), 10).ok_or("Failed to parse integer")?)),
-            ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(H160::try_from(value.as_str().ok_or("Invalid Hash160 value")?).map_err(|e| e.to_string())?)),
-            ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(H256::try_from(value.as_str().ok_or("Invalid Hash256 value")?).map_err(|e| e.to_string())?)),
-            ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(hex::decode(value.as_str().ok_or("Invalid ByteArray value")?).map_err(|e| e.to_string())?)),
-            ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECPoint::try_from(value.as_str().ok_or("Invalid PublicKey value")?).map_err(|e| e.to_string())?)),
-            ContractParameterType::String => Some(ContractParameterValue::String(value.as_str().ok_or("Invalid string value")?.to_string())),
-            ContractParameterType::Array => {
-                let array = value.as_array().ok_or("Invalid array value")?;
-                let params = array.iter().map(|item| ContractParameter::from_json(item.as_object().ok_or("Invalid array item")?)).collect::<Result<Vec<_>, _>>()?;
-                Some(ContractParameterValue::Array(params))
-            },
-            ContractParameterType::Map => {
-                let map = value.as_object().ok_or("Invalid map value")?;
-                let params = map.iter().map(|(k, v)| {
-                    Ok((
-                        ContractParameter::from_json(k.as_object().ok_or("Invalid map key")?)?,
-                        ContractParameter::from_json(v.as_object().ok_or("Invalid map value")?)?,
-                    ))
-                }).collect::<Result<HashMap<_, _>, String>>()?;
-                Some(ContractParameterValue::Map(params))
-            },
-            _ => {}
-        };
-
-        Ok(ContractParameter {
-            param_type,
-            value: param_value,
-        })
-    }
-
     /// Sets the value of the parameter from a string.
     pub fn set_value(&mut self, text: &str) -> Result<(), String> {
         self.value = match self.param_type {
@@ -131,8 +76,65 @@ impl ContractParameter {
         Ok(())
     }
 
-    /// Converts the parameter to a JSON object.
-    pub fn to_json(&self) -> JToken {
+}
+
+impl JsonConvertibleTrait for ContractParameter {
+    fn from_json(json: &serde_json::Value) -> Result<Self, JsonError> {
+        let type_str = json.get("type")
+        .and_then(|v| v.as_str())
+        .ok_or("Missing or invalid 'type' field")?;
+
+    let param_type = match type_str {
+        "Any" => ContractParameterType::Any,
+        "Signature" => ContractParameterType::Signature,
+        "Boolean" => ContractParameterType::Boolean,
+        "Integer" => ContractParameterType::Integer,
+        "Hash160" => ContractParameterType::Hash160,
+        "Hash256" => ContractParameterType::Hash256,
+        "ByteArray" => ContractParameterType::ByteArray,
+        "PublicKey" => ContractParameterType::PublicKey,
+        "String" => ContractParameterType::String,
+        "Array" => ContractParameterType::Array,
+        "Map" => ContractParameterType::Map,
+        _ => return Err(format!("Invalid parameter type: {}", type_str)),
+    };
+
+    let value = json.get("value").ok_or("Missing 'value' field")?;
+    let param_value = match param_type {
+        ContractParameterType::Any => None,
+        ContractParameterType::Signature => Some(ContractParameterValue::Signature(hex::decode(value.as_str().ok_or("Invalid signature value")?).map_err(|e| e.to_string())?)),
+        ContractParameterType::Boolean => Some(ContractParameterValue::Boolean(value.as_bool().ok_or("Invalid boolean value")?)),
+        ContractParameterType::Integer => Some(ContractParameterValue::Integer(BigInt::parse_bytes(value.as_str().ok_or("Invalid integer value")?.as_bytes(), 10).ok_or("Failed to parse integer")?)),
+        ContractParameterType::Hash160 => Some(ContractParameterValue::Hash160(H160::try_from(value.as_str().ok_or("Invalid Hash160 value")?).map_err(|e| e.to_string())?)),
+        ContractParameterType::Hash256 => Some(ContractParameterValue::Hash256(H256::try_from(value.as_str().ok_or("Invalid Hash256 value")?).map_err(|e| e.to_string())?)),
+        ContractParameterType::ByteArray => Some(ContractParameterValue::ByteArray(hex::decode(value.as_str().ok_or("Invalid ByteArray value")?).map_err(|e| e.to_string())?)),
+        ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECPoint::try_from(value.as_str().ok_or("Invalid PublicKey value")?).map_err(|e| e.to_string())?)),
+        ContractParameterType::String => Some(ContractParameterValue::String(value.as_str().ok_or("Invalid string value")?.to_string())),
+        ContractParameterType::Array => {
+            let array = value.as_array().ok_or("Invalid array value")?;
+            let params = array.iter().map(|item| ContractParameter::from_json(item.as_object().ok_or("Invalid array item")?)).collect::<Result<Vec<_>, _>>()?;
+            Some(ContractParameterValue::Array(params))
+        },
+        ContractParameterType::Map => {
+            let map = value.as_object().ok_or("Invalid map value")?;
+            let params = map.iter().map(|(k, v)| {
+                Ok((
+                    ContractParameter::from_json(k.as_object().ok_or("Invalid map key")?)?,
+                    ContractParameter::from_json(v.as_object().ok_or("Invalid map value")?)?,
+                ))
+            }).collect::<Result<HashMap<_, _>, String>>()?;
+            Some(ContractParameterValue::Map(params))
+        },
+        _ => {}
+    };
+
+    Ok(ContractParameter {
+        param_type,
+        value: param_value,
+    })
+    }
+
+    fn to_json(&self) -> serde_json::Value {
         let mut json = JToken::new_object();
         json.insert("type".to_string(), JToken::from(format!("{:?}", self.param_type))).expect("TODO: panic message");
         
@@ -161,7 +163,9 @@ impl ContractParameter {
 
         json
     }
-}
+
+    
+}   
 
 impl fmt::Display for ContractParameter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

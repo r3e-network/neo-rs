@@ -1,6 +1,6 @@
 use crate::wallet::Wallet;
 
-pub trait IWalletChangedHandler {
+pub trait WalletChangedHandlerTrait {
     /// The handler of WalletChanged event from the `IWalletProvider`.
     /// Triggered when a new wallet is assigned to the node.
     ///

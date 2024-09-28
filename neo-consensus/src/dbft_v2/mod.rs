@@ -15,9 +15,9 @@ use alloc::string::String;
 use std::sync::mpsc;
 
 use neo_base::{encoding::bin::*, errors, time::unix_millis_now};
-use neo_core::payload::{Extensible, CONSENSUS_CATEGORY};
+use neo_core::payload::{CONSENSUS_CATEGORY, Extensible};
 use neo_core::store::ChainStates;
-use neo_core::{tx, types::*, Keypair};
+use neo_core::{Keypair, tx, types::*};
 pub use {committee::*, context::*, message::*, recovery::*, state_machine::*, timer::*};
 
 #[derive(Debug, Copy, Clone)]
@@ -40,7 +40,9 @@ pub struct HView {
 
 impl HView {
     #[inline]
-    pub fn zero(&self) -> bool { self.eq(&Self::default()) }
+    pub fn zero(&self) -> bool {
+        self.eq(&Self::default())
+    }
 
     #[inline]
     pub fn is_previous(&self, other: &HView) -> bool {
@@ -51,19 +53,19 @@ impl HView {
 
 #[derive(Debug)]
 pub struct DbftConfig {
-    pub network: u32,
-    pub version: u32,
+    pub network:          u32,
+    pub version:          u32,
     pub per_block_millis: u64,
 
     pub max_txs_per_block: u32,
-    pub max_block_size: usize,
-    pub max_block_sysfee: u64,
+    pub max_block_size:    usize,
+    pub max_block_sysfee:  u64,
 
     pub max_pending_broadcasts: u32,
 
     /// i.e. timestamp_increment
-    pub milli_increment: u64,
-    pub recovery_logs: String,
+    pub milli_increment:      u64,
+    pub recovery_logs:        String,
     pub ignore_recovery_logs: bool,
 }
 
@@ -92,10 +94,10 @@ pub fn next_block_unix_milli(now: u64, milli_increment: u64, prev_block_unix_mil
 }
 
 pub struct DbftConsensus {
-    settings: DbftConfig,
+    settings:      DbftConfig,
     state_machine: StateMachine,
-    timer_rx: mpsc::Receiver<Timer>,
-    broadcast_rx: mpsc::Receiver<Payload>,
+    timer_rx:      mpsc::Receiver<Timer>,
+    broadcast_rx:  mpsc::Receiver<Payload>,
 }
 
 impl DbftConsensus {
@@ -197,8 +199,8 @@ impl DbftConsensus {
 
         // 6. Ignore the message if the consensus message data is in a wrong format
         let mut buffer = RefBuffer::from(payload.data.as_bytes());
-        let mut message: Payload = BinDecoder::decode_bin(&mut buffer)
-            .map_err(|err| OnPayloadError::DecodeError(err))?;
+        let mut message: Payload =
+            BinDecoder::decode_bin(&mut buffer).map_err(|err| OnPayloadError::DecodeError(err))?;
 
         match &mut message {
             Payload::PrepareRequest(r) => {

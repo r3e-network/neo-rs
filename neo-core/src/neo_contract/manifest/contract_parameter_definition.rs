@@ -5,13 +5,15 @@ use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::json::Json;
 use std::fmt;
+use serde::{Serialize, Deserialize};
 
 /// Represents a parameter of an event or method in ABI.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ContractParameterDefinition {
     /// The name of the parameter.
     pub name: String,
     /// The type of the parameter. It can be any value of ContractParameterType except Void.
+    #[serde(rename = "type")]
     pub parameter_type: ContractParameterType,
 }
 
@@ -90,6 +92,7 @@ impl ContractParameterDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json;
 
     #[test]
     fn test_contract_parameter_definition_serialization() {
@@ -132,5 +135,19 @@ mod tests {
         json.insert("name", Json::from("test"));
         json.insert("type", Json::from("Void"));
         assert!(ContractParameterDefinition::from_json(&json).is_err());
+    }
+
+    #[test]
+    fn test_serde_serialization() {
+        let param = ContractParameterDefinition {
+            name: "test".to_string(),
+            parameter_type: ContractParameterType::String,
+        };
+
+        let serialized = serde_json::to_string(&param).unwrap();
+        let deserialized: ContractParameterDefinition = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(param.name, deserialized.name);
+        assert_eq!(param.parameter_type, deserialized.parameter_type);
     }
 }

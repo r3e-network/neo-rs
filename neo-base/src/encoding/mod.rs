@@ -3,7 +3,7 @@
 
 use alloc::string::String;
 
-use serde::{de::Error, Deserialize, Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serializer, de::Error};
 
 pub mod base58;
 pub mod base64;

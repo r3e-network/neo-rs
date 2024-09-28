@@ -28,7 +28,7 @@ pub trait SlicesSha256 {
 }
 
 impl<T: Iterator> SlicesSha256 for T
-    where <T as Iterator>::Item: AsRef<[u8]>,
+where <T as Iterator>::Item: AsRef<[u8]>
 {
     #[inline]
     fn slices_sha256(self) -> [u8; SHA256_HASH_SIZE] {
@@ -45,7 +45,9 @@ pub trait Sha256Twice {
 
 impl<T: Sha256> Sha256Twice for T {
     #[inline]
-    fn sha256_twice(&self) -> [u8; SHA256_HASH_SIZE] { self.sha256().sha256() }
+    fn sha256_twice(&self) -> [u8; SHA256_HASH_SIZE] {
+        self.sha256().sha256()
+    }
 }
 
 pub trait Ripemd160 {

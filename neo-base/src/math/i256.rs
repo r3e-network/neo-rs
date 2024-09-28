@@ -6,7 +6,7 @@ use core::cmp::{Ord, Ordering, PartialOrd};
 use core::fmt::{Debug, Display, Formatter};
 use core::ops::{BitAnd, BitOr, BitXor, Not};
 
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 use crate::encoding::{bin::*, hex::StartsWith0x};
 use crate::{bytes::ToRevArray, errors};
@@ -14,7 +14,7 @@ use crate::{bytes::ToRevArray, errors};
 #[derive(Copy, Clone, Default, Hash, Eq, PartialEq)]
 #[repr(C)]
 pub struct I256 {
-    low: u128,
+    low:  u128,
     high: i128,
 }
 
@@ -35,25 +35,39 @@ impl I256 {
 
     // NOTE: assume platform endian is little endian
     #[inline]
-    pub fn to_le_bytes(&self) -> [u8; 32] { unsafe { core::mem::transmute_copy(self) } }
+    pub fn to_le_bytes(&self) -> [u8; 32] {
+        unsafe { core::mem::transmute_copy(self) }
+    }
 
     #[inline]
-    pub fn to_be_bytes(&self) -> [u8; 32] { self.to_le_bytes().to_rev_array() }
+    pub fn to_be_bytes(&self) -> [u8; 32] {
+        self.to_le_bytes().to_rev_array()
+    }
 
     #[inline]
-    pub fn from_le_bytes(buf: [u8; 32]) -> Self { unsafe { core::mem::transmute_copy(&buf) } }
+    pub fn from_le_bytes(buf: [u8; 32]) -> Self {
+        unsafe { core::mem::transmute_copy(&buf) }
+    }
 
     #[inline]
-    pub fn from_be_bytes(buf: [u8; 32]) -> Self { Self::from_le_bytes(buf.to_rev_array()) }
+    pub fn from_be_bytes(buf: [u8; 32]) -> Self {
+        Self::from_le_bytes(buf.to_rev_array())
+    }
 
     #[inline]
-    pub fn is_zero(&self) -> bool { self.eq(&I256::ZERO) }
+    pub fn is_zero(&self) -> bool {
+        self.eq(&I256::ZERO)
+    }
 
     #[inline]
-    pub fn is_even(&self) -> bool { self.low & 1u128 == 0 }
+    pub fn is_even(&self) -> bool {
+        self.low & 1u128 == 0
+    }
 
     #[inline]
-    pub fn is_negative(&self) -> bool { self.high.is_negative() }
+    pub fn is_negative(&self) -> bool {
+        self.high.is_negative()
+    }
 
     #[inline]
     pub fn is_postive(&self) -> bool {
@@ -71,14 +85,20 @@ impl I256 {
     }
 
     #[inline]
-    pub fn as_i128(&self) -> i128 { self.low as i128 }
+    pub fn as_i128(&self) -> i128 {
+        self.low as i128
+    }
 
     #[inline]
-    pub fn as_u128(&self) -> u128 { self.low }
+    pub fn as_u128(&self) -> u128 {
+        self.low
+    }
 }
 
 impl Debug for I256 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result { write!(f, "{self}") }
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{self}")
+    }
 }
 
 impl Display for I256 {
@@ -90,7 +110,9 @@ impl Display for I256 {
 }
 
 impl PartialOrd for I256 {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Ord for I256 {
@@ -101,32 +123,44 @@ impl Ord for I256 {
 
 impl From<i8> for I256 {
     #[inline]
-    fn from(value: i8) -> Self { Self::from(value as i128) }
+    fn from(value: i8) -> Self {
+        Self::from(value as i128)
+    }
 }
 
 impl From<i16> for I256 {
     #[inline]
-    fn from(value: i16) -> Self { Self::from(value as i128) }
+    fn from(value: i16) -> Self {
+        Self::from(value as i128)
+    }
 }
 
 impl From<i32> for I256 {
     #[inline]
-    fn from(value: i32) -> Self { Self::from(value as i128) }
+    fn from(value: i32) -> Self {
+        Self::from(value as i128)
+    }
 }
 
 impl From<i64> for I256 {
     #[inline]
-    fn from(value: i64) -> Self { Self::from(value as i128) }
+    fn from(value: i64) -> Self {
+        Self::from(value as i128)
+    }
 }
 
 impl From<usize> for I256 {
     #[inline]
-    fn from(value: usize) -> Self { Self::from(value as i128) }
+    fn from(value: usize) -> Self {
+        Self::from(value as i128)
+    }
 }
 
 impl From<i128> for I256 {
     #[inline]
-    fn from(value: i128) -> Self { Self { low: value as u128, high: value >> 127 } }
+    fn from(value: i128) -> Self {
+        Self { low: value as u128, high: value >> 127 }
+    }
 }
 
 #[derive(Debug, Clone, Copy, errors::Error)]
@@ -171,9 +205,13 @@ impl<'de> Deserialize<'de> for I256 {
 }
 
 impl BinEncoder for I256 {
-    fn encode_bin(&self, w: &mut impl BinWriter) { w.write(self.to_le_bytes().as_slice()); }
+    fn encode_bin(&self, w: &mut impl BinWriter) {
+        w.write(self.to_le_bytes().as_slice());
+    }
 
-    fn bin_size(&self) -> usize { 32 }
+    fn bin_size(&self) -> usize {
+        32
+    }
 }
 
 impl BinDecoder for I256 {
@@ -216,7 +254,9 @@ impl Not for I256 {
     type Output = Self;
 
     #[inline]
-    fn not(self) -> Self::Output { Self { low: !self.low, high: !self.high } }
+    fn not(self) -> Self::Output {
+        Self { low: !self.low, high: !self.high }
+    }
 }
 
 #[cfg(test)]

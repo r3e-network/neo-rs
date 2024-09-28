@@ -10,7 +10,7 @@ pub mod fee;
 
 pub struct NeoSystem {
     chain: Arc<BlockChain>,
-    node: LocalNode,
+    node:  LocalNode,
 }
 
 impl NeoSystem {

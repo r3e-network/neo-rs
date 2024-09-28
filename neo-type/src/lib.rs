@@ -1,9 +1,9 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-pub mod fixed_bytes;
 pub mod check_sign;
 pub mod dbft;
+pub mod fixed_bytes;
 pub mod genesis;
 pub mod h160;
 pub mod h256;
@@ -14,21 +14,19 @@ pub mod verifying;
 
 use std::{string::String, vec::Vec};
 
-use serde::{Deserialize, Serialize};
-
-use neo_base::encoding::{base58::*, bin::*};
-use neo_base::errors;
-use neo_base::hash::{Ripemd160, Sha256};
-
-pub use fixed_bytes::*;
 pub use check_sign::*;
 pub use dbft::*;
+pub use fixed_bytes::*;
 pub use genesis::*;
 pub use h160::*;
 pub use h256::*;
+use neo_base::encoding::{base58::*, bin::*};
+use neo_base::errors;
+use neo_base::hash::{Ripemd160, Sha256};
 use neo_crypto::secp256r1::PublicKey;
 pub use opcode::*;
 pub use script::*;
+use serde::{Deserialize, Serialize};
 pub use settings::*;
 pub use verifying::*;
 
@@ -98,7 +96,7 @@ impl ToScriptHash for PublicKey {
 }
 
 pub struct Address {
-    version: u8,
+    version:     u8,
     base58check: String,
 }
 
@@ -210,7 +208,7 @@ impl ToNeo3Address for PublicKey {
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Role {
     StateValidator = 4,
-    Oracle = 8,
+    Oracle    = 8,
     NeoFSAlphabet = 16,
     P2pNotary = 32,
 }
@@ -218,8 +216,8 @@ pub enum Role {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, BinEncode, BinDecode)]
 #[bin(repr = u8)]
 pub enum VMState {
-    None = 0,
-    Halt = 1,
+    None  = 0,
+    Halt  = 1,
     Fault = 2,
     Break = 4,
 }

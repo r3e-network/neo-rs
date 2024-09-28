@@ -1,12 +1,10 @@
-use core::str::FromStr;
 use std::io::Write;
 use neo_json::jtoken::JToken;
-use neo_vm::References;
-use neo_vm::stack_item::StackItem;
+use neo_vm::{References, StackItem};
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::network::payloads::conditions::{WitnessCondition, WitnessConditionType};
-use neo_type::H160;
+use neo_type::{H160, H160_SIZE};
 
 #[derive(Debug)]
 pub struct CalledByContractCondition {
@@ -20,7 +18,7 @@ impl WitnessCondition for CalledByContractCondition {
     }
 
     fn size(&self) -> usize {
-        self.base_size() + H160::LEN
+        self.base_size() + H160_SIZE
     }
 
     fn deserialize_without_type(&mut self, reader: &mut MemoryReader, max_nest_depth: usize) {
@@ -39,17 +37,25 @@ impl WitnessCondition for CalledByContractCondition {
         self.hash = H160::from_str(json["hash"].as_str().unwrap()).unwrap();
     }
 
-    fn to_json(&self) -> JToken {
-        let mut json = self.base_to_json();
-        json.insert("hash".to_string(), self.hash.to_string().into());
-        json
-    }
-
     fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         let mut result = self.base_to_stack_item(reference_counter);
         if let StackItem::Array(array) = &mut result {
             array.push(StackItem::ByteString(self.hash.to_vec()));
         }
         result
+    }
+}
+
+
+impl JsonConvertibleTrait for CalledByContractCondition {
+    fn from_json(json: &JToken) -> Option<Self> {
+        let hash = H160::from_str(json["hash"].as_str().unwrap()).unwrap();
+        Some(CalledByContractCondition { hash })
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        let mut json = self.base_to_json();
+        json.insert("hash".to_string(), self.hash.to_string().into());
+        json
     }
 }

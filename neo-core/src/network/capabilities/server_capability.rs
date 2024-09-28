@@ -2,7 +2,7 @@ use std::io::Error;
 use super::NodeCapability;
 use super::NodeCapabilityType;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 
 /// Indicates that the node is a server.
@@ -33,7 +33,7 @@ impl ServerCapability {
     }
 }
 
-impl ISerializable for ServerCapability {
+impl SerializableTrait for ServerCapability {
     fn size(&self) -> usize {
         todo!()
     }

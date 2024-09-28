@@ -4,8 +4,8 @@
 use alloc::{boxed::Box, vec::Vec};
 use core::cmp::Ordering;
 
-use neo_core::types::{Member, MemberCache, ScriptHash, ToBftHash, NEO_TOTAL_SUPPLY};
 use neo_core::PublicKey;
+use neo_core::types::{Member, MemberCache, NEO_TOTAL_SUPPLY, ScriptHash, ToBftHash};
 
 const EFFECTIVE_VOTER_TURNOUT: u64 = 5;
 
@@ -95,7 +95,11 @@ impl Committee {
         // select from candidates if satisfied
         candidates.sort_by(|lhs, rhs| {
             let ordering = lhs.votes.cmp(&rhs.votes);
-            if ordering != Ordering::Equal { ordering } else { lhs.key.cmp(&rhs.key) }
+            if ordering != Ordering::Equal {
+                ordering
+            } else {
+                lhs.key.cmp(&rhs.key)
+            }
         });
 
         candidates.iter().take(nr_committee).map(|member| member.clone()).collect()

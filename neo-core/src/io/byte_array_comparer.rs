@@ -1,4 +1,3 @@
-
 use std::cmp::Ordering;
 
 pub struct ByteArrayComparer {

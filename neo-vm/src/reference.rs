@@ -5,7 +5,6 @@ use core::hash::{Hash, Hasher};
 
 use crate::*;
 
-
 pub(crate) enum TrackItem {
     Array(Array),
     Map(Map),
@@ -13,10 +12,14 @@ pub(crate) enum TrackItem {
 
 impl TrackItem {
     #[inline]
-    pub fn with_array(item: Array) -> Self { TrackItem::Array(item) }
+    pub fn with_array(item: Array) -> Self {
+        TrackItem::Array(item)
+    }
 
     #[inline]
-    pub fn with_map(item: Map) -> Self { TrackItem::Map(item) }
+    pub fn with_map(item: Map) -> Self {
+        TrackItem::Map(item)
+    }
 }
 
 impl PartialEq<Self> for TrackItem {
@@ -49,10 +52,9 @@ impl Hash for TrackItem {
 //     TooDepthNested(u32, u32),
 // }
 
-
 // NOTE: References must drop after Vm existed.
 pub struct References {
-    tracked: hashbrown::HashSet<TrackItem>,
+    tracked:    hashbrown::HashSet<TrackItem>,
     // zero_referred: hashbrown::HashSet<TrackItem>,
     references: isize,
 }
@@ -61,7 +63,7 @@ impl References {
     #[inline]
     pub fn new() -> Self {
         Self {
-            tracked: Default::default(),
+            tracked:    Default::default(),
             // zero_referred: Default::default(),
             references: 0,
         }
@@ -69,11 +71,15 @@ impl References {
 
     // StackItem must add to References before Push to Stack or Slots
     #[inline]
-    pub fn add(&mut self, item: &StackItem) { self.recursive_add(item, 1); }
+    pub fn add(&mut self, item: &StackItem) {
+        self.recursive_add(item, 1);
+    }
 
     // StackItem must remove from References after Pop from Stack or Slots
     #[inline]
-    pub fn remove(&mut self, item: &StackItem) { self.recursive_remove(item, 1); }
+    pub fn remove(&mut self, item: &StackItem) {
+        self.recursive_remove(item, 1);
+    }
 
     fn recursive_add(&mut self, item: &StackItem, depth: u32) {
         self.references += 1;
@@ -101,7 +107,8 @@ impl References {
         self.references -= 1;
         match item {
             StackItem::Array(v) => {
-                if v.strong_count() == 2 { // 2 == item + another one in self.tracked
+                if v.strong_count() == 2 {
+                    // 2 == item + another one in self.tracked
                     v.items().iter().for_each(|x| self.recursive_remove(x, depth + 1));
                     self.tracked.remove(&TrackItem::Array(v.clone()));
                 }
@@ -110,7 +117,8 @@ impl References {
                 v.items().iter().for_each(|x| self.recursive_remove(x, depth + 1));
             }
             StackItem::Map(v) => {
-                if v.strong_count() == 2 { // 2 == item + another one in self.tracked
+                if v.strong_count() == 2 {
+                    // 2 == item + another one in self.tracked
                     v.items().iter().for_each(|(_k, v)| self.recursive_remove(v, depth + 1));
                     self.tracked.remove(&TrackItem::Map(v.clone()));
                 }
@@ -120,9 +128,10 @@ impl References {
     }
 
     #[inline]
-    pub fn references(&self) -> isize { self.references }
+    pub fn references(&self) -> isize {
+        self.references
+    }
 }
-
 
 impl Drop for References {
     fn drop(&mut self) {

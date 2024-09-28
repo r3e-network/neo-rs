@@ -2,7 +2,7 @@ use std::io;
 use std::mem::size_of;
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 
 /// This message is sent to load the BloomFilter.
 pub struct FilterLoadPayload {
@@ -38,7 +38,7 @@ impl FilterLoadPayload {
 
 }
 
-impl ISerializable for FilterLoadPayload {
+impl SerializableTrait for FilterLoadPayload {
     fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let filter = reader.read_var_bytes(36000)?;
         let k = reader.read_u8()?;

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use neo_json::json_convert_trait::IJsonConvertible;
+use neo_json::json_convert_trait::JsonConvertibleTrait;
 use neo_json::json_error::JsonError;
 use neo_json::jtoken::JToken;
 use crate::cryptography::ECPoint;
@@ -44,8 +44,8 @@ impl ContextItem {
     }
 }
 
-impl IJsonConvertible for ContextItem {
-    fn to_json(&self) -> JToken {
+impl JsonConvertibleTrait for ContextItem {
+    fn to_json(&self) -> serde_json::Value {
         let mut json = JToken::new_object();
         json.insert("script", JValue::from(hex::encode(&self.script)));
         json.insert("parameters", JValue::from(self.parameters.iter().map(|p| p.to_json()).collect::<Vec<_>>()));
@@ -56,7 +56,7 @@ impl IJsonConvertible for ContextItem {
         json
     }
 
-    fn from_json(json: &JToken) -> Result<Self, JsonError>
+    fn from_json(json: &serde_json::Value) -> Result<Self, JsonError>
     where
         Self: Sized
     {

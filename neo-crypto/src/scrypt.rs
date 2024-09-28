@@ -16,9 +16,9 @@ pub enum Error {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Params {
-    pub n: u64,
-    pub r: u32,
-    pub p: u32,
+    pub n:   u64,
+    pub r:   u32,
+    pub p:   u32,
     pub len: u32,
 }
 

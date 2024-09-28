@@ -2,7 +2,7 @@
 // All Rights Reserved
 
 use std::ops::DerefMut;
-use std::sync::{mpsc, Mutex};
+use std::sync::{Mutex, mpsc};
 
 use crate::dbft_v2::{HView, ViewNumber};
 

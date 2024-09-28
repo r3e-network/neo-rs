@@ -1,4 +1,3 @@
-
 use std::any::TypeId;
 
 /// Represents an attribute for reflection caching in the Neo ecosystem.

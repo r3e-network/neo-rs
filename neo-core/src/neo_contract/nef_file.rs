@@ -8,12 +8,32 @@ use neo_json::jtoken::JToken;
 use neo_vm::vm::ExecutionEngineLimits;
 use crate::cryptography::Crypto;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::method_token::MethodToken;
+use serde::{Serialize, Deserialize};
+
+/*
+┌───────────────────────────────────────────────────────────────────────┐
+│                    NEO Executable Format 3 (NEF3)                     │
+├──────────┬───────────────┬────────────────────────────────────────────┤
+│  Field   │     Type      │                  Comment                   │
+├──────────┼───────────────┼────────────────────────────────────────────┤
+│ Magic    │ uint32        │ Magic header                               │
+│ Compiler │ byte[64]      │ Compiler name and version                  │
+├──────────┼───────────────┼────────────────────────────────────────────┤
+│ Source   │ byte[]        │ The url of the source files, max 255 bytes │
+│ Reserve  │ byte[2]       │ Reserved for future extensions. Must be 0. │
+│ Tokens   │ MethodToken[] │ Method tokens                              │
+│ Reserve  │ byte[2]       │ Reserved for future extensions. Must be 0. │
+│ Script   │ byte[]        │ Var bytes for the payload                  │
+├──────────┼───────────────┼────────────────────────────────────────────┤
+│ Checksum │ uint32        │ First four bytes of double SHA256 hash     │
+└──────────┴───────────────┴────────────────────────────────────────────┘
+ */
 
 /// Represents the structure of NEO Executable Format.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct NefFile {
     /// The name and version of the compiler that generated this nef file.
     pub compiler: String,
@@ -51,25 +71,19 @@ impl NefFile {
         let hash = Crypto::hash256(&data[..data.len() - 4]);
         u32::from_le_bytes(hash[..4].try_into().unwrap())
     }
+}
 
-    /// Converts the nef file to a JSON object.
-    pub fn to_json(&self) -> JToken {
-        JToken::new_object()
-            .insert("magic".to_string(), Self::MAGIC.into())
-            .unwrap()
-            .insert("compiler".to_string(), self.compiler.clone().into())
-            .unwrap()
-            .insert("source".to_string(), self.source.clone().into())
-            .unwrap()
-            .insert("tokens".to_string(), self.tokens.iter().map(|t| t.to_json()).collect::<Vec<_>>().into())
-            .unwrap()
-            .insert("script".to_string(), base64::encode(&self.script).into())
-            .unwrap()
-            .insert("checksum".to_string(), self.checksum.into())
+impl JsonConvertibleTrait for NefFile {
+    fn to_json(&self) -> serde_json::Value {
+        serde_json::to_value(self).unwrap()
+    }
+    
+    fn from_json(json: &serde_json::Value) -> Result<Self, JsonError> {
+        serde_json::from_value(json.clone()).map_err(|_| JsonError::InvalidFormat)
     }
 }
 
-impl ISerializable for NefFile {
+impl SerializableTrait for NefFile {
     fn size(&self) -> usize {
         Self::HEADER_SIZE +
             self.source.var_size() +

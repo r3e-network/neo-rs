@@ -1,6 +1,6 @@
 use std::io::{Error, ErrorKind};
 use neo_json::jtoken::JToken;
-use neo_vm::References;
+use neo_vm::{References, StackItem};
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
@@ -53,7 +53,7 @@ impl WitnessCondition for AndCondition {
         Ok(())
     }
 
-    fn to_json(&self) -> JToken {
+    fn to_json(&self) -> serde_json::Value {
         // Implement JSON conversion logic here
         JToken::new_object() // Placeholder
     }

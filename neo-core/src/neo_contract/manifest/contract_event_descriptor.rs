@@ -1,6 +1,6 @@
 use alloc::rc::Rc;
 use std::collections::HashMap;
-use neo_json::json_convert_trait::IJsonConvertible;
+use neo_json::json_convert_trait::JsonConvertibleTrait;
 use neo_json::json_error::JsonError;
 use neo_json::jtoken::JToken;
 use neo_vm::References;
@@ -55,13 +55,13 @@ impl IInteroperable for ContractEventDescriptor {
 
 }
 
-impl IJsonConvertible for ContractEventDescriptor {
+impl JsonConvertibleTrait for ContractEventDescriptor {
     /// Converts the event to a JSON object.
     ///
     /// # Returns
     ///
     /// The event represented by a JSON object.
-     fn to_json(&self) -> JToken {
+     fn to_json(&self) -> serde_json::Value {
         let mut json = JToken::new_object();
         json.insert("name".to_string(), JToken::from(self.name.clone()));
         json.insert("parameters".to_string(), JToken::from(self.parameters.iter().map(|u| u.to_json()).collect::<Vec<_>>()));
@@ -77,7 +77,7 @@ impl IJsonConvertible for ContractEventDescriptor {
     /// # Returns
     ///
     /// The converted event.
-     fn from_json(json: &JToken) -> Result<Self, JsonError> {
+     fn from_json(json: &serde_json::Value) -> Result<Self, JsonError> {
         let name = json.get("name")
             .ok_or(JsonError::InvalidFormat)?
             .as_string()

@@ -1,23 +1,19 @@
 use std::collections::{HashMap, HashSet, LinkedList, VecDeque};
-use std::error::Error;
 use std::sync::Arc;
 use actix::dev::Envelope;
 use lazy_static::lazy_static;
-use NeoRust::builder::Transaction;
-use NeoRust::neo_types::{StackItem, VMState};
-use NeoRust::prelude::ScriptBuilder;
 use crate::block::Block;
 use crate::ledger::blockchain_application_executed::ledger::ApplicationExecuted;
 use crate::ledger::verify_result::VerifyResult;
 use crate::neo_contract::application_engine::ApplicationEngine;
-use crate::neo_contract::notify_event_args::NotifyEventArgs;
 use crate::neo_contract::trigger_type::TriggerType;
 use crate::neo_system::NeoSystem;
 use crate::network::LocalNode;
 use crate::store::Store;
-use crate::network::payloads::{IInventory, IVerifiable, InventoryType, Witness};
+use crate::network::payloads::{IInventory, IVerifiable, Transaction};
 use neo_type::H160;
 use neo_type::H256;
+use neo_vm::ScriptBuilder;
 
 pub type CommittingHandler = fn(system: &NeoSystem, block: &Block, snapshot: &dyn Store<WriteBatch=()>, application_executed_list: &[ApplicationExecuted]);
 pub type CommittedHandler = fn(system: &NeoSystem, block: &Block);
@@ -109,7 +105,7 @@ impl Blockchain {
 
     fn add_unverified_block_to_cache(&mut self, block: Block) {
         let list = self.block_cache_unverified
-            .entry(block.index())
+            .entry(block.index)
             .or_insert_with(|| UnverifiedBlocksList {
                 blocks: LinkedList::new(),
                 nodes: HashSet::new(),

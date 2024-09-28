@@ -2,7 +2,7 @@ use neo_io::{MemoryReader, Serializable};
 use neo_types::H256;
 use std::io::{self, Write};
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use neo_type::H256;
 
@@ -35,7 +35,7 @@ impl GetBlocksPayload {
     }
 }
 
-impl ISerializable for GetBlocksPayload {
+impl SerializableTrait for GetBlocksPayload {
     fn size(&self) -> usize {
         self.hash_start.size() + std::mem::size_of::<i16>()
     }

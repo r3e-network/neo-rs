@@ -2,7 +2,6 @@
 // All Rights Reserved
 
 use neo_base::encoding::bin::*;
-
 use neo_crypto::secp256r1::PublicKey;
 
 pub const NEO_TOTAL_SUPPLY: u64 = 1000_000_000; // 0.1 Billion
@@ -16,7 +15,7 @@ pub enum Role {
 
 #[derive(Debug, Clone, BinDecode, BinEncode)]
 pub struct Member {
-    pub key: PublicKey,
+    pub key:   PublicKey,
     pub votes: u64, // U256,
 }
 

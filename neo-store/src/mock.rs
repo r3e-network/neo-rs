@@ -8,7 +8,7 @@ use neo_core::store::{self, *};
 
 struct Item {
     pub version: Version,
-    pub value: Vec<u8>,
+    pub value:   Vec<u8>,
 }
 
 #[derive(Clone)]
@@ -17,14 +17,16 @@ pub struct MockStore {
 }
 
 impl MockStore {
-    pub fn new() -> Self { Self { inner: Arc::new(Mutex::new(MockInner::new())) } }
+    pub fn new() -> Self {
+        Self { inner: Arc::new(Mutex::new(MockInner::new())) }
+    }
 }
 
 #[derive(Clone)]
 pub struct WriteBatch {
     deletes: Vec<(Vec<u8>, Versions)>,
-    puts: Vec<(Vec<u8>, Vec<u8>, Versions)>,
-    inner: Arc<Mutex<MockInner>>,
+    puts:    Vec<(Vec<u8>, Vec<u8>, Versions)>,
+    inner:   Arc<Mutex<MockInner>>,
 }
 
 impl store::WriteBatch for WriteBatch {
@@ -72,11 +74,13 @@ impl store::WriteBatch for WriteBatch {
 
 struct MockInner {
     version: u64,
-    store: BTreeMap<Vec<u8>, Item>,
+    store:   BTreeMap<Vec<u8>, Item>,
 }
 
 impl MockInner {
-    fn new() -> Self { Self { version: 0, store: BTreeMap::new() } }
+    fn new() -> Self {
+        Self { version: 0, store: BTreeMap::new() }
+    }
 
     fn next_version(&mut self) -> Version {
         self.version += 1;

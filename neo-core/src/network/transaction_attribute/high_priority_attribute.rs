@@ -1,7 +1,7 @@
 
 use std::io::{Error, Write};
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::{Transaction};
 use crate::network::transaction_attribute::transaction_attribute::TransactionAttribute;
@@ -11,7 +11,7 @@ use crate::persistence::DataCache;
 /// Indicates that the transaction is of high priority.
 pub struct HighPriorityAttribute;
 
-impl ISerializable for HighPriorityAttribute {
+impl SerializableTrait for HighPriorityAttribute {
     fn size(&self) -> usize {
         todo!()
     }

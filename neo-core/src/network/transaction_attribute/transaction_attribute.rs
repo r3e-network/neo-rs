@@ -1,13 +1,13 @@
 use std::io;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::Transaction;
 use crate::network::transaction_attribute::transaction_attribute_type::TransactionAttributeType;
 use crate::persistence::DataCache;
 
 /// Represents an attribute of a transaction.
-pub trait TransactionAttribute: ISerializable {
+pub trait TransactionAttribute: SerializableTrait {
     /// The type of the attribute.
     fn get_type(&self) -> TransactionAttributeType;
 
@@ -39,7 +39,7 @@ pub trait TransactionAttribute: ISerializable {
     fn deserialize_without_type(&mut self, reader: &mut MemoryReader) -> io::Result<()>;
 
     /// Converts the attribute to a JSON object.
-    fn to_json(&self) -> JToken {
+    fn to_json(&self) -> serde_json::Value { {
         JToken::new_object().insert("type".to_string(), self.get_type() as u8)
     }
 

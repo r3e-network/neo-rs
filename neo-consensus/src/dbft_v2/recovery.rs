@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use neo_base::encoding::bin::*;
-use neo_core::types::{Bytes, Sign, H256, H256_SIZE};
+use neo_core::types::{Bytes, H256, H256_SIZE, Sign};
 
 use crate::dbft_v2::*;
 
@@ -20,10 +20,10 @@ pub struct RecoveryRequest {
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct RecoveryMessage {
-    pub change_views: Vec<ChangeViewCompact>,
+    pub change_views:  Vec<ChangeViewCompact>,
     pub prepare_stage: PrepareStage,
-    pub preparations: Vec<PreparationCompact>,
-    pub commits: Vec<CommitCompact>,
+    pub preparations:  Vec<PreparationCompact>,
+    pub commits:       Vec<CommitCompact>,
 }
 
 impl RecoveryMessage {
@@ -115,30 +115,34 @@ impl BinDecoder for PrepareStage {
             return Err(BinDecodeError::InvalidValue("PrepareStage", offset + 1));
         }
 
-        Ok(Self::Preparation(if size == 0 { None } else { Some(BinDecoder::decode_bin(r)?) }))
+        Ok(Self::Preparation(if size == 0 {
+            None
+        } else {
+            Some(BinDecoder::decode_bin(r)?)
+        }))
     }
 }
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct ChangeViewCompact {
-    pub validator_index: ViewIndex,
+    pub validator_index:      ViewIndex,
     pub original_view_number: ViewNumber,
-    pub unix_milli: u64,
-    pub invocation_script: Bytes,
+    pub unix_milli:           u64,
+    pub invocation_script:    Bytes,
 }
 
 impl ChangeViewCompact {
     pub fn to_change_view_request(&self, block_index: u32) -> Message<ChangeViewRequest> {
         Message {
-            meta: MessageMeta {
+            meta:    MessageMeta {
                 block_index,
                 validator_index: self.validator_index,
                 view_number: self.original_view_number,
             },
             message: ChangeViewRequest {
                 new_view_number: self.original_view_number + 1,
-                unix_milli: self.unix_milli,
-                reason: ChangeViewReason::Unknown,
+                unix_milli:      self.unix_milli,
+                reason:          ChangeViewReason::Unknown,
             },
         }
     }
@@ -155,7 +159,7 @@ pub struct CommitCompact {
 impl CommitCompact {
     pub fn to_commit(&self, block_index: u32) -> Message<Commit> {
         Message {
-            meta: MessageMeta {
+            meta:    MessageMeta {
                 block_index,
                 validator_index: self.validator_index,
                 view_number: self.view_number,
@@ -167,7 +171,7 @@ impl CommitCompact {
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct PreparationCompact {
-    pub validator_index: ViewIndex,
+    pub validator_index:   ViewIndex,
     pub invocation_script: Bytes,
 }
 
@@ -180,7 +184,7 @@ impl PreparationCompact {
     ) -> Message<PrepareResponse> {
         let validator_index = self.validator_index;
         Message {
-            meta: MessageMeta { block_index, validator_index, view_number },
+            meta:    MessageMeta { block_index, validator_index, view_number },
             message: PrepareResponse { preparation },
         }
     }

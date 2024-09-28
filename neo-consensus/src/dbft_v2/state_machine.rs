@@ -2,18 +2,16 @@
 // All Rights Reserved
 
 use alloc::boxed::Box;
-
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
-
 use neo_base::{byzantine_failure_quorum, byzantine_honest_quorum};
 use neo_core::block::{self, Header};
 use neo_core::merkle::MerkleSha256;
 use neo_core::store::ChainStates;
-use neo_core::types::{Sign, ToSignData, H256};
+use neo_core::types::{H256, Sign, ToSignData};
 use neo_crypto::{
     ecdsa::{DigestVerify, Sign as EcdsaSign},
     rand,
@@ -25,27 +23,33 @@ const MAX_ADVANCED_BLOCKS: u64 = 8;
 
 pub struct StateMachine {
     pub(crate) self_keypair: Keypair,
-    pub(crate) timer: ViewTimer,
+    pub(crate) timer:        ViewTimer,
     pub(crate) broadcast_tx: mpsc::SyncSender<Payload>,
 
     pub(crate) unix_milli_now: fn() -> u64,
-    pub(crate) chain: Box<dyn ChainStates>,
-    pub(crate) committee: Committee,
+    pub(crate) chain:          Box<dyn ChainStates>,
+    pub(crate) committee:      Committee,
 
-    pub(crate) states: ConsensusStates,
+    pub(crate) states:  ConsensusStates,
     pub(crate) context: ConsensusContext,
-    pub(crate) header: Option<Header>,
+    pub(crate) header:  Option<Header>,
 }
 
 impl StateMachine {
     #[inline]
-    pub fn states(&self) -> &ConsensusStates { &self.states }
+    pub fn states(&self) -> &ConsensusStates {
+        &self.states
+    }
 
     #[inline]
-    pub fn context(&self) -> &ConsensusContext { &self.context }
+    pub fn context(&self) -> &ConsensusContext {
+        &self.context
+    }
 
     #[inline]
-    pub fn unix_milli_now(&self) -> u64 { (self.unix_milli_now)() }
+    pub fn unix_milli_now(&self) -> u64 {
+        (self.unix_milli_now)()
+    }
 
     pub fn is_view_changing(&self) -> bool {
         if self.states.watch_only {
@@ -437,7 +441,7 @@ impl StateMachine {
         self.extend_timeout_millis(2, per_block_millis);
 
         let message = Message {
-            meta: self.states.new_message_meta(),
+            meta:    self.states.new_message_meta(),
             message: PrepareResponse { preparation: payload_hash },
         };
         self.broadcast_tx
@@ -462,9 +466,9 @@ impl StateMachine {
         if self.context.commit_count() + fails > quorum {
             // TODO: log
             let message = Message {
-                meta: self.states.new_message_meta(),
+                meta:    self.states.new_message_meta(),
                 message: RecoveryRequest {
-                    unix_milli: self.unix_milli_now(),
+                    unix_milli:   self.unix_milli_now(),
                     payload_hash: H256::default(),
                 },
             };
@@ -564,7 +568,7 @@ impl StateMachine {
         let sign = self.self_keypair.secret.sign(&sign_data).expect("`sign(header)` should be ok");
 
         let commit = Message {
-            meta: self.states.new_message_meta(),
+            meta:    self.states.new_message_meta(),
             message: Commit { sign: Sign::from(sign) },
         };
         self.broadcast_tx
@@ -811,9 +815,9 @@ impl StateMachine {
         {
             if !self.context.has_preparation(self.states.primary_index) {
                 let meta = MessageMeta {
-                    block_index: meta.block_index,
+                    block_index:     meta.block_index,
                     validator_index: self.states.primary_index,
-                    view_number: meta.view_number,
+                    view_number:     meta.view_number,
                 };
                 if let Some(r) = message.prepare_request(meta) {
                     self.on_message(settings, Payload::PrepareRequest(r));

@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 
 use neo_base::errors;
 use neo_type::ToScriptHash;
+
 use crate::{OpCode::*, *};
 
 #[derive(Debug, errors::Error)]
@@ -21,8 +22,8 @@ pub enum ProgramError {
 
 #[derive(Debug, Clone)]
 pub struct Op {
-    pub ip: u32,
-    pub code: OpCode,
+    pub ip:      u32,
+    pub code:    OpCode,
     pub operand: Operand,
 }
 
@@ -47,18 +48,24 @@ impl AsOp for OpCode {
 // Neo VM Program
 pub struct Program {
     script_hash: ScriptHash,
-    ops: Vec<Op>,
+    ops:         Vec<Op>,
 }
 
 impl Program {
     #[inline]
-    pub fn nop() -> Self { Self { script_hash: [].to_script_hash(), ops: Vec::new() } }
+    pub fn nop() -> Self {
+        Self { script_hash: [].to_script_hash(), ops: Vec::new() }
+    }
 
     #[inline]
-    pub fn script_hash(&self) -> &ScriptHash { &self.script_hash }
+    pub fn script_hash(&self) -> &ScriptHash {
+        &self.script_hash
+    }
 
     #[inline]
-    pub fn ops(&self) -> &[Op] { &self.ops }
+    pub fn ops(&self) -> &[Op] {
+        &self.ops
+    }
 
     pub fn build(script: &[u8]) -> Result<Program, ProgramError> {
         let mut decoder = ScriptDecoder::new(script);
@@ -98,7 +105,6 @@ impl Program {
         Ok(Program { script_hash: script.to_script_hash(), ops })
     }
 }
-
 
 #[cfg(test)]
 mod test {

@@ -1,9 +1,7 @@
 use crate::json_error::JsonError;
-use crate::jtoken::JToken;
 
-pub trait IJsonConvertible {
-    fn to_json(&self) -> JToken;
-    fn from_json(json: &JToken) -> Result<Self, JsonError>
-    where
-        Self: Sized;
+pub trait JsonConvertibleTrait {
+    fn to_json(&self) -> serde_json::Value;
+    fn from_json(json: &serde_json::Value) -> Result<Self, JsonError>
+    where Self: Sized;
 }

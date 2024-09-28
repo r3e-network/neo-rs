@@ -1,6 +1,6 @@
 use std::io::{Cursor, Write};
 use byteorder::{BigEndian, WriteBytesExt};
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::neo_contract::storage_key::StorageKey;
 
 /// Used to build storage keys for native contracts.
@@ -47,7 +47,7 @@ impl KeyBuilder {
     /// # Arguments
     ///
     /// * `key` - Part of the key.
-    pub fn add_serializable<T: ISerializable>(&mut self, key: &T) -> &mut Self {
+    pub fn add_serializable<T: SerializableTrait>(&mut self, key: &T) -> &mut Self {
         let mut cursor = Cursor::new(Vec::new());
         key.serialize(&mut cursor);
         self.buffer.extend_from_slice(cursor.get_ref());

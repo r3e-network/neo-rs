@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::Witness;
 use crate::protocol_settings::ProtocolSettings;

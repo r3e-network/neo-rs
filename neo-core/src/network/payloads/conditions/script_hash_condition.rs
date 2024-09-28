@@ -3,7 +3,7 @@ use neo_json::jtoken::JToken;
 use neo_vm::References;
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::network::payloads::conditions::{WitnessCondition, WitnessConditionType};
@@ -43,7 +43,7 @@ impl WitnessCondition for ScriptHashCondition {
         Ok(())
     }
 
-    fn to_json(&self) -> JToken {
+    fn to_json(&self) -> serde_json::Value {
         let mut json = self.base_to_json();
         json.insert("hash".to_string(), self.hash.to_string().into());
         json

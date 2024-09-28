@@ -1,5 +1,6 @@
 use std::ops::BitOr;
 use bitflags::bitflags;
+use serde::{Serialize, Deserialize};
 
 /// Represents the operations allowed when a contract is called.
 bitflags! {
@@ -42,5 +43,24 @@ impl BitOr for CallFlags {
 
     fn bitor(self, rhs: Self) -> Self::Output {
         self | rhs;
+    }
+}
+
+impl Serialize for CallFlags {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u8(self.bits())
+    }
+}
+
+impl<'de> Deserialize<'de> for CallFlags {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bits = u8::deserialize(deserializer)?;
+        CallFlags::from_bits(bits).ok_or_else(|| serde::de::Error::custom("Invalid CallFlags value"))
     }
 }

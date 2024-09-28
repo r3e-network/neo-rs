@@ -7,7 +7,7 @@ pub mod inotify_handler;
 pub mod iservice_added_handler;
 pub mod itransaction_added_handler;
 pub mod itransaction_removed_handler;
-pub mod iwallet_changed_handler;
+pub mod wallet_changed_handler_trait;
 
 
 pub fn add(left: usize, right: usize) -> usize {

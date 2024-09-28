@@ -7,8 +7,8 @@ use crate::{References, StackItem};
 
 // i.e. EvaluationStack
 pub struct EvaluationStack {
-    limit: usize,
-    items: Vec<StackItem>,
+    limit:      usize,
+    items:      Vec<StackItem>,
     references: References,
 }
 
@@ -18,10 +18,14 @@ impl EvaluationStack {
     }
 
     #[inline]
-    pub fn references(&self) -> &References { &self.references }
+    pub fn references(&self) -> &References {
+        &self.references
+    }
 
     #[inline]
-    pub fn len(&self) -> usize { self.items.len() }
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
 
     #[inline]
     pub fn push(&mut self, item: StackItem) -> bool {
@@ -40,7 +44,9 @@ impl EvaluationStack {
     }
 
     #[inline]
-    pub fn top(&self) -> Option<&StackItem> { self.items.last() }
+    pub fn top(&self) -> Option<&StackItem> {
+        self.items.last()
+    }
 }
 
 #[cfg(test)]

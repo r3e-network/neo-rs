@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 
 /// Sent to detect whether the connection has been disconnected.
@@ -56,7 +56,7 @@ impl PingPayload {
     }
 }
 
-impl ISerializable for PingPayload {
+impl SerializableTrait for PingPayload {
     fn size(&self) -> usize {
         std::mem::size_of::<u32>() * 3 // LastBlockIndex + Timestamp + Nonce
     }

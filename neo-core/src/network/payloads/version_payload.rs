@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use NeoRust::prelude::{StringExt, VarSizeTrait};
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::capabilities::NodeCapability;
 use crate::network::LocalNode;
@@ -62,7 +62,7 @@ impl VersionPayload {
     }
 }
 
-impl ISerializable for VersionPayload {
+impl SerializableTrait for VersionPayload {
     fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let network = reader.read_u32()?;
         let version = reader.read_u32()?;

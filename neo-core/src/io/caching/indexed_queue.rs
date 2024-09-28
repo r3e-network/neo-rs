@@ -1,4 +1,3 @@
-
 use std::collections::VecDeque;
 
 /// Represents a queue with indexed access to the items

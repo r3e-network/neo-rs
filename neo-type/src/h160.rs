@@ -1,20 +1,20 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use std::{string::String, vec::Vec};
 use core::fmt::{Display, Formatter};
+use std::{string::String, vec::Vec};
 
 use neo_base::{
     encoding::bin::*,
     encoding::hex::{StartsWith0x, ToRevHex},
     errors,
 };
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 pub const H160_SIZE: usize = 20;
 
 /// little endian
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct H160([u8; H160_SIZE]);
 
 impl H160 {
@@ -25,32 +25,46 @@ impl H160 {
         H160::from(buf)
     }
 
-    pub fn is_zero(&self) -> bool { self.0 == [0u8; H160_SIZE] }
+    pub fn is_zero(&self) -> bool {
+        self.0 == [0u8; H160_SIZE]
+    }
 
-    pub fn zero() -> Self { Self([0u8; H160_SIZE]) }
+    pub fn zero() -> Self {
+        Self([0u8; H160_SIZE])
+    }
 
-    pub fn as_le_bytes(&self) -> &[u8] { &self.0 }
+    pub fn as_le_bytes(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl AsRef<[u8; H160_SIZE]> for H160 {
     #[inline]
-    fn as_ref(&self) -> &[u8; H160_SIZE] { &self.0 }
+    fn as_ref(&self) -> &[u8; H160_SIZE] {
+        &self.0
+    }
 }
 
 impl AsRef<[u8]> for H160 {
     #[inline]
-    fn as_ref(&self) -> &[u8] { &self.0 }
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl From<[u8; H160_SIZE]> for H160 {
     /// NOTE: value is little endian
     #[inline]
-    fn from(value: [u8; H160_SIZE]) -> Self { Self(value) }
+    fn from(value: [u8; H160_SIZE]) -> Self {
+        Self(value)
+    }
 }
 
 impl Into<[u8; H160_SIZE]> for H160 {
     #[inline]
-    fn into(self) -> [u8; H160_SIZE] { self.0 }
+    fn into(self) -> [u8; H160_SIZE] {
+        self.0
+    }
 }
 
 impl From<&[u8]> for H160 {
@@ -70,15 +84,6 @@ impl From<&str> for H160 {
     }
 }
 
-impl From<&[u8]> for H160 {
-    fn from(value: &[u8]) -> Self {
-        let mut buf = [0u8; H160_SIZE];
-        buf.copy_from_slice(value);
-        buf.reverse();
-        H160::from(buf)
-    }
-}
-
 impl Display for H160 {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
@@ -88,9 +93,13 @@ impl Display for H160 {
 }
 
 impl BinEncoder for H160 {
-    fn encode_bin(&self, w: &mut impl BinWriter) { w.write(&self.0); }
+    fn encode_bin(&self, w: &mut impl BinWriter) {
+        w.write(&self.0);
+    }
 
-    fn bin_size(&self) -> usize { H160_SIZE }
+    fn bin_size(&self) -> usize {
+        H160_SIZE
+    }
 }
 
 impl BinDecoder for H160 {
@@ -132,24 +141,11 @@ impl TryFrom<&str> for H160 {
     }
 }
 
-impl Serialize for H160 {
-    #[inline]
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_string())
-    }
-}
-
-impl<'de> Deserialize<'de> for H160 {
-    #[inline]
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = String::deserialize(deserializer)?;
-        H160::try_from(value.as_str()).map_err(D::Error::custom)
-    }
-}
-
 impl Default for H160 {
     #[inline]
-    fn default() -> Self { Self([0u8; H160_SIZE]) }
+    fn default() -> Self {
+        Self([0u8; H160_SIZE])
+    }
 }
 
 #[cfg(test)]

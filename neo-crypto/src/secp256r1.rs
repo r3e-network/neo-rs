@@ -4,13 +4,12 @@
 use alloc::string::{String, ToString};
 use core::{convert::TryFrom, result::Result};
 
-use p256::elliptic_curve::sec1::ToEncodedPoint;
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
-
 use neo_base::bytes::{ToArray, ToRevArray};
 use neo_base::encoding::bin::*;
 use neo_base::encoding::hex::{FromHex, ToHex};
 use neo_base::errors;
+use p256::elliptic_curve::sec1::ToEncodedPoint;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 use crate::{key::SecretKey, rand};
 
@@ -29,7 +28,9 @@ pub struct Keypair {
 
 impl Keypair {
     // NOTE: `secret` and `public` must be a keypair
-    pub fn new(secret: PrivateKey, public: PublicKey) -> Self { Self { secret, public } }
+    pub fn new(secret: PrivateKey, public: PublicKey) -> Self {
+        Self { secret, public }
+    }
 }
 
 /// little endian. PrivateKey i.e. SecretKey. sk -> SecretKey, pk -> PublicKey
@@ -46,7 +47,9 @@ pub enum DecodePrivateKeyError {
 
 impl PrivateKey {
     #[inline]
-    pub fn as_le_bytes(&self) -> &[u8] { self.key.as_ref() }
+    pub fn as_le_bytes(&self) -> &[u8] {
+        self.key.as_ref()
+    }
 
     pub fn from_le_bytes(sk: &[u8]) -> Result<Self, DecodePrivateKeyError> {
         use DecodePrivateKeyError as Error;
@@ -56,8 +59,8 @@ impl PrivateKey {
         }
 
         let sk: [u8; KEY_SIZE] = sk.to_rev_array();
-        let point = p256::SecretKey::from_slice(sk.as_slice())
-            .map_err(|_| Error::InvalidPrivateKey)?;
+        let point =
+            p256::SecretKey::from_slice(sk.as_slice()).map_err(|_| Error::InvalidPrivateKey)?;
 
         Ok(Self { key: point.to_bytes().as_slice().to_rev_array().into() })
     }
@@ -70,8 +73,8 @@ impl PrivateKey {
         }
 
         let sk: [u8; KEY_SIZE] = sk.to_array();
-        let point = p256::SecretKey::from_slice(sk.as_slice())
-            .map_err(|_| Error::InvalidPrivateKey)?;
+        let point =
+            p256::SecretKey::from_slice(sk.as_slice()).map_err(|_| Error::InvalidPrivateKey)?;
 
         Ok(Self { key: point.to_bytes().as_slice().to_rev_array().into() })
     }
@@ -116,7 +119,9 @@ pub enum DecodePublicKeyError {
 
 impl PublicKey {
     #[inline]
-    pub fn as_le_bytes(&self) -> (&[u8], &[u8]) { (self.gx.as_slice(), self.gy.as_slice()) }
+    pub fn as_le_bytes(&self) -> (&[u8], &[u8]) {
+        (self.gx.as_slice(), self.gy.as_slice())
+    }
 
     pub fn to_uncompressed(&self) -> [u8; 2 * KEY_SIZE + 1] {
         let mut buf = [0u8; 65];
@@ -201,7 +206,9 @@ impl BinEncoder for PublicKey {
         w.write(pk.as_slice());
     }
 
-    fn bin_size(&self) -> usize { PUBLIC_COMPRESSED_SIZE }
+    fn bin_size(&self) -> usize {
+        PUBLIC_COMPRESSED_SIZE
+    }
 }
 
 impl BinDecoder for PublicKey {
@@ -285,8 +292,8 @@ impl<T: rand::CryptoRand> GenKeypair for T {
 mod test {
     use neo_base::encoding::hex::{DecodeHex, ToHex};
 
-    use crate::rand::OsRand;
     use super::*;
+    use crate::rand::OsRand;
 
     #[test]
     fn test_from_compressed() {
@@ -294,8 +301,7 @@ mod test {
             .decode_hex()
             .expect("hex decode should be ok");
 
-        let key = PublicKey::from_compressed(&x)
-            .expect("from compressed public should be ok");
+        let key = PublicKey::from_compressed(&x).expect("from compressed public should be ok");
 
         let gy: [u8; KEY_SIZE] = key.gy.as_slice().to_rev_array();
         assert_eq!(
@@ -305,8 +311,8 @@ mod test {
         assert_eq!(x.as_slice(), key.to_compressed().as_slice());
 
         let uncompressed = key.to_uncompressed();
-        let got = PublicKey::from_uncompressed(&uncompressed)
-            .expect("from uncompressed should be ok");
+        let got =
+            PublicKey::from_uncompressed(&uncompressed).expect("from uncompressed should be ok");
         assert_eq!(key, got);
 
         let should = "035a928f201639204e06b4368b1a93365462a8ebbff0b8818151b74faab3a2b61a"
@@ -319,15 +325,13 @@ mod test {
     #[test]
     fn test_gen_keypair() {
         for _ in 0..10 {
-            let (sk, pk) = OsRand::gen_keypair(&mut OsRand)
-                .expect("gen_keypair should be ok");
+            let (sk, pk) = OsRand::gen_keypair(&mut OsRand).expect("gen_keypair should be ok");
 
             let got = PublicKey::from_compressed(pk.to_compressed().as_slice())
                 .expect("from compressed public should be ok");
             assert_eq!(pk, got);
 
-            let from_sk = PublicKey::try_from(&sk)
-                .expect("try from sk should be ok");
+            let from_sk = PublicKey::try_from(&sk).expect("try from sk should be ok");
             assert_eq!(pk, from_sk);
         }
     }

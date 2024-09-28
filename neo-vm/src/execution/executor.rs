@@ -48,8 +48,8 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0x1E>, // Push14, 0x1E, 30
     exec_invalid_opcode::<0x1F>, // Push15, 0x1F, 31
     exec_invalid_opcode::<0x20>, // Push16, 0x20, 32
-    |_cx, _op| Ok(()), // Nop, 0x21, 33
-    exec_jmp,                       // Jmp, 0x22, 34
+    |_cx, _op| Ok(()),           // Nop, 0x21, 33
+    exec_jmp,                    // Jmp, 0x22, 34
     exec_invalid_opcode::<0x23>, // JmpL, 0x23, 35
     exec_invalid_opcode::<0x24>, // JmpIf, 0x24, 36
     exec_invalid_opcode::<0x25>, // JmpIfL, 0x25, 37
@@ -82,9 +82,9 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0x40>, // Return, 0x40, 64
     exec_invalid_opcode::<0x41>, // Syscall, 0x41, 65
     exec_invalid_opcode::<0x42>, // Reserved, 0x42, 66
-    exec_depth,                     // Depth, 0x43, 67
+    exec_depth,                  // Depth, 0x43, 67
     exec_invalid_opcode::<0x44>, // Reserved, 0x44, 68
-    exec_drop,                     // Drop, 0x45, 69
+    exec_drop,                   // Drop, 0x45, 69
     exec_invalid_opcode::<0x46>, // Nip, 0x46, 70
     exec_invalid_opcode::<0x47>, // Reserved, 0x47, 71
     exec_invalid_opcode::<0x48>, // Xdrop, 0x48, 72
@@ -101,8 +101,8 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0x53>, // Reverse3, 0x53, 83
     exec_invalid_opcode::<0x54>, // Reverse4, 0x54, 84
     exec_invalid_opcode::<0x55>, // ReverseN, 0x55, 85
-    exec_init_sslot,               // InitSSLot, 0x56, 86
-    exec_init_slot,                // InitSlot, 0x57, 87
+    exec_init_sslot,             // InitSSLot, 0x56, 86
+    exec_init_slot,              // InitSlot, 0x57, 87
     exec_load_static_n::<0x00>,  // LdSFLd0, 0x58, 88
     exec_load_static_n::<0x01>,  // LdSFLd1, 0x59, 89
     exec_load_static_n::<0x02>,  // LdSFLd2, 0x5A, 90
@@ -110,7 +110,7 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_load_static_n::<0x04>,  // LdSFLd4, 0x5C, 92
     exec_load_static_n::<0x05>,  // LdSFLd5, 0x5D, 93
     exec_load_static_n::<0x06>,  // LdSFLd6, 0x5E, 94
-    exec_load_static,              // LdSFLd, 0x5F, 95
+    exec_load_static,            // LdSFLd, 0x5F, 95
     exec_invalid_opcode::<0x60>, // StSFLd0, 0x60, 96
     exec_invalid_opcode::<0x61>, // StSFLd1, 0x61, 97
     exec_invalid_opcode::<0x62>, // StSFLd2, 0x62, 98
@@ -159,16 +159,16 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0x8D>, // Left, 0x8D, 141
     exec_invalid_opcode::<0x8E>, // Right, 0x8E, 142
     exec_invalid_opcode::<0x8F>, // Reserved, 0x8F, 143
-    exec_invert,                   // Invert, 0x90, 144
-    exec_and,                      // And, 0x91, 145
-    exec_or,                       // Or, 0x92, 146
-    exec_xor,                      // Xor, 0x93, 147
+    exec_invert,                 // Invert, 0x90, 144
+    exec_and,                    // And, 0x91, 145
+    exec_or,                     // Or, 0x92, 146
+    exec_xor,                    // Xor, 0x93, 147
     exec_invalid_opcode::<0x94>, // Reserved, 0x94, 148
     exec_invalid_opcode::<0x95>, // Reserved, 0x95, 149
     exec_invalid_opcode::<0x96>, // Reserved, 0x96, 150
-    exec_equal,                     // Equal, 0x97, 151
-    exec_not_equal,                 // NotEqual, 0x98, 152
-    exec_sign,                      // Sign, 0x99, 153
+    exec_equal,                  // Equal, 0x97, 151
+    exec_not_equal,              // NotEqual, 0x98, 152
+    exec_sign,                   // Sign, 0x99, 153
     exec_invalid_opcode::<0x9A>, // Abs, 0x9A, 154
     exec_invalid_opcode::<0x9B>, // Negate, 0x9B, 155
     exec_invalid_opcode::<0x9C>, // Inc, 0x9C, 156
@@ -205,7 +205,7 @@ pub(crate) const EXECUTORS: [Executor; 256] = [
     exec_invalid_opcode::<0xBB>, // Within, 0xBB, 187
     exec_invalid_opcode::<0xBC>, // Reserved, 0xBC, 188
     exec_invalid_opcode::<0xBD>, // Reserved, 0xBD, 189
-    exec_pack_map,                 // PackMap, 0xBE, 190
+    exec_pack_map,               // PackMap, 0xBE, 190
     exec_invalid_opcode::<0xBF>, // PackStruct, 0xBF, 191
     exec_invalid_opcode::<0xC0>, // Pack, 0xC0, 192
     exec_invalid_opcode::<0xC1>, // Unpack, 0xC1, 193

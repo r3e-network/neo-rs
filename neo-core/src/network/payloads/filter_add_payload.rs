@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 
 /// This message is sent to update the items for the BloomFilter.
@@ -10,7 +10,7 @@ pub struct FilterAddPayload {
 }
 
 
-impl ISerializable for FilterAddPayload {
+impl SerializableTrait for FilterAddPayload {
     fn size(&self) -> usize {
         self.data.len()
     }

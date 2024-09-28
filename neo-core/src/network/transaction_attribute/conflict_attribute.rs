@@ -1,17 +1,19 @@
 use std::io::Write;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::{Transaction, TransactionAttribute, TransactionAttributeType};
 use crate::persistence::DataCache;
 use neo_type::H256;
+use crate::network::transaction_attribute::transaction_attribute::TransactionAttribute;
+use crate::network::transaction_attribute_type::TransactionAttributeType;
 
 pub struct Conflicts {
     /// Indicates the conflict transaction hash.
     pub hash: H256,
 }
 
-impl ISerializable for Conflicts {
+impl SerializableTrait for Conflicts {
     fn size(&self) -> usize {
         todo!()
     }

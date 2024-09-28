@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use neo_base::encoding::bin::*;
-use neo_core::types::{Sign, H256};
+use neo_core::types::{H256, Sign};
 
 use crate::dbft_v2::*;
 
@@ -19,16 +19,16 @@ pub enum MessageType {
     ChangeView = 0x00,
     PrepareRequest = 0x20,
     PrepareResponse = 0x21,
-    Commit = 0x30,
+    Commit     = 0x30,
     RecoveryRequest = 0x40,
     RecoveryMessage = 0x41,
 }
 
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 pub struct MessageMeta {
-    pub block_index: u32,
+    pub block_index:     u32,
     pub validator_index: ViewIndex,
-    pub view_number: ViewNumber,
+    pub view_number:     ViewNumber,
 }
 
 impl MessageMeta {
@@ -40,17 +40,17 @@ impl MessageMeta {
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct Message<M: Debug + Clone + BinEncoder + BinDecoder> {
-    pub meta: MessageMeta,
+    pub meta:    MessageMeta,
     pub message: M,
 }
 
 impl Message<ChangeViewRequest> {
     pub fn to_change_view_compact(&self) -> ChangeViewCompact {
         ChangeViewCompact {
-            validator_index: self.meta.validator_index,
+            validator_index:      self.meta.validator_index,
             original_view_number: self.meta.view_number,
-            unix_milli: self.message.unix_milli,
-            invocation_script: Bytes::default(), // TODO: sign
+            unix_milli:           self.message.unix_milli,
+            invocation_script:    Bytes::default(), // TODO: sign
         }
     }
 }
@@ -69,7 +69,7 @@ impl Message<Commit> {
 impl Message<PrepareRequest> {
     pub fn to_preparation_compact(&self) -> PreparationCompact {
         PreparationCompact {
-            validator_index: self.meta.validator_index,
+            validator_index:   self.meta.validator_index,
             invocation_script: Bytes::default(), // TODO: sign
         }
     }
@@ -78,7 +78,7 @@ impl Message<PrepareRequest> {
 impl Message<PrepareResponse> {
     pub fn to_preparation_compact(&self) -> PreparationCompact {
         PreparationCompact {
-            validator_index: self.meta.validator_index,
+            validator_index:   self.meta.validator_index,
             invocation_script: Bytes::default(), // TODO: sign
         }
     }
@@ -133,11 +133,11 @@ impl Payload {
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct PrepareRequest {
-    pub version: u32,
-    pub prev_hash: H256,
+    pub version:    u32,
+    pub prev_hash:  H256,
     pub unix_milli: u64,
-    pub nonce: u64,
-    pub tx_hashes: Vec<H256>,
+    pub nonce:      u64,
+    pub tx_hashes:  Vec<H256>,
 
     /// Extensible hash that contains this PrepareRequest
     #[bin(ignore)]
@@ -151,7 +151,9 @@ pub struct PrepareResponse {
 
 impl PrepareResponse {
     #[inline]
-    pub fn new(prepare_request_hash: H256) -> Self { Self { preparation: prepare_request_hash } }
+    pub fn new(prepare_request_hash: H256) -> Self {
+        Self { preparation: prepare_request_hash }
+    }
 
     #[inline]
     pub fn new_payload(meta: MessageMeta, prepare_request_hash: H256) -> Payload {
@@ -162,13 +164,13 @@ impl PrepareResponse {
 #[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
 #[bin(repr = u8)]
 pub enum ChangeViewReason {
-    Timeout = 0x00,
+    Timeout    = 0x00,
     ChangeAgreement = 0x01,
     TxNotFound = 0x02,
     TxRejectedByPolicy = 0x03,
-    TxInvalid = 0x04,
+    TxInvalid  = 0x04,
     BlockRejectedByPolicy = 0x05,
-    Unknown = 0xff,
+    Unknown    = 0xff,
 }
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
@@ -180,6 +182,6 @@ pub struct Commit {
 pub struct ChangeViewRequest {
     #[bin(ignore)]
     pub new_view_number: ViewNumber,
-    pub unix_milli: u64,
-    pub reason: ChangeViewReason,
+    pub unix_milli:      u64,
+    pub reason:          ChangeViewReason,
 }

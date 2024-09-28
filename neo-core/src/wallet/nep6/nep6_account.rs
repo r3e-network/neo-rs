@@ -60,21 +60,6 @@ impl NEP6Account {
         }
     }
 
-    pub fn from_json(json: &JToken, wallet: NEP6Wallet) -> Result<Self, Error> {
-        let script_hash = json["address"].as_str()
-            .ok_or(Error::InvalidFormat("Missing address"))?
-            .to_script_hash(wallet.protocol_settings().address_version)?;
-        
-        let mut account = Self::new(wallet, script_hash, json["key"].as_str().map(String::from));
-        
-        account.label = json["label"].as_str().map(String::from);
-        account.is_default = json["isDefault"].as_bool().unwrap_or(false);
-        account.lock = json["lock"].as_bool().unwrap_or(false);
-        account.contract = json["contract"].as_object().map(NEP6Contract::from_json);
-        account.extra = json["extra"].clone();
-        
-        Ok(account)
-    }
 
     pub fn get_key_with_password(&mut self, password: &str) -> Result<Option<&KeyPair>, Error> {
         if self.nep2key.is_none() {
@@ -94,19 +79,7 @@ impl NEP6Account {
         Ok(self.key.as_ref())
     }
 
-    pub fn to_json(&self) -> JToken {
-        let mut account = JToken::new_object();
-        account["address"] = JToken::from(self.script_hash.to_address(self.wallet.protocol_settings().address_version));
-        account["label"] = JToken::from(self.label.clone());
-        account["isDefault"] = JToken::from(self.is_default);
-        account["lock"] = JToken::from(self.lock);
-        account["key"] = JToken::from(self.nep2key.clone());
-        if let Some(contract) = &self.contract {
-            account["contract"] = contract.to_json();
-        }
-        account["extra"] = self.extra.clone().unwrap_or_default();
-        account
-    }
+
 
     pub fn verify_password(&self, password: &str) -> bool {
         Wallet::get_private_key_from_nep2(
@@ -168,5 +141,39 @@ impl NEP6Account {
         if !ptr.is_null() {
             unsafe { Box::from_raw(ptr) };
         }
+    }
+}
+
+
+impl JsonConvertibleTrait for NEP6Account {
+    fn from_json(json: &JToken, wallet: NEP6Wallet) -> Result<Self, Error> {
+        let script_hash = json["address"].as_str()
+            .ok_or(Error::InvalidFormat("Missing address"))?
+            .to_script_hash(wallet.protocol_settings().address_version)?;
+        
+        let mut account = Self::new(wallet, script_hash, json["key"].as_str().map(String::from));
+        
+        account.label = json["label"].as_str().map(String::from);
+        account.is_default = json["isDefault"].as_bool().unwrap_or(false);
+        account.lock = json["lock"].as_bool().unwrap_or(false);
+        account.contract = json["contract"].as_object().map(NEP6Contract::from_json);
+        account.extra = json["extra"].clone();
+        
+        Ok(account)
+    }
+
+
+     fn to_json(&self) -> serde_json::Value {
+        let mut account = JToken::new_object();
+        account["address"] = JToken::from(self.script_hash.to_address(self.wallet.protocol_settings().address_version));
+        account["label"] = JToken::from(self.label.clone());
+        account["isDefault"] = JToken::from(self.is_default);
+        account["lock"] = JToken::from(self.lock);
+        account["key"] = JToken::from(self.nep2key.clone());
+        if let Some(contract) = &self.contract {
+            account["contract"] = contract.to_json();
+        }
+        account["extra"] = self.extra.clone().unwrap_or_default();
+        account
     }
 }

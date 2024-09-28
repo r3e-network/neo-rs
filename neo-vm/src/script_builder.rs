@@ -2,26 +2,23 @@
 // All Rights Reserved
 
 use bytes::{BufMut, BytesMut};
-
 use neo_base::math::I256;
 
 use crate::{OpCode, OpCode::*};
 
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(u8)]
 pub enum Jump {
-    Jmp = 0x22,
-    JmpIf = 0x24,
+    Jmp      = 0x22,
+    JmpIf    = 0x24,
     JmpIfNot = 0x26,
-    JmpEq = 0x28,
-    JmpNe = 0x2A,
-    JmpGt = 0x2C,
-    JmpGe = 0x2E,
-    JmpLt = 0x30,
-    JmpLe = 0x32,
+    JmpEq    = 0x28,
+    JmpNe    = 0x2A,
+    JmpGt    = 0x2C,
+    JmpGe    = 0x2E,
+    JmpLt    = 0x30,
+    JmpLe    = 0x32,
 }
-
 
 pub struct ScriptBuilder {
     buf: BytesMut,
@@ -29,7 +26,9 @@ pub struct ScriptBuilder {
 
 impl ScriptBuilder {
     #[inline]
-    pub fn new() -> Self { Self { buf: BytesMut::new() } }
+    pub fn new() -> Self {
+        Self { buf: BytesMut::new() }
+    }
 
     #[inline]
     pub fn emit(&mut self, opcode: OpCode) {
@@ -48,7 +47,8 @@ impl ScriptBuilder {
 
     pub fn emit_try(&mut self, catch: i32, finally: i32) {
         if (catch >= i8::MIN as i32 && catch <= i8::MAX as i32)
-            && (finally >= i8::MIN as i32 && finally <= i8::MAX as i32) {
+            && (finally >= i8::MIN as i32 && finally <= i8::MAX as i32)
+        {
             self.buf.put_u8(Try.as_u8());
             self.buf.put_i8(catch as i8);
             self.buf.put_i8(finally as i8);

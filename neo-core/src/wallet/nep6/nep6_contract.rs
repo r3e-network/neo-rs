@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use neo_json::jtoken::JToken;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
-
+use crate::json_convert_trait::JsonConvertibleTrait;
 #[derive(Clone, Debug)]
 pub struct NEP6Contract {
     pub script: Vec<u8>,
@@ -10,8 +10,8 @@ pub struct NEP6Contract {
     pub deployed: bool,
 }
 
-impl NEP6Contract {
-    pub fn from_json(json: &JToken) -> Option<Self> {
+impl JsonConvertibleTrait for NEP6Contract {
+    fn from_json(json: &JToken) -> Option<Self> {
         if json.is_null() {
             return None;
         }
@@ -36,7 +36,7 @@ impl NEP6Contract {
         })
     }
 
-    pub fn to_json(&self) -> JToken {
+     fn to_json(&self) -> serde_json::Value {
         let mut contract = JToken::new_object();
         contract["script"] = JToken::String(general_purpose::STANDARD.encode(&self.script));
         contract["parameters"] = JToken::Array(

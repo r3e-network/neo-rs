@@ -2,7 +2,7 @@ use neo_core::io::{Serializable, MemoryReader, BinaryWriter};
 use crate::network::payloads::Header;
 use std::io;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::Header;
 
@@ -23,7 +23,7 @@ impl HeadersPayload {
 
 }
 
-impl ISerializable for HeadersPayload {
+impl SerializableTrait for HeadersPayload {
     fn size(&self) -> usize {
         self.headers.var_vec_size()
     }

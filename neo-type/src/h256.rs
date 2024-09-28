@@ -6,7 +6,8 @@ use core::fmt::{Display, Formatter};
 use neo_base::encoding::bin::*;
 use neo_base::encoding::hex::{StartsWith0x, ToRevHex};
 use neo_base::errors;
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+
 use crate::ToH160Error;
 
 pub const H256_SIZE: usize = 32;
@@ -23,27 +24,39 @@ impl H256 {
         H256::from(buf)
     }
 
-    pub fn zero() -> Self { Self([0u8; H256_SIZE]) }
-    
-    pub fn is_zero(&self) -> bool { self.0 == [0u8; H256_SIZE] }
+    pub fn zero() -> Self {
+        Self([0u8; H256_SIZE])
+    }
 
-    pub fn as_le_bytes(&self) -> &[u8] { &self.0 }
+    pub fn is_zero(&self) -> bool {
+        self.0 == [0u8; H256_SIZE]
+    }
+
+    pub fn as_le_bytes(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl AsRef<[u8; H256_SIZE]> for H256 {
     #[inline]
-    fn as_ref(&self) -> &[u8; H256_SIZE] { &self.0 }
+    fn as_ref(&self) -> &[u8; H256_SIZE] {
+        &self.0
+    }
 }
 
 impl AsRef<[u8]> for H256 {
     #[inline]
-    fn as_ref(&self) -> &[u8] { &self.0 }
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl From<[u8; H256_SIZE]> for H256 {
     /// NOTE: value is little endian.
     ///  if H256 is from sha256-hash, and the `to_string` will output a reversed hex-string from sha256-hash.
-    fn from(value: [u8; H256_SIZE]) -> Self { Self(value) }
+    fn from(value: [u8; H256_SIZE]) -> Self {
+        Self(value)
+    }
 }
 
 impl From<&[u8]> for H256 {
@@ -63,7 +76,6 @@ impl From<&str> for H256 {
     }
 }
 
-
 impl Display for H256 {
     #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
@@ -73,9 +85,13 @@ impl Display for H256 {
 }
 
 impl BinEncoder for H256 {
-    fn encode_bin(&self, w: &mut impl BinWriter) { w.write(&self.0); }
+    fn encode_bin(&self, w: &mut impl BinWriter) {
+        w.write(&self.0);
+    }
 
-    fn bin_size(&self) -> usize { H256_SIZE }
+    fn bin_size(&self) -> usize {
+        H256_SIZE
+    }
 }
 
 impl BinDecoder for H256 {
@@ -134,7 +150,9 @@ impl<'de> Deserialize<'de> for H256 {
 
 impl Default for H256 {
     #[inline]
-    fn default() -> Self { Self([0u8; H256_SIZE]) }
+    fn default() -> Self {
+        Self([0u8; H256_SIZE])
+    }
 }
 
 #[cfg(test)]

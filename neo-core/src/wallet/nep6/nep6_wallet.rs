@@ -2,24 +2,26 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use serde_json::json;
+
 use neo_type::H160;
+use serde_json::json;
+
 use crate::protocol_settings::ProtocolSettings;
 use crate::wallet::key_pair::KeyPair;
-use crate::wallet::nep6::{NEP6Account, ScryptParameters};
 use crate::wallet::nep6::nep6_error::Nep6Error;
+use crate::wallet::nep6::{NEP6Account, ScryptParameters};
 
 /// An implementation of the NEP-6 wallet standard.
 ///
 /// See: https://github.com/neo-project/proposals/blob/master/nep-6.mediawiki
 pub struct NEP6Wallet {
     password: String, // Note: In production, use a more secure way to store passwords
-    name: String,
-    version: String,
+    name:     String,
+    version:  String,
     accounts: Arc<Mutex<HashMap<H160, NEP6Account>>>,
-    extra: Option<serde_json::Value>,
-    scrypt: ScryptParameters,
-    path: String,
+    extra:    Option<serde_json::Value>,
+    scrypt:   ScryptParameters,
+    path:     String,
     settings: ProtocolSettings,
 }
 
@@ -29,7 +31,8 @@ impl NEP6Wallet {
         let path_buf = Path::new(path);
         if path_buf.exists() {
             let wallet_json = fs::read_to_string(path).expect("Unable to read wallet file");
-            let wallet: serde_json::Value = serde_json::from_str(&wallet_json).expect("Invalid JSON in wallet file");
+            let wallet: serde_json::Value =
+                serde_json::from_str(&wallet_json).expect("Invalid JSON in wallet file");
             Self::from_json(path, password, settings, &wallet)
         } else {
             Self {
@@ -43,32 +46,6 @@ impl NEP6Wallet {
                 settings,
             }
         }
-    }
-
-    /// Loads the wallet with the specified JSON string.
-    pub fn from_json(path: &str, password: &str, settings: ProtocolSettings, json: &serde_json::Value) -> Self {
-        let mut wallet = Self {
-            password: password.to_string(),
-            name: json["name"].as_str().unwrap_or("").to_string(),
-            version: json["version"].as_str().unwrap_or("1.0").to_string(),
-            accounts: Arc::new(Mutex::new(HashMap::new())),
-            extra: json["extra"].clone(),
-            scrypt: ScryptParameters::from_json(&json["scrypt"]),
-            path: path.to_string(),
-            settings,
-        };
-
-        let accounts = json["accounts"].as_array().expect("Invalid accounts in wallet");
-        for account_json in accounts {
-            let account = NEP6Account::from_json(account_json, &wallet);
-            wallet.add_account(account);
-        }
-
-        if !wallet.verify_password(password) {
-            panic!("Wrong password.");
-        }
-
-        wallet
     }
 
     fn add_account(&self, account: NEP6Account) {
@@ -130,19 +107,6 @@ impl NEP6Wallet {
         self.create_account(&private_key.private_key())
     }
 
-    pub fn to_json(&self) -> serde_json::Value {
-        let accounts = self.accounts.lock().unwrap();
-        let accounts_json: Vec<serde_json::Value> = accounts.values().map(|a| a.to_json()).collect();
-
-        json!({
-            "name": self.name,
-            "version": self.version,
-            "scrypt": self.scrypt.to_json(),
-            "accounts": accounts_json,
-            "extra": self.extra
-        })
-    }
-
     pub fn save(&self) {
         let json = self.to_json().to_string();
         fs::write(&self.path, json).expect("Unable to write wallet file");
@@ -158,7 +122,11 @@ impl NEP6Wallet {
         }
     }
 
-    pub fn change_password(&mut self, old_password: &str, new_password: &str) -> Result<(), Nep6Error> {
+    pub fn change_password(
+        &mut self,
+        old_password: &str,
+        new_password: &str,
+    ) -> Result<(), Nep6Error> {
         if !self.verify_password(old_password) {
             return Err(Nep6Error::InvalidPassword);
         }
@@ -223,10 +191,58 @@ impl Wallet for NEP6Wallet {
     }
 }
 
+impl JsonConvertibleTrait for NEP6Wallet {
+    fn to_json(&self) -> serde_json::Value {
+        let accounts = self.accounts.lock().unwrap();
+        let accounts_json: Vec<serde_json::Value> =
+            accounts.values().map(|a| a.to_json()).collect();
+
+        json!({
+            "name": self.name,
+            "version": self.version,
+            "scrypt": self.scrypt.to_json(),
+            "accounts": accounts_json,
+            "extra": self.extra
+        })
+    }
+
+    /// Loads the wallet with the specified JSON string.
+    fn from_json(
+        path: &str,
+        password: &str,
+        settings: ProtocolSettings,
+        json: &serde_json::Value,
+    ) -> Self {
+        let mut wallet = Self {
+            password: password.to_string(),
+            name: json["name"].as_str().unwrap_or("").to_string(),
+            version: json["version"].as_str().unwrap_or("1.0").to_string(),
+            accounts: Arc::new(Mutex::new(HashMap::new())),
+            extra: Some(json["extra"].clone()),
+            scrypt: ScryptParameters::from_json(&json["scrypt"]),
+            path: path.to_string(),
+            settings,
+        };
+
+        let accounts = json["accounts"].as_array().expect("Invalid accounts in wallet");
+        for account_json in accounts {
+            let account = NEP6Account::from_json(account_json, &wallet);
+            wallet.add_account(account);
+        }
+
+        if !wallet.verify_password(password) {
+            panic!("Wrong password.");
+        }
+
+        wallet
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::tempdir;
+
+    use super::*;
 
     #[test]
     fn test_create_and_save_wallet() {
@@ -234,7 +250,8 @@ mod tests {
         let path = dir.path().join("test_wallet.json");
         let settings = ProtocolSettings::default();
 
-        let wallet = NEP6Wallet::new(path.to_str().unwrap(), "password", &settings, "TestWallet").unwrap();
+        let wallet =
+            NEP6Wallet::new(path.to_str().unwrap(), "password", &settings, "TestWallet").unwrap();
         wallet.save();
 
         assert!(path.exists());
@@ -246,7 +263,8 @@ mod tests {
         let path = dir.path().join("test_wallet.json");
         let settings = ProtocolSettings::default();
 
-        let mut wallet = NEP6Wallet::new(path.to_str().unwrap(), "password", &settings, "TestWallet").unwrap();
+        let mut wallet =
+            NEP6Wallet::new(path.to_str().unwrap(), "password", &settings, "TestWallet").unwrap();
         let key_pair = wallet.create_key().unwrap();
 
         assert!(wallet.contains(&key_pair.script_hash()));
@@ -258,7 +276,8 @@ mod tests {
         let path = dir.path().join("test_wallet.json");
         let settings = ProtocolSettings::default();
 
-        let wallet = NEP6Wallet::new(path.to_str().unwrap(), "password", &settings, "TestWallet").unwrap();
+        let wallet =
+            NEP6Wallet::new(path.to_str().unwrap(), "password", &settings, "TestWallet").unwrap();
 
         assert!(wallet.verify_password("password"));
         assert!(!wallet.verify_password("wrong_password"));

@@ -2,9 +2,8 @@ use std::convert::TryFrom;
 use std::io;
 use neo_json::jtoken::JToken;
 use neo_vm::References;
-use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::conditions::{WitnessCondition, MAX_NESTING_DEPTH};
 use super::WitnessRuleAction;
@@ -19,7 +18,7 @@ pub struct WitnessRule {
     pub condition: dyn WitnessCondition,
 }
 
-impl ISerializable for WitnessRule {
+impl SerializableTrait for WitnessRule {
     fn size(&self) -> usize {
         std::mem::size_of::<WitnessRuleAction>() + self.condition.size()
     }
@@ -55,7 +54,7 @@ impl IJsonConvertible for WitnessRule {
     }
 
     /// Converts the rule to a JSON object.
-     fn to_json(&self) -> JToken {
+     fn to_json(&self) -> serde_json::Value {
         JToken::new_object()
             .insert("action".to_string(), JValue::from(self.action as u8))
             .unwrap()

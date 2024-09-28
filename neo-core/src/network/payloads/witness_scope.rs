@@ -2,6 +2,7 @@ use bitflags::bitflags;
 
 bitflags! {
     /// Represents the scope of a Witness.
+    #[derive(Default,Clone,Eq,PartialEq,Debug)]
     pub struct WitnessScope: u8 {
         /// Indicates that no contract was witnessed. Only sign the transaction.
         const NONE = 0;

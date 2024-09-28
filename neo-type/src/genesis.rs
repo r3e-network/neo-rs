@@ -6,10 +6,11 @@ use std::collections::HashMap;
 
 #[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
-use serde::{Deserialize, Serialize};
 use neo_crypto::secp256r1::PublicKey;
-use crate::dbft::Role;
+use serde::{Deserialize, Serialize};
+
 use crate::Script;
+use crate::dbft::Role;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Genesis {

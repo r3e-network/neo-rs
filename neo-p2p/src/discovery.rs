@@ -5,23 +5,22 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use tokio::sync::mpsc;
-
 use neo_base::math::LcgRand;
 use neo_base::time::UnixTime;
+use tokio::sync::mpsc;
 
-use crate::{*, SeedState::*};
+use crate::{SeedState::*, *};
 
 const CONNECT_RETRY_TIMES: u32 = 3;
 const MAX_POOL_SIZE: usize = 1024;
 
 #[derive(Debug, Clone)]
 pub struct Discoveries {
-    pub net_size: u32,
-    pub fan_out: u32,
+    pub net_size:    u32,
+    pub fan_out:     u32,
     pub unconnected: u32,
-    pub connected: u32,
-    pub goods: u32,
+    pub connected:   u32,
+    pub goods:       u32,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -34,13 +33,15 @@ pub enum SeedState {
 #[allow(dead_code)]
 #[derive(Copy, Clone)]
 pub(crate) struct Knew {
-    pub when: UnixTime,
+    pub when:         UnixTime,
     pub remain_times: u32,
 }
 
 impl Knew {
     #[inline]
-    pub fn new() -> Self { Knew { when: UnixTime::now(), remain_times: CONNECT_RETRY_TIMES } }
+    pub fn new() -> Self {
+        Knew { when: UnixTime::now(), remain_times: CONNECT_RETRY_TIMES }
+    }
 }
 
 pub type Discovery = Arc<Mutex<DiscoveryV1<mpsc::Sender<SocketAddr>>>>;
@@ -48,24 +49,24 @@ pub type Discovery = Arc<Mutex<DiscoveryV1<mpsc::Sender<SocketAddr>>>>;
 // stages: seeds -> unconnected -> attempts -> connected -> goods or failures
 #[allow(dead_code)]
 pub struct DiscoveryV1<Dial: crate::Dial> {
-    dial: Dial,
+    dial:     Dial,
     resolver: DnsResolver,
-    seeds: Vec<(String, Seed)>, // HashMap<String, Seed>,
+    seeds:    Vec<(String, Seed)>, // HashMap<String, Seed>,
 
     // knew but not connected
     unconnected: HashMap<SocketAddr, Knew>,
-    attempts: HashMap<SocketAddr, UnixTime>,
-    connected: HashMap<SocketAddr, Connected>,
+    attempts:    HashMap<SocketAddr, UnixTime>,
+    connected:   HashMap<SocketAddr, Connected>,
 
     // TODO: remove from failures after some time
     failures: HashMap<SocketAddr, UnixTime>,
-    goods: HashMap<SocketAddr, TcpPeer>,
+    goods:    HashMap<SocketAddr, TcpPeer>,
 
     // nonce -> service address
     nodes: HashMap<u32, SocketAddr>,
 
     // i.e. optimal fan out
-    fan_out: u32,
+    fan_out:  u32,
     net_size: u32,
 }
 
@@ -94,7 +95,11 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
 
     fn update_net_size(&mut self) {
         let net_size = self.connected.len() + self.unconnected.len() + 1; // +1 is itself
-        let fan_out = if net_size > 2 { 2.5 * ((net_size - 1) as f64).ln() } else { 1.0 };
+        let fan_out = if net_size > 2 {
+            2.5 * ((net_size - 1) as f64).ln()
+        } else {
+            1.0
+        };
 
         self.fan_out = (fan_out + 0.5) as u32;
         self.net_size = net_size as u32;
@@ -282,10 +287,14 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
 
     // `addr` may be client or server socket addr
     #[inline]
-    pub fn connected(&self, addr: &SocketAddr) -> Option<&Connected> { self.connected.get(addr) }
+    pub fn connected(&self, addr: &SocketAddr) -> Option<&Connected> {
+        self.connected.get(addr)
+    }
 
     #[inline]
-    pub fn good(&self, addr: &SocketAddr) -> Option<&TcpPeer> { self.goods.get(addr) }
+    pub fn good(&self, addr: &SocketAddr) -> Option<&TcpPeer> {
+        self.goods.get(addr)
+    }
 
     #[inline]
     pub fn has_peer(&self, service: &SocketAddr, nonce: u32) -> bool {
@@ -293,23 +302,23 @@ impl<Dial: crate::Dial> DiscoveryV1<Dial> {
     }
 
     #[inline]
-    pub fn connected_peers(&self) -> impl Iterator<Item=&Connected> {
+    pub fn connected_peers(&self) -> impl Iterator<Item = &Connected> {
         self.connected.iter().map(|(_, peer)| peer)
     }
 
     #[inline]
-    pub fn good_peers(&self) -> impl Iterator<Item=&TcpPeer> {
+    pub fn good_peers(&self) -> impl Iterator<Item = &TcpPeer> {
         self.goods.iter().map(|(_, peer)| peer)
     }
 
     #[inline]
     pub fn discoveries(&self) -> Discoveries {
         Discoveries {
-            net_size: self.net_size,
-            fan_out: self.fan_out,
+            net_size:    self.net_size,
+            fan_out:     self.fan_out,
             unconnected: self.unconnected.len() as u32,
-            connected: self.connected.len() as u32,
-            goods: self.goods.len() as u32,
+            connected:   self.connected.len() as u32,
+            goods:       self.goods.len() as u32,
         }
     }
 }
@@ -342,17 +351,14 @@ mod test {
         assert!(PeerStage::Connected.belongs(connected.stages()));
         assert!(!disc.attempts.contains_key(&addr));
 
-        disc.on_good(TcpPeer::new(
-            addr,
-            Version {
-                network: Network::DevNet.as_magic(),
-                version: 0,
-                unix_seconds: unix_seconds_now() as u32,
-                nonce: 12345,
-                user_agent: "x".into(),
-                capabilities: vec![Capability::TcpServer { port: addr.port() }],
-            },
-        ));
+        disc.on_good(TcpPeer::new(addr, Version {
+            network:      Network::DevNet.as_magic(),
+            version:      0,
+            unix_seconds: unix_seconds_now() as u32,
+            nonce:        12345,
+            user_agent:   "x".into(),
+            capabilities: vec![Capability::TcpServer { port: addr.port() }],
+        }));
 
         let Some(peer) = disc.good(&addr) else {
             panic!("should be exists");

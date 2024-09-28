@@ -22,9 +22,13 @@ pub const BUILD_DATE: &str = compile_time::date_str!();
 pub const VERSION: &str =
     const_format::concatcp!("neo-rs (", platform(), "; ", BUILD_DATE, "_", GIT_VERSION, ")");
 
-pub fn byzantine_honest_quorum(n: u32) -> u32 { n - (n - 1) / 3 }
+pub fn byzantine_honest_quorum(n: u32) -> u32 {
+    n - (n - 1) / 3
+}
 
-pub fn byzantine_failure_quorum(n: u32) -> u32 { (n - 1) / 3 }
+pub fn byzantine_failure_quorum(n: u32) -> u32 {
+    (n - 1) / 3
+}
 
 // #[cfg(all(not(test), not(feature = "std")))]
 // #[panic_handler]

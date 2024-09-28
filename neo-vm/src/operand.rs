@@ -4,7 +4,6 @@
 use neo_base::bytes::{PickU16, PickU32, PickU64};
 use tinyvec::TinyVec;
 
-
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct CodeAttr {
     pub price: u64,
@@ -66,7 +65,8 @@ impl Operand {
 #[cfg(test)]
 mod test {
     use strum::IntoEnumIterator;
-    use crate::vm::{OpCode, OP_CODES};
+
+    use crate::vm::{OP_CODES, OpCode};
 
     #[test]
     fn test_opcode_valid() {

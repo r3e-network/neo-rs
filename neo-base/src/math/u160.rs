@@ -6,7 +6,7 @@ use core::cmp::{Ord, Ordering, PartialOrd};
 use core::fmt::{Display, Formatter};
 use core::ops::{Add, BitAnd, BitOr, BitXor, Not, Sub};
 
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 use crate::encoding::hex::StartsWith0x;
 use crate::math::Widening;
@@ -67,17 +67,23 @@ impl Display for U160 {
 
 impl From<u64> for U160 {
     #[inline]
-    fn from(value: u64) -> Self { Self { n: [value, 0, 0] } }
+    fn from(value: u64) -> Self {
+        Self { n: [value, 0, 0] }
+    }
 }
 
 impl From<u128> for U160 {
     #[inline]
-    fn from(value: u128) -> Self { Self { n: [value as u64, (value >> 64) as u64, 0] } }
+    fn from(value: u128) -> Self {
+        Self { n: [value as u64, (value >> 64) as u64, 0] }
+    }
 }
 
 impl PartialOrd for U160 {
     #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Ord for U160 {
@@ -136,7 +142,9 @@ impl<'de> Deserialize<'de> for U160 {
 
 impl Default for U160 {
     #[inline]
-    fn default() -> Self { Self { n: [0; N] } }
+    fn default() -> Self {
+        Self { n: [0; N] }
+    }
 }
 
 impl Add for U160 {

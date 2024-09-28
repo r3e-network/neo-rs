@@ -1,5 +1,6 @@
-use encoding_rs::Encoding;
 use std::sync::OnceLock;
+
+use encoding_rs::Encoding;
 
 pub mod json {
     use super::*;

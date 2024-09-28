@@ -3,6 +3,7 @@ pub(crate) mod payloads;
 mod capabilities;
 mod transaction_attribute;
 mod connection;
+mod network_error;
 
 pub use connection::*;
 pub use helper::*;

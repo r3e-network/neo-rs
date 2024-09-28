@@ -49,7 +49,7 @@ impl WitnessCondition for NotCondition {
         Ok(())
     }
 
-    fn to_json(&self) -> JToken {
+    fn to_json(&self) -> serde_json::Value {
         JToken::new_object()
             .insert("type".to_string(), self.condition_type().to_string().into())
             .unwrap()

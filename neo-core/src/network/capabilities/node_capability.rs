@@ -1,11 +1,11 @@
 use std::io;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::capabilities::{FullNodeCapability, NodeCapabilityType, ServerCapability};
 
 /// Represents the capabilities of a NEO node.
-pub trait NodeCapability : ISerializable{
+pub trait NodeCapability : SerializableTrait {
     /// Indicates the type of the NodeCapability.
     fn capability_type(&self) -> NodeCapabilityType;
 

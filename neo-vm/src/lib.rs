@@ -8,28 +8,28 @@ extern crate alloc;
 use alloc::{rc::Rc, vec::Vec};
 
 use neo_base::errors;
-
 pub use {decode::*, execution::*, execution_context::*, interop::*, script_builder::*};
 pub use {evaluation_stack::*, operand::*, program::*, reference::*, stackitem_type::*};
 use {slots::*, tables::*};
+
 use crate::vm::{OpCode, VMState};
 
-pub mod script_builder;
-pub mod execution_context;
+mod call_flags;
 pub mod decode;
+pub mod evaluation_stack;
+pub mod exception;
 pub mod execution;
+pub mod execution_context;
 pub mod interop;
 pub mod operand;
 pub mod program;
 pub mod reference;
-pub mod slots;
-pub mod evaluation_stack;
-pub mod tables;
-pub mod stackitem_type;
-pub mod vm;
 pub mod script;
-pub mod exception;
-mod call_flags;
+pub mod script_builder;
+pub mod slots;
+pub mod stackitem_type;
+pub mod tables;
+pub mod vm;
 pub mod vm_error;
 
 pub const MAX_STACK_SIZE: usize = 2048;
@@ -42,7 +42,9 @@ pub trait RunPrice {
 
 impl RunPrice for OpCode {
     #[inline]
-    fn price(&self) -> u64 { CODE_ATTRS[self.as_u8() as usize].price }
+    fn price(&self) -> u64 {
+        CODE_ATTRS[self.as_u8() as usize].price
+    }
 }
 
 #[derive(Debug, errors::Error)]
@@ -105,22 +107,16 @@ impl ExecError {
 // }
 
 pub struct NeoVm<Env: VmEnv> {
-    state: VMState,
-    gas_limit: u64,
+    state:        VMState,
+    gas_limit:    u64,
     gas_consumed: u64,
-    invocations: Vec<ExecutionContext>,
-    env: Env,
+    invocations:  Vec<ExecutionContext>,
+    env:          Env,
 }
 
 impl<Env: VmEnv> NeoVm<Env> {
     pub fn new(gas_limit: u64, env: Env) -> Self {
-        NeoVm {
-            state: VMState::Break,
-            gas_limit,
-            gas_consumed: 0,
-            invocations: Vec::new(),
-            env,
-        }
+        NeoVm { state: VMState::Break, gas_limit, gas_consumed: 0, invocations: Vec::new(), env }
     }
 
     pub fn execute(&mut self) -> Result<(), ExecError> {
@@ -141,8 +137,12 @@ impl<Env: VmEnv> NeoVm<Env> {
     }
 
     #[inline]
-    pub fn vm_state(&self) -> VMState { self.state }
+    pub fn vm_state(&self) -> VMState {
+        self.state
+    }
 
     #[inline]
-    fn current_cx(&mut self) -> Option<&mut ExecutionContext> { self.invocations.last_mut() }
+    fn current_cx(&mut self) -> Option<&mut ExecutionContext> {
+        self.invocations.last_mut()
+    }
 }

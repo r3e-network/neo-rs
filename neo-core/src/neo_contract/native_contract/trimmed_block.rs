@@ -5,7 +5,7 @@ use neo_vm::References;
 use neo_vm::StackItem;
 use crate::block::Header;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::neo_contract::native_contract::native_contract_error::NativeContractError;
@@ -33,7 +33,7 @@ impl TrimmedBlock {
     }
 }
 
-impl ISerializable for TrimmedBlock {
+impl SerializableTrait for TrimmedBlock {
     fn size(&self) -> usize {
         self.header.size() + self.hashes.var_size()
     }

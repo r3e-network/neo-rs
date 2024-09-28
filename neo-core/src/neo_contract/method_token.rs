@@ -2,12 +2,13 @@ use std::io::{Read, Write};
 use NeoRust::prelude::StringExt;
 use neo_json::jtoken::JToken;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::call_flags::CallFlags;
 use neo_type::H160;
 
 /// Represents the methods that a contract will call statically.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MethodToken {
     /// The hash of the contract to be called.
     pub hash: H160,
@@ -16,20 +17,22 @@ pub struct MethodToken {
     pub method: String,
 
     /// The number of parameters of the method to be called.
+    #[serde(rename = "paramcount")]
     pub parameters_count: u16,
 
     /// Indicates whether the method to be called has a return value.
+    #[serde(rename = "hasreturnvalue")]
     pub has_return_value: bool,
 
     /// The CallFlags to be used to call the contract.
+    #[serde(rename = "callflags")]
     pub call_flags: CallFlags,
 }
 
-impl MethodToken {
-
+impl JsonConvertibleTrait for MethodToken {
 
     /// Converts the token to a JSON object.
-    pub fn to_json(&self) -> JToken {
+    fn to_json(&self) -> serde_json::Value {
         JToken::new_object()
             .insert("hash".to_string(), self.hash.to_string())
             .unwrap()
@@ -41,12 +44,19 @@ impl MethodToken {
             .unwrap()
             .insert("callflags".to_string(), self.call_flags)
             .unwrap()
-
-
     }
+
+    fn from_json(json: &serde_json::Value) -> Result<Self, JsonError> {
+        let hash = json.get("hash")
+            .and_then(|v| v.as_str())
+            .ok_or(JsonError::InvalidFormat)?;
+        let hash = H160::from_str(hash).map_err(|_| JsonError::InvalidFormat)?;
+
+        let method = json.get("method")
+            .and_then(|v| v.as_str())
 }
 
-impl ISerializable for MethodToken {
+impl SerializableTrait for MethodToken {
     fn size(&self) -> usize {
         H160::LEN +
             self.method.var_size() +

@@ -68,11 +68,13 @@ pub const VALID_UNTIL_BLOCK_INCREMENT_BASE: u64 = 86_400_000;
 pub enum Network {
     MainNet = 0x00746e41,
     TestNet = 0x74746e41,
-    DevNet = 0x4e454e, // i.e. PrivateNet
+    DevNet  = 0x4e454e, // i.e. PrivateNet
 }
 
 impl Network {
-    pub const fn as_magic(self) -> u32 { self as u32 }
+    pub const fn as_magic(self) -> u32 {
+        self as u32
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -85,13 +87,13 @@ pub enum HardFork {
 #[derive(Debug, Copy, Clone)]
 pub struct HardForkHeight {
     pub hard_fork: HardFork,
-    pub height: u32,
+    pub height:    u32,
 }
 
 #[derive(Debug)]
 pub struct NeoConfig {
-    pub network: u32,
-    pub address_version: u8,
+    pub network:          u32,
+    pub address_version:  u8,
     pub per_block_millis: u64,
 
     pub standby_committee: Vec<PublicKey>,
@@ -152,18 +154,18 @@ pub const fn max_block_timestamp_increment(per_block_millis: u64) -> u64 {
 
 #[derive(Debug)]
 pub struct WalletConfig {
-    pub path: String,
+    pub path:     String,
     pub password: String,
 }
 
 #[derive(Debug)]
 pub struct ConsensusConfig {
-    pub enabled: bool,
+    pub enabled:       bool,
     pub unlock_wallet: WalletConfig,
 }
 
 #[derive(Debug)]
 pub struct AppConfig {
     pub log_level: String,
-    pub log_path: String,
+    pub log_path:  String,
 }

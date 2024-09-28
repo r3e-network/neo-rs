@@ -1,12 +1,14 @@
 use std::collections::HashSet;
 use std::hash::Hasher;
 use std::io::{Read, Write};
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::network::payloads::{IInventory, IVerifiable, InventoryType, Witness};
 use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
 use neo_type::H160;
 use neo_type::H256;
+use crate::io::binary_writer::BinaryWriter;
+use crate::io::memory_reader::MemoryReader;
 
 /// Represents an extensible message that can be relayed.
 pub struct ExtensiblePayload {
@@ -47,7 +49,7 @@ impl IInventory for ExtensiblePayload {
     }
 }
 
-impl ISerializable for ExtensiblePayload {
+impl SerializableTrait for ExtensiblePayload {
     fn size(&self) -> usize {
         todo!()
     }
@@ -102,6 +104,8 @@ impl IVerifiable for ExtensiblePayload {
     fn set_witnesses(&mut self, witnesses: Vec<Witness>) {
         todo!()
     }
+
+    type Error = ();
 }
 
 impl ExtensiblePayload {

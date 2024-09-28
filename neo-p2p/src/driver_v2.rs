@@ -3,11 +3,12 @@
 
 use std::io::Error as IoError;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicI32, AtomicU32, Ordering::Relaxed};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, AtomicU32, Ordering::Relaxed};
 use std::time::Duration;
 
 use dashmap::DashMap;
+use neo_core::types::Bytes;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::error::TrySendError;
@@ -17,8 +18,6 @@ use tokio_stream::StreamExt;
 use tokio_util::bytes::BytesMut;
 use tokio_util::codec::{Encoder, FramedRead};
 use tokio_util::sync::{CancellationToken, DropGuard};
-
-use neo_core::types::Bytes;
 
 use crate::{NetEvent::*, *};
 
@@ -34,11 +33,11 @@ pub type NetHandles = Arc<DashMap<SocketAddr, NetHandle>>;
 #[derive(Clone)]
 pub struct NetDriver {
     max_peers: usize,
-    runtime: Handle,
-    listen: SocketAddr,
-    handles: NetHandles,
-    close_tx: mpsc::Sender<SocketAddr>,
-    net_tx: mpsc::Sender<NetMessage>,
+    runtime:   Handle,
+    listen:    SocketAddr,
+    handles:   NetHandles,
+    close_tx:  mpsc::Sender<SocketAddr>,
+    net_tx:    mpsc::Sender<NetMessage>,
 }
 
 impl NetDriver {
@@ -58,7 +57,9 @@ impl NetDriver {
     }
 
     #[inline]
-    pub fn net_handles(&self) -> NetHandles { self.handles.clone() }
+    pub fn net_handles(&self) -> NetHandles {
+        self.handles.clone()
+    }
 
     #[inline]
     fn remove_net_handle(&self, peer: &SocketAddr) -> Option<NetHandle> {
@@ -143,7 +144,11 @@ impl NetDriver {
     }
 
     async fn on_established(&self, peer: SocketAddr, event: NetEvent, stream: TcpStream) {
-        let source = if matches!(event, Accepted) { "Accepted" } else { "Connected" };
+        let source = if matches!(event, Accepted) {
+            "Accepted"
+        } else {
+            "Connected"
+        };
         log::info!("`on_established` for {} with {}", &peer, source);
 
         let canceler = CancellationToken::new();
@@ -233,14 +238,16 @@ impl NetDriver {
 
 #[allow(dead_code)]
 pub(crate) struct NetHandleStates {
-    sent_get_addrs: AtomicI32,
+    sent_get_addrs:   AtomicI32,
     last_block_index: AtomicU32,
-    cancel: DropGuard,
+    cancel:           DropGuard,
 }
 
 impl NetHandleStates {
     #[inline]
-    pub fn last_block_index(&self) -> u32 { self.last_block_index.load(Relaxed) }
+    pub fn last_block_index(&self) -> u32 {
+        self.last_block_index.load(Relaxed)
+    }
 
     #[inline]
     pub fn set_last_block_index(&self, new: u32) {
@@ -251,7 +258,9 @@ impl NetHandleStates {
     }
 
     #[inline]
-    pub fn on_sent_get_address(&self) { self.sent_get_addrs.fetch_add(1, Relaxed); }
+    pub fn on_sent_get_address(&self) {
+        self.sent_get_addrs.fetch_add(1, Relaxed);
+    }
 
     pub fn on_recv_address(&self) -> bool {
         loop {
@@ -269,7 +278,7 @@ impl NetHandleStates {
 
 #[derive(Clone)]
 pub struct NetHandle {
-    data_tx: mpsc::Sender<Bytes>,
+    data_tx:           mpsc::Sender<Bytes>,
     pub(crate) states: Arc<NetHandleStates>,
 }
 
@@ -279,9 +288,9 @@ impl NetHandle {
         Self {
             data_tx,
             states: Arc::new(NetHandleStates {
-                sent_get_addrs: AtomicI32::new(0),
+                sent_get_addrs:   AtomicI32::new(0),
                 last_block_index: AtomicU32::new(0),
-                cancel: cancel.drop_guard(),
+                cancel:           cancel.drop_guard(),
             }),
         }
     }
@@ -316,40 +325,33 @@ mod test {
     use neo_core::payload::{P2pMessage, Ping};
     use tokio::runtime::Runtime;
 
-    use crate::{driver_v2::*, ToMessageEncoded};
+    use crate::{ToMessageEncoded, driver_v2::*};
 
     #[test]
     fn test_listen() {
-        let addr = "127.0.0.1:10123".parse()
-            .expect("parse should be ok");
+        let addr = "127.0.0.1:10123".parse().expect("parse should be ok");
 
         let cancel = CancellationToken::new();
         let (net_tx, mut net_rx) = mpsc::channel(MESSAGE_CHAN_SIZE);
 
-        let runtime = Runtime::new()
-            .expect("Runtime::new() should be ok");
+        let runtime = Runtime::new().expect("Runtime::new() should be ok");
         let driver = NetDriver::new(runtime.handle().clone(), 128, addr, net_tx);
 
         driver.on_accepting(cancel.clone());
         std::thread::sleep(Duration::from_secs(1));
 
-        let mut stream = TcpStream::connect(addr)
-            .expect("`connect` should be ok");
+        let mut stream = TcpStream::connect(addr).expect("`connect` should be ok");
 
         let ping = P2pMessage::Ping(Ping { last_block_index: 2, unix_seconds: 3, nonce: 4 });
-        let buf = ping.to_message_encoded()
-            .expect("`to_message_encoded` should be ok");
+        let buf = ping.to_message_encoded().expect("`to_message_encoded` should be ok");
 
-        stream.write_all(buf.as_ref())
-            .expect("`write_all` should be ok");
+        stream.write_all(buf.as_ref()).expect("`write_all` should be ok");
         // stream.write_all(buf.as_ref()).expect("`write_all` should be ok");
 
-        let recv = net_rx.blocking_recv()
-            .expect("`blocking_recv` should be Some");
+        let recv = net_rx.blocking_recv().expect("`blocking_recv` should be Some");
         assert_eq!(recv.event, Accepted);
 
-        let recv = net_rx.blocking_recv()
-            .expect("`blocking_recv` should be Some");
+        let recv = net_rx.blocking_recv().expect("`blocking_recv` should be Some");
         assert!(matches!(recv.event, Message(_)));
 
         let Message(event) = recv.event else {
@@ -357,8 +359,7 @@ mod test {
         };
 
         let mut buf = RefBuffer::from(event.as_bytes());
-        let recv: P2pMessage = BinDecoder::decode_bin(&mut buf)
-            .expect("`decode_bin` should be ok");
+        let recv: P2pMessage = BinDecoder::decode_bin(&mut buf).expect("`decode_bin` should be ok");
         assert!(matches!(recv, P2pMessage::Ping(_)));
 
         let P2pMessage::Ping(ping) = recv else {
@@ -368,8 +369,7 @@ mod test {
         assert_eq!(ping.unix_seconds, 3);
         assert_eq!(ping.nonce, 4);
 
-        let local = stream.local_addr()
-            .expect("`local_addr` should be ok");
+        let local = stream.local_addr().expect("`local_addr` should be ok");
         driver.remove_net_handle(&local);
 
         cancel.cancel();

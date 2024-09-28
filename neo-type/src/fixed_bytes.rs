@@ -1,24 +1,30 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use std::{string::String, vec::Vec};
 use core::net::IpAddr;
+use std::{string::String, vec::Vec};
 
 use bytes::{BufMut, BytesMut};
 use neo_base::encoding::{base64::*, bin::*};
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct FixedBytes<const N: usize>(pub [u8; N]);
 
 impl<const N: usize> FixedBytes<N> {
-    pub fn as_bytes(&self) -> &[u8] { &self.0 }
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
 
-    pub fn is_zero(&self) -> bool { self.0.iter().all(|x| *x == 0) }
+    pub fn is_zero(&self) -> bool {
+        self.0.iter().all(|x| *x == 0)
+    }
 }
 
 impl<const N: usize> From<[u8; N]> for FixedBytes<N> {
-    fn from(value: [u8; N]) -> Self { Self(value) }
+    fn from(value: [u8; N]) -> Self {
+        Self(value)
+    }
 }
 
 impl<const N: usize> From<&[u8]> for FixedBytes<N> {
@@ -32,25 +38,37 @@ impl<const N: usize> From<&[u8]> for FixedBytes<N> {
 }
 
 impl<const N: usize> Into<[u8; N]> for FixedBytes<N> {
-    fn into(self) -> [u8; N] { self.0 }
+    fn into(self) -> [u8; N] {
+        self.0
+    }
 }
 
 impl<const N: usize> AsRef<[u8; N]> for FixedBytes<N> {
-    fn as_ref(&self) -> &[u8; N] { &self.0 }
+    fn as_ref(&self) -> &[u8; N] {
+        &self.0
+    }
 }
 
 impl<const N: usize> AsRef<[u8]> for FixedBytes<N> {
-    fn as_ref(&self) -> &[u8] { self.0.as_ref() }
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
 }
 
 impl<const N: usize> Default for FixedBytes<N> {
-    fn default() -> Self { Self([0u8; N]) }
+    fn default() -> Self {
+        Self([0u8; N])
+    }
 }
 
 impl<const N: usize> BinEncoder for FixedBytes<N> {
-    fn encode_bin(&self, w: &mut impl BinWriter) { w.write(self.0.as_ref()) }
+    fn encode_bin(&self, w: &mut impl BinWriter) {
+        w.write(self.0.as_ref())
+    }
 
-    fn bin_size(&self) -> usize { N }
+    fn bin_size(&self) -> usize {
+        N
+    }
 }
 
 impl<const N: usize> BinDecoder for FixedBytes<N> {
@@ -91,25 +109,37 @@ impl From<IpAddr> for FixedBytes<16> {
 pub struct Bytes(pub Vec<u8>);
 
 impl Bytes {
-    pub fn len(&self) -> usize { self.0.len() }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 
-    pub fn as_bytes(&self) -> &[u8] { self.0.as_slice() }
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_slice()
+    }
 }
 
 impl From<Vec<u8>> for Bytes {
-    fn from(value: Vec<u8>) -> Self { Bytes(value) }
+    fn from(value: Vec<u8>) -> Self {
+        Bytes(value)
+    }
 }
 
 impl Into<Vec<u8>> for Bytes {
-    fn into(self) -> Vec<u8> { self.0 }
+    fn into(self) -> Vec<u8> {
+        self.0
+    }
 }
 
 impl AsRef<[u8]> for Bytes {
-    fn as_ref(&self) -> &[u8] { self.0.as_ref() }
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
 }
 
 impl Default for Bytes {
-    fn default() -> Self { Self(Default::default()) }
+    fn default() -> Self {
+        Self(Default::default())
+    }
 }
 
 impl BinEncoder for Bytes {

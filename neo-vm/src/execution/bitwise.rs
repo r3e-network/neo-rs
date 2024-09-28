@@ -73,8 +73,10 @@ mod test {
 
     #[test]
     fn test_exec_invert() {
-        let mut cx =
-            ExecutionContext::new(EvaluationStack::new(1024, References::new()), Rc::new(Program::nop()));
+        let mut cx = ExecutionContext::new(
+            EvaluationStack::new(1024, References::new()),
+            Rc::new(Program::nop()),
+        );
 
         let op = Op { ip: 1, code: OpCode::Invert, operand: Default::default() };
         let _ = exec_invert(&mut cx, &op).expect_err("empty stack should be failed");

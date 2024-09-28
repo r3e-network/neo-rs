@@ -4,6 +4,7 @@
 use bytes::BytesMut;
 use neo_base::encoding::bin::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use crate::{Bytes, CheckSign, ToCheckSign};
 
 // The maximum length of invocation-script.
@@ -28,25 +29,37 @@ pub struct Script {
 }
 
 impl Script {
-    pub fn len(&self) -> usize { self.script.len() }
+    pub fn len(&self) -> usize {
+        self.script.len()
+    }
 
-    pub fn as_bytes(&self) -> &[u8] { self.script.as_bytes() }
+    pub fn as_bytes(&self) -> &[u8] {
+        self.script.as_bytes()
+    }
 }
 
 impl From<&[u8]> for Script {
-    fn from(value: &[u8]) -> Self { Self { script: value.to_vec().into() } }
+    fn from(value: &[u8]) -> Self {
+        Self { script: value.to_vec().into() }
+    }
 }
 
 impl From<Vec<u8>> for Script {
-    fn from(value: Vec<u8>) -> Self { Self { script: value.into() } }
+    fn from(value: Vec<u8>) -> Self {
+        Self { script: value.into() }
+    }
 }
 
 impl From<BytesMut> for Script {
-    fn from(value: BytesMut) -> Self { Self { script: Bytes(value.into()) } }
+    fn from(value: BytesMut) -> Self {
+        Self { script: Bytes(value.into()) }
+    }
 }
 
 impl AsRef<[u8]> for Script {
-    fn as_ref(&self) -> &[u8] { self.script.as_ref() }
+    fn as_ref(&self) -> &[u8] {
+        self.script.as_ref()
+    }
 }
 
 impl Serialize for Script {
@@ -68,5 +81,7 @@ pub trait ToVerificationScript {
 }
 
 impl<T: ToCheckSign> ToVerificationScript for T {
-    fn to_verification_script(&self) -> CheckSign { self.to_check_sign() }
+    fn to_verification_script(&self) -> CheckSign {
+        self.to_check_sign()
+    }
 }

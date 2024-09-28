@@ -1,6 +1,6 @@
 use std::io::Write;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::calculate_hash;
 use crate::network::payloads::Witness;
@@ -9,7 +9,7 @@ use neo_type::H160;
 use neo_type::H256;
 
 /// Represents an object that can be verified in the NEO network.
-pub trait IVerifiable: ISerializable {
+pub trait IVerifiable: SerializableTrait {
     type Error;
 
     /// The hash of the IVerifiable object.

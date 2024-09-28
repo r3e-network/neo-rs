@@ -16,25 +16,39 @@ pub struct UnixTime(i64);
 
 impl UnixTime {
     #[inline]
-    pub fn now() -> UnixTime { Self(utc_now().timestamp_micros()) }
+    pub fn now() -> UnixTime {
+        Self(utc_now().timestamp_micros())
+    }
 
-    pub const fn from_millis(millis: i64) -> Self { Self(millis) }
+    pub const fn from_millis(millis: i64) -> Self {
+        Self(millis)
+    }
 
-    pub const fn unix_micros(&self) -> i64 { self.0 }
+    pub const fn unix_micros(&self) -> i64 {
+        self.0
+    }
 
-    pub const fn unix_millis(&self) -> i64 { self.0 / 1000 }
+    pub const fn unix_millis(&self) -> i64 {
+        self.0 / 1000
+    }
 
-    pub const fn unix_seconds(&self) -> i64 { self.0 / 1000 / 1000 }
+    pub const fn unix_seconds(&self) -> i64 {
+        self.0 / 1000 / 1000
+    }
 
     #[inline]
-    pub fn since(u: UnixTime) -> TimeDelta { TimeDelta::microseconds(Self::now().0 - u.0) }
+    pub fn since(u: UnixTime) -> TimeDelta {
+        TimeDelta::microseconds(Self::now().0 - u.0)
+    }
 }
 
 impl Sub for UnixTime {
     type Output = TimeDelta;
 
     #[inline]
-    fn sub(self, rhs: Self) -> Self::Output { TimeDelta::microseconds(self.0 - rhs.0) }
+    fn sub(self, rhs: Self) -> Self::Output {
+        TimeDelta::microseconds(self.0 - rhs.0)
+    }
 }
 
 impl Add<Duration> for UnixTime {
@@ -80,38 +94,60 @@ pub struct AtomicUnixTime(AtomicI64);
 
 impl AtomicUnixTime {
     #[inline]
-    pub fn now() -> AtomicUnixTime { Self(AtomicI64::new(utc_now().timestamp_micros())) }
+    pub fn now() -> AtomicUnixTime {
+        Self(AtomicI64::new(utc_now().timestamp_micros()))
+    }
 
-    pub const fn from_millis(millis: i64) -> Self { Self(AtomicI64::new(millis)) }
+    pub const fn from_millis(millis: i64) -> Self {
+        Self(AtomicI64::new(millis))
+    }
 
-    pub fn unix_micros(&self) -> i64 { self.0.load(Relaxed) }
+    pub fn unix_micros(&self) -> i64 {
+        self.0.load(Relaxed)
+    }
 
-    pub fn unix_millis(&self) -> i64 { self.unix_micros() / 1000 }
+    pub fn unix_millis(&self) -> i64 {
+        self.unix_micros() / 1000
+    }
 
-    pub fn unix_seconds(&self) -> i64 { self.unix_micros() / 1000 / 1000 }
+    pub fn unix_seconds(&self) -> i64 {
+        self.unix_micros() / 1000 / 1000
+    }
 
-    pub fn load(&self) -> UnixTime { UnixTime(self.unix_micros()) }
+    pub fn load(&self) -> UnixTime {
+        UnixTime(self.unix_micros())
+    }
 
-    pub fn store(&self, new: UnixTime) { self.0.store(new.0, Relaxed) }
+    pub fn store(&self, new: UnixTime) {
+        self.0.store(new.0, Relaxed)
+    }
 }
 
 #[inline]
-pub fn unix_millis_now() -> u64 { UnixTime::now().unix_millis() as u64 }
+pub fn unix_millis_now() -> u64 {
+    UnixTime::now().unix_millis() as u64
+}
 
 #[inline]
-pub fn unix_seconds_now() -> u64 { UnixTime::now().unix_seconds() as u64 }
+pub fn unix_seconds_now() -> u64 {
+    UnixTime::now().unix_seconds() as u64
+}
 
 #[inline]
-pub fn utc_now() -> UtcTime { chrono::Utc::now() }
+pub fn utc_now() -> UtcTime {
+    chrono::Utc::now()
+}
 
 #[inline]
-pub fn local_now() -> LocalTime { chrono::Local::now() }
+pub fn local_now() -> LocalTime {
+    chrono::Local::now()
+}
 
 pub struct Tick {
-    unix_millis: AtomicU64,
-    interval: Duration,
+    unix_millis:  AtomicU64,
+    interval:     Duration,
     check_millis: u64,
-    stopped: AtomicBool,
+    stopped:      AtomicBool,
 }
 
 impl Tick {
@@ -139,10 +175,14 @@ impl Tick {
     }
 
     #[inline]
-    pub fn is_stopped(&self) -> bool { self.stopped.load(Relaxed) }
+    pub fn is_stopped(&self) -> bool {
+        self.stopped.load(Relaxed)
+    }
 
     #[inline]
-    pub fn stop(&self) { self.stopped.store(true, Relaxed) }
+    pub fn stop(&self) {
+        self.stopped.store(true, Relaxed)
+    }
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ mod indexed_queue;
 mod keyed_collection_slim;
 mod reflection_cache_attribute;
 mod ecpoint_cache;
+mod reflection_cache;
 
 pub use cache::*;
 pub use fifocache::*;
@@ -13,4 +14,5 @@ pub use indexed_queue::*;
 pub use keyed_collection_slim::*;
 pub use reflection_cache_attribute::*;
 pub use ecpoint_cache::*;
+pub use reflection_cache::*;
 

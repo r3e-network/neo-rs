@@ -81,7 +81,9 @@ pub trait PickU16 {
 
 impl<const N: usize> PickU16 for [u8; N] {
     #[inline]
-    fn pick_le_u16(&self) -> u16 { u16::from_le_bytes([self[0], self[1]]) }
+    fn pick_le_u16(&self) -> u16 {
+        u16::from_le_bytes([self[0], self[1]])
+    }
 }
 
 pub trait PickU32 {
@@ -90,7 +92,9 @@ pub trait PickU32 {
 
 impl<const N: usize> PickU32 for [u8; N] {
     #[inline]
-    fn pick_le_u32(&self) -> u32 { u32::from_le_bytes([self[0], self[1], self[2], self[3]]) }
+    fn pick_le_u32(&self) -> u32 {
+        u32::from_le_bytes([self[0], self[1], self[2], self[3]])
+    }
 }
 
 pub trait PickU64 {
@@ -100,9 +104,7 @@ pub trait PickU64 {
 impl<const N: usize> PickU64 for [u8; N] {
     #[inline]
     fn pick_le_u64(&self) -> u64 {
-        u64::from_le_bytes([
-            self[0], self[1], self[2], self[3], self[4], self[5], self[6], self[7],
-        ])
+        u64::from_le_bytes([self[0], self[1], self[2], self[3], self[4], self[5], self[6], self[7]])
     }
 }
 
@@ -126,9 +128,7 @@ impl PickU64 for [u8] {
     #[inline]
     fn pick_le_u64(&self) -> u64 {
         let _ = self[7];
-        u64::from_le_bytes([
-            self[0], self[1], self[2], self[3], self[4], self[5], self[6], self[7],
-        ])
+        u64::from_le_bytes([self[0], self[1], self[2], self[3], self[4], self[5], self[6], self[7]])
     }
 }
 
@@ -138,12 +138,16 @@ pub trait PickU128 {
 
 impl<const N: usize> PickU128 for [u8; N] {
     #[inline]
-    fn pick_le_u128(&self) -> u128 { u128::from_le_bytes(self.to_array()) }
+    fn pick_le_u128(&self) -> u128 {
+        u128::from_le_bytes(self.to_array())
+    }
 }
 
 impl PickU128 for [u8] {
     #[inline]
-    fn pick_le_u128(&self) -> u128 { u128::from_le_bytes(self.to_array()) }
+    fn pick_le_u128(&self) -> u128 {
+        u128::from_le_bytes(self.to_array())
+    }
 }
 
 pub trait PickU256 {
@@ -152,12 +156,16 @@ pub trait PickU256 {
 
 impl<const N: usize> PickU256 for [u8; N] {
     #[inline]
-    fn pick_le_u256(&self) -> U256 { U256::from_le_bytes(&self.to_array()) }
+    fn pick_le_u256(&self) -> U256 {
+        U256::from_le_bytes(&self.to_array())
+    }
 }
 
 impl PickU256 for [u8] {
     #[inline]
-    fn pick_le_u256(&self) -> U256 { U256::from_le_bytes(&self.to_array()) }
+    fn pick_le_u256(&self) -> U256 {
+        U256::from_le_bytes(&self.to_array())
+    }
 }
 
 pub trait PickAtMost<const N: usize> {

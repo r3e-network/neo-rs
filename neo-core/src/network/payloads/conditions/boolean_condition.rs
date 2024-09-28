@@ -1,7 +1,6 @@
 use core::fmt::{Debug};
 use neo_json::jtoken::JToken;
-use neo_vm::References;
-use neo_vm::stack_item::StackItem;
+use neo_vm::{References, StackItem};
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
 use crate::neo_contract::application_engine::ApplicationEngine;
@@ -38,11 +37,7 @@ impl WitnessCondition for BooleanCondition {
         self.expression = json["expression"].as_bool().unwrap();
     }
 
-    fn to_json(&self) -> JToken {
-        let mut json = <Self as WitnessCondition>::to_json(self);
-        json.insert("expression".to_string(), self.expression.into()).expect("TODO: panic message");
-        json
-    }
+
 
     fn to_stack_item(&self, reference_counter: &mut References) -> StackItem {
         let mut result = <Self as WitnessCondition>::to_stack_item(self, reference_counter);
@@ -51,4 +46,18 @@ impl WitnessCondition for BooleanCondition {
         }
         result
     }
+}
+
+
+impl JsonConvertibleTrait for BooleanCondition {
+    fn from_json(json: &JToken) -> Option<Self> {
+        let expression = json["expression"].as_bool().unwrap();
+        Some(BooleanCondition { expression })
+    }
+    fn to_json(&self) -> serde_json::Value {
+        let mut json = <Self as WitnessCondition>::to_json(self);
+        json.insert("expression".to_string(), self.expression.into()).expect("TODO: panic message");
+        json
+    }
+    
 }

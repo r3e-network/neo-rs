@@ -2,7 +2,7 @@ use neo_io::{BinaryReader, BinaryWriter};
 use std::io;
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::network::payloads::HeadersPayload;
 
 /// This message is sent to request for blocks by index.
@@ -33,7 +33,7 @@ impl GetBlockByIndexPayload {
     }
 }
 
-impl ISerializable for GetBlockByIndexPayload {
+impl SerializableTrait for GetBlockByIndexPayload {
     fn size(&self) -> usize {
         std::mem::size_of::<u32>() + std::mem::size_of::<i16>()
     }

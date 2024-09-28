@@ -1,9 +1,11 @@
-use crate::jpath_token::JPath;
-use crate::json_error::JsonError;
+use std::convert::{TryFrom, TryInto};
+
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::convert::{TryFrom, TryInto};
+
+use crate::jpath_token::JPath;
+use crate::json_error::JsonError;
 /// Represents the largest safe integer in JSON.
 pub const MAX_SAFE_INTEGER: i64 = (1 << 53) - 1;
 
@@ -406,7 +408,6 @@ impl From<IndexMap<String, JToken>> for JToken {
         JToken::Object(value)
     }
 }
-
 
 // impl from json to JToken
 impl From<Value> for JToken {

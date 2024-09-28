@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 use NeoRust::types::StackItem;
 use num_bigint::BigInt;
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
-use crate::io::iserializable::ISerializable;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::neo_contract::binary_serializer::BinarySerializer;
 use crate::neo_contract::iinteroperable::IInteroperable;
 
@@ -121,7 +121,7 @@ impl StorageItem {
     }
 }
 
-impl ISerializable for StorageItem {
+impl SerializableTrait for StorageItem {
     fn size(&self) -> usize {
         self.value().len()
     }

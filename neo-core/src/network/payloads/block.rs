@@ -1,8 +1,8 @@
-use std::io::Write;
-use crate::network::payloads::{Header, Transaction};
-use neo_type::H256;
+use crate::network::payloads::{Header, IInventory, IVerifiable, InventoryType, Transaction, Witness};
+use neo_type::{H160, H256};
 use getset::{CopyGetters, Getters, MutGetters, Setters};
 use crate::cryptography::MerkleTree;
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
 use crate::ledger::header_cache::HeaderCache;
 use crate::persistence::DataCache;
@@ -88,7 +88,7 @@ impl Block {
         }
     }
 
-    pub fn to_json(&self, settings: &ProtocolSettings) -> JObject {
+    pub fn to_json(&self, settings: &ProtocolSettings) -> serde_json::Value {
         let mut json = self.header.to_json(settings);
         json.insert("size", self.size() as i64);
         json.insert("tx", self.transactions.iter().map(|tx| tx.to_json(settings)).collect::<Vec<_>>());
@@ -103,8 +103,6 @@ impl Block {
         self.header.verify_with_header_cache(settings, snapshot, header_cache)
     }
 }
-
-
 
 impl PartialEq for Block {
     fn eq(&mut self, other: &mut Self) -> bool {
@@ -131,7 +129,7 @@ impl IVerifiable for Block {
         self.header.witnesses()
     }
 
-    fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<H160> {
+    fn get_script_hashes_for_verifying(&self, snapshot: &dyn DataCache) -> Vec<H160> {
         self.header.get_script_hashes_for_verifying(snapshot)
     }
 }

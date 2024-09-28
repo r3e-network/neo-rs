@@ -4,7 +4,7 @@ use neo_base::encoding::base64;
 use neo_vm::stack_item::StackItem;
 use neo_vm::References;
 use neo_vm::StackItem;
-use crate::{io::iserializable::ISerializable, neo_contract::iinteroperable::IInteroperable};
+use crate::{io::serializable_trait::SerializableTrait, neo_contract::iinteroperable::IInteroperable};
 use crate::cryptography::ECPoint;
 use crate::neo_contract::manifest::manifest_error::ManifestError;
 

@@ -1,4 +1,5 @@
 use std::ops::BitOr;
+
 use bitflags::bitflags;
 
 /// Represents the operations allowed when a contract is called.

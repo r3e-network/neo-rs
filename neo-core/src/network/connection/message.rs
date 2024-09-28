@@ -1,5 +1,7 @@
 use std::io::{self, Write};
-use crate::io::iserializable::ISerializable;
+use crate::io::binary_writer::BinaryWriter;
+use crate::io::caching::ReflectionCache;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::MessageCommand;
 
@@ -12,7 +14,7 @@ pub enum MessageFlags {
 pub struct Message {
     pub flags: MessageFlags,
     pub command: MessageCommand,
-    pub payload: Option<Box<dyn ISerializable>>,
+    pub payload: Option<Box<dyn SerializableTrait>>,
     payload_compressed: Vec<u8>,
 }
 
@@ -21,7 +23,7 @@ impl Message {
     const COMPRESSION_MIN_SIZE: usize = 128;
     const COMPRESSION_THRESHOLD: usize = 64;
 
-    pub fn new(command: MessageCommand, payload: Option<Box<dyn ISerializable>>) -> Self {
+    pub fn new(command: MessageCommand, payload: Option<Box<dyn SerializableTrait>>) -> Self {
         let mut message = Message {
             flags: MessageFlags::None,
             command,
@@ -125,7 +127,7 @@ impl Message {
     }
 }
 
-impl ISerializable for Message {
+impl SerializableTrait for Message {
     fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
         let flags = MessageFlags::from(reader.read_u8()?);
         let command = MessageCommand::from(reader.read_u8()?);

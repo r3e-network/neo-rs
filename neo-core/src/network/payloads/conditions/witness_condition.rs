@@ -66,7 +66,7 @@ pub trait WitnessCondition: fmt::Debug {
         Ok(condition)
     }
 
-    fn to_json(&self) -> JToken {
+    fn to_json(&self) -> serde_json::Value {
         let mut json = JToken::new_object();
         json.insert("type", self.condition_type().to_string());
         json
