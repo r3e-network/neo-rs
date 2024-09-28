@@ -3,17 +3,21 @@ use aes_gcm::aes::Aes256;
 use sha2::{Digest, Sha256};
 use neo_base::encoding::base58;
 use crate::contract::Contract;
-use crate::cryptography::ECPoint;
+use crate::cryptography::{ECCurve, ECPoint};
 use neo_type::H160;
 
+use getset::{Getters, Setters};
+
 /// Represents a private/public key pair in wallets.
-#[derive(Clone)]
+#[derive(Clone, Getters, Setters)]
 pub struct KeyPair {
     /// The private key.
-    pub private_key: [u8; 32],
+    #[getset(get = "pub", set = "pub")]
+    private_key: [u8; 32],
 
     /// The public key.
-    pub public_key: ECPoint,
+    #[getset(get = "pub", set = "pub")]
+    public_key: ECPoint,
 }
 
 impl KeyPair {
@@ -35,7 +39,7 @@ impl KeyPair {
         let public_key = if private_key.len() == 32 {
             ECPoint::from_private_key(&private_key)
         } else {
-            ECPoint::from_bytes(&private_key, ECCurve::Secp256r1)?
+            ECPoint::from_bytes(&private_key, ECCurve::secp256r1())?
         };
 
         Ok(Self { private_key, public_key })

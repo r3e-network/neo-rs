@@ -1,86 +1,77 @@
-package native
-
-import (
-	"crypto/elliptic"
-	"errors"
-	"math/big"
-
-	"github.com/nspcc-dev/neo-go/pkg/crypto/keys"
-	"github.com/nspcc-dev/neo-go/pkg/vm/stackitem"
-)
+use std::error::Error;
+use num_bigint::BigInt;
+use crate::crypto::keys::PublicKey;
+use crate::vm::stackitem::{Item, Convertible};
 
 // IDList is a list of oracle request IDs.
-type IDList []uint64
+pub type IDList = Vec<u64>;
 
 // NodeList represents a list of oracle nodes.
-type NodeList keys.PublicKeys
+pub type NodeList = Vec<PublicKey>;
 
-// ToStackItem implements stackitem.Convertible. It never returns an error.
-func (l IDList) ToStackItem() (stackitem.Item, error) {
-	arr := make([]stackitem.Item, len(l))
-	for i := range l {
-		arr[i] = stackitem.NewBigInteger(new(big.Int).SetUint64(l[i]))
-	}
-	return stackitem.NewArray(arr), nil
+impl Convertible for IDList {
+    // ToStackItem implements stackitem::Convertible. It never returns an error.
+    fn to_stack_item(&self) -> Result<Item, Box<dyn Error>> {
+        let arr: Vec<Item> = self.iter()
+            .map(|&id| Item::BigInteger(BigInt::from(id)))
+            .collect();
+        Ok(Item::Array(arr))
+    }
+
+    // FromStackItem implements stackitem::Convertible.
+    fn from_stack_item(item: &Item) -> Result<Self, Box<dyn Error>> {
+        if let Item::Array(arr) = item {
+            let mut result = IDList::with_capacity(arr.len());
+            for item in arr {
+                if let Item::BigInteger(bi) = item {
+                    result.push(bi.to_u64().ok_or("Integer overflow")?);
+                } else {
+                    return Err("Expected BigInteger item".into());
+                }
+            }
+            Ok(result)
+        } else {
+            Err("Expected Array item".into())
+        }
+    }
 }
 
-// FromStackItem implements stackitem.Convertible.
-func (l *IDList) FromStackItem(it stackitem.Item) error {
-	arr, ok := it.Value().([]stackitem.Item)
-	if !ok {
-		return errors.New("not an array")
-	}
-	*l = make(IDList, len(arr))
-	for i := range arr {
-		bi, err := arr[i].TryInteger()
-		if err != nil {
-			return err
-		}
-		(*l)[i] = bi.Uint64()
-	}
-	return nil
+impl IDList {
+    // Remove removes id from the list.
+    pub fn remove(&mut self, id: u64) -> bool {
+        if let Some(index) = self.iter().position(|&x| x == id) {
+            self.remove(index);
+            true
+        } else {
+            false
+        }
+    }
 }
 
-// Remove removes id from the list.
-func (l *IDList) Remove(id uint64) bool {
-	for i := range *l {
-		if id == (*l)[i] {
-			if i < len(*l) {
-				copy((*l)[i:], (*l)[i+1:])
-			}
-			*l = (*l)[:len(*l)-1]
-			return true
-		}
-	}
-	return false
-}
+impl Convertible for NodeList {
+    // ToStackItem implements stackitem::Convertible. It never returns an error.
+    fn to_stack_item(&self) -> Result<Item, Box<dyn Error>> {
+        let arr: Vec<Item> = self.iter()
+            .map(|key| Item::ByteArray(key.to_bytes()))
+            .collect();
+        Ok(Item::Array(arr))
+    }
 
-// ToStackItem implements stackitem.Convertible. It never returns an error.
-func (l NodeList) ToStackItem() (stackitem.Item, error) {
-	arr := make([]stackitem.Item, len(l))
-	for i := range l {
-		arr[i] = stackitem.NewByteArray(l[i].Bytes())
-	}
-	return stackitem.NewArray(arr), nil
-}
-
-// FromStackItem implements stackitem.Convertible.
-func (l *NodeList) FromStackItem(it stackitem.Item) error {
-	arr, ok := it.Value().([]stackitem.Item)
-	if !ok {
-		return errors.New("not an array")
-	}
-	*l = make(NodeList, len(arr))
-	for i := range arr {
-		bs, err := arr[i].TryBytes()
-		if err != nil {
-			return err
-		}
-		pub, err := keys.NewPublicKeyFromBytes(bs, elliptic.P256())
-		if err != nil {
-			return err
-		}
-		(*l)[i] = pub
-	}
-	return nil
+    // FromStackItem implements stackitem::Convertible.
+    fn from_stack_item(item: &Item) -> Result<Self, Box<dyn Error>> {
+        if let Item::Array(arr) = item {
+            let mut result = NodeList::with_capacity(arr.len());
+            for item in arr {
+                if let Item::ByteArray(bytes) = item {
+                    let pub_key = PublicKey::from_bytes(bytes)?;
+                    result.push(pub_key);
+                } else {
+                    return Err("Expected ByteArray item".into());
+                }
+            }
+            Ok(result)
+        } else {
+            Err("Expected Array item".into())
+        }
+    }
 }

@@ -46,7 +46,6 @@ impl TransactionAttribute for NotValidBefore {
         self.height = reader.read_u32();
     }
 
-
 }
 
 impl NotValidBefore{

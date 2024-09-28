@@ -3,10 +3,8 @@
 
 use alloc::{string::String, vec::Vec};
 use core::net::SocketAddr;
-
 use neo_base::encoding::bin::*;
-
-use crate::types::{Bytes, FixedBytes};
+use neo_type::{Bytes, FixedBytes};
 
 const MAX_CAPABILITIES: usize = 32;
 const MAX_USER_AGENT_SIZE: usize = 1024;

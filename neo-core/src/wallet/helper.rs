@@ -29,7 +29,7 @@ pub mod helper {
     ///
     /// The signature for the `IVerifiable`.
     pub fn sign(verifiable: &impl IVerifiable, key: &KeyPair, network: u32) -> Vec<u8> {
-        Crypto::sign(&verifiable.get_sign_data(network), &key.private_key())
+        Crypto::sign(&verifiable.get_sign_data(network), &key.private_key(), None, Hasher::Sha256)
     }
 
     /// Converts the specified script hash to an address.
@@ -98,7 +98,7 @@ pub mod helper {
         account_script: impl Fn(&H160) -> Option<Vec<u8>>,
         max_execution_cost: i64,
     ) -> Result<i64, String> {
-        let hashes = tx.get_script_hashes_for_verifying(snapshot)?;
+        let hashes = tx.get_script_hashes_for_verifying(Some(snapshot))?;
 
         // base size for transaction: includes const_header + signers + attributes + script + hashes
         let mut size = Transaction::HEADER_SIZE
@@ -113,9 +113,9 @@ pub mod helper {
             let witness_script = account_script(hash);
             let mut invocation_script = None;
 
-            if tx.witnesses.is_some() && witness_script.is_none() {
+            if tx.witnesses().is_some() && witness_script.is_none() {
                 // Try to find the script in the witnesses
-                if let Some(witness) = tx.witnesses.as_ref().unwrap().get(index) {
+                if let Some(witness) = tx.witnesses().as_ref().unwrap().get(index) {
                     let verification_script = witness.verification_script.to_vec();
                     if verification_script.is_empty() {
                         // Then it's a contract-based witness, so try to get the corresponding invocation script for it
@@ -155,7 +155,7 @@ pub mod helper {
                     return Err(format!("Smart contract {} returns false.", contract.hash));
                 }
 
-                max_execution_cost -= engine.fee_consumed;
+                max_execution_cost -= engine.fee_consumed();
                 if max_execution_cost <= 0 {
                     return Err("Insufficient GAS.".into());
                 }

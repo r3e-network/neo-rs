@@ -1,12 +1,15 @@
+use alloc::rc::Rc;
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::{ HashSet};
 use std::convert::TryFrom;
-use std::io::{self};
+use std::io::{self, Error};
 use std::mem;
+use NeoRust::builder::InteropService;
 use NeoRust::neo_types::VMState;
 use NeoRust::prelude::VarSizeTrait;
 use neo_json::jtoken::JToken;
-use neo_vm::{OpCode, ScriptBuilder};
+use neo_vm::{OpCode, References, ScriptBuilder, StackItem};
 use crate::contract::{CallFlags, TriggerType};
 use crate::cryptography::{Crypto, Helper};
 use crate::io::binary_writer::BinaryWriter;
@@ -22,20 +25,34 @@ use crate::protocol_settings::ProtocolSettings;
 use crate::store::Snapshot;
 use neo_type::H160;
 use neo_type::H256;
+use crate::io::serializable_trait::SerializableTrait;
+use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::network::network_error::NetworkError;
 
 /// Represents a transaction.
-#[derive(Clone)]
+use getset::{Getters, Setters};
+
+#[derive(Clone, Getters, Setters)]
 pub struct Transaction {
+    #[getset(get = "pub", set = "pub")]
     version: u8,
+    #[getset(get = "pub", set = "pub")]
     nonce: u32,
     // In the unit of datoshi, 1 datoshi = 1e-8 GAS
+    #[getset(get = "pub", set = "pub")]
     sys_fee: i64,
     // In the unit of datoshi, 1 datoshi = 1e-8 GAS
+    #[getset(get = "pub", set = "pub")]
     net_fee: i64,
+    #[getset(get = "pub", set = "pub")]
     valid_until_block: u32,
-    pub(crate) signers: Vec<Signer>,
+    #[getset(get = "pub", set = "pub")]
+    pub signers: Vec<Signer>,
+    #[getset(get = "pub", set = "pub")]
     attributes: Vec<Box<dyn TransactionAttribute>>,
+    #[getset(get = "pub", set = "pub")]
     script: Vec<u8>,
+    #[getset(get = "pub", set = "pub")]
     witnesses: Vec<Witness>,
 }
 
@@ -89,15 +106,6 @@ impl Transaction {
         &self.signers
     }
 
-    /// The size of the transaction.
-    pub fn size(&self) -> usize {
-        Self::HEADER_SIZE +
-            self.signers.var_size() +
-            self.attributes.var_size() +
-            self.script.var_size() +
-            self.witnesses.var_size()
-    }
-
     /// The system fee of the transaction.
     pub fn system_fee(&self) -> i64 {
         self.sys_fee
@@ -116,16 +124,6 @@ impl Transaction {
     /// The witnesses of the transaction.
     pub fn witnesses(&self) -> &[Witness] {
         &self.witnesses
-    }
-
-    pub fn deserialize(&mut self, reader: &mut MemoryReader) -> io::Result<()> {
-        let start_position = reader.position();
-        self.deserialize_unsigned(reader)?;
-        self.witnesses = reader.read_serializable_array::<Witness>(self.signers.len())?;
-        if self.witnesses.len() != self.signers.len() {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Witness count mismatch"));
-        }
-        Ok(())
     }
 
     fn deserialize_attributes(reader: &mut MemoryReader, max_count: usize) -> io::Result<Vec<Box<dyn TransactionAttribute>>> {
@@ -159,52 +157,41 @@ impl Transaction {
         Ok(signers)
     }
 
-    pub fn deserialize_unsigned(&mut self, reader: &mut MemoryReader) -> io::Result<()> {
-        self.version = reader.read_u8()?;
-        if self.version > 0 {
+    pub fn deserialize_unsigned(reader: &mut MemoryReader) -> io::Result<Self> {
+        let version = reader.read_u8()?;
+        if version > 0 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid version"));
         }
-        self.nonce = reader.read_u32()?;
-        self.sys_fee = reader.read_i64()?;
-        if self.sys_fee < 0 {
+        let nonce = reader.read_u32()?;
+        let sys_fee = reader.read_i64()?;
+        if sys_fee < 0 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid system fee"));
         }
-        self.net_fee = reader.read_i64()?;
-        if self.net_fee < 0 {
+        let net_fee = reader.read_i64()?;
+        if net_fee < 0 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid network fee"));
         }
-        if self.sys_fee.checked_add(self.net_fee).is_none() {
+        if sys_fee.checked_add(net_fee).is_none() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Fee overflow"));
         }
-        self.valid_until_block = reader.read_u32()?;
-        self.signers = Self::deserialize_signers(reader, Self::MAX_TRANSACTION_ATTRIBUTES)?;
-        self.attributes = Self::deserialize_attributes(reader, Self::MAX_TRANSACTION_ATTRIBUTES - self.signers.len())?;
-        self.script = reader.read_var_bytes(u16::MAX as usize)?;
-        if self.script.is_empty() {
+        let valid_until_block = reader.read_u32()?;
+        let signers = Self::deserialize_signers(reader, Self::MAX_TRANSACTION_ATTRIBUTES)?;
+        let attributes = Self::deserialize_attributes(reader, Self::MAX_TRANSACTION_ATTRIBUTES - signers.len())?;
+        let script = reader.read_var_bytes(u16::MAX as usize)?;
+        if script.is_empty() {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Empty script"));
         }
-        Ok(())
-    }
-    pub fn serialize(&self, writer: &mut BinaryWriter) -> io::Result<()> {
-        writer.write_u8(self.version)?;
-        writer.write_u32(self.nonce)?;
-        writer.write_i64(self.sys_fee)?;
-        writer.write_i64(self.net_fee)?;
-        writer.write_u32(self.valid_until_block)?;
-        writer.write_var_int(self.signers.len() as u64)?;
-        for signer in &self.signers {
-            writer.write_serializable(signer)?;
-        }
-        writer.write_var_int(self.attributes.len() as u64)?;
-        for attribute in &self.attributes {
-            writer.write_serializable(attribute.as_ref())?;
-        }
-        writer.write_var_bytes(&self.script)?;
-        writer.write_var_int(self.witnesses.len() as u64)?;
-        for witness in &self.witnesses {
-            writer.write_serializable(witness)?;
-        }
-        Ok(())
+        Ok(Self {
+            version,
+            nonce,
+            sys_fee,
+            net_fee,
+            valid_until_block,
+            signers,
+            attributes,
+            script,
+            witnesses: Vec::new(), // Initialize witnesses as empty
+        })
     }
 
     pub fn verify(&self, snapshot: &Snapshot) -> bool {
@@ -291,12 +278,62 @@ impl TryFrom<&JToken> for Transaction {
     }
 }
 
-impl Native for Transaction {
-    fn name() -> &'static str {
-        "Transaction"
+impl SerializableTrait for Transaction {
+    fn size(&self) -> usize {
+        Self::HEADER_SIZE +
+            self.signers.var_size() +
+            self.attributes.var_size() +
+            self.script.var_size() +
+            self.witnesses.var_size()
     }
 
-    fn to_stack_item(&self) -> Array {
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        writer.write_u8(self.version)?;
+        writer.write_u32(self.nonce)?;
+        writer.write_i64(self.sys_fee)?;
+        writer.write_i64(self.net_fee)?;
+        writer.write_u32(self.valid_until_block)?;
+        writer.write_var_int(self.signers.len() as u64)?;
+        for signer in &self.signers {
+            writer.write_serializable(signer)?;
+        }
+        writer.write_var_int(self.attributes.len() as u64)?;
+        for attribute in &self.attributes {
+            writer.write_serializable(attribute.as_ref())?;
+        }
+        writer.write_var_bytes(&self.script)?;
+        writer.write_var_int(self.witnesses.len() as u64)?;
+        for witness in &self.witnesses {
+            writer.write_serializable(witness)?;
+        }
+        Ok(())
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, Error> {
+        let mut tx = Self::deserialize_unsigned(reader)?;
+        let witness_count = reader.read_var_int()?;
+        tx.witnesses = reader.read_serializable_array::<Witness>(witness_count as usize)?;
+        if tx.witnesses.len() != tx.signers.len() {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "Witness count mismatch"));
+        }
+        Ok(tx)
+    }
+}
+
+impl Default for Transaction {
+    fn default() -> Self {
+        todo!()
+    }
+}
+
+impl IInteroperable for Transaction {
+    type Error = NetworkError;
+
+    fn from_stack_item(stack_item: &Rc<StackItem>) -> Result<Self, Self::Error> {
+        unimplemented!()
+    }
+
+    fn to_stack_item(&self, reference_counter: Option<&mut Rc<RefCell<References>>>) -> Result<Rc<StackItem>, Self::Error> {
         let mut items = Vec::new();
         items.push(self.version.into());
         items.push(self.nonce.into());
@@ -310,7 +347,6 @@ impl Native for Transaction {
         Array::from(items)
     }
 }
-
 
 impl Transaction {
     pub fn verify(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, context: Option<&TransactionVerificationContext>, conflicts_list: &[Transaction]) -> VerifyResult {
@@ -327,7 +363,7 @@ impl Transaction {
             return VerifyResult::Expired;
         }
 
-        let hashes = self.get_script_hashes_for_verifying(snapshot);
+        let hashes = self.get_script_hashes_for_verifying(Some(snapshot));
         for hash in &hashes {
             if NativeContract::Policy::is_blocked(snapshot, hash) {
                 return VerifyResult::PolicyFail;
@@ -430,17 +466,17 @@ impl Transaction {
         VerifyResult::Succeed
     }
 
-    fn get_script_hashes_for_verifying(&self, _snapshot: Option<&dyn DataCache>) -> Vec<H160> {
+    pub fn get_script_hashes_for_verifying(&self, _snapshot: Option<&dyn DataCache>) -> Vec<H160> {
         self.signers.iter().map(|signer| signer.account.clone()).collect()
     }
 
-    fn verify_witness(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, hash: &H160, witness: &Witness, gas: i64) -> Result<i64, ()> {
+    pub fn verify_witness(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache, hash: &H160, witness: &Witness, gas: i64) -> Result<i64, ()> {
         // Implement witness verification logic
         // This is a placeholder implementation
         Ok(gas / 2)
     }
 
-    fn get_sign_data(&self, network: u32) -> Vec<u8> {
+    pub fn get_sign_data(&self, network: u32) -> Vec<u8> {
         // Implement sign data generation
         // This is a placeholder implementation
         vec![]

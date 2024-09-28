@@ -46,36 +46,31 @@ impl ContextItem {
 
 impl JsonConvertibleTrait for ContextItem {
     fn to_json(&self) -> serde_json::Value {
-        let mut json = JToken::new_object();
-        json.insert("script", JValue::from(hex::encode(&self.script)));
-        json.insert("parameters", JValue::from(self.parameters.iter().map(|p| p.to_json()).collect::<Vec<_>>()));
-        let signatures = self.signatures.iter()
-            .map(|(k, v)| (k.to_string(), JValue::from(hex::encode(v))))
-            .collect::<HashMap<_, _>>();
-        json.insert("signatures", JValue::from(signatures));
-        json
+        serde_json::json!({
+            "script": hex::encode(&self.script),
+            "parameters": self.parameters.iter().map(|p| p.to_json()).collect::<Vec<_>>(),
+            "signatures": self.signatures.iter()
+                .map(|(k, v)| (k.to_string(), hex::encode(v)))
+                .collect::<HashMap<_, _>>()
+        })
     }
 
     fn from_json(json: &serde_json::Value) -> Result<Self, JsonError>
     where
         Self: Sized
     {
-        let script = json.get("script")
-            .and_then(|v| v.as_str())
-            .ok_or(JsonError::InvalidFormat)?;
-        let script = hex::decode(script).map_err(|_| JsonError::InvalidFormat)?;
+        let script = hex::decode(json["script"].as_str().ok_or(JsonError::InvalidFormat)?)
+            .map_err(|_| JsonError::InvalidFormat)?;
 
-        let parameters = json.get("parameters")
-            .and_then(|v| v.as_array())
-            .ok_or(JsonError::InvalidFormat)?;
-        let parameters = parameters.iter()
-            .map(|item| ContractParameter::from_json(item))
+        let parameters = json["parameters"].as_array()
+            .ok_or(JsonError::InvalidFormat)?
+            .iter()
+            .map(ContractParameter::from_json)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let signatures = json.get("signatures")
-            .and_then(|v| v.as_object())
-            .ok_or(JsonError::InvalidFormat)?;
-        let signatures = signatures.iter()
+        let signatures = json["signatures"].as_object()
+            .ok_or(JsonError::InvalidFormat)?
+            .iter()
             .map(|(k, v)| {
                 let public_key = ECPoint::try_from(k.as_str()).map_err(|_| JsonError::InvalidFormat)?;
                 let signature = hex::decode(v.as_str().ok_or(JsonError::InvalidFormat)?).map_err(|_| JsonError::InvalidFormat)?;

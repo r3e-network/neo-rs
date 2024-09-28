@@ -8,7 +8,6 @@ pub mod io;
 pub mod neorpc;
 pub mod neotest;
 pub mod network;
-pub mod rename.sh;
 pub mod rpcclient;
 pub mod services;
 pub mod smartcontract;

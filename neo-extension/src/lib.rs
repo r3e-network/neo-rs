@@ -1,3 +1,5 @@
+#![feature(ip)]
+
 mod big_integer_extensions;
 mod byte_extensions;
 mod date_time_extensions;
