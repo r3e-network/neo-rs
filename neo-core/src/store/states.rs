@@ -13,10 +13,14 @@ pub struct CurrentStates {
 
 pub trait BlockStates {
     #[inline]
-    fn current_block_index(&self) -> u32 { self.current_states().block_index }
+    fn current_block_index(&self) -> u32 {
+        self.current_states().block_index
+    }
 
     #[inline]
-    fn current_block_hash(&self) -> H256 { self.current_states().block_hash }
+    fn current_block_hash(&self) -> H256 {
+        self.current_states().block_hash
+    }
 
     fn current_states(&self) -> CurrentStates; // Result<CurrentStates, Self::Error>;
 }
@@ -30,7 +34,9 @@ pub trait ChainStates: BlockStates {
 }
 
 pub trait FeeStates {
-    fn netfee_per_byte(&self) -> u64;
+    fn netfee_perbyte(&self) -> u64;
 
     fn balance_of(&self, account: &H160) -> U256;
 }
+
+pub trait NeoStates: FeeStates + ChainStates {}

@@ -33,18 +33,18 @@ impl ExecContext {
     }
 
     #[inline]
-    pub fn references(&self) -> &References { self.stack.references() }
+    pub fn references(&self) -> &References {
+        self.stack.references()
+    }
 
     #[inline]
-    pub fn on_terminated(&mut self) { self.pc = self.program.ops().len() }
+    pub fn on_terminated(&mut self) {
+        self.pc = self.program.ops().len()
+    }
 
     #[inline]
     pub fn change_pc(&mut self, to: u32) -> bool {
-        self.program
-            .ops()
-            .binary_search_by(|x| x.ip.cmp(&to))
-            .map(|x| self.pc = x)
-            .is_ok()
+        self.program.ops().binary_search_by(|x| x.ip.cmp(&to)).map(|x| self.pc = x).is_ok()
     }
 
     #[inline]

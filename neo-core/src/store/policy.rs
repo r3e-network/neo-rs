@@ -21,11 +21,3 @@ pub const PREFIX_BLOCKED_ACCOUNTS: u8 = 15;
 pub struct Policy {
     //
 }
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn test_policy() {
-        //
-    }
-}

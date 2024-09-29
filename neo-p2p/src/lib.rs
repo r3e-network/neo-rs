@@ -90,8 +90,12 @@ pub struct P2pConfig {
     pub discovery_factor: u32,
     pub broadcast_factor: u32,
 
+    /// The port in Version message
+    pub port: u16,
+
     /// Listen local socket-addr, like "0.0.0.0:10234"
     pub listen: String,
+
     // pub announced_port: u16,
     pub network: u32,
 
@@ -118,6 +122,7 @@ impl Default for P2pConfig {
             attempt_peers: 20,
             discovery_factor: 1000,
             broadcast_factor: 0,
+            port: 10234,
             listen: "127.0.0.1:10234".into(),
             network: Network::DevNet.as_magic(),
             relay: true,

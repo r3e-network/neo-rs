@@ -13,7 +13,6 @@ pub(crate) struct CodeAttr {
     pub trailing: u32,
 
     pub unsigned: bool,
-    // pub may_jump: bool,
 }
 
 #[derive(Debug, Default, Clone)]

@@ -11,7 +11,7 @@ use neo_base::hash::{Ripemd160, Sha256};
 
 use crate::PublicKey;
 pub use {bytes::*, check_sign::*, dbft::*, genesis::*, h160::*, h256::*};
-pub use {opcode::*, script::*, settings::*, verifying::*};
+pub use {config::*, opcode::*, script::*, verifying::*};
 
 pub mod bytes;
 pub mod check_sign;
@@ -24,7 +24,7 @@ pub mod h256;
 pub mod opcode;
 pub mod script;
 
-pub mod settings;
+pub mod config;
 pub mod verifying;
 
 pub const SCRIPT_HASH_SIZE: usize = H160_SIZE;

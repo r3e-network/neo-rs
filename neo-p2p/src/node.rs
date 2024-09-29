@@ -54,8 +54,6 @@ impl LocalNode {
 
     pub fn seeds(&self) -> &[String] { &self.config.seeds }
 
-    pub fn port(&self) -> u16 { self.local.port() }
-
     pub fn local_addr(&self) -> SocketAddr { self.local }
 
     // drop(NodeHandle) will close the listener
@@ -173,7 +171,7 @@ mod test {
         let node = LocalNode::new(P2pConfig::default());
         let addr = node.local_addr();
 
-        let message = MessageHandleV2::new(node.port(), node.config.clone(), node.net_handles());
+        let message = MessageHandleV2::new( node.config.clone(), node.net_handles());
         let handle = node.run(message);
         std::thread::sleep(Duration::from_secs(1));
 

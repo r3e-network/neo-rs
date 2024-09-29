@@ -9,9 +9,9 @@ use neo_base::encoding::bin::*;
 use neo_base::hash::Sha256;
 use neo_crypto::ecdsa::{Sign as EcdsaSign, SignError};
 
-use crate::PrivateKey;
 use crate::tx::Witnesses;
-use crate::types::{Bytes, H160, Sign, ToSignData};
+use crate::types::{Bytes, Sign, ToSignData, H160};
+use crate::PrivateKey;
 
 pub const CONSENSUS_CATEGORY: &'static str = "dBFT";
 pub const MAX_CATEGORY_SIZE: usize = 32;
@@ -65,11 +65,9 @@ impl BinDecoder for Extensible {
 mod test {
     use bytes::BytesMut;
 
-    use neo_base::hash::{Ripemd160, Sha256};
-
-    use crate::tx::Witness;
-
     use super::*;
+    use crate::tx::Witness;
+    use neo_base::hash::{Ripemd160, Sha256};
 
     #[test]
     fn test_extensible() {
@@ -79,8 +77,7 @@ mod test {
             valid_block_end: 10,
             sender: "Hello".sha256().ripemd160().into(),
             data: b"Hello".to_vec().into(),
-            witnesses: Witness::new(b"invocation".as_ref().into(), b"verification".as_ref().into())
-                .into(),
+            witnesses: Witness::new(b"in".as_ref().into(), b"v".as_ref().into()).into(),
         };
 
         let mut w = BytesMut::with_capacity(128);

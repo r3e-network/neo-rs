@@ -59,9 +59,13 @@ pub struct Header {
 
 impl Header {
     #[inline]
-    pub fn hash(&self) -> H256 { self.hash.unwrap_or_else(|| self.hash_fields_sha256().into()) }
+    pub fn hash(&self) -> H256 {
+        self.hash.unwrap_or_else(|| self.hash_fields_sha256().into())
+    }
 
-    pub fn calc_hash(&mut self) { self.hash = Some(self.hash_fields_sha256().into()); }
+    pub fn calc_hash(&mut self) {
+        self.hash = Some(self.hash_fields_sha256().into());
+    }
 }
 
 impl EncodeHashFields for Header {
@@ -74,6 +78,7 @@ impl EncodeHashFields for Header {
         self.index.encode_bin(w); // 4
         self.primary.encode_bin(w); // 1
         self.next_consensus.encode_bin(w); // 20
+
         // if self.state_root_enabled {
         //     self.prev_state_root.encode_bin(w);
         // }
@@ -97,15 +102,25 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn new(header: Header, txs: Vec<Tx>) -> Self { Self { header, txs } }
+    pub fn new(header: Header, txs: Vec<Tx>) -> Self {
+        Self { header, txs }
+    }
 
-    pub fn hash(&self) -> H256 { self.header.hash() }
+    pub fn hash(&self) -> H256 {
+        self.header.hash()
+    }
 
-    pub fn header(&self) -> &Header { &self.header }
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
 
-    pub fn txs(&self) -> &[Tx] { self.txs.as_slice() }
+    pub fn txs(&self) -> &[Tx] {
+        self.txs.as_slice()
+    }
 
-    pub fn block_index(&self) -> u32 { self.header.index }
+    pub fn block_index(&self) -> u32 {
+        self.header.index
+    }
 
     pub fn new_genesis_block(validators: &[PublicKey]) -> Self {
         let next_consensus = validators.to_bft_hash().expect("`to_bft_hash` should be ok");
@@ -138,7 +153,9 @@ impl Block {
 }
 
 impl EncodeHashFields for Block {
-    fn encode_hash_fields(&self, w: &mut impl BinWriter) { self.header.encode_hash_fields(w); }
+    fn encode_hash_fields(&self, w: &mut impl BinWriter) {
+        self.header.encode_hash_fields(w);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, BinDecode)]
@@ -150,26 +167,37 @@ pub struct TrimmedBlock {
 }
 
 impl TrimmedBlock {
-    pub fn hash(&self) -> H256 { self.header.hash() }
+    pub fn hash(&self) -> H256 {
+        self.header.hash()
+    }
 
-    pub fn header(&self) -> &Header { &self.header }
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
 
-    pub fn block_index(&self) -> u32 { self.header.index }
+    pub fn block_index(&self) -> u32 {
+        self.header.index
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct StatedBlock {
     pub header: Header,
-
     pub txs: Vec<StatedTx>,
 }
 
 impl StatedBlock {
-    pub fn hash(&self) -> H256 { self.header.hash() }
+    pub fn hash(&self) -> H256 {
+        self.header.hash()
+    }
 
-    pub fn txs(&self) -> &[StatedTx] { &self.txs }
+    pub fn txs(&self) -> &[StatedTx] {
+        &self.txs
+    }
 
-    pub fn block_index(&self) -> u32 { self.header.index }
+    pub fn block_index(&self) -> u32 {
+        self.header.index
+    }
 
     pub fn to_trimmed_block(&self) -> TrimmedBlock {
         TrimmedBlock {
@@ -213,14 +241,12 @@ mod test {
             index: 2,
             primary: 1,
             next_consensus: Default::default(),
-            witnesses: Witness::new(Default::default(), Default::default()).into(),
+            witnesses: Witness::new(Script::default(), Script::default()).into(),
         };
 
         head.calc_hash();
         let encoded = serde_json::to_string(&head).expect("json encode should be ok");
-
         let got: Header = serde_json::from_str(&encoded).expect("json decode should be ok");
-
         assert_eq!(head.hash, got.hash);
         assert_eq!(head.version, got.version);
         assert_eq!(head.unix_milli, got.unix_milli);
@@ -233,7 +259,6 @@ mod test {
     #[test]
     fn test_genesis_block() {
         let (_, pk1) = OsRand::gen_keypair(&mut OsRand).expect("gen_keypair should be ok");
-
         let genesis = Block::new_genesis_block(core::array::from_ref(&pk1));
         assert_eq!(genesis.header.index, 0);
     }

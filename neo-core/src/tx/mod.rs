@@ -3,6 +3,7 @@
 
 pub mod attr;
 pub mod signer;
+pub mod verify;
 pub mod witness;
 
 #[cfg(any(feature = "std", test))]
@@ -16,13 +17,15 @@ mod pool_test;
 
 use alloc::vec::Vec;
 
-use neo_base::encoding::bin::*;
 use serde::{Deserialize, Serialize};
-pub use {attr::*, signer::*, witness::*};
-#[cfg(any(feature = "std", test))]
-pub use {pool::*, pool_event::*};
+
+use neo_base::encoding::bin::*;
 
 use crate::types::{Script, VmState, H160, H256};
+pub use {attr::*, signer::*, verify::*, witness::*};
+
+#[cfg(any(feature = "std", test))]
+pub use {pool::*, pool_event::*};
 
 #[derive(Debug, Clone, Deserialize, Serialize, BinEncode, InnerBinDecode)]
 pub struct Tx {
@@ -71,22 +74,34 @@ impl EncodeHashFields for Tx {
 impl BinDecoder for Tx {
     fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
         let mut tx = Self::decode_bin_inner(r)?;
-        tx.calc_hash_and_size();
+        tx.recalc_hash();
         Ok(tx)
     }
 }
 
 impl Tx {
     /// i.e. TxID
-    pub fn hash(&self) -> H256 { self.hash.unwrap_or_else(|| self.calc_hash()) }
+    #[inline]
+    pub fn hash(&self) -> H256 {
+        self.hash.unwrap_or_else(|| self.hash_fields_sha256().into())
+    }
 
-    pub fn size(&self) -> u32 { self.size.unwrap_or_else(|| self.bin_size() as u32) }
+    #[inline]
+    pub fn size(&self) -> u32 {
+        self.size.unwrap_or_else(|| self.bin_size() as u32)
+    }
 
-    pub fn fee(&self) -> u64 { self.sysfee + self.netfee }
+    pub fn fee(&self) -> u64 {
+        self.sysfee + self.netfee
+    }
 
-    pub fn netfee_per_byte(&self) -> u64 { self.netfee / self.size() as u64 }
+    pub fn netfee_per_byte(&self) -> u64 {
+        self.netfee / self.size() as u64
+    }
 
-    pub fn signers(&self) -> Vec<&H160> { self.signers.iter().map(|s| &s.account).collect() }
+    pub fn signers(&self) -> Vec<&H160> {
+        self.signers.iter().map(|s| &s.account).collect()
+    }
 
     pub fn has_signer(&self, signer: &H160) -> bool {
         self.signers.iter().find(|s| s.account.eq(signer)).is_some()
@@ -102,12 +117,20 @@ impl Tx {
             .collect()
     }
 
-    pub fn calc_hash_and_size(&mut self) {
+    #[inline]
+    pub fn recalc_hash(&mut self) -> &H256 {
         self.size = Some(self.bin_size() as u32); // assume never exceed u32::MAX
-        self.hash = Some(self.calc_hash());
+        self.hash = Some(self.hash_fields_sha256().into());
+        self.hash.as_ref().unwrap()
     }
 
-    fn calc_hash(&self) -> H256 { self.hash_fields_sha256().into() }
+    #[inline]
+    pub fn calc_hash(&mut self) -> &H256 {
+        if self.hash.is_none() {
+            self.recalc_hash();
+        }
+        self.hash.as_ref().unwrap()
+    }
 }
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
@@ -119,7 +142,9 @@ pub struct StatedTx {
 
 impl StatedTx {
     #[inline]
-    pub fn hash(&self) -> H256 { self.tx.hash() }
+    pub fn hash(&self) -> H256 {
+        self.tx.hash()
+    }
 }
 
 #[cfg(test)]
@@ -154,7 +179,7 @@ mod test {
         assert_eq!(got.netfee, tx.netfee);
         assert_eq!(got.valid_until_block, tx.valid_until_block);
 
-        tx.calc_hash_and_size();
+        tx.recalc_hash();
         let decode = serde_json::to_string(&tx).expect("json encode should be ok");
 
         let mut got: Tx = serde_json::from_str(&decode).expect("json decode should be ok");
@@ -162,7 +187,7 @@ mod test {
         assert_eq!(got.hash, None);
         assert_eq!(got.size, None);
 
-        got.calc_hash_and_size();
+        got.recalc_hash();
         assert_eq!(got.hash, tx.hash);
         assert_eq!(got.size, tx.size);
     }

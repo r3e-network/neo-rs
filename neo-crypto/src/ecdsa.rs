@@ -99,8 +99,8 @@ pub enum VerifyError {
     #[error("ecdsa: invalid public key")]
     InvalidPublicKey,
 
-    #[error("ecdsa: invalid signature")]
-    InvalidSignature,
+    #[error("ecdsa: invalid sign")]
+    InvalidSign,
 }
 
 impl Verify for secp256r1::PublicKey {
@@ -122,12 +122,12 @@ impl DigestVerify for secp256r1::PublicKey {
         // sign[32..ECC256_SIGN_SIZE].reverse(); // little endian to big endian
 
         let sign = Signature::try_from(sign.as_ref())
-            .map_err(|_| VerifyError::InvalidSignature)?;
+            .map_err(|_| VerifyError::InvalidSign)?;
 
         VerifyingKey::from_sec1_bytes(&self.to_uncompressed())
             .map_err(|_| VerifyError::InvalidPublicKey)?
             .verify(message.as_ref(), &sign)
-            .map_err(|_| VerifyError::InvalidSignature)
+            .map_err(|_| VerifyError::InvalidSign)
     }
 }
 

@@ -53,13 +53,19 @@ pub struct Program {
 
 impl Program {
     #[inline]
-    pub fn nop() -> Self { Self { script_hash: [].to_script_hash(), ops: Vec::new() } }
+    pub fn nop() -> Self {
+        Self { script_hash: [].to_script_hash(), ops: Vec::new() }
+    }
 
     #[inline]
-    pub fn script_hash(&self) -> &ScriptHash { &self.script_hash }
+    pub fn script_hash(&self) -> &ScriptHash {
+        &self.script_hash
+    }
 
     #[inline]
-    pub fn ops(&self) -> &[Op] { &self.ops }
+    pub fn ops(&self) -> &[Op] {
+        &self.ops
+    }
 
     pub fn build(script: &[u8]) -> Result<Program, ProgramError> {
         let mut decoder = ScriptDecoder::new(script);
@@ -100,7 +106,6 @@ impl Program {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use neo_base::encoding::hex::DecodeHex;
@@ -110,9 +115,7 @@ mod test {
     #[test]
     fn test_program_build() {
         let script = TEST_CODES_1.decode_hex().expect("`decode_hex` should be ok");
-
         let program = Program::build(&script).expect("`Program::build` should be ok");
-
         assert_eq!(program.ops().is_empty(), false);
         // for op in program.ops.iter() {
         //     std::println!("{:04}: {:?}, {:?}", op.ip, op.code, op.operand);

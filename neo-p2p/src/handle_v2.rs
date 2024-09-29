@@ -44,14 +44,13 @@ pub enum HandleError {
 #[derive(Clone)]
 pub struct MessageHandleV2 {
     net_handles: NetHandles,
-    port: u16,
     config: P2pConfig,
 }
 
 impl MessageHandleV2 {
     #[inline]
-    pub fn new(port: u16, config: P2pConfig, net_handles: NetHandles) -> Self {
-        Self { net_handles, port, config }
+    pub fn new(config: P2pConfig, net_handles: NetHandles) -> Self {
+        Self { net_handles, config }
     }
 
     #[inline]
@@ -171,9 +170,9 @@ impl MessageHandleV2 {
 impl MessageHandleV2 {
     fn on_incoming(&self, discovery: &Discovery, event: &NetEvent, peer: &SocketAddr) {
         let capabilities = if self.config.relay {
-            vec![TcpServer { port: self.port }, FullNode { start_height: 0 }] // TODO: set start_height
+            vec![TcpServer { port: self.config.port }, FullNode { start_height: 0 }] // TODO: set start_height
         } else {
-            vec![TcpServer { port: self.port }]
+            vec![TcpServer { port: self.config.port }]
         };
         let version = P2pMessage::Version(Version {
             network: self.config.network,

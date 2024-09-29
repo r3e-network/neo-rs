@@ -1,33 +1,39 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use bytes::BytesMut;
+use ::bytes::BytesMut;
+
 use neo_base::encoding::bin::HashFieldsSha256;
 use neo_crypto::ecdsa::{
     DigestVerify, Secp256r1Sign, Sign as EcdsaSign, SignError, ECC256_SIGN_SIZE,
 };
 
-use crate::types::{FixedBytes, Script, Varbytes, SIGN_DATA_SIZE};
-use crate::{PrivateKey, PublicKey};
+use crate::{types::*, PrivateKey, PublicKey};
 
 pub type Sign = FixedBytes<ECC256_SIGN_SIZE>;
 
 impl Sign {
     pub fn to_invocation_script(&self) -> Script {
         let mut buf = BytesMut::with_capacity(4 + ECC256_SIGN_SIZE);
-        buf.put_varbytes(self.as_bytes());
+        buf.push_data(self.as_bytes());
         buf.into()
     }
 
-    pub fn as_secp256r1_sign(&self) -> Secp256r1Sign { Secp256r1Sign::from(self.0.clone()) }
+    pub fn as_secp256r1_sign(&self) -> Secp256r1Sign {
+        Secp256r1Sign::from(self.0.clone())
+    }
 }
 
 impl Into<Secp256r1Sign> for Sign {
-    fn into(self) -> Secp256r1Sign { Secp256r1Sign::from(self.0) }
+    fn into(self) -> Secp256r1Sign {
+        Secp256r1Sign::from(self.0)
+    }
 }
 
 impl From<Secp256r1Sign> for Sign {
-    fn from(sign: Secp256r1Sign) -> Self { Self(sign.into()) }
+    fn from(sign: Secp256r1Sign) -> Self {
+        Self(sign.into())
+    }
 }
 
 pub struct SignData([u8; SIGN_DATA_SIZE]);
@@ -37,15 +43,21 @@ impl SignData {
         u32::from_le_bytes([self.0[0], self.0[1], self.0[2], self.0[3]])
     }
 
-    pub fn as_bytes(&self) -> &[u8] { &self.0 }
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl AsRef<[u8]> for SignData {
-    fn as_ref(&self) -> &[u8] { &self.0 }
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl AsRef<[u8; SIGN_DATA_SIZE]> for SignData {
-    fn as_ref(&self) -> &[u8; SIGN_DATA_SIZE] { &self.0 }
+    fn as_ref(&self) -> &[u8; SIGN_DATA_SIZE] {
+        &self.0
+    }
 }
 
 pub trait ToSignData {
@@ -119,16 +131,50 @@ impl<T: HashFieldsSha256> MultiSignVerify for T {
     }
 }
 
+pub trait ParseInvocationScript {
+    fn parse_sign(&self) -> Option<&[u8]>;
+
+    fn parse_multi_signs(&self) -> Option<Vec<&[u8]>>;
+}
+
+impl ParseInvocationScript for [u8] {
+    fn parse_sign(&self) -> Option<&[u8]> {
+        if self.len() != 65 {
+            return None;
+        }
+
+        Some(&self[2..])
+    }
+
+    fn parse_multi_signs(&self) -> Option<Vec<&[u8]>> {
+        let bytes = self;
+        let mut i = 0;
+        let mut signs = Vec::with_capacity(7);
+        while i < bytes.len() {
+            // PushData1 1byte + length 1 byte + Sign 64 byte
+            if i + 66 > bytes.len() || bytes[i] != OpCode::PushData1 as u8 || bytes[i + 1] != 64 {
+                return None;
+            }
+
+            signs.push(&bytes[i + 2..i + 66]);
+            i += 66;
+        }
+
+        Some(signs)
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use neo_base::hash::{Sha256, SHA256_HASH_SIZE};
-
     use super::*;
+    use neo_base::hash::{Sha256, SHA256_HASH_SIZE};
 
     struct MockHashFields;
 
     impl HashFieldsSha256 for MockHashFields {
-        fn hash_fields_sha256(&self) -> [u8; SHA256_HASH_SIZE] { "hello".sha256() }
+        fn hash_fields_sha256(&self) -> [u8; SHA256_HASH_SIZE] {
+            "hello".sha256()
+        }
     }
 
     #[test]

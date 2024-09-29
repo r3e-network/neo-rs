@@ -17,13 +17,25 @@ pub enum OpError {
     // TooLargeParam(u32, u8),
 }
 
+impl OpError {
+    #[inline]
+    pub fn which(&self) -> (u32, u8) {
+        match self {
+            Self::InvalidOpCode(ip, op) => (*ip, *op),
+            Self::OutOfBound(ip, op) => (*ip, *op),
+        }
+    }
+}
+
 pub struct ScriptDecoder<'a> {
     next: usize,
     script: &'a [u8],
 }
 
 impl<'a> ScriptDecoder<'a> {
-    pub fn new(script: &'a [u8]) -> Self { Self { script, next: 0 } }
+    pub fn new(script: &'a [u8]) -> Self {
+        Self { script, next: 0 }
+    }
 }
 
 impl Iterator for ScriptDecoder<'_> {
@@ -45,7 +57,7 @@ impl Iterator for ScriptDecoder<'_> {
             return Some(Err(OpError::InvalidOpCode(ip as u32, next)));
         };
 
-        let attr =  &CODE_ATTRS[next as usize];
+        let attr = &CODE_ATTRS[next as usize];
         let trailing = attr.trailing as usize;
         if trailing <= 0 {
             return Some(Ok(opcode.as_op(ip as u32)));
@@ -85,9 +97,8 @@ impl Iterator for ScriptDecoder<'_> {
 
 #[cfg(test)]
 pub(crate) mod test {
-    use neo_base::encoding::hex::DecodeHex;
-
     use crate::{OpCode::*, ScriptDecoder};
+    use neo_base::encoding::hex::DecodeHex;
 
     pub(crate) const TEST_CODES_1: &str =
         "57020004ffffffffffffffff0000000000000000701071223d6801ff00a34a7045694a9c4a020000\
@@ -96,17 +107,15 @@ pub(crate) mod test {
 
     #[test]
     fn test_op_iter() {
-        let script = TEST_CODES_1.decode_hex()
-            .expect("`decode_hex` should be ok");
+        let script = TEST_CODES_1.decode_hex().expect("`decode_hex` should be ok");
 
         let mut decoder = ScriptDecoder::new(&script);
         while let Some(op) = decoder.next() {
             let op = op.expect("`op` should be ok");
             match op.code {
-                PushInt128 | PushData1 | PushData2 => { assert_eq!(op.operand.first, 0); }
-                _ => { assert!(op.operand.data.is_empty()); }
+                PushInt128 | PushData1 | PushData2 => assert_eq!(op.operand.first, 0),
+                _ => assert!(op.operand.data.is_empty()),
             }
-            // std::println!("{:04}: {:?}, {:?}", op.ip, op.code, op.operand);
         }
     }
 }

@@ -7,7 +7,7 @@ use bytes::{BufMut, BytesMut};
 use neo_base::hash::{Ripemd160, Sha256};
 use neo_base::{byzantine_honest_quorum, errors};
 
-use crate::types::{Bytes, OpCode, Script, ScriptHash, ToScriptHash, Varint, MAX_SIGNERS};
+use crate::types::{Bytes, OpCode, Script, ScriptHash, ToScriptHash, PushInt, MAX_SIGNERS};
 use crate::{PublicKey, PUBLIC_COMPRESSED_SIZE};
 
 // 40 bytes = 1-byte CHECK_SIG_PUSH_DATA1 + 1-byte length + 33-bytes key + 1-byte OpCode + 4-bytes suffix
@@ -130,14 +130,14 @@ impl<T: AsRef<[PublicKey]>> ToCheckMultiSign for T {
 
         keys.sort_by(|lhs, rhs| lhs.cmp(rhs));
 
-        buf.put_varint(signers as u64);
+        buf.push_int(signers as u64);
         keys.into_iter().for_each(|k| {
             buf.put_u8(OpCode::PushData1.as_u8());
             buf.put_u8(SIZE as u8);
             buf.put_slice(k.to_compressed().as_slice());
         });
 
-        buf.put_varint(n as u64);
+        buf.push_int(n as u64);
         buf.put_u8(OpCode::Syscall.as_u8());
         buf.put_slice(&CHECK_MULTI_SIG_HASH_SUFFIX);
 
