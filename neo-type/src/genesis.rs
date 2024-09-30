@@ -10,12 +10,12 @@ use neo_crypto::secp256r1::PublicKey;
 use serde::{Deserialize, Serialize};
 
 use crate::Script;
-use crate::dbft::Role;
+use crate::dbft::ConsensusRole;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Genesis {
     #[serde(rename = "Roles")]
-    pub roles: HashMap<Role, Vec<PublicKey>>,
+    pub roles: HashMap<ConsensusRole, Vec<PublicKey>>,
 
     #[serde(rename = "Transaction")]
     pub tx: GenesisTx,

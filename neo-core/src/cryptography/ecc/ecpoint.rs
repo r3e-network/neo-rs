@@ -2,12 +2,16 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 use num_bigint::BigUint;
 use std::collections::HashMap;
+use std::io::Error;
 use std::sync::Mutex;
 use futures::TryFutureExt;
 use lazy_static::lazy_static;
 use num_traits::ToPrimitive;
 use crate::cryptography::{ECCurve, ECFieldElement};
+use crate::io::binary_writer::BinaryWriter;
 use crate::io::caching::ECPointCache;
+use crate::io::memory_reader::MemoryReader;
+use crate::io::serializable_trait::SerializableTrait;
 
 #[derive(Clone, Debug)]
 pub struct ECPoint {
@@ -16,12 +20,6 @@ pub struct ECPoint {
     pub(crate) curve: Rc<ECCurve>,
     compressed_point: Option<Vec<u8>>,
     uncompressed_point: Option<Vec<u8>>,
-}
-
-impl ECPoint {
-    pub(crate) fn from_encoded(p0: _) -> T {
-        todo!()
-    }
 }
 
 lazy_static! {
@@ -80,8 +78,62 @@ impl ECPoint {
         self.x.is_none() && self.y.is_none()
     }
 
-    pub fn size(&self) -> usize {
-        if self.is_infinity() { 1 } else { 33 }
+    /// Deserializes an `ECPoint` object from a `MemoryReader`.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - The `MemoryReader` for reading data.
+    /// * `curve` - The `ECCurve` object used to construct the `ECPoint`.
+    ///
+    /// # Returns
+    ///
+    /// The deserialized point.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `FormatError` if the point encoding is invalid.
+    pub fn deserialize_from(reader: &mut MemoryReader, curve: Rc<ECCurve>) -> Result<Rc<Self>, FormatError> {
+        let size = match reader.peek()? {
+            0x02 | 0x03 => 1 + curve.expected_ec_point_length,
+            0x04 => 1 + curve.expected_ec_point_length * 2,
+            _ => return Err(FormatError::new(format!("Invalid point encoding {}", reader.peek()?)))
+        };
+        let data = reader.read_memory(size)?;
+        Ok(Self::decode_point(&data, curve))
+    }
+
+
+    /// Constructs an `ECPoint` object from a byte array.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - The byte array to be used to construct the object.
+    /// * `curve` - The `ECCurve` object used to construct the `ECPoint`.
+    ///
+    /// # Returns
+    ///
+    /// The decoded point.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input format is invalid.
+    pub fn from_bytes(bytes: &[u8], curve: Rc<ECCurve>) -> Rc<Self> {
+        match bytes.len() {
+            33 | 65 => Self::decode_point(bytes, curve),
+            64 | 72 => {
+                let mut new_bytes = Vec::with_capacity(65);
+                new_bytes.push(0x04);
+                new_bytes.extend_from_slice(&bytes[bytes.len() - 64..]);
+                Self::decode_point(&new_bytes, curve)
+            },
+            96 | 104 => {
+                let mut new_bytes = Vec::with_capacity(65);
+                new_bytes.push(0x04);
+                new_bytes.extend_from_slice(&bytes[bytes.len() - 96..bytes.len() - 32]);
+                Self::decode_point(&new_bytes, curve)
+            },
+            _ => panic!("Invalid format"),
+        }
     }
 
     pub fn decode_point(encoded: &[u8], curve: Rc<ECCurve>) -> Rc<Self> {
@@ -531,6 +583,28 @@ impl std::ops::Add for &ECPoint {
         let x3 = &gamma.square() - self.x.as_ref().unwrap() - other.x.as_ref().unwrap();
         let y3 = &gamma * (self.x.as_ref().unwrap() - &x3) - self.y.as_ref().unwrap();
         ECPoint::new(Some(x3), Some(y3), Rc::clone(&self.curve))
+    }
+}
+
+
+impl SerializableTrait for ECPoint {
+    fn size(&self) -> usize {
+        if self.is_infinity() { 1 } else { 33 }
+    }
+
+    fn serialize(&mut self, writer: &mut BinaryWriter) {
+        writer.write_bytes(&self.encode_point(true));
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, Error> {
+        let p = Self::deserialize_from(reader, Rc::clone(&self.curve))?;
+        Ok(Self {
+            x: p.x.clone(),
+            y: p.y.clone(),
+            curve: Rc::clone(&self.curve),
+            compressed_point: p.compressed_point.clone(),
+            uncompressed_point: p.uncompressed_point.clone(),
+        })
     }
 }
 

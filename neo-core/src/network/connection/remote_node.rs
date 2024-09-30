@@ -1,56 +1,75 @@
-use std::collections::{HashMap, VecDeque};
-use std::net::{SocketAddr, IpAddr};
+use std::collections::{ VecDeque};
+use std::net::{SocketAddr};
 use std::sync::Arc;
 use std::time::{ Instant};
-use crate::io::caching::{CacheInterface, HashSetCache};
+use actix::dev::Envelope;
+use actix::prelude::*;
+use tokio::io::{ AsyncWriteExt};
+use tokio::net::TcpStream;
+use bytes::{BytesMut};
+use chrono::Local;
+use getset::{Getters, Setters};
 use crate::neo_system::NeoSystem;
-use crate::network::{Message, MessageCommand};
+use crate::network::{Connection, LocalNode, Message, MessageCommand};
 use crate::network::capabilities::{FullNodeCapability, NodeCapabilityType, ServerCapability};
-use crate::network::NodeMessage::Relay;
-use crate::network::payloads::VersionPayload;
+use crate::network::payloads::{VersionPayload, PingPayload, InvPayload, IInventory, InventoryType};
 use crate::network::connection::peer::Peer;
-use crate::network::PeerMessage::Timer;
-use crate::payload::P2pMessage::Inventory;
+use neo_io::{CacheInterface, HashSetCache};
 use neo_type::H256;
 
+#[derive(Message)]
+#[rtype(result = "()")]
+struct StartProtocol;
+
+#[derive(Message)]
+#[rtype(result = "()")]
+struct Relay {
+    inventory: Box<dyn IInventory<Error=()>>,
+}
+
+#[derive(Getters, Setters)]
 pub struct RemoteNode {
     system: Arc<NeoSystem>,
-    local_node: Arc<Peer>,
+    local_node: Arc<LocalNode>,
     message_queue_high: VecDeque<Message>,
     message_queue_low: VecDeque<Message>,
     last_sent: Instant,
     sent_commands: [bool; 256],
-    msg_buffer: Vec<u8>,
+    msg_buffer: BytesMut,
     ack: bool,
     last_height_sent: u32,
     listener: SocketAddr,
     listener_tcp_port: u16,
+    #[getset(get = "pub")]
     pub(crate) version: Option<VersionPayload>,
-    pub(crate) last_block_index: u32,
+    #[getset(get = "pub")]
+    last_block_index: u32,
+    #[getset(get = "pub")]
     is_full_node: bool,
     known_hashes: HashSetCache<H256>,
     sent_hashes: HashSetCache<H256>,
+    stream: TcpStream,
 }
 
 impl RemoteNode {
     pub fn new(
         system: Arc<NeoSystem>,
-        local_node: Arc<Peer>,
-        connection: impl Connection,
+        local_node: Arc<LocalNode>,
+        stream: TcpStream,
         remote: SocketAddr,
         local: SocketAddr,
     ) -> Self {
         let capacity = system.mem_pool.capacity() * 2 / 5;
         let known_hashes = HashSetCache::new(capacity);
         let sent_hashes = HashSetCache::new(capacity);
-        local_node.remote_nodes.insert(connection.id(), Arc::new(Self {
+        Self {
             system,
             local_node,
             message_queue_high: VecDeque::new(),
             message_queue_low: VecDeque::new(),
             last_sent: Instant::now(),
             sent_commands: [false; 256],
-            msg_buffer: Vec::new(),
+            msg_buffer: BytesMut::with_capacity(1024),
             ack: true,
             last_height_sent: 0,
             listener: remote,
@@ -60,56 +79,33 @@ impl RemoteNode {
             is_full_node: false,
             known_hashes,
             sent_hashes,
-        }));
-        Self
+            stream,
+        }
     }
 
     pub fn listener(&self) -> SocketAddr {
         SocketAddr::new(self.listener.ip(), self.listener_tcp_port)
     }
 
-    pub fn version(&self) -> Option<&VersionPayload> {
-        self.version.as_ref()
-    }
-
-    pub fn last_block_index(&self) -> u32 {
-        self.last_block_index
-    }
-
-    pub fn is_full_node(&self) -> bool {
-        self.is_full_node
-    }
-
     fn check_message_queue(&mut self) {
         if !self.ack {
             return;
         }
-        if let Some(message) = self.message_queue_high.pop_front() {
-            self.send_message(message);
-        } else if let Some(message) = self.message_queue_low.pop_front() {
+        if let Some(message) = self.message_queue_high.pop_front().or_else(|| self.message_queue_low.pop_front()) {
             self.send_message(message);
         }
     }
 
     fn enqueue_message(&mut self, message: Message) {
-        let is_single = match message.command {
-            MessageCommand::Addr
-            | MessageCommand::GetAddr
-            | MessageCommand::GetBlocks
-            | MessageCommand::GetHeaders
-            | MessageCommand::Mempool
-            | MessageCommand::Ping
-            | MessageCommand::Pong => true,
-            _ => false,
-        };
+        let is_single = matches!(message.command,
+            MessageCommand::Addr | MessageCommand::GetAddr | MessageCommand::GetBlocks |
+            MessageCommand::GetHeaders | MessageCommand::Mempool | MessageCommand::Ping |
+            MessageCommand::Pong
+        );
         let message_queue = match message.command {
-            MessageCommand::Alert
-            | MessageCommand::Extensible
-            | MessageCommand::FilterAdd
-            | MessageCommand::FilterClear
-            | MessageCommand::FilterLoad
-            | MessageCommand::GetAddr
-            | MessageCommand::Mempool => &mut self.message_queue_high,
+            MessageCommand::Alert | MessageCommand::Extensible | MessageCommand::FilterAdd |
+            MessageCommand::FilterClear | MessageCommand::FilterLoad | MessageCommand::GetAddr |
+            MessageCommand::Mempool => &mut self.message_queue_high,
             _ => &mut self.message_queue_low,
         };
         if !is_single || !message_queue.iter().any(|m| m.command == message.command) {
@@ -119,42 +115,39 @@ impl RemoteNode {
         self.check_message_queue();
     }
 
-    fn on_ack(&mut self) {
+    async fn on_ack(&mut self) {
         self.ack = true;
         self.check_message_queue();
     }
 
-    fn on_data(&mut self, data: &[u8]) {
-        self.msg_buffer.extend_from_slice(data);
+    async fn on_data(&mut self, data: BytesMut) {
+        self.msg_buffer.extend_from_slice(&data);
         while let Some(message) = self.try_parse_message() {
-            self.on_message(message);
+            self.on_message(message).await;
         }
     }
 
-    fn on_receive(&mut self, message: impl Message) {
-        match message {
-            Timer(_) => self.on_timer(),
-            Message(msg) => {
-                if let Some(payload) = msg.payload.as_ping() {
+    async fn on_message(&mut self, message: Message) {
+        match message.command {
+            MessageCommand::Ping => {
+                if let Some(payload) = message.payload.as_ping() {
                     if payload.last_block_index > self.last_height_sent {
                         self.last_height_sent = payload.last_block_index;
-                    } else if msg.command == MessageCommand::Ping {
+                    } else {
                         return;
                     }
                 }
-                self.enqueue_message(msg);
             }
-            Inventory(inventory) => self.on_send(inventory),
-            Relay(relay) => self.on_relay(relay.inventory),
-            StartProtocol(_) => self.on_start_protocol(),
+            _ => {}
         }
+        self.enqueue_message(message);
     }
 
-    fn on_relay(&mut self, inventory: impl Inventory) {
+    async fn on_relay(&mut self, inventory: Box<dyn IInventory<Error=()>>) {
         if !self.is_full_node {
             return;
         }
-        if let InventoryType::TX = inventory.inventory_type() {
+        if inventory.inventory_type() == InventoryType::TX {
             if let Some(ref bloom_filter) = self.bloom_filter {
                 if !bloom_filter.test(inventory.as_transaction().unwrap()) {
                     return;
@@ -167,11 +160,11 @@ impl RemoteNode {
         ));
     }
 
-    fn on_send(&mut self, inventory: impl Inventory) {
+    async fn on_send(&mut self, inventory: Box<dyn IInventory<Error=()>>) {
         if !self.is_full_node {
             return;
         }
-        if let InventoryType::TX = inventory.inventory_type() {
+        if inventory.inventory_type() == InventoryType::TX {
             if let Some(ref bloom_filter) = self.bloom_filter {
                 if !bloom_filter.test(inventory.as_transaction().unwrap()) {
                     return;
@@ -181,9 +174,9 @@ impl RemoteNode {
         self.enqueue_message(Message::new(inventory.inventory_type().into(), inventory));
     }
 
-    fn on_start_protocol(&mut self) {
-        let capabilities = vec![FullNodeCapability::new(
-            NativeContract::Ledger::current_index(&self.system.store_view),
+    async fn on_start_protocol(&mut self) {
+        let mut capabilities = vec![FullNodeCapability::new(
+            NativeContract::Ledger::current_index(&self.system.store_view()),
         )];
         if self.local_node.listener_tcp_port > 0 {
             capabilities.push(ServerCapability::new(
@@ -202,20 +195,165 @@ impl RemoteNode {
         ));
     }
 
-    fn post_stop(&mut self) {
-        self.timer.cancel();
-        self.local_node.remote_nodes.remove(&self.remote_addr);
-    }
-
     fn send_message(&mut self, message: Message) {
         self.ack = false;
-        self.send_data(&message.to_bytes());
+        let _ = self.stream.write_all(&message.to_bytes());
         self.sent_commands[message.command as usize] = true;
     }
 
     fn try_parse_message(&mut self) -> Option<Message> {
         let (message, length) = Message::try_deserialize(&self.msg_buffer)?;
-        self.msg_buffer.drain(..length);
+        self.msg_buffer.advance(length);
         Some(message)
+    }
+}
+
+impl Actor for RemoteNode {
+    type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        ctx.set_mailbox_capacity(1000);
+    }
+}
+
+impl Handler<StartProtocol> for RemoteNode {
+    type Result = ();
+
+    fn handle(&mut self, _msg: StartProtocol, _ctx: &mut Self::Context) -> Self::Result {
+        self.on_start_protocol();
+    }
+}
+
+impl Handler<Relay> for RemoteNode {
+    type Result = ();
+
+    fn handle(&mut self, msg: Relay, _ctx: &mut Self::Context) -> Self::Result {
+        self.on_relay(msg.inventory);
+    }
+}
+
+impl Connection for RemoteNode {
+    fn remote(&self) -> SocketAddr {
+        self.listener
+    }
+
+    fn local(&self) -> SocketAddr {
+        self.stream.local_addr().unwrap()
+    }
+
+    fn stream(&self) -> &TcpStream {
+        &self.stream
+    }
+
+    fn stream_mut(&mut self) -> &mut TcpStream {
+        &mut self.stream
+    }
+
+    fn is_disconnected(&self) -> bool {
+        // Implement based on connection state
+        self.version.is_none() || self.stream.peer_addr().is_err()
+    }
+
+    fn set_disconnected(&mut self, value: bool) {
+        if value {
+            self.version = None;
+        }
+    }
+
+    fn new(stream: TcpStream, remote: SocketAddr, local: SocketAddr) -> Self where Self: Sized {
+        unimplemented!("Use RemoteNode::new instead")
+    }
+
+    async fn disconnect(&mut self, abort: bool) {
+        self.set_disconnected(true);
+        if abort {
+            self.stream.abort().await.ok();
+        } else {
+            self.stream.shutdown().await.ok();
+        }
+        // Additional cleanup if needed
+        self.message_queue_high.clear();
+        self.message_queue_low.clear();
+        self.known_hashes.clear();
+        self.sent_hashes.clear();
+        self.version = None;
+        self.last_block_index = 0;
+        self.is_full_node = false;
+        self.ack = false;
+        self.last_sent = Instant::now();
+        self.sent_commands = [false; 256];
+        self.msg_buffer.clear();
+    }
+
+    async fn on_ack(&mut self) {
+        self.ack = true;
+        self.process_message_queue().await;
+    }
+
+    async fn on_data(&mut self, data: BytesMut) {
+        self.msg_buffer.extend_from_slice(&data);
+        while let Some(message) = self.try_parse_message() {
+            self.handle_message(message).await;
+        }
+    }
+}
+
+pub struct RemoteNodeMailbox {
+    inner: VecDeque<Envelope<RemoteNode>>,
+}
+
+impl PriorityMailbox for RemoteNodeMailbox {
+    fn new() -> Self {
+        RemoteNodeMailbox {
+            inner: VecDeque::new(),
+        }
+    }
+
+    fn enqueue(&mut self, msg: Envelope<RemoteNode>) {
+        match msg.message() {
+            Message(msg) if matches!(msg.command,
+                MessageCommand::Extensible | MessageCommand::FilterAdd |
+                MessageCommand::FilterClear | MessageCommand::FilterLoad |
+                MessageCommand::VerAck | MessageCommand::Version |
+                MessageCommand::Alert
+            ) => self.inner.push_front(msg),
+            Tcp::ConnectionClosed(_) | Connection::Close(_) | Connection::Ack(_) => self.inner.push_front(msg),
+            _ => self.inner.push_back(msg),
+        }
+    }
+
+    fn dequeue(&mut self) -> Option<Envelope<RemoteNode>> {
+        self.inner.pop_front()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn filter(&mut self, f: impl Fn(&Envelope<RemoteNode>) -> bool) {
+        self.inner.retain(f);
+    }
+}
+
+impl RemoteNodeMailbox {
+    fn shall_drop(&self, msg: &Envelope<RemoteNode>) -> bool {
+        if let Message(msg) = msg.message() {
+            matches!(msg.command,
+                MessageCommand::GetAddr | MessageCommand::GetBlocks |
+                MessageCommand::GetHeaders | MessageCommand::Mempool
+            ) && self.inner.iter().any(|e| {
+                if let Message(existing_msg) = e.message() {
+                    existing_msg.command == msg.command
+                } else {
+                    false
+                }
+            })
+        } else {
+            false
+        }
     }
 }

@@ -3,7 +3,6 @@
 use std::hash::Hash;
 use std::cmp::Eq;
 
-pub mod neo_io_caching {
     use std::collections::{HashMap, LinkedList};
     use std::hash::Hash;
 
@@ -90,5 +89,3 @@ where
         }
     }
 }
-
-} // mod neo_io_caching

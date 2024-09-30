@@ -4,6 +4,8 @@ use std::sync::OnceLock;
 use std::marker::PhantomData;
 use crate::io::memory_reader::MemoryReader;
 use crate::io::serializable_trait::SerializableTrait;
+use lazy_static::lazy_static;
+use std::sync::Mutex;
 
 /// The `ReflectionCache` struct emulates a reflection cache, mapping keys to types,
 /// and allows for creating instances of those types.
@@ -67,53 +69,22 @@ where
     }
 }
 
-//
-// // Usage Example:
-//
-// // Define an enum to use as keys.
-// #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-// pub enum MyEnum {
-//     TypeA,
-//     TypeB,
-// }
-//
-// // Define some structs to associate with the enum variants.
-// #[derive(Default)]
-// pub struct TypeA {
-//     // fields...
-// }
-//
-// #[derive(Default)]
-// pub struct TypeB {
-//     // fields...
-// }
-//
-// // Initialize the reflection cache with the types.
-// static REFLECTION_CACHE: OnceLock<ReflectionCache<MyEnum>> = OnceLock::new();
-//
-// fn initialize_cache() {
-//     let mut cache = ReflectionCache::new();
-//     cache.register::<TypeA>(MyEnum::TypeA);
-//     cache.register::<TypeB>(MyEnum::TypeB);
-//     REFLECTION_CACHE.set(cache).unwrap();
-// }
-//
-// fn main() {
-//     initialize_cache();
-//
-//     // Create an instance of TypeA.
-//     if let Some(instance) = REFLECTION_CACHE.get().unwrap().create_instance(MyEnum::TypeA) {
-//         // Downcast the boxed Any to the specific type.
-//         if let Ok(type_a) = instance.downcast::<TypeA>() {
-//             // Use the instance...
-//             println!("Created an instance of TypeA!");
-//         }
-//     }
-//
-//     // Create an instance of TypeB.
-//     if let Some(instance) = REFLECTION_CACHE.get().unwrap().create_instance(MyEnum::TypeB) {
-//         if let Ok(type_b) = instance.downcast::<TypeB>() {
-//             println!("Created an instance of TypeB!");
-//         }
-//     }
-// }
+use once_cell::sync::Lazy;
+
+pub static GLOBAL_REFLECTION_CACHES: Lazy<Mutex<HashMap<std::any::TypeId, Box<dyn Any + Send + Sync>>>> = Lazy::new(|| {
+    Mutex::new(HashMap::new())
+});
+
+pub fn get_or_create_global_reflection_cache<T: 'static + Copy + Eq + std::hash::Hash + Send + Sync>() -> &'static Mutex<ReflectionCache<T>> {
+    let type_id = std::any::TypeId::of::<T>();
+    let mut caches = GLOBAL_REFLECTION_CACHES.lock().unwrap();
+    
+    caches.entry(type_id).or_insert_with(|| {
+        Box::new(Mutex::new(ReflectionCache::<T>::new()))
+    });
+    
+    // Safety: We know this cast is safe because we just ensured the entry exists with the correct type
+    unsafe {
+        &*(caches.get(&type_id).unwrap().downcast_ref::<Mutex<ReflectionCache<T>>>().unwrap() as *const Mutex<ReflectionCache<T>>)
+    }
+}

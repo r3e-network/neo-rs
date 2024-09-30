@@ -8,6 +8,7 @@ pub mod transaction_router;
 pub mod transaction_verification_context;
 pub mod verify_result;
 pub mod blockchain_application_executed;
+mod ledger_error;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right

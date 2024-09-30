@@ -1,6 +1,6 @@
 use alloc::rc::Rc;
+use neo_io::{CacheInterface, FIFOCache};
 use crate::cryptography::ECPoint;
-use crate::io::caching::{CacheInterface, FIFOCache};
 
 pub struct ECPointCache {
     pub inner_cache: FIFOCache<Vec<u8>, ECPoint>,

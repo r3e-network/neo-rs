@@ -5,10 +5,10 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use neo_base::errors;
-use neo_core::types::{Bytes, DEFAULT_PER_BLOCK_MILLIS, Network, SEED_LIST_DEV_NET};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 pub use {codec::*, discovery::*, driver_v2::*, handle_v2::*, node::*, peer::*};
+use neo_type::{Bytes, Network, DEFAULT_PER_BLOCK_MILLIS, SEED_LIST_DEV_NET};
 
 pub mod codec;
 pub mod discovery;

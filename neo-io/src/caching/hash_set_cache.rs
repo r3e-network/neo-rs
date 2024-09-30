@@ -1,7 +1,7 @@
 use std::collections::{HashSet, LinkedList};
 use std::hash::Hash;
 use std::sync::{Arc, RwLock};
-use crate::io::caching::CacheInterface;
+use crate::CacheInterface;
 
 pub struct HashSetCache<T>
 where

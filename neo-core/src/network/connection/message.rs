@@ -1,34 +1,39 @@
-use std::io::{self, Write};
+use actix::prelude::*;
+use serde::{Serialize, Deserialize};
+use getset::{Getters, Setters};
 use crate::io::binary_writer::BinaryWriter;
-use crate::io::caching::ReflectionCache;
-use crate::io::serializable_trait::SerializableTrait;
+use crate::io::caching::{get_or_create_global_reflection_cache, ReflectionCache};
 use crate::io::memory_reader::MemoryReader;
-use crate::network::MessageCommand;
+use crate::io::serializable_trait::SerializableTrait;
+use crate::network::{MessageCommand, MessageFlags, RemoteNode};
+use lz4::{block::compress as lz4_compress_block, block::decompress as lz4_decompress_block};
+use crate::network::network_error::NetworkError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MessageFlags {
-    None = 0,
-    Compressed = 1,
-}
-
-pub struct Message {
+#[derive(Getters, Setters, Clone)]
+pub struct Message<T: SerializableTrait + Clone> {
+    #[getset(get = "pub", set = "pub")]
     pub flags: MessageFlags,
+    #[getset(get = "pub", set = "pub")]
     pub command: MessageCommand,
-    pub payload: Option<Box<dyn SerializableTrait>>,
+    #[getset(get = "pub", set = "pub")]
+    pub payload: Option<T>,
+    #[getset(get = "pub", set = "pub")]
     payload_compressed: Vec<u8>,
 }
 
-impl Message {
+impl<T: SerializableTrait + Clone> Message<T> {
     pub const PAYLOAD_MAX_SIZE: usize = 0x02000000;
     const COMPRESSION_MIN_SIZE: usize = 128;
     const COMPRESSION_THRESHOLD: usize = 64;
 
-    pub fn new(command: MessageCommand, payload: Option<Box<dyn SerializableTrait>>) -> Self {
+    pub fn create(command: MessageCommand, payload: Option<T>) -> Self {
         let mut message = Message {
             flags: MessageFlags::None,
             command,
             payload: payload.clone(),
-            payload_compressed: payload.map_or(Vec::new(), |p| p.to_vec()),
+            payload_compressed: payload
+                .as_ref()
+                .map_or(Vec::new(), |p| p.to_vec()),
         };
 
         let try_compression = matches!(
@@ -45,7 +50,9 @@ impl Message {
 
         if try_compression && message.payload_compressed.len() > Self::COMPRESSION_MIN_SIZE {
             let compressed = lz4_compress(&message.payload_compressed);
-            if compressed.len() < message.payload_compressed.len() - Self::COMPRESSION_THRESHOLD {
+            if compressed.len()
+                < message.payload_compressed.len() - Self::COMPRESSION_THRESHOLD
+            {
                 message.payload_compressed = compressed;
                 message.flags = MessageFlags::Compressed;
             }
@@ -63,10 +70,14 @@ impl Message {
         } else {
             self.payload_compressed.clone()
         };
-        self.payload = Some(ReflectionCache::<MessageCommand>::create_serializable(
-            self.command,
-            &decompressed,
-        ));
+        self.payload = Some(
+            get_or_create_global_reflection_cache::<MessageCommand>()
+                .lock()
+                .unwrap()
+                .create_serializable(self.command, &mut MemoryReader::new(&decompressed))
+                .unwrap()
+                .unwrap(),
+        );
     }
 
     pub fn try_deserialize(data: &[u8]) -> Option<(Self, usize)> {
@@ -74,7 +85,7 @@ impl Message {
             return None;
         }
 
-        let flags = MessageFlags::from(data[0]);
+        let flags = MessageFlags::from_u8(data[0]).ok_or(||Err(NetworkError::Unknown("Unknown flag".to_string()))).ok()?;
         let command = MessageCommand::from(data[1]);
         let (length, payload_index) = match data[2] {
             0xFD => {
@@ -87,7 +98,10 @@ impl Message {
                 if data.len() < 7 {
                     return None;
                 }
-                (u32::from_le_bytes([data[3], data[4], data[5], data[6]]) as usize, 7)
+                (
+                    u32::from_le_bytes([data[3], data[4], data[5], data[6]]) as usize,
+                    7,
+                )
             }
             0xFF => {
                 if data.len() < 11 {
@@ -95,7 +109,8 @@ impl Message {
                 }
                 (
                     u64::from_le_bytes([
-                        data[3], data[4], data[5], data[6], data[7], data[8], data[9], data[10],
+                        data[3], data[4], data[5], data[6], data[7], data[8], data[9],
+                        data[10],
                     ]) as usize,
                     11,
                 )
@@ -127,9 +142,22 @@ impl Message {
     }
 }
 
-impl SerializableTrait for Message {
+impl<T: SerializableTrait + Clone> SerializableTrait for Message<T> {
+    fn size(&self) -> usize {
+        std::mem::size_of::<MessageFlags>()
+            + std::mem::size_of::<MessageCommand>()
+            + self.payload_compressed.len()
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), std::io::Error> {
+        writer.write_u8(self.flags.into())?;
+        writer.write_u8(self.command.into())?;
+        writer.write_var_bytes(&self.payload_compressed)?;
+        Ok(())
+    }
+
     fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
-        let flags = MessageFlags::from(reader.read_u8()?);
+        let flags = MessageFlags::from_u8(reader.read_u8()?);
         let command = MessageCommand::from(reader.read_u8()?);
         let payload_compressed = reader.read_var_bytes(Self::PAYLOAD_MAX_SIZE)?;
         let mut msg = Message {
@@ -141,50 +169,28 @@ impl SerializableTrait for Message {
         msg.decompress_payload();
         Ok(msg)
     }
-
-    fn serialize(&self, writer: &mut BinaryWriter) {
-        writer.write_u8(self.flags as u8)?;
-        writer.write_u8(self.command as u8)?;
-        writer.write_var_bytes(&self.payload_compressed)?;
-        Ok(())
-    }
-
-    fn size(&self) -> usize {
-        todo!()
-    }
 }
 
-// Helper functions (implementations needed)
+// Implement LZ4 compression using the `lz4` crate
 fn lz4_compress(data: &[u8]) -> Vec<u8> {
-    // Implement LZ4 compression
-    unimplemented!()
+    lz4_compress_block(data, None, false).unwrap_or_else(|_| data.to_vec())
 }
 
+// Implement LZ4 decompression using the `lz4` crate
 fn lz4_decompress(data: &[u8], max_size: usize) -> Vec<u8> {
-    // Implement LZ4 decompression
-    unimplemented!()
+    lz4_decompress_block(data, Some(max_size as i32)).unwrap_or_else(|_| data.to_vec())
 }
 
-// Trait implementations for From<u8> for MessageFlags and MessageCommand
-impl From<u8> for MessageFlags {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => MessageFlags::None,
-            1 => MessageFlags::Compressed,
-            _ => panic!("Invalid MessageFlags value"),
-        }
-    }
+
+impl<T: SerializableTrait + Clone> actix::Message for Message<T> {
+    type Result = ();
 }
 
-impl From<u8> for MessageCommand {
-    fn from(value: u8) -> Self {
-        match value {
-            // Implement conversion from u8 to MessageCommand
-            // Example:
-            // 0 => MessageCommand::Block,
-            // 1 => MessageCommand::Extensible,
-            // ...
-            _ => unimplemented!("MessageCommand conversion not fully implemented"),
-        }
+impl<T: SerializableTrait + Clone> Handler<Message<T>> for RemoteNode {
+    type Result = ();
+
+    fn handle(&mut self, msg: Message<T>, _ctx: &mut Self::Context) -> Self::Result {
+        // Handle the message
+        self.handle_message(msg);
     }
 }

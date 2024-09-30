@@ -1,6 +1,6 @@
 use std::hash::Hash;
 use std::collections::VecDeque;
-use crate::io::caching::{Cache, CacheInterface};
+use crate::{Cache, CacheInterface};
 
 pub struct FIFOCache<K, V>
 where

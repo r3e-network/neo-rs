@@ -23,7 +23,7 @@ impl Witness {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Witnesses(pub(crate) [Witness; 1]);
+pub struct Witnesses(pub [Witness; 1]);
 
 impl Witnesses {
     pub fn witness(&self) -> &Witness { &self.0[0] }

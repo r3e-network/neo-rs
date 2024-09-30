@@ -6,6 +6,8 @@ pub mod byte_array_equality_comparer;
 pub mod binary_writer;
 pub mod binary_reader;
 mod io_error;
+mod priority_mailbox;
+mod priority_message_queue;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right

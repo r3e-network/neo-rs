@@ -19,6 +19,7 @@ neo-type = {path="../neo-type", default-features = false}
 neo-vm = { path = "../neo-vm", default-features = false }
 neo-proc-macros = {path = "../neo-proc-macros", default-features = false}
 neo-json = {path ="../neo-json", default-features = false}
+neo-io = {path ="../neo-io", default-features = false}
 
 #bytes     = { version = "1", default-features = false }
 subtle    = { version = "2", default-features = false }
@@ -30,7 +31,7 @@ serde_repr       = { version = "0" }
 
 hashbrown        = { version = "0", features = ["serde"]}
 mimalloc         = { version = "0", default-features = false }
-
+lz4 = "1.24.0"
 lz4_flex         = { version = "0.11", default-features = false }
 
 thiserror        = { version = "1", optional = true }

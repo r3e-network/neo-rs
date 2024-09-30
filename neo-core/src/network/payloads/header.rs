@@ -10,7 +10,6 @@ use serde::Serialize;
 use neo_json::jtoken::JToken;
 use crate::ledger::header_cache::HeaderCache;
 use crate::persistence::DataCache;
-use crate::tx::Witnesses;
 
 /// Represents a block header.
 #[derive(Getters, Setters, MutGetters, CopyGetters, Clone, Default, Debug)]
@@ -60,7 +59,7 @@ pub struct Header {
 
     /// Script used to validate the block. Only one is supported at now.
     #[getset(get = "pub", set = "pub", get_mut = "pub")]
-    pub witnesses: Witnesses,
+    pub witness: Witness,
 }
 
 impl Header {
@@ -75,7 +74,7 @@ impl Header {
             hash: None,
             timestamp: 0,
             primary: 0,
-            witnesses: Default::default(),
+            witness: Default::default(),
         }
     }
 
@@ -88,7 +87,7 @@ impl Header {
         std::mem::size_of::<u32>() +
         std::mem::size_of::<u8>() +
         H160::LEN +
-            1usize + self.witnesses.size() as usize
+            1usize + self.witness.size() as usize
     }
 
     pub fn hash(&mut self) -> H256 {
@@ -104,7 +103,7 @@ impl Header {
         if witnesses.len() != 1 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid witness count"));
         }
-        self.witnesses = witnesses[0].clone();
+        self.witness = witnesses[0].clone();
         Ok(())
     }
 
@@ -127,7 +126,7 @@ impl Header {
     pub fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
         self.serialize_unsigned(writer)?;
         writer.write_all(&[1])?; // Write witness count
-        self.witnesses.serialize(writer)?;
+        self.witness.serialize(writer)?;
         Ok(())
     }
 
@@ -165,7 +164,7 @@ impl Header {
         .unwrap()
         .insert("nextconsensus".to_string(), self.next_consensus.to_address(settings.address_version()))
         .unwrap()
-        .insert("witnesses".to_string(),  JToken::from(vec![self.witnesses.to_json()]))
+        .insert("witnesses".to_string(),  JToken::from(vec![self.witness.to_json()]))
         .unwrap();
         json
     }

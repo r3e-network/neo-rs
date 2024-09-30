@@ -11,6 +11,7 @@ edition = "2021"
 neo-base     = { path = "../neo-base", default-features = false }
 neo-core     = { path = "../neo-core", default-features = false }
 neo-crypto   = { path = "../neo-crypto", default-features = false }
+neo-type     = { path = "../neo-type", default-features = false }
 
 log          = { version = "0.4" }
 serde        = { version = "1", default-features = false, features = ["derive", "alloc"] }

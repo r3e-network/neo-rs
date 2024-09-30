@@ -135,6 +135,22 @@ impl ScriptBuilder {
         true
     }
 
+    /// Emits the opcodes for pushing the specified data onto the stack.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The data to be pushed, implementing the `ISerializable` trait.
+    ///
+    /// # Returns
+    ///
+    /// Returns `self` to allow for method chaining.
+    pub fn emit_push<T: SerializableTrait>(&mut self, data: &T) -> &mut Self {
+        let serialized_data = data.to_array();
+        self.emit_push_data(&serialized_data);
+        self
+    }
+
+
     #[inline]
     pub fn emit_with_operand(&mut self, opcode: OpCode, first: u8) {
         self.buf.put_u8(opcode.as_u8());

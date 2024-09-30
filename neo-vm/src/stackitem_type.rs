@@ -14,8 +14,6 @@ use crate::{CastError::*, StackItem::*, *};
 
 pub const MAX_INT_SIZE: usize = 32;
 
-pub type ScriptHash = H160;
-
 pub type IndexMap = indexmap::IndexMap<StackItem, StackItem, DefaultHashBuilder>;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, TryFromPrimitive)]

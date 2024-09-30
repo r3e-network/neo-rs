@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
-use crate::block::Header;
+use crate::network::payloads::Header;
 
 /// Used to cache the headers of the blocks that have not been received.
 pub struct HeaderCache {

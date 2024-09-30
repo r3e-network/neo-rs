@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicI32, AtomicU32, Ordering::Relaxed};
 use std::time::Duration;
 
 use dashmap::DashMap;
-use neo_core::types::Bytes;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::error::TrySendError;

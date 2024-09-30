@@ -17,6 +17,9 @@ pub const H256_SIZE: usize = 32;
 pub struct H256([u8; H256_SIZE]);
 
 impl H256 {
+    pub const LEN: usize = H256_SIZE;
+
+    pub fn len(&self) -> usize { H256_SIZE }
     pub fn from_script(p0: &Vec<u8>) -> H256 {
         let mut buf = [0u8; H256_SIZE];
         buf.copy_from_slice(p0);
@@ -27,6 +30,8 @@ impl H256 {
     pub fn zero() -> Self {
         Self([0u8; H256_SIZE])
     }
+
+    pub const ZERO: Self = Self::zero();
 
     pub fn is_zero(&self) -> bool {
         self.0 == [0u8; H256_SIZE]

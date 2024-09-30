@@ -3,17 +3,19 @@ use core::str::FromStr;
 use std::io::{Error, ErrorKind};
 use std::fmt;
 use neo_json::jtoken::JToken;
-use neo_vm::References;
+use neo_vm::{References, StackItem};
 use neo_vm::stack_item::StackItem;
 use crate::io::binary_writer::BinaryWriter;
 use crate::io::memory_reader::MemoryReader;
+use crate::io::serializable_trait::SerializableTrait;
 use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::network::payloads::conditions::WitnessConditionType;
 
 pub const MAX_SUBITEMS: usize = 16;
 pub const MAX_NESTING_DEPTH: i32 = 2;
 
-pub trait WitnessCondition: fmt::Debug {
+pub trait WitnessCondition: fmt::Debug + Clone + IInteroperable + SerializableTrait {
     /// The type of the WitnessCondition.
     fn condition_type(&self) -> WitnessConditionType;
 

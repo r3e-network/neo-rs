@@ -1,5 +1,5 @@
 /// Represents the command of a message.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum MessageCommand {
     // Handshaking
@@ -8,7 +8,7 @@ pub enum MessageCommand {
     Version = 0x00,
 
     /// Sent to respond to Version messages.
-    Verack = 0x01,
+    VerAck = 0x01,
 
     // Connectivity
     /// Sent to request for remote nodes.
@@ -92,4 +92,41 @@ pub enum MessageCommand {
     // Others
     /// Sent to send an alert.
     Alert = 0x40,
+}
+
+
+impl From<u8> for MessageCommand {
+    fn from(value: u8) -> Self {
+        match value {
+            0x01 => MessageCommand::Version,
+            0x02 => MessageCommand::VerAck,
+            0x03 => MessageCommand::Ping,
+            0x04 => MessageCommand::Pong,
+            0x10 => MessageCommand::GetAddr,
+            0x11 => MessageCommand::Addr,
+            0x18 => MessageCommand::GetHeaders,
+            0x20 => MessageCommand::Headers,
+            0x21 => MessageCommand::Inv,
+            0x24 => MessageCommand::GetBlocks,
+            0x28 => MessageCommand::GetData,
+            0x29 => MessageCommand::GetBlockByIndex,
+            0x2a => MessageCommand::NotFound,
+            0x2b => MessageCommand::Transaction,
+            0x2c => MessageCommand::Block,
+            0x2e => MessageCommand::Extensible,
+            0x2f => MessageCommand::Reject,
+            0x30 => MessageCommand::FilterLoad,
+            0x31 => MessageCommand::FilterAdd,
+            0x32 => MessageCommand::FilterClear,
+            0x38 => MessageCommand::MerkleBlock,
+            0x40 => MessageCommand::Alert,
+            _ => panic!("Invalid message command"),
+        }
+    }
+}
+
+impl From<MessageCommand> for u8 {
+    fn from(command: MessageCommand) -> Self {
+        command as u8
+    }
 }

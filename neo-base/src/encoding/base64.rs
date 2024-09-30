@@ -75,6 +75,22 @@ impl FromBase64 for Vec<u8> {
     }
 }
 
+impl FromBase64 for String {
+    type Error = FromBase64Error;
+
+    #[inline]
+    fn from_base64_std<T: AsRef<[u8]>>(src: T) -> Result<String, Self::Error> {
+        let decoded = Vec::from_base64_std(src)?;
+        String::from_utf8(decoded).map_err(|_| FromBase64Error::InvalidChar('\0'))
+    }
+
+    #[inline]
+    fn from_base64_url<T: AsRef<[u8]>>(src: T) -> Result<String, Self::Error> {
+        let decoded = Vec::from_base64_url(src)?;
+        String::from_utf8(decoded).map_err(|_| FromBase64Error::InvalidChar('\0'))
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -88,5 +104,17 @@ mod test {
         let b = [0x1, 0x2, 0x3, 0x4, 0x5, 0x6];
         let d = Vec::from_base64_std(&b.to_base64_std()).expect("decode shou be ok");
         assert_eq!(b.as_slice(), d.as_slice());
+    }
+
+    #[test]
+    fn test_string_base64() {
+        let original = "Hello, World!";
+        let encoded = original.as_bytes().to_base64_std();
+        let decoded = String::from_base64_std(&encoded).expect("decode should be ok");
+        assert_eq!(original, decoded);
+
+        let encoded_url = original.as_bytes().to_base64_url();
+        let decoded_url = String::from_base64_url(&encoded_url).expect("decode should be ok");
+        assert_eq!(original, decoded_url);
     }
 }

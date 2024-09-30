@@ -47,7 +47,7 @@ impl KeyPair {
 
     /// The hash of the public key.
     pub fn public_key_hash(&self) -> H160 {
-        self.public_key.to_script_hash()
+        self.public_key.encode_point(true).to_script_hash()
     }
 
     /// Exports the private key in WIF format.

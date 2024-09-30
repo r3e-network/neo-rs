@@ -7,7 +7,7 @@ use neo_crypto::secp256r1::PublicKey;
 pub const NEO_TOTAL_SUPPLY: u64 = 1000_000_000; // 0.1 Billion
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum Role {
+pub enum ConsensusRole {
     Primary,
     Backup,
     WatchOnly,

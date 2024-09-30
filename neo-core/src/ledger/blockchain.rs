@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, LinkedList, VecDeque};
 use std::sync::Arc;
 use actix::dev::Envelope;
+use actix::prelude::*;
 use lazy_static::lazy_static;
 use crate::block::Block;
 use crate::ledger::blockchain_application_executed::ledger::ApplicationExecuted;
@@ -11,9 +12,9 @@ use crate::neo_system::NeoSystem;
 use crate::network::LocalNode;
 use crate::store::Store;
 use crate::network::payloads::{IInventory, IVerifiable, Transaction};
-use neo_type::H160;
-use neo_type::H256;
+use neo_type::{H160, H256};
 use neo_vm::ScriptBuilder;
+use crate::io::priority_mailbox::PriorityMailbox;
 
 pub type CommittingHandler = fn(system: &NeoSystem, block: &Block, snapshot: &dyn Store<WriteBatch=()>, application_executed_list: &[ApplicationExecuted]);
 pub type CommittedHandler = fn(system: &NeoSystem, block: &Block);
@@ -55,7 +56,7 @@ pub struct RelayResult {
 struct Initialize;
 struct UnverifiedBlocksList {
     blocks: LinkedList<Block>,
-    nodes: HashSet<ActorRef>,
+    nodes: HashSet<Addr<dyn Actor<Context=()>>>,
 }
 
 lazy_static! {
@@ -100,12 +101,12 @@ impl Blockchain {
             self.persist(&block);
             current_height += 1;
         }
-        self.sender().tell(ImportCompleted, self.sender());
+        self.sender().do_send(ImportCompleted);
     }
 
     fn add_unverified_block_to_cache(&mut self, block: Block) {
         let list = self.block_cache_unverified
-            .entry(block.index)
+            .entry(block.index())
             .or_insert_with(|| UnverifiedBlocksList {
                 blocks: LinkedList::new(),
                 nodes: HashSet::new(),
@@ -116,7 +117,7 @@ impl Blockchain {
         }
 
         if !list.nodes.insert(self.sender()) {
-            self.sender().tell(Tcp::Abort, self.sender());
+            self.sender().do_send(Tcp::Abort);
             return;
         }
 
@@ -139,14 +140,14 @@ impl Blockchain {
             self.system.mem_pool.try_add(&tx, &snapshot);
         }
 
-        self.sender().tell(FillCompleted, self.sender());
+        self.sender().do_send(FillCompleted);
     }
 
     fn on_initialize(&mut self) {
         if !NativeContract::Ledger::initialized(&self.system.store_view()) {
             self.persist(&self.system.genesis_block);
         }
-        self.sender().tell((), self.sender());
+        self.sender().do_send(());
     }
 
     fn on_inventory(&mut self, inventory: Box<dyn IInventory>, relay: bool) {
@@ -162,7 +163,7 @@ impl Blockchain {
         };
 
         if result == VerifyResult::Succeed && relay {
-            self.system.local_node.tell(LocalNode::RelayDirectly { inventory }, self.sender());
+            self.system.local_node.do_send(LocalNode::RelayDirectly { inventory });
         }
         self.send_relay_result(inventory, result);
     }
@@ -171,7 +172,7 @@ impl Blockchain {
         let snapshot = self.system.store_view();
         let persisting_block = block.clone();
         let mut engine = ApplicationEngine::new(TriggerType::ON_PERSIST, &persisting_block, &snapshot, self.system.settings.gas_free);
-        engine.load_script(NativeContract::Ledger.script().to_vec());
+        engine.load_script(&ON_PERSIST_SCRIPT);
         if engine.execute().is_ok() {
             engine.commit();
         }
@@ -188,7 +189,7 @@ impl Blockchain {
             handler(&self.system, &persisting_block);
         }
 
-        self.sender().tell(PersistCompleted { block: persisting_block }, self.sender());
+        self.sender().do_send(PersistCompleted { block: persisting_block });
     }
 
     fn send_relay_result(&self, inventory: Box<dyn IInventory>, result: VerifyResult) {
@@ -196,7 +197,7 @@ impl Blockchain {
             inventory,
             result,
         };
-        self.sender().tell(rr, self.sender());
+        self.sender().do_send(rr);
         self.system.event_bus.publish(RelayResultReason::new(inventory, result));
     }
 
@@ -212,27 +213,61 @@ impl Blockchain {
 }
 
 impl Actor for Blockchain {
-    type Context = akka::actor::Context<Self>;
+    type Context = Context<Self>;
 
-    fn receive(&mut self, msg: Self::Message, _ctx: &mut Self::Context) {
-        match msg {
-            Initialize => self.on_initialize(),
-            Import { blocks, verify } => self.on_import(blocks, verify),
-            FillMemoryPool { transactions } => self.on_fill_memory_pool(transactions),
-            Reverify { inventories } => self.on_reverify(inventories),
-            RelayResult { inventory, result } => self.on_relay_result(inventory, result),
-            PersistCompleted { block } => self.on_persist_completed(block),
-            ImportCompleted => self.on_import_completed(),
-            FillCompleted => self.on_fill_completed(),
+    fn started(&mut self, ctx: &mut Self::Context) {
+        ctx.set_mailbox_capacity(1000);
+    }
+}
+
+impl Handler<Initialize> for Blockchain {
+    type Result = ();
+
+    fn handle(&mut self, _msg: Initialize, _ctx: &mut Self::Context) -> Self::Result {
+        self.on_initialize();
+    }
+}
+
+impl Handler<Import> for Blockchain {
+    type Result = ();
+
+    fn handle(&mut self, msg: Import, _ctx: &mut Self::Context) -> Self::Result {
+        self.on_import(msg.blocks, msg.verify);
+    }
+}
+
+impl Handler<FillMemoryPool> for Blockchain {
+    type Result = ();
+
+    fn handle(&mut self, msg: FillMemoryPool, _ctx: &mut Self::Context) -> Self::Result {
+        self.on_fill_memory_pool(msg.transactions);
+    }
+}
+
+impl Handler<Reverify> for Blockchain {
+    type Result = ();
+
+    fn handle(&mut self, msg: Reverify, _ctx: &mut Self::Context) -> Self::Result {
+        for inventory in msg.inventories {
+            self.on_inventory(inventory, false);
         }
     }
 }
 
-pub fn props(system: Arc<NeoSystem>) -> Props {
-    Props::new(move || Blockchain::new(system.clone())).with_mailbox("blockchain-mailbox")
+pub fn create_blockchain_actor(system: Arc<NeoSystem>) -> Addr<Blockchain> {
+    let mailbox = SyncArbiter::start(1, move || {
+        let settings = Arc::new(system.settings.clone());
+        let config = Arc::new(system.config.clone());
+        PriorityMailbox::new(settings, config)
+    });
+
+    Actor::create(|_| Blockchain::new(system.clone()))
+        .with_mailbox(mailbox)
+        .start()
 }
+
 struct BlockchainMailbox {
-    inner: VecDeque<Envelope>,
+    inner: VecDeque<Envelope<Blockchain>>,
 }
 
 impl PriorityMailbox for BlockchainMailbox {
@@ -242,7 +277,7 @@ impl PriorityMailbox for BlockchainMailbox {
         }
     }
 
-    fn enqueue(&mut self, msg: Envelope) {
+    fn enqueue(&mut self, msg: Envelope<Blockchain>) {
         match msg.message() {
             // High priority messages
             PersistCompleted { .. } | ImportCompleted | FillCompleted => {
@@ -262,7 +297,7 @@ impl PriorityMailbox for BlockchainMailbox {
         }
     }
 
-    fn dequeue(&mut self) -> Option<Envelope> {
+    fn dequeue(&mut self) -> Option<Envelope<Blockchain>> {
         self.inner.pop_front()
     }
 
