@@ -5,21 +5,20 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use crossbeam::atomic::AtomicCell;
+use neo_base::time::{Tick, unix_millis_now};
 use tokio::runtime::{self, Runtime};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-
-use neo_base::time::{unix_millis_now, Tick};
 
 use crate::*;
 
 pub struct LocalNode {
     runtime: Option<Runtime>,
     // ledger: Arc<dyn Ledger>,
-    net_rx: AtomicCell<Option<mpsc::Receiver<NetMessage>>>,
-    driver: NetDriver,
-    local: SocketAddr,
-    config: P2pConfig,
+    net_rx:  AtomicCell<Option<mpsc::Receiver<NetMessage>>>,
+    driver:  NetDriver,
+    local:   SocketAddr,
+    config:  P2pConfig,
 }
 
 impl LocalNode {
@@ -48,13 +47,21 @@ impl LocalNode {
         }
     }
 
-    pub fn p2p_config(&self) -> &P2pConfig { &self.config }
+    pub fn p2p_config(&self) -> &P2pConfig {
+        &self.config
+    }
 
-    pub fn net_handles(&self) -> NetHandles { self.driver.net_handles() }
+    pub fn net_handles(&self) -> NetHandles {
+        self.driver.net_handles()
+    }
 
-    pub fn seeds(&self) -> &[String] { &self.config.seeds }
+    pub fn seeds(&self) -> &[String] {
+        &self.config.seeds
+    }
 
-    pub fn local_addr(&self) -> SocketAddr { self.local }
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local
+    }
 
     // drop(NodeHandle) will close the listener
     pub fn run(&self, handle: MessageHandleV2) -> NodeHandle {
@@ -125,8 +132,8 @@ impl Drop for LocalNode {
 pub struct NodeHandle {
     // connect_tx: mpsc::Sender<SocketAddr>,
     discovery: Discovery,
-    cancel: CancellationToken,
-    tick: Arc<Tick>,
+    cancel:    CancellationToken,
+    tick:      Arc<Tick>,
 }
 
 impl NodeHandle {
@@ -139,16 +146,22 @@ impl NodeHandle {
         Self {
             // connect_tx: connect_tx.clone(),
             discovery: DiscoveryV1::with_shared(connect_tx, resolver),
-            cancel: CancellationToken::new(),
-            tick: Arc::new(Tick::new(protocol_tick)),
+            cancel:    CancellationToken::new(),
+            tick:      Arc::new(Tick::new(protocol_tick)),
         }
     }
 
-    fn protocol_tick(&self) -> Arc<Tick> { self.tick.clone() }
+    fn protocol_tick(&self) -> Arc<Tick> {
+        self.tick.clone()
+    }
 
-    pub(crate) fn cancelee(&self) -> CancellationToken { self.cancel.clone() }
+    pub(crate) fn cancelee(&self) -> CancellationToken {
+        self.cancel.clone()
+    }
 
-    pub(crate) fn discovery(&self) -> Discovery { self.discovery.clone() }
+    pub(crate) fn discovery(&self) -> Discovery {
+        self.discovery.clone()
+    }
 }
 
 impl Drop for NodeHandle {
@@ -171,19 +184,16 @@ mod test {
         let node = LocalNode::new(P2pConfig::default());
         let addr = node.local_addr();
 
-        let message = MessageHandleV2::new( node.config.clone(), node.net_handles());
+        let message = MessageHandleV2::new(node.config.clone(), node.net_handles());
         let handle = node.run(message);
         std::thread::sleep(Duration::from_secs(1));
 
-        let mut stream = TcpStream::connect(addr)
-            .expect("`TcpStream::connect` should be ok");
+        let mut stream = TcpStream::connect(addr).expect("`TcpStream::connect` should be ok");
 
         let ping = P2pMessage::Ping(Ping { last_block_index: 2, unix_seconds: 3, nonce: 4 });
-        let buf = ping.to_message_encoded()
-            .expect("`to_message_encoded` should be ok");
+        let buf = ping.to_message_encoded().expect("`to_message_encoded` should be ok");
 
-        stream.write_all(buf.as_ref())
-            .expect("`write_all` should be ok");
+        stream.write_all(buf.as_ref()).expect("`write_all` should be ok");
         std::thread::sleep(Duration::from_millis(200));
 
         drop(handle);

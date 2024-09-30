@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, Error, Write};
 use crate::io::serializable_trait::SerializableTrait;
 use crate::io::memory_reader::MemoryReader;
 use crate::network::payloads::Witness;
@@ -8,6 +8,7 @@ use neo_type::H256;
 use getset::{CopyGetters, Getters, MutGetters, Setters};
 use serde::Serialize;
 use neo_json::jtoken::JToken;
+use crate::io::binary_writer::BinaryWriter;
 use crate::ledger::header_cache::HeaderCache;
 use crate::persistence::DataCache;
 
@@ -78,33 +79,11 @@ impl Header {
         }
     }
 
-    pub fn size(&self) -> usize {
-        std::mem::size_of::<u32>() +
-        H256::LEN +
-        H256::LEN +
-        std::mem::size_of::<u64>() +
-        std::mem::size_of::<u64>() +
-        std::mem::size_of::<u32>() +
-        std::mem::size_of::<u8>() +
-        H160::LEN +
-            1usize + self.witness.size() as usize
-    }
-
     pub fn hash(&mut self) -> H256 {
         if self.hash.is_none() {
             self.hash = Some(self.calculate_hash());
         }
         self.hash.unwrap()
-    }
-
-    pub fn deserialize(&mut self, reader: &mut MemoryReader) -> io::Result<()> {
-        self.deserialize_unsigned(reader)?;
-        let witnesses = reader.read_serializable_array::<Witness>(1)?;
-        if witnesses.len() != 1 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid witness count"));
-        }
-        self.witness = witnesses[0].clone();
-        Ok(())
     }
 
     pub fn deserialize_unsigned(&mut self, reader: &mut MemoryReader) -> io::Result<()> {
@@ -123,13 +102,6 @@ impl Header {
         Ok(())
     }
 
-    pub fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        self.serialize_unsigned(writer)?;
-        writer.write_all(&[1])?; // Write witness count
-        self.witness.serialize(writer)?;
-        Ok(())
-    }
-
     pub fn serialize_unsigned(&self, writer: &mut dyn Write) -> io::Result<()> {
         writer.write_all(&self.version.to_le_bytes())?;
         self.prev_hash.serialize(writer)?;
@@ -142,31 +114,20 @@ impl Header {
         Ok(())
     }
 
-    pub fn to_json(&self, settings: &ProtocolSettings) -> JToken {
-        let mut json = JToken::new_object();
-        json.insert("hash".to_string(), self.hash().to_string().into())
-        .unwrap()
-        .insert("size".to_string(), self.size().into())
-        .unwrap()
-        .insert("version".to_string(), self.version.into())
-        .unwrap()
-        .insert("previousblockhash".to_string(), self.prev_hash.to_string().into())
-        .unwrap()
-        .insert("merkleroot".to_string(), self.merkle_root.to_string())
-        .unwrap()
-        .insert("time".to_string(), self.timestamp as i64)
-        .unwrap()
-        .insert("nonce".to_string(), format!("{:016X}", self.nonce))
-        .unwrap()
-        .insert("index".to_string(), self.index as i64)
-        .unwrap()
-        .insert("primary".to_string(), self.primary as i64)
-        .unwrap()
-        .insert("nextconsensus".to_string(), self.next_consensus.to_address(settings.address_version()))
-        .unwrap()
-        .insert("witnesses".to_string(),  JToken::from(vec![self.witness.to_json()]))
-        .unwrap();
-        json
+    pub fn to_json(&self, settings: &ProtocolSettings) -> serde_json::Value {
+        serde_json::json!({
+            "hash": self.hash().to_string(),
+            "size": self.size(),
+            "version": self.version,
+            "previousblockhash": self.prev_hash.to_string(),
+            "merkleroot": self.merkle_root.to_string(),
+            "time": self.timestamp as i64,
+            "nonce": format!("{:016X}", self.nonce),
+            "index": self.index as i64,
+            "primary": self.primary as i64,
+            "nextconsensus": self.next_consensus.to_address(settings.address_version()),
+            "witnesses": vec![self.witness.to_json()]
+        })
     }
 
     pub fn verify(&self, settings: &ProtocolSettings, snapshot: &dyn DataCache) -> bool {
@@ -215,7 +176,36 @@ impl Header {
     }
 }
 
+impl SerializableTrait for Header {
+    fn size(&self) -> usize {
+        std::mem::size_of::<u32>() +
+            H256::LEN +
+            H256::LEN +
+            std::mem::size_of::<u64>() +
+            std::mem::size_of::<u64>() +
+            std::mem::size_of::<u32>() +
+            std::mem::size_of::<u8>() +
+            H160::LEN +
+            1usize + self.witness.size() as usize
+    }
 
+    fn serialize(&self, writer: &mut BinaryWriter) {
+        self.serialize_unsigned(writer)?;
+        writer.write_all(&[1])?; // Write witness count
+        self.witness.serialize(writer)?;
+        Ok(())
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, Error> {
+        self.deserialize_unsigned(reader)?;
+        let witnesses = reader.read_serializable_array::<Witness>(1)?;
+        if witnesses.len() != 1 {
+            return Err(std::io::new(io::ErrorKind::InvalidData, "Invalid witness count"));
+        }
+        self.witness = witnesses[0].clone();
+        Ok(())
+    }
+}
 
 impl PartialEq for Header {
     fn eq(&self, other: &Self) -> bool {

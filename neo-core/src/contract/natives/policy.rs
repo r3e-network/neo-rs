@@ -1,7 +1,8 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use crate::{tx::AttrType, types::H160};
+use neo_type::H160;
+use crate::tx::AttrType;
 
 pub struct PolicyContract {
     //

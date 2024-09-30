@@ -1,14 +1,18 @@
+use getset::{Getters, Setters};
 use neo_base::encoding::base58::{FromBase58Check, FromBase58CheckError, ToBase58Check};
 use neo_base::errors;
 use neo_crypto::secp256r1::PublicKey;
-use crate::{CheckSign, MultiCheckSign, ScriptHash, ToCheckSign, ToScriptHash, ADDRESS_NEO3, SCRIPT_HASH_SIZE};
 use serde::{Deserialize, Serialize};
-use getset::{Getters, Setters};
+
+use crate::{
+    ADDRESS_NEO3, CheckSign, MultiCheckSign, SCRIPT_HASH_SIZE, ScriptHash, ToCheckSign,
+    ToScriptHash,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Getters, Setters)]
 pub struct Address {
     #[getset(get = "pub", set = "pub")]
-    pub version: u8,
+    pub version:     u8,
     #[getset(get = "pub", set = "pub")]
     pub base58check: String,
 }
@@ -31,7 +35,6 @@ impl AsRef<str> for Address {
         self.base58check.as_str()
     }
 }
-
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, errors::Error)]
 pub enum ToAddressError {

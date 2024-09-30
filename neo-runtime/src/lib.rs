@@ -3,19 +3,18 @@
 
 use std::sync::Arc;
 
+pub use fee::*;
 use neo_core::blockchain::BlockChain;
 use neo_core::contract::NativeContracts;
 use neo_core::store::NeoStates;
 use neo_core::types::ChainConfig;
 use neo_p2p::{LocalNode, MessageHandleV2, P2pConfig};
 
-pub use fee::*;
-
 pub mod fee;
 
 pub struct NeoConfig {
     pub chain_config: ChainConfig,
-    pub p2p_config: P2pConfig,
+    pub p2p_config:   P2pConfig,
 }
 
 pub struct NeoSystem {
@@ -30,7 +29,7 @@ impl NeoSystem {
         Self {
             // network: config.chain_config.network,
             chain: Arc::new(BlockChain::new(states, natives, config.chain_config)),
-            node: LocalNode::new(config.p2p_config),
+            node:  LocalNode::new(config.p2p_config),
         }
     }
 

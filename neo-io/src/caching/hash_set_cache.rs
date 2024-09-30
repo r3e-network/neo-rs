@@ -1,11 +1,11 @@
 use std::collections::{HashSet, LinkedList};
 use std::hash::Hash;
 use std::sync::{Arc, RwLock};
+
 use crate::CacheInterface;
 
 pub struct HashSetCache<T>
-where
-    T: Eq + Hash + Clone,
+where T: Eq + Hash + Clone
 {
     inner: Arc<RwLock<InnerHashSetCache<T>>>,
     bucket_capacity: usize,
@@ -13,16 +13,14 @@ where
 }
 
 struct InnerHashSetCache<T>
-where
-    T: Eq + Hash + Clone,
+where T: Eq + Hash + Clone
 {
-    sets: LinkedList<HashSet<T>>,
+    sets:  LinkedList<HashSet<T>>,
     count: usize,
 }
 
 impl<T> CacheInterface<T, ()> for HashSetCache<T>
-where
-    T: Eq + Hash + Clone,
+where T: Eq + Hash + Clone
 {
     fn new(max_capacity: usize) -> Self {
         let bucket_capacity = max_capacity.max(1);
@@ -31,10 +29,7 @@ where
         sets.push_front(HashSet::new());
 
         HashSetCache {
-            inner: Arc::new(RwLock::new(InnerHashSetCache {
-                sets,
-                count: 0,
-            })),
+            inner: Arc::new(RwLock::new(InnerHashSetCache { sets, count: 0 })),
             bucket_capacity,
             max_bucket_count,
         }
@@ -103,8 +98,7 @@ where
 }
 
 impl<T> HashSetCache<T>
-where
-    T: Eq + Hash + Clone,
+where T: Eq + Hash + Clone
 {
     pub fn new_with_buckets(bucket_capacity: usize, max_bucket_count: usize) -> Self {
         if bucket_capacity == 0 {
@@ -118,19 +112,14 @@ where
         sets.push_front(HashSet::new());
 
         HashSetCache {
-            inner: Arc::new(RwLock::new(InnerHashSetCache {
-                sets,
-                count: 0,
-            })),
+            inner: Arc::new(RwLock::new(InnerHashSetCache { sets, count: 0 })),
             bucket_capacity,
             max_bucket_count,
         }
     }
 
     pub fn except_with<I>(&self, items: I)
-    where
-        I: IntoIterator<Item = T>,
-    {
+    where I: IntoIterator<Item = T> {
         let mut inner = self.inner.write().unwrap();
         for item in items {
             for set in inner.sets.iter_mut() {
@@ -145,8 +134,7 @@ where
 }
 
 impl<T> Clone for HashSetCache<T>
-where
-    T: Eq + Hash + Clone,
+where T: Eq + Hash + Clone
 {
     fn clone(&self) -> Self {
         HashSetCache {

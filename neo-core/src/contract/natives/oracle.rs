@@ -2,8 +2,7 @@
 // All Rights Reserved
 
 use alloc::string::String;
-
-use crate::types::{H160, H256};
+use neo_type::{H160, H256};
 
 pub const ORACLE_RESPONSE_SCRIPT: &'static [u8] = b"TODO";
 

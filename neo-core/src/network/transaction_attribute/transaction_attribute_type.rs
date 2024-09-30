@@ -1,5 +1,8 @@
+use neo_base::encoding::bin::*;
+use serde::{Deserialize, Serialize};
 
 /// Represents the type of a transaction_attribute.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, BinEncode, BinDecode)]
 #[repr(u8)]
 pub enum TransactionAttributeType {
     /// Indicates that the transaction is of high priority.
@@ -17,4 +20,10 @@ pub enum TransactionAttributeType {
     /// Indicates that the transaction conflicts with Conflicts.Hash.
     #[reflection_cache(type = "Conflicts")]
     Conflicts = 0x21,
+}
+
+
+
+impl TransactionAttributeType {
+    pub fn allow_multiple(self) -> bool { self == Self::Conflicts }
 }

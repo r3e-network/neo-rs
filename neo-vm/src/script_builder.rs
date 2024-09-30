@@ -150,7 +150,6 @@ impl ScriptBuilder {
         self
     }
 
-
     #[inline]
     pub fn emit_with_operand(&mut self, opcode: OpCode, first: u8) {
         self.buf.put_u8(opcode.as_u8());

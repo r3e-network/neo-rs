@@ -14,49 +14,45 @@ pub mod pool_event;
 
 #[cfg(test)]
 mod pool_test;
-
 use alloc::vec::Vec;
-
 use serde::{Deserialize, Serialize};
-
 use neo_base::encoding::bin::*;
-
-use crate::types::{Script, VmState, H160, H256};
 pub use {attr::*, signer::*, verify::*, witness::*};
 
 #[cfg(any(feature = "std", test))]
 pub use {pool::*, pool_event::*};
+use neo_type::{Script, VMState, H160, H256};
 
-#[derive(Debug, Clone, Deserialize, Serialize, BinEncode, InnerBinDecode)]
-pub struct Tx {
-    /// i.e. tx-id, None means no set. Set it to None if hash-fields changed
-    #[bin(ignore)]
-    #[serde(skip_serializing_if = "Option::is_none", skip_deserializing)]
-    hash: Option<H256>,
-
-    /// None means not-computed. Set it to None if hash-fields changed
-    #[bin(ignore)]
-    #[serde(skip_serializing_if = "Option::is_none", skip_deserializing)]
-    size: Option<u32>,
-
-    pub version: u8,
-    pub nonce: u32,
-
-    pub sysfee: u64,
-    pub netfee: u64,
-
-    #[serde(rename = "validuntilblock")]
-    pub valid_until_block: u32,
-
-    pub signers: Vec<Signer>,
-
-    pub attributes: Vec<TxAttr>,
-
-    pub script: Script,
-
-    /// i.e. scripts
-    pub witnesses: Vec<Witness>,
-}
+// #[derive(Debug, Clone, Deserialize, Serialize, BinEncode, InnerBinDecode)]
+// pub struct Tx {
+//     /// i.e. tx-id, None means no set. Set it to None if hash-fields changed
+//     #[bin(ignore)]
+//     #[serde(skip_serializing_if = "Option::is_none", skip_deserializing)]
+//     hash: Option<H256>,
+//
+//     /// None means not-computed. Set it to None if hash-fields changed
+//     #[bin(ignore)]
+//     #[serde(skip_serializing_if = "Option::is_none", skip_deserializing)]
+//     size: Option<u32>,
+//
+//     pub version: u8,
+//     pub nonce: u32,
+//
+//     pub sysfee: u64,
+//     pub netfee: u64,
+//
+//     #[serde(rename = "validuntilblock")]
+//     pub valid_until_block: u32,
+//
+//     pub signers: Vec<Signer>,
+//
+//     pub attributes: Vec<TxAttr>,
+//
+//     pub script: Script,
+//
+//     /// i.e. scripts
+//     pub witnesses: Vec<Witness>,
+// }
 
 impl EncodeHashFields for Tx {
     fn encode_hash_fields(&self, w: &mut impl BinWriter) {
@@ -137,7 +133,7 @@ impl Tx {
 pub struct StatedTx {
     pub block_index: u32,
     pub tx: Tx,
-    pub state: VmState,
+    pub state: VMState,
 }
 
 impl StatedTx {

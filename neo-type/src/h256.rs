@@ -19,7 +19,9 @@ pub struct H256([u8; H256_SIZE]);
 impl H256 {
     pub const LEN: usize = H256_SIZE;
 
-    pub fn len(&self) -> usize { H256_SIZE }
+    pub fn len() -> usize {
+        H256_SIZE
+    }
     pub fn from_script(p0: &Vec<u8>) -> H256 {
         let mut buf = [0u8; H256_SIZE];
         buf.copy_from_slice(p0);

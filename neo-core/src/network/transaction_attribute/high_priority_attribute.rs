@@ -1,44 +1,40 @@
+// Copyright (C) 2015-2024 The Neo Project.
+//
+// HighPriorityAttribute.rs file belongs to the neo project and is free
+// software distributed under the MIT software license, see the
+// accompanying file LICENSE in the main directory of the
+// repository or http://www.opensource.org/licenses/mit-license.php
+// for more details.
+//
+// Redistribution and use in source and binary forms with or without
+// modifications are permitted.
 
-use std::io::{Error, Write};
-use crate::io::binary_writer::BinaryWriter;
-use crate::io::serializable_trait::SerializableTrait;
-use crate::io::memory_reader::MemoryReader;
-use crate::network::payloads::{Transaction};
-use crate::network::transaction_attribute::transaction_attribute::TransactionAttribute;
-use crate::network::transaction_attribute::transaction_attribute_type::TransactionAttributeType;
+use std::io::Write;
+use crate::io::{BinaryReader, BinaryWriter};
+use crate::network::payloads::Transaction;
+use crate::network::transaction_attribute::{TransactionAttribute, TransactionAttributeType};
 use crate::persistence::DataCache;
+use crate::types::UInt160;
+use crate::smart_contract::native::NativeContract;
 
 /// Indicates that the transaction is of high priority.
+#[derive(Default)]
 pub struct HighPriorityAttribute;
 
-impl SerializableTrait for HighPriorityAttribute {
-    fn size(&self) -> usize {
-        todo!()
-    }
-
-    fn serialize(&self, writer: &mut BinaryWriter) {
-        todo!()
-    }
-
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, Error> {
-        todo!()
-    }
-}
-
 impl TransactionAttribute for HighPriorityAttribute {
-    fn get_type(&self) -> TransactionAttributeType {
-        TransactionAttributeType::HighPriority
-    }
-
     fn allow_multiple(&self) -> bool {
         false
     }
 
-    fn deserialize_without_type(&mut self, _reader: &mut MemoryReader) {
+    fn get_type(&self) -> TransactionAttributeType {
+        TransactionAttributeType::HighPriority
+    }
+
+    fn deserialize_without_type(&mut self, _reader: &mut dyn BinaryReader) {
         // Empty implementation
     }
 
-    fn serialize_without_type<W: Write>(&self, _writer: &mut W) {
+    fn serialize_without_type(&self, _writer: &mut dyn Write) {
         // Empty implementation
     }
 

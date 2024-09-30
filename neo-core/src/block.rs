@@ -7,91 +7,90 @@ use serde::{Deserialize, Serialize};
 
 use neo_base::encoding::bin::*;
 use neo_base::encoding::{decode_hex_u64, encode_hex_u64};
-
+use neo_type::{Script, ToBftHash, H160, H256};
 use crate::tx::{StatedTx, Tx, Witness, Witnesses};
-use crate::types::{Script, ToBftHash, H160, H256};
 use crate::PublicKey;
 
-#[derive(Debug, Clone, Serialize, Deserialize, BinEncode, InnerBinDecode)]
-pub struct Header {
-    /// the hash of this block header
-    #[bin(ignore)]
-    pub hash: Option<H256>,
+// #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, InnerBinDecode)]
+// pub struct Header {
+//     /// the hash of this block header
+//     #[bin(ignore)]
+//     pub hash: Option<H256>,
 
-    /// the version of this block header
-    pub version: u32,
+//     /// the version of this block header
+//     pub version: u32,
 
-    /// the hash of the previous block.
-    #[serde(rename = "previousblockhash")]
-    pub prev_hash: H256,
+//     /// the hash of the previous block.
+//     #[serde(rename = "previousblockhash")]
+//     pub prev_hash: H256,
 
-    /// the root hash of a transaction list.
-    #[serde(rename = "merkleroot")]
-    pub merkle_root: H256,
+//     /// the root hash of a transaction list.
+//     #[serde(rename = "merkleroot")]
+//     pub merkle_root: H256,
 
-    /// unix timestamp in milliseconds, i.e. timestamp
-    #[serde(rename = "time")]
-    pub unix_milli: u64,
+//     /// unix timestamp in milliseconds, i.e. timestamp
+//     #[serde(rename = "time")]
+//     pub unix_milli: u64,
 
-    /// a random number
-    #[serde(serialize_with = "encode_hex_u64", deserialize_with = "decode_hex_u64")]
-    pub nonce: u64,
+//     /// a random number
+//     #[serde(serialize_with = "encode_hex_u64", deserialize_with = "decode_hex_u64")]
+//     pub nonce: u64,
 
-    /// index/height of the block
-    pub index: u32,
+//     /// index/height of the block
+//     pub index: u32,
 
-    /// the index of the primary consensus node for this block.
-    pub primary: u8,
+//     /// the index of the primary consensus node for this block.
+//     pub primary: u8,
 
-    /// contract address of the next miner
-    #[serde(rename = "nextconsensus")]
-    pub next_consensus: H160,
+//     /// contract address of the next miner
+//     #[serde(rename = "nextconsensus")]
+//     pub next_consensus: H160,
 
-    /// Script used to validate the block. Only one is supported at now.
-    pub witnesses: Witnesses,
-    // #[serde(skip)]
-    // pub state_root_enabled: bool,
+//     /// Script used to validate the block. Only one is supported at now.
+//     pub witnesses: Witnesses,
+//     // #[serde(skip)]
+//     // pub state_root_enabled: bool,
 
-    // /// the state root of the previous block.
-    // #[serde(default, rename = "previousstateroot", skip_serializing_if = "H256::is_zero")]
-    // pub prev_state_root: H256,
-}
+//     // /// the state root of the previous block.
+//     // #[serde(default, rename = "previousstateroot", skip_serializing_if = "H256::is_zero")]
+//     // pub prev_state_root: H256,
+// }
 
-impl Header {
-    #[inline]
-    pub fn hash(&self) -> H256 {
-        self.hash.unwrap_or_else(|| self.hash_fields_sha256().into())
-    }
+// impl Header {
+//     #[inline]
+//     pub fn hash(&self) -> H256 {
+//         self.hash.unwrap_or_else(|| self.hash_fields_sha256().into())
+//     }
 
-    pub fn calc_hash(&mut self) {
-        self.hash = Some(self.hash_fields_sha256().into());
-    }
-}
+//     pub fn calc_hash(&mut self) {
+//         self.hash = Some(self.hash_fields_sha256().into());
+//     }
+// }
 
-impl EncodeHashFields for Header {
-    fn encode_hash_fields(&self, w: &mut impl BinWriter) {
-        self.version.encode_bin(w); // 4
-        self.prev_hash.encode_bin(w); // 32
-        self.merkle_root.encode_bin(w); // 32
-        self.unix_milli.encode_bin(w); // 8
-        self.nonce.encode_bin(w); // 8
-        self.index.encode_bin(w); // 4
-        self.primary.encode_bin(w); // 1
-        self.next_consensus.encode_bin(w); // 20
+// impl EncodeHashFields for Header {
+//     fn encode_hash_fields(&self, w: &mut impl BinWriter) {
+//         self.version.encode_bin(w); // 4
+//         self.prev_hash.encode_bin(w); // 32
+//         self.merkle_root.encode_bin(w); // 32
+//         self.unix_milli.encode_bin(w); // 8
+//         self.nonce.encode_bin(w); // 8
+//         self.index.encode_bin(w); // 4
+//         self.primary.encode_bin(w); // 1
+//         self.next_consensus.encode_bin(w); // 20
 
-        // if self.state_root_enabled {
-        //     self.prev_state_root.encode_bin(w);
-        // }
-    }
-}
+//         // if self.state_root_enabled {
+//         //     self.prev_state_root.encode_bin(w);
+//         // }
+//     }
+// }
 
-impl BinDecoder for Header {
-    fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
-        let mut head = Self::decode_bin_inner(r)?;
-        head.calc_hash();
-        Ok(head)
-    }
-}
+// impl BinDecoder for Header {
+//     fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
+//         let mut head = Self::decode_bin_inner(r)?;
+//         head.calc_hash();
+//         Ok(head)
+//     }
+// }
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, BinDecode)]
 pub struct Block {

@@ -1,28 +1,32 @@
 use std::cmp::Ordering;
-use std::hash::Hash;
-use std::time::{SystemTime, UNIX_EPOCH};
-use NeoRust::builder::Transaction;
-use NeoRust::neo_protocol::HighPriorityAttribute;
+use chrono::{DateTime, Utc};
+use crate::network::p2p::payloads::Transaction;
+use crate::neo_protocol::HighPriorityAttribute;
+use crate::time_provider::TimeProvider;
 
 /// Represents an item in the Memory Pool.
 ///
 /// Note: PoolItem objects don't consider transaction priority (low or high) in their compare
 /// CompareTo method. This is because items of differing priority are never added to the same
 /// sorted set in MemoryPool.
+#[derive(Getters, Setters)]
 pub struct PoolItem {
     /// Internal transaction for PoolItem
-    pub tx: Transaction,
+    #[getset(get = "pub")]
+    tx: Transaction,
 
     /// Timestamp when transaction was stored on PoolItem
-    pub timestamp: u64,
+    #[getset(get = "pub")]
+    timestamp: DateTime<Utc>,
 
     /// Timestamp when this transaction was last broadcast to other nodes
-    pub last_broadcast_timestamp: u64,
+    #[getset(get = "pub", set = "pub")]
+    last_broadcast_timestamp: DateTime<Utc>,
 }
 
 impl PoolItem {
     pub fn new(tx: Transaction) -> Self {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = TimeProvider::current().utc_now();
         Self {
             tx,
             timestamp: now,
@@ -30,7 +34,7 @@ impl PoolItem {
         }
     }
 
-    fn compare_to(&self, other_tx: &Transaction) -> Ordering {
+    pub fn compare_to(&self, other_tx: &Transaction) -> Ordering {
         let self_high_priority = self.tx.get_attribute::<HighPriorityAttribute>().is_some();
         let other_high_priority = other_tx.get_attribute::<HighPriorityAttribute>().is_some();
 

@@ -1,7 +1,6 @@
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use crate::cryptography::ECPoint;
-use crate::io::iserializ, Debugable::ISerializable;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::network::payloads::{WitnessRule, WitnessRuleAction, WitnessScope};
 use crate::network::payloads::conditions::{BooleanCondition, ScriptHashCondition};
@@ -94,7 +93,7 @@ impl IInteroperable for Signer {
 }
 
 
-impl ISerializable for Signer {
+impl SerializableTrait for Signer {
      fn size(&self) -> usize {
         H160::len() +
         std::mem::size_of::<WitnessScope>() +
@@ -174,40 +173,38 @@ self.account.serialize(writer)?;
             rules,
         })
     }
-
-    
 }
 
 impl IJsonConvertible for Signer {
-     fn from_json(json: &JObject) -> Result<Self, String> {
-        let account = H160::from_str(json.get("account").ok_or("Missing account")?.as_str().ok_or("Invalid account")?)?;
-        let scopes = WitnessScope::try_from(json.get("scopes").ok_or("Missing scopes")?.as_u64().ok_or("Invalid scopes")? as u8)?;
+     fn from_json(json: &serde_json::Value) -> Result<Self, serde_json::Error> {
+        let account = H160::from_str(json["account"].as_str().ok_or_else(|| serde_json::Error::custom("Missing or invalid account"))?)?;
+        let scopes = WitnessScope::try_from(json["scopes"].as_u64().ok_or_else(|| serde_json::Error::custom("Missing or invalid scopes"))? as u8)?;
 
         let allowed_contracts = if scopes.contains(WitnessScope::CustomContracts) {
-            json.get("allowedcontracts").ok_or("Missing allowedcontracts")?
-                .as_array().ok_or("Invalid allowedcontracts")?
+            json["allowedcontracts"].as_array()
+                .ok_or_else(|| serde_json::Error::custom("Missing or invalid allowedcontracts"))?
                 .iter()
-                .map(|p| H160::from_str(p.as_str().ok_or("Invalid contract")?))
+                .map(|p| H160::from_str(p.as_str().ok_or_else(|| serde_json::Error::custom("Invalid contract"))?))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             Vec::new()
         };
 
         let allowed_groups = if scopes.contains(WitnessScope::CustomGroups) {
-            json.get("allowedgroups").ok_or("Missing allowedgroups")?
-                .as_array().ok_or("Invalid allowedgroups")?
+            json["allowedgroups"].as_array()
+                .ok_or_else(|| serde_json::Error::custom("Missing or invalid allowedgroups"))?
                 .iter()
-                .map(|p| ECPoint::from_str(p.as_str().ok_or("Invalid group")?))
+                .map(|p| ECPoint::from_str(p.as_str().ok_or_else(|| serde_json::Error::custom("Invalid group"))?))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             Vec::new()
         };
 
         let rules = if scopes.contains(WitnessScope::WitnessRules) {
-            json.get("rules").ok_or("Missing rules")?
-                .as_array().ok_or("Invalid rules")?
+            json["rules"].as_array()
+                .ok_or_else(|| serde_json::Error::custom("Missing or invalid rules"))?
                 .iter()
-                .map(|p| WitnessRule::from_json(p.as_object().ok_or("Invalid rule")?))
+                .map(|p| WitnessRule::from_json(p))
                 .collect::<Result<Vec<_>, _>>()?
         } else {
             Vec::new()
@@ -222,19 +219,25 @@ impl IJsonConvertible for Signer {
         })
     }
 
-     fn to_json(&self) -> serde_json::Value { {
-        let mut json = JObject::new();
-        json.insert("account", self.account.to_string().into());
-        json.insert("scopes", (self.scopes as u8).into());
+     fn to_json(&self) -> serde_json::Value {
+        let mut json = serde_json::Map::new();
+        json.insert("account".to_string(), serde_json::Value::String(self.account.to_string()));
+        json.insert("scopes".to_string(), serde_json::Value::Number(serde_json::Number::from(self.scopes as u8)));
         if self.scopes.contains(WitnessScope::CustomContracts) {
-            json.insert("allowedcontracts", JArray::from(self.allowed_contracts.iter().map(|p| p.to_string().into()).collect::<Vec<_>>()));
+            json.insert("allowedcontracts".to_string(), serde_json::Value::Array(
+                self.allowed_contracts.iter().map(|p| serde_json::Value::String(p.to_string())).collect()
+            ));
         }
         if self.scopes.contains(WitnessScope::CustomGroups) {
-            json.insert("allowedgroups", JArray::from(self.allowed_groups.iter().map(|p| p.to_string().into()).collect::<Vec<_>>()));
+            json.insert("allowedgroups".to_string(), serde_json::Value::Array(
+                self.allowed_groups.iter().map(|p| serde_json::Value::String(p.to_string())).collect()
+            ));
         }
         if self.scopes.contains(WitnessScope::WitnessRules) {
-            json.insert("rules", JArray::from(self.rules.iter().map(|p| p.to_json()).collect::<Vec<_>>()));
+            json.insert("rules".to_string(), serde_json::Value::Array(
+                self.rules.iter().map(|p| p.to_json()).collect()
+            ));
         }
-        json
+        serde_json::Value::Object(json)
     }
 }

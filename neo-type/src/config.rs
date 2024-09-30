@@ -1,9 +1,10 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+use alloc::{string::String, vec::Vec};
 use core::fmt::Debug;
 
-use neo_crypto::secp256r1::PublicKey;
+use crate::PublicKey;
 
 /// constants
 pub const CURRENT_TX_VERSION: u8 = 0;
@@ -91,22 +92,16 @@ pub struct HardForkHeight {
 }
 
 #[derive(Debug)]
-<<<<<<<< HEAD:neo-type/src/settings.rs
-pub struct NeoConfig {
-    pub network:          u32,
-    pub address_version:  u8,
-========
 pub struct ChainConfig {
-    pub network: u32,
+    pub network:          u32,
     // pub address_version: u8, // only v3 is supported now
->>>>>>>> fea.framework:neo-type/src/config.rs
     pub per_block_millis: u64,
 
-    pub standby_committee: Vec<PublicKey>,
+    pub standby_committee:    Vec<PublicKey>,
     pub nr_committee_members: u32,
-    pub nr_validators: u32,
-    // pub seeds: Vec<String>,
+    pub nr_validators:        u32,
 
+    // pub seeds: Vec<String>,
     /// see Tx.valid_until_block
     pub max_valid_until_block_increment: u64,
 

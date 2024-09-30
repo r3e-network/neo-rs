@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::hash::Hasher;
 use std::io::{Read, Write};
+use NeoRust::prelude::var_size;
+use serde::Deserialize;
 use crate::io::serializable_trait::SerializableTrait;
 use crate::network::payloads::{IInventory, IVerifiable, InventoryType, Witness};
 use crate::persistence::DataCache;
@@ -72,16 +74,30 @@ impl SerializableTrait for ExtensiblePayload {
 }
 
 impl IVerifiable for ExtensiblePayload {
+    type Error = ();
+
+    fn witnesses(&self) -> &[Witness] {
+        todo!()
+    }
+
+    fn set_witnesses(&mut self, witnesses: Vec<Witness>) {
+        todo!()
+    }
+
     fn deserialize_unsigned(&mut self, reader: &mut impl Read) -> std::io::Result<()> {
         self.category = read_var_string(reader, 32)?;
-        self.valid_block_start = reader.read_u32::<LittleEndian>()?;
-        self.valid_block_end = reader.read_u32::<LittleEndian>()?;
+        self.valid_block_start = reader.read_u32()?;
+        self.valid_block_end = reader.read_u32()?;
         if self.valid_block_start >= self.valid_block_end {
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid block range"));
         }
         self.sender = H160::deserialize(reader)?;
         self.data = read_var_bytes(reader)?;
         Ok(())
+    }
+
+    fn get_script_hashes_for_verifying(&self, _snapshot: &dyn DataCache) -> Vec<H160> {
+        vec![self.sender]
     }
 
     fn serialize_unsigned(&self, writer: &mut impl Write) -> std::io::Result<()> {
@@ -92,20 +108,6 @@ impl IVerifiable for ExtensiblePayload {
         write_var_bytes(writer, &self.data)?;
         Ok(())
     }
-
-    fn get_script_hashes_for_verifying(&self, _snapshot: &dyn DataCache) -> Vec<H160> {
-        vec![self.sender]
-    }
-
-    fn witnesses(&self) -> &[Witness] {
-        todo!()
-    }
-
-    fn set_witnesses(&mut self, witnesses: Vec<Witness>) {
-        todo!()
-    }
-
-    type Error = ();
 }
 
 impl ExtensiblePayload {

@@ -2,13 +2,12 @@
 // All Rights Reserved
 
 use ::bytes::BytesMut;
-
 use neo_base::encoding::bin::HashFieldsSha256;
 use neo_crypto::ecdsa::{
-    DigestVerify, Secp256r1Sign, Sign as EcdsaSign, SignError, ECC256_SIGN_SIZE,
+    DigestVerify, ECC256_SIGN_SIZE, Secp256r1Sign, Sign as EcdsaSign, SignError,
 };
 
-use crate::{types::*, PrivateKey, PublicKey};
+use crate::{PrivateKey, PublicKey, types::*};
 
 pub type Sign = FixedBytes<ECC256_SIGN_SIZE>;
 
@@ -166,8 +165,9 @@ impl ParseInvocationScript for [u8] {
 
 #[cfg(test)]
 mod test {
+    use neo_base::hash::{SHA256_HASH_SIZE, Sha256};
+
     use super::*;
-    use neo_base::hash::{Sha256, SHA256_HASH_SIZE};
 
     struct MockHashFields;
 

@@ -20,16 +20,12 @@ impl<T> IndexedQueue<T> {
         if capacity == 0 {
             panic!("The capacity must be greater than zero.");
         }
-        Self {
-            queue: VecDeque::with_capacity(capacity),
-        }
+        Self { queue: VecDeque::with_capacity(capacity) }
     }
 
     /// Creates a queue filled with the specified items
     pub fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        Self {
-            queue: VecDeque::from_iter(iter),
-        }
+        Self { queue: VecDeque::from_iter(iter) }
     }
 
     /// Gets the value at the index
@@ -77,9 +73,7 @@ impl<T> IndexedQueue<T> {
 
     /// Returns a vector of the items in the queue
     pub fn to_vec(&self) -> Vec<T>
-    where
-        T: Clone,
-    {
+    where T: Clone {
         self.queue.iter().cloned().collect()
     }
 

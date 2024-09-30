@@ -18,9 +18,6 @@ pub struct Witness {
     /// The verification script of the witness. It can be empty if the contract is deployed.
     #[getset(get = "pub", set = "pub")]
     pub verification_script: Vec<u8>,
-
-    #[getset(get = "pub", set = "pub")]
-    script_hash: Option<ScriptHash>,
 }
 
 impl Witness {
@@ -32,11 +29,8 @@ impl Witness {
     const MAX_VERIFICATION_SCRIPT: usize = 1024;
 
     /// The hash of the `verification_script`.
-    pub fn script_hash(&mut self) -> ScriptHash {
-        if self.script_hash.is_none() {
-            self.script_hash = Some(self.verification_script.to_script_hash());
-        }
-        self.script_hash.unwrap()
+    pub fn script_hash(&self) -> ScriptHash {
+        self.verification_script.to_script_hash()
     }
 }
 

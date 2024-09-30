@@ -1,12 +1,11 @@
 #![feature(linked_list_retain)]
 
-use std::hash::Hash;
 use std::cmp::Eq;
+use std::collections::{HashMap, LinkedList};
+use std::hash::Hash;
+use std::hash::Hash;
 
-    use std::collections::{HashMap, LinkedList};
-    use std::hash::Hash;
-
-    pub trait KeyedCollectionSlim<K, V>
+pub trait KeyedCollectionSlim<K, V>
 where
     K: Eq + Hash,
     V: PartialEq + Ord,
@@ -25,7 +24,7 @@ where
     V: PartialEq + Ord,
 {
     items: LinkedList<V>,
-    dict: HashMap<K, *mut LinkedList<V>>,
+    dict:  HashMap<K, *mut LinkedList<V>>,
 }
 
 impl<K, V> KeyedCollectionSlimImpl<K, V>
@@ -34,10 +33,7 @@ where
     V: PartialEq + Ord,
 {
     pub fn new() -> Self {
-        KeyedCollectionSlimImpl {
-            items: LinkedList::new(),
-            dict: HashMap::new(),
-        }
+        KeyedCollectionSlimImpl { items: LinkedList::new(), dict: HashMap::new() }
     }
 
     pub fn count(&self) -> usize {
@@ -62,7 +58,9 @@ where
     fn add(&mut self, item: V) -> Result<(), String> {
         let key = self.get_key_for_item(&item);
         if self.dict.contains_key(&key) {
-            return Err("An element with the same key already exists in the collection.".to_string());
+            return Err(
+                "An element with the same key already exists in the collection.".to_string()
+            );
         }
         self.items.push_back(item);
         let node = self.items.back_mut().unwrap() as *mut V;

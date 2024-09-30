@@ -1,5 +1,6 @@
 use neo_base::hash::{Ripemd160, Sha256};
 use neo_crypto::secp256r1::PublicKey;
+
 use crate::{CheckSign, H160, SCRIPT_HASH_SIZE};
 
 #[derive(Debug, Default, Hash, Copy, Clone, Eq, PartialEq)]

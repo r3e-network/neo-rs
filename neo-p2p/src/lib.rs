@@ -5,10 +5,10 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use neo_base::errors;
+use neo_type::{Bytes, DEFAULT_PER_BLOCK_MILLIS, Network, SEED_LIST_DEV_NET};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 pub use {codec::*, discovery::*, driver_v2::*, handle_v2::*, node::*, peer::*};
-use neo_type::{Bytes, Network, DEFAULT_PER_BLOCK_MILLIS, SEED_LIST_DEV_NET};
 
 pub mod codec;
 pub mod discovery;
@@ -39,7 +39,7 @@ impl NetEvent {
 
 #[derive(Debug, Clone)]
 pub struct NetMessage {
-    pub peer: SocketAddr,
+    pub peer:  SocketAddr,
     pub event: NetEvent,
 }
 
@@ -79,9 +79,9 @@ impl Dial for mpsc::Sender<SocketAddr> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct P2pConfig {
-    pub nonce: u32,
-    pub min_peers: u32,
-    pub max_peers: u32,
+    pub nonce:         u32,
+    pub min_peers:     u32,
+    pub max_peers:     u32,
     pub attempt_peers: u32,
 
     /// Broadcast interval is  discovery_factor * per_block_millis
@@ -104,8 +104,8 @@ pub struct P2pConfig {
     // i.e. protocol_tick_interval
     pub tick_interval: Duration,
     pub ping_interval: Duration,
-    pub ping_timeout: Duration,
-    pub dial_timeout: Duration,
+    pub ping_timeout:  Duration,
+    pub dial_timeout:  Duration,
 
     pub per_block_millis: u64,
 }

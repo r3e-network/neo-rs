@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet, LinkedList, VecDeque};
 use std::sync::Arc;
-use actix::dev::Envelope;
 use actix::prelude::*;
 use lazy_static::lazy_static;
 use crate::block::Block;
@@ -15,11 +14,14 @@ use crate::network::payloads::{IInventory, IVerifiable, Transaction};
 use neo_type::{H160, H256};
 use neo_vm::ScriptBuilder;
 use crate::io::priority_mailbox::PriorityMailbox;
+use getset::{Getters, Setters};
+use serde::{Serialize, Deserialize};
 
 pub type CommittingHandler = fn(system: &NeoSystem, block: &Block, snapshot: &dyn Store<WriteBatch=()>, application_executed_list: &[ApplicationExecuted]);
 pub type CommittedHandler = fn(system: &NeoSystem, block: &Block);
 
 /// Actor used to verify and relay `IInventory`.
+#[derive(Getters, Setters)]
 pub struct Blockchain {
     system: Arc<NeoSystem>,
     block_cache: HashMap<H256, Block>,
@@ -27,36 +29,48 @@ pub struct Blockchain {
     extensible_witness_white_list: Option<HashSet<H160>>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct PersistCompleted {
     pub block: Block,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Import {
     pub blocks: Vec<Block>,
+    #[serde(default = "default_verify")]
     pub verify: bool,
 }
 
+fn default_verify() -> bool {
+    true
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct ImportCompleted;
 
+#[derive(Serialize, Deserialize)]
 pub struct FillMemoryPool {
     pub transactions: Vec<Transaction>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct FillCompleted;
 
+#[derive(Serialize, Deserialize)]
 pub struct Reverify {
-    pub inventories: Vec<Box<dyn IInventory<Error=()>>>,
+    pub inventories: Vec<Box<dyn IInventory>>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct RelayResult {
-    pub inventory: Box<dyn IInventory<Error=()>>,
+    pub inventory: Box<dyn IInventory>,
     pub result: VerifyResult,
 }
 
 struct Initialize;
 struct UnverifiedBlocksList {
     blocks: LinkedList<Block>,
-    nodes: HashSet<Addr<dyn Actor<Context=()>>>,
+    nodes: HashSet<Addr<dyn Actor>>,
 }
 
 lazy_static! {

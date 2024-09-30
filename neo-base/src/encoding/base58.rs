@@ -32,16 +32,16 @@ impl<T: AsRef<[u8]>> ToBase58Check for T {
 
         buf.to_base58()
     }
-    
+
     fn base58_check_encode(&self) -> String {
         let src = self.as_ref();
         let mut buf = Vec::with_capacity(src.len() + 4);
-        
+
         buf.extend_from_slice(src);
-        
+
         let check = buf.sha256_twice();
         buf.extend_from_slice(&check[..4]);
-        
+
         buf.to_base58()
     }
 }
@@ -73,7 +73,7 @@ pub trait FromBase58Check: Sized {
         suffix: Option<u8>,
     ) -> Result<Self, Self::Error>;
 
-    fn base58_check_decode(&self)  -> Result<Self, Self::Error>;
+    fn base58_check_decode(&self) -> Result<Self, Self::Error>;
 }
 
 impl FromBase58Check for Vec<u8> {
@@ -126,11 +126,11 @@ impl FromBase58Check for Vec<u8> {
             Ok(s[start_at..s.len() - 4].to_vec())
         }
     }
-    
-    fn base58_check_decode(&self)  -> Result<Self, Self::Error> {
+
+    fn base58_check_decode(&self) -> Result<Self, Self::Error> {
         // Decode the Base58Check-encoded string
         let decoded = Vec::from_base58_check(self, None, None)?;
-    
+
         // Create a new instance of Self from the decoded bytes
         Self::try_from(decoded.as_slice()).map_err(|_| Self::Error::InvalidData)
     }

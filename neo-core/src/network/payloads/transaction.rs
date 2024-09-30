@@ -31,27 +31,43 @@ use crate::network::network_error::NetworkError;
 
 /// Represents a transaction.
 use getset::{Getters, Setters};
+use serde::{Deserialize, Serialize};
+use neo_base::encoding::bin::{BinDecodeError, BinDecoder, BinEncoder, BinReader, BinWriter, EncodeHashFields, HashFieldsSha256};
+use neo_proc_macros::{BinEncode, InnerBinDecode};
+use crate::tx::{Conflicts, TxAttr};
 
-#[derive(Clone, Getters, Setters)]
+#[derive(Clone, Getters, Setters, Debug, Deserialize, Serialize, BinEncode, InnerBinDecode)]
 pub struct Transaction {
     #[getset(get = "pub", set = "pub")]
     version: u8,
+
     #[getset(get = "pub", set = "pub")]
     nonce: u32,
+
     // In the unit of datoshi, 1 datoshi = 1e-8 GAS
+    #[serde(rename = "sysfee")]
     #[getset(get = "pub", set = "pub")]
     sys_fee: i64,
+
     // In the unit of datoshi, 1 datoshi = 1e-8 GAS
+    #[serde(rename = "netfee")]
     #[getset(get = "pub", set = "pub")]
     net_fee: i64,
+
+    #[serde(rename = "validuntilblock")]
     #[getset(get = "pub", set = "pub")]
     valid_until_block: u32,
+
     #[getset(get = "pub", set = "pub")]
     pub signers: Vec<Signer>,
+
     #[getset(get = "pub", set = "pub")]
     attributes: Vec<Box<dyn TransactionAttribute>>,
+
     #[getset(get = "pub", set = "pub")]
     script: Vec<u8>,
+
+    #[serde(rename = "witnesses")]
     #[getset(get = "pub", set = "pub")]
     witnesses: Vec<Witness>,
 }
@@ -235,31 +251,74 @@ impl Transaction {
     pub fn get_script_hash(&self) -> H160 {
         H160::from(&Crypto::hash160(&self.script))
     }
+
+    pub fn conflicts(&self) -> Vec<Conflicts> {
+        self.attributes
+            .iter()
+            .map_while(|attr| match attr {
+                TxAttr::Conflicts(conflicts) => Some(conflicts.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[inline]
+    pub fn calc_hash(&self) -> H256 {
+        self.hash_fields_sha256().into()
+    }
 }
 
-impl TryFrom<&JToken> for Transaction {
-    type Error = io::Error;
 
-    fn try_from(json: &JToken) -> Result<Self, Self::Error> {
-        let version = json.get_u8("version")?;
-        let nonce = json.get_u32("nonce")?;
-        let sysfee = json.get_i64("sysfee")?;
-        let netfee = json.get_i64("netfee")?;
-        let valid_until_block = json.get_u32("validUntilBlock")?;
+impl EncodeHashFields for Transaction {
+    fn encode_hash_fields(&self, w: &mut impl BinWriter) {
+        self.version.encode_bin(w); // 1
+        self.nonce.encode_bin(w); // 4
+        self.sys_fee.encode_bin(w); // 8
+        self.net_fee.encode_bin(w); // 8
+        self.valid_until_block.encode_bin(w); // 4
+        self.signers.encode_bin(w);
+        self.attributes.encode_bin(w);
+        self.script.encode_bin(w);
+    }
+}
+
+impl BinDecoder for Transaction {
+    fn decode_bin(r: &mut impl BinReader) -> Result<Self, BinDecodeError> {
+        let mut tx = Self::decode_bin_inner(r)?;
+        tx.recalc_hash();
+        Ok(tx)
+    }
+}
+
+
+use serde_json::Value;
+
+impl TryFrom<&Value> for Transaction {
+    type Error = serde_json::Error;
+
+    fn try_from(json: &Value) -> Result<Self, Self::Error> {
+        let version = json["version"].as_u64().ok_or_else(|| serde_json::Error::custom("Invalid version"))? as u8;
+        let nonce = json["nonce"].as_u64().ok_or_else(|| serde_json::Error::custom("Invalid nonce"))? as u32;
+        let sysfee = json["sysfee"].as_i64().ok_or_else(|| serde_json::Error::custom("Invalid sysfee"))?;
+        let netfee = json["netfee"].as_i64().ok_or_else(|| serde_json::Error::custom("Invalid netfee"))?;
+        let valid_until_block = json["validUntilBlock"].as_u64().ok_or_else(|| serde_json::Error::custom("Invalid validUntilBlock"))? as u32;
         
-        let signers = json.get_array("signers")?
+        let signers = json["signers"].as_array()
+            .ok_or_else(|| serde_json::Error::custom("Invalid signers"))?
             .iter()
             .map(|s| Signer::try_from(s))
             .collect::<Result<Vec<_>, _>>()?;
         
-        let attributes = json.get_array("attributes")?
+        let attributes = json["attributes"].as_array()
+            .ok_or_else(|| serde_json::Error::custom("Invalid attributes"))?
             .iter()
             .map(|a| TransactionAttribute::try_from(a))
             .collect::<Result<Vec<_>, _>>()?;
         
-        let script = json.get_base64("script")?;
+        let script = base64::decode(json["script"].as_str().ok_or_else(|| serde_json::Error::custom("Invalid script"))?)?;
         
-        let witnesses = json.get_array("witnesses")?
+        let witnesses = json["witnesses"].as_array()
+            .ok_or_else(|| serde_json::Error::custom("Invalid witnesses"))?
             .iter()
             .map(|w| Witness::try_from(w))
             .collect::<Result<Vec<_>, _>>()?;
@@ -322,7 +381,17 @@ impl SerializableTrait for Transaction {
 
 impl Default for Transaction {
     fn default() -> Self {
-        todo!()
+    Self {
+        version: 0,
+        nonce: 0,
+        sys_fee: 0,
+        net_fee: 0,
+        valid_until_block: 0,
+        signers: Vec::new(),
+        attributes: Vec::new(),
+        script: Vec::new(),
+        witnesses: Vec::new(),
+    }
     }
 }
 

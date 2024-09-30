@@ -9,7 +9,6 @@ use neo_base::{errors, math::U256};
 
 use crate::store::{BlockStates, FeeStates};
 use crate::tx::{Tx, TxAttr};
-use crate::types::{H160, H256};
 
 #[derive(Debug, Copy, Clone)]
 pub enum TxRemovalReason {

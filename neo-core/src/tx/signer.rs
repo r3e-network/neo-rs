@@ -5,8 +5,10 @@ use alloc::vec::Vec;
 
 use neo_base::encoding::bin::*;
 use serde::{Deserialize, Serialize};
-
-use crate::{tx::*, types::H160, PublicKey};
+use neo_crypto::secp256r1::PublicKey;
+use neo_type::H160;
+use crate::network::payloads::WitnessRule;
+use crate::tx::WitnessScopes;
 
 pub const MAX_ALLOWED_GROUPS: usize = 16;
 

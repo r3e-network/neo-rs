@@ -5,8 +5,7 @@ use alloc::{string::String, vec::Vec};
 
 use neo_base::encoding::bin::*;
 use serde::{Deserialize, Serialize};
-
-use crate::types::Script;
+use neo_type::Script;
 
 pub const MAX_CONDITION_NESTING: usize = 2;
 

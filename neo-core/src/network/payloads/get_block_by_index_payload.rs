@@ -2,6 +2,7 @@ use neo_io::{BinaryReader, BinaryWriter};
 use std::io;
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
+use crate::io::memory_reader::MemoryReader;
 use crate::io::serializable_trait::SerializableTrait;
 use crate::network::payloads::HeadersPayload;
 

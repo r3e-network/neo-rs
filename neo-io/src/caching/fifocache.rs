@@ -1,5 +1,6 @@
-use std::hash::Hash;
 use std::collections::VecDeque;
+use std::hash::Hash;
+
 use crate::{Cache, CacheInterface};
 
 pub struct FIFOCache<K, V>
@@ -17,10 +18,7 @@ where
     V: Clone,
 {
     fn new(max_capacity: usize) -> Self {
-        FIFOCache {
-            inner: Cache::new(max_capacity),
-            order: VecDeque::with_capacity(max_capacity),
-        }
+        FIFOCache { inner: Cache::new(max_capacity), order: VecDeque::with_capacity(max_capacity) }
     }
 
     fn get(&self, key: &K) -> Option<V> {
@@ -69,9 +67,6 @@ where
     V: Clone,
 {
     fn clone(&self) -> Self {
-        FIFOCache {
-            inner: self.inner.clone(),
-            order: self.order.clone(),
-        }
+        FIFOCache { inner: self.inner.clone(), order: self.order.clone() }
     }
 }

@@ -2,9 +2,10 @@
 // All Rights Reserved
 
 use neo_base::{encoding::bin::BinEncoder, errors};
-
+use neo_crypto::secp256r1::PublicKey;
+use neo_type::{MultiSignVerify, ParseInvocationScript, ScriptHash, SignVerify, ToScriptHash, H160, H160_SIZE, MAX_TX_SIZE};
+use crate::contract::{MayMultiSignContract, MaySignContract, MultiSigners};
 use crate::tx::{Signer as TxSigner, Tx};
-use crate::{contract::*, types::*, PublicKey};
 
 pub const MAX_VERIFICATION_GAS: u64 = 1_5000_0000; // 1.5 GAS
 pub const CHECK_SIG_COST: u64 = 1 << 15;

@@ -1,7 +1,9 @@
 use std::io;
 use std::mem::size_of;
+use crate::cryptography::BloomFilter;
 use crate::io::binary_reader::BinaryReader;
 use crate::io::binary_writer::BinaryWriter;
+use crate::io::memory_reader::MemoryReader;
 use crate::io::serializable_trait::SerializableTrait;
 
 /// This message is sent to load the BloomFilter.
@@ -39,14 +41,8 @@ impl FilterLoadPayload {
 }
 
 impl SerializableTrait for FilterLoadPayload {
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
-        let filter = reader.read_var_bytes(36000)?;
-        let k = reader.read_u8()?;
-        if k > 50 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "K is too large"));
-        }
-        let tweak = reader.read_u32()?;
-        Ok(FilterLoadPayload { filter, k, tweak })
+    fn size(&self) -> usize {
+        self.filter.len() + size_of::<u8>() + size_of::<u32>()
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) {
@@ -55,8 +51,14 @@ impl SerializableTrait for FilterLoadPayload {
         writer.write_u32(self.tweak)?;
         Ok(())
     }
-    
-    fn size(&self) -> usize {
-        self.filter.len() + size_of::<u8>() + size_of::<u32>()
+
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, std::io::Error> {
+        let filter = reader.read_var_bytes(36000)?;
+        let k = reader.read_u8()?;
+        if k > 50 {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "K is too large"));
+        }
+        let tweak = reader.read_u32()?;
+        Ok(FilterLoadPayload { filter, k, tweak })
     }
 }

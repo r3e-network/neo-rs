@@ -18,9 +18,10 @@ pub const H160_SIZE: usize = 20;
 pub struct H160([u8; H160_SIZE]);
 
 impl H160 {
-
     pub const LEN: usize = H160_SIZE;
-    pub fn len(&self) -> usize { H160_SIZE }
+    pub fn len() -> usize {
+        H160_SIZE
+    }
     pub fn from_script(p0: &Vec<u8>) -> H160 {
         let mut buf = [0u8; H160_SIZE];
         buf.copy_from_slice(p0);

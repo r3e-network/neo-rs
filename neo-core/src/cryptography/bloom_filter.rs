@@ -4,7 +4,7 @@ use bloomfilter::reexports::bit_vec::BitVec;
 pub struct BloomFilter {
     seeds: Vec<u32>,
     bits: BitVec,
-    tweak: u32,
+    pub(crate) tweak: u32,
 }
 
 impl BloomFilter {

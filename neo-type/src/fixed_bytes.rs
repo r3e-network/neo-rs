@@ -5,11 +5,10 @@ use alloc::{string::String, vec, vec::Vec};
 use core::net::IpAddr;
 
 use bytes::{BufMut, BytesMut};
-use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+use neo_base::encoding::{base64::*, bin::*};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 use crate::types::OpCode;
-use neo_base::encoding::{base64::*, bin::*};
-
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct FixedBytes<const N: usize>(pub(crate) [u8; N]);

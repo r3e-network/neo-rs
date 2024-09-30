@@ -1,92 +1,58 @@
 use std::any::Any;
-use std::sync::{Arc};
+use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI32, Ordering};
 use chrono::{DateTime, Utc};
-use NeoRust::builder::Transaction;
-use tokio::sync::{mpsc, Mutex as TokioMutex};
-use tokio::task::JoinHandle;
+use actix::prelude::*;
+use tokio::sync::mpsc;
 use neo_type::{H160, H256};
-use crate::block::{Block, Header};
 use crate::contract::Contract;
 use crate::ledger::header_cache::HeaderCache;
 use crate::ledger::memory_pool::MemoryPool;
-use crate::network::ChannelsConfig;
-use crate::network::payloads::Witness;
+use crate::network::{ChannelsConfig, LocalNode, TaskManager};
+use crate::network::payloads::{Block, Transaction, Witness};
 use crate::persistence::{MemoryStore, SnapshotCache, StoreProviderTrait};
 use crate::protocol_settings::ProtocolSettings;
 use crate::store::Store;
+use crate::transaction::Transaction;
+use crate::native_contract::NativeContract;
+use crate::plugin::Plugin;
+use crate::utility;
+use crate::vm::OpCode;
+use serde::{Serialize, Deserialize};
+use getset::{Getters, Setters};
+use crate::ledger::blockchain::Blockchain;
+use crate::ledger::transaction_router::ledger::TransactionRouter;
 
+#[derive(Getters, Setters)]
 pub struct NeoSystem {
-    pub settings: Arc<ProtocolSettings>,
-    pub genesis_block: Block,
-    pub blockchain: BlockchainHandle,
-    pub local_node: LocalNodeHandle,
-    pub task_manager: TaskManagerHandle,
-    pub tx_router: TxRouterHandle,
-    pub mem_pool: Arc<MemoryPool>,
-    pub header_cache: Arc<HeaderCache>,
-    pub relay_cache: Arc<TokioMutex<HashMap<H256, bool>>>,
-    services: Arc<TokioMutex<Vec<Box<dyn Any + Send + Sync>>>>,
-    store: Arc<dyn Store<WriteBatch=()>>,
+    #[getset(get = "pub")]
+    settings: Arc<ProtocolSettings>,
+    #[getset(get = "pub")]
+    genesis_block: Block,
+    #[getset(get = "pub")]
+    blockchain: Addr<Blockchain>,
+    #[getset(get = "pub")]
+    local_node: Addr<LocalNode>,
+    #[getset(get = "pub")]
+    task_manager: Addr<TaskManager>,
+    #[getset(get = "pub")]
+    tx_router: Addr<TransactionRouter>,
+    #[getset(get = "pub")]
+    mem_pool: Arc<MemoryPool>,
+    #[getset(get = "pub")]
+    header_cache: Arc<HeaderCache>,
+    #[getset(get = "pub")]
+    relay_cache: Arc<Mutex<HashMap<H256, bool>>>,
+    services: Arc<Mutex<Vec<Box<dyn Any + Send + Sync>>>>,
+    store: Arc<dyn Store>,
     storage_provider: Arc<dyn StoreProviderTrait>,
-    start_message: Arc<TokioMutex<Option<ChannelsConfig>>>,
+    start_message: Arc<Mutex<Option<ChannelsConfig>>>,
     suspend: Arc<AtomicI32>,
 }
 
-struct BlockchainHandle {
-    sender: mpsc::Sender<BlockchainMessage>,
-    handle: JoinHandle<()>,
-}
-
-struct LocalNodeHandle {
-    sender: mpsc::Sender<LocalNodeMessage>,
-    handle: JoinHandle<()>,
-}
-
-struct TaskManagerHandle {
-    sender: mpsc::Sender<TaskManagerMessage>,
-    handle: JoinHandle<()>,
-}
-
-struct TxRouterHandle {
-    sender: mpsc::Sender<TxRouterMessage>,
-    handle: JoinHandle<()>,
-}
-enum BlockchainMessage {
-    Initialize,
-    AddBlock(Block),
-    GetBlock(H256),
-    GetHeight,
-    ValidateTransaction(Transaction),
-    Persist(Block),
-    Shutdown,
-}
-
-enum LocalNodeMessage {
-    Start(ChannelsConfig),
-    ConnectToPeer(String),
-    BroadcastTransaction(Transaction),
-    RequestBlockByHash(H256),
-    RequestBlockByIndex(u32),
-    Shutdown,
-}
-
-enum TaskManagerMessage {
-    ScheduleTask(Task),
-    CancelTask(TaskId),
-    GetTaskStatus(TaskId),
-    Shutdown,
-}
-
-enum TxRouterMessage {
-    RouteTransaction(Transaction),
-    GetTransactionStatus(H256),
-    Shutdown,
-}
-
 impl NeoSystem {
-    pub async fn new(
+    pub fn new(
         settings: Arc<ProtocolSettings>,
         storage_provider: Option<Arc<dyn StoreProviderTrait>>,
         storage_path: Option<String>,
@@ -94,50 +60,39 @@ impl NeoSystem {
         let storage_provider = storage_provider.unwrap_or_else(|| Arc::new(MemoryStore::new()) as Arc<dyn StoreProviderTrait>);
         let store = storage_provider.get_store(storage_path);
         let genesis_block = Self::create_genesis_block(&settings);
-        let mempool = Arc::new(MemoryPool::new());
+        let mem_pool = Arc::new(MemoryPool::new());
         let header_cache = Arc::new(HeaderCache::new());
 
-        let (blockchain_sender, blockchain_receiver) = mpsc::channel(100);
-        let (local_node_sender, local_node_receiver) = mpsc::channel(100);
-        let (task_manager_sender, task_manager_receiver) = mpsc::channel(100);
-        let (tx_router_sender, tx_router_receiver) = mpsc::channel(100);
+        let system = System::new();
+        let blockchain = system.block_on(Blockchain::new(store.clone()).start());
+        let local_node = system.block_on(LocalNode::new().start());
+        let task_manager = system.block_on(TaskManager::new().start());
+        let tx_router = system.block_on(TransactionRouter::new().start());
 
-        let system = Arc::new(Self {
-            settings: settings.clone(),
+        let neo_system = Self {
+            settings,
             genesis_block,
-            blockchain: BlockchainHandle {
-                sender: blockchain_sender,
-                handle: tokio::spawn(blockchain_actor(blockchain_receiver, store.clone())),
-            },
-            local_node: LocalNodeHandle {
-                sender: local_node_sender,
-                handle: tokio::spawn(local_node_actor(local_node_receiver)),
-            },
-            task_manager: TaskManagerHandle {
-                sender: task_manager_sender,
-                handle: tokio::spawn(task_manager_actor(task_manager_receiver)),
-            },
-            tx_router: TxRouterHandle {
-                sender: tx_router_sender,
-                handle: tokio::spawn(tx_router_actor(tx_router_receiver)),
-            },
-            mem_pool: mempool,
+            blockchain,
+            local_node,
+            task_manager,
+            tx_router,
+            mem_pool,
             header_cache,
-            relay_cache: Arc::new(TokioMutex::new(HashMap::new())),
-            services: Arc::new(TokioMutex::new(Vec::new())),
+            relay_cache: Arc::new(Mutex::new(HashMap::new())),
+            services: Arc::new(Mutex::new(Vec::new())),
             store,
             storage_provider,
-            start_message: Arc::new(TokioMutex::new(None)),
+            start_message: Arc::new(Mutex::new(None)),
             suspend: Arc::new(AtomicI32::new(0)),
-        });
+        };
 
         for plugin in Plugin::plugins() {
-            plugin.on_system_loaded(&system);
+            plugin.on_system_loaded(&neo_system);
         }
 
-        system.blockchain.sender.send(BlockchainMessage::Initialize).await.unwrap();
+        system.block_on(neo_system.blockchain.send(BlockchainMessage::Initialize));
 
-        system
+        neo_system
     }
 
     fn create_genesis_block(settings: &ProtocolSettings) -> Block {
@@ -147,21 +102,17 @@ impl NeoSystem {
 
         Block {
             header: Header {
-                hash: None,
-                version: 0,
                 prev_hash: H256::zero(),
                 merkle_root: H256::zero(),
                 timestamp,
                 nonce: 2083236893,
                 index: 0,
-                primary_index: 0,
                 next_consensus: Contract::get_bft_address(&settings.standby_validators()),
                 witness: Witness {
                     invocation_script: Vec::new(),
                     verification_script: vec![OpCode::Push1 as u8],
                 },
-                primary: 0,
-                witnesses: Default::default(),
+                ..Default::default()
             },
             transactions: Vec::new(),
         }
@@ -181,13 +132,6 @@ impl NeoSystem {
             .map(|s| Arc::new(s.clone()))
     }
 
-    pub async fn ensure_stopped(&self, handle: &JoinHandle<()>) {
-        // Signal the actor to stop (you need to implement this mechanism)
-        // Then wait for it to finish
-        handle.abort();
-        let _ = handle.await;
-    }
-
     pub fn load_store(&self, path: &str) -> Arc<dyn Store> {
         self.storage_provider.get_store(Some(path.to_string()))
     }
@@ -198,7 +142,7 @@ impl NeoSystem {
         }
         let mut start_message = self.start_message.lock().await;
         if let Some(config) = start_message.take() {
-            self.local_node.sender.send(LocalNodeMessage::Start(config)).await.unwrap();
+            self.local_node.do_send(LocalNodeMessage::Start(config));
         }
         true
     }
@@ -209,7 +153,7 @@ impl NeoSystem {
 
         if self.suspend.load(Ordering::SeqCst) == 0 {
             if let Some(config) = start_message.take() {
-                self.local_node.sender.send(LocalNodeMessage::Start(config)).await.unwrap();
+                self.local_node.do_send(LocalNodeMessage::Start(config));
             }
         }
     }
@@ -241,21 +185,17 @@ impl NeoSystem {
         ).await
     }
 }
+
 impl Drop for NeoSystem {
     fn drop(&mut self) {
         // Signal all actors to shut down
-        let _ = self.blockchain.sender.try_send(BlockchainMessage::Shutdown);
-        let _ = self.local_node.sender.try_send(LocalNodeMessage::Shutdown);
-        let _ = self.task_manager.sender.try_send(TaskManagerMessage::Shutdown);
-        let _ = self.tx_router.sender.try_send(TxRouterMessage::Shutdown);
+        self.blockchain.do_send(BlockchainMessage::Shutdown);
+        self.local_node.do_send(LocalNodeMessage::Shutdown);
+        self.task_manager.do_send(TaskManagerMessage::Shutdown);
+        self.tx_router.do_send(TxRouterMessage::Shutdown);
 
         // Wait for all actors to finish
-        let _ = self.runtime.block_on(async {
-            let _ = self.blockchain.handle.await;
-            let _ = self.local_node.handle.await;
-            let _ = self.task_manager.handle.await;
-            let _ = self.tx_router.handle.await;
-        });
+        System::current().stop();
 
         // Dispose plugins
         for plugin in Plugin::plugins() {
@@ -272,79 +212,47 @@ impl Drop for NeoSystem {
     }
 }
 
-async fn blockchain_actor(mut rx: mpsc::Receiver<BlockchainMessage>, store: Arc<dyn Store>) {
-    while let Some(msg) = rx.recv().await {
-        match msg {
-            BlockchainMessage::Initialize => {
-                println!("Initializing blockchain");
-                // Perform initialization tasks
-                // e.g., load the latest state from the store
-            },
-            BlockchainMessage::AddBlock(block) => {
-                println!("Adding block: {}", block.hash());
-                // Validate and add the block to the chain
-                // Update the store
-            },
-            BlockchainMessage::GetBlock(hash) => {
-                println!("Retrieving block: {}", hash);
-                // Fetch the block from the store
-                // You might want to send the result back to the requester
-            },
-            BlockchainMessage::GetHeight => {
-                println!("Getting current height");
-                // Retrieve the current height from the store
-                // You might want to send the result back to the requester
-            },
-            BlockchainMessage::ValidateTransaction(tx) => {
-                println!("Validating transaction: {}", tx.hash());
-                // Perform transaction validation
-                // You might want to send the result back to the requester
-            },
-            BlockchainMessage::Persist(block) => {
-                println!("Persisting block: {}", block.hash());
-                // Persist the block to the store
-            },
-            BlockchainMessage::Shutdown => {
-                println!("Shutting down blockchain actor");
-                break;
-            }
-        }
-    }
-    println!("Blockchain actor shut down");
+#[derive(Message)]
+#[rtype(result = "()")]
+pub enum BlockchainMessage {
+    Initialize,
+    AddBlock(Block),
+    GetBlock(H256),
+    GetHeight,
+    ValidateTransaction(Transaction),
+    Persist(Block),
+    Shutdown,
 }
 
-async fn local_node_actor(mut rx: mpsc::Receiver<LocalNodeMessage>) {
-    while let Some(msg) = rx.recv().await {
-        match msg {
-            LocalNodeMessage::Start(config) => {
-                println!("Starting local node with config: {:?}", config);
-                // Initialize network connections based on the config
-            },
-            LocalNodeMessage::ConnectToPeer(address) => {
-                println!("Connecting to peer: {}", address);
-                // Establish connection to the specified peer
-            },
-            LocalNodeMessage::BroadcastTransaction(tx) => {
-                println!("Broadcasting transaction: {}", tx.hash());
-                // Broadcast the transaction to connected peers
-            },
-            LocalNodeMessage::RequestBlockByHash(hash) => {
-                println!("Requesting block by hash: {}", hash);
-                // Request the block from peers
-            },
-            LocalNodeMessage::RequestBlockByIndex(index) => {
-                println!("Requesting block by index: {}", index);
-                // Request the block from peers
-            },
-            LocalNodeMessage::Shutdown => {
-                println!("Shutting down local node actor");
-                break;
-            }
-        }
-    }
-    println!("Local node actor shut down");
+#[derive(Message)]
+#[rtype(result = "()")]
+pub enum LocalNodeMessage {
+    Start(ChannelsConfig),
+    ConnectToPeer(String),
+    BroadcastTransaction(Transaction),
+    RequestBlockByHash(H256),
+    RequestBlockByIndex(u32),
+    Shutdown,
 }
 
+#[derive(Message)]
+#[rtype(result = "()")]
+pub enum TaskManagerMessage {
+    ScheduleTask(Task),
+    CancelTask(TaskId),
+    GetTaskStatus(TaskId),
+    Shutdown,
+}
+
+#[derive(Message)]
+#[rtype(result = "()")]
+pub enum TxRouterMessage {
+    RouteTransaction(Transaction),
+    GetTransactionStatus(H256),
+    Shutdown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContainsTransactionType {
     NotExist,
     ExistsInPool,

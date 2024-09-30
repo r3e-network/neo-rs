@@ -40,9 +40,9 @@ where
     K: Clone,
     V: Clone,
 {
-    key: K,
+    key:   K,
     value: V,
-    time: u64,
+    time:  u64,
 }
 
 impl<K, V> CacheInterface<K, V> for Cache<K, V>
@@ -51,21 +51,13 @@ where
     V: Clone,
 {
     fn new(max_capacity: usize) -> Self {
-        Cache {
-            inner: Arc::new(RwLock::new(InnerCache {
-                map: HashMap::new(),
-            })),
-            max_capacity,
-        }
+        Cache { inner: Arc::new(RwLock::new(InnerCache { map: HashMap::new() })), max_capacity }
     }
 
     fn get(&self, key: &K) -> Option<V> {
         let mut inner = self.inner.write().unwrap();
         if let Some(item) = inner.map.get_mut(key) {
-            item.time = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
+            item.time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
             Some(item.value.clone())
         } else {
             None
@@ -75,26 +67,16 @@ where
     fn insert(&self, key: K, value: V) {
         let mut inner = self.inner.write().unwrap();
         if inner.map.len() >= self.max_capacity {
-            let oldest = inner
-                .map
-                .iter()
-                .min_by_key(|(_, v)| v.time)
-                .map(|(k, _)| k.clone());
+            let oldest = inner.map.iter().min_by_key(|(_, v)| v.time).map(|(k, _)| k.clone());
             if let Some(oldest_key) = oldest {
                 inner.map.remove(&oldest_key);
             }
         }
-        inner.map.insert(
-            key.clone(),
-            CacheItem {
-                key,
-                value,
-                time: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs(),
-            },
-        );
+        inner.map.insert(key.clone(), CacheItem {
+            key,
+            value,
+            time: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+        });
     }
 
     fn remove(&self, key: &K) -> Option<V> {
@@ -128,9 +110,6 @@ where
     V: Clone,
 {
     fn clone(&self) -> Self {
-        Cache {
-            inner: self.inner.clone(),
-            max_capacity: self.max_capacity,
-        }
+        Cache { inner: self.inner.clone(), max_capacity: self.max_capacity }
     }
 }
