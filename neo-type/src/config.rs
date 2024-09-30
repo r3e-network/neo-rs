@@ -91,21 +91,30 @@ pub struct HardForkHeight {
 }
 
 #[derive(Debug)]
+<<<<<<<< HEAD:neo-type/src/settings.rs
 pub struct NeoConfig {
     pub network:          u32,
     pub address_version:  u8,
+========
+pub struct ChainConfig {
+    pub network: u32,
+    // pub address_version: u8, // only v3 is supported now
+>>>>>>>> fea.framework:neo-type/src/config.rs
     pub per_block_millis: u64,
 
     pub standby_committee: Vec<PublicKey>,
     pub nr_committee_members: u32,
     pub nr_validators: u32,
-    pub seeds: Vec<String>,
+    // pub seeds: Vec<String>,
 
     /// see Tx.valid_until_block
     pub max_valid_until_block_increment: u64,
 
     /// Max Transactions Per Block
     pub max_txs_per_block: u32,
+
+    /// max block sysfee in GAS
+    pub max_block_sysfee: u64,
 
     /// i.e. MemoryPoolMaxTransactions
     pub max_txpool_size: u32,
@@ -119,19 +128,20 @@ pub struct NeoConfig {
     pub initial_gas: u64,
 }
 
-impl Default for NeoConfig {
+impl Default for ChainConfig {
     fn default() -> Self {
         let increment = max_block_timestamp_increment(DEFAULT_PER_BLOCK_MILLIS);
         Self {
             network: 0,
-            address_version: ADDRESS_V3,
+            // address_version: ADDRESS_V3,
             per_block_millis: DEFAULT_PER_BLOCK_MILLIS,
             standby_committee: Vec::new(),
             nr_committee_members: DEFAULT_COMMITTEE_NUM,
             nr_validators: DEFAULT_VALIDATOR_NUM,
-            seeds: Vec::new(),
+            // seeds: Vec::new(),
             max_valid_until_block_increment: increment,
             max_txs_per_block: DEFAULT_MAX_TXS_PER_BLOCK,
+            max_block_sysfee: DEFAULT_MAX_BLOCK_SYSFEE,
             max_txpool_size: 50_000,
             max_traceable_blocks: 2_102_400,
             hard_forks: Vec::new(),
@@ -140,10 +150,16 @@ impl Default for NeoConfig {
     }
 }
 
-impl NeoConfig {
+impl ChainConfig {
+    #[inline]
     pub fn standby_validators(&self) -> &[PublicKey] {
         let take = core::cmp::min(self.nr_validators as usize, self.standby_committee.len());
         &self.standby_committee[..take]
+    }
+
+    #[inline]
+    pub fn is_traceable_block(&self, current_block: u32, tx_block: u32) -> bool {
+        tx_block <= current_block && tx_block + self.max_traceable_blocks > current_block
     }
 }
 

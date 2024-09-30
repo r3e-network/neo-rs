@@ -5,9 +5,9 @@ use alloc::{vec, vec::Vec};
 
 use ::bytes::{BufMut, BytesMut};
 use neo_base::{encoding::bin::*, errors};
-pub use {context::*, event::*, manifest::*, natives::*, nef::*, nep11::*, nep17::*, param::*};
 
 use crate::{types::*, PublicKey, PUBLIC_COMPRESSED_SIZE};
+pub use {context::*, event::*, manifest::*, natives::*, nef::*, nep11::*, nep17::*, param::*};
 
 pub mod context;
 pub mod event;
@@ -92,19 +92,20 @@ pub fn contract_hash(sender: &H160, name: &str, nef_checksum: u32) -> H160 {
     let mut buf = BytesMut::with_capacity(1 + (2 + 20) + (2 + name.len()) + 4);
 
     buf.put_u8(OpCode::Abort.as_u8());
-    buf.put_varbytes(sender.as_le_bytes());
-    buf.put_varint(nef_checksum as u64);
-    buf.put_varbytes(name);
+    buf.push_data(sender.as_le_bytes());
+    buf.push_int(nef_checksum as u64);
+    buf.push_data(name);
 
     buf.to_script_hash().into()
 }
 
-pub trait IsSignContract {
-    fn is_sign_contract(&self) -> bool;
+pub trait MaySignContract {
+    fn may_sign_contract(&self) -> bool; // Option<PublicKey>;
 }
 
-impl<T: AsRef<[u8]>> IsSignContract for T {
-    fn is_sign_contract(&self) -> bool {
+impl<T: AsRef<[u8]>> MaySignContract for T {
+    #[inline]
+    fn may_sign_contract(&self) -> bool {
         let bytes = self.as_ref();
         bytes.len() == CHECK_SIG_SIZE
             && bytes[0] == OpCode::PushData1.as_u8()
@@ -114,21 +115,26 @@ impl<T: AsRef<[u8]>> IsSignContract for T {
     }
 }
 
-impl IsSignContract for Contract {
+impl MaySignContract for Contract {
     #[inline]
-    fn is_sign_contract(&self) -> bool {
-        self.as_bytes().is_sign_contract()
+    fn may_sign_contract(&self) -> bool {
+        self.as_bytes().may_sign_contract()
     }
 }
 
-pub trait IsMultiSignContract {
-    /// It determines a contract is multi-sign contract or not,
-    /// and returns (public-keys-number, signers-number) when it is.
-    fn is_multi_sign_contract(&self) -> Option<(u16, u16)>;
+pub struct MultiSigners {
+    pub keys: Vec<PublicKey>,
+    pub signers: u16, // i.e n
 }
 
-impl<T: AsRef<[u8]>> IsMultiSignContract for T {
-    fn is_multi_sign_contract(&self) -> Option<(u16, u16)> {
+pub trait MayMultiSignContract {
+    /// It determines a contract is multi-sign contract or not,
+    /// and returns (public-keys-number, signers-number) when it is.
+    fn may_multi_sign_contract(&self) -> Option<MultiSigners>;
+}
+
+impl<T: AsRef<[u8]>> MayMultiSignContract for T {
+    fn may_multi_sign_contract(&self) -> Option<MultiSigners> {
         let bytes = self.as_ref();
         if bytes.len() < MIN_MULTI_CONTRACT_SIZE {
             return None;
@@ -146,21 +152,22 @@ impl<T: AsRef<[u8]>> IsMultiSignContract for T {
             return None;
         }
 
-        let mut keys = 0usize;
+        let mut keys = Vec::with_capacity(signers as usize);
         while u8::decode_bin(&mut r).ok()? == OpCode::PushData1.as_u8() {
             let size = u8::decode_bin(&mut r).ok()?;
             if size != PUBLIC_COMPRESSED_SIZE as u8 {
                 return None;
             }
 
-            if r.discard(PUBLIC_COMPRESSED_SIZE) < PUBLIC_COMPRESSED_SIZE {
-                // just discard
+            let mut buffer = [0u8; PUBLIC_COMPRESSED_SIZE];
+            if r.read_full(&mut buffer).is_err() {
                 return None;
             }
-            keys += 1;
+
+            let _ = PublicKey::from_compressed(&buffer).map(|k| keys.push(k)).ok()?;
         }
 
-        if keys < signers as usize || keys > MAX_SIGNERS {
+        if keys.len() < signers as usize || keys.len() > MAX_SIGNERS {
             return None;
         }
 
@@ -171,15 +178,11 @@ impl<T: AsRef<[u8]>> IsMultiSignContract for T {
             _ => return None,
         };
 
-        if n != keys as u16 {
+        if n != keys.len() as u16 || u8::decode_bin(&mut r).ok()? != OpCode::Syscall.as_u8() {
             return None;
         }
 
-        if u8::decode_bin(&mut r).ok()? != OpCode::Syscall.as_u8() {
-            return None;
-        }
-
-        r.as_bytes().eq(&CHECK_MULTI_SIG_HASH_SUFFIX).then_some((keys as u16, signers))
+        r.as_bytes().eq(&CHECK_MULTI_SIG_HASH_SUFFIX).then_some(MultiSigners { keys, signers })
     }
 }
 

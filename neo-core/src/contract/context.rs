@@ -2,20 +2,21 @@
 // All Rights Reserved
 
 use alloc::vec::Vec;
+
 #[cfg(feature = "std")]
 use std::collections::HashMap;
 
-use bytes::BytesMut;
 #[cfg(not(feature = "std"))]
 use hashbrown::HashMap;
-use neo_type::{Script, Signature, Varbytes};
-use crate::{
-    PublicKey,
-};
+
+use bytes::BytesMut;
+
+use crate::types::{PushData, Script, Sign};
+use crate::PublicKey;
 
 pub struct MultiSignContext<'a> {
     validators: &'a [PublicKey],
-    arguments: Vec<Signature>,
+    arguments: Vec<Sign>,
     signs: HashMap<&'a PublicKey, usize>,
 }
 
@@ -28,9 +29,11 @@ impl<'a> MultiSignContext<'a> {
         }
     }
 
-    pub fn signs_count(&self) -> usize { self.signs.len() }
+    pub fn signs_count(&self) -> usize {
+        self.signs.len()
+    }
 
-    pub fn add_sign(&mut self, key: &'a PublicKey, sign: &Signature) -> bool {
+    pub fn add_sign(&mut self, key: &'a PublicKey, sign: &Sign) -> bool {
         if self.signs.get(key).is_some() {
             return false;
         }
@@ -50,7 +53,7 @@ impl<'a> MultiSignContext<'a> {
         let mut buf = BytesMut::with_capacity(self.signs_count() * SIGN_UNIT);
         for validator in self.validators.iter().rev() {
             if let Some(index) = self.signs.get(validator) {
-                buf.put_varbytes(&self.arguments[*index])
+                buf.push_data(&self.arguments[*index])
             }
         }
 

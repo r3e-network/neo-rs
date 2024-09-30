@@ -24,8 +24,7 @@ fn test_message_handle() {
     let service: SocketAddr = config.listen.parse().unwrap();
 
     let local = LocalNode::new(config);
-    let handle =
-        MessageHandleV2::new(local.port(), local.p2p_config().clone(), local.net_handles());
+    let handle = MessageHandleV2::new(local.p2p_config().clone(), local.net_handles());
 
     let node = local.run(handle);
     std::thread::sleep(Duration::from_millis(200));

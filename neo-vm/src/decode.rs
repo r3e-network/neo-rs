@@ -17,8 +17,18 @@ pub enum OpError {
     // TooLargeParam(u32, u8),
 }
 
+impl OpError {
+    #[inline]
+    pub fn which(&self) -> (u32, u8) {
+        match self {
+            Self::InvalidOpCode(ip, op) => (*ip, *op),
+            Self::OutOfBound(ip, op) => (*ip, *op),
+        }
+    }
+}
+
 pub struct ScriptDecoder<'a> {
-    next:   usize,
+    next: usize,
     script: &'a [u8],
 }
 
@@ -87,11 +97,11 @@ impl Iterator for ScriptDecoder<'_> {
 
 #[cfg(test)]
 pub(crate) mod test {
+    use crate::{OpCode::*, ScriptDecoder};
     use neo_base::encoding::hex::DecodeHex;
 
-    use crate::{OpCode::*, ScriptDecoder};
-
-    pub(crate) const TEST_CODES_1: &str = "57020004ffffffffffffffff0000000000000000701071223d6801ff00a34a7045694a9c4a020000\
+    pub(crate) const TEST_CODES_1: &str =
+        "57020004ffffffffffffffff0000000000000000701071223d6801ff00a34a7045694a9c4a020000\
         00802e04220a4a02ffffff7f321e03ffffffff00000000914a02ffffff7f320c03000000000100000\
         09f714569010004b524c068220240";
 
@@ -103,14 +113,9 @@ pub(crate) mod test {
         while let Some(op) = decoder.next() {
             let op = op.expect("`op` should be ok");
             match op.code {
-                PushInt128 | PushData1 | PushData2 => {
-                    assert_eq!(op.operand.first, 0);
-                }
-                _ => {
-                    assert!(op.operand.data.is_empty());
-                }
+                PushInt128 | PushData1 | PushData2 => assert_eq!(op.operand.first, 0),
+                _ => assert!(op.operand.data.is_empty()),
             }
-            // std::println!("{:04}: {:?}, {:?}", op.ip, op.code, op.operand);
         }
     }
 }

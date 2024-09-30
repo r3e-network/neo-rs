@@ -30,7 +30,7 @@ impl<Store: store::Store> TxStore<Store> {
         let key = self.tx_key(hash);
         let mut tx = self.store.get_bin_encoded::<StatedTx>(&key)?;
 
-        tx.tx.calc_hash_and_size();
+        tx.tx.recalc_hash();
         if !tx.tx.hash().eq(hash) {
             // TODO: data inconsistent
         }

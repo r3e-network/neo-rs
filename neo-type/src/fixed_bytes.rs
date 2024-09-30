@@ -1,15 +1,18 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+use alloc::{string::String, vec, vec::Vec};
 use core::net::IpAddr;
-use std::{string::String, vec::Vec};
 
 use bytes::{BufMut, BytesMut};
+use serde::{de::Error, Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::types::OpCode;
 use neo_base::encoding::{base64::*, bin::*};
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct FixedBytes<const N: usize>(pub [u8; N]);
+pub struct FixedBytes<const N: usize>(pub(crate) [u8; N]);
 
 impl<const N: usize> FixedBytes<N> {
     pub fn as_bytes(&self) -> &[u8] {
@@ -106,7 +109,7 @@ impl From<IpAddr> for FixedBytes<16> {
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct Bytes(pub Vec<u8>);
+pub struct Bytes(pub(crate) Vec<u8>);
 
 impl Bytes {
     pub fn len(&self) -> usize {
@@ -183,12 +186,12 @@ impl<'de> Deserialize<'de> for Bytes {
     }
 }
 
-pub trait Varbytes {
-    fn put_varbytes<T: AsRef<[u8]>>(&mut self, bytes: T);
+pub(crate) trait PushData {
+    fn push_data<T: AsRef<[u8]>>(&mut self, bytes: T);
 }
 
-impl Varbytes for BytesMut {
-    fn put_varbytes<T: AsRef<[u8]>>(&mut self, bytes: T) {
+impl PushData for BytesMut {
+    fn push_data<T: AsRef<[u8]>>(&mut self, bytes: T) {
         let bytes = bytes.as_ref();
         if bytes.len() > u32::MAX as usize {
             core::panic!("too many bytes({} > u32::MAX)", bytes.len());
@@ -196,15 +199,15 @@ impl Varbytes for BytesMut {
 
         match bytes.len() {
             0..=0xFF => {
-                self.put_u8(0x0C); // PUSH_DATA1
+                self.put_u8(OpCode::PushData1 as u8); // PUSH_DATA1
                 self.put_u8(bytes.len() as u8);
             }
             0x100..=0xFFFF => {
-                self.put_u8(0x0D); // PUSH_DATA2
+                self.put_u8(OpCode::PushData2 as u8); // PUSH_DATA2
                 self.put_u16_le(bytes.len() as u16);
             }
             _ => {
-                self.put_u8(0x0E); // PUSH_DATA4
+                self.put_u8(OpCode::PushData4 as u8); // PUSH_DATA4
                 self.put_u32_le(bytes.len() as u32);
             }
         }
@@ -213,12 +216,12 @@ impl Varbytes for BytesMut {
     }
 }
 
-pub trait Varint {
-    fn put_varint(&mut self, n: u64);
+pub(crate) trait PushInt {
+    fn push_int(&mut self, n: u64);
 }
 
-impl Varint for BytesMut {
-    fn put_varint(&mut self, n: u64) {
+impl PushInt for BytesMut {
+    fn push_int(&mut self, n: u64) {
         match n {
             0..=16 => {
                 // PUSH0

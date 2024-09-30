@@ -1,12 +1,14 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+use alloc::vec::Vec;
+
 use bytes::{BufMut, BytesMut};
 use neo_base::hash::{Ripemd160, Sha256};
 use neo_base::{byzantine_honest_quorum, errors};
-use neo_crypto::secp256r1::{PUBLIC_COMPRESSED_SIZE, PublicKey};
 
-use crate::{Bytes, MAX_SIGNERS, OpCode, Script, ScriptHash, ToScriptHash, Varint};
+use crate::types::{Bytes, OpCode, Script, ScriptHash, ToScriptHash, PushInt, MAX_SIGNERS};
+use crate::{PublicKey, PUBLIC_COMPRESSED_SIZE};
 
 // 40 bytes = 1-byte CHECK_SIG_PUSH_DATA1 + 1-byte length + 33-bytes key + 1-byte OpCode + 4-bytes suffix
 pub const CHECK_SIG_SIZE: usize = 1 + 1 + 33 + 1 + 4;
@@ -14,41 +16,31 @@ pub const CHECK_SIG_SIZE: usize = 1 + 1 + 33 + 1 + 4;
 pub const CHECK_SIG_HASH_SUFFIX: [u8; 4] = [0x56, 0xe7, 0xb3, 0x27];
 pub const CHECK_MULTI_SIG_HASH_SUFFIX: [u8; 4] = [0x9e, 0xd0, 0xdc, 0x3a];
 
-pub struct CheckSign(pub [u8; CHECK_SIG_SIZE]);
+pub struct CheckSign(pub(crate) [u8; CHECK_SIG_SIZE]);
 
 impl CheckSign {
     #[inline]
-    pub fn as_bytes(&self) -> &[u8] {
-        self.0.as_slice()
-    }
+    pub fn as_bytes(&self) -> &[u8] { self.0.as_slice() }
 }
 
 impl AsRef<[u8; CHECK_SIG_SIZE]> for CheckSign {
     #[inline]
-    fn as_ref(&self) -> &[u8; CHECK_SIG_SIZE] {
-        &self.0
-    }
+    fn as_ref(&self) -> &[u8; CHECK_SIG_SIZE] { &self.0 }
 }
 
 impl AsRef<[u8]> for CheckSign {
     #[inline]
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
+    fn as_ref(&self) -> &[u8] { &self.0 }
 }
 
 impl Into<Bytes> for CheckSign {
     #[inline]
-    fn into(self) -> Bytes {
-        Bytes::from(self.0.to_vec())
-    }
+    fn into(self) -> Bytes { Bytes::from(self.0.to_vec()) }
 }
 
 impl Into<Script> for CheckSign {
     #[inline]
-    fn into(self) -> Script {
-        Script::from(self.as_bytes())
-    }
+    fn into(self) -> Script { Script::from(self.as_bytes()) }
 }
 
 pub struct MultiCheckSign {
@@ -63,52 +55,38 @@ pub struct MultiCheckSign {
 
 impl MultiCheckSign {
     #[inline]
-    pub fn new(keys: usize, signers: usize, sign: Vec<u8>) -> Self {
+    pub(crate) fn new(keys: usize, signers: usize, sign: Vec<u8>) -> Self {
         Self { keys, signers, sign }
     }
 
     #[inline]
-    pub fn keys(&self) -> usize {
-        self.keys
-    }
+    pub fn keys(&self) -> usize { self.keys }
 
     #[inline]
-    pub fn signers(&self) -> usize {
-        self.signers
-    }
+    pub fn signers(&self) -> usize { self.signers }
 
     #[inline]
-    pub fn as_bytes(&self) -> &[u8] {
-        self.sign.as_slice()
-    }
+    pub fn as_bytes(&self) -> &[u8] { self.sign.as_slice() }
 }
 
 impl AsRef<[u8]> for MultiCheckSign {
     #[inline]
-    fn as_ref(&self) -> &[u8] {
-        self.sign.as_ref()
-    }
+    fn as_ref(&self) -> &[u8] { self.sign.as_ref() }
 }
 
 impl ToScriptHash for MultiCheckSign {
     #[inline]
-    fn to_script_hash(&self) -> ScriptHash {
-        ScriptHash(self.sign.sha256().ripemd160())
-    }
+    fn to_script_hash(&self) -> ScriptHash { ScriptHash(self.sign.sha256().ripemd160()) }
 }
 
 impl Into<Bytes> for MultiCheckSign {
     #[inline]
-    fn into(self) -> Bytes {
-        Bytes::from(self.sign)
-    }
+    fn into(self) -> Bytes { Bytes::from(self.sign) }
 }
 
 impl Into<Script> for MultiCheckSign {
     #[inline]
-    fn into(self) -> Script {
-        Script::from(self.sign)
-    }
+    fn into(self) -> Script { Script::from(self.sign) }
 }
 
 pub trait ToCheckSign {
@@ -152,14 +130,14 @@ impl<T: AsRef<[PublicKey]>> ToCheckMultiSign for T {
 
         keys.sort_by(|lhs, rhs| lhs.cmp(rhs));
 
-        buf.put_varint(signers as u64);
+        buf.push_int(signers as u64);
         keys.into_iter().for_each(|k| {
             buf.put_u8(OpCode::PushData1.as_u8());
             buf.put_u8(SIZE as u8);
             buf.put_slice(k.to_compressed().as_slice());
         });
 
-        buf.put_varint(n as u64);
+        buf.push_int(n as u64);
         buf.put_u8(OpCode::Syscall.as_u8());
         buf.put_slice(&CHECK_MULTI_SIG_HASH_SUFFIX);
 
@@ -192,12 +170,12 @@ impl<T: AsRef<[PublicKey]>> ToBftHash for T {
 
 #[cfg(test)]
 mod test {
+    use alloc::vec::Vec;
 
     use neo_base::encoding::hex::DecodeHex;
     use neo_crypto::secp256r1::PublicKey;
 
-    use crate::{ToCheckMultiSign, ToCheckSign, ToNeo3Address, ToScriptHash};
-    use crate::{ToCheckSign, ToNeo3Address, ToScriptHash};
+    use crate::types::{ToCheckMultiSign, ToCheckSign, ToNeo3Address, ToScriptHash};
 
     #[test]
     fn test_one_key_address() {

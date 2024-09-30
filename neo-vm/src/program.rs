@@ -115,9 +115,7 @@ mod test {
     #[test]
     fn test_program_build() {
         let script = TEST_CODES_1.decode_hex().expect("`decode_hex` should be ok");
-
         let program = Program::build(&script).expect("`Program::build` should be ok");
-
         assert_eq!(program.ops().is_empty(), false);
         // for op in program.ops.iter() {
         //     std::println!("{:04}: {:?}, {:?}", op.ip, op.code, op.operand);

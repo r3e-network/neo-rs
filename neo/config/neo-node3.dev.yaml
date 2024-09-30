@@ -9,6 +9,7 @@ p2p:
   attempt_peers: 16
   discovery_factor: 1000
   broadcast_factor: 0
+  port: 10237
   listen: "127.0.0.1:10237"
   network: 0x4e454e
   relay: true

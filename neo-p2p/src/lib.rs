@@ -39,7 +39,7 @@ impl NetEvent {
 
 #[derive(Debug, Clone)]
 pub struct NetMessage {
-    pub peer:  SocketAddr,
+    pub peer: SocketAddr,
     pub event: NetEvent,
 }
 
@@ -79,17 +79,21 @@ impl Dial for mpsc::Sender<SocketAddr> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct P2pConfig {
-    pub nonce:         u32,
-    pub min_peers:     u32,
-    pub max_peers:     u32,
+    pub nonce: u32,
+    pub min_peers: u32,
+    pub max_peers: u32,
     pub attempt_peers: u32,
 
     /// Broadcast interval is  discovery_factor * per_block_millis
     pub discovery_factor: u32,
     pub broadcast_factor: u32,
 
+    /// The port in Version message
+    pub port: u16,
+
     /// Listen local socket-addr, like "0.0.0.0:10234"
-    pub listen:  String,
+    pub listen: String,
+
     // pub announced_port: u16,
     pub network: u32,
 
@@ -100,8 +104,8 @@ pub struct P2pConfig {
     // i.e. protocol_tick_interval
     pub tick_interval: Duration,
     pub ping_interval: Duration,
-    pub ping_timeout:  Duration,
-    pub dial_timeout:  Duration,
+    pub ping_timeout: Duration,
+    pub dial_timeout: Duration,
 
     pub per_block_millis: u64,
 }
@@ -116,6 +120,7 @@ impl Default for P2pConfig {
             attempt_peers: 20,
             discovery_factor: 1000,
             broadcast_factor: 0,
+            port: 10234,
             listen: "127.0.0.1:10234".into(),
             network: Network::DevNet.as_magic(),
             relay: true,

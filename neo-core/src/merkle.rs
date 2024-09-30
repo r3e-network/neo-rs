@@ -17,14 +17,14 @@ pub struct MerkleTree {
 impl MerkleTree {
     pub fn new(hashes: &[H256]) -> Self {
         let nodes = build_merkle_nodes(&hashes);
-
         let root = nodes[0].clone();
         let leaves_offset = nodes.len() - hashes.len();
-
         Self { nodes, root, leaves_offset }
     }
 
-    pub fn root(&self) -> &H256 { &self.root }
+    pub fn root(&self) -> &H256 {
+        &self.root
+    }
 }
 
 fn build_merkle_nodes(hashes: &[H256]) -> Vec<H256> {
@@ -128,11 +128,9 @@ impl<T: AsRef<[H256]>> MerkleSha256 for T {
 
 #[cfg(test)]
 mod test {
-    use neo_base::{
-        bytes::ToArray,
-        encoding::hex::{FromRevHex, ToHex},
-        hash::Sha256,
-    };
+    use neo_base::bytes::ToArray;
+    use neo_base::encoding::hex::{FromRevHex, ToHex};
+    use neo_base::hash::Sha256;
 
     use super::*;
     use neo_type::H256;
@@ -163,7 +161,9 @@ mod test {
     }
 
     impl MerkleHash for [H256; 2] {
-        fn merkle_hash(&self) -> H256 { self.iter().slices_sha256().sha256().into() }
+        fn merkle_hash(&self) -> H256 {
+            self.iter().slices_sha256().sha256().into()
+        }
     }
 
     #[test]
