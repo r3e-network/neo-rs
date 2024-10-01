@@ -1,11 +1,10 @@
 
 use std::sync::Arc;
 
-pub mod ledger {
-    use NeoRust::builder::Transaction;
     use crate::ledger::verify_result::VerifyResult;
     use crate::neo_system::NeoSystem;
-    use super::*;
+use crate::network::payloads::Transaction;
+use super::*;
 
     pub struct TransactionRouter {
         system: Arc<NeoSystem>,
@@ -28,7 +27,7 @@ pub mod ledger {
         }
 
         pub fn on_receive(&self, message: Preverify) -> Option<PreverifyCompleted> {
-            let verify_result = message.transaction.verify_state_independent(&self.system.settings);
+            let verify_result = message.transaction.verify_state_independent(&self.system.settings());
             Some(PreverifyCompleted {
                 transaction: message.transaction,
                 relay: message.relay,
@@ -40,4 +39,3 @@ pub mod ledger {
             Arc::new(TransactionRouter::new(system))
         }
     }
-}

@@ -3,13 +3,12 @@ use std::sync::MutexGuard;
 use bytes::BufMut;
 use crate::neo_contract::storage_item::StorageItem;
 use crate::neo_contract::storage_key::StorageKey;
-use crate::persistence::{DataCache, SeekDirection, SnapshotTrait, Trackable};
+use crate::persistence::{DataCache, ReadOnlyStoreTrait, SeekDirection, SnapshotTrait, Trackable};
 use crate::persistence::persistence_error::PersistenceError;
-use crate::store::ReadOnlyStore;
 
 /// Represents a cache for the snapshot or database of the NEO blockchain.
 pub struct SnapshotCache {
-    store: Box<dyn ReadOnlyStore>,
+    store: Box<dyn ReadOnlyStoreTrait>,
     snapshot: Option<Box<dyn SnapshotTrait>>,
     cache: HashMap<Vec<u8>, Option<Vec<u8>>>,
 }
@@ -19,29 +18,15 @@ impl SnapshotCache {
     ///
     /// # Arguments
     ///
-    /// * `store` - A type that implements ReadOnlyStore to create a readonly cache,
+    /// * `store` - A type that implements ReadOnlyStoreTrait to create a readonly cache,
     ///             or a type that implements Snapshot to create a snapshot cache.
-    pub fn new<T: ReadOnlyStore + 'static>(store: T) -> Self {
+    pub fn new<T: ReadOnlyStoreTrait + 'static>(store: T) -> Self {
         let snapshot = store.as_any().downcast_ref::<dyn SnapshotTrait>().map(|s| Box::new(s.clone()) as Box<dyn SnapshotTrait>);
         SnapshotCache {
             store: Box::new(store),
             snapshot,
             cache: HashMap::new(),
         }
-    }
-
-    fn add_internal(&mut self, key: &[u8], value: &[u8]) {
-        if let Some(snapshot) = &mut self.snapshot {
-            snapshot.put(key, value);
-        }
-        self.cache.insert(key.to_vec(), Some(value.to_vec()));
-    }
-
-    fn delete_internal(&mut self, key: &[u8]) {
-        if let Some(snapshot) = &mut self.snapshot {
-            snapshot.delete(key);
-        }
-        self.cache.insert(key.to_vec(), None);
     }
 
     pub fn commit(&mut self) {
@@ -54,29 +39,6 @@ impl SnapshotCache {
         if let Some(snapshot) = &mut self.snapshot {
             snapshot.commit();
         }
-    }
-
-    fn contains_internal(&self, key: &[u8]) -> bool {
-        self.store.contains(key)
-    }
-
-    fn get_internal(&self, key: &[u8]) -> Result<Vec<u8>, Error> {
-        self.store.try_get(key).ok_or_else(|| Error::KeyNotFound)
-    }
-
-    fn seek_internal(&self, key_or_prefix: &[u8], direction: SeekDirection) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>> {
-        Box::new(self.store.seek(key_or_prefix, direction))
-    }
-
-    fn try_get_internal(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.store.try_get(key)
-    }
-
-    fn update_internal(&mut self, key: &[u8], value: &[u8]) {
-        if let Some(snapshot) = &mut self.snapshot {
-            snapshot.put(key, value);
-        }
-        self.cache.insert(key.to_vec(), Some(value.to_vec()));
     }
 }
 
@@ -93,7 +55,7 @@ impl DataCache for SnapshotCache {
         self.contains_internal(key)
     }
 
-    fn get(&self, key: &[u8]) -> Result<Vec<u8>, Error> {
+    fn get(&self, key: &[u8]) -> Result<Vec<u8>, PersistenceError> {
         self.get_internal(key)
     }
 
@@ -117,31 +79,40 @@ impl DataCache for SnapshotCache {
     }
 
     fn get_internal(&self, key: &StorageKey) -> Result<StorageItem, PersistenceError> {
-        todo!()
+        self.store.try_get(key).ok_or_else(|| PersistenceError::KeyNotFound)
     }
 
-    fn add_internal(&self, key: &StorageKey, value: &StorageItem) -> Result<(), PersistenceError> {
-        todo!()
+    fn add_internal(&mut self, key: &StorageKey, value: &StorageItem) -> Result<(), PersistenceError> {
+        if let Some(snapshot) = &mut self.snapshot {
+            snapshot.put(key, value);
+        }
+        self.cache.insert(key.to_vec(), Some(value.to_vec()));
     }
 
     fn delete_internal(&self, key: &StorageKey) -> Result<(), PersistenceError> {
-        todo!()
+        if let Some(snapshot) = &mut self.snapshot {
+            snapshot.delete(key);
+        }
+        self.cache.insert(key.to_vec(), None);
     }
 
     fn contains_internal(&self, key: &StorageKey) -> bool {
-        todo!()
+        self.store.contains(key.to_array().into())
     }
 
     fn try_get_internal(&self, key: &StorageKey) -> Result<Option<StorageItem>, &'static str> {
-        todo!()
+        self.store.try_get(key)
     }
 
-    fn update_internal(&self, key: &StorageKey, value: &StorageItem) -> Result<(), PersistenceError> {
-        todo!()
+    fn update_internal(&mut self, key: &StorageKey, value: &StorageItem) -> Result<(), PersistenceError> {
+        if let Some(snapshot) = &mut self.snapshot {
+            snapshot.put(key, value);
+        }
+        self.cache.insert(key.to_vec(), Some(value.to_vec()));
     }
 
     fn seek_internal(&self, key_or_prefix: &[u8], direction: SeekDirection) -> Box<dyn Iterator<Item=(StorageKey, StorageItem)> + '_> {
-        todo!()
+        Box::new(self.store.seek(key_or_prefix, direction))
     }
 
     fn get_dictionary(&self) -> MutexGuard<'_, HashMap<StorageKey, Trackable>> {

@@ -2,12 +2,17 @@ use alloc::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
-use neo_proc_macros::{contract, event};
+use neo_proc_macros::{contract_method, event};
+use neo_type::H256;
 use neo_vm::References;
 use neo_vm::StackItem;
+use crate::contract::OracleRequest;
+use crate::cryptography::Crypto;
+use crate::neo_contract::application_engine::ApplicationEngine;
 use crate::neo_contract::iinteroperable::IInteroperable;
+use crate::network::payloads::OracleResponse;
+use crate::persistence::DataCache;
 
-#[contract]
 pub struct OracleContract {
     max_url_length: u32,
     max_filter_length: u32,
@@ -33,7 +38,6 @@ pub struct OracleResponseEvent {
     original_tx: H256,
 }
 
-#[contract]
 impl OracleContract {
     pub fn new() -> Self {
         Self {

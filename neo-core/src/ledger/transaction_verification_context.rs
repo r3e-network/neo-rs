@@ -1,12 +1,11 @@
-
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
-use NeoRust::builder::Transaction;
 use crate::store::Snapshot;
 use crate::tx::OracleResponse;
 use neo_type::H160;
 use neo_type::H256;
+use crate::network::payloads::Transaction;
 
 /// The context used to verify the transaction.
 pub struct TransactionVerificationContext {

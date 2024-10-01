@@ -7,7 +7,7 @@ use core::hash::{Hash, Hasher};
 
 use hashbrown::hash_map::DefaultHashBuilder;
 use neo_base::{errors, math::I256};
-use neo_type::H160;
+use neo_type::{ScriptHash, H160};
 use num_enum::TryFromPrimitive;
 
 use crate::{CastError::*, StackItem::*, *};

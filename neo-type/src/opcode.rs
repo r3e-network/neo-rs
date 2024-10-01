@@ -1,8 +1,9 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use strum::EnumIter;
 use strum_macros::EnumIter;
+use crate::OpCode::*;
+
 const PUSH_DATA1_PRICE: u64 = 8;
 const SYSCALL_PRICE: u64 = 0;
 const PUSH_INT_PRICE: u64 = 1;

@@ -142,7 +142,7 @@ impl ContractParametersContext {
         true
     }
 
-    pub fn create_item(&mut self, contract: Contract) -> bool {
+    pub fn create_item(&mut self, mut contract: Contract) -> bool {
         let script_hash = contract.script_hash();
         if !self.script_hashes().contains(&script_hash) {
             return false;

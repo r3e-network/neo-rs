@@ -1,4 +1,3 @@
-
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::persistence::{ReadOnlyStoreTrait, SnapshotTrait, IStore, MemorySnapshot, SeekDirection};
@@ -22,37 +21,9 @@ impl MemoryStore {
 
 impl ReadOnlyStoreTrait for MemoryStore {
     fn seek(&self, key: &[u8], direction: SeekDirection) -> Box<dyn Iterator<Item=(Vec<u8>, Vec<u8>)>> {
-        todo!()
-    }
-
-    fn try_get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        todo!()
-    }
-
-    fn contains(&self, key: &[u8]) -> bool {
-        todo!()
-    }
-}
-
-impl IStore for MemoryStore {
-    fn delete(&mut self, key: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-        self.inner_data.write().unwrap().remove(&Vec::from(key));
-        Ok(())
-    }
-
-    fn get_snapshot(&self) -> Box<dyn SnapshotTrait> {
-        Box::new(MemorySnapshot::new(Arc::clone(&self.inner_data)))
-    }
-
-    fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-        self.inner_data.write().unwrap().insert(Vec::from(key), Vec::from(value));
-        Ok(())
-    }
-
-    fn seek(&self, key_or_prefix: &[u8], direction: SeekDirection) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>> {
         let data = self.inner_data.read().unwrap();
         let mut items: Vec<_> = data.iter()
-            .filter(|(k, _)| k.as_slice().starts_with(key_or_prefix))
+            .filter(|(k, _)| k.as_slice().starts_with(key))
             .map(|(k, v)| (k.to_vec(), v.to_vec()))
             .collect();
 
@@ -70,6 +41,22 @@ impl IStore for MemoryStore {
 
     fn contains(&self, key: &[u8]) -> bool {
         self.inner_data.read().unwrap().contains_key(&Vec::from(key))
+    }
+}
+
+impl IStore for MemoryStore {
+    fn delete(&mut self, key: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+        self.inner_data.write().unwrap().remove(&Vec::from(key));
+        Ok(())
+    }
+
+    fn get_snapshot(&self) -> Box<dyn SnapshotTrait> {
+        Box::new(MemorySnapshot::new(Arc::clone(&self.inner_data)))
+    }
+
+    fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+        self.inner_data.write().unwrap().insert(Vec::from(key), Vec::from(value));
+        Ok(())
     }
 }
 

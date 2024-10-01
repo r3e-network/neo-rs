@@ -7,7 +7,7 @@ use neo_base::errors;
 use neo_type::{multi_sign_contract_cost, sign_contract_cost, ChainConfig};
 use crate::contract::{NativeContracts, ORACLE_RESPONSE_SCRIPT};
 use crate::store::NeoStates;
-use crate::{tx::*};
+use crate::tx::*;
 
 #[allow(unused)]
 pub struct BlockChain {

@@ -10,8 +10,7 @@ use std::collections::HashMap;
 use hashbrown::HashMap;
 
 use bytes::BytesMut;
-
-use crate::types::{PushData, Script, Sign};
+use neo_type::{PushData, Script, Sign};
 use crate::PublicKey;
 
 pub struct MultiSignContext<'a> {

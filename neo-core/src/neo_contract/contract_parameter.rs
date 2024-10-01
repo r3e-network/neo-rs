@@ -72,6 +72,8 @@ impl ContractParameter {
             ContractParameterType::PublicKey => Some(ContractParameterValue::PublicKey(ECPoint::try_from(text).map_err(|e| e.to_string())?)),
             ContractParameterType::String => Some(ContractParameterValue::String(text.to_string())),
             ContractParameterType::Array | ContractParameterType::Map => return Err("Cannot set Array or Map from string".to_string()),
+            ContractParameterType::InteropInterface => todo!(),
+            ContractParameterType::Void => todo!(),
         };
         Ok(())
     }

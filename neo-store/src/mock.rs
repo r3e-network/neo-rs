@@ -106,7 +106,7 @@ impl MockInner {
     }
 }
 
-impl ReadOnlyStore for MockStore {
+impl ReadOnlyStoreTrait for MockStore {
     fn get(&self, key: &[u8]) -> Result<(Vec<u8>, Version), ReadError> {
         let inner = self.inner.lock().unwrap();
         inner

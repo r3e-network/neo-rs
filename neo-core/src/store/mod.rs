@@ -76,11 +76,11 @@ impl ReadError {
     pub fn is_not_found(&self) -> bool { matches!(self, Self::NoSuchKey) }
 }
 
-pub trait ReadOnlyStore: Clone + Sync + Send {
-    fn get(&self, key: &[u8]) -> Result<(Vec<u8>, Version), ReadError>;
-
-    fn contains(&self, key: &[u8]) -> Result<Version, ReadError>;
-}
+// pub trait ReadOnlyStoreTrait: Clone + Sync + Send {
+//     fn get(&self, key: &[u8]) -> Result<(Vec<u8>, Version), ReadError>;
+//
+//     fn contains(&self, key: &[u8]) -> bool;
+// }
 
 #[derive(Debug, Clone, errors::Error)]
 pub enum WriteError {
@@ -88,7 +88,7 @@ pub enum WriteError {
     Conflicted,
 }
 
-pub trait Store: ReadOnlyStore {
+pub trait Store: ReadOnlyStoreTrait {
     type WriteBatch: WriteBatch;
 
     fn delete(&self, key: &[u8], options: &WriteOptions) -> Result<Version, WriteError>;
@@ -158,7 +158,7 @@ pub trait GetBinEncoded {
     fn get_bin_encoded<T: BinDecoder>(&self, key: &[u8]) -> Result<T, BinReadError>;
 }
 
-impl<Store: ReadOnlyStore> GetBinEncoded for Store {
+impl<Store: ReadOnlyStoreTrait> GetBinEncoded for Store {
     fn get_bin_encoded<T: BinDecoder>(&self, key: &[u8]) -> Result<T, BinReadError> {
         let (data, _version) = self.get(key)
             .map_err(|err| BinReadError::from(err))?;

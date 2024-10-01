@@ -1,14 +1,12 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use alloc::{string::String, vec, vec::Vec};
 use core::net::IpAddr;
 
 use bytes::{BufMut, BytesMut};
 use neo_base::encoding::{base64::*, bin::*};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
-
-use crate::types::OpCode;
+use crate::OpCode;
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct FixedBytes<const N: usize>(pub(crate) [u8; N]);
@@ -185,7 +183,7 @@ impl<'de> Deserialize<'de> for Bytes {
     }
 }
 
-pub(crate) trait PushData {
+pub trait PushData {
     fn push_data<T: AsRef<[u8]>>(&mut self, bytes: T);
 }
 
@@ -215,7 +213,7 @@ impl PushData for BytesMut {
     }
 }
 
-pub(crate) trait PushInt {
+pub trait PushInt {
     fn push_int(&mut self, n: u64);
 }
 

@@ -4,7 +4,6 @@
 use alloc::{string::String, vec::Vec};
 
 use serde::{Deserialize, Serialize};
-use neo_type::Signature;
 use crate::{
     contract::{NamedParamType, ParamType},
     PublicKey,

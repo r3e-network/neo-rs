@@ -1,7 +1,7 @@
-
-use neo::prelude::*;
-use neo::json::Json;
 use std::marker::PhantomData;
+use serde_json::Value;
+use neo_json::json_convert_trait::JsonConvertibleTrait;
+use neo_json::json_error::JsonError;
 
 /// A container that supports wildcard.
 #[derive(Clone, Debug)]
@@ -31,41 +31,39 @@ impl<T> WildcardContainer<T> {
             _phantom: PhantomData,
         }
     }
+}
 
-    /// Converts the container from a JSON object.
-    pub fn from_json<F>(json: &Json, element_selector: F) -> Result<Self, Error>
-    where
-        F: Fn(&Json) -> Result<T, Error>,
-    {
-        match json {
-            Json::String(s) if s == "*" => Ok(Self::create_wildcard()),
-            Json::Array(array) => {
-                let data = array
-                    .iter()
-                    .map(element_selector)
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(Self::create(data))
-            }
-            _ => Err(Error::Format),
-        }
-    }
-
-    /// Converts the container to a JSON object.
-    pub fn to_json<F>(&self, element_selector: F) -> Json
-    where
-        F: Fn(&T) -> Json,
-    {
+impl<T> JsonConvertibleTrait for WildcardContainer<T> {
+    fn to_json(&self) -> Value {
         if self.is_wildcard() {
-            Json::String("*".to_string())
+            serde_json::Value::String("*".to_string())
         } else {
-            Json::Array(
+            serde_json::Value::Array(
                 self.data
                     .as_ref()
                     .unwrap()
                     .iter()
-                    .map(element_selector)
-                    .collect(),
+                    .map(|item| item.to_json())
+                    .collect()
             )
+        }
+    }
+
+    fn from_json(json: &Value) -> Result<Self, JsonError>
+    where
+        Self: Sized,
+        T: JsonConvertibleTrait,
+    {
+        match json {
+            serde_json::Value::String(s) if s == "*" => Ok(Self::create_wildcard()),
+            serde_json::Value::Array(array) => {
+                let data = array
+                    .iter()
+                    .map(|item| T::from_json(item))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Self::create(data))
+            }
+            _ => Err(JsonError::InvalidFormat),
         }
     }
 }

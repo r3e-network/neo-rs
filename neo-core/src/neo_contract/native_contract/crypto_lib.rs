@@ -1,12 +1,11 @@
 use alloc::rc::Rc;
 use std::collections::HashMap;
 use lazy_static::lazy_static;
-use neo_proc_macros::{contract, contract_impl};
+use neo_proc_macros::{contract, contract_method};
 use crate::cryptography::{ECCurve, Hasher};
 use crate::neo_contract::native_contract::named_curve_hash::NamedCurveHash;
 
 /// A native contract library that provides cryptographic algorithms.
-#[contract]
 pub struct CryptoLib;
 
 lazy_static! {
@@ -20,7 +19,6 @@ lazy_static! {
     };
 }
 
-#[contract_impl]
 impl CryptoLib {
     /// Computes the hash value for the specified byte array using the ripemd160 algorithm.
     #[contract_method(cpu_fee = 1 << 15, name = "ripemd160")]

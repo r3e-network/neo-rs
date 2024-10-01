@@ -33,27 +33,41 @@ impl JsonConvertibleTrait for MethodToken {
 
     /// Converts the token to a JSON object.
     fn to_json(&self) -> serde_json::Value {
-        JToken::new_object()
-            .insert("hash".to_string(), self.hash.to_string())
-            .unwrap()
-            .insert("method".to_string(), self.method.clone())
-            .unwrap()
-            .insert("paramcount".to_string(), self.parameters_count)
-            .unwrap()
-            .insert("hasreturnvalue".to_string(), self.has_return_value)
-            .unwrap()
-            .insert("callflags".to_string(), self.call_flags)
-            .unwrap()
+        serde_json::json!({
+            "hash": self.hash.to_string(),
+            "method": self.method,
+            "paramcount": self.parameters_count,
+            "hasreturnvalue": self.has_return_value,
+            "callflags": self.call_flags
+        })
     }
 
     fn from_json(json: &serde_json::Value) -> Result<Self, JsonError> {
-        let hash = json.get("hash")
-            .and_then(|v| v.as_str())
+        let hash = json["hash"].as_str()
             .ok_or(JsonError::InvalidFormat)?;
         let hash = H160::from_str(hash).map_err(|_| JsonError::InvalidFormat)?;
 
-        let method = json.get("method")
-            .and_then(|v| v.as_str())
+        let method = json["method"].as_str()
+            .ok_or(JsonError::InvalidFormat)?;
+        
+        let parameters_count = json["paramcount"].as_u64()
+            .ok_or(JsonError::InvalidFormat)? as u16;
+        
+        let has_return_value = json["hasreturnvalue"].as_bool()
+            .ok_or(JsonError::InvalidFormat)?;
+        
+        let call_flags = CallFlags::from_bits(json["callflags"].as_u64()
+            .ok_or(JsonError::InvalidFormat)? as u8)
+            .ok_or(JsonError::InvalidFormat)?;
+
+        Ok(Self {
+            hash,
+            method: method.to_string(),
+            parameters_count,
+            has_return_value,
+            call_flags,
+        })
+    }
 }
 
 impl SerializableTrait for MethodToken {

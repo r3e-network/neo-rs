@@ -1,18 +1,19 @@
 use std::collections::HashSet;
 use NeoRust::neo_types::VMState;
 use serde::{Deserialize, Serialize};
-use neo_proc_macros::{contract, contract_impl, contract_method};
+use neo_proc_macros::{contract,  contract_method};
 use crate::neo_contract::storage_context::StorageContext;
 use crate::network::payloads::{Header, Transaction};
 use neo_type::H160;
 use neo_type::H256;
+use crate::neo_contract::application_engine::ApplicationEngine;
+use crate::neo_contract::contract_error::ContractError;
+use crate::store::PREFIX_CURRENT_BLOCK;
 
-#[contract]
 pub struct LedgerContract {
     storage_map: StorageMap,
 }
 
-#[contract_impl]
 impl LedgerContract {
 
     const PREFIX_BLOCK_HASH: u8 = 9;
@@ -26,7 +27,6 @@ impl LedgerContract {
         }
     }
 
-    #[on_persist]
     pub fn on_persist(&mut self, engine: &mut ApplicationEngine) -> Result<(), ContractError> {
         let transactions: Vec<TransactionState> = engine
             .persisting_block()
@@ -85,7 +85,6 @@ impl LedgerContract {
         Ok(())
     }
 
-    #[post_persist]
     pub fn post_persist(&mut self, engine: &mut ApplicationEngine) -> Result<(), ContractError> {
         let mut state = self
             .storage_map

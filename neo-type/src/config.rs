@@ -1,10 +1,8 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use alloc::{string::String, vec::Vec};
 use core::fmt::Debug;
-
-use crate::PublicKey;
+use neo_crypto::secp256r1::PublicKey;
 
 /// constants
 pub const CURRENT_TX_VERSION: u8 = 0;

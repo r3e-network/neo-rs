@@ -6,8 +6,9 @@ use alloc::{vec, vec::Vec};
 use ::bytes::{BufMut, BytesMut};
 use neo_base::{encoding::bin::*, errors};
 
-use crate::{types::*, PublicKey, PUBLIC_COMPRESSED_SIZE};
 pub use {context::*, event::*, manifest::*, natives::*, nef::*, nep11::*, nep17::*, param::*};
+use neo_crypto::secp256r1::{PublicKey, PUBLIC_COMPRESSED_SIZE};
+use neo_type::{OpCode, PushData, PushInt, Script, ToCheckMultiSign, ToCheckSign, ToScriptHash, CHECK_MULTI_SIG_HASH_SUFFIX, CHECK_SIG_HASH_SUFFIX, CHECK_SIG_SIZE, H160, MAX_SIGNERS};
 
 pub mod context;
 pub mod event;

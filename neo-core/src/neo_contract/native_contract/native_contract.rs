@@ -78,7 +78,7 @@ pub trait NativeContract: Send + Sync {
                     .collect(),
             },
             permissions: vec![ContractPermission::default()],
-            trusts: WildcardContainer::new(),
+            trusts: WildcardContainer::create_wildcard(),
             extra: None,
         };
 
