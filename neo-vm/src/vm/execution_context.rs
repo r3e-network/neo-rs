@@ -97,10 +97,10 @@ impl ExecutionContext {
         self.shared_states.borrow_mut().static_fields.as_mut()
     }
     pub fn states(&self) -> &HashMap<TypeId, Box<dyn Any>> {
-        &self.shared_states.borrow().states
+        &self.shared_states.lock().unwrap().states
     }
     pub fn states_mut(&mut self) -> &mut HashMap<TypeId, Box<dyn Any>> {
-        &mut self.shared_states.borrow_mut().states
+        &mut self.shared_states.lock().unwrap().states
     }
 
     pub fn move_next(&mut self) {
@@ -122,6 +122,7 @@ impl ExecutionContext {
             shared_states,
             instruction_pointer: ip,
             rv_count: 0,
+
             local_variables: self.local_variables.clone(),
             arguments: self.arguments.clone(),
             try_stack: self.try_stack.clone(),

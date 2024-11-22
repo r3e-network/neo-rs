@@ -6,9 +6,9 @@ pub mod stack_item;
 pub mod stackitem_type;
 
 use stackitem_type::*;
-mod convertible_trait;
-mod equatable_trait;
 mod type_error;
+mod pointer_item;
+mod interop_item;
 
 pub fn add(left: usize, right: usize) -> usize {
 	left + right

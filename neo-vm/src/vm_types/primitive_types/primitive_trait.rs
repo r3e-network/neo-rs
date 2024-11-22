@@ -4,6 +4,7 @@ use serde::__private::de::Content::String;
 use crate::item_trait::StackItemTrait;
 use crate::item_type::StackItemType;
 use crate::StackItem::Integer;
+use crate::StackItemType;
 
 pub trait PrimitiveTrait: StackItemTrait + Clone {
 

@@ -266,7 +266,7 @@ impl ExecutionEngine {
     }
 
     fn execute_try(&mut self, catch_offset: usize, finally_offset: usize) {
-        let context = self.current_context.as_mut().unwrap().borrow_mut();
+        let mut context = self.current_context.as_mut().unwrap().borrow_mut();
 
         if catch_offset == 0 && finally_offset == 0 {
             panic!("Invalid try block offsets");
