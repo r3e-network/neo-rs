@@ -1,7 +1,4 @@
-use std::fmt::Error;
-
 use thiserror::Error;
-
 use crate::vm::OpCode;
 
 /// Represents errors during VM execution.

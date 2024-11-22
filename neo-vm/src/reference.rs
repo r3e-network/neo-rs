@@ -1,61 +1,10 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use core::hash::{Hash, Hasher};
+use crate::compound_types::compound_trait::CompoundTrait;
+use crate::stack_item::{SharedItem, StackItem};
 
-use crate::*;
-
-pub(crate) enum TrackItem {
-    Array(Array),
-    Map(Map),
-}
-
-impl TrackItem {
-    #[inline]
-    pub fn with_array(item: Array) -> Self {
-        TrackItem::Array(item)
-    }
-
-    #[inline]
-    pub fn with_map(item: Map) -> Self {
-        TrackItem::Map(item)
-    }
-}
-
-impl PartialEq<Self> for TrackItem {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        use TrackItem::*;
-        match (self, other) {
-            (Array(l), Array(r)) => l == r,
-            (Map(l), Map(r)) => l == r,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for TrackItem {}
-
-impl Hash for TrackItem {
-    #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            TrackItem::Array(v) => v.hash(state),
-            TrackItem::Map(v) => v.hash(state),
-        }
-    }
-}
-
-// #[derive(Debug, errors::Error)]
-// pub enum ReferenceError {
-//     #[error("reference: too depth nested {}, max {}")]
-//     TooDepthNested(u32, u32),
-// }
-
-// NOTE: References must drop after Vm existed.
 pub struct References {
-    tracked:    hashbrown::HashSet<TrackItem>,
-    // zero_referred: hashbrown::HashSet<TrackItem>,
     references: isize,
 }
 
@@ -63,67 +12,75 @@ impl References {
     #[inline]
     pub fn new() -> Self {
         Self {
-            tracked:    Default::default(),
-            // zero_referred: Default::default(),
             references: 0,
         }
     }
 
-    // StackItem must add to References before Push to Stack or Slots
+    // Add an item to the reference counter
     #[inline]
-    pub fn add(&mut self, item: &StackItem) {
-        self.recursive_add(item, 1);
-    }
+    pub fn add(&mut self, item: &SharedItem) {
+        if let Ok(guard) = item.lock() {
+            self.references += 1;
 
-    // StackItem must remove from References after Pop from Stack or Slots
-    #[inline]
-    pub fn remove(&mut self, item: &StackItem) {
-        self.recursive_remove(item, 1);
-    }
-
-    fn recursive_add(&mut self, item: &StackItem, depth: u32) {
-        self.references += 1;
-        match item {
-            StackItem::Array(v) => {
-                if v.strong_count() == 1 {
-                    self.tracked.insert(TrackItem::Array(v.clone()));
-                    v.items().iter().for_each(|x| self.recursive_add(x, depth + 1));
+            match &*guard {
+                StackItem::Array(arr) => {
+                    if arr.ref_inc() == 1 {
+                        for item in arr.items() {
+                            self.add(item);
+                        }
+                    }
                 }
-            }
-            StackItem::Struct(v) => {
-                v.items().iter().for_each(|x| self.recursive_add(x, depth + 1));
-            }
-            StackItem::Map(v) => {
-                if v.strong_count() == 1 {
-                    self.tracked.insert(TrackItem::Map(v.clone()));
-                    v.items().iter().for_each(|(_k, v)| self.recursive_add(v, depth + 1));
+                StackItem::Struct(s) => {
+                    if Arc::strong_count(item) == 1 {
+                        for item in s.items() {
+                            self.add(item);
+                        }
+                    }
                 }
+                StackItem::Map(m) => {
+                    if Arc::strong_count(item) == 1 {
+                        for (key, value) in m.items() {
+                            self.add(key);
+                            self.add(value);
+                        }
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
-    fn recursive_remove(&mut self, item: &StackItem, depth: u32) {
-        self.references -= 1;
-        match item {
-            StackItem::Array(v) => {
-                if v.strong_count() == 2 {
-                    // 2 == item + another one in self.tracked
-                    v.items().iter().for_each(|x| self.recursive_remove(x, depth + 1));
-                    self.tracked.remove(&TrackItem::Array(v.clone()));
+    // Remove an item from the reference counter
+    #[inline] 
+    pub fn remove(&mut self, item: &SharedItem) {
+        if let Ok(guard) = item.lock() {
+            self.references -= 1;
+
+            match &*guard {
+                StackItem::Array(arr) => {
+                    if Arc::strong_count(item) == 0 {
+                        for item in arr.items() {
+                            self.remove(item);
+                        }
+                    }
                 }
-            }
-            StackItem::Struct(v) => {
-                v.items().iter().for_each(|x| self.recursive_remove(x, depth + 1));
-            }
-            StackItem::Map(v) => {
-                if v.strong_count() == 2 {
-                    // 2 == item + another one in self.tracked
-                    v.items().iter().for_each(|(_k, v)| self.recursive_remove(v, depth + 1));
-                    self.tracked.remove(&TrackItem::Map(v.clone()));
+                StackItem::Struct(s) => {
+                    if Arc::strong_count(item) == 0 {
+                        for item in s.items() {
+                            self.remove(item);
+                        }
+                    }
                 }
+                StackItem::Map(m) => {
+                    if Arc::strong_count(item) == 0 {
+                        for (key, value) in m.items() {
+                            self.remove(key);
+                            self.remove(value);
+                        }
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 
@@ -133,45 +90,41 @@ impl References {
     }
 }
 
-impl Drop for References {
-    fn drop(&mut self) {
-        for item in &self.tracked {
-            match item {
-                TrackItem::Array(v) if v.strong_count() > 1 => v.items_mut().clear(),
-                TrackItem::Map(v) if v.strong_count() > 1 => v.items_mut().clear(),
-                _ => {}
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use super::*;
+    use crate::stack_item::{ArrayItem, MapItem};
 
     #[test]
     fn test_references() {
         let mut rf = References::new();
 
-        let item = StackItem::with_boolean(false);
+        let item = StackItem::with_boolean(false).into_arc_mutex();
         rf.add(&item);
         assert_eq!(rf.references(), 1);
 
         rf.remove(&item);
         assert_eq!(rf.references(), 0);
 
-        let s = StackItem::Array(Array::new(0));
-        rf.add(&s);
+        let array = StackItem::Array(ArrayItem::new(0)).into_arc_mutex();
+        let map = StackItem::Map(MapItem::with_capacity(2)).into_arc_mutex();
 
-        let m = StackItem::Map(Map::with_capacity(2));
-        rf.add(&m);
+        rf.add(&array);
+        rf.add(&map);
 
-        if let StackItem::Array(s) = &s {
-            s.items_mut().push(m.clone());
+        if let Ok(mut arr) = array.lock() {
+            if let StackItem::Array(a) = &mut *arr {
+                a.items_mut().push(map.clone());
+            }
         }
 
-        if let StackItem::Map(m) = &m {
-            m.items_mut().insert(StackItem::Integer(1.into()), s.clone());
+        if let Ok(mut m) = map.lock() {
+            if let StackItem::Map(m) = &mut *m {
+                m.items_mut().insert(
+                    StackItem::Integer(1.into()), 
+                    array.clone()
+                );
+            }
         }
 
         assert_eq!(rf.references(), 2);

@@ -10,9 +10,9 @@ where
 {
     fn new(max_capacity: usize) -> Self;
     fn get(&self, key: &K) -> Option<V>;
-    fn insert(&self, key: K, value: V);
-    fn remove(&self, key: &K) -> Option<V>;
-    fn clear(&self);
+    fn insert(&mut self, key: K, value: V);
+    fn remove(&mut self, key: &K) -> Option<V>;
+    fn clear(&mut self);
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
     fn contains_key(&self, key: &K) -> bool;
@@ -64,7 +64,7 @@ where
         }
     }
 
-    fn insert(&self, key: K, value: V) {
+    fn insert(&mut self, key: K, value: V) {
         let mut inner = self.inner.write().unwrap();
         if inner.map.len() >= self.max_capacity {
             let oldest = inner.map.iter().min_by_key(|(_, v)| v.time).map(|(k, _)| k.clone());
@@ -79,12 +79,12 @@ where
         });
     }
 
-    fn remove(&self, key: &K) -> Option<V> {
+    fn remove(&mut self, key: &K) -> Option<V> {
         let mut inner = self.inner.write().unwrap();
         inner.map.remove(key).map(|item| item.value)
     }
 
-    fn clear(&self) {
+    fn clear(&mut self) {
         let mut inner = self.inner.write().unwrap();
         inner.map.clear();
     }

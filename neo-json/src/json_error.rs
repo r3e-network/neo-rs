@@ -12,5 +12,6 @@ pub enum JsonError {
     IndexOutOfBounds,
     #[error("Key not found")]
     KeyNotFound,
+    #[error("Invalid format")]
     InvalidFormat,
 }

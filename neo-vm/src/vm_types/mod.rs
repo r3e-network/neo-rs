@@ -1,17 +1,14 @@
-pub mod interop_interface;
-pub mod reference_counter;
 pub mod item_trait;
-pub mod item_type;
-
-pub mod buffer;
-
-pub mod null;
-
-pub mod pointer;
 
 pub mod compound_types;
 pub mod primitive_types;
 pub mod stack_item;
+pub mod stackitem_type;
+
+use stackitem_type::*;
+mod convertible_trait;
+mod equatable_trait;
+mod type_error;
 
 pub fn add(left: usize, right: usize) -> usize {
 	left + right

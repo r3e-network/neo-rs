@@ -1,6 +1,3 @@
-use crate::{
-    item_type::StackItemType,
-};
 use std::{
 	cell::RefCell,
 	fmt::{Debug},
@@ -12,34 +9,16 @@ use std::any::Any;
 use std::collections::HashMap;
 use num_bigint::BigInt;
 use serde::{Deserialize, Serialize};
-use crate::execution_engine_limits::ExecutionEngineLimits;
-use crate::interop_interface::InteropInterface;
-use crate::null::Null;
 use crate::stack_item::StackItem;
+use crate::stack_item::StackItem::Null;
+use crate::{Interop, StackItemType};
+use crate::vm::ExecutionEngineLimits;
 
 pub trait StackItemTrait: Clone + Hash + Eq+PartialEq+Serialize+Deserialize {
 
 	type Item;
 	type ItemType;
 	type ObjectReferences;
-
-	type DFN;
-
-	type LowLink;
-	type OnStack;
-
-	fn dfn(&self) -> isize;
-
-	fn set_dfn(&mut self, dfn: isize);
-
-	fn low_link(&self) -> usize;
-	fn set_low_link(&mut self, link: usize);
-
-	fn on_stack(&self) -> bool;
-	fn set_on_stack(&mut self, on_stack: bool);
-
-	fn set_object_references(&mut self, refs: Self::ObjectReferences);
-	fn object_references(&self) -> &Self::ObjectReferences;
 
 	fn set_stack_references(&mut self, count: usize);
 
@@ -106,7 +85,7 @@ pub trait StackItemTrait: Clone + Hash + Eq+PartialEq+Serialize+Deserialize {
 	fn from_interface(value: Some(dyn Any)) -> Box< StackItem>{
 
 		match value {
-			Some(value)=>InteropInterface::new(value),
+			Some(value)=>Interop::new(value),
 			None => Null::new(),
 		}
 	}
@@ -115,23 +94,11 @@ pub trait StackItemTrait: Clone + Hash + Eq+PartialEq+Serialize+Deserialize {
 	fn get_interface<T: Any>(&self) -> Option<&T>{
 		panic!("Not implemented")
 	}
-
-
+	
 	fn get_bytes(&self) -> &[u8];
 
 	fn to_ref(&self) -> Rc<RefCell< StackItem>> {
 		Rc::new(RefCell::new(self.clone()))
 	}
 
-}
-
-pub struct ObjectReferenceEntry {
-	pub(crate) item: Rc<RefCell< StackItem>>,
-	pub(crate) references: i32,
-}
-
-impl ObjectReferenceEntry {
-	pub fn new(item: Rc<RefCell< StackItem>>) -> Self {
-		Self { item, references: 0 }
-	}
 }

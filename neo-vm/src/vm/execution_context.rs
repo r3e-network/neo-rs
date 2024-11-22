@@ -5,25 +5,23 @@ use std::{
     collections::HashMap,
     rc::Rc,
 };
-
 use crate::References;
 use crate::exception::exception_handling_context::ExceptionHandlingContext;
-use crate::vm::slot::Slot;
 use crate::vm::{EvaluationStack, Instruction, Script};
+use crate::vm::slots::Slots;
 
-#[derive(Clone)]
 pub struct ExecutionContext {
-    pub shared_states:       Rc<RefCell<SharedStates>>,
+    pub shared_states:      Rc<RefCell<SharedStates>>,
     pub instruction_pointer: usize,
 
     /// The number of return values when this context returns.
     pub rv_count: i32,
 
     /// The local variables of this context.
-    pub local_variables: Option<Slot>,
+    pub local_variables: Option<Slots>,
 
     /// The arguments passed to this context.
-    pub arguments: Option<Slot>,
+    pub arguments: Option<Slots>,
 
     /// The try stack to handle exceptions.
     pub try_stack: Option<Vec<ExceptionHandlingContext>>,
@@ -44,7 +42,7 @@ impl Debug for ExecutionContext {
 pub struct SharedStates {
     pub(crate) script:           Script,
     pub(crate) evaluation_stack: Rc<RefCell<EvaluationStack>>,
-    pub(crate) static_fields:    Option<Slot>,
+    pub(crate) static_fields:    Option<Slots>,
     pub(crate) states:           HashMap<TypeId, Box<dyn Any>>,
 }
 
@@ -69,7 +67,7 @@ impl ExecutionContext {
     pub fn get_state<T: 'static>(&mut self) -> &mut T
     where T: Default + Any {
         self.shared_states
-            .borrow()
+            .borrow_mut()
             .states
             .entry(TypeId::of::<T>())
             .or_insert_with(|| Box::new(Default::default()))
@@ -81,28 +79,28 @@ impl ExecutionContext {
         self.shared_states.borrow().evaluation_stack.clone()
     }
     pub fn evaluation_stack_mut(&mut self) -> Rc<RefCell<EvaluationStack>> {
-        self.shared_states.borrow().evaluation_stack.clone()
+        self.shared_states.borrow_mut().evaluation_stack.clone()
     }
 
     pub fn script(&self) -> &Script {
         &self.shared_states.borrow().script
     }
     pub fn script_mut(&mut self) -> &mut Script {
-        &mut self.shared_states.borrow().script
+        &mut self.shared_states.borrow_mut().script
     }
 
-    pub fn fields(&self) -> Option<&Slot> {
+    pub fn fields(&self) -> Option<&Slots> {
         self.shared_states.borrow().static_fields.as_ref()
     }
 
-    pub fn fields_mut(&mut self) -> Option<&mut Slot> {
-        self.shared_states.borrow().static_fields.as_mut()
+    pub fn fields_mut(&mut self) -> Option<&mut Slots> {
+        self.shared_states.borrow_mut().static_fields.as_mut()
     }
     pub fn states(&self) -> &HashMap<TypeId, Box<dyn Any>> {
         &self.shared_states.borrow().states
     }
     pub fn states_mut(&mut self) -> &mut HashMap<TypeId, Box<dyn Any>> {
-        &mut self.shared_states.borrow().states
+        &mut self.shared_states.borrow_mut().states
     }
 
     pub fn move_next(&mut self) {
@@ -111,7 +109,7 @@ impl ExecutionContext {
         if self.instruction_pointer >= self.script().len() {
             self.instruction_pointer = 0;
         }
-    }
+    }   
 
     pub fn clone(&self) -> Self {
         Self::clone_with_ip(self, self.instruction_pointer)
@@ -124,7 +122,6 @@ impl ExecutionContext {
             shared_states,
             instruction_pointer: ip,
             rv_count: 0,
-
             local_variables: self.local_variables.clone(),
             arguments: self.arguments.clone(),
             try_stack: self.try_stack.clone(),

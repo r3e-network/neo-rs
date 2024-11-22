@@ -3,12 +3,11 @@
 use std::cmp::Eq;
 use std::collections::{HashMap, LinkedList};
 use std::hash::Hash;
-use std::hash::Hash;
 
 pub trait KeyedCollectionSlim<K, V>
 where
     K: Eq + Hash,
-    V: PartialEq + Ord,
+    V: PartialEq + Ord + Clone,
 {
     fn get_key_for_item(&self, item: &V) -> K;
 
@@ -21,16 +20,16 @@ where
 pub struct KeyedCollectionSlimImpl<K, V>
 where
     K: Eq + Hash,
-    V: PartialEq + Ord,
+    V: PartialEq + Ord + Clone,
 {
     items: LinkedList<V>,
-    dict:  HashMap<K, *mut LinkedList<V>>,
+    dict: HashMap<K, V>,
 }
 
 impl<K, V> KeyedCollectionSlimImpl<K, V>
 where
     K: Eq + Hash,
-    V: PartialEq + Ord,
+    V: PartialEq + Ord + Clone,
 {
     pub fn new() -> Self {
         KeyedCollectionSlimImpl { items: LinkedList::new(), dict: HashMap::new() }
@@ -48,7 +47,7 @@ where
 impl<K, V> KeyedCollectionSlim<K, V> for KeyedCollectionSlimImpl<K, V>
 where
     K: Eq + Hash,
-    V: PartialEq + Ord,
+    V: PartialEq + Ord + Clone,
 {
     fn get_key_for_item(&self, item: &V) -> K {
         // This method needs to be implemented by the user of this trait
@@ -62,9 +61,8 @@ where
                 "An element with the same key already exists in the collection.".to_string()
             );
         }
-        self.items.push_back(item);
-        let node = self.items.back_mut().unwrap() as *mut V;
-        self.dict.insert(key, node);
+        self.items.push_back(item.clone());
+        self.dict.insert(key, item);
         Ok(())
     }
 
@@ -73,10 +71,14 @@ where
     }
 
     fn remove(&mut self, key: &K) {
-        if let Some(node) = self.dict.remove(key) {
-            unsafe {
-                self.items.retain(|item| item as *const _ != node);
+        if let Some(item_to_remove) = self.dict.remove(key) {
+            let mut new_items = LinkedList::new();
+            while let Some(item) = self.items.pop_front() {
+                if item != item_to_remove {
+                    new_items.push_back(item);
+                }
             }
+            self.items = new_items;
         }
     }
 

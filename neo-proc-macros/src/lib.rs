@@ -103,27 +103,27 @@ impl Parse for ContractMethodArgs {
                             }
                         }
                         "required_call_flags" => {
-                            if let Lit::Int(lit) = nv.value {
+                            if let Expr::Lit(ExprLit { lit: Lit::Int(lit), .. }) = nv.value {
                                 args.required_call_flags = Some(lit.base10_parse()?);
                             }
                         }
                         "cpu_fee" => {
-                            if let Lit::Int(lit) = nv.value {
+                            if let Expr::Lit(ExprLit { lit: Lit::Int(lit), .. }) = nv.value {
                                 args.cpu_fee = Some(lit.base10_parse()?);
                             }
                         }
                         "storage_fee" => {
-                            if let Lit::Int(lit) = nv.value {
+                            if let Expr::Lit(ExprLit { lit: Lit::Int(lit), .. }) = nv.value {
                                 args.storage_fee = Some(lit.base10_parse()?);
                             }
                         }
                         "active_in" => {
-                            if let Lit::Str(lit) = nv.value {
+                            if let Expr::Lit(ExprLit { lit: Lit::Str(lit), .. }) = nv.value {
                                 args.active_in = Some(lit.value());
                             }
                         }
                         "deprecated_in" => {
-                            if let Lit::Str(lit) = nv.value {
+                            if let Expr::Lit(ExprLit { lit: Lit::Str(lit), .. }) = nv.value {
                                 args.deprecated_in = Some(lit.value());
                             }
                         }

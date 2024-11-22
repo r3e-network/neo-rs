@@ -1,6 +1,6 @@
 use alloc::rc::Rc;
 use neo_vm::{OpCode, ScriptBuilder, StackItem, VMState};
-use neo_vm::stackitem_type::{ExecutionContext};
+use neo_vm::vm_types::stackitem_type::{ExecutionContext};
 use std::convert::TryInto;
 use std::collections::HashMap;
 use neo_type::{Script, H160};

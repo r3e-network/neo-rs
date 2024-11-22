@@ -436,7 +436,7 @@ impl TryFrom<JToken> for i32 {
 
     fn try_from(value: JToken) -> Result<Self, Self::Error> {
         if let JToken::Number(num) = value {
-            num.as_i64().map(|n| n as i32).ok_or(JsonError::FormatError)
+           Ok(num as i32)
         } else {
             Err(JsonError::FormatError)
         }
@@ -448,7 +448,7 @@ impl TryFrom<JToken> for f64 {
 
     fn try_from(value: JToken) -> Result<Self, Self::Error> {
         if let JToken::Number(num) = value {
-            num.as_f64().ok_or(JsonError::FormatError)
+           Ok(num)
         } else {
             Err(JsonError::FormatError)
         }

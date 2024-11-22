@@ -44,7 +44,7 @@ where T: Eq + Hash + Clone
         }
     }
 
-    fn insert(&self, key: T, _value: ()) {
+    fn insert(&mut self, key: T, _value: ()) {
         let mut inner = self.inner.write().unwrap();
         if !inner.sets.iter().any(|set| set.contains(&key)) {
             inner.count += 1;
@@ -65,7 +65,7 @@ where T: Eq + Hash + Clone
         }
     }
 
-    fn remove(&self, key: &T) -> Option<()> {
+    fn remove(&mut self, key: &T) -> Option<()> {
         let mut inner = self.inner.write().unwrap();
         for set in inner.sets.iter_mut() {
             if set.remove(key) {
@@ -76,7 +76,7 @@ where T: Eq + Hash + Clone
         None
     }
 
-    fn clear(&self) {
+    fn clear(&mut self) {
         let mut inner = self.inner.write().unwrap();
         inner.sets.clear();
         inner.sets.push_front(HashSet::new());
@@ -129,7 +129,9 @@ where T: Eq + Hash + Clone
                 }
             }
         }
-        inner.sets.retain(|set| !set.is_empty());
+        let non_empty: Vec<_> = inner.sets.iter().cloned().filter(|set| !set.is_empty()).collect();
+        inner.sets.clear();
+        inner.sets.extend(non_empty);
     }
 }
 

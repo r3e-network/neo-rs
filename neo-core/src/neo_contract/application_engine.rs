@@ -5,7 +5,7 @@ use std::time::SystemTime;
 use std::rc::Rc;
 use std::cell::RefCell;
 use neo_vm::StackItem;
-use neo_vm::vm::{ExecutionContext, Instruction, NeoVm, Script};
+use neo_vm::vm::{ExecutionContext, Instruction, ExecutionEngine, Script};
 use crate::block::Block;
 use crate::contract::TriggerType;
 use crate::neo_contract::call_flags::CallFlags;
@@ -32,7 +32,7 @@ use neo_type::H256;
 const TEST_MODE_GAS: i64 = 20_00000000;
 
 pub struct ApplicationEngine {
-    execution_engine: NeoVm,
+    execution_engine: ExecutionEngine,
     trigger: TriggerType,
     fee_consumed: i64,
     fee_amount: i64,
@@ -89,7 +89,7 @@ impl ApplicationEngine {
         }
 
         let mut engine = Self {
-            execution_engine: NeoVm::new(jump_table.unwrap_or_else(|| Self::compose_default_jump_table())),
+            execution_engine: ExecutionEngine::new(jump_table.unwrap_or_else(|| Self::compose_default_jump_table())),
             trigger,
             fee_consumed: 0,
             fee_amount: gas,

@@ -1,14 +1,9 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use serde::__private::de::Content::String;
-use crate::{
-	item_trait::{StackItemTrait},
-};
-use crate::buffer::Buffer;
-use crate::primitive_types::boolean::Boolean;
-use crate::primitive_types::byte_string::ByteString;
-use crate::primitive_types::integer::Integer;
+use crate::item_trait::StackItemTrait;
 use crate::item_type::StackItemType;
+use crate::StackItem::Integer;
 
 pub trait PrimitiveTrait: StackItemTrait + Clone {
 

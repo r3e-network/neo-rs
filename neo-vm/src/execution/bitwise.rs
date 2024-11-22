@@ -2,6 +2,7 @@
 // All Rights Reserved
 
 use crate::*;
+use crate::stack_item::StackItem;
 
 pub(crate) fn exec_invert(cx: &mut ExecutionContext, op: &Op) -> Result<(), ExecError> {
     let item = pop!(cx, op)

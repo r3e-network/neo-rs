@@ -7,11 +7,10 @@ pub mod evaluation_stack;
 
 pub mod execution_context;
 
-pub mod slot;
-
 pub mod execution_engine;
 pub mod execution_engine_limits;
 pub mod vm_state;
+pub mod slots;
 
 pub use evaluation_stack::*;
 pub use execution_context::*;

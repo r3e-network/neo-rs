@@ -4,8 +4,8 @@
 use neo_base::encoding::{bin::ToBinEncoded, hex::ToHex};
 use neo_base::errors;
 use neo_base::math::U256;
-
-use crate::{store::{self, *}, types::H160};
+use neo_type::H160;
+use crate::{store::{self, *}};
 
 pub const NEO_CONTRACT_ID: u32 = 0xffff_fffb; // -5
 

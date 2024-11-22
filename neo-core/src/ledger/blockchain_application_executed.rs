@@ -2,7 +2,7 @@ use std::error::Error;
 
 pub mod ledger {
     use NeoRust::neo_types::VMState;
-    use neo_vm::StackItem;
+    use neo_vm::stack_item::SharedItem;
     use crate::neo_contract::application_engine::ApplicationEngine;
     use crate::neo_contract::notify_event_args::NotifyEventArgs;
     use crate::neo_contract::trigger_type::TriggerType;
@@ -26,7 +26,7 @@ pub mod ledger {
         pub gas_consumed: i64,
 
         /// Items on the stack of the virtual machine after execution.
-        pub stack: Vec<StackItem>,
+        pub stack: Vec<SharedItem>,
 
         /// The notifications sent during the execution.
         pub notifications: Vec<NotifyEventArgs>,

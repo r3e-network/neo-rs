@@ -7,7 +7,6 @@ use neo_base::{encoding::bin::*, errors, hash::Sha256Checksum};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr as DeserializeRepr, Serialize_repr as SerializeRepr};
 use neo_type::{FixedBytes, Script, H160};
-use crate::types::{FixedBytes, Script, H160};
 
 pub const NEF3_MAGIC: u32 = 0x3346454E;
 pub const MAX_METHOD_LENGTH: usize = 32;

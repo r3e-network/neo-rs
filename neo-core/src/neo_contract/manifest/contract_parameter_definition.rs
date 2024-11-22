@@ -1,6 +1,6 @@
 use neo_vm::stack_item::StackItem;
 use neo_vm::References;
-use neo_vm::stackitem_type::Struct;
+use neo_vm::vm_types::stackitem_type::Struct;
 use crate::neo_contract::contract_parameter_type::ContractParameterType;
 use crate::neo_contract::iinteroperable::IInteroperable;
 use crate::json::Json;

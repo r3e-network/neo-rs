@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::rc::Rc;
-
-use crate::{References, StackItem};
+use crate::References;
+use crate::stack_item::{SharedItem, StackItem};
 
 pub struct EvaluationStack {
-    inner_list:        VecDeque<Rc<RefCell<StackItem>>>,
+    inner_list:        VecDeque<SharedItem>,
     reference_counter: Rc<RefCell<References>>,
 }
 
@@ -16,7 +16,7 @@ impl EvaluationStack {
 
     pub fn clear(&mut self) {
         for item in &self.inner_list {
-            self.reference_counter.borrow_mut().remove_stack_reference(item.clone());
+            self.reference_counter.borrow_mut().remove(&item);
         }
         self.inner_list.clear();
     }
@@ -36,12 +36,12 @@ impl EvaluationStack {
         }
     }
 
-    pub fn insert(&mut self, index: usize, item: Rc<RefCell<StackItem>>) {
+    pub fn insert(&mut self, index: usize, item: SharedItem) {
         if index > self.inner_list.len() {
             panic!("Insert out of bounds");
         }
         self.inner_list.insert(self.inner_list.len() - index, item.clone());
-        self.reference_counter.borrow_mut().add_stack_reference(item.clone(), 1);
+        self.reference_counter.borrow_mut().add(&item);
     }
 
     pub fn move_to(&mut self, stack: &mut EvaluationStack, count: i32) {
@@ -57,7 +57,7 @@ impl EvaluationStack {
         }
     }
 
-    pub fn peek(&self, index: i32) -> Rc<RefCell<StackItem>> {
+    pub fn peek(&self, index: i32) -> SharedItem {
         let index = index as isize;
         if index >= self.inner_list.len() as isize {
             panic!("Peek out of bounds");
@@ -71,9 +71,13 @@ impl EvaluationStack {
         self.inner_list.get((self.inner_list.len() as isize - index - 1) as usize).unwrap().clone()
     }
 
-    pub fn push(&mut self, item: Rc<RefCell<StackItem>>) {
+    pub fn top(&self) -> SharedItem {
+        self.inner_list.back().unwrap().clone()
+    }
+
+    pub fn push(&mut self, item: SharedItem) {
         self.inner_list.push_back(item.clone());
-        self.reference_counter.borrow_mut().add_stack_reference(item, 1);
+        self.reference_counter.borrow_mut().add(&item);  
     }
 
     pub fn reverse(&mut self, n: i32) {
@@ -88,15 +92,15 @@ impl EvaluationStack {
         self.inner_list.make_contiguous().reverse();
     }
 
-    pub fn pop(&mut self) -> Rc<RefCell<StackItem>> {
+    pub fn pop(&mut self) -> SharedItem {
         self.remove(0)
     }
 
-    pub fn pop_typed<T: StackItemTrait>(&mut self) -> T {
-        self.remove::<T>(0)
+    pub fn pop_typed(&mut self) -> StackItem {
+        self.remove(0)
     }
 
-    pub fn remove<T: StackItemTrait>(&mut self, index: i32) -> T {
+    pub fn remove(&mut self, index: i32) -> T {
         let index = index as isize;
         if index >= self.inner_list.len() as isize {
             panic!("Argument out of range");
@@ -109,10 +113,10 @@ impl EvaluationStack {
         }
         let index = self.inner_list.len() as isize - index - 1;
         let item = self.inner_list.remove(index as usize).unwrap();
-        if !item.borrow_mut().is::<T>() {
+        if !item.borrow().is::<T>() {
             panic!("Invalid cast");
         }
-        self.reference_counter.borrow_mut().remove_stack_reference(&item);
+        self.reference_counter.borrow_mut().remove(&item);
         item.try_into().unwrap()
     }
 

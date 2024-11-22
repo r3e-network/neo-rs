@@ -215,6 +215,9 @@ pub enum OpCode {
 
     AbortMsg   = 0xE0,
     AssertMsg  = 0xE1,
+
+    #[num_enum(default)]
+    Unknown    = 0xFF,
 }
 
 impl OpCode {

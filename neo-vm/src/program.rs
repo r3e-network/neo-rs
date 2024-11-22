@@ -4,7 +4,7 @@
 use alloc::vec::Vec;
 
 use neo_base::errors;
-use neo_type::ToScriptHash;
+use neo_type::{ScriptHash, ToScriptHash};
 
 use crate::{OpCode::*, *};
 

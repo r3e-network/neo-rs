@@ -9,9 +9,12 @@ use alloc::{rc::Rc, vec::Vec};
 
 use neo_base::errors;
 pub use {decode::*, execution::*, execution_context::*, interop::*, script_builder::*};
-pub use {evaluation_stack::*, operand::*, program::*, reference::*, stackitem_type::*};
-use {slots::*, tables::*};
-
+pub use {evaluation_stack::*, operand::*, program::*, reference::*};
+use tables::*;
+use vm::slots::*;
+pub use vm_types::*;
+pub use vm_types::stackitem_type::*;
+use crate::stack_item::SharedItem;
 use crate::vm::{OpCode, VMState};
 
 mod call_flags;
@@ -24,13 +27,11 @@ pub mod interop;
 pub mod operand;
 pub mod program;
 pub mod reference;
-pub mod script;
 pub mod script_builder;
-pub mod slots;
-pub mod stackitem_type;
 pub mod tables;
 pub mod vm;
 pub mod vm_error;
+pub mod vm_types;
 
 pub const MAX_STACK_SIZE: usize = 2048;
 pub const MAX_STACK_ITEM_SIZE: usize = 65535 * 2;
@@ -60,8 +61,8 @@ pub trait VmEnv {
     fn on_syscall(
         &self,
         syscall: u32,
-        params: &[StackItem],
-    ) -> Result<Vec<StackItem>, SyscallError>;
+        params: &[SharedItem],
+    ) -> Result<Vec<SharedItem>, SyscallError>;
 
     // i.e. on CALL_T, call token
     fn on_token_call(&self, token: u32);

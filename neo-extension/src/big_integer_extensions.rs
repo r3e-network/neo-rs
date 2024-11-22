@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::ops::{BitAnd, Shl};
 
 use num_bigint::BigInt;
@@ -41,7 +40,15 @@ impl BigIntegerExtensions for BigInt {
     }
 
     fn mod_inverse(&self, n: &BigInt) -> Option<BigInt> {
-        if self.gcd(n) != BigInt::one() {
+        fn gcd(a: &BigInt, b: &BigInt) -> BigInt {
+            if b.is_zero() {
+                a.clone()
+            } else {
+                gcd(b, &(a % b))
+            }
+        }
+
+        if gcd(self, n) != BigInt::one() {
             return None;
         }
 

@@ -276,29 +276,29 @@ impl TryFrom<JToken> for bool {
     }
 }
 
-impl TryFrom<JToken> for f64 {
-    type Error = JsonError;
+// impl TryFrom<JToken> for f64 {
+//     type Error = JsonError;
 
-    fn try_from(value: JToken) -> Result<Self, Self::Error> {
-        if let JToken::Number(n) = value {
-            Ok(n)
-        } else {
-            Err(JsonError::InvalidCast)
-        }
-    }
-}
+//     fn try_from(value: JToken) -> Result<Self, Self::Error> {
+//         if let JToken::Number(n) = value {
+//             Ok(n)
+//         } else {
+//             Err(JsonError::InvalidCast)
+//         }
+//     }
+// }
 
-impl TryFrom<JToken> for String {
-    type Error = JsonError;
+// impl TryFrom<JToken> for String {
+//     type Error = JsonError;
 
-    fn try_from(value: JToken) -> Result<Self, Self::Error> {
-        if let JToken::String(s) = value {
-            Ok(s)
-        } else {
-            Err(JsonError::InvalidCast)
-        }
-    }
-}
+//     fn try_from(value: JToken) -> Result<Self, Self::Error> {
+//         if let JToken::String(s) = value {
+//             Ok(s)
+//         } else {
+//             Err(JsonError::InvalidCast)
+//         }
+//     }
+// }
 
 impl TryFrom<JToken> for Vec<JToken> {
     type Error = JsonError;
@@ -331,17 +331,17 @@ impl From<bool> for JToken {
     }
 }
 
-impl From<f64> for JToken {
-    fn from(value: f64) -> Self {
-        JToken::Number(value)
-    }
-}
+// impl From<f64> for JToken {
+//     fn from(value: f64) -> Self {
+//         JToken::Number(value)
+//     }
+// }
 
-impl From<i32> for JToken {
-    fn from(value: i32) -> Self {
-        JToken::Number(value as f64)
-    }
-}
+// impl From<i32> for JToken {
+//     fn from(value: i32) -> Self {
+//         JToken::Number(value as f64)
+//     }
+// }
 
 impl From<i64> for JToken {
     fn from(value: i64) -> Self {
@@ -385,17 +385,17 @@ impl From<u8> for JToken {
     }
 }
 
-impl From<String> for JToken {
-    fn from(value: String) -> Self {
-        JToken::String(value)
-    }
-}
+// impl From<String> for JToken {
+//     fn from(value: String) -> Self {
+//         JToken::String(value)
+//     }
+// }
 
-impl From<&str> for JToken {
-    fn from(value: &str) -> Self {
-        JToken::String(value.to_string())
-    }
-}
+// impl From<&str> for JToken {
+//     fn from(value: &str) -> Self {
+//         JToken::String(value.to_string())
+//     }
+// }
 
 impl From<Vec<JToken>> for JToken {
     fn from(value: Vec<JToken>) -> Self {
@@ -410,8 +410,8 @@ impl From<IndexMap<String, JToken>> for JToken {
 }
 
 // impl from json to JToken
-impl From<Value> for JToken {
-    fn from(value: Value) -> Self {
-        JToken::from(value)
-    }
-}
+// impl From<Value> for JToken {
+//     fn from(value: Value) -> Self {
+//         JToken::from(value)
+//     }
+// }

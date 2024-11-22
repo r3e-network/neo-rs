@@ -8,25 +8,6 @@ use strum::{Display, EnumIter, EnumString, IntoEnumIterator};
 use crate::call_flags::CallFlags;
 use crate::{InteropCall::*, RunPrice};
 
-#[derive(Debug, Clone)]
-pub struct Interop {
-    // TODO
-}
-
-impl Hash for Interop {
-    #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u8(0xff);
-    }
-}
-
-impl PartialEq<Self> for Interop {
-    fn eq(&self, _other: &Self) -> bool {
-        false
-    } // TODO
-}
-
-impl Eq for Interop {}
 
 #[derive(Copy, Clone, PartialEq, Eq, EnumString, Display, EnumIter)]
 #[repr(u8)]

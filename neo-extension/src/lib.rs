@@ -10,12 +10,10 @@ mod utility;
 pub mod Collections;
 pub mod Net;
 
-pub use assembly_extensions::*;
 pub use big_integer_extensions::*;
 pub use byte_extensions::*;
 pub use date_time_extensions::*;
 pub use random_extensions::*;
-pub use secure_string_extensions::*;
 pub use string_extensions::*;
 pub use utility::*;
 

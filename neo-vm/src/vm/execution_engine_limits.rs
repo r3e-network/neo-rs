@@ -1,4 +1,3 @@
-use std::num::NonZeroU32;
 
 /// Represents the restrictions on the vm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]

@@ -8,7 +8,7 @@ pub struct ExecutionContext {
     pub(crate) locals:    Option<Slots>,
     pub(crate) arguments: Option<Slots>,
 
-    // stack should be declare after than statics, locals and arguments
+    // stack should be declared after than statics, locals and arguments
     pub(crate) stack: EvaluationStack,
 
     pc:      usize,
