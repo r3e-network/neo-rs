@@ -1,14 +1,15 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
-use crate::{hash::Sha256Twice, errors};
 
-pub use base58::{FromBase58, ToBase58, FromBase58Error};
+pub use base58::{FromBase58, FromBase58Error, ToBase58};
+
+use crate::{errors, hash::Sha256Twice};
 
 pub trait ToBase58Check {
     fn to_base58_check(&self, prefix: Option<u8>, suffix: Option<u8>) -> String;
+    fn base58_check_encode(&self) -> String;
 }
 
 impl<T: AsRef<[u8]>> ToBase58Check for T {
@@ -28,6 +29,18 @@ impl<T: AsRef<[u8]>> ToBase58Check for T {
 
         let check = buf.sha256_twice();
         buf.extend(&check[..4]);
+
+        buf.to_base58()
+    }
+
+    fn base58_check_encode(&self) -> String {
+        let src = self.as_ref();
+        let mut buf = Vec::with_capacity(src.len() + 4);
+
+        buf.extend_from_slice(src);
+
+        let check = buf.sha256_twice();
+        buf.extend_from_slice(&check[..4]);
 
         buf.to_base58()
     }
@@ -54,14 +67,23 @@ pub enum FromBase58CheckError {
 pub trait FromBase58Check: Sized {
     type Error;
 
-    fn from_base58_check<T: AsRef<str>>(src: T, prefix: Option<u8>, suffix: Option<u8>) -> Result<Self, Self::Error>;
-}
+    fn from_base58_check<T: AsRef<str>>(
+        src: T,
+        prefix: Option<u8>,
+        suffix: Option<u8>,
+    ) -> Result<Self, Self::Error>;
 
+    fn base58_check_decode(&self) -> Result<Self, Self::Error>;
+}
 
 impl FromBase58Check for Vec<u8> {
     type Error = FromBase58CheckError;
 
-    fn from_base58_check<T: AsRef<str>>(src: T, prefix: Option<u8>, suffix: Option<u8>) -> Result<Vec<u8>, Self::Error> {
+    fn from_base58_check<T: AsRef<str>>(
+        src: T,
+        prefix: Option<u8>,
+        suffix: Option<u8>,
+    ) -> Result<Vec<u8>, Self::Error> {
         use base58::FromBase58Error as Error;
 
         let src = src.as_ref();
@@ -72,11 +94,10 @@ impl FromBase58Check for Vec<u8> {
         };
 
         let start_at = if prefix.is_some() { 1 } else { 0 };
-        let v = src.from_base58()
-            .map_err(|err| match err {
-                Error::InvalidBase58Character(ch, _) => Self::Error::InvalidChar(ch),
-                Error::InvalidBase58Length => Self::Error::InvalidLength,
-            })?;
+        let v = src.from_base58().map_err(|err| match err {
+            Error::InvalidBase58Character(ch, _) => Self::Error::InvalidChar(ch),
+            Error::InvalidBase58Length => Self::Error::InvalidLength,
+        })?;
 
         let s = v.as_slice();
         if s.len() < min_size {
@@ -105,6 +126,14 @@ impl FromBase58Check for Vec<u8> {
             Ok(s[start_at..s.len() - 4].to_vec())
         }
     }
+
+    fn base58_check_decode(&self) -> Result<Self, Self::Error> {
+        // Decode the Base58Check-encoded string
+        let decoded = Vec::from_base58_check(self, None, None)?;
+
+        // Create a new instance of Self from the decoded bytes
+        Self::try_from(decoded.as_slice()).map_err(|_| Self::Error::InvalidData)
+    }
 }
 
 #[cfg(test)]
@@ -115,31 +144,29 @@ mod test {
     #[test]
     fn test_base58_check() {
         let origin = "1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu";
-        let decoded = Vec::from_base58_check(&origin, Some(0x00), None).
-            expect("decode should be ok");
+        let decoded =
+            Vec::from_base58_check(&origin, Some(0x00), None).expect("decode should be ok");
 
         let encoded = Vec::to_base58_check(&decoded, Some(0x00), None);
         assert_eq!(origin, encoded);
 
         let origin = "1234567890";
-        let _ = Vec::from_base58_check(origin, None, None).
-            expect_err("decode should be failed");
+        let _ = Vec::from_base58_check(origin, None, None).expect_err("decode should be failed");
 
         let encoded = origin.to_base58_check(None, Some(0x01));
-        let decoded = Vec::from_base58_check(&encoded, None, Some(0x01)).
-            expect("decode should be ok");
+        let decoded =
+            Vec::from_base58_check(&encoded, None, Some(0x01)).expect("decode should be ok");
         assert_eq!(origin.as_bytes(), decoded.as_slice());
 
         let encoded = origin.to_base58_check(Some(0x03), None);
-        let _ = Vec::from_base58_check((encoded + "x").as_str(), Some(0x03), None).
-            expect_err("decode should be failed");
+        let _ = Vec::from_base58_check((encoded + "x").as_str(), Some(0x03), None)
+            .expect_err("decode should be failed");
     }
 
     #[test]
     fn test_base58_addr() {
         let addr = "AceQbAj2xuFLiH5hQAHMnV39wtmjUKiVRj";
-        let addr = Vec::from_base58_check(addr, None, None)
-            .expect("decode should be ok");
+        let addr = Vec::from_base58_check(addr, None, None).expect("decode should be ok");
 
         assert_eq!(addr.to_hex(), "17e4f124b1c3b23553f07cebfb852b2a60aa6c6d94");
     }

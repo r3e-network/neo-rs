@@ -1,31 +1,26 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{vec, vec::Vec};
+
 use ::bytes::{BufMut, BytesMut};
+use neo_base::{encoding::bin::*, errors};
 
-use neo_base::{errors, encoding::bin::{BinDecoder, RefBuffer}};
-use neo_base::encoding::bin::BinReader;
-use crate::{PublicKey, PUBLIC_COMPRESSED_SIZE, contract::param::ParamType, types::*};
-
+pub use {context::*, event::*, manifest::*, natives::*, nef::*, nep11::*, nep17::*, param::*};
+use neo_crypto::secp256r1::{PublicKey, PUBLIC_COMPRESSED_SIZE};
+use neo_type::{OpCode, PushData, PushInt, Script, ToCheckMultiSign, ToCheckSign, ToScriptHash, CHECK_MULTI_SIG_HASH_SUFFIX, CHECK_SIG_HASH_SUFFIX, CHECK_SIG_SIZE, H160, MAX_SIGNERS};
 
 pub mod context;
-
 pub mod event;
 pub mod manifest;
-
+pub mod natives;
 pub mod nef;
-pub mod nep17;
 pub mod nep11;
-
-pub mod native;
-
+pub mod nep17;
 pub mod param;
-
+mod contract_error;
 
 pub const MIN_MULTI_CONTRACT_SIZE: usize = 42;
-
 
 #[derive(Debug)]
 pub struct Contract {
@@ -34,10 +29,11 @@ pub struct Contract {
     pub script_hash: H160,
 }
 
-
 impl Contract {
     #[inline]
-    pub fn as_bytes(&self) -> &[u8] { self.script.as_bytes() }
+    pub fn as_bytes(&self) -> &[u8] {
+        self.script.as_bytes()
+    }
 }
 
 pub trait ToSignContract {
@@ -92,53 +88,54 @@ impl<T: AsRef<[PublicKey]>> ToMultiSignContract for T {
     }
 }
 
-
 pub fn contract_hash(sender: &H160, name: &str, nef_checksum: u32) -> H160 {
-    const OPCODE_ABORT: u8 = 0x38;
-
     // 1(Abort) + (2+20) + (2+name.len()) + 4
     let mut buf = BytesMut::with_capacity(1 + (2 + 20) + (2 + name.len()) + 4);
 
-    buf.put_u8(OPCODE_ABORT);
-    buf.put_varbytes(sender.as_le_bytes());
-    buf.put_varint(nef_checksum as u64);
-    buf.put_varbytes(name);
+    buf.put_u8(OpCode::Abort.as_u8());
+    buf.push_data(sender.as_le_bytes());
+    buf.push_int(nef_checksum as u64);
+    buf.push_data(name);
 
     buf.to_script_hash().into()
 }
 
-
-pub trait IsSignContract {
-    fn is_sign_contract(&self) -> bool;
+pub trait MaySignContract {
+    fn may_sign_contract(&self) -> bool; // Option<PublicKey>;
 }
 
-impl<T: AsRef<[u8]>> IsSignContract for T {
-    fn is_sign_contract(&self) -> bool {
-        let bytes = self.as_ref();
-        bytes.len() == CHECK_SIG_SIZE &&
-            bytes[0] == PUSH_DATA1 &&
-            bytes[1] == PUBLIC_COMPRESSED_SIZE as u8 &&
-            bytes[35] == CHECK_SIG_OP_CODE &&
-            bytes.ends_with(&CHECK_SIG_HASH_SUFFIX)
-    }
-}
-
-impl IsSignContract for Contract {
+impl<T: AsRef<[u8]>> MaySignContract for T {
     #[inline]
-    fn is_sign_contract(&self) -> bool {
-        self.as_bytes().is_sign_contract()
+    fn may_sign_contract(&self) -> bool {
+        let bytes = self.as_ref();
+        bytes.len() == CHECK_SIG_SIZE
+            && bytes[0] == OpCode::PushData1.as_u8()
+            && bytes[1] == PUBLIC_COMPRESSED_SIZE as u8
+            && bytes[35] == OpCode::Syscall.as_u8()
+            && bytes.ends_with(&CHECK_SIG_HASH_SUFFIX)
     }
 }
 
+impl MaySignContract for Contract {
+    #[inline]
+    fn may_sign_contract(&self) -> bool {
+        self.as_bytes().may_sign_contract()
+    }
+}
 
-pub trait IsMultiSignContract {
+pub struct MultiSigners {
+    pub keys: Vec<PublicKey>,
+    pub signers: u16, // i.e n
+}
+
+pub trait MayMultiSignContract {
     /// It determines a contract is multi-sign contract or not,
     /// and returns (public-keys-number, signers-number) when it is.
-    fn is_multi_sign_contract(&self) -> Option<(u16, u16)>;
+    fn may_multi_sign_contract(&self) -> Option<MultiSigners>;
 }
 
-impl<T: AsRef<[u8]>> IsMultiSignContract for T {
-    fn is_multi_sign_contract(&self) -> Option<(u16, u16)> {
+impl<T: AsRef<[u8]>> MayMultiSignContract for T {
+    fn may_multi_sign_contract(&self) -> Option<MultiSigners> {
         let bytes = self.as_ref();
         if bytes.len() < MIN_MULTI_CONTRACT_SIZE {
             return None;
@@ -147,7 +144,7 @@ impl<T: AsRef<[u8]>> IsMultiSignContract for T {
         let mut r = RefBuffer::from(bytes);
         let signers = match u8::decode_bin(&mut r).ok()? {
             0x00 => u8::decode_bin(&mut r).ok()? as u16, // PUSH INT8
-            0x01 => u16::decode_bin(&mut r).ok()?, // PUSH INT16
+            0x01 => u16::decode_bin(&mut r).ok()?,       // PUSH INT16
             n if n >= 0x11 && n <= 0x20 => (n - 0x11) as u16, // 0x11 -> PUSH0
             _ => return None,
         };
@@ -156,48 +153,46 @@ impl<T: AsRef<[u8]>> IsMultiSignContract for T {
             return None;
         }
 
-        let mut keys = 0usize;
-        while u8::decode_bin(&mut r).ok()? == PUSH_DATA1 {
+        let mut keys = Vec::with_capacity(signers as usize);
+        while u8::decode_bin(&mut r).ok()? == OpCode::PushData1.as_u8() {
             let size = u8::decode_bin(&mut r).ok()?;
             if size != PUBLIC_COMPRESSED_SIZE as u8 {
                 return None;
             }
 
-            if r.discard(PUBLIC_COMPRESSED_SIZE) < PUBLIC_COMPRESSED_SIZE { // just discard
+            let mut buffer = [0u8; PUBLIC_COMPRESSED_SIZE];
+            if r.read_full(&mut buffer).is_err() {
                 return None;
             }
-            keys += 1;
+
+            let _ = PublicKey::from_compressed(&buffer).map(|k| keys.push(k)).ok()?;
         }
 
-        if keys < signers as usize || keys > MAX_SIGNERS {
+        if keys.len() < signers as usize || keys.len() > MAX_SIGNERS {
             return None;
         }
 
         let n = match u8::decode_bin(&mut r).ok()? {
             0x00 => u8::decode_bin(&mut r).ok()? as u16, // PUSH INT8
-            0x01 => u16::decode_bin(&mut r).ok()?, // PUSH INT16
+            0x01 => u16::decode_bin(&mut r).ok()?,       // PUSH INT16
             n if n >= 0x11 && n <= 0x20 => (n - 0x11) as u16, // 0x11 -> PUSH0
             _ => return None,
         };
 
-        if n != keys as u16 {
+        if n != keys.len() as u16 || u8::decode_bin(&mut r).ok()? != OpCode::Syscall.as_u8() {
             return None;
         }
 
-        if u8::decode_bin(&mut r).ok()? != CHECK_SIG_OP_CODE {
-            return None;
-        }
-
-        r.as_bytes().eq(&CHECK_MULTI_SIG_HASH_SUFFIX).then_some((keys as u16, signers))
+        r.as_bytes().eq(&CHECK_MULTI_SIG_HASH_SUFFIX).then_some(MultiSigners { keys, signers })
     }
 }
 
-
 #[cfg(test)]
 mod test {
-    use super::*;
     use neo_base::encoding::hex::DecodeHex;
     use neo_crypto::{rand::OsRand, secp256r1::GenKeypair};
+
+    use super::*;
     use crate::PublicKey;
 
     #[test]
@@ -206,8 +201,7 @@ mod test {
             .decode_hex()
             .expect("hex decode should be ok");
 
-        let key = PublicKey::from_compressed(&x)
-            .expect("from compressed public should be ok");
+        let key = PublicKey::from_compressed(&x).expect("from compressed public should be ok");
 
         let contract = key.to_sign_contract();
         assert_eq!(contract.script.as_bytes(), key.to_check_sign().as_bytes());
@@ -218,20 +212,12 @@ mod test {
 
     #[test]
     fn test_multi_sig_contract() {
-        let (_, pk1) = OsRand::gen_keypair(&mut OsRand)
-            .expect("gen_keypair should be ok");
-
-        let (_, pk2) = OsRand::gen_keypair(&mut OsRand)
-            .expect("gen_keypair should be ok");
+        let (_, pk1) = OsRand::gen_keypair(&mut OsRand).expect("gen_keypair should be ok");
+        let (_, pk2) = OsRand::gen_keypair(&mut OsRand).expect("gen_keypair should be ok");
 
         let keys = [pk1, pk2];
-        let _ = keys.to_multi_sign_contract(0)
-            .expect_err("cannot be zero signer");
-
-        let _ = keys.to_multi_sign_contract(3)
-            .expect_err("cannot be zero signer");
-
-        let _ = keys.to_multi_sign_contract(1)
-            .expect("to_multi_sign_contract should be ok");
+        let _ = keys.to_multi_sign_contract(0).expect_err("cannot be zero signer");
+        let _ = keys.to_multi_sign_contract(3).expect_err("cannot be zero signer");
+        let _ = keys.to_multi_sign_contract(1).expect("to_multi_sign_contract should be ok");
     }
 }

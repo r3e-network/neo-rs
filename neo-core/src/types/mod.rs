@@ -1,28 +1,31 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
+use alloc::{string::String, vec::Vec};
+
+use serde::{Deserialize, Serialize};
+
+use neo_base::encoding::{base58::*, bin::*};
+use neo_base::errors;
+use neo_base::hash::{Ripemd160, Sha256};
+
+use crate::PublicKey;
+pub use {bytes::*, check_sign::*, dbft::*, genesis::*, h160::*, h256::*};
+pub use {config::*, opcode::*, script::*, verifying::*};
 
 pub mod bytes;
 pub mod check_sign;
+pub mod dbft;
 pub mod genesis;
 
 pub mod h160;
 pub mod h256;
 
+pub mod opcode;
 pub mod script;
 
-pub mod settings;
+pub mod config;
 pub mod verifying;
-
-pub use {bytes::*, check_sign::*, genesis::*, h160::*, h256::*, script::*, settings::*, verifying::*};
-
-
-use alloc::{string::String, vec::Vec};
-use serde::{Deserialize, Serialize};
-
-use neo_base::{errors, encoding::{base58::*, bin::*}, hash::{Ripemd160, Sha256}};
-use crate::PublicKey;
-
 
 pub const SCRIPT_HASH_SIZE: usize = H160_SIZE;
 pub const ACCOUNT_SIZE: usize = H160_SIZE;
@@ -31,32 +34,37 @@ pub const ADDRESS_NEO3: u8 = 0x35;
 /// network(u32) + SHA256
 pub const SIGN_DATA_SIZE: usize = 4 + H256_SIZE;
 
-
 pub type Fee = u64;
 
-
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Hash, Copy, Clone, Eq, PartialEq)]
 pub struct ScriptHash(pub(crate) [u8; SCRIPT_HASH_SIZE]);
-
 
 impl AsRef<[u8; SCRIPT_HASH_SIZE]> for ScriptHash {
     #[inline]
-    fn as_ref(&self) -> &[u8; SCRIPT_HASH_SIZE] { &self.0 }
+    fn as_ref(&self) -> &[u8; SCRIPT_HASH_SIZE] {
+        &self.0
+    }
 }
 
 impl AsRef<[u8]> for ScriptHash {
     #[inline]
-    fn as_ref(&self) -> &[u8] { &self.0 }
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 impl From<H160> for ScriptHash {
     #[inline]
-    fn from(value: H160) -> Self { Self(value.into()) }
+    fn from(value: H160) -> Self {
+        Self(value.into())
+    }
 }
 
 impl Into<H160> for ScriptHash {
     #[inline]
-    fn into(self) -> H160 { H160::from(self.0) }
+    fn into(self) -> H160 {
+        H160::from(self.0)
+    }
 }
 
 pub trait ToScriptHash {
@@ -65,12 +73,16 @@ pub trait ToScriptHash {
 
 impl ToScriptHash for [u8] {
     #[inline]
-    fn to_script_hash(&self) -> ScriptHash { ScriptHash(self.sha256().ripemd160()) }
+    fn to_script_hash(&self) -> ScriptHash {
+        ScriptHash(self.sha256().ripemd160())
+    }
 }
 
 impl ToScriptHash for CheckSign {
     #[inline]
-    fn to_script_hash(&self) -> ScriptHash { ScriptHash(self.sha256().ripemd160()) }
+    fn to_script_hash(&self) -> ScriptHash {
+        ScriptHash(self.sha256().ripemd160())
+    }
 }
 
 impl ToScriptHash for PublicKey {
@@ -80,7 +92,6 @@ impl ToScriptHash for PublicKey {
     }
 }
 
-
 pub struct Address {
     version: u8,
     base58check: String,
@@ -88,15 +99,21 @@ pub struct Address {
 
 impl Address {
     #[inline]
-    pub fn version(&self) -> u8 { self.version }
+    pub fn version(&self) -> u8 {
+        self.version
+    }
 
     #[inline]
-    pub fn as_str(&self) -> &str { self.base58check.as_str() }
+    pub fn as_str(&self) -> &str {
+        self.base58check.as_str()
+    }
 }
 
 impl AsRef<str> for Address {
     #[inline]
-    fn as_ref(&self) -> &str { self.base58check.as_str() }
+    fn as_ref(&self) -> &str {
+        self.base58check.as_str()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, errors::Error)]
@@ -134,14 +151,14 @@ impl TryFrom<&str> for Address {
     type Error = ToAddressError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let check = Vec::from_base58_check(value, None, None)
-            .map_err(Self::Error::from)?;
+        let check = Vec::from_base58_check(value, None, None).map_err(Self::Error::from)?;
 
         if check.len() != 21 {
             return Err(Self::Error::InvalidLength);
         }
 
-        if check[0] != ADDRESS_NEO3 { // NEO2 is not supported at now.
+        if check[0] != ADDRESS_NEO3 {
+            // NEO2 is not supported at now.
             return Err(Self::Error::InvalidVersion(check[0]));
         }
 
@@ -160,10 +177,7 @@ impl ToNeo3Address for ScriptHash {
         addr[0] = ADDRESS_NEO3;
         addr[1..].copy_from_slice(self.0.as_ref());
 
-        Address {
-            version: ADDRESS_NEO3,
-            base58check: addr.to_base58_check(None, None),
-        }
+        Address { version: ADDRESS_NEO3, base58check: addr.to_base58_check(None, None) }
     }
 }
 
@@ -188,17 +202,15 @@ impl ToNeo3Address for PublicKey {
     }
 }
 
-
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Role {
     StateValidator = 4,
     Oracle = 8,
     NeoFSAlphabet = 16,
-    P2PNotary = 32,
+    P2pNotary = 32,
 }
 
-
-#[derive(Debug, Copy, Clone, BinEncode, BinDecode)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, BinEncode, BinDecode)]
 #[bin(repr = u8)]
 pub enum VmState {
     None = 0,
@@ -207,7 +219,7 @@ pub enum VmState {
     Break = 4,
 }
 
-
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct AccountId {
     version: u8,
@@ -216,27 +228,34 @@ pub struct AccountId {
 
 impl AccountId {
     #[inline]
-    pub fn version(&self) -> u8 { self.version }
+    pub fn version(&self) -> u8 {
+        self.version
+    }
 }
 
 impl AsRef<[u8; ACCOUNT_SIZE]> for AccountId {
     #[inline]
-    fn as_ref(&self) -> &[u8; ACCOUNT_SIZE] { &self.account }
+    fn as_ref(&self) -> &[u8; ACCOUNT_SIZE] {
+        &self.account
+    }
 }
 
 impl AsRef<[u8]> for AccountId {
     #[inline]
-    fn as_ref(&self) -> &[u8] { &self.account }
+    fn as_ref(&self) -> &[u8] {
+        &self.account
+    }
 }
 
 pub type Extra = Option<serde_json::Map<String, serde_json::Value>>;
 
-
 #[cfg(test)]
 mod test {
-    use super::*;
-    use neo_base::{bytes::ToArray, encoding::{base64::ToBase64, hex::DecodeHex}};
+    use neo_base::bytes::ToArray;
+    use neo_base::encoding::base64::ToBase64;
+    use neo_base::encoding::hex::DecodeHex;
 
+    use super::*;
 
     #[test]
     fn test_script_hash() {

@@ -4,3 +4,5 @@
 .idea/
 
 /neo-wasm
+**/log/
+/.vscode

@@ -1,3 +1,6 @@
+# Copyright @ 2023 - 2024, R3E Network
+# All Rights Reserved
+
 [workspace]
 resolver = "2"
 
@@ -13,12 +16,21 @@ members = [
     "neo-store",
     "neo-proc-macros",
     "neo-vm",
-#   "neo-wasm",
+    "neo-json",
+    "neo-cli",
+    "neo-extension",
+    "neo-type",
+    "neo-io",
 ]
 
-[profile.release]
-lto = "fat"
-opt_level = 3
-codegen_units = 1
+[workspace.dependencies]
+##neorust = { git = "https://github.com/R3E-Network/NeoRust", branch = "master" }
+#primitive-vm_types = "0.13.0"
+num-traits = "0.2"
 
-# RUSTFLAGS="-C target-cpu=native"
+[profile.release]
+lto           = "fat"
+opt-level     = 3
+codegen-units = 1
+
+# RUSTFLAGS = "-C target-cpu=native"

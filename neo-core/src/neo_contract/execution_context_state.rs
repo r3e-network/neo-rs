@@ -1,0 +1,53 @@
+
+use neo_vm::vm::ExecutionContext;
+use crate::neo_contract::contract_state::ContractState;
+use crate::neo_contract::call_flags::CallFlags;
+use neo_type::H160;
+use crate::persistence::DataCache;
+
+/// Represents the custom state in `ExecContext`.
+pub struct ExecutionContextState {
+    /// The script hash of the current context.
+    pub script_hash: H160,
+
+    /// The calling context.
+    pub calling_context: Option<Box<ExecutionContext>>,
+
+    /// The script hash of the calling native contract. Used in native contracts only.
+    pub(crate) native_calling_script_hash: Option<H160>,
+
+    /// The `ContractState` of the current context.
+    pub contract: Option<ContractState>,
+
+    /// The `CallFlags` of the current context.
+    pub call_flags: CallFlags,
+
+    /// The snapshot cache.
+    pub snapshot_cache: Option<dyn DataCache>,
+
+    /// The notification count.
+    pub notification_count: i32,
+
+    /// Indicates if it's a dynamic call.
+    pub is_dynamic_call: bool,
+}
+
+impl ExecutionContextState {
+    pub fn new() -> Self {
+        Self {
+            script_hash: H160::ZERO,
+            calling_context: None,
+            native_calling_script_hash: None,
+            contract: None,
+            call_flags: CallFlags::ALL,
+            snapshot_cache: None,
+            notification_count: 0,
+            is_dynamic_call: false,
+        }
+    }
+
+    #[deprecated(note = "Use snapshot_cache instead")]
+    pub fn snapshot(&self) -> Option<&dyn DataCache> {
+        self.snapshot_cache.as_ref()
+    }
+}

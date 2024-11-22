@@ -1,10 +1,13 @@
+# Copyright @ 2023 - 2024, R3E Network
+# All Rights Reserved
+
 [package]
 name = "neo-crypto"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-neo-base   = { path = "../neo-base" }
+neo-base   = { path = "../neo-base", default-features = false }
 
 rand_core  = { version = "0.6", default-features = false, features = ["getrandom", "alloc"]}
 p256       = { version = "0", default-features = false, features = ["arithmetic", "ecdsa", "ecdh"]}
@@ -22,6 +25,7 @@ thiserror-no-std = { version = "2", optional = true }
 
 
 [features]
-default = ["thiserror-no-std"]
+default = ["neo-base/default", "thiserror-no-std"]
 
-std     = ["thiserror", "rand_core/std"]
+std     = ["neo-base/std", "rand_core/std", "thiserror"]
+sgx     = []

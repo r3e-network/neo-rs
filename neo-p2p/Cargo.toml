@@ -1,3 +1,6 @@
+# Copyright @ 2023 - 2024, R3E Network
+# All Rights Reserved
+
 [package]
 name = "neo-p2p"
 version = "0.1.0"
@@ -5,9 +8,34 @@ edition = "2021"
 
 
 [dependencies]
+neo-base     = { path = "../neo-base", default-features = false }
+neo-core     = { path = "../neo-core", default-features = false }
+neo-crypto   = { path = "../neo-crypto", default-features = false }
+neo-type     = { path = "../neo-type", default-features = false }
+
+log          = { version = "0.4" }
+serde        = { version = "1", default-features = false, features = ["derive", "alloc"] }
+
+dashmap      = { version = "6" }
+crossbeam    = { version = "0.8" }
+chrono       = { version = "0.4" }
+
+tokio        = { version = "1", features = ["full"] }
+tokio-util   = { version = "0.7", features = ["full"] }
+tokio-stream = { version = "0.1" }
+
+trust-dns-resolver = { version = "0.23" }
+
+libc         = { version = "0.2" }
+thiserror    = { version = "1" }
+
+
+[dev-dependencies]
+ctor       =  { version = "0.2" }
+env_logger =  { version = "0.11" }
 
 
 [features]
-default = []
+default = ["std"]
 
-std     = []
+std     = ["neo-base/std", "neo-core/std", "neo-crypto/std"]

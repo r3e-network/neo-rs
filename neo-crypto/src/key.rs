@@ -2,6 +2,7 @@
 // All Rights Reserved
 
 use core::convert::{From, Into};
+
 use subtle::ConstantTimeEq;
 use zeroize::ZeroizeOnDrop;
 
@@ -28,24 +29,32 @@ impl<const N: usize> SecretKey<N> {
     }
 
     #[inline]
-    pub fn as_slice(&self) -> &[u8] { self.key.as_ref() }
+    pub fn as_bytes(&self) -> &[u8] {
+        self.key.as_ref()
+    }
 }
 
 impl<const N: usize> AsRef<[u8]> for SecretKey<N> {
     /// use it carefully
     #[inline]
-    fn as_ref(&self) -> &[u8] { self.key.as_ref() }
+    fn as_ref(&self) -> &[u8] {
+        self.key.as_ref()
+    }
 }
 
 impl<const N: usize> AsRef<[u8; N]> for SecretKey<N> {
     /// use it carefully
     #[inline]
-    fn as_ref(&self) -> &[u8; N] { &self.key }
+    fn as_ref(&self) -> &[u8; N] {
+        &self.key
+    }
 }
 
 impl<const N: usize> Default for SecretKey<N> {
     #[inline]
-    fn default() -> Self { Self { key: [0u8; N] } }
+    fn default() -> Self {
+        Self { key: [0u8; N] }
+    }
 }
 
 impl<const N: usize> Eq for SecretKey<N> {}
@@ -53,20 +62,28 @@ impl<const N: usize> Eq for SecretKey<N> {}
 /// implement constant time equality for key
 impl<const N: usize> PartialEq for SecretKey<N> {
     #[inline]
-    fn eq(&self, other: &Self) -> bool { self.key.ct_eq(&other.key).into() }
+    fn eq(&self, other: &Self) -> bool {
+        self.key.ct_eq(&other.key).into()
+    }
 }
 
 impl<const N: usize> PartialEq<[u8]> for SecretKey<N> {
     #[inline]
-    fn eq(&self, other: &[u8]) -> bool { self.key.ct_eq(other).into() }
+    fn eq(&self, other: &[u8]) -> bool {
+        self.key.ct_eq(other).into()
+    }
 }
 
 impl<const N: usize> Into<[u8; N]> for SecretKey<N> {
     #[inline]
-    fn into(self) -> [u8; N] { self.key }
+    fn into(self) -> [u8; N] {
+        self.key
+    }
 }
 
 impl<const N: usize> From<[u8; N]> for SecretKey<N> {
     #[inline]
-    fn from(key: [u8; N]) -> Self { Self { key } }
+    fn from(key: [u8; N]) -> Self {
+        Self { key }
+    }
 }

@@ -1,12 +1,9 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
-use neo_base::math::Uint256;
-
-use crate::contract::param::ParamValue;
-use crate::types::{Bytes, H160};
-
+use neo_base::math::U256;
+use neo_type::{Bytes, H160};
+use crate::contract::ParamValue;
 
 pub trait Iter<T> {
     type Item;
@@ -14,7 +11,6 @@ pub trait Iter<T> {
 
     fn next(&mut self) -> Option<Result<Self::Item, Self::Error>>;
 }
-
 
 pub trait Nep11 {
     const TOTAL_SUPPLY: &'static str = "totalSupply";
@@ -35,21 +31,33 @@ pub trait Nep11 {
 
     fn decimals(&self) -> u8;
 
-    fn total_supply(&self) -> Uint256;
+    fn total_supply(&self) -> U256;
 
     /// `properties` is optional
     fn properties(&self) -> Bytes;
 
-    fn balance_of(&self, owner: &H160) -> Uint256;
+    fn balance_of(&self, owner: &H160) -> U256;
 
     fn tokens_of<TokenIter: Iter<Bytes>>(&self, owner: &H160) -> TokenIter;
 
     fn owner_of(&self, token_id: &Bytes) -> H160;
 
-    fn transfer(&self, to: &H160, token_id: &Bytes, data: &ParamValue) -> Result<bool, Self::TransferError>;
+    fn transfer(
+        &self,
+        to: &H160,
+        token_id: &Bytes,
+        data: &ParamValue,
+    ) -> Result<bool, Self::TransferError>;
 
     /// `transfer_token` for divisible token
-    fn transfer_token(&self, from: &H160, to: &H160, amount: u64, token_id: &Bytes, data: &ParamValue) -> Result<bool, Self::TransferError>;
+    fn transfer_token(
+        &self,
+        from: &H160,
+        to: &H160,
+        amount: u64,
+        token_id: &Bytes,
+        data: &ParamValue,
+    ) -> Result<bool, Self::TransferError>;
 
     /// `owner_of_token` returns multi owners if this NFT is divided
     fn owners_of_token<OwnerIter: Iter<H160>>(&self, token_id: &Bytes) -> OwnerIter;
@@ -61,20 +69,30 @@ pub trait Nep11 {
     fn tokens<TokenIter: Iter<Bytes>>(&self) -> TokenIter;
 }
 
-
 pub trait Nep11Receiver {
     const ON_NEP11_PAYMENT: &'static str = "onNEP11Payment";
 
     type Error;
 
-    fn on_nep11_payment(&self, from: &H160, amount: u64, token_id: &Bytes, data: &ParamValue) -> Result<(), Self::Error>;
+    fn on_nep11_payment(
+        &self,
+        from: &H160,
+        amount: u64,
+        token_id: &Bytes,
+        data: &ParamValue,
+    ) -> Result<(), Self::Error>;
 }
-
 
 pub trait Nep11Event {
     const TRANSFER: &'static str = "Transfer";
 
     type EmitError;
 
-    fn emit_transfer(&self, from: &H160, to: &H160, amount: u64, token_id: &Bytes) -> Result<(), Self::EmitError>;
+    fn emit_transfer(
+        &self,
+        from: &H160,
+        to: &H160,
+        amount: u64,
+        token_id: &Bytes,
+    ) -> Result<(), Self::EmitError>;
 }

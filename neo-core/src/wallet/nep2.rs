@@ -2,21 +2,22 @@
 // All Rights Reserved
 
 use alloc::{string::String, vec::Vec};
+
 use bytes::{BufMut, BytesMut};
 use subtle::ConstantTimeEq;
 
-use neo_base::{
-    errors, hash::Sha256Twice,
-    bytes::{xor_array, ToArray, ToRevArray},
-    encoding::base58::{ToBase58Check, FromBase58Check},
-};
-use neo_crypto::{aes::Aes256EcbCipher, key::SecretKey, scrypt::{DeriveKey, Params}};
-use crate::{PrivateKey, PublicKey, KEY_SIZE, types::{Address, ToNeo3Address}};
-
+use neo_base::bytes::{xor_array, ToArray, ToRevArray};
+use neo_base::encoding::base58::{FromBase58Check, ToBase58Check};
+use neo_base::errors;
+use neo_base::hash::Sha256Twice;
+use neo_crypto::aes::Aes256EcbCipher;
+use neo_crypto::key::SecretKey;
+use neo_crypto::scrypt::{DeriveKey, Params};
+use neo_type::{Address, ToNeo3Address};
+use crate::{PrivateKey, PublicKey, KEY_SIZE};
 
 const NEP2_KEY_SIZE: usize = 39;
 const DERIVED_KEY_SIZE: usize = 2 * KEY_SIZE;
-
 
 #[derive(Debug)]
 pub struct Nep2Key {
@@ -25,7 +26,9 @@ pub struct Nep2Key {
 
 impl Nep2Key {
     #[inline]
-    pub fn as_str(&self) -> &str { self.key.as_str() }
+    pub fn as_str(&self) -> &str {
+        self.key.as_str()
+    }
 }
 
 pub trait ToNep2Key {
@@ -41,16 +44,17 @@ impl ToNep2Key for PrivateKey {
     fn to_nep2_key(&self, addr: &Address, password: &[u8]) -> Nep2Key {
         let hash = addr.as_str().sha256_twice();
 
-        let derived = password.derive_key::<64>(&hash[..4], scrypt_params())
+        let derived = password
+            .derive_key::<64>(&hash[..4], scrypt_params())
             .expect("default nep2-key params should be ok");
 
         let derived: &[u8; 64] = derived.as_ref();
         let sk = SecretKey::<KEY_SIZE>::from(self.as_le_bytes().to_rev_array());
-        let mut key = xor_array::<KEY_SIZE>(sk.as_slice(), &derived[..KEY_SIZE]);
+        let mut key = xor_array::<KEY_SIZE>(sk.as_bytes(), &derived[..KEY_SIZE]);
 
         let _ = SecretKey::from(derived[KEY_SIZE..].to_array())
             .aes256_ecb_encrypt_aligned(key.as_mut_slice())
-            .expect("aes256_ecb_encrypt_aligned should be ok");
+            .expect("`aes256_ecb_encrypt_aligned` should be ok");
 
         let mut buf = BytesMut::with_capacity(3 + 4 + key.len());
 
@@ -94,25 +98,25 @@ impl<T: AsRef<[u8]>> Nep2KeyDecrypt for T {
             return Err(Nep2VerifyError::InvalidKeyLength);
         }
 
-        let derived = self.derive_key::<DERIVED_KEY_SIZE>(&raw[3..7], scrypt_params())
+        let derived = self
+            .derive_key::<DERIVED_KEY_SIZE>(&raw[3..7], scrypt_params())
             .expect("default nep2-key params should be ok");
 
-        let derived = derived.as_slice();
+        let derived = derived.as_bytes();
         let mut encrypted: [u8; KEY_SIZE] = raw[7..].to_array();
 
         let _ = SecretKey::from(derived[KEY_SIZE..].to_array())
             .aes256_ecb_decrypt_aligned(encrypted.as_mut_slice())
-            .expect("decrypt 32-bytes data should be ok");
+            .expect("`aes256_ecb_decrypt_aligned` should be ok");
 
         // secret-key
         let sk = xor_array::<KEY_SIZE>(&encrypted, &derived[..KEY_SIZE]);
 
-        let sk = PrivateKey::from_be_bytes(sk.as_slice())
-            .map_err(|_err| Nep2VerifyError::InvalidKey)?;
+        let sk =
+            PrivateKey::from_be_bytes(sk.as_slice()).map_err(|_err| Nep2VerifyError::InvalidKey)?;
 
-        let addr = PublicKey::try_from(&sk)
-            .map_err(|_err| Nep2VerifyError::InvalidKey)?
-            .to_neo3_address();
+        let addr =
+            PublicKey::try_from(&sk).map_err(|_err| Nep2VerifyError::InvalidKey)?.to_neo3_address();
 
         let hash = addr.as_str().sha256_twice();
         if hash[..4].ct_eq(&raw[3..7]).into() {
@@ -125,9 +129,9 @@ impl<T: AsRef<[u8]>> Nep2KeyDecrypt for T {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use neo_base::encoding::hex::{DecodeHex, ToHex};
 
-    use neo_base::encoding::hex::{ToHex, DecodeHex};
+    use super::*;
 
     #[test]
     #[ignore = "It is too time-consuming"]
@@ -136,11 +140,9 @@ mod test {
             .decode_hex()
             .expect("hex decode should be ok");
 
-        let sk = PrivateKey::from_be_bytes(sk.as_slice())
-            .expect("from le-bytes should be ok ");
+        let sk = PrivateKey::from_be_bytes(sk.as_slice()).expect("from le-bytes should be ok ");
 
-        let pk = PublicKey::try_from(&sk)
-            .expect("from private key should be ok");
+        let pk = PublicKey::try_from(&sk).expect("from private key should be ok");
         assert_eq!(
             "02028a99826edc0c97d18e22b6932373d908d323aa7f92656a77ec26e8861699ef",
             pk.to_compressed().to_hex(),
@@ -154,9 +156,7 @@ mod test {
 
         assert_eq!(key.as_str(), "6PYUUUFei9PBBfVkSn8q7hFCnewWFRBKPxcn6Kz6Bmk3FqWyLyuTQE2XFH");
 
-        let got = pwd.decrypt_nep2_key(key.as_str())
-            .expect("decrypt should be ok");
-
+        let got = pwd.decrypt_nep2_key(key.as_str()).expect("decrypt should be ok");
         assert_eq!(got.as_le_bytes(), sk.as_le_bytes());
     }
 }

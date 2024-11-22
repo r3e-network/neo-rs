@@ -1,0 +1,16 @@
+# Copyright @ 2023 - 2024, R3E Network
+# All Rights Reserved
+
+refresh_rate: 60 seconds
+appenders:
+  stdout:
+    kind: console
+    encoder:
+      pattern: "[{d(%Y-%m-%dT%H:%M:%S%.6f)} {h({l})} {M}:L{L}] {m}{n}"
+    filters:
+      - kind: threshold
+        level: info
+root:
+  level: info
+  appenders:
+    - stdout

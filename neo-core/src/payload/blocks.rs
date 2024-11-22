@@ -1,16 +1,13 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::vec::Vec;
-
 use neo_base::encoding::bin::*;
-use crate::{block::Header, types::{H256, Bytes}};
-
+use neo_type::{Bytes, H256};
+use crate::block::Header;
 
 pub const MAX_HEADERS_ALLOWED: usize = 2000;
 pub const MAX_HASH_COUNT: usize = 500;
-
 
 /// i.e. GetBlockByIndex
 #[derive(Debug, Clone, BinEncode, BinDecode)]
@@ -19,7 +16,6 @@ pub struct BlockIndexRange {
     pub count: u16,
 }
 
-
 /// i.e. GetBlocks
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct BlockHashRange {
@@ -27,12 +23,10 @@ pub struct BlockHashRange {
     pub count: u16,
 }
 
-
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct Headers {
     pub headers: Vec<Header>,
 }
-
 
 #[derive(Debug, Clone, BinEncode, BinDecode)]
 pub struct MerkleBlock {

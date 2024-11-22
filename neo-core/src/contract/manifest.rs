@@ -1,12 +1,21 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::{string::String, vec::Vec};
-use serde::{Deserialize, Serialize};
 
-use crate::{PublicKey, types::{Sign, Extra}};
-use crate::contract::param::{NamedParamType, ParamType};
+use serde::{Deserialize, Serialize};
+use crate::{
+    contract::{NamedParamType, ParamType},
+    PublicKey,
+};
+
+pub const NEP11_NAME: &'static str = "NEP-11";
+pub const NEP17_NAME: &'static str = "NEP-17";
+
+pub const NEP11_PAYABLE: &'static str = "NEP-11-Payable";
+pub const NEP17_PAYABLE: &'static str = "NEP-17-Payable";
+
+pub const EMPTY_FEATURES: &'static str = "{}";
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,14 +24,12 @@ pub struct Group {
     pub public_key: PublicKey,
 
     #[serde(rename = "signature")]
-    pub sign: Sign,
+    pub sign: Signature,
 }
-
 
 /// Empty at now.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Features {}
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Permission {
@@ -39,20 +46,17 @@ pub struct Method {
     pub safe: bool,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub name: String,
     pub parameters: Vec<NamedParamType>,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Abi {
     pub methods: Vec<Method>,
     pub events: Vec<Event>,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {

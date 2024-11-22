@@ -1,3 +1,6 @@
+# Copyright @ 2023 - 2024, R3E Network
+# All Rights Reserved
+
 [package]
 name = "neo-base"
 version = "0.1.0"
@@ -17,7 +20,12 @@ tiny-keccak = { version = "2", features = ["keccak"] }
 bytes       = { version = "1", default-features = false }
 serde       = { version = "1", default-features = false, features = ["derive", "alloc"] }
 
-cfg-if      = { version = "1" }
+cfg-if       = { version = "1" }
+git-version  = { version = "0.3" }
+compile-time = { version = "0.2" }
+const_format = { version = "0.2"}
+
+chrono       = { version = "0.4", optional = true }
 
 thiserror        = { version = "1", optional = true }
 thiserror-no-std = { version = "2", optional = true }
@@ -26,4 +34,4 @@ thiserror-no-std = { version = "2", optional = true }
 [features]
 default = ["thiserror-no-std"]
 
-std = ["thiserror", "serde/std"]
+std     = ["serde/std", "chrono", "thiserror"]

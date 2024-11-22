@@ -2,8 +2,8 @@
 // All Rights Reserved
 
 use neo_base::errors;
-use crate::key::SecretKey;
 
+use crate::key::SecretKey;
 
 #[derive(Debug, Clone, errors::Error)]
 pub enum Error {
@@ -16,9 +16,9 @@ pub enum Error {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Params {
-    pub n: u64,
-    pub r: u32,
-    pub p: u32,
+    pub n:   u64,
+    pub r:   u32,
+    pub p:   u32,
     pub len: u32,
 }
 
@@ -31,7 +31,11 @@ impl core::fmt::Display for Params {
 }
 
 pub trait DeriveKey {
-    fn derive_key<const N: usize>(&self, salt: &[u8], params: Params) -> Result<SecretKey<N>, Error>;
+    fn derive_key<const N: usize>(
+        &self,
+        salt: &[u8],
+        params: Params,
+    ) -> Result<SecretKey<N>, Error>;
 }
 
 impl<T: AsRef<[u8]>> DeriveKey for T {
@@ -40,14 +44,19 @@ impl<T: AsRef<[u8]>> DeriveKey for T {
     /// r must in [1, 4294967295],
     /// p must in [1, 4294967295],
     /// N must be satisfied (N > 0 && N/32 > 0xffff_ffff)
-    fn derive_key<const N: usize>(&self, salt: &[u8], params: Params) -> Result<SecretKey<N>, Error> {
+    fn derive_key<const N: usize>(
+        &self,
+        salt: &[u8],
+        params: Params,
+    ) -> Result<SecretKey<N>, Error> {
         if params.n.count_ones() != 1 {
             return Err(Error::InvalidParams);
         }
 
         let key = self.as_ref();
-        let params = scrypt::Params::new(params.n.ilog2() as u8, params.r, params.p, params.len as usize)
-            .map_err(|_| Error::InvalidParams)?;
+        let params =
+            scrypt::Params::new(params.n.ilog2() as u8, params.r, params.p, params.len as usize)
+                .map_err(|_| Error::InvalidParams)?;
 
         let mut derived = [0u8; N];
         let _ = scrypt::scrypt(key, salt, &params, derived.as_mut_slice())
@@ -59,8 +68,9 @@ impl<T: AsRef<[u8]>> DeriveKey for T {
 
 #[cfg(test)]
 mod test {
+    use neo_base::encoding::hex::{DecodeHex, ToHex};
+
     use super::*;
-    use neo_base::encoding::hex::{ToHex, DecodeHex};
 
     #[test]
     fn test_derive_key() {
@@ -70,7 +80,8 @@ mod test {
             .expect("decode hex should be ok");
 
         let params = Params { n: 2, r: 8, p: 1, len: 10 };
-        let key: SecretKey<64> = password.derive_key(salt.as_slice(), params)
+        let key: SecretKey<64> = password
+            .derive_key(salt.as_slice(), params)
             .expect("A 64-bytes derived-key should be ok");
 
         let expected = "52a5dacfcf80e5111d2c7fbed177113a1b48a882b066a017f2c856086680fac7\

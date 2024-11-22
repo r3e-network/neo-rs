@@ -1,11 +1,10 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-use serde::{Deserialize, Serialize};
 use neo_base::encoding::bin::*;
+use serde::{Deserialize, Serialize};
 
 use crate::types::{Bytes, H256};
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, BinEncode, BinDecode)]
 #[bin(repr = u8)]
@@ -79,15 +78,39 @@ pub enum TxAttr {
     #[bin(tag = 0x21)]
     Conflicts(Conflicts),
 
-    #[bin(tag = 0x22)]
-    NotaryAssisted(NotaryAssisted),
+    // #[bin(tag = 0x22)]
+    // NotaryAssisted(NotaryAssisted),
 }
 
 impl TxAttr {
-    pub fn allow_multiple(&self) -> bool {
+    pub fn attr_type(&self) -> AttrType {
         match self {
-            TxAttr::Conflicts(_) => true,
-            _ => false
+            TxAttr::HighPriority => AttrType::HighPriority,
+            TxAttr::OracleResponse(_) => AttrType::OracleResponse,
+            TxAttr::NotValidBefore(_) => AttrType::NotValidBefore,
+            TxAttr::Conflicts(_) => AttrType::Conflicts,
+            // TxAttr::NotaryAssisted(_) => AttrType::NotaryAssisted,
+        }
+    }
+    
+    #[inline]
+    pub fn allow_multiple(&self) -> bool {
+        matches!(self, TxAttr::Conflicts(_))
+    }
+
+    #[inline]
+    pub fn as_oracle(&self) -> Option<&OracleResponse> {
+        match self {
+            TxAttr::OracleResponse(oracle) => Some(oracle),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_conflicts(&self) -> Option<&Conflicts> {
+        match self {
+            TxAttr::Conflicts(conflicts) => Some(conflicts),
+            _ => None,
         }
     }
 }

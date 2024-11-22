@@ -2,10 +2,10 @@
 // All Rights Reserved
 
 use alloc::{string::String, vec::Vec};
+
 use serde::{Deserialize, Serialize};
-
-use crate::{types::{Extra, H160}, contract::param::NamedParamType};
-
+use neo_type::{Extra, H160};
+use crate::contract::NamedParamType;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Scrypt {
@@ -27,7 +27,6 @@ pub struct Contract {
 pub struct Account {
     // #[serde(skip)]
     // script_hash: ScriptHash,
-
     pub address: String,
 
     pub label: Option<String>,
@@ -55,7 +54,6 @@ impl Account {
 pub struct Nep6Wallet {
     // #[serde(skip)]
     // network: u32,
-
     pub name: Option<String>,
 
     pub version: String,
@@ -87,11 +85,12 @@ pub struct Token {
     pub standard: String,
 }
 
-
 #[cfg(test)]
 mod test {
+    use neo_type::ToNeo3Address;
     use super::*;
-    use crate::{PublicKey, types::ToNeo3Address, wallet::nep2::Nep2KeyDecrypt};
+    use crate::{ PublicKey};
+    use crate::wallet::nep6::nep2::Nep2KeyDecrypt;
 
     #[test]
     #[ignore = "It is too time-consuming"]
@@ -125,12 +124,17 @@ mod test {
         assert!(nep6.name.is_none());
         assert!(nep6.extra.is_none());
 
-        let contract = nep6.accounts[0].contract.as_ref().expect("contract should exist");
+        let contract = nep6.accounts[0].contract.as_ref()
+            .expect("contract should exist");
         assert_eq!(contract.parameters[0].name, "signature");
-        assert_eq!(nep6.accounts[0].key, "6PYUUUFei9PBBfVkSn8q7hFCnewWFRBKPxcn6Kz6Bmk3FqWyLyuTQE2XFH");
+        assert_eq!(
+            nep6.accounts[0].key,
+            "6PYUUUFei9PBBfVkSn8q7hFCnewWFRBKPxcn6Kz6Bmk3FqWyLyuTQE2XFH"
+        );
 
-        let sk = "city of zion".decrypt_nep2_key(&nep6.accounts[0].key)
-            .expect("decrypt should be ok");
+        let sk =
+            "city of zion".decrypt_nep2_key(&nep6.accounts[0].key)
+                .expect("decrypt should be ok");
 
         let addr = PublicKey::try_from(&sk)
             .expect("to public key should be ok")

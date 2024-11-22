@@ -2,6 +2,7 @@
 // All Rights Reserved
 
 use sha2::Digest;
+
 use crate::bytes::ToArray;
 
 pub const SHA256_HASH_SIZE: usize = 32;
@@ -26,7 +27,9 @@ pub trait SlicesSha256 {
     fn slices_sha256(self) -> [u8; SHA256_HASH_SIZE];
 }
 
-impl<T: Iterator> SlicesSha256 for T where <T as Iterator>::Item: AsRef<[u8]> {
+impl<T: Iterator> SlicesSha256 for T
+where <T as Iterator>::Item: AsRef<[u8]>
+{
     #[inline]
     fn slices_sha256(self) -> [u8; SHA256_HASH_SIZE] {
         let mut h = sha2::Sha256::new();
@@ -36,14 +39,15 @@ impl<T: Iterator> SlicesSha256 for T where <T as Iterator>::Item: AsRef<[u8]> {
     }
 }
 
-
 pub trait Sha256Twice {
     fn sha256_twice(&self) -> [u8; SHA256_HASH_SIZE];
 }
 
 impl<T: Sha256> Sha256Twice for T {
     #[inline]
-    fn sha256_twice(&self) -> [u8; SHA256_HASH_SIZE] { self.sha256().sha256() }
+    fn sha256_twice(&self) -> [u8; SHA256_HASH_SIZE] {
+        self.sha256().sha256()
+    }
 }
 
 pub trait Ripemd160 {
@@ -101,7 +105,6 @@ impl<T: AsRef<[u8]>> Keccak256 for T {
     }
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -119,20 +122,30 @@ mod test {
     #[test]
     fn test_sha256() {
         let hash = b"Hello world!".sha256();
-        assert_eq!(hash.to_hex(), "c0535e4be2b79ffd93291305436bf889314e4a3faec05ecffcbb7df31ad9e51a");
+        assert_eq!(
+            hash.to_hex(),
+            "c0535e4be2b79ffd93291305436bf889314e4a3faec05ecffcbb7df31ad9e51a"
+        );
 
         let hash = b"hello world".sha256();
-        assert_eq!(hash.to_hex(), "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
+        assert_eq!(
+            hash.to_hex(),
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
 
         let hash = b"".sha256();
-        assert_eq!(hash.to_hex(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assert_eq!(
+            hash.to_hex(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
     }
 
     #[test]
     fn test_sha256_slices() {
-        let hash = [b"Hello world!".as_ref(), b"".as_ref()]
-            .iter()
-            .slices_sha256();
-        assert_eq!(hash.to_hex(), "c0535e4be2b79ffd93291305436bf889314e4a3faec05ecffcbb7df31ad9e51a");
+        let hash = [b"Hello world!".as_ref(), b"".as_ref()].iter().slices_sha256();
+        assert_eq!(
+            hash.to_hex(),
+            "c0535e4be2b79ffd93291305436bf889314e4a3faec05ecffcbb7df31ad9e51a"
+        );
     }
 }

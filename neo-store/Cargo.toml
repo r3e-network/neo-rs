@@ -1,3 +1,6 @@
+# Copyright @ 2023 - 2024, R3E Network
+# All Rights Reserved
+
 [package]
 name = "neo-store"
 version = "0.1.0"
@@ -10,3 +13,6 @@ neo-core  =  { path = "../neo-core" }
 
 
 [features]
+default = ["std"]
+
+std     = ["neo-base/std", "neo-core/std"]

@@ -1,14 +1,19 @@
+# Copyright @ 2023 - 2024, R3E Network
+# All Rights Reserved
+
 [package]
 name = "neo-runtime"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-neo-core = { path = "../neo-core" }
-neo-vm   = { path = "../neo-vm" }
 
+[dependencies]
+neo-base   = { path = "../neo-base" }
+neo-core   = { path = "../neo-core"}
+neo-crypto = { path = "../neo-crypto"}
+neo-vm     = { path = "../neo-vm" }
+neo-p2p    = { path = "../neo-p2p"}
+
+thiserror  = { version = "1" }
 
 [features]
-default = []
-
-std     = []

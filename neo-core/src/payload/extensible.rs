@@ -1,19 +1,21 @@
 // Copyright @ 2023 - 2024, R3E Network
 // All Rights Reserved
 
-
 use alloc::string::String;
+
 use serde::{Deserialize, Serialize};
 
-use neo_base::{encoding::bin::*, hash::Sha256};
+use neo_base::encoding::bin::*;
+use neo_base::hash::Sha256;
 use neo_crypto::ecdsa::{Sign as EcdsaSign, SignError};
-use crate::{PrivateKey, tx::Witnesses, types::{Bytes, H160, Sign, ToSignData}};
 
+use crate::tx::Witnesses;
+use crate::types::{Bytes, Sign, ToSignData, H160};
+use crate::PrivateKey;
 
 pub const CONSENSUS_CATEGORY: &'static str = "dBFT";
 pub const MAX_CATEGORY_SIZE: usize = 32;
 pub const MAX_DATA_SIZE: usize = 0x02000000;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, BinEncode, InnerBinDecode)]
 pub struct Extensible {
@@ -28,8 +30,7 @@ pub struct Extensible {
 impl Extensible {
     pub fn sign(&mut self, network: u32, key: &PrivateKey) -> Result<Sign, SignError> {
         let hash = self.to_sign_data(network).sha256();
-        key.sign(hash.as_slice())
-            .map(|sign| Sign::from(sign))
+        key.sign(hash.as_slice()).map(|sign| Sign::from(sign))
     }
 }
 
@@ -62,10 +63,11 @@ impl BinDecoder for Extensible {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use bytes::BytesMut;
-    use neo_base::hash::{Ripemd160, Sha256};
+
+    use super::*;
     use crate::tx::Witness;
+    use neo_base::hash::{Ripemd160, Sha256};
 
     #[test]
     fn test_extensible() {
@@ -75,18 +77,14 @@ mod test {
             valid_block_end: 10,
             sender: "Hello".sha256().ripemd160().into(),
             data: b"Hello".to_vec().into(),
-            witnesses: Witness::new(
-                b"invocation".as_ref().into(),
-                b"verification".as_ref().into(),
-            ).into(),
+            witnesses: Witness::new(b"in".as_ref().into(), b"v".as_ref().into()).into(),
         };
 
         let mut w = BytesMut::with_capacity(128);
         ext.encode_bin(&mut w);
 
         let mut r = RefBuffer::from(w.as_ref());
-        let got: Extensible = BinDecoder::decode_bin(&mut r)
-            .expect("decode_bin should be ok");
+        let got: Extensible = BinDecoder::decode_bin(&mut r).expect("decode_bin should be ok");
 
         assert_eq!(ext.category, got.category);
         assert_eq!(ext.valid_block_end, got.valid_block_end);

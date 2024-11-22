@@ -2,14 +2,15 @@
 // All Rights Reserved
 
 use alloc::vec::Vec;
+
+use neo_base::encoding::bin::*;
 use serde::{Deserialize, Serialize};
-use neo_base::encoding::bin::{BinDecodeError, BinDecoder, BinEncoder, BinReader, BinWriter};
-
-use crate::{PublicKey, types::H160, tx::*};
-
+use neo_crypto::secp256r1::PublicKey;
+use neo_type::H160;
+use crate::network::payloads::WitnessRule;
+use crate::tx::WitnessScopes;
 
 pub const MAX_ALLOWED_GROUPS: usize = 16;
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignerType {
@@ -17,7 +18,6 @@ pub enum SignerType {
     Contract = 0x01,
     Tx = 0x02,
 }
-
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Signer {
@@ -98,4 +98,3 @@ impl BinDecoder for Signer {
         Ok(signer)
     }
 }
-

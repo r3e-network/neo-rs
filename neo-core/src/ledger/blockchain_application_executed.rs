@@ -1,0 +1,54 @@
+use std::error::Error;
+
+pub mod ledger {
+    use NeoRust::neo_types::VMState;
+    use neo_vm::stack_item::SharedItem;
+    use crate::neo_contract::application_engine::ApplicationEngine;
+    use crate::neo_contract::notify_event_args::NotifyEventArgs;
+    use crate::neo_contract::trigger_type::TriggerType;
+    use crate::network::payloads::Transaction;
+    use super::*;
+
+    pub struct ApplicationExecuted {
+        /// The transaction that contains the executed script. This field could be None if the contract is invoked by system.
+        pub transaction: Option<Transaction>,
+
+        /// The trigger of the execution.
+        pub trigger: TriggerType,
+
+        /// The state of the virtual machine after the contract is executed.
+        pub vm_state: VMState,
+
+        /// The error that caused the execution to terminate abnormally. This field could be None if the execution ends normally.
+        pub error: Option<Box<dyn Error>>,
+
+        /// GAS spent to execute.
+        pub gas_consumed: i64,
+
+        /// Items on the stack of the virtual machine after execution.
+        pub stack: Vec<SharedItem>,
+
+        /// The notifications sent during the execution.
+        pub notifications: Vec<NotifyEventArgs>,
+    }
+
+    impl ApplicationExecuted {
+        pub fn new(engine: &ApplicationEngine) -> Self {
+            Self {
+                transaction: engine.script_container().and_then(|container| container.downcast_ref::<Transaction>().cloned()),
+                trigger: engine.trigger(),
+                vm_state: engine.state(),
+                gas_consumed: engine.fee_consumed(),
+                error: engine.fault_exception().map(|e| Box::new(e) as Box<dyn Error>),
+                stack: engine.result_stack().to_vec(),
+                notifications: engine.notifications().to_vec(),
+            }
+        }
+    }
+
+    pub struct Blockchain;
+
+    impl Blockchain {
+
+    }
+}

@@ -3,7 +3,11 @@
 
 use alloc::{string::String, vec::Vec};
 use core::result::Result;
-use base64::{Engine, engine::general_purpose::{STANDARD, URL_SAFE}};
+
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE},
+};
 
 use crate::errors;
 
@@ -15,12 +19,15 @@ pub trait ToBase64 {
 
 impl<T: AsRef<[u8]>> ToBase64 for T {
     #[inline]
-    fn to_base64_std(&self) -> String { STANDARD.encode(self.as_ref()) }
+    fn to_base64_std(&self) -> String {
+        STANDARD.encode(self.as_ref())
+    }
 
     #[inline]
-    fn to_base64_url(&self) -> String { URL_SAFE.encode(self.as_ref()) }
+    fn to_base64_url(&self) -> String {
+        URL_SAFE.encode(self.as_ref())
+    }
 }
-
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone, errors::Error)]
 pub enum FromBase64Error {
@@ -59,14 +66,28 @@ impl FromBase64 for Vec<u8> {
 
     #[inline]
     fn from_base64_std<T: AsRef<[u8]>>(src: T) -> Result<Vec<u8>, Self::Error> {
-        STANDARD.decode(src.as_ref())
-            .map_err(FromBase64Error::from)
+        STANDARD.decode(src.as_ref()).map_err(FromBase64Error::from)
     }
 
     #[inline]
     fn from_base64_url<T: AsRef<[u8]>>(src: T) -> Result<Vec<u8>, Self::Error> {
-        URL_SAFE.decode(src.as_ref())
-            .map_err(FromBase64Error::from)
+        URL_SAFE.decode(src.as_ref()).map_err(FromBase64Error::from)
+    }
+}
+
+impl FromBase64 for String {
+    type Error = FromBase64Error;
+
+    #[inline]
+    fn from_base64_std<T: AsRef<[u8]>>(src: T) -> Result<String, Self::Error> {
+        let decoded = Vec::from_base64_std(src)?;
+        String::from_utf8(decoded).map_err(|_| FromBase64Error::InvalidChar('\0'))
+    }
+
+    #[inline]
+    fn from_base64_url<T: AsRef<[u8]>>(src: T) -> Result<String, Self::Error> {
+        let decoded = Vec::from_base64_url(src)?;
+        String::from_utf8(decoded).map_err(|_| FromBase64Error::InvalidChar('\0'))
     }
 }
 
@@ -77,13 +98,23 @@ mod test {
     #[test]
     fn test_base64() {
         let b = [0xfcu8, 0xfe, 0xfd, 0xfc];
-        let r = Vec::from_base64_std(&b)
-            .expect_err("decode should be failed");
+        let r = Vec::from_base64_std(&b).expect_err("decode should be failed");
         assert_eq!(r, FromBase64Error::InvalidChar(0xfcu8 as char));
 
         let b = [0x1, 0x2, 0x3, 0x4, 0x5, 0x6];
-        let d = Vec::from_base64_std(&b.to_base64_std())
-            .expect("decode shou be ok");
+        let d = Vec::from_base64_std(&b.to_base64_std()).expect("decode shou be ok");
         assert_eq!(b.as_slice(), d.as_slice());
+    }
+
+    #[test]
+    fn test_string_base64() {
+        let original = "Hello, World!";
+        let encoded = original.as_bytes().to_base64_std();
+        let decoded = String::from_base64_std(&encoded).expect("decode should be ok");
+        assert_eq!(original, decoded);
+
+        let encoded_url = original.as_bytes().to_base64_url();
+        let decoded_url = String::from_base64_url(&encoded_url).expect("decode should be ok");
+        assert_eq!(original, decoded_url);
     }
 }

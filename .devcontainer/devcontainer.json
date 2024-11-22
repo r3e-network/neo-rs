@@ -1,0 +1,30 @@
+{
+    "name": "Rust Development Container with VPN Access",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "serayuzgur.crates",
+                "vadimcn.vscode-lldb"
+            ],
+            "settings": {
+                "editor.formatOnSave": true,
+                "rust-analyzer.checkOnSave.command": "clippy"
+            }
+        }
+    },
+    "forwardPorts": [3000],
+    "postCreateCommand": "cargo build",
+    "remoteUser": "vscode",
+    "runArgs": [
+        "--network=host"
+    ],
+    "containerEnv": {
+        "http_proxy": "http://localhost:7890",
+        "https_proxy": "http://localhost:7890"
+    }
+}

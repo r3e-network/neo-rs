@@ -2,14 +2,16 @@
 // All Rights Reserved
 
 use alloc::string::{String, ToString};
-use core::{result::Result, convert::TryFrom};
+use core::{convert::TryFrom, result::Result};
 
-use p256::elliptic_curve::{sec1::ToEncodedPoint};
-use serde::{Serializer, Serialize, Deserializer, Deserialize, de::Error};
+use neo_base::bytes::{ToArray, ToRevArray};
+use neo_base::encoding::bin::*;
+use neo_base::encoding::hex::{FromHex, ToHex};
+use neo_base::errors;
+use p256::elliptic_curve::sec1::ToEncodedPoint;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
-use neo_base::{errors, bytes::{ToRevArray, ToArray}, encoding::hex::{FromHex, ToHex}, encoding::bin::*};
-use crate::{rand, key::SecretKey};
-
+use crate::{key::SecretKey, rand};
 
 pub const KEY_SIZE: usize = 32;
 pub const PUBLIC_COMPRESSED_SIZE: usize = KEY_SIZE + 1;
@@ -18,14 +20,15 @@ const ODD_PREFIX: u8 = 0x03;
 const EVEN_PREFIX: u8 = 0x02;
 const UNCOMPRESSED_PREFIX: u8 = 0x04;
 
-
-pub struct Keypair<'a> {
-    pub secret: &'a PrivateKey,
-    pub public: &'a PublicKey,
+#[derive(Debug, Clone)]
+pub struct Keypair {
+    pub secret: PrivateKey,
+    pub public: PublicKey,
 }
 
-impl<'a> Keypair<'a> {
-    pub fn new(secret: &'a PrivateKey, public: &'a PublicKey) -> Self {
+impl Keypair {
+    // NOTE: `secret` and `public` must be a keypair
+    pub fn new(secret: PrivateKey, public: PublicKey) -> Self {
         Self { secret, public }
     }
 }
@@ -44,7 +47,9 @@ pub enum DecodePrivateKeyError {
 
 impl PrivateKey {
     #[inline]
-    pub fn as_le_bytes(&self) -> &[u8] { self.key.as_ref() }
+    pub fn as_le_bytes(&self) -> &[u8] {
+        self.key.as_ref()
+    }
 
     pub fn from_le_bytes(sk: &[u8]) -> Result<Self, DecodePrivateKeyError> {
         use DecodePrivateKeyError as Error;
@@ -54,8 +59,8 @@ impl PrivateKey {
         }
 
         let sk: [u8; KEY_SIZE] = sk.to_rev_array();
-        let point = p256::SecretKey::from_slice(sk.as_slice())
-            .map_err(|_| Error::InvalidPrivateKey)?;
+        let point =
+            p256::SecretKey::from_slice(sk.as_slice()).map_err(|_| Error::InvalidPrivateKey)?;
 
         Ok(Self { key: point.to_bytes().as_slice().to_rev_array().into() })
     }
@@ -68,8 +73,8 @@ impl PrivateKey {
         }
 
         let sk: [u8; KEY_SIZE] = sk.to_array();
-        let point = p256::SecretKey::from_slice(sk.as_slice())
-            .map_err(|_| Error::InvalidPrivateKey)?;
+        let point =
+            p256::SecretKey::from_slice(sk.as_slice()).map_err(|_| Error::InvalidPrivateKey)?;
 
         Ok(Self { key: point.to_bytes().as_slice().to_rev_array().into() })
     }
@@ -102,10 +107,7 @@ impl TryFrom<&PrivateKey> for PublicKey {
 
         let x = point.x().ok_or(Error::InvalidPrivateKey)?;
         let y = point.y().ok_or(Error::InvalidPrivateKey)?;
-        Ok(PublicKey {
-            gx: x.as_slice().to_rev_array(),
-            gy: y.as_slice().to_rev_array(),
-        })
+        Ok(PublicKey { gx: x.as_slice().to_rev_array(), gy: y.as_slice().to_rev_array() })
     }
 }
 
@@ -167,10 +169,7 @@ impl PublicKey {
             return Err(Error::InvalidPublicKey);
         }
 
-        Ok(PublicKey {
-            gx: x.as_slice().to_rev_array(),
-            gy: y.as_slice().to_rev_array(),
-        })
+        Ok(PublicKey { gx: x.as_slice().to_rev_array(), gy: y.as_slice().to_rev_array() })
     }
 }
 
@@ -196,8 +195,8 @@ impl Serialize for PublicKey {
 impl<'de> Deserialize<'de> for PublicKey {
     #[inline]
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        PublicKey::from_hex(String::deserialize(deserializer)?.as_str())
-            .map_err(D::Error::custom)
+        let value = String::deserialize(deserializer)?;
+        PublicKey::from_hex(value.as_str()).map_err(D::Error::custom)
     }
 }
 
@@ -207,7 +206,9 @@ impl BinEncoder for PublicKey {
         w.write(pk.as_slice());
     }
 
-    fn bin_size(&self) -> usize { PUBLIC_COMPRESSED_SIZE }
+    fn bin_size(&self) -> usize {
+        PUBLIC_COMPRESSED_SIZE
+    }
 }
 
 impl BinDecoder for PublicKey {
@@ -230,7 +231,7 @@ impl BinDecoder for PublicKey {
                 PublicKey::from_uncompressed(&pk)
                     .map_err(|_| BinDecodeError::InvalidValue("PublicKey", offset))
             }
-            _ => Err(BinDecodeError::InvalidType("PublicKey", offset, b as u64))
+            _ => Err(BinDecodeError::InvalidType("PublicKey", offset, b as u64)),
         }
     }
 }
@@ -241,7 +242,6 @@ pub enum GenKeyError {
     GenRandomError(String),
 }
 
-
 pub trait GenKeypair {
     fn gen_keypair(&mut self) -> Result<(PrivateKey, PublicKey), GenKeyError>;
 }
@@ -251,20 +251,21 @@ fn gen_private_key(random: &mut impl rand::CryptoRand) -> Result<p256::SecretKey
 
     let mut bytes = p256::FieldBytes::default();
     for _ in 0..5 {
-        random.read_full(bytes.as_mut_slice())
+        random
+            .read_full(bytes.as_mut_slice())
             .map_err(|err| GenKeyError::GenRandomError(err.to_string()))?;
 
         let no_zero: Option<p256::NonZeroScalar> = p256::Scalar::from_repr(bytes)
             .and_then(|scalar| p256::NonZeroScalar::new(scalar))
             .into();
-        if let Some(key) = no_zero { // TODO: CtOption
+        if let Some(key) = no_zero {
+            // TODO: CtOption
             return Ok(p256::SecretKey::new(key.into()));
         }
     }
 
     Err(GenKeyError::GenRandomError("try too many times".into()))
 }
-
 
 impl<T: rand::CryptoRand> GenKeypair for T {
     fn gen_keypair(&mut self) -> Result<(PrivateKey, PublicKey), GenKeyError> {
@@ -287,11 +288,11 @@ impl<T: rand::CryptoRand> GenKeypair for T {
     }
 }
 
-
 #[cfg(test)]
 mod test {
-    use super::*;
     use neo_base::encoding::hex::{DecodeHex, ToHex};
+
+    use super::*;
     use crate::rand::OsRand;
 
     #[test]
@@ -300,16 +301,18 @@ mod test {
             .decode_hex()
             .expect("hex decode should be ok");
 
-        let key = PublicKey::from_compressed(&x)
-            .expect("from compressed public should be ok");
+        let key = PublicKey::from_compressed(&x).expect("from compressed public should be ok");
 
         let gy: [u8; KEY_SIZE] = key.gy.as_slice().to_rev_array();
-        assert_eq!("35dfabcb79ac492a2a88588d2f2e73f045cd8af58059282e09d693dc340e113f", &gy.to_hex());
+        assert_eq!(
+            "35dfabcb79ac492a2a88588d2f2e73f045cd8af58059282e09d693dc340e113f",
+            &gy.to_hex()
+        );
         assert_eq!(x.as_slice(), key.to_compressed().as_slice());
 
         let uncompressed = key.to_uncompressed();
-        let got = PublicKey::from_uncompressed(&uncompressed)
-            .expect("from uncompressed should be ok");
+        let got =
+            PublicKey::from_uncompressed(&uncompressed).expect("from uncompressed should be ok");
         assert_eq!(key, got);
 
         let should = "035a928f201639204e06b4368b1a93365462a8ebbff0b8818151b74faab3a2b61a"
@@ -322,15 +325,13 @@ mod test {
     #[test]
     fn test_gen_keypair() {
         for _ in 0..10 {
-            let (sk, pk) = OsRand::gen_keypair(&mut OsRand)
-                .expect("gen_keypair should be ok");
+            let (sk, pk) = OsRand::gen_keypair(&mut OsRand).expect("gen_keypair should be ok");
 
             let got = PublicKey::from_compressed(pk.to_compressed().as_slice())
                 .expect("from compressed public should be ok");
             assert_eq!(pk, got);
 
-            let from_sk = PublicKey::try_from(&sk)
-                .expect("try from sk should be ok");
+            let from_sk = PublicKey::try_from(&sk).expect("try from sk should be ok");
             assert_eq!(pk, from_sk);
         }
     }
