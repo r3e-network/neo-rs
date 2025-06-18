@@ -1,0 +1,48 @@
+[package]
+name = "neo-smart-contract"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core dependencies
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+derive_more = "0.99"
+base64 = "0.21"
+
+# Cryptography
+secp256k1 = "0.28"
+sha2 = "0.10"
+sha3 = "0.10"
+ripemd = "0.1"
+hex = "0.4"
+bls12_381 = "0.8"
+group = "0.13"
+pairing = "0.23"
+
+# Numeric types
+num-bigint = "0.4"
+num-traits = "0.2"
+
+# Async runtime and HTTP
+tokio = { version = "1.0", features = ["full"] }
+reqwest = { version = "0.11", features = ["json"] }
+
+# Additional cryptography
+hmac = "0.12"
+
+# Storage
+rocksdb = "0.21"
+
+# Logging
+log = "0.4"
+
+# Internal dependencies
+neo-core = { path = "../core" }
+neo-vm = { path = "../vm" }
+neo-cryptography = { path = "../cryptography" }
+neo-io = { path = "../io" }
+neo-ledger = { path = "../ledger" }
+
+[dev-dependencies]

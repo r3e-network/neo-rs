@@ -1,0 +1,824 @@
+//! Numeric operations for the Neo Virtual Machine.
+//!
+//! This module provides the numeric operation handlers for the Neo VM.
+
+use crate::execution_engine::ExecutionEngine;
+use crate::instruction::Instruction;
+use crate::jump_table::JumpTable;
+use crate::op_code::OpCode;
+use crate::stack_item::StackItem;
+use crate::Error;
+use crate::Result;
+use num_bigint::BigInt;
+use num_traits::{One, Zero, Signed, ToPrimitive};
+
+/// Registers the numeric operation handlers.
+pub fn register_handlers(jump_table: &mut JumpTable) {
+    jump_table.register(OpCode::INC, inc);
+    jump_table.register(OpCode::DEC, dec);
+    jump_table.register(OpCode::SIGN, sign);
+    jump_table.register(OpCode::NEGATE, negate);
+    jump_table.register(OpCode::ABS, abs);
+    jump_table.register(OpCode::ADD, add);
+    jump_table.register(OpCode::SUB, sub);
+    jump_table.register(OpCode::MUL, mul);
+    jump_table.register(OpCode::DIV, div);
+    jump_table.register(OpCode::MOD, modulo);
+    jump_table.register(OpCode::POW, pow);
+    jump_table.register(OpCode::SQRT, sqrt);
+    jump_table.register(OpCode::SHL, shl);
+    jump_table.register(OpCode::SHR, shr);
+    jump_table.register(OpCode::MIN, min);
+    jump_table.register(OpCode::MAX, max);
+    jump_table.register(OpCode::WITHIN, within);
+
+    // Comparison operations
+    jump_table.register(OpCode::LT, lt);
+    jump_table.register(OpCode::LE, le);
+    jump_table.register(OpCode::GT, gt);
+    jump_table.register(OpCode::GE, ge);
+    jump_table.register(OpCode::NUMEQUAL, numequal);
+    jump_table.register(OpCode::NUMNOTEQUAL, numnotequal);
+
+    // Logical operations
+    jump_table.register(OpCode::NOT, not);
+    jump_table.register(OpCode::BOOLAND, booland);
+    jump_table.register(OpCode::BOOLOR, boolor);
+    jump_table.register(OpCode::NZ, nz);
+
+    // Advanced numeric operations
+    jump_table.register(OpCode::MODMUL, modmul);
+    jump_table.register(OpCode::MODPOW, modpow);
+}
+
+/// Implements the INC operation.
+fn inc(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the value from the stack
+    let value = context.pop()?.as_int()?;
+
+    // Increment the value
+    let result = value + BigInt::one();
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the DEC operation.
+fn dec(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the value from the stack
+    let value = context.pop()?.as_int()?;
+
+    // Decrement the value
+    let result = value - BigInt::one();
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the SIGN operation.
+fn sign(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the value from the stack
+    let value = context.pop()?.as_int()?;
+
+    // Get the sign of the value
+    let result = if value.is_zero() {
+        BigInt::zero()
+    } else if value.is_positive() {
+        BigInt::one()
+    } else {
+        -BigInt::one()
+    };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the NEGATE operation.
+fn negate(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the value from the stack
+    let value = context.pop()?.as_int()?;
+
+    // Negate the value
+    let result = -value;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the ABS operation.
+fn abs(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the value from the stack
+    let value = context.pop()?.as_int()?;
+
+    // Get the absolute value
+    let result = value.abs();
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the ADD operation.
+fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?;
+    let a = context.pop()?;
+
+    // Add the values
+    let result = match (a, b) {
+        (StackItem::Integer(a), StackItem::Integer(b)) => {
+            let sum = &a + &b;
+            StackItem::from_int(sum)
+        }
+        (StackItem::ByteString(a), StackItem::ByteString(b)) => {
+            let mut result = a.clone();
+            result.extend_from_slice(&b);
+            StackItem::from_byte_string(result)
+        }
+        (StackItem::Buffer(a), StackItem::Buffer(b)) => {
+            let mut result = a.clone();
+            result.extend_from_slice(&b);
+            StackItem::from_buffer(result)
+        }
+        (a, b) => {
+            // Try to convert to integers and add
+            let a_int = a.as_int()?;
+            let b_int = b.as_int()?;
+            let sum = &a_int + &b_int;
+            StackItem::from_int(sum)
+        }
+    };
+
+    // Push the result onto the stack
+    context.push(result)?;
+
+    Ok(())
+}
+
+/// Implements the SUB operation.
+fn sub(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+
+    // Subtract the values
+    let result = a - b;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the MUL operation.
+fn mul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+
+    // Multiply the values
+    let result = a * b;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the DIV operation.
+fn div(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+
+    // Check for division by zero
+    if b.is_zero() {
+        return Err(Error::InvalidOperation("Division by zero".into()));
+    }
+
+    // Divide the values
+    let result = a / b;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the MOD operation.
+fn modulo(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+
+    // Check for division by zero
+    if b.is_zero() {
+        return Err(Error::InvalidOperation("Division by zero".into()));
+    }
+
+    // Calculate the modulo
+    let result = a % b;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the POW operation.
+fn pow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+
+    // Check if the exponent is negative
+    if b.is_negative() {
+        return Err(Error::InvalidOperation("Negative exponent".into()));
+    }
+
+    // Convert the exponent to a u32
+    let exponent = b.to_u32().ok_or_else(|| Error::InvalidOperation("Exponent too large".into()))?;
+
+    // Calculate the power
+    let result = a.pow(exponent);
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the SQRT operation.
+fn sqrt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the value from the stack
+    let value = context.pop()?.as_int()?;
+
+    // Check if the value is negative
+    if value.is_negative() {
+        return Err(Error::InvalidOperation("Square root of negative number".into()));
+    }
+
+    // Calculate the square root (production-ready implementation matching C# VM.Sqrt exactly)
+    // Use integer square root algorithm for precise results with large numbers
+    let result = if value.is_zero() {
+        BigInt::zero()
+    } else {
+        // Newton's method for integer square root (matches C# BigInteger.Sqrt exactly)
+        integer_sqrt(&value)
+    };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Integer square root using Newton's method (matches C# BigInteger.Sqrt exactly)
+fn integer_sqrt(value: &BigInt) -> BigInt {
+    if value.is_zero() {
+        return BigInt::zero();
+    }
+
+    if value == &BigInt::from(1) {
+        return BigInt::from(1);
+    }
+
+    // Newton's method: x_{n+1} = (x_n + value/x_n) / 2
+    let mut x = value.clone();
+    let mut y: BigInt = (value + 1) / 2;
+
+    while y < x {
+        x = y.clone();
+        y = (&x + value / &x) / 2;
+    }
+
+    x
+}
+
+/// Implements the SHL operation.
+fn shl(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+
+    // Check if the shift amount is negative
+    if b.is_negative() {
+        return Err(Error::InvalidOperation("Negative shift amount".into()));
+    }
+
+    // Convert the shift amount to a u32
+    let shift = b.to_u32().ok_or_else(|| Error::InvalidOperation("Shift amount too large".into()))?;
+
+    // Perform the left shift
+    let result = a << shift;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the SHR operation.
+fn shr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+
+    // Check if the shift amount is negative
+    if b.is_negative() {
+        return Err(Error::InvalidOperation("Negative shift amount".into()));
+    }
+
+    // Convert the shift amount to a u32
+    let shift = b.to_u32().ok_or_else(|| Error::InvalidOperation("Shift amount too large".into()))?;
+
+    // Perform the right shift
+    let result = a >> shift;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the MIN operation.
+fn min(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+
+    // Get the minimum value
+    let result = if a < b { a } else { b };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the MAX operation.
+fn max(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+
+    // Get the maximum value
+    let result = if a > b { a } else { b };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the WITHIN operation.
+fn within(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+    let x = context.pop()?.as_int()?;
+
+    // Check if x is within the range [a, b)
+    let result = a <= x && x < b;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the LT operation.
+fn lt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Check if we have enough items on the stack (need 2 for comparison)
+    if context.evaluation_stack().len() < 2 {
+        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
+        if context.evaluation_stack().len() == 1 {
+            return Err(Error::InsufficientStackItems);
+        }
+        // If 0 items, let the pop() fail naturally to cause FAULT
+    }
+
+    // Pop the values from the stack
+    let b = context.pop()?;
+    let a = context.pop()?;
+
+    // Handle null comparisons (null is less than any non-null value)
+    let result = match (&a, &b) {
+        (StackItem::Null, StackItem::Null) => false, // null < null is false
+        (StackItem::Null, _) => true,                // null < anything is true
+        (_, StackItem::Null) => false,               // anything < null is false
+        _ => {
+            // Both are non-null, convert to integers and compare
+            let a_int = a.as_int()?;
+            let b_int = b.as_int()?;
+            a_int < b_int
+        }
+    };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the LE operation.
+fn le(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Check if we have enough items on the stack (need 2 for comparison)
+    if context.evaluation_stack().len() < 2 {
+        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
+        if context.evaluation_stack().len() == 1 {
+            return Err(Error::InsufficientStackItems);
+        }
+        // If 0 items, let the pop() fail naturally to cause FAULT
+    }
+
+    // Pop the values from the stack
+    let b = context.pop()?;
+    let a = context.pop()?;
+
+    // Handle null comparisons (null is less than any non-null value)
+    let result = match (&a, &b) {
+        (StackItem::Null, StackItem::Null) => true,  // null <= null is true
+        (StackItem::Null, _) => true,                // null <= anything is true
+        (_, StackItem::Null) => false,               // anything <= null is false
+        _ => {
+            // Both are non-null, convert to integers and compare
+            let a_int = a.as_int()?;
+            let b_int = b.as_int()?;
+            a_int <= b_int
+        }
+    };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the GT operation.
+fn gt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Check if we have enough items on the stack (need 2 for comparison)
+    if context.evaluation_stack().len() < 2 {
+        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
+        if context.evaluation_stack().len() == 1 {
+            return Err(Error::InsufficientStackItems);
+        }
+        // If 0 items, let the pop() fail naturally to cause FAULT
+    }
+
+    // Pop the values from the stack
+    let b = context.pop()?;
+    let a = context.pop()?;
+
+    // Handle null comparisons (null is less than any non-null value)
+    let result = match (&a, &b) {
+        (StackItem::Null, StackItem::Null) => false, // null > null is false
+        (StackItem::Null, _) => false,               // null > anything is false
+        (_, StackItem::Null) => true,                // anything > null is true
+        _ => {
+            // Both are non-null, convert to integers and compare
+            let a_int = a.as_int()?;
+            let b_int = b.as_int()?;
+            a_int > b_int
+        }
+    };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the GE operation.
+fn ge(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Check if we have enough items on the stack (need 2 for comparison)
+    if context.evaluation_stack().len() < 2 {
+        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
+        if context.evaluation_stack().len() == 1 {
+            return Err(Error::InsufficientStackItems);
+        }
+        // If 0 items, let the pop() fail naturally to cause FAULT
+    }
+
+    // Pop the values from the stack
+    let b = context.pop()?;
+    let a = context.pop()?;
+
+    // Handle null comparisons (null is less than any non-null value)
+    let result = match (&a, &b) {
+        (StackItem::Null, StackItem::Null) => true,  // null >= null is true
+        (StackItem::Null, _) => false,               // null >= anything is false
+        (_, StackItem::Null) => true,                // anything >= null is true
+        _ => {
+            // Both are non-null, convert to integers and compare
+            let a_int = a.as_int()?;
+            let b_int = b.as_int()?;
+            a_int >= b_int
+        }
+    };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the NUMEQUAL operation.
+fn numequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Check if we have enough items on the stack (need 2 for comparison)
+    if context.evaluation_stack().len() < 2 {
+        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
+        if context.evaluation_stack().len() == 1 {
+            return Err(Error::InsufficientStackItems);
+        }
+        // If 0 items, let the pop() fail naturally to cause FAULT
+    }
+
+    // Pop the values from the stack
+    let b = context.pop()?;
+    let a = context.pop()?;
+
+    // Handle different types for numeric equality
+    let result = match (&a, &b) {
+        (StackItem::Null, StackItem::Null) => true,  // null == null is true
+        (StackItem::Null, _) => false,               // null == anything is false
+        (_, StackItem::Null) => false,               // anything == null is false
+        (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool == b_bool, // boolean == boolean
+        (StackItem::Boolean(a_bool), _) => {
+            // Convert boolean to integer and compare
+            let a_int = if *a_bool { 1 } else { 0 };
+            let b_int = b.as_int()?;
+            num_bigint::BigInt::from(a_int) == b_int
+        }
+        (_, StackItem::Boolean(b_bool)) => {
+            // Convert boolean to integer and compare
+            let a_int = a.as_int()?;
+            let b_int = if *b_bool { 1 } else { 0 };
+            a_int == num_bigint::BigInt::from(b_int)
+        }
+        _ => {
+            // Both are non-null, non-boolean, convert to integers and compare
+            let a_int = a.as_int()?;
+            let b_int = b.as_int()?;
+            a_int == b_int
+        }
+    };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the NUMNOTEQUAL operation.
+fn numnotequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Check if we have enough items on the stack (need 2 for comparison)
+    if context.evaluation_stack().len() < 2 {
+        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
+        if context.evaluation_stack().len() == 1 {
+            return Err(Error::InsufficientStackItems);
+        }
+        // If 0 items, let the pop() fail naturally to cause FAULT
+    }
+
+    // Pop the values from the stack
+    let b = context.pop()?;
+    let a = context.pop()?;
+
+    // Handle different types for numeric inequality
+    let result = match (&a, &b) {
+        (StackItem::Null, StackItem::Null) => false, // null != null is false
+        (StackItem::Null, _) => true,                // null != anything is true
+        (_, StackItem::Null) => true,                // anything != null is true
+        (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool != b_bool, // boolean != boolean
+        (StackItem::Boolean(a_bool), _) => {
+            // Convert boolean to integer and compare
+            let a_int = if *a_bool { 1 } else { 0 };
+            let b_int = b.as_int()?;
+            num_bigint::BigInt::from(a_int) != b_int
+        }
+        (_, StackItem::Boolean(b_bool)) => {
+            // Convert boolean to integer and compare
+            let a_int = a.as_int()?;
+            let b_int = if *b_bool { 1 } else { 0 };
+            a_int != num_bigint::BigInt::from(b_int)
+        }
+        _ => {
+            // Both are non-null, non-boolean, convert to integers and compare
+            let a_int = a.as_int()?;
+            let b_int = b.as_int()?;
+            a_int != b_int
+        }
+    };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the NOT operation.
+fn not(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the value from the stack
+    let value = context.pop()?;
+
+    // Perform logical NOT
+    let result = match value {
+        StackItem::Boolean(b) => !b,
+        StackItem::Integer(i) => i.is_zero(),
+        StackItem::Null => true,
+        _ => false,
+    };
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the BOOLAND operation.
+fn booland(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_bool()?;
+    let a = context.pop()?.as_bool()?;
+
+    // Perform logical AND
+    let result = a && b;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the BOOLOR operation.
+fn boolor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let b = context.pop()?.as_bool()?;
+    let a = context.pop()?.as_bool()?;
+
+    // Perform logical OR
+    let result = a || b;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the NZ operation.
+fn nz(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the value from the stack
+    let value = context.pop()?.as_int()?;
+
+    // Check if the value is not zero
+    let result = !value.is_zero();
+
+    // Push the result onto the stack
+    context.push(StackItem::from_bool(result))?;
+
+    Ok(())
+}
+
+/// Implements the MODMUL operation.
+fn modmul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let modulus = context.pop()?.as_int()?;
+    let b = context.pop()?.as_int()?;
+    let a = context.pop()?.as_int()?;
+
+    // Check for zero modulus
+    if modulus.is_zero() {
+        return Err(Error::DivisionByZero);
+    }
+
+    // Perform modular multiplication: (a * b) % modulus
+    let result = (a * b) % modulus;
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}
+
+/// Implements the MODPOW operation.
+fn modpow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+    // Get the current context
+    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+
+    // Pop the values from the stack
+    let modulus = context.pop()?.as_int()?;
+    let exponent = context.pop()?.as_int()?;
+    let base = context.pop()?.as_int()?;
+
+    // Check for zero modulus
+    if modulus.is_zero() {
+        return Err(Error::DivisionByZero);
+    }
+
+    // Check for negative exponent
+    if exponent.is_negative() {
+        return Err(Error::InvalidOperation("Negative exponent not supported".into()));
+    }
+
+    // Perform modular exponentiation: base^exponent % modulus
+    let result = base.modpow(&exponent, &modulus);
+
+    // Push the result onto the stack
+    context.push(StackItem::from_int(result))?;
+
+    Ok(())
+}

@@ -1,0 +1,43 @@
+[package]
+name = "neo-node"
+version = "0.1.0"
+edition = "2021"
+authors = ["Neo Global Development <dev@neo.org>"]
+description = "Neo blockchain node implementation in Rust"
+
+[[bin]]
+name = "neo-node"
+path = "src/main.rs"
+
+[dependencies]
+# Internal crates
+neo-core = { path = "../crates/core" }
+neo-cryptography = { path = "../crates/cryptography" }
+neo-io = { path = "../crates/io" }
+neo-vm = { path = "../crates/vm" }
+neo-smart-contract = { path = "../crates/smart_contract" }
+neo-ledger = { path = "../crates/ledger" }
+neo-network = { path = "../crates/network" }
+neo-persistence = { path = "../crates/persistence" }
+neo-wallets = { path = "../crates/wallets" }
+# neo-consensus = { path = "../crates/consensus" }  # Disabled for basic node functionality
+
+# External dependencies
+tokio = { version = "1.28", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+clap = { version = "4.3", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1.0"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+hex = "0.4"
+tempfile = "3.8"
+futures = "0.3"
+async-trait = "0.1"
+parking_lot = "0.12"
+dashmap = "5.5"
+warp = "0.3"
+rand = "0.8"

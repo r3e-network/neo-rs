@@ -1,0 +1,251 @@
+// Copyright (C) 2015-2025 The Neo Project.
+//
+// serialization.rs file belongs to the neo project and is free
+// software distributed under the MIT software license, see the
+// accompanying file LICENSE in the main directory of the
+// repository or http://www.opensource.org/licenses/mit-license.php
+// for more details.
+//
+// Redistribution and use in source and binary forms with or without
+// modifications are permitted.
+
+//! Transaction serialization implementation matching C# Neo N3 exactly.
+
+use neo_io::{Serializable, BinaryWriter, MemoryReader};
+use neo_io::serializable::helper::get_var_size;
+use crate::witness::Witness;
+use crate::signer::Signer;
+use std::sync::Mutex;
+
+use super::core::{Transaction, MAX_TRANSACTION_ATTRIBUTES, HEADER_SIZE};
+use super::attributes::TransactionAttribute;
+
+impl Serializable for Transaction {
+    fn size(&self) -> usize {
+        let mut size = HEADER_SIZE;
+        
+        // Signers size
+        size += get_var_size(self.signers.len() as u64);
+        for signer in &self.signers {
+            size += signer.size();
+        }
+        
+        // Attributes size
+        size += get_var_size(self.attributes.len() as u64);
+        for attribute in &self.attributes {
+            size += attribute.size();
+        }
+        
+        // Script size
+        size += get_var_size(self.script.len() as u64) + self.script.len();
+        
+        // Witnesses size
+        size += get_var_size(self.witnesses.len() as u64);
+        for witness in &self.witnesses {
+            size += witness.size();
+        }
+        
+        size
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), neo_io::Error> {
+        // Write header
+        writer.write_bytes(&[self.version])?;
+        writer.write_bytes(&self.nonce.to_le_bytes())?;
+        writer.write_bytes(&self.system_fee.to_le_bytes())?;
+        writer.write_bytes(&self.network_fee.to_le_bytes())?;
+        writer.write_bytes(&self.valid_until_block.to_le_bytes())?;
+
+        // Write signers
+        writer.write_var_int(self.signers.len() as u64)?;
+        for signer in &self.signers {
+            Serializable::serialize(signer, writer)?;
+        }
+
+        // Write attributes
+        writer.write_var_int(self.attributes.len() as u64)?;
+        for attribute in &self.attributes {
+            attribute.serialize(writer).map_err(|e| neo_io::Error::InvalidData(e.to_string()))?;
+        }
+
+        // Write script
+        writer.write_var_bytes(&self.script)?;
+
+        // Write witnesses
+        writer.write_var_int(self.witnesses.len() as u64)?;
+        for witness in &self.witnesses {
+            Serializable::serialize(witness, writer)?;
+        }
+
+        Ok(())
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, neo_io::Error> {
+        // Read header
+        let version = reader.read_byte()?;
+        if version > 0 {
+            return Err(neo_io::Error::InvalidData(format!("Invalid version: {}", version)));
+        }
+
+        let nonce = reader.read_u32()?;
+        let system_fee = reader.read_u64()? as i64;
+        let network_fee = reader.read_u64()? as i64;
+        let valid_until_block = reader.read_u32()?;
+
+        if system_fee < 0 {
+            return Err(neo_io::Error::InvalidData(format!("Invalid system fee: {}", system_fee)));
+        }
+
+        if network_fee < 0 {
+            return Err(neo_io::Error::InvalidData(format!("Invalid network fee: {}", network_fee)));
+        }
+
+        // Read signers
+        let signer_count = reader.read_var_int(MAX_TRANSACTION_ATTRIBUTES as u64)? as usize;
+        if signer_count == 0 {
+            return Err(neo_io::Error::InvalidData("No signers".to_string()));
+        }
+        if signer_count > MAX_TRANSACTION_ATTRIBUTES {
+            return Err(neo_io::Error::InvalidData(format!("Too many signers: {}", signer_count)));
+        }
+
+        let mut signers = Vec::with_capacity(signer_count);
+        for _ in 0..signer_count {
+            let signer = <Signer as Serializable>::deserialize(reader)?;
+            signers.push(signer);
+        }
+
+        // Read attributes
+        let attr_count = reader.read_var_int(MAX_TRANSACTION_ATTRIBUTES as u64)? as usize;
+        if attr_count > (MAX_TRANSACTION_ATTRIBUTES - signers.len()) {
+            return Err(neo_io::Error::InvalidData(format!("Too many attributes: {}", attr_count)));
+        }
+
+        let mut attributes = Vec::with_capacity(attr_count);
+        for _ in 0..attr_count {
+            let attribute = TransactionAttribute::deserialize(reader).map_err(|e| neo_io::Error::InvalidData(e.to_string()))?;
+            attributes.push(attribute);
+        }
+
+        // Read script
+        let script = reader.read_var_bytes(u16::MAX as usize)?;
+        if script.is_empty() {
+            return Err(neo_io::Error::InvalidData("Empty script".to_string()));
+        }
+
+        // Read witnesses
+        let witness_count = reader.read_var_int(MAX_TRANSACTION_ATTRIBUTES as u64)? as usize;
+        if witness_count != signers.len() {
+            return Err(neo_io::Error::InvalidData(format!("Witness count mismatch: {} != {}", witness_count, signers.len())));
+        }
+
+        let mut witnesses = Vec::with_capacity(witness_count);
+        for _ in 0..witness_count {
+            let witness = <Witness as Serializable>::deserialize(reader)?;
+            witnesses.push(witness);
+        }
+
+        Ok(Self {
+            version,
+            nonce,
+            system_fee,
+            network_fee,
+            valid_until_block,
+            signers,
+            attributes,
+            script,
+            witnesses,
+            _hash: Mutex::new(None),
+            _size: Mutex::new(0),
+        })
+    }
+}
+
+impl Transaction {
+    /// Gets the size of the transaction in bytes (matches C# Size property exactly).
+    pub fn size(&self) -> usize {
+        <Self as Serializable>::size(self)
+    }
+
+    /// Serializes the transaction to bytes (production-ready implementation).
+    pub fn to_bytes(&self) -> Result<Vec<u8>, neo_io::Error> {
+        let mut writer = BinaryWriter::new();
+        self.serialize(&mut writer)?;
+        Ok(writer.to_bytes())
+    }
+
+    /// Deserializes a transaction from bytes (production-ready implementation).
+    pub fn from_bytes(data: &[u8]) -> Result<Self, neo_io::Error> {
+        let mut reader = MemoryReader::new(data);
+        Self::deserialize(&mut reader)
+    }
+
+    /// Serializes the transaction to hex string (production-ready implementation).
+    pub fn to_hex(&self) -> Result<String, neo_io::Error> {
+        let bytes = self.to_bytes()?;
+        Ok(hex::encode(bytes))
+    }
+
+    /// Deserializes a transaction from hex string (production-ready implementation).
+    pub fn from_hex(hex_str: &str) -> Result<Self, neo_io::Error> {
+        let bytes = hex::decode(hex_str)
+            .map_err(|e| neo_io::Error::InvalidData(format!("Invalid hex: {}", e)))?;
+        Self::from_bytes(&bytes)
+    }
+
+    /// Validates the transaction structure during deserialization (production-ready implementation).
+    fn validate_deserialized_structure(&self) -> Result<(), neo_io::Error> {
+        // Production-ready structure validation (matches C# validation exactly)
+        
+        // Check basic constraints
+        if self.signers.is_empty() {
+            return Err(neo_io::Error::InvalidData("Transaction must have at least one signer".to_string()));
+        }
+        
+        if self.signers.len() > 16 {
+            return Err(neo_io::Error::InvalidData("Too many signers".to_string()));
+        }
+        
+        if self.attributes.len() > MAX_TRANSACTION_ATTRIBUTES {
+            return Err(neo_io::Error::InvalidData("Too many attributes".to_string()));
+        }
+        
+        if self.witnesses.len() != self.signers.len() {
+            return Err(neo_io::Error::InvalidData("Witness count must match signer count".to_string()));
+        }
+        
+        if self.script.is_empty() {
+            return Err(neo_io::Error::InvalidData("Transaction script cannot be empty".to_string()));
+        }
+        
+        if self.script.len() > 65535 {
+            return Err(neo_io::Error::InvalidData("Transaction script too large".to_string()));
+        }
+        
+        // Check size constraints
+        let size = self.size();
+        if size > super::core::MAX_TRANSACTION_SIZE {
+            return Err(neo_io::Error::InvalidData(format!(
+                "Transaction size {} exceeds maximum {}", 
+                size, 
+                super::core::MAX_TRANSACTION_SIZE
+            )));
+        }
+        
+        Ok(())
+    }
+
+    /// Creates a transaction from serialized data with validation (production-ready implementation).
+    pub fn from_bytes_validated(data: &[u8]) -> Result<Self, neo_io::Error> {
+        let transaction = Self::from_bytes(data)?;
+        transaction.validate_deserialized_structure()?;
+        Ok(transaction)
+    }
+
+    /// Creates a transaction from hex string with validation (production-ready implementation).
+    pub fn from_hex_validated(hex_str: &str) -> Result<Self, neo_io::Error> {
+        let transaction = Self::from_hex(hex_str)?;
+        transaction.validate_deserialized_structure()?;
+        Ok(transaction)
+    }
+}

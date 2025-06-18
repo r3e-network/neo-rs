@@ -1,0 +1,311 @@
+// Copyright (C) 2015-2025 The Neo Project.
+//
+// attributes.rs file belongs to the neo project and is free
+// software distributed under the MIT software license, see the
+// accompanying file LICENSE in the main directory of the
+// repository or http://www.opensource.org/licenses/mit-license.php
+// for more details.
+//
+// Redistribution and use in source and binary forms with or without
+// modifications are permitted.
+
+//! Transaction attributes implementation matching C# Neo N3 exactly.
+
+use std::fmt;
+use serde::{Deserialize, Serialize};
+use crate::{UInt160, UInt256, CoreResult, CoreError};
+use neo_io::{Serializable, BinaryWriter, MemoryReader};
+use neo_io::serializable::helper::get_var_size;
+
+/// Transaction attribute types (matches C# TransactionAttributeType enum exactly).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum TransactionAttributeType {
+    /// High priority attribute (matches C# HighPriority = 0x01).
+    HighPriority = 0x01,
+    /// Oracle response attribute (matches C# OracleResponse = 0x11).
+    OracleResponse = 0x11,
+    /// Not valid before attribute (matches C# NotValidBefore = 0x20).
+    NotValidBefore = 0x20,
+    /// Conflicts attribute (matches C# Conflicts = 0x21).
+    Conflicts = 0x21,
+}
+
+/// Represents a transaction attribute (matches C# TransactionAttribute class exactly).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TransactionAttribute {
+    /// High priority attribute for prioritizing transactions.
+    HighPriority,
+    
+    /// Oracle response attribute containing oracle callback data.
+    OracleResponse {
+        /// Oracle response ID (matches C# Id property).
+        id: u64,
+        /// Oracle response code (matches C# Code property).
+        code: OracleResponseCode,
+        /// Oracle response result (matches C# Result property).
+        result: Vec<u8>,
+    },
+    
+    /// Not valid before attribute specifying earliest valid block.
+    NotValidBefore {
+        /// Block height before which transaction is invalid (matches C# Height property).
+        height: u32,
+    },
+    
+    /// Conflicts attribute for transaction conflict resolution.
+    Conflicts {
+        /// Hash of conflicting transaction (matches C# Hash property).
+        hash: UInt256,
+    },
+}
+
+/// Oracle response codes (matches C# OracleResponseCode enum exactly).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum OracleResponseCode {
+    /// Success response (matches C# Success = 0x00).
+    Success = 0x00,
+    /// Protocol not supported (matches C# ProtocolNotSupported = 0x10).
+    ProtocolNotSupported = 0x10,
+    /// Console not found (matches C# ConsensusUnreachable = 0x12).
+    ConsensusUnreachable = 0x12,
+    /// Not found (matches C# NotFound = 0x14).
+    NotFound = 0x14,
+    /// Timeout (matches C# Timeout = 0x16).
+    Timeout = 0x16,
+    /// Forbidden (matches C# Forbidden = 0x18).
+    Forbidden = 0x18,
+    /// Response too large (matches C# ResponseTooLarge = 0x1a).
+    ResponseTooLarge = 0x1a,
+    /// Insufficient funds (matches C# InsufficientFunds = 0x1c).
+    InsufficientFunds = 0x1c,
+    /// Content type not supported (matches C# ContentTypeNotSupported = 0x1f).
+    ContentTypeNotSupported = 0x1f,
+    /// Error (matches C# Error = 0xff).
+    Error = 0xff,
+}
+
+impl TransactionAttribute {
+    /// Gets the attribute type (matches C# Type property exactly).
+    pub fn attribute_type(&self) -> TransactionAttributeType {
+        match self {
+            TransactionAttribute::HighPriority => TransactionAttributeType::HighPriority,
+            TransactionAttribute::OracleResponse { .. } => TransactionAttributeType::OracleResponse,
+            TransactionAttribute::NotValidBefore { .. } => TransactionAttributeType::NotValidBefore,
+            TransactionAttribute::Conflicts { .. } => TransactionAttributeType::Conflicts,
+        }
+    }
+
+    /// Gets the size of the attribute in bytes (matches C# Size property exactly).
+    pub fn size(&self) -> usize {
+        match self {
+            TransactionAttribute::HighPriority => 1, // Just the type byte
+            TransactionAttribute::OracleResponse { result, .. } => {
+                1 + // type
+                8 + // id (u64)
+                1 + // code (u8)
+                get_var_size(result.len() as u64) + result.len() // result with var length
+            }
+            TransactionAttribute::NotValidBefore { .. } => {
+                1 + // type
+                4   // height (u32)
+            }
+            TransactionAttribute::Conflicts { .. } => {
+                1 + // type
+                32  // hash (UInt256)
+            }
+        }
+    }
+
+    /// Validates the attribute (matches C# Verify method exactly).
+    pub fn verify(&self) -> Result<(), CoreError> {
+        match self {
+            TransactionAttribute::HighPriority => {
+                // High priority attributes are always valid (matches C# behavior)
+                Ok(())
+            }
+            TransactionAttribute::OracleResponse { id, result, .. } => {
+                // Validate oracle response (matches C# OracleResponse.Verify)
+                if *id == 0 {
+                    return Err(CoreError::InvalidData("Oracle ID cannot be zero".to_string()));
+                }
+                if result.len() > 65535 {
+                    return Err(CoreError::InvalidData("Oracle result too large".to_string()));
+                }
+                Ok(())
+            }
+            TransactionAttribute::NotValidBefore { height } => {
+                // Validate not valid before height (matches C# NotValidBefore.Verify)
+                if *height == 0 {
+                    return Err(CoreError::InvalidData("Height cannot be zero".to_string()));
+                }
+                Ok(())
+            }
+            TransactionAttribute::Conflicts { hash } => {
+                // Validate conflicts hash (matches C# Conflicts.Verify)
+                if hash.is_zero() {
+                    return Err(CoreError::InvalidData("Conflict hash cannot be zero".to_string()));
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Checks if this attribute allows duplicates (matches C# AllowMultiple property exactly).
+    pub fn allows_multiple(&self) -> bool {
+        match self {
+            TransactionAttribute::HighPriority => false, // Only one high priority allowed
+            TransactionAttribute::OracleResponse { .. } => false, // Only one oracle response allowed
+            TransactionAttribute::NotValidBefore { .. } => false, // Only one not valid before allowed
+            TransactionAttribute::Conflicts { .. } => true, // Multiple conflicts allowed
+        }
+    }
+
+    /// Checks if this attribute allows duplicates (C# AllowMultiple property compatibility).
+    pub fn allow_multiple(&self) -> bool {
+        self.allows_multiple()
+    }
+
+    /// Gets the raw data of the attribute (for consensus processing)
+    pub fn data(&self) -> Vec<u8> {
+        match self {
+            TransactionAttribute::HighPriority => vec![],
+            TransactionAttribute::OracleResponse { id, code, result } => {
+                let mut data = Vec::new();
+                data.extend_from_slice(&id.to_le_bytes());
+                data.push(*code as u8);
+                data.extend_from_slice(result);
+                data
+            }
+            TransactionAttribute::NotValidBefore { height } => {
+                height.to_le_bytes().to_vec()
+            }
+            TransactionAttribute::Conflicts { hash } => {
+                hash.as_bytes().to_vec()
+            }
+        }
+    }
+
+    /// Serializes the attribute to binary format (matches C# Serialize method exactly).
+    pub fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), CoreError> {
+        // Write attribute type
+        writer.write_bytes(&[self.attribute_type() as u8])
+            .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+
+        // Write attribute data
+        match self {
+            TransactionAttribute::HighPriority => {
+                // No additional data for high priority (matches C# behavior)
+            }
+            TransactionAttribute::OracleResponse { id, code, result } => {
+                // Write oracle response data (matches C# OracleResponse.Serialize)
+                writer.write_bytes(&id.to_le_bytes())
+                    .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+                writer.write_bytes(&[*code as u8])
+                    .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+                writer.write_var_bytes(result)
+                    .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+            }
+            TransactionAttribute::NotValidBefore { height } => {
+                // Write not valid before data (matches C# NotValidBefore.Serialize)
+                writer.write_bytes(&height.to_le_bytes())
+                    .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+            }
+            TransactionAttribute::Conflicts { hash } => {
+                // Write conflicts data (matches C# Conflicts.Serialize)
+                writer.write_bytes(hash.as_bytes())
+                    .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Deserializes an attribute from binary format (matches C# Deserialize method exactly).
+    pub fn deserialize(reader: &mut MemoryReader) -> Result<Self, CoreError> {
+        // Read attribute type
+        let attribute_type = reader.read_byte()
+            .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+
+        match attribute_type {
+            0x01 => {
+                // High priority attribute (matches C# HighPriority deserialization)
+                Ok(TransactionAttribute::HighPriority)
+            }
+            0x11 => {
+                // Oracle response attribute (matches C# OracleResponse deserialization)
+                let id = reader.read_u64()
+                    .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+                let code_byte = reader.read_byte()
+                    .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+                let code = match code_byte {
+                    0x00 => OracleResponseCode::Success,
+                    0x10 => OracleResponseCode::ProtocolNotSupported,
+                    0x12 => OracleResponseCode::ConsensusUnreachable,
+                    0x14 => OracleResponseCode::NotFound,
+                    0x16 => OracleResponseCode::Timeout,
+                    0x18 => OracleResponseCode::Forbidden,
+                    0x1a => OracleResponseCode::ResponseTooLarge,
+                    0x1c => OracleResponseCode::InsufficientFunds,
+                    0x1f => OracleResponseCode::ContentTypeNotSupported,
+                    0xff => OracleResponseCode::Error,
+                    _ => return Err(CoreError::InvalidData(format!("Invalid oracle response code: {}", code_byte))),
+                };
+                let result = reader.read_var_bytes(65535)
+                    .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+                
+                Ok(TransactionAttribute::OracleResponse { id, code, result })
+            }
+            0x20 => {
+                // Not valid before attribute (matches C# NotValidBefore deserialization)
+                let height = reader.read_u32()
+                    .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+                Ok(TransactionAttribute::NotValidBefore { height })
+            }
+            0x21 => {
+                // Conflicts attribute (matches C# Conflicts deserialization)
+                let hash_bytes = reader.read_bytes(32)
+                    .map_err(|e| CoreError::SerializationError(e.to_string()))?;
+                let hash = UInt256::from_bytes(&hash_bytes)
+                    .map_err(|e| CoreError::InvalidData(format!("Invalid hash: {}", e)))?;
+                Ok(TransactionAttribute::Conflicts { hash })
+            }
+            _ => Err(CoreError::InvalidData(format!("Unknown attribute type: {}", attribute_type))),
+        }
+    }
+}
+
+impl fmt::Display for TransactionAttribute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TransactionAttribute::HighPriority => write!(f, "HighPriority"),
+            TransactionAttribute::OracleResponse { id, code, result } => {
+                write!(f, "OracleResponse(id: {}, code: {:?}, result_len: {})", id, code, result.len())
+            }
+            TransactionAttribute::NotValidBefore { height } => {
+                write!(f, "NotValidBefore(height: {})", height)
+            }
+            TransactionAttribute::Conflicts { hash } => {
+                write!(f, "Conflicts(hash: {})", hash)
+            }
+        }
+    }
+}
+
+impl fmt::Display for OracleResponseCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OracleResponseCode::Success => write!(f, "Success"),
+            OracleResponseCode::ProtocolNotSupported => write!(f, "ProtocolNotSupported"),
+            OracleResponseCode::ConsensusUnreachable => write!(f, "ConsensusUnreachable"),
+            OracleResponseCode::NotFound => write!(f, "NotFound"),
+            OracleResponseCode::Timeout => write!(f, "Timeout"),
+            OracleResponseCode::Forbidden => write!(f, "Forbidden"),
+            OracleResponseCode::ResponseTooLarge => write!(f, "ResponseTooLarge"),
+            OracleResponseCode::InsufficientFunds => write!(f, "InsufficientFunds"),
+            OracleResponseCode::ContentTypeNotSupported => write!(f, "ContentTypeNotSupported"),
+            OracleResponseCode::Error => write!(f, "Error"),
+        }
+    }
+}

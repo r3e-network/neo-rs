@@ -1,0 +1,130 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cli",
+    "crates/core",
+    "crates/cryptography",
+    "crates/io",
+    "crates/json",
+    "crates/mpt_trie",
+    "crates/vm",
+    "crates/wallets",
+    "crates/consensus",
+    "crates/ledger",
+    "crates/network",
+    "crates/smart_contract",
+    "crates/persistence",
+    "crates/config",
+    "crates/rpc_server",
+    "demo",
+    "node",
+    "crates/rpc_client",
+    "crates/bls12_381",
+    "crates/extensions",
+    # Commented out non-existent crates until they are implemented
+    # "crates/plugins",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Neo Global Development <dev@neo.org>"]
+repository = "https://github.com/neo-project/neo-rs"
+license = "MIT"
+readme = "README.md"
+
+[package]
+name = "neo-rs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Neo blockchain implementation in Rust"
+
+[dependencies]
+# Neo crates
+neo-config = { path = "crates/config" }
+# neo-consensus = { path = "crates/consensus" }  # Temporarily disabled for P2P testing
+neo-ledger = { path = "crates/ledger" }
+neo-network = { path = "crates/network" }
+neo-persistence = { path = "crates/persistence" }
+neo-rpc-server = { path = "crates/rpc_server" }
+neo-core = { path = "crates/core" }
+
+# External dependencies
+tokio = { version = "1.28", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = "2.34"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+url = "2.0"
+
+[[example]]
+name = "live_network_test"
+path = "examples/live_network_test.rs"
+
+[[example]]
+name = "network_test"
+path = "examples/network_test.rs"
+
+[[example]]
+name = "local_sync_test"
+path = "local_sync_test.rs"
+
+[[example]]
+name = "error_handling_demo"
+path = "error_handling_demo.rs"
+
+[[example]]
+name = "graceful_shutdown_demo"
+path = "graceful_shutdown_demo.rs"
+
+[[example]]
+name = "rpc_server_demo"
+path = "rpc_server_demo.rs"
+
+[workspace.dependencies]
+# Internal crates
+neo-core = { path = "crates/core", version = "0.1.0" }
+neo-cryptography = { path = "crates/cryptography", version = "0.1.0" }
+neo-io = { path = "crates/io", version = "0.1.0" }
+neo-vm = { path = "crates/vm", version = "0.1.0" }
+neo-smart-contract = { path = "crates/smart_contract", version = "0.1.0" }
+neo-ledger = { path = "crates/ledger", version = "0.1.0" }
+neo-network = { path = "crates/network", version = "0.1.0" }
+neo-persistence = { path = "crates/persistence", version = "0.1.0" }
+neo-wallets = { path = "crates/wallets", version = "0.1.0" }
+neo-consensus = { path = "crates/consensus", version = "0.1.0" }
+neo-plugins = { path = "crates/plugins", version = "0.1.0" }
+neo-json = { path = "crates/json", version = "0.1.0" }
+neo-mpt-trie = { path = "crates/mpt_trie", version = "0.1.0" }
+
+# External dependencies
+num-bigint = "0.4"
+num-traits = "0.2"
+secp256k1 = { version = "0.27", features = ["recovery"] }
+sha2 = "0.10"
+ripemd = "0.1"
+bs58 = "0.5"
+hex = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+bytes = "1.4"
+lru = "0.10"
+derive_more = "0.99"
+rust_decimal = "1.30"
+rocksdb = "0.21"
+log = "0.4"
+env_logger = "0.10"
+clap = { version = "4.3", features = ["derive"] }
+rand = "0.8"
+async-trait = "0.1"
+futures = "0.3"
+hashbrown = "0.14"
+lazy_static = "1.4"
+ed25519-dalek = "1.0"
+tempfile = "3.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1.28", features = ["full"] }

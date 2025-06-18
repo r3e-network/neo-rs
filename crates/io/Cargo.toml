@@ -1,0 +1,34 @@
+[package]
+name = "neo-io"
+version = "0.1.0"
+edition = "2021"
+authors = ["Neo Global Development <dev@neo.org>"]
+description = "IO operations and data structures for the Neo blockchain"
+repository = "https://github.com/neo-project/neo-rs"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+# External dependencies
+bytes = { workspace = true }
+thiserror = { workspace = true }
+derive_more = { workspace = true }
+lru = { workspace = true }
+hashbrown = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+indexmap = "2.0"
+
+# Internal dependencies
+# Temporarily commented out to break dependency cycle
+# neo-cryptography = { workspace = true, optional = true }
+
+[features]
+default = ["std", "async"]
+std = []
+async = ["tokio", "async-trait", "futures"]
+# Temporarily commented out to break dependency cycle
+# crypto = ["neo-cryptography"]

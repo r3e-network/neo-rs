@@ -1,0 +1,607 @@
+//! Neo Network Module
+//!
+//! This module provides comprehensive networking functionality for the Neo blockchain,
+//! including P2P communication, message handling, peer management, and RPC services.
+//!
+//! ## Components
+//!
+//! - **P2P**: Peer-to-peer communication and protocol handling
+//! - **Messages**: Network message types and serialization
+//! - **Peers**: Peer discovery, connection management, and routing
+//! - **Sync**: Blockchain synchronization and consensus
+//! - **RPC**: JSON-RPC server for external API access
+//! - **Server**: Network server coordination and management
+
+pub mod p2p;
+pub mod messages;
+pub mod peers;
+pub mod sync;
+pub mod rpc;
+pub mod server;
+pub mod p2p_node;
+pub mod peer_manager;
+pub mod error_handling;
+pub mod shutdown_impl;
+
+// Re-export main types
+pub use crate::p2p_node::{P2pNode, PeerInfo, NodeCapability, NodeStatus, NodeStatistics, NodeEvent};
+pub use crate::peer_manager::{PeerManager, PeerState, PeerConnection, PeerEvent, ConnectionStats};
+pub use crate::messages::{NetworkMessage, MessageCommand, ProtocolMessage, InventoryItem, InventoryType, MessageHeader, MessageValidator};
+pub use crate::error_handling::{NetworkErrorHandler, NetworkErrorEvent, ErrorSeverity, RecoveryStrategy, OperationContext, ErrorStatistics};
+
+// Temporary stubs for missing types
+pub type P2PEvent = NodeEvent;
+pub type P2PNode = P2pNode;
+pub type RpcServer = crate::rpc::RpcServer;
+pub type SyncManager = crate::sync::SyncManager;
+pub type SyncEvent = crate::sync::SyncEvent;
+
+use neo_core::{UInt160, UInt256};
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::net::SocketAddr;
+use thiserror::Error;
+
+/// Result type for network operations
+pub type Result<T> = std::result::Result<T, Error>;
+
+/// Network-specific error types
+#[derive(Error, Debug)]
+pub enum Error {
+    /// Connection error
+    #[error("Connection error: {0}")]
+    Connection(String),
+
+    /// Protocol error
+    #[error("Protocol error: {0}")]
+    Protocol(String),
+
+    /// Serialization error
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
+    /// Peer error
+    #[error("Peer error: {0}")]
+    Peer(String),
+
+    /// Synchronization error
+    #[error("Synchronization error: {0}")]
+    Sync(String),
+
+    /// RPC error
+    #[error("RPC error: {0}")]
+    Rpc(String),
+
+    /// Timeout error
+    #[error("Timeout error: {0}")]
+    Timeout(String),
+
+    /// Authentication error
+    #[error("Authentication error: {0}")]
+    Authentication(String),
+
+    /// Rate limiting error
+    #[error("Rate limit exceeded: {0}")]
+    RateLimit(String),
+
+    /// Invalid message error
+    #[error("Invalid message: {0}")]
+    InvalidMessage(String),
+
+    /// Invalid header error
+    #[error("Invalid header: {0}")]
+    InvalidHeader(String),
+
+    /// Network configuration error
+    #[error("Configuration error: {0}")]
+    Configuration(String),
+
+    /// Peer already connected error
+    #[error("Peer already connected: {0}")]
+    PeerAlreadyConnected(String),
+
+    /// Connection limit reached error
+    #[error("Connection limit reached")]
+    ConnectionLimitReached,
+
+    /// Connection failed error
+    #[error("Connection failed: {0}")]
+    ConnectionFailed(String),
+
+    /// Connection timeout error
+    #[error("Connection timeout")]
+    ConnectionTimeout,
+
+    /// Peer not connected error
+    #[error("Peer not connected: {0}")]
+    PeerNotConnected(String),
+
+    /// Message send failed error
+    #[error("Message send failed: {0}")]
+    MessageSendFailed(String),
+
+    /// Handshake failed error
+    #[error("Handshake failed: {0}")]
+    HandshakeFailed(String),
+
+    /// Handshake timeout error
+    #[error("Handshake timeout")]
+    HandshakeTimeout,
+
+    /// IO error
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// JSON error
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    /// Ledger error
+    #[error("Ledger error: {0}")]
+    Ledger(String),
+
+    /// Generic error
+    #[error("Network error: {0}")]
+    Generic(String),
+}
+
+// Add conversion from neo_ledger::Error to network Error
+impl From<neo_ledger::Error> for Error {
+    fn from(err: neo_ledger::Error) -> Self {
+        Error::Ledger(err.to_string())
+    }
+}
+
+// Add conversion from neo_io::Error to network Error
+impl From<neo_io::Error> for Error {
+    fn from(err: neo_io::Error) -> Self {
+        Error::Serialization(err.to_string())
+    }
+}
+
+// Add conversion from neo_core::Error to network Error
+impl From<neo_core::Error> for Error {
+    fn from(err: neo_core::Error) -> Self {
+        Error::Protocol(err.to_string())
+    }
+}
+
+/// Network protocol version
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ProtocolVersion {
+    /// Major version
+    pub major: u32,
+    /// Minor version
+    pub minor: u32,
+    /// Patch version
+    pub patch: u32,
+}
+
+impl ProtocolVersion {
+    /// Creates a new protocol version
+    pub fn new(major: u32, minor: u32, patch: u32) -> Self {
+        Self { major, minor, patch }
+    }
+
+    /// Current Neo protocol version
+    pub fn current() -> Self {
+        Self::new(3, 6, 0) // Neo N3 version 3.6.0
+    }
+
+    /// Checks if this version is compatible with another
+    pub fn is_compatible(&self, other: &ProtocolVersion) -> bool {
+        self.major == other.major && self.minor >= other.minor
+    }
+
+    /// Converts to a single u32 value (for network protocol compatibility)
+    pub fn as_u32(&self) -> u32 {
+        // Encode version as: major (8 bits) | minor (8 bits) | patch (16 bits)
+        ((self.major & 0xFF) << 24) | ((self.minor & 0xFF) << 16) | (self.patch & 0xFFFF)
+    }
+
+    /// Creates from a u32 value
+    pub fn from_u32(value: u32) -> Self {
+        Self {
+            major: (value >> 24) & 0xFF,
+            minor: (value >> 16) & 0xFF,
+            patch: value & 0xFFFF,
+        }
+    }
+}
+
+impl fmt::Display for ProtocolVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
+impl Default for ProtocolVersion {
+    fn default() -> Self {
+        Self::current()
+    }
+}
+
+/// Network node information
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeInfo {
+    /// Node ID
+    pub id: UInt160,
+    /// Node version
+    pub version: ProtocolVersion,
+    /// Node user agent
+    pub user_agent: String,
+    /// Node capabilities
+    pub capabilities: Vec<String>,
+    /// Node start height
+    pub start_height: u32,
+    /// Node timestamp
+    pub timestamp: u64,
+    /// Node nonce
+    pub nonce: u32,
+}
+
+impl NodeInfo {
+    /// Creates a new node info
+    pub fn new(id: UInt160, start_height: u32) -> Self {
+        Self {
+            id,
+            version: ProtocolVersion::current(),
+            user_agent: "neo-rs/0.1.0".to_string(),
+            capabilities: vec![
+                "FullNode".to_string(),
+                "TcpServer".to_string(),
+                "WsServer".to_string(),
+            ],
+            start_height,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            nonce: rand::random(),
+        }
+    }
+}
+
+/// Network statistics
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NetworkStats {
+    /// Number of connected peers
+    pub peer_count: usize,
+    /// Number of inbound connections
+    pub inbound_connections: usize,
+    /// Number of outbound connections
+    pub outbound_connections: usize,
+    /// Total bytes sent
+    pub bytes_sent: u64,
+    /// Total bytes received
+    pub bytes_received: u64,
+    /// Messages sent per second
+    pub messages_sent_per_sec: f64,
+    /// Messages received per second
+    pub messages_received_per_sec: f64,
+    /// Average latency in milliseconds
+    pub average_latency_ms: f64,
+    /// Sync status
+    pub sync_status: String,
+    /// Current block height
+    pub current_height: u32,
+    /// Best known height
+    pub best_known_height: u32,
+}
+
+impl Default for NetworkStats {
+    fn default() -> Self {
+        Self {
+            peer_count: 0,
+            inbound_connections: 0,
+            outbound_connections: 0,
+            bytes_sent: 0,
+            bytes_received: 0,
+            messages_sent_per_sec: 0.0,
+            messages_received_per_sec: 0.0,
+            average_latency_ms: 0.0,
+            sync_status: "Disconnected".to_string(),
+            current_height: 0,
+            best_known_height: 0,
+        }
+    }
+}
+
+/// Network command types for external control
+#[derive(Debug, Clone)]
+pub enum NetworkCommand {
+    /// Connect to a specific peer
+    ConnectToPeer(SocketAddr),
+    /// Disconnect from a specific peer
+    DisconnectPeer(SocketAddr),
+    /// Send a message to a specific peer
+    SendMessage {
+        peer: SocketAddr,
+        message: NetworkMessage,
+    },
+    /// Broadcast a message to all peers
+    BroadcastMessage(NetworkMessage),
+    /// Stop the network service
+    Stop,
+}
+
+/// Message handler for protocol processing
+pub struct MessageHandler {
+    config: NetworkConfig,
+}
+
+impl MessageHandler {
+    pub fn new(config: NetworkConfig) -> Result<Self> {
+        Ok(Self { config })
+    }
+    
+    pub async fn start(&self) -> Result<()> {
+        Ok(())
+    }
+    
+    pub async fn stop(&self) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// Network event types
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NetworkEvent {
+    /// Peer connected
+    PeerConnected {
+        peer_id: UInt160,
+        address: SocketAddr,
+    },
+    /// Peer disconnected
+    PeerDisconnected {
+        peer_id: UInt160,
+        reason: String,
+    },
+    /// Message received
+    MessageReceived {
+        peer_id: UInt160,
+        message_type: String,
+    },
+    /// Block received
+    BlockReceived {
+        block_hash: UInt256,
+        height: u32,
+    },
+    /// Transaction received
+    TransactionReceived {
+        tx_hash: UInt256,
+    },
+    /// Sync started
+    SyncStarted {
+        target_height: u32,
+    },
+    /// Sync completed
+    SyncCompleted {
+        final_height: u32,
+    },
+    /// Sync failed
+    SyncFailed {
+        error: String,
+    },
+}
+
+/// Network configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkConfig {
+    /// Network magic number
+    pub magic: u32,
+    /// Protocol version
+    pub protocol_version: ProtocolVersion,
+    /// Node user agent
+    pub user_agent: String,
+    /// Listen address
+    pub listen_address: SocketAddr,
+    /// P2P configuration
+    pub p2p_config: P2PConfig,
+    /// RPC configuration
+    pub rpc_config: Option<RpcConfig>,
+    /// Maximum number of peers
+    pub max_peers: usize,
+    /// Maximum outbound connections
+    pub max_outbound_connections: usize,
+    /// Maximum inbound connections
+    pub max_inbound_connections: usize,
+    /// Connection timeout in seconds
+    pub connection_timeout: u64,
+    /// Handshake timeout in seconds
+    pub handshake_timeout: u64,
+    /// Ping interval in seconds
+    pub ping_interval: u64,
+    /// Enable transaction relay
+    pub enable_relay: bool,
+    /// Seed nodes for peer discovery
+    pub seed_nodes: Vec<SocketAddr>,
+    /// P2P port
+    pub port: u16,
+    /// WebSocket enabled
+    pub websocket_enabled: bool,
+    /// WebSocket port
+    pub websocket_port: u16,
+}
+
+/// P2P configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct P2PConfig {
+    pub listen_address: SocketAddr,
+    pub max_peers: usize,
+    pub connection_timeout: std::time::Duration,
+    pub handshake_timeout: std::time::Duration,
+    pub ping_interval: std::time::Duration,
+    pub message_buffer_size: usize,
+    pub enable_compression: bool,
+}
+
+impl Default for P2PConfig {
+    fn default() -> Self {
+        Self {
+            listen_address: "0.0.0.0:10333".parse().unwrap(),
+            max_peers: 100,
+            connection_timeout: std::time::Duration::from_secs(30),
+            handshake_timeout: std::time::Duration::from_secs(10),
+            ping_interval: std::time::Duration::from_secs(30),
+            message_buffer_size: 1000,
+            enable_compression: false,
+        }
+    }
+}
+
+/// RPC configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcConfig {
+    pub enabled: bool,
+    pub bind_address: String,
+    pub port: u16,
+    pub max_connections: usize,
+    pub http_address: Option<SocketAddr>,
+    pub ws_address: Option<SocketAddr>,
+}
+
+impl Default for RpcConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            bind_address: "127.0.0.1".to_string(),
+            port: 10332,
+            max_connections: 100,
+            http_address: Some("127.0.0.1:10332".parse().unwrap()),
+            ws_address: Some("127.0.0.1:10334".parse().unwrap()),
+        }
+    }
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        Self {
+            magic: 0x334f454e, // Neo N3 mainnet magic
+            protocol_version: ProtocolVersion::current(),
+            user_agent: "neo-rs/0.1.0".to_string(),
+            listen_address: "0.0.0.0:10333".parse().unwrap(),
+            p2p_config: P2PConfig::default(),
+            rpc_config: Some(RpcConfig::default()),
+            max_peers: 100,
+            max_outbound_connections: 10,
+            max_inbound_connections: 40,
+            connection_timeout: 30,
+            handshake_timeout: 10,
+            ping_interval: 30,
+            enable_relay: true,
+            seed_nodes: vec![
+                // Use IP addresses for testing to avoid DNS resolution issues
+                "127.0.0.1:10333".parse().unwrap(),
+                "127.0.0.2:10333".parse().unwrap(),
+                "127.0.0.3:10333".parse().unwrap(),
+            ],
+            port: 10333,
+            websocket_enabled: false,
+            websocket_port: 10334,
+        }
+    }
+}
+
+impl NetworkConfig {
+    /// Gets connection timeout in seconds
+    pub fn connection_timeout_secs(&self) -> u64 {
+        self.connection_timeout
+    }
+    /// Creates a testnet configuration
+    pub fn testnet() -> Self {
+        Self {
+            magic: 0x3554334e, // Neo N3 testnet magic (FIXED - was incorrect before)
+            listen_address: "0.0.0.0:20333".parse().unwrap(),
+            p2p_config: P2PConfig {
+                listen_address: "0.0.0.0:20333".parse().unwrap(),
+                max_peers: 100,
+                connection_timeout: std::time::Duration::from_secs(30),
+                handshake_timeout: std::time::Duration::from_secs(10),
+                ping_interval: std::time::Duration::from_secs(30),
+                message_buffer_size: 1000,
+                enable_compression: false,
+            },
+            seed_nodes: vec![
+                // Use IP addresses for testing to avoid DNS resolution issues
+                "127.0.0.1:20333".parse().unwrap(),
+                "127.0.0.2:20333".parse().unwrap(),
+                "127.0.0.3:20333".parse().unwrap(),
+            ],
+            port: 20333,
+            websocket_enabled: false,
+            websocket_port: 20334,
+            ..Default::default()
+        }
+    }
+
+    /// Creates a private network configuration
+    pub fn private() -> Self {
+        Self {
+            magic: 0x12345678, // Custom magic for private network
+            listen_address: "0.0.0.0:30333".parse().unwrap(),
+            p2p_config: P2PConfig {
+                listen_address: "0.0.0.0:30333".parse().unwrap(),
+                max_peers: 10,
+                connection_timeout: std::time::Duration::from_secs(30),
+                handshake_timeout: std::time::Duration::from_secs(10),
+                ping_interval: std::time::Duration::from_secs(30),
+                message_buffer_size: 1000,
+                enable_compression: false,
+            },
+            seed_nodes: vec![], // No seed nodes for private network
+            max_peers: 10,
+            ..Default::default()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_protocol_version() {
+        let v1 = ProtocolVersion::new(3, 6, 0);
+        let v2 = ProtocolVersion::new(3, 5, 0);
+        let v3 = ProtocolVersion::new(2, 6, 0);
+
+        assert!(v1.is_compatible(&v2));
+        assert!(!v1.is_compatible(&v3));
+        assert_eq!(v1.to_string(), "3.6.0");
+    }
+
+    #[test]
+    fn test_node_info() {
+        let node_id = UInt160::zero();
+        let info = NodeInfo::new(node_id, 100);
+
+        assert_eq!(info.id, node_id);
+        assert_eq!(info.start_height, 100);
+        assert_eq!(info.version, ProtocolVersion::current());
+        assert!(!info.capabilities.is_empty());
+    }
+
+    #[test]
+    fn test_network_config() {
+        let config = NetworkConfig::default();
+        assert_eq!(config.magic, 0x334f454e);
+        assert_eq!(config.max_peers, 100);
+        assert!(!config.seed_nodes.is_empty());
+
+        let testnet_config = NetworkConfig::testnet();
+        assert_eq!(testnet_config.magic, 0x3554334e);
+
+        let private_config = NetworkConfig::private();
+        assert_eq!(private_config.magic, 0x12345678);
+        assert!(private_config.seed_nodes.is_empty());
+    }
+
+    #[test]
+    fn test_network_stats() {
+        let stats = NetworkStats::default();
+        assert_eq!(stats.peer_count, 0);
+        assert_eq!(stats.current_height, 0);
+        assert_eq!(stats.sync_status, "Disconnected");
+    }
+}

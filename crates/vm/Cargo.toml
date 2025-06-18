@@ -1,0 +1,39 @@
+[package]
+name = "neo-vm"
+version = "0.1.0"
+edition = "2021"
+authors = ["Neo Global Development <dev@neo.org>"]
+description = "Virtual machine implementation for the Neo blockchain"
+repository = "https://github.com/neo-project/neo-rs"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+# External dependencies
+num-bigint = "0.4"
+num-traits = "0.2"
+thiserror = "1.0"
+derive_more = "0.99"
+hashbrown = "0.14"
+serde = { version = "1.0", features = ["derive"], optional = true }
+serde_json = { version = "1.0", optional = true }
+paste = "1.0"
+lazy_static = "1.4"
+
+# Internal dependencies
+neo-cryptography = { path = "../cryptography" }
+neo-io = { path = "../io" }
+neo-core = { path = "../core" }
+
+# Cryptography dependencies for script hash calculation
+sha2 = "0.10"
+ripemd = "0.1"
+
+# Mock neo-io for tests
+[dev-dependencies]
+
+[features]
+default = ["std", "serde-types"]
+std = []
+serde-types = ["serde", "serde_json"]
+minimal = []  # Minimal feature set for compilation
