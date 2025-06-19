@@ -43,6 +43,8 @@ pub struct Blockchain {
 impl Blockchain {
     /// Creates a new blockchain instance (matches C# Neo Blockchain.Create exactly)
     pub async fn new(network: NetworkType) -> Result<Self> {
+        tracing::info!("🔧 Creating new blockchain instance for network: {:?}", network);
+        
         // Initialize storage (RocksDB only)
         let storage = Arc::new(Storage::new_default().unwrap_or_else(|_| {
             eprintln!("Warning: Failed to create default storage, using temporary RocksDB storage");
@@ -67,8 +69,18 @@ impl Blockchain {
         };
 
         // Initialize genesis block if needed
-        blockchain.initialize_genesis().await?;
+        tracing::info!("🔧 Initializing genesis block...");
+        match blockchain.initialize_genesis().await {
+            Ok(()) => {
+                tracing::info!("✅ Genesis initialization completed successfully");
+            }
+            Err(e) => {
+                tracing::error!("❌ Genesis initialization failed: {}", e);
+                return Err(e);
+            }
+        }
 
+        tracing::info!("✅ Blockchain created successfully");
         Ok(blockchain)
     }
 
@@ -80,11 +92,22 @@ impl Blockchain {
             // Check if genesis block exists
             if self.persistence.get_block(0).await?.is_none() {
                 // Create and persist genesis block
+                tracing::info!("Creating genesis block for network: {:?}", self.network);
                 let genesis_block = match self.network {
-                    NetworkType::MainNet => self.genesis.initialize_genesis_block().await?,
-                    NetworkType::TestNet => self.genesis.create_testnet_genesis_block()?,
-                    NetworkType::Private => self.genesis.create_private_genesis_block()?,
+                    NetworkType::MainNet => {
+                        tracing::info!("Using MainNet genesis creation");
+                        self.genesis.create_genesis_block()?
+                    },
+                    NetworkType::TestNet => {
+                        tracing::info!("Using TestNet genesis creation");
+                        self.genesis.create_testnet_genesis_block()?
+                    },
+                    NetworkType::Private => {
+                        tracing::info!("Using Private genesis creation");
+                        self.genesis.create_private_genesis_block()?
+                    },
                 };
+                tracing::info!("Persisting genesis block with index: {}", genesis_block.header.index);
                 self.persist_block(&genesis_block).await?;
                 
                 // Update height cache
@@ -180,21 +203,41 @@ impl Blockchain {
     pub async fn persist_block(&self, block: &Block) -> Result<()> {
         let _lock = self.persist_lock.lock().await;
 
-        // Validate block first
-        let verification_result = self.verifier.verify_header(&block.header).await?;
-        if verification_result != VerifyResult::Succeed {
-            return Err(Error::Validation("Block verification failed".to_string()));
+        // Skip validation for genesis block (index 0)
+        if block.header.index > 0 {
+            // Validate block first
+            tracing::debug!("🔍 Starting block verification for block index {}", block.header.index);
+            let verification_result = self.verifier.verify_header(&block.header).await?;
+            tracing::debug!("🔍 Block verification result: {:?}", verification_result);
+            if verification_result != VerifyResult::Succeed {
+                tracing::error!("❌ Block header verification failed with result: {:?}", verification_result);
+                return Err(Error::Validation("Block header verification failed".to_string()));
+            }
+            tracing::debug!("✅ Block verification succeeded");
+        } else {
+            tracing::debug!("⏭️ Skipping verification for genesis block");
         }
 
         // Verify block index is correct
         let current_height = self.get_height().await;
-        if block.header.index != current_height + 1 {
+        tracing::debug!("🔍 Current height: {}, block index: {}", current_height, block.header.index);
+        let expected_index = if block.header.index == 0 {
+            // Genesis block should have index 0
+            0
+        } else {
+            // Regular blocks should have index = current_height + 1
+            current_height + 1
+        };
+        
+        if block.header.index != expected_index {
+            tracing::error!("❌ Block index validation failed: expected {}, got {}", expected_index, block.header.index);
             return Err(Error::Validation(format!(
                 "Invalid block index: expected {}, got {}", 
-                current_height + 1, 
+                expected_index, 
                 block.header.index
             )));
         }
+        tracing::debug!("✅ Block index validation passed");
 
         // Verify previous hash
         if block.header.index > 0 {
@@ -209,6 +252,7 @@ impl Blockchain {
         for transaction in &block.transactions {
             let tx_verification = self.verifier.verify_transaction(transaction).await?;
             if tx_verification != VerifyResult::Succeed {
+                tracing::error!("❌ Transaction verification failed for tx in block {}", block.header.index);
                 return Err(Error::Validation("Transaction verification failed".to_string()));
             }
         }

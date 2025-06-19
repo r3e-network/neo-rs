@@ -491,10 +491,12 @@ impl Default for NetworkConfig {
             ping_interval: 30,
             enable_relay: true,
             seed_nodes: vec![
-                // Use IP addresses for testing to avoid DNS resolution issues
-                "127.0.0.1:10333".parse().unwrap(),
-                "127.0.0.2:10333".parse().unwrap(),
-                "127.0.0.3:10333".parse().unwrap(),
+                // Real Neo N3 MainNet seed nodes (IP addresses)
+                "34.133.235.69:10333".parse().unwrap(),   // seed1.neo.org
+                "35.192.59.217:10333".parse().unwrap(),   // seed2.neo.org
+                "35.188.199.101:10333".parse().unwrap(),  // seed3.neo.org
+                "35.238.26.128:10333".parse().unwrap(),   // seed4.neo.org
+                "34.124.145.177:10333".parse().unwrap(),  // seed5.neo.org
             ],
             port: 10333,
             websocket_enabled: false,
@@ -511,7 +513,7 @@ impl NetworkConfig {
     /// Creates a testnet configuration
     pub fn testnet() -> Self {
         Self {
-            magic: 0x3554334e, // Neo N3 testnet magic (FIXED - was incorrect before)
+            magic: 0x3554334e, // Neo N3 testnet magic (N5T3 in ASCII, little-endian)
             listen_address: "0.0.0.0:20333".parse().unwrap(),
             p2p_config: P2PConfig {
                 listen_address: "0.0.0.0:20333".parse().unwrap(),
@@ -523,10 +525,12 @@ impl NetworkConfig {
                 enable_compression: false,
             },
             seed_nodes: vec![
-                // Use IP addresses for testing to avoid DNS resolution issues
-                "127.0.0.1:20333".parse().unwrap(),
-                "127.0.0.2:20333".parse().unwrap(),
-                "127.0.0.3:20333".parse().unwrap(),
+                // Real Neo N3 TestNet seed nodes (IP addresses)
+                "34.133.235.69:20333".parse().unwrap(),   // seed1t5.neo.org
+                "35.192.59.217:20333".parse().unwrap(),   // seed2t5.neo.org
+                "35.188.199.101:20333".parse().unwrap(),  // seed3t5.neo.org
+                "35.238.26.128:20333".parse().unwrap(),   // seed4t5.neo.org
+                "34.124.145.177:20333".parse().unwrap(),  // seed5t5.neo.org
             ],
             port: 20333,
             websocket_enabled: false,

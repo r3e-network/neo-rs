@@ -15,15 +15,16 @@ use tracing::{error, info, warn};
 use neo_core::ShutdownCoordinator;
 use neo_ledger::Blockchain;
 use neo_network::{P2pNode, SyncManager, NetworkCommand};
+use neo_config::NetworkType;
 
 mod config;
-use crate::config::NodeConfig;
+mod debug;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::DEBUG)
         .with_target(false)
         .init();
 
@@ -55,7 +56,7 @@ async fn main() -> Result<()> {
                 .long("p2p-port")
                 .value_name("PORT")
                 .help("P2P network port")
-                .default_value("10333"),
+                .default_value("20333"),
         )
         .get_matches();
 
@@ -79,20 +80,30 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn run_node(is_testnet: bool, is_mainnet: bool, rpc_port: u16, p2p_port: u16) -> Result<()> {
+async fn run_node(is_testnet: bool, is_mainnet: bool, _rpc_port: u16, p2p_port: u16) -> Result<()> {
     // Initialize shutdown coordinator
     let shutdown_coordinator = Arc::new(ShutdownCoordinator::new());
 
     // Initialize blockchain
     info!("⛓️  Initializing blockchain...");
-    let blockchain = if is_testnet {
-        Blockchain::new_testnet()
+    let network_type = if is_testnet {
+        NetworkType::TestNet
     } else if is_mainnet {
-        Blockchain::new_mainnet()
+        NetworkType::MainNet
     } else {
-        Blockchain::new_regtest()
+        NetworkType::Private
     };
-    let blockchain = Arc::new(blockchain);
+    let blockchain = match Blockchain::new(network_type).await {
+        Ok(blockchain) => {
+            info!("✅ Blockchain initialized successfully");
+            Arc::new(blockchain)
+        }
+        Err(e) => {
+            error!("❌ Blockchain initialization failed: {}", e);
+            error!("❌ Error details: {:?}", e);
+            return Err(anyhow::anyhow!("Failed to initialize blockchain: {}", e));
+        }
+    };
 
     // Initialize network configuration
     let mut network_config = if is_testnet {
