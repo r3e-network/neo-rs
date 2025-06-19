@@ -55,7 +55,7 @@ impl GenesisManager {
     }
 
     /// Creates the genesis block (matches C# Neo genesis block)
-    fn create_genesis_block(&self) -> Result<Block> {
+    pub fn create_genesis_block(&self) -> Result<Block> {
         tracing::info!("🔧 Creating Neo genesis block...");
         tracing::debug!("🔧 Using Neo mainnet genesis parameters");
         
@@ -147,7 +147,7 @@ impl GenesisManager {
     }
 
     /// Persists the genesis block to storage (matches C# Neo genesis persistence)
-    async fn persist_genesis_block(&self, genesis_block: &Block) -> Result<()> {
+    pub async fn persist_genesis_block(&self, genesis_block: &Block) -> Result<()> {
         let genesis_hash = genesis_block.hash();
         
         // Store the genesis block

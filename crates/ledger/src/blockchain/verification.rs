@@ -66,6 +66,12 @@ impl BlockchainVerifier {
 
     /// Verifies a block header (matches C# Neo VerifyHeader exactly)
     pub async fn verify_header(&self, header: &BlockHeader) -> Result<VerifyResult> {
+        // Skip verification for genesis block (index 0)
+        if header.index == 0 {
+            tracing::debug!("Skipping verification for genesis block");
+            return Ok(VerifyResult::Succeed);
+        }
+
         // Basic header validation
         if let Err(_) = self.validate_header_basic(header) {
             return Ok(VerifyResult::Fail);
@@ -206,8 +212,8 @@ impl BlockchainVerifier {
             return Err(Error::Validation("Header timestamp too far in future".to_string()));
         }
 
-        // Check if header has witnesses
-        if header.witnesses.is_empty() {
+        // Check if header has witnesses (skip for genesis block)
+        if header.index > 0 && header.witnesses.is_empty() {
             return Err(Error::Validation("Header has no witnesses".to_string()));
         }
 
