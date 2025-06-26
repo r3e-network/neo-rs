@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*.*.*'
 
+# Cancel running release workflows when new tags are pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
