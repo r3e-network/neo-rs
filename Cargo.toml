@@ -300,10 +300,10 @@ rand.workspace = true
 futures.workspace = true
 
 # Benchmarks
-[[bench]]
-name = "node_performance"
-harness = false
-required-features = ["full"]
+# [[bench]]
+# name = "node_performance"
+# harness = false
+# required-features = ["full"]
 
 # Examples
 [[example]]
