@@ -234,11 +234,9 @@ jobs:
       - name: Build documentation
         run: |
           echo "📚 Building documentation for deployment..."
-          cargo doc --all-features || {
-            echo "❌ Documentation build failed!"
-            exit 1
-          }
-          # Create index.html redirect for GitHub Pages
+          cargo doc --all-features
+          # Ensure target/doc directory exists and create index.html redirect for GitHub Pages
+          mkdir -p target/doc
           echo '<meta http-equiv=refresh content=0;url=neo_core/index.html>' > target/doc/index.html
           echo "✅ Documentation build successful"
 
