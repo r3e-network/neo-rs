@@ -9,6 +9,11 @@ on:
     # Run nightly at 2 AM UTC
     - cron: '0 2 * * *'
 
+# Cancel running workflows when new commits are pushed
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
