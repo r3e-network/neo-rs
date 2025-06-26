@@ -14,6 +14,7 @@ use tracing::{debug, info, warn};
 use crate::args::CliArgs;
 use crate::config::Config;
 use crate::wallet::WalletManager;
+use neo_config::NetworkType;
 use neo_ledger::{Blockchain, Storage};
 use neo_network::p2p::MessageHandler;
 use neo_network::{NetworkMessage, NodeInfo, P2PConfig, P2PNode, ProtocolVersion, SyncManager};
@@ -630,9 +631,9 @@ impl MainService {
         // 1. Initialize Blockchain with proper network type
         info!("⛓️  Initializing blockchain...");
         let network_type = match self.args.network {
-            crate::args::Network::Mainnet => neo_config::NetworkType::MainNet,
-            crate::args::Network::Testnet => neo_config::NetworkType::TestNet,
-            crate::args::Network::Private => neo_config::NetworkType::Private,
+            crate::args::Network::Mainnet => NetworkType::MainNet,
+            crate::args::Network::Testnet => NetworkType::TestNet,
+            crate::args::Network::Private => NetworkType::Private,
         };
 
         let blockchain = Arc::new(Blockchain::new(network_type).await?);
