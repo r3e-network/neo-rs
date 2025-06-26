@@ -208,9 +208,9 @@ neo-ledger.workspace = true
 neo-network.workspace = true
 neo-persistence.workspace = true
 # neo-cli.workspace = true # Temporarily disabled
-neo-cryptography.workspace = true
-neo-smart-contract.workspace = true
-neo-vm.workspace = true
+# neo-cryptography.workspace = true # Temporarily disabled
+# neo-smart-contract.workspace = true # Temporarily disabled
+# neo-vm.workspace = true # Temporarily disabled
 
 # Runtime and async
 tokio.workspace = true
