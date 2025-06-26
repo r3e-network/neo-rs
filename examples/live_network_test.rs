@@ -86,7 +86,7 @@ async fn test_network_connectivity(
     let storage = Arc::new(RocksDbStore::new(&temp_dir)?);
 
     // Create blockchain instance
-    let blockchain = Arc::new(Blockchain::new(storage.clone(), network_type).await?);
+    let blockchain = Arc::new(Blockchain::new(storage.clone()).await?);
 
     // Create P2P node
     info!("🔧 Creating P2P node for {}...", network_name);
@@ -113,7 +113,7 @@ async fn test_network_connectivity(
     let mut connected = false;
 
     while start_time.elapsed().as_secs() < 30 {
-        let peer_count = p2p_node.connected_peer_count().await;
+        let peer_count = p2p_node.get_connected_peers().await.len();
 
         if peer_count > max_peers {
             max_peers = peer_count;
@@ -126,7 +126,7 @@ async fn test_network_connectivity(
                 // Show peer details
                 let peers = p2p_node.get_connected_peers().await;
                 for (i, peer) in peers.iter().take(3).enumerate() {
-                    info!("   Peer {}: {}", i + 1, peer);
+                    info!("   Peer {}: {:?}", i + 1, peer);
                 }
             }
         }
