@@ -630,9 +630,9 @@ impl MainService {
         // 1. Initialize Blockchain with proper network type
         info!("⛓️  Initializing blockchain...");
         let network_type = match self.args.network {
-            crate::args::Network::Mainnet => neo_ledger::blockchain::NetworkType::MainNet,
-            crate::args::Network::Testnet => neo_ledger::blockchain::NetworkType::TestNet,
-            crate::args::Network::Private => neo_ledger::blockchain::NetworkType::Private,
+            crate::args::Network::Mainnet => neo_config::NetworkType::MainNet,
+            crate::args::Network::Testnet => neo_config::NetworkType::TestNet,
+            crate::args::Network::Private => neo_config::NetworkType::Private,
         };
 
         let blockchain = Arc::new(Blockchain::new(network_type).await?);
