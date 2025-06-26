@@ -3,20 +3,12 @@
 //! Comprehensive tests for the Neo network layer implementation,
 //! including P2P networking, message handling, and RPC functionality.
 
-use neo_core::{Block, BlockHeader, Transaction, UInt160, UInt256};
-use neo_network::{
-    message::{
-        AddrPayload, Message, MessageType, Payload, PingPayload, PongPayload, VersionPayload,
-    },
-    peer::{Peer, PeerInfo, PeerState},
-    NetworkConfig, NetworkServer, NetworkServerConfig, P2PConfig, P2PNode, ProtocolVersion,
-    RpcConfig, RpcServer,
-};
-use neo_rpc_client::{RpcClient, RpcConfig as ClientConfig};
+use neo_core::{Transaction, UInt160, UInt256};
+use neo_network::{NetworkConfig, NodeInfo, P2PNode};
+use neo_rpc_client::RpcClient;
 use std::net::SocketAddr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::time::sleep;
-use tokio_test;
 
 /// Test network configuration validation
 #[test]

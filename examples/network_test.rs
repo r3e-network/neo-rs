@@ -5,7 +5,7 @@
 //! using the Neo protocol.
 
 use neo_core::UInt160;
-use neo_network::{MessageType, NetworkConfig, NetworkMessage, P2PEvent, P2PNode, ProtocolMessage};
+use neo_network::{NetworkConfig, NetworkMessage, NodeEvent, P2PNode, ProtocolMessage};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::time::Duration;
@@ -75,8 +75,7 @@ async fn test_message_format() {
     let version_message = ProtocolMessage::version(&node_info, 10333, true);
 
     // Test with mainnet magic
-    let mainnet_magic = 0x334f454e; // Neo N3 mainnet magic
-    let network_message = NetworkMessage::new(mainnet_magic, version_message);
+    let network_message = NetworkMessage::new(version_message);
 
     // Test serialization
     match network_message.to_bytes() {
@@ -88,7 +87,7 @@ async fn test_message_format() {
             match NetworkMessage::from_bytes(&bytes) {
                 Ok(deserialized) => {
                     println!("  📥 Message deserialized successfully");
-                    assert_eq!(deserialized.header.magic, mainnet_magic);
+                    assert_eq!(deserialized.header.magic, 0x3554334e); // TestNet magic
                     println!("  ✅ Message format verified (C# compatible)");
                 }
                 Err(e) => {
@@ -179,10 +178,7 @@ async fn test_node_connection(addr: SocketAddr) -> Result<(), Box<dyn std::error
     let node_info = neo_network::NodeInfo::new(UInt160::zero(), 0);
 
     // Create P2P node
-    let p2p_node = P2PNode::new(config.p2p_config.clone(), node_info, config.magic);
-
-    // Start the node
-    p2p_node.start().await?;
+    let p2p_node = P2PNode::new(config, node_info)?;
 
     // Attempt connection with timeout
     let connection_result = timeout(Duration::from_secs(5), p2p_node.connect_peer(addr)).await;
@@ -204,10 +200,7 @@ async fn test_protocol_stack() {
     let config = NetworkConfig::default();
     let node_info = neo_network::NodeInfo::new(UInt160::zero(), 0);
 
-    match P2PNode::new(config.p2p_config.clone(), node_info, config.magic)
-        .start()
-        .await
-    {
+    match P2PNode::new(config, node_info) {
         Ok(_) => println!("    ✅ P2P node created and started successfully"),
         Err(e) => println!("    ❌ P2P node failed to start: {}", e),
     }
