@@ -12,23 +12,21 @@ pub fn get_oracle_response_attribute(transaction: &Transaction) -> Option<Oracle
     // Production-ready Oracle response extraction (matches C# Transaction.GetAttribute<OracleResponse> exactly)
     // This implements the C# logic: tx.GetAttribute<OracleResponse>()
 
-    // 1. Iterate through transaction attributes (production attribute scanning)
-    for attribute in transaction.attributes() {
+    // 1. Find first Oracle response attribute (production attribute scanning)
+    transaction.attributes().iter().find_map(|attribute| {
         // 2. Check if attribute is Oracle response (production type checking)
         match attribute {
             TransactionAttribute::OracleResponse { id, code, result } => {
                 // 3. Create Oracle response object (production Oracle data)
-                return Some(OracleResponse {
+                Some(OracleResponse {
                     id: *id,
                     code: *code,
                     result: result.clone(),
-                });
+                })
             } // Handle other attribute types when they are added
+            _ => None,
         }
-    }
-
-    // 4. No Oracle response found (production result)
-    None
+    })
 }
 
 /// Gets signers from Oracle request (production implementation)
