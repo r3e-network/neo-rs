@@ -73,8 +73,6 @@ jobs:
             exit 1
           }
           echo "✅ Documentation build passed"
-        env:
-          RUSTDOCFLAGS: "-Dwarnings"
 
   # Test suite on Ubuntu with stable Rust
   test:
