@@ -1,0 +1,19 @@
+# Development directory - not for production
+
+# Debug files
+debug/*
+*.log
+
+# Test files
+test-files/*
+*.tmp
+
+# Scripts output
+scripts/*.out
+scripts/*.tmp
+
+# But keep the directory structure
+!debug/.gitkeep
+!test-files/.gitkeep
+!scripts/.gitkeep
+!logs/.gitkeep
