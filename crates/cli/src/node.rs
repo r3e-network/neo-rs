@@ -13,7 +13,7 @@ use tracing::{debug, error, info, warn};
 use neo_core::transaction::BlockchainSnapshot;
 use neo_core::{Transaction, UInt160, UInt256};
 use neo_ledger::{Blockchain, Storage};
-use neo_network::{P2PEvent, P2PNode, SyncManager};
+use neo_network::{NodeEvent, P2PNode, SyncManager};
 
 /// Complete Neo blockchain node implementation - Production Ready
 pub struct NeoNode {
@@ -317,7 +317,7 @@ impl NeoNode {
         use neo_network::{NetworkMessage, ProtocolMessage};
 
         let tx_message = ProtocolMessage::Tx { transaction };
-        let network_message = NetworkMessage::new(self.p2p_node.magic(), tx_message);
+        let network_message = NetworkMessage::new(tx_message);
 
         self.p2p_node.broadcast_message(network_message).await?;
 
@@ -361,109 +361,68 @@ impl NeoNode {
                 match event_rx.recv().await {
                     Some(event) => {
                         match event {
-                            P2PEvent::PeerConnected { peer_id, address } => {
-                                info!("✅ Peer connected: {} ({})", address, peer_id);
+                            NodeEvent::PeerConnected(peer_info) => {
+                                info!("✅ Peer connected: {} ({})", peer_info.address, peer_info.peer_id);
 
-                                let peer_info = PeerInfo {
-                                    address,
-                                    user_agent: "".to_string(),
-                                    start_height: 0,
+                                let peer_data = PeerInfo {
+                                    address: peer_info.address,
+                                    user_agent: peer_info.user_agent.clone(),
+                                    start_height: peer_info.start_height,
                                     last_seen: std::time::Instant::now(),
                                     bytes_sent: 0,
                                     bytes_received: 0,
                                     connected_at: std::time::Instant::now(),
                                 };
 
-                                connected_peers.write().await.insert(address, peer_info);
+                                connected_peers.write().await.insert(peer_info.address, peer_data);
                             }
 
-                            P2PEvent::PeerDisconnected {
-                                peer_id,
-                                address,
-                                reason,
-                            } => {
-                                info!(
-                                    "❌ Peer disconnected: {} ({}) - {}",
-                                    address, peer_id, reason
-                                );
+                            NodeEvent::PeerDisconnected(address) => {
+                                info!("❌ Peer disconnected: {}", address);
                                 connected_peers.write().await.remove(&address);
                             }
 
-                            P2PEvent::HandshakeCompleted {
-                                peer_id,
-                                address,
-                                node_info,
-                            } => {
-                                info!(
-                                    "🤝 Handshake completed with {} ({}): {} v{}",
-                                    address, peer_id, node_info.user_agent, node_info.version
-                                );
+                            NodeEvent::MessageReceived { peer, message } => {
+                                debug!("📨 Received message from {}", peer);
 
-                                if let Some(peer_info) =
-                                    connected_peers.write().await.get_mut(&address)
-                                {
-                                    peer_info.user_agent = node_info.user_agent;
-                                    peer_info.start_height = node_info.start_height;
-                                }
-                            }
-
-                            P2PEvent::MessageReceived { peer_id, message } => {
                                 // Handle messages with proper blockchain processing
-                                if let Err(e) = Self::handle_p2p_message_production(
-                                    message,
-                                    peer_id,
-                                    &mempool,
-                                    &connected_peers,
-                                    &stats,
-                                    &blockchain,
-                                    &sync_manager,
-                                )
-                                .await
-                                {
-                                    warn!("Failed to handle P2P message from {}: {}", peer_id, e);
+                                // Extract peer_id from connected peers
+                                if let Some(peer_info) = connected_peers.read().await.get(&peer) {
+                                    let peer_id = peer_info.user_agent.clone(); // Temporary - should use actual peer_id
+                                    if let Err(e) = Self::handle_p2p_message_production(
+                                        message,
+                                        peer_id,
+                                        &mempool,
+                                        &connected_peers,
+                                        &stats,
+                                        &blockchain,
+                                        &sync_manager,
+                                    )
+                                    .await
+                                    {
+                                        warn!("Failed to handle P2P message from {}: {}", peer, e);
+                                    }
                                 }
                             }
 
-                            P2PEvent::ConnectionFailed { address, error } => {
-                                warn!("❌ Connection to {} failed: {}", address, error);
+                            NodeEvent::NetworkError { peer, error } => {
+                                if let Some(peer_addr) = peer {
+                                    warn!("❌ Network error with {}: {}", peer_addr, error);
+                                } else {
+                                    warn!("❌ General network error: {}", error);
+                                }
                             }
 
-                            P2PEvent::PeerHeight { address, height } => {
-                                info!("📊 Peer {} reports height: {}", address, height);
-
-                                // CRITICAL FIX: Update sync manager with peer height to trigger sync
-                                sync_manager.update_best_height(height, address).await;
-
-                                info!(
-                                    "🔄 Updated best known height to {}, checking if sync needed",
-                                    height
-                                );
+                            NodeEvent::NodeStarted => {
+                                info!("🚀 Node started successfully");
                             }
 
-                            P2PEvent::PeerVersion {
-                                address,
-                                version,
-                                user_agent,
-                                start_height,
-                            } => {
-                                info!(
-                                    "📊 Peer {} version: v{}, agent: {}, height: {}",
-                                    address, version, user_agent, start_height
-                                );
+                            NodeEvent::NodeStopped => {
+                                info!("🛑 Node stopped");
                             }
 
-                            P2PEvent::NetworkStatus {
-                                connected,
-                                peer_count,
-                            } => {
-                                info!(
-                                    "📊 Network status - Connected: {}, Peers: {}",
-                                    connected, peer_count
-                                );
-                            }
-
-                            P2PEvent::PingCompleted { address, rtt_ms } => {
-                                debug!("🏓 Ping completed for {}: {}ms", address, rtt_ms);
+                            NodeEvent::MessageSent { peer, message } => {
+                                debug!("📤 Message sent to {}", peer);
                             }
                         }
                     }
