@@ -94,7 +94,9 @@ async fn test_mainnet_connectivity() {
     }
 
     // Stop the P2P node
-    p2p_node.stop().await;
+    if let Ok(p2p_node) = p2p_node {
+        p2p_node.stop().await?;
+    }
 
     // Verify we connected to at least one peer
     assert!(
@@ -186,7 +188,9 @@ async fn test_testnet_connectivity() {
     }
 
     // Stop the P2P node
-    p2p_node.stop().await;
+    if let Ok(p2p_node) = p2p_node {
+        p2p_node.stop().await?;
+    }
 
     // Verify we connected to at least one testnet peer
     assert!(
@@ -235,7 +239,7 @@ async fn test_network_message_format() {
 
     // Create network message with mainnet magic
     let magic = 0x334f454e; // Neo N3 mainnet magic
-    let network_message = NetworkMessage::new(magic, version_message);
+    let network_message = NetworkMessage::new(version_message);
 
     info!("🔍 Testing message serialization...");
 

@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let storage = Arc::new(RocksDbStore::new(&temp_dir)?);
 
         // Create blockchain instance
-        let blockchain = Arc::new(Blockchain::new(storage.clone(), network_type).await?);
+        let blockchain = Arc::new(Blockchain::new(storage.clone()).await?);
 
         // Create P2P node
         info!("🔧 Creating P2P node for {}...", network_name);
@@ -90,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(Duration::from_secs(2)).await;
 
             // Check connectivity status
-            let connected_peers = p2p_node.connected_peer_count().await;
+            let connected_peers = p2p_node.get_connected_peers().await.len();
 
             if connected_peers > 0 && !connection_established {
                 info!(
@@ -102,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Show some peer info
                 let peers = p2p_node.get_connected_peers().await;
                 for (i, peer) in peers.iter().take(3).enumerate() {
-                    info!("   Peer {}: {}", i + 1, peer);
+                    info!("   Peer {}: {:?}", i + 1, peer);
                 }
                 if peers.len() > 3 {
                     info!("   ... and {} more peers", peers.len() - 3);

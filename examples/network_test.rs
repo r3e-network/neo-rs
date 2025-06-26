@@ -206,8 +206,10 @@ async fn test_protocol_stack() {
     }
 
     // Test 2: Message Creation
-    let ping_msg = NetworkMessage::new(config.magic, ProtocolMessage::ping());
-    let pong_msg = NetworkMessage::new(config.magic, ProtocolMessage::pong(12345));
+    let ping_msg = NetworkMessage::new(ProtocolMessage::Ping {
+        nonce: rand::random(),
+    });
+    let pong_msg = NetworkMessage::new(ProtocolMessage::Pong { nonce: 12345 });
 
     println!("    ✅ Ping/Pong messages created");
 
