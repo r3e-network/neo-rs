@@ -4,9 +4,12 @@
 
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::fmt;
+use std::str::FromStr;
+use std::hash::Hash;
 
 /// Network type for Neo blockchain
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum NetworkType {
     MainNet,
     #[default]
@@ -30,6 +33,29 @@ impl NetworkType {
             NetworkType::MainNet => 0x35,
             NetworkType::TestNet => 0x35,
             NetworkType::Private => 0x35,
+        }
+    }
+}
+
+impl fmt::Display for NetworkType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            NetworkType::MainNet => write!(f, "mainnet"),
+            NetworkType::TestNet => write!(f, "testnet"),
+            NetworkType::Private => write!(f, "private"),
+        }
+    }
+}
+
+impl FromStr for NetworkType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "mainnet" | "main" => Ok(NetworkType::MainNet),
+            "testnet" | "test" => Ok(NetworkType::TestNet),
+            "private" | "privnet" => Ok(NetworkType::Private),
+            _ => Err(format!("Unknown network type: {}", s)),
         }
     }
 }
