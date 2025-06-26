@@ -100,16 +100,16 @@ fn test_complex_control_flow() {
     let script_bytes = vec![
         OpCode::PUSHT as u8, // if (true)
         OpCode::JMPIF as u8,
-        0x05, // Jump to "PUSHF" if true (which it is)
+        0x05,                // Jump to "PUSHF" if true (which it is)
         OpCode::PUSH3 as u8, // result = 3 (else branch)
         OpCode::JMP as u8,
-        0x0E, // Jump to end
+        0x0E,                // Jump to end
         OpCode::PUSHF as u8, // if (false)
         OpCode::JMPIF as u8,
-        0x09, // Jump to "PUSH1" if true (which it isn't)
+        0x09,                // Jump to "PUSH1" if true (which it isn't)
         OpCode::PUSH2 as u8, // result = 2 (else branch of nested if)
         OpCode::JMP as u8,
-        0x0E, // Jump to end
+        0x0E,                // Jump to end
         OpCode::PUSH1 as u8, // result = 1 (then branch of nested if)
     ];
 
@@ -379,14 +379,14 @@ fn test_complex_bitwise_operations() {
     // = 11
 
     let script_bytes = vec![
-        OpCode::PUSH5 as u8, // Push 5
-        OpCode::PUSH3 as u8, // Push 3
-        OpCode::AND as u8,   // 5 & 3 = 1
-        OpCode::PUSH8 as u8, // Push 8
-        OpCode::OR as u8,    // 1 | 8 = 9
-        OpCode::PUSH1 as u8, // Push 1
+        OpCode::PUSH5 as u8,  // Push 5
+        OpCode::PUSH3 as u8,  // Push 3
+        OpCode::AND as u8,    // 5 & 3 = 1
+        OpCode::PUSH8 as u8,  // Push 8
+        OpCode::OR as u8,     // 1 | 8 = 9
+        OpCode::PUSH1 as u8,  // Push 1
         OpCode::INVERT as u8, // ~1 = -2 in two's complement
-        OpCode::XOR as u8,   // 9 ^ (-2) = 11
+        OpCode::XOR as u8,    // 9 ^ (-2) = 11
     ];
 
     // Create the execution engine

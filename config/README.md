@@ -5,8 +5,10 @@ This directory contains configuration files for Neo-RS.
 ## Structure
 
 - `examples/` - Example configuration files
-- `rustfmt.toml` - Rust code formatting configuration
-- `clippy.toml` - Clippy linting configuration
+- `rustfmt.toml` - Symbolic link to root rustfmt.toml
+- `clippy.toml` - Symbolic link to root clippy.toml
+
+Note: Cargo expects rustfmt.toml and clippy.toml in the project root, so the actual files are there with symlinks here for organization.
 
 ## Usage
 

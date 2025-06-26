@@ -61,7 +61,9 @@ impl neo_io::Serializable for InventoryItem {
             0x2c => InventoryType::Block,
             0xe0 => InventoryType::Consensus,
             _ => {
-                return Err(neo_io::Error::InvalidData("Invalid inventory type".to_string()).into());
+                return Err(
+                    neo_io::Error::InvalidData("Invalid inventory type".to_string()).into(),
+                );
             }
         };
         let hash_bytes = reader.read_bytes(32)?;
