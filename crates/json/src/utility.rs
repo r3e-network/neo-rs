@@ -1,6 +1,6 @@
 /// Utility functions for JSON processing
 /// This matches the C# Neo.Json.Utility class
-
+///
 /// Strict UTF-8 encoding/decoding utilities
 pub struct StrictUtf8;
 
