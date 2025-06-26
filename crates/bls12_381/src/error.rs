@@ -164,7 +164,10 @@ mod tests {
         let err = BlsError::invalid_private_key("test error");
         assert_eq!(err.to_string(), "Invalid private key: test error");
 
-        let err = BlsError::InvalidKeySize { expected: 32, actual: 16 };
+        let err = BlsError::InvalidKeySize {
+            expected: 32,
+            actual: 16,
+        };
         assert_eq!(err.to_string(), "Invalid key size: expected 32, got 16");
     }
 
@@ -185,4 +188,4 @@ mod tests {
         let err4 = BlsError::InvalidPrivateKey("test".to_string());
         assert_eq!(err3, err4);
     }
-} 
+}

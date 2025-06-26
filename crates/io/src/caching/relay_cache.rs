@@ -3,7 +3,7 @@
 //! This module provides a cache for relayed messages in the Neo network.
 
 use super::TimedCache;
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::time::Duration;
 
 /// A key for the relay cache.
@@ -11,7 +11,7 @@ use std::time::Duration;
 pub struct RelayKey {
     /// The hash of the message
     pub hash: Vec<u8>,
-    
+
     /// The type of the message
     pub message_type: u8,
 }
@@ -28,10 +28,7 @@ impl RelayKey {
     ///
     /// A new relay key
     pub fn new(hash: Vec<u8>, message_type: u8) -> Self {
-        Self {
-            hash,
-            message_type,
-        }
+        Self { hash, message_type }
     }
 }
 
@@ -57,27 +54,27 @@ impl RelayCache {
             cache: TimedCache::new(capacity, default_ttl),
         }
     }
-    
+
     /// Returns the capacity of the cache.
     pub fn capacity(&self) -> usize {
         self.cache.capacity()
     }
-    
+
     /// Returns the number of entries in the cache.
     pub fn len(&self) -> usize {
         self.cache.len()
     }
-    
+
     /// Returns whether the cache is empty.
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
-    
+
     /// Returns the default time-to-live for entries.
     pub fn default_ttl(&self) -> Duration {
         self.cache.default_ttl()
     }
-    
+
     /// Sets the default time-to-live for entries.
     ///
     /// # Arguments
@@ -86,7 +83,7 @@ impl RelayCache {
     pub fn set_default_ttl(&mut self, ttl: Duration) {
         self.cache.set_default_ttl(ttl);
     }
-    
+
     /// Checks if a message is in the cache.
     ///
     /// # Arguments
@@ -101,7 +98,7 @@ impl RelayCache {
         let key = RelayKey::new(hash.to_vec(), message_type);
         self.cache.get(&key).is_some()
     }
-    
+
     /// Adds a message to the cache.
     ///
     /// # Arguments
@@ -121,7 +118,7 @@ impl RelayCache {
             true
         }
     }
-    
+
     /// Removes a message from the cache.
     ///
     /// # Arguments
@@ -132,12 +129,12 @@ impl RelayCache {
         let key = RelayKey::new(hash.to_vec(), message_type);
         self.cache.remove(&key);
     }
-    
+
     /// Clears the cache.
     pub fn clear(&mut self) {
         self.cache.clear();
     }
-    
+
     /// Removes all expired entries from the cache.
     pub fn purge_expired(&mut self) {
         self.cache.purge_expired();

@@ -3,9 +3,7 @@
 //! This module provides a binary reader for deserializing Neo data structures.
 
 use crate::{Error, Result, Serializable};
-use bytes::{Buf, Bytes};
-use std::convert::TryFrom;
-use std::io::Read;
+use bytes::Bytes;
 
 /// A reader for deserializing Neo data structures from binary data.
 pub struct BinaryReader {
@@ -65,7 +63,7 @@ impl BinaryReader {
     /// The byte read or an error if the end of the data has been reached
     pub fn read_byte(&mut self) -> Result<u8> {
         if self.is_eof() {
-            return Err(Error::EndOfStream);
+            return Err(Error::EndOfStream.into());
         }
 
         let byte = self.data[self.position];
@@ -110,7 +108,7 @@ impl BinaryReader {
     /// The unsigned 16-bit integer read or an error if the end of the data has been reached
     pub fn read_u16(&mut self) -> Result<u16> {
         if self.remaining() < 2 {
-            return Err(Error::EndOfStream);
+            return Err(Error::EndOfStream.into());
         }
 
         let mut buf = [0u8; 2];
@@ -127,7 +125,7 @@ impl BinaryReader {
     /// The signed 16-bit integer read or an error if the end of the data has been reached
     pub fn read_i16(&mut self) -> Result<i16> {
         if self.remaining() < 2 {
-            return Err(Error::EndOfStream);
+            return Err(Error::EndOfStream.into());
         }
 
         let mut buf = [0u8; 2];
@@ -144,7 +142,7 @@ impl BinaryReader {
     /// The unsigned 32-bit integer read or an error if the end of the data has been reached
     pub fn read_u32(&mut self) -> Result<u32> {
         if self.remaining() < 4 {
-            return Err(Error::EndOfStream);
+            return Err(Error::EndOfStream.into());
         }
 
         let mut buf = [0u8; 4];
@@ -161,7 +159,7 @@ impl BinaryReader {
     /// The signed 32-bit integer read or an error if the end of the data has been reached
     pub fn read_i32(&mut self) -> Result<i32> {
         if self.remaining() < 4 {
-            return Err(Error::EndOfStream);
+            return Err(Error::EndOfStream.into());
         }
 
         let mut buf = [0u8; 4];
@@ -178,7 +176,7 @@ impl BinaryReader {
     /// The unsigned 64-bit integer read or an error if the end of the data has been reached
     pub fn read_u64(&mut self) -> Result<u64> {
         if self.remaining() < 8 {
-            return Err(Error::EndOfStream);
+            return Err(Error::EndOfStream.into());
         }
 
         let mut buf = [0u8; 8];
@@ -195,7 +193,7 @@ impl BinaryReader {
     /// The signed 64-bit integer read or an error if the end of the data has been reached
     pub fn read_i64(&mut self) -> Result<i64> {
         if self.remaining() < 8 {
-            return Err(Error::EndOfStream);
+            return Err(Error::EndOfStream.into());
         }
 
         let mut buf = [0u8; 8];
@@ -242,7 +240,7 @@ impl BinaryReader {
     /// The fixed-length byte array read or an error if the end of the data has been reached
     pub fn read_bytes(&mut self, length: usize) -> Result<Vec<u8>> {
         if self.remaining() < length {
-            return Err(Error::EndOfStream);
+            return Err(Error::EndOfStream.into());
         }
 
         let bytes = self.data.slice(self.position..self.position + length);
@@ -258,7 +256,8 @@ impl BinaryReader {
     /// The variable-length string read or an error if the end of the data has been reached
     pub fn read_var_string(&mut self) -> Result<String> {
         let bytes = self.read_var_bytes()?;
-        String::from_utf8(bytes).map_err(|e| Error::Deserialization(format!("Invalid UTF-8 string: {}", e)))
+        String::from_utf8(bytes)
+            .map_err(|e| Error::Deserialization(format!("Invalid UTF-8 string: {}", e)).into())
     }
 
     /// Reads a serializable object from the data.
@@ -271,10 +270,10 @@ impl BinaryReader {
         let remaining_data = &self.data[self.position..];
         let mut memory_reader = crate::MemoryReader::new(remaining_data);
         let result = T::deserialize(&mut memory_reader)?;
-        
+
         // Update position based on how much the MemoryReader consumed
         self.position += memory_reader.position();
-        
+
         Ok(result)
     }
 
@@ -324,7 +323,9 @@ impl BinaryReader {
     /// An error if the position is out of bounds
     pub fn seek(&mut self, position: usize) -> Result<()> {
         if position > self.data.len() {
-            return Err(Error::InvalidOperation(format!("Position {} is out of bounds", position)));
+            return Err(
+                Error::InvalidOperation(format!("Position {} is out of bounds", position)).into(),
+            );
         }
 
         self.position = position;
@@ -342,7 +343,7 @@ impl BinaryReader {
     /// An error if the end of the data has been reached
     pub fn skip(&mut self, count: usize) -> Result<()> {
         if self.remaining() < count {
-            return Err(Error::EndOfStream);
+            return Err(Error::EndOfStream.into());
         }
 
         self.position += count;

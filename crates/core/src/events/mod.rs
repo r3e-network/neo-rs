@@ -11,9 +11,9 @@
 
 //! Event handling for Neo blockchain.
 
-use std::sync::{Arc, RwLock};
-use std::collections::HashMap;
 use std::any::Any;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 /// Trait for event handlers.
 pub trait EventHandler: Send + Sync {
@@ -56,7 +56,9 @@ impl EventManager {
     /// A boolean indicating whether the handler was successfully registered.
     pub fn register<H: EventHandler + 'static>(&self, event_name: &str, handler: H) -> bool {
         if let Ok(mut handlers) = self.handlers.write() {
-            let entry = handlers.entry(event_name.to_string()).or_insert_with(Vec::new);
+            let entry = handlers
+                .entry(event_name.to_string())
+                .or_insert_with(Vec::new);
             entry.push(Arc::new(handler));
             true
         } else {
@@ -108,32 +110,32 @@ impl EventManager {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
-    
+
     struct TestHandler {
         called: Arc<AtomicBool>,
     }
-    
+
     impl EventHandler for TestHandler {
         fn handle(&self, _sender: &dyn Any, _args: &dyn Any) {
             self.called.store(true, Ordering::SeqCst);
         }
     }
-    
+
     #[test]
     fn test_event_manager() {
         let manager = EventManager::new();
         let called = Arc::new(AtomicBool::new(false));
-        
+
         let handler = TestHandler {
             called: called.clone(),
         };
-        
+
         // Register handler
         assert!(manager.register("test_event", handler));
-        
+
         // Trigger event
         manager.trigger("test_event", &"sender", &"args");
-        
+
         // Check if handler was called
         assert!(called.load(Ordering::SeqCst));
     }

@@ -33,23 +33,36 @@ impl ECPoint {
     /// # Returns
     ///
     /// A new `ECPoint` or an error if the point is not on the curve
-    pub fn new(x: Option<ECFieldElement>, y: Option<ECFieldElement>, curve: ECCurve) -> ECCResult<Self> {
+    pub fn new(
+        x: Option<ECFieldElement>,
+        y: Option<ECFieldElement>,
+        curve: ECCurve,
+    ) -> ECCResult<Self> {
         match (x, y) {
             (None, None) => {
                 // Point at infinity is valid
-                Ok(Self { x: None, y: None, curve })
+                Ok(Self {
+                    x: None,
+                    y: None,
+                    curve,
+                })
             }
             (Some(x), Some(y)) => {
                 // Check if the point is on the curve: y² = x³ + ax + b
                 let left = y.square();
-                let right = &(&x.cube() + &(&(&ECFieldElement::new(curve.a.clone(), x.p.clone())? * &x) +
-                                           &ECFieldElement::new(curve.b.clone(), x.p.clone())?));
+                let right = &(&x.cube()
+                    + &(&(&ECFieldElement::new(curve.a.clone(), x.p.clone())? * &x)
+                        + &ECFieldElement::new(curve.b.clone(), x.p.clone())?));
 
                 if left != *right {
                     return Err(ECCError::PointNotOnCurve);
                 }
 
-                Ok(Self { x: Some(x), y: Some(y), curve })
+                Ok(Self {
+                    x: Some(x),
+                    y: Some(y),
+                    curve,
+                })
             }
             _ => {
                 // One coordinate is None but the other isn't
@@ -104,9 +117,7 @@ impl ECPoint {
 
         match data[0] {
             // Infinity point
-            0x00 => {
-                Ok(Self::infinity(curve))
-            }
+            0x00 => Ok(Self::infinity(curve)),
             // Uncompressed point format
             0x04 => {
                 if data.len() != 65 {
@@ -147,7 +158,9 @@ impl ECPoint {
                 let beta = alpha.pow(&exponent);
 
                 let y_bit = (data[0] & 1) == 1;
-                let y = if (beta.value.clone() & BigInt::one()) == (if y_bit { BigInt::one() } else { BigInt::zero() }) {
+                let y = if (beta.value.clone() & BigInt::one())
+                    == (if y_bit { BigInt::one() } else { BigInt::zero() })
+                {
                     beta
                 } else {
                     ECFieldElement::new(curve.p.clone() - beta.value, curve.p.clone())?
@@ -175,7 +188,11 @@ impl ECPoint {
         let mut result = Vec::with_capacity(33);
 
         // Determine the prefix based on the y-coordinate's parity
-        let prefix = if &y.value & BigInt::one() == BigInt::one() { 0x03 } else { 0x02 };
+        let prefix = if &y.value & BigInt::one() == BigInt::one() {
+            0x03
+        } else {
+            0x02
+        };
         result.push(prefix);
 
         // Add the x-coordinate
@@ -258,8 +275,11 @@ impl ECPoint {
         // Check if the point satisfies the curve equation: y² = x³ + ax + b
         let y_squared = y.square();
         let x_cubed = &x.square() * x;
-        let ax = &ECFieldElement::new(self.curve.a.clone(), x.p.clone()).unwrap_or_else(|_| ECFieldElement::new(BigInt::zero(), x.p.clone()).unwrap()) * x;
-        let b = ECFieldElement::new(self.curve.b.clone(), x.p.clone()).unwrap_or_else(|_| ECFieldElement::new(BigInt::zero(), x.p.clone()).unwrap());
+        let ax = &ECFieldElement::new(self.curve.a.clone(), x.p.clone())
+            .unwrap_or_else(|_| ECFieldElement::new(BigInt::zero(), x.p.clone()).unwrap())
+            * x;
+        let b = ECFieldElement::new(self.curve.b.clone(), x.p.clone())
+            .unwrap_or_else(|_| ECFieldElement::new(BigInt::zero(), x.p.clone()).unwrap());
 
         let right_side = &(&x_cubed + &ax) + &b;
         y_squared == right_side
@@ -415,8 +435,8 @@ impl<'b> Add<&'b ECPoint> for &ECPoint {
                 let three = ECFieldElement::new(BigInt::from(3), x1.p.clone())?;
                 let two = ECFieldElement::new(BigInt::from(2), y1.p.clone())?;
 
-                let numerator = &(&(&three * &x1.square()) +
-                                 &ECFieldElement::new(curve.a.clone(), x1.p.clone())?);
+                let numerator = &(&(&three * &x1.square())
+                    + &ECFieldElement::new(curve.a.clone(), x1.p.clone())?);
                 let denominator = &(&two * y1);
 
                 numerator / denominator
@@ -474,7 +494,8 @@ impl Serialize for ECPoint {
     {
         use serde::ser::Error;
 
-        let encoded = self.encode_compressed()
+        let encoded = self
+            .encode_compressed()
             .map_err(|e| S::Error::custom(format!("Failed to encode ECPoint: {e}")))?;
 
         serializer.serialize_bytes(&encoded)

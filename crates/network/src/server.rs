@@ -3,20 +3,22 @@
 //! This module provides the main network server that coordinates all networking
 //! components including P2P, synchronization, and RPC services.
 
-use crate::{
-    NetworkStats, P2PConfig, P2PEvent, P2pNode, Result, NetworkConfig,
-    SyncManager, SyncEvent, PeerManager,
+use crate::rpc::{RpcConfig as InternalRpcConfig, RpcServer};
+use crate::shutdown_impl::{
+    DatabaseShutdown, NetworkServerShutdown, RpcServerShutdown, TransactionPoolShutdown,
 };
-use crate::rpc::{RpcServer, RpcConfig as InternalRpcConfig};
-use crate::shutdown_impl::{NetworkServerShutdown, RpcServerShutdown, DatabaseShutdown, TransactionPoolShutdown};
-use neo_core::{UInt160, ShutdownCoordinator, SignalHandler};
+use crate::{
+    NetworkConfig, NetworkStats, P2PConfig, P2PEvent, P2pNode, PeerManager, Result, SyncEvent,
+    SyncManager,
+};
+use neo_core::{ShutdownCoordinator, SignalHandler, UInt160};
 use neo_ledger::{Blockchain, Ledger};
 
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use tokio::time::interval;
 use tracing::{info, warn};
 
@@ -149,15 +151,19 @@ impl NetworkServer {
             listen_address: config.p2p_config.listen_address,
             ..NetworkConfig::default()
         };
-        
+
         let (command_sender, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = Arc::new(P2pNode::new(network_config, command_receiver)?);
-        
+
         // Pass blockchain directly to SyncManager
         let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), p2p_node.clone()));
 
         let rpc_server = config.rpc_config.as_ref().map(|rpc_config| {
-            Arc::new(RpcServer::with_p2p_node(rpc_config.clone(), blockchain.clone(), p2p_node.clone()))
+            Arc::new(RpcServer::with_p2p_node(
+                rpc_config.clone(),
+                blockchain.clone(),
+                p2p_node.clone(),
+            ))
         });
 
         let (event_tx, _) = broadcast::channel(1000);
@@ -181,10 +187,10 @@ impl NetworkServer {
         *self.running.write().await = true;
 
         info!("Starting network server");
-        
+
         // Register components with shutdown coordinator
         self.register_shutdown_handlers().await?;
-        
+
         // Start signal handler for graceful shutdown
         let signal_handler = SignalHandler::new(Arc::clone(&self.shutdown_coordinator));
         signal_handler.start().await;
@@ -224,14 +230,15 @@ impl NetworkServer {
     /// Stops the network server
     pub async fn stop(&self) {
         info!("Stopping network server");
-        
+
         // Initiate graceful shutdown through the coordinator
-        if let Err(e) = self.shutdown_coordinator
+        if let Err(e) = self
+            .shutdown_coordinator
             .initiate_shutdown("NetworkServer stop requested".to_string())
-            .await 
+            .await
         {
             warn!("Failed to initiate graceful shutdown: {}", e);
-            
+
             // Fallback to direct shutdown
             *self.running.write().await = false;
 
@@ -248,21 +255,21 @@ impl NetworkServer {
 
         info!("Network server stopped");
     }
-    
+
     /// Registers all components with the shutdown coordinator
     async fn register_shutdown_handlers(&self) -> Result<()> {
         info!("Registering shutdown handlers");
-        
+
         // Register sync manager (priority 30)
         self.shutdown_coordinator
             .register_component(Arc::clone(&self.sync_manager) as Arc<dyn neo_core::Shutdown>)
             .await;
-        
+
         // Register P2P node (priority 35)
         self.shutdown_coordinator
             .register_component(Arc::clone(&self.p2p_node) as Arc<dyn neo_core::Shutdown>)
             .await;
-        
+
         // Register network server wrapper (priority 25)
         let network_wrapper = Arc::new(NetworkServerShutdown::new(
             Arc::clone(&self.p2p_node),
@@ -271,7 +278,7 @@ impl NetworkServer {
         self.shutdown_coordinator
             .register_component(network_wrapper)
             .await;
-        
+
         // Register RPC server if enabled (priority 60)
         if let Some(rpc_server) = &self.rpc_server {
             let rpc_shutdown = Arc::new(RpcServerShutdown::new(
@@ -282,13 +289,13 @@ impl NetworkServer {
                 .register_component(rpc_shutdown)
                 .await;
         }
-        
+
         // Register database shutdown handler (priority 120)
         let db_shutdown = Arc::new(DatabaseShutdown::new("BlockchainDB".to_string()));
         self.shutdown_coordinator
             .register_component(db_shutdown)
             .await;
-        
+
         // Register transaction pool shutdown handler (priority 80)
         let tx_pool_shutdown = Arc::new(TransactionPoolShutdown::new(
             Arc::new(RwLock::new(0)), // In real implementation, this would track actual pending tx count
@@ -296,7 +303,7 @@ impl NetworkServer {
         self.shutdown_coordinator
             .register_component(tx_pool_shutdown)
             .await;
-        
+
         info!("All shutdown handlers registered");
         Ok(())
     }
@@ -325,12 +332,12 @@ impl NetworkServer {
     pub fn event_receiver(&self) -> broadcast::Receiver<NetworkServerEvent> {
         self.event_tx.subscribe()
     }
-    
+
     /// Gets the shutdown signal that can be awaited
     pub fn shutdown_signal(&self) -> Arc<tokio::sync::Notify> {
         self.shutdown_coordinator.get_shutdown_signal()
     }
-    
+
     /// Subscribes to shutdown events
     pub fn shutdown_events(&self) -> broadcast::Receiver<neo_core::ShutdownEvent> {
         self.shutdown_coordinator.subscribe_to_events()
@@ -417,7 +424,7 @@ impl NetworkServer {
                     bytes_received: peer_stats.bytes_received,
                     messages_sent_per_sec: 0.0, // Would calculate from rate
                     messages_received_per_sec: 0.0, // Would calculate from rate
-                    average_latency_ms: 0.0, // Would calculate from ping data
+                    average_latency_ms: 0.0,    // Would calculate from ping data
                     sync_status: sync_stats.state.to_string(),
                     current_height,
                     best_known_height: sync_stats.best_known_height,

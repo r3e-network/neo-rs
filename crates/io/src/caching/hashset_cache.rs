@@ -7,11 +7,11 @@ use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 
 /// HashSet cache implementation that matches C# HashSetCache<T> exactly.
-/// 
+///
 /// This cache stores unique items and provides fast lookup and insertion.
 /// It automatically manages capacity by removing items when the limit is reached.
-pub struct HashSetCache<T> 
-where 
+pub struct HashSetCache<T>
+where
     T: Hash + Eq + Clone + Send + Sync,
 {
     /// The internal hash set for storing items
@@ -21,17 +21,17 @@ where
 }
 
 impl<T> HashSetCache<T>
-where 
+where
     T: Hash + Eq + Clone + Send + Sync,
 {
     /// Creates a new HashSet cache with the specified capacity.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `max_capacity` - The maximum number of items the cache can hold
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A new HashSet cache
     pub fn new(max_capacity: usize) -> Self {
         Self {
@@ -57,22 +57,22 @@ where
 
     /// Adds an item to the cache.
     /// If the cache is at capacity, this may remove an existing item.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `item` - The item to add
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// True if the item was added (wasn't already present), false otherwise
     pub fn add(&self, item: T) -> bool {
         let mut items = self.items.lock().unwrap();
-        
+
         // If item already exists, return false
         if items.contains(&item) {
             return false;
         }
-        
+
         // Check capacity and remove an item if necessary
         if items.len() >= self.max_capacity {
             // Remove an arbitrary item (HashSet doesn't guarantee order)
@@ -80,31 +80,31 @@ where
                 items.remove(&to_remove);
             }
         }
-        
+
         items.insert(item)
     }
 
     /// Checks if the cache contains the specified item.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `item` - The item to check for
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// True if the item is in the cache, false otherwise
     pub fn contains(&self, item: &T) -> bool {
         self.items.lock().unwrap().contains(item)
     }
 
     /// Removes an item from the cache.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `item` - The item to remove
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// True if the item was removed, false if it wasn't present
     pub fn remove(&self, item: &T) -> bool {
         self.items.lock().unwrap().remove(item)
@@ -116,18 +116,18 @@ where
     }
 
     /// Gets all items in the cache as a vector.
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A vector containing all items in the cache
     pub fn to_vec(&self) -> Vec<T> {
         self.items.lock().unwrap().iter().cloned().collect()
     }
 
     /// Adds multiple items to the cache.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `items` - The items to add
     pub fn add_range(&self, items: Vec<T>) {
         for item in items {
@@ -136,23 +136,25 @@ where
     }
 
     /// Copies items to the provided slice starting at the specified index.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `array` - The array to copy items to
     /// * `start_index` - The starting index in the array
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// Result indicating success or error message
     pub fn copy_to(&self, array: &mut [T], start_index: usize) -> Result<(), String> {
         let items = self.items.lock().unwrap();
         let count = items.len();
-        
+
         if start_index + count > array.len() {
             return Err(format!(
                 "start_index({}) + count({}) > array.len({})",
-                start_index, count, array.len()
+                start_index,
+                count,
+                array.len()
             ));
         }
 
@@ -173,7 +175,7 @@ where
 }
 
 impl<T> Clone for HashSetCache<T>
-where 
+where
     T: Hash + Eq + Clone + Send + Sync,
 {
     fn clone(&self) -> Self {
@@ -187,7 +189,7 @@ where
 
 // Implement standard collection traits for compatibility
 impl<T> std::iter::FromIterator<T> for HashSetCache<T>
-where 
+where
     T: Hash + Eq + Clone + Send + Sync,
 {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
@@ -206,13 +208,13 @@ mod tests {
     #[test]
     fn test_hashset_cache_basic_operations() {
         let cache = HashSetCache::new(3);
-        
+
         // Test add and contains
         assert!(cache.add(1));
         assert!(cache.add(2));
         assert!(cache.add(3));
         assert_eq!(cache.count(), 3);
-        
+
         assert!(cache.contains(&1));
         assert!(cache.contains(&2));
         assert!(cache.contains(&3));
@@ -222,8 +224,8 @@ mod tests {
     #[test]
     fn test_hashset_cache_duplicate_add() {
         let cache = HashSetCache::new(3);
-        
-        assert!(cache.add(1));  // First add should succeed
+
+        assert!(cache.add(1)); // First add should succeed
         assert!(!cache.add(1)); // Duplicate add should fail
         assert_eq!(cache.count(), 1);
     }
@@ -231,16 +233,16 @@ mod tests {
     #[test]
     fn test_hashset_cache_capacity_management() {
         let cache = HashSetCache::new(2);
-        
+
         // Add items up to capacity
         assert!(cache.add(1));
         assert!(cache.add(2));
         assert_eq!(cache.count(), 2);
-        
+
         // Add one more item, should evict one existing item
         assert!(cache.add(3));
         assert_eq!(cache.count(), 2);
-        
+
         // One of the original items should be gone
         let remaining_count = [1, 2].iter().filter(|&&x| cache.contains(&x)).count();
         assert_eq!(remaining_count, 1);
@@ -250,17 +252,17 @@ mod tests {
     #[test]
     fn test_hashset_cache_remove() {
         let cache = HashSetCache::new(3);
-        
+
         cache.add(1);
         cache.add(2);
         cache.add(3);
-        
+
         assert!(cache.remove(&2));
         assert_eq!(cache.count(), 2);
         assert!(!cache.contains(&2));
         assert!(cache.contains(&1));
         assert!(cache.contains(&3));
-        
+
         // Try to remove non-existent item
         assert!(!cache.remove(&4));
         assert_eq!(cache.count(), 2);
@@ -269,12 +271,12 @@ mod tests {
     #[test]
     fn test_hashset_cache_clear() {
         let cache = HashSetCache::new(3);
-        
+
         cache.add(1);
         cache.add(2);
         cache.add(3);
         assert_eq!(cache.count(), 3);
-        
+
         cache.clear();
         assert_eq!(cache.count(), 0);
         assert!(cache.is_empty());
@@ -286,9 +288,9 @@ mod tests {
     #[test]
     fn test_hashset_cache_add_range() {
         let cache = HashSetCache::new(5);
-        
+
         cache.add_range(vec![1, 2, 3, 2, 4]); // Note: 2 is duplicated
-        
+
         // Should have 4 unique items
         assert_eq!(cache.count(), 4);
         assert!(cache.contains(&1));
@@ -300,14 +302,14 @@ mod tests {
     #[test]
     fn test_hashset_cache_to_vec() {
         let cache = HashSetCache::new(3);
-        
+
         cache.add(1);
         cache.add(2);
         cache.add(3);
-        
+
         let items = cache.to_vec();
         assert_eq!(items.len(), 3);
-        
+
         // Check that all items are present (order doesn't matter for HashSet)
         assert!(items.contains(&1));
         assert!(items.contains(&2));
@@ -317,13 +319,13 @@ mod tests {
     #[test]
     fn test_hashset_cache_copy_to() {
         let cache = HashSetCache::new(3);
-        
+
         cache.add(1);
         cache.add(2);
-        
+
         let mut array = [0; 5];
         cache.copy_to(&mut array, 1).unwrap();
-        
+
         // Check that items were copied starting at index 1
         assert_eq!(array[0], 0); // Should be unchanged
         // array[1] and array[2] should contain the items (order may vary)
@@ -337,11 +339,11 @@ mod tests {
     #[test]
     fn test_hashset_cache_copy_to_error() {
         let cache = HashSetCache::new(3);
-        
+
         cache.add(1);
         cache.add(2);
         cache.add(3);
-        
+
         let mut array = [0; 3];
         // Try to copy 3 items starting at index 1 (would need 4 slots)
         let result = cache.copy_to(&mut array, 1);
@@ -351,7 +353,7 @@ mod tests {
     #[test]
     fn test_hashset_cache_from_iter() {
         let cache: HashSetCache<i32> = [1, 2, 3, 2, 4].iter().cloned().collect();
-        
+
         assert_eq!(cache.count(), 4); // Should have 4 unique items
         assert!(cache.contains(&1));
         assert!(cache.contains(&2));
@@ -364,17 +366,17 @@ mod tests {
         let cache1 = HashSetCache::new(3);
         cache1.add(1);
         cache1.add(2);
-        
+
         let cache2 = cache1.clone();
-        
+
         // Both caches should have the same items
         assert_eq!(cache1.count(), cache2.count());
         assert!(cache2.contains(&1));
         assert!(cache2.contains(&2));
-        
+
         // But they should be independent
         cache1.add(3);
         assert!(cache1.contains(&3));
         assert!(!cache2.contains(&3));
     }
-} 
+}

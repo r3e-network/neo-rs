@@ -3,12 +3,11 @@
 //! These tests ensure that our core types (UInt160, UInt256, etc.) work correctly
 //! with the wallet functionality and match the C# implementation behavior.
 
-use neo_wallets::{
-    StandardWalletAccount, KeyPair, WalletAccount, ContractParameterType,
-    Contract, Version, Error,
-};
-use neo_core::UInt160;
 use hex;
+use neo_core::UInt160;
+use neo_wallets::{
+    Contract, ContractParameterType, Error, KeyPair, StandardWalletAccount, Version, WalletAccount,
+};
 
 use neo_wallets::ContractParameterType::*;
 
@@ -59,14 +58,18 @@ fn test_invalid_address_format() {
     // Test invalid address formats
     let invalid_addresses = vec![
         "invalid_address",
-        "3vQB7B6MrGQZaxCuFg4oh", // Too short
+        "3vQB7B6MrGQZaxCuFg4oh",                 // Too short
         "NdtB8RXRmJ7Nhw1FPTm7E6HoDZGnDw37nf123", // Too long
-        "", // Empty
+        "",                                      // Empty
     ];
 
     for invalid_address in invalid_addresses {
         let result = UInt160::from_address(invalid_address);
-        assert!(result.is_err(), "Address '{}' should be invalid", invalid_address);
+        assert!(
+            result.is_err(),
+            "Address '{}' should be invalid",
+            invalid_address
+        );
     }
 }
 
@@ -104,7 +107,8 @@ fn test_wallet_account_address_consistency() {
 fn test_contract_script_hash() {
     // Test contract script hash generation
     let key_pair = KeyPair::generate().unwrap();
-    let contract = Contract::create_signature_contract(&key_pair.get_public_key_point().unwrap()).unwrap();
+    let contract =
+        Contract::create_signature_contract(&key_pair.get_public_key_point().unwrap()).unwrap();
 
     // Contract script hash should match key pair script hash
     assert_eq!(contract.script_hash(), key_pair.get_script_hash());
@@ -231,7 +235,8 @@ fn test_invalid_contract_parameter_type() {
 fn test_uint160_parsing() {
     // Test UInt160 parsing from hex string (matches C# UT_UInt160.TestGernerator3)
     let hex_str = "0xff00000000000000000000000000000000000001";
-    let uint160 = UInt160::from_bytes(&hex::decode(hex_str.trim_start_matches("0x")).unwrap()).unwrap();
+    let uint160 =
+        UInt160::from_bytes(&hex::decode(hex_str.trim_start_matches("0x")).unwrap()).unwrap();
 
     // Should format back to same string
     assert_eq!(hex_str, uint160.to_string());
@@ -241,7 +246,10 @@ fn test_uint160_parsing() {
 fn test_uint160_zero_initialization() {
     // Test UInt160 zero initialization (matches C# UT_UInt160.TestGernerator1)
     let uint160 = UInt160::new();
-    assert_eq!("0x0000000000000000000000000000000000000000", uint160.to_string());
+    assert_eq!(
+        "0x0000000000000000000000000000000000000000",
+        uint160.to_string()
+    );
 }
 
 #[test]

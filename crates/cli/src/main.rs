@@ -3,23 +3,23 @@
 //! This is the main CLI entry point for the Neo-Rust blockchain node.
 //! It provides complete node functionality matching the C# Neo CLI exactly.
 
+use anyhow::Result;
+use clap::Parser;
 use std::env;
 use std::process;
-use anyhow::Result;
-use tracing::{error, info, debug, Level};
+use tracing::{Level, debug, error, info};
 use tracing_subscriber::filter::EnvFilter;
-use clap::Parser;
 
-mod service;
+mod args;
 mod config;
 mod console;
-mod wallet;
 mod node;
 mod rpc;
-mod args;
+mod service;
+mod wallet;
 
-use service::MainService;
 use args::CliArgs;
+use service::MainService;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
 
     // Create and run main service
     let mut main_service = MainService::new(args).await?;
-    
+
     // Run the main service
     match main_service.start().await {
         Ok(_) => {
@@ -77,20 +77,30 @@ fn show_startup_banner() {
     println!("║                 Compatible with C# Neo Reference                ║");
     println!("╚══════════════════════════════════════════════════════════════════╝");
     println!();
-    
+
     // System information
     info!("🖥️  System Information:");
     info!("   OS: {}", std::env::consts::OS);
     info!("   Architecture: {}", std::env::consts::ARCH);
-    info!("   Rust Version: {}", std::env!("CARGO_PKG_RUST_VERSION", "Unknown"));
-    info!("   Build Profile: {}", if cfg!(debug_assertions) { "debug" } else { "release" });
-    
+    info!(
+        "   Rust Version: {}",
+        std::env!("CARGO_PKG_RUST_VERSION", "Unknown")
+    );
+    info!(
+        "   Build Profile: {}",
+        if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        }
+    );
+
     // Performance information
     info!("⚡ Performance Capabilities:");
     info!("   🏎️  Async I/O with Tokio runtime");
     info!("   🧵 Multi-threaded processing");
     info!("   💾 Optimized memory management");
     info!("   🔄 Fast blockchain synchronization");
-    
+
     println!();
-} 
+}

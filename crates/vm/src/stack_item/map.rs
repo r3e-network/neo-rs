@@ -2,11 +2,11 @@
 //!
 //! This module provides the Map stack item implementation used in the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::StackItem;
 use crate::stack_item::stack_item_type::StackItemType;
-use crate::Error;
-use crate::Result;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -21,14 +21,17 @@ pub struct Map {
 
 impl Map {
     /// Creates a new map with the specified items and reference counter.
-    pub fn new(items: BTreeMap<StackItem, StackItem>, reference_counter: Option<Arc<ReferenceCounter>>) -> Self {
+    pub fn new(
+        items: BTreeMap<StackItem, StackItem>,
+        reference_counter: Option<Arc<ReferenceCounter>>,
+    ) -> Self {
         let mut reference_id = None;
-        
+
         // Register with reference counter if provided
         if let Some(rc) = &reference_counter {
             reference_id = Some(rc.add_reference());
         }
-        
+
         Self {
             items,
             reference_id,
@@ -46,19 +49,24 @@ impl Map {
     }
 
     /// Gets the value for the specified key.
-    pub fn get(&self, key: &StackItem) -> Result<&StackItem> {
-        self.items.get(key).ok_or_else(|| Error::InvalidOperation(format!("Key not found: {:?}", key)))
+    pub fn get(&self, key: &StackItem) -> VmResult<&StackItem> {
+        self.items
+            .get(key)
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {:?}", key)))
     }
 
     /// Sets the value for the specified key.
-    pub fn set(&mut self, key: StackItem, value: StackItem) -> Result<()> {
+    pub fn set(&mut self, key: StackItem, value: StackItem) -> VmResult<()> {
         self.items.insert(key, value);
         Ok(())
     }
 
     /// Removes the value for the specified key.
-    pub fn remove(&mut self, key: &StackItem) -> Result<StackItem> {
-        let value = self.items.remove(key).ok_or_else(|| Error::InvalidOperation(format!("Key not found: {:?}", key)))?;
+    pub fn remove(&mut self, key: &StackItem) -> VmResult<StackItem> {
+        let value = self
+            .items
+            .remove(key)
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {:?}", key)))?;
         Ok(value)
     }
 
@@ -130,8 +138,24 @@ mod tests {
 
         let map = Map::new(items, None);
 
-        assert_eq!(map.get(&StackItem::from_int(1)).unwrap().as_int().unwrap().to_i32().unwrap(), 10);
-        assert_eq!(map.get(&StackItem::from_int(2)).unwrap().as_int().unwrap().to_i32().unwrap(), 20);
+        assert_eq!(
+            map.get(&StackItem::from_int(1))
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            10
+        );
+        assert_eq!(
+            map.get(&StackItem::from_int(2))
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            20
+        );
         assert!(map.get(&StackItem::from_int(3)).is_err());
     }
 
@@ -143,12 +167,30 @@ mod tests {
         let mut map = Map::new(items, None);
 
         // Update existing key
-        map.set(StackItem::from_int(1), StackItem::from_int(100)).unwrap();
-        assert_eq!(map.get(&StackItem::from_int(1)).unwrap().as_int().unwrap().to_i32().unwrap(), 100);
+        map.set(StackItem::from_int(1), StackItem::from_int(100))
+            .unwrap();
+        assert_eq!(
+            map.get(&StackItem::from_int(1))
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            100
+        );
 
         // Add new key
-        map.set(StackItem::from_int(2), StackItem::from_int(20)).unwrap();
-        assert_eq!(map.get(&StackItem::from_int(2)).unwrap().as_int().unwrap().to_i32().unwrap(), 20);
+        map.set(StackItem::from_int(2), StackItem::from_int(20))
+            .unwrap();
+        assert_eq!(
+            map.get(&StackItem::from_int(2))
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            20
+        );
 
         assert_eq!(map.len(), 2);
     }
@@ -189,10 +231,7 @@ mod tests {
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
         items.insert(
             StackItem::from_int(2),
-            StackItem::from_array(vec![
-                StackItem::from_int(20),
-                StackItem::from_int(30),
-            ]),
+            StackItem::from_array(vec![StackItem::from_int(20), StackItem::from_int(30)]),
         );
 
         let map = Map::new(items, None);
@@ -201,12 +240,26 @@ mod tests {
         assert_eq!(copied.len(), map.len());
 
         // Check that the nested array was deep copied
-        let nested_original = map.get(&StackItem::from_int(2)).unwrap().as_array().unwrap();
-        let nested_copied = copied.get(&StackItem::from_int(2)).unwrap().as_array().unwrap();
+        let nested_original = map
+            .get(&StackItem::from_int(2))
+            .unwrap()
+            .as_array()
+            .unwrap();
+        let nested_copied = copied
+            .get(&StackItem::from_int(2))
+            .unwrap()
+            .as_array()
+            .unwrap();
 
         assert_eq!(nested_copied.len(), nested_original.len());
-        assert_eq!(nested_copied[0].as_int().unwrap(), nested_original[0].as_int().unwrap());
-        assert_eq!(nested_copied[1].as_int().unwrap(), nested_original[1].as_int().unwrap());
+        assert_eq!(
+            nested_copied[0].as_int().unwrap(),
+            nested_original[0].as_int().unwrap()
+        );
+        assert_eq!(
+            nested_copied[1].as_int().unwrap(),
+            nested_original[1].as_int().unwrap()
+        );
     }
 
     #[test]

@@ -2,11 +2,11 @@
 //!
 //! This module provides core cryptographic functions used in the Neo blockchain.
 
-use crate::ecc::ECPoint;
-use crate::hasher::Hasher;
-use crate::hash_algorithm::HashAlgorithm;
 use crate::Error;
-use rand::{rngs::OsRng, RngCore};
+use crate::ecc::ECPoint;
+use crate::hash_algorithm::HashAlgorithm;
+use crate::hasher::Hasher;
+use rand::{RngCore, rngs::OsRng};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -70,28 +70,34 @@ impl Crypto {
         hash_algorithm: HashAlgorithm,
     ) -> Result<Vec<u8>, Error> {
         let curve = ec_curve.unwrap_or(crate::ecc::ECCurve::secp256r1());
-        
+
         // Validate private key length
         if pri_key.len() != 32 {
-            return Err(Error::InvalidKey("Private key must be 32 bytes".to_string()));
+            return Err(Error::InvalidKey(
+                "Private key must be 32 bytes".to_string(),
+            ));
         }
-        
-        let private_key_array: [u8; 32] = pri_key.try_into()
+
+        let private_key_array: [u8; 32] = pri_key
+            .try_into()
             .map_err(|_| Error::InvalidKey("Invalid private key length".to_string()))?;
-        
+
         // Hash the message first using the specified algorithm
         let message_hash = Self::get_message_hash(message, hash_algorithm)?;
-        
+
         match curve.name {
             "secp256r1" => {
                 // Use secp256r1 (P-256) implementation
                 crate::ecdsa::ECDsa::sign(&message_hash, &private_key_array)
-            },
+            }
             "secp256k1" => {
-                // Use secp256k1 implementation  
+                // Use secp256k1 implementation
                 crate::ecdsa::ECDsa::sign_secp256k1(&message_hash, pri_key)
-            },
-            _ => Err(Error::UnsupportedAlgorithm(format!("Unsupported curve: {}", curve.name))),
+            }
+            _ => Err(Error::UnsupportedAlgorithm(format!(
+                "Unsupported curve: {}",
+                curve.name
+            ))),
         }
     }
 
@@ -123,7 +129,7 @@ impl Crypto {
             Ok(hash) => hash,
             Err(_) => return false,
         };
-        
+
         match pubkey.get_curve().name {
             "secp256r1" => {
                 // Use secp256r1 (P-256) implementation
@@ -131,16 +137,22 @@ impl Crypto {
                     Ok(bytes) => bytes,
                     Err(_) => return false,
                 };
-                crate::ecdsa::ECDsa::verify(&message_hash, signature, &pubkey_bytes).unwrap_or(false)
-            },
+                crate::ecdsa::ECDsa::verify(&message_hash, signature, &pubkey_bytes)
+                    .unwrap_or(false)
+            }
             "secp256k1" => {
                 // Use secp256k1 implementation
                 let pubkey_bytes = match pubkey.encode_point(false) {
                     Ok(bytes) => bytes,
                     Err(_) => return false,
                 };
-                crate::ecdsa::ECDsa::verify_signature_secp256k1(&message_hash, signature, &pubkey_bytes).unwrap_or(false)
-            },
+                crate::ecdsa::ECDsa::verify_signature_secp256k1(
+                    &message_hash,
+                    signature,
+                    &pubkey_bytes,
+                )
+                .unwrap_or(false)
+            }
             _ => false,
         }
     }
@@ -156,7 +168,10 @@ impl Crypto {
     /// # Returns
     ///
     /// Hashed message
-    pub fn get_message_hash(message: &[u8], hash_algorithm: HashAlgorithm) -> Result<Vec<u8>, Error> {
+    pub fn get_message_hash(
+        message: &[u8],
+        hash_algorithm: HashAlgorithm,
+    ) -> Result<Vec<u8>, Error> {
         match hash_algorithm {
             HashAlgorithm::Sha256 => Ok(crate::hash::sha256(message).to_vec()),
             HashAlgorithm::Sha512 => Ok(crate::hash::sha512(message).to_vec()),
@@ -166,7 +181,7 @@ impl Crypto {
 
     /// Recovers the public key from a signature and message hash.
     /// This matches the C# Crypto.ECRecover implementation.
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `signature` - Signature, either 65 bytes (r[32] || s[32] || v[1]) or 64 bytes in "compact" form (r[32] || yParityAndS[32])
@@ -181,10 +196,14 @@ impl Crypto {
     /// Returns an error if signature or hash is invalid
     pub fn ec_recover(signature: &[u8], hash: &[u8]) -> Result<ECPoint, Error> {
         if signature.len() != 65 && signature.len() != 64 {
-            return Err(Error::InvalidSignature("Signature must be 65 or 64 bytes".into()));
+            return Err(Error::InvalidSignature(
+                "Signature must be 65 or 64 bytes".to_string(),
+            ));
         }
         if hash.len() != 32 {
-            return Err(Error::InvalidSignature("Message hash must be 32 bytes".into()));
+            return Err(Error::InvalidSignature(
+                "Message hash must be 32 bytes".to_string(),
+            ));
         }
 
         // Use secp256k1 for ECRecover (matches C# implementation)
@@ -193,29 +212,31 @@ impl Crypto {
             let r = &signature[0..32];
             let s = &signature[32..64];
             let v = signature[64];
-            
+
             // v could be 0..3 or 27..30 (Ethereum style).
             let rec_id = if v >= 27 { v - 27 } else { v };
             if rec_id > 3 {
-                return Err(Error::InvalidSignature("Recovery value must be in [0..3] after normalization".into()));
+                return Err(Error::InvalidSignature(
+                    "Recovery value must be in [0..3] after normalization".to_string(),
+                ));
             }
-            
+
             Self::recover_public_key_secp256k1(r, s, hash, rec_id)
         } else {
             // 64 bytes "compact" format: r[32] || yParityAndS[32]
             let r = &signature[0..32];
             let y_parity_and_s = &signature[32..64];
-            
+
             // Extract yParity from the top bit of s
             let y_parity = (y_parity_and_s[0] & 0x80) != 0;
-            
+
             // Create s without the top bit
             let mut s = [0u8; 32];
             s.copy_from_slice(y_parity_and_s);
             s[0] &= 0x7F; // Clear the top bit
-            
+
             let rec_id = if y_parity { 1 } else { 0 };
-            
+
             Self::recover_public_key_secp256k1(r, &s, hash, rec_id)
         }
     }
@@ -224,36 +245,40 @@ impl Crypto {
     /// Production implementation using the secp256k1 crate for reliable recovery
     fn recover_public_key_secp256k1(
         r_bytes: &[u8],
-        s_bytes: &[u8], 
+        s_bytes: &[u8],
         hash: &[u8],
         recovery_id: u8,
     ) -> Result<ECPoint, Error> {
-        use secp256k1::{Secp256k1, Message, ecdsa::{RecoverableSignature, RecoveryId}};
-        
+        use secp256k1::{
+            Message, Secp256k1,
+            ecdsa::{RecoverableSignature, RecoveryId},
+        };
+
         // Create secp256k1 context
         let secp = Secp256k1::new();
-        
+
         // Create message from hash
-        let message = Message::from_slice(hash)
+        let message = Message::from_digest_slice(hash)
             .map_err(|e| Error::InvalidSignature(format!("Invalid message hash: {e}")))?;
-        
+
         // Create recovery ID
         let rec_id = RecoveryId::from_i32(recovery_id as i32)
             .map_err(|e| Error::InvalidSignature(format!("Invalid recovery ID: {e}")))?;
-        
+
         // Create signature data
         let mut sig_data = [0u8; 64];
         sig_data[0..32].copy_from_slice(r_bytes);
         sig_data[32..64].copy_from_slice(s_bytes);
-        
+
         // Create recoverable signature
         let recoverable_sig = RecoverableSignature::from_compact(&sig_data, rec_id)
             .map_err(|e| Error::InvalidSignature(format!("Invalid recoverable signature: {e}")))?;
-        
+
         // Recover public key
-        let public_key = secp.recover_ecdsa(&message, &recoverable_sig)
+        let public_key = secp
+            .recover_ecdsa(&message, &recoverable_sig)
             .map_err(|e| Error::InvalidSignature(format!("Public key recovery failed: {e}")))?;
-        
+
         // Convert to ECPoint format
         let pubkey_bytes = public_key.serialize_uncompressed();
         ECPoint::decode(&pubkey_bytes, crate::ecc::ECCurve::secp256k1())
@@ -274,7 +299,7 @@ impl Crypto {
         OsRng.fill_bytes(&mut bytes);
         bytes
     }
-    
+
     /// Computes the SHA-256 hash of the given data.
     ///
     /// # Arguments
@@ -287,7 +312,7 @@ impl Crypto {
     pub fn sha256(data: &[u8]) -> Vec<u8> {
         Hasher::sha256(data)
     }
-    
+
     /// Computes the RIPEMD-160 hash of the given data.
     ///
     /// # Arguments
@@ -300,7 +325,7 @@ impl Crypto {
     pub fn ripemd160(data: &[u8]) -> Vec<u8> {
         Hasher::ripemd160(data)
     }
-    
+
     /// Verifies an ECDSA signature.
     ///
     /// # Arguments
@@ -315,7 +340,7 @@ impl Crypto {
     pub fn verify_signature_bytes(message: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
         crate::helper::verify_signature(message, signature, public_key)
     }
-    
+
     /// Signs a message using ECDSA.
     ///
     /// # Arguments
@@ -329,7 +354,7 @@ impl Crypto {
     pub fn sign_message(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, Error> {
         crate::helper::sign_message(message, private_key)
     }
-    
+
     /// Derives a public key from a private key.
     ///
     /// # Arguments
@@ -342,7 +367,7 @@ impl Crypto {
     pub fn private_key_to_public_key(private_key: &[u8]) -> Result<Vec<u8>, Error> {
         crate::helper::private_key_to_public_key(private_key)
     }
-    
+
     /// Computes the script hash of a public key.
     ///
     /// # Arguments
@@ -355,7 +380,7 @@ impl Crypto {
     pub fn public_key_to_script_hash(public_key: &[u8]) -> Vec<u8> {
         crate::helper::public_key_to_script_hash(public_key)
     }
-    
+
     /// Generates a random private key.
     ///
     /// # Returns
@@ -364,7 +389,7 @@ impl Crypto {
     pub fn generate_private_key() -> Vec<u8> {
         crate::helper::generate_private_key()
     }
-    
+
     /// Verifies that a point is on the specified curve.
     ///
     /// # Arguments
@@ -379,7 +404,7 @@ impl Crypto {
     }
 
     /// Create and cache ECDsa objects (matches C# CreateECDsa implementation)
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `pubkey` - The public key
@@ -392,7 +417,7 @@ impl Crypto {
             Ok(k) => k,
             Err(e) => return Err(Error::InvalidKey(format!("Failed to encode point: {e}"))),
         };
-        
+
         // Check cache first
         {
             let cache = ECDSA_CACHE.lock().unwrap();
@@ -400,18 +425,18 @@ impl Crypto {
                 return Ok(cached.clone());
             }
         }
-        
+
         // Create new ECDSA object (production implementation)
         // In production, this would contain the actual ECDSA context and validation state
         // For compatibility with the C# implementation, we store the encoded public key
         let ecdsa_data = key.clone();
-        
+
         // Add to cache
         {
             let mut cache = ECDSA_CACHE.lock().unwrap();
             cache.insert(key, ecdsa_data.clone());
         }
-        
+
         Ok(ecdsa_data)
     }
 
@@ -426,24 +451,24 @@ impl Crypto {
     ///
     /// The shared secret or an error
     pub fn compute_shared_secret(private_key: &[u8], public_key: &[u8]) -> Result<Vec<u8>, Error> {
-        use secp256k1::{Secp256k1, SecretKey, PublicKey as Secp256k1PublicKey};
-        
+        use secp256k1::{PublicKey as Secp256k1PublicKey, Secp256k1, SecretKey};
+
         let _secp = Secp256k1::new();
-        
+
         // Parse private key
         let secret_key = SecretKey::from_slice(private_key)
             .map_err(|e| Error::InvalidKey(format!("Invalid private key: {e}")))?;
-        
+
         // Parse public key
         let secp256k1_public_key = Secp256k1PublicKey::from_slice(public_key)
             .map_err(|e| Error::InvalidKey(format!("Invalid public key: {e}")))?;
-        
+
         // Compute shared secret using ECDH (multiply public key by private key)
         // For ECDH, we need to use the ecdh module from secp256k1
         use secp256k1::ecdh::SharedSecret;
-        
+
         let shared_secret = SharedSecret::new(&secp256k1_public_key, &secret_key);
-        
+
         // Return the shared secret as bytes
         Ok(shared_secret.secret_bytes().to_vec())
     }
@@ -489,11 +514,7 @@ impl Crypto {
     /// # Returns
     ///
     /// true if the signature is valid; otherwise, false
-    pub fn verify_signature_default(
-        message: &[u8],
-        signature: &[u8],
-        pubkey: &ECPoint,
-    ) -> bool {
+    pub fn verify_signature_default(message: &[u8], signature: &[u8], pubkey: &ECPoint) -> bool {
         Self::verify_signature(message, signature, pubkey, HashAlgorithm::Sha256)
     }
 
@@ -531,7 +552,12 @@ impl Crypto {
         pri_key: &[u8],
         ec_curve: &crate::ecc::ECCurve,
     ) -> Result<Vec<u8>, Error> {
-        Self::sign(message, pri_key, Some(ec_curve.clone()), HashAlgorithm::Sha256)
+        Self::sign(
+            message,
+            pri_key,
+            Some(ec_curve.clone()),
+            HashAlgorithm::Sha256,
+        )
     }
 
     /// Get hash from message using ReadOnlySpan-like interface.
@@ -545,7 +571,10 @@ impl Crypto {
     /// # Returns
     ///
     /// Hashed message
-    pub fn get_message_hash_span(message: &[u8], hash_algorithm: HashAlgorithm) -> Result<Vec<u8>, Error> {
+    pub fn get_message_hash_span(
+        message: &[u8],
+        hash_algorithm: HashAlgorithm,
+    ) -> Result<Vec<u8>, Error> {
         Self::get_message_hash(message, hash_algorithm)
     }
 
@@ -562,7 +591,9 @@ impl Crypto {
     /// The decompressed public key or an error
     pub fn decompress_secp256k1_key(x_coord_bytes: &[u8], y_bit: bool) -> Result<Vec<u8>, Error> {
         if x_coord_bytes.len() != 32 {
-            return Err(Error::InvalidKey("X coordinate must be 32 bytes".to_string()));
+            return Err(Error::InvalidKey(
+                "X coordinate must be 32 bytes".to_string(),
+            ));
         }
 
         // Create compressed key format: prefix (0x02 or 0x03) + x coordinate
@@ -571,10 +602,12 @@ impl Crypto {
 
         // Use secp256k1 to decompress
         use secp256k1::PublicKey as Secp256k1PublicKey;
-        
+
         match Secp256k1PublicKey::from_slice(&compressed_key) {
             Ok(pubkey) => Ok(pubkey.serialize_uncompressed().to_vec()),
-            Err(e) => Err(Error::InvalidKey(format!("Failed to decompress secp256k1 key: {e}"))),
+            Err(e) => Err(Error::InvalidKey(format!(
+                "Failed to decompress secp256k1 key: {e}"
+            ))),
         }
     }
 

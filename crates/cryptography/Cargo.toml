@@ -1,6 +1,6 @@
 [package]
 name = "neo-cryptography"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Neo Global Development <dev@neo.org>"]
 description = "Cryptographic primitives for the Neo blockchain"

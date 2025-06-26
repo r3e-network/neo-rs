@@ -3,7 +3,7 @@
 //! This module provides comprehensive peer management functionality,
 //! including peer discovery, connection management, and peer state tracking.
 
-use crate::{Error, NodeInfo, ProtocolVersion, Result};
+use crate::{NetworkError, NetworkResult, NodeInfo, ProtocolVersion};
 use neo_core::UInt160;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -110,7 +110,7 @@ impl PeerInfo {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_secs()
+                .as_secs(),
         );
         self.failed_attempts = 0;
     }
@@ -161,7 +161,10 @@ impl PeerInfo {
 
     /// Checks if peer is active
     pub fn is_active(&self) -> bool {
-        matches!(self.status, PeerStatus::Ready | PeerStatus::Connected | PeerStatus::Handshaking)
+        matches!(
+            self.status,
+            PeerStatus::Ready | PeerStatus::Connected | PeerStatus::Handshaking
+        )
     }
 }
 
@@ -323,7 +326,7 @@ impl PeerManager {
     }
 
     /// Connects to a peer
-    pub async fn connect_peer(&self, address: SocketAddr) -> Result<()> {
+    pub async fn connect_peer(&self, address: SocketAddr) -> NetworkResult<()> {
         // Check if already connected
         if self.peers.read().await.contains_key(&address) {
             return Ok(());
@@ -331,12 +334,15 @@ impl PeerManager {
 
         // Check if banned
         if self.banned_peers.read().await.contains(&address) {
-            return Err(Error::Peer("Peer is banned".to_string()));
+            return Err(NetworkError::PeerBanned { address });
         }
 
         // Check peer limit
         if self.peers.read().await.len() >= self.max_peers {
-            return Err(Error::Peer("Maximum peers reached".to_string()));
+            return Err(NetworkError::ConnectionLimitReached {
+                current: self.peers.read().await.len(),
+                max: self.max_peers,
+            });
         }
 
         // Create new peer
@@ -370,7 +376,11 @@ impl PeerManager {
     }
 
     /// Marks a peer as ready
-    pub async fn mark_peer_ready(&self, address: SocketAddr, node_info: &NodeInfo) -> Result<()> {
+    pub async fn mark_peer_ready(
+        &self,
+        address: SocketAddr,
+        node_info: &NodeInfo,
+    ) -> NetworkResult<()> {
         let mut peers = self.peers.write().await;
         if let Some(peer) = peers.get_mut(&address) {
             peer.info.update_from_node_info(node_info);
@@ -413,7 +423,9 @@ impl PeerManager {
 
     /// Gets ready peers
     pub async fn get_ready_peers(&self) -> Vec<Peer> {
-        self.peers.read().await
+        self.peers
+            .read()
+            .await
             .values()
             .filter(|peer| peer.info.status == PeerStatus::Ready)
             .cloned()
@@ -429,9 +441,9 @@ impl PeerManager {
         known_peers
             .values()
             .filter(|peer| {
-                !connected_peers.contains_key(&peer.address) &&
-                !banned_peers.contains(&peer.address) &&
-                peer.should_retry(self.max_attempts, self.retry_delay)
+                !connected_peers.contains_key(&peer.address)
+                    && !banned_peers.contains(&peer.address)
+                    && peer.should_retry(self.max_attempts, self.retry_delay)
             })
             .take(count)
             .map(|peer| peer.address)
@@ -439,7 +451,12 @@ impl PeerManager {
     }
 
     /// Records peer statistics
-    pub async fn record_peer_stats(&self, address: SocketAddr, bytes_sent: u64, bytes_received: u64) {
+    pub async fn record_peer_stats(
+        &self,
+        address: SocketAddr,
+        bytes_sent: u64,
+        bytes_received: u64,
+    ) {
         let mut peers = self.peers.write().await;
         if let Some(peer) = peers.get_mut(&address) {
             peer.record_bytes_sent(bytes_sent);
@@ -456,7 +473,9 @@ impl PeerManager {
     /// Completes a ping from a peer
     pub async fn complete_ping(&self, address: SocketAddr, nonce: u32) -> Option<Duration> {
         let mut peers = self.peers.write().await;
-        peers.get_mut(&address).and_then(|peer| peer.complete_ping(nonce))
+        peers
+            .get_mut(&address)
+            .and_then(|peer| peer.complete_ping(nonce))
     }
 
     /// Gets peer statistics
@@ -468,15 +487,16 @@ impl PeerManager {
         let connected_count = peers.len();
         let inbound_count = peers.values().filter(|p| p.info.inbound).count();
         let outbound_count = connected_count - inbound_count;
-        let ready_count = peers.values().filter(|p| p.info.status == PeerStatus::Ready).count();
+        let ready_count = peers
+            .values()
+            .filter(|p| p.info.status == PeerStatus::Ready)
+            .count();
 
         let total_bytes_sent = peers.values().map(|p| p.bytes_sent).sum();
         let total_bytes_received = peers.values().map(|p| p.bytes_received).sum();
 
         let average_latency = {
-            let latencies: Vec<u64> = peers.values()
-                .filter_map(|p| p.info.latency)
-                .collect();
+            let latencies: Vec<u64> = peers.values().filter_map(|p| p.info.latency).collect();
 
             if latencies.is_empty() {
                 0.0
@@ -502,46 +522,48 @@ impl PeerManager {
     pub async fn cleanup(&self) {
         // Production-ready banned peer cleanup (matches C# Neo NetworkPeerManager exactly)
         // This implements the C# logic: CleanupExpiredBans with timestamp tracking
-        
+
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         // 1. Track removal statistics for monitoring
         let initial_count = self.banned_peers.read().await.len();
         let mut expired_count = 0;
         let mut permanent_bans = 0;
-        
+
         // 2. Filter out expired bans (production ban expiration logic)
-        // Note: This is a simplified cleanup - in production we'd need proper ban tracking
+        // Note: Production cleanup would track ban timestamps and durations
         let mut banned_peers = self.banned_peers.write().await;
         let mut to_remove = Vec::new();
-        
+
         for peer_addr in banned_peers.iter() {
             // For now, we'll implement a simple time-based cleanup
             // In production, this would check actual ban timestamps
             to_remove.push(*peer_addr);
         }
-        
+
         // Remove expired bans
         for addr in to_remove {
             banned_peers.remove(&addr);
             expired_count += 1;
         }
-        
+
         drop(banned_peers); // Release the lock
-        
+
         // 3. Update ban statistics (production monitoring)
         let final_count = self.banned_peers.read().await.len();
         let removed_count = initial_count - final_count;
-        
+
         // 4. Log cleanup results for network monitoring
         if removed_count > 0 {
-            println!("Ban cleanup completed: {} expired, {} permanent, {} total removed, {} remaining", 
-                    expired_count, permanent_bans, removed_count, final_count);
+            println!(
+                "Ban cleanup completed: {} expired, {} permanent, {} total removed, {} remaining",
+                expired_count, permanent_bans, removed_count, final_count
+            );
         }
-        
+
         // 5. Trigger peer discovery if many bans expired (production network health)
         if removed_count > 5 {
             // Many bans expired - initiate peer discovery to maintain network connectivity
@@ -553,14 +575,14 @@ impl PeerManager {
     fn calculate_protocol_ban_duration(&self, offense_count: u32) -> u64 {
         // Production-ready ban duration calculation (matches C# Neo ban duration logic)
         // Progressive ban duration: 1st offense = 1 hour, 2nd = 6 hours, 3rd+ = 24 hours
-        
+
         match offense_count {
-            1 => 3600,       // 1 hour for first offense
-            2 => 21600,      // 6 hours for second offense
-            3 => 86400,      // 24 hours for third offense
-            4 => 259200,     // 3 days for fourth offense
-            5 => 604800,     // 1 week for fifth offense
-            _ => 2592000,    // 30 days for repeat offenders (severe)
+            1 => 3600,    // 1 hour for first offense
+            2 => 21600,   // 6 hours for second offense
+            3 => 86400,   // 24 hours for third offense
+            4 => 259200,  // 3 days for fourth offense
+            5 => 604800,  // 1 week for fifth offense
+            _ => 2592000, // 30 days for repeat offenders (severe)
         }
     }
 
@@ -568,9 +590,11 @@ impl PeerManager {
     fn trigger_peer_discovery(&self) {
         // Production-ready peer discovery trigger (matches C# Neo peer discovery)
         // This would integrate with the actual peer discovery system
-        
-        println!("Triggering peer discovery due to expired bans - maintaining network connectivity");
-        
+
+        println!(
+            "Triggering peer discovery due to expired bans - maintaining network connectivity"
+        );
+
         // In production, this would:
         // 1. Query seed nodes for new peers
         // 2. Broadcast GetAddr messages to existing peers
@@ -618,7 +642,7 @@ pub enum BanType {
     /// Permanent ban (never expires)
     Permanent,
     /// Protocol violation ban with progressive duration
-    Protocol { 
+    Protocol {
         offense_count: u32,
         first_offense_at: u64,
     },

@@ -10,10 +10,10 @@ use std::time::Duration;
 pub struct ECDsaCacheKey {
     /// The message that was signed
     pub message: Vec<u8>,
-    
+
     /// The public key used to verify the signature
     pub public_key: Vec<u8>,
-    
+
     /// The signature to verify
     pub signature: Vec<u8>,
 }
@@ -61,27 +61,27 @@ impl ECDsaCache {
             cache: TimedCache::new(capacity, default_ttl),
         }
     }
-    
+
     /// Returns the capacity of the cache.
     pub fn capacity(&self) -> usize {
         self.cache.capacity()
     }
-    
+
     /// Returns the number of entries in the cache.
     pub fn len(&self) -> usize {
         self.cache.len()
     }
-    
+
     /// Returns whether the cache is empty.
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
-    
+
     /// Returns the default time-to-live for entries.
     pub fn default_ttl(&self) -> Duration {
         self.cache.default_ttl()
     }
-    
+
     /// Sets the default time-to-live for entries.
     ///
     /// # Arguments
@@ -90,7 +90,7 @@ impl ECDsaCache {
     pub fn set_default_ttl(&mut self, ttl: Duration) {
         self.cache.set_default_ttl(ttl);
     }
-    
+
     /// Gets the verification result for a signature.
     ///
     /// # Arguments
@@ -106,7 +106,7 @@ impl ECDsaCache {
         let key = ECDsaCacheKey::new(message.to_vec(), public_key.to_vec(), signature.to_vec());
         self.cache.get(&key).copied()
     }
-    
+
     /// Puts a verification result into the cache.
     ///
     /// # Arguments
@@ -119,12 +119,12 @@ impl ECDsaCache {
         let key = ECDsaCacheKey::new(message.to_vec(), public_key.to_vec(), signature.to_vec());
         self.cache.put(key, result);
     }
-    
+
     /// Clears the cache.
     pub fn clear(&mut self) {
         self.cache.clear();
     }
-    
+
     /// Removes all expired entries from the cache.
     pub fn purge_expired(&mut self) {
         self.cache.purge_expired();

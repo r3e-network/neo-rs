@@ -4,7 +4,6 @@
 
 use super::TimedCache;
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 
@@ -13,7 +12,7 @@ use std::time::Duration;
 pub struct ReflectionCacheKey {
     /// The type ID of the object
     pub type_id: TypeId,
-    
+
     /// The name of the method or property
     pub name: String,
 }
@@ -55,27 +54,27 @@ impl ReflectionCache {
             cache: TimedCache::new(capacity, default_ttl),
         }
     }
-    
+
     /// Returns the capacity of the cache.
     pub fn capacity(&self) -> usize {
         self.cache.capacity()
     }
-    
+
     /// Returns the number of entries in the cache.
     pub fn len(&self) -> usize {
         self.cache.len()
     }
-    
+
     /// Returns whether the cache is empty.
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
-    
+
     /// Returns the default time-to-live for entries.
     pub fn default_ttl(&self) -> Duration {
         self.cache.default_ttl()
     }
-    
+
     /// Sets the default time-to-live for entries.
     ///
     /// # Arguments
@@ -84,7 +83,7 @@ impl ReflectionCache {
     pub fn set_default_ttl(&mut self, ttl: Duration) {
         self.cache.set_default_ttl(ttl);
     }
-    
+
     /// Gets a value from the cache.
     ///
     /// # Arguments
@@ -95,17 +94,21 @@ impl ReflectionCache {
     /// # Returns
     ///
     /// The value if it exists and has not expired, or None otherwise
-    pub fn get<T: 'static + Clone + Send + Sync>(&mut self, type_id: TypeId, name: &str) -> Option<T> {
+    pub fn get<T: 'static + Clone + Send + Sync>(
+        &mut self,
+        type_id: TypeId,
+        name: &str,
+    ) -> Option<T> {
         let key = ReflectionCacheKey {
             type_id,
             name: name.to_string(),
         };
-        
-        self.cache.get(&key).and_then(|value| {
-            value.downcast_ref::<T>().cloned()
-        })
+
+        self.cache
+            .get(&key)
+            .and_then(|value| value.downcast_ref::<T>().cloned())
     }
-    
+
     /// Puts a value into the cache.
     ///
     /// # Arguments
@@ -118,10 +121,10 @@ impl ReflectionCache {
             type_id,
             name: name.to_string(),
         };
-        
+
         self.cache.put(key, Box::new(value));
     }
-    
+
     /// Removes a value from the cache.
     ///
     /// # Arguments
@@ -133,15 +136,15 @@ impl ReflectionCache {
             type_id,
             name: name.to_string(),
         };
-        
+
         self.cache.remove(&key);
     }
-    
+
     /// Clears the cache.
     pub fn clear(&mut self) {
         self.cache.clear();
     }
-    
+
     /// Removes all expired entries from the cache.
     pub fn purge_expired(&mut self) {
         self.cache.purge_expired();

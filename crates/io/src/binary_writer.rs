@@ -2,7 +2,7 @@
 //!
 //! This module provides a binary writer for serializing Neo data structures.
 
-use crate::{Error, Result, Serializable};
+use crate::{Result, Serializable};
 use bytes::{BufMut, BytesMut};
 use std::io::Write;
 
@@ -351,7 +351,8 @@ impl Default for BinaryWriter {
 
 impl Write for BinaryWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.write_bytes(buf).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+        self.write_bytes(buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
     }
 
     fn flush(&mut self) -> std::io::Result<()> {

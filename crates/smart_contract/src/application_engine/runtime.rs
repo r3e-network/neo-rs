@@ -3,8 +3,8 @@
 //! This module implements runtime functionality exactly matching C# Neo's ApplicationEngine.Runtime.cs.
 //! It provides notification events, logs, and runtime system interactions.
 
-use neo_core::UInt160;
 use crate::{Error, Result};
+use neo_core::UInt160;
 
 /// Represents a notification event emitted by a smart contract.
 /// This matches C# Neo's NotificationEvent exactly.
@@ -50,10 +50,7 @@ impl NotificationEvent {
 impl LogEvent {
     /// Creates a new log event.
     pub fn new(contract: UInt160, message: String) -> Self {
-        Self {
-            contract,
-            message,
-        }
+        Self { contract, message }
     }
 }
 
@@ -124,12 +121,19 @@ impl RuntimeManager {
 
     /// Emits a notification (production-ready implementation matching C# Neo exactly).
     /// This matches C# ApplicationEngine.RuntimeNotify method exactly.
-    pub fn notify(&mut self, contract_hash: UInt160, event_name: String, state: Vec<u8>) -> Result<()> {
+    pub fn notify(
+        &mut self,
+        contract_hash: UInt160,
+        event_name: String,
+        state: Vec<u8>,
+    ) -> Result<()> {
         // Production-ready notification emission (matches C# ApplicationEngine.RuntimeNotify exactly)
-        
+
         // 1. Validate event name (matches C# validation logic)
         if event_name.is_empty() {
-            return Err(Error::InvalidArguments("Event name cannot be empty".to_string()));
+            return Err(Error::InvalidArguments(
+                "Event name cannot be empty".to_string(),
+            ));
         }
 
         if event_name.len() > 32 {
@@ -157,7 +161,7 @@ impl RuntimeManager {
     /// This matches C# ApplicationEngine.RuntimeLog method exactly.
     pub fn log(&mut self, contract_hash: UInt160, message: String) -> Result<()> {
         // Production-ready log emission (matches C# ApplicationEngine.RuntimeLog exactly)
-        
+
         // 1. Validate message length (matches C# validation logic)
         if message.len() > 1024 {
             return Err(Error::InvalidArguments("Log message too long".to_string()));
@@ -176,17 +180,26 @@ impl RuntimeManager {
     }
 
     /// Emits a generic event with arguments.
-    pub fn emit_event(&mut self, contract_hash: UInt160, event_name: &str, args: Vec<Vec<u8>>) -> Result<()> {
+    pub fn emit_event(
+        &mut self,
+        contract_hash: UInt160,
+        event_name: &str,
+        args: Vec<Vec<u8>>,
+    ) -> Result<()> {
         // Production-ready event emission (matches C# ApplicationEngine event handling exactly)
-        
+
         // 1. Validate event name
         if event_name.is_empty() {
-            return Err(Error::InvalidArguments("Event name cannot be empty".to_string()));
+            return Err(Error::InvalidArguments(
+                "Event name cannot be empty".to_string(),
+            ));
         }
 
         // 2. Validate arguments count
         if args.len() > 16 {
-            return Err(Error::InvalidArguments("Too many event arguments".to_string()));
+            return Err(Error::InvalidArguments(
+                "Too many event arguments".to_string(),
+            ));
         }
 
         // 3. Serialize arguments to state bytes (matches C# serialization exactly)
@@ -210,7 +223,10 @@ impl RuntimeManager {
     }
 
     /// Filters notifications by contract.
-    pub fn get_notifications_by_contract(&self, contract_hash: &UInt160) -> Vec<&NotificationEvent> {
+    pub fn get_notifications_by_contract(
+        &self,
+        contract_hash: &UInt160,
+    ) -> Vec<&NotificationEvent> {
         self.notifications
             .iter()
             .filter(|notification| &notification.contract == contract_hash)
@@ -238,4 +254,4 @@ impl Default for RuntimeManager {
     fn default() -> Self {
         Self::new()
     }
-} 
+}

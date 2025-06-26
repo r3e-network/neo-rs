@@ -20,7 +20,10 @@ impl Ed25519 {
         let mut csprng = OsRng;
         let keypair = Keypair::generate(&mut csprng);
 
-        (keypair.secret.as_bytes().to_vec(), keypair.public.as_bytes().to_vec())
+        (
+            keypair.secret.as_bytes().to_vec(),
+            keypair.public.as_bytes().to_vec(),
+        )
     }
 
     /// Derives a public key from a private key.
@@ -34,7 +37,7 @@ impl Ed25519 {
     /// The derived public key or an error
     pub fn private_key_to_public_key(private_key: &[u8]) -> Result<Vec<u8>, Error> {
         if private_key.len() != 32 {
-            return Err(Error::InvalidKey("Invalid private key length".into()));
+            return Err(Error::InvalidKey("Invalid private key length".to_string()));
         }
 
         let secret = SecretKey::from_bytes(private_key)
@@ -59,7 +62,7 @@ impl Ed25519 {
     /// The signature or an error
     pub fn sign(private_key: &[u8], message: &[u8]) -> Result<Vec<u8>, Error> {
         if private_key.len() != 32 {
-            return Err(Error::InvalidKey("Invalid private key length".into()));
+            return Err(Error::InvalidKey("Invalid private key length".to_string()));
         }
 
         let secret = SecretKey::from_bytes(private_key)

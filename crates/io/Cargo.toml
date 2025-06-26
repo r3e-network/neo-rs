@@ -1,6 +1,6 @@
 [package]
 name = "neo-io"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Neo Global Development <dev@neo.org>"]
 description = "IO operations and data structures for the Neo blockchain"
@@ -32,3 +32,7 @@ std = []
 async = ["tokio", "async-trait", "futures"]
 # Temporarily commented out to break dependency cycle
 # crypto = ["neo-cryptography"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+tempfile = { workspace = true }

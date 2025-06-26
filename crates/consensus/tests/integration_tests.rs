@@ -1,11 +1,13 @@
 //! Integration tests for the consensus module.
 
+use neo_consensus::context::TimerType;
+use neo_consensus::proposal::{MemoryPool, MempoolConfig, ProposalConfig, ProposalManager};
+use neo_consensus::recovery::{RecoveryConfig, RecoveryManager};
+use neo_consensus::service::{
+    ConsensusService, ConsensusServiceConfig, ConsensusServiceState, Ledger, NetworkService,
+};
+use neo_consensus::validators::{Validator, ValidatorPerformance, ValidatorSet};
 use neo_consensus::*;
-use neo_consensus::proposal::{MemoryPool, MempoolConfig, ProposalManager, ProposalConfig};
-use neo_consensus::context::{TimerType};
-use neo_consensus::recovery::{RecoveryManager, RecoveryConfig};
-use neo_consensus::service::{ConsensusServiceState, ConsensusServiceConfig, ConsensusService, NetworkService, Ledger};
-use neo_consensus::validators::{ValidatorPerformance, Validator, ValidatorSet};
 use neo_core::{UInt160, UInt256};
 use std::sync::Arc;
 
@@ -103,29 +105,47 @@ async fn test_block_index_operations() {
 async fn test_validator_set_operations() {
     let validators = vec![
         Validator::new(UInt160::zero(), vec![1], 1000, 0, 100),
-        Validator::new(UInt160::from_bytes(&[1; 20]).unwrap(), vec![2], 2000, 1, 100),
-        Validator::new(UInt160::from_bytes(&[2; 20]).unwrap(), vec![3], 3000, 2, 100),
-        Validator::new(UInt160::from_bytes(&[3; 20]).unwrap(), vec![4], 4000, 3, 100),
+        Validator::new(
+            UInt160::from_bytes(&[1; 20]).unwrap(),
+            vec![2],
+            2000,
+            1,
+            100,
+        ),
+        Validator::new(
+            UInt160::from_bytes(&[2; 20]).unwrap(),
+            vec![3],
+            3000,
+            2,
+            100,
+        ),
+        Validator::new(
+            UInt160::from_bytes(&[3; 20]).unwrap(),
+            vec![4],
+            4000,
+            3,
+            100,
+        ),
     ];
-    
+
     let validator_set = ValidatorSet::new(validators, 100);
-    
+
     // Test validation
     assert!(validator_set.validate().is_ok());
-    
+
     // Test primary selection
     let primary = validator_set.get_primary(ViewNumber::new(0));
     assert!(primary.is_some());
     assert_eq!(primary.unwrap().index, 0);
-    
+
     let primary = validator_set.get_primary(ViewNumber::new(2));
     assert!(primary.is_some());
     assert_eq!(primary.unwrap().index, 2);
-    
+
     // Test backup selection
     let backups = validator_set.get_backups(ViewNumber::new(0));
     assert_eq!(backups.len(), 3);
-    
+
     // Test required signatures
     assert_eq!(validator_set.required_signatures(), 3); // 4 - (4-1)/3 = 3
 }
@@ -134,28 +154,30 @@ async fn test_validator_set_operations() {
 async fn test_validator_manager() {
     let config = ValidatorConfig::default();
     let manager = ValidatorManager::new(config);
-    
+
     // Test registering validators
     for i in 0..7 {
         let hash = UInt160::from_bytes(&[i; 20]).unwrap();
         let public_key = vec![i; 33];
         let stake = 1000_00000000; // 1000 NEO
-        
-        manager.register_validator(hash, public_key, stake, 100).unwrap();
+
+        manager
+            .register_validator(hash, public_key, stake, 100)
+            .unwrap();
     }
-    
+
     // Test getting validators
     let all_validators = manager.get_all_validators();
     assert_eq!(all_validators.len(), 7);
-    
+
     let active_validators = manager.get_active_validators();
     assert_eq!(active_validators.len(), 7);
-    
+
     // Test selecting validator set
     let validator_set = manager.select_next_validator_set(7).unwrap();
     assert_eq!(validator_set.len(), 7);
     assert!(validator_set.validate().is_ok());
-    
+
     // Test stats
     let stats = manager.get_stats();
     assert_eq!(stats.total_validators, 7);
@@ -167,25 +189,27 @@ async fn test_consensus_context() {
     let config = ConsensusConfig::default();
     let my_hash = UInt160::zero();
     let context = ConsensusContext::new(config, my_hash);
-    
+
     // Test starting a round
     let block_index = BlockIndex::new(100);
     assert!(context.start_round(block_index).is_ok());
-    
+
     let round = context.get_current_round();
     assert_eq!(round.block_index, block_index);
     assert_eq!(round.view_number, ViewNumber::new(0));
-    
+
     // Test changing view
-    context.change_view(ViewNumber::new(1), ViewChangeReason::PrepareRequestTimeout).unwrap();
-    
+    context
+        .change_view(ViewNumber::new(1), ViewChangeReason::PrepareRequestTimeout)
+        .unwrap();
+
     let round = context.get_current_round();
     assert_eq!(round.view_number.value(), 1);
-    
+
     // Test timer operations
     context.start_timer(TimerType::PrepareRequest);
     assert!(context.is_timer_active(TimerType::PrepareRequest));
-    
+
     context.stop_timer(TimerType::PrepareRequest);
     assert!(!context.is_timer_active(TimerType::PrepareRequest));
 }
@@ -205,7 +229,7 @@ async fn test_dbft_engine() {
     let config = DbftConfig::default();
     let my_hash = UInt160::zero();
     let (message_tx, _message_rx) = tokio::sync::mpsc::unbounded_channel();
-    
+
     let engine = DbftEngine::new(config, my_hash, message_tx);
 
     // Test starting the engine
@@ -225,23 +249,35 @@ async fn test_consensus_service() {
     let network = Arc::new(NetworkService::new());
     let ledger = Arc::new(Ledger::new());
 
-    let mut service = ConsensusService::new(
-        config,
-        my_hash,
-        ledger,
-        network,
-        mempool,
-    );
+    let mut service = ConsensusService::new(config, my_hash, ledger, network, mempool);
 
     // Create a proper validator set with 4 validators (minimum required)
     let validators = vec![
         Validator::new(UInt160::zero(), vec![1; 33], 1000_00000000, 0, 0),
-        Validator::new(UInt160::from_bytes(&[1; 20]).unwrap(), vec![2; 33], 1000_00000000, 1, 0),
-        Validator::new(UInt160::from_bytes(&[2; 20]).unwrap(), vec![3; 33], 1000_00000000, 2, 0),
-        Validator::new(UInt160::from_bytes(&[3; 20]).unwrap(), vec![4; 33], 1000_00000000, 3, 0),
+        Validator::new(
+            UInt160::from_bytes(&[1; 20]).unwrap(),
+            vec![2; 33],
+            1000_00000000,
+            1,
+            0,
+        ),
+        Validator::new(
+            UInt160::from_bytes(&[2; 20]).unwrap(),
+            vec![3; 33],
+            1000_00000000,
+            2,
+            0,
+        ),
+        Validator::new(
+            UInt160::from_bytes(&[3; 20]).unwrap(),
+            vec![4; 33],
+            1000_00000000,
+            3,
+            0,
+        ),
     ];
     let validator_set = ValidatorSet::new(validators, 0);
-    
+
     // Set the validator set before starting the service
     service.update_validator_set(validator_set).await.unwrap();
 
@@ -249,7 +285,7 @@ async fn test_consensus_service() {
     match service.start().await {
         Ok(_) => {
             assert_eq!(service.state(), ConsensusServiceState::Running);
-            
+
             // Test stopping the service
             service.stop().await;
             assert_eq!(service.state(), ConsensusServiceState::Stopped);
@@ -277,7 +313,7 @@ async fn test_recovery_manager() {
 #[tokio::test]
 async fn test_validator_performance() {
     let mut performance = ValidatorPerformance::default();
-    
+
     // Record some performance metrics
     performance.record_block_proposal();
     performance.record_block_signature();
@@ -329,7 +365,7 @@ async fn test_consensus_round_management() {
 #[tokio::test]
 async fn test_csharp_consensus_compatibility() {
     // Test that our consensus implementation matches C# behavior
-    
+
     // 1. Test view number wrapping (C# uses byte, so wraps at 255)
     let mut view = ViewNumber::new(255);
     view.increment();

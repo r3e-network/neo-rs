@@ -2,14 +2,14 @@
 //!
 //! This module provides script representation and parsing functionality.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::instruction::{Instruction, OperandSizePrefix};
 use crate::op_code::OpCode;
-use crate::Error;
-use crate::Result;
 use neo_io::MemoryReader;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
 /// Represents a script in the Neo VM.
@@ -35,7 +35,7 @@ pub struct InstructionIterator<'a> {
 }
 
 impl<'a> Iterator for InstructionIterator<'a> {
-    type Item = Result<(usize, Instruction)>;
+    type Item = VmResult<(usize, Instruction)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.position >= self.script.len() {
@@ -55,7 +55,7 @@ impl<'a> Iterator for InstructionIterator<'a> {
 
 impl Script {
     /// Creates a new script with optional validation and strict mode.
-    pub fn new(script: Vec<u8>, strict_mode: bool) -> Result<Self> {
+    pub fn new(script: Vec<u8>, strict_mode: bool) -> VmResult<Self> {
         let mut s = Self {
             script,
             instructions: Arc::new(Mutex::new(HashMap::new())),
@@ -77,7 +77,7 @@ impl Script {
 
     /// Creates a new script with default settings (non-strict mode).
     /// This provides backward compatibility for code expecting Script::new(script).
-    pub fn from(script: Vec<u8>) -> Result<Self> {
+    pub fn from(script: Vec<u8>) -> VmResult<Self> {
         Self::new(script, false)
     }
 
@@ -103,7 +103,7 @@ impl Script {
     }
 
     /// Populates the instruction cache by parsing all instructions
-    fn populate_instruction_cache(&mut self) -> Result<()> {
+    fn populate_instruction_cache(&mut self) -> VmResult<()> {
         let mut position = 0;
         let mut instructions = HashMap::new();
 
@@ -111,7 +111,7 @@ impl Script {
             let mut reader = MemoryReader::new(&self.script);
             reader.set_position(position)?;
             let instruction = Instruction::parse_from_neo_io_reader(&mut reader)?;
-            
+
             instructions.insert(position, instruction.clone());
             position += instruction.size();
         }
@@ -121,7 +121,7 @@ impl Script {
     }
 
     /// Validates the script.
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> VmResult<()> {
         let mut reader = MemoryReader::new(&self.script);
 
         while reader.position() < reader.len() {
@@ -132,7 +132,10 @@ impl Script {
 
             // Check if the instruction goes beyond the script bounds
             if instruction.pointer() + instruction.size() > self.script.len() {
-                return Err(Error::InvalidInstruction(format!("Instruction at position {} exceeds script bounds", instruction.pointer())));
+                return Err(VmError::invalid_instruction_msg(format!(
+                    "Instruction at position {} exceeds script bounds",
+                    instruction.pointer()
+                )));
             }
 
             // We would check for additional validity here, such as invalid jump targets
@@ -142,32 +145,57 @@ impl Script {
     }
 
     /// Validates the script in strict mode.
-    pub fn validate_strict(&self) -> Result<()> {
+    pub fn validate_strict(&self) -> VmResult<()> {
         let instructions = self.instructions.lock().unwrap();
 
         // Validate jump targets
         for (&ip, instruction) in instructions.iter() {
             match instruction.opcode() {
-                OpCode::JMP | OpCode::JMPIF | OpCode::JMPIFNOT |
-                OpCode::JMPEQ | OpCode::JMPNE | OpCode::JMPGT | OpCode::JMPGE |
-                OpCode::JMPLT | OpCode::JMPLE | OpCode::CALL | OpCode::ENDTRY => {
+                OpCode::JMP
+                | OpCode::JMPIF
+                | OpCode::JMPIFNOT
+                | OpCode::JMPEQ
+                | OpCode::JMPNE
+                | OpCode::JMPGT
+                | OpCode::JMPGE
+                | OpCode::JMPLT
+                | OpCode::JMPLE
+                | OpCode::CALL
+                | OpCode::ENDTRY => {
                     let offset = instruction.operand_as::<i8>()?;
                     // Jump offsets are relative to the next instruction
                     let next_ip = ip + instruction.size();
                     let target = (next_ip as i32 + offset as i32) as usize;
                     if !instructions.contains_key(&target) {
-                        return Err(Error::InvalidScript(format!("Invalid jump target at position {}: {:?}", ip, instruction.opcode())));
+                        return Err(VmError::invalid_script_msg(format!(
+                            "Invalid jump target at position {}: {:?}",
+                            ip,
+                            instruction.opcode()
+                        )));
                     }
                 }
-                OpCode::PUSHA | OpCode::JMP_L | OpCode::JMPIF_L | OpCode::JMPIFNOT_L |
-                OpCode::JMPEQ_L | OpCode::JMPNE_L | OpCode::JMPGT_L | OpCode::JMPGE_L |
-                OpCode::JMPLT_L | OpCode::JMPLE_L | OpCode::CALL_L | OpCode::ENDTRY_L => {
+                OpCode::PUSHA
+                | OpCode::JMP_L
+                | OpCode::JMPIF_L
+                | OpCode::JMPIFNOT_L
+                | OpCode::JMPEQ_L
+                | OpCode::JMPNE_L
+                | OpCode::JMPGT_L
+                | OpCode::JMPGE_L
+                | OpCode::JMPLT_L
+                | OpCode::JMPLE_L
+                | OpCode::CALL_L
+                | OpCode::ENDTRY_L => {
                     let offset = instruction.operand_as::<i32>()?;
                     // Jump offsets are relative to the next instruction
                     let next_ip = ip + instruction.size();
                     let target = (next_ip as i32 + offset) as usize;
                     if !instructions.contains_key(&target) {
-                        return Err(Error::InvalidScript(format!("Invalid jump target at position {}: {:?}", ip, instruction.opcode())));
+                        return Err(VmError::invalid_script_msg(format!(
+                            "Invalid jump target at position {}: {:?}",
+                            ip,
+                            instruction.opcode()
+                        )));
                     }
                 }
                 OpCode::TRY => {
@@ -180,11 +208,19 @@ impl Script {
                     let finally_target = (next_ip as i32 + finally_offset as i32) as usize;
 
                     if !instructions.contains_key(&catch_target) {
-                        return Err(Error::InvalidScript(format!("Invalid catch target at position {}: {:?}", ip, instruction.opcode())));
+                        return Err(VmError::invalid_script_msg(format!(
+                            "Invalid catch target at position {}: {:?}",
+                            ip,
+                            instruction.opcode()
+                        )));
                     }
 
                     if !instructions.contains_key(&finally_target) {
-                        return Err(Error::InvalidScript(format!("Invalid finally target at position {}: {:?}", ip, instruction.opcode())));
+                        return Err(VmError::invalid_script_msg(format!(
+                            "Invalid finally target at position {}: {:?}",
+                            ip,
+                            instruction.opcode()
+                        )));
                     }
                 }
                 OpCode::TRY_L => {
@@ -197,21 +233,41 @@ impl Script {
                     let finally_target = (next_ip as i32 + finally_offset) as usize;
 
                     if !instructions.contains_key(&catch_target) {
-                        return Err(Error::InvalidScript(format!("Invalid catch target at position {}: {:?}", ip, instruction.opcode())));
+                        return Err(VmError::invalid_script_msg(format!(
+                            "Invalid catch target at position {}: {:?}",
+                            ip,
+                            instruction.opcode()
+                        )));
                     }
 
                     if !instructions.contains_key(&finally_target) {
-                        return Err(Error::InvalidScript(format!("Invalid finally target at position {}: {:?}", ip, instruction.opcode())));
+                        return Err(VmError::invalid_script_msg(format!(
+                            "Invalid finally target at position {}: {:?}",
+                            ip,
+                            instruction.opcode()
+                        )));
                     }
                 }
                 OpCode::NEWARRAY_T | OpCode::ISTYPE | OpCode::CONVERT => {
                     let type_byte = instruction.operand_as::<u8>()?;
-                    if let Some(item_type) = crate::stack_item::stack_item_type::StackItemType::from_byte(type_byte) {
-                        if instruction.opcode() != OpCode::NEWARRAY_T && item_type == crate::stack_item::stack_item_type::StackItemType::Any {
-                            return Err(Error::InvalidScript(format!("Invalid type at position {}: {:?}", ip, instruction.opcode())));
+                    if let Some(item_type) =
+                        crate::stack_item::stack_item_type::StackItemType::from_byte(type_byte)
+                    {
+                        if instruction.opcode() != OpCode::NEWARRAY_T
+                            && item_type == crate::stack_item::stack_item_type::StackItemType::Any
+                        {
+                            return Err(VmError::invalid_script_msg(format!(
+                                "Invalid type at position {}: {:?}",
+                                ip,
+                                instruction.opcode()
+                            )));
                         }
                     } else {
-                        return Err(Error::InvalidScript(format!("Invalid type at position {}: {:?}", ip, instruction.opcode())));
+                        return Err(VmError::invalid_script_msg(format!(
+                            "Invalid type at position {}: {:?}",
+                            ip,
+                            instruction.opcode()
+                        )));
                     }
                 }
                 _ => {}
@@ -222,9 +278,12 @@ impl Script {
     }
 
     /// Gets the instruction at the specified position.
-    pub fn get_instruction(&self, position: usize) -> Result<Instruction> {
+    pub fn get_instruction(&self, position: usize) -> VmResult<Instruction> {
         if position >= self.script.len() {
-            return Err(Error::InvalidOperation(format!("Position {} is beyond script bounds", position)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Position {} is beyond script bounds",
+                position
+            )));
         }
 
         // Check if the instruction is already cached
@@ -237,7 +296,10 @@ impl Script {
 
         // If in strict mode, we should have all instructions cached
         if self.strict_mode {
-            return Err(Error::InvalidOperation(format!("Position {} not found with strict mode", position)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Position {} not found with strict mode",
+                position
+            )));
         }
 
         // Parse the instruction
@@ -255,18 +317,24 @@ impl Script {
     }
 
     /// Gets a byte at the specified position.
-    pub fn get_byte(&self, position: usize) -> Result<u8> {
+    pub fn get_byte(&self, position: usize) -> VmResult<u8> {
         if position >= self.script.len() {
-            return Err(Error::InvalidOperation(format!("Position {} is beyond script bounds", position)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Position {} is beyond script bounds",
+                position
+            )));
         }
 
         Ok(self.script[position])
     }
 
     /// Gets a range of bytes from the script.
-    pub fn range(&self, start: usize, end: usize) -> Result<Vec<u8>> {
+    pub fn range(&self, start: usize, end: usize) -> VmResult<Vec<u8>> {
         if start >= self.script.len() || end > self.script.len() || start > end {
-            return Err(Error::InvalidOperation(format!("Range {}..{} is invalid", start, end)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Range {}..{} is invalid",
+                start, end
+            )));
         }
 
         Ok(self.script[start..end].to_vec())
@@ -321,11 +389,11 @@ impl Script {
     /// # Returns
     ///
     /// The absolute position after the jump
-    pub fn get_jump_offset(&self, next_position: usize, offset: i32) -> Result<usize> {
+    pub fn get_jump_offset(&self, next_position: usize, offset: i32) -> VmResult<usize> {
         let new_position = next_position as i32 + offset;
 
         if new_position < 0 || new_position >= self.script.len() as i32 {
-            return Err(Error::InvalidScript("Jump offset out of bounds".into()));
+            return Err(VmError::invalid_script_msg("Jump offset out of bounds"));
         }
 
         Ok(new_position as usize)
@@ -393,7 +461,7 @@ impl Script {
     /// # Returns
     ///
     /// The absolute position of the jump target
-    pub fn get_jump_target(&self, instruction: &Instruction) -> Result<usize> {
+    pub fn get_jump_target(&self, instruction: &Instruction) -> VmResult<usize> {
         let opcode = instruction.opcode();
         let position = instruction.pointer();
         let next_position = position + instruction.size();
@@ -410,17 +478,30 @@ impl Script {
                 let offset = instruction.operand_as::<i32>()?;
                 self.get_jump_offset(next_position, offset)
             }
-            OpCode::JMPEQ | OpCode::JMPNE | OpCode::JMPGT | OpCode::JMPGE | OpCode::JMPLT | OpCode::JMPLE => {
+            OpCode::JMPEQ
+            | OpCode::JMPNE
+            | OpCode::JMPGT
+            | OpCode::JMPGE
+            | OpCode::JMPLT
+            | OpCode::JMPLE => {
                 // 1-byte offset
                 let offset = instruction.operand_as::<i8>()?;
                 self.get_jump_offset(next_position, offset as i32)
             }
-            OpCode::JMPEQ_L | OpCode::JMPNE_L | OpCode::JMPGT_L | OpCode::JMPGE_L | OpCode::JMPLT_L | OpCode::JMPLE_L => {
+            OpCode::JMPEQ_L
+            | OpCode::JMPNE_L
+            | OpCode::JMPGT_L
+            | OpCode::JMPGE_L
+            | OpCode::JMPLT_L
+            | OpCode::JMPLE_L => {
                 // 4-byte offset
                 let offset = instruction.operand_as::<i32>()?;
                 self.get_jump_offset(next_position, offset)
             }
-            _ => Err(Error::InvalidInstruction(format!("Not a jump instruction: {:?}", opcode))),
+            _ => Err(VmError::invalid_instruction_msg(format!(
+                "Not a jump instruction: {:?}",
+                opcode
+            ))),
         }
     }
 
@@ -433,14 +514,17 @@ impl Script {
     /// # Returns
     ///
     /// A tuple of (catch_offset, finally_offset) as absolute positions
-    pub fn get_try_offsets(&self, instruction: &Instruction) -> Result<(usize, usize)> {
+    pub fn get_try_offsets(&self, instruction: &Instruction) -> VmResult<(usize, usize)> {
         let opcode = instruction.opcode();
         let position = instruction.pointer();
         let next_position = position + instruction.size();
 
         // Check if the instruction is a TRY instruction
         if opcode != OpCode::TRY {
-            return Err(Error::InvalidInstruction(format!("Not a TRY instruction: {:?}", opcode)));
+            return Err(VmError::invalid_instruction_msg(format!(
+                "Not a TRY instruction: {:?}",
+                opcode
+            )));
         }
 
         // Get the catch and finally offsets
@@ -463,7 +547,7 @@ impl Script {
     /// # Returns
     ///
     /// A tuple of (instruction, next_position)
-    pub fn get_next_instruction(&self, position: usize) -> Result<(Instruction, usize)> {
+    pub fn get_next_instruction(&self, position: usize) -> VmResult<(Instruction, usize)> {
         let instruction = self.get_instruction(position)?;
         let next_position = position + instruction.size();
         Ok((instruction, next_position))
@@ -511,7 +595,10 @@ mod tests {
         assert_eq!(script.get_byte(1).unwrap(), OpCode::PUSH2 as u8);
 
         // Get a range
-        assert_eq!(script.range(0, 2).unwrap(), vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8]);
+        assert_eq!(
+            script.range(0, 2).unwrap(),
+            vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8]
+        );
 
         // Test hash code
         let hash = script.hash_code();
@@ -526,7 +613,8 @@ mod tests {
     fn test_script_validation_with_invalid_jump() {
         // Create an invalid script: JMP with a target beyond the script bounds
         let script_bytes = vec![
-            OpCode::JMP as u8, 0xFF, // Jump to a position well beyond the script
+            OpCode::JMP as u8,
+            0xFF, // Jump to a position well beyond the script
         ];
 
         // Create without validation should succeed
@@ -568,11 +656,12 @@ mod tests {
     fn test_script_with_valid_jumps() {
         // Create a valid script with jumps
         let script_bytes = vec![
-            OpCode::PUSH1 as u8,                // 0
-            OpCode::JMP as u8, 0x00,            // 1: Jump to position 3 (offset 0 from next instruction at 3)
-            OpCode::PUSH2 as u8,                // 3
-            OpCode::ADD as u8,                  // 4
-            OpCode::RET as u8,                  // 5
+            OpCode::PUSH1 as u8, // 0
+            OpCode::JMP as u8,
+            0x00,                // 1: Jump to position 3 (offset 0 from next instruction at 3)
+            OpCode::PUSH2 as u8, // 3
+            OpCode::ADD as u8,   // 4
+            OpCode::RET as u8,   // 5
         ];
 
         // Create with validation

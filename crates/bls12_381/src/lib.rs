@@ -6,19 +6,19 @@
 //! BLS signatures are used in Neo N3 for consensus operations, allowing signature aggregation
 //! for efficient multi-signature schemes.
 
+pub mod aggregation;
+pub mod batch;
+pub mod constants;
 pub mod error;
 pub mod keys;
 pub mod signature;
-pub mod aggregation;
 pub mod utils;
-pub mod constants;
-pub mod batch;
 
-pub use error::{BlsError, BlsResult};
-pub use keys::{PrivateKey, PublicKey, KeyPair};
-pub use signature::{Signature, SignatureScheme};
-pub use aggregation::{AggregateSignature, AggregatePublicKey};
+pub use aggregation::{AggregatePublicKey, AggregateSignature};
 pub use batch::BatchVerifier;
+pub use error::{BlsError, BlsResult};
+pub use keys::{KeyPair, PrivateKey, PublicKey};
+pub use signature::{Signature, SignatureScheme};
 
 use rand::RngCore;
 
@@ -145,7 +145,7 @@ mod tests {
         let mut rng = thread_rng();
         let private_key = Bls12381::generate_private_key(&mut rng);
         let public_key = Bls12381::derive_public_key(&private_key);
-        
+
         assert!(Bls12381::validate_private_key(&private_key));
         assert!(Bls12381::validate_public_key(&public_key));
     }
@@ -159,7 +159,7 @@ mod tests {
 
         let signature = Bls12381::sign(&private_key, message).unwrap();
         assert!(Bls12381::verify(&public_key, message, &signature));
-        
+
         // Test with different message
         let wrong_message = b"Wrong message";
         assert!(!Bls12381::verify(&public_key, wrong_message, &signature));
@@ -175,7 +175,8 @@ mod tests {
 
         // Test private key serialization
         let private_key_bytes = Bls12381::private_key_to_bytes(&private_key);
-        let deserialized_private_key = Bls12381::private_key_from_bytes(&private_key_bytes).unwrap();
+        let deserialized_private_key =
+            Bls12381::private_key_from_bytes(&private_key_bytes).unwrap();
         assert_eq!(private_key, deserialized_private_key);
 
         // Test public key serialization
@@ -195,4 +196,4 @@ mod tests {
         assert_eq!(constants::PUBLIC_KEY_SIZE, 48);
         assert_eq!(constants::SIGNATURE_SIZE, 96);
     }
-} 
+}

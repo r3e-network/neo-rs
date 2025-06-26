@@ -1,10 +1,10 @@
 //! Compound type operation OpCodes for the Neo Virtual Machine.
-//! 
+//!
 //! This module contains all OpCodes related to compound data types,
 //! including arrays, structs, maps, and their manipulation.
 
 /// Compound type operation OpCodes.
-/// 
+///
 /// These opcodes work with arrays, structs, maps, and other compound data types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -168,25 +168,47 @@ impl CompoundOpCode {
     pub fn creates_new(&self) -> bool {
         matches!(
             self,
-            Self::NEWARRAY | Self::NEWARRAY_T | Self::NEWSTRUCT | Self::NEWMAP | Self::PACKMAP | Self::PACKSTRUCT | Self::PACK
+            Self::NEWARRAY
+                | Self::NEWARRAY_T
+                | Self::NEWSTRUCT
+                | Self::NEWMAP
+                | Self::PACKMAP
+                | Self::PACKSTRUCT
+                | Self::PACK
         )
     }
 
     /// Checks if this operation modifies an existing compound type.
     pub fn modifies_existing(&self) -> bool {
-        matches!(self, Self::APPEND | Self::REVERSE | Self::REMOVE | Self::SETITEM)
+        matches!(
+            self,
+            Self::APPEND | Self::REVERSE | Self::REMOVE | Self::SETITEM
+        )
     }
 
     /// Checks if this operation queries a compound type.
     pub fn is_query(&self) -> bool {
-        matches!(self, Self::HASKEY | Self::KEYS | Self::VALUES | Self::PICKITEM | Self::SIZE)
+        matches!(
+            self,
+            Self::HASKEY | Self::KEYS | Self::VALUES | Self::PICKITEM | Self::SIZE
+        )
     }
 
     /// Checks if this operation works with arrays.
     pub fn works_with_arrays(&self) -> bool {
         matches!(
             self,
-            Self::NEWARRAY | Self::NEWARRAY_T | Self::APPEND | Self::REVERSE | Self::REMOVE | Self::HASKEY | Self::PACK | Self::UNPACK | Self::PICKITEM | Self::SETITEM | Self::SIZE
+            Self::NEWARRAY
+                | Self::NEWARRAY_T
+                | Self::APPEND
+                | Self::REVERSE
+                | Self::REMOVE
+                | Self::HASKEY
+                | Self::PACK
+                | Self::UNPACK
+                | Self::PICKITEM
+                | Self::SETITEM
+                | Self::SIZE
         )
     }
 
@@ -194,12 +216,23 @@ impl CompoundOpCode {
     pub fn works_with_maps(&self) -> bool {
         matches!(
             self,
-            Self::NEWMAP | Self::REMOVE | Self::HASKEY | Self::KEYS | Self::VALUES | Self::PACKMAP | Self::PICKITEM | Self::SETITEM | Self::SIZE
+            Self::NEWMAP
+                | Self::REMOVE
+                | Self::HASKEY
+                | Self::KEYS
+                | Self::VALUES
+                | Self::PACKMAP
+                | Self::PICKITEM
+                | Self::SETITEM
+                | Self::SIZE
         )
     }
 
     /// Checks if this operation works with structs.
     pub fn works_with_structs(&self) -> bool {
-        matches!(self, Self::NEWSTRUCT | Self::PACKSTRUCT | Self::PICKITEM | Self::SETITEM)
+        matches!(
+            self,
+            Self::NEWSTRUCT | Self::PACKSTRUCT | Self::PICKITEM | Self::SETITEM
+        )
     }
 }

@@ -38,8 +38,8 @@ mod tests {
     fn test_strict_utf8_invalid() {
         let invalid_bytes = vec![0xFF, 0xFE, 0xFD];
         assert!(StrictUtf8::get_string(&invalid_bytes).is_err());
-        
+
         let lossy = StrictUtf8::get_string_lossy(&invalid_bytes);
         assert!(!lossy.is_empty()); // Should contain replacement characters
     }
-} 
+}

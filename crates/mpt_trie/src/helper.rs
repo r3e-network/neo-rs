@@ -1,6 +1,5 @@
 /// Helper functions for MPT Trie operations
 /// This matches the C# Helper class functionality
-
 use crate::error::{MptError, MptResult};
 
 /// Converts a byte array to nibbles (4-bit values)
@@ -8,8 +7,8 @@ use crate::error::{MptError, MptResult};
 pub fn to_nibbles(path: &[u8]) -> Vec<u8> {
     let mut result = Vec::with_capacity(path.len() * 2);
     for &byte in path {
-        result.push(byte >> 4);        // High nibble
-        result.push(byte & 0x0F);      // Low nibble
+        result.push(byte >> 4); // High nibble
+        result.push(byte & 0x0F); // Low nibble
     }
     result
 }
@@ -18,21 +17,23 @@ pub fn to_nibbles(path: &[u8]) -> Vec<u8> {
 /// This matches the C# FromNibbles method
 pub fn from_nibbles(path: &[u8]) -> MptResult<Vec<u8>> {
     if path.len() % 2 != 0 {
-        return Err(MptError::InvalidFormat("MPTTrie.FromNibbles invalid path".to_string()));
+        return Err(MptError::InvalidFormat(
+            "MPTTrie.FromNibbles invalid path".to_string(),
+        ));
     }
-    
+
     let mut result = Vec::with_capacity(path.len() / 2);
     for chunk in path.chunks_exact(2) {
         let high = chunk[0];
         let low = chunk[1];
-        
+
         if high > 15 || low > 15 {
             return Err(MptError::InvalidFormat("Invalid nibble value".to_string()));
         }
-        
+
         result.push((high << 4) | low);
     }
-    
+
     Ok(result)
 }
 
@@ -109,4 +110,4 @@ mod tests {
         let expected = vec![1, 2, 3, 4, 5, 6];
         assert_eq!(concat_bytes(&a, &b), expected);
     }
-} 
+}

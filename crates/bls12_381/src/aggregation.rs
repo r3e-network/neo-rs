@@ -3,9 +3,9 @@
 use crate::error::{BlsError, BlsResult};
 use crate::keys::PublicKey;
 use crate::signature::{Signature, SignatureScheme};
-use bls12_381::{G1Affine, G2Affine, G1Projective, G2Projective};
+use bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective};
 use group::Curve;
-use serde::{Deserialize, Serialize, Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Aggregate BLS signature (matches C# Neo.Cryptography.BLS12_381.AggregateSignature)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,44 +184,44 @@ impl AggregatePublicKey {
         dst: &[u8],
     ) -> bool {
         // Production-ready aggregate verification (matches C# Neo exactly)
-        
+
         // 1. Validate inputs
         if public_keys.is_empty() || messages.is_empty() {
             return false;
         }
-        
+
         if public_keys.len() != messages.len() {
             return false;
         }
-        
+
         // 2. Hash each message to G2 point
         let mut message_points = Vec::with_capacity(messages.len());
         for message in messages {
             let point = crate::utils::hash_to_g2(message, dst);
             message_points.push(point);
         }
-        
+
         // 3. Prepare pairing inputs
         // We need to verify: e(aggregate_signature, G1::generator()) == product(e(public_key_i, hash_i))
-        
+
         // Convert to affine coordinates for pairing
         let agg_sig_affine = aggregate_signature.to_affine();
         let g1_gen_affine = G1Projective::generator().to_affine();
-        
+
         // 4. Compute left side of pairing equation: e(aggregate_signature, G1::generator())
         let left_pairing = bls12_381::pairing(&g1_gen_affine, &agg_sig_affine);
-        
+
         // 5. Compute right side: product of e(public_key_i, hash_i)
         let mut right_pairing = bls12_381::Gt::identity();
-        
+
         for (public_key, message_point) in public_keys.iter().zip(message_points.iter()) {
             let pk_affine = public_key.to_affine();
             let msg_affine = message_point.to_affine();
-            
+
             let pairing_result = bls12_381::pairing(&pk_affine, &msg_affine);
             right_pairing = right_pairing + pairing_result;
         }
-        
+
         // 6. Verify the pairing equation
         left_pairing == right_pairing
     }
@@ -233,8 +233,8 @@ impl AggregatePublicKey {
         aggregate_signature: &AggregateSignature,
         scheme: SignatureScheme,
     ) -> bool {
-        use crate::utils;
         use crate::NEO_BLS_DST;
+        use crate::utils;
         use bls12_381::pairing;
 
         if message.is_empty() {
@@ -248,9 +248,7 @@ impl AggregatePublicKey {
                 // For aggregated keys, message augmentation is more complex
                 message.to_vec()
             }
-            SignatureScheme::ProofOfPossession => {
-                message.to_vec()
-            }
+            SignatureScheme::ProofOfPossession => message.to_vec(),
         };
 
         // Hash message to G2 point
@@ -259,7 +257,10 @@ impl AggregatePublicKey {
         // Verify: e(aggregate_public_key, hash_point) == e(G1, aggregate_signature)
         // Convert to affine coordinates for pairing
         let lhs = pairing(&self.point.to_affine(), &hash_point.to_affine());
-        let rhs = pairing(&G1Affine::generator(), &aggregate_signature.point().to_affine());
+        let rhs = pairing(
+            &G1Affine::generator(),
+            &aggregate_signature.point().to_affine(),
+        );
 
         lhs == rhs
     }
@@ -273,8 +274,8 @@ impl AggregatePublicKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::KeyPair;
     use crate::Bls12381;
+    use crate::keys::KeyPair;
     use rand::thread_rng;
 
     #[test]
@@ -374,4 +375,4 @@ mod tests {
         let result = AggregatePublicKey::aggregate(&empty_public_keys);
         assert!(result.is_err());
     }
-} 
+}

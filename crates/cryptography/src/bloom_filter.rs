@@ -10,13 +10,13 @@ use std::fmt;
 pub struct BloomFilter {
     /// The bit array for the filter
     bits: Vec<u8>,
-    
+
     /// The number of hash functions
     k: u8,
-    
+
     /// The number of elements added to the filter
     count: usize,
-    
+
     /// The tweak value for the hash functions
     tweak: u32,
 }
@@ -42,7 +42,7 @@ impl BloomFilter {
             tweak,
         }
     }
-    
+
     /// Creates a new Bloom filter with the specified parameters and elements.
     ///
     /// # Arguments
@@ -62,7 +62,7 @@ impl BloomFilter {
         }
         filter
     }
-    
+
     /// Creates a new Bloom filter with optimal parameters for the expected number of elements
     /// and desired false positive rate.
     ///
@@ -80,7 +80,7 @@ impl BloomFilter {
         let k = Self::optimal_k(m, n);
         Self::new(m, k, tweak)
     }
-    
+
     /// Calculates the optimal size of the filter in bits for the expected number of elements
     /// and desired false positive rate.
     ///
@@ -96,7 +96,7 @@ impl BloomFilter {
         let m = -((n as f64) * p.ln() / (2.0f64.ln().powi(2))).ceil() as usize;
         m.max(1)
     }
-    
+
     /// Calculates the optimal number of hash functions for the given filter size and
     /// expected number of elements.
     ///
@@ -112,27 +112,27 @@ impl BloomFilter {
         let k = ((m as f64) / (n as f64) * 2.0f64.ln()).ceil() as u8;
         k.max(1)
     }
-    
+
     /// Returns the size of the filter in bits.
     pub fn size(&self) -> usize {
         self.bits.len() * 8
     }
-    
+
     /// Returns the number of hash functions used by the filter.
     pub fn k(&self) -> u8 {
         self.k
     }
-    
+
     /// Returns the number of elements added to the filter.
     pub fn count(&self) -> usize {
         self.count
     }
-    
+
     /// Returns the tweak value used by the filter.
     pub fn tweak(&self) -> u32 {
         self.tweak
     }
-    
+
     /// Adds an element to the filter.
     ///
     /// # Arguments
@@ -145,7 +145,7 @@ impl BloomFilter {
         }
         self.count += 1;
     }
-    
+
     /// Checks if an element might be in the filter.
     ///
     /// # Arguments
@@ -164,22 +164,22 @@ impl BloomFilter {
         }
         true
     }
-    
+
     /// Clears the filter.
     pub fn clear(&mut self) {
         self.bits.fill(0);
         self.count = 0;
     }
-    
+
     /// Returns the estimated false positive rate of the filter.
     pub fn false_positive_rate(&self) -> f64 {
         let m = self.size() as f64;
         let k = self.k as f64;
         let n = self.count as f64;
-        
+
         (1.0 - (1.0 - 1.0 / m).powf(k * n)).powf(k)
     }
-    
+
     /// Computes a hash for the given element and index.
     ///
     /// # Arguments
@@ -191,10 +191,13 @@ impl BloomFilter {
     ///
     /// The hash value
     fn hash(&self, element: &[u8], index: u8) -> u32 {
-        let seed = self.tweak.wrapping_add(index as u32).wrapping_mul(0xFBA4C795);
+        let seed = self
+            .tweak
+            .wrapping_add(index as u32)
+            .wrapping_mul(0xFBA4C795);
         murmur::murmur32(element, seed)
     }
-    
+
     /// Sets the bit at the specified index.
     ///
     /// # Arguments
@@ -205,7 +208,7 @@ impl BloomFilter {
         let bit_index = index % 8;
         self.bits[byte_index] |= 1 << bit_index;
     }
-    
+
     /// Gets the bit at the specified index.
     ///
     /// # Arguments
@@ -220,12 +223,12 @@ impl BloomFilter {
         let bit_index = index % 8;
         (self.bits[byte_index] & (1 << bit_index)) != 0
     }
-    
+
     /// Returns the raw bit array of the filter.
     pub fn to_bytes(&self) -> Vec<u8> {
         self.bits.clone()
     }
-    
+
     /// Creates a filter from a raw bit array.
     ///
     /// # Arguments

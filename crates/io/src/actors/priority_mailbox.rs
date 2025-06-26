@@ -4,7 +4,7 @@
 
 use super::{Message, PriorityMessageQueue};
 use std::fmt;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 /// A mailbox that processes messages in priority order.
 pub struct PriorityMailbox<M: Message> {

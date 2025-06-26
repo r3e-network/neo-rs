@@ -3,15 +3,15 @@
 //! This module provides interoperability services that smart contracts
 //! can use to interact with the blockchain and external systems.
 
-pub mod runtime;
-pub mod storage;
 pub mod contract;
 pub mod crypto;
+pub mod runtime;
+pub mod storage;
 
-pub use runtime::RuntimeService;
-pub use storage::StorageService;
 pub use contract::ContractService;
 pub use crypto::CryptoService;
+pub use runtime::RuntimeService;
+pub use storage::StorageService;
 
 use crate::application_engine::ApplicationEngine;
 use crate::{Error, Result};
@@ -20,10 +20,10 @@ use crate::{Error, Result};
 pub trait InteropService {
     /// Gets the name of the interop service.
     fn name(&self) -> &str;
-    
+
     /// Gets the gas cost for this service.
     fn gas_cost(&self) -> i64;
-    
+
     /// Executes the interop service.
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>>;
 }
@@ -39,23 +39,23 @@ impl InteropRegistry {
         let mut registry = Self {
             services: std::collections::HashMap::new(),
         };
-        
+
         // Register standard services
         registry.register_standard_services();
-        
+
         registry
     }
-    
+
     /// Registers a new interop service.
     pub fn register(&mut self, service: Box<dyn InteropService>) {
         self.services.insert(service.name().to_string(), service);
     }
-    
+
     /// Gets an interop service by name.
     pub fn get(&self, name: &str) -> Option<&dyn InteropService> {
         self.services.get(name).map(|s| s.as_ref())
     }
-    
+
     /// Executes an interop service.
     pub fn execute(
         &self,
@@ -63,32 +63,33 @@ impl InteropRegistry {
         engine: &mut ApplicationEngine,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
-        let service = self.get(name)
+        let service = self
+            .get(name)
             .ok_or_else(|| Error::InteropServiceError(format!("Service not found: {}", name)))?;
-        
+
         // Check and consume gas
         engine.consume_gas(service.gas_cost())?;
-        
+
         // Execute the service
         service.execute(engine, args)
     }
-    
+
     /// Registers standard Neo interop services.
     fn register_standard_services(&mut self) {
         // Runtime services
         self.register(Box::new(runtime::LogService));
         self.register(Box::new(runtime::NotifyService));
         self.register(Box::new(runtime::GetTimeService));
-        
+
         // Storage services
         self.register(Box::new(storage::GetService));
         self.register(Box::new(storage::PutService));
         self.register(Box::new(storage::DeleteService));
-        
+
         // Contract services
         self.register(Box::new(contract::CallService));
         self.register(Box::new(contract::GetContractService));
-        
+
         // Crypto services
         self.register(Box::new(crypto::CheckSigService));
         self.register(Box::new(crypto::CheckMultiSigService));
@@ -108,22 +109,22 @@ mod tests {
     #[test]
     fn test_interop_registry_creation() {
         let registry = InteropRegistry::new();
-        
+
         // Check that standard services are registered
         assert!(registry.get("System.Runtime.Log").is_some());
         assert!(registry.get("System.Storage.Get").is_some());
         assert!(registry.get("System.Contract.Call").is_some());
         assert!(registry.get("System.Crypto.CheckSig").is_some());
     }
-    
+
     #[test]
     fn test_interop_service_execution() {
         let registry = InteropRegistry::new();
         let mut engine = ApplicationEngine::new(neo_vm::TriggerType::Application, 10_000_000);
-        
+
         // Set up the required current script hash for the Log service
         engine.set_current_script_hash(Some(neo_core::UInt160::zero()));
-        
+
         // Test log service
         let result = registry.execute(
             "System.Runtime.Log",

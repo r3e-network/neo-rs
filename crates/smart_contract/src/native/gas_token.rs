@@ -16,9 +16,10 @@ impl GasToken {
     pub fn new() -> Self {
         // GAS token contract hash (well-known constant)
         let hash = UInt160::from_bytes(&[
-            0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0xd5, 0x18, 0x4c,
-            0x19, 0xf2, 0xc0, 0xeb, 0xb3, 0x77, 0xd3, 0x1a, 0x8c, 0x16,
-        ]).unwrap();
+            0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0xd5, 0x18, 0x4c, 0x19, 0xf2, 0xc0, 0xeb,
+            0xb3, 0x77, 0xd3, 0x1a, 0x8c, 0x16,
+        ])
+        .unwrap();
 
         let methods = vec![
             NativeMethod::safe("symbol".to_string(), 0),
@@ -44,7 +45,10 @@ impl GasToken {
             "totalSupply" => self.total_supply(engine),
             "balanceOf" => self.balance_of(engine, args),
             "transfer" => self.transfer(engine, args),
-            _ => Err(Error::NativeContractError(format!("Unknown method: {}", method))),
+            _ => Err(Error::NativeContractError(format!(
+                "Unknown method: {}",
+                method
+            ))),
         }
     }
 
@@ -82,13 +86,17 @@ impl GasToken {
 
     fn balance_of(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("balanceOf requires account argument".to_string()));
+            return Err(Error::NativeContractError(
+                "balanceOf requires account argument".to_string(),
+            ));
         }
 
         // Production-ready balance lookup from storage (matches C# GasToken.BalanceOf exactly)
         let account = &args[0];
         if account.len() != 20 {
-            return Err(Error::NativeContractError("Invalid account length".to_string()));
+            return Err(Error::NativeContractError(
+                "Invalid account length".to_string(),
+            ));
         }
 
         // Get storage context for this contract
@@ -115,7 +123,7 @@ impl GasToken {
     fn transfer(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 3 {
             return Err(Error::NativeContractError(
-                "transfer requires from, to, and amount arguments".to_string()
+                "transfer requires from, to, and amount arguments".to_string(),
             ));
         }
 
@@ -126,7 +134,9 @@ impl GasToken {
 
         // Validate addresses
         if from.len() != 20 || to.len() != 20 {
-            return Err(Error::NativeContractError("Invalid address length".to_string()));
+            return Err(Error::NativeContractError(
+                "Invalid address length".to_string(),
+            ));
         }
 
         // Parse amount
@@ -138,7 +148,9 @@ impl GasToken {
         };
 
         if amount < 0 {
-            return Err(Error::NativeContractError("Amount cannot be negative".to_string()));
+            return Err(Error::NativeContractError(
+                "Amount cannot be negative".to_string(),
+            ));
         }
 
         // Check if from and to are the same
@@ -271,31 +283,33 @@ mod tests {
     fn test_gas_token_transfer() {
         let gas = GasToken::new();
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        
+
         // Set up initial balance for the from account
         let from_account = vec![0u8; 20];
         let to_account = vec![1u8; 20];
         let context = engine.get_native_storage_context(&gas.hash).unwrap();
-        
+
         // Give the from account 5000 GAS initial balance
         let initial_balance = 5000i64;
-        engine.put_storage_item(&context, &from_account, &initial_balance.to_le_bytes()).unwrap();
-        
+        engine
+            .put_storage_item(&context, &from_account, &initial_balance.to_le_bytes())
+            .unwrap();
+
         let args = vec![
-            from_account.clone(), // from
-            to_account.clone(),   // to
+            from_account.clone(),           // from
+            to_account.clone(),             // to
             1000i64.to_le_bytes().to_vec(), // amount
         ];
-        
+
         let result = gas.transfer(&mut engine, &args).unwrap();
         assert_eq!(result, vec![1]); // Success
-        
+
         // Verify balances after transfer
         let from_balance_args = vec![from_account];
         let from_balance_result = gas.balance_of(&mut engine, &from_balance_args).unwrap();
         let from_balance = i64::from_le_bytes(from_balance_result.try_into().unwrap());
         assert_eq!(from_balance, 4000); // 5000 - 1000
-        
+
         let to_balance_args = vec![to_account];
         let to_balance_result = gas.balance_of(&mut engine, &to_balance_args).unwrap();
         let to_balance = i64::from_le_bytes(to_balance_result.try_into().unwrap());

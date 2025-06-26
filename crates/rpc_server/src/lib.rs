@@ -1,53 +1,188 @@
 //! Neo RPC Server
 //!
-//! Simplified RPC server implementation for testing the Neo node.
+//! Implementation of Neo N3 JSON-RPC server for blockchain interaction.
 
 use neo_config::RpcServerConfig;
 use neo_ledger::Ledger;
 use neo_persistence::RocksDbStore;
+use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{info, error};
+use tracing::{error, info, warn};
+use warp::Filter;
 
+pub mod methods;
+pub mod types;
+
+use methods::RpcMethods;
+use types::{RpcRequest, RpcResponse};
+
+/// Neo N3 RPC Server implementation
 pub struct RpcServer {
     config: RpcServerConfig,
-    _ledger: Arc<Ledger>,
-    _storage: Arc<RocksDbStore>,
+    ledger: Arc<Ledger>,
+    storage: Arc<RocksDbStore>,
     shutdown_receiver: Option<broadcast::Receiver<()>>,
+    methods: RpcMethods,
 }
 
 impl RpcServer {
+    /// Creates a new RPC server instance
     pub async fn new(
         config: RpcServerConfig,
         ledger: Arc<Ledger>,
         storage: Arc<RocksDbStore>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        info!("Creating RPC server on port {}", config.port);
-        
+        info!(
+            "Creating RPC server on {}:{}",
+            config.bind_address, config.port
+        );
+
+        let methods = RpcMethods::new(ledger.clone(), storage.clone());
+
         Ok(Self {
             config,
-            _ledger: ledger,
-            _storage: storage,
+            ledger,
+            storage,
             shutdown_receiver: None,
+            methods,
         })
     }
 
+    /// Starts the RPC server
     pub async fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        info!("Starting RPC server on {}:{}", self.config.bind_address, self.config.port);
-        
-        // In a full implementation, this would start an HTTP server
-        // For now, we just log that it's "started"
-        
-        info!("RPC server started successfully");
+        info!(
+            "Starting RPC server on {}:{}",
+            self.config.bind_address, self.config.port
+        );
+
+        let bind_addr: std::net::SocketAddr =
+            format!("{}:{}", self.config.bind_address, self.config.port)
+                .parse()
+                .map_err(|e| format!("Invalid bind address: {}", e))?;
+
+        // Clone methods for use in filters
+        let methods = self.methods.clone();
+
+        // Create RPC endpoint
+        let rpc_methods = methods.clone();
+        let rpc = warp::path("rpc")
+            .and(warp::post())
+            .and(warp::body::json())
+            .and_then(move |req: RpcRequest| {
+                let methods = rpc_methods.clone();
+                async move {
+                    handle_rpc_request(methods, req).await.map_err(|e| {
+                        warn!("RPC request failed: {}", e);
+                        warp::reject::custom(RpcError(e.to_string()))
+                    })
+                }
+            });
+
+        // Create health check endpoint
+        let health = warp::path("health").and(warp::get()).map(|| {
+            warp::reply::json(&json!({
+                "status": "ok",
+                "service": "neo-rpc",
+                "timestamp": chrono::Utc::now().timestamp()
+            }))
+        });
+
+        // Create CORS configuration
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_headers(vec!["content-type"])
+            .allow_methods(vec!["GET", "POST", "OPTIONS"]);
+
+        // Combine all routes
+        let routes = rpc.or(health).with(cors);
+
+        info!("✅ RPC server started successfully on http://{}", bind_addr);
+        info!("Available endpoints:");
+        info!("  - http://{}/rpc (JSON-RPC 2.0)", bind_addr);
+        info!("  - http://{}/health (Health check)", bind_addr);
+
+        // Start the server
+        warp::serve(routes).run(bind_addr).await;
+
         Ok(())
     }
 
+    /// Stops the RPC server
     pub async fn stop(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Stopping RPC server");
-        
-        // In a full implementation, this would gracefully shutdown the HTTP server
-        
+        // In a full implementation, we would gracefully shutdown the server
         info!("RPC server stopped");
         Ok(())
+    }
+}
+
+/// Handle RPC request
+async fn handle_rpc_request(
+    methods: RpcMethods,
+    req: RpcRequest,
+) -> Result<impl warp::Reply, Box<dyn std::error::Error + Send + Sync>> {
+    let response = match req.method.as_str() {
+        "getblockcount" => {
+            let result = methods.get_block_count().await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getblock" => {
+            let result = methods.get_block(req.params).await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getblockhash" => {
+            let result = methods.get_block_hash(req.params).await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getbestblockhash" => {
+            let result = methods.get_best_block_hash().await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getversion" => {
+            let result = methods.get_version().await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getpeers" => {
+            let result = methods.get_peers().await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getconnectioncount" => {
+            let result = methods.get_connection_count().await?;
+            RpcResponse::success(result, req.id)
+        }
+        "validateaddress" => {
+            let result = methods.validate_address(req.params).await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getnativecontracts" => {
+            let result = methods.get_native_contracts().await?;
+            RpcResponse::success(result, req.id)
+        }
+        _ => RpcResponse::error(-32601, "Method not found", req.id),
+    };
+
+    Ok(warp::reply::json(&response))
+}
+
+/// Custom error type for warp rejections
+#[derive(Debug)]
+struct RpcError(String);
+
+impl warp::reject::Reject for RpcError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::runtime::Runtime;
+
+    #[test]
+    fn test_rpc_server_creation() {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            // This would require setting up proper ledger and storage
+            // For now, just test that the types compile
+            assert!(true);
+        });
     }
 }

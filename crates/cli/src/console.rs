@@ -41,7 +41,7 @@ impl ConsoleService {
 
             let mut input = String::new();
             io::stdin().read_line(&mut input).unwrap();
-            
+
             let input = input.trim();
             if input.is_empty() {
                 continue;
@@ -74,11 +74,11 @@ impl ConsoleService {
                 println!("neo-cli {}", env!("CARGO_PKG_VERSION"));
                 println!("Neo N3 compatibility: 3.6.0");
                 println!("Neo VM compatibility: 3.6.0");
-            },
+            }
             "clear" => {
                 print!("\x1B[2J\x1B[1;1H");
                 io::stdout().flush().unwrap();
-            },
+            }
             "wallet" => {
                 if parts.len() > 1 {
                     match parts[1] {
@@ -90,21 +90,24 @@ impl ConsoleService {
                 } else {
                     println!("Usage: wallet [list|create|open]");
                 }
-            },
+            }
             "show" => {
                 if parts.len() > 1 {
                     match parts[1] {
                         "state" => self.show_state().await?,
                         "version" => {
                             println!("neo-cli {}", env!("CARGO_PKG_VERSION"));
-                        },
+                        }
                         _ => println!("Unknown show command. Type 'help' for usage."),
                     }
                 } else {
                     println!("Usage: show [state|version]");
                 }
-            },
-            _ => println!("Unknown command '{}'. Type 'help' for available commands.", parts[0]),
+            }
+            _ => println!(
+                "Unknown command '{}'. Type 'help' for available commands.",
+                parts[0]
+            ),
         }
 
         Ok(())
@@ -175,4 +178,4 @@ impl Default for ConsoleService {
     fn default() -> Self {
         Self::new()
     }
-} 
+}

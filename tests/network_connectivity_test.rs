@@ -1,14 +1,14 @@
 //! Network connectivity test for Neo Rust node
-//! 
+//!
 //! This test verifies that the Rust Neo node can connect to the real Neo N3 network,
 //! discover peers, perform handshakes, and communicate using the Neo protocol.
 
-use neo_network::{NetworkConfig, P2PNode, P2PEvent, NetworkMessage, ProtocolMessage, MessageType};
 use neo_core::UInt160;
+use neo_network::{MessageType, NetworkConfig, NetworkMessage, P2PEvent, P2PNode, ProtocolMessage};
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::time::{timeout, sleep};
-use tracing::{info, debug, warn, error};
+use tokio::time::{sleep, timeout};
+use tracing::{debug, error, info, warn};
 
 #[tokio::test]
 async fn test_mainnet_connectivity() {
@@ -45,18 +45,30 @@ async fn test_mainnet_connectivity() {
     let max_test_peers = 3; // Test connection to 3 peers
 
     for (i, seed_addr) in config.seed_nodes.iter().take(max_test_peers).enumerate() {
-        info!("🔗 Attempting to connect to seed node {}: {}", i + 1, seed_addr);
-        
+        info!(
+            "🔗 Attempting to connect to seed node {}: {}",
+            i + 1,
+            seed_addr
+        );
+
         match p2p_node.connect_peer(*seed_addr).await {
             Ok(()) => {
                 info!("✅ Successfully initiated connection to {}", seed_addr);
-                
+
                 // Wait for connection events with timeout
-                match timeout(Duration::from_secs(30), wait_for_connection_event(&mut event_receiver, *seed_addr)).await {
+                match timeout(
+                    Duration::from_secs(30),
+                    wait_for_connection_event(&mut event_receiver, *seed_addr),
+                )
+                .await
+                {
                     Ok(true) => {
-                        info!("🎉 Successfully connected and completed handshake with {}", seed_addr);
+                        info!(
+                            "🎉 Successfully connected and completed handshake with {}",
+                            seed_addr
+                        );
                         connected_peers += 1;
-                        
+
                         // Test basic communication
                         if let Err(e) = test_basic_communication(&p2p_node, *seed_addr).await {
                             warn!("Communication test failed with {}: {}", seed_addr, e);
@@ -85,10 +97,16 @@ async fn test_mainnet_connectivity() {
     p2p_node.stop().await;
 
     // Verify we connected to at least one peer
-    assert!(connected_peers > 0, "Failed to connect to any mainnet peers");
-    
+    assert!(
+        connected_peers > 0,
+        "Failed to connect to any mainnet peers"
+    );
+
     info!("🎉 Mainnet connectivity test completed successfully!");
-    info!("📊 Connected to {}/{} seed nodes", connected_peers, max_test_peers);
+    info!(
+        "📊 Connected to {}/{} seed nodes",
+        connected_peers, max_test_peers
+    );
 }
 
 #[tokio::test]
@@ -126,16 +144,28 @@ async fn test_testnet_connectivity() {
     let max_test_peers = 2; // Test connection to 2 testnet peers
 
     for (i, seed_addr) in config.seed_nodes.iter().take(max_test_peers).enumerate() {
-        info!("🔗 Attempting to connect to testnet seed node {}: {}", i + 1, seed_addr);
-        
+        info!(
+            "🔗 Attempting to connect to testnet seed node {}: {}",
+            i + 1,
+            seed_addr
+        );
+
         match p2p_node.connect_peer(*seed_addr).await {
             Ok(()) => {
                 info!("✅ Successfully initiated connection to {}", seed_addr);
-                
+
                 // Wait for connection events with timeout
-                match timeout(Duration::from_secs(30), wait_for_connection_event(&mut event_receiver, *seed_addr)).await {
+                match timeout(
+                    Duration::from_secs(30),
+                    wait_for_connection_event(&mut event_receiver, *seed_addr),
+                )
+                .await
+                {
                     Ok(true) => {
-                        info!("🎉 Successfully connected and completed handshake with {}", seed_addr);
+                        info!(
+                            "🎉 Successfully connected and completed handshake with {}",
+                            seed_addr
+                        );
                         connected_peers += 1;
                     }
                     Ok(false) => {
@@ -159,10 +189,16 @@ async fn test_testnet_connectivity() {
     p2p_node.stop().await;
 
     // Verify we connected to at least one testnet peer
-    assert!(connected_peers > 0, "Failed to connect to any testnet peers");
-    
+    assert!(
+        connected_peers > 0,
+        "Failed to connect to any testnet peers"
+    );
+
     info!("🎉 Testnet connectivity test completed successfully!");
-    info!("📊 Connected to {}/{} testnet seed nodes", connected_peers, max_test_peers);
+    info!(
+        "📊 Connected to {}/{} testnet seed nodes",
+        connected_peers, max_test_peers
+    );
 }
 
 #[tokio::test]
@@ -174,37 +210,46 @@ async fn test_protocol_version_compatibility() {
 
     // Test compatibility with older versions
     let older_version = neo_network::ProtocolVersion::new(3, 5, 0);
-    assert!(version.is_compatible(&older_version), "Should be compatible with older patch versions");
+    assert!(
+        version.is_compatible(&older_version),
+        "Should be compatible with older patch versions"
+    );
 
     // Test incompatibility with different major versions
     let different_major = neo_network::ProtocolVersion::new(2, 6, 0);
-    assert!(!version.is_compatible(&different_major), "Should not be compatible with different major versions");
+    assert!(
+        !version.is_compatible(&different_major),
+        "Should not be compatible with different major versions"
+    );
 
     info!("✅ Protocol version compatibility tests passed");
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_network_message_format() {
     info!("📨 Testing Neo N3 network message format compatibility...");
 
     // Test creating a version message (used in handshake)
     let node_info = neo_network::NodeInfo::new(UInt160::zero(), 100);
     let version_message = ProtocolMessage::version(&node_info, 10333, true);
-    
+
     // Create network message with mainnet magic
     let magic = 0x334f454e; // Neo N3 mainnet magic
     let network_message = NetworkMessage::new(magic, version_message);
 
     info!("🔍 Testing message serialization...");
-    
+
     // Test serialization (this should match C# Neo message format)
     match network_message.to_bytes() {
         Ok(bytes) => {
             info!("✅ Message serialized successfully, {} bytes", bytes.len());
-            
+
             // Verify header format (should be 24 bytes for Neo N3)
-            assert!(bytes.len() >= 24, "Message should have at least 24-byte header");
-            
+            assert!(
+                bytes.len() >= 24,
+                "Message should have at least 24-byte header"
+            );
+
             // Test deserialization
             match NetworkMessage::from_bytes(&bytes) {
                 Ok(deserialized) => {
@@ -239,7 +284,9 @@ async fn wait_for_connection_event(
             P2PEvent::HandshakeCompleted { address, .. } if address == target_addr => {
                 return true;
             }
-            P2PEvent::PeerDisconnected { address, reason, .. } if address == target_addr => {
+            P2PEvent::PeerDisconnected {
+                address, reason, ..
+            } if address == target_addr => {
                 warn!("Peer {} disconnected: {}", address, reason);
                 return false;
             }
@@ -266,7 +313,7 @@ async fn test_basic_communication(
     // Create a ping message
     let ping_message = NetworkMessage::new(
         0x334f454e, // Mainnet magic
-        ProtocolMessage::ping()
+        ProtocolMessage::ping(),
     );
 
     // Send ping message
@@ -308,4 +355,4 @@ async fn test_full_network_stack() {
 
     info!("✅ Node info tests passed");
     info!("🎉 Full network stack integration test completed!");
-} 
+}

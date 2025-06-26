@@ -2,13 +2,13 @@
 //!
 //! This module provides blockchain persistence functionality exactly matching C# Neo persistence.
 
-use crate::{Error, Result, Block, BlockHeader};
-use super::storage::{Storage, StorageKey, StorageItem};
-use neo_core::{UInt160, UInt256, Transaction};
+use super::storage::{Storage, StorageItem, StorageKey};
+use crate::{Block, BlockHeader, Error, Result};
+use neo_core::{Transaction, UInt160, UInt256};
 use std::collections::HashMap;
-use tokio::sync::RwLock;
-use std::sync::Arc;
 use std::pin::Pin;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Blockchain persistence manager (matches C# Neo DataCache exactly)
 #[derive(Debug)]
@@ -141,7 +141,7 @@ impl BlockchainPersistence {
     /// Commits all pending changes to storage (matches C# Neo DataCache.Commit)
     pub async fn commit(&self) -> Result<()> {
         let mut write_cache = self.write_cache.write().await;
-        
+
         // Apply all changes from write cache to storage
         for (key, cache_item) in write_cache.iter() {
             if cache_item.is_dirty {
@@ -175,10 +175,10 @@ impl BlockchainPersistence {
     pub async fn create_snapshot(&self) -> Result<BlockchainSnapshot> {
         // Commit any pending changes first
         self.commit().await?;
-        
+
         // Create storage snapshot
         let storage_snapshot = self.storage.snapshot().await?;
-        
+
         Ok(BlockchainSnapshot::new(Arc::new(storage_snapshot)))
     }
 
@@ -196,7 +196,8 @@ impl BlockchainPersistence {
 
         // Store transactions
         for (tx_index, transaction) in block.transactions.iter().enumerate() {
-            self.persist_transaction(transaction, block.header.index, tx_index as u32).await?;
+            self.persist_transaction(transaction, block.header.index, tx_index as u32)
+                .await?;
         }
 
         // Update current block height
@@ -211,9 +212,14 @@ impl BlockchainPersistence {
     }
 
     /// Persists a transaction to storage
-    async fn persist_transaction(&self, transaction: &Transaction, block_index: u32, tx_index: u32) -> Result<()> {
+    async fn persist_transaction(
+        &self,
+        transaction: &Transaction,
+        block_index: u32,
+        tx_index: u32,
+    ) -> Result<()> {
         let tx_hash = transaction.hash()?;
-        
+
         // Store transaction data
         let tx_key = StorageKey::transaction(tx_hash);
         let tx_item = StorageItem::new(bincode::serialize(transaction)?);
@@ -253,12 +259,12 @@ impl BlockchainPersistence {
     pub async fn get_block_by_hash(&self, hash: &UInt256) -> Result<Option<Block>> {
         // Production-ready efficient block lookup (matches C# Blockchain persistence exactly)
         // This implements the C# logic: GetBlock with optimized storage access patterns
-        
+
         // 1. Check block cache first for recent blocks (production optimization)
         if let Some(cached_block) = self.block_cache.read().await.get(hash) {
             return Ok(Some(cached_block.clone()));
         }
-        
+
         // 2. Direct RocksDB lookup by block hash (production efficiency)
         let block_key = self.make_block_key(hash);
         match self.storage.get(&block_key).await {
@@ -306,7 +312,8 @@ impl BlockchainPersistence {
         match self.get(&height_key).await? {
             Some(item) => {
                 if item.value.len() >= 4 {
-                    let bytes: [u8; 4] = item.value[0..4].try_into()
+                    let bytes: [u8; 4] = item.value[0..4]
+                        .try_into()
                         .map_err(|_| Error::Validation("Invalid height bytes".to_string()))?;
                     Ok(u32::from_le_bytes(bytes))
                 } else {
@@ -320,7 +327,7 @@ impl BlockchainPersistence {
     /// Adds an item to the read cache
     async fn add_to_read_cache(&self, key: StorageKey, item: StorageItem) {
         let mut read_cache = self.read_cache.write().await;
-        
+
         // Simple LRU eviction if cache is full
         if read_cache.len() >= self.cache_size_limit {
             // Remove oldest entry (in a real LRU, we'd track access times)
@@ -328,7 +335,7 @@ impl BlockchainPersistence {
                 read_cache.remove(&oldest_key);
             }
         }
-        
+
         read_cache.insert(key, item);
     }
 
@@ -347,7 +354,7 @@ impl BlockchainPersistence {
                 tokio::runtime::Runtime::new().map(|rt| rt.handle().clone())
             })
             .map_err(|e| Error::Generic(format!("Failed to get tokio runtime: {}", e)))?;
-        
+
         rt.block_on(self.get(key))
     }
 
@@ -358,13 +365,12 @@ impl BlockchainPersistence {
         (read_cache.len(), write_cache.len())
     }
 
-
-
     /// Makes a block key from a block hash
     fn make_block_key(&self, hash: &UInt256) -> StorageKey {
         // Use the first 4 bytes of the hash as a u32 for the key
         let hash_bytes = hash.as_bytes();
-        let index = u32::from_le_bytes([hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3]]);
+        let index =
+            u32::from_le_bytes([hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3]]);
         StorageKey::new(b"BLOCK".to_vec(), hash.as_bytes().to_vec())
     }
 }
@@ -401,8 +407,8 @@ impl BlockchainSnapshot {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::storage::RocksDBStorage;
+    use super::*;
 
     #[tokio::test]
     async fn test_persistence_basic_operations() {
@@ -419,10 +425,13 @@ mod tests {
 
         // Test commit
         persistence.commit().await.unwrap();
-        
+
         // Test after commit
         let retrieved_after_commit = persistence.get(&key).await.unwrap();
-        assert_eq!(retrieved_after_commit, Some(StorageItem::new(b"test_value".to_vec())));
+        assert_eq!(
+            retrieved_after_commit,
+            Some(StorageItem::new(b"test_value".to_vec()))
+        );
     }
 
     #[tokio::test]
@@ -440,7 +449,7 @@ mod tests {
         // Get twice to test caching
         let first_get = persistence.get(&key).await.unwrap();
         let second_get = persistence.get(&key).await.unwrap();
-        
+
         assert_eq!(first_get, Some(item.clone()));
         assert_eq!(second_get, Some(item));
 
@@ -461,12 +470,12 @@ mod tests {
         // Put, commit, then delete
         persistence.put(key.clone(), item.clone()).await.unwrap();
         persistence.commit().await.unwrap();
-        
+
         assert!(persistence.contains(&key).await.unwrap());
-        
+
         persistence.delete(&key).await.unwrap();
         persistence.commit().await.unwrap();
-        
+
         assert!(!persistence.contains(&key).await.unwrap());
     }
 }

@@ -9,36 +9,35 @@
 //! - **IStoreSnapshot**: Snapshot interface (matches C# IStoreSnapshot)  
 //! - **RocksDbStore**: RocksDB storage implementation (production-ready storage)
 
-pub mod storage;
 pub mod rocksdb;
+pub mod storage;
 
 // Production-ready modules for comprehensive persistence functionality
-pub mod cache;
-pub mod index;
 pub mod backup;
-pub mod migration;
+pub mod cache;
 pub mod compression;
+pub mod index;
+pub mod migration;
 pub mod serialization;
 
 // Re-export main types (matches C# Neo structure) - RocksDB only
+pub use rocksdb::{RocksDbSnapshot, RocksDbStorageProvider, RocksDbStore};
 pub use storage::{
-    IStore, IStoreSnapshot, IReadOnlyStore, IWriteStore, SeekDirection,
-    StorageConfig, BatchOperation, CompressionAlgorithm,
-    CompactionStrategy, StorageProvider,
+    BatchOperation, CompactionStrategy, CompressionAlgorithm, IReadOnlyStore, IStore,
+    IStoreSnapshot, IWriteStore, SeekDirection, StorageConfig, StorageProvider,
 };
-pub use rocksdb::{RocksDbStore, RocksDbSnapshot, RocksDbStorageProvider};
 
 // Re-export cache types
 pub use cache::{CacheConfig, LruCache, TtlCache};
 
-// Re-export index types  
-pub use index::{IndexConfig, IndexType, BTreeIndex, HashIndex};
+// Re-export index types
+pub use index::{BTreeIndex, HashIndex, IndexConfig, IndexType};
 
 // Re-export backup types
-pub use backup::{BackupManager, BackupMetadata, BackupType, BackupStatus, BackupConfig};
+pub use backup::{BackupConfig, BackupManager, BackupMetadata, BackupStatus, BackupType};
 
 // Re-export migration types
-pub use migration::{MigrationManager, SchemaMigration, MigrationConfig};
+pub use migration::{MigrationConfig, MigrationManager, SchemaMigration};
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -103,25 +102,25 @@ impl Storage {
     pub async fn stats(&self) -> Result<StorageStats> {
         // Production-ready storage statistics collection (matches C# Neo storage monitoring exactly)
         // In C# Neo: this would collect comprehensive storage metrics
-        
+
         // 1. Get basic storage metrics from the underlying store
         let snapshot = self.get_snapshot();
         let mut total_keys = 0u64;
         let mut total_size = 0u64;
-        
+
         // 2. Iterate through all entries to calculate statistics
         let entries = self.find(None, SeekDirection::Forward).await?;
         for (key, value) in entries {
             total_keys += 1;
             total_size += (key.len() + value.len()) as u64;
         }
-        
+
         // 3. Get cache statistics if available
         let (cache_hits, cache_misses) = (0, 0); // Would be from actual cache implementation
-        
+
         // 4. Get current blockchain height from storage
         let current_height = self.get_current_height().await.unwrap_or(0);
-        
+
         Ok(StorageStats {
             total_keys,
             total_size,
@@ -138,8 +137,10 @@ impl Storage {
             Some(height_bytes) => {
                 if height_bytes.len() >= 4 {
                     let height = u32::from_le_bytes([
-                        height_bytes[0], height_bytes[1], 
-                        height_bytes[2], height_bytes[3]
+                        height_bytes[0],
+                        height_bytes[1],
+                        height_bytes[2],
+                        height_bytes[3],
                     ]);
                     Ok(height)
                 } else {
@@ -162,7 +163,11 @@ impl Storage {
     }
 
     /// Finds entries with optional key prefix
-    pub async fn find(&self, key_or_prefix: Option<&[u8]>, direction: SeekDirection) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    pub async fn find(
+        &self,
+        key_or_prefix: Option<&[u8]>,
+        direction: SeekDirection,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
         let iter = self.store.find(key_or_prefix, direction);
         Ok(iter.collect())
     }
@@ -171,14 +176,14 @@ impl Storage {
     pub async fn export_all_data(&self) -> Result<Vec<u8>> {
         // Production-ready data export (matches C# Neo backup functionality exactly)
         let mut exported_data = Vec::new();
-        
+
         // Export all key-value pairs from storage
         let all_entries = self.find(None, SeekDirection::Forward).await?;
-        
+
         // Serialize the data in a format that can be imported later
         let serialized = bincode::serialize(&all_entries)
             .map_err(|e| Error::SerializationError(e.to_string()))?;
-        
+
         exported_data.extend_from_slice(&serialized);
         Ok(exported_data)
     }
@@ -186,26 +191,30 @@ impl Storage {
     /// Imports all data into storage (production implementation)
     pub async fn import_all_data(&mut self, data: &[u8]) -> Result<()> {
         // Production-ready data import (matches C# Neo restore functionality exactly)
-        
+
         // Deserialize the data
-        let entries: Vec<(Vec<u8>, Vec<u8>)> = bincode::deserialize(data)
-            .map_err(|e| Error::SerializationError(e.to_string()))?;
-        
+        let entries: Vec<(Vec<u8>, Vec<u8>)> =
+            bincode::deserialize(data).map_err(|e| Error::SerializationError(e.to_string()))?;
+
         // Import all key-value pairs into storage
         for (key, value) in entries {
             self.put(&key, value).await?;
         }
-        
+
         Ok(())
     }
 
     /// Exports incremental data since last backup height (production implementation)
-    pub async fn export_incremental_data(&self, last_backup_height: u32, current_height: u32) -> Result<Vec<u8>> {
+    pub async fn export_incremental_data(
+        &self,
+        last_backup_height: u32,
+        current_height: u32,
+    ) -> Result<Vec<u8>> {
         // Production-ready incremental data export (matches C# Neo backup functionality exactly)
         // This implements the C# logic: exporting only changes since the last backup
-        
+
         let mut incremental_data = Vec::new();
-        
+
         // 1. Export blocks between last backup height and current height
         for height in (last_backup_height + 1)..=current_height {
             // Get block data at this height
@@ -213,18 +222,18 @@ impl Storage {
             if let Some(block_data) = self.get(block_key.as_bytes()).await? {
                 incremental_data.extend_from_slice(&block_data);
             }
-            
+
             // Get state changes at this height
             let state_key = format!("DATA:State:{}", height);
             if let Some(state_data) = self.get(state_key.as_bytes()).await? {
                 incremental_data.extend_from_slice(&state_data);
             }
         }
-        
+
         // 2. Serialize the incremental data
         let serialized = bincode::serialize(&incremental_data)
             .map_err(|e| Error::SerializationError(e.to_string()))?;
-        
+
         Ok(serialized)
     }
 
@@ -232,23 +241,23 @@ impl Storage {
     pub async fn export_snapshot_data(&self) -> Result<Vec<u8>> {
         // Production-ready snapshot data export (matches C# Neo backup functionality exactly)
         // This implements the C# logic: creating a point-in-time snapshot of the blockchain state
-        
+
         let mut snapshot_data = Vec::new();
-        
+
         // 1. Export current blockchain state (all current storage items)
         let current_state = self.find(Some(b"DATA:"), SeekDirection::Forward).await?;
-        
+
         // 2. Add metadata about the snapshot
         let current_height = self.get_current_height().await?;
         let metadata = format!("SNAPSHOT:HEIGHT:{}", current_height);
         snapshot_data.extend_from_slice(metadata.as_bytes());
         snapshot_data.push(0); // Separator
-        
+
         // 3. Add the current state data
         let state_serialized = bincode::serialize(&current_state)
             .map_err(|e| Error::SerializationError(e.to_string()))?;
         snapshot_data.extend_from_slice(&state_serialized);
-        
+
         Ok(snapshot_data)
     }
 }
@@ -283,10 +292,10 @@ impl StorageKey {
         if bytes.len() < 4 {
             return Self::new(0, bytes);
         }
-        
+
         let id = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let key = bytes[4..].to_vec();
-        
+
         Self { id, key }
     }
 

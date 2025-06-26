@@ -3,8 +3,8 @@
 //! This module provides comprehensive error handling for RPC operations,
 //! matching the C# Neo.Network.RPC error handling exactly.
 
-use thiserror::Error;
 use crate::JsonRpcError;
+use thiserror::Error;
 
 /// Result type for RPC operations
 pub type RpcResult<T> = Result<T, RpcError>;
@@ -137,7 +137,10 @@ impl RpcError {
 
     /// Checks if this is a protocol-related error
     pub fn is_protocol_error(&self) -> bool {
-        matches!(self, RpcError::Protocol(_) | RpcError::InvalidResponse { .. })
+        matches!(
+            self,
+            RpcError::Protocol(_) | RpcError::InvalidResponse { .. }
+        )
     }
 }
 
@@ -163,22 +166,22 @@ impl From<JsonRpcError> for RpcError {
 pub mod error_codes {
     /// Parse error - Invalid JSON was received by the server
     pub const PARSE_ERROR: i32 = -32700;
-    
+
     /// Invalid Request - The JSON sent is not a valid Request object
     pub const INVALID_REQUEST: i32 = -32600;
-    
+
     /// Method not found - The method does not exist / is not available
     pub const METHOD_NOT_FOUND: i32 = -32601;
-    
+
     /// Invalid params - Invalid method parameter(s)
     pub const INVALID_PARAMS: i32 = -32602;
-    
+
     /// Internal error - Internal JSON-RPC error
     pub const INTERNAL_ERROR: i32 = -32603;
-    
+
     /// Server error range start
     pub const SERVER_ERROR_START: i32 = -32099;
-    
+
     /// Server error range end
     pub const SERVER_ERROR_END: i32 = -32000;
 }
@@ -187,46 +190,46 @@ pub mod error_codes {
 pub mod neo_error_codes {
     /// Unknown block
     pub const UNKNOWN_BLOCK: i32 = -100;
-    
+
     /// Unknown transaction
     pub const UNKNOWN_TRANSACTION: i32 = -101;
-    
+
     /// Unknown contract
     pub const UNKNOWN_CONTRACT: i32 = -102;
-    
+
     /// Unknown storage item
     pub const UNKNOWN_STORAGE: i32 = -103;
-    
+
     /// Insufficient funds
     pub const INSUFFICIENT_FUNDS: i32 = -300;
-    
+
     /// Wallet not found
     pub const WALLET_NOT_FOUND: i32 = -400;
-    
+
     /// Wallet not open
     pub const WALLET_NOT_OPEN: i32 = -401;
-    
+
     /// Invalid address format
     pub const INVALID_ADDRESS: i32 = -402;
-    
+
     /// Invalid transaction format
     pub const INVALID_TRANSACTION: i32 = -500;
-    
+
     /// Transaction verification failed
     pub const VERIFICATION_FAILED: i32 = -501;
-    
+
     /// Transaction already exists
     pub const TRANSACTION_EXISTS: i32 = -502;
-    
+
     /// Memory pool full
     pub const MEMPOOL_FULL: i32 = -503;
-    
+
     /// Policy check failed
     pub const POLICY_FAILED: i32 = -504;
-    
+
     /// Invalid script
     pub const INVALID_SCRIPT: i32 = -600;
-    
+
     /// Script execution failed
     pub const EXECUTION_FAILED: i32 = -601;
 }
@@ -301,4 +304,4 @@ mod tests {
         assert!(!json_rpc_error.is_network_error());
         assert!(json_rpc_error.is_protocol_error());
     }
-} 
+}

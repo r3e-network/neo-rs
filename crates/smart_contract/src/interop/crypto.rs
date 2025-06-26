@@ -19,7 +19,7 @@ impl InteropService for CheckSigService {
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
             return Err(Error::InteropServiceError(
-                "CheckSig requires signature and public key arguments".to_string()
+                "CheckSig requires signature and public key arguments".to_string(),
             ));
         }
 
@@ -28,12 +28,16 @@ impl InteropService for CheckSigService {
 
         // Validate signature length (64 bytes for ECDSA)
         if signature.len() != 64 {
-            return Err(Error::InteropServiceError("Invalid signature length".to_string()));
+            return Err(Error::InteropServiceError(
+                "Invalid signature length".to_string(),
+            ));
         }
 
         // Validate public key length (33 bytes compressed or 65 bytes uncompressed)
         if public_key.len() != 33 && public_key.len() != 65 {
-            return Err(Error::InteropServiceError("Invalid public key length".to_string()));
+            return Err(Error::InteropServiceError(
+                "Invalid public key length".to_string(),
+            ));
         }
 
         // Get the message to verify from the current transaction context
@@ -42,22 +46,21 @@ impl InteropService for CheckSigService {
             Some(container) => container.get_hash_data(),
             None => {
                 // For testing purposes, use a fixed test message when no container is available
-                vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                     0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-                     0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
-                     0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20]
+                vec![
+                    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
+                    0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a,
+                    0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+                ]
             }
         };
 
         // Verify the ECDSA signature using secp256r1 curve (Neo's standard)
-        let is_valid = match neo_cryptography::ecdsa::ECDsa::verify_signature(
-            &message,
-            signature,
-            public_key
-        ) {
-            Ok(valid) => valid,
-            Err(_) => false,
-        };
+        let is_valid =
+            match neo_cryptography::ecdsa::ECDsa::verify_signature(&message, signature, public_key)
+            {
+                Ok(valid) => valid,
+                Err(_) => false,
+            };
 
         Ok(vec![if is_valid { 1 } else { 0 }])
     }
@@ -78,7 +81,7 @@ impl InteropService for CheckMultiSigService {
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
             return Err(Error::InteropServiceError(
-                "CheckMultisig requires signatures and public keys arguments".to_string()
+                "CheckMultisig requires signatures and public keys arguments".to_string(),
             ));
         }
 
@@ -86,7 +89,9 @@ impl InteropService for CheckMultiSigService {
 
         // 1. Parse the signatures array
         if args.len() < 3 {
-            return Err(Error::InvalidArguments("CheckMultisig requires at least 3 arguments".to_string()));
+            return Err(Error::InvalidArguments(
+                "CheckMultisig requires at least 3 arguments".to_string(),
+            ));
         }
 
         let message = &args[0];
@@ -98,7 +103,9 @@ impl InteropService for CheckMultiSigService {
         let mut offset = 0;
         while offset < signatures_data.len() {
             if offset + 64 > signatures_data.len() {
-                return Err(Error::InvalidSignature("Invalid signature length".to_string()));
+                return Err(Error::InvalidSignature(
+                    "Invalid signature length".to_string(),
+                ));
             }
             let signature = signatures_data[offset..offset + 64].to_vec();
             signatures.push(signature);
@@ -110,7 +117,9 @@ impl InteropService for CheckMultiSigService {
         let mut offset = 0;
         while offset < public_keys_data.len() {
             if offset + 33 > public_keys_data.len() {
-                return Err(Error::InvalidPublicKey("Invalid public key length".to_string()));
+                return Err(Error::InvalidPublicKey(
+                    "Invalid public key length".to_string(),
+                ));
             }
             let public_key = public_keys_data[offset..offset + 33].to_vec();
             public_keys.push(public_key);
@@ -119,7 +128,9 @@ impl InteropService for CheckMultiSigService {
 
         // 4. Validate signature count
         if signatures.len() > public_keys.len() {
-            return Err(Error::InvalidSignature("More signatures than public keys".to_string()));
+            return Err(Error::InvalidSignature(
+                "More signatures than public keys".to_string(),
+            ));
         }
 
         // 5. Verify signatures (m-of-n multisig)
@@ -135,12 +146,16 @@ impl InteropService for CheckMultiSigService {
             match neo_cryptography::ecdsa::ECDsa::verify_signature_secp256r1(
                 message,
                 &signatures[sig_index],
-                public_key
+                public_key,
             ) {
                 Ok(true) => {
                     verified_count += 1;
                     sig_index += 1;
-                    println!("Signature {} verified with public key {}", sig_index - 1, hex::encode(public_key));
+                    println!(
+                        "Signature {} verified with public key {}",
+                        sig_index - 1,
+                        hex::encode(public_key)
+                    );
                 }
                 Ok(false) => {
                     // This public key doesn't match this signature, try next public key
@@ -156,8 +171,12 @@ impl InteropService for CheckMultiSigService {
         // 6. Check if all signatures were verified
         let is_valid = verified_count == signatures.len();
 
-        println!("Multi-signature verification: {}/{} signatures verified, result: {}",
-                verified_count, signatures.len(), is_valid);
+        println!(
+            "Multi-signature verification: {}/{} signatures verified, result: {}",
+            verified_count,
+            signatures.len(),
+            is_valid
+        );
 
         // 7. Return result as bytes
         Ok(vec![if is_valid { 1 } else { 0 }])
@@ -178,7 +197,9 @@ impl InteropService for Sha256Service {
 
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::InteropServiceError("SHA256 requires data argument".to_string()));
+            return Err(Error::InteropServiceError(
+                "SHA256 requires data argument".to_string(),
+            ));
         }
 
         let data = &args[0];
@@ -206,7 +227,9 @@ impl InteropService for Ripemd160Service {
 
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::InteropServiceError("RIPEMD160 requires data argument".to_string()));
+            return Err(Error::InteropServiceError(
+                "RIPEMD160 requires data argument".to_string(),
+            ));
         }
 
         let data = &args[0];
@@ -235,7 +258,8 @@ impl InteropService for VerifyWithECDsaSecp256r1Service {
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 3 {
             return Err(Error::InteropServiceError(
-                "VerifyWithECDsaSecp256r1 requires message, signature, and public key arguments".to_string()
+                "VerifyWithECDsaSecp256r1 requires message, signature, and public key arguments"
+                    .to_string(),
             ));
         }
 
@@ -245,20 +269,22 @@ impl InteropService for VerifyWithECDsaSecp256r1Service {
 
         // Validate signature and public key lengths
         if signature.len() != 64 {
-            return Err(Error::InteropServiceError("Invalid signature length".to_string()));
+            return Err(Error::InteropServiceError(
+                "Invalid signature length".to_string(),
+            ));
         }
 
         if public_key.len() != 33 && public_key.len() != 65 {
-            return Err(Error::InteropServiceError("Invalid public key length".to_string()));
+            return Err(Error::InteropServiceError(
+                "Invalid public key length".to_string(),
+            ));
         }
 
         // Production-ready ECDSA signature verification using secp256r1 curve
         // This matches the C# Neo implementation exactly
 
         let is_valid = match neo_cryptography::ecdsa::ECDsa::verify_signature(
-            message,
-            signature,
-            public_key
+            message, signature, public_key,
         ) {
             Ok(valid) => valid,
             Err(_) => false,
@@ -287,7 +313,9 @@ impl CryptoService {
 /// Verifies a signature using ECDSA.
 pub fn verify_signature(engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
     if args.len() != 3 {
-        return Err(Error::InteropServiceError("verify_signature requires 3 arguments".to_string()));
+        return Err(Error::InteropServiceError(
+            "verify_signature requires 3 arguments".to_string(),
+        ));
     }
 
     let message = &args[0];
@@ -301,9 +329,7 @@ pub fn verify_signature(engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Res
 
     // Verify the signature using secp256r1
     let is_valid = match neo_cryptography::ecdsa::ECDsa::verify_signature_secp256r1(
-        message,
-        signature,
-        public_key,
+        message, signature, public_key,
     ) {
         Ok(valid) => valid,
         Err(_) => false,

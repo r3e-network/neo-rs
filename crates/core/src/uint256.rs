@@ -11,12 +11,12 @@
 
 //! Implementation of UInt256, a 256-bit unsigned integer.
 
+use crate::CoreError;
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
-use crate::CoreError;
-use neo_io::{Serializable, BinaryWriter, MemoryReader};
 
 /// The length of UInt256 values in bytes.
 pub const UINT256_SIZE: usize = 32;
@@ -37,7 +37,12 @@ pub struct UInt256 {
 }
 
 /// Zero value for UInt256.
-pub static ZERO: UInt256 = UInt256 { value1: 0, value2: 0, value3: 0, value4: 0 };
+pub static ZERO: UInt256 = UInt256 {
+    value1: 0,
+    value2: 0,
+    value3: 0,
+    value4: 0,
+};
 
 impl UInt256 {
     /// Creates a new UInt256 instance.
@@ -71,10 +76,10 @@ impl UInt256 {
     /// true if the value of the value parameter is the same as this instance; otherwise, false.
     pub fn equals(&self, other: Option<&Self>) -> bool {
         if let Some(other) = other {
-            self.value1 == other.value1 &&
-            self.value2 == other.value2 &&
-            self.value3 == other.value3 &&
-            self.value4 == other.value4
+            self.value1 == other.value1
+                && self.value2 == other.value2
+                && self.value3 == other.value3
+                && self.value4 == other.value4
         } else {
             false
         }
@@ -91,7 +96,9 @@ impl UInt256 {
     /// A new UInt256 instance.
     pub fn from_bytes(value: &[u8]) -> Result<Self, CoreError> {
         if value.len() != UINT256_SIZE {
-            return Err(CoreError::InvalidFormat(format!("Invalid length: {}", value.len())));
+            return Err(CoreError::InvalidFormat {
+                message: format!("Invalid length: {}", value.len()),
+            });
         }
 
         let mut result = Self::new();
@@ -194,12 +201,16 @@ impl UInt256 {
     pub fn parse(s: &str) -> Result<Self, CoreError> {
         let mut result = None;
         if !Self::try_parse(s, &mut result) {
-            return Err(CoreError::InvalidFormat("Invalid format".to_string()));
+            return Err(CoreError::InvalidFormat {
+                message: "Invalid format".to_string(),
+            });
         }
 
         match result {
             Some(value) => Ok(value),
-            None => Err(CoreError::InvalidFormat("Failed to parse UInt256".to_string())),
+            None => Err(CoreError::InvalidFormat {
+                message: "Failed to parse UInt256".to_string(),
+            }),
         }
     }
 
@@ -286,7 +297,7 @@ impl Serializable for UInt256 {
         UINT256_SIZE
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), neo_io::Error> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
         writer.write_u64(self.value1)?;
         writer.write_u64(self.value2)?;
         writer.write_u64(self.value3)?;
@@ -294,12 +305,17 @@ impl Serializable for UInt256 {
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, neo_io::Error> {
+    fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
         let value1 = reader.read_u64()?;
         let value2 = reader.read_u64()?;
         let value3 = reader.read_u64()?;
         let value4 = reader.read_u64()?;
-        Ok(Self { value1, value2, value3, value4 })
+        Ok(Self {
+            value1,
+            value2,
+            value3,
+            value4,
+        })
     }
 }
 
@@ -425,7 +441,10 @@ mod tests {
 
         // Parse a hex string
         let mut result = None;
-        assert!(UInt256::try_parse("0000000000000000000000000000000000000000000000000000000000000001", &mut result));
+        assert!(UInt256::try_parse(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+            &mut result
+        ));
         assert!(result.is_some());
 
         // Compare the parsed value with the expected value
@@ -446,7 +465,10 @@ mod tests {
         uint1.value1 = 1;
 
         let mut result = None;
-        assert!(UInt256::try_parse("0000000000000000000000000000000000000000000000000000000000000001", &mut result));
+        assert!(UInt256::try_parse(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+            &mut result
+        ));
         assert!(result.is_some());
 
         let uint = result.unwrap();
@@ -462,7 +484,10 @@ mod tests {
     fn test_uint256_to_hex_string() {
         let mut uint = UInt256::new();
         uint.value1 = 1;
-        assert_eq!(uint.to_hex_string(), "0x0000000000000000000000000000000000000000000000000000000000000001");
+        assert_eq!(
+            uint.to_hex_string(),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
     }
 
     #[test]
@@ -523,7 +548,10 @@ mod tests {
     #[test]
     fn test_uint256_from_string() {
         let mut result = None;
-        assert!(UInt256::try_parse("0000000000000000000000000000000000000000000000000000000000000001", &mut result));
+        assert!(UInt256::try_parse(
+            "0000000000000000000000000000000000000000000000000000000000000001",
+            &mut result
+        ));
         assert!(result.is_some());
 
         let uint = result.unwrap();

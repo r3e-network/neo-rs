@@ -4,13 +4,13 @@
 
 use indexmap::IndexMap;
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
 use std::marker::PhantomData;
+use std::sync::{Arc, Mutex};
 
 /// A cache item with doubly-linked list functionality.
 /// This matches the C# CacheItem class exactly.
-pub struct CacheItem<TKey, TValue> 
-where 
+pub struct CacheItem<TKey, TValue>
+where
     TKey: Clone,
     TValue: Clone,
 {
@@ -44,19 +44,26 @@ impl<TKey: Clone, TValue: Clone> CacheItem<TKey, TValue> {
     /// This matches the C# Add method exactly.
     pub fn add(&mut self, another: Arc<Mutex<CacheItem<TKey, TValue>>>) {
         let next = self.next.clone();
-        another.lock().unwrap().link(Some(Arc::new(Mutex::new(self.clone()))), next);
+        another
+            .lock()
+            .unwrap()
+            .link(Some(Arc::new(Mutex::new(self.clone()))), next);
     }
 
     /// Links this item between prev and next.
     /// This matches the C# Link method exactly.
-    fn link(&mut self, prev: Option<Arc<Mutex<CacheItem<TKey, TValue>>>>, next: Option<Arc<Mutex<CacheItem<TKey, TValue>>>>) {
+    fn link(
+        &mut self,
+        prev: Option<Arc<Mutex<CacheItem<TKey, TValue>>>>,
+        next: Option<Arc<Mutex<CacheItem<TKey, TValue>>>>,
+    ) {
         self.prev = prev.clone();
         self.next = next.clone();
-        
+
         if let Some(prev_item) = prev {
             prev_item.lock().unwrap().next = Some(Arc::new(Mutex::new(self.clone())));
         }
-        
+
         if let Some(next_item) = next {
             next_item.lock().unwrap().prev = Some(Arc::new(Mutex::new(self.clone())));
         }
@@ -79,7 +86,7 @@ impl<TKey: Clone, TValue: Clone> CacheItem<TKey, TValue> {
         if self.is_empty() {
             return None;
         }
-        
+
         let prev = self.prev.clone()?;
         prev.lock().unwrap().unlink();
         Some(prev)
@@ -98,10 +105,10 @@ impl<TKey: Clone, TValue: Clone> Clone for CacheItem<TKey, TValue> {
 }
 
 /// Abstract base cache class that matches C# Cache<TKey, TValue> exactly.
-/// 
+///
 /// This provides the foundation for all cache implementations in Neo.
-pub trait Cache<TKey, TValue>: Send + Sync 
-where 
+pub trait Cache<TKey, TValue>: Send + Sync
+where
     TKey: Hash + Eq + Clone + Send + Sync,
     TValue: Clone + Send + Sync,
 {
@@ -181,8 +188,8 @@ where
 
 /// Concrete implementation of the Cache trait.
 /// This matches the C# Cache<TKey, TValue> class implementation.
-pub struct ConcreteCache<TKey, TValue, F, G> 
-where 
+pub struct ConcreteCache<TKey, TValue, F, G>
+where
     TKey: Hash + Eq + Clone + Send + Sync,
     TValue: Clone + Send + Sync,
     F: Fn(&TValue) -> TKey + Send + Sync,
@@ -203,14 +210,14 @@ where
 }
 
 impl<TKey, TValue, F, G> ConcreteCache<TKey, TValue, F, G>
-where 
+where
     TKey: Hash + Eq + Clone + Send + Sync,
     TValue: Clone + Send + Sync,
     F: Fn(&TValue) -> TKey + Send + Sync,
     G: Fn(&mut CacheItem<TKey, TValue>) + Send + Sync,
 {
     /// Creates a new concrete cache with the specified capacity and functions.
-    pub fn new(max_capacity: usize, get_key_fn: F, on_access_fn: G) -> Self 
+    pub fn new(max_capacity: usize, get_key_fn: F, on_access_fn: G) -> Self
     where
         TKey: Default,
         TValue: Default,
@@ -219,7 +226,7 @@ where
         let dummy_key = TKey::default(); // Use Default trait instead of unsafe zeroed
         let dummy_value = TValue::default(); // Use Default trait instead of unsafe zeroed
         let head = Arc::new(Mutex::new(CacheItem::new(dummy_key, dummy_value)));
-        
+
         Self {
             head,
             inner_dictionary: Arc::new(Mutex::new(IndexMap::new())),
@@ -233,7 +240,7 @@ where
     /// Internal method to add an item.
     fn add_internal(&self, key: TKey, item: TValue) {
         let mut dict = self.inner_dictionary.lock().unwrap();
-        
+
         if let Some(cached) = dict.get(&key) {
             // Item already exists, just access it
             let mut cached_item = cached.lock().unwrap();
@@ -259,7 +266,7 @@ where
     /// Internal method to remove an item.
     fn remove_internal(&self, key: &TKey) -> bool {
         let mut dict = self.inner_dictionary.lock().unwrap();
-        
+
         if let Some(item) = dict.shift_remove(key) {
             item.lock().unwrap().unlink();
             // In C#, this would dispose if IDisposable
@@ -272,7 +279,7 @@ where
 }
 
 impl<TKey, TValue, F, G> Cache<TKey, TValue> for ConcreteCache<TKey, TValue, F, G>
-where 
+where
     TKey: Hash + Eq + Clone + Send + Sync,
     TValue: Clone + Send + Sync,
     F: Fn(&TValue) -> TKey + Send + Sync,
@@ -319,7 +326,7 @@ where
     fn clear(&self) {
         let mut dict = self.inner_dictionary.lock().unwrap();
         dict.clear();
-        
+
         let mut head = self.head.lock().unwrap();
         head.unlink();
     }
@@ -346,11 +353,13 @@ where
     fn copy_to(&self, array: &mut [TValue], start_index: usize) -> Result<(), String> {
         let dict = self.inner_dictionary.lock().unwrap();
         let count = dict.len();
-        
+
         if start_index + count > array.len() {
             return Err(format!(
                 "start_index({}) + count({}) > array.len({})",
-                start_index, count, array.len()
+                start_index,
+                count,
+                array.len()
             ));
         }
 
@@ -381,10 +390,15 @@ mod tests {
         data: String,
     }
 
-    fn create_test_cache() -> ConcreteCache<u32, TestItem, impl Fn(&TestItem) -> u32, impl Fn(&mut CacheItem<u32, TestItem>)> {
+    fn create_test_cache() -> ConcreteCache<
+        u32,
+        TestItem,
+        impl Fn(&TestItem) -> u32,
+        impl Fn(&mut CacheItem<u32, TestItem>),
+    > {
         ConcreteCache::new(
-            3, // max capacity
-            |item: &TestItem| item.id, // get key function
+            3,                                         // max capacity
+            |item: &TestItem| item.id,                 // get key function
             |_item: &mut CacheItem<u32, TestItem>| {}, // on access function (no-op for basic test)
         )
     }
@@ -392,11 +406,14 @@ mod tests {
     #[test]
     fn test_cache_add_and_get() {
         let cache = create_test_cache();
-        let item = TestItem { id: 1, data: "test".to_string() };
-        
+        let item = TestItem {
+            id: 1,
+            data: "test".to_string(),
+        };
+
         cache.add(item.clone());
         assert_eq!(cache.count(), 1);
-        
+
         let retrieved = cache.get(&1).unwrap();
         assert_eq!(retrieved, item);
     }
@@ -404,17 +421,23 @@ mod tests {
     #[test]
     fn test_cache_capacity_eviction() {
         let cache = create_test_cache();
-        
+
         // Add items up to capacity
         for i in 1..=3 {
-            cache.add(TestItem { id: i, data: format!("test{}", i) });
+            cache.add(TestItem {
+                id: i,
+                data: format!("test{}", i),
+            });
         }
         assert_eq!(cache.count(), 3);
-        
+
         // Add one more item, should evict the oldest
-        cache.add(TestItem { id: 4, data: "test4".to_string() });
+        cache.add(TestItem {
+            id: 4,
+            data: "test4".to_string(),
+        });
         assert_eq!(cache.count(), 3);
-        
+
         // First item should be evicted
         assert!(cache.get(&1).is_none());
         assert!(cache.get(&4).is_some());
@@ -423,8 +446,11 @@ mod tests {
     #[test]
     fn test_cache_contains() {
         let cache = create_test_cache();
-        let item = TestItem { id: 1, data: "test".to_string() };
-        
+        let item = TestItem {
+            id: 1,
+            data: "test".to_string(),
+        };
+
         assert!(!cache.contains_key(&1));
         cache.add(item.clone());
         assert!(cache.contains_key(&1));
@@ -434,11 +460,14 @@ mod tests {
     #[test]
     fn test_cache_remove() {
         let cache = create_test_cache();
-        let item = TestItem { id: 1, data: "test".to_string() };
-        
+        let item = TestItem {
+            id: 1,
+            data: "test".to_string(),
+        };
+
         cache.add(item.clone());
         assert_eq!(cache.count(), 1);
-        
+
         assert!(cache.remove(&item));
         assert_eq!(cache.count(), 0);
         assert!(!cache.contains_key(&1));
@@ -447,13 +476,16 @@ mod tests {
     #[test]
     fn test_cache_clear() {
         let cache = create_test_cache();
-        
+
         for i in 1..=3 {
-            cache.add(TestItem { id: i, data: format!("test{}", i) });
+            cache.add(TestItem {
+                id: i,
+                data: format!("test{}", i),
+            });
         }
         assert_eq!(cache.count(), 3);
-        
+
         cache.clear();
         assert_eq!(cache.count(), 0);
     }
-} 
+}

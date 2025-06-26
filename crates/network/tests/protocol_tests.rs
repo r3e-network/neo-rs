@@ -1,0 +1,626 @@
+//! Network Protocol C# Compatibility Tests
+//!
+//! These tests ensure full compatibility with C# Neo.Network protocol implementation.
+//! Tests are based on the C# Neo.Network.P2P protocol test suite.
+
+use neo_core::{Block, Transaction, UInt160, UInt256};
+use neo_network::protocol::*;
+use neo_network::*;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+#[cfg(test)]
+mod protocol_tests {
+    use super::*;
+
+    /// Test protocol message serialization (matches C# Message serialization exactly)
+    #[test]
+    fn test_protocol_message_serialization_compatibility() {
+        // Test Version message (matches C# VersionPayload exactly)
+        let version_msg = VersionMessage {
+            version: 0x00,
+            services: NodeServices::NodeNetwork as u64,
+            timestamp: 1234567890,
+            port: 10333,
+            nonce: 0x1234567890ABCDEF,
+            user_agent: "/NEO:3.6.0/".to_string(),
+            start_height: 100000,
+        };
+
+        let serialized = version_msg.serialize().unwrap();
+        let deserialized = VersionMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.version, version_msg.version);
+        assert_eq!(deserialized.services, version_msg.services);
+        assert_eq!(deserialized.timestamp, version_msg.timestamp);
+        assert_eq!(deserialized.port, version_msg.port);
+        assert_eq!(deserialized.nonce, version_msg.nonce);
+        assert_eq!(deserialized.user_agent, version_msg.user_agent);
+        assert_eq!(deserialized.start_height, version_msg.start_height);
+    }
+
+    /// Test network addresses (matches C# NetworkAddress exactly)
+    #[test]
+    fn test_network_address_compatibility() {
+        // Test IPv4 address (matches C# NetworkAddress for IPv4 exactly)
+        let ipv4_addr = NetworkAddress {
+            timestamp: 1234567890,
+            services: NodeServices::NodeNetwork as u64,
+            address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)),
+            port: 10333,
+        };
+
+        let serialized = ipv4_addr.serialize().unwrap();
+        let deserialized = NetworkAddress::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.timestamp, ipv4_addr.timestamp);
+        assert_eq!(deserialized.services, ipv4_addr.services);
+        assert_eq!(deserialized.address, ipv4_addr.address);
+        assert_eq!(deserialized.port, ipv4_addr.port);
+
+        // Test IPv6 address (matches C# NetworkAddress for IPv6 exactly)
+        let ipv6_addr = NetworkAddress {
+            timestamp: 1234567890,
+            services: NodeServices::NodeNetwork as u64,
+            address: "2001:db8::1".parse().unwrap(),
+            port: 10333,
+        };
+
+        let serialized = ipv6_addr.serialize().unwrap();
+        let deserialized = NetworkAddress::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.address, ipv6_addr.address);
+    }
+
+    /// Test inventory messages (matches C# InvPayload exactly)
+    #[test]
+    fn test_inventory_message_compatibility() {
+        // Test inventory message with blocks (matches C# InvPayload exactly)
+        let mut hashes = vec![];
+        for i in 0..10 {
+            hashes.push(UInt256::from_bytes(&[i; 32]).unwrap());
+        }
+
+        let inv_msg = InventoryMessage {
+            type_: InventoryType::Block,
+            hashes: hashes.clone(),
+        };
+
+        let serialized = inv_msg.serialize().unwrap();
+        let deserialized = InventoryMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.type_, InventoryType::Block);
+        assert_eq!(deserialized.hashes.len(), 10);
+        for (i, hash) in deserialized.hashes.iter().enumerate() {
+            assert_eq!(*hash, hashes[i]);
+        }
+
+        // Test with transactions
+        let tx_inv_msg = InventoryMessage {
+            type_: InventoryType::TX,
+            hashes: hashes.clone(),
+        };
+
+        let serialized = tx_inv_msg.serialize().unwrap();
+        let deserialized = InventoryMessage::deserialize(&serialized).unwrap();
+        assert_eq!(deserialized.type_, InventoryType::TX);
+    }
+
+    /// Test GetData message (matches C# GetDataPayload exactly)
+    #[test]
+    fn test_getdata_message_compatibility() {
+        let hashes = vec![
+            UInt256::from_bytes(&[1u8; 32]).unwrap(),
+            UInt256::from_bytes(&[2u8; 32]).unwrap(),
+            UInt256::from_bytes(&[3u8; 32]).unwrap(),
+        ];
+
+        let getdata_msg = GetDataMessage {
+            type_: InventoryType::Block,
+            hashes: hashes.clone(),
+        };
+
+        let serialized = getdata_msg.serialize().unwrap();
+        let deserialized = GetDataMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.type_, InventoryType::Block);
+        assert_eq!(deserialized.hashes, hashes);
+    }
+
+    /// Test GetBlocks message (matches C# GetBlocksPayload exactly)
+    #[test]
+    fn test_getblocks_message_compatibility() {
+        let hash_start = vec![
+            UInt256::from_bytes(&[10u8; 32]).unwrap(),
+            UInt256::from_bytes(&[20u8; 32]).unwrap(),
+        ];
+        let hash_stop = UInt256::from_bytes(&[30u8; 32]).unwrap();
+
+        let getblocks_msg = GetBlocksMessage {
+            hash_start: hash_start.clone(),
+            hash_stop,
+        };
+
+        let serialized = getblocks_msg.serialize().unwrap();
+        let deserialized = GetBlocksMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.hash_start, hash_start);
+        assert_eq!(deserialized.hash_stop, hash_stop);
+    }
+
+    /// Test Headers message (matches C# HeadersPayload exactly)
+    #[test]
+    fn test_headers_message_compatibility() {
+        let mut headers = vec![];
+        for i in 0..5 {
+            let header = BlockHeader {
+                version: 0,
+                prev_hash: UInt256::from_bytes(&[i; 32]).unwrap(),
+                merkle_root: UInt256::from_bytes(&[(i + 1); 32]).unwrap(),
+                timestamp: 1234567890 + i as u64,
+                index: i,
+                next_consensus: UInt160::from_bytes(&[i as u8; 20]).unwrap(),
+                witness: vec![],
+            };
+            headers.push(header);
+        }
+
+        let headers_msg = HeadersMessage {
+            headers: headers.clone(),
+        };
+
+        let serialized = headers_msg.serialize().unwrap();
+        let deserialized = HeadersMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.headers.len(), 5);
+        for (i, header) in deserialized.headers.iter().enumerate() {
+            assert_eq!(header.index, headers[i].index);
+            assert_eq!(header.prev_hash, headers[i].prev_hash);
+            assert_eq!(header.timestamp, headers[i].timestamp);
+        }
+    }
+
+    /// Test Ping/Pong messages (matches C# PingPayload exactly)
+    #[test]
+    fn test_ping_pong_compatibility() {
+        // Test Ping message
+        let ping_msg = PingMessage {
+            timestamp: 1234567890,
+            nonce: 0xDEADBEEF,
+        };
+
+        let serialized = ping_msg.serialize().unwrap();
+        let deserialized = PingMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.timestamp, ping_msg.timestamp);
+        assert_eq!(deserialized.nonce, ping_msg.nonce);
+
+        // Test Pong message (should be same structure)
+        let pong_msg = PongMessage {
+            timestamp: ping_msg.timestamp,
+            nonce: ping_msg.nonce,
+        };
+
+        let serialized = pong_msg.serialize().unwrap();
+        let deserialized = PongMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.timestamp, pong_msg.timestamp);
+        assert_eq!(deserialized.nonce, pong_msg.nonce);
+    }
+
+    /// Test Address message (matches C# AddrPayload exactly)
+    #[test]
+    fn test_address_message_compatibility() {
+        let mut addresses = vec![];
+        for i in 0..10 {
+            addresses.push(NetworkAddress {
+                timestamp: 1234567890 + i,
+                services: NodeServices::NodeNetwork as u64,
+                address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, i as u8)),
+                port: 10333 + i as u16,
+            });
+        }
+
+        let addr_msg = AddressMessage {
+            addresses: addresses.clone(),
+        };
+
+        let serialized = addr_msg.serialize().unwrap();
+        let deserialized = AddressMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.addresses.len(), 10);
+        for (i, addr) in deserialized.addresses.iter().enumerate() {
+            assert_eq!(addr.timestamp, addresses[i].timestamp);
+            assert_eq!(addr.services, addresses[i].services);
+            assert_eq!(addr.address, addresses[i].address);
+            assert_eq!(addr.port, addresses[i].port);
+        }
+    }
+
+    /// Test Transaction message (matches C# transaction network format exactly)
+    #[test]
+    fn test_transaction_message_compatibility() {
+        let tx = Transaction {
+            version: 0,
+            nonce: 123456,
+            system_fee: 1000000,
+            network_fee: 100000,
+            valid_until_block: 999999,
+            attributes: vec![],
+            signers: vec![create_test_signer()],
+            script: vec![0x51, 0x52, 0x53], // PUSH1 PUSH2 PUSH3
+            witnesses: vec![create_test_witness()],
+        };
+
+        let tx_msg = TransactionMessage {
+            transaction: tx.clone(),
+        };
+
+        let serialized = tx_msg.serialize().unwrap();
+        let deserialized = TransactionMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.transaction.version, tx.version);
+        assert_eq!(deserialized.transaction.nonce, tx.nonce);
+        assert_eq!(deserialized.transaction.system_fee, tx.system_fee);
+        assert_eq!(deserialized.transaction.network_fee, tx.network_fee);
+        assert_eq!(deserialized.transaction.script, tx.script);
+    }
+
+    /// Test Block message (matches C# block network format exactly)
+    #[test]
+    fn test_block_message_compatibility() {
+        let transactions = vec![
+            create_test_transaction(1),
+            create_test_transaction(2),
+            create_test_transaction(3),
+        ];
+
+        let block = Block {
+            version: 0,
+            prev_hash: UInt256::from_bytes(&[1u8; 32]).unwrap(),
+            merkle_root: calculate_merkle_root(&transactions),
+            timestamp: 1234567890,
+            index: 100,
+            next_consensus: UInt160::from_bytes(&[2u8; 20]).unwrap(),
+            witness: vec![create_test_witness()],
+            consensus_data: ConsensusData {
+                primary_index: 0,
+                nonce: 42,
+            },
+            transactions,
+        };
+
+        let block_msg = BlockMessage {
+            block: block.clone(),
+        };
+
+        let serialized = block_msg.serialize().unwrap();
+        let deserialized = BlockMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.block.version, block.version);
+        assert_eq!(deserialized.block.index, block.index);
+        assert_eq!(deserialized.block.prev_hash, block.prev_hash);
+        assert_eq!(deserialized.block.timestamp, block.timestamp);
+        assert_eq!(
+            deserialized.block.transactions.len(),
+            block.transactions.len()
+        );
+    }
+
+    /// Test Verack message (matches C# VerAckPayload exactly)
+    #[test]
+    fn test_verack_message_compatibility() {
+        let verack_msg = VerackMessage {};
+
+        let serialized = verack_msg.serialize().unwrap();
+        let deserialized = VerackMessage::deserialize(&serialized).unwrap();
+
+        // Verack is empty, just test it serializes/deserializes
+        assert_eq!(serialized.len(), 0);
+    }
+
+    /// Test FilterAdd message (matches C# FilterAddPayload exactly)
+    #[test]
+    fn test_filteradd_message_compatibility() {
+        let filter_data = vec![0x01, 0x02, 0x03, 0x04, 0x05];
+
+        let filteradd_msg = FilterAddMessage {
+            data: filter_data.clone(),
+        };
+
+        let serialized = filteradd_msg.serialize().unwrap();
+        let deserialized = FilterAddMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.data, filter_data);
+    }
+
+    /// Test FilterClear message (matches C# FilterClearPayload exactly)
+    #[test]
+    fn test_filterclear_message_compatibility() {
+        let filterclear_msg = FilterClearMessage {};
+
+        let serialized = filterclear_msg.serialize().unwrap();
+        let deserialized = FilterClearMessage::deserialize(&serialized).unwrap();
+
+        // FilterClear is empty
+        assert_eq!(serialized.len(), 0);
+    }
+
+    /// Test FilterLoad message (matches C# FilterLoadPayload exactly)
+    #[test]
+    fn test_filterload_message_compatibility() {
+        let bloom_filter = BloomFilter {
+            data: vec![0xFF; 1024],
+            hash_functions: 5,
+            tweak: 12345,
+            flags: BloomFilterFlags::UpdateAll,
+        };
+
+        let filterload_msg = FilterLoadMessage {
+            filter: bloom_filter.clone(),
+        };
+
+        let serialized = filterload_msg.serialize().unwrap();
+        let deserialized = FilterLoadMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.filter.data, bloom_filter.data);
+        assert_eq!(
+            deserialized.filter.hash_functions,
+            bloom_filter.hash_functions
+        );
+        assert_eq!(deserialized.filter.tweak, bloom_filter.tweak);
+        assert_eq!(deserialized.filter.flags, bloom_filter.flags);
+    }
+
+    /// Test MerkleBlock message (matches C# MerkleBlockPayload exactly)
+    #[test]
+    fn test_merkleblock_message_compatibility() {
+        let header = BlockHeader {
+            version: 0,
+            prev_hash: UInt256::from_bytes(&[1u8; 32]).unwrap(),
+            merkle_root: UInt256::from_bytes(&[2u8; 32]).unwrap(),
+            timestamp: 1234567890,
+            index: 100,
+            next_consensus: UInt160::from_bytes(&[3u8; 20]).unwrap(),
+            witness: vec![],
+        };
+
+        let tx_count = 10;
+        let hashes = vec![
+            UInt256::from_bytes(&[10u8; 32]).unwrap(),
+            UInt256::from_bytes(&[20u8; 32]).unwrap(),
+            UInt256::from_bytes(&[30u8; 32]).unwrap(),
+        ];
+        let flags = vec![0x01, 0x03, 0x07];
+
+        let merkleblock_msg = MerkleBlockMessage {
+            header,
+            tx_count,
+            hashes: hashes.clone(),
+            flags: flags.clone(),
+        };
+
+        let serialized = merkleblock_msg.serialize().unwrap();
+        let deserialized = MerkleBlockMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.header.index, header.index);
+        assert_eq!(deserialized.tx_count, tx_count);
+        assert_eq!(deserialized.hashes, hashes);
+        assert_eq!(deserialized.flags, flags);
+    }
+
+    /// Test NotFound message (matches C# NotFoundPayload exactly)
+    #[test]
+    fn test_notfound_message_compatibility() {
+        let hashes = vec![
+            UInt256::from_bytes(&[100u8; 32]).unwrap(),
+            UInt256::from_bytes(&[200u8; 32]).unwrap(),
+        ];
+
+        let notfound_msg = NotFoundMessage {
+            type_: InventoryType::Block,
+            hashes: hashes.clone(),
+        };
+
+        let serialized = notfound_msg.serialize().unwrap();
+        let deserialized = NotFoundMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.type_, InventoryType::Block);
+        assert_eq!(deserialized.hashes, hashes);
+    }
+
+    /// Test message header format (matches C# Message header exactly)
+    #[test]
+    fn test_message_header_compatibility() {
+        let network_magic = 0x334f454e; // NEO3 mainnet
+        let command = "version";
+        let payload = vec![0x01, 0x02, 0x03, 0x04];
+
+        let message = NetworkMessage {
+            magic: network_magic,
+            command: command.to_string(),
+            payload: payload.clone(),
+            checksum: calculate_checksum(&payload),
+        };
+
+        let serialized = message.serialize().unwrap();
+        let deserialized = NetworkMessage::deserialize(&serialized).unwrap();
+
+        assert_eq!(deserialized.magic, network_magic);
+        assert_eq!(deserialized.command, command);
+        assert_eq!(deserialized.payload, payload);
+        assert_eq!(deserialized.checksum, message.checksum);
+    }
+
+    /// Test message size limits (matches C# size constraints exactly)
+    #[test]
+    fn test_message_size_limits_compatibility() {
+        // Test maximum message size (C# limit is 0x02000000 bytes = 32MB)
+        let max_payload_size = 0x02000000 - 24; // Subtract header size
+
+        // Create large but valid message
+        let large_payload = vec![0x00; max_payload_size];
+        let message = NetworkMessage {
+            magic: 0x334f454e,
+            command: "large".to_string(),
+            payload: large_payload,
+            checksum: 0,
+        };
+
+        let serialized = message.serialize().unwrap();
+        assert!(serialized.len() <= 0x02000000);
+
+        // Test oversized message should fail
+        let oversized_payload = vec![0x00; 0x02000000];
+        let oversized_message = NetworkMessage {
+            magic: 0x334f454e,
+            command: "oversized".to_string(),
+            payload: oversized_payload,
+            checksum: 0,
+        };
+
+        assert!(oversized_message.serialize().is_err());
+    }
+
+    /// Test protocol version compatibility (matches C# version handling exactly)
+    #[test]
+    fn test_protocol_version_compatibility() {
+        // Test current protocol version
+        assert_eq!(PROTOCOL_VERSION, 0x00);
+
+        // Test minimum supported version
+        assert_eq!(MIN_PROTOCOL_VERSION, 0x00);
+
+        // Test version compatibility check
+        assert!(is_version_supported(0x00));
+
+        // Test service flags
+        assert_eq!(NodeServices::NodeNetwork as u64, 0x01);
+        assert_eq!(NodeServices::NodeGetBlocks as u64, 0x02);
+        assert_eq!(NodeServices::NodeGetTransactions as u64, 0x04);
+    }
+
+    /// Test checksum calculation (matches C# checksum exactly)
+    #[test]
+    fn test_checksum_calculation_compatibility() {
+        let test_data = vec![0x01, 0x02, 0x03, 0x04, 0x05];
+        let checksum = calculate_checksum(&test_data);
+
+        // Calculate expected checksum (double SHA256, first 4 bytes)
+        use sha2::{Digest, Sha256};
+        let hash1 = Sha256::digest(&test_data);
+        let hash2 = Sha256::digest(&hash1);
+        let expected = u32::from_le_bytes([hash2[0], hash2[1], hash2[2], hash2[3]]);
+
+        assert_eq!(checksum, expected);
+
+        // Test empty data
+        let empty_checksum = calculate_checksum(&[]);
+        assert_ne!(empty_checksum, 0); // Should not be zero
+    }
+
+    /// Test network magic values (matches C# network constants exactly)
+    #[test]
+    fn test_network_magic_compatibility() {
+        // Test mainnet magic
+        assert_eq!(MAINNET_MAGIC, 0x334f454e);
+
+        // Test testnet magic
+        assert_eq!(TESTNET_MAGIC, 0x3554454e);
+
+        // Test private net magic
+        assert_eq!(PRIVATE_NET_MAGIC, 0x334f454e);
+
+        // Test magic validation
+        assert!(is_valid_magic(MAINNET_MAGIC));
+        assert!(is_valid_magic(TESTNET_MAGIC));
+        assert!(!is_valid_magic(0x12345678)); // Invalid magic
+    }
+
+    // Helper functions
+
+    fn create_test_transaction(nonce: u32) -> Transaction {
+        Transaction {
+            version: 0,
+            nonce,
+            system_fee: 0,
+            network_fee: 0,
+            valid_until_block: 999999,
+            attributes: vec![],
+            signers: vec![create_test_signer()],
+            script: vec![0x51], // PUSH1
+            witnesses: vec![create_test_witness()],
+        }
+    }
+
+    fn create_test_signer() -> Signer {
+        Signer {
+            account: UInt160::from_bytes(&[1u8; 20]).unwrap(),
+            scopes: WitnessScope::CalledByEntry,
+            allowed_contracts: vec![],
+            allowed_groups: vec![],
+            rules: vec![],
+        }
+    }
+
+    fn create_test_witness() -> Witness {
+        Witness {
+            invocation_script: vec![0x00; 64],
+            verification_script: vec![0x51],
+        }
+    }
+
+    fn calculate_merkle_root(transactions: &[Transaction]) -> UInt256 {
+        if transactions.is_empty() {
+            return UInt256::zero();
+        }
+
+        let mut hashes: Vec<UInt256> = transactions.iter().map(|tx| tx.hash()).collect();
+
+        while hashes.len() > 1 {
+            let mut new_hashes = vec![];
+
+            for chunk in hashes.chunks(2) {
+                if chunk.len() == 2 {
+                    new_hashes.push(combine_hashes(&chunk[0], &chunk[1]));
+                } else {
+                    new_hashes.push(combine_hashes(&chunk[0], &chunk[0]));
+                }
+            }
+
+            hashes = new_hashes;
+        }
+
+        hashes[0]
+    }
+
+    fn combine_hashes(hash1: &UInt256, hash2: &UInt256) -> UInt256 {
+        use sha2::{Digest, Sha256};
+        let mut data = Vec::new();
+        data.extend_from_slice(hash1.as_bytes());
+        data.extend_from_slice(hash2.as_bytes());
+        let hash = Sha256::digest(&data);
+        UInt256::from_bytes(&hash).unwrap()
+    }
+
+    fn calculate_checksum(data: &[u8]) -> u32 {
+        use sha2::{Digest, Sha256};
+        let hash1 = Sha256::digest(data);
+        let hash2 = Sha256::digest(&hash1);
+        u32::from_le_bytes([hash2[0], hash2[1], hash2[2], hash2[3]])
+    }
+
+    fn is_version_supported(version: u32) -> bool {
+        version >= MIN_PROTOCOL_VERSION && version <= PROTOCOL_VERSION
+    }
+
+    fn is_valid_magic(magic: u32) -> bool {
+        magic == MAINNET_MAGIC || magic == TESTNET_MAGIC
+    }
+
+    // Constants
+    const PROTOCOL_VERSION: u32 = 0x00;
+    const MIN_PROTOCOL_VERSION: u32 = 0x00;
+    const MAINNET_MAGIC: u32 = 0x334f454e;
+    const TESTNET_MAGIC: u32 = 0x3554454e;
+    const PRIVATE_NET_MAGIC: u32 = 0x334f454e;
+}

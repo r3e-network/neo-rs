@@ -1,10 +1,10 @@
 //! Constant-related OpCodes for the Neo Virtual Machine.
-//! 
+//!
 //! This module contains all OpCodes related to pushing constants onto the stack,
 //! including integers, booleans, null values, and data.
 
 /// Constant-related OpCodes.
-/// 
+///
 /// These opcodes are used to push various constant values onto the execution stack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

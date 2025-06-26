@@ -13,9 +13,5 @@ pub use operand_size::OperandSize;
 
 // Re-export category types for convenience
 pub use categories::{
-    ConstantOpCode,
-    FlowControlOpCode,
-    StackOpCode,
-    ArithmeticOpCode,
-    OpCodeCategory,
+    ArithmeticOpCode, ConstantOpCode, FlowControlOpCode, OpCodeCategory, StackOpCode,
 };

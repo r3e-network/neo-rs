@@ -1,8 +1,8 @@
-use crate::{Node, MptResult, MptError};
+use crate::{MptError, MptResult, Node};
 use neo_core::UInt256;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 /// Cache statistics for monitoring performance
 #[derive(Debug, Clone, Default)]
@@ -329,12 +329,12 @@ impl Cache {
     pub fn clear(&mut self) -> MptResult<()> {
         // Commit dirty entries first
         self.commit()?;
-        
+
         self.entries.clear();
         self.lru_order.clear();
         self.dirty_entries.clear();
         self.stats.total_size = 0;
-        
+
         Ok(())
     }
 
@@ -364,7 +364,7 @@ impl Cache {
         let max_age = Duration::from_secs(3600); // 1 hour
 
         let mut to_remove = Vec::new();
-        
+
         for (key, entry) in &self.entries {
             if now.duration_since(entry.last_accessed) > max_age && !entry.is_dirty {
                 to_remove.push(*key);
@@ -492,7 +492,7 @@ mod tests {
     #[test]
     fn test_cache_clear() {
         let mut cache = Cache::new();
-        
+
         // Add multiple entries
         for i in 0..10 {
             let mut key_bytes = [0u8; 32];
@@ -516,11 +516,11 @@ mod tests {
     fn test_cache_lru_eviction() {
         // Create small cache with entry limit to force eviction
         let mut cache = Cache::with_capacity(1000, 2); // Only 2 entries max
-        
+
         let key1 = UInt256::zero();
         let key2 = UInt256::from_bytes(&[1u8; 32]).unwrap();
         let key3 = UInt256::from_bytes(&[2u8; 32]).unwrap();
-        
+
         let node1 = create_test_node(1);
         let node2 = create_test_node(2);
         let node3 = create_test_node(3);
@@ -535,7 +535,7 @@ mod tests {
 
         // Add third key, should trigger eviction due to entry limit
         cache.put(key3, node3).unwrap();
-        
+
         // Should still have at most 2 entries
         assert!(cache.len() <= 2);
 
@@ -543,7 +543,7 @@ mod tests {
         assert!(cache.get(&key1).unwrap().is_some());
         // key3 should be present (just added)
         assert!(cache.get(&key3).unwrap().is_some());
-        
+
         // At least one eviction should have occurred
         assert!(cache.stats().evictions >= 1);
     }
@@ -661,7 +661,7 @@ mod tests {
         let node = create_test_node(42);
 
         cache.put(key, node).unwrap();
-        
+
         // Commit without storage should not error
         cache.commit().unwrap();
         assert_eq!(cache.len(), 1);
@@ -704,4 +704,4 @@ mod tests {
         assert!(get_duration.as_millis() < 100);
         assert_eq!(cache.stats().hits, 1000);
     }
-} 
+}

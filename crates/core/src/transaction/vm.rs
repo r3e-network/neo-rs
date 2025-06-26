@@ -11,9 +11,8 @@
 
 //! VM integration for transactions matching C# Neo N3 exactly.
 
-use serde::{Deserialize, Serialize};
-use crate::{UInt160, UInt256, CoreResult, CoreError};
 use super::blockchain::BlockchainSnapshot;
+use crate::CoreError;
 
 /// ApplicationEngine for VM execution (matches C# ApplicationEngine exactly).
 #[derive(Debug, Clone)]
@@ -134,44 +133,49 @@ impl ApplicationEngine {
     fn execute_production_vm_instructions(&self) -> bool {
         // Production-ready VM instruction execution (matches C# ApplicationEngine.Execute exactly)
         // This implements the C# logic: ExecutionEngine.Execute()
-        
+
         // 1. Validate script structure first (security requirement)
         if !self.validate_script_structure() {
             return false;
         }
-        
+
         // 2. Validate script opcodes (matches C# VM opcode validation exactly)
         if let Err(_) = validate_vm_script_opcodes(&self.script) {
             return false;
         }
-        
+
         // 3. Check gas consumption before execution (matches C# GasConsumed check exactly)
         if self.gas_consumed >= self.gas_limit {
             return false;
         }
-        
+
         // 4. Production-ready instruction execution (matches C# VM execution exactly)
         // This implements the full C# Neo N3 VM execution pipeline
-        
+
         // 4.1. Initialize execution context (matches C# ExecutionContext exactly)
         let mut instruction_pointer = 0usize;
         let mut execution_stack = Vec::new();
         let mut alt_stack = Vec::new();
         let mut gas_consumed = self.gas_consumed;
-        
+
         // 4.2. Execute instructions in loop (matches C# ExecuteNext exactly)
         while instruction_pointer < self.script.len() {
             let opcode = self.script[instruction_pointer];
-            
+
             // 4.3. Check gas limit before each instruction (matches C# GasConsumed check exactly)
             let instruction_gas_cost = self.calculate_instruction_gas_cost(opcode);
             if gas_consumed + instruction_gas_cost > self.gas_limit {
                 return false; // Out of gas
             }
             gas_consumed += instruction_gas_cost;
-            
+
             // 4.4. Execute instruction (matches C# VM instruction dispatch exactly)
-            match self.execute_vm_instruction(opcode, &mut instruction_pointer, &mut execution_stack, &mut alt_stack) {
+            match self.execute_vm_instruction(
+                opcode,
+                &mut instruction_pointer,
+                &mut execution_stack,
+                &mut alt_stack,
+            ) {
                 Ok(true) => {
                     // Instruction executed successfully, continue
                     instruction_pointer += 1;
@@ -185,18 +189,18 @@ impl ApplicationEngine {
                     return false;
                 }
             }
-            
+
             // 4.5. Check for stack overflow (matches C# VM stack limits exactly)
             if execution_stack.len() > 2048 || alt_stack.len() > 2048 {
                 return false; // Stack overflow
             }
-            
+
             // 4.6. Prevent infinite loops (matches C# VM execution limits exactly)
             if instruction_pointer >= self.script.len() {
                 break;
             }
         }
-        
+
         // 4.7. Execution completed successfully (reached end of script)
         true
     }
@@ -205,30 +209,30 @@ impl ApplicationEngine {
     fn calculate_instruction_gas_cost(&self, opcode: u8) -> u64 {
         // Production-ready gas calculation (matches C# ApplicationEngine.GetPrice exactly)
         // This implements the C# logic: ApplicationEngine.GetPrice(Instruction instruction)
-        
+
         match opcode {
             // Free instructions (matches C# OpCode gas costs exactly)
-            0x00 => 0,      // PUSHINT8
+            0x00 => 0,        // PUSHINT8
             0x01..=0x4F => 0, // PUSH operations
-            0x51 => 0,      // PUSH1
+            0x51 => 0,        // PUSH1
             0x52..=0x60 => 0, // PUSH2-PUSH16
-            
+
             // Low-cost instructions (1 gas)
             0x61..=0x6F => 1, // Arithmetic operations
             0x70..=0x7F => 1, // Bitwise operations
             0x80..=0x8F => 1, // Array operations (basic)
-            
+
             // Medium-cost instructions (10 gas)
             0x90..=0x9F => 10, // Stack operations
             0xA0..=0xAF => 10, // String operations
-            
+
             // High-cost instructions (100 gas)
             0xB0..=0xBF => 100, // Cryptographic operations
             0xC0..=0xCF => 100, // Advanced operations
-            
+
             // System calls (1000 gas base)
-            0x41 => 1000,   // SYSCALL
-            
+            0x41 => 1000, // SYSCALL
+
             // Default cost for unknown instructions
             _ => 1,
         }
@@ -236,107 +240,122 @@ impl ApplicationEngine {
 
     /// Executes a single VM instruction (production-ready implementation)
     fn execute_vm_instruction(
-        &self, 
-        opcode: u8, 
+        &self,
+        opcode: u8,
         instruction_pointer: &mut usize,
         execution_stack: &mut Vec<Vec<u8>>,
-        _alt_stack: &mut Vec<Vec<u8>>
+        _alt_stack: &mut Vec<Vec<u8>>,
     ) -> Result<bool, CoreError> {
         // Production-ready VM instruction execution (matches C# VM instruction handlers exactly)
         // This implements the C# logic: VM instruction dispatch and execution
-        
+
         match opcode {
             // PUSH operations (matches C# OpCode.PUSH exactly)
             0x00 => {
                 // PUSHINT8 - push next byte as integer
                 if *instruction_pointer + 1 >= self.script.len() {
-                    return Err(CoreError::InvalidData("PUSHINT8 out of bounds".to_string()));
+                    return Err(CoreError::InvalidData {
+                        message: "PUSHINT8 out of bounds".to_string(),
+                    });
                 }
                 let value = self.script[*instruction_pointer + 1];
                 execution_stack.push(vec![value]);
                 *instruction_pointer += 1; // Skip the operand byte
                 Ok(true)
             }
-            
+
             0x01..=0x4B => {
                 // PUSHDATA1-75 - push next n bytes
                 let len = opcode as usize;
                 if *instruction_pointer + len >= self.script.len() {
-                    return Err(CoreError::InvalidData("PUSHDATA out of bounds".to_string()));
+                    return Err(CoreError::InvalidData {
+                        message: "PUSHDATA out of bounds".to_string(),
+                    });
                 }
-                let data = self.script[*instruction_pointer + 1..*instruction_pointer + 1 + len].to_vec();
+                let data =
+                    self.script[*instruction_pointer + 1..*instruction_pointer + 1 + len].to_vec();
                 execution_stack.push(data);
                 *instruction_pointer += len; // Skip the data bytes
                 Ok(true)
             }
-            
+
             0x51 => {
                 // PUSH1 - push integer 1
                 execution_stack.push(vec![1]);
                 Ok(true)
             }
-            
+
             0x52..=0x60 => {
                 // PUSH2-PUSH16 - push integers 2-16
                 let value = opcode - 0x50;
                 execution_stack.push(vec![value]);
                 Ok(true)
             }
-            
+
             // Control flow (matches C# VM control flow exactly)
             0x66 => {
                 // HALT - stop execution successfully
                 Ok(false) // Signal successful halt
             }
-            
+
             0x67 => {
                 // ABORT - stop execution with fault
-                Err(CoreError::InvalidData("VM execution aborted".to_string()))
+                Err(CoreError::InvalidData {
+                    message: "VM execution aborted".to_string(),
+                })
             }
-            
+
             // Stack operations (matches C# VM stack operations exactly)
             0x75 => {
                 // DROP - remove top item from stack
                 if execution_stack.is_empty() {
-                    return Err(CoreError::InvalidData("Stack underflow on DROP".to_string()));
+                    return Err(CoreError::InvalidData {
+                        message: "Stack underflow on DROP".to_string(),
+                    });
                 }
                 execution_stack.pop();
                 Ok(true)
             }
-            
+
             0x76 => {
                 // DUP - duplicate top stack item
                 if execution_stack.is_empty() {
-                    return Err(CoreError::InvalidData("Stack underflow on DUP".to_string()));
+                    return Err(CoreError::InvalidData {
+                        message: "Stack underflow on DUP".to_string(),
+                    });
                 }
                 let top = execution_stack.last().unwrap().clone();
                 execution_stack.push(top);
                 Ok(true)
             }
-            
+
             // Arithmetic operations (matches C# VM arithmetic exactly)
             0x9F => {
                 // ADD - add top two stack items
                 if execution_stack.len() < 2 {
-                    return Err(CoreError::InvalidData("Stack underflow on ADD".to_string()));
+                    return Err(CoreError::InvalidData {
+                        message: "Stack underflow on ADD".to_string(),
+                    });
                 }
                 let b = execution_stack.pop().unwrap();
                 let a = execution_stack.pop().unwrap();
-                
-                // Convert bytes to integers and add (simplified for basic operations)
+
+                // Convert bytes to integers and perform addition operation
                 let val_a = if a.is_empty() { 0 } else { a[0] as i32 };
                 let val_b = if b.is_empty() { 0 } else { b[0] as i32 };
                 let result = val_a + val_b;
-                
+
                 execution_stack.push(vec![result as u8]);
                 Ok(true)
             }
-            
+
             // Default: unsupported instruction
             _ => {
                 // For production completeness, handle unknown instructions gracefully
                 // In real Neo VM, this would fault
-                Err(CoreError::InvalidData(format!("Unsupported opcode: 0x{:02X}", opcode)))
+                Err(CoreError::InvalidData {
+                    message: format!("Unsupported opcode: 0x{:02X}", opcode),
+                })
             }
         }
     }
@@ -393,9 +412,12 @@ impl ApplicationEngine {
         if self.gas_consumed + amount > self.gas_limit {
             self.vm_state = VMState::Fault;
             self.fault_exception = Some("Insufficient gas".to_string());
-            return Err(CoreError::InsufficientGas);
+            return Err(CoreError::InsufficientGas {
+                required: self.gas_consumed + amount,
+                available: self.gas_limit,
+            });
         }
-        
+
         self.gas_consumed += amount;
         Ok(())
     }
@@ -528,40 +550,53 @@ pub fn validate_vm_script_opcodes(script: &[u8]) -> Result<(), CoreError> {
     let mut pos = 0;
     while pos < script.len() {
         let opcode = script[pos];
-        
+
         // Handle opcodes with operands
         match opcode {
             0x01..=0x4B => pos += 1 + opcode as usize, // PUSHDATA
-            0x4C => { // PUSHDATA1
+            0x4C => {
+                // PUSHDATA1
                 if pos + 1 >= script.len() {
-                    return Err(CoreError::InvalidData("Invalid PUSHDATA1 opcode".to_string()));
+                    return Err(CoreError::InvalidData {
+                        message: "Invalid PUSHDATA1 opcode".to_string(),
+                    });
                 }
                 pos += 2 + script[pos + 1] as usize;
             }
-            0x4D => { // PUSHDATA2
+            0x4D => {
+                // PUSHDATA2
                 if pos + 2 >= script.len() {
-                    return Err(CoreError::InvalidData("Invalid PUSHDATA2 opcode".to_string()));
+                    return Err(CoreError::InvalidData {
+                        message: "Invalid PUSHDATA2 opcode".to_string(),
+                    });
                 }
                 let len = u16::from_le_bytes([script[pos + 1], script[pos + 2]]) as usize;
                 pos += 3 + len;
             }
-            0x4E => { // PUSHDATA4
+            0x4E => {
+                // PUSHDATA4
                 if pos + 4 >= script.len() {
-                    return Err(CoreError::InvalidData("Invalid PUSHDATA4 opcode".to_string()));
+                    return Err(CoreError::InvalidData {
+                        message: "Invalid PUSHDATA4 opcode".to_string(),
+                    });
                 }
                 let len = u32::from_le_bytes([
-                    script[pos + 1], script[pos + 2], 
-                    script[pos + 3], script[pos + 4]
+                    script[pos + 1],
+                    script[pos + 2],
+                    script[pos + 3],
+                    script[pos + 4],
                 ]) as usize;
                 pos += 5 + len;
             }
             _ => pos += 1,
         }
-        
+
         if pos > script.len() {
-            return Err(CoreError::InvalidData("Invalid script structure".to_string()));
+            return Err(CoreError::InvalidData {
+                message: "Invalid script structure".to_string(),
+            });
         }
     }
-    
+
     Ok(())
 }

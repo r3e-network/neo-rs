@@ -1,12 +1,12 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::Hash;
-use serde::{Serialize, Deserialize};
 
 /// An ordered dictionary that maintains insertion order
 /// This matches the C# OrderedDictionary implementation
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct OrderedDictionary<K, V> 
-where 
+pub struct OrderedDictionary<K, V>
+where
     K: Clone + Eq + Hash,
     V: Clone,
 {
@@ -139,16 +139,16 @@ mod tests {
     #[test]
     fn test_ordered_dictionary_basic() {
         let mut dict = OrderedDictionary::new();
-        
+
         dict.insert("first", 1);
         dict.insert("second", 2);
         dict.insert("third", 3);
-        
+
         assert_eq!(dict.len(), 3);
         assert_eq!(dict.get(&"first"), Some(&1));
         assert_eq!(dict.get(&"second"), Some(&2));
         assert_eq!(dict.get(&"third"), Some(&3));
-        
+
         // Check insertion order is maintained
         let keys: Vec<_> = dict.keys().collect();
         assert_eq!(keys, vec![&"first", &"second", &"third"]);
@@ -157,15 +157,15 @@ mod tests {
     #[test]
     fn test_ordered_dictionary_remove() {
         let mut dict = OrderedDictionary::new();
-        
+
         dict.insert("a", 1);
         dict.insert("b", 2);
         dict.insert("c", 3);
-        
+
         assert_eq!(dict.remove(&"b"), Some(2));
         assert_eq!(dict.len(), 2);
-        
+
         let keys: Vec<_> = dict.keys().collect();
         assert_eq!(keys, vec![&"a", &"c"]);
     }
-} 
+}

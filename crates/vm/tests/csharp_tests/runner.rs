@@ -3,11 +3,11 @@
 //! This module contains the JsonTestRunner implementation that executes
 //! C# Neo VM JSON test files and verifies the results match expected behavior.
 
+use neo_vm::stack_item::{StackItem, StackItemType};
+use neo_vm::{ExecutionEngine, Script, VMState};
+use serde_json;
 use std::collections::HashMap;
 use std::fs;
-use serde_json;
-use neo_vm::{ExecutionEngine, Script, VMState};
-use neo_vm::stack_item::{StackItem, StackItemType};
 
 use super::common::*;
 
@@ -261,7 +261,10 @@ impl JsonTestRunner {
     }
 
     /// Test all JSON files in a directory (matches C# directory test execution)
-    pub fn test_json_directory(&mut self, dir_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn test_json_directory(
+        &mut self,
+        dir_path: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         println!("📂 Testing JSON directory: {}", dir_path);
 
         let entries = fs::read_dir(dir_path)?;
@@ -283,7 +286,11 @@ impl JsonTestRunner {
                 match self.test_json_file(file_path_str) {
                     Ok(_) => println!("   ✅ {}", json_file.file_name().unwrap().to_str().unwrap()),
                     Err(e) => {
-                        println!("   ❌ {}: {}", json_file.file_name().unwrap().to_str().unwrap(), e);
+                        println!(
+                            "   ❌ {}: {}",
+                            json_file.file_name().unwrap().to_str().unwrap(),
+                            e
+                        );
                         // Continue with other files instead of failing completely
                     }
                 }
@@ -327,7 +334,7 @@ impl JsonTestRunner {
 
         while i < script.len() {
             let opcode_str = &script[i];
-            
+
             if opcode_str.starts_with("0x") {
                 // Handle hex data (matches C# hex data handling)
                 let hex_str = &opcode_str[2..];
@@ -336,7 +343,7 @@ impl JsonTestRunner {
                 }
 
                 for j in (0..hex_str.len()).step_by(2) {
-                    let byte_str = &hex_str[j..j+2];
+                    let byte_str = &hex_str[j..j + 2];
                     let byte = u8::from_str_radix(byte_str, 16)
                         .map_err(|_| format!("Invalid hex byte: {}", byte_str))?;
                     bytes.push(byte);
@@ -344,11 +351,13 @@ impl JsonTestRunner {
                 i += 1;
             } else if opcode_str == "PUSHDATA1" {
                 // Special handling for PUSHDATA1 instruction
-                let opcode_byte = self.opcode_map.get(opcode_str)
+                let opcode_byte = self
+                    .opcode_map
+                    .get(opcode_str)
                     .ok_or_else(|| format!("Unknown opcode: {}", opcode_str))?;
                 bytes.push(*opcode_byte);
                 i += 1;
-                
+
                 // PUSHDATA1 format: opcode + length_byte + data_bytes
                 // Next element should be the length (single byte)
                 if i < script.len() && script[i].starts_with("0x") {
@@ -359,16 +368,18 @@ impl JsonTestRunner {
                             .map_err(|_| format!("Invalid length byte: {}", script[i]))?;
                         bytes.push(length_byte);
                         i += 1;
-                        
+
                         // Next element should be the data
                         if i < script.len() && script[i].starts_with("0x") {
                             let data_hex = &script[i][2..];
                             if data_hex.len() % 2 != 0 {
-                                return Err(format!("Invalid data hex string: {}", script[i]).into());
+                                return Err(
+                                    format!("Invalid data hex string: {}", script[i]).into()
+                                );
                             }
-                            
+
                             for j in (0..data_hex.len()).step_by(2) {
-                                let byte_str = &data_hex[j..j+2];
+                                let byte_str = &data_hex[j..j + 2];
                                 let byte = u8::from_str_radix(byte_str, 16)
                                     .map_err(|_| format!("Invalid data byte: {}", byte_str))?;
                                 bytes.push(byte);
@@ -379,7 +390,7 @@ impl JsonTestRunner {
                         // This is the "Without enough length" case where length and data are combined
                         // e.g., "0x0501020304" means length=5 but only 4 bytes of data follow
                         for j in (0..length_hex.len()).step_by(2) {
-                            let byte_str = &length_hex[j..j+2];
+                            let byte_str = &length_hex[j..j + 2];
                             let byte = u8::from_str_radix(byte_str, 16)
                                 .map_err(|_| format!("Invalid hex byte: {}", byte_str))?;
                             bytes.push(byte);
@@ -389,11 +400,13 @@ impl JsonTestRunner {
                 }
             } else if opcode_str == "PUSHDATA2" {
                 // Special handling for PUSHDATA2 instruction (2-byte length)
-                let opcode_byte = self.opcode_map.get(opcode_str)
+                let opcode_byte = self
+                    .opcode_map
+                    .get(opcode_str)
                     .ok_or_else(|| format!("Unknown opcode: {}", opcode_str))?;
                 bytes.push(*opcode_byte);
                 i += 1;
-                
+
                 // PUSHDATA2 format: opcode + length_2bytes + data_bytes
                 // Collect following hex values as operand data
                 while i < script.len() && script[i].starts_with("0x") {
@@ -401,9 +414,9 @@ impl JsonTestRunner {
                     if hex_str.len() % 2 != 0 {
                         return Err(format!("Invalid hex string: {}", script[i]).into());
                     }
-                    
+
                     for j in (0..hex_str.len()).step_by(2) {
-                        let byte_str = &hex_str[j..j+2];
+                        let byte_str = &hex_str[j..j + 2];
                         let byte = u8::from_str_radix(byte_str, 16)
                             .map_err(|_| format!("Invalid hex byte: {}", byte_str))?;
                         bytes.push(byte);
@@ -412,11 +425,13 @@ impl JsonTestRunner {
                 }
             } else if opcode_str == "PUSHDATA4" {
                 // Special handling for PUSHDATA4 instruction (4-byte length)
-                let opcode_byte = self.opcode_map.get(opcode_str)
+                let opcode_byte = self
+                    .opcode_map
+                    .get(opcode_str)
                     .ok_or_else(|| format!("Unknown opcode: {}", opcode_str))?;
                 bytes.push(*opcode_byte);
                 i += 1;
-                
+
                 // PUSHDATA4 format: opcode + length_4bytes + data_bytes
                 // Collect following hex values as operand data
                 while i < script.len() && script[i].starts_with("0x") {
@@ -424,9 +439,9 @@ impl JsonTestRunner {
                     if hex_str.len() % 2 != 0 {
                         return Err(format!("Invalid hex string: {}", script[i]).into());
                     }
-                    
+
                     for j in (0..hex_str.len()).step_by(2) {
-                        let byte_str = &hex_str[j..j+2];
+                        let byte_str = &hex_str[j..j + 2];
                         let byte = u8::from_str_radix(byte_str, 16)
                             .map_err(|_| format!("Invalid hex byte: {}", byte_str))?;
                         bytes.push(byte);
@@ -435,7 +450,9 @@ impl JsonTestRunner {
                 }
             } else {
                 // Handle regular opcode names (matches C# opcode name handling)
-                let opcode_byte = self.opcode_map.get(opcode_str)
+                let opcode_byte = self
+                    .opcode_map
+                    .get(opcode_str)
                     .ok_or_else(|| format!("Unknown opcode: {}", opcode_str))?;
                 bytes.push(*opcode_byte);
                 i += 1;
@@ -447,7 +464,7 @@ impl JsonTestRunner {
             script[0] == "PUSHDATA1" && 
             script[1].starts_with("0x05") && // Length 5 but insufficient data
             script[1].len() > 4; // Has combined length+data format
-        
+
         // Add RET instruction at the end only if not testing insufficient data (matches C# behavior)
         if !is_insufficient_data_test {
             bytes.push(0x40); // RET
@@ -468,14 +485,16 @@ impl JsonTestRunner {
                 self.engine.step_next();
             }
             "stepOut" => {
-                while self.engine.state() != VMState::HALT && self.engine.state() != VMState::FAULT {
+                while self.engine.state() != VMState::HALT && self.engine.state() != VMState::FAULT
+                {
                     self.engine.execute_next()?;
                 }
             }
             "execute" | "Execute" => {
                 // Execute until completion (HALT or FAULT)
                 // Support both lowercase and uppercase variants
-                while self.engine.state() != VMState::HALT && self.engine.state() != VMState::FAULT {
+                while self.engine.state() != VMState::HALT && self.engine.state() != VMState::FAULT
+                {
                     self.engine.execute_next()?;
                 }
             }
@@ -485,7 +504,10 @@ impl JsonTestRunner {
     }
 
     /// Verify the result matches expected state (matches C# result verification)
-    fn verify_result(&self, expected: &VMUTExecutionEngineState) -> Result<(), Box<dyn std::error::Error>> {
+    fn verify_result(
+        &self,
+        expected: &VMUTExecutionEngineState,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Verify VM state
         let actual_state = match self.engine.state() {
             VMState::NONE => "NONE",
@@ -498,7 +520,8 @@ impl JsonTestRunner {
             return Err(format!(
                 "State mismatch: expected {}, got {}",
                 expected.state, actual_state
-            ).into());
+            )
+            .into());
         }
 
         // Verify invocation stack if present
@@ -515,15 +538,24 @@ impl JsonTestRunner {
     }
 
     /// Verify invocation stack matches expected state (matches C# verification)
-    fn verify_invocation_stack(&self, _expected: &[VMUTExecutionContextState]) -> Result<(), Box<dyn std::error::Error>> {
+    fn verify_invocation_stack(
+        &self,
+        _expected: &[VMUTExecutionContextState],
+    ) -> Result<(), Box<dyn std::error::Error>> {
         println!("    ✅ Invocation stack verification passed (placeholder)");
         // Detailed invocation stack verification - Future enhancement for test infrastructure
         Ok(())
     }
 
     /// Verify result stack matches expected state (matches C# verification)
-    fn verify_result_stack(&self, expected: &[VMUTStackItem]) -> Result<(), Box<dyn std::error::Error>> {
-        println!("    ✅ Result stack verification passed (placeholder - {} expected items)", expected.len());
+    fn verify_result_stack(
+        &self,
+        expected: &[VMUTStackItem],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        println!(
+            "    ✅ Result stack verification passed (placeholder - {} expected items)",
+            expected.len()
+        );
         // Detailed result stack verification - Future enhancement pending stack access methods
         Ok(())
     }

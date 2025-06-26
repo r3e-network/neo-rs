@@ -3,7 +3,7 @@
 //! This module provides contract functionality for wallet accounts,
 //! converted from the C# Neo Contract class (@neo-sharp/src/Neo/SmartContract/Contract.cs).
 
-use crate::{Error, Result, ContractParameterType};
+use crate::{ContractParameterType, Error, Result};
 use neo_core::{UInt160, UInt256, Witness};
 use neo_cryptography::ECPoint;
 use serde::{Deserialize, Serialize};
@@ -37,10 +37,7 @@ pub struct Contract {
 
 impl Contract {
     /// Creates a new contract.
-    pub fn new(
-        script: Vec<u8>,
-        parameter_list: Vec<ContractParameterType>,
-    ) -> Self {
+    pub fn new(script: Vec<u8>, parameter_list: Vec<ContractParameterType>) -> Self {
         let script_hash = UInt160::from_script(&script);
         let is_standard = Self::is_standard_contract(&script);
         let is_multi_sig = Self::is_multi_sig_contract(&script);
@@ -110,10 +107,10 @@ impl Contract {
 
             // Production-ready signature addition with proper multi-signature support (matches C# Contract.CreateMultiSigRedeemScript exactly)
             // This implements the C# logic: creating invocation scripts for multi-signature contracts
-            
+
             // 1. Add signature data with proper PUSHDATA operation (production script generation)
             self.add_signature_to_script(&mut invocation_script, &signature)?;
-            
+
             // 2. For multi-signature contracts, continue adding signatures
             invocation_script.push(0x0c); // PUSHDATA1
             invocation_script.push(signature.len() as u8);
@@ -184,9 +181,7 @@ impl Contract {
         // Check if it's a standard signature script
         if script.len() == 40 {
             // Standard format: PUSHDATA1 33 <pubkey> SYSCALL System.Crypto.CheckWitness
-            script[0] == 0x0c &&
-            script[1] == 33 &&
-            script[34] == 0x41
+            script[0] == 0x0c && script[1] == 33 && script[34] == 0x41
         } else {
             false
         }
@@ -249,7 +244,9 @@ impl Contract {
 
         if self.is_multi_sig {
             if self.public_keys.len() < self.signatures_required as usize {
-                return Err(Error::Other("Not enough public keys for required signatures".to_string()));
+                return Err(Error::Other(
+                    "Not enough public keys for required signatures".to_string(),
+                ));
             }
         }
 

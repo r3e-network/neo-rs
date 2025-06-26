@@ -1,6 +1,6 @@
 [package]
 name = "neo-cli"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "Neo CLI - Command-line interface for Neo blockchain node"
 license = "MIT"
@@ -24,7 +24,7 @@ neo-wallets = { workspace = true }
 # neo-consensus = { workspace = true }  # Temporarily disabled due to compilation errors
 neo-json = { workspace = true }
 neo-mpt-trie = { workspace = true }
-neo-rpc-client = { path = "../rpc_client", version = "0.1.0" }
+neo-rpc-client = { path = "../rpc_client", version = "0.3.0" }
 
 # External dependencies
 clap = { version = "4.4", features = ["derive", "env"] }
@@ -63,6 +63,9 @@ dialoguer = "0.11"
 indicatif = "0.17"
 
 [dev-dependencies]
+# Test utilities
 tempfile = { workspace = true }
 assert_cmd = "2.0"
-predicates = "3.0" 
+predicates = "3.0"
+tokio-test = "0.4"
+chrono = { version = "0.4", features = ["serde"] } 

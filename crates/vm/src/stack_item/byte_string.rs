@@ -2,9 +2,9 @@
 //!
 //! This module provides the ByteString stack item implementation used in the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::stack_item::stack_item_type::StackItemType;
-use crate::Error;
-use crate::Result;
 use num_bigint::BigInt;
 use std::sync::Arc;
 
@@ -23,7 +23,9 @@ impl ByteString {
 
     /// Creates a new byte string from a string.
     pub fn from_string(s: &str) -> Self {
-        Self { data: s.as_bytes().to_vec() }
+        Self {
+            data: s.as_bytes().to_vec(),
+        }
     }
 
     /// Gets the byte string data.
@@ -47,8 +49,11 @@ impl ByteString {
     }
 
     /// Gets the byte at the specified index.
-    pub fn get(&self, index: usize) -> Result<u8> {
-        self.data.get(index).copied().ok_or_else(|| Error::InvalidOperation(format!("Index out of range: {}", index)))
+    pub fn get(&self, index: usize) -> VmResult<u8> {
+        self.data
+            .get(index)
+            .copied()
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {}", index)))
     }
 
     /// Converts the byte string to an integer.
@@ -56,7 +61,7 @@ impl ByteString {
     /// This matches the C# Neo implementation exactly:
     /// - Uses little-endian byte order (no reversal needed)
     /// - Handles negative numbers using .NET BigInteger format (not two's complement)
-    pub fn to_integer(&self) -> Result<BigInt> {
+    pub fn to_integer(&self) -> VmResult<BigInt> {
         if self.data.is_empty() {
             return Ok(BigInt::from(0));
         }
@@ -98,9 +103,9 @@ impl ByteString {
     }
 
     /// Converts the byte string to a UTF-8 string if possible.
-    pub fn to_string(&self) -> Result<String> {
+    pub fn to_string(&self) -> VmResult<String> {
         String::from_utf8(self.data.clone())
-            .map_err(|e| Error::InvalidOperation(format!("Invalid UTF-8 sequence: {}", e)))
+            .map_err(|e| VmError::invalid_operation_msg(format!("Invalid UTF-8 sequence: {}", e)))
     }
 
     /// Creates a deep copy of the byte string.
@@ -155,7 +160,10 @@ mod tests {
 
         // Test larger positive number
         let larger_byte_string = ByteString::new(vec![0xCD, 0xAB, 0, 0]);
-        assert_eq!(larger_byte_string.to_integer().unwrap(), BigInt::from(0xABCD));
+        assert_eq!(
+            larger_byte_string.to_integer().unwrap(),
+            BigInt::from(0xABCD)
+        );
 
         // Test negative number
         let negative_byte_string = ByteString::new(vec![1, 0, 0, 0x80]);

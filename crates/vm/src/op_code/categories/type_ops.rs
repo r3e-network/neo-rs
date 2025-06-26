@@ -1,10 +1,10 @@
 //! Type operation OpCodes for the Neo Virtual Machine.
-//! 
+//!
 //! This module contains all OpCodes related to type operations,
 //! including type conversion, type checking, and verification.
 
 /// Type operation OpCodes.
-/// 
+///
 /// These opcodes handle type conversion and type checking operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

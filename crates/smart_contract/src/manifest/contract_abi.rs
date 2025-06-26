@@ -2,8 +2,8 @@
 //!
 //! Defines the interface of a smart contract including methods, events, and parameters.
 
-use serde::{Deserialize, Serialize};
 use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
 
 /// Represents the ABI of a smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,9 +164,10 @@ impl ContractAbi {
         let mut method_names = std::collections::HashSet::new();
         for method in &self.methods {
             if !method_names.insert(&method.name) {
-                return Err(Error::InvalidManifest(
-                    format!("Duplicate method name: {}", method.name)
-                ));
+                return Err(Error::InvalidManifest(format!(
+                    "Duplicate method name: {}",
+                    method.name
+                )));
             }
         }
 
@@ -174,9 +175,10 @@ impl ContractAbi {
         let mut event_names = std::collections::HashSet::new();
         for event in &self.events {
             if !event_names.insert(&event.name) {
-                return Err(Error::InvalidManifest(
-                    format!("Duplicate event name: {}", event.name)
-                ));
+                return Err(Error::InvalidManifest(format!(
+                    "Duplicate event name: {}",
+                    event.name
+                )));
             }
         }
 
@@ -205,7 +207,9 @@ impl ContractMethod {
     /// Validates the method.
     pub fn validate(&self) -> Result<()> {
         if self.name.is_empty() {
-            return Err(Error::InvalidManifest("Method name cannot be empty".to_string()));
+            return Err(Error::InvalidManifest(
+                "Method name cannot be empty".to_string(),
+            ));
         }
 
         // Validate parameters
@@ -215,7 +219,9 @@ impl ContractMethod {
 
         // Validate return type
         if self.return_type.is_empty() {
-            return Err(Error::InvalidManifest("Return type cannot be empty".to_string()));
+            return Err(Error::InvalidManifest(
+                "Return type cannot be empty".to_string(),
+            ));
         }
 
         Ok(())
@@ -231,7 +237,9 @@ impl ContractEvent {
     /// Validates the event.
     pub fn validate(&self) -> Result<()> {
         if self.name.is_empty() {
-            return Err(Error::InvalidManifest("Event name cannot be empty".to_string()));
+            return Err(Error::InvalidManifest(
+                "Event name cannot be empty".to_string(),
+            ));
         }
 
         // Validate parameters
@@ -255,11 +263,15 @@ impl ContractParameter {
     /// Validates the parameter.
     pub fn validate(&self) -> Result<()> {
         if self.name.is_empty() {
-            return Err(Error::InvalidManifest("Parameter name cannot be empty".to_string()));
+            return Err(Error::InvalidManifest(
+                "Parameter name cannot be empty".to_string(),
+            ));
         }
 
         if self.parameter_type.is_empty() {
-            return Err(Error::InvalidManifest("Parameter type cannot be empty".to_string()));
+            return Err(Error::InvalidManifest(
+                "Parameter type cannot be empty".to_string(),
+            ));
         }
 
         Ok(())
@@ -306,13 +318,7 @@ mod tests {
 
     #[test]
     fn test_contract_method_creation() {
-        let method = ContractMethod::new(
-            "test".to_string(),
-            vec![],
-            "Void".to_string(),
-            0,
-            true,
-        );
+        let method = ContractMethod::new("test".to_string(), vec![], "Void".to_string(), 0, true);
 
         assert_eq!(method.name, "test");
         assert_eq!(method.return_type, "Void");
@@ -324,7 +330,10 @@ mod tests {
     fn test_contract_event_creation() {
         let event = ContractEvent::new(
             "TestEvent".to_string(),
-            vec![ContractParameter::new("value".to_string(), "Integer".to_string())],
+            vec![ContractParameter::new(
+                "value".to_string(),
+                "Integer".to_string(),
+            )],
         );
 
         assert_eq!(event.name, "TestEvent");

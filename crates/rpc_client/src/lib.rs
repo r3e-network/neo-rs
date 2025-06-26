@@ -14,8 +14,8 @@
 
 pub mod client;
 pub mod error;
-pub mod models;
 pub mod methods;
+pub mod models;
 pub mod neo_rpc;
 
 // Re-export main types for convenience
@@ -200,4 +200,4 @@ mod tests {
         assert_eq!(request.method, deserialized.method);
         assert_eq!(request.id, deserialized.id);
     }
-} 
+}

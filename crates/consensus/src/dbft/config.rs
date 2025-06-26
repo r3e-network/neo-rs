@@ -43,8 +43,8 @@ impl Default for DbftConfig {
             enable_message_batching: true,
             message_batch_size: 10,
             enable_signature_aggregation: false, // Not implemented yet
-            block_time_target_ms: 15000, // 15 seconds
-            max_block_size: 262144, // 256KB
+            block_time_target_ms: 15000,         // 15 seconds
+            max_block_size: 262144,              // 256KB
             max_transactions_per_block: 512,
             view_change_timeout_multiplier: 2.0,
             enable_recovery: true,
@@ -87,7 +87,7 @@ impl DbftConfig {
             enable_message_batching: true,
             message_batch_size: 20,
             block_time_target_ms: 15000, // 15 seconds
-            max_block_size: 1048576, // 1MB
+            max_block_size: 1048576,     // 1MB
             max_transactions_per_block: 1024,
             view_change_timeout_multiplier: 2.5,
             enable_recovery: true,

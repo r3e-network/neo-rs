@@ -1,10 +1,10 @@
 //! Splice operation OpCodes for the Neo Virtual Machine.
-//! 
+//!
 //! This module contains all OpCodes related to string and buffer manipulation,
 //! including concatenation, substring operations, and memory copying.
 
 /// Splice operation OpCodes.
-/// 
+///
 /// These opcodes manipulate strings and buffers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -67,7 +67,10 @@ pub enum SpliceOpCode {
 impl SpliceOpCode {
     /// Checks if this operation creates a new buffer/string.
     pub fn creates_new(&self) -> bool {
-        matches!(self, Self::NEWBUFFER | Self::CAT | Self::SUBSTR | Self::LEFT | Self::RIGHT)
+        matches!(
+            self,
+            Self::NEWBUFFER | Self::CAT | Self::SUBSTR | Self::LEFT | Self::RIGHT
+        )
     }
 
     /// Checks if this operation modifies existing data.

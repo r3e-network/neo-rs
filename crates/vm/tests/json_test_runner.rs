@@ -75,28 +75,34 @@ impl JsonTestRunner {
     }
 
     /// Execute a JSON test file (matches C# TestJson method)
-    pub fn test_json_file<P: AsRef<Path>>(&mut self, file_path: P) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn test_json_file<P: AsRef<Path>>(
+        &mut self,
+        file_path: P,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let file_content = fs::read_to_string(file_path.as_ref())?;
         let vmut: VMUT = serde_json::from_str(&file_content)?;
-        
+
         println!("Testing: {} - {}", vmut.category, vmut.name);
-        
+
         for test in vmut.tests {
             println!("  Running test: {}", test.name);
             self.execute_test(&test)?;
         }
-        
+
         Ok(())
     }
 
     /// Execute a directory of JSON tests (matches C# TestJson method)
-    pub fn test_json_directory<P: AsRef<Path>>(&mut self, dir_path: P) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn test_json_directory<P: AsRef<Path>>(
+        &mut self,
+        dir_path: P,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let entries = fs::read_dir(dir_path)?;
-        
+
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
                 println!("Processing file: {:?}", path);
                 self.test_json_file(&path)?;
@@ -104,7 +110,7 @@ impl JsonTestRunner {
                 self.test_json_directory(&path)?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -113,30 +119,30 @@ impl JsonTestRunner {
         // Convert script from string opcodes to bytes
         let script_bytes = self.compile_script(&test.script)?;
         let script = Script::new(script_bytes, false).unwrap();
-        
+
         // Load script into engine
         self.engine.load_script(script, -1, 0).unwrap();
-        
+
         // Execute each step
         for (step_index, step) in test.steps.iter().enumerate() {
             println!("    Step {}: {:?}", step_index + 1, step.actions);
-            
+
             // Execute actions
             for action in &step.actions {
                 self.execute_action(action)?;
             }
-            
+
             // Verify result
             self.verify_result(&step.result)?;
         }
-        
+
         Ok(())
     }
 
     /// Compile script from opcode strings to bytes (matches C# script compilation)
     fn compile_script(&self, opcodes: &[String]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let mut bytes = Vec::new();
-        
+
         for opcode in opcodes {
             match opcode.as_str() {
                 "PUSHNULL" => bytes.push(0xf0),
@@ -252,12 +258,12 @@ impl JsonTestRunner {
                 _ => return Err(format!("Unknown opcode: {}", opcode).into()),
             }
         }
-        
+
         // Add RET instruction if not present
         if bytes.is_empty() || bytes[bytes.len() - 1] != 0x40 {
             bytes.push(0x40); // RET
         }
-        
+
         Ok(bytes)
     }
 
@@ -271,7 +277,8 @@ impl JsonTestRunner {
                 self.engine.execute_next_instruction()?;
             }
             "stepOut" => {
-                while self.engine.state() != VMState::HALT && self.engine.state() != VMState::FAULT {
+                while self.engine.state() != VMState::HALT && self.engine.state() != VMState::FAULT
+                {
                     self.engine.execute_next_instruction()?;
                 }
             }
@@ -281,7 +288,10 @@ impl JsonTestRunner {
     }
 
     /// Verify the result matches expected state (matches C# result verification)
-    fn verify_result(&self, expected: &VMUTExecutionEngineState) -> Result<(), Box<dyn std::error::Error>> {
+    fn verify_result(
+        &self,
+        expected: &VMUTExecutionEngineState,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Verify VM state
         let actual_state = match self.engine.state() {
             VMState::NONE => "NONE",
@@ -289,26 +299,27 @@ impl JsonTestRunner {
             VMState::FAULT => "FAULT",
             VMState::BREAK => "BREAK",
         };
-        
+
         if actual_state != expected.state {
             return Err(format!(
                 "State mismatch: expected {}, got {}",
                 expected.state, actual_state
-            ).into());
+            )
+            .into());
         }
-        
+
         // Verify invocation stack if present
         if let Some(expected_invocation_stack) = &expected.invocation_stack {
             // Invocation stack verification - Future enhancement for complete test coverage
             println!("    Invocation stack verification not yet implemented");
         }
-        
+
         // Verify result stack if present
         if let Some(expected_result_stack) = &expected.result_stack {
             // Result stack verification - Future enhancement for complete test coverage
             println!("    Result stack verification not yet implemented");
         }
-        
+
         Ok(())
     }
 }

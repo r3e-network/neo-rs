@@ -11,19 +11,22 @@
 
 //! Integration tests for the Neo Core module.
 
-use neo_core::uint160::{UInt160, UINT160_SIZE};
-use neo_core::uint256::{UInt256, UINT256_SIZE};
 use neo_core::big_decimal::BigDecimal;
-use neo_core::transaction_type::ContainsTransactionType;
+use neo_core::builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
+use neo_core::events::{EventHandler, EventManager};
 use neo_core::extensions::byte_extensions::ByteExtensions;
 use neo_core::hardfork::{Hardfork, HardforkManager};
-use neo_core::events::{EventHandler, EventManager};
 use neo_core::neo_system::{NeoSystem, ProtocolSettings};
-use neo_core::builders::{TransactionBuilder, SignerBuilder, WitnessBuilder};
+use neo_core::transaction_type::ContainsTransactionType;
+use neo_core::uint160::{UINT160_SIZE, UInt160};
+use neo_core::uint256::{UINT256_SIZE, UInt256};
 
 use num_bigint::BigInt;
 
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 #[test]
 fn test_uint160_creation_and_comparison() {
@@ -74,7 +77,9 @@ fn test_uint256_creation_and_comparison() {
     assert_eq!(uint1, uint2);
 
     // Create UInt256 from hex string
-    let uint3 = UInt256::parse("0x0000000000000000000000000000000000000000000000000000000000000001").unwrap();
+    let uint3 =
+        UInt256::parse("0x0000000000000000000000000000000000000000000000000000000000000001")
+            .unwrap();
     let array = uint3.to_array();
     assert_eq!(array[0], 1);
     for i in 1..UINT256_SIZE {

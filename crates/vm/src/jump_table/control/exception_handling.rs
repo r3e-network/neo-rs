@@ -1,16 +1,18 @@
 //! Exception handling operations for the Neo Virtual Machine.
 
+use super::types::ExceptionHandler;
 use crate::{
+    error::{VmError, VmResult},
     execution_engine::ExecutionEngine,
     instruction::Instruction,
-    Error,
 };
-use super::types::ExceptionHandler;
 
 /// Implements the TRY operation.
-pub fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the catch and finally offsets from the instruction
     let catch_offset = instruction.read_i16_operand()?;
@@ -43,9 +45,11 @@ pub fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate:
 }
 
 /// Implements the TRY_L operation (long try with 32-bit offsets).
-pub fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the catch and finally offsets from the instruction
     let catch_offset = instruction.read_i32_operand()?;
@@ -78,16 +82,19 @@ pub fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
 }
 
 /// Implements the ENDTRY operation.
-pub fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the finally offset from the instruction
     let finally_offset = instruction.read_i16_operand()?;
 
     // Get the current context and pop the exception handler
     let (handler, should_jump, jump_target) = {
-        let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
-        
-        let handler = context.pop_exception_handler()
-            .ok_or_else(|| Error::InvalidOperation("No exception handler to end".into()))?;
+        let context = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+
+        let handler = context
+            .pop_exception_handler()
+            .ok_or_else(|| VmError::invalid_operation_msg("No exception handler to end"))?;
 
         // Determine if we should jump and where
         let (should_jump, jump_target) = if finally_offset != 0 {
@@ -113,16 +120,19 @@ pub fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate:
 }
 
 /// Implements the ENDTRY_L operation (long endtry with 32-bit offset).
-pub fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the finally offset from the instruction
     let finally_offset = instruction.read_i32_operand()?;
 
     // Get the current context and pop the exception handler
     let (handler, should_jump, jump_target) = {
-        let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
-        
-        let handler = context.pop_exception_handler()
-            .ok_or_else(|| Error::InvalidOperation("No exception handler to end".into()))?;
+        let context = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+
+        let handler = context
+            .pop_exception_handler()
+            .ok_or_else(|| VmError::invalid_operation_msg("No exception handler to end"))?;
 
         // Determine if we should jump and where
         let (should_jump, jump_target) = if finally_offset != 0 {
@@ -148,14 +158,18 @@ pub fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crat
 }
 
 /// Implements the ENDFINALLY operation.
-pub fn endfinally(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate::Result<()> {
+pub fn endfinally(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Check if we're in an exception state
     if context.is_in_exception() {
         // Re-throw the exception
-        return Err(Error::ExecutionHalted("Exception re-thrown from finally block".into()));
+        return Err(VmError::execution_halted_msg(
+            "Exception re-thrown from finally block",
+        ));
     }
 
     // Continue normal execution
@@ -163,10 +177,12 @@ pub fn endfinally(engine: &mut ExecutionEngine, _instruction: &Instruction) -> c
 }
 
 /// Implements the THROW operation.
-pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate::Result<()> {
+pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Pop the exception message from the stack and handle exception processing
     let message = {
-        let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+        let context = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
         let exception_message = context.pop()?.as_bytes()?;
         String::from_utf8(exception_message)
             .unwrap_or_else(|_| "Invalid exception message".to_string())
@@ -175,14 +191,18 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate:
     // Look for exception handlers
     loop {
         let handler_result = {
-            let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+            let context = engine
+                .current_context_mut()
+                .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
             context.pop_exception_handler()
         };
 
         if let Some(handler) = handler_result {
             // Restore stack to the depth when the handler was installed
             {
-                let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+                let context = engine
+                    .current_context_mut()
+                    .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
                 while context.evaluation_stack().len() > handler.stack_depth {
                     context.pop()?;
                 }
@@ -190,7 +210,9 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate:
 
             // If there's a catch block, jump to it
             if let Some(catch_offset) = handler.catch_offset {
-                let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+                let context = engine
+                    .current_context_mut()
+                    .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
                 context.set_instruction_pointer(catch_offset);
                 context.set_exception_state(true);
                 engine.is_jumping = true;
@@ -199,7 +221,9 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate:
 
             // If there's a finally block, jump to it
             if let Some(finally_offset) = handler.finally_offset {
-                let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+                let context = engine
+                    .current_context_mut()
+                    .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
                 context.set_instruction_pointer(finally_offset);
                 context.set_exception_state(true);
                 engine.is_jumping = true;
@@ -213,20 +237,25 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate:
 
     // No exception handler found, halt execution
     engine.set_state(crate::execution_engine::VMState::FAULT);
-    Err(Error::ExecutionHalted(format!("Unhandled exception: {}", message)))
+    Err(VmError::execution_halted_msg(format!(
+        "Unhandled exception: {}",
+        message
+    )))
 }
 
 /// Implements the ABORT operation.
-pub fn abort(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate::Result<()> {
+pub fn abort(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Set the engine state to FAULT
     engine.set_state(crate::execution_engine::VMState::FAULT);
-    Err(Error::ExecutionHalted("Execution aborted".into()))
+    Err(VmError::execution_halted_msg("Execution aborted"))
 }
 
 /// Implements the ASSERT operation.
-pub fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate::Result<()> {
+pub fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
@@ -235,8 +264,8 @@ pub fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate
     if !condition {
         // Set the engine state to FAULT
         engine.set_state(crate::execution_engine::VMState::FAULT);
-        return Err(Error::ExecutionHalted("Assertion failed".into()));
+        return Err(VmError::execution_halted_msg("Assertion failed"));
     }
 
     Ok(())
-} 
+}

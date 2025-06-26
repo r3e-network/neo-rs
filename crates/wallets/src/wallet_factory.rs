@@ -3,7 +3,10 @@
 //! This module provides wallet factory functionality for creating and opening wallets,
 //! converted from the C# Neo WalletFactory classes (@neo-sharp/src/Neo/Wallets/).
 
-use crate::{wallet::{Wallet, WalletResult}, Error, Result};
+use crate::{
+    Error, Result,
+    wallet::{Wallet, WalletResult},
+};
 use async_trait::async_trait;
 use std::path::Path;
 
@@ -32,11 +35,7 @@ pub trait IWalletFactory: Send + Sync {
     ) -> WalletResult<Box<dyn Wallet>>;
 
     /// Opens an existing wallet.
-    async fn open_wallet(
-        &self,
-        path: &str,
-        password: &str,
-    ) -> WalletResult<Box<dyn Wallet>>;
+    async fn open_wallet(&self, path: &str, password: &str) -> WalletResult<Box<dyn Wallet>>;
 
     /// Gets the factory name.
     fn name(&self) -> &'static str;
@@ -61,7 +60,10 @@ impl WalletFactory {
         // Check if parent directory exists
         if let Some(parent) = path_obj.parent() {
             if !parent.exists() {
-                return Err(Error::Other(format!("Directory does not exist: {}", parent.display())));
+                return Err(Error::Other(format!(
+                    "Directory does not exist: {}",
+                    parent.display()
+                )));
             }
         }
 
@@ -94,7 +96,9 @@ impl WalletFactory {
         }
 
         if password.len() < 8 {
-            return Err(Error::Other("Password must be at least 8 characters".to_string()));
+            return Err(Error::Other(
+                "Password must be at least 8 characters".to_string(),
+            ));
         }
 
         if password.len() > 1024 {
@@ -111,16 +115,14 @@ impl WalletFactory {
 
     /// Gets the file size.
     pub fn get_file_size(path: &str) -> Result<u64> {
-        let metadata = std::fs::metadata(path)
-            .map_err(|e| Error::Io(e))?;
+        let metadata = std::fs::metadata(path).map_err(|e| Error::Io(e))?;
         Ok(metadata.len())
     }
 
     /// Creates a backup of a wallet file.
     pub fn create_backup(path: &str) -> Result<String> {
         let backup_path = format!("{}.backup", path);
-        std::fs::copy(path, &backup_path)
-            .map_err(|e| Error::Io(e))?;
+        std::fs::copy(path, &backup_path).map_err(|e| Error::Io(e))?;
         Ok(backup_path)
     }
 
@@ -148,8 +150,7 @@ impl WalletFactory {
             // Production-ready secure file deletion (matches C# WalletFactory.SecureDelete exactly)
 
             // 1. Get file size for secure overwriting
-            let file_size = std::fs::metadata(path)
-                .map_err(|e| Error::Io(e))?.len();
+            let file_size = std::fs::metadata(path).map_err(|e| Error::Io(e))?.len();
 
             // 2. Overwrite file with random data multiple times for security
             use rand::RngCore;
@@ -168,17 +169,14 @@ impl WalletFactory {
 
                 // Overwrite file with random data
                 use std::io::Write;
-                file.write_all(&random_data)
-                    .map_err(|e| Error::Io(e))?;
-                file.flush()
-                    .map_err(|e| Error::Io(e))?;
+                file.write_all(&random_data).map_err(|e| Error::Io(e))?;
+                file.flush().map_err(|e| Error::Io(e))?;
 
                 println!("Secure deletion pass {} completed for {}", pass + 1, path);
             }
 
             // 3. Finally delete the file
-            std::fs::remove_file(path)
-                .map_err(|e| Error::Io(e))?;
+            std::fs::remove_file(path).map_err(|e| Error::Io(e))?;
             println!("Wallet file {} securely deleted", path);
         }
         Ok(())
@@ -208,7 +206,8 @@ impl WalletFactory {
             return Err(Error::InvalidWalletFormat);
         }
 
-        if file_size > 100 * 1024 * 1024 { // 100MB limit
+        if file_size > 100 * 1024 * 1024 {
+            // 100MB limit
             return Err(Error::Other("Wallet file is too large".to_string()));
         }
 
@@ -222,8 +221,7 @@ impl WalletFactory {
         let file_size = Self::get_file_size(path)?;
         let wallet_type = Self::get_wallet_type(path).unwrap_or("Unknown");
 
-        let metadata = std::fs::metadata(path)
-            .map_err(|e| Error::Io(e))?;
+        let metadata = std::fs::metadata(path).map_err(|e| Error::Io(e))?;
 
         Ok(WalletInfo {
             path: path.to_string(),
@@ -278,9 +276,18 @@ mod tests {
     #[test]
     fn test_get_wallet_type() {
         assert_eq!(WalletFactory::get_wallet_type("wallet.json"), Some("NEP-6"));
-        assert_eq!(WalletFactory::get_wallet_type("wallet.db3"), Some("NEP-6 (SQLite)"));
-        assert_eq!(WalletFactory::get_wallet_type("wallet.wallet"), Some("Legacy"));
-        assert_eq!(WalletFactory::get_wallet_type("wallet.unknown"), Some("Unknown"));
+        assert_eq!(
+            WalletFactory::get_wallet_type("wallet.db3"),
+            Some("NEP-6 (SQLite)")
+        );
+        assert_eq!(
+            WalletFactory::get_wallet_type("wallet.wallet"),
+            Some("Legacy")
+        );
+        assert_eq!(
+            WalletFactory::get_wallet_type("wallet.unknown"),
+            Some("Unknown")
+        );
     }
 
     #[test]

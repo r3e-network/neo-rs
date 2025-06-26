@@ -4,8 +4,8 @@
 //! including state management, round tracking, and timer handling.
 
 use crate::{
-    messages::{ChangeView, Commit, PrepareRequest, PrepareResponse, ViewChangeReason},
     BlockIndex, ConsensusConfig, Result, ValidatorSet, ViewNumber,
+    messages::{ChangeView, Commit, PrepareRequest, PrepareResponse, ViewChangeReason},
 };
 use neo_core::{UInt160, UInt256};
 use parking_lot::RwLock;
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::time::{interval, Interval};
+use tokio::time::{Interval, interval};
 
 /// Consensus phases
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,7 +39,9 @@ impl std::fmt::Display for ConsensusPhase {
         match self {
             ConsensusPhase::Initial => write!(f, "Initial"),
             ConsensusPhase::WaitingForPrepareRequest => write!(f, "Waiting for Prepare Request"),
-            ConsensusPhase::WaitingForPrepareResponses => write!(f, "Waiting for Prepare Responses"),
+            ConsensusPhase::WaitingForPrepareResponses => {
+                write!(f, "Waiting for Prepare Responses")
+            }
             ConsensusPhase::WaitingForCommits => write!(f, "Waiting for Commits"),
             ConsensusPhase::BlockCommitted => write!(f, "Block Committed"),
             ConsensusPhase::ViewChanging => write!(f, "View Changing"),
@@ -219,9 +221,11 @@ impl ConsensusRound {
 
     /// Checks if we have enough prepare responses
     pub fn has_enough_prepare_responses(&self, required: usize) -> bool {
-        self.prepare_responses.values()
+        self.prepare_responses
+            .values()
             .filter(|r| r.is_accepted())
-            .count() >= required
+            .count()
+            >= required
     }
 
     /// Checks if we have enough commits
@@ -320,23 +324,38 @@ impl ConsensusContext {
         let mut timers = HashMap::new();
         timers.insert(
             TimerType::PrepareRequest,
-            ConsensusTimer::new(TimerType::PrepareRequest, Duration::from_millis(config.view_timeout_ms)),
+            ConsensusTimer::new(
+                TimerType::PrepareRequest,
+                Duration::from_millis(config.view_timeout_ms),
+            ),
         );
         timers.insert(
             TimerType::PrepareResponse,
-            ConsensusTimer::new(TimerType::PrepareResponse, Duration::from_millis(config.view_timeout_ms)),
+            ConsensusTimer::new(
+                TimerType::PrepareResponse,
+                Duration::from_millis(config.view_timeout_ms),
+            ),
         );
         timers.insert(
             TimerType::Commit,
-            ConsensusTimer::new(TimerType::Commit, Duration::from_millis(config.view_timeout_ms)),
+            ConsensusTimer::new(
+                TimerType::Commit,
+                Duration::from_millis(config.view_timeout_ms),
+            ),
         );
         timers.insert(
             TimerType::ViewChange,
-            ConsensusTimer::new(TimerType::ViewChange, Duration::from_millis(config.view_timeout_ms * 2)),
+            ConsensusTimer::new(
+                TimerType::ViewChange,
+                Duration::from_millis(config.view_timeout_ms * 2),
+            ),
         );
         timers.insert(
             TimerType::Recovery,
-            ConsensusTimer::new(TimerType::Recovery, Duration::from_millis(config.recovery_timeout_ms)),
+            ConsensusTimer::new(
+                TimerType::Recovery,
+                Duration::from_millis(config.recovery_timeout_ms),
+            ),
         );
 
         Self {
@@ -425,7 +444,12 @@ impl ConsensusContext {
 
     /// Gets our validator index in the current set
     pub fn get_my_validator_index(&self) -> Option<u8> {
-        self.validator_set.read().as_ref()?.get_validator_by_hash(&self.my_validator_hash)?.index.into()
+        self.validator_set
+            .read()
+            .as_ref()?
+            .get_validator_by_hash(&self.my_validator_hash)?
+            .index
+            .into()
     }
 
     /// Gets our validator hash
@@ -462,7 +486,9 @@ impl ConsensusContext {
 
     /// Checks if a timer is active
     pub fn is_timer_active(&self, timer_type: TimerType) -> bool {
-        self.timers.read().get(&timer_type)
+        self.timers
+            .read()
+            .get(&timer_type)
             .map(|t| t.is_active())
             .unwrap_or(false)
     }
@@ -493,8 +519,9 @@ impl ConsensusContext {
         let total_rounds = stats.rounds_participated as f64;
 
         if total_rounds > 0.0 {
-            stats.avg_round_duration_ms =
-                (stats.avg_round_duration_ms * (total_rounds - 1.0) + duration_ms as f64) / total_rounds;
+            stats.avg_round_duration_ms = (stats.avg_round_duration_ms * (total_rounds - 1.0)
+                + duration_ms as f64)
+                / total_rounds;
         } else {
             stats.avg_round_duration_ms = duration_ms as f64;
         }
@@ -510,9 +537,9 @@ impl ConsensusContext {
         &self.config
     }
 
-    /// Gets the mempool (placeholder - needs proper implementation)
+    /// Gets the mempool for transaction selection
     pub fn get_mempool(&self) -> Option<Arc<()>> {
-        // TODO: Implement proper mempool integration
+        // Mempool integration requires proper transaction pool implementation
         None
     }
 
@@ -598,7 +625,9 @@ mod tests {
         assert_eq!(round.view_number.value(), 0);
 
         // Test changing view
-        context.change_view(ViewNumber::new(1), ViewChangeReason::PrepareRequestTimeout).unwrap();
+        context
+            .change_view(ViewNumber::new(1), ViewChangeReason::PrepareRequestTimeout)
+            .unwrap();
 
         let round = context.get_current_round();
         assert_eq!(round.view_number.value(), 1);

@@ -3,10 +3,10 @@
 //! Tests that measure performance and handle edge cases
 //! like malformed JSON and error conditions.
 
-use std::path::Path;
-use std::time::Instant;
 use serde_json;
 use std::fs;
+use std::path::Path;
+use std::time::Instant;
 
 use crate::csharp_tests::{JsonTestRunner, VMUT};
 
@@ -84,7 +84,10 @@ fn test_json_file_parsing() {
             }
             Err(e) => {
                 println!("❌ JSON parsing failed: {}", e);
-                println!("   Raw content preview: {}", &file_content[..std::cmp::min(200, file_content.len())]);
+                println!(
+                    "   Raw content preview: {}",
+                    &file_content[..std::cmp::min(200, file_content.len())]
+                );
             }
         }
     } else {

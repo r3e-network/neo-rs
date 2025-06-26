@@ -11,10 +11,10 @@
 
 //! Builder patterns for Neo blockchain components.
 
-pub mod transaction_builder;
 pub mod signer_builder;
+pub mod transaction_builder;
 pub mod witness_builder;
 
-pub use transaction_builder::TransactionBuilder;
 pub use signer_builder::SignerBuilder;
+pub use transaction_builder::TransactionBuilder;
 pub use witness_builder::WitnessBuilder;

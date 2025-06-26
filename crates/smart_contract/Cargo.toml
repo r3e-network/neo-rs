@@ -1,6 +1,6 @@
 [package]
 name = "neo-smart-contract"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -37,6 +37,9 @@ rocksdb = "0.21"
 
 # Logging
 log = "0.4"
+
+# URL parsing
+url = "2.4"
 
 # Internal dependencies
 neo-core = { path = "../core" }

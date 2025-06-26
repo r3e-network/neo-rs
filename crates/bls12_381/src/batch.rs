@@ -3,14 +3,14 @@
 //! This module provides efficient batch verification of multiple BLS signatures,
 //! which is essential for consensus operations in Neo blockchain.
 
+use crate::constants::{BATCH_VERIFICATION_THRESHOLD, MAX_AGGREGATE_SIZE};
 use crate::error::{BlsError, BlsResult};
 use crate::keys::PublicKey;
 use crate::signature::{Signature, SignatureScheme};
-use crate::constants::{BATCH_VERIFICATION_THRESHOLD, MAX_AGGREGATE_SIZE};
 use crate::utils;
 use bls12_381::{G1Affine, G2Affine, G2Projective, pairing};
 use group::Curve;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 
 /// Batch verifier for efficient verification of multiple BLS signatures
 /// This provides significant performance improvements when verifying many signatures
@@ -100,7 +100,7 @@ impl BatchVerifier {
         for item in &self.items {
             let signature = Signature::from_affine(item.signature);
             let public_key = PublicKey::from_affine(item.public_key);
-            
+
             if !signature.verify(&public_key, &item.message, item.scheme) {
                 return false;
             }
@@ -112,7 +112,7 @@ impl BatchVerifier {
     /// This is more efficient for large batches but requires randomization for security
     fn verify_batch_randomized(&self) -> bool {
         let mut rng = thread_rng();
-        
+
         // Generate random coefficients for each signature
         let coefficients: Vec<u64> = (0..self.items.len())
             .map(|_| rng.gen_range(1..=u64::MAX))
@@ -136,13 +136,13 @@ impl BatchVerifier {
 
             // Hash message to G2
             let message_point = utils::hash_to_g2(&prepared_message, crate::NEO_BLS_DST);
-            
+
             // Accumulate with random coefficient
             let coeff_scalar = bls12_381::Scalar::from(coeff);
-            
+
             // left_g1 += coeff * public_key
             left_g1 = (left_g1 + (item.public_key * coeff_scalar)).to_affine();
-            
+
             // left_g2 += coeff * message_point
             left_g2 += message_point * coeff_scalar;
         }
@@ -215,12 +215,19 @@ mod tests {
         let mut rng = thread_rng();
         let keypair = KeyPair::generate(&mut rng);
         let message = b"test message";
-        
+
         let signature = keypair.sign(message, SignatureScheme::Basic).unwrap();
-        
+
         let mut verifier = BatchVerifier::new();
-        verifier.add(message, &signature, keypair.public_key(), SignatureScheme::Basic).unwrap();
-        
+        verifier
+            .add(
+                message,
+                &signature,
+                keypair.public_key(),
+                SignatureScheme::Basic,
+            )
+            .unwrap();
+
         assert_eq!(verifier.len(), 1);
         assert!(verifier.verify());
     }
@@ -229,16 +236,25 @@ mod tests {
     fn test_multiple_signatures_batch() {
         let mut rng = thread_rng();
         let mut verifier = BatchVerifier::new();
-        
+
         // Create multiple valid signatures
         for i in 0..5 {
             let keypair = KeyPair::generate(&mut rng);
             let message = format!("test message {}", i);
-            let signature = keypair.sign(message.as_bytes(), SignatureScheme::Basic).unwrap();
-            
-            verifier.add(message.as_bytes(), &signature, keypair.public_key(), SignatureScheme::Basic).unwrap();
+            let signature = keypair
+                .sign(message.as_bytes(), SignatureScheme::Basic)
+                .unwrap();
+
+            verifier
+                .add(
+                    message.as_bytes(),
+                    &signature,
+                    keypair.public_key(),
+                    SignatureScheme::Basic,
+                )
+                .unwrap();
         }
-        
+
         assert_eq!(verifier.len(), 5);
         assert!(verifier.verify());
     }
@@ -247,20 +263,36 @@ mod tests {
     fn test_batch_with_invalid_signature() {
         let mut rng = thread_rng();
         let mut verifier = BatchVerifier::new();
-        
+
         // Add valid signature
         let keypair1 = KeyPair::generate(&mut rng);
         let message1 = b"test message 1";
         let signature1 = keypair1.sign(message1, SignatureScheme::Basic).unwrap();
-        verifier.add(message1, &signature1, keypair1.public_key(), SignatureScheme::Basic).unwrap();
-        
+        verifier
+            .add(
+                message1,
+                &signature1,
+                keypair1.public_key(),
+                SignatureScheme::Basic,
+            )
+            .unwrap();
+
         // Add invalid signature (wrong message)
         let keypair2 = KeyPair::generate(&mut rng);
         let message2 = b"test message 2";
         let wrong_message = b"wrong message";
-        let signature2 = keypair2.sign(wrong_message, SignatureScheme::Basic).unwrap();
-        verifier.add(message2, &signature2, keypair2.public_key(), SignatureScheme::Basic).unwrap();
-        
+        let signature2 = keypair2
+            .sign(wrong_message, SignatureScheme::Basic)
+            .unwrap();
+        verifier
+            .add(
+                message2,
+                &signature2,
+                keypair2.public_key(),
+                SignatureScheme::Basic,
+            )
+            .unwrap();
+
         assert_eq!(verifier.len(), 2);
         assert!(!verifier.verify()); // Should fail due to invalid signature
     }
@@ -269,33 +301,60 @@ mod tests {
     fn test_scheme_enforcement() {
         let mut rng = thread_rng();
         let mut verifier = BatchVerifier::new_with_scheme(SignatureScheme::Basic);
-        
+
         let keypair = KeyPair::generate(&mut rng);
         let message = b"test message";
         let signature = keypair.sign(message, SignatureScheme::Basic).unwrap();
-        
+
         // This should succeed
-        assert!(verifier.add(message, &signature, keypair.public_key(), SignatureScheme::Basic).is_ok());
-        
+        assert!(
+            verifier
+                .add(
+                    message,
+                    &signature,
+                    keypair.public_key(),
+                    SignatureScheme::Basic
+                )
+                .is_ok()
+        );
+
         // This should fail due to scheme mismatch
-        let signature2 = keypair.sign(message, SignatureScheme::MessageAugmentation).unwrap();
-        assert!(verifier.add(message, &signature2, keypair.public_key(), SignatureScheme::MessageAugmentation).is_err());
+        let signature2 = keypair
+            .sign(message, SignatureScheme::MessageAugmentation)
+            .unwrap();
+        assert!(
+            verifier
+                .add(
+                    message,
+                    &signature2,
+                    keypair.public_key(),
+                    SignatureScheme::MessageAugmentation
+                )
+                .is_err()
+        );
     }
 
     #[test]
     fn test_clear_batch() {
         let mut rng = thread_rng();
         let mut verifier = BatchVerifier::new();
-        
+
         let keypair = KeyPair::generate(&mut rng);
         let message = b"test message";
         let signature = keypair.sign(message, SignatureScheme::Basic).unwrap();
-        
-        verifier.add(message, &signature, keypair.public_key(), SignatureScheme::Basic).unwrap();
+
+        verifier
+            .add(
+                message,
+                &signature,
+                keypair.public_key(),
+                SignatureScheme::Basic,
+            )
+            .unwrap();
         assert_eq!(verifier.len(), 1);
-        
+
         verifier.clear();
         assert_eq!(verifier.len(), 0);
         assert!(verifier.is_empty());
     }
-} 
+}

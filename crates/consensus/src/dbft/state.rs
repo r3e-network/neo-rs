@@ -3,9 +3,7 @@
 //! This module contains state definitions, statistics, and events for the dBFT consensus engine.
 
 use crate::{
-    context::TimerType,
-    messages::ViewChangeReason,
-    BlockIndex, ConsensusSignature, ViewNumber,
+    BlockIndex, ConsensusSignature, ViewNumber, context::TimerType, messages::ViewChangeReason,
 };
 use neo_core::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
@@ -145,8 +143,10 @@ impl DbftStats {
             self.avg_block_time_ms = block_time_ms as f64;
             self.avg_consensus_time_ms = consensus_time_ms as f64;
         } else {
-            self.avg_block_time_ms = alpha * (block_time_ms as f64) + (1.0 - alpha) * self.avg_block_time_ms;
-            self.avg_consensus_time_ms = alpha * (consensus_time_ms as f64) + (1.0 - alpha) * self.avg_consensus_time_ms;
+            self.avg_block_time_ms =
+                alpha * (block_time_ms as f64) + (1.0 - alpha) * self.avg_block_time_ms;
+            self.avg_consensus_time_ms =
+                alpha * (consensus_time_ms as f64) + (1.0 - alpha) * self.avg_consensus_time_ms;
         }
     }
 
@@ -192,7 +192,8 @@ impl DbftStats {
         if self.messages_received == 0 {
             return 100.0;
         }
-        ((self.messages_received - self.invalid_messages) as f64 / self.messages_received as f64) * 100.0
+        ((self.messages_received - self.invalid_messages) as f64 / self.messages_received as f64)
+            * 100.0
     }
 }
 
@@ -283,12 +284,18 @@ impl DbftEvent {
 
     /// Checks if this is an error event
     pub fn is_error(&self) -> bool {
-        matches!(self, Self::ConsensusTimeout { .. } | Self::ValidationError { .. })
+        matches!(
+            self,
+            Self::ConsensusTimeout { .. } | Self::ValidationError { .. }
+        )
     }
 
     /// Checks if this is a success event
     pub fn is_success(&self) -> bool {
-        matches!(self, Self::BlockCommitted { .. } | Self::RecoveryCompleted { success: true, .. })
+        matches!(
+            self,
+            Self::BlockCommitted { .. } | Self::RecoveryCompleted { success: true, .. }
+        )
     }
 }
 
@@ -317,7 +324,7 @@ mod tests {
         assert!(DbftState::Running.is_active());
         assert!(DbftState::Running.can_process_messages());
         assert!(DbftState::Running.can_start_consensus());
-        
+
         assert!(!DbftState::Stopped.is_active());
         assert!(!DbftState::Stopped.can_process_messages());
         assert!(!DbftState::Stopped.can_start_consensus());
@@ -326,12 +333,12 @@ mod tests {
     #[test]
     fn test_stats_calculations() {
         let mut stats = DbftStats::default();
-        
+
         // Test success rate
         stats.consensus_rounds = 10;
         stats.blocks_produced = 8;
         assert_eq!(stats.success_rate(), 80.0);
-        
+
         // Test message validity rate
         stats.messages_received = 100;
         stats.invalid_messages = 5;
@@ -346,7 +353,7 @@ mod tests {
             signatures: vec![],
             consensus_time_ms: 1000,
         };
-        
+
         assert_eq!(event.event_type(), "BlockCommitted");
         assert!(event.is_success());
         assert!(!event.is_error());

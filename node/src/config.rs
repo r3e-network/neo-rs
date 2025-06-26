@@ -211,7 +211,7 @@ impl NodeConfig {
         data_dir: PathBuf,
     ) -> anyhow::Result<Self> {
         let config_path = PathBuf::from(config_path);
-        
+
         let mut config = if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)?;
             toml::from_str::<NodeConfig>(&content)?
@@ -224,11 +224,11 @@ impl NodeConfig {
             } else {
                 Self::regtest()
             };
-            
+
             // Save default config
             let config_content = toml::to_string_pretty(&default_config)?;
             std::fs::write(&config_path, config_content)?;
-            
+
             default_config
         };
 
@@ -291,7 +291,9 @@ impl NodeConfig {
 
         // Validate RPC configuration
         if self.rpc.enabled && self.rpc.max_connections == 0 {
-            return Err(anyhow::anyhow!("RPC max_connections must be greater than 0"));
+            return Err(anyhow::anyhow!(
+                "RPC max_connections must be greater than 0"
+            ));
         }
 
         // Validate consensus configuration
@@ -300,7 +302,9 @@ impl NodeConfig {
                 return Err(anyhow::anyhow!("block_time_ms must be greater than 0"));
             }
             if self.consensus.max_transactions_per_block == 0 {
-                return Err(anyhow::anyhow!("max_transactions_per_block must be greater than 0"));
+                return Err(anyhow::anyhow!(
+                    "max_transactions_per_block must be greater than 0"
+                ));
             }
         }
 

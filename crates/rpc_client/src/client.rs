@@ -3,11 +3,11 @@
 //! This module provides the main RPC client implementation for communicating
 //! with Neo N3 nodes, matching the C# Neo.Network.RPC.RpcClient exactly.
 
-use crate::{RpcConfig, RpcError, RpcResult, JsonRpcRequest, JsonRpcResponse, rpc_methods};
+use crate::{JsonRpcRequest, JsonRpcResponse, RpcConfig, RpcError, RpcResult, rpc_methods};
 use reqwest::{Client, ClientBuilder};
 use serde_json::Value;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::debug;
@@ -50,8 +50,9 @@ impl RpcClient {
         for (key, value) in &config.headers {
             let header_name = reqwest::header::HeaderName::from_bytes(key.as_bytes())
                 .map_err(|e| RpcError::Config(format!("Invalid header name '{}': {}", key, e)))?;
-            let header_value = reqwest::header::HeaderValue::from_str(value)
-                .map_err(|e| RpcError::Config(format!("Invalid header value '{}': {}", value, e)))?;
+            let header_value = reqwest::header::HeaderValue::from_str(value).map_err(|e| {
+                RpcError::Config(format!("Invalid header value '{}': {}", value, e))
+            })?;
             headers.insert(header_name, header_value);
         }
 
@@ -78,31 +79,37 @@ impl RpcClient {
     /// Makes a raw JSON-RPC request with retry logic
     pub async fn call_raw(&self, method: String, params: Value) -> RpcResult<Value> {
         let mut last_error_message = None;
-        
+
         for attempt in 0..=self.config.max_retries {
             match self.call_once(method.clone(), params.clone()).await {
                 Ok(result) => return Ok(result),
                 Err(error) => {
                     let is_retryable = error.is_retryable();
                     last_error_message = Some(error.to_string());
-                    
+
                     // Check if error is retryable
                     if !is_retryable || attempt == self.config.max_retries {
                         return Err(error);
                     }
-                    
+
                     // Wait before retry
                     if attempt < self.config.max_retries {
-                        let delay = Duration::from_millis(self.config.retry_delay * (attempt as u64 + 1));
-                        debug!("Retrying request after {}ms (attempt {}/{})", delay.as_millis(), attempt + 1, self.config.max_retries);
+                        let delay =
+                            Duration::from_millis(self.config.retry_delay * (attempt as u64 + 1));
+                        debug!(
+                            "Retrying request after {}ms (attempt {}/{})",
+                            delay.as_millis(),
+                            attempt + 1,
+                            self.config.max_retries
+                        );
                         sleep(delay).await;
                     }
                 }
             }
         }
-        
+
         Err(RpcError::Internal(
-            last_error_message.unwrap_or_else(|| "No error recorded".to_string())
+            last_error_message.unwrap_or_else(|| "No error recorded".to_string()),
         ))
     }
 
@@ -110,9 +117,9 @@ impl RpcClient {
     async fn call_once(&self, method: String, params: Value) -> RpcResult<Value> {
         let request_id = self.next_request_id();
         let request = JsonRpcRequest::new(method.clone(), params, request_id);
-        
+
         debug!("Making RPC request: {} (id: {})", method, request_id);
-        
+
         // Send HTTP request
         let response = self
             .client
@@ -125,7 +132,10 @@ impl RpcClient {
         // Check HTTP status
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(RpcError::ServerError {
                 code: status.as_u16() as i32,
                 message: format!("HTTP {}: {}", status, error_text),
@@ -134,11 +144,14 @@ impl RpcClient {
 
         // Parse JSON response
         let rpc_response: JsonRpcResponse = response.json().await?;
-        
+
         // Validate response ID
         if rpc_response.id != request_id {
             return Err(RpcError::InvalidResponse {
-                message: format!("Response ID mismatch: expected {}, got {}", request_id, rpc_response.id),
+                message: format!(
+                    "Response ID mismatch: expected {}, got {}",
+                    request_id, rpc_response.id
+                ),
             });
         }
 
@@ -148,105 +161,14 @@ impl RpcClient {
         }
 
         // Return result
-        rpc_response.result.ok_or_else(|| RpcError::InvalidResponse {
-            message: "Response missing both result and error".to_string(),
-        })
+        rpc_response
+            .result
+            .ok_or_else(|| RpcError::InvalidResponse {
+                message: "Response missing both result and error".to_string(),
+            })
     }
 
     /// Gets the current block count (matches C# GetBlockCountAsync exactly)
-    pub async fn get_block_count(&self) -> RpcResult<u32> {
-        let result = self.call_raw(rpc_methods::GET_BLOCK_COUNT.to_string(), Value::Array(vec![])).await?;
-        result.as_u64()
-            .and_then(|n| u32::try_from(n).ok())
-            .ok_or_else(|| RpcError::InvalidResponse {
-                message: format!("Invalid block count: {}", result),
-            })
-    }
-
-    /// Gets the best block hash (matches C# GetBestBlockHashAsync exactly)
-    pub async fn get_best_block_hash(&self) -> RpcResult<String> {
-        let result = self.call_raw(rpc_methods::GET_BEST_BLOCK_HASH.to_string(), Value::Array(vec![])).await?;
-        result.as_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| RpcError::InvalidResponse {
-                message: format!("Invalid block hash: {}", result),
-            })
-    }
-
-    /// Gets a block by hash or index (matches C# GetBlockAsync exactly)
-    pub async fn get_block(&self, identifier: String, verbose: bool) -> RpcResult<Value> {
-        let params = serde_json::json!([identifier, verbose]);
-        self.call_raw(rpc_methods::GET_BLOCK.to_string(), params).await
-    }
-
-    /// Gets a block hash by index (matches C# GetBlockHashAsync exactly)
-    pub async fn get_block_hash(&self, index: u32) -> RpcResult<String> {
-        let params = serde_json::json!([index]);
-        let result = self.call_raw(rpc_methods::GET_BLOCK_HASH.to_string(), params).await?;
-        result.as_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| RpcError::InvalidResponse {
-                message: format!("Invalid block hash: {}", result),
-            })
-    }
-
-    /// Gets the connection count (matches C# GetConnectionCountAsync exactly)
-    pub async fn get_connection_count(&self) -> RpcResult<u32> {
-        let result = self.call_raw(rpc_methods::GET_CONNECTION_COUNT.to_string(), Value::Array(vec![])).await?;
-        result.as_u64()
-            .and_then(|n| u32::try_from(n).ok())
-            .ok_or_else(|| RpcError::InvalidResponse {
-                message: format!("Invalid connection count: {}", result),
-            })
-    }
-
-    /// Gets the version information (matches C# GetVersionAsync exactly)
-    pub async fn get_version(&self) -> RpcResult<Value> {
-        self.call_raw(rpc_methods::GET_VERSION.to_string(), Value::Array(vec![])).await
-    }
-
-    /// Sends a raw transaction (matches C# SendRawTransactionAsync exactly)
-    pub async fn send_raw_transaction(&self, transaction_hex: String) -> RpcResult<String> {
-        let params = serde_json::json!([transaction_hex]);
-        let result = self.call_raw(rpc_methods::SEND_RAW_TRANSACTION.to_string(), params).await?;
-        result.as_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| RpcError::InvalidResponse {
-                message: format!("Invalid transaction hash: {}", result),
-            })
-    }
-
-    /// Gets a raw transaction (matches C# GetRawTransactionAsync exactly)
-    pub async fn get_raw_transaction(&self, tx_hash: String, verbose: bool) -> RpcResult<Value> {
-        let params = serde_json::json!([tx_hash, verbose]);
-        self.call_raw(rpc_methods::GET_RAW_TRANSACTION.to_string(), params).await
-    }
-
-    /// Invokes a smart contract function (matches C# InvokeFunctionAsync exactly)
-    pub async fn invoke_function(&self, contract_hash: String, method: String, params: Value) -> RpcResult<Value> {
-        let rpc_params = serde_json::json!([contract_hash, method, params]);
-        self.call_raw(rpc_methods::INVOKE_FUNCTION.to_string(), rpc_params).await
-    }
-
-    /// Invokes a script (matches C# InvokeScriptAsync exactly)
-    pub async fn invoke_script(&self, script_hex: String) -> RpcResult<Value> {
-        let params = serde_json::json!([script_hex]);
-        self.call_raw(rpc_methods::INVOKE_SCRIPT.to_string(), params).await
-    }
-
-    /// Gets the raw mempool (matches C# GetRawMempoolAsync exactly)
-    pub async fn get_raw_mempool(&self, should_get_unverified: bool) -> RpcResult<Value> {
-        let params = serde_json::json!([should_get_unverified]);
-        self.call_raw(rpc_methods::GET_RAW_MEMPOOL.to_string(), params).await
-    }
-
-    /// Validates an address (matches C# ValidateAddressAsync exactly)
-    pub async fn validate_address(&self, address: String) -> RpcResult<Value> {
-        let params = serde_json::json!([address]);
-        self.call_raw(rpc_methods::VALIDATE_ADDRESS.to_string(), params).await
-    }
-
-    /// Gets the client configuration
     pub fn config(&self) -> &RpcConfig {
         &self.config
     }
@@ -314,7 +236,6 @@ impl RpcClientBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[tokio::test]
     async fn test_client_creation() {
@@ -350,12 +271,12 @@ mod tests {
             user_agent: "test-client".to_string(),
             headers: std::collections::HashMap::new(),
         };
-        
+
         let client = RpcClient::with_config(config).unwrap();
         assert_eq!(client.endpoint(), "http://localhost:10332");
         assert_eq!(client.config().timeout, 5);
         assert_eq!(client.config().max_retries, 0);
-        
+
         // Test request ID generation
         let id1 = client.next_request_id();
         let id2 = client.next_request_id();
@@ -378,14 +299,14 @@ mod tests {
             }
             other_error => panic!("Expected MethodNotFound error, got: {:?}", other_error),
         }
-        
+
         // Test other error codes
         let invalid_params_error = crate::JsonRpcError {
             code: -32602,
             message: "Invalid params".to_string(),
             data: None,
         };
-        
+
         let rpc_error: crate::RpcError = invalid_params_error.into();
         match rpc_error {
             crate::RpcError::InvalidParams(msg) => {
@@ -399,20 +320,20 @@ mod tests {
     async fn test_basic_functionality_without_mock() {
         // Test basic client functionality without requiring external dependencies
         let client = RpcClient::new("http://localhost:10332".to_string()).unwrap();
-        
+
         // Test configuration
         assert_eq!(client.endpoint(), "http://localhost:10332");
         assert_eq!(client.config().timeout, 30);
         assert_eq!(client.config().max_retries, 3);
-        
+
         // Test builder pattern
         let builder_client = RpcClientBuilder::new()
             .endpoint("http://test.example.com")
             .timeout(120)
             .build()
             .unwrap();
-        
+
         assert_eq!(builder_client.endpoint(), "http://test.example.com");
         assert_eq!(builder_client.config().timeout, 120);
     }
-} 
+}

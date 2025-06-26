@@ -1,0 +1,134 @@
+[build]
+  # Build command (none needed for static site)
+  command = ""
+  # Directory to publish
+  publish = "."
+  # Functions directory (if using Netlify Functions in future)
+  functions = "netlify/functions"
+
+[build.environment]
+  # Node.js version for any future build processes
+  NODE_VERSION = "18"
+
+# Headers for security and performance
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Security headers
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    
+    # Performance headers
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Specific headers for HTML files
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Headers for CSS and JS files
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Headers for assets
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Redirects and rewrites
+[[redirects]]
+  # Redirect root to index.html
+  from = "/"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  # Handle documentation routing
+  from = "/docs"
+  to = "/docs/getting-started.html"
+  status = 301
+
+[[redirects]]
+  # Handle GitHub redirects
+  from = "/github"
+  to = "https://github.com/neo-project/neo-rs"
+  status = 301
+
+[[redirects]]
+  # Handle Discord redirects
+  from = "/discord"
+  to = "https://discord.gg/neo"
+  status = 301
+
+[[redirects]]
+  # Catch-all for SPA-like behavior (fallback to index.html)
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Form handling (for future contact forms)
+[build.processing]
+  skip_processing = false
+
+[build.processing.css]
+  bundle = true
+  minify = true
+
+[build.processing.js]
+  bundle = true
+  minify = true
+
+[build.processing.html]
+  pretty_urls = true
+
+# Edge handlers for performance
+[[edge_handlers]]
+  pattern = "/api/*"
+  function = "api-handler"
+
+# Plugin configuration
+[[plugins]]
+  package = "@netlify/plugin-sitemap"
+  
+  [plugins.inputs]
+    buildDir = "."
+    exclude = [
+      "/netlify/*",
+      "/admin/*"
+    ]
+
+# Context-specific settings
+[context.production]
+  environment = { NODE_ENV = "production" }
+
+[context.deploy-preview]
+  environment = { NODE_ENV = "preview" }
+
+[context.branch-deploy]
+  environment = { NODE_ENV = "development" }
+
+# Branch-specific settings
+[context.master]
+  environment = { NODE_ENV = "production" }
+
+[context.main]
+  environment = { NODE_ENV = "production" }
+
+# Development settings
+[dev]
+  command = "python3 -m http.server 8000"
+  port = 8000
+  publish = "."
+  autoLaunch = false

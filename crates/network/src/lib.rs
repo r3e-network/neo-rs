@@ -12,24 +12,41 @@
 //! - **RPC**: JSON-RPC server for external API access
 //! - **Server**: Network server coordination and management
 
-pub mod p2p;
+pub mod error;
+pub mod error_handling;
+pub mod handlers;
 pub mod messages;
-pub mod peers;
-pub mod sync;
-pub mod rpc;
-pub mod server;
+pub mod p2p;
 pub mod p2p_node;
 pub mod peer_manager;
-pub mod error_handling;
+pub mod peers;
+pub mod relay_cache;
+pub mod rpc;
+pub mod server;
 pub mod shutdown_impl;
+pub mod sync;
+pub mod transaction_relay;
 
 // Re-export main types
-pub use crate::p2p_node::{P2pNode, PeerInfo, NodeCapability, NodeStatus, NodeStatistics, NodeEvent};
-pub use crate::peer_manager::{PeerManager, PeerState, PeerConnection, PeerEvent, ConnectionStats};
-pub use crate::messages::{NetworkMessage, MessageCommand, ProtocolMessage, InventoryItem, InventoryType, MessageHeader, MessageValidator};
-pub use crate::error_handling::{NetworkErrorHandler, NetworkErrorEvent, ErrorSeverity, RecoveryStrategy, OperationContext, ErrorStatistics};
+pub use crate::error_handling::{
+    ErrorStatistics, NetworkErrorEvent, NetworkErrorHandler, OperationContext, RecoveryStrategy,
+};
+pub use crate::handlers::TransactionMessageHandler;
+pub use crate::messages::{
+    InventoryItem, InventoryType, MessageCommand, MessageValidator, Neo3Message, NetworkMessage,
+    ProtocolMessage,
+};
+pub use crate::p2p_node::{
+    NodeCapability, NodeEvent, NodeStatistics, NodeStatus, P2pNode, PeerInfo,
+};
+pub use crate::peer_manager::{ConnectionStats, PeerConnection, PeerEvent, PeerManager, PeerState};
+pub use crate::relay_cache::RelayCache;
+pub use crate::transaction_relay::{
+    RelayStatistics, TransactionRelay, TransactionRelayConfig, TransactionRelayEvent,
+};
+pub use error::{ErrorSeverity, NetworkError, NetworkResult, Result};
 
-// Temporary stubs for missing types
+// Type aliases for network component integration
 pub type P2PEvent = NodeEvent;
 pub type P2PNode = P2pNode;
 pub type RpcServer = crate::rpc::RpcServer;
@@ -42,12 +59,15 @@ use std::fmt;
 use std::net::SocketAddr;
 use thiserror::Error;
 
-/// Result type for network operations
-pub type Result<T> = std::result::Result<T, Error>;
+/// Legacy error type for backward compatibility
+///
+/// **Deprecated**: Use [`NetworkError`] instead for new code.
+#[deprecated(since = "0.3.0", note = "Use NetworkError instead")]
+pub use LegacyError as Error;
 
-/// Network-specific error types
+/// Legacy network errors for backward compatibility
 #[derive(Error, Debug)]
-pub enum Error {
+pub enum LegacyError {
     /// Connection error
     #[error("Connection error: {0}")]
     Connection(String),
@@ -145,24 +165,22 @@ pub enum Error {
     Generic(String),
 }
 
-// Add conversion from neo_ledger::Error to network Error
-impl From<neo_ledger::Error> for Error {
+// Legacy error conversions
+impl From<neo_ledger::Error> for LegacyError {
     fn from(err: neo_ledger::Error) -> Self {
-        Error::Ledger(err.to_string())
+        LegacyError::Ledger(err.to_string())
     }
 }
 
-// Add conversion from neo_io::Error to network Error
-impl From<neo_io::Error> for Error {
+impl From<neo_io::Error> for LegacyError {
     fn from(err: neo_io::Error) -> Self {
-        Error::Serialization(err.to_string())
+        LegacyError::Serialization(err.to_string())
     }
 }
 
-// Add conversion from neo_core::Error to network Error
-impl From<neo_core::Error> for Error {
-    fn from(err: neo_core::Error) -> Self {
-        Error::Protocol(err.to_string())
+impl From<neo_core::CoreError> for LegacyError {
+    fn from(err: neo_core::CoreError) -> Self {
+        LegacyError::Protocol(err.to_string())
     }
 }
 
@@ -180,7 +198,11 @@ pub struct ProtocolVersion {
 impl ProtocolVersion {
     /// Creates a new protocol version
     pub fn new(major: u32, minor: u32, patch: u32) -> Self {
-        Self { major, minor, patch }
+        Self {
+            major,
+            minor,
+            patch,
+        }
     }
 
     /// Current Neo protocol version
@@ -334,11 +356,11 @@ impl MessageHandler {
     pub fn new(config: NetworkConfig) -> Result<Self> {
         Ok(Self { config })
     }
-    
+
     pub async fn start(&self) -> Result<()> {
         Ok(())
     }
-    
+
     pub async fn stop(&self) -> Result<()> {
         Ok(())
     }
@@ -353,36 +375,22 @@ pub enum NetworkEvent {
         address: SocketAddr,
     },
     /// Peer disconnected
-    PeerDisconnected {
-        peer_id: UInt160,
-        reason: String,
-    },
+    PeerDisconnected { peer_id: UInt160, reason: String },
     /// Message received
     MessageReceived {
         peer_id: UInt160,
         message_type: String,
     },
     /// Block received
-    BlockReceived {
-        block_hash: UInt256,
-        height: u32,
-    },
+    BlockReceived { block_hash: UInt256, height: u32 },
     /// Transaction received
-    TransactionReceived {
-        tx_hash: UInt256,
-    },
+    TransactionReceived { tx_hash: UInt256 },
     /// Sync started
-    SyncStarted {
-        target_height: u32,
-    },
+    SyncStarted { target_height: u32 },
     /// Sync completed
-    SyncCompleted {
-        final_height: u32,
-    },
+    SyncCompleted { final_height: u32 },
     /// Sync failed
-    SyncFailed {
-        error: String,
-    },
+    SyncFailed { error: String },
 }
 
 /// Network configuration
@@ -477,7 +485,7 @@ impl Default for RpcConfig {
 impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
-            magic: 0x334f454e, // Neo N3 mainnet magic
+            magic: 0x00746E41, // Neo N3 mainnet magic ("Ant" in little-endian)
             protocol_version: ProtocolVersion::current(),
             user_agent: "neo-rs/0.1.0".to_string(),
             listen_address: "0.0.0.0:10333".parse().unwrap(),
@@ -492,11 +500,11 @@ impl Default for NetworkConfig {
             enable_relay: true,
             seed_nodes: vec![
                 // Real Neo N3 MainNet seed nodes (IP addresses)
-                "34.133.235.69:10333".parse().unwrap(),   // seed1.neo.org
-                "35.192.59.217:10333".parse().unwrap(),   // seed2.neo.org
-                "35.188.199.101:10333".parse().unwrap(),  // seed3.neo.org
-                "35.238.26.128:10333".parse().unwrap(),   // seed4.neo.org
-                "34.124.145.177:10333".parse().unwrap(),  // seed5.neo.org
+                "34.133.235.69:10333".parse().unwrap(), // seed1.neo.org
+                "35.192.59.217:10333".parse().unwrap(), // seed2.neo.org
+                "35.188.199.101:10333".parse().unwrap(), // seed3.neo.org
+                "35.238.26.128:10333".parse().unwrap(), // seed4.neo.org
+                "34.124.145.177:10333".parse().unwrap(), // seed5.neo.org
             ],
             port: 10333,
             websocket_enabled: false,
@@ -513,7 +521,7 @@ impl NetworkConfig {
     /// Creates a testnet configuration
     pub fn testnet() -> Self {
         Self {
-            magic: 0x3554334e, // Neo N3 testnet magic (N5T3 in ASCII, little-endian)
+            magic: 0x74746E41, // Neo N3 testnet magic (1953787457 in decimal)
             listen_address: "0.0.0.0:20333".parse().unwrap(),
             p2p_config: P2PConfig {
                 listen_address: "0.0.0.0:20333".parse().unwrap(),
@@ -526,11 +534,11 @@ impl NetworkConfig {
             },
             seed_nodes: vec![
                 // Real Neo N3 TestNet seed nodes (IP addresses)
-                "34.133.235.69:20333".parse().unwrap(),   // seed1t5.neo.org
-                "35.192.59.217:20333".parse().unwrap(),   // seed2t5.neo.org
-                "35.188.199.101:20333".parse().unwrap(),  // seed3t5.neo.org
-                "35.238.26.128:20333".parse().unwrap(),   // seed4t5.neo.org
-                "34.124.145.177:20333".parse().unwrap(),  // seed5t5.neo.org
+                "34.133.235.69:20333".parse().unwrap(), // seed1t5.neo.org
+                "35.192.59.217:20333".parse().unwrap(), // seed2t5.neo.org
+                "35.188.199.101:20333".parse().unwrap(), // seed3t5.neo.org
+                "35.238.26.128:20333".parse().unwrap(), // seed4t5.neo.org
+                "34.124.145.177:20333".parse().unwrap(), // seed5t5.neo.org
             ],
             port: 20333,
             websocket_enabled: false,

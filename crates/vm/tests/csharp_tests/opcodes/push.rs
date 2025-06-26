@@ -2,16 +2,17 @@
 //!
 //! Tests for all PUSH-related opcodes including PUSHNULL, PUSHDATA*, PUSHINT*, etc.
 
-use std::path::Path;
-use neo_vm::{ExecutionEngine, Script, VMState};
 use neo_vm::stack_item::StackItemType;
+use neo_vm::{ExecutionEngine, Script, VMState};
+use std::path::Path;
 
 use crate::csharp_tests::JsonTestRunner;
 
 /// Test OpCodes Push category (matches C# TestOpCodesPush)
 #[test]
 fn test_opcodes_push() {
-    let test_path = "/Users/jinghuiliao/git/will/neo-dev/neo-sharp/tests/Neo.VM.Tests/Tests/OpCodes/Push";
+    let test_path =
+        "/Users/jinghuiliao/git/will/neo-dev/neo-sharp/tests/Neo.VM.Tests/Tests/OpCodes/Push";
     if Path::new(test_path).exists() {
         let mut runner = JsonTestRunner::new();
         runner.test_json_directory(test_path).unwrap();
@@ -36,32 +37,39 @@ fn test_pushnull_json() {
 #[test]
 fn test_pushdata1_json() {
     let mut runner = JsonTestRunner::new();
-    
+
     // Debug: Check both test case compilations
     println!("🔍 Testing PUSHDATA1 script compilation...");
-    
+
     // Good definition case
-    let script1 = vec!["PUSHDATA1".to_string(), "0x04".to_string(), "0x01020304".to_string()];
+    let script1 = vec![
+        "PUSHDATA1".to_string(),
+        "0x04".to_string(),
+        "0x01020304".to_string(),
+    ];
     let compiled_bytes1 = runner.compile_script(&script1).unwrap();
     println!("✅ Good definition script: {:?}", compiled_bytes1);
-    
+
     // Without enough length case (from JSON file)
     let script2 = vec!["PUSHDATA1".to_string(), "0x0501020304".to_string()];
     println!("Debug - script2 input: {:?}", script2);
     println!("Debug - script2[0]: '{}'", script2[0]);
     println!("Debug - script2[1]: '{}'", script2[1]);
-    println!("Debug - script2[1].starts_with('0x05'): {}", script2[1].starts_with("0x05"));
+    println!(
+        "Debug - script2[1].starts_with('0x05'): {}",
+        script2[1].starts_with("0x05")
+    );
     println!("Debug - script2[1].len(): {}", script2[1].len());
     println!("Debug - script2.len() == 2: {}", script2.len() == 2);
-    
+
     let compiled_bytes2 = runner.compile_script(&script2).unwrap();
     println!("❌ Without enough length script: {:?}", compiled_bytes2);
-    
+
     // Analyze the "Without enough length" case:
     // Script should be: [0x0c, 0x05, 0x01, 0x02, 0x03, 0x04] WITHOUT RET
     // PUSHDATA1 should try to read 5 bytes but only 4 are available
     println!("Expected: [12, 5, 1, 2, 3, 4] WITHOUT RET - should FAULT when reading 5 bytes");
-    
+
     runner.test_json_file("/Users/jinghuiliao/git/will/neo-dev/neo-sharp/tests/Neo.VM.Tests/Tests/OpCodes/Push/PUSHDATA1.json").unwrap();
 }
 
@@ -69,36 +77,39 @@ fn test_pushdata1_json() {
 #[test]
 fn test_pushdata1_direct() {
     println!("🧪 Testing PUSHDATA1 directly...");
-    
+
     // Create script: PUSHDATA1 + length(4) + data(01020304) + RET
     let script_bytes = vec![0x0c, 0x04, 0x01, 0x02, 0x03, 0x04, 0x40];
     println!("Script bytes: {:?}", script_bytes);
-    
+
     let script = Script::new(script_bytes, false).unwrap();
     let mut engine = ExecutionEngine::new(None);
-    
+
     match engine.load_script(script, 0, 0) {
         Ok(_) => {
             println!("✅ Script loaded successfully");
-            
+
             // Execute step by step to see what's happening
             loop {
                 let state = engine.state();
                 println!("Current VM state: {:?}", state);
-                
+
                 if state == VMState::HALT || state == VMState::FAULT {
                     break;
                 }
-                
+
                 // Get current instruction info
                 if let Some(context) = engine.current_context() {
                     let ip = context.instruction_pointer();
                     println!("Instruction pointer: {}", ip);
-                    
+
                     match context.script().get_instruction(ip) {
                         Ok(instruction) => {
-                            println!("About to execute: {:?} with operand {:?}", 
-                                instruction.opcode(), instruction.operand());
+                            println!(
+                                "About to execute: {:?} with operand {:?}",
+                                instruction.opcode(),
+                                instruction.operand()
+                            );
                         }
                         Err(e) => {
                             println!("Failed to get instruction: {}", e);
@@ -106,12 +117,12 @@ fn test_pushdata1_direct() {
                         }
                     }
                 }
-                
+
                 // Execute one step
                 match engine.execute_next() {
                     Ok(_) => {
                         println!("✅ Step executed successfully");
-                        
+
                         // Check stack state after execution
                         if let Some(context) = engine.current_context() {
                             let stack = context.evaluation_stack();
@@ -130,10 +141,10 @@ fn test_pushdata1_direct() {
                     }
                 }
             }
-            
+
             let final_state = engine.state();
             println!("Final state: {:?}", final_state);
-            
+
             match final_state {
                 VMState::HALT => {
                     println!("✅ PUSHDATA1 execution successful");
@@ -168,18 +179,18 @@ fn test_pushdata1_direct() {
 #[test]
 fn test_pushdata1_insufficient_data() {
     println!("🚨 Testing PUSHDATA1 with insufficient data...");
-    
-    // Script: PUSHDATA1 + length(5) + data(only 4 bytes) + RET  
+
+    // Script: PUSHDATA1 + length(5) + data(only 4 bytes) + RET
     // This should FAULT because PUSHDATA1 tries to read 5 bytes but only 4 are available
     let script_bytes = vec![0x0c, 0x05, 0x01, 0x02, 0x03, 0x04, 0x40];
     println!("Script: {:?}", script_bytes);
     println!("PUSHDATA1 wants 5 bytes but only [1,2,3,4] (4 bytes) available before RET");
-    
+
     let script = Script::new(script_bytes, false).unwrap();
     let mut engine = ExecutionEngine::new(None);
-    
+
     engine.load_script(script, 0, 0).unwrap();
-    
+
     // Execute until completion
     while engine.state() != VMState::HALT && engine.state() != VMState::FAULT {
         match engine.execute_next() {
@@ -192,14 +203,17 @@ fn test_pushdata1_insufficient_data() {
             }
         }
     }
-    
+
     let final_state = engine.state();
     println!("Final state: {:?}", final_state);
-    
+
     if final_state == VMState::FAULT {
         println!("✅ PUSHDATA1 correctly FAULTed with insufficient data");
     } else {
-        println!("❌ PUSHDATA1 should have FAULTed but got: {:?}", final_state);
+        println!(
+            "❌ PUSHDATA1 should have FAULTed but got: {:?}",
+            final_state
+        );
         panic!("Expected FAULT but got {:?}", final_state);
     }
 }
@@ -271,9 +285,15 @@ fn test_pushint_opcode(opcode_name: &str, script_bytes: Vec<u8>, expected_type: 
                             if let Ok(top_item) = context.peek(0) {
                                 let actual_type = top_item.stack_item_type();
                                 if actual_type == expected_type {
-                                    println!("     ✅ {} executed successfully, pushed {:?}", opcode_name, actual_type);
+                                    println!(
+                                        "     ✅ {} executed successfully, pushed {:?}",
+                                        opcode_name, actual_type
+                                    );
                                 } else {
-                                    println!("     ⚠️ {} type mismatch: expected {:?}, got {:?}", opcode_name, expected_type, actual_type);
+                                    println!(
+                                        "     ⚠️ {} type mismatch: expected {:?}, got {:?}",
+                                        opcode_name, expected_type, actual_type
+                                    );
                                 }
                             } else {
                                 println!("     ❌ {} failed to peek stack item", opcode_name);
@@ -322,7 +342,7 @@ fn test_pusha_vm_execution() {
     // Create a PUSHA script without RET to check evaluation stack
     // PUSHA 0x00000001 (offset +1)
     let script_bytes = vec![
-        0x0a,                    // PUSHA opcode
+        0x0a, // PUSHA opcode
         0x01, 0x00, 0x00, 0x00, // 4-byte offset (little-endian): +1
     ]; // Total: 5 bytes (no RET)
 
@@ -345,7 +365,10 @@ fn test_pusha_vm_execution() {
                     // Check the evaluation stack after PUSHA
                     if let Some(context) = engine.current_context() {
                         let eval_stack = context.evaluation_stack();
-                        println!("   📊 Evaluation stack size after PUSHA: {}", eval_stack.len());
+                        println!(
+                            "   📊 Evaluation stack size after PUSHA: {}",
+                            eval_stack.len()
+                        );
 
                         if eval_stack.len() > 0 {
                             println!("   ✅ PUSHA successfully pushed item to evaluation stack");
@@ -360,7 +383,10 @@ fn test_pusha_vm_execution() {
                                         println!("   ✅ Confirmed: Top item is a Pointer");
                                     }
                                     other => {
-                                        println!("   ⚠️ Unexpected: Top item is {:?}, expected Pointer", other);
+                                        println!(
+                                            "   ⚠️ Unexpected: Top item is {:?}, expected Pointer",
+                                            other
+                                        );
                                     }
                                 }
                             } else {

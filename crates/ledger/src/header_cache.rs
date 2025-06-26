@@ -44,12 +44,12 @@ impl HeaderCache {
     /// Returns true if the header was added, false if the cache is full
     pub fn add(&self, header: Header) -> bool {
         let mut headers = self.headers.write();
-        
+
         // Enforce the cache limit when Full
         if headers.len() >= MAX_HEADERS {
             return false;
         }
-        
+
         headers.push_back(header);
         true
     }

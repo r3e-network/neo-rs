@@ -2,9 +2,9 @@
 //!
 //! This module provides the Integer stack item implementation used in the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::stack_item::stack_item_type::StackItemType;
-use crate::Error;
-use crate::Result;
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::sync::Arc;
@@ -19,7 +19,9 @@ pub struct Integer {
 impl Integer {
     /// Creates a new integer with the specified value.
     pub fn new<T: Into<BigInt>>(value: T) -> Self {
-        Self { value: value.into() }
+        Self {
+            value: value.into(),
+        }
     }
 
     /// Gets the integer value.

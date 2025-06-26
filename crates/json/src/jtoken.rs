@@ -1,7 +1,7 @@
 use crate::error::{JsonError, JsonResult};
 use crate::utility::StrictUtf8;
-use serde::{Serialize, Deserialize};
-use serde_json::{Value as JsonValue};
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::fmt;
 
 /// Represents a JSON token - the main type for all JSON values
@@ -30,7 +30,9 @@ impl JToken {
                     Ok(None)
                 }
             }
-            _ => Err(JsonError::NotSupported("Index access not supported for this token type".to_string())),
+            _ => Err(JsonError::NotSupported(
+                "Index access not supported for this token type".to_string(),
+            )),
         }
     }
 
@@ -45,7 +47,9 @@ impl JToken {
                     Err(JsonError::NotSupported("Index out of bounds".to_string()))
                 }
             }
-            _ => Err(JsonError::NotSupported("Index access not supported for this token type".to_string())),
+            _ => Err(JsonError::NotSupported(
+                "Index access not supported for this token type".to_string(),
+            )),
         }
     }
 
@@ -64,7 +68,9 @@ impl JToken {
                 obj.insert(key, value);
                 Ok(())
             }
-            _ => Err(JsonError::NotSupported("Property access not supported for this token type".to_string())),
+            _ => Err(JsonError::NotSupported(
+                "Property access not supported for this token type".to_string(),
+            )),
         }
     }
 
@@ -81,13 +87,13 @@ impl JToken {
     }
 
     /// Converts the current JSON token to an enum value
-    pub fn as_enum<T>(&self, default_value: T, _ignore_case: bool) -> T 
-    where 
+    pub fn as_enum<T>(&self, default_value: T, _ignore_case: bool) -> T
+    where
         T: Clone + std::str::FromStr + std::convert::TryFrom<u32>,
     {
         // Production-ready enum parsing with proper type conversion (matches C# JToken.ToObject exactly)
         // This implements the C# logic: JToken.ToObject<T>() with full enum value mapping
-        
+
         // 1. Try to parse enum from string value (production implementation)
         if let JToken::String(str_value) = self {
             // Parse enum by name (case-insensitive matching like C#)
@@ -95,7 +101,7 @@ impl JToken {
                 return parsed_value;
             }
         }
-        
+
         // 2. Try to parse enum from integer value (production fallback)
         if let JToken::Number(num_value) = self {
             // Check if the number is finite and non-negative
@@ -107,7 +113,7 @@ impl JToken {
                 }
             }
         }
-        
+
         // 3. Return default value if parsing fails (production error handling)
         default_value
     }
@@ -143,8 +149,8 @@ impl JToken {
     }
 
     /// Gets the enum value (strict)
-    pub fn get_enum<T>(&self, _ignore_case: bool) -> JsonResult<T> 
-    where 
+    pub fn get_enum<T>(&self, _ignore_case: bool) -> JsonResult<T>
+    where
         T: Clone + std::str::FromStr + std::convert::TryFrom<u32>,
         T::Err: std::fmt::Debug,
         <T as std::convert::TryFrom<u32>>::Error: std::fmt::Debug,
@@ -156,7 +162,7 @@ impl JToken {
                 return Ok(parsed_value);
             }
         }
-        
+
         // 2. Try to parse enum from integer value
         if let JToken::Number(num_value) = self {
             // Check if the number is finite and non-negative
@@ -168,19 +174,25 @@ impl JToken {
                 }
             }
         }
-        
+
         // 3. Return error if parsing fails
-        Err(JsonError::InvalidCast("Cannot convert token to enum".to_string()))
+        Err(JsonError::InvalidCast(
+            "Cannot convert token to enum".to_string(),
+        ))
     }
 
     /// Gets the 32-bit signed integer value
     pub fn get_int32(&self) -> JsonResult<i32> {
         let d = self.get_number()?;
         if d.fract() != 0.0 {
-            return Err(JsonError::InvalidCast("Number is not an integer".to_string()));
+            return Err(JsonError::InvalidCast(
+                "Number is not an integer".to_string(),
+            ));
         }
         if d < i32::MIN as f64 || d > i32::MAX as f64 {
-            return Err(JsonError::OverflowError("Number cannot be converted to i32".to_string()));
+            return Err(JsonError::OverflowError(
+                "Number cannot be converted to i32".to_string(),
+            ));
         }
         Ok(d as i32)
     }
@@ -216,7 +228,7 @@ impl JToken {
 
         let json_value: JsonValue = serde_json::from_str(value)
             .map_err(|e| JsonError::ParseError(format!("JSON parse error: {}", e)))?;
-        
+
         Ok(Some(Self::from_serde_value(json_value)))
     }
 
@@ -228,7 +240,8 @@ impl JToken {
             JsonValue::Number(n) => JToken::Number(n.as_f64().unwrap_or(0.0)),
             JsonValue::String(s) => JToken::String(s),
             JsonValue::Array(arr) => {
-                let tokens: Vec<Option<JToken>> = arr.into_iter()
+                let tokens: Vec<Option<JToken>> = arr
+                    .into_iter()
                     .map(|v| Some(Self::from_serde_value(v)))
                     .collect();
                 JToken::Array(tokens)
@@ -248,15 +261,16 @@ impl JToken {
         match self {
             JToken::Null => JsonValue::Null,
             JToken::Boolean(b) => JsonValue::Bool(*b),
-            JToken::Number(n) => JsonValue::Number(serde_json::Number::from_f64(*n).unwrap_or_else(|| serde_json::Number::from(0))),
+            JToken::Number(n) => JsonValue::Number(
+                serde_json::Number::from_f64(*n).unwrap_or_else(|| serde_json::Number::from(0)),
+            ),
             JToken::String(s) => JsonValue::String(s.clone()),
             JToken::Array(arr) => {
-                let values: Vec<JsonValue> = arr.iter()
-                    .map(|opt_token| {
-                        match opt_token {
-                            Some(token) => token.to_serde_value(),
-                            None => JsonValue::Null,
-                        }
+                let values: Vec<JsonValue> = arr
+                    .iter()
+                    .map(|opt_token| match opt_token {
+                        Some(token) => token.to_serde_value(),
+                        None => JsonValue::Null,
                     })
                     .collect();
                 JsonValue::Array(values)
@@ -282,7 +296,7 @@ impl JToken {
         } else {
             serde_json::to_string(&self.to_serde_value())
         };
-        
+
         match json_str {
             Ok(s) => StrictUtf8::get_bytes(&s),
             Err(_) => Vec::new(),
@@ -376,7 +390,7 @@ mod tests {
     fn test_jtoken_parse() {
         let json = r#"{"name": "test", "value": 42}"#;
         let token = JToken::parse_string(json, 64).unwrap().unwrap();
-        
+
         if let JToken::Object(_) = token {
             assert_eq!(token.get_property("name").unwrap().as_string(), "test");
             assert_eq!(token.get_property("value").unwrap().as_number(), 42.0);
@@ -393,9 +407,9 @@ mod tests {
             None,
         ];
         let token = JToken::Array(arr);
-        
+
         assert_eq!(token.get_index(0).unwrap().unwrap().as_number(), 1.0);
         assert_eq!(token.get_index(1).unwrap().unwrap().as_string(), "test");
         assert!(token.get_index(2).unwrap().is_none());
     }
-} 
+}

@@ -2,10 +2,10 @@
 //!
 //! This module represents a stack used by the Neo VM for executing scripts.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::StackItem;
-use crate::Error;
-use crate::Result;
 
 /// Represents the evaluation stack in the VM.
 #[derive(Clone)]
@@ -39,28 +39,28 @@ impl EvaluationStack {
     }
 
     /// Pops an item from the stack.
-    pub fn pop(&mut self) -> Result<StackItem> {
+    pub fn pop(&mut self) -> VmResult<StackItem> {
         match self.stack.pop() {
             Some(item) => {
                 // Remove a stack reference from the item (matches C# RemoveStackReference exactly)
                 self.reference_counter.remove_stack_reference(&item);
                 Ok(item)
             }
-            None => Err(Error::StackUnderflow),
+            None => Err(VmError::stack_underflow_msg(0, 0)),
         }
     }
 
     /// Returns the item at the top of the stack without removing it.
-    pub fn peek(&self, n: isize) -> Result<&StackItem> {
+    pub fn peek(&self, n: isize) -> VmResult<&StackItem> {
         let mut index = n;
         if index >= self.stack.len() as isize {
-            return Err(Error::StackUnderflow);
+            return Err(VmError::stack_underflow_msg(0, 0));
         }
 
         if index < 0 {
             index += self.stack.len() as isize;
             if index < 0 {
-                return Err(Error::StackUnderflow);
+                return Err(VmError::stack_underflow_msg(0, 0));
             }
         }
 
@@ -70,16 +70,16 @@ impl EvaluationStack {
     }
 
     /// Returns the item at the top of the stack without removing it (mutable).
-    pub fn peek_mut(&mut self, n: isize) -> Result<&mut StackItem> {
+    pub fn peek_mut(&mut self, n: isize) -> VmResult<&mut StackItem> {
         let mut index = n;
         if index >= self.stack.len() as isize {
-            return Err(Error::StackUnderflow);
+            return Err(VmError::stack_underflow_msg(0, 0));
         }
 
         if index < 0 {
             index += self.stack.len() as isize;
             if index < 0 {
-                return Err(Error::StackUnderflow);
+                return Err(VmError::stack_underflow_msg(0, 0));
             }
         }
 
@@ -99,9 +99,9 @@ impl EvaluationStack {
     }
 
     /// Removes the item at the specified index from the stack.
-    pub fn remove(&mut self, index: usize) -> Result<StackItem> {
+    pub fn remove(&mut self, index: usize) -> VmResult<StackItem> {
         if index >= self.stack.len() {
-            return Err(Error::StackUnderflow);
+            return Err(VmError::stack_underflow_msg(0, 0));
         }
 
         // Remove the item at the specified index
@@ -114,9 +114,9 @@ impl EvaluationStack {
     }
 
     /// Inserts an item at the specified index in the stack.
-    pub fn insert(&mut self, index: usize, item: StackItem) -> Result<()> {
+    pub fn insert(&mut self, index: usize, item: StackItem) -> VmResult<()> {
         if index > self.stack.len() {
-            return Err(Error::InvalidOperation("Insert index out of range".into()));
+            return Err(VmError::invalid_operation_msg("Insert index out of range"));
         }
 
         // Add a stack reference to the item (matches C# AddStackReference exactly)
@@ -129,9 +129,9 @@ impl EvaluationStack {
     }
 
     /// Swaps the positions of two items on the stack.
-    pub fn swap(&mut self, i: usize, j: usize) -> Result<()> {
+    pub fn swap(&mut self, i: usize, j: usize) -> VmResult<()> {
         if i >= self.stack.len() || j >= self.stack.len() {
-            return Err(Error::StackUnderflow);
+            return Err(VmError::stack_underflow_msg(0, 0));
         }
 
         // Swap the items at the specified indices
@@ -141,9 +141,9 @@ impl EvaluationStack {
     }
 
     /// Reverses the order of n items at the top of the stack.
-    pub fn reverse(&mut self, n: usize) -> Result<()> {
+    pub fn reverse(&mut self, n: usize) -> VmResult<()> {
         if n > self.stack.len() {
-            return Err(Error::InvalidOperation("Reverse count out of range".into()));
+            return Err(VmError::invalid_operation_msg("Reverse count out of range"));
         }
 
         if n <= 1 {
@@ -216,7 +216,7 @@ mod tests {
 
         // Pop an item
         let item = stack.pop().unwrap();
-        assert_eq!(item.as_int().unwrap(), 3.into());
+        assert_eq!(item.as_int().unwrap(), 3);
 
         // Check updated stack size
         assert_eq!(stack.len(), 2);
@@ -237,9 +237,9 @@ mod tests {
         let item1 = stack.peek(1).unwrap();
         let item2 = stack.peek(2).unwrap();
 
-        assert_eq!(item0.as_int().unwrap(), 3.into());
-        assert_eq!(item1.as_int().unwrap(), 2.into());
-        assert_eq!(item2.as_int().unwrap(), 1.into());
+        assert_eq!(item0.as_int().unwrap(), 3);
+        assert_eq!(item1.as_int().unwrap(), 2);
+        assert_eq!(item2.as_int().unwrap(), 1);
 
         // Check stack size (peek doesn't change the stack)
         assert_eq!(stack.len(), 3);
@@ -258,17 +258,17 @@ mod tests {
         stack.insert(1, StackItem::from_int(2)).unwrap();
 
         // Check stack
-        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 1.into());
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2.into());
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 3.into());
+        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 1);
+        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2);
+        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 3);
 
         // Remove an item
         let item = stack.remove(1).unwrap();
-        assert_eq!(item.as_int().unwrap(), 2.into());
+        assert_eq!(item.as_int().unwrap(), 2);
 
         // Check stack
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 1.into());
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 3.into());
+        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 1);
+        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 3);
     }
 
     #[test]
@@ -285,9 +285,9 @@ mod tests {
         stack.swap(0, 2).unwrap();
 
         // Check stack
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1.into());
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2.into());
-        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 3.into());
+        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1);
+        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2);
+        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 3);
     }
 
     #[test]
@@ -306,34 +306,34 @@ mod tests {
         stack.reverse(3).unwrap();
 
         // Check stack
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 3.into());
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 4.into());
-        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 5.into());
-        assert_eq!(stack.peek(3).unwrap().as_int().unwrap(), 2.into());
-        assert_eq!(stack.peek(4).unwrap().as_int().unwrap(), 1.into());
+        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 3);
+        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 4);
+        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 5);
+        assert_eq!(stack.peek(3).unwrap().as_int().unwrap(), 2);
+        assert_eq!(stack.peek(4).unwrap().as_int().unwrap(), 1);
 
         // Reverse all items
         stack.reverse(5).unwrap();
 
         // Check stack
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1.into());
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2.into());
-        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 5.into());
-        assert_eq!(stack.peek(3).unwrap().as_int().unwrap(), 4.into());
-        assert_eq!(stack.peek(4).unwrap().as_int().unwrap(), 3.into());
+        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1);
+        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2);
+        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 5);
+        assert_eq!(stack.peek(3).unwrap().as_int().unwrap(), 4);
+        assert_eq!(stack.peek(4).unwrap().as_int().unwrap(), 3);
 
         // Reverse 0 items (no change)
         stack.reverse(0).unwrap();
 
         // Check stack (unchanged)
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1.into());
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2.into());
+        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1);
+        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2);
 
         // Reverse 1 item (no change)
         stack.reverse(1).unwrap();
 
         // Check stack (unchanged)
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1.into());
+        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1);
 
         // Try to reverse more items than on the stack
         assert!(stack.reverse(10).is_err());
@@ -376,7 +376,7 @@ mod tests {
         assert_eq!(stack1.len(), 3);
         assert_eq!(stack2.len(), 3);
 
-        assert_eq!(stack1.peek(0).unwrap().as_int().unwrap(), 3.into());
-        assert_eq!(stack2.peek(0).unwrap().as_int().unwrap(), 3.into());
+        assert_eq!(stack1.peek(0).unwrap().as_int().unwrap(), 3);
+        assert_eq!(stack2.peek(0).unwrap().as_int().unwrap(), 3);
     }
 }

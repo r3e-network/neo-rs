@@ -3,8 +3,11 @@
 //! This module provides a RocksDB-based storage implementation that matches
 //! C# Neo RocksDB storage functionality.
 
-use crate::storage::{IStore, IStoreSnapshot, IReadOnlyStore, IWriteStore, SeekDirection, StorageProvider, StorageConfig};
-use rocksdb::{DB, WriteBatch, IteratorMode, Direction, Options};
+use crate::storage::{
+    IReadOnlyStore, IStore, IStoreSnapshot, IWriteStore, SeekDirection, StorageConfig,
+    StorageProvider,
+};
+use rocksdb::{DB, Direction, IteratorMode, Options, WriteBatch};
 use std::sync::Arc;
 
 /// RocksDB store implementation (matches C# Neo RocksDB store)
@@ -17,13 +20,11 @@ impl RocksDbStore {
     pub fn new(path: &str) -> crate::Result<Self> {
         let mut opts = Options::default();
         opts.create_if_missing(true);
-        
+
         let db = DB::open(&opts, path)
             .map_err(|e| crate::Error::Database(format!("Failed to open RocksDB: {}", e)))?;
-        
-        Ok(Self {
-            db: Arc::new(db),
-        })
+
+        Ok(Self { db: Arc::new(db) })
     }
 }
 
@@ -36,18 +37,27 @@ impl IReadOnlyStore<Vec<u8>, Vec<u8>> for RocksDbStore {
         self.db.get(key).ok().flatten().is_some()
     }
 
-    fn find(&self, key_or_prefix: Option<&[u8]>, direction: SeekDirection) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>> {
+    fn find(
+        &self,
+        key_or_prefix: Option<&[u8]>,
+        direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>> {
         let db = self.db.clone();
         let prefix = key_or_prefix.map(|p| p.to_vec());
-        
+
         let iter_mode = match (prefix.as_ref(), direction) {
-            (Some(prefix), SeekDirection::Forward) => IteratorMode::From(prefix, Direction::Forward),
-            (Some(prefix), SeekDirection::Backward) => IteratorMode::From(prefix, Direction::Reverse),
+            (Some(prefix), SeekDirection::Forward) => {
+                IteratorMode::From(prefix, Direction::Forward)
+            }
+            (Some(prefix), SeekDirection::Backward) => {
+                IteratorMode::From(prefix, Direction::Reverse)
+            }
             (None, SeekDirection::Forward) => IteratorMode::Start,
             (None, SeekDirection::Backward) => IteratorMode::End,
         };
 
-        let items: Vec<(Vec<u8>, Vec<u8>)> = db.iterator(iter_mode)
+        let items: Vec<(Vec<u8>, Vec<u8>)> = db
+            .iterator(iter_mode)
             .map(|result| {
                 let (key, value) = result.unwrap();
                 (key.to_vec(), value.to_vec())
@@ -105,18 +115,27 @@ impl IReadOnlyStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
         self.db.get(key).ok().flatten().is_some()
     }
 
-    fn find(&self, key_or_prefix: Option<&[u8]>, direction: SeekDirection) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>> {
+    fn find(
+        &self,
+        key_or_prefix: Option<&[u8]>,
+        direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>> {
         let db = self.db.clone();
         let prefix = key_or_prefix.map(|p| p.to_vec());
-        
+
         let iter_mode = match (prefix.as_ref(), direction) {
-            (Some(prefix), SeekDirection::Forward) => IteratorMode::From(prefix, Direction::Forward),
-            (Some(prefix), SeekDirection::Backward) => IteratorMode::From(prefix, Direction::Reverse),
+            (Some(prefix), SeekDirection::Forward) => {
+                IteratorMode::From(prefix, Direction::Forward)
+            }
+            (Some(prefix), SeekDirection::Backward) => {
+                IteratorMode::From(prefix, Direction::Reverse)
+            }
             (None, SeekDirection::Forward) => IteratorMode::Start,
             (None, SeekDirection::Backward) => IteratorMode::End,
         };
 
-        let items: Vec<(Vec<u8>, Vec<u8>)> = db.iterator(iter_mode)
+        let items: Vec<(Vec<u8>, Vec<u8>)> = db
+            .iterator(iter_mode)
             .map(|result| {
                 let (key, value) = result.unwrap();
                 (key.to_vec(), value.to_vec())
@@ -181,4 +200,4 @@ impl StorageProvider for RocksDbStorageProvider {
         let store = RocksDbStore::new(&path)?;
         Ok(Box::new(store))
     }
-} 
+}

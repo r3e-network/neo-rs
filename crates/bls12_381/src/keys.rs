@@ -1,13 +1,13 @@
 //! BLS12-381 key types and operations.
 
+use crate::constants::{PRIVATE_KEY_SIZE, PUBLIC_KEY_SIZE};
 use crate::error::{BlsError, BlsResult};
 use crate::signature::{Signature, SignatureScheme};
-use crate::constants::{PRIVATE_KEY_SIZE, PUBLIC_KEY_SIZE};
 use bls12_381::{G1Affine, Scalar};
-use group::Curve;
 use ff::Field;
+use group::Curve;
 use rand::RngCore;
-use serde::{Deserialize, Serialize, Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// BLS12-381 private key (matches C# Neo.Cryptography.BLS12_381.PrivateKey)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -276,7 +276,9 @@ impl KeyPair {
         // Verify that the public key matches the private key
         let derived_public_key = private_key.public_key();
         if public_key != derived_public_key {
-            return Err(BlsError::invalid_input("Public key does not match private key"));
+            return Err(BlsError::invalid_input(
+                "Public key does not match private key",
+            ));
         }
 
         Ok(Self {
@@ -314,10 +316,10 @@ mod tests {
     fn test_private_key_serialization() {
         let mut rng = thread_rng();
         let private_key = PrivateKey::generate(&mut rng);
-        
+
         let bytes = private_key.to_bytes();
         assert_eq!(bytes.len(), PRIVATE_KEY_SIZE);
-        
+
         let deserialized = PrivateKey::from_bytes(&bytes).unwrap();
         assert_eq!(private_key, deserialized);
     }
@@ -327,7 +329,7 @@ mod tests {
         let mut rng = thread_rng();
         let private_key = PrivateKey::generate(&mut rng);
         let public_key = private_key.public_key();
-        
+
         assert!(public_key.is_valid());
     }
 
@@ -336,10 +338,10 @@ mod tests {
         let mut rng = thread_rng();
         let private_key = PrivateKey::generate(&mut rng);
         let public_key = private_key.public_key();
-        
+
         let bytes = public_key.to_bytes();
         assert_eq!(bytes.len(), PUBLIC_KEY_SIZE);
-        
+
         let deserialized = PublicKey::from_bytes(&bytes).unwrap();
         assert_eq!(public_key, deserialized);
     }
@@ -348,7 +350,7 @@ mod tests {
     fn test_key_pair_generation() {
         let mut rng = thread_rng();
         let key_pair = KeyPair::generate(&mut rng);
-        
+
         assert!(key_pair.is_valid());
         assert_eq!(key_pair.private_key().public_key(), *key_pair.public_key());
     }
@@ -357,10 +359,10 @@ mod tests {
     fn test_key_pair_serialization() {
         let mut rng = thread_rng();
         let key_pair = KeyPair::generate(&mut rng);
-        
+
         let bytes = key_pair.to_bytes();
         assert_eq!(bytes.len(), PRIVATE_KEY_SIZE + PUBLIC_KEY_SIZE);
-        
+
         let deserialized = KeyPair::from_bytes(&bytes).unwrap();
         assert_eq!(key_pair, deserialized);
     }
@@ -370,12 +372,12 @@ mod tests {
         let mut rng = thread_rng();
         let private_key = PrivateKey::generate(&mut rng);
         let public_key = private_key.public_key();
-        
+
         // Test private key hex
         let private_hex = private_key.to_hex();
         let private_from_hex = PrivateKey::from_hex(&private_hex).unwrap();
         assert_eq!(private_key, private_from_hex);
-        
+
         // Test public key hex
         let public_hex = public_key.to_hex();
         let public_from_hex = PublicKey::from_hex(&public_hex).unwrap();
@@ -387,7 +389,7 @@ mod tests {
         let mut rng = thread_rng();
         let key1 = KeyPair::generate(&mut rng);
         let key2 = KeyPair::generate(&mut rng);
-        
+
         // Test addition
         let sum = key1.public_key().add(key2.public_key());
         assert!(sum.is_valid());
@@ -398,13 +400,13 @@ mod tests {
         // Test invalid private key size
         let invalid_private = PrivateKey::from_bytes(&[0u8; 16]);
         assert!(invalid_private.is_err());
-        
+
         // Test invalid public key size
         let invalid_public = PublicKey::from_bytes(&[0u8; 32]);
         assert!(invalid_public.is_err());
-        
+
         // Test invalid key pair size
         let invalid_pair = KeyPair::from_bytes(&[0u8; 64]);
         assert!(invalid_pair.is_err());
     }
-} 
+}

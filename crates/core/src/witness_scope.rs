@@ -11,8 +11,8 @@
 
 //! Implementation of WitnessScope, representing the scope of a witness.
 
-use std::fmt;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Represents the scope of a witness (matches C# WitnessScope [Flags] enum exactly).
 ///
@@ -104,7 +104,7 @@ impl WitnessScope {
             _ => {
                 // Production-ready flag combination validation (matches C# WitnessScope validation exactly)
                 // This implements the C# logic: handling valid flag combinations
-                
+
                 // 1. Check if it's a valid combination of flags (production validation)
                 let valid_flags = 0x01 | 0x10 | 0x20 | 0x40 | 0x80;
                 if (value & !valid_flags) == 0 {
@@ -240,7 +240,10 @@ mod tests {
     #[test]
     fn test_witness_scope_from_byte() {
         assert_eq!(WitnessScope::from_byte(0x00), Some(WitnessScope::None));
-        assert_eq!(WitnessScope::from_byte(0x01), Some(WitnessScope::CalledByEntry));
+        assert_eq!(
+            WitnessScope::from_byte(0x01),
+            Some(WitnessScope::CalledByEntry)
+        );
         assert_eq!(WitnessScope::from_byte(0x80), Some(WitnessScope::Global));
         assert_eq!(WitnessScope::from_byte(0xFF), None);
     }

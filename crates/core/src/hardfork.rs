@@ -11,8 +11,8 @@
 
 //! Hardfork configuration and detection for Neo blockchain.
 
-use std::collections::HashMap;
 use lazy_static::lazy_static;
+use std::collections::HashMap;
 use std::sync::RwLock;
 
 /// Represents a hardfork in the Neo blockchain (matches C# Hardfork enum exactly).

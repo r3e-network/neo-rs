@@ -11,8 +11,6 @@
 
 //! Builder for Neo transactions.
 
-
-
 /// Builder for Neo transactions (matches C# TransactionBuilder exactly).
 #[derive(Debug, Clone)]
 pub struct TransactionBuilder {

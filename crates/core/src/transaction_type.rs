@@ -18,10 +18,10 @@ use std::fmt;
 pub enum ContainsTransactionType {
     /// The transaction does not exist.
     NotExist,
-    
+
     /// The transaction exists in the memory pool.
     ExistsInPool,
-    
+
     /// The transaction exists in the blockchain ledger.
     ExistsInLedger,
 }
@@ -39,11 +39,17 @@ impl fmt::Display for ContainsTransactionType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_contains_transaction_type_display() {
         assert_eq!(ContainsTransactionType::NotExist.to_string(), "NotExist");
-        assert_eq!(ContainsTransactionType::ExistsInPool.to_string(), "ExistsInPool");
-        assert_eq!(ContainsTransactionType::ExistsInLedger.to_string(), "ExistsInLedger");
+        assert_eq!(
+            ContainsTransactionType::ExistsInPool.to_string(),
+            "ExistsInPool"
+        );
+        assert_eq!(
+            ContainsTransactionType::ExistsInLedger.to_string(),
+            "ExistsInLedger"
+        );
     }
 }

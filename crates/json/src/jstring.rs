@@ -144,7 +144,7 @@ mod tests {
     fn test_jstring_jtoken_conversion() {
         let jstr = JString::from("test");
         let token = jstr.clone().to_jtoken();
-        
+
         match token {
             JToken::String(value) => assert_eq!(value, "test"),
             _ => panic!("Expected JToken::String"),
@@ -162,4 +162,4 @@ mod tests {
         let jstr = JString::from("test");
         assert_eq!(format!("{}", jstr), "test");
     }
-} 
+}

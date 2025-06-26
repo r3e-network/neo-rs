@@ -11,35 +11,38 @@
 
 //! Serialization traits and utilities for Neo objects.
 
-use crate::{BinaryWriter, MemoryReader, Error, Result};
-use std::io::Write;
+use crate::{BinaryWriter, IoResult, MemoryReader};
 
 /// Represents NEO objects that can be serialized.
-/// 
+///
 /// This trait matches the C# ISerializable interface exactly.
 pub trait Serializable {
     /// The size of the object in bytes after serialization.
     fn size(&self) -> usize;
 
     /// Serializes the object using the specified BinaryWriter.
-    fn serialize(&self, writer: &mut BinaryWriter) -> Result<()>;
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()>;
 
     /// Deserializes the object using the specified MemoryReader.
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self> where Self: Sized;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self>
+    where
+        Self: Sized;
 }
 
 /// Represents NEO objects that can be serialized using spans.
-/// 
+///
 /// This trait matches the C# ISerializableSpan interface exactly.
 pub trait SerializableSpan {
     /// The size of the object in bytes after serialization.
     fn size(&self) -> usize;
 
     /// Serializes the object to the specified span.
-    fn serialize(&self, destination: &mut [u8]) -> Result<()>;
+    fn serialize(&self, destination: &mut [u8]) -> IoResult<()>;
 
     /// Deserializes the object from the specified span.
-    fn deserialize(source: &[u8]) -> Result<Self> where Self: Sized;
+    fn deserialize(source: &[u8]) -> IoResult<Self>
+    where
+        Self: Sized;
 }
 
 /// Extension methods for serializable objects.
@@ -52,7 +55,10 @@ pub trait SerializableExt: Serializable {
     }
 
     /// Creates an object from a byte array.
-    fn from_array(data: &[u8]) -> Result<Self> where Self: Sized {
+    fn from_array(data: &[u8]) -> IoResult<Self>
+    where
+        Self: Sized,
+    {
         let mut reader = MemoryReader::new(data);
         Self::deserialize(&mut reader)
     }
@@ -66,7 +72,10 @@ pub mod helper {
     use super::*;
 
     /// Serializes a collection of serializable objects.
-    pub fn serialize_array<T: Serializable>(items: &[T], writer: &mut BinaryWriter) -> Result<()> {
+    pub fn serialize_array<T: Serializable>(
+        items: &[T],
+        writer: &mut BinaryWriter,
+    ) -> IoResult<()> {
         writer.write_var_int(items.len() as u64)?;
         for item in items {
             item.serialize(writer)?;
@@ -75,7 +84,10 @@ pub mod helper {
     }
 
     /// Deserializes a collection of serializable objects.
-    pub fn deserialize_array<T: Serializable>(reader: &mut MemoryReader, max: usize) -> Result<Vec<T>> {
+    pub fn deserialize_array<T: Serializable>(
+        reader: &mut MemoryReader,
+        max: usize,
+    ) -> IoResult<Vec<T>> {
         let count = reader.read_var_int(max as u64)? as usize;
         let mut items = Vec::with_capacity(count);
         for _ in 0..count {
@@ -121,12 +133,12 @@ mod tests {
             4
         }
 
-        fn serialize(&self, writer: &mut BinaryWriter) -> Result<()> {
+        fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
             writer.write_u32(self.value)?;
             Ok(())
         }
 
-        fn deserialize(reader: &mut MemoryReader) -> Result<Self> {
+        fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
             Ok(TestStruct {
                 value: reader.read_u32()?,
             })

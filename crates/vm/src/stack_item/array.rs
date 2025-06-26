@@ -2,11 +2,11 @@
 //!
 //! This module provides the Array stack item implementation used in the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::StackItem;
 use crate::stack_item::stack_item_type::StackItemType;
-use crate::Error;
-use crate::Result;
 use std::sync::Arc;
 
 /// Represents an array of stack items in the VM.
@@ -22,12 +22,12 @@ impl Array {
     /// Creates a new array with the specified items.
     pub fn new(items: Vec<StackItem>, reference_counter: Option<Arc<ReferenceCounter>>) -> Self {
         let mut reference_id = None;
-        
+
         // Register with reference counter if provided
         if let Some(rc) = &reference_counter {
             reference_id = Some(rc.add_reference());
         }
-        
+
         Self {
             items,
             reference_id,
@@ -180,9 +180,12 @@ mod tests {
         array.set(1, StackItem::from_int(42));
 
         assert_eq!(array.get(0).unwrap().as_int().unwrap().to_i32().unwrap(), 1);
-        assert_eq!(array.get(1).unwrap().as_int().unwrap().to_i32().unwrap(), 42);
+        assert_eq!(
+            array.get(1).unwrap().as_int().unwrap().to_i32().unwrap(),
+            42
+        );
         assert_eq!(array.get(2).unwrap().as_int().unwrap().to_i32().unwrap(), 3);
-        
+
         // Test setting out of bounds - should not panic, just do nothing
         array.set(3, StackItem::from_int(4));
         assert_eq!(array.len(), 3); // Length should remain the same
@@ -190,10 +193,7 @@ mod tests {
 
     #[test]
     fn test_array_push_pop() {
-        let items = vec![
-            StackItem::from_int(1),
-            StackItem::from_int(2),
-        ];
+        let items = vec![StackItem::from_int(1), StackItem::from_int(2)];
 
         let mut array = Array::new(items, None);
 
@@ -229,25 +229,34 @@ mod tests {
         let items = vec![
             StackItem::from_int(1),
             StackItem::from_int(2),
-            StackItem::from_array(vec![
-                StackItem::from_int(3),
-                StackItem::from_int(4),
-            ]),
+            StackItem::from_array(vec![StackItem::from_int(3), StackItem::from_int(4)]),
         ];
 
         let array = Array::new(items, None);
         let copied = array.deep_copy(None);
 
         assert_eq!(copied.len(), array.len());
-        assert_eq!(copied.get(0).unwrap().as_int().unwrap(), array.get(0).unwrap().as_int().unwrap());
-        assert_eq!(copied.get(1).unwrap().as_int().unwrap(), array.get(1).unwrap().as_int().unwrap());
+        assert_eq!(
+            copied.get(0).unwrap().as_int().unwrap(),
+            array.get(0).unwrap().as_int().unwrap()
+        );
+        assert_eq!(
+            copied.get(1).unwrap().as_int().unwrap(),
+            array.get(1).unwrap().as_int().unwrap()
+        );
 
         // Check that the nested array was deep copied
         let nested_original = array.get(2).unwrap().as_array().unwrap();
         let nested_copied = copied.get(2).unwrap().as_array().unwrap();
 
         assert_eq!(nested_copied.len(), nested_original.len());
-        assert_eq!(nested_copied[0].as_int().unwrap(), nested_original[0].as_int().unwrap());
-        assert_eq!(nested_copied[1].as_int().unwrap(), nested_original[1].as_int().unwrap());
+        assert_eq!(
+            nested_copied[0].as_int().unwrap(),
+            nested_original[0].as_int().unwrap()
+        );
+        assert_eq!(
+            nested_copied[1].as_int().unwrap(),
+            nested_original[1].as_int().unwrap()
+        );
     }
 }

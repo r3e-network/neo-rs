@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Node types for MPT Trie nodes
 /// This matches the C# NodeType enum exactly
@@ -41,8 +41,9 @@ impl TryFrom<u8> for NodeType {
     type Error = crate::error::MptError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        NodeType::from_byte(value)
-            .ok_or_else(|| crate::error::MptError::InvalidFormat(format!("Invalid node type: {}", value)))
+        NodeType::from_byte(value).ok_or_else(|| {
+            crate::error::MptError::InvalidFormat(format!("Invalid node type: {}", value))
+        })
     }
 }
 
@@ -72,4 +73,4 @@ mod tests {
         assert_eq!(NodeType::try_from(0x04).unwrap(), NodeType::Empty);
         assert!(NodeType::try_from(0xFF).is_err());
     }
-} 
+}

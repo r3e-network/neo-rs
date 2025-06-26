@@ -54,7 +54,7 @@ impl Default for StorageConfig {
             compression_algorithm: CompressionAlgorithm::Lz4,
             compaction_strategy: CompactionStrategy::Level,
             max_open_files: Some(1000),
-            cache_size: Some(64 * 1024 * 1024), // 64MB
+            cache_size: Some(64 * 1024 * 1024),        // 64MB
             write_buffer_size: Some(16 * 1024 * 1024), // 16MB
             enable_statistics: false,
         }
@@ -70,7 +70,11 @@ pub trait IReadOnlyStore<TKey, TValue> {
     fn contains(&self, key: &TKey) -> bool;
 
     /// Finds entries with optional key prefix (matches C# Find)
-    fn find(&self, key_or_prefix: Option<&[u8]>, direction: SeekDirection) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>>;
+    fn find(
+        &self,
+        key_or_prefix: Option<&[u8]>,
+        direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (Vec<u8>, Vec<u8>)>>;
 }
 
 /// Write store interface (matches C# IWriteStore<TKey, TValue>)

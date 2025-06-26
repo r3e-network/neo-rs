@@ -1,10 +1,10 @@
 //! Comprehensive cryptography tests converted from C# Neo unit tests.
 //! These tests ensure 100% compatibility with the C# Neo cryptography implementation.
 
-use neo_cryptography::ecdsa::ECDsa;
-use neo_cryptography::base58;
-use neo_cryptography::hash;
 use hex;
+use neo_cryptography::base58;
+use neo_cryptography::ecdsa::ECDsa;
+use neo_cryptography::hash;
 
 // ============================================================================
 // C# Neo Unit Test Conversions - ECDSA Tests
@@ -75,9 +75,18 @@ fn test_ecdsa_secp256r1_compatibility() {
 fn test_sha256_hash() {
     // Test SHA256 exactly like C# Neo
     let test_cases = vec![
-        (&b""[..], "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
-        (&b"abc"[..], "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
-        (&b"Neo"[..], "effee861f3433baac2d48e5b422c771dfb3762fb096a4aa9a8ba49eb6e7d7c27"), // Corrected expected value
+        (
+            &b""[..],
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        ),
+        (
+            &b"abc"[..],
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        ),
+        (
+            &b"Neo"[..],
+            "effee861f3433baac2d48e5b422c771dfb3762fb096a4aa9a8ba49eb6e7d7c27",
+        ), // Corrected expected value
     ];
 
     for (input, expected) in test_cases {
@@ -185,7 +194,10 @@ fn test_base58_decode() {
                 assert!(decoded.is_empty());
             } else {
                 // For non-empty inputs, just verify decode worked
-                println!("Decode result for '{}': {:?} (re-encodes to '{}')", input, decoded, re_encoded);
+                println!(
+                    "Decode result for '{}': {:?} (re-encodes to '{}')",
+                    input, decoded, re_encoded
+                );
             }
         }
     }
@@ -227,7 +239,10 @@ fn test_base58_check_decode() {
         Err(_) => {
             // If decode fails, at least verify the encoding worked
             assert!(!encoded.is_empty());
-            println!("Base58Check decode failed, but encoding worked: {}", encoded);
+            println!(
+                "Base58Check decode failed, but encoding worked: {}",
+                encoded
+            );
         }
     }
 }
@@ -296,21 +311,21 @@ fn test_merkle_tree_operations() {
 fn test_crypto_class_methods() {
     use neo_cryptography::crypto::Crypto;
     use neo_cryptography::hash_algorithm::HashAlgorithm;
-    
+
     let test_data = b"Neo blockchain test data";
-    
+
     // Test Hash160 and Hash256 static methods
     let hash160_result = Crypto::hash160(test_data);
     let hash256_result = Crypto::hash256(test_data);
-    
+
     assert_eq!(hash160_result.len(), 20);
     assert_eq!(hash256_result.len(), 32);
-    
+
     // Test message hash generation
     let sha256_hash = Crypto::get_message_hash(test_data, HashAlgorithm::Sha256).unwrap();
     let sha512_hash = Crypto::get_message_hash(test_data, HashAlgorithm::Sha512).unwrap();
     let keccak256_hash = Crypto::get_message_hash(test_data, HashAlgorithm::Keccak256).unwrap();
-    
+
     assert_eq!(sha256_hash.len(), 32);
     assert_eq!(sha512_hash.len(), 64);
     assert_eq!(keccak256_hash.len(), 32);
@@ -320,16 +335,16 @@ fn test_crypto_class_methods() {
 #[test]
 fn test_crypto_validation_methods() {
     use neo_cryptography::crypto::Crypto;
-    
+
     let valid_signature = vec![0u8; 64];
     let invalid_signature = vec![0u8; 63];
     let valid_hash = vec![0u8; 32];
     let invalid_hash = vec![0u8; 31];
-    
+
     // Test signature format validation
     assert!(Crypto::validate_signature_format(&valid_signature));
     assert!(!Crypto::validate_signature_format(&invalid_signature));
-    
+
     // Test hash format validation
     assert!(Crypto::validate_hash_format(&valid_hash));
     assert!(!Crypto::validate_hash_format(&invalid_hash));
@@ -339,23 +354,25 @@ fn test_crypto_validation_methods() {
 #[test]
 fn test_helper_aes_encryption() {
     use neo_cryptography::helper;
-    
+
     let plaintext = b"Hello, Neo blockchain!";
     let key = vec![0u8; 32]; // 256-bit key
     let nonce = vec![1u8; 12]; // 96-bit nonce
-    
+
     // Test encryption
     let encrypted = helper::aes256_encrypt(plaintext, &key, &nonce, None).unwrap();
     assert!(encrypted.len() > plaintext.len()); // Should be larger due to nonce and tag
-    
+
     // Test decryption
     let decrypted = helper::aes256_decrypt(&encrypted, &key, None).unwrap();
     assert_eq!(decrypted, plaintext);
-    
+
     // Test with associated data
     let associated_data = b"additional auth data";
-    let encrypted_with_aad = helper::aes256_encrypt(plaintext, &key, &nonce, Some(associated_data)).unwrap();
-    let decrypted_with_aad = helper::aes256_decrypt(&encrypted_with_aad, &key, Some(associated_data)).unwrap();
+    let encrypted_with_aad =
+        helper::aes256_encrypt(plaintext, &key, &nonce, Some(associated_data)).unwrap();
+    let decrypted_with_aad =
+        helper::aes256_decrypt(&encrypted_with_aad, &key, Some(associated_data)).unwrap();
     assert_eq!(decrypted_with_aad, plaintext);
 }
 
@@ -363,13 +380,13 @@ fn test_helper_aes_encryption() {
 #[test]
 fn test_helper_rotation_functions() {
     use neo_cryptography::helper;
-    
+
     // Test 32-bit rotation
     let value_u32 = 0x12345678u32;
     let rotated_u32 = helper::rotate_left_u32(value_u32, 8);
     let expected_u32 = 0x34567812u32; // Rotate left by 8 bits
     assert_eq!(rotated_u32, expected_u32);
-    
+
     // Test 64-bit rotation
     let value_u64 = 0x123456789ABCDEF0u64;
     let rotated_u64 = helper::rotate_left_u64(value_u64, 16);
@@ -381,19 +398,19 @@ fn test_helper_rotation_functions() {
 #[test]
 fn test_helper_hash_slice_functions() {
     use neo_cryptography::helper;
-    
+
     let test_data = b"This is a long test string for slice hashing";
-    
+
     // Test SHA-256 slice hashing
     let sha256_slice = helper::sha256_slice(test_data, 5, 10).unwrap();
     let sha256_direct = hash::sha256(&test_data[5..15]);
     assert_eq!(sha256_slice, sha256_direct.to_vec());
-    
+
     // Test SHA-512 slice hashing
     let sha512_slice = helper::sha512_slice(test_data, 10, 15).unwrap();
     let sha512_direct = hash::sha512(&test_data[10..25]);
     assert_eq!(sha512_slice, sha512_direct.to_vec());
-    
+
     // Test bounds checking
     assert!(helper::sha256_slice(test_data, 100, 10).is_err());
     assert!(helper::sha512_slice(test_data, 0, 1000).is_err());

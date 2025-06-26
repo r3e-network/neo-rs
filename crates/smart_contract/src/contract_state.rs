@@ -3,10 +3,10 @@
 //! This module provides the ContractState struct which represents the state
 //! of a deployed smart contract in the Neo blockchain.
 
+use crate::manifest::ContractManifest;
 use neo_core::UInt160;
 use neo_io::{BinaryWriter, Serializable};
 use neo_vm::CallFlags;
-use crate::manifest::ContractManifest;
 
 /// Represents the state of a deployed smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -79,12 +79,7 @@ impl Default for MethodToken {
 
 impl ContractState {
     /// Creates a new contract state.
-    pub fn new(
-        id: i32,
-        hash: UInt160,
-        nef: NefFile,
-        manifest: ContractManifest,
-    ) -> Self {
+    pub fn new(id: i32, hash: UInt160, nef: NefFile, manifest: ContractManifest) -> Self {
         Self {
             id,
             update_counter: 0,
@@ -142,13 +137,15 @@ impl ContractState {
         writer.write_u16(self.update_counter)?;
         neo_io::Serializable::serialize(&self.hash, writer)?;
         neo_io::Serializable::serialize(&self.nef, writer)?;
-        
+
         // Use custom manifest serialization - explicit error conversion
-        match self.manifest.serialize(writer) {
-            Ok(()) => {},
-            Err(e) => return Err(neo_io::Error::InvalidData(format!("Manifest serialization error: {:?}", e))),
-        }
-        
+        self.manifest
+            .serialize(writer)
+            .map_err(|e| neo_io::IoError::InvalidData {
+                context: "Manifest serialization".to_string(),
+                value: format!("{:?}", e),
+            })?;
+
         Ok(())
     }
 
@@ -158,11 +155,16 @@ impl ContractState {
         let update_counter = reader.read_uint16()?;
         let hash = <UInt160 as neo_io::Serializable>::deserialize(reader)?;
         let nef = <NefFile as neo_io::Serializable>::deserialize(reader)?;
-        
+
         // Use custom manifest deserialization - explicit error conversion
         let manifest = match ContractManifest::deserialize(reader) {
             Ok(manifest) => manifest,
-            Err(e) => return Err(neo_io::Error::InvalidData(format!("Manifest deserialization error: {:?}", e))),
+            Err(e) => {
+                return Err(neo_io::IoError::InvalidData {
+                    context: "Manifest deserialization".to_string(),
+                    value: format!("{:?}", e),
+                });
+            }
         };
 
         Ok(Self {
@@ -268,10 +270,12 @@ impl Serializable for ContractState {
         writer.write_bytes(self.hash.as_bytes())?;
         self.nef.serialize(writer)?;
         // Handle manifest serialization error conversion
-        match self.manifest.serialize(writer) {
-            Ok(()) => {},
-            Err(e) => return Err(neo_io::Error::InvalidData(format!("Manifest serialization error: {:?}", e))),
-        }
+        self.manifest
+            .serialize(writer)
+            .map_err(|e| neo_io::IoError::InvalidData {
+                context: "Manifest serialization".to_string(),
+                value: format!("{:?}", e),
+            })?;
         Ok(())
     }
 
@@ -280,11 +284,16 @@ impl Serializable for ContractState {
         let update_counter = reader.read_uint16()?;
         let hash = <UInt160 as neo_io::Serializable>::deserialize(reader)?;
         let nef = <NefFile as neo_io::Serializable>::deserialize(reader)?;
-        
+
         // Use custom manifest deserialization - explicit error conversion
         let manifest = match ContractManifest::deserialize(reader) {
             Ok(manifest) => manifest,
-            Err(e) => return Err(neo_io::Error::InvalidData(format!("Manifest deserialization error: {:?}", e))),
+            Err(e) => {
+                return Err(neo_io::IoError::InvalidData {
+                    context: "Manifest deserialization".to_string(),
+                    value: format!("{:?}", e),
+                });
+            }
         };
 
         Ok(Self {
@@ -327,7 +336,10 @@ impl Serializable for NefFile {
     fn deserialize(reader: &mut neo_io::MemoryReader) -> neo_io::Result<Self> {
         let magic = reader.read_u32()?;
         if magic != 0x3346454E {
-            return Err(neo_io::Error::InvalidData("Invalid NEF magic".to_string()));
+            return Err(neo_io::IoError::InvalidData {
+                context: "NEF deserialization".to_string(),
+                value: format!("magic: 0x{:08X}", magic),
+            });
         }
 
         let compiler = reader.read_var_string(1024)?; // Max 1024 chars for compiler
@@ -372,7 +384,8 @@ impl Serializable for MethodToken {
 
     fn deserialize(reader: &mut neo_io::MemoryReader) -> neo_io::Result<Self> {
         let hash_bytes = reader.read_bytes(20)?;
-        let hash = UInt160::from_bytes(&hash_bytes).map_err(|e| neo_io::Error::InvalidData(e.to_string()))?;
+        let hash = UInt160::from_bytes(&hash_bytes)
+            .map_err(|e| neo_io::Error::InvalidData(e.to_string()))?;
         let method = reader.read_var_string(256)?; // Max 256 chars for method name
         let parameters_count = reader.read_uint16()?;
         let has_return_value = reader.read_boolean()?;
@@ -418,13 +431,7 @@ mod tests {
     #[test]
     fn test_method_token_creation() {
         let hash = UInt160::zero();
-        let token = MethodToken::new(
-            hash,
-            "test".to_string(),
-            2,
-            true,
-            CallFlags(0x01),
-        );
+        let token = MethodToken::new(hash, "test".to_string(), 2, true, CallFlags(0x01));
 
         assert_eq!(token.hash, hash);
         assert_eq!(token.method, "test");

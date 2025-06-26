@@ -2,15 +2,15 @@
 //!
 //! This module provides the numeric operation handlers for the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::StackItem;
-use crate::Error;
-use crate::Result;
 use num_bigint::BigInt;
-use num_traits::{One, Zero, Signed, ToPrimitive};
+use num_traits::{One, Signed, ToPrimitive, Zero};
 
 /// Registers the numeric operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
@@ -52,9 +52,11 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 /// Implements the INC operation.
-fn inc(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn inc(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the value from the stack
     let value = context.pop()?.as_int()?;
@@ -69,9 +71,11 @@ fn inc(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the DEC operation.
-fn dec(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn dec(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the value from the stack
     let value = context.pop()?.as_int()?;
@@ -86,9 +90,11 @@ fn dec(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the SIGN operation.
-fn sign(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn sign(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the value from the stack
     let value = context.pop()?.as_int()?;
@@ -109,9 +115,11 @@ fn sign(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the NEGATE operation.
-fn negate(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn negate(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the value from the stack
     let value = context.pop()?.as_int()?;
@@ -126,9 +134,11 @@ fn negate(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 }
 
 /// Implements the ABS operation.
-fn abs(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn abs(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the value from the stack
     let value = context.pop()?.as_int()?;
@@ -143,9 +153,11 @@ fn abs(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the ADD operation.
-fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?;
@@ -183,9 +195,11 @@ fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the SUB operation.
-fn sub(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn sub(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
@@ -201,9 +215,11 @@ fn sub(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the MUL operation.
-fn mul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn mul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
@@ -219,9 +235,11 @@ fn mul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the DIV operation.
-fn div(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn div(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
@@ -229,7 +247,7 @@ fn div(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 
     // Check for division by zero
     if b.is_zero() {
-        return Err(Error::InvalidOperation("Division by zero".into()));
+        return Err(VmError::invalid_operation_msg("Division by zero"));
     }
 
     // Divide the values
@@ -242,9 +260,11 @@ fn div(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the MOD operation.
-fn modulo(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn modulo(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
@@ -252,7 +272,7 @@ fn modulo(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 
     // Check for division by zero
     if b.is_zero() {
-        return Err(Error::InvalidOperation("Division by zero".into()));
+        return Err(VmError::invalid_operation_msg("Division by zero"));
     }
 
     // Calculate the modulo
@@ -265,9 +285,11 @@ fn modulo(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 }
 
 /// Implements the POW operation.
-fn pow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn pow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
@@ -275,11 +297,13 @@ fn pow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 
     // Check if the exponent is negative
     if b.is_negative() {
-        return Err(Error::InvalidOperation("Negative exponent".into()));
+        return Err(VmError::invalid_operation_msg("Negative exponent"));
     }
 
     // Convert the exponent to a u32
-    let exponent = b.to_u32().ok_or_else(|| Error::InvalidOperation("Exponent too large".into()))?;
+    let exponent = b
+        .to_u32()
+        .ok_or_else(|| VmError::invalid_operation_msg("Exponent too large"))?;
 
     // Calculate the power
     let result = a.pow(exponent);
@@ -291,16 +315,20 @@ fn pow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the SQRT operation.
-fn sqrt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn sqrt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the value from the stack
     let value = context.pop()?.as_int()?;
 
     // Check if the value is negative
     if value.is_negative() {
-        return Err(Error::InvalidOperation("Square root of negative number".into()));
+        return Err(VmError::invalid_operation_msg(
+            "Square root of negative number",
+        ));
     }
 
     // Calculate the square root (production-ready implementation matching C# VM.Sqrt exactly)
@@ -341,9 +369,11 @@ fn integer_sqrt(value: &BigInt) -> BigInt {
 }
 
 /// Implements the SHL operation.
-fn shl(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn shl(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
@@ -351,11 +381,13 @@ fn shl(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 
     // Check if the shift amount is negative
     if b.is_negative() {
-        return Err(Error::InvalidOperation("Negative shift amount".into()));
+        return Err(VmError::invalid_operation_msg("Negative shift amount"));
     }
 
     // Convert the shift amount to a u32
-    let shift = b.to_u32().ok_or_else(|| Error::InvalidOperation("Shift amount too large".into()))?;
+    let shift = b
+        .to_u32()
+        .ok_or_else(|| VmError::invalid_operation_msg("Shift amount too large"))?;
 
     // Perform the left shift
     let result = a << shift;
@@ -367,9 +399,11 @@ fn shl(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the SHR operation.
-fn shr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn shr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
@@ -377,11 +411,13 @@ fn shr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 
     // Check if the shift amount is negative
     if b.is_negative() {
-        return Err(Error::InvalidOperation("Negative shift amount".into()));
+        return Err(VmError::invalid_operation_msg("Negative shift amount"));
     }
 
     // Convert the shift amount to a u32
-    let shift = b.to_u32().ok_or_else(|| Error::InvalidOperation("Shift amount too large".into()))?;
+    let shift = b
+        .to_u32()
+        .ok_or_else(|| VmError::invalid_operation_msg("Shift amount too large"))?;
 
     // Perform the right shift
     let result = a >> shift;
@@ -393,9 +429,11 @@ fn shr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the MIN operation.
-fn min(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn min(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
@@ -411,9 +449,11 @@ fn min(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the MAX operation.
-fn max(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn max(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
@@ -429,9 +469,11 @@ fn max(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the WITHIN operation.
-fn within(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn within(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_int()?;
@@ -448,15 +490,17 @@ fn within(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 }
 
 /// Implements the LT operation.
-fn lt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn lt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
         // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
-            return Err(Error::InsufficientStackItems);
+            return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
         // If 0 items, let the pop() fail naturally to cause FAULT
     }
@@ -485,15 +529,17 @@ fn lt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the LE operation.
-fn le(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn le(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
         // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
-            return Err(Error::InsufficientStackItems);
+            return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
         // If 0 items, let the pop() fail naturally to cause FAULT
     }
@@ -504,9 +550,9 @@ fn le(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 
     // Handle null comparisons (null is less than any non-null value)
     let result = match (&a, &b) {
-        (StackItem::Null, StackItem::Null) => true,  // null <= null is true
-        (StackItem::Null, _) => true,                // null <= anything is true
-        (_, StackItem::Null) => false,               // anything <= null is false
+        (StackItem::Null, StackItem::Null) => true, // null <= null is true
+        (StackItem::Null, _) => true,               // null <= anything is true
+        (_, StackItem::Null) => false,              // anything <= null is false
         _ => {
             // Both are non-null, convert to integers and compare
             let a_int = a.as_int()?;
@@ -522,15 +568,17 @@ fn le(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the GT operation.
-fn gt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn gt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
         // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
-            return Err(Error::InsufficientStackItems);
+            return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
         // If 0 items, let the pop() fail naturally to cause FAULT
     }
@@ -559,15 +607,17 @@ fn gt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the GE operation.
-fn ge(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn ge(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
         // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
-            return Err(Error::InsufficientStackItems);
+            return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
         // If 0 items, let the pop() fail naturally to cause FAULT
     }
@@ -578,9 +628,9 @@ fn ge(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 
     // Handle null comparisons (null is less than any non-null value)
     let result = match (&a, &b) {
-        (StackItem::Null, StackItem::Null) => true,  // null >= null is true
-        (StackItem::Null, _) => false,               // null >= anything is false
-        (_, StackItem::Null) => true,                // anything >= null is true
+        (StackItem::Null, StackItem::Null) => true, // null >= null is true
+        (StackItem::Null, _) => false,              // null >= anything is false
+        (_, StackItem::Null) => true,               // anything >= null is true
         _ => {
             // Both are non-null, convert to integers and compare
             let a_int = a.as_int()?;
@@ -596,15 +646,17 @@ fn ge(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the NUMEQUAL operation.
-fn numequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn numequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
         // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
-            return Err(Error::InsufficientStackItems);
+            return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
         // If 0 items, let the pop() fail naturally to cause FAULT
     }
@@ -615,9 +667,9 @@ fn numequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<
 
     // Handle different types for numeric equality
     let result = match (&a, &b) {
-        (StackItem::Null, StackItem::Null) => true,  // null == null is true
-        (StackItem::Null, _) => false,               // null == anything is false
-        (_, StackItem::Null) => false,               // anything == null is false
+        (StackItem::Null, StackItem::Null) => true, // null == null is true
+        (StackItem::Null, _) => false,              // null == anything is false
+        (_, StackItem::Null) => false,              // anything == null is false
         (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool == b_bool, // boolean == boolean
         (StackItem::Boolean(a_bool), _) => {
             // Convert boolean to integer and compare
@@ -646,15 +698,17 @@ fn numequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<
 }
 
 /// Implements the NUMNOTEQUAL operation.
-fn numnotequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn numnotequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
         // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
-            return Err(Error::InsufficientStackItems);
+            return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
         // If 0 items, let the pop() fail naturally to cause FAULT
     }
@@ -696,9 +750,11 @@ fn numnotequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Resu
 }
 
 /// Implements the NOT operation.
-fn not(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn not(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the value from the stack
     let value = context.pop()?;
@@ -718,9 +774,11 @@ fn not(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the BOOLAND operation.
-fn booland(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn booland(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_bool()?;
@@ -736,9 +794,11 @@ fn booland(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<(
 }
 
 /// Implements the BOOLOR operation.
-fn boolor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn boolor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?.as_bool()?;
@@ -754,9 +814,11 @@ fn boolor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 }
 
 /// Implements the NZ operation.
-fn nz(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn nz(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the value from the stack
     let value = context.pop()?.as_int()?;
@@ -771,9 +833,11 @@ fn nz(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the MODMUL operation.
-fn modmul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn modmul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let modulus = context.pop()?.as_int()?;
@@ -782,7 +846,7 @@ fn modmul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 
     // Check for zero modulus
     if modulus.is_zero() {
-        return Err(Error::DivisionByZero);
+        return Err(VmError::division_by_zero_msg("division"));
     }
 
     // Perform modular multiplication: (a * b) % modulus
@@ -795,9 +859,11 @@ fn modmul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 }
 
 /// Implements the MODPOW operation.
-fn modpow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn modpow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let modulus = context.pop()?.as_int()?;
@@ -806,12 +872,14 @@ fn modpow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 
     // Check for zero modulus
     if modulus.is_zero() {
-        return Err(Error::DivisionByZero);
+        return Err(VmError::division_by_zero_msg("division"));
     }
 
     // Check for negative exponent
     if exponent.is_negative() {
-        return Err(Error::InvalidOperation("Negative exponent not supported".into()));
+        return Err(VmError::invalid_operation_msg(
+            "Negative exponent not supported",
+        ));
     }
 
     // Perform modular exponentiation: base^exponent % modulus

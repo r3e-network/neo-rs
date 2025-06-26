@@ -55,7 +55,7 @@ impl ScryptParameters {
     /// Gets the default scrypt parameters for NEP-2.
     pub fn default_nep2() -> Self {
         Self {
-            n: 16384,  // 2^14
+            n: 16384, // 2^14
             r: 8,
             p: 8,
             dklen: Some(64),
@@ -65,7 +65,7 @@ impl ScryptParameters {
     /// Gets the default scrypt parameters for NEP-6.
     pub fn default_nep6() -> Self {
         Self {
-            n: 16384,  // 2^14
+            n: 16384, // 2^14
             r: 8,
             p: 8,
             dklen: Some(64),
@@ -75,7 +75,7 @@ impl ScryptParameters {
     /// Gets fast scrypt parameters (for testing).
     pub fn fast() -> Self {
         Self {
-            n: 1024,   // 2^10
+            n: 1024, // 2^10
             r: 1,
             p: 1,
             dklen: Some(64),
@@ -96,7 +96,9 @@ impl ScryptParameters {
     pub fn validate(&self) -> Result<()> {
         // N must be a power of 2 and greater than 1
         if self.n <= 1 || (self.n & (self.n - 1)) != 0 {
-            return Err(Error::Other("N must be a power of 2 greater than 1".to_string()));
+            return Err(Error::Other(
+                "N must be a power of 2 greater than 1".to_string(),
+            ));
         }
 
         // R must be greater than 0
@@ -125,10 +127,13 @@ impl ScryptParameters {
         // Check derived key length
         if let Some(dklen) = self.dklen {
             if dklen == 0 {
-                return Err(Error::Other("Derived key length must be greater than 0".to_string()));
+                return Err(Error::Other(
+                    "Derived key length must be greater than 0".to_string(),
+                ));
             }
 
-            if dklen > 1024 * 1024 { // 1MB limit
+            if dklen > 1024 * 1024 {
+                // 1MB limit
                 return Err(Error::Other("Derived key length is too large".to_string()));
             }
         }
@@ -179,8 +184,7 @@ impl ScryptParameters {
         let log_n = self.log_n() as u8;
         let dklen = self.dklen.unwrap_or(64) as usize;
 
-        scrypt::Params::new(log_n, self.r, self.p, dklen)
-            .map_err(|e| Error::Scrypt(e.to_string()))
+        scrypt::Params::new(log_n, self.r, self.p, dklen).map_err(|e| Error::Scrypt(e.to_string()))
     }
 
     /// Creates from scrypt crate parameters.
@@ -217,7 +221,7 @@ impl ScryptPresets {
     /// Interactive parameters (fast, for real-time use).
     pub fn interactive() -> ScryptParameters {
         ScryptParameters {
-            n: 32768,  // 2^15
+            n: 32768, // 2^15
             r: 8,
             p: 1,
             dklen: Some(64),
@@ -242,7 +246,7 @@ impl ScryptPresets {
     /// Test parameters (very fast, for testing only).
     pub fn test() -> ScryptParameters {
         ScryptParameters {
-            n: 16,     // 2^4
+            n: 16, // 2^4
             r: 1,
             p: 1,
             dklen: Some(64),

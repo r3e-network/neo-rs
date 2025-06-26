@@ -1,10 +1,10 @@
 //! Arithmetic operation OpCodes for the Neo Virtual Machine.
-//! 
+//!
 //! This module contains all OpCodes related to numeric operations,
 //! including basic arithmetic, bitwise operations, and comparisons.
 
 /// Arithmetic operation OpCodes.
-/// 
+///
 /// These opcodes perform mathematical and bitwise operations on stack items.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -230,14 +230,23 @@ impl ArithmeticOpCode {
 
     /// Checks if this is a comparison operation.
     pub fn is_comparison(&self) -> bool {
-        matches!(self, Self::EQUAL | Self::NOTEQUAL | Self::MIN | Self::MAX | Self::WITHIN)
+        matches!(
+            self,
+            Self::EQUAL | Self::NOTEQUAL | Self::MIN | Self::MAX | Self::WITHIN
+        )
     }
 
     /// Checks if this is a unary operation (operates on one value).
     pub fn is_unary(&self) -> bool {
         matches!(
             self,
-            Self::INVERT | Self::INC | Self::DEC | Self::SIGN | Self::NEGATE | Self::ABS | Self::SQRT
+            Self::INVERT
+                | Self::INC
+                | Self::DEC
+                | Self::SIGN
+                | Self::NEGATE
+                | Self::ABS
+                | Self::SQRT
         )
     }
 
@@ -294,7 +303,15 @@ impl ArithmeticOpCode {
     pub fn is_commutative(&self) -> bool {
         matches!(
             self,
-            Self::AND | Self::OR | Self::XOR | Self::EQUAL | Self::NOTEQUAL | Self::ADD | Self::MUL | Self::MIN | Self::MAX
+            Self::AND
+                | Self::OR
+                | Self::XOR
+                | Self::EQUAL
+                | Self::NOTEQUAL
+                | Self::ADD
+                | Self::MUL
+                | Self::MIN
+                | Self::MAX
         )
     }
 }

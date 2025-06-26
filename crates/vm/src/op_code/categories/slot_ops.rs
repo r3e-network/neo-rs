@@ -1,10 +1,10 @@
 //! Slot operation OpCodes for the Neo Virtual Machine.
-//! 
+//!
 //! This module contains all OpCodes related to slot operations,
 //! including local variables, static fields, and arguments.
 
 /// Slot operation OpCodes.
-/// 
+///
 /// These opcodes manage local variables, static fields, and function arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

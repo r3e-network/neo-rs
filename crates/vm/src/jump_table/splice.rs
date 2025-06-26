@@ -2,13 +2,13 @@
 //!
 //! This module provides the splice operation handlers for the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::StackItem;
-use crate::Error;
-use crate::Result;
 use num_traits::ToPrimitive;
 
 /// Registers the splice operation handlers.
@@ -22,12 +22,18 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 /// Implements the NEWBUFFER operation.
-fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the size from the stack
-    let size = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid buffer size".into()))?;
+    let size = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid buffer size"))?;
 
     // Create a new buffer
     let buffer = StackItem::from_buffer(vec![0; size]);
@@ -39,26 +45,49 @@ fn new_buffer(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Resul
 }
 
 /// Implements the MEMCPY operation.
-fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
-    let count = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid count".into()))?;
-    let src_offset = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid source offset".into()))?;
-    let dst_offset = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid destination offset".into()))?;
+    let count = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
+    let src_offset = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid source offset"))?;
+    let dst_offset = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid destination offset"))?;
     let src = context.pop()?;
     let dst = context.pop()?;
 
     // Get the source and destination data
     let src_data = match src {
         StackItem::ByteString(data) | StackItem::Buffer(data) => data,
-        _ => return Err(Error::InvalidType("Expected ByteString or Buffer for source".into())),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected ByteString or Buffer for source",
+            ));
+        }
     };
 
     // Check bounds
     if src_offset + count > src_data.len() {
-        return Err(Error::InvalidOperation(format!("Source out of bounds: {} + {} > {}", src_offset, count, src_data.len())));
+        return Err(VmError::invalid_operation_msg(format!(
+            "Source out of bounds: {} + {} > {}",
+            src_offset,
+            count,
+            src_data.len()
+        )));
     }
 
     // Get the destination data
@@ -66,7 +95,12 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
         StackItem::Buffer(mut data) => {
             // Check bounds
             if dst_offset + count > data.len() {
-                return Err(Error::InvalidOperation(format!("Destination out of bounds: {} + {} > {}", dst_offset, count, data.len())));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Destination out of bounds: {} + {} > {}",
+                    dst_offset,
+                    count,
+                    data.len()
+                )));
             }
 
             // Copy the data
@@ -77,16 +111,22 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
             // Push the updated buffer onto the stack
             context.push(StackItem::from_buffer(data))?;
         }
-        _ => return Err(Error::InvalidType("Expected Buffer for destination".into())),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected Buffer for destination",
+            ));
+        }
     }
 
     Ok(())
 }
 
 /// Implements the CAT operation.
-fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
     let b = context.pop()?;
@@ -114,7 +154,11 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
             result.extend_from_slice(&b);
             StackItem::from_buffer(result)
         }
-        _ => return Err(Error::InvalidType("Expected ByteString or Buffer".into())),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected ByteString or Buffer",
+            ));
+        }
     };
 
     // Push the result onto the stack
@@ -124,13 +168,23 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the SUBSTR operation.
-fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
-    let count = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid count".into()))?;
-    let offset = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid offset".into()))?;
+    let count = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
+    let offset = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid offset"))?;
     let value = context.pop()?;
 
     // Get the substring
@@ -138,7 +192,12 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
         StackItem::ByteString(data) => {
             // Check bounds
             if offset + count > data.len() {
-                return Err(Error::InvalidOperation(format!("Substring out of bounds: {} + {} > {}", offset, count, data.len())));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Substring out of bounds: {} + {} > {}",
+                    offset,
+                    count,
+                    data.len()
+                )));
             }
 
             // Get the substring
@@ -148,14 +207,23 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
         StackItem::Buffer(data) => {
             // Check bounds
             if offset + count > data.len() {
-                return Err(Error::InvalidOperation(format!("Substring out of bounds: {} + {} > {}", offset, count, data.len())));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Substring out of bounds: {} + {} > {}",
+                    offset,
+                    count,
+                    data.len()
+                )));
             }
 
             // Get the substring
             let substring = data[offset..offset + count].to_vec();
             StackItem::from_buffer(substring)
         }
-        _ => return Err(Error::InvalidType("Expected ByteString or Buffer".into())),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected ByteString or Buffer",
+            ));
+        }
     };
 
     // Push the result onto the stack
@@ -165,12 +233,18 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 }
 
 /// Implements the LEFT operation.
-fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
-    let count = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid count".into()))?;
+    let count = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;
 
     // Get the left part
@@ -178,7 +252,11 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> 
         StackItem::ByteString(data) => {
             // Check bounds
             if count > data.len() {
-                return Err(Error::InvalidOperation(format!("Left out of bounds: {} > {}", count, data.len())));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Left out of bounds: {} > {}",
+                    count,
+                    data.len()
+                )));
             }
 
             // Get the left part
@@ -188,14 +266,22 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> 
         StackItem::Buffer(data) => {
             // Check bounds
             if count > data.len() {
-                return Err(Error::InvalidOperation(format!("Left out of bounds: {} > {}", count, data.len())));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Left out of bounds: {} > {}",
+                    count,
+                    data.len()
+                )));
             }
 
             // Get the left part
             let left = data[..count].to_vec();
             StackItem::from_buffer(left)
         }
-        _ => return Err(Error::InvalidType("Expected ByteString or Buffer".into())),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected ByteString or Buffer",
+            ));
+        }
     };
 
     // Push the result onto the stack
@@ -205,12 +291,18 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the RIGHT operation.
-fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the values from the stack
-    let count = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid count".into()))?;
+    let count = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
     let value = context.pop()?;
 
     // Get the right part
@@ -218,7 +310,11 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()>
         StackItem::ByteString(data) => {
             // Check bounds
             if count > data.len() {
-                return Err(Error::InvalidOperation(format!("Right out of bounds: {} > {}", count, data.len())));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Right out of bounds: {} > {}",
+                    count,
+                    data.len()
+                )));
             }
 
             // Get the right part
@@ -228,14 +324,22 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()>
         StackItem::Buffer(data) => {
             // Check bounds
             if count > data.len() {
-                return Err(Error::InvalidOperation(format!("Right out of bounds: {} > {}", count, data.len())));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Right out of bounds: {} > {}",
+                    count,
+                    data.len()
+                )));
             }
 
             // Get the right part
             let right = data[data.len() - count..].to_vec();
             StackItem::from_buffer(right)
         }
-        _ => return Err(Error::InvalidType("Expected ByteString or Buffer".into())),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected ByteString or Buffer",
+            ));
+        }
     };
 
     // Push the result onto the stack

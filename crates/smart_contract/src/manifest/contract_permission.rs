@@ -3,11 +3,11 @@
 //! Defines the permissions that a contract requires to call other contracts
 //! and access their methods.
 
+use super::{ContractGroup, ContractManifest, WildcardContainer};
+use crate::{Error, Result};
 use neo_core::UInt160;
 use neo_cryptography::ecc::ECPoint;
 use serde::{Deserialize, Serialize};
-use crate::{Error, Result};
-use super::{WildcardContainer, ContractGroup, ContractManifest};
 
 /// Represents a permission that a contract requires.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,10 +35,7 @@ pub enum ContractPermissionDescriptor {
 
 impl ContractPermission {
     /// Creates a new contract permission.
-    pub fn new(
-        contract: ContractPermissionDescriptor,
-        methods: WildcardContainer<String>,
-    ) -> Self {
+    pub fn new(contract: ContractPermissionDescriptor, methods: WildcardContainer<String>) -> Self {
         Self { contract, methods }
     }
 
@@ -117,7 +114,7 @@ impl ContractPermission {
             ContractPermissionDescriptor::Wildcard(s) => {
                 if s != "*" {
                     return Err(Error::InvalidManifest(
-                        "Invalid wildcard in contract permission".to_string()
+                        "Invalid wildcard in contract permission".to_string(),
                     ));
                 }
             }
@@ -127,7 +124,7 @@ impl ContractPermission {
             ContractPermissionDescriptor::Group(pubkey) => {
                 if !pubkey.is_valid() {
                     return Err(Error::InvalidManifest(
-                        "Invalid public key in contract permission".to_string()
+                        "Invalid public key in contract permission".to_string(),
                     ));
                 }
             }
@@ -136,14 +133,14 @@ impl ContractPermission {
         // Validate method permission
         if !self.methods.is_wildcard() && self.methods.count() == 0 {
             return Err(Error::InvalidManifest(
-                "Method list cannot be empty".to_string()
+                "Method list cannot be empty".to_string(),
             ));
         }
 
         for method in self.methods.values() {
             if method.is_empty() {
                 return Err(Error::InvalidManifest(
-                    "Method name cannot be empty".to_string()
+                    "Method name cannot be empty".to_string(),
                 ));
             }
         }
@@ -172,7 +169,7 @@ impl ContractPermissionDescriptor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_cryptography::ecc::{ECPoint, ECCurve};
+    use neo_cryptography::ecc::{ECCurve, ECPoint};
 
     #[test]
     fn test_wildcard_permission() {

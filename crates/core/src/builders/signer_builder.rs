@@ -11,7 +11,7 @@
 
 //! Builder for transaction signers.
 
-use crate::{Signer, UInt160, WitnessScope, WitnessRule};
+use crate::{Signer, UInt160, WitnessRule, WitnessScope};
 
 /// Builder for transaction signers (matches C# SignerBuilder exactly).
 #[derive(Debug)]
@@ -33,7 +33,7 @@ impl SignerBuilder {
                 allowed_contracts: Vec::new(),
                 allowed_groups: Vec::new(),
                 rules: Vec::new(),
-            }
+            },
         }
     }
 

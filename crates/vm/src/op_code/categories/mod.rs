@@ -3,22 +3,22 @@
 //! This module organizes OpCodes into logical categories for better maintainability
 //! and understanding. Each category represents a specific type of operation.
 
+pub mod arithmetic;
+pub mod compound_ops;
 pub mod constants;
 pub mod flow_control;
-pub mod stack_ops;
-pub mod arithmetic;
 pub mod slot_ops;
 pub mod splice_ops;
-pub mod compound_ops;
+pub mod stack_ops;
 pub mod type_ops;
 
+pub use arithmetic::ArithmeticOpCode;
+pub use compound_ops::CompoundOpCode;
 pub use constants::ConstantOpCode;
 pub use flow_control::FlowControlOpCode;
-pub use stack_ops::StackOpCode;
-pub use arithmetic::ArithmeticOpCode;
 pub use slot_ops::SlotOpCode;
 pub use splice_ops::SpliceOpCode;
-pub use compound_ops::CompoundOpCode;
+pub use stack_ops::StackOpCode;
 pub use type_ops::TypeOpCode;
 
 /// All OpCode categories combined into a single enum.
@@ -69,7 +69,12 @@ impl OpCodeCategory {
     pub fn modifies_stack(&self) -> bool {
         matches!(
             self,
-            Self::Constant(_) | Self::Stack(_) | Self::Arithmetic(_) | Self::Slot(_) | Self::Compound(_) | Self::Type(_)
+            Self::Constant(_)
+                | Self::Stack(_)
+                | Self::Arithmetic(_)
+                | Self::Slot(_)
+                | Self::Compound(_)
+                | Self::Type(_)
         )
     }
 

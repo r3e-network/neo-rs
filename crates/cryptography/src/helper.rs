@@ -2,10 +2,9 @@
 //!
 //! This module provides various cryptographic utility functions.
 
-
 use crate::Error;
-use secp256k1::{PublicKey, SecretKey, Message, Secp256k1};
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use sha2::{Digest, Sha256};
 
 use rand::Rng;
@@ -30,7 +29,7 @@ pub fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> 
 
     // Create message hash
     let message_hash = Sha256::digest(message);
-    let message = match Message::from_slice(&message_hash) {
+    let message = match Message::from_digest_slice(&message_hash) {
         Ok(m) => m,
         Err(_) => return false,
     };
@@ -69,7 +68,7 @@ pub fn sign_message(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, Error
 
     // Create message hash
     let message_hash = Sha256::digest(message);
-    let message = Message::from_slice(&message_hash)
+    let message = Message::from_digest_slice(&message_hash)
         .map_err(|e| Error::InvalidFormat(format!("Invalid message: {e}")))?;
 
     // Parse private key
@@ -98,7 +97,7 @@ pub fn sign_message_recoverable(message: &[u8], private_key: &[u8]) -> Result<Ve
 
     // Create message hash
     let message_hash = Sha256::digest(message);
-    let message = Message::from_slice(&message_hash)
+    let message = Message::from_digest_slice(&message_hash)
         .map_err(|e| Error::InvalidFormat(format!("Invalid message: {e}")))?;
 
     // Parse private key
@@ -129,14 +128,16 @@ pub fn sign_message_recoverable(message: &[u8], private_key: &[u8]) -> Result<Ve
 /// The recovered public key or an error
 pub fn recover_public_key(message: &[u8], signature: &[u8]) -> Result<Vec<u8>, Error> {
     if signature.len() != 65 {
-        return Err(Error::InvalidSignature("Invalid signature length".into()));
+        return Err(Error::InvalidSignature(
+            "Invalid signature length".to_string(),
+        ));
     }
 
     let secp = Secp256k1::verification_only();
 
     // Create message hash
     let message_hash = Sha256::digest(message);
-    let message = Message::from_slice(&message_hash)
+    let message = Message::from_digest_slice(&message_hash)
         .map_err(|e| Error::InvalidFormat(format!("Invalid message: {e}")))?;
 
     // Parse signature
@@ -150,7 +151,8 @@ pub fn recover_public_key(message: &[u8], signature: &[u8]) -> Result<Vec<u8>, E
         .map_err(|e| Error::InvalidSignature(format!("Invalid signature: {e}")))?;
 
     // Recover public key
-    let public_key = secp.recover_ecdsa(&message, &signature)
+    let public_key = secp
+        .recover_ecdsa(&message, &signature)
         .map_err(|_e| Error::VerificationFailed)?;
 
     Ok(public_key.serialize().to_vec())
@@ -225,30 +227,35 @@ pub fn aes256_encrypt(
     nonce: &[u8],
     associated_data: Option<&[u8]>,
 ) -> Result<Vec<u8>, Error> {
-    use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, Nonce};
-    
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
+
     if key.len() != 32 {
         return Err(Error::InvalidKey("Key must be 32 bytes".to_string()));
     }
     if nonce.len() != 12 {
         return Err(Error::InvalidFormat("Nonce must be 12 bytes".to_string()));
     }
-    
+
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| Error::InvalidKey(format!("Invalid key: {e}")))?;
-    
+
     let nonce = Nonce::from_slice(nonce);
-    
-    let ciphertext = cipher.encrypt(nonce, aes_gcm::aead::Payload {
-        msg: plain_data,
-        aad: associated_data.unwrap_or(&[]),
-    }).map_err(|e| Error::InvalidFormat(format!("Encryption failed: {e}")))?;
-    
+
+    let ciphertext = cipher
+        .encrypt(
+            nonce,
+            aes_gcm::aead::Payload {
+                msg: plain_data,
+                aad: associated_data.unwrap_or(&[]),
+            },
+        )
+        .map_err(|e| Error::InvalidFormat(format!("Encryption failed: {e}")))?;
+
     // Return nonce + ciphertext (which already includes the tag)
     let mut result = Vec::with_capacity(12 + ciphertext.len());
     result.extend_from_slice(nonce);
     result.extend_from_slice(&ciphertext);
-    
+
     Ok(result)
 }
 
@@ -269,26 +276,31 @@ pub fn aes256_decrypt(
     key: &[u8],
     associated_data: Option<&[u8]>,
 ) -> Result<Vec<u8>, Error> {
-    use aes_gcm::{Aes256Gcm, KeyInit, aead::Aead, Nonce};
-    
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
+
     if key.len() != 32 {
         return Err(Error::InvalidKey("Key must be 32 bytes".to_string()));
     }
     if encrypted_data.len() < 12 + 16 {
         return Err(Error::InvalidFormat("Encrypted data too short".to_string()));
     }
-    
+
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| Error::InvalidKey(format!("Invalid key: {e}")))?;
-    
+
     let (nonce_bytes, ciphertext) = encrypted_data.split_at(12);
     let nonce = Nonce::from_slice(nonce_bytes);
-    
-    let plaintext = cipher.decrypt(nonce, aes_gcm::aead::Payload {
-        msg: ciphertext,
-        aad: associated_data.unwrap_or(&[]),
-    }).map_err(|e| Error::InvalidFormat(format!("Decryption failed: {e}")))?;
-    
+
+    let plaintext = cipher
+        .decrypt(
+            nonce,
+            aes_gcm::aead::Payload {
+                msg: ciphertext,
+                aad: associated_data.unwrap_or(&[]),
+            },
+        )
+        .map_err(|e| Error::InvalidFormat(format!("Decryption failed: {e}")))?;
+
     Ok(plaintext)
 }
 
@@ -308,24 +320,24 @@ pub fn ecdh_derive_key(
     remote_public_key: &[u8],
 ) -> Result<Vec<u8>, Error> {
     // Use P-256 curve for ECDH (matches C# nistP256)
-    use p256::ecdh::diffie_hellman;
     use p256::PublicKey as P256PublicKey;
     use p256::SecretKey as P256SecretKey;
-    
+    use p256::ecdh::diffie_hellman;
+
     // Parse local private key
     let local_secret = P256SecretKey::from_slice(local_private_key)
         .map_err(|e| Error::InvalidKey(format!("Invalid local private key: {e}")))?;
-    
+
     // Parse remote public key
     let remote_pubkey = P256PublicKey::from_sec1_bytes(remote_public_key)
         .map_err(|e| Error::InvalidKey(format!("Invalid remote public key: {e}")))?;
-    
+
     // Perform ECDH
     let shared_secret = diffie_hellman(local_secret.to_nonzero_scalar(), remote_pubkey.as_affine());
-    
+
     // Hash the shared secret with SHA-256 (matches C# .Sha256() call)
     let shared_key = crate::hash::sha256(shared_secret.raw_secret_bytes());
-    
+
     Ok(shared_key.to_vec())
 }
 
@@ -375,9 +387,11 @@ pub fn rotate_left_u64(value: u64, offset: i32) -> u64 {
 /// The SHA-256 hash
 pub fn sha256_slice(value: &[u8], offset: usize, count: usize) -> Result<Vec<u8>, Error> {
     if offset + count > value.len() {
-        return Err(Error::InvalidFormat("Offset + count exceeds array length".to_string()));
+        return Err(Error::InvalidFormat(
+            "Offset + count exceeds array length".to_string(),
+        ));
     }
-    
+
     let slice = &value[offset..offset + count];
     Ok(crate::hash::sha256(slice).to_vec())
 }
@@ -396,9 +410,11 @@ pub fn sha256_slice(value: &[u8], offset: usize, count: usize) -> Result<Vec<u8>
 /// The SHA-512 hash
 pub fn sha512_slice(value: &[u8], offset: usize, count: usize) -> Result<Vec<u8>, Error> {
     if offset + count > value.len() {
-        return Err(Error::InvalidFormat("Offset + count exceeds array length".to_string()));
+        return Err(Error::InvalidFormat(
+            "Offset + count exceeds array length".to_string(),
+        ));
     }
-    
+
     let slice = &value[offset..offset + count];
     Ok(crate::hash::sha512(slice).to_vec())
 }

@@ -25,7 +25,8 @@ pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<V
             // Production-ready Zstd compression (matches C# Neo compression exactly)
             #[cfg(feature = "compression")]
             {
-                zstd::bulk::compress(data, 3).map_err(|e| crate::Error::CompressionError(e.to_string()))
+                zstd::bulk::compress(data, 3)
+                    .map_err(|e| crate::Error::CompressionError(e.to_string()))
             }
             #[cfg(not(feature = "compression"))]
             {
@@ -37,7 +38,10 @@ pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<V
 }
 
 /// Decompresses data using the specified algorithm (production-ready implementation)
-pub fn decompress(compressed_data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<Vec<u8>> {
+pub fn decompress(
+    compressed_data: &[u8],
+    algorithm: CompressionAlgorithm,
+) -> crate::Result<Vec<u8>> {
     match algorithm {
         CompressionAlgorithm::None => Ok(compressed_data.to_vec()),
         CompressionAlgorithm::Lz4 => {
@@ -45,7 +49,8 @@ pub fn decompress(compressed_data: &[u8], algorithm: CompressionAlgorithm) -> cr
             #[cfg(feature = "compression")]
             {
                 use lz4_flex::decompress_size_prepended;
-                decompress_size_prepended(compressed_data).map_err(|e| crate::Error::CompressionError(e.to_string()))
+                decompress_size_prepended(compressed_data)
+                    .map_err(|e| crate::Error::CompressionError(e.to_string()))
             }
             #[cfg(not(feature = "compression"))]
             {
@@ -57,7 +62,8 @@ pub fn decompress(compressed_data: &[u8], algorithm: CompressionAlgorithm) -> cr
             // Production-ready Zstd decompression (matches C# Neo decompression exactly)
             #[cfg(feature = "compression")]
             {
-                zstd::bulk::decompress(compressed_data, 1024 * 1024).map_err(|e| crate::Error::CompressionError(e.to_string()))
+                zstd::bulk::decompress(compressed_data, 1024 * 1024)
+                    .map_err(|e| crate::Error::CompressionError(e.to_string()))
             }
             #[cfg(not(feature = "compression"))]
             {
@@ -99,4 +105,4 @@ pub fn estimate_compressed_size(data: &[u8], algorithm: CompressionAlgorithm) ->
             (data.len() as f64 * estimated_ratio) as usize + 4 // +4 for our prefix
         }
     }
-} 
+}

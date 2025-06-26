@@ -88,22 +88,24 @@ impl SchemaMigration {
     pub fn apply(&mut self) -> Result<()> {
         // Production-ready migration application (matches C# Neo database migration exactly)
         // In C# Neo: this would execute the migration script against the database
-        
+
         // 1. Validate migration script
         if self.script.is_empty() {
-            return Err(crate::Error::Generic("Migration script is empty".to_string()));
+            return Err(crate::Error::Generic(
+                "Migration script is empty".to_string(),
+            ));
         }
-        
+
         // 2. Execute migration operations
         // In production, this would:
         // - Parse the migration script
         // - Execute database schema changes
         // - Update migration tracking table
         // - Verify migration success
-        
+
         // 3. Mark as applied
         self.applied = true;
-        
+
         Ok(())
     }
 
@@ -111,22 +113,24 @@ impl SchemaMigration {
     pub fn revert(&mut self) -> Result<()> {
         // Production-ready migration reversion (matches C# Neo database migration exactly)
         // In C# Neo: this would execute the rollback script against the database
-        
+
         // 1. Check if migration can be reverted
         if !self.applied {
-            return Err(crate::Error::Generic("Migration not applied, cannot revert".to_string()));
+            return Err(crate::Error::Generic(
+                "Migration not applied, cannot revert".to_string(),
+            ));
         }
-        
+
         // 2. Execute rollback operations
         // In production, this would:
         // - Parse the rollback script
         // - Execute database schema rollback
         // - Update migration tracking table
         // - Verify rollback success
-        
+
         // 3. Mark as not applied
         self.applied = false;
-        
+
         Ok(())
     }
 }
@@ -160,17 +164,18 @@ impl MigrationManager {
     pub fn apply_migrations(&mut self) -> Result<()> {
         // Production-ready migration application (matches C# Neo database migration exactly)
         // In C# Neo: this would apply all pending migrations in order
-        
+
         // 1. Get all pending migration versions
-        let mut pending_versions: Vec<u32> = self.migrations
+        let mut pending_versions: Vec<u32> = self
+            .migrations
             .values()
             .filter(|m| !m.applied && m.version > self.current_version)
             .map(|m| m.version)
             .collect();
-        
+
         // 2. Sort by version
         pending_versions.sort();
-        
+
         // 3. Apply each migration in order
         for version in pending_versions {
             // Apply the migration
@@ -179,7 +184,7 @@ impl MigrationManager {
                 self.current_version = version;
             }
         }
-        
+
         Ok(())
     }
 
@@ -187,27 +192,28 @@ impl MigrationManager {
     pub fn revert_to_version(&mut self, target_version: u32) -> Result<()> {
         // Production-ready migration reversion (matches C# Neo database migration exactly)
         // In C# Neo: this would revert migrations back to the target version
-        
+
         // 1. Get migration versions to revert (in reverse order)
-        let mut versions_to_revert: Vec<u32> = self.migrations
+        let mut versions_to_revert: Vec<u32> = self
+            .migrations
             .values()
             .filter(|m| m.applied && m.version > target_version)
             .map(|m| m.version)
             .collect();
-        
+
         // 2. Sort by version (descending)
         versions_to_revert.sort_by(|a, b| b.cmp(a));
-        
+
         // 3. Revert each migration
         for version in versions_to_revert {
             if let Some(migration) = self.migrations.get_mut(&version) {
                 migration.revert()?;
             }
         }
-        
+
         // 4. Update current version
         self.current_version = target_version;
-        
+
         Ok(())
     }
 
@@ -225,11 +231,12 @@ impl MigrationManager {
 
     /// Gets pending migrations
     pub fn get_pending_migrations(&self) -> Vec<&SchemaMigration> {
-        let mut pending: Vec<_> = self.migrations
+        let mut pending: Vec<_> = self
+            .migrations
             .values()
             .filter(|m| !m.applied && m.version > self.current_version)
             .collect();
         pending.sort_by_key(|m| m.version);
         pending
     }
-} 
+}
