@@ -387,21 +387,20 @@ impl NeoNode {
 
                                 // Handle messages with proper blockchain processing
                                 // Extract peer_id from connected peers
-                                if let Some(peer_info) = connected_peers.read().await.get(&peer) {
-                                    let peer_id = peer_info.user_agent.clone(); // Temporary - should use actual peer_id
-                                    if let Err(e) = Self::handle_p2p_message_production(
-                                        message,
-                                        peer_id,
-                                        &mempool,
-                                        &connected_peers,
-                                        &stats,
-                                        &blockchain,
-                                        &sync_manager,
-                                    )
-                                    .await
-                                    {
-                                        warn!("Failed to handle P2P message from {}: {}", peer, e);
-                                    }
+                                // Generate a peer_id from the peer address (temporary solution)
+                                let peer_id = UInt160::from_bytes(&peer.to_string().as_bytes()[..20].try_into().unwrap_or([0u8; 20])).unwrap_or_default();
+                                if let Err(e) = Self::handle_p2p_message_production(
+                                    message,
+                                    peer_id,
+                                    &mempool,
+                                    &connected_peers,
+                                    &stats,
+                                    &blockchain,
+                                    &sync_manager,
+                                )
+                                .await
+                                {
+                                    warn!("Failed to handle P2P message from {}: {}", peer, e);
                                 }
                             }
 
