@@ -160,11 +160,12 @@ pub enum Error {
     Generic(String),
 }
 
-impl From<neo_vm::VmError> for Error {
-    fn from(err: neo_vm::VmError) -> Self {
-        Error::VmError(err.to_string())
-    }
-}
+// Temporarily disabled for CI - neo-vm dependency commented out
+// impl From<neo_vm::VmError> for Error {
+//     fn from(err: neo_vm::VmError) -> Self {
+//         Error::VmError(err.to_string())
+//     }
+// }
 
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {

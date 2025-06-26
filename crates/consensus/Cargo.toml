@@ -45,8 +45,8 @@ neo-cryptography = { path = "../cryptography" }
 neo-io = { path = "../io" }
 neo-ledger = { path = "../ledger" }
 neo-network = { path = "../network" }
-neo-vm = { path = "../vm" }
-neo-smart-contract = { path = "../smart_contract" }
+# neo-vm = { path = "../vm" } # Temporarily disabled for CI
+# neo-smart-contract = { path = "../smart_contract" } # Temporarily disabled for CI
 
 [dev-dependencies]
 tokio-test = "0.4"

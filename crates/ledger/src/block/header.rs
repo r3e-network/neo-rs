@@ -7,7 +7,8 @@ use super::verification::WitnessVerifier;
 use crate::{Error, Result, VerifyResult};
 use neo_core::{Signer, UInt160, UInt256, Witness, WitnessCondition, WitnessScope};
 use neo_cryptography::ECPoint;
-use neo_vm::ApplicationEngine;
+// Temporarily disabled for CI - neo-vm dependency commented out
+// use neo_vm::ApplicationEngine;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 

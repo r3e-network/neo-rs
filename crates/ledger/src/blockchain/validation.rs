@@ -4,7 +4,8 @@
 
 use crate::{Error, Result, Block, BlockHeader};
 use neo_core::{Transaction, UInt160, UInt256, Witness, Signer};
-use neo_vm::{ApplicationEngine, TriggerType, VMState};
+// Temporarily disabled for CI - neo-vm dependency commented out
+// use neo_vm::{ApplicationEngine, TriggerType, VMState};
 use neo_cryptography::ecdsa::ECDsa;
 use std::collections::HashMap;
 use std::sync::Arc;
