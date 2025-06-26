@@ -68,10 +68,7 @@ jobs:
       - name: Check documentation
         run: |
           echo "🔍 Building documentation..."
-          cargo doc --all-features || {
-            echo "❌ Documentation build failed!"
-            exit 1
-          }
+          cargo doc --all-features
           echo "✅ Documentation build passed"
 
   # Test suite on Ubuntu with stable Rust
