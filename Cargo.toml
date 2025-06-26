@@ -307,10 +307,6 @@ name = "network_test"
 path = "examples/network_test.rs"
 required-features = ["network"]
 
-[[example]]
-name = "minimal_node"
-path = "examples/minimal_node.rs"
-required-features = ["minimal"]
 
 # Profiles
 [profile.release]
