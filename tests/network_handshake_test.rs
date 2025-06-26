@@ -14,12 +14,7 @@ async fn test_handshake_with_real_node() -> Result<(), Box<dyn std::error::Error
     println!("🔌 Testing handshake with real Neo N3 node...");
 
     // Create version message using our protocol implementation
-    let node_info = NodeInfo {
-        user_agent: "neo-rs/0.1.0".to_string(),
-        protocol_version: 3,
-        network: neo_config::NetworkType::TestNet,
-        port: 20333,
-    };
+    let node_info = NodeInfo::new(UInt160::zero(), 0);
 
     let version_msg = ProtocolMessage::version(&node_info, 20333, true);
     let version_bytes = version_msg.to_bytes()?;
@@ -103,12 +98,7 @@ async fn test_handshake_with_real_node() -> Result<(), Box<dyn std::error::Error
 async fn test_version_message_serialization() -> Result<(), Box<dyn std::error::Error>> {
     println!("🧪 Testing version message serialization...");
 
-    let node_info = NodeInfo {
-        user_agent: "neo-rs/0.1.0".to_string(),
-        protocol_version: 3,
-        network: NetworkType::TestNet,
-        port: 20333,
-    };
+    let node_info = NodeInfo::new(UInt160::zero(), 0);
 
     let version_msg = ProtocolMessage::version(&node_info, 20333, true);
     let serialized = version_msg.to_bytes()?;
