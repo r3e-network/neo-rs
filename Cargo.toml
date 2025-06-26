@@ -29,7 +29,7 @@ members = [
     "crates/rpc_client",
     
     # Applications
-    "crates/cli",
+    # "crates/cli", # Temporarily disabled due to API mismatches
     "crates/wallets",
     
     # Node implementations
@@ -81,7 +81,7 @@ neo-mpt-trie = { path = "crates/mpt_trie", version = "0.3.0" }
 neo-config = { path = "crates/config", version = "0.3.0" }
 neo-rpc-server = { path = "crates/rpc_server", version = "0.3.0" }
 neo-rpc-client = { path = "crates/rpc_client", version = "0.3.0" }
-neo-cli = { path = "crates/cli", version = "0.3.0" }
+# neo-cli = { path = "crates/cli", version = "0.3.0" } # Temporarily disabled
 neo-bls12-381 = { path = "crates/bls12_381", version = "0.3.0" }
 neo-extensions = { path = "crates/extensions", version = "0.3.0" }
 
@@ -207,7 +207,7 @@ neo-config.workspace = true
 neo-ledger.workspace = true
 neo-network.workspace = true
 neo-persistence.workspace = true
-neo-cli.workspace = true
+# neo-cli.workspace = true # Temporarily disabled
 
 # Runtime and async
 tokio.workspace = true
