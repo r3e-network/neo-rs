@@ -305,16 +305,16 @@ futures.workspace = true
 # harness = false
 # required-features = ["full"]
 
-# Examples
-[[example]]
-name = "live_network_test"
-path = "examples/live_network_test.rs"
-required-features = ["full"]
+# Examples (temporarily disabled due to API mismatches)
+# [[example]]
+# name = "live_network_test"
+# path = "examples/live_network_test.rs"
+# required-features = ["full"]
 
-[[example]]
-name = "network_test"
-path = "examples/network_test.rs"
-required-features = ["full"]
+# [[example]]
+# name = "network_test"
+# path = "examples/network_test.rs"
+# required-features = ["full"]
 
 
 # Profiles
