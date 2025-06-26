@@ -68,7 +68,7 @@ jobs:
       - name: Check documentation
         run: |
           echo "🔍 Building documentation..."
-          cargo doc --no-deps --all-features || {
+          cargo doc --all-features || {
             echo "❌ Documentation build failed!"
             exit 1
           }
@@ -239,11 +239,12 @@ jobs:
       - name: Build documentation
         run: |
           echo "📚 Building documentation for deployment..."
-          cargo doc --all-features --no-deps || {
+          cargo doc --all-features || {
             echo "❌ Documentation build failed!"
             exit 1
           }
-          echo '<meta http-equiv=refresh content=0;url=neo_rs/index.html>' > target/doc/index.html
+          # Create index.html redirect for GitHub Pages
+          echo '<meta http-equiv=refresh content=0;url=neo_core/index.html>' > target/doc/index.html
           echo "✅ Documentation build successful"
 
       - name: Deploy to GitHub Pages
