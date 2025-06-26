@@ -3,21 +3,6 @@ name = "neo-network"
 version = "0.3.0"
 edition = "2021"
 
-[[bin]]
-name = "test_network_connectivity"
-path = "test_network_connectivity.rs"
-
-[[bin]]
-name = "test_improved_messaging"
-path = "src/test_improved_messaging.rs"
-
-[[bin]]
-name = "simple_message_test"
-path = "src/simple_message_test.rs"
-
-[[bin]]
-name = "complete_handshake_test"
-path = "src/complete_handshake_test.rs"
 
 [dependencies]
 # Core dependencies
