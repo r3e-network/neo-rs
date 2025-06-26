@@ -208,6 +208,9 @@ neo-ledger.workspace = true
 neo-network.workspace = true
 neo-persistence.workspace = true
 # neo-cli.workspace = true # Temporarily disabled
+neo-cryptography.workspace = true
+neo-smart-contract.workspace = true
+neo-vm.workspace = true
 
 # Runtime and async
 tokio.workspace = true
@@ -289,6 +292,12 @@ tempfile.workspace = true
 criterion.workspace = true
 proptest.workspace = true
 mockall.workspace = true
+tokio-test = "0.4"
+serde_json.workspace = true
+sha2.workspace = true
+bs58.workspace = true
+rand.workspace = true
+futures.workspace = true
 
 # Benchmarks
 [[bench]]

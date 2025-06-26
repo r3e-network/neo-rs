@@ -1,5 +1,6 @@
 //! Network handshake test focusing on P2P protocol compatibility
 
+use neo_config::NetworkType;
 use neo_core::UInt160;
 use neo_network::messages::protocol::ProtocolMessage;
 use neo_network::{NetworkConfig, NodeInfo};
@@ -14,20 +15,10 @@ async fn test_handshake_with_real_node() -> Result<(), Box<dyn std::error::Error
 
     // Create version message using our protocol implementation
     let node_info = NodeInfo {
-        id: UInt160::zero(),
-        version: neo_network::ProtocolVersion {
-            major: 3,
-            minor: 6,
-            build: 0,
-        },
         user_agent: "neo-rs/0.1.0".to_string(),
-        capabilities: vec!["FullNode".to_string()],
-        start_height: 0,
-        timestamp: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
-        nonce: rand::random(),
+        protocol_version: 3,
+        network: neo_config::NetworkType::TestNet,
+        port: 20333,
     };
 
     let version_msg = ProtocolMessage::version(&node_info, 20333, true);
@@ -113,17 +104,10 @@ async fn test_version_message_serialization() -> Result<(), Box<dyn std::error::
     println!("🧪 Testing version message serialization...");
 
     let node_info = NodeInfo {
-        id: UInt160::zero(),
-        version: neo_network::ProtocolVersion {
-            major: 3,
-            minor: 6,
-            build: 0,
-        },
         user_agent: "neo-rs/0.1.0".to_string(),
-        capabilities: vec!["FullNode".to_string()],
-        start_height: 123456,
-        timestamp: 1640995200,
-        nonce: 0x12345678,
+        protocol_version: 3,
+        network: NetworkType::TestNet,
+        port: 20333,
     };
 
     let version_msg = ProtocolMessage::version(&node_info, 20333, true);

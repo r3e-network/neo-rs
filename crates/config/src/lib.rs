@@ -3,10 +3,10 @@
 //! This module provides configuration types for the Neo N3 Rust node.
 
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
 use std::fmt;
-use std::str::FromStr;
 use std::hash::Hash;
+use std::net::SocketAddr;
+use std::str::FromStr;
 
 /// Network type for Neo blockchain
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]

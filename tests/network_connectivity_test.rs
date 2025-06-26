@@ -4,7 +4,7 @@
 //! discover peers, perform handshakes, and communicate using the Neo protocol.
 
 use neo_core::UInt160;
-use neo_network::{MessageType, NetworkConfig, NetworkMessage, P2PEvent, P2PNode, ProtocolMessage};
+use neo_network::{NetworkConfig, NetworkMessage, NodeEvent, NodeInfo, P2PNode, ProtocolMessage};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
@@ -273,24 +273,22 @@ async fn test_network_message_format() {
 
 /// Wait for a connection event for a specific peer
 async fn wait_for_connection_event(
-    event_receiver: &mut tokio::sync::broadcast::Receiver<P2PEvent>,
+    event_receiver: &mut tokio::sync::broadcast::Receiver<NodeEvent>,
     target_addr: SocketAddr,
 ) -> bool {
     while let Ok(event) = event_receiver.recv().await {
         match event {
-            P2PEvent::PeerConnected { address, .. } if address == target_addr => {
+            NodeEvent::PeerConnected(peer_info) if peer_info.address == target_addr => {
                 return true;
             }
-            P2PEvent::HandshakeCompleted { address, .. } if address == target_addr => {
-                return true;
-            }
-            P2PEvent::PeerDisconnected {
-                address, reason, ..
-            } if address == target_addr => {
-                warn!("Peer {} disconnected: {}", address, reason);
+            NodeEvent::PeerDisconnected(address) if address == target_addr => {
+                warn!("Peer {} disconnected", address);
                 return false;
             }
-            P2PEvent::ConnectionFailed { address, error } if address == target_addr => {
+            NodeEvent::NetworkError {
+                peer: Some(address),
+                error,
+            } if address == target_addr => {
                 warn!("Connection to {} failed: {}", address, error);
                 return false;
             }
@@ -311,10 +309,9 @@ async fn test_basic_communication(
     info!("📞 Testing basic communication with {}", peer_addr);
 
     // Create a ping message
-    let ping_message = NetworkMessage::new(
-        0x334f454e, // Mainnet magic
-        ProtocolMessage::ping(),
-    );
+    let ping_message = NetworkMessage::new(ProtocolMessage::Ping {
+        nonce: rand::random(),
+    });
 
     // Send ping message
     p2p_node.send_message(peer_addr, ping_message).await?;

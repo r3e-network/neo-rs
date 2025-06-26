@@ -6,11 +6,11 @@
 //! Usage:
 //!   cargo run --example network_connection_test
 
-use neo_cli::{
-    args::{LogLevel, Network},
-    service::MainService,
-    CliArgs,
-};
+use neo_config::{NetworkConfig, NetworkType};
+use neo_ledger::Blockchain;
+use neo_network::{NodeInfo, P2PNode};
+use neo_persistence::rocksdb::RocksDbStore;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
@@ -23,11 +23,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     // Test both MainNet and TestNet connectivity
-    for network in [Network::Mainnet, Network::Testnet] {
-        let network_name = match network {
-            Network::Mainnet => "Neo N3 MainNet",
-            Network::Testnet => "Neo N3 TestNet",
-            Network::Private => "Private Network",
+    for network_type in [NetworkType::MainNet, NetworkType::TestNet] {
+        let network_name = match network_type {
+            NetworkType::MainNet => "Neo N3 MainNet",
+            NetworkType::TestNet => "Neo N3 TestNet",
+            NetworkType::Private => "Private Network",
         };
 
         info!(
@@ -36,60 +36,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         info!("───────────────────────────────────────────");
 
-        // Create CLI arguments for the test
-        let cli_args = CliArgs {
-            config: None,
-            wallet: None,
-            password: None,
-            db_engine: None,
-            db_path: None,
-            no_verify: false,
-            plugins: vec![],
-            verbose: LogLevel::Info,
-            daemon: false,
-            network,
-            rpc_port: None,
-            p2p_port: match network {
-                Network::Mainnet => Some(10333),
-                Network::Testnet => Some(20333),
-                Network::Private => Some(30333),
-            },
-            max_connections: Some(50),
-            min_connections: Some(5),
-            data_dir: Some(std::env::temp_dir().join("neo-rs-test")),
-            show_version: false,
+        // Create network configuration
+        let mut network_config = NetworkConfig::default();
+        network_config.port = match network_type {
+            NetworkType::MainNet => 10333,
+            NetworkType::TestNet => 20333,
+            NetworkType::Private => 30333,
         };
 
-        // Initialize the main service
-        info!("🔧 Initializing Neo Rust node for {}...", network_name);
-        let mut service = match MainService::new(cli_args).await {
-            Ok(service) => {
-                info!("✅ Neo Rust node initialized successfully");
-                service
-            }
-            Err(e) => {
-                error!("❌ Failed to initialize Neo Rust node: {}", e);
-                continue; // Try next network
-            }
+        // Create node info
+        let node_info = NodeInfo {
+            user_agent: "Neo-Rust-Test/0.1.0".to_string(),
+            protocol_version: 3,
+            network: network_type,
+            port: network_config.port,
         };
 
-        // Start the service with timeout
-        info!(
-            "🚀 Starting Neo Rust node and connecting to {}...",
-            network_name
-        );
+        // Create temporary storage
+        let temp_dir = std::env::temp_dir().join(format!("neo-rs-test-{}", network_type));
+        let storage = Arc::new(RocksDbStore::new(&temp_dir)?);
+
+        // Create blockchain instance
+        let blockchain = Arc::new(Blockchain::new(storage.clone(), network_type).await?);
+
+        // Create P2P node
+        info!("🔧 Creating P2P node for {}...", network_name);
+        let p2p_node = P2PNode::new(network_config, node_info)?;
+
+        // Start the P2P node
+        info!("🚀 Starting P2P node and connecting to {}...", network_name);
         info!("⏳ This may take a moment to connect to peers...");
 
-        match timeout(Duration::from_secs(30), service.start()).await {
+        match timeout(Duration::from_secs(30), p2p_node.start()).await {
             Ok(Ok(_)) => {
-                info!("✅ Neo Rust node started successfully!");
+                info!("✅ P2P node started successfully!");
                 info!(
                     "🔗 Node is now attempting to connect to {} peers",
                     network_name
                 );
             }
             Ok(Err(e)) => {
-                error!("❌ Failed to start Neo Rust node: {}", e);
+                error!("❌ Failed to start P2P node: {}", e);
                 continue; // Try next network
             }
             Err(_) => {
@@ -107,19 +94,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(Duration::from_secs(2)).await;
 
             // Check connectivity status
-            if let Some(p2p_node) = service.p2p_node() {
-                let peer_manager = p2p_node.peer_manager();
-                let stats = peer_manager.get_stats().await;
-                let peer_count = stats.connected_peers;
+            let connected_peers = p2p_node.connected_peer_count().await;
 
-                if peer_count > 0 && !connection_established {
-                    info!(
-                        "🎉 Successfully connected to {} network with {} peers!",
-                        network_name, peer_count
-                    );
-                    connection_established = true;
-                    break;
+            if connected_peers > 0 && !connection_established {
+                info!(
+                    "🎉 Successfully connected to {} network with {} peers!",
+                    network_name, connected_peers
+                );
+                connection_established = true;
+
+                // Show some peer info
+                let peers = p2p_node.get_connected_peers().await;
+                for (i, peer) in peers.iter().take(3).enumerate() {
+                    info!("   Peer {}: {}", i + 1, peer);
                 }
+                if peers.len() > 3 {
+                    info!("   ... and {} more peers", peers.len() - 3);
+                }
+                break;
+            } else if connected_peers == 0 {
+                debug!("No peers connected yet...");
             }
         }
 
@@ -136,11 +130,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Graceful shutdown
-        info!("🛑 Shutting down Neo Rust node...");
-        if let Err(e) = service.stop().await {
+        info!("🛑 Shutting down P2P node...");
+        if let Err(e) = p2p_node.stop().await {
             warn!("Warning during shutdown: {}", e);
         }
         info!("✅ Shutdown complete");
+
+        // Clean up temporary directory
+        if let Err(e) = std::fs::remove_dir_all(&temp_dir) {
+            debug!("Failed to clean up temp directory: {}", e);
+        }
 
         // Wait a moment before testing next network
         sleep(Duration::from_secs(2)).await;
