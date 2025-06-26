@@ -68,7 +68,7 @@ jobs:
       - name: Check documentation
         run: |
           echo "🔍 Building documentation..."
-          cargo doc --all-features
+          cargo doc --all-features --verbose
           echo "✅ Documentation build passed"
 
   # Test suite on Ubuntu with stable Rust
@@ -234,7 +234,7 @@ jobs:
       - name: Build documentation
         run: |
           echo "📚 Building documentation for deployment..."
-          cargo doc --all-features
+          cargo doc --all-features --verbose
           # Ensure target/doc directory exists and create index.html redirect for GitHub Pages
           mkdir -p target/doc
           echo '<meta http-equiv=refresh content=0;url=neo_core/index.html>' > target/doc/index.html
