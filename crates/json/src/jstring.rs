@@ -27,8 +27,8 @@ impl JString {
         &self.value
     }
 
-    /// Gets the string value as a String
-    pub fn to_string(&self) -> String {
+    /// Gets the string value as a String (for compatibility with C# JString.ToString())
+    pub fn get_string(&self) -> String {
         self.value.clone()
     }
 

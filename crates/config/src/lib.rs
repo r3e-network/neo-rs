@@ -4,20 +4,14 @@
 
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::path::PathBuf;
 
 /// Network type for Neo blockchain
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum NetworkType {
     MainNet,
+    #[default]
     TestNet,
     Private,
-}
-
-impl Default for NetworkType {
-    fn default() -> Self {
-        NetworkType::TestNet
-    }
 }
 
 impl NetworkType {
