@@ -378,9 +378,7 @@ impl Eq for Transaction {}
 impl crate::IVerifiable for Transaction {
     fn verify(&self) -> bool {
         // Verify transaction structure and constraints
-        if self.version > 0xFF {
-            return false;
-        }
+        // Note: version is u8, so it's automatically in valid range 0-255
 
         if self.signers.is_empty() || self.signers.len() > 16 {
             return false;
