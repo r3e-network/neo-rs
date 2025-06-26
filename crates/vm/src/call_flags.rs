@@ -28,7 +28,9 @@ impl CallFlags {
     pub const STATES: Self = Self(Self::READ_STATES.0 | Self::WRITE_STATES.0);
 
     /// Allow all operations.
-    pub const ALL: Self = Self(Self::READ_STATES.0 | Self::WRITE_STATES.0 | Self::ALLOW_CALL.0 | Self::ALLOW_NOTIFY.0);
+    pub const ALL: Self = Self(
+        Self::READ_STATES.0 | Self::WRITE_STATES.0 | Self::ALLOW_CALL.0 | Self::ALLOW_NOTIFY.0,
+    );
 
     /// Checks if the flags include the specified flags.
     pub fn has_flag(&self, flag: Self) -> bool {
@@ -89,7 +91,17 @@ mod tests {
 
     #[test]
     fn test_bitor() {
-        assert_eq!((CallFlags::READ_STATES | CallFlags::WRITE_STATES).0, CallFlags::STATES.0);
-        assert_eq!((CallFlags::READ_STATES | CallFlags::WRITE_STATES | CallFlags::ALLOW_CALL | CallFlags::ALLOW_NOTIFY).0, CallFlags::ALL.0);
+        assert_eq!(
+            (CallFlags::READ_STATES | CallFlags::WRITE_STATES).0,
+            CallFlags::STATES.0
+        );
+        assert_eq!(
+            (CallFlags::READ_STATES
+                | CallFlags::WRITE_STATES
+                | CallFlags::ALLOW_CALL
+                | CallFlags::ALLOW_NOTIFY)
+                .0,
+            CallFlags::ALL.0
+        );
     }
 }

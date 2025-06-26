@@ -4,11 +4,11 @@
 //! that exactly matches the C# Neo.Network.P2P.MemoryPool functionality.
 
 use crate::{Error, Result};
-use neo_core::{Transaction, UInt256, UInt160};
-use std::collections::{HashMap, BTreeMap, HashSet};
-use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, Duration};
+use neo_core::{Transaction, UInt160, UInt256};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, RwLock};
+use std::time::{Duration, SystemTime};
 use tracing::{debug, info, warn};
 
 /// Memory pool configuration (matches C# MemoryPool settings)
@@ -31,10 +31,10 @@ pub struct MempoolConfig {
 impl Default for MempoolConfig {
     fn default() -> Self {
         Self {
-            max_transactions: 50000, // Matches C# Neo default
+            max_transactions: 50000,             // Matches C# Neo default
             max_memory_usage: 100 * 1024 * 1024, // 100MB
-            transaction_timeout: 120, // 2 minutes
-            min_fee_per_byte: 1000, // 0.001 GAS per byte
+            transaction_timeout: 120,            // 2 minutes
+            min_fee_per_byte: 1000,              // 0.001 GAS per byte
             enable_replacement: true,
             max_transaction_size: 102400, // 100KB
         }
@@ -69,7 +69,8 @@ impl PooledTransaction {
         };
 
         // Extract sender addresses from signers
-        let senders = transaction.signers()
+        let senders = transaction
+            .signers()
             .iter()
             .map(|signer| signer.account)
             .collect();
@@ -86,7 +87,9 @@ impl PooledTransaction {
 
     /// Gets the transaction hash
     pub fn hash(&self) -> Result<UInt256> {
-        self.transaction.hash()
+        self.transaction
+            .hash()
+            .map_err(|e| Error::Generic(e.to_string()))
     }
 
     /// Checks if the transaction has expired
@@ -141,9 +144,13 @@ impl Default for MempoolStats {
 pub trait TxVerifier: Send + Sync {
     /// Verifies if a transaction is valid for inclusion in mempool
     fn verify_transaction(&self, transaction: &Transaction) -> Result<bool>;
-    
+
     /// Checks if transaction conflicts with any in the pool
-    fn check_conflicts(&self, transaction: &Transaction, pool_transactions: &[&Transaction]) -> Result<bool>;
+    fn check_conflicts(
+        &self,
+        transaction: &Transaction,
+        pool_transactions: &[&Transaction],
+    ) -> Result<bool>;
 }
 
 /// Default transaction verifier
@@ -153,7 +160,7 @@ pub struct DefaultTxVerifier;
 impl TxVerifier for DefaultTxVerifier {
     fn verify_transaction(&self, transaction: &Transaction) -> Result<bool> {
         // Basic validation (production would include full verification)
-        
+
         // 1. Check basic format
         if transaction.script().is_empty() {
             return Ok(false);
@@ -177,9 +184,13 @@ impl TxVerifier for DefaultTxVerifier {
         Ok(true)
     }
 
-    fn check_conflicts(&self, transaction: &Transaction, pool_transactions: &[&Transaction]) -> Result<bool> {
+    fn check_conflicts(
+        &self,
+        transaction: &Transaction,
+        pool_transactions: &[&Transaction],
+    ) -> Result<bool> {
         let tx_hash = transaction.hash()?;
-        
+
         // Check for duplicate transaction hash
         for pool_tx in pool_transactions {
             if pool_tx.hash()? == tx_hash {
@@ -235,7 +246,7 @@ impl MemoryPool {
     /// Tries to add a transaction to the pool (matches C# TryAdd)
     pub fn try_add(&self, transaction: Transaction, high_priority: bool) -> Result<bool> {
         let tx_hash = transaction.hash()?;
-        
+
         // 1. Check if transaction already exists
         if self.contains(&tx_hash) {
             debug!("Transaction {} already in pool", tx_hash);
@@ -255,9 +266,12 @@ impl MemoryPool {
         } else {
             0
         };
-        
+
         if fee_per_byte < self.config.min_fee_per_byte {
-            warn!("Transaction {} fee too low: {} per byte", tx_hash, fee_per_byte);
+            warn!(
+                "Transaction {} fee too low: {} per byte",
+                tx_hash, fee_per_byte
+            );
             return Ok(false);
         }
 
@@ -268,14 +282,20 @@ impl MemoryPool {
         }
 
         // 5. Check for conflicts
-        let pool_txs: Vec<&Transaction> = self.transactions.read().unwrap()
-            .values()
-            .map(|pooled| &pooled.transaction)
-            .collect();
-            
-        if self.verifier.check_conflicts(&transaction, &pool_txs)? {
-            warn!("Transaction {} conflicts with existing transactions", tx_hash);
-            return Ok(false);
+        {
+            let transactions_guard = self.transactions.read().unwrap();
+            let pool_txs: Vec<&Transaction> = transactions_guard
+                .values()
+                .map(|pooled| &pooled.transaction)
+                .collect();
+
+            if self.verifier.check_conflicts(&transaction, &pool_txs)? {
+                warn!(
+                    "Transaction {} conflicts with existing transactions",
+                    tx_hash
+                );
+                return Ok(false);
+            }
         }
 
         // 6. Check pool capacity
@@ -297,19 +317,19 @@ impl MemoryPool {
     /// Removes a transaction from the pool (matches C# TryRemove)
     pub fn try_remove(&self, tx_hash: &UInt256) -> Result<Option<Transaction>> {
         let mut transactions = self.transactions.write().unwrap();
-        
+
         if let Some(pooled_tx) = transactions.remove(tx_hash) {
             drop(transactions);
-            
+
             // Remove from priority queue
             self.remove_from_priority_queue(&pooled_tx)?;
-            
+
             // Remove from sender map
             self.remove_from_sender_map(&pooled_tx)?;
-            
+
             // Update statistics
             self.update_stats_on_remove(&pooled_tx);
-            
+
             info!("Removed transaction {} from mempool", tx_hash);
             Ok(Some(pooled_tx.transaction))
         } else {
@@ -324,7 +344,9 @@ impl MemoryPool {
 
     /// Gets a transaction from the pool (matches C# TryGetValue)
     pub fn get_transaction(&self, tx_hash: &UInt256) -> Option<Transaction> {
-        self.transactions.read().unwrap()
+        self.transactions
+            .read()
+            .unwrap()
             .get(tx_hash)
             .map(|pooled_tx| pooled_tx.transaction.clone())
     }
@@ -333,29 +355,31 @@ impl MemoryPool {
     pub fn get_sorted_transactions(&self, max_count: Option<usize>) -> Vec<Transaction> {
         let transactions = self.transactions.read().unwrap();
         let priority_queue = self.priority_queue.read().unwrap();
-        
+
         let mut result = Vec::new();
         let limit = max_count.unwrap_or(self.config.max_transactions);
-        
+
         // Iterate through priority queue from highest to lowest priority
         for (_, tx_hashes) in priority_queue.iter().rev() {
             for tx_hash in tx_hashes {
                 if let Some(pooled_tx) = transactions.get(tx_hash) {
                     result.push(pooled_tx.transaction.clone());
-                    
+
                     if result.len() >= limit {
                         return result;
                     }
                 }
             }
         }
-        
+
         result
     }
 
     /// Gets all transactions from the pool (matches C# GetAllTransactions)
     pub fn get_all_transactions(&self) -> Vec<Transaction> {
-        self.transactions.read().unwrap()
+        self.transactions
+            .read()
+            .unwrap()
             .values()
             .map(|pooled_tx| pooled_tx.transaction.clone())
             .collect()
@@ -365,9 +389,10 @@ impl MemoryPool {
     pub fn get_transactions_by_sender(&self, sender: &UInt160) -> Vec<Transaction> {
         let transactions = self.transactions.read().unwrap();
         let sender_map = self.sender_map.read().unwrap();
-        
+
         if let Some(tx_hashes) = sender_map.get(sender) {
-            tx_hashes.iter()
+            tx_hashes
+                .iter()
                 .filter_map(|hash| transactions.get(hash))
                 .map(|pooled_tx| pooled_tx.transaction.clone())
                 .collect()
@@ -380,7 +405,7 @@ impl MemoryPool {
     pub fn clear_expired_transactions(&self) -> Result<usize> {
         let timeout = Duration::from_secs(self.config.transaction_timeout);
         let mut expired_hashes = Vec::new();
-        
+
         {
             let transactions = self.transactions.read().unwrap();
             for (hash, pooled_tx) in transactions.iter() {
@@ -389,18 +414,21 @@ impl MemoryPool {
                 }
             }
         }
-        
+
         let mut removed_count = 0;
         for hash in expired_hashes {
             if self.try_remove(&hash)?.is_some() {
                 removed_count += 1;
             }
         }
-        
+
         if removed_count > 0 {
-            info!("Removed {} expired transactions from mempool", removed_count);
+            info!(
+                "Removed {} expired transactions from mempool",
+                removed_count
+            );
         }
-        
+
         Ok(removed_count)
     }
 
@@ -408,25 +436,24 @@ impl MemoryPool {
     pub fn get_stats(&self) -> MempoolStats {
         let mut stats = self.stats.read().unwrap().clone();
         let transactions = self.transactions.read().unwrap();
-        
+
         // Update real-time statistics
         stats.transaction_count = transactions.len();
-        stats.memory_usage = transactions.values()
-            .map(|tx| tx.size)
-            .sum();
-        
-        stats.high_priority_count = transactions.values()
-            .filter(|tx| tx.high_priority)
-            .count();
-            
+        stats.memory_usage = transactions.values().map(|tx| tx.size).sum();
+
+        stats.high_priority_count = transactions.values().filter(|tx| tx.high_priority).count();
+
         if stats.transaction_count > 0 {
-            stats.average_fee_per_byte = transactions.values()
+            stats.average_fee_per_byte = transactions
+                .values()
                 .map(|tx| tx.fee_per_byte as f64)
-                .sum::<f64>() / stats.transaction_count as f64;
+                .sum::<f64>()
+                / stats.transaction_count as f64;
         }
-        
-        stats.utilization_percentage = (stats.transaction_count as f64 / self.config.max_transactions as f64) * 100.0;
-        
+
+        stats.utilization_percentage =
+            (stats.transaction_count as f64 / self.config.max_transactions as f64) * 100.0;
+
         stats
     }
 
@@ -434,15 +461,15 @@ impl MemoryPool {
     pub fn clear(&self) -> Result<usize> {
         let mut transactions = self.transactions.write().unwrap();
         let count = transactions.len();
-        
+
         transactions.clear();
         self.priority_queue.write().unwrap().clear();
         self.sender_map.write().unwrap().clear();
-        
+
         // Reset statistics
         let mut stats = self.stats.write().unwrap();
         stats.transactions_removed += count as u64;
-        
+
         info!("Cleared {} transactions from mempool", count);
         Ok(count)
     }
@@ -454,18 +481,18 @@ impl MemoryPool {
         let transactions = self.transactions.read().unwrap();
         let current_count = transactions.len();
         let current_memory = transactions.values().map(|tx| tx.size).sum::<usize>();
-        
+
         // Check transaction count limit
         if current_count >= self.config.max_transactions {
             return Ok(false);
         }
-        
+
         // Check memory limit
         let tx_size = transaction.size();
         if current_memory + tx_size > self.config.max_memory_usage {
             return Ok(false);
         }
-        
+
         Ok(true)
     }
 
@@ -484,24 +511,24 @@ impl MemoryPool {
         // Find lowest priority transactions to remove
         let transactions = self.transactions.read().unwrap();
         let mut candidates_to_remove = Vec::new();
-        
+
         for (hash, pooled_tx) in transactions.iter() {
             if !pooled_tx.high_priority && pooled_tx.fee_per_byte < new_fee_per_byte {
                 candidates_to_remove.push(*hash);
             }
         }
-        
+
         drop(transactions);
-        
+
         // Remove candidates until we have space
         for hash in candidates_to_remove {
             self.try_remove(&hash)?;
-            
+
             if self.can_add_transaction(new_transaction, high_priority)? {
                 return Ok(true);
             }
         }
-        
+
         Ok(false)
     }
 
@@ -509,27 +536,33 @@ impl MemoryPool {
     fn add_to_pool(&self, pooled_tx: PooledTransaction) -> Result<()> {
         let tx_hash = pooled_tx.hash()?;
         let priority_score = pooled_tx.priority_score();
-        
+
         // Add to main transaction map
-        self.transactions.write().unwrap().insert(tx_hash, pooled_tx.clone());
-        
+        self.transactions
+            .write()
+            .unwrap()
+            .insert(tx_hash, pooled_tx.clone());
+
         // Add to priority queue
-        self.priority_queue.write().unwrap()
+        self.priority_queue
+            .write()
+            .unwrap()
             .entry(priority_score)
             .or_insert_with(Vec::new)
             .push(tx_hash);
-        
+
         // Add to sender map
         let mut sender_map = self.sender_map.write().unwrap();
         for sender in &pooled_tx.senders {
-            sender_map.entry(*sender)
+            sender_map
+                .entry(*sender)
                 .or_insert_with(HashSet::new)
                 .insert(tx_hash);
         }
-        
+
         // Update statistics
         self.update_stats_on_add(&pooled_tx);
-        
+
         Ok(())
     }
 
@@ -537,34 +570,34 @@ impl MemoryPool {
     fn remove_from_priority_queue(&self, pooled_tx: &PooledTransaction) -> Result<()> {
         let tx_hash = pooled_tx.hash()?;
         let priority_score = pooled_tx.priority_score();
-        
+
         let mut priority_queue = self.priority_queue.write().unwrap();
         if let Some(tx_hashes) = priority_queue.get_mut(&priority_score) {
             tx_hashes.retain(|&hash| hash != tx_hash);
-            
+
             if tx_hashes.is_empty() {
                 priority_queue.remove(&priority_score);
             }
         }
-        
+
         Ok(())
     }
 
     /// Removes transaction from sender map
     fn remove_from_sender_map(&self, pooled_tx: &PooledTransaction) -> Result<()> {
         let tx_hash = pooled_tx.hash()?;
-        
+
         let mut sender_map = self.sender_map.write().unwrap();
         for sender in &pooled_tx.senders {
             if let Some(tx_hashes) = sender_map.get_mut(sender) {
                 tx_hashes.remove(&tx_hash);
-                
+
                 if tx_hashes.is_empty() {
                     sender_map.remove(sender);
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -584,13 +617,13 @@ impl MemoryPool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_core::{Transaction, UInt256, UInt160, Signer, WitnessScope, Witness};
+    use neo_core::{Signer, Transaction, UInt160, UInt256, Witness, WitnessScope};
 
     #[test]
     fn test_mempool_creation() {
         let config = MempoolConfig::default();
         let pool = MemoryPool::new(config.clone());
-        
+
         let stats = pool.get_stats();
         assert_eq!(stats.transaction_count, 0);
         assert_eq!(stats.memory_usage, 0);
@@ -620,7 +653,7 @@ mod tests {
     async fn test_add_transaction() {
         let config = MempoolConfig::default();
         let pool = MemoryPool::new(config);
-        
+
         let mut tx = Transaction::new();
         tx.set_script(vec![0x40]); // Simple RET script
         tx.set_network_fee(100000); // High fee
@@ -635,10 +668,10 @@ mod tests {
 
         let tx_hash = tx.hash().unwrap();
         let result = pool.try_add(tx, false).unwrap();
-        
+
         assert!(result);
         assert!(pool.contains(&tx_hash));
-        
+
         let stats = pool.get_stats();
         assert_eq!(stats.transaction_count, 1);
     }
@@ -647,7 +680,7 @@ mod tests {
     fn test_get_sorted_transactions() {
         let config = MempoolConfig::default();
         let pool = MemoryPool::new(config);
-        
+
         // Add transactions with different fees
         for i in 0..5 {
             let mut tx = Transaction::new();
@@ -662,13 +695,13 @@ mod tests {
                 rules: Vec::new(),
             });
             tx.add_witness(Witness::default());
-            
+
             pool.try_add(tx, false).unwrap();
         }
-        
+
         let sorted_txs = pool.get_sorted_transactions(Some(3));
         assert_eq!(sorted_txs.len(), 3);
-        
+
         // Should be sorted by fee (highest first)
         assert!(sorted_txs[0].network_fee() >= sorted_txs[1].network_fee());
         assert!(sorted_txs[1].network_fee() >= sorted_txs[2].network_fee());
@@ -678,7 +711,7 @@ mod tests {
     fn test_clear_pool() {
         let config = MempoolConfig::default();
         let pool = MemoryPool::new(config);
-        
+
         // Add some transactions
         for i in 0..3 {
             let mut tx = Transaction::new();
@@ -693,12 +726,12 @@ mod tests {
                 rules: Vec::new(),
             });
             tx.add_witness(Witness::default());
-            
+
             pool.try_add(tx, false).unwrap();
         }
-        
+
         assert_eq!(pool.get_stats().transaction_count, 3);
-        
+
         let cleared_count = pool.clear().unwrap();
         assert_eq!(cleared_count, 3);
         assert_eq!(pool.get_stats().transaction_count, 0);

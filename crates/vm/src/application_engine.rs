@@ -3,6 +3,7 @@
 //! This module extends the Neo VM with Neo blockchain-specific functionality.
 
 use crate::call_flags::CallFlags;
+use crate::error::{VmError, VmResult};
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::{ExecutionEngine, ExecutionEngineLimits, VMState};
 use crate::instruction::Instruction;
@@ -11,7 +12,6 @@ use crate::op_code::OpCode;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::StackItem;
-use crate::Result;
 use std::collections::HashMap;
 
 /// The trigger types for script execution.
@@ -62,7 +62,7 @@ impl BlockchainSnapshot {
     pub fn block_height(&self) -> u32 {
         self.block_height
     }
-    
+
     pub fn timestamp(&self) -> u64 {
         self.timestamp
     }
@@ -79,7 +79,7 @@ impl NotificationContext {
     pub fn get_current_height(&self) -> u32 {
         self.current_height
     }
-    
+
     pub fn get_block_timestamp(&self) -> u64 {
         self.block_timestamp
     }
@@ -96,7 +96,7 @@ impl ApplicationExecutionContext {
     pub fn get_current_height(&self) -> u32 {
         self.current_height
     }
-    
+
     pub fn get_persisting_block_time(&self) -> u64 {
         self.persisting_block_time
     }
@@ -160,11 +160,7 @@ impl ApplicationEngine {
         let reference_counter = ReferenceCounter::new();
         // Use the default jump table which includes all standard operation handlers
         let jump_table = Some(crate::jump_table::JumpTable::default());
-        let engine = ExecutionEngine::new_with_limits(
-            jump_table,
-            reference_counter,
-            limits,
-        );
+        let engine = ExecutionEngine::new_with_limits(jump_table, reference_counter, limits);
 
         Self {
             engine,
@@ -230,14 +226,15 @@ impl ApplicationEngine {
 
     /// Gets the script container (transaction or block).
     pub fn get_script_container<T: 'static>(&self) -> Option<&T> {
-        self.script_container.as_ref()
+        self.script_container
+            .as_ref()
             .and_then(|container| container.downcast_ref::<T>())
     }
 
     /// Validates that the current call flags include the required flags.
-    pub fn validate_call_flags(&self, required_call_flags: CallFlags) -> Result<()> {
+    pub fn validate_call_flags(&self, required_call_flags: CallFlags) -> VmResult<()> {
         if !self.call_flags.has_flag(required_call_flags) {
-            return Err(crate::Error::InvalidOperation(format!(
+            return Err(crate::VmError::invalid_operation_msg(format!(
                 "Cannot call this operation with the flag {:?}",
                 self.call_flags
             )));
@@ -247,11 +244,14 @@ impl ApplicationEngine {
     }
 
     /// Consumes gas.
-    pub fn consume_gas(&mut self, gas: i64) -> Result<()> {
+    pub fn consume_gas(&mut self, gas: i64) -> VmResult<()> {
         self.gas_consumed += gas;
 
         if self.gas_consumed > self.gas_limit {
-            return Err(crate::Error::InvalidOperation(format!("Gas limit exceeded: {} > {}", self.gas_consumed, self.gas_limit)));
+            return Err(crate::VmError::invalid_operation_msg(format!(
+                "Gas limit exceeded: {} > {}",
+                self.gas_consumed, self.gas_limit
+            )));
         }
 
         Ok(())
@@ -312,12 +312,19 @@ impl ApplicationEngine {
             // Get the current instruction
             let instruction = match self.engine.current_context() {
                 Some(context) => {
-                    println!("ApplicationEngine: Current IP: {}, Script length: {}", context.instruction_pointer(), context.script().len());
+                    println!(
+                        "ApplicationEngine: Current IP: {}, Script length: {}",
+                        context.instruction_pointer(),
+                        context.script().len()
+                    );
                     match context.current_instruction() {
                         Ok(instruction) => {
-                            println!("ApplicationEngine: Got instruction: {:?}", instruction.opcode());
+                            println!(
+                                "ApplicationEngine: Got instruction: {:?}",
+                                instruction.opcode()
+                            );
                             instruction
-                        },
+                        }
                         Err(err) => {
                             // Check if this is an "end of script" error (normal case) or a parsing error (fault case)
                             let error_msg = format!("{:?}", err);
@@ -328,13 +335,16 @@ impl ApplicationEngine {
                                 return VMState::HALT;
                             } else {
                                 // Instruction parsing error - this should cause a FAULT
-                                println!("ApplicationEngine: Instruction parsing error: {:?}, faulting", err);
+                                println!(
+                                    "ApplicationEngine: Instruction parsing error: {:?}, faulting",
+                                    err
+                                );
                                 self.engine.set_state(VMState::FAULT);
                                 return VMState::FAULT;
                             }
                         }
                     }
-                },
+                }
                 None => {
                     println!("ApplicationEngine: No current context, halting");
                     self.engine.set_state(VMState::HALT);
@@ -408,7 +418,10 @@ impl ApplicationEngine {
                     engine.result_stack_mut().push(item);
                 }
 
-                println!("RET: Result stack size after: {}", engine.result_stack().len());
+                println!(
+                    "RET: Result stack size after: {}",
+                    engine.result_stack().len()
+                );
             } else {
                 // Not last context - move items to parent context's evaluation stack
                 let mut items_to_move = Vec::new();
@@ -442,20 +455,28 @@ impl ApplicationEngine {
     }
 
     /// Handles a SYSCALL instruction.
-    fn handle_syscall(&mut self, instruction: &Instruction) -> Result<()> {
+    fn handle_syscall(&mut self, instruction: &Instruction) -> VmResult<()> {
         // Get the syscall name
         let syscall_name = instruction.syscall_name()?;
 
         // Validate call flags before invoking the method
-        let required_flags = self.interop_service.get_required_call_flags(syscall_name.as_bytes());
+        let required_flags = self
+            .interop_service
+            .get_required_call_flags(syscall_name.as_bytes());
         self.validate_call_flags(required_flags)?;
 
         // Delegate all syscalls to the interop service
-        self.interop_service.invoke(&mut self.engine, syscall_name.as_bytes())
+        self.interop_service
+            .invoke(&mut self.engine, syscall_name.as_bytes())
     }
 
     /// Loads a script.
-    pub fn load_script(&mut self, script: Script, rvcount: i32, initial_position: usize) -> Result<ExecutionContext> {
+    pub fn load_script(
+        &mut self,
+        script: Script,
+        rvcount: i32,
+        initial_position: usize,
+    ) -> VmResult<ExecutionContext> {
         // Consume gas for loading the script
         self.consume_gas(script.len() as i64 * self.price_per_instruction)?;
 
@@ -474,7 +495,7 @@ impl ApplicationEngine {
     }
 
     /// Executes the next instruction.
-    pub fn execute_next(&mut self) -> Result<()> {
+    pub fn execute_next(&mut self) -> VmResult<()> {
         // Consume gas for the instruction
         self.consume_gas(self.price_per_instruction)?;
 
@@ -483,7 +504,7 @@ impl ApplicationEngine {
     }
 
     /// Called before executing an instruction.
-    pub fn pre_execute_instruction(&mut self, instruction: &Instruction) -> Result<()> {
+    pub fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         // Calculate gas cost for the instruction
         let gas_cost = self.calculate_gas_cost(instruction);
 
@@ -494,7 +515,7 @@ impl ApplicationEngine {
     }
 
     /// Called after executing an instruction.
-    pub fn post_execute_instruction(&mut self, instruction: &Instruction) -> Result<()> {
+    pub fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         // Additional post-execution logic can be added here
         Ok(())
     }
@@ -530,18 +551,44 @@ impl ApplicationEngine {
             // No crypto operations in base VM - handled by interop services
 
             // Push operations with operands
-            OpCode::PUSHINT8 | OpCode::PUSHINT16 | OpCode::PUSHINT32 | OpCode::PUSHINT64 |
-            OpCode::PUSHINT128 | OpCode::PUSHINT256 | OpCode::PUSHA | OpCode::PUSHDATA1 |
-            OpCode::PUSHDATA2 | OpCode::PUSHDATA4 => {
+            OpCode::PUSHINT8
+            | OpCode::PUSHINT16
+            | OpCode::PUSHINT32
+            | OpCode::PUSHINT64
+            | OpCode::PUSHINT128
+            | OpCode::PUSHINT256
+            | OpCode::PUSHA
+            | OpCode::PUSHDATA1
+            | OpCode::PUSHDATA2
+            | OpCode::PUSHDATA4 => {
                 cost += self.price_per_instruction;
             }
 
             // Control flow operations
-            OpCode::JMP | OpCode::JMP_L | OpCode::JMPIF | OpCode::JMPIF_L | OpCode::JMPIFNOT |
-            OpCode::JMPIFNOT_L | OpCode::JMPEQ | OpCode::JMPEQ_L | OpCode::JMPNE | OpCode::JMPNE_L |
-            OpCode::JMPGT | OpCode::JMPGT_L | OpCode::JMPGE | OpCode::JMPGE_L | OpCode::JMPLT |
-            OpCode::JMPLT_L | OpCode::JMPLE | OpCode::JMPLE_L | OpCode::CALL | OpCode::CALL_L |
-            OpCode::CALLA | OpCode::TRY | OpCode::ENDTRY | OpCode::ENDFINALLY => {
+            OpCode::JMP
+            | OpCode::JMP_L
+            | OpCode::JMPIF
+            | OpCode::JMPIF_L
+            | OpCode::JMPIFNOT
+            | OpCode::JMPIFNOT_L
+            | OpCode::JMPEQ
+            | OpCode::JMPEQ_L
+            | OpCode::JMPNE
+            | OpCode::JMPNE_L
+            | OpCode::JMPGT
+            | OpCode::JMPGT_L
+            | OpCode::JMPGE
+            | OpCode::JMPGE_L
+            | OpCode::JMPLT
+            | OpCode::JMPLT_L
+            | OpCode::JMPLE
+            | OpCode::JMPLE_L
+            | OpCode::CALL
+            | OpCode::CALL_L
+            | OpCode::CALLA
+            | OpCode::TRY
+            | OpCode::ENDTRY
+            | OpCode::ENDFINALLY => {
                 cost += self.price_per_instruction * 2;
             }
 
@@ -551,38 +598,81 @@ impl ApplicationEngine {
             }
 
             // Stack operations
-            OpCode::DUP | OpCode::SWAP | OpCode::OVER | OpCode::ROT | OpCode::TUCK | OpCode::DEPTH |
-            OpCode::DROP | OpCode::NIP | OpCode::XDROP | OpCode::CLEAR | OpCode::PICK => {
+            OpCode::DUP
+            | OpCode::SWAP
+            | OpCode::OVER
+            | OpCode::ROT
+            | OpCode::TUCK
+            | OpCode::DEPTH
+            | OpCode::DROP
+            | OpCode::NIP
+            | OpCode::XDROP
+            | OpCode::CLEAR
+            | OpCode::PICK => {
                 cost += self.price_per_instruction / 2;
             }
 
             // Slot operations
-            OpCode::INITSLOT | OpCode::LDSFLD | OpCode::STSFLD | OpCode::LDLOC | OpCode::STLOC |
-            OpCode::LDARG | OpCode::STARG => {
+            OpCode::INITSLOT
+            | OpCode::LDSFLD
+            | OpCode::STSFLD
+            | OpCode::LDLOC
+            | OpCode::STLOC
+            | OpCode::LDARG
+            | OpCode::STARG => {
                 cost += self.price_per_instruction;
             }
 
             // Splice operations
-            OpCode::NEWBUFFER | OpCode::MEMCPY | OpCode::CAT | OpCode::SUBSTR | OpCode::LEFT |
-            OpCode::RIGHT => {
+            OpCode::NEWBUFFER
+            | OpCode::MEMCPY
+            | OpCode::CAT
+            | OpCode::SUBSTR
+            | OpCode::LEFT
+            | OpCode::RIGHT => {
                 cost += self.price_per_instruction * 2;
             }
 
             // Bitwise operations
-            OpCode::INVERT | OpCode::AND | OpCode::OR | OpCode::XOR | OpCode::EQUAL | OpCode::NOTEQUAL => {
+            OpCode::INVERT
+            | OpCode::AND
+            | OpCode::OR
+            | OpCode::XOR
+            | OpCode::EQUAL
+            | OpCode::NOTEQUAL => {
                 cost += self.price_per_instruction;
             }
 
             // Numeric operations
-            OpCode::INC | OpCode::DEC | OpCode::SIGN | OpCode::NEGATE | OpCode::ABS | OpCode::ADD |
-            OpCode::SUB | OpCode::MUL | OpCode::DIV | OpCode::MOD | OpCode::POW | OpCode::SQRT |
-            OpCode::SHL | OpCode::SHR | OpCode::MIN | OpCode::MAX | OpCode::WITHIN => {
+            OpCode::INC
+            | OpCode::DEC
+            | OpCode::SIGN
+            | OpCode::NEGATE
+            | OpCode::ABS
+            | OpCode::ADD
+            | OpCode::SUB
+            | OpCode::MUL
+            | OpCode::DIV
+            | OpCode::MOD
+            | OpCode::POW
+            | OpCode::SQRT
+            | OpCode::SHL
+            | OpCode::SHR
+            | OpCode::MIN
+            | OpCode::MAX
+            | OpCode::WITHIN => {
                 cost += self.price_per_instruction;
             }
 
             // Compound-type operations
-            OpCode::KEYS | OpCode::VALUES | OpCode::PACKMAP | OpCode::PACKSTRUCT | OpCode::PACK |
-            OpCode::UNPACK | OpCode::PICKITEM | OpCode::SIZE => {
+            OpCode::KEYS
+            | OpCode::VALUES
+            | OpCode::PACKMAP
+            | OpCode::PACKSTRUCT
+            | OpCode::PACK
+            | OpCode::UNPACK
+            | OpCode::PICKITEM
+            | OpCode::SIZE => {
                 cost += self.price_per_instruction * 2;
             }
 
@@ -614,43 +704,43 @@ impl ApplicationEngine {
     }
 
     /// Gets the timestamp of the current persisting block.
-    pub fn persisting_block_time(&self) -> Result<u64> {
+    pub fn persisting_block_time(&self) -> VmResult<u64> {
         // Production-ready persisting block time retrieval (matches C# ApplicationEngine.PersistingBlock.Timestamp exactly)
         // This implements the C# logic: ApplicationEngine.PersistingBlock.Timestamp for accurate timing
-        
+
         // 1. Access persisting block through snapshot context (production accuracy)
         if let Some(ref snapshot) = self.snapshot {
             // 2. Get block timestamp from blockchain snapshot (production timing)
             let block_time = snapshot.timestamp();
-            
+
             // 3. Validate timestamp is reasonable (production safety)
             if self.validate_block_timestamp(block_time) {
                 return Ok(block_time);
             }
         }
-        
+
         // 4. Access through notification context if available (production fallback)
         if let Some(ref notif_context) = self.notification_context {
             // 5. Extract timestamp from context data (production context access)
             let block_time = notif_context.get_block_timestamp();
             return Ok(block_time);
         }
-        
+
         // 6. Access through execution context if available (production execution context)
         if let Some(ref exec_context) = self.execution_context {
             // 7. Get timestamp from execution environment (production execution timing)
             let block_time = exec_context.get_persisting_block_time();
             return Ok(block_time);
         }
-        
+
         // 8. Calculate timestamp from current blockchain height and block time (production calculation)
         let current_height = self.get_current_blockchain_height();
         let genesis_time = 1468595301000; // Neo N3 MainNet genesis timestamp (milliseconds)
         let block_interval_ms = 15000; // 15 seconds per block (Neo N3 standard)
-        
+
         // 9. Calculate expected block time based on height (production timing calculation)
         let calculated_time = genesis_time + (current_height as u64 * block_interval_ms);
-        
+
         // 10. Validate calculated time is reasonable (production validation)
         if self.validate_block_timestamp(calculated_time) {
             Ok(calculated_time)
@@ -658,9 +748,11 @@ impl ApplicationEngine {
             // 11. Final fallback to current system time (production safety)
             let current_time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|_| crate::Error::InvalidOperation("System time error".to_string()))?
+                .map_err(|_| {
+                    crate::VmError::invalid_operation_msg("System time error".to_string())
+                })?
                 .as_millis() as u64;
-            
+
             Ok(current_time)
         }
     }
@@ -673,7 +765,7 @@ impl ApplicationEngine {
 
     /// Storage put operation (production implementation matching C# exactly)
     /// In C# Neo: ApplicationEngine.Storage_Put
-    pub fn storage_put(&mut self, _key: &[u8], _value: Vec<u8>) -> Result<()> {
+    pub fn storage_put(&mut self, _key: &[u8], _value: Vec<u8>) -> VmResult<()> {
         // In production this would store in the blockchain snapshot
         // For now just succeed silently as placeholder
         Ok(())
@@ -681,7 +773,7 @@ impl ApplicationEngine {
 
     /// Storage delete operation (production implementation matching C# exactly)
     /// In C# Neo: ApplicationEngine.Storage_Delete  
-    pub fn storage_delete(&mut self, _key: &[u8]) -> Result<()> {
+    pub fn storage_delete(&mut self, _key: &[u8]) -> VmResult<()> {
         // In production this would delete from the blockchain snapshot
         // For now just succeed silently as placeholder
         Ok(())
@@ -690,25 +782,25 @@ impl ApplicationEngine {
     /// Validates block timestamp for reasonableness (production validation)
     fn validate_block_timestamp(&self, timestamp: u64) -> bool {
         // Production-ready timestamp validation (matches C# Block.Timestamp validation exactly)
-        
+
         // 1. Check minimum timestamp (Neo genesis block)
         if timestamp < 1468595301000 {
             return false; // Before Neo N3 genesis
         }
-        
+
         // 2. Check maximum timestamp (reasonable future limit)
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-        
+
         // 3. Allow up to 1 hour in the future (matches Neo N3 block validation)
         let max_future_time = current_time + 3600000; // 1 hour in milliseconds
-        
+
         if timestamp > max_future_time {
             return false; // Too far in the future
         }
-        
+
         // 4. Timestamp is reasonable
         true
     }
@@ -716,22 +808,22 @@ impl ApplicationEngine {
     /// Gets current blockchain height for timing calculations (production implementation)
     fn get_current_blockchain_height(&self) -> u32 {
         // Production-ready height retrieval for timing calculations
-        
+
         // 1. Access through snapshot if available
         if let Some(ref snapshot) = self.snapshot {
             return snapshot.block_height();
         }
-        
+
         // 2. Access through notification context if available
         if let Some(ref notif_context) = self.notification_context {
             return notif_context.get_current_height();
         }
-        
+
         // 3. Access through execution context if available
         if let Some(ref exec_context) = self.execution_context {
             return exec_context.get_current_height();
         }
-        
+
         // 4. Fallback to default height (production safety)
         0
     }
@@ -744,19 +836,19 @@ impl ApplicationEngine {
         method: &str,
         call_flags: CallFlags,
         arguments: Vec<StackItem>,
-    ) -> Result<StackItem> {
+    ) -> VmResult<StackItem> {
         // Production implementation: Call contract method (matches C# ApplicationEngine.CallContract exactly)
         // In C# Neo: public object CallContract(UInt160 scriptHash, string method, CallFlags callFlags, params object[] arguments)
-        
+
         // 1. Validate call flags (matches C# exactly)
         self.validate_call_flags(call_flags)?;
-        
+
         // 2. Create contract call script (matches C# script generation exactly)
         let call_script = self.create_contract_call_script(script_hash, method, &arguments)?;
-        
+
         // 3. Execute the contract call in a new context (matches C# exactly)
         let result = self.execute_contract_call(call_script)?;
-        
+
         Ok(result)
     }
 
@@ -766,43 +858,43 @@ impl ApplicationEngine {
         script_hash: &[u8],
         method: &str,
         arguments: &[StackItem],
-    ) -> Result<Script> {
+    ) -> VmResult<Script> {
         // Production implementation: Create contract call script (matches C# ScriptBuilder exactly)
         // This implements C# logic: ScriptBuilder.EmitDynamicCall(scriptHash, method, arguments)
-        
+
         use crate::script_builder::ScriptBuilder;
-        
+
         let mut builder = ScriptBuilder::new();
-        
+
         // 1. Push arguments in reverse order (matches C# calling convention)
         for arg in arguments.iter().rev() {
             builder.emit_push_stack_item(arg.clone())?;
         }
-        
+
         // 2. Push method name
         builder.emit_push_string(method);
-        
+
         // 3. Push script hash
         builder.emit_push_bytes(script_hash);
-        
+
         // 4. Emit SYSCALL for System.Contract.Call
         builder.emit_syscall("System.Contract.Call");
-        
+
         Ok(builder.to_script())
     }
 
     /// Executes a contract call script (production-ready implementation)
-    fn execute_contract_call(&mut self, script: Script) -> Result<StackItem> {
+    fn execute_contract_call(&mut self, script: Script) -> VmResult<StackItem> {
         // Production implementation: Execute contract call (matches C# ApplicationEngine execution exactly)
-        
+
         // 1. Save current state
         let original_gas_consumed = self.gas_consumed;
         let original_call_flags = self.call_flags;
-        
+
         // 2. Load and execute the contract call script
         let context = self.load_script(script, 1, 0)?; // Return 1 value
         let execution_result = self.execute_with_interop();
-        
+
         // 3. Check execution result
         match execution_result {
             VMState::HALT => {
@@ -817,11 +909,13 @@ impl ApplicationEngine {
                 // Restore original state on fault
                 self.gas_consumed = original_gas_consumed;
                 self.call_flags = original_call_flags;
-                Err(crate::Error::InvalidOperation("Contract call failed".to_string()))
+                Err(crate::VmError::invalid_operation_msg(
+                    "Contract call failed".to_string(),
+                ))
             }
-            _ => {
-                Err(crate::Error::InvalidOperation("Contract call did not complete".to_string()))
-            }
+            _ => Err(crate::VmError::invalid_operation_msg(
+                "Contract call did not complete".to_string(),
+            )),
         }
     }
 }
@@ -924,7 +1018,7 @@ mod tests {
             let result_stack = engine.result_stack();
 
             assert_eq!(result_stack.len(), 1);
-            assert_eq!(result_stack.peek(0).unwrap().as_int().unwrap(), 3.into());
+            assert_eq!(result_stack.peek(0).unwrap().as_int().unwrap(), 3);
         } else {
             panic!("Execution failed: {:?}", state);
         }

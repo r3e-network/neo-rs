@@ -3,9 +3,9 @@
 //! This module implements storage functionality exactly matching C# Neo's ApplicationEngine.Storage.cs.
 //! It provides storage context management, storage operations, and storage iteration.
 
-use neo_core::UInt160;
-use crate::storage::{StorageKey, StorageItem};
+use crate::storage::{StorageItem, StorageKey};
 use crate::{Error, Result};
+use neo_core::UInt160;
 use std::collections::HashMap;
 
 /// Maximum size of storage keys (matches C# ApplicationEngine.MaxStorageKeySize exactly).
@@ -81,7 +81,11 @@ pub struct StorageIterator {
 
 impl StorageIterator {
     /// Creates a new storage iterator.
-    pub fn new(entries: Vec<(Vec<u8>, StorageItem)>, prefix_length: usize, options: FindOptions) -> Self {
+    pub fn new(
+        entries: Vec<(Vec<u8>, StorageItem)>,
+        prefix_length: usize,
+        options: FindOptions,
+    ) -> Self {
         Self {
             entries,
             position: 0,
@@ -113,7 +117,9 @@ impl StorageIterator {
         let result_value = item.value.clone();
 
         // Apply RemovePrefix option
-        if self.options.contains(FindOptions::REMOVE_PREFIX) && result_key.len() >= self.prefix_length {
+        if self.options.contains(FindOptions::REMOVE_PREFIX)
+            && result_key.len() >= self.prefix_length
+        {
             result_key = result_key[self.prefix_length..].to_vec();
         }
 
@@ -127,7 +133,7 @@ impl StorageIterator {
             // Return a proper structure containing both key and value
             // This matches the C# implementation where Value returns a StackItem containing both
             let mut result = Vec::new();
-            
+
             // Add key length prefix (4 bytes, little-endian)
             result.extend_from_slice(&(result_key.len() as u32).to_le_bytes());
             // Add key data
@@ -136,7 +142,7 @@ impl StorageIterator {
             result.extend_from_slice(&(result_value.len() as u32).to_le_bytes());
             // Add value data
             result.extend_from_slice(&result_value);
-            
+
             Some(result)
         }
     }
@@ -159,7 +165,12 @@ pub trait StorageOperations {
 
     /// Puts a storage item (production-ready implementation matching C# Neo exactly).
     /// This matches C# ApplicationEngine.Put method exactly.
-    fn put_storage_item(&mut self, context: &StorageContext, key: &[u8], value: &[u8]) -> Result<()>;
+    fn put_storage_item(
+        &mut self,
+        context: &StorageContext,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<()>;
 
     /// Deletes a storage item (production-ready implementation matching C# Neo exactly).
     /// This matches C# ApplicationEngine.Delete method exactly.
@@ -179,7 +190,12 @@ pub trait StorageOperations {
 
     /// Finds storage entries with the given prefix and options.
     /// This matches C# ApplicationEngine.Find method exactly.
-    fn find_storage_entries(&self, context: &StorageContext, prefix: &[u8], options: FindOptions) -> StorageIterator;
+    fn find_storage_entries(
+        &self,
+        context: &StorageContext,
+        prefix: &[u8],
+        options: FindOptions,
+    ) -> StorageIterator;
 
     /// Gets the storage price per byte.
     fn get_storage_price(&self) -> usize;
@@ -221,10 +237,10 @@ impl StorageManager {
     pub fn create_storage_iterator(&mut self, results: Vec<(Vec<u8>, StorageItem)>) -> Result<u32> {
         let iterator_id = self.next_iterator_id;
         self.next_iterator_id += 1;
-        
+
         let iterator = StorageIterator::new(results, 0, FindOptions::NONE);
         self.storage_iterators.insert(iterator_id, iterator);
-        
+
         Ok(iterator_id)
     }
 
@@ -233,14 +249,14 @@ impl StorageManager {
         &mut self,
         results: Vec<(Vec<u8>, StorageItem)>,
         prefix_length: usize,
-        options: FindOptions
+        options: FindOptions,
     ) -> Result<u32> {
         let iterator_id = self.next_iterator_id;
         self.next_iterator_id += 1;
-        
+
         let iterator = StorageIterator::new(results, prefix_length, options);
         self.storage_iterators.insert(iterator_id, iterator);
-        
+
         Ok(iterator_id)
     }
 
@@ -256,14 +272,18 @@ impl StorageManager {
 
     /// Advances an iterator to the next item.
     pub fn iterator_next(&mut self, iterator_id: u32) -> Result<bool> {
-        let iterator = self.storage_iterators.get_mut(&iterator_id)
+        let iterator = self
+            .storage_iterators
+            .get_mut(&iterator_id)
             .ok_or_else(|| Error::InvalidArguments("Iterator not found".to_string()))?;
         Ok(iterator.next())
     }
 
     /// Gets the current value from an iterator.
     pub fn iterator_value(&self, iterator_id: u32) -> Result<Option<Vec<u8>>> {
-        let iterator = self.storage_iterators.get(&iterator_id)
+        let iterator = self
+            .storage_iterators
+            .get(&iterator_id)
             .ok_or_else(|| Error::InvalidArguments("Iterator not found".to_string()))?;
         Ok(iterator.value())
     }
@@ -302,7 +322,8 @@ impl StorageManager {
 
     /// Deletes storage entries by prefix.
     pub fn delete_storage_by_prefix(&mut self, prefix: &[u8]) -> Result<()> {
-        let keys_to_delete: Vec<_> = self.storage
+        let keys_to_delete: Vec<_> = self
+            .storage
             .keys()
             .filter(|key| key.key.starts_with(prefix))
             .cloned()
@@ -330,4 +351,4 @@ impl Default for StorageManager {
     fn default() -> Self {
         Self::new()
     }
-} 
+}

@@ -9,17 +9,17 @@
 //! - state: Blockchain state management (matches C# state handling)
 //! - blockchain: Main Blockchain struct (matches C# Blockchain class)
 
-pub mod storage;
+pub mod blockchain;
 pub mod genesis;
-pub mod verification;
 pub mod persistence;
 pub mod state;
-pub mod blockchain;
+pub mod storage;
+pub mod verification;
 
 // Re-export main types for compatibility
 pub use blockchain::{Blockchain, BlockchainStats};
-pub use storage::{Storage, StorageKey, StorageItem, StorageProvider, RocksDBStorage};
 pub use genesis::GenesisManager;
-pub use verification::{BlockchainVerifier, VerifyResult};
 pub use persistence::{BlockchainPersistence, BlockchainSnapshot};
-pub use state::{BlockchainState, ContractState, PolicySettings}; 
+pub use state::{BlockchainState, ContractState, PolicySettings};
+pub use storage::{RocksDBStorage, Storage, StorageItem, StorageKey, StorageProvider};
+pub use verification::{BlockchainVerifier, VerifyResult};

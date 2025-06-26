@@ -3,7 +3,7 @@
 //! This module provides comprehensive event handling for smart contracts,
 //! including event emission, filtering, and subscription management.
 
-use crate::{Error, Result, EventError};
+use crate::{Error, EventError, Result};
 use neo_core::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -170,9 +170,10 @@ impl EventManager {
         // Validate event data size
         let data_size = self.calculate_event_data_size(&event.data);
         if data_size > MAX_EVENT_DATA_SIZE {
-            return Err(Error::Storage(
-                format!("Event data too large: {} bytes (max: {})", data_size, MAX_EVENT_DATA_SIZE)
-            ));
+            return Err(Error::Storage(format!(
+                "Event data too large: {} bytes (max: {})",
+                data_size, MAX_EVENT_DATA_SIZE
+            )));
         }
 
         // Add to events list
@@ -211,9 +212,15 @@ impl EventManager {
 
         // Start with all events or filter by contract/name for efficiency
         let candidate_indices = if let Some(contract) = &filter.contract {
-            self.events_by_contract.get(contract).cloned().unwrap_or_default()
+            self.events_by_contract
+                .get(contract)
+                .cloned()
+                .unwrap_or_default()
         } else if let Some(event_name) = &filter.event_name {
-            self.events_by_name.get(event_name).cloned().unwrap_or_default()
+            self.events_by_name
+                .get(event_name)
+                .cloned()
+                .unwrap_or_default()
         } else {
             (0..self.events.len()).collect()
         };
@@ -331,7 +338,8 @@ impl EventManager {
 
         for subscription_id in subscription_ids {
             // First, check if we should notify this subscription
-            let should_notify = if let Some(subscription) = self.subscriptions.get(&subscription_id) {
+            let should_notify = if let Some(subscription) = self.subscriptions.get(&subscription_id)
+            {
                 subscription.active && self.matches_filter(event, &subscription.filter)
             } else {
                 false
@@ -351,14 +359,16 @@ impl EventManager {
                 // Update subscription statistics
                 if let Some(subscription_mut) = self.subscriptions.get_mut(&subscription_id) {
                     subscription_mut.events_delivered += 1;
-                    subscription_mut.last_delivery_time = Some(std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs());
+                    subscription_mut.last_delivery_time = Some(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs(),
+                    );
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -383,7 +393,10 @@ impl EventManager {
             EventValue::Hash160(_) => 20,
             EventValue::Hash256(_) => 32,
             EventValue::Array(arr) => arr.iter().map(|v| self.calculate_value_size(v)).sum(),
-            EventValue::Map(map) => map.iter().map(|(k, v)| k.len() + self.calculate_value_size(v)).sum(),
+            EventValue::Map(map) => map
+                .iter()
+                .map(|(k, v)| k.len() + self.calculate_value_size(v))
+                .sum(),
         }
     }
 
@@ -398,11 +411,17 @@ impl EventManager {
         }
     }
 
-    /// Invokes event callback (simplified implementation).
-    fn invoke_event_callback(&self, subscription: &EventSubscription, event: &SmartContractEvent) -> Result<()> {
+    /// Invokes event callback for notification delivery.
+    fn invoke_event_callback(
+        &self,
+        subscription: &EventSubscription,
+        event: &SmartContractEvent,
+    ) -> Result<()> {
         // Simple callback logging (production-ready implementation would handle HTTP/WebSocket)
-        println!("Event notification for subscription {}: {} from contract {} (callback: {})",
-                subscription.id, event.event_name, event.contract, subscription.callback);
+        println!(
+            "Event notification for subscription {}: {} from contract {} (callback: {})",
+            subscription.id, event.event_name, event.contract, subscription.callback
+        );
         Ok(())
     }
 }

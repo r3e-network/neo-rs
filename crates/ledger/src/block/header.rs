@@ -3,11 +3,11 @@
 //! This module implements the BlockHeader structure exactly matching C# Neo's Header.cs.
 //! It provides header validation, hashing, and witness verification.
 
+use super::verification::WitnessVerifier;
 use crate::{Error, Result, VerifyResult};
-use neo_core::{UInt160, UInt256, Witness, Signer, WitnessScope, WitnessCondition};
+use neo_core::{Signer, UInt160, UInt256, Witness, WitnessCondition, WitnessScope};
 use neo_cryptography::ECPoint;
 use neo_vm::ApplicationEngine;
-use super::verification::WitnessVerifier;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -153,7 +153,7 @@ impl BlockHeader {
             if self.index != 0 {
                 return VerifyResult::Invalid;
             }
-            
+
             if self.previous_hash != UInt256::zero() {
                 return VerifyResult::Invalid;
             }
@@ -173,15 +173,15 @@ impl BlockHeader {
     fn get_protocol_settings_validators_count(&self) -> u8 {
         // Production implementation: Get ValidatorsCount from ProtocolSettings
         // In C# Neo: ProtocolSettings.Default.ValidatorsCount
-        
+
         // 1. Load from protocol settings configuration
         // This would typically be loaded from ProtocolSettings.json
         let default_validators_count = 7; // Neo N3 default
-        
+
         // 2. Production-ready configuration loading (matches C# ProtocolSettings exactly)
         // This implements C# logic: ProtocolSettings.Default.ValidatorsCount from ProtocolSettings.json
         // Production implementation loads from configuration file, validates values, and caches settings
-        
+
         // 3. Return configured validators count
         default_validators_count
     }
@@ -202,14 +202,14 @@ impl BlockHeader {
     /// Creates a genesis block header
     pub fn genesis(next_consensus: UInt160) -> Self {
         Self::new(
-            0,                    // version
-            UInt256::zero(),     // previous_hash
-            UInt256::zero(),     // merkle_root (will be calculated)
+            0,                         // version
+            UInt256::zero(),           // previous_hash
+            UInt256::zero(),           // merkle_root (will be calculated)
             Self::current_timestamp(), // timestamp
-            0,                   // nonce
-            0,                   // index
-            0,                   // primary_index
-            next_consensus,      // next_consensus
+            0,                         // nonce
+            0,                         // index
+            0,                         // primary_index
+            next_consensus,            // next_consensus
         )
     }
 
@@ -221,7 +221,7 @@ impl BlockHeader {
     /// Gets the size of the header in bytes
     pub fn size(&self) -> usize {
         use neo_io::BinaryWriter;
-        
+
         let mut writer = BinaryWriter::new();
         let _ = writer.write_u32(self.version);
         let _ = writer.write_bytes(self.previous_hash.as_bytes());
@@ -231,13 +231,13 @@ impl BlockHeader {
         let _ = writer.write_u32(self.index);
         let _ = writer.write_u8(self.primary_index);
         let _ = writer.write_bytes(self.next_consensus.as_bytes());
-        
+
         // Add witness data size
         let _ = writer.write_var_int(self.witnesses.len() as u64);
         for witness in &self.witnesses {
             let _ = <Witness as neo_io::Serializable>::serialize(witness, &mut writer);
         }
-        
+
         writer.to_bytes().len()
     }
 }
@@ -295,10 +295,10 @@ mod tests {
     fn test_genesis_header() {
         let next_consensus = UInt160::from_bytes(&[1; 20]).unwrap();
         let header = BlockHeader::genesis(next_consensus);
-        
+
         assert!(header.is_genesis());
         assert_eq!(header.index, 0);
         assert_eq!(header.previous_hash, UInt256::zero());
         assert_eq!(header.next_consensus, next_consensus);
     }
-} 
+}

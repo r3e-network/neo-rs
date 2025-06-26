@@ -993,7 +993,7 @@ pub enum OpCode {
 impl TryFrom<u8> for OpCode {
     type Error = ();
 
-    fn try_from(byte: u8) -> Result<Self, Self::Error> {
+    fn try_from(byte: u8) -> VmResult<Self, Self::Error> {
         Self::from_byte(byte).ok_or(())
     }
 }

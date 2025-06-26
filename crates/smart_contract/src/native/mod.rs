@@ -3,23 +3,23 @@
 //! This module provides the built-in native contracts for the Neo blockchain,
 //! including NEO, GAS, Policy, and other system contracts.
 
+pub mod crypto_lib;
+pub mod gas_token;
 pub mod native_contract;
 pub mod neo_token;
-pub mod gas_token;
+pub mod oracle_contract;
 pub mod policy_contract;
 pub mod role_management;
 pub mod std_lib;
-pub mod crypto_lib;
-pub mod oracle_contract;
 
+pub use crypto_lib::CryptoLib;
+pub use gas_token::GasToken;
 pub use native_contract::{NativeContract, NativeMethod};
 pub use neo_token::NeoToken;
-pub use gas_token::GasToken;
-pub use policy_contract::PolicyContract;
-pub use role_management::{RoleManagement, Role};
-pub use std_lib::StdLib;
-pub use crypto_lib::CryptoLib;
 pub use oracle_contract::{OracleContract, OracleRequest, OracleResponse};
+pub use policy_contract::PolicyContract;
+pub use role_management::{Role, RoleManagement};
+pub use std_lib::StdLib;
 
 use neo_core::UInt160;
 use std::collections::HashMap;

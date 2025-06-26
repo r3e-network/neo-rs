@@ -1,8 +1,8 @@
 //! Basic tests for the smart contract module.
 
-use neo_smart_contract::*;
-use neo_smart_contract::native::NativeContract;
 use neo_core::UInt160;
+use neo_smart_contract::native::NativeContract;
+use neo_smart_contract::*;
 
 #[test]
 fn test_basic_compilation() {
@@ -98,10 +98,10 @@ fn test_contract_state_creation() {
 fn test_policy_contract() {
     let policy = native::PolicyContract::new();
     assert_eq!(policy.name(), "PolicyContract");
-    
+
     // Test that the contract has methods
     assert!(!policy.methods().is_empty());
-    
+
     // Test hash is valid
     let hash = policy.hash();
     assert_ne!(hash, UInt160::zero());
@@ -111,10 +111,10 @@ fn test_policy_contract() {
 fn test_oracle_contract() {
     let oracle = native::OracleContract::new();
     assert_eq!(oracle.name(), "OracleContract");
-    
+
     // Test that the contract has methods
     assert!(!oracle.methods().is_empty());
-    
+
     // Test hash is valid
     let hash = oracle.hash();
     assert_ne!(hash, UInt160::zero());

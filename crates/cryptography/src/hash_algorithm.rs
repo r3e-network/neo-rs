@@ -12,10 +12,10 @@ use std::str::FromStr;
 pub enum HashAlgorithm {
     /// The SHA256 hash algorithm
     Sha256 = 0x00,
-    
+
     /// The Keccak256 hash algorithm
     Keccak256 = 0x01,
-    
+
     /// The SHA512 hash algorithm  
     Sha512 = 0x02,
 }
@@ -29,12 +29,12 @@ impl HashAlgorithm {
             HashAlgorithm::Sha512 => 64,
         }
     }
-    
+
     /// Returns the name of the hash algorithm.
     pub fn name(&self) -> &'static str {
         match self {
             HashAlgorithm::Sha256 => "SHA256",
-            HashAlgorithm::Keccak256 => "KECCAK256", 
+            HashAlgorithm::Keccak256 => "KECCAK256",
             HashAlgorithm::Sha512 => "SHA512",
         }
     }
@@ -53,7 +53,7 @@ pub struct UnknownHashAlgorithm(String);
 
 impl FromStr for HashAlgorithm {
     type Err = UnknownHashAlgorithm;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
             "SHA256" => Ok(HashAlgorithm::Sha256),

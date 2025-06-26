@@ -12,20 +12,20 @@
 //! - tasks: Background task management (matches TaskManager pattern)
 
 pub mod config;
-pub mod events;
 pub mod connection;
+pub mod events;
 pub mod protocol;
 // pub mod node; // Disabled - using p2p_node.rs instead
-pub mod tasks;
 pub mod local_test_framework;
+pub mod tasks;
 
 // Re-export main types for convenience
 pub use config::P2PConfig;
+pub use connection::{ConnectionState, PeerConnection};
 pub use events::P2PEvent;
-pub use connection::{PeerConnection, ConnectionState};
 pub use protocol::MessageHandler;
 // pub use node::P2PNode; // Disabled - using p2p_node.rs instead
-pub use local_test_framework::{LocalTestFramework, TestNode, TestSyncScenario, SyncTestResult};
+pub use local_test_framework::{LocalTestFramework, SyncTestResult, TestNode, TestSyncScenario};
 
 // Main re-exports for P2P functionality
 
@@ -35,4 +35,4 @@ pub const MAX_PEERS: usize = 100;
 pub const CONNECTION_TIMEOUT_SECS: u64 = 30;
 pub const HANDSHAKE_TIMEOUT_SECS: u64 = 10;
 pub const PING_INTERVAL_SECS: u64 = 30;
-pub const MESSAGE_BUFFER_SIZE: usize = 1000; 
+pub const MESSAGE_BUFFER_SIZE: usize = 1000;

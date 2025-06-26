@@ -30,7 +30,10 @@ fn test_script_compilation_edge_cases() {
 
     // Test other previously missing opcodes
     let result = runner.compile_script(&["PUSHINT8".to_string()]);
-    assert!(result.is_ok(), "PUSHINT8 opcode should compile successfully");
+    assert!(
+        result.is_ok(),
+        "PUSHINT8 opcode should compile successfully"
+    );
     assert_eq!(result.unwrap(), vec![0x00, 0x40]); // PUSHINT8 + RET
 
     let result = runner.compile_script(&["PUSHT".to_string()]);
@@ -50,11 +53,17 @@ fn test_hex_data_compilation() {
 
     // Test invalid hex data (odd length)
     let result = runner.compile_script(&["0x123".to_string()]);
-    assert!(result.is_err(), "Odd-length hex data should fail compilation");
+    assert!(
+        result.is_err(),
+        "Odd-length hex data should fail compilation"
+    );
 
     // Test invalid hex characters
     let result = runner.compile_script(&["0xGG".to_string()]);
-    assert!(result.is_err(), "Invalid hex characters should fail compilation");
+    assert!(
+        result.is_err(),
+        "Invalid hex characters should fail compilation"
+    );
 }
 
 /// Test PUSHDATA compilation with hex data
@@ -77,7 +86,7 @@ fn test_pushdata1_debug() {
 
     // Now test what happens when we parse this script
     use neo_vm::script::Script;
-    let script_obj = Script::new(compiled[..compiled.len()-1].to_vec(), false).unwrap(); // Remove RET for testing
+    let script_obj = Script::new(compiled[..compiled.len() - 1].to_vec(), false).unwrap(); // Remove RET for testing
     let instructions: Result<Vec<_>, _> = script_obj.instructions().collect();
 
     match instructions {

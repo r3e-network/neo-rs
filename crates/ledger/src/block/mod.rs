@@ -9,15 +9,15 @@
 //! - builder: Block builder for creating blocks (matches BlockBuilder pattern)
 //! - verification: Cryptographic verification logic (matches verification methods)
 
-pub mod header;
 pub mod block;
 pub mod builder;
+pub mod header;
 pub mod verification;
 
 // Re-export main types for convenience
-pub use header::{BlockHeader, Header};
 pub use block::Block;
 pub use builder::BlockBuilder;
+pub use header::{BlockHeader, Header};
 
 use crate::{Error, Result, VerifyResult};
 
@@ -34,8 +34,8 @@ pub trait ScriptHashExt {
 
 impl ScriptHashExt for Vec<u8> {
     fn to_script_hash(&self) -> neo_core::UInt160 {
+        use ripemd::{Digest as RipemdDigest, Ripemd160};
         use sha2::{Digest, Sha256};
-        use ripemd::{Ripemd160, Digest as RipemdDigest};
 
         // Hash160 = RIPEMD160(SHA256(script)) - matches C# exactly
         let mut sha256_hasher = Sha256::new();
@@ -48,4 +48,4 @@ impl ScriptHashExt for Vec<u8> {
 
         neo_core::UInt160::from_bytes(&ripemd_result).unwrap_or_else(|_| neo_core::UInt160::zero())
     }
-} 
+}

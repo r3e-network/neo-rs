@@ -12,9 +12,7 @@ pub struct JArray {
 impl JArray {
     /// Creates a new empty JSON array
     pub fn new() -> Self {
-        Self {
-            items: Vec::new(),
-        }
+        Self { items: Vec::new() }
     }
 
     /// Creates a new JSON array from a vector of tokens
@@ -58,7 +56,10 @@ impl JArray {
             self.items[index] = value;
             Ok(())
         } else {
-            Err(JsonError::InvalidOperation(format!("Index {} out of bounds", index)))
+            Err(JsonError::InvalidOperation(format!(
+                "Index {} out of bounds",
+                index
+            )))
         }
     }
 
@@ -73,7 +74,10 @@ impl JArray {
             self.items.insert(index, item);
             Ok(())
         } else {
-            Err(JsonError::InvalidOperation(format!("Index {} out of bounds", index)))
+            Err(JsonError::InvalidOperation(format!(
+                "Index {} out of bounds",
+                index
+            )))
         }
     }
 
@@ -82,7 +86,10 @@ impl JArray {
         if index < self.items.len() {
             Ok(self.items.remove(index))
         } else {
-            Err(JsonError::InvalidOperation(format!("Index {} out of bounds", index)))
+            Err(JsonError::InvalidOperation(format!(
+                "Index {} out of bounds",
+                index
+            )))
         }
     }
 
@@ -140,7 +147,9 @@ impl JArray {
     pub fn from_jtoken(token: JToken) -> JsonResult<Self> {
         match token {
             JToken::Array(items) => Ok(Self { items }),
-            _ => Err(JsonError::InvalidOperation("Token is not an array".to_string())),
+            _ => Err(JsonError::InvalidOperation(
+                "Token is not an array".to_string(),
+            )),
         }
     }
 }
@@ -188,7 +197,10 @@ impl IntoIterator for JArray {
 
 impl<'a> IntoIterator for &'a JArray {
     type Item = Option<&'a JToken>;
-    type IntoIter = std::iter::Map<std::slice::Iter<'a, Option<JToken>>, fn(&'a Option<JToken>) -> Option<&'a JToken>>;
+    type IntoIter = std::iter::Map<
+        std::slice::Iter<'a, Option<JToken>>,
+        fn(&'a Option<JToken>) -> Option<&'a JToken>,
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
         self.items.iter().map(|item| item.as_ref())
@@ -234,7 +246,9 @@ mod tests {
         array.add(Some(JToken::String("first".to_string())));
         array.add(Some(JToken::String("third".to_string())));
 
-        array.insert(1, Some(JToken::String("second".to_string()))).unwrap();
+        array
+            .insert(1, Some(JToken::String("second".to_string())))
+            .unwrap();
 
         assert_eq!(array.len(), 3);
         assert_eq!(array.get(0), Some(&JToken::String("first".to_string())));
@@ -318,4 +332,4 @@ mod tests {
         let array2 = JArray::from_jtoken(token_clone).unwrap();
         assert_eq!(array, array2);
     }
-} 
+}

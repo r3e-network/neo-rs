@@ -25,7 +25,7 @@ async fn test_error_handler_integration() {
     
     // Test error classification
     let connection_error = Error::ConnectionFailed("Test connection failure".to_string());
-    let protocol_error = Error::Protocol("Test protocol error".to_string());
+    let protocol_error = Error::Protocol("Test protocol error".to_string());)
     let timeout_error = Error::Timeout("Test timeout".to_string());
     
     // Create operation contexts for testing

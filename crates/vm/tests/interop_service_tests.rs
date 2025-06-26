@@ -1,26 +1,58 @@
 //! Integration tests for the Neo VM interop service.
 
+use neo_vm::call_flags::CallFlags;
 use neo_vm::execution_engine::ExecutionEngine;
 use neo_vm::interop_service::{InteropDescriptor, InteropService};
 use neo_vm::op_code::OpCode;
 use neo_vm::script::Script;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm::stack_item::StackItem;
-use neo_vm::call_flags::CallFlags;
 
 #[test]
 fn test_interop_service_creation() {
     let service = InteropService::new();
 
     // Check that standard methods are registered
-    assert!(service.get_method("System.Runtime.Platform".as_bytes()).is_some());
-    assert!(service.get_method("System.Runtime.GetTrigger".as_bytes()).is_some());
-    assert!(service.get_method("System.Runtime.GetTime".as_bytes()).is_some());
-    assert!(service.get_method("System.Runtime.Log".as_bytes()).is_some());
-    assert!(service.get_method("System.Storage.GetContext".as_bytes()).is_some());
-    assert!(service.get_method("System.Storage.Get".as_bytes()).is_some());
-    assert!(service.get_method("System.Storage.Put".as_bytes()).is_some());
-    assert!(service.get_method("System.Storage.Delete".as_bytes()).is_some());
+    assert!(
+        service
+            .get_method("System.Runtime.Platform".as_bytes())
+            .is_some()
+    );
+    assert!(
+        service
+            .get_method("System.Runtime.GetTrigger".as_bytes())
+            .is_some()
+    );
+    assert!(
+        service
+            .get_method("System.Runtime.GetTime".as_bytes())
+            .is_some()
+    );
+    assert!(
+        service
+            .get_method("System.Runtime.Log".as_bytes())
+            .is_some()
+    );
+    assert!(
+        service
+            .get_method("System.Storage.GetContext".as_bytes())
+            .is_some()
+    );
+    assert!(
+        service
+            .get_method("System.Storage.Get".as_bytes())
+            .is_some()
+    );
+    assert!(
+        service
+            .get_method("System.Storage.Put".as_bytes())
+            .is_some()
+    );
+    assert!(
+        service
+            .get_method("System.Storage.Delete".as_bytes())
+            .is_some()
+    );
 }
 
 #[test]
@@ -69,19 +101,24 @@ fn test_interop_service_invoke() {
 
     // Create a script that calls the interop method
     let mut builder = ScriptBuilder::new();
-    builder
-        .emit_syscall("Test.Method")
-        .emit_opcode(OpCode::RET);
+    builder.emit_syscall("Test.Method").emit_opcode(OpCode::RET);
     let script = builder.to_script();
 
     // Load the script
     engine.load_script(script, -1, 0).unwrap();
 
     // Get the first instruction
-    let instruction = engine.current_context().unwrap().script().get_instruction(0).unwrap();
+    let instruction = engine
+        .current_context()
+        .unwrap()
+        .script()
+        .get_instruction(0)
+        .unwrap();
 
     // Invoke the interop method using the instruction
-    service.invoke_instruction(&mut engine, &instruction).unwrap();
+    service
+        .invoke_instruction(&mut engine, &instruction)
+        .unwrap();
 
     // Check the result
     let context = engine.current_context().unwrap();
@@ -108,10 +145,17 @@ fn test_interop_service_platform() {
     engine.load_script(script, -1, 0).unwrap();
 
     // Get the first instruction
-    let instruction = engine.current_context().unwrap().script().get_instruction(0).unwrap();
+    let instruction = engine
+        .current_context()
+        .unwrap()
+        .script()
+        .get_instruction(0)
+        .unwrap();
 
     // Invoke the interop method
-    service.invoke_instruction(&mut engine, &instruction).unwrap();
+    service
+        .invoke_instruction(&mut engine, &instruction)
+        .unwrap();
 
     // Check the result
     let context = engine.current_context().unwrap();
@@ -145,10 +189,17 @@ fn test_interop_service_log() {
     }
 
     // Get the SYSCALL instruction
-    let instruction = engine.current_context().unwrap().script().get_instruction(0).unwrap();
+    let instruction = engine
+        .current_context()
+        .unwrap()
+        .script()
+        .get_instruction(0)
+        .unwrap();
 
     // Invoke the interop method
-    service.invoke_instruction(&mut engine, &instruction).unwrap();
+    service
+        .invoke_instruction(&mut engine, &instruction)
+        .unwrap();
 
     // Check that the stack is empty (the log method consumes the message)
     let context = engine.current_context().unwrap();
@@ -170,8 +221,15 @@ fn test_interop_service_storage() {
         let script = builder.to_script();
         engine.load_script(script, -1, 0).unwrap();
 
-        let instruction = engine.current_context().unwrap().script().get_instruction(0).unwrap();
-        service.invoke_instruction(&mut engine, &instruction).unwrap();
+        let instruction = engine
+            .current_context()
+            .unwrap()
+            .script()
+            .get_instruction(0)
+            .unwrap();
+        service
+            .invoke_instruction(&mut engine, &instruction)
+            .unwrap();
 
         // Should have one item on stack (the context)
         let context = engine.current_context().unwrap();
@@ -196,8 +254,15 @@ fn test_interop_service_storage() {
             stack.push(StackItem::from_byte_string(vec![4, 5, 6])); // value
         }
 
-        let instruction = engine.current_context().unwrap().script().get_instruction(0).unwrap();
-        service.invoke_instruction(&mut engine, &instruction).unwrap();
+        let instruction = engine
+            .current_context()
+            .unwrap()
+            .script()
+            .get_instruction(0)
+            .unwrap();
+        service
+            .invoke_instruction(&mut engine, &instruction)
+            .unwrap();
 
         // Stack should be empty after Put
         let context = engine.current_context().unwrap();
@@ -221,8 +286,15 @@ fn test_interop_service_storage() {
             stack.push(StackItem::from_byte_string(vec![1, 2, 3])); // key
         }
 
-        let instruction = engine.current_context().unwrap().script().get_instruction(0).unwrap();
-        service.invoke_instruction(&mut engine, &instruction).unwrap();
+        let instruction = engine
+            .current_context()
+            .unwrap()
+            .script()
+            .get_instruction(0)
+            .unwrap();
+        service
+            .invoke_instruction(&mut engine, &instruction)
+            .unwrap();
 
         // Should have the retrieved value on stack
         let context = engine.current_context().unwrap();

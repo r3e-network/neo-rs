@@ -177,7 +177,7 @@ async fn test_node_connection(addr: SocketAddr) -> Result<(), Box<dyn std::error
     match connection_result {
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => Err(e.into()),
-        Err(_) => Err("Connection timeout".into()),
+        Err(_) => Err("Connection timeout")),
     }
 }
 

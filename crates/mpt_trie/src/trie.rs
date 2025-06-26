@@ -1,6 +1,6 @@
-use crate::{Node, Cache, NodeType};
 use crate::error::{MptError, MptResult};
-use crate::helper::{to_nibbles, from_nibbles, common_prefix_length};
+use crate::helper::{common_prefix_length, from_nibbles, to_nibbles};
+use crate::{Cache, Node, NodeType};
 use neo_core::UInt256;
 
 /// MPT Trie implementation
@@ -37,7 +37,11 @@ impl Trie {
     }
 
     /// Creates a new Trie with storage backend
-    pub fn new_with_storage(root: Option<UInt256>, full_state: bool, storage: Box<dyn TrieStorage>) -> Self {
+    pub fn new_with_storage(
+        root: Option<UInt256>,
+        full_state: bool,
+        storage: Box<dyn TrieStorage>,
+    ) -> Self {
         let root_node = match root {
             Some(hash) => Node::new_hash(hash),
             None => Node::new(),
@@ -117,7 +121,7 @@ impl Trie {
                 if path.is_empty() {
                     return Ok(node.value().map(|v| v.to_vec()));
                 }
-                
+
                 let index = path[0] as usize;
                 if index < 16 {
                     if let Some(child) = node.children().get(index) {
@@ -140,7 +144,7 @@ impl Trie {
                         Ok(None) => {
                             // Production-ready storage resolution (matches C# MPT exactly)
                             // This implements the C# logic: HashNode resolution from persistent storage
-                            
+
                             // 1. Attempt to load node from persistent storage using hash
                             match self.load_node_from_storage(&hash) {
                                 Ok(node_data) => {
@@ -149,7 +153,7 @@ impl Trie {
                                         Ok(resolved_node) => {
                                             // 3. Cache the resolved node for future use (production optimization)
                                             let _ = self.cache.put(hash, resolved_node.clone());
-                                            
+
                                             // 4. Recursively get from the resolved node
                                             self.get_node(&resolved_node, path)
                                         }
@@ -208,7 +212,7 @@ impl Trie {
 
                     // Split the leaf into a branch
                     let common_len = common_prefix_length(existing_key, path);
-                    
+
                     if common_len == existing_key.len() && common_len == path.len() {
                         // Same key, update value
                         node.set_value(Some(value.to_vec()));
@@ -218,33 +222,33 @@ impl Trie {
                     // Create branch node
                     let mut branch = Node::new();
                     branch.set_node_type(NodeType::BranchNode);
-                    
+
                     // Handle existing leaf
                     if common_len < existing_key.len() {
                         let existing_index = existing_key[common_len] as usize;
                         let existing_remainder = &existing_key[common_len + 1..];
-                        
+
                         let mut existing_leaf = Node::new();
                         existing_leaf.set_node_type(NodeType::LeafNode);
                         existing_leaf.set_key(Some(existing_remainder.to_vec()));
                         existing_leaf.set_value(node.value().map(|v| v.to_vec()));
-                        
+
                         branch.set_child(existing_index, Some(existing_leaf));
                     } else {
                         // Existing key is prefix of new key
                         branch.set_value(node.value().map(|v| v.to_vec()));
                     }
-                    
+
                     // Handle new value
                     if common_len < path.len() {
                         let new_index = path[common_len] as usize;
                         let new_remainder = &path[common_len + 1..];
-                        
+
                         let mut new_leaf = Node::new();
                         new_leaf.set_node_type(NodeType::LeafNode);
                         new_leaf.set_key(Some(new_remainder.to_vec()));
                         new_leaf.set_value(Some(value.to_vec()));
-                        
+
                         branch.set_child(new_index, Some(new_leaf));
                     } else {
                         // New key is prefix of existing key
@@ -266,11 +270,12 @@ impl Trie {
             NodeType::ExtensionNode => {
                 if let Some(key) = node.key() {
                     let common_len = common_prefix_length(key, path);
-                    
+
                     if common_len == key.len() {
                         // Path continues through this extension
                         if let Some(next) = node.next() {
-                            let new_next = self.put_node(next.clone(), &path[key.len()..], value)?;
+                            let new_next =
+                                self.put_node(next.clone(), &path[key.len()..], value)?;
                             node.set_next(Some(Box::new(new_next)));
                         }
                         return Ok(node);
@@ -278,31 +283,31 @@ impl Trie {
                         // Split the extension
                         let mut branch = Node::new();
                         branch.set_node_type(NodeType::BranchNode);
-                        
+
                         // Handle existing extension
                         if common_len + 1 < key.len() {
                             let mut new_extension = Node::new();
                             new_extension.set_node_type(NodeType::ExtensionNode);
                             new_extension.set_key(Some(key[common_len + 1..].to_vec()));
                             new_extension.set_next(node.next().map(|n| Box::new(n.clone())));
-                            
+
                             let existing_index = key[common_len] as usize;
                             branch.set_child(existing_index, Some(new_extension));
                         } else {
                             let existing_index = key[common_len] as usize;
                             branch.set_child(existing_index, node.next().map(|n| n.clone()));
                         }
-                        
+
                         // Handle new path
                         if common_len < path.len() {
                             let new_index = path[common_len] as usize;
                             let new_remainder = &path[common_len + 1..];
-                            
+
                             let mut new_leaf = Node::new();
                             new_leaf.set_node_type(NodeType::LeafNode);
                             new_leaf.set_key(Some(new_remainder.to_vec()));
                             new_leaf.set_value(Some(value.to_vec()));
-                            
+
                             branch.set_child(new_index, Some(new_leaf));
                         } else {
                             branch.set_value(Some(value.to_vec()));
@@ -327,7 +332,7 @@ impl Trie {
                     node.set_value(Some(value.to_vec()));
                     return Ok(node);
                 }
-                
+
                 let index = path[0] as usize;
                 if index < 16 {
                     let child = node.children().get(index).cloned().flatten();
@@ -352,14 +357,14 @@ impl Trie {
                         Ok(None) => {
                             // Production-ready extension node contraction (matches C# MPT exactly)
                             // This implements the C# logic: ExtensionNode.Contract() for path optimization
-                            
+
                             if self.is_node_contractible(&node) {
                                 // Contract extension nodes with single child to optimize trie structure
                                 if let Some(contracted) = self.contract_extension_node(&node) {
                                     return self.put_node_recursive(contracted, path, 0, value);
                                 }
                             }
-                            
+
                             // Standard case: return optimized node (production implementation)
                             return Ok(node);
                         }
@@ -419,7 +424,9 @@ impl Trie {
                 if let Some(key) = node.key() {
                     if path.len() >= key.len() && &path[..key.len()] == key {
                         if let Some(next) = node.next() {
-                            if let Some(new_next) = self.delete_node(next.clone(), &path[key.len()..])? {
+                            if let Some(new_next) =
+                                self.delete_node(next.clone(), &path[key.len()..])?
+                            {
                                 node.set_next(Some(Box::new(new_next)));
                                 return Ok(Some(node));
                             } else {
@@ -440,7 +447,7 @@ impl Trie {
                     }
                     return Ok(Some(node));
                 }
-                
+
                 let index = path[0] as usize;
                 if index < 16 {
                     if let Some(child) = node.children().get(index).cloned().flatten() {
@@ -465,7 +472,7 @@ impl Trie {
                         Ok(None) => {
                             // Production-ready persistent storage integration (matches C# MPT exactly)
                             // This implements the C# logic: HashNode resolution from persistent storage
-                            
+
                             // 1. Attempt to load node from persistent storage using hash
                             match self.load_node_from_storage(&hash) {
                                 Ok(node_data) => {
@@ -477,7 +484,9 @@ impl Trie {
                                         }
                                         Err(_) => {
                                             // 4. Corrupted node data in storage
-                                            Err(MptError::CorruptedNode("Failed to deserialize stored node".to_string()))
+                                            Err(MptError::CorruptedNode(
+                                                "Failed to deserialize stored node".to_string(),
+                                            ))
                                         }
                                     }
                                 }
@@ -579,9 +588,14 @@ impl Trie {
                                         Ok(resolved_node) => {
                                             // 5. Cache the resolved node for future use (production cache update)
                                             let _ = self.cache.put(hash, resolved_node.clone());
-                                            
+
                                             // 6. Recursively process the resolved node (production recursion)
-                                            self.find_node(&resolved_node, prefix, current_path, results)?;
+                                            self.find_node(
+                                                &resolved_node,
+                                                prefix,
+                                                current_path,
+                                                results,
+                                            )?;
                                         }
                                         Err(_) => {
                                             // 7. Deserialization failed - skip this node (production error handling)
@@ -616,7 +630,12 @@ impl Trie {
     }
 
     /// Internal method to generate proof for a node
-    fn get_proof_node(&mut self, node: &Node, path: &[u8], proof: &mut Vec<Vec<u8>>) -> MptResult<()> {
+    fn get_proof_node(
+        &mut self,
+        node: &Node,
+        path: &[u8],
+        proof: &mut Vec<Vec<u8>>,
+    ) -> MptResult<()> {
         if node.is_empty() {
             return Ok(());
         }
@@ -670,7 +689,7 @@ impl Trie {
                                         Ok(resolved_node) => {
                                             // Cache the resolved node for future use (production cache update)
                                             let _ = self.cache.put(hash, resolved_node.clone());
-                                            
+
                                             // Recursively process the resolved node (production recursion)
                                             self.get_proof_node(&resolved_node, path, proof)?;
                                         }
@@ -699,13 +718,16 @@ impl Trie {
     }
 
     /// Helper method to load node from persistent storage (production implementation)
-    fn load_node_from_storage(&self, hash: &UInt256) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    fn load_node_from_storage(
+        &self,
+        hash: &UInt256,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         // Production-ready persistent storage integration (matches C# MPT exactly)
         // This implements the C# logic: Store.TryGet(hash) for node resolution
-        
+
         // 1. Convert hash to storage key format (production key format)
         let storage_key = format!("MPT_NODE_{}", hex::encode(hash.as_bytes()));
-        
+
         // 2. Query RocksDB storage for node data (production storage access)
         if let Some(storage) = &self.storage {
             match storage.get(hash) {
@@ -714,13 +736,13 @@ impl Trie {
                     if node_data.len() < 32 {
                         return Err("Invalid node data size".into());
                     }
-                    
+
                     // 4. Verify stored hash matches requested hash (production integrity check)
                     let stored_hash = neo_cryptography::hash256(&node_data);
                     if stored_hash != *hash.as_bytes() {
                         return Err("Hash mismatch in stored node".into());
                     }
-                    
+
                     // 5. Return validated node data (production result)
                     Ok(node_data)
                 }
@@ -738,15 +760,15 @@ impl Trie {
             Err("No storage backend configured".into())
         }
     }
-    
+
     /// Helper method to check if a node can be contracted (production implementation)
     fn is_node_contractible(&self, _node: &Node) -> bool {
         // Production-ready node contraction check (matches C# MPT optimization exactly)
         // This implements the C# logic: ExtensionNode.CanContract()
-        
+
         // Production-ready node contraction check (matches C# MPT optimization exactly)
         // This implements the C# logic: checking if nodes can be merged for path compression
-        
+
         match _node.node_type() {
             // 1. Extension nodes with extension/leaf children can be contracted
             NodeType::ExtensionNode => {
@@ -756,7 +778,9 @@ impl Trie {
             // 2. Branch nodes with only one child can potentially be contracted
             NodeType::BranchNode => {
                 // Check if branch has only one non-empty child
-                let non_empty_children = _node.children().iter()
+                let non_empty_children = _node
+                    .children()
+                    .iter()
                     .filter(|child| child.is_some())
                     .count();
                 non_empty_children <= 1
@@ -765,15 +789,15 @@ impl Trie {
             _ => false,
         }
     }
-    
+
     /// Helper method to contract an extension node (production implementation)
     fn contract_extension_node(&self, _node: &Node) -> Option<Node> {
         // Production-ready extension node contraction (matches C# MPT optimization exactly)
         // This implements the C# logic: ExtensionNode.Contract() for path compression
-        
+
         // Production-ready extension node contraction (matches C# MPT optimization exactly)
         // This implements the C# logic: ExtensionNode.Contract() for path compression
-        
+
         match _node.node_type() {
             NodeType::ExtensionNode => {
                 // 1. Get extension node properties
@@ -786,7 +810,7 @@ impl Trie {
                                 if let Some(next_path) = next_node.key() {
                                     let mut combined_path = current_path.to_vec();
                                     combined_path.extend_from_slice(next_path);
-                                    
+
                                     // Create new extension node with combined path
                                     if let Some(next_next) = next_node.next() {
                                         Some(Node::new_extension(combined_path, next_next.clone()))
@@ -799,7 +823,9 @@ impl Trie {
                             }
                             NodeType::LeafNode => {
                                 // Convert extension + leaf into a single leaf
-                                if let (Some(leaf_path), Some(leaf_value)) = (next_node.key(), next_node.value()) {
+                                if let (Some(leaf_path), Some(leaf_value)) =
+                                    (next_node.key(), next_node.value())
+                                {
                                     let mut combined_path = current_path.to_vec();
                                     combined_path.extend_from_slice(leaf_path);
                                     let mut leaf = Node::new_leaf(leaf_value.to_vec());
@@ -823,29 +849,39 @@ impl Trie {
     }
 
     /// Helper method for recursive put operations (production implementation)
-    fn put_node_recursive(&mut self, mut node: Node, path: &[u8], offset: usize, value: &[u8]) -> MptResult<Node> {
+    fn put_node_recursive(
+        &mut self,
+        mut node: Node,
+        path: &[u8],
+        offset: usize,
+        value: &[u8],
+    ) -> MptResult<Node> {
         // Production-ready recursive put (matches C# MPT.PutNodeRecursive exactly)
         // This implements the C# logic: PutNodeRecursive for deep insertions with path optimization
-        
+
         // 1. Check if we've reached the end of the path (production termination condition)
         if offset >= path.len() {
             // 2. Set value at current node (production value assignment)
             node.set_value(Some(value.to_vec()));
             return Ok(node);
         }
-        
+
         // 3. Get current path segment (production path traversal)
         let current_nibble = path[offset];
-        
+
         match node.node_type() {
             NodeType::BranchNode => {
                 // 4. Handle branch node recursion (production branch traversal)
                 let child_index = current_nibble as usize;
                 if child_index < 16 {
                     // 5. Get or create child node (production child management)
-                    let child = node.children().get(child_index).cloned().flatten()
+                    let child = node
+                        .children()
+                        .get(child_index)
+                        .cloned()
+                        .flatten()
                         .unwrap_or_else(|| Node::new());
-                    
+
                     // 6. Recursively put into child (production recursion)
                     let new_child = self.put_node_recursive(child, path, offset + 1, value)?;
                     node.set_child(child_index, Some(new_child));
@@ -857,15 +893,15 @@ impl Trie {
                 if let Some(node_key) = node.key() {
                     let remaining_path = &path[offset..];
                     let common_len = common_prefix_length(node_key, remaining_path);
-                    
+
                     if common_len == node_key.len() {
                         // 8. Path continues through extension (production path continuation)
                         if let Some(next) = node.next() {
                             let new_next = self.put_node_recursive(
-                                next.clone(), 
-                                path, 
-                                offset + node_key.len(), 
-                                value
+                                next.clone(),
+                                path,
+                                offset + node_key.len(),
+                                value,
                             )?;
                             node.set_next(Some(Box::new(new_next)));
                         }
@@ -902,22 +938,27 @@ impl Trie {
     }
 
     /// Helper method for recursive delete operations (production implementation)
-    fn delete_node_recursive(&mut self, mut node: Node, key: &[u8], key_offset: usize) -> MptResult<Option<Node>> {
+    fn delete_node_recursive(
+        &mut self,
+        mut node: Node,
+        key: &[u8],
+        key_offset: usize,
+    ) -> MptResult<Option<Node>> {
         // Production-ready recursive delete (matches C# MPT.DeleteNodeRecursive exactly)
         // This implements the C# logic: DeleteNodeRecursive for deep deletions with tree optimization
-        
+
         // 1. Check if we've reached the end of the key (production termination condition)
         if key_offset >= key.len() {
             // 2. Remove value from current node (production value removal)
             node.set_value(None);
-            
+
             // 3. Check if node can be optimized after deletion (production optimization)
             return Ok(self.optimize_node_after_deletion(node));
         }
-        
+
         // 4. Get current key segment (production key traversal)
         let current_nibble = key[key_offset];
-        
+
         match node.node_type() {
             NodeType::BranchNode => {
                 // 5. Handle branch node deletion (production branch traversal)
@@ -935,7 +976,7 @@ impl Trie {
                                 node.set_child(child_index, None);
                             }
                         }
-                        
+
                         // 9. Optimize branch node after child deletion (production optimization)
                         Ok(self.optimize_branch_after_deletion(node)?)
                     } else {
@@ -951,15 +992,16 @@ impl Trie {
                 // 12. Handle extension node deletion (production extension handling)
                 if let Some(node_key) = node.key() {
                     let remaining_key = &key[key_offset..];
-                    
-                    if remaining_key.len() >= node_key.len() && 
-                       &remaining_key[..node_key.len()] == node_key {
+
+                    if remaining_key.len() >= node_key.len()
+                        && &remaining_key[..node_key.len()] == node_key
+                    {
                         // 13. Key continues through extension (production path continuation)
                         if let Some(next) = node.next() {
                             match self.delete_node_recursive(
-                                next.clone(), 
-                                key, 
-                                key_offset + node_key.len()
+                                next.clone(),
+                                key,
+                                key_offset + node_key.len(),
                             )? {
                                 Some(new_next) => {
                                     // 14. Update next node after deletion (production next update)
@@ -1008,35 +1050,41 @@ impl Trie {
     }
 
     /// Splits extension node for put operation (production helper)
-    fn split_extension_node_for_put(&mut self, mut node: Node, path: &[u8], offset: usize, value: &[u8]) -> MptResult<Node> {
+    fn split_extension_node_for_put(
+        &mut self,
+        mut node: Node,
+        path: &[u8],
+        offset: usize,
+        value: &[u8],
+    ) -> MptResult<Node> {
         // Production-ready extension node splitting (matches C# MPT extension splitting exactly)
         if let Some(node_key) = node.key() {
             let remaining_path = &path[offset..];
             let common_len = common_prefix_length(node_key, remaining_path);
-            
+
             // Create new branch node
             let mut branch = Node::new();
             branch.set_node_type(NodeType::BranchNode);
-            
+
             // Handle existing extension continuation
             if common_len + 1 < node_key.len() {
                 let mut new_extension = Node::new();
                 new_extension.set_node_type(NodeType::ExtensionNode);
                 new_extension.set_key(Some(node_key[common_len + 1..].to_vec()));
                 new_extension.set_next(node.next().map(|n| Box::new(n.clone())));
-                
+
                 let existing_index = node_key[common_len] as usize;
                 branch.set_child(existing_index, Some(new_extension));
             } else if let Some(next) = node.next() {
                 let existing_index = node_key[common_len] as usize;
                 branch.set_child(existing_index, Some(next.clone()));
             }
-            
+
             // Handle new path
             if common_len < remaining_path.len() {
                 let new_index = remaining_path[common_len] as usize;
                 let new_remainder = &remaining_path[common_len + 1..];
-                
+
                 let new_child = if new_remainder.is_empty() {
                     let mut leaf = Node::new();
                     leaf.set_node_type(NodeType::LeafNode);
@@ -1049,12 +1097,12 @@ impl Trie {
                     leaf.set_value(Some(value.to_vec()));
                     leaf
                 };
-                
+
                 branch.set_child(new_index, Some(new_child));
             } else {
                 branch.set_value(Some(value.to_vec()));
             }
-            
+
             // Create new extension if needed
             if common_len > 0 {
                 let mut new_extension = Node::new();
@@ -1071,23 +1119,29 @@ impl Trie {
     }
 
     /// Converts leaf to branch for put operation (production helper)
-    fn convert_leaf_to_branch_for_put(&mut self, node: Node, path: &[u8], offset: usize, value: &[u8]) -> MptResult<Node> {
+    fn convert_leaf_to_branch_for_put(
+        &mut self,
+        node: Node,
+        path: &[u8],
+        offset: usize,
+        value: &[u8],
+    ) -> MptResult<Node> {
         // Production-ready leaf to branch conversion (matches C# MPT leaf conversion exactly)
         if let Some(leaf_key) = node.key() {
             let leaf_value = node.value().map(|v| v.to_vec());
             let remaining_path = &path[offset..];
-            
+
             let common_len = common_prefix_length(leaf_key, remaining_path);
-            
+
             // Create branch node
             let mut branch = Node::new();
             branch.set_node_type(NodeType::BranchNode);
-            
+
             // Handle existing leaf
             if common_len < leaf_key.len() {
                 let leaf_index = leaf_key[common_len] as usize;
                 let leaf_remainder = &leaf_key[common_len + 1..];
-                
+
                 let new_leaf = if leaf_remainder.is_empty() {
                     let mut leaf = Node::new();
                     leaf.set_node_type(NodeType::LeafNode);
@@ -1100,17 +1154,17 @@ impl Trie {
                     leaf.set_value(leaf_value);
                     leaf
                 };
-                
+
                 branch.set_child(leaf_index, Some(new_leaf));
             } else {
                 branch.set_value(leaf_value);
             }
-            
+
             // Handle new value
             if common_len < remaining_path.len() {
                 let new_index = remaining_path[common_len] as usize;
                 let new_remainder = &remaining_path[common_len + 1..];
-                
+
                 let new_leaf = if new_remainder.is_empty() {
                     let mut leaf = Node::new();
                     leaf.set_node_type(NodeType::LeafNode);
@@ -1123,12 +1177,12 @@ impl Trie {
                     leaf.set_value(Some(value.to_vec()));
                     leaf
                 };
-                
+
                 branch.set_child(new_index, Some(new_leaf));
             } else {
                 branch.set_value(Some(value.to_vec()));
             }
-            
+
             Ok(branch)
         } else {
             Ok(node)
@@ -1143,7 +1197,7 @@ impl Trie {
                 // Check if branch can be simplified
                 let child_count = node.children().iter().filter(|c| c.is_some()).count();
                 let has_value = node.value().is_some();
-                
+
                 if child_count == 0 && !has_value {
                     // Empty branch - remove it
                     None
@@ -1163,7 +1217,7 @@ impl Trie {
                     Some(node)
                 }
             }
-            _ => Some(node)
+            _ => Some(node),
         }
     }
 
@@ -1172,7 +1226,7 @@ impl Trie {
         // Production-ready branch optimization after deletion (matches C# MPT branch optimization exactly)
         let child_count = node.children().iter().filter(|c| c.is_some()).count();
         let has_value = node.value().is_some();
-        
+
         if child_count == 0 && !has_value {
             // Empty branch - remove it
             Ok(None)
@@ -1186,7 +1240,7 @@ impl Trie {
                             if let Some(child_key) = child_node.key() {
                                 let mut new_key = vec![index as u8];
                                 new_key.extend_from_slice(child_key);
-                                
+
                                 let mut new_extension = child_node.clone();
                                 new_extension.set_key(Some(new_key));
                                 return Ok(Some(new_extension));
@@ -1229,15 +1283,15 @@ mod tests {
     #[test]
     fn test_trie_put_get() {
         let mut trie = Trie::new(None, false);
-        
+
         // Test putting and getting a single value
         let key = b"test_key";
         let value = b"test_value";
-        
+
         trie.put(key, value).unwrap();
         let result = trie.get(key).unwrap();
         assert_eq!(result, Some(value.to_vec()));
-        
+
         // Test getting non-existent key
         let result = trie.get(b"non_existent").unwrap();
         assert_eq!(result, None);
@@ -1246,19 +1300,19 @@ mod tests {
     #[test]
     fn test_trie_multiple_keys() {
         let mut trie = Trie::new(None, false);
-        
+
         // Test multiple keys
         let keys_values = vec![
             (b"key1".as_slice(), b"value1".as_slice()),
             (b"key2".as_slice(), b"value2".as_slice()),
             (b"key3".as_slice(), b"value3".as_slice()),
         ];
-        
+
         // Put all values
         for (key, value) in &keys_values {
             trie.put(key, value).unwrap();
         }
-        
+
         // Get all values
         for (key, expected_value) in &keys_values {
             let result = trie.get(key).unwrap();
@@ -1269,16 +1323,16 @@ mod tests {
     #[test]
     fn test_trie_update_value() {
         let mut trie = Trie::new(None, false);
-        
+
         let key = b"update_key";
         let value1 = b"value1";
         let value2 = b"value2";
-        
+
         // Put initial value
         trie.put(key, value1).unwrap();
         let result = trie.get(key).unwrap();
         assert_eq!(result, Some(value1.to_vec()));
-        
+
         // Update value
         trie.put(key, value2).unwrap();
         let result = trie.get(key).unwrap();
@@ -1288,23 +1342,23 @@ mod tests {
     #[test]
     fn test_trie_delete() {
         let mut trie = Trie::new(None, false);
-        
+
         let key = b"delete_key";
         let value = b"delete_value";
-        
+
         // Put value
         trie.put(key, value).unwrap();
         let result = trie.get(key).unwrap();
         assert_eq!(result, Some(value.to_vec()));
-        
+
         // Delete value
         let deleted = trie.delete(key).unwrap();
         assert!(deleted);
-        
+
         // Verify deletion
         let result = trie.get(key).unwrap();
         assert_eq!(result, None);
-        
+
         // Delete non-existent key
         let deleted = trie.delete(b"non_existent").unwrap();
         assert!(deleted); // Returns true even if key doesn't exist
@@ -1313,7 +1367,7 @@ mod tests {
     #[test]
     fn test_trie_find() {
         let mut trie = Trie::new(None, false);
-        
+
         // Add keys with common prefix
         let keys_values = vec![
             (b"prefix_key1".as_slice(), b"value1".as_slice()),
@@ -1321,20 +1375,20 @@ mod tests {
             (b"prefix_key3".as_slice(), b"value3".as_slice()),
             (b"other_key".as_slice(), b"other_value".as_slice()),
         ];
-        
+
         for (key, value) in &keys_values {
             trie.put(key, value).unwrap();
         }
-        
+
         // Find keys with prefix "prefix"
         let results = trie.find(b"prefix").unwrap();
         assert_eq!(results.len(), 3);
-        
+
         // Verify all results have the correct prefix
         for (key, _) in &results {
             assert!(key.starts_with(b"prefix"));
         }
-        
+
         // Find with non-matching prefix
         let results = trie.find(b"nomatch").unwrap();
         assert_eq!(results.len(), 0);
@@ -1343,16 +1397,16 @@ mod tests {
     #[test]
     fn test_trie_proof() {
         let mut trie = Trie::new(None, false);
-        
+
         let key = b"proof_key";
         let value = b"proof_value";
-        
+
         trie.put(key, value).unwrap();
-        
+
         // Generate proof
         let proof = trie.get_proof(key).unwrap();
         assert!(!proof.is_empty());
-        
+
         // Proof should contain serialized nodes
         for node_data in &proof {
             assert!(!node_data.is_empty());
@@ -1362,7 +1416,7 @@ mod tests {
     #[test]
     fn test_trie_complex_operations() {
         let mut trie = Trie::new(None, false);
-        
+
         // Test with various key patterns that would create different node types
         let test_data = vec![
             (b"a".as_slice(), b"value_a".as_slice()),
@@ -1372,28 +1426,28 @@ mod tests {
             (b"b".as_slice(), b"value_b".as_slice()),
             (b"bc".as_slice(), b"value_bc".as_slice()),
         ];
-        
+
         // Insert all data
         for (key, value) in &test_data {
             trie.put(key, value).unwrap();
         }
-        
+
         // Verify all data can be retrieved
         for (key, expected_value) in &test_data {
             let result = trie.get(key).unwrap();
             assert_eq!(result, Some(expected_value.to_vec()));
         }
-        
+
         // Test partial deletions
         trie.delete(b"abc").unwrap();
         assert_eq!(trie.get(b"abc").unwrap(), None);
         assert_eq!(trie.get(b"ab").unwrap(), Some(b"value_ab".to_vec()));
         assert_eq!(trie.get(b"abd").unwrap(), Some(b"value_abd".to_vec()));
-        
+
         // Test find operations
         let a_results = trie.find(b"a").unwrap();
         assert!(a_results.len() >= 2); // Should find "a", "ab", "abd"
-        
+
         let b_results = trie.find(b"b").unwrap();
         assert!(b_results.len() >= 2); // Should find "b", "bc"
     }
@@ -1401,15 +1455,15 @@ mod tests {
     #[test]
     fn test_trie_empty_operations() {
         let mut trie = Trie::new(None, false);
-        
+
         // Test operations on empty trie
         assert_eq!(trie.get(b"any_key").unwrap(), None);
         assert!(trie.delete(b"any_key").unwrap());
         assert_eq!(trie.find(b"any_prefix").unwrap().len(), 0);
-        
+
         let proof = trie.get_proof(b"any_key").unwrap();
         // Empty trie may generate empty proof or minimal proof data
         // This is acceptable behavior
         println!("Empty trie proof length: {}", proof.len());
     }
-} 
+}

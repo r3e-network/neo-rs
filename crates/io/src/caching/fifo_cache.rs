@@ -8,8 +8,8 @@ use std::marker::PhantomData;
 
 /// FIFO (First-In-First-Out) cache implementation.
 /// This matches the C# FIFOCache<TKey, TValue> class exactly.
-pub struct FIFOCache<TKey, TValue, F> 
-where 
+pub struct FIFOCache<TKey, TValue, F>
+where
     TKey: Hash + Eq + Clone + Send + Sync,
     TValue: Clone + Send + Sync,
     F: Fn(&TValue) -> TKey + Send + Sync,
@@ -21,22 +21,22 @@ where
 }
 
 impl<TKey, TValue, F> FIFOCache<TKey, TValue, F>
-where 
+where
     TKey: Hash + Eq + Clone + Send + Sync,
     TValue: Clone + Send + Sync,
     F: Fn(&TValue) -> TKey + Send + Sync,
 {
     /// Creates a new FIFO cache with the specified capacity and key extraction function.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `max_capacity` - The maximum number of items the cache can hold
     /// * `get_key_fn` - Function to extract the key from a value
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A new FIFO cache
-    pub fn new(max_capacity: usize, get_key_fn: F) -> Self 
+    pub fn new(max_capacity: usize, get_key_fn: F) -> Self
     where
         TKey: Default,
         TValue: Default,
@@ -45,7 +45,7 @@ where
         let on_access_fn: fn(&mut CacheItem<TKey, TValue>) = |_item| {
             // No-op: FIFO doesn't change order on access
         };
-        
+
         Self {
             inner: ConcreteCache::new(max_capacity, get_key_fn, on_access_fn),
             _phantom: PhantomData,
@@ -54,7 +54,7 @@ where
 }
 
 impl<TKey, TValue, F> Cache<TKey, TValue> for FIFOCache<TKey, TValue, F>
-where 
+where
     TKey: Hash + Eq + Clone + Send + Sync,
     TValue: Clone + Send + Sync,
     F: Fn(&TValue) -> TKey + Send + Sync,
@@ -125,20 +125,32 @@ mod tests {
     #[test]
     fn test_fifo_cache_eviction_order() {
         let cache = FIFOCache::new(3, |item: &TestItem| item.id);
-        
+
         // Add items in order
-        cache.add(TestItem { id: 1, data: "first".to_string() });
-        cache.add(TestItem { id: 2, data: "second".to_string() });
-        cache.add(TestItem { id: 3, data: "third".to_string() });
-        
+        cache.add(TestItem {
+            id: 1,
+            data: "first".to_string(),
+        });
+        cache.add(TestItem {
+            id: 2,
+            data: "second".to_string(),
+        });
+        cache.add(TestItem {
+            id: 3,
+            data: "third".to_string(),
+        });
+
         assert_eq!(cache.count(), 3);
-        
+
         // Access the first item (should not affect FIFO order)
         let _first = cache.get(&1);
-        
+
         // Add a fourth item, should evict the first (oldest) item
-        cache.add(TestItem { id: 4, data: "fourth".to_string() });
-        
+        cache.add(TestItem {
+            id: 4,
+            data: "fourth".to_string(),
+        });
+
         assert_eq!(cache.count(), 3);
         assert!(cache.get(&1).is_none()); // First item should be evicted
         assert!(cache.get(&2).is_some()); // Second item should still be there
@@ -149,18 +161,27 @@ mod tests {
     #[test]
     fn test_fifo_cache_access_doesnt_change_order() {
         let cache = FIFOCache::new(2, |item: &TestItem| item.id);
-        
-        cache.add(TestItem { id: 1, data: "first".to_string() });
-        cache.add(TestItem { id: 2, data: "second".to_string() });
-        
+
+        cache.add(TestItem {
+            id: 1,
+            data: "first".to_string(),
+        });
+        cache.add(TestItem {
+            id: 2,
+            data: "second".to_string(),
+        });
+
         // Access the first item multiple times
         let _first1 = cache.get(&1);
         let _first2 = cache.get(&1);
         let _first3 = cache.get(&1);
-        
+
         // Add a third item, should still evict the first item (not the second)
-        cache.add(TestItem { id: 3, data: "third".to_string() });
-        
+        cache.add(TestItem {
+            id: 3,
+            data: "third".to_string(),
+        });
+
         assert!(cache.get(&1).is_none()); // First item should be evicted despite being accessed
         assert!(cache.get(&2).is_some()); // Second item should still be there
         assert!(cache.get(&3).is_some()); // Third item should be there
@@ -169,26 +190,35 @@ mod tests {
     #[test]
     fn test_fifo_cache_basic_operations() {
         let cache = FIFOCache::new(5, |item: &TestItem| item.id);
-        
+
         // Test add and get
-        let item = TestItem { id: 1, data: "test".to_string() };
+        let item = TestItem {
+            id: 1,
+            data: "test".to_string(),
+        };
         cache.add(item.clone());
         assert_eq!(cache.get(&1).unwrap(), item);
-        
+
         // Test contains
         assert!(cache.contains_key(&1));
         assert!(cache.contains(&item));
-        
+
         // Test remove
         assert!(cache.remove_key(&1));
         assert!(!cache.contains_key(&1));
-        
+
         // Test clear
-        cache.add(TestItem { id: 2, data: "test2".to_string() });
-        cache.add(TestItem { id: 3, data: "test3".to_string() });
+        cache.add(TestItem {
+            id: 2,
+            data: "test2".to_string(),
+        });
+        cache.add(TestItem {
+            id: 3,
+            data: "test3".to_string(),
+        });
         assert_eq!(cache.count(), 2);
-        
+
         cache.clear();
         assert_eq!(cache.count(), 0);
     }
-} 
+}

@@ -1,5 +1,5 @@
 //! Instruction parsing unit tests
-//! 
+//!
 //! Tests for instruction parsing edge cases and error handling.
 
 use neo_io::MemoryReader;
@@ -14,7 +14,10 @@ fn test_memory_reader_bounds_check() {
 
     // Should succeed: read 4 bytes
     let result = reader.read_bytes(4);
-    assert!(result.is_ok(), "Should be able to read 4 bytes from 4-byte data");
+    assert!(
+        result.is_ok(),
+        "Should be able to read 4 bytes from 4-byte data"
+    );
     assert_eq!(result.unwrap(), &[0x01, 0x02, 0x03, 0x04]);
 
     // Reset reader
@@ -22,8 +25,14 @@ fn test_memory_reader_bounds_check() {
 
     // Should fail: try to read 5 bytes from 4-byte data
     let result = reader.read_bytes(5);
-    assert!(result.is_err(), "Should fail when trying to read 5 bytes from 4-byte data");
-    println!("Expected error when reading beyond bounds: {:?}", result.err());
+    assert!(
+        result.is_err(),
+        "Should fail when trying to read 5 bytes from 4-byte data"
+    );
+    println!(
+        "Expected error when reading beyond bounds: {:?}",
+        result.err()
+    );
 }
 
 /// Test PUSHDATA1 instruction parsing with insufficient data
@@ -42,7 +51,11 @@ fn test_pushdata1_instruction_parsing() {
     } else {
         println!("❌ parse_from_reader unexpectedly succeeded");
         let instruction = result.unwrap();
-        println!("Parsed instruction: opcode={:?}, operand={:?}", instruction.opcode(), instruction.operand());
+        println!(
+            "Parsed instruction: opcode={:?}, operand={:?}",
+            instruction.opcode(),
+            instruction.operand()
+        );
     }
 
     // Now test the neo-io version
@@ -55,7 +68,11 @@ fn test_pushdata1_instruction_parsing() {
     } else {
         println!("❌ parse_from_neo_io_reader unexpectedly succeeded");
         let instruction = result.unwrap();
-        println!("Parsed instruction: opcode={:?}, operand={:?}", instruction.opcode(), instruction.operand());
+        println!(
+            "Parsed instruction: opcode={:?}, operand={:?}",
+            instruction.opcode(),
+            instruction.operand()
+        );
     }
 }
 
@@ -67,38 +84,70 @@ fn test_instruction_operand_sizes() {
     let mut reader = MemoryReader::new(&script);
     let result = Instruction::parse_from_reader(&mut reader);
     assert!(result.is_ok(), "PUSHINT8 should parse successfully");
-    
+
     let instruction = result.unwrap();
-    assert_eq!(instruction.operand_data().len(), 1, "PUSHINT8 should have 1-byte operand");
-    assert_eq!(instruction.operand_data()[0], 0x42, "PUSHINT8 operand should be 0x42");
+    assert_eq!(
+        instruction.operand_data().len(),
+        1,
+        "PUSHINT8 should have 1-byte operand"
+    );
+    assert_eq!(
+        instruction.operand_data()[0],
+        0x42,
+        "PUSHINT8 operand should be 0x42"
+    );
 
     // Test PUSHINT16 (2-byte operand)
     let script = vec![0x01, 0x34, 0x12]; // PUSHINT16 + value (little-endian)
     let mut reader = MemoryReader::new(&script);
     let result = Instruction::parse_from_reader(&mut reader);
     assert!(result.is_ok(), "PUSHINT16 should parse successfully");
-    
+
     let instruction = result.unwrap();
-    assert_eq!(instruction.operand_data().len(), 2, "PUSHINT16 should have 2-byte operand");
-    assert_eq!(instruction.operand_data(), &[0x34, 0x12], "PUSHINT16 operand should be [0x34, 0x12]");
+    assert_eq!(
+        instruction.operand_data().len(),
+        2,
+        "PUSHINT16 should have 2-byte operand"
+    );
+    assert_eq!(
+        instruction.operand_data(),
+        &[0x34, 0x12],
+        "PUSHINT16 operand should be [0x34, 0x12]"
+    );
 
     // Test PUSHINT32 (4-byte operand)
     let script = vec![0x02, 0x78, 0x56, 0x34, 0x12]; // PUSHINT32 + value (little-endian)
     let mut reader = MemoryReader::new(&script);
     let result = Instruction::parse_from_reader(&mut reader);
     assert!(result.is_ok(), "PUSHINT32 should parse successfully");
-    
+
     let instruction = result.unwrap();
-    assert_eq!(instruction.operand_data().len(), 4, "PUSHINT32 should have 4-byte operand");
-    assert_eq!(instruction.operand_data(), &[0x78, 0x56, 0x34, 0x12], "PUSHINT32 operand should be [0x78, 0x56, 0x34, 0x12]");
+    assert_eq!(
+        instruction.operand_data().len(),
+        4,
+        "PUSHINT32 should have 4-byte operand"
+    );
+    assert_eq!(
+        instruction.operand_data(),
+        &[0x78, 0x56, 0x34, 0x12],
+        "PUSHINT32 operand should be [0x78, 0x56, 0x34, 0x12]"
+    );
 
     // Test PUSHINT64 (8-byte operand)
     let script = vec![0x03, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11]; // PUSHINT64 + value
     let mut reader = MemoryReader::new(&script);
     let result = Instruction::parse_from_reader(&mut reader);
     assert!(result.is_ok(), "PUSHINT64 should parse successfully");
-    
+
     let instruction = result.unwrap();
-    assert_eq!(instruction.operand_data().len(), 8, "PUSHINT64 should have 8-byte operand");
-    assert_eq!(instruction.operand_data(), &[0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11], "PUSHINT64 operand should be correct");
+    assert_eq!(
+        instruction.operand_data().len(),
+        8,
+        "PUSHINT64 should have 8-byte operand"
+    );
+    assert_eq!(
+        instruction.operand_data(),
+        &[0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11],
+        "PUSHINT64 operand should be correct"
+    );
 }

@@ -191,8 +191,9 @@ impl ValidatorPerformance {
     pub fn update_response_time(&mut self, response_time_ms: f64) {
         let total_responses = self.rounds_participated as f64;
         if total_responses > 0.0 {
-            self.avg_response_time_ms =
-                (self.avg_response_time_ms * (total_responses - 1.0) + response_time_ms) / total_responses;
+            self.avg_response_time_ms = (self.avg_response_time_ms * (total_responses - 1.0)
+                + response_time_ms)
+                / total_responses;
         } else {
             self.avg_response_time_ms = response_time_ms;
         }
@@ -260,7 +261,8 @@ impl ValidatorSet {
         }
 
         let primary_index = (view.value() as usize) % self.validators.len();
-        self.validators.iter()
+        self.validators
+            .iter()
             .enumerate()
             .filter(|(i, _)| *i != primary_index)
             .map(|(_, v)| v)
@@ -297,13 +299,13 @@ impl ValidatorSet {
     pub fn validate(&self) -> Result<()> {
         if self.validators.len() < 4 {
             return Err(Error::InvalidValidator(
-                "Validator set must have at least 4 validators".to_string()
+                "Validator set must have at least 4 validators".to_string(),
             ));
         }
 
         if (self.validators.len() - 1) % 3 != 0 {
             return Err(Error::InvalidValidator(
-                "Validator count must be 3f+1 where f is the number of Byzantine nodes".to_string()
+                "Validator count must be 3f+1 where f is the number of Byzantine nodes".to_string(),
             ));
         }
 
@@ -312,7 +314,7 @@ impl ValidatorSet {
         for validator in &self.validators {
             if !seen.insert(&validator.public_key_hash) {
                 return Err(Error::InvalidValidator(
-                    "Duplicate validator in set".to_string()
+                    "Duplicate validator in set".to_string(),
                 ));
             }
         }
@@ -383,9 +385,10 @@ impl ValidatorManager {
         block_height: u32,
     ) -> Result<()> {
         if stake < self.config.min_stake {
-            return Err(Error::InvalidValidator(
-                format!("Stake {} is below minimum {}", stake, self.config.min_stake)
-            ));
+            return Err(Error::InvalidValidator(format!(
+                "Stake {} is below minimum {}",
+                stake, self.config.min_stake
+            )));
         }
 
         // Scope the write lock to avoid holding it during update_stats
@@ -394,18 +397,12 @@ impl ValidatorManager {
 
             if all_validators.contains_key(&public_key_hash) {
                 return Err(Error::InvalidValidator(
-                    "Validator already registered".to_string()
+                    "Validator already registered".to_string(),
                 ));
             }
 
             let index = all_validators.len() as u8;
-            let validator = Validator::new(
-                public_key_hash,
-                public_key,
-                stake,
-                index,
-                block_height,
-            );
+            let validator = Validator::new(public_key_hash, public_key, stake, index, block_height);
 
             all_validators.insert(public_key_hash, validator);
             all_validators.len()
@@ -460,7 +457,8 @@ impl ValidatorManager {
 
     /// Gets active validators
     pub fn get_active_validators(&self) -> Vec<Validator> {
-        self.all_validators.read()
+        self.all_validators
+            .read()
             .values()
             .filter(|v| v.active)
             .cloned()
@@ -468,7 +466,11 @@ impl ValidatorManager {
     }
 
     /// Updates validator performance
-    pub fn update_validator_performance<F>(&self, validator_hash: &UInt160, update_fn: F) -> Result<()>
+    pub fn update_validator_performance<F>(
+        &self,
+        validator_hash: &UInt160,
+        update_fn: F,
+    ) -> Result<()>
     where
         F: FnOnce(&mut ValidatorPerformance),
     {
@@ -497,7 +499,8 @@ impl ValidatorManager {
         let all_validators = self.all_validators.read();
 
         // Get eligible validators (active with sufficient performance)
-        let mut eligible: Vec<_> = all_validators.values()
+        let mut eligible: Vec<_> = all_validators
+            .values()
             .filter(|v| v.active && v.performance_score() >= self.config.min_performance_score)
             .cloned()
             .collect();
@@ -506,20 +509,29 @@ impl ValidatorManager {
         drop(all_validators);
 
         if eligible.len() < 4 {
-            return Err(Error::InsufficientValidators(
-                format!("Only {} eligible validators, need at least 4", eligible.len())
-            ));
+            return Err(Error::InsufficientValidators(format!(
+                "Only {} eligible validators, need at least 4",
+                eligible.len()
+            )));
         }
 
         // Sort by stake (descending) and performance score (descending)
         eligible.sort_by(|a, b| {
-            b.stake.cmp(&a.stake)
-                .then_with(|| b.performance_score().partial_cmp(&a.performance_score()).unwrap())
+            b.stake.cmp(&a.stake).then_with(|| {
+                b.performance_score()
+                    .partial_cmp(&a.performance_score())
+                    .unwrap()
+            })
         });
 
         // Take top validators up to target size
-        let selected_count = target_size.min(eligible.len()).min(self.config.max_validators);
-        let mut selected = eligible.into_iter().take(selected_count).collect::<Vec<_>>();
+        let selected_count = target_size
+            .min(eligible.len())
+            .min(self.config.max_validators);
+        let mut selected = eligible
+            .into_iter()
+            .take(selected_count)
+            .collect::<Vec<_>>();
 
         // Update indices
         for (i, validator) in selected.iter_mut().enumerate() {
@@ -532,19 +544,28 @@ impl ValidatorManager {
     /// Updates internal statistics safely without holding multiple locks
     fn update_stats_safe(&self) {
         // Collect data while holding minimal locks
-        let (total_validators, active_validators, online_validators, avg_performance_score, total_stake) = {
+        let (
+            total_validators,
+            active_validators,
+            online_validators,
+            avg_performance_score,
+            total_stake,
+        ) = {
             let all_validators = self.all_validators.read();
-            
+
             let total = all_validators.len();
             let active = all_validators.values().filter(|v| v.active).count();
-            let online = all_validators.values()
+            let online = all_validators
+                .values()
                 .filter(|v| v.is_online(300)) // 5 minutes
                 .count();
 
             let avg_score = if total > 0 {
-                all_validators.values()
+                all_validators
+                    .values()
                     .map(|v| v.performance_score())
-                    .sum::<f64>() / total as f64
+                    .sum::<f64>()
+                    / total as f64
             } else {
                 0.0
             };
@@ -554,7 +575,11 @@ impl ValidatorManager {
         }; // Release validators lock
 
         let current_set_size = {
-            self.current_set.read().as_ref().map(|s| s.len()).unwrap_or(0)
+            self.current_set
+                .read()
+                .as_ref()
+                .map(|s| s.len())
+                .unwrap_or(0)
         }; // Release current_set lock
 
         // Now update stats with a single write lock
@@ -618,9 +643,27 @@ mod tests {
     fn test_validator_set() {
         let validators = vec![
             Validator::new(UInt160::zero(), vec![1], 1000, 0, 100),
-            Validator::new(UInt160::from_bytes(&[1; 20]).unwrap(), vec![2], 2000, 1, 100),
-            Validator::new(UInt160::from_bytes(&[2; 20]).unwrap(), vec![3], 3000, 2, 100),
-            Validator::new(UInt160::from_bytes(&[3; 20]).unwrap(), vec![4], 4000, 3, 100),
+            Validator::new(
+                UInt160::from_bytes(&[1; 20]).unwrap(),
+                vec![2],
+                2000,
+                1,
+                100,
+            ),
+            Validator::new(
+                UInt160::from_bytes(&[2; 20]).unwrap(),
+                vec![3],
+                3000,
+                2,
+                100,
+            ),
+            Validator::new(
+                UInt160::from_bytes(&[3; 20]).unwrap(),
+                vec![4],
+                4000,
+                3,
+                100,
+            ),
         ];
 
         let validator_set = ValidatorSet::new(validators, 100);
@@ -655,7 +698,9 @@ mod tests {
         let stake = 1000_00000000; // 1000 NEO
 
         // Register validator
-        manager.register_validator(hash, public_key, stake, 100).unwrap();
+        manager
+            .register_validator(hash, public_key, stake, 100)
+            .unwrap();
 
         // Check validator exists
         let validator = manager.get_validator(&hash);

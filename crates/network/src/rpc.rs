@@ -3,24 +3,24 @@
 //! This module provides a comprehensive JSON-RPC server for external API access,
 //! supporting both HTTP and WebSocket connections with full Neo N3 API compatibility.
 
-use crate::{Error, Result};
+use crate::{NetworkError, NetworkResult as Result};
 use axum::{
-    extract::{ws::WebSocket, State, WebSocketUpgrade},
+    Json, Router,
+    extract::{State, WebSocketUpgrade, ws::WebSocket},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use neo_core::UInt256;
-use neo_ledger::{Blockchain, Block};
+use neo_ledger::{Block, Blockchain};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tracing::{debug, error, info, warn};
-use std::str::FromStr;
 
 /// RPC configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,7 +205,11 @@ impl RpcServer {
     }
 
     /// Creates a new RPC server with P2P node
-    pub fn with_p2p_node(config: RpcConfig, blockchain: Arc<Blockchain>, p2p_node: Arc<crate::P2pNode>) -> Self {
+    pub fn with_p2p_node(
+        config: RpcConfig,
+        blockchain: Arc<Blockchain>,
+        p2p_node: Arc<crate::P2pNode>,
+    ) -> Self {
         let state = RpcState::with_p2p_node(blockchain, p2p_node);
 
         Self {
@@ -225,8 +229,13 @@ impl RpcServer {
         let app = self.create_router().await;
 
         // Start HTTP server
-        let listener = tokio::net::TcpListener::bind(self.config.http_address).await
-            .map_err(|e| Error::Rpc(format!("Failed to bind HTTP server: {}", e)))?;
+        let listener = tokio::net::TcpListener::bind(self.config.http_address)
+            .await
+            .map_err(|e| NetworkError::Rpc {
+                method: "server_bind".to_string(),
+                code: -1,
+                message: format!("Failed to bind HTTP server: {}", e),
+            })?;
 
         tokio::spawn(async move {
             if let Err(e) = axum::Server::from_tcp(listener.into_std().unwrap())
@@ -305,10 +314,7 @@ async fn handle_rpc_request(
 }
 
 /// Handles WebSocket connections
-async fn handle_websocket(
-    ws: WebSocketUpgrade,
-    State(state): State<RpcState>,
-) -> Response {
+async fn handle_websocket(ws: WebSocketUpgrade, State(state): State<RpcState>) -> Response {
     ws.on_upgrade(|socket| handle_websocket_connection(socket, state))
 }
 
@@ -337,7 +343,11 @@ async fn handle_websocket_connection(mut socket: WebSocket, state: RpcState) {
                         };
 
                         if let Ok(response_text) = serde_json::to_string(&response) {
-                            if socket.send(axum::extract::ws::Message::Text(response_text)).await.is_err() {
+                            if socket
+                                .send(axum::extract::ws::Message::Text(response_text))
+                                .await
+                                .is_err()
+                            {
                                 break;
                             }
                         }
@@ -351,7 +361,11 @@ async fn handle_websocket_connection(mut socket: WebSocket, state: RpcState) {
                         };
 
                         if let Ok(response_text) = serde_json::to_string(&error_response) {
-                            if socket.send(axum::extract::ws::Message::Text(response_text)).await.is_err() {
+                            if socket
+                                .send(axum::extract::ws::Message::Text(response_text))
+                                .await
+                                .is_err()
+                            {
                                 break;
                             }
                         }
@@ -372,7 +386,10 @@ async fn handle_websocket_connection(mut socket: WebSocket, state: RpcState) {
 }
 
 /// Handles RPC method calls
-async fn handle_rpc_method(state: &RpcState, request: &RpcRequest) -> std::result::Result<Value, RpcError> {
+async fn handle_rpc_method(
+    state: &RpcState,
+    request: &RpcRequest,
+) -> std::result::Result<Value, RpcError> {
     match request.method.as_str() {
         // Blockchain methods
         "getbestblockhash" => handle_get_best_block_hash(state).await,
@@ -418,7 +435,9 @@ async fn handle_rpc_method(state: &RpcState, request: &RpcRequest) -> std::resul
         method_name => {
             let methods = state.methods.read().await;
             if let Some(handler) = methods.get(method_name) {
-                handler.handle(request.params.clone()).await
+                handler
+                    .handle(request.params.clone())
+                    .await
                     .map_err(|e| RpcError::custom(-1, e.to_string()))
             } else {
                 Err(RpcError::method_not_found())
@@ -434,12 +453,16 @@ async fn handle_get_block_count(state: &RpcState) -> std::result::Result<Value, 
 }
 
 /// Handles getblock method
-async fn handle_get_block(state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_get_block(
+    state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let block_result = if let Some(block_id_value) = params.as_ref() {
-        let block_id = block_id_value.get(0)
+        let block_id = block_id_value
+            .get(0)
             .and_then(|v| v.as_str())
             .ok_or_else(|| RpcError::invalid_params())?;
-        
+
         if let Ok(hash) = UInt256::from_str(&block_id) {
             state.blockchain.get_block_by_hash(&hash).await
         } else if let Ok(index) = block_id.parse::<u32>() {
@@ -472,9 +495,13 @@ async fn handle_get_block(state: &RpcState, params: &Option<Value>) -> std::resu
 }
 
 /// Handles getblockhash method
-async fn handle_get_block_hash(state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_get_block_hash(
+    state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let index = params.get(0)
+    let index = params
+        .get(0)
         .and_then(|v| v.as_u64())
         .ok_or_else(RpcError::invalid_params)? as u32;
 
@@ -487,24 +514,28 @@ async fn handle_get_block_hash(state: &RpcState, params: &Option<Value>) -> std:
 
 /// Handles getbestblockhash method
 async fn handle_get_best_block_hash(state: &RpcState) -> std::result::Result<Value, RpcError> {
-    let hash = state.blockchain.get_best_block_hash().await
+    let hash = state
+        .blockchain
+        .get_best_block_hash()
+        .await
         .map_err(|_| RpcError::custom(-100, "Failed to get best block hash".to_string()))?;
     Ok(json!(hash.to_string()))
 }
 
 /// Handles getrawtransaction method
-async fn handle_get_raw_transaction(state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_get_raw_transaction(
+    state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let hash_str = params.get(0)
+    let hash_str = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
-    let verbose = params.get(1)
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let verbose = params.get(1).and_then(|v| v.as_bool()).unwrap_or(false);
 
-    let hash = UInt256::parse(hash_str)
-        .map_err(|_| RpcError::invalid_params())?;
+    let hash = UInt256::parse(hash_str).map_err(|_| RpcError::invalid_params())?;
 
     match state.blockchain.get_transaction(&hash).await {
         Ok(Some(tx)) => {
@@ -529,7 +560,7 @@ async fn handle_get_raw_transaction(state: &RpcState, params: &Option<Value>) ->
                 // Return hex-encoded transaction
                 Ok(json!(hex::encode("transaction_bytes"))) // Would serialize actual transaction
             }
-        },
+        }
         Ok(None) => Err(RpcError::custom(-100, "Transaction not found".to_string())),
         Err(_) => Err(RpcError::custom(-100, "Transaction not found".to_string())),
     }
@@ -559,13 +590,16 @@ async fn handle_get_version() -> std::result::Result<Value, RpcError> {
 async fn handle_get_peers(state: &RpcState) -> std::result::Result<Value, RpcError> {
     if let Some(p2p_node) = &state.p2p_node {
         let connected_peers = p2p_node.get_connected_peers().await;
-        let peers: Vec<Value> = connected_peers.into_iter().map(|peer| {
-            json!({
-                "address": peer.address.ip().to_string(),
-                "port": peer.address.port()
+        let peers: Vec<Value> = connected_peers
+            .into_iter()
+            .map(|peer| {
+                json!({
+                    "address": peer.address.ip().to_string(),
+                    "port": peer.address.port()
+                })
             })
-        }).collect();
-        
+            .collect();
+
         Ok(json!({
             "unconnected": [],
             "bad": [],
@@ -593,7 +627,8 @@ async fn handle_get_connection_count(state: &RpcState) -> std::result::Result<Va
 /// Handles validateaddress method
 async fn handle_validate_address(params: &Option<Value>) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let address = params.get(0)
+    let address = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
@@ -612,15 +647,17 @@ async fn handle_ping() -> std::result::Result<Value, RpcError> {
 }
 
 /// Handles getblockheader method
-async fn handle_get_block_header(state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_get_block_header(
+    state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let block_id = params.get(0)
+    let block_id = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
-    
-    let verbose = params.get(1)
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+
+    let verbose = params.get(1).and_then(|v| v.as_bool()).unwrap_or(true);
 
     let block_result = if let Ok(hash) = UInt256::from_str(&block_id) {
         state.blockchain.get_block_by_hash(&hash).await
@@ -649,7 +686,7 @@ async fn handle_get_block_header(state: &RpcState, params: &Option<Value>) -> st
             } else {
                 Ok(json!(hex::encode("header_bytes"))) // Would serialize actual header
             }
-        },
+        }
         Ok(None) => Err(RpcError::custom(-100, "Block not found".to_string())),
         Err(_) => Err(RpcError::custom(-100, "Block not found".to_string())),
     }
@@ -676,9 +713,13 @@ async fn handle_get_committee(_state: &RpcState) -> std::result::Result<Value, R
 }
 
 /// Handles getcontractstate method
-async fn handle_get_contract_state(_state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_get_contract_state(
+    _state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let _contract_hash = params.get(0)
+    let _contract_hash = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
@@ -728,7 +769,7 @@ async fn handle_get_native_contracts(_state: &RpcState) -> std::result::Result<V
             },
             "nef": {
                 "magic": 860243278,
-                "compiler": "neon", 
+                "compiler": "neon",
                 "version": "3.0.0",
                 "script": "VwIBeBAMFWNvbnRyYWN0LmNhbGwuZmFtZSxVFDuYkE="
             },
@@ -738,7 +779,9 @@ async fn handle_get_native_contracts(_state: &RpcState) -> std::result::Result<V
 }
 
 /// Handles getnextblockvalidators method
-async fn handle_get_next_block_validators(_state: &RpcState) -> std::result::Result<Value, RpcError> {
+async fn handle_get_next_block_validators(
+    _state: &RpcState,
+) -> std::result::Result<Value, RpcError> {
     Ok(json!([
         {
             "publickey": "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
@@ -746,7 +789,7 @@ async fn handle_get_next_block_validators(_state: &RpcState) -> std::result::Res
             "active": true
         },
         {
-            "publickey": "03b8d9d5771d8f513aa0869b9cc8d50986403b78c6da36890638c3d46a5adce04a", 
+            "publickey": "03b8d9d5771d8f513aa0869b9cc8d50986403b78c6da36890638c3d46a5adce04a",
             "votes": "91350000",
             "active": true
         }
@@ -754,8 +797,12 @@ async fn handle_get_next_block_validators(_state: &RpcState) -> std::result::Res
 }
 
 /// Handles getrawmempool method
-async fn handle_get_raw_mempool(_state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
-    let _should_get_unverified = params.as_ref()
+async fn handle_get_raw_mempool(
+    _state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
+    let _should_get_unverified = params
+        .as_ref()
         .and_then(|p| p.get(0))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
@@ -765,12 +812,17 @@ async fn handle_get_raw_mempool(_state: &RpcState, params: &Option<Value>) -> st
 }
 
 /// Handles getstorage method
-async fn handle_get_storage(_state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_get_storage(
+    _state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let _contract_hash = params.get(0)
+    let _contract_hash = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
-    let _key = params.get(1)
+    let _key = params
+        .get(1)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
@@ -779,9 +831,13 @@ async fn handle_get_storage(_state: &RpcState, params: &Option<Value>) -> std::r
 }
 
 /// Handles gettransactionheight method
-async fn handle_get_transaction_height(_state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_get_transaction_height(
+    _state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let _hash_str = params.get(0)
+    let _hash_str = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
@@ -801,12 +857,17 @@ async fn handle_get_validators(_state: &RpcState) -> std::result::Result<Value, 
 }
 
 /// Handles invokefunction method
-async fn handle_invoke_function(_state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_invoke_function(
+    _state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let _contract_hash = params.get(0)
+    let _contract_hash = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
-    let _method = params.get(1)
+    let _method = params
+        .get(1)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
@@ -826,9 +887,13 @@ async fn handle_invoke_function(_state: &RpcState, params: &Option<Value>) -> st
 }
 
 /// Handles invokescript method
-async fn handle_invoke_script(_state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_invoke_script(
+    _state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let _script = params.get(0)
+    let _script = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
@@ -843,15 +908,22 @@ async fn handle_invoke_script(_state: &RpcState, params: &Option<Value>) -> std:
 }
 
 /// Handles testinvoke method
-async fn handle_test_invoke(state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_test_invoke(
+    state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     // Delegate to invokescript for now
     handle_invoke_script(state, params).await
 }
 
 /// Handles sendrawtransaction method
-async fn handle_send_raw_transaction(_state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_send_raw_transaction(
+    _state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let _tx_hex = params.get(0)
+    let _tx_hex = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
@@ -862,9 +934,13 @@ async fn handle_send_raw_transaction(_state: &RpcState, params: &Option<Value>) 
 }
 
 /// Handles getapplicationlog method
-async fn handle_get_application_log(_state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_get_application_log(
+    _state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let _tx_hash = params.get(0)
+    let _tx_hash = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
@@ -880,9 +956,13 @@ async fn handle_get_application_log(_state: &RpcState, params: &Option<Value>) -
 }
 
 /// Handles getnetworkfee method
-async fn handle_get_network_fee(_state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_get_network_fee(
+    _state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let _tx_hex = params.get(0)
+    let _tx_hex = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
@@ -893,9 +973,13 @@ async fn handle_get_network_fee(_state: &RpcState, params: &Option<Value>) -> st
 }
 
 /// Handles calculatenetworkfee method  
-async fn handle_calculate_network_fee(_state: &RpcState, params: &Option<Value>) -> std::result::Result<Value, RpcError> {
+async fn handle_calculate_network_fee(
+    _state: &RpcState,
+    params: &Option<Value>,
+) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
-    let _tx_hex = params.get(0)
+    let _tx_hex = params
+        .get(0)
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
@@ -991,7 +1075,7 @@ mod tests {
         assert_eq!(request.method, "getblock");
         assert!(request.params.is_some());
         assert_eq!(request.id, Some(json!(2)));
-        
+
         let params = request.params.unwrap();
         assert!(params.is_array());
         let params_array = params.as_array().unwrap();
@@ -1044,7 +1128,7 @@ mod tests {
     fn test_rpc_state_creation() {
         let blockchain = create_test_blockchain();
         let state = RpcState::new(blockchain.clone());
-        
+
         assert!(Arc::ptr_eq(&state.blockchain, &blockchain));
         assert!(state.p2p_node.is_none());
     }
@@ -1055,9 +1139,9 @@ mod tests {
         let network_config = crate::NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = Arc::new(crate::P2pNode::new(network_config, command_receiver).unwrap());
-        
+
         let state = RpcState::with_p2p_node(blockchain.clone(), p2p_node.clone());
-        
+
         assert!(Arc::ptr_eq(&state.blockchain, &blockchain));
         assert!(state.p2p_node.is_some());
         assert!(Arc::ptr_eq(state.p2p_node.as_ref().unwrap(), &p2p_node));
@@ -1066,7 +1150,7 @@ mod tests {
     #[tokio::test]
     async fn test_rpc_state_register_method() {
         struct TestMethod;
-        
+
         #[async_trait::async_trait]
         impl RpcMethod for TestMethod {
             async fn handle(&self, _params: Option<Value>) -> Result<Value> {
@@ -1075,8 +1159,10 @@ mod tests {
         }
 
         let state = create_test_state();
-        state.register_method("test_method".to_string(), TestMethod).await;
-        
+        state
+            .register_method("test_method".to_string(), TestMethod)
+            .await;
+
         let methods = state.methods.read().await;
         assert!(methods.contains_key("test_method"));
     }
@@ -1085,7 +1171,7 @@ mod tests {
     async fn test_handle_get_block_count() {
         let state = create_test_state();
         let result = handle_get_block_count(&state).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_number());
@@ -1094,17 +1180,17 @@ mod tests {
     #[tokio::test]
     async fn test_handle_get_version() {
         let result = handle_get_version().await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_object());
-        
+
         let obj = value.as_object().unwrap();
         assert!(obj.contains_key("tcpport"));
         assert!(obj.contains_key("wsport"));
         assert!(obj.contains_key("useragent"));
         assert!(obj.contains_key("protocol"));
-        
+
         assert_eq!(obj["useragent"], "neo-rs/0.1.0");
         assert_eq!(obj["tcpport"], 10333);
         assert_eq!(obj["wsport"], 10334);
@@ -1113,7 +1199,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_ping() {
         let result = handle_ping().await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert_eq!(value, json!(true));
@@ -1123,11 +1209,11 @@ mod tests {
     async fn test_handle_validate_address_valid() {
         let params = Some(json!(["NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs"]));
         let result = handle_validate_address(&params).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_object());
-        
+
         let obj = value.as_object().unwrap();
         assert!(obj.contains_key("address"));
         assert!(obj.contains_key("isvalid"));
@@ -1138,11 +1224,11 @@ mod tests {
     async fn test_handle_validate_address_invalid() {
         let params = Some(json!(["invalid_address"]));
         let result = handle_validate_address(&params).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_object());
-        
+
         let obj = value.as_object().unwrap();
         assert_eq!(obj["isvalid"], false);
     }
@@ -1150,7 +1236,7 @@ mod tests {
     #[tokio::test]
     async fn test_handle_validate_address_no_params() {
         let result = handle_validate_address(&None).await;
-        
+
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert_eq!(error.code, -32602); // Invalid params
@@ -1160,7 +1246,7 @@ mod tests {
     async fn test_handle_get_connection_count_no_p2p() {
         let state = create_test_state();
         let result = handle_get_connection_count(&state).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert_eq!(value, json!(0));
@@ -1170,16 +1256,16 @@ mod tests {
     async fn test_handle_get_peers_no_p2p() {
         let state = create_test_state();
         let result = handle_get_peers(&state).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_object());
-        
+
         let obj = value.as_object().unwrap();
         assert!(obj.contains_key("connected"));
         assert!(obj.contains_key("unconnected"));
         assert!(obj.contains_key("bad"));
-        
+
         let connected = obj["connected"].as_array().unwrap();
         assert_eq!(connected.len(), 0);
     }
@@ -1188,14 +1274,14 @@ mod tests {
     async fn test_handle_get_committee() {
         let state = create_test_state();
         let result = handle_get_committee(&state).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_array());
-        
+
         let committee = value.as_array().unwrap();
         assert_eq!(committee.len(), 7); // Standard committee size
-        
+
         for member in committee {
             assert!(member.is_string());
             let pubkey = member.as_str().unwrap();
@@ -1208,14 +1294,14 @@ mod tests {
     async fn test_handle_get_validators() {
         let state = create_test_state();
         let result = handle_get_validators(&state).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_array());
-        
+
         let validators = value.as_array().unwrap();
         assert!(!validators.is_empty());
-        
+
         for validator in validators {
             assert!(validator.is_object());
             let obj = validator.as_object().unwrap();
@@ -1230,11 +1316,11 @@ mod tests {
         let state = create_test_state();
         let params = Some(json!([false]));
         let result = handle_get_raw_mempool(&state, &params).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_array());
-        
+
         let mempool = value.as_array().unwrap();
         assert_eq!(mempool.len(), 0); // Empty for test
     }
@@ -1248,17 +1334,17 @@ mod tests {
             []
         ]));
         let result = handle_invoke_function(&state, &params).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_object());
-        
+
         let obj = value.as_object().unwrap();
         assert!(obj.contains_key("script"));
         assert!(obj.contains_key("state"));
         assert!(obj.contains_key("gasconsumed"));
         assert!(obj.contains_key("stack"));
-        
+
         assert_eq!(obj["state"], "HALT");
     }
 
@@ -1266,7 +1352,7 @@ mod tests {
     async fn test_handle_invoke_function_invalid_params() {
         let state = create_test_state();
         let result = handle_invoke_function(&state, &None).await;
-        
+
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert_eq!(error.code, -32602); // Invalid params
@@ -1277,14 +1363,14 @@ mod tests {
         let state = create_test_state();
         let params = Some(json!(["deadbeef"]));
         let result = handle_send_raw_transaction(&state, &params).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_object());
-        
+
         let obj = value.as_object().unwrap();
         assert!(obj.contains_key("hash"));
-        
+
         let hash = obj["hash"].as_str().unwrap();
         assert_eq!(hash.len(), 66); // 0x + 64 hex chars
         assert!(hash.starts_with("0x"));
@@ -1293,13 +1379,15 @@ mod tests {
     #[tokio::test]
     async fn test_handle_get_application_log() {
         let state = create_test_state();
-        let params = Some(json!(["0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"]));
+        let params = Some(json!([
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        ]));
         let result = handle_get_application_log(&state, &params).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_object());
-        
+
         let obj = value.as_object().unwrap();
         assert!(obj.contains_key("txid"));
         assert!(obj.contains_key("trigger"));
@@ -1307,7 +1395,7 @@ mod tests {
         assert!(obj.contains_key("gasconsumed"));
         assert!(obj.contains_key("stack"));
         assert!(obj.contains_key("notifications"));
-        
+
         assert_eq!(obj["trigger"], "Application");
         assert_eq!(obj["vmstate"], "HALT");
     }
@@ -1317,14 +1405,14 @@ mod tests {
         let state = create_test_state();
         let params = Some(json!(["deadbeef"]));
         let result = handle_calculate_network_fee(&state, &params).await;
-        
+
         assert!(result.is_ok());
         let value = result.unwrap();
         assert!(value.is_object());
-        
+
         let obj = value.as_object().unwrap();
         assert!(obj.contains_key("networkfee"));
-        
+
         let fee = obj["networkfee"].as_str().unwrap();
         assert!(!fee.is_empty());
         assert!(fee.parse::<u64>().is_ok());
@@ -1333,7 +1421,7 @@ mod tests {
     #[tokio::test]
     async fn test_rpc_method_dispatch() {
         let state = create_test_state();
-        
+
         // Test valid method
         let request = RpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -1341,10 +1429,10 @@ mod tests {
             params: None,
             id: Some(json!(1)),
         };
-        
+
         let result = handle_rpc_method(&state, &request).await;
         assert!(result.is_ok());
-        
+
         // Test invalid method
         let invalid_request = RpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -1352,7 +1440,7 @@ mod tests {
             params: None,
             id: Some(json!(2)),
         };
-        
+
         let result = handle_rpc_method(&state, &invalid_request).await;
         assert!(result.is_err());
         let error = result.unwrap_err();
@@ -1364,7 +1452,7 @@ mod tests {
         let config = RpcConfig::default();
         let blockchain = create_test_blockchain();
         let server = RpcServer::new(config, blockchain);
-        
+
         // Just verify it creates without panicking
         assert_eq!(*server.running.try_read().unwrap(), false);
     }

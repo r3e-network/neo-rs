@@ -10,22 +10,22 @@
 //! This implementation is converted from the C# Neo implementation (@neo-sharp/)
 //! to ensure exact compatibility with the Neo N3 protocol.
 
+pub mod contract;
+pub mod key_pair;
+pub mod nep6;
+pub mod scrypt_parameters;
 pub mod wallet;
 pub mod wallet_account;
 pub mod wallet_factory;
-pub mod nep6;
-pub mod contract;
-pub mod key_pair;
-pub mod scrypt_parameters;
 
 // Re-export main types
-pub use wallet::{Wallet, WalletError, WalletResult};
-pub use wallet_account::{WalletAccount, StandardWalletAccount};
-pub use wallet_factory::{WalletFactory, IWalletFactory};
-pub use nep6::{Nep6Wallet, Nep6Account, Nep6Contract};
 pub use contract::Contract;
 pub use key_pair::KeyPair;
+pub use nep6::{Nep6Account, Nep6Contract, Nep6Wallet};
 pub use scrypt_parameters::ScryptParameters;
+pub use wallet::{Wallet, WalletError, WalletResult};
+pub use wallet_account::{StandardWalletAccount, WalletAccount};
+pub use wallet_factory::{IWalletFactory, WalletFactory};
 
 use neo_core::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
@@ -84,7 +84,7 @@ pub enum Error {
     Cryptography(#[from] neo_cryptography::Error),
 
     #[error("Core error: {0}")]
-    Core(#[from] neo_core::Error),
+    Core(#[from] neo_core::CoreError),
 
     #[error("Scrypt error: {0}")]
     Scrypt(String),
@@ -176,7 +176,10 @@ impl TryFrom<u8> for ContractParameterType {
             0x22 => Ok(ContractParameterType::Map),
             0x30 => Ok(ContractParameterType::InteropInterface),
             0xff => Ok(ContractParameterType::Void),
-            _ => Err(Error::Other(format!("Invalid contract parameter type: {}", value))),
+            _ => Err(Error::Other(format!(
+                "Invalid contract parameter type: {}",
+                value
+            ))),
         }
     }
 }
@@ -191,7 +194,11 @@ pub struct Version {
 
 impl Version {
     pub fn new(major: u32, minor: u32, patch: u32) -> Self {
-        Self { major, minor, patch }
+        Self {
+            major,
+            minor,
+            patch,
+        }
     }
 
     pub fn parse(version_str: &str) -> Result<Self> {
@@ -200,9 +207,15 @@ impl Version {
             return Err(Error::Other("Invalid version format".to_string()));
         }
 
-        let major = parts[0].parse().map_err(|_| Error::Other("Invalid major version".to_string()))?;
-        let minor = parts[1].parse().map_err(|_| Error::Other("Invalid minor version".to_string()))?;
-        let patch = parts[2].parse().map_err(|_| Error::Other("Invalid patch version".to_string()))?;
+        let major = parts[0]
+            .parse()
+            .map_err(|_| Error::Other("Invalid major version".to_string()))?;
+        let minor = parts[1]
+            .parse()
+            .map_err(|_| Error::Other("Invalid minor version".to_string()))?;
+        let patch = parts[2]
+            .parse()
+            .map_err(|_| Error::Other("Invalid patch version".to_string()))?;
 
         Ok(Self::new(major, minor, patch))
     }

@@ -2,7 +2,7 @@
 
 use crate::application_engine::ApplicationEngine;
 use crate::interop::InteropService;
-use crate::storage::{StorageKey, StorageItem};
+use crate::storage::{StorageItem, StorageKey};
 use crate::{Error, Result};
 
 /// Service for getting values from contract storage.
@@ -19,10 +19,13 @@ impl InteropService for GetService {
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::InteropServiceError("Get requires a key argument".to_string()));
+            return Err(Error::InteropServiceError(
+                "Get requires a key argument".to_string(),
+            ));
         }
 
-        let current_contract = engine.current_contract()
+        let current_contract = engine
+            .current_contract()
             .ok_or_else(|| Error::InteropServiceError("No current contract".to_string()))?;
 
         let key = StorageKey::new(current_contract.hash, args[0].clone());
@@ -49,11 +52,12 @@ impl InteropService for PutService {
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
             return Err(Error::InteropServiceError(
-                "Put requires key and value arguments".to_string()
+                "Put requires key and value arguments".to_string(),
             ));
         }
 
-        let current_contract = engine.current_contract()
+        let current_contract = engine
+            .current_contract()
             .ok_or_else(|| Error::InteropServiceError("No current contract".to_string()))?;
 
         let key = StorageKey::new(current_contract.hash, args[0].clone());
@@ -83,10 +87,13 @@ impl InteropService for DeleteService {
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::InteropServiceError("Delete requires a key argument".to_string()));
+            return Err(Error::InteropServiceError(
+                "Delete requires a key argument".to_string(),
+            ));
         }
 
-        let current_contract = engine.current_contract()
+        let current_contract = engine
+            .current_contract()
             .ok_or_else(|| Error::InteropServiceError("No current contract".to_string()))?;
 
         let key = StorageKey::new(current_contract.hash, args[0].clone());
@@ -111,17 +118,21 @@ impl InteropService for FindService {
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::InteropServiceError("Find requires a prefix argument".to_string()));
+            return Err(Error::InteropServiceError(
+                "Find requires a prefix argument".to_string(),
+            ));
         }
 
-        let current_contract = engine.current_contract()
+        let current_contract = engine
+            .current_contract()
             .ok_or_else(|| Error::InteropServiceError("No current contract".to_string()))?;
 
         let prefix = &args[0];
         let results: Vec<(Vec<u8>, StorageItem)> = Vec::new();
 
         // Get the current contract to scope the search
-        let current_contract = engine.current_contract()
+        let current_contract = engine
+            .current_contract()
             .ok_or_else(|| Error::InteropServiceError("No current contract".to_string()))?;
 
         // Iterate through storage to find keys with the given prefix
@@ -138,7 +149,9 @@ impl InteropService for FindService {
 
         // 2. Validate prefix length
         if prefix.len() > 64 {
-            return Err(Error::InvalidArguments("Storage prefix too long (max 64 bytes)".to_string()));
+            return Err(Error::InvalidArguments(
+                "Storage prefix too long (max 64 bytes)".to_string(),
+            ));
         }
 
         // 3. Create full storage key prefix
@@ -162,8 +175,12 @@ impl InteropService for FindService {
         // 6. Create storage iterator
         let iterator_id = engine.create_storage_iterator(results)?;
 
-        println!("Storage find operation: found {} items with prefix {:?} for contract {}",
-                iterator_id, String::from_utf8_lossy(prefix), current_contract);
+        println!(
+            "Storage find operation: found {} items with prefix {:?} for contract {}",
+            iterator_id,
+            String::from_utf8_lossy(prefix),
+            current_contract
+        );
 
         // 7. Return iterator ID as bytes
         Ok(iterator_id.to_le_bytes().to_vec())
@@ -183,7 +200,8 @@ impl InteropService for GetContextService {
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, _args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        let current_contract = engine.current_contract()
+        let current_contract = engine
+            .current_contract()
             .ok_or_else(|| Error::InteropServiceError("No current contract".to_string()))?;
 
         // Return the current contract hash as the storage context
@@ -204,7 +222,8 @@ impl InteropService for GetReadOnlyContextService {
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, _args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        let current_contract = engine.current_contract()
+        let current_contract = engine
+            .current_contract()
             .ok_or_else(|| Error::InteropServiceError("No current contract".to_string()))?;
 
         // Production-ready read-only storage context (matches C# System.Storage.GetReadOnlyContext exactly)
@@ -214,7 +233,10 @@ impl InteropService for GetReadOnlyContextService {
         // Add read-only marker (0x01 at the end)
         context.push(0x01);
 
-        println!("Created read-only storage context for contract {}", current_contract.hash);
+        println!(
+            "Created read-only storage context for contract {}",
+            current_contract.hash
+        );
         Ok(context)
     }
 }
@@ -249,7 +271,7 @@ mod tests {
 
         // Set current contract
         let contract_hash = UInt160::zero();
-        
+
         // Create and add the contract to the cache
         use crate::contract_state::{ContractState, NefFile};
         use crate::manifest::ContractManifest;
@@ -257,7 +279,7 @@ mod tests {
         let manifest = ContractManifest::default();
         let contract = ContractState::new(1, contract_hash, nef, manifest);
         engine.add_contract(contract);
-        
+
         // Set current script hash
         engine.set_current_script_hash(Some(contract_hash));
 
@@ -275,7 +297,7 @@ mod tests {
 
         // Set current contract
         let contract_hash = UInt160::zero();
-        
+
         // Create and add the contract to the cache
         use crate::contract_state::{ContractState, NefFile};
         use crate::manifest::ContractManifest;
@@ -283,7 +305,7 @@ mod tests {
         let manifest = ContractManifest::default();
         let contract = ContractState::new(1, contract_hash, nef, manifest);
         engine.add_contract(contract);
-        
+
         // Set current script hash
         engine.set_current_script_hash(Some(contract_hash));
 
@@ -304,7 +326,7 @@ mod tests {
 
         // Set current contract
         let contract_hash = UInt160::zero();
-        
+
         // Create and add the contract to the cache
         use crate::contract_state::{ContractState, NefFile};
         use crate::manifest::ContractManifest;
@@ -312,7 +334,7 @@ mod tests {
         let manifest = ContractManifest::default();
         let contract = ContractState::new(1, contract_hash, nef, manifest);
         engine.add_contract(contract);
-        
+
         // Set current script hash
         engine.set_current_script_hash(Some(contract_hash));
 
@@ -338,7 +360,7 @@ mod tests {
 
         // Set current contract
         let contract_hash = UInt160::zero();
-        
+
         // Create and add the contract to the cache
         use crate::contract_state::{ContractState, NefFile};
         use crate::manifest::ContractManifest;
@@ -346,7 +368,7 @@ mod tests {
         let manifest = ContractManifest::default();
         let contract = ContractState::new(1, contract_hash, nef, manifest);
         engine.add_contract(contract);
-        
+
         // Set current script hash
         engine.set_current_script_hash(Some(contract_hash));
 

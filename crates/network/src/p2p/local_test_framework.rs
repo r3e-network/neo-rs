@@ -3,15 +3,18 @@
 //! This module provides a comprehensive local testing framework for Neo N3 P2P functionality.
 //! It simulates multiple Neo N3 nodes and network behavior for testing purposes.
 
-use crate::{Error, Result, NetworkMessage, ProtocolMessage, P2pNode, SyncManager, NetworkConfig};
+use crate::{
+    NetworkConfig, NetworkError, NetworkMessage, NetworkResult as Result, P2pNode, ProtocolMessage,
+    SyncManager,
+};
+use neo_core::{Transaction, UInt160, UInt256};
 use neo_ledger::{Block, BlockHeader, Blockchain};
-use neo_core::{UInt256, UInt160, Transaction};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock, broadcast};
-use tokio::time::{interval, Duration, Instant};
-use tracing::{info, debug, warn, error};
+use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio::time::{Duration, Instant, interval};
+use tracing::{debug, error, info, warn};
 
 /// Test node that simulates a Neo N3 peer
 #[derive(Debug)]
@@ -36,7 +39,7 @@ impl TestNode {
     /// Creates a new test node
     pub fn new(address: SocketAddr, height: u32) -> Self {
         let (message_tx, message_rx) = mpsc::channel(1000);
-        
+
         Self {
             address,
             height,
@@ -51,12 +54,15 @@ impl TestNode {
     /// Starts the test node
     pub async fn start(&mut self) -> Result<()> {
         *self.running.write().await = true;
-        
-        info!("Started test node {} at height {}", self.address, self.height);
-        
+
+        info!(
+            "Started test node {} at height {}",
+            self.address, self.height
+        );
+
         // Generate test blocks for this node
         self.generate_test_blocks().await?;
-        
+
         Ok(())
     }
 
@@ -70,16 +76,20 @@ impl TestNode {
     async fn generate_test_blocks(&self) -> Result<()> {
         let mut blocks = self.blocks.write().await;
         let mut headers = self.headers.write().await;
-        
+
         for i in 0..=self.height {
             let block = self.create_test_block(i).await?;
             let header = block.header.clone();
-            
+
             blocks.insert(i, block);
             headers.insert(i, header);
         }
-        
-        info!("Generated {} test blocks for node {}", self.height + 1, self.address);
+
+        info!(
+            "Generated {} test blocks for node {}",
+            self.height + 1,
+            self.address
+        );
         Ok(())
     }
 
@@ -96,7 +106,7 @@ impl TestNode {
             version: 0,
             previous_hash,
             merkle_root: UInt256::from_bytes(&[0x42; 32]).unwrap(), // Test merkle root
-            timestamp: 1640995200000 + (height as u64 * 15000), // 15 second intervals
+            timestamp: 1640995200000 + (height as u64 * 15000),     // 15 second intervals
             nonce: height as u64,
             index: height,
             primary_index: 0,
@@ -120,16 +130,19 @@ impl TestNode {
         tx.set_network_fee(1000000); // 0.01 GAS
         tx.set_valid_until_block(height + 1000);
         tx.set_script(vec![0x40, 0x41, 0x42]); // Simple test script
-        
+
         Ok(tx)
     }
 
     /// Handles incoming messages
     pub async fn handle_message(&self, message: NetworkMessage) -> Result<Option<NetworkMessage>> {
         match message.payload {
-            ProtocolMessage::GetHeaders { hash_start, hash_stop: _ } => {
+            ProtocolMessage::GetHeaders {
+                hash_start,
+                hash_stop: _,
+            } => {
                 debug!("Test node {} received GetHeaders request", self.address);
-                
+
                 // Find starting height from hash_start
                 let start_height = if hash_start.is_empty() {
                     0
@@ -140,7 +153,7 @@ impl TestNode {
 
                 let headers = self.headers.read().await;
                 let mut response_headers = Vec::new();
-                
+
                 // Return up to 2000 headers starting from start_height
                 for i in start_height..=self.height.min(start_height + 1999) {
                     if let Some(header) = headers.get(&i) {
@@ -148,47 +161,61 @@ impl TestNode {
                     }
                 }
 
-                info!("Test node {} returning {} headers starting from height {}", 
-                      self.address, response_headers.len(), start_height);
+                info!(
+                    "Test node {} returning {} headers starting from height {}",
+                    self.address,
+                    response_headers.len(),
+                    start_height
+                );
 
                 let response = ProtocolMessage::Headers {
                     headers: response_headers,
                 };
 
-                Ok(Some(NetworkMessage::new(0x3554334e, response)))
-            },
+                Ok(Some(NetworkMessage::new(response)))
+            }
 
             ProtocolMessage::GetBlockByIndex { index_start, count } => {
-                debug!("Test node {} received GetBlockByIndex for height {} (count: {})", 
-                       self.address, index_start, count);
+                debug!(
+                    "Test node {} received GetBlockByIndex for height {} (count: {})",
+                    self.address, index_start, count
+                );
 
                 let blocks = self.blocks.read().await;
-                
+
                 if let Some(block) = blocks.get(&index_start) {
                     let response = ProtocolMessage::Block {
                         block: block.clone(),
                     };
 
-                    info!("Test node {} returning block at height {}", self.address, index_start);
-                    Ok(Some(NetworkMessage::new(0x3554334e, response)))
+                    info!(
+                        "Test node {} returning block at height {}",
+                        self.address, index_start
+                    );
+                    Ok(Some(NetworkMessage::new(response)))
                 } else {
-                    warn!("Test node {} does not have block at height {}", self.address, index_start);
+                    warn!(
+                        "Test node {} does not have block at height {}",
+                        self.address, index_start
+                    );
                     Ok(None)
                 }
-            },
+            }
 
-            ProtocolMessage::Version { 
-                version, 
-                services, 
-                timestamp, 
+            ProtocolMessage::Version {
+                version,
+                services,
+                timestamp,
                 port,
-                nonce, 
-                user_agent, 
-                start_height, 
-                relay 
+                nonce,
+                user_agent,
+                start_height,
+                relay,
             } => {
-                info!("Test node {} received version message from peer (height: {})", 
-                      self.address, start_height);
+                info!(
+                    "Test node {} received version message from peer (height: {})",
+                    self.address, start_height
+                );
 
                 // Respond with our version
                 let response = ProtocolMessage::Version {
@@ -202,16 +229,19 @@ impl TestNode {
                     relay,
                 };
 
-                Ok(Some(NetworkMessage::new(0x3554334e, response)))
-            },
+                Ok(Some(NetworkMessage::new(response)))
+            }
 
             ProtocolMessage::Verack => {
                 info!("Test node {} received verack", self.address);
-                Ok(Some(NetworkMessage::new(0x3554334e, ProtocolMessage::Verack)))
-            },
+                Ok(Some(NetworkMessage::new(ProtocolMessage::Verack)))
+            }
 
             _ => {
-                debug!("Test node {} received unhandled message: {:?}", self.address, message.payload);
+                debug!(
+                    "Test node {} received unhandled message: {:?}",
+                    self.address, message.payload
+                );
                 Ok(None)
             }
         }
@@ -242,12 +272,12 @@ impl LocalTestFramework {
     pub async fn add_node(&mut self, address: SocketAddr, height: u32) -> Result<()> {
         let mut node = TestNode::new(address, height);
         node.start().await?;
-        
+
         let mut router = self.message_router.write().await;
         router.insert(address, node.message_tx.clone());
-        
+
         self.nodes.insert(address, node);
-        
+
         info!("Added test node {} with height {}", address, height);
         Ok(())
     }
@@ -255,25 +285,28 @@ impl LocalTestFramework {
     /// Starts the testing framework
     pub async fn start(&self) -> Result<()> {
         *self.running.write().await = true;
-        
-        info!("Started local P2P testing framework with {} nodes", self.nodes.len());
-        
+
+        info!(
+            "Started local P2P testing framework with {} nodes",
+            self.nodes.len()
+        );
+
         // Start message handling for all nodes
         for (address, node) in &self.nodes {
             self.spawn_node_handler(*address).await;
         }
-        
+
         Ok(())
     }
 
     /// Stops the testing framework
     pub async fn stop(&self) {
         *self.running.write().await = false;
-        
+
         for node in self.nodes.values() {
             node.stop().await;
         }
-        
+
         info!("Stopped local P2P testing framework");
     }
 
@@ -281,13 +314,13 @@ impl LocalTestFramework {
     async fn spawn_node_handler(&self, address: SocketAddr) {
         let running = self.running.clone();
         let router = self.message_router.clone();
-        
+
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(100));
-            
+
             while *running.read().await {
                 interval.tick().await;
-                
+
                 // Handle messages for this node
                 // (Implementation would route messages between nodes)
             }
@@ -295,20 +328,35 @@ impl LocalTestFramework {
     }
 
     /// Simulates sending a message to a node
-    pub async fn send_message_to_node(&self, target: SocketAddr, message: NetworkMessage) -> Result<()> {
+    pub async fn send_message_to_node(
+        &self,
+        target: SocketAddr,
+        message: NetworkMessage,
+    ) -> Result<()> {
         let router = self.message_router.read().await;
-        
+
         if let Some(sender) = router.get(&target) {
-            sender.send(message).await.map_err(|_| Error::Generic("Failed to send message to test node".to_string()))?;
+            sender
+                .send(message)
+                .await
+                .map_err(|_| NetworkError::MessageSendFailed {
+                    peer: target,
+                    message_type: "NetworkMessage".to_string(),
+                    reason: "Failed to send message to test node".to_string(),
+                })?;
             Ok(())
         } else {
-            Err(Error::Generic(format!("Test node {} not found", target)))
+            Err(NetworkError::PeerNotConnected { address: target })
         }
     }
 
     /// Gets the highest block height among all test nodes
     pub fn get_max_height(&self) -> u32 {
-        self.nodes.values().map(|node| node.height).max().unwrap_or(0)
+        self.nodes
+            .values()
+            .map(|node| node.height)
+            .max()
+            .unwrap_or(0)
     }
 
     /// Creates a test blockchain sync scenario
@@ -322,10 +370,10 @@ impl LocalTestFramework {
 
         // Node 1: Behind (height 100)
         self.add_node(addresses[0], 100).await?;
-        
+
         // Node 2: Current (height 150)
         self.add_node(addresses[1], 150).await?;
-        
+
         // Node 3: Ahead (height 200)
         self.add_node(addresses[2], 200).await?;
 
@@ -355,7 +403,7 @@ impl TestSyncScenario {
     /// Runs the sync test scenario
     pub async fn run_sync_test(&self, sync_manager: &SyncManager) -> Result<SyncTestResult> {
         let start_time = Instant::now();
-        
+
         info!("Starting sync test scenario:");
         info!("  Behind node: {} (height: ~100)", self.behind_node);
         info!("  Current node: {} (height: ~150)", self.current_node);
@@ -363,26 +411,28 @@ impl TestSyncScenario {
         info!("  Target height: {}", self.target_height);
 
         // Update best known height to trigger sync
-        sync_manager.update_best_height(self.target_height, self.ahead_node).await;
+        sync_manager
+            .update_best_height(self.target_height, self.ahead_node)
+            .await;
 
         // Monitor sync progress
         let mut stats_interval = interval(Duration::from_secs(2));
         let mut max_wait = 60; // 60 seconds max
-        
+
         loop {
             stats_interval.tick().await;
             max_wait -= 2;
-            
+
             let stats = sync_manager.stats().await;
-            info!("Sync progress: {:.1}% ({}/{})", 
-                  stats.progress_percentage, 
-                  stats.current_height, 
-                  stats.best_known_height);
+            info!(
+                "Sync progress: {:.1}% ({}/{})",
+                stats.progress_percentage, stats.current_height, stats.best_known_height
+            );
 
             if stats.current_height >= self.target_height {
                 let duration = start_time.elapsed();
                 info!("Sync test completed successfully in {:?}", duration);
-                
+
                 return Ok(SyncTestResult {
                     success: true,
                     final_height: stats.current_height,
@@ -395,7 +445,7 @@ impl TestSyncScenario {
             if max_wait <= 0 {
                 warn!("Sync test timed out after 60 seconds");
                 let duration = start_time.elapsed();
-                
+
                 return Ok(SyncTestResult {
                     success: false,
                     final_height: sync_manager.stats().await.current_height,
@@ -432,7 +482,7 @@ impl SyncTestResult {
         info!("Duration: {:?}", self.duration);
         info!("Blocks synced: {}", self.blocks_synced);
         info!("Average speed: {:.2} blocks/sec", self.average_speed);
-        
+
         if self.success {
             info!("✅ Sync test PASSED");
         } else {
@@ -448,10 +498,10 @@ mod tests {
     #[tokio::test]
     async fn test_local_framework_creation() {
         let mut framework = LocalTestFramework::new();
-        
+
         let addr: SocketAddr = "127.0.0.1:20001".parse().unwrap();
         framework.add_node(addr, 100).await.unwrap();
-        
+
         assert_eq!(framework.get_max_height(), 100);
     }
 
@@ -459,7 +509,7 @@ mod tests {
     async fn test_node_message_handling() {
         let addr: SocketAddr = "127.0.0.1:20001".parse().unwrap();
         let node = TestNode::new(addr, 50);
-        
+
         let version_msg = NetworkMessage::new(
             0x3554334e,
             ProtocolMessage::Version {
@@ -470,7 +520,7 @@ mod tests {
                 user_agent: "Test".to_string(),
                 start_height: 0,
                 relay: true,
-            }
+            },
         );
 
         let response = node.handle_message(version_msg).await.unwrap();

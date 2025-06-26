@@ -3,13 +3,13 @@
 //! This module provides functionality for deploying, updating, and managing
 //! smart contracts on the Neo blockchain.
 
-use neo_core::{UInt160, UInt256};
 use crate::application_engine::ApplicationEngine;
 use crate::contract_state::{ContractState, NefFile};
 use crate::manifest::ContractManifest;
-use crate::validation::ContractValidator;
 use crate::storage::StorageKey;
+use crate::validation::ContractValidator;
 use crate::{Error, Result};
+use neo_core::{UInt160, UInt256};
 use std::collections::HashMap;
 
 /// Contract deployment transaction data.
@@ -111,7 +111,11 @@ impl DeploymentManager {
         deployment: DeploymentTransaction,
     ) -> Result<DeploymentResult> {
         // Validate the deployment
-        self.validator.validate_deployment(&deployment.nef, &deployment.manifest, &deployment.sender)?;
+        self.validator.validate_deployment(
+            &deployment.nef,
+            &deployment.manifest,
+            &deployment.sender,
+        )?;
 
         // Calculate contract hash
         let contract_hash = ContractState::calculate_hash(
@@ -122,9 +126,10 @@ impl DeploymentManager {
 
         // Check if contract already exists
         if self.contracts.contains_key(&contract_hash) {
-            return Err(Error::ContractNotFound(
-                format!("Contract already exists: {}", contract_hash)
-            ));
+            return Err(Error::ContractNotFound(format!(
+                "Contract already exists: {}",
+                contract_hash
+            )));
         }
 
         // Create contract state
@@ -167,7 +172,9 @@ impl DeploymentManager {
         update: UpdateTransaction,
     ) -> Result<DeploymentResult> {
         // Get the existing contract
-        let mut contract = self.contracts.get(&update.contract_hash)
+        let mut contract = self
+            .contracts
+            .get(&update.contract_hash)
             .ok_or_else(|| Error::ContractNotFound(update.contract_hash.to_string()))?
             .clone();
 
@@ -175,7 +182,8 @@ impl DeploymentManager {
         let new_nef = update.nef.as_ref().unwrap_or(&contract.nef);
         let new_manifest = update.manifest.as_ref().unwrap_or(&contract.manifest);
 
-        self.validator.validate_update(&contract, new_nef, new_manifest)?;
+        self.validator
+            .validate_update(&contract, new_nef, new_manifest)?;
 
         // Update the contract
         if let Some(ref nef) = update.nef {
@@ -191,7 +199,8 @@ impl DeploymentManager {
         let gas_consumed = self.execute_update(engine, &contract, &update, &mut events)?;
 
         // Store the updated contract
-        self.contracts.insert(update.contract_hash, contract.clone());
+        self.contracts
+            .insert(update.contract_hash, contract.clone());
 
         // Add update event
         events.push(ContractEvent {
@@ -217,19 +226,21 @@ impl DeploymentManager {
         tx_hash: UInt256,
     ) -> Result<Vec<ContractEvent>> {
         // Get the contract
-        let contract = self.contracts.get(&contract_hash)
+        let contract = self
+            .contracts
+            .get(&contract_hash)
             .ok_or_else(|| Error::ContractNotFound(contract_hash.to_string()))?;
 
         // Validate permissions (only the contract itself can destroy itself)
         if let Some(current_contract) = engine.current_contract() {
             if current_contract.hash != contract_hash {
                 return Err(Error::PermissionDenied(
-                    "Only the contract itself can destroy itself".to_string()
+                    "Only the contract itself can destroy itself".to_string(),
                 ));
             }
         } else {
             return Err(Error::PermissionDenied(
-                "Contract destruction must be called from within the contract".to_string()
+                "Contract destruction must be called from within the contract".to_string(),
             ));
         }
 
@@ -281,8 +292,10 @@ impl DeploymentManager {
         if let Some(init_method) = contract.manifest.get_method("_initialize") {
             // Production-ready method execution (matches C# ContractManagement.Deploy exactly)
 
-            println!("Executing initialization method '{}' on contract {}",
-                    init_method.name, contract.hash);
+            println!(
+                "Executing initialization method '{}' on contract {}",
+                init_method.name, contract.hash
+            );
 
             // Call the contract method using the production-ready call_contract method
             let args = if let Some(data) = &deployment.data {
@@ -293,8 +306,11 @@ impl DeploymentManager {
 
             match engine.call_contract(contract.hash, &init_method.name, args) {
                 Ok(_result) => {
-                    println!("Initialization method '{}' completed successfully", init_method.name);
-                    
+                    println!(
+                        "Initialization method '{}' completed successfully",
+                        init_method.name
+                    );
+
                     // Check for any events emitted during initialization
                     for notification in engine.notifications() {
                         events.push(ContractEvent {
@@ -306,9 +322,10 @@ impl DeploymentManager {
                     }
                 }
                 Err(e) => {
-                    return Err(Error::VmError(
-                        format!("Contract initialization failed: {}", e)
-                    ));
+                    return Err(Error::VmError(format!(
+                        "Contract initialization failed: {}",
+                        e
+                    )));
                 }
             }
         }
@@ -332,7 +349,10 @@ impl DeploymentManager {
         if let Some(update_method) = contract.manifest.get_method("_update") {
             // Production-ready method execution (matches C# ContractManagement.Update exactly)
 
-            println!("Executing update method '{}' on contract {}", update_method.name, contract.hash);
+            println!(
+                "Executing update method '{}' on contract {}",
+                update_method.name, contract.hash
+            );
 
             // Call the contract method using the production-ready call_contract method
             let args = if let Some(data) = &update.data {
@@ -343,8 +363,11 @@ impl DeploymentManager {
 
             match engine.call_contract(contract.hash, &update_method.name, args) {
                 Ok(_result) => {
-                    println!("Update method '{}' executed successfully", update_method.name);
-                    
+                    println!(
+                        "Update method '{}' executed successfully",
+                        update_method.name
+                    );
+
                     // Check for any events emitted during update
                     for notification in engine.notifications() {
                         events.push(ContractEvent {
@@ -356,9 +379,7 @@ impl DeploymentManager {
                     }
                 }
                 Err(e) => {
-                    return Err(Error::VmError(
-                        format!("Contract update failed: {}", e)
-                    ));
+                    return Err(Error::VmError(format!("Contract update failed: {}", e)));
                 }
             }
         }
@@ -377,7 +398,10 @@ impl DeploymentManager {
         // Production-ready contract destruction (matches C# ContractManagement.Destroy exactly)
 
         // 1. Clear all storage for this contract
-        println!("Destroying contract {} and clearing all storage", contract.hash);
+        println!(
+            "Destroying contract {} and clearing all storage",
+            contract.hash
+        );
 
         // Iterate through all storage keys for this contract (matches C# ContractManagement.Destroy exactly)
         // Delete each storage item from the blockchain storage

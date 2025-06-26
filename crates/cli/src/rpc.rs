@@ -3,17 +3,17 @@
 //! This module provides a complete production-ready JSON-RPC server for the Neo CLI
 //! that implements all standard Neo RPC methods exactly like the C# Neo node.
 
-use std::sync::Arc;
-use std::net::SocketAddr;
-use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 use anyhow::Result;
-use tracing::{info, debug, warn, error};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::{debug, error, info, warn};
 
 use crate::node::NeoNode;
-use neo_core::{UInt256, UInt160, Transaction};
-use neo_ledger::{Blockchain, Block};
+use neo_core::{Transaction, UInt160, UInt256};
+use neo_ledger::{Block, Blockchain};
 
 /// Complete JSON-RPC server implementation - Production Ready
 pub struct RpcServer {
@@ -285,10 +285,10 @@ impl RpcServer {
                 match listener.accept().await {
                     Ok((stream, addr)) => {
                         debug!("RPC connection from {}", addr);
-                        
+
                         let node_clone = node.clone();
                         let running_clone = running.clone();
-                        
+
                         tokio::spawn(async move {
                             Self::handle_rpc_connection(stream, node_clone, running_clone).await;
                         });
@@ -298,7 +298,7 @@ impl RpcServer {
                     }
                 }
             }
-            
+
             info!("JSON-RPC server stopped");
         });
 
@@ -310,7 +310,7 @@ impl RpcServer {
     pub async fn stop(&mut self) {
         info!("Stopping JSON-RPC server");
         *self.running.write().await = false;
-        
+
         if let Some(handle) = self.server_handle.take() {
             handle.abort();
         }
@@ -343,7 +343,10 @@ impl RpcServer {
                         r#"{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error"},"id":null}"#.to_string()
                     });
 
-                    if let Err(e) = writer.write_all(format!("{}\n", response_json).as_bytes()).await {
+                    if let Err(e) = writer
+                        .write_all(format!("{}\n", response_json).as_bytes())
+                        .await
+                    {
                         debug!("Failed to write RPC response: {}", e);
                         break;
                     }
@@ -377,7 +380,7 @@ impl RpcServer {
 
         // Handle the method
         let result = Self::execute_rpc_method(&request.method, request.params, node).await;
-        
+
         match result {
             Ok(result) => RpcResponse {
                 jsonrpc: "2.0".to_string(),
@@ -395,7 +398,11 @@ impl RpcServer {
     }
 
     /// Executes an RPC method - Complete Neo RPC API Implementation
-    async fn execute_rpc_method(method: &str, params: Option<Value>, node: &Arc<NeoNode>) -> Result<Value, RpcError> {
+    async fn execute_rpc_method(
+        method: &str,
+        params: Option<Value>,
+        node: &Arc<NeoNode>,
+    ) -> Result<Value, RpcError> {
         match method {
             // Blockchain methods
             "getbestblockhash" => {
@@ -408,12 +415,13 @@ impl RpcServer {
                     }
                     Err(_) => {
                         // Fallback to genesis block hash for robustness (production safety)
-                        let genesis_hash = "0x0000000000000000000000000000000000000000000000000000000000000000";
+                        let genesis_hash =
+                            "0x0000000000000000000000000000000000000000000000000000000000000000";
                         Ok(json!(genesis_hash))
                     }
                 }
             }
-            
+
             "getblock" => {
                 // Get block by hash or index
                 if let Some(params) = params {
@@ -449,7 +457,7 @@ impl RpcServer {
                     })
                 }
             }
-            
+
             "getblockcount" => {
                 // Get current block height + 1
                 match node.blockchain_height().await {
@@ -465,7 +473,7 @@ impl RpcServer {
                     }),
                 }
             }
-            
+
             "getblockhash" => {
                 // Get block hash by index
                 if let Some(params) = params {
@@ -487,7 +495,7 @@ impl RpcServer {
                     })
                 }
             }
-            
+
             "getblockheader" => {
                 // Get block header by hash or index
                 if let Some(params) = params {
@@ -522,40 +530,44 @@ impl RpcServer {
                     })
                 }
             }
-            
+
             "getconnectioncount" => {
                 // Get number of connected peers
                 let peer_count = node.peer_count().await;
                 Ok(json!(peer_count))
             }
-            
+
             "getpeers" => {
                 // Get connected peers information
                 let peers = node.get_connected_peers().await;
-                let peer_list: Vec<Value> = peers.into_iter().map(|peer| {
-                    json!({
-                        "address": peer.address.ip().to_string(),
-                        "port": peer.address.port()
+                let peer_list: Vec<Value> = peers
+                    .into_iter()
+                    .map(|peer| {
+                        json!({
+                            "address": peer.address.ip().to_string(),
+                            "port": peer.address.port()
+                        })
                     })
-                }).collect();
-                
+                    .collect();
+
                 Ok(json!({
                     "unconnected": [],
                     "bad": [],
                     "connected": peer_list
                 }))
             }
-            
+
             "getrawmempool" => {
                 // Get mempool transaction hashes
                 let transactions = node.get_mempool_transactions().await;
-                let tx_hashes: Vec<String> = transactions.into_iter()
+                let tx_hashes: Vec<String> = transactions
+                    .into_iter()
                     .filter_map(|tx| tx.hash().ok())
                     .map(|hash| format!("0x{}", hash))
                     .collect();
                 Ok(json!(tx_hashes))
             }
-            
+
             "getrawtransaction" => {
                 // Get raw transaction by hash
                 if let Some(params) = params {
@@ -590,7 +602,7 @@ impl RpcServer {
                     })
                 }
             }
-            
+
             "gettransactionheight" => {
                 // Get block height containing transaction
                 if let Some(params) = params {
@@ -612,7 +624,7 @@ impl RpcServer {
                     })
                 }
             }
-            
+
             "getversion" => {
                 // Get node version information
                 Ok(json!({
@@ -633,14 +645,14 @@ impl RpcServer {
                     }
                 }))
             }
-            
+
             "sendrawtransaction" => {
                 // Broadcast raw transaction (production-ready implementation)
                 if let Some(params) = params {
                     if let Some(tx_hex) = params.get(0).and_then(|v| v.as_str()) {
                         // Production-ready transaction broadcasting (matches C# Neo RPC exactly)
                         // This implements the C# logic: RpcServer.SendRawTransaction with full validation
-                        
+
                         // 1. Decode hex transaction data (production hex parsing)
                         let tx_bytes = match hex::decode(tx_hex.trim_start_matches("0x")) {
                             Ok(bytes) => bytes,
@@ -652,7 +664,7 @@ impl RpcServer {
                                 });
                             }
                         };
-                        
+
                         // 2. Deserialize transaction (production deserialization)
                         let transaction = match neo_core::Transaction::from_bytes(&tx_bytes) {
                             Ok(tx) => tx,
@@ -664,7 +676,7 @@ impl RpcServer {
                                 });
                             }
                         };
-                        
+
                         // 3. Calculate actual transaction hash (production hash calculation)
                         let tx_hash = match transaction.hash() {
                             Ok(hash) => format!("0x{}", hash),
@@ -676,7 +688,7 @@ impl RpcServer {
                                 });
                             }
                         };
-                        
+
                         // 4. Validate and add transaction to mempool (production mempool integration)
                         match node.add_transaction_to_mempool(transaction).await {
                             Ok(_) => {
@@ -693,7 +705,7 @@ impl RpcServer {
                                 });
                             }
                         }
-                        
+
                         // 5. Return actual transaction hash (production response)
                         Ok(json!({
                             "hash": tx_hash
@@ -713,7 +725,7 @@ impl RpcServer {
                     })
                 }
             }
-            
+
             "validateaddress" => {
                 // Validate Neo address
                 if let Some(params) = params {
@@ -738,14 +750,12 @@ impl RpcServer {
                     })
                 }
             }
-            
-            _ => {
-                Err(RpcError {
-                    code: -32601,
-                    message: "Method not found".to_string(),
-                    data: None,
-                })
-            }
+
+            _ => Err(RpcError {
+                code: -32601,
+                message: "Method not found".to_string(),
+                data: None,
+            }),
         }
     }
-} 
+}

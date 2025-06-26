@@ -61,9 +61,10 @@ impl RoleManagement {
     pub fn new() -> Self {
         // RoleManagement contract hash (well-known constant)
         let hash = UInt160::from_bytes(&[
-            0x49, 0xcf, 0x4e, 0x5f, 0x4e, 0x94, 0x5d, 0x3b, 0x8d, 0x3c,
-            0x4d, 0x2e, 0x3c, 0x6a, 0x61, 0x4b, 0x4b, 0x5e, 0x1b, 0x20,
-        ]).unwrap();
+            0x49, 0xcf, 0x4e, 0x5f, 0x4e, 0x94, 0x5d, 0x3b, 0x8d, 0x3c, 0x4d, 0x2e, 0x3c, 0x6a,
+            0x61, 0x4b, 0x4b, 0x5e, 0x1b, 0x20,
+        ])
+        .unwrap();
 
         let methods = vec![
             NativeMethod::safe("getDesignatedByRole".to_string(), 1 << 15),
@@ -87,7 +88,10 @@ impl RoleManagement {
         match method {
             "getDesignatedByRole" => self.get_designated_by_role(args),
             "designateAsRole" => self.designate_as_role(engine, args),
-            _ => Err(Error::NativeContractError(format!("Unknown method: {}", method))),
+            _ => Err(Error::NativeContractError(format!(
+                "Unknown method: {}",
+                method
+            ))),
         }
     }
 
@@ -95,13 +99,15 @@ impl RoleManagement {
     pub fn get_designated_by_role(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
             return Err(Error::NativeContractError(
-                "getDesignatedByRole requires role and index arguments".to_string()
+                "getDesignatedByRole requires role and index arguments".to_string(),
             ));
         }
 
         // Parse role
         if args[0].is_empty() {
-            return Err(Error::NativeContractError("Invalid role argument".to_string()));
+            return Err(Error::NativeContractError(
+                "Invalid role argument".to_string(),
+            ));
         }
         let role_value = args[0][0];
         let role = Role::from_u8(role_value)
@@ -109,7 +115,9 @@ impl RoleManagement {
 
         // Parse block index
         if args[1].len() != 4 {
-            return Err(Error::NativeContractError("Invalid index argument".to_string()));
+            return Err(Error::NativeContractError(
+                "Invalid index argument".to_string(),
+            ));
         }
         let index = u32::from_le_bytes([args[1][0], args[1][1], args[1][2], args[1][3]]);
 
@@ -129,16 +137,22 @@ impl RoleManagement {
     }
 
     /// Designates public keys for a specific role.
-    pub fn designate_as_role(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    pub fn designate_as_role(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.len() < 2 {
             return Err(Error::NativeContractError(
-                "designateAsRole requires role and public keys arguments".to_string()
+                "designateAsRole requires role and public keys arguments".to_string(),
             ));
         }
 
         // Parse role
         if args[0].is_empty() {
-            return Err(Error::NativeContractError("Invalid role argument".to_string()));
+            return Err(Error::NativeContractError(
+                "Invalid role argument".to_string(),
+            ));
         }
         let role_value = args[0][0];
         let role = Role::from_u8(role_value)
@@ -167,8 +181,12 @@ impl RoleManagement {
         engine.put_storage_item(&context, storage_key.as_bytes(), &serialized_keys)?;
 
         // 3. Emit a designation event (production implementation matching C# Neo exactly)
-        println!("Role {:?} designated to {} public keys (production event emission)", role, public_keys.len());
-        
+        println!(
+            "Role {:?} designated to {} public keys (production event emission)",
+            role,
+            public_keys.len()
+        );
+
         // In production, this would emit a proper Designation event to the blockchain
 
         Ok(vec![1]) // Return true for success
@@ -193,8 +211,9 @@ impl RoleManagement {
 
         // Write each public key
         for pubkey in public_keys {
-            let encoded = pubkey.encode_compressed()
-                .map_err(|_| Error::NativeContractError("Failed to encode public key".to_string()))?;
+            let encoded = pubkey.encode_compressed().map_err(|_| {
+                Error::NativeContractError("Failed to encode public key".to_string())
+            })?;
             result.extend_from_slice(&encoded);
         }
 
@@ -204,7 +223,9 @@ impl RoleManagement {
     /// Parses public keys from bytes.
     fn parse_public_keys(&self, data: &[u8]) -> Result<Vec<ECPoint>> {
         if data.len() < 4 {
-            return Err(Error::NativeContractError("Invalid public keys data".to_string()));
+            return Err(Error::NativeContractError(
+                "Invalid public keys data".to_string(),
+            ));
         }
 
         let count = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
@@ -213,7 +234,9 @@ impl RoleManagement {
 
         for _ in 0..count {
             if offset + 33 > data.len() {
-                return Err(Error::NativeContractError("Invalid public key data".to_string()));
+                return Err(Error::NativeContractError(
+                    "Invalid public key data".to_string(),
+                ));
             }
 
             let mut key_bytes = [0u8; 33];
@@ -221,17 +244,22 @@ impl RoleManagement {
 
             // Check for invalid all-zero key
             if key_bytes.iter().all(|&b| b == 0) {
-                return Err(Error::NativeContractError("Invalid public key: cannot be all zeros".to_string()));
+                return Err(Error::NativeContractError(
+                    "Invalid public key: cannot be all zeros".to_string(),
+                ));
             }
 
             // Check for valid compressed public key format
             if key_bytes[0] != 0x02 && key_bytes[0] != 0x03 {
-                return Err(Error::NativeContractError("Invalid public key: invalid compression prefix".to_string()));
+                return Err(Error::NativeContractError(
+                    "Invalid public key: invalid compression prefix".to_string(),
+                ));
             }
 
             let curve = neo_cryptography::ecc::ECCurve::secp256r1();
-            let pubkey = ECPoint::decode_compressed(&key_bytes, curve)
-                .map_err(|_| Error::NativeContractError("Invalid public key encoding".to_string()))?;
+            let pubkey = ECPoint::decode_compressed(&key_bytes, curve).map_err(|_| {
+                Error::NativeContractError("Invalid public key encoding".to_string())
+            })?;
 
             public_keys.push(pubkey);
             offset += 33;
@@ -297,10 +325,7 @@ mod tests {
     #[test]
     fn test_get_designated_by_role_empty() {
         let role_mgmt = RoleManagement::new();
-        let args = vec![
-            vec![Role::Oracle as u8],
-            0u32.to_le_bytes().to_vec(),
-        ];
+        let args = vec![vec![Role::Oracle as u8], 0u32.to_le_bytes().to_vec()];
 
         let result = role_mgmt.get_designated_by_role(&args).unwrap();
         assert_eq!(result, vec![0]); // Empty array
@@ -316,10 +341,7 @@ mod tests {
         pubkeys_data.extend_from_slice(&1u32.to_le_bytes()); // 1 public key
         pubkeys_data.extend_from_slice(&[0u8; 33]); // Mock compressed public key
 
-        let args = vec![
-            vec![Role::Oracle as u8],
-            pubkeys_data,
-        ];
+        let args = vec![vec![Role::Oracle as u8], pubkeys_data];
 
         // Production-ready test: This correctly fails because the mock public key is invalid
         // The implementation properly validates public key format and rejects invalid keys

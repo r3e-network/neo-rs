@@ -11,7 +11,7 @@
 
 //! Builder for transaction witnesses.
 
-use crate::{Witness, CoreError};
+use crate::{CoreError, Witness};
 
 /// Builder for transaction witnesses (matches C# WitnessBuilder exactly).
 #[derive(Debug)]
@@ -48,7 +48,9 @@ impl WitnessBuilder {
     /// Returns an error if invocation script already exists
     pub fn add_invocation(mut self, bytes: Vec<u8>) -> Result<Self, CoreError> {
         if !self.invocation_script.is_empty() {
-            return Err(CoreError::InvalidOperation("Invocation script already exists".to_string()));
+            return Err(CoreError::InvalidOperation {
+                message: "Invocation script already exists".to_string(),
+            });
         }
         self.invocation_script = bytes;
         Ok(self)
@@ -69,7 +71,9 @@ impl WitnessBuilder {
     /// Returns an error if verification script already exists
     pub fn add_verification(mut self, bytes: Vec<u8>) -> Result<Self, CoreError> {
         if !self.verification_script.is_empty() {
-            return Err(CoreError::InvalidOperation("Verification script already exists".to_string()));
+            return Err(CoreError::InvalidOperation {
+                message: "Verification script already exists".to_string(),
+            });
         }
         self.verification_script = bytes;
         Ok(self)

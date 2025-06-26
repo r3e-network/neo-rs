@@ -3,8 +3,8 @@
 //! This module provides hash functions used in the Neo blockchain.
 
 use crate::hash_algorithm::HashAlgorithm;
-use sha2::{Digest, Sha256};
 use ripemd::Ripemd160;
+use sha2::{Digest, Sha256};
 use std::io;
 
 /// Provides hash functions for Neo.

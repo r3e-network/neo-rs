@@ -5,11 +5,11 @@
 
 use crate::{Error, Result};
 use neo_core::{UInt160, UInt256};
-use neo_cryptography::{ECC, ECPoint, ECDsa};
-use serde::{Deserialize, Serialize};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use neo_cryptography::{ECC, ECDsa, ECPoint};
 use rand::RngCore;
+use serde::{Deserialize, Serialize};
 use std::fmt;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// A cryptographic key pair for Neo accounts.
 /// This matches the C# KeyPair class functionality.
@@ -58,8 +58,7 @@ impl KeyPair {
     /// The encrypted_key should be base64-encoded NEP-2 data.
     pub fn from_nep2(encrypted_key: &[u8], password: &str) -> Result<Self> {
         // First try to decode as base64
-        let decoded = base64::decode(encrypted_key)
-            .map_err(|_| Error::InvalidNep2Key)?;
+        let decoded = base64::decode(encrypted_key).map_err(|_| Error::InvalidNep2Key)?;
 
         let private_key = Self::decrypt_nep2(&decoded, password)?;
         Self::from_private_key(&private_key)
@@ -190,17 +189,21 @@ impl KeyPair {
 
     /// Encrypts a private key using NEP-2 standard.
     fn encrypt_nep2(private_key: &[u8; 32], password: &str) -> Result<Vec<u8>> {
-        use scrypt::{Scrypt, Params};
         use aes::Aes256;
-        use cbc::{Encryptor, cipher::{KeyIvInit, BlockEncryptMut}};
+        use cbc::{
+            Encryptor,
+            cipher::{BlockEncryptMut, KeyIvInit},
+        };
+        use scrypt::{Params, Scrypt};
 
         // NEP-2 parameters
         let n = 16384; // CPU cost
-        let r = 8;     // Memory cost
-        let p = 8;     // Parallelization
+        let r = 8; // Memory cost
+        let p = 8; // Parallelization
 
         // Generate address hash
-        let address = UInt160::from_script(&Self::get_verification_script_for_key(private_key)).to_address();
+        let address =
+            UInt160::from_script(&Self::get_verification_script_for_key(private_key)).to_address();
         let address_hash = &neo_cryptography::hash::sha256(address.as_bytes())[0..4];
 
         // Derive key using scrypt
@@ -227,7 +230,8 @@ impl KeyPair {
         let mut buffer = xor_key.to_vec();
         buffer.resize(32, 0); // Ensure exactly 32 bytes
         // No padding needed since xor_key is exactly 32 bytes (multiple of 16)
-        let encrypted = cipher.encrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut buffer, 32)
+        let encrypted = cipher
+            .encrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut buffer, 32)
             .map_err(|e| Error::Aes(e.to_string()))?;
         let encrypted = encrypted.to_vec();
 
@@ -243,9 +247,12 @@ impl KeyPair {
 
     /// Decrypts a NEP-2 encrypted private key.
     fn decrypt_nep2(encrypted_key: &[u8], password: &str) -> Result<[u8; 32]> {
-        use scrypt::{Scrypt, Params};
         use aes::Aes256;
-        use cbc::{Decryptor, cipher::{KeyIvInit, BlockDecryptMut}};
+        use cbc::{
+            Decryptor,
+            cipher::{BlockDecryptMut, KeyIvInit},
+        };
+        use scrypt::{Params, Scrypt};
 
         if encrypted_key.len() != 39 {
             return Err(Error::InvalidNep2Key);
@@ -279,7 +286,8 @@ impl KeyPair {
         // Decrypt with AES-256-CBC (no padding, like C# implementation)
         let cipher = Decryptor::<Aes256>::new(derived_half2.into(), &[0u8; 16].into());
         let mut buffer = encrypted_data.to_vec();
-        let decrypted = cipher.decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut buffer)
+        let decrypted = cipher
+            .decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut buffer)
             .map_err(|e| Error::Aes(e.to_string()))?;
 
         // XOR with derived_half1 to get private key

@@ -21,7 +21,8 @@ neo-network = { path = "../crates/network" }
 neo-persistence = { path = "../crates/persistence" }
 neo-wallets = { path = "../crates/wallets" }
 neo-config = { path = "../crates/config" }
-# neo-consensus = { path = "../crates/consensus" }  # Disabled for basic node functionality
+neo-rpc-server = { path = "../crates/rpc_server" }
+neo-consensus = { path = "../crates/consensus" }
 
 # External dependencies
 tokio = { version = "1.28", features = ["full"] }

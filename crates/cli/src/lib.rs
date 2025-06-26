@@ -67,11 +67,11 @@ pub fn display_version() {
 // Define the modules first
 pub mod args;
 pub mod config;
-pub mod service;
-pub mod wallet;
+pub mod console;
 pub mod node;
 pub mod rpc;
-pub mod console;
+pub mod service;
+pub mod wallet;
 
 // Re-export common types for easy access within the crate
 pub use args::CliArgs;
@@ -79,5 +79,8 @@ pub use service::MainService;
 
 /// Get version information as a string (for testing)
 pub fn get_version_info() -> String {
-    format!("Neo CLI v{}\nNeo Core v{}\nNeo VM v{}", VERSION, NEO_VERSION, VM_VERSION)
-} 
+    format!(
+        "Neo CLI v{}\nNeo Core v{}\nNeo VM v{}",
+        VERSION, NEO_VERSION, VM_VERSION
+    )
+}

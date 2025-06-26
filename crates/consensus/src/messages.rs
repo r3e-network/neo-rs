@@ -3,9 +3,7 @@
 //! This module provides comprehensive consensus message functionality,
 //! including all dBFT message types and their serialization/deserialization.
 
-use crate::{
-    BlockIndex, ConsensusPayload, ConsensusSignature, Error, Result, ViewNumber,
-};
+use crate::{BlockIndex, ConsensusPayload, ConsensusSignature, Error, Result, ViewNumber};
 use neo_core::UInt256;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -123,8 +121,13 @@ impl ConsensusMessage {
             (ConsensusMessageType::Commit, ConsensusMessageData::Commit(_)) => {}
             (ConsensusMessageType::ChangeView, ConsensusMessageData::ChangeView(_)) => {}
             (ConsensusMessageType::RecoveryRequest, ConsensusMessageData::RecoveryRequest(_)) => {}
-            (ConsensusMessageType::RecoveryResponse, ConsensusMessageData::RecoveryResponse(_)) => {}
-            _ => return Err(Error::InvalidMessage("Message type and data mismatch".to_string())),
+            (ConsensusMessageType::RecoveryResponse, ConsensusMessageData::RecoveryResponse(_)) => {
+            }
+            _ => {
+                return Err(Error::InvalidMessage(
+                    "Message type and data mismatch".to_string(),
+                ));
+            }
         }
 
         // Validate timestamp (not too old or too far in future)
@@ -134,11 +137,15 @@ impl ConsensusMessage {
             .as_secs();
 
         if self.timestamp() > now + 300 {
-            return Err(Error::InvalidMessage("Message timestamp too far in future".to_string()));
+            return Err(Error::InvalidMessage(
+                "Message timestamp too far in future".to_string(),
+            ));
         }
 
         if now > self.timestamp() + 3600 {
-            return Err(Error::InvalidMessage("Message timestamp too old".to_string()));
+            return Err(Error::InvalidMessage(
+                "Message timestamp too old".to_string(),
+            ));
         }
 
         Ok(())
@@ -172,11 +179,7 @@ pub struct PrepareRequest {
 
 impl PrepareRequest {
     /// Creates a new prepare request
-    pub fn new(
-        block_hash: UInt256,
-        block_data: Vec<u8>,
-        transaction_hashes: Vec<UInt256>,
-    ) -> Self {
+    pub fn new(block_hash: UInt256, block_data: Vec<u8>, transaction_hashes: Vec<UInt256>) -> Self {
         Self {
             block_hash,
             block_data,
@@ -188,23 +191,31 @@ impl PrepareRequest {
     /// Validates the prepare request
     pub fn validate(&self) -> Result<()> {
         if self.block_data.is_empty() {
-            return Err(Error::InvalidMessage("Block data cannot be empty".to_string()));
+            return Err(Error::InvalidMessage(
+                "Block data cannot be empty".to_string(),
+            ));
         }
 
         // Production-ready block validation (matches C# dBFT.ValidateBlock exactly)
 
         // 1. Validate block header
         if self.block_data.is_empty() {
-            return Err(Error::InvalidBlock("Block data cannot be empty".to_string()));
+            return Err(Error::InvalidBlock(
+                "Block data cannot be empty".to_string(),
+            ));
         }
 
         // 2. Validate transaction hashes
         if self.transaction_hashes.is_empty() {
-            return Err(Error::InvalidBlock("Block must contain at least one transaction".to_string()));
+            return Err(Error::InvalidBlock(
+                "Block must contain at least one transaction".to_string(),
+            ));
         }
 
         if self.transaction_hashes.len() > 512 {
-            return Err(Error::InvalidBlock("Too many transactions in block".to_string()));
+            return Err(Error::InvalidBlock(
+                "Too many transactions in block".to_string(),
+            ));
         }
 
         // 3. Validate block hash
@@ -216,15 +227,19 @@ impl PrepareRequest {
         let mut seen_hashes = std::collections::HashSet::new();
         for tx_hash in &self.transaction_hashes {
             if !seen_hashes.insert(tx_hash) {
-                return Err(Error::InvalidBlock("Duplicate transaction hash in block".to_string()));
+                return Err(Error::InvalidBlock(
+                    "Duplicate transaction hash in block".to_string(),
+                ));
             }
         }
 
         // 5. Validate block size (production implementation matching C# Neo exactly)
-        if self.block_data.len() > 262144 { // 256KB limit matches C# Neo MaxBlockSize
-            return Err(Error::InvalidMessage(
-                format!("Block size {} exceeds maximum allowed size of 262144 bytes", self.block_data.len())
-            ));
+        if self.block_data.len() > 262144 {
+            // 256KB limit matches C# Neo MaxBlockSize
+            return Err(Error::InvalidMessage(format!(
+                "Block size {} exceeds maximum allowed size of 262144 bytes",
+                self.block_data.len()
+            )));
         }
 
         println!("Block validation passed for block {}", self.block_hash);
@@ -299,7 +314,9 @@ impl Commit {
     /// Validates the commit message
     pub fn validate(&self) -> Result<()> {
         if self.commitment_signature.is_empty() {
-            return Err(Error::InvalidMessage("Commitment signature cannot be empty".to_string()));
+            return Err(Error::InvalidMessage(
+                "Commitment signature cannot be empty".to_string(),
+            ));
         }
 
         Ok(())
@@ -461,10 +478,16 @@ mod tests {
     #[test]
     fn test_consensus_message_type() {
         assert_eq!(ConsensusMessageType::PrepareRequest.to_byte(), 0x00);
-        assert_eq!(ConsensusMessageType::from_byte(0x00), Some(ConsensusMessageType::PrepareRequest));
+        assert_eq!(
+            ConsensusMessageType::from_byte(0x00),
+            Some(ConsensusMessageType::PrepareRequest)
+        );
 
         assert_eq!(ConsensusMessageType::Commit.to_byte(), 0x02);
-        assert_eq!(ConsensusMessageType::from_byte(0x02), Some(ConsensusMessageType::Commit));
+        assert_eq!(
+            ConsensusMessageType::from_byte(0x02),
+            Some(ConsensusMessageType::Commit)
+        );
 
         assert_eq!(ConsensusMessageType::from_byte(0xFF), None);
     }
@@ -475,7 +498,8 @@ mod tests {
         let block_data = vec![1, 2, 3, 4];
         let tx_hashes = vec![UInt256::from_bytes(&[2; 32]).unwrap()];
 
-        let prepare_request = PrepareRequest::new(block_hash, block_data.clone(), tx_hashes.clone());
+        let prepare_request =
+            PrepareRequest::new(block_hash, block_data.clone(), tx_hashes.clone());
 
         assert_eq!(prepare_request.block_hash, block_hash);
         assert_eq!(prepare_request.block_data, block_data);

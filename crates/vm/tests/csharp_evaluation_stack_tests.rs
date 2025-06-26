@@ -3,7 +3,7 @@
 //! This file contains unit tests that ensure the Rust EvaluationStack implementation
 //! behaves identically to the C# Neo VM EvaluationStack implementation.
 
-use neo_vm::{EvaluationStack, StackItem, ReferenceCounter};
+use neo_vm::{EvaluationStack, ReferenceCounter, StackItem};
 use num_bigint::BigInt;
 
 #[cfg(test)]
@@ -26,7 +26,11 @@ mod tests {
         assert!(!stack.is_empty(), "Stack should not be empty after push");
 
         stack.push(StackItem::Integer(BigInt::from(2)));
-        assert_eq!(stack.len(), 2, "Stack should have 2 items after second push");
+        assert_eq!(
+            stack.len(),
+            2,
+            "Stack should have 2 items after second push"
+        );
 
         stack.push(StackItem::Integer(BigInt::from(3)));
         assert_eq!(stack.len(), 3, "Stack should have 3 items after third push");
@@ -77,7 +81,10 @@ mod tests {
             panic!("Popped item should be Integer(1)");
         }
         assert_eq!(stack.len(), 0, "Stack should be empty after all pops");
-        assert!(stack.is_empty(), "Stack should report as empty after all pops");
+        assert!(
+            stack.is_empty(),
+            "Stack should report as empty after all pops"
+        );
     }
 
     /// Test stack overflow protection (matches C# TestStackOverflow)
@@ -171,7 +178,9 @@ mod tests {
         stack.push(StackItem::Integer(BigInt::from(3)));
 
         // Insert at position 1 (note: insert uses Vec indexing, not stack indexing)
-        stack.insert(1, StackItem::Integer(BigInt::from(99))).unwrap();
+        stack
+            .insert(1, StackItem::Integer(BigInt::from(99)))
+            .unwrap();
 
         assert_eq!(stack.len(), 4, "Stack should have 4 items after insert");
 
@@ -267,24 +276,43 @@ mod tests {
         stack.push(StackItem::from_byte_string("Hello"));
         stack.push(StackItem::from_byte_string(vec![1u8, 2, 3]));
 
-        assert_eq!(stack.len(), 5, "Stack should have 5 items of different types");
+        assert_eq!(
+            stack.len(),
+            5,
+            "Stack should have 5 items of different types"
+        );
 
         // Verify each type
         let byte_array = stack.pop().unwrap();
-        assert!(matches!(byte_array, StackItem::ByteString(_)), "Should be ByteString");
+        assert!(
+            matches!(byte_array, StackItem::ByteString(_)),
+            "Should be ByteString"
+        );
 
         let string_item = stack.pop().unwrap();
-        assert!(matches!(string_item, StackItem::ByteString(_)), "Should be ByteString");
+        assert!(
+            matches!(string_item, StackItem::ByteString(_)),
+            "Should be ByteString"
+        );
 
         let integer = stack.pop().unwrap();
-        assert!(matches!(integer, StackItem::Integer(_)), "Should be Integer");
+        assert!(
+            matches!(integer, StackItem::Integer(_)),
+            "Should be Integer"
+        );
 
         let boolean = stack.pop().unwrap();
-        assert!(matches!(boolean, StackItem::Boolean(_)), "Should be Boolean");
+        assert!(
+            matches!(boolean, StackItem::Boolean(_)),
+            "Should be Boolean"
+        );
 
         let null = stack.pop().unwrap();
         assert!(matches!(null, StackItem::Null), "Should be Null");
 
-        assert!(stack.is_empty(), "Stack should be empty after popping all items");
+        assert!(
+            stack.is_empty(),
+            "Stack should be empty after popping all items"
+        );
     }
 }

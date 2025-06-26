@@ -1,22 +1,24 @@
 //! Basic control flow operations for the Neo Virtual Machine.
 
 use crate::{
+    error::{VmError, VmResult},
     execution_engine::ExecutionEngine,
     instruction::Instruction,
-    Error,
 };
 use num_traits::ToPrimitive;
 
 /// Implements the NOP operation.
-pub fn nop(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate::Result<()> {
+pub fn nop(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Do nothing
     Ok(())
 }
 
 /// Implements the JMP operation.
-pub fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offset from the instruction
     let offset = instruction.read_i16_operand()?;
@@ -24,7 +26,10 @@ pub fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Re
     // Calculate the new instruction pointer
     let new_ip = context.instruction_pointer() as i32 + offset as i32;
     if new_ip < 0 || new_ip > context.script().len() as i32 {
-        return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+        return Err(VmError::invalid_operation_msg(format!(
+            "Jump out of bounds: {}",
+            new_ip
+        )));
     }
 
     // Set the new instruction pointer
@@ -37,9 +42,11 @@ pub fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Re
 }
 
 /// Implements the JMP_L operation (long jump with 32-bit offset).
-pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offset from the instruction
     let offset = instruction.read_i32_operand()?;
@@ -47,7 +54,10 @@ pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
     // Calculate the new instruction pointer
     let new_ip = context.instruction_pointer() as i32 + offset;
     if new_ip < 0 || new_ip > context.script().len() as i32 {
-        return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+        return Err(VmError::invalid_operation_msg(format!(
+            "Jump out of bounds: {}",
+            new_ip
+        )));
     }
 
     // Set the new instruction pointer
@@ -60,9 +70,11 @@ pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
 }
 
 /// Implements the JMPIF operation.
-pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
@@ -75,7 +87,10 @@ pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -89,9 +104,11 @@ pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
 }
 
 /// Implements the JMPIF_L operation (long conditional jump with 32-bit offset).
-pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
@@ -104,7 +121,10 @@ pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -118,9 +138,11 @@ pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
 }
 
 /// Implements the JMPIFNOT operation.
-pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
@@ -133,7 +155,10 @@ pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> crat
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -147,9 +172,11 @@ pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> crat
 }
 
 /// Implements the JMPIFNOT_L operation (long conditional jump with 32-bit offset).
-pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
@@ -162,7 +189,10 @@ pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> cr
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -176,9 +206,11 @@ pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> cr
 }
 
 /// Implements the JMPEQ operation (jump if equal).
-pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -192,7 +224,10 @@ pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -206,9 +241,11 @@ pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
 }
 
 /// Implements the JMPEQ_L operation (long jump if equal).
-pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -222,7 +259,10 @@ pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -236,9 +276,11 @@ pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
 }
 
 /// Implements the JMPNE operation (jump if not equal).
-pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -252,7 +294,10 @@ pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -266,9 +311,11 @@ pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
 }
 
 /// Implements the JMPNE_L operation (long jump if not equal).
-pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -282,7 +329,10 @@ pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -296,9 +346,11 @@ pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
 }
 
 /// Implements the JMPGT operation (jump if greater than).
-pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -312,7 +364,10 @@ pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -326,9 +381,11 @@ pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
 }
 
 /// Implements the JMPGT_L operation (long jump if greater than).
-pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -342,7 +399,10 @@ pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -356,9 +416,11 @@ pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
 }
 
 /// Implements the JMPGE operation (jump if greater than or equal).
-pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -372,7 +434,10 @@ pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -386,9 +451,11 @@ pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
 }
 
 /// Implements the JMPGE_L operation (long jump if greater than or equal).
-pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -402,7 +469,10 @@ pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -416,9 +486,11 @@ pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
 }
 
 /// Implements the JMPLT operation (jump if less than).
-pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -432,7 +504,10 @@ pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -446,9 +521,11 @@ pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
 }
 
 /// Implements the JMPLT_L operation (long jump if less than).
-pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -462,7 +539,10 @@ pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -476,9 +556,11 @@ pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
 }
 
 /// Implements the JMPLE operation (jump if less than or equal).
-pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -492,7 +574,10 @@ pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -506,9 +591,11 @@ pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::
 }
 
 /// Implements the JMPLE_L operation (long jump if less than or equal).
-pub fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -522,7 +609,10 @@ pub fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {}",
+                new_ip
+            )));
         }
 
         // Set the new instruction pointer
@@ -536,9 +626,11 @@ pub fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate
 }
 
 /// Implements the CALL operation.
-pub fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offset from the instruction
     let offset = instruction.read_i16_operand()?;
@@ -546,7 +638,10 @@ pub fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::R
     // Calculate the call target
     let call_target = context.instruction_pointer() as i32 + offset as i32;
     if call_target < 0 || call_target > context.script().len() as i32 {
-        return Err(Error::InvalidOperation(format!("Call target out of bounds: {}", call_target)));
+        return Err(VmError::invalid_operation_msg(format!(
+            "Call target out of bounds: {}",
+            call_target
+        )));
     }
 
     // Create a new context for the call
@@ -563,9 +658,11 @@ pub fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::R
 }
 
 /// Implements the CALL_L operation.
-pub fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate::Result<()> {
+pub fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offset from the instruction
     let offset = instruction.read_i32_operand()?;
@@ -573,7 +670,10 @@ pub fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate:
     // Calculate the call target
     let call_target = context.instruction_pointer() as i32 + offset;
     if call_target < 0 || call_target > context.script().len() as i32 {
-        return Err(Error::InvalidOperation(format!("Call target out of bounds: {}", call_target)));
+        return Err(VmError::invalid_operation_msg(format!(
+            "Call target out of bounds: {}",
+            call_target
+        )));
     }
 
     // Create a new context for the call
@@ -590,12 +690,18 @@ pub fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> crate:
 }
 
 /// Implements the CALLA operation.
-pub fn calla(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate::Result<()> {
+pub fn calla(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the call target from the stack
-    let call_target = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid call target".into()))?;
+    let call_target = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid call target"))?;
 
     // Create a new context for the call
     let script = context.script().clone();
@@ -611,12 +717,18 @@ pub fn calla(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate:
 }
 
 /// Implements the CALLT operation.
-pub fn callt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate::Result<()> {
+pub fn callt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the call target from the stack
-    let call_target = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid call target".into()))?;
+    let call_target = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid call target"))?;
 
     // Create a new context for the call
     let script = context.script().clone();
@@ -632,19 +744,24 @@ pub fn callt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate:
 }
 
 /// Implements the RET operation.
-pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate::Result<()> {
+pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the return value count from the current context
     let (rvcount, items_to_copy) = {
-        let context = engine.current_context().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+        let context = engine
+            .current_context()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
         let rvcount = context.rvcount();
-        
+
         // If rvcount is not -1, collect the top rvcount items to copy to result stack
         let items_to_copy = if rvcount != -1 {
             let rvcount = rvcount as usize;
             let stack_size = context.evaluation_stack().len();
 
             if rvcount > stack_size {
-                return Err(Error::InvalidOperation(format!("Not enough items on stack for return: {} > {}", rvcount, stack_size)));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Not enough items on stack for return: {} > {}",
+                    rvcount, stack_size
+                )));
             }
 
             // Collect the top rvcount items from evaluation stack
@@ -658,7 +775,7 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate::R
         } else {
             Vec::new()
         };
-        
+
         (rvcount, items_to_copy)
     };
 
@@ -678,4 +795,4 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> crate::R
     engine.is_jumping = true;
 
     Ok(())
-} 
+}

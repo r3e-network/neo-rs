@@ -14,10 +14,7 @@ pub enum ExtensionError {
 
     /// Missing plugin dependency
     #[error("Plugin '{plugin}' requires dependency '{dependency}'")]
-    MissingDependency {
-        plugin: String,
-        dependency: String,
-    },
+    MissingDependency { plugin: String, dependency: String },
 
     /// Plugin not found
     #[error("Plugin '{0}' not found")]
@@ -109,4 +106,4 @@ mod tests {
         let ext_error: ExtensionError = io_error.into();
         assert!(matches!(ext_error, ExtensionError::IoError(_)));
     }
-} 
+}

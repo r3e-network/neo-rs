@@ -49,7 +49,9 @@ impl MemoryReader {
     /// Sets the position in the reader.
     pub fn set_position(&mut self, position: usize) -> Result<()> {
         if position > self.span.len() {
-            return Err(Error::InvalidOperation(format!("Position {} is out of bounds", position)));
+            return Err(
+                Error::InvalidOperation(format!("Position {} is out of bounds", position)).into(),
+            );
         }
         self.pos = position;
         Ok(())
@@ -58,7 +60,7 @@ impl MemoryReader {
     /// Ensures that there are enough bytes remaining to read the specified amount.
     fn ensure_position(&self, move_amount: usize) -> Result<()> {
         if self.pos + move_amount > self.span.len() {
-            return Err(Error::FormatException);
+            return Err(Error::FormatException.into());
         }
         Ok(())
     }
@@ -74,7 +76,7 @@ impl MemoryReader {
         match self.read_byte()? {
             0 => Ok(false),
             1 => Ok(true),
-            _ => Err(Error::FormatException),
+            _ => Err(Error::FormatException.into()),
         }
     }
 
@@ -222,7 +224,7 @@ impl MemoryReader {
             _ => b as u64,
         };
         if value > max {
-            return Err(Error::FormatException);
+            return Err(Error::FormatException.into());
         }
         Ok(value)
     }
@@ -232,25 +234,25 @@ impl MemoryReader {
         self.ensure_position(length)?;
         let end = self.pos + length;
         let mut i = self.pos;
-        
+
         // Find the null terminator
         while i < end && self.span[i] != 0 {
             i += 1;
         }
-        
+
         let data = &self.span[self.pos..i];
-        
+
         // Check that remaining bytes are all zero
         for j in i..end {
             if self.span[j] != 0 {
-                return Err(Error::FormatException);
+                return Err(Error::FormatException.into());
             }
         }
-        
+
         self.pos = end;
-        
+
         // Convert to UTF-8 string (strict)
-        String::from_utf8(data.to_vec()).map_err(|_| Error::FormatException)
+        String::from_utf8(data.to_vec()).map_err(|_| Error::FormatException.into())
     }
 
     /// Reads a variable-length string.
@@ -259,9 +261,9 @@ impl MemoryReader {
         self.ensure_position(length)?;
         let data = &self.span[self.pos..self.pos + length];
         self.pos += length;
-        
+
         // Convert to UTF-8 string (strict)
-        String::from_utf8(data.to_vec()).map_err(|_| Error::FormatException)
+        String::from_utf8(data.to_vec()).map_err(|_| Error::FormatException.into())
     }
 
     /// Reads a memory slice of the specified count.

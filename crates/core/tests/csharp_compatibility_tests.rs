@@ -89,16 +89,19 @@ fn test_uint160_parse() {
         assert!(result.is_ok(), "Failed to parse: {}", case);
 
         let hash = result.unwrap();
-        assert_eq!(hash.to_string(), "0x0102030405060708090a0b0c0d0e0f1011121314");
+        assert_eq!(
+            hash.to_string(),
+            "0x0102030405060708090a0b0c0d0e0f1011121314"
+        );
     }
 
     // Test invalid hex strings exactly like C# Neo
     let invalid_cases = vec![
-        "0x010203040506070809", // Too short
+        "0x010203040506070809",                         // Too short
         "0x0102030405060708090a0b0c0d0e0f101112131415", // Too long
-        "0xgg02030405060708090a0b0c0d0e0f1011121314", // Invalid hex
-        "", // Empty string
-        "not_hex", // Not hex at all
+        "0xgg02030405060708090a0b0c0d0e0f1011121314",   // Invalid hex
+        "",                                             // Empty string
+        "not_hex",                                      // Not hex at all
     ];
 
     for case in invalid_cases {
@@ -143,8 +146,12 @@ fn test_uint160_to_string() {
 #[test]
 fn test_uint256_compare_to() {
     let hash1 = UInt256::zero();
-    let hash2 = UInt256::from_str("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20").unwrap();
-    let hash3 = UInt256::from_str("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20").unwrap();
+    let hash2 =
+        UInt256::from_str("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+            .unwrap();
+    let hash3 =
+        UInt256::from_str("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+            .unwrap();
 
     // Test comparison operations exactly like C# Neo
     assert!(hash1 < hash2);
@@ -158,7 +165,9 @@ fn test_uint256_compare_to() {
 fn test_uint256_equals() {
     let hash1 = UInt256::zero();
     let hash2 = UInt256::zero();
-    let hash3 = UInt256::from_str("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20").unwrap();
+    let hash3 =
+        UInt256::from_str("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+            .unwrap();
 
     // Test equality exactly like C# Neo
     assert_eq!(hash1, hash2);
@@ -175,7 +184,10 @@ fn test_uint256_parse() {
     assert!(result.is_ok());
 
     let hash = result.unwrap();
-    assert_eq!(hash.to_string(), "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20");
+    assert_eq!(
+        hash.to_string(),
+        "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+    );
 
     // Test invalid hex strings exactly like C# Neo
     let invalid_cases = vec![

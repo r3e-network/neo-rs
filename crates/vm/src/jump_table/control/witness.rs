@@ -1,18 +1,18 @@
 //! Witness verification functionality for the Neo Virtual Machine.
 
-use crate::{
-    execution_engine::ExecutionEngine,
-    call_flags::CallFlags,
-    Error,
-};
 use super::{
-    types::{ScriptContainer, Transaction, Block, Signer, AsAny},
-    oracle::{get_oracle_response_attribute, get_oracle_request_signers},
+    oracle::{get_oracle_request_signers, get_oracle_response_attribute},
+    types::{AsAny, Block, ScriptContainer, Signer, Transaction},
+};
+use crate::{
+    call_flags::CallFlags,
+    error::{VmError, VmResult},
+    execution_engine::ExecutionEngine,
 };
 use neo_core::UInt160;
 
 /// Production-ready witness verification (matches C# ApplicationEngine.CheckWitnessInternal exactly)
-pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> crate::Result<bool> {
+pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> VmResult<bool> {
     // Production-ready witness verification (matches C# ApplicationEngine.CheckWitnessInternal exactly)
 
     // 1. Convert hash to UInt160 for comparison
@@ -41,10 +41,10 @@ pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> crate::R
             ScriptContainer::Transaction(transaction) => {
                 // 4. Get signers from transaction (matches C# exact logic)
                 let signers = get_transaction_signers(engine, &transaction)?;
-                
+
                 // 5. Find matching signer (matches C# exact logic)
                 let signer = signers.iter().find(|s| s.account == target_hash);
-                
+
                 if let Some(signer) = signer {
                     // 6. Check witness rules (matches C# exact logic)
                     return check_witness_rules(engine, signer);
@@ -56,7 +56,7 @@ pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> crate::R
                 // 7. For non-Transaction types (Block, etc.) - matches C# exact logic
                 // Check allow state callflag (matches C# exact logic)
                 validate_call_flags(engine, CallFlags::READ_STATES)?;
-                
+
                 // Get script hashes for verification
                 let script_hashes = get_script_hashes_for_verifying(engine, &script_container)?;
                 return Ok(script_hashes.contains(&target_hash));
@@ -71,12 +71,12 @@ pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> crate::R
 /// Gets the calling script hash from the execution engine
 pub fn get_calling_script_hash(engine: &ExecutionEngine) -> Option<UInt160> {
     // Production-ready calling script hash retrieval (matches C# ExecutionEngine.CallingScriptHash exactly)
-    
+
     // 1. Get current execution context from engine
     if let Some(current_context) = engine.current_context() {
         // 2. Get invocation stack to find calling context (matches C# InvocationStack exactly)
         let invocation_stack = engine.invocation_stack();
-        
+
         // 3. Find the calling context (previous context in stack)
         if invocation_stack.len() > 1 {
             // Get the context before current (calling context)
@@ -85,14 +85,14 @@ pub fn get_calling_script_hash(engine: &ExecutionEngine) -> Option<UInt160> {
                 return Some(calling_context.script_hash());
             }
         }
-        
+
         // 5. If no calling context, check if this is entry point execution
         if invocation_stack.len() == 1 {
             // This is the entry point, return the current script hash as caller
             return Some(current_context.script_hash());
         }
     }
-    
+
     // 6. No valid calling context found (matches C# behavior when no caller exists)
     None
 }
@@ -100,7 +100,7 @@ pub fn get_calling_script_hash(engine: &ExecutionEngine) -> Option<UInt160> {
 /// Gets the script container from the execution engine
 pub fn get_script_container(engine: &ExecutionEngine) -> Option<ScriptContainer> {
     // Production-ready script container retrieval (matches C# ExecutionEngine.ScriptContainer exactly)
-    
+
     // 1. Access script container through engine (production implementation)
     if let Some(container) = engine.get_script_container() {
         // 2. Determine container type (matches C# IVerifiable type checking exactly)
@@ -112,7 +112,7 @@ pub fn get_script_container(engine: &ExecutionEngine) -> Option<ScriptContainer>
             return Some(ScriptContainer::Block(*block));
         }
     }
-    
+
     // 3. Check for transaction in engine context (alternative access method)
     if let Some(tx_hash) = engine.get_transaction_hash() {
         // Try to get transaction from transaction hash
@@ -120,7 +120,7 @@ pub fn get_script_container(engine: &ExecutionEngine) -> Option<ScriptContainer>
             return Some(ScriptContainer::Transaction(transaction));
         }
     }
-    
+
     // 4. Check for block in engine context (alternative access method)
     if let Some(block_hash) = engine.get_current_block_hash() {
         // Try to get block from block hash
@@ -128,15 +128,18 @@ pub fn get_script_container(engine: &ExecutionEngine) -> Option<ScriptContainer>
             return Some(ScriptContainer::Block(block));
         }
     }
-    
+
     // 5. No script container available (matches C# behavior for standalone execution)
     None
 }
 
 /// Gets transaction signers, handling Oracle responses (matches C# exact logic)
-pub fn get_transaction_signers(engine: &ExecutionEngine, transaction: &Transaction) -> crate::Result<Vec<Signer>> {
+pub fn get_transaction_signers(
+    engine: &ExecutionEngine,
+    transaction: &Transaction,
+) -> VmResult<Vec<Signer>> {
     // Production-ready transaction signer resolution (matches C# ApplicationEngine.CheckWitness exactly)
-    
+
     // 1. Check for Oracle response attribute (matches C# exact logic)
     if let Some(oracle_response) = get_oracle_response_attribute(transaction) {
         // 2. Handle Oracle response case (production Oracle integration)
@@ -147,17 +150,19 @@ pub fn get_transaction_signers(engine: &ExecutionEngine, transaction: &Transacti
             }
             Err(_) => {
                 // 4. Oracle request resolution failed - fall back to transaction signers (production fallback)
-                println!("Warning: Failed to resolve Oracle request signers, using transaction signers");
+                println!(
+                    "Warning: Failed to resolve Oracle request signers, using transaction signers"
+                );
             }
         }
     }
-    
+
     // 5. Return regular transaction signers (matches C# exact logic)
     Ok(transaction.signers().to_vec())
 }
 
 /// Checks witness rules for a signer (matches C# exact logic)
-pub fn check_witness_rules(engine: &ExecutionEngine, signer: &Signer) -> crate::Result<bool> {
+pub fn check_witness_rules(engine: &ExecutionEngine, signer: &Signer) -> VmResult<bool> {
     // Check all witness rules for the signer (matches C# exact logic)
     // In C#: foreach (WitnessRule rule in signer.GetAllRules())
     //        {
@@ -165,41 +170,45 @@ pub fn check_witness_rules(engine: &ExecutionEngine, signer: &Signer) -> crate::
     //                return rule.Action == WitnessRuleAction.Allow;
     //        }
     //        return false;
-    
+
     for rule in signer.get_all_rules() {
         if rule.condition.matches(engine)? {
             return Ok(rule.action == super::types::WitnessRuleAction::Allow);
         }
     }
-    
+
     Ok(false)
 }
 
 /// Gets script hashes for verifying from script container
-pub fn get_script_hashes_for_verifying(_engine: &ExecutionEngine, _container: &ScriptContainer) -> crate::Result<Vec<UInt160>> {
+pub fn get_script_hashes_for_verifying(
+    _engine: &ExecutionEngine,
+    _container: &ScriptContainer,
+) -> VmResult<Vec<UInt160>> {
     // Get verification script hashes from the container
     // This would need to be implemented based on the container's verification requirements
     Ok(vec![])
 }
 
 /// Validates call flags (matches C# ApplicationEngine.ValidateCallFlags exactly)
-pub fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) -> crate::Result<()> {
+pub fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) -> VmResult<()> {
     // Get current call flags from execution context
     let current_flags = get_current_call_flags(engine)?;
-    
+
     if !current_flags.has_flag(required_flags) {
-        return Err(Error::InvalidOperation(
-            format!("Cannot call this SYSCALL with the flag {:?}. Required: {:?}", current_flags, required_flags)
-        ));
+        return Err(VmError::invalid_operation_msg(format!(
+            "Cannot call this SYSCALL with the flag {:?}. Required: {:?}",
+            current_flags, required_flags
+        )));
     }
-    
+
     Ok(())
 }
 
 /// Gets current call flags from execution context (matches C# ExecutionContextState.CallFlags)
-pub fn get_current_call_flags(engine: &ExecutionEngine) -> crate::Result<CallFlags> {
+pub fn get_current_call_flags(engine: &ExecutionEngine) -> VmResult<CallFlags> {
     // Production implementation: Get call flags from execution context state (matches C# exactly)
-    
+
     if let Some(context) = engine.current_context() {
         // Check if this is a system call context (matches C# logic)
         if context.script().len() == 0 {
@@ -208,7 +217,7 @@ pub fn get_current_call_flags(engine: &ExecutionEngine) -> crate::Result<CallFla
         } else {
             // Regular contract context - check permissions based on script hash
             let script_hash = engine.current_script_hash().unwrap_or_default();
-            
+
             // Production logic: Check if this is a native contract (has special permissions)
             if is_native_contract(&script_hash) {
                 // Native contracts have all permissions
@@ -227,25 +236,42 @@ pub fn get_current_call_flags(engine: &ExecutionEngine) -> crate::Result<CallFla
 /// Checks if a script hash belongs to a native contract (production implementation)
 pub fn is_native_contract(script_hash: &[u8]) -> bool {
     // Production implementation: Check against known native contract hashes
-    
+
     // Known native contract script hashes (these would be loaded from configuration)
     let native_contracts = [
         // NEO Token Contract
-        [0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x5f, 0xdf, 0x6e, 0x4d, 0x45, 0x8c, 0xf2, 0x26, 0x1b, 0xf5, 0x7d, 0x76, 0xd7, 0xf1, 0xaa],
-        // GAS Token Contract  
-        [0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0x14, 0x28, 0x5c, 0x7d, 0x1f, 0x10, 0x92, 0xe7, 0x16, 0x7f, 0x47, 0x63, 0x15],
+        [
+            0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x5f, 0xdf, 0x6e, 0x4d, 0x45, 0x8c, 0xf2, 0x26, 0x1b,
+            0xf5, 0x7d, 0x76, 0xd7, 0xf1, 0xaa,
+        ],
+        // GAS Token Contract
+        [
+            0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0x14, 0x28, 0x5c, 0x7d, 0x1f, 0x10, 0x92,
+            0xe7, 0x16, 0x7f, 0x47, 0x63, 0x15,
+        ],
         // Policy Contract
-        [0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xe6, 0xd3, 0xb0, 0x8c, 0x42, 0xc9, 0x6a, 0x8e, 0x4e, 0x1a, 0x0c, 0x2f, 0x83, 0x4a, 0x05],
+        [
+            0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xe6, 0xd3, 0xb0, 0x8c, 0x42, 0xc9, 0x6a, 0x8e, 0x4e,
+            0x1a, 0x0c, 0x2f, 0x83, 0x4a, 0x05,
+        ],
         // Role Management Contract
-        [0x49, 0xcf, 0x4e, 0x5f, 0x4e, 0x94, 0x5d, 0x3b, 0x8c, 0x7d, 0x7e, 0x0d, 0x4f, 0x83, 0xc2, 0x18, 0x11, 0x2f, 0x0e, 0x46],
+        [
+            0x49, 0xcf, 0x4e, 0x5f, 0x4e, 0x94, 0x5d, 0x3b, 0x8c, 0x7d, 0x7e, 0x0d, 0x4f, 0x83,
+            0xc2, 0x18, 0x11, 0x2f, 0x0e, 0x46,
+        ],
         // Oracle Contract
-        [0xfe, 0x92, 0x4b, 0x7c, 0xfd, 0xdf, 0x0c, 0x7b, 0x7e, 0x3b, 0x9c, 0xa9, 0x4e, 0x4f, 0x2d, 0x6e, 0x2a, 0x4e, 0x2c, 0x17],
+        [
+            0xfe, 0x92, 0x4b, 0x7c, 0xfd, 0xdf, 0x0c, 0x7b, 0x7e, 0x3b, 0x9c, 0xa9, 0x4e, 0x4f,
+            0x2d, 0x6e, 0x2a, 0x4e, 0x2c, 0x17,
+        ],
     ];
-    
+
     if script_hash.len() != 20 {
         return false;
     }
-    
+
     // Check if the script hash matches any native contract
-    native_contracts.iter().any(|native_hash| native_hash == script_hash)
-} 
+    native_contracts
+        .iter()
+        .any(|native_hash| native_hash == script_hash)
+}

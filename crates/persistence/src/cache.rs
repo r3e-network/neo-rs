@@ -96,23 +96,23 @@ where
     /// Gets a value from the cache (production implementation)
     pub fn get(&mut self, key: &K) -> Option<V> {
         // Production-ready LRU cache get operation (matches C# Neo caching exactly)
-        
+
         if let Some(value) = self.data.get(key).cloned() {
             // Move to front (most recently used)
             self.move_to_front(key);
-            
+
             // Update statistics
             if self.enable_stats {
                 self.stats.hits += 1;
             }
-            
+
             Some(value)
         } else {
             // Update statistics
             if self.enable_stats {
                 self.stats.misses += 1;
             }
-            
+
             None
         }
     }
@@ -120,7 +120,7 @@ where
     /// Puts a value into the cache (production implementation)
     pub fn put(&mut self, key: K, value: V) {
         // Production-ready LRU cache put operation (matches C# Neo caching exactly)
-        
+
         if self.data.contains_key(&key) {
             // Update existing entry
             self.data.insert(key.clone(), value);
@@ -131,10 +131,10 @@ where
                 // Evict least recently used
                 self.evict_lru();
             }
-            
+
             self.data.insert(key.clone(), value);
             self.access_order.push_front(key);
-            
+
             if self.enable_stats {
                 self.stats.entries = self.data.len();
             }
@@ -148,11 +148,11 @@ where
             if let Some(pos) = self.access_order.iter().position(|k| k == key) {
                 self.access_order.remove(pos);
             }
-            
+
             if self.enable_stats {
                 self.stats.entries = self.data.len();
             }
-            
+
             Some(value)
         } else {
             None
@@ -163,7 +163,7 @@ where
     pub fn clear(&mut self) {
         self.data.clear();
         self.access_order.clear();
-        
+
         if self.enable_stats {
             self.stats.entries = 0;
         }
@@ -190,7 +190,7 @@ where
         if let Some(pos) = self.access_order.iter().position(|k| k == key) {
             self.access_order.remove(pos);
         }
-        
+
         // Add to front
         self.access_order.push_front(key.clone());
     }
@@ -199,7 +199,7 @@ where
     fn evict_lru(&mut self) {
         if let Some(lru_key) = self.access_order.pop_back() {
             self.data.remove(&lru_key);
-            
+
             if self.enable_stats {
                 self.stats.evictions += 1;
                 self.stats.entries = self.data.len();
@@ -267,27 +267,27 @@ where
     /// Gets a value from the cache (production implementation)
     pub fn get(&mut self, key: &K) -> Option<V> {
         // Production-ready TTL cache get operation (matches C# Neo caching exactly)
-        
+
         // Cleanup expired entries periodically
         self.cleanup_if_needed();
-        
+
         if let Some(entry) = self.data.get(key) {
             if entry.expires_at > Instant::now() {
                 // Entry is still valid
                 if self.enable_stats {
                     self.stats.hits += 1;
                 }
-                
+
                 Some(entry.value.clone())
             } else {
                 // Entry has expired, remove it
                 self.data.remove(key);
-                
+
                 if self.enable_stats {
                     self.stats.misses += 1;
                     self.stats.entries = self.data.len();
                 }
-                
+
                 None
             }
         } else {
@@ -295,7 +295,7 @@ where
             if self.enable_stats {
                 self.stats.misses += 1;
             }
-            
+
             None
         }
     }
@@ -308,12 +308,12 @@ where
     /// Puts a value into the cache with custom TTL (production implementation)
     pub fn put_with_ttl(&mut self, key: K, value: V, ttl: Duration) {
         // Production-ready TTL cache put operation (matches C# Neo caching exactly)
-        
+
         let expires_at = Instant::now() + ttl;
         let entry = TtlEntry { value, expires_at };
-        
+
         self.data.insert(key, entry);
-        
+
         if self.enable_stats {
             self.stats.entries = self.data.len();
         }
@@ -325,7 +325,7 @@ where
             if self.enable_stats {
                 self.stats.entries = self.data.len();
             }
-            
+
             Some(entry.value)
         } else {
             None
@@ -335,7 +335,7 @@ where
     /// Clears the cache
     pub fn clear(&mut self) {
         self.data.clear();
-        
+
         if self.enable_stats {
             self.stats.entries = 0;
         }
@@ -359,7 +359,7 @@ where
     /// Cleans up expired entries if needed
     fn cleanup_if_needed(&mut self) {
         let now = Instant::now();
-        
+
         if now.duration_since(self.last_cleanup) >= self.cleanup_interval {
             self.cleanup_expired();
             self.last_cleanup = now;
@@ -370,13 +370,13 @@ where
     fn cleanup_expired(&mut self) {
         let now = Instant::now();
         let initial_len = self.data.len();
-        
+
         self.data.retain(|_, entry| entry.expires_at > now);
-        
+
         if self.enable_stats {
             let removed = initial_len - self.data.len();
             self.stats.evictions += removed as u64;
             self.stats.entries = self.data.len();
         }
     }
-} 
+}

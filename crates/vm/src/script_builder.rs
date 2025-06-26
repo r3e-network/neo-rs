@@ -2,6 +2,7 @@
 //!
 //! This module provides a way to programmatically construct scripts for the Neo VM.
 
+use crate::error::VmResult;
 use crate::op_code::OpCode;
 use crate::script::Script;
 use std::convert::TryFrom;
@@ -15,9 +16,7 @@ pub struct ScriptBuilder {
 impl ScriptBuilder {
     /// Creates a new script builder.
     pub fn new() -> Self {
-        Self {
-            script: Vec::new(),
-        }
+        Self { script: Vec::new() }
     }
 
     /// Emits a single byte to the script.
@@ -127,9 +126,12 @@ impl ScriptBuilder {
     }
 
     /// Emits a push operation for a stack item.
-    pub fn emit_push_stack_item(&mut self, item: crate::stack_item::StackItem) -> crate::Result<&mut Self> {
+    pub fn emit_push_stack_item(
+        &mut self,
+        item: crate::stack_item::StackItem,
+    ) -> VmResult<&mut Self> {
         use crate::stack_item::StackItem;
-        
+
         match item {
             StackItem::Null => {
                 self.emit_opcode(OpCode::PUSHNULL);
@@ -163,22 +165,22 @@ impl ScriptBuilder {
             StackItem::Map(map) => {
                 // Production-ready map serialization (matches C# ScriptBuilder.EmitPush exactly)
                 // This implements the C# logic: EmitPush(IDictionary) for map conversion
-                
+
                 // 1. Emit map size (production map format)
                 self.emit_push_int(map.len() as i64);
-                
+
                 // 2. Create new map instruction (production map creation)
                 self.emit_opcode(OpCode::NEWMAP);
-                
+
                 // 3. Emit key-value pairs (production map population)
                 for (key, value) in map {
                     // Duplicate the map for each insertion
                     self.emit_opcode(OpCode::DUP);
-                    
+
                     // Push key and value onto stack
                     self.emit_push_stack_item(key)?;
                     self.emit_push_stack_item(value)?;
-                    
+
                     // Set the key-value pair in the map
                     self.emit_opcode(OpCode::SETITEM);
                 }
@@ -188,16 +190,19 @@ impl ScriptBuilder {
             }
             StackItem::InteropInterface(_) => {
                 // InteropInterface cannot be serialized to script
-                return Err(crate::Error::InvalidOperation("Cannot serialize InteropInterface to script".to_string()));
+                return Err(crate::VmError::invalid_operation_msg(
+                    "Cannot serialize InteropInterface to script".to_string(),
+                ));
             }
         }
-        
+
         Ok(self)
     }
 
     /// Emits a jump operation.
     pub fn emit_jump(&mut self, op: OpCode, offset: i16) -> &mut Self {
-        if op != OpCode::JMP && op != OpCode::JMPIF && op != OpCode::JMPIFNOT && op != OpCode::CALL {
+        if op != OpCode::JMP && op != OpCode::JMPIF && op != OpCode::JMPIFNOT && op != OpCode::CALL
+        {
             panic!("Invalid jump operation");
         }
 
@@ -270,7 +275,10 @@ mod tests {
         builder.emit_opcode(OpCode::ADD);
 
         let script = builder.to_array();
-        assert_eq!(script, vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8, OpCode::ADD as u8]);
+        assert_eq!(
+            script,
+            vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8, OpCode::ADD as u8]
+        );
     }
 
     #[test]

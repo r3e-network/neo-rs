@@ -11,7 +11,7 @@ use std::fmt;
 pub struct PriorityMessageQueue<M: Message> {
     /// The underlying binary heap
     queue: BinaryHeap<PriorityMessage<M>>,
-    
+
     /// The maximum size of the queue
     max_size: usize,
 }
@@ -20,10 +20,10 @@ pub struct PriorityMessageQueue<M: Message> {
 struct PriorityMessage<M: Message> {
     /// The message
     message: M,
-    
+
     /// The priority of the message
     priority: u8,
-    
+
     /// The sequence number of the message
     sequence: u64,
 }
@@ -66,7 +66,8 @@ impl<M: Message> PartialOrd for PriorityMessage<M> {
 impl<M: Message> Ord for PriorityMessage<M> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Higher priority comes first
-        self.priority.cmp(&other.priority)
+        self.priority
+            .cmp(&other.priority)
             // Then lower sequence number comes first
             .then_with(|| Reverse(self.sequence).cmp(&Reverse(other.sequence)))
     }
@@ -88,27 +89,27 @@ impl<M: Message> PriorityMessageQueue<M> {
             max_size,
         }
     }
-    
+
     /// Returns the maximum size of the queue.
     pub fn max_size(&self) -> usize {
         self.max_size
     }
-    
+
     /// Returns the number of messages in the queue.
     pub fn len(&self) -> usize {
         self.queue.len()
     }
-    
+
     /// Returns whether the queue is empty.
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
-    
+
     /// Returns whether the queue is full.
     pub fn is_full(&self) -> bool {
         self.queue.len() >= self.max_size
     }
-    
+
     /// Pushes a message onto the queue.
     ///
     /// # Arguments
@@ -123,22 +124,24 @@ impl<M: Message> PriorityMessageQueue<M> {
         if self.is_full() {
             return false;
         }
-        
+
         let priority_message = PriorityMessage::new(message, sequence);
         self.queue.push(priority_message);
-        
+
         true
     }
-    
+
     /// Pops the highest-priority message from the queue.
     ///
     /// # Returns
     ///
     /// The highest-priority message, or None if the queue is empty
     pub fn pop(&mut self) -> Option<M> {
-        self.queue.pop().map(|priority_message| priority_message.message)
+        self.queue
+            .pop()
+            .map(|priority_message| priority_message.message)
     }
-    
+
     /// Clears the queue.
     pub fn clear(&mut self) {
         self.queue.clear();

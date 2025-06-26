@@ -3,19 +3,19 @@
 //! This module provides caching mechanisms for Neo data structures.
 
 mod cache;
-mod fifo_cache;
-mod lru_cache;
-mod hashset_cache;
 mod ecdsa_cache;
 mod ecpoint_cache;
+mod fifo_cache;
+mod hashset_cache;
+mod lru_cache;
 mod reflection_cache;
 mod relay_cache;
 
 // Core cache infrastructure (matches C# exactly)
 pub use cache::{Cache, CacheItem, ConcreteCache};
 pub use fifo_cache::FIFOCache;
-pub use lru_cache::{LRUCache, SimpleLRUCache};
 pub use hashset_cache::HashSetCache;
+pub use lru_cache::{LRUCache, SimpleLRUCache};
 
 // Specialized caches
 pub use ecdsa_cache::ECDsaCache;
@@ -132,7 +132,11 @@ impl<K: Hash + Eq + Clone, V> TimedCache<K, V> {
     /// A reference to the value if it exists and has not expired, or None otherwise
     pub fn get(&mut self, key: &K) -> Option<&V> {
         // Check if expired first
-        let is_expired = self.cache.peek(key).map(|entry| entry.is_expired()).unwrap_or(false);
+        let is_expired = self
+            .cache
+            .peek(key)
+            .map(|entry| entry.is_expired())
+            .unwrap_or(false);
 
         if is_expired {
             self.cache.pop(key);
@@ -153,7 +157,11 @@ impl<K: Hash + Eq + Clone, V> TimedCache<K, V> {
     /// A mutable reference to the value if it exists and has not expired, or None otherwise
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
         // Check if expired first
-        let is_expired = self.cache.peek(key).map(|entry| entry.is_expired()).unwrap_or(false);
+        let is_expired = self
+            .cache
+            .peek(key)
+            .map(|entry| entry.is_expired())
+            .unwrap_or(false);
 
         if is_expired {
             self.cache.pop(key);
@@ -213,7 +221,8 @@ impl<K: Hash + Eq + Clone, V> TimedCache<K, V> {
 
     /// Removes all expired entries from the cache.
     pub fn purge_expired(&mut self) {
-        let keys_to_remove: Vec<K> = self.cache
+        let keys_to_remove: Vec<K> = self
+            .cache
             .iter()
             .filter(|(_, entry)| entry.is_expired())
             .map(|(key, _)| key.clone())

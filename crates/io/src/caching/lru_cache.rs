@@ -8,8 +8,8 @@ use std::marker::PhantomData;
 
 /// LRU (Least Recently Used) cache implementation.
 /// This matches the C# LRUCache<TKey, TValue> class exactly.
-pub struct LRUCache<TKey, TValue, F> 
-where 
+pub struct LRUCache<TKey, TValue, F>
+where
     TKey: Hash + Eq + Clone + Send + Sync,
     TValue: Clone + Send + Sync,
     F: Fn(&TValue) -> TKey + Send + Sync,
@@ -21,22 +21,22 @@ where
 }
 
 impl<TKey, TValue, F> LRUCache<TKey, TValue, F>
-where 
+where
     TKey: Hash + Eq + Clone + Send + Sync,
     TValue: Clone + Send + Sync,
     F: Fn(&TValue) -> TKey + Send + Sync,
 {
     /// Creates a new LRU cache with the specified capacity and key extraction function.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `max_capacity` - The maximum number of items the cache can hold
     /// * `get_key_fn` - Function to extract the key from a value
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A new LRU cache
-    pub fn new(max_capacity: usize, get_key_fn: F) -> Self 
+    pub fn new(max_capacity: usize, get_key_fn: F) -> Self
     where
         TKey: Default,
         TValue: Default,
@@ -49,7 +49,7 @@ where
             // to add the item back. This is a simplified version.
             // The real implementation would need to be more sophisticated.
         };
-        
+
         Self {
             inner: ConcreteCache::new(max_capacity, get_key_fn, on_access_fn),
             _phantom: PhantomData,
@@ -58,7 +58,7 @@ where
 }
 
 impl<TKey, TValue, F> Cache<TKey, TValue> for LRUCache<TKey, TValue, F>
-where 
+where
     TKey: Hash + Eq + Clone + Send + Sync,
     TValue: Clone + Send + Sync,
     F: Fn(&TValue) -> TKey + Send + Sync,
@@ -118,8 +118,8 @@ where
 
 /// A simpler, more practical LRU cache implementation using the existing LruCache from the lru crate.
 /// This provides better performance and is easier to use correctly.
-pub struct SimpleLRUCache<TKey, TValue> 
-where 
+pub struct SimpleLRUCache<TKey, TValue>
+where
     TKey: Hash + Eq + Clone,
     TValue: Clone,
 {
@@ -128,14 +128,16 @@ where
 }
 
 impl<TKey, TValue> SimpleLRUCache<TKey, TValue>
-where 
+where
     TKey: Hash + Eq + Clone,
     TValue: Clone,
 {
     /// Creates a new simple LRU cache with the specified capacity.
     pub fn new(capacity: usize) -> Self {
         Self {
-            cache: std::sync::Mutex::new(lru::LruCache::new(std::num::NonZeroUsize::new(capacity).unwrap())),
+            cache: std::sync::Mutex::new(lru::LruCache::new(
+                std::num::NonZeroUsize::new(capacity).unwrap(),
+            )),
         }
     }
 
@@ -193,12 +195,12 @@ mod tests {
     #[test]
     fn test_simple_lru_cache_basic_operations() {
         let cache = SimpleLRUCache::new(3);
-        
+
         // Test put and get
         cache.put(1, "first".to_string());
         cache.put(2, "second".to_string());
         cache.put(3, "third".to_string());
-        
+
         assert_eq!(cache.len(), 3);
         assert_eq!(cache.get(&1).unwrap(), "first");
         assert_eq!(cache.get(&2).unwrap(), "second");
@@ -208,39 +210,39 @@ mod tests {
     #[test]
     fn test_simple_lru_cache_eviction() {
         let cache = SimpleLRUCache::new(2);
-        
+
         cache.put(1, "first".to_string());
         cache.put(2, "second".to_string());
-        
+
         // Access first item to make it most recently used
         let _first = cache.get(&1);
-        
+
         // Add third item, should evict second item (least recently used)
         cache.put(3, "third".to_string());
-        
+
         assert_eq!(cache.len(), 2);
         assert!(cache.get(&1).is_some()); // First item should still be there
-        assert!(cache.get(&2).is_none());  // Second item should be evicted
+        assert!(cache.get(&2).is_none()); // Second item should be evicted
         assert!(cache.get(&3).is_some()); // Third item should be there
     }
 
     #[test]
     fn test_simple_lru_cache_access_updates_order() {
         let cache = SimpleLRUCache::new(3);
-        
+
         cache.put(1, "first".to_string());
         cache.put(2, "second".to_string());
         cache.put(3, "third".to_string());
-        
+
         // Access first item to make it most recently used
         let _first = cache.get(&1);
-        
+
         // Add fourth item, should evict second item (now least recently used)
         cache.put(4, "fourth".to_string());
-        
+
         assert_eq!(cache.len(), 3);
         assert!(cache.get(&1).is_some()); // First item should still be there (recently accessed)
-        assert!(cache.get(&2).is_none());  // Second item should be evicted
+        assert!(cache.get(&2).is_none()); // Second item should be evicted
         assert!(cache.get(&3).is_some()); // Third item should still be there
         assert!(cache.get(&4).is_some()); // Fourth item should be there
     }
@@ -248,17 +250,17 @@ mod tests {
     #[test]
     fn test_simple_lru_cache_remove_and_clear() {
         let cache = SimpleLRUCache::new(3);
-        
+
         cache.put(1, "first".to_string());
         cache.put(2, "second".to_string());
         cache.put(3, "third".to_string());
-        
+
         // Test remove
         let removed = cache.remove(&2);
         assert_eq!(removed.unwrap(), "second");
         assert_eq!(cache.len(), 2);
         assert!(!cache.contains(&2));
-        
+
         // Test clear
         cache.clear();
         assert_eq!(cache.len(), 0);
@@ -268,13 +270,13 @@ mod tests {
     #[test]
     fn test_simple_lru_cache_contains() {
         let cache = SimpleLRUCache::new(2);
-        
+
         cache.put(1, "first".to_string());
         assert!(cache.contains(&1));
         assert!(!cache.contains(&2));
-        
+
         cache.put(2, "second".to_string());
         assert!(cache.contains(&1));
         assert!(cache.contains(&2));
     }
-} 
+}

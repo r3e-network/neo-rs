@@ -121,7 +121,7 @@ mod tests {
     fn test_jboolean_jtoken_conversion() {
         let jbool = JBoolean::from(true);
         let token = jbool.clone().to_jtoken();
-        
+
         match token {
             JToken::Boolean(value) => assert!(value),
             _ => panic!("Expected JToken::Boolean"),
@@ -142,4 +142,4 @@ mod tests {
         let jfalse = JBoolean::from(false);
         assert_eq!(format!("{}", jfalse), "false");
     }
-} 
+}

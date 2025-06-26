@@ -2,8 +2,8 @@
 //!
 //! This module provides a Merkle tree implementation for efficient verification of data integrity.
 
-use crate::hasher::Hasher;
 use crate::hash_algorithm::HashAlgorithm;
+use crate::hasher::Hasher;
 use std::fmt;
 
 /// A node in a Merkle tree.
@@ -11,13 +11,13 @@ use std::fmt;
 pub struct MerkleTreeNode {
     /// The hash of this node
     pub hash: Vec<u8>,
-    
+
     /// The left child of this node, if any
     pub left: Option<Box<MerkleTreeNode>>,
-    
+
     /// The right child of this node, if any
     pub right: Option<Box<MerkleTreeNode>>,
-    
+
     /// Whether this node is a leaf node
     pub is_leaf: bool,
 }
@@ -40,7 +40,7 @@ impl MerkleTreeNode {
             is_leaf: true,
         }
     }
-    
+
     /// Creates a new branch node with the given left and right children.
     ///
     /// # Arguments
@@ -55,9 +55,9 @@ impl MerkleTreeNode {
         let mut combined = Vec::with_capacity(left.hash.len() + right.hash.len());
         combined.extend_from_slice(&left.hash);
         combined.extend_from_slice(&right.hash);
-        
+
         let hash = Hasher::hash(HashAlgorithm::Sha256, &combined);
-        
+
         Self {
             hash,
             left: Some(Box::new(left)),
@@ -72,7 +72,7 @@ impl MerkleTreeNode {
 pub struct MerkleTree {
     /// The root node of the tree
     pub root: Option<MerkleTreeNode>,
-    
+
     /// The depth of the tree
     pub depth: usize,
 }
@@ -91,24 +91,24 @@ impl MerkleTree {
         if hashes.is_empty() {
             return None;
         }
-        
+
         let mut nodes: Vec<MerkleTreeNode> = hashes
             .iter()
             .map(|hash| MerkleTreeNode::new_leaf(hash.clone()))
             .collect();
-        
+
         let mut depth = 1;
         while nodes.len() > 1 {
             depth += 1;
             nodes = Self::build_next_level(&nodes);
         }
-        
+
         Some(Self {
             root: Some(nodes.remove(0)),
             depth,
         })
     }
-    
+
     /// Builds the next level of the tree from the current level.
     ///
     /// # Arguments
@@ -120,7 +120,7 @@ impl MerkleTree {
     /// The next level of nodes
     fn build_next_level(nodes: &[MerkleTreeNode]) -> Vec<MerkleTreeNode> {
         let mut result = Vec::with_capacity(nodes.len().div_ceil(2));
-        
+
         for i in (0..nodes.len()).step_by(2) {
             if i + 1 < nodes.len() {
                 // Pair of nodes
@@ -132,10 +132,10 @@ impl MerkleTree {
                 result.push(branch);
             }
         }
-        
+
         result
     }
-    
+
     /// Returns the root hash of the tree.
     ///
     /// # Returns
@@ -144,7 +144,7 @@ impl MerkleTree {
     pub fn root_hash(&self) -> Option<&Vec<u8>> {
         self.root.as_ref().map(|node| &node.hash)
     }
-    
+
     /// Computes a Merkle proof for the given leaf index.
     ///
     /// # Arguments
@@ -159,10 +159,10 @@ impl MerkleTree {
         if index >= total || self.root.is_none() {
             return None;
         }
-        
+
         let mut proof = Vec::new();
         let mut path = Vec::new();
-        
+
         // Calculate the path from the root to the leaf
         let mut i = index;
         let mut level_size = total;
@@ -171,7 +171,7 @@ impl MerkleTree {
             i /= 2;
             level_size = level_size.div_ceil(2);
         }
-        
+
         // Traverse the tree to collect the proof
         let mut node = self.root.as_ref().unwrap();
         for is_right in path.iter().rev() {
@@ -193,10 +193,10 @@ impl MerkleTree {
                 }
             }
         }
-        
+
         Some(proof)
     }
-    
+
     /// Verifies a Merkle proof for the given leaf hash.
     ///
     /// # Arguments
@@ -220,10 +220,10 @@ impl MerkleTree {
         if index >= total {
             return false;
         }
-        
+
         let mut hash = leaf_hash.to_vec();
         let mut i = index;
-        
+
         for sibling_hash in proof.iter() {
             let combined = if i % 2 == 1 {
                 // We're on the right, so sibling is on the left
@@ -238,14 +238,14 @@ impl MerkleTree {
                 combined.extend_from_slice(sibling_hash);
                 combined
             };
-            
+
             hash = Hasher::hash(HashAlgorithm::Sha256, &combined);
             i /= 2;
         }
-        
+
         hash == root_hash
     }
-    
+
     /// Computes the root hash for the given leaf hashes.
     ///
     /// # Arguments
@@ -258,7 +258,7 @@ impl MerkleTree {
     pub fn compute_root(hashes: &[Vec<u8>]) -> Option<Vec<u8>> {
         Self::new(hashes).and_then(|tree| tree.root_hash().cloned())
     }
-    
+
     /// Trims the tree to the given depth.
     ///
     /// # Arguments
@@ -272,25 +272,25 @@ impl MerkleTree {
         if depth >= self.depth || self.root.is_none() {
             return self.clone();
         }
-        
+
         let mut root = self.root.as_ref().unwrap().clone();
         let mut current_depth = self.depth;
-        
+
         while current_depth > depth {
             if root.left.is_none() || root.right.is_none() {
                 break;
             }
-            
+
             root = MerkleTreeNode {
                 hash: root.hash,
                 left: None,
                 right: None,
                 is_leaf: false,
             };
-            
+
             current_depth -= 1;
         }
-        
+
         Self {
             root: Some(root),
             depth: current_depth,

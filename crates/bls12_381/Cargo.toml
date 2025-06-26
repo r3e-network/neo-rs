@@ -1,6 +1,6 @@
 [package]
 name = "neo-bls12-381"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "BLS12-381 cryptographic operations for Neo blockchain"
 license = "MIT"
@@ -29,4 +29,5 @@ digest = "0.10"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
-proptest = "1.0" 
+proptest = "1.0"
+rand_chacha = "0.3" 

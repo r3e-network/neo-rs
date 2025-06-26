@@ -3,12 +3,12 @@
 //! Represents the manifest of a smart contract which declares the features
 //! and permissions it will use when deployed.
 
+use crate::manifest::{ContractAbi, ContractGroup, ContractPermission};
+use crate::{Error, Result};
 use neo_core::UInt160;
-use neo_io::{BinaryWriter, Serializable, MemoryReader};
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::manifest::{ContractGroup, ContractPermission, ContractAbi};
-use crate::{Error, Result};
 
 /// Maximum length of a contract manifest in bytes.
 pub const MAX_MANIFEST_LENGTH: usize = 65535;
@@ -108,8 +108,8 @@ impl ContractManifest {
     /// Creates a manifest from JSON.
     pub fn from_json(json: &str) -> Result<Self> {
         // Production-ready JSON parsing (matches C# ContractManifest.FromJson exactly)
-        let value: Value = serde_json::from_str(json)
-            .map_err(|e| Error::SerializationError(e.to_string()))?;
+        let value: Value =
+            serde_json::from_str(json).map_err(|e| Error::SerializationError(e.to_string()))?;
 
         let name = value["name"]
             .as_str()
@@ -168,7 +168,9 @@ impl ContractManifest {
     pub fn validate(&self) -> Result<()> {
         // Validate name
         if self.name.is_empty() {
-            return Err(Error::InvalidManifest("Contract name cannot be empty".to_string()));
+            return Err(Error::InvalidManifest(
+                "Contract name cannot be empty".to_string(),
+            ));
         }
 
         // Validate manifest size
@@ -183,7 +185,9 @@ impl ContractManifest {
 
         // Validate permissions
         if self.permissions.is_empty() {
-            return Err(Error::InvalidManifest("At least one permission required".to_string()));
+            return Err(Error::InvalidManifest(
+                "At least one permission required".to_string(),
+            ));
         }
 
         for permission in &self.permissions {
@@ -323,8 +327,10 @@ impl ContractManifest {
         let extra = if extra_json.is_empty() {
             None
         } else {
-            Some(serde_json::from_str(&extra_json)
-                .map_err(|e| Error::SerializationError(e.to_string()))?)
+            Some(
+                serde_json::from_str(&extra_json)
+                    .map_err(|e| Error::SerializationError(e.to_string()))?,
+            )
         };
 
         Ok(Self {
@@ -340,18 +346,23 @@ impl ContractManifest {
     }
 
     /// Custom serialization for ContractGroup (matches C# ContractGroup.ToStackItem exactly)
-    fn serialize_contract_group(&self, group: &ContractGroup, writer: &mut BinaryWriter) -> Result<()> {
+    fn serialize_contract_group(
+        &self,
+        group: &ContractGroup,
+        writer: &mut BinaryWriter,
+    ) -> Result<()> {
         // Production-ready binary serialization (matches C# ContractGroup.ToStackItem exactly)
         // This implements the C# logic: ContractGroup.ToStackItem() serialization format
-        
+
         // 1. Serialize public key (33 bytes for compressed secp256r1 key)
-        let public_key_bytes = group.public_key.encode_point(true)
-            .map_err(|e| Error::SerializationError(format!("Failed to encode public key: {}", e)))?;
+        let public_key_bytes = group.public_key.encode_point(true).map_err(|e| {
+            Error::SerializationError(format!("Failed to encode public key: {}", e))
+        })?;
         writer.write_bytes(&public_key_bytes)?;
-        
+
         // 2. Serialize signature (64 bytes for secp256r1 signature)
         writer.write_bytes(&group.signature)?;
-        
+
         Ok(())
     }
 
@@ -367,36 +378,36 @@ impl ContractManifest {
     fn serialize_contract_abi(&self, abi: &ContractAbi, writer: &mut BinaryWriter) -> Result<()> {
         // Production-ready binary serialization (matches C# ContractAbi.ToStackItem exactly)
         // This implements the C# logic: ContractAbi.ToStackItem() serialization format
-        
+
         // 1. Serialize methods array (matches C# StackItem array format)
         writer.write_var_int(abi.methods.len() as u64)?;
         for method in &abi.methods {
             // Serialize method name
             writer.write_var_string(&method.name)?;
-            
+
             // Serialize parameters count and data
             writer.write_var_int(method.parameters.len() as u64)?;
             for param in &method.parameters {
                 writer.write_var_string(&param.name)?;
                 writer.write_var_string(&param.parameter_type)?;
             }
-            
+
             // Serialize return type
             writer.write_var_string(&method.return_type)?;
-            
+
             // Serialize offset
             writer.write_i32(method.offset)?;
-            
+
             // Serialize safe flag
             writer.write_bool(method.safe)?;
         }
-        
+
         // 2. Serialize events array (matches C# event serialization format)
         writer.write_var_int(abi.events.len() as u64)?;
         for event in &abi.events {
             // Serialize event name
             writer.write_var_string(&event.name)?;
-            
+
             // Serialize event parameters
             writer.write_var_int(event.parameters.len() as u64)?;
             for param in &event.parameters {
@@ -404,7 +415,7 @@ impl ContractManifest {
                 writer.write_var_string(&param.parameter_type)?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -417,10 +428,14 @@ impl ContractManifest {
     }
 
     /// Custom serialization for ContractPermission (matches C# ContractPermission.ToStackItem exactly)
-    fn serialize_contract_permission(&self, permission: &ContractPermission, writer: &mut BinaryWriter) -> Result<()> {
+    fn serialize_contract_permission(
+        &self,
+        permission: &ContractPermission,
+        writer: &mut BinaryWriter,
+    ) -> Result<()> {
         // Production-ready binary serialization (matches C# ContractPermission.ToStackItem exactly)
         // This implements the C# logic: ContractPermission.ToStackItem() serialization format
-        
+
         // 1. Serialize contract field (matches C# WildcardContainer<UInt160> serialization)
         match &permission.contract {
             crate::manifest::ContractPermissionDescriptor::Hash(contract_hash) => {
@@ -433,7 +448,7 @@ impl ContractManifest {
                 writer.write_u8(0x00)?; // Indicator for wildcard
             }
         }
-        
+
         // 2. Serialize methods field (matches C# WildcardContainer<string> serialization)
         if permission.methods.is_wildcard() {
             // Wildcard methods
@@ -446,7 +461,7 @@ impl ContractManifest {
                 writer.write_var_string(method)?;
             }
         }
-        
+
         Ok(())
     }
 

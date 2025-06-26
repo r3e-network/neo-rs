@@ -82,11 +82,17 @@ impl P2PNode {
 
         // Validate configuration
         self.config.validate()
-            .map_err(|e| Error::Configuration(format!("Invalid P2P config: {}", e)))?;
+            .map_err(|e| NetworkError::Configuration { 
+                parameter: "p2p_config".to_string(), 
+                reason: format!("Invalid P2P config: {}", e) 
+            })?;
 
         // Start listening for incoming connections
         let listener = TcpListener::bind(self.config.listen_address).await
-            .map_err(|e| Error::Connection(format!("Failed to bind listener: {}", e)))?;
+            .map_err(|e| NetworkError::ConnectionFailed { 
+                address: self.config.listen_address, 
+                reason: format!("Failed to bind listener: {}", e) 
+            })?;
 
         // Start background tasks
         self.task_manager.start_connection_acceptor(
@@ -142,14 +148,20 @@ impl P2PNode {
 
         // Check peer manager limits
         if !self.peer_manager.can_connect_to(address).await {
-            return Err(Error::Peer("Peer connection not allowed".to_string()));
+            return Err(NetworkError::PeerNotConnected { address });
         }
 
         // Establish TCP connection
         let stream = timeout(self.config.connection_timeout, TcpStream::connect(address))
             .await
-            .map_err(|_| Error::Connection("Connection timeout".to_string()))?
-            .map_err(|e| Error::Connection(format!("Failed to connect: {}", e)))?;
+            .map_err(|_| NetworkError::ConnectionTimeout { 
+                address, 
+                timeout_ms: self.config.connection_timeout.as_millis() as u64 
+            })?
+            .map_err(|e| NetworkError::ConnectionFailed { 
+                address, 
+                reason: format!("Failed to connect: {}", e) 
+            })?;
 
         // Create connection
         let connection = PeerConnection::new(stream, address, false);
@@ -205,7 +217,7 @@ impl P2PNode {
         if let Some(connection) = connections.get_mut(&address) {
             connection.send_message(message).await?;
         } else {
-            return Err(Error::Peer("Peer not connected".to_string()));
+            return Err(NetworkError::PeerNotConnected { address });
         }
 
         Ok(())
@@ -269,14 +281,14 @@ impl P2PNode {
     /// Sends GetData request to a peer (production implementation matching C# Neo)
     pub async fn send_get_data(&self, address: SocketAddr, inventory: Vec<crate::InventoryItem>) -> Result<()> {
         let get_data_message = crate::ProtocolMessage::GetData { inventory };
-        let network_message = NetworkMessage::new(self.magic, get_data_message);
+        let network_message = NetworkMessage::new(get_data_message);
         self.send_message(address, network_message).await
     }
 
     /// Broadcasts inventory to all peers except source (production implementation matching C# Neo)
     pub async fn broadcast_inventory(&self, inventory: Vec<crate::InventoryItem>, exclude_peer: Option<SocketAddr>) -> Result<()> {
         let inv_message = crate::ProtocolMessage::Inv { inventory };
-        let network_message = NetworkMessage::new(self.magic, inv_message);
+        let network_message = NetworkMessage::new(inv_message);
         
         let connections = self.connections.read().await;
         let mut success_count = 0;
@@ -303,21 +315,21 @@ impl P2PNode {
     /// Sends headers to a peer (production implementation matching C# Neo)
     pub async fn send_headers(&self, address: SocketAddr, headers: Vec<neo_ledger::BlockHeader>) -> Result<()> {
         let headers_message = crate::ProtocolMessage::Headers { headers };
-        let network_message = NetworkMessage::new(self.magic, headers_message);
+        let network_message = NetworkMessage::new(headers_message);
         self.send_message(address, network_message).await
     }
 
     /// Sends block to a peer (production implementation matching C# Neo)
     pub async fn send_block(&self, address: SocketAddr, block: neo_ledger::Block) -> Result<()> {
         let block_message = crate::ProtocolMessage::Block { block };
-        let network_message = NetworkMessage::new(self.magic, block_message);
+        let network_message = NetworkMessage::new(block_message);
         self.send_message(address, network_message).await
     }
 
     /// Sends transaction to a peer (production implementation matching C# Neo)
     pub async fn send_transaction(&self, address: SocketAddr, transaction: neo_core::Transaction) -> Result<()> {
         let tx_message = crate::ProtocolMessage::Tx { transaction };
-        let network_message = NetworkMessage::new(self.magic, tx_message);
+        let network_message = NetworkMessage::new(tx_message);
         self.send_message(address, network_message).await
     }
 
@@ -329,14 +341,14 @@ impl P2PNode {
             self.config.listen_address.port(),
             true,
         );
-        let network_message = NetworkMessage::new(self.magic, version_message);
+        let network_message = NetworkMessage::new(version_message);
 
         // Send through the stored connection
         if let Some(connection) = self.connections.write().await.get_mut(&address) {
             connection.set_state(ConnectionState::Handshaking);
             connection.send_message(network_message).await?;
         } else {
-            return Err(Error::Connection(format!("No connection found for {}", address)));
+            return Err(NetworkError::PeerNotConnected { address });
         }
 
         Ok(())
@@ -416,7 +428,7 @@ impl P2PNode {
 
         // Send verack response
         let verack = ProtocolMessage::Verack;
-        let verack_msg = NetworkMessage::new(self.magic, verack);
+        let verack_msg = NetworkMessage::new(verack);
         self.send_message(address, verack_msg).await?;
 
         // Emit events
@@ -462,7 +474,7 @@ impl P2PNode {
         
         // Send pong response
         let pong = ProtocolMessage::pong(nonce);
-        let pong_msg = NetworkMessage::new(self.magic, pong);
+        let pong_msg = NetworkMessage::new(pong);
         self.send_message(address, pong_msg).await?;
 
         Ok(())

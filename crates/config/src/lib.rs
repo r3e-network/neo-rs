@@ -88,7 +88,7 @@ impl Default for LedgerConfig {
     fn default() -> Self {
         Self {
             max_transactions_per_block: 512,
-            max_block_size: 1048576, // 1MB
+            max_block_size: 1048576,       // 1MB
             milliseconds_per_block: 15000, // 15 seconds
         }
     }
@@ -118,11 +118,11 @@ impl Default for NetworkConfig {
             max_inbound_connections: 40,
             connection_timeout_secs: 30,
             seed_nodes: vec![
-                "168.62.167.190:20333".parse().unwrap(),  // seed1t.neo.org
-                "52.187.47.33:20333".parse().unwrap(),    // seed2t.neo.org
-                "52.166.72.196:20333".parse().unwrap(),   // seed3t.neo.org
-                "13.75.254.144:20333".parse().unwrap(),   // seed4t.neo.org
-                "13.71.130.1:20333".parse().unwrap(),     // seed5t.neo.org
+                "168.62.167.190:20333".parse().unwrap(), // seed1t.neo.org
+                "52.187.47.33:20333".parse().unwrap(),   // seed2t.neo.org
+                "52.166.72.196:20333".parse().unwrap(),  // seed3t.neo.org
+                "13.75.254.144:20333".parse().unwrap(),  // seed4t.neo.org
+                "13.71.130.1:20333".parse().unwrap(),    // seed5t.neo.org
             ],
             user_agent: "Neo-Rust/0.1.0".to_string(),
             protocol_version: 3,

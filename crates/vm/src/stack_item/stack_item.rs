@@ -2,10 +2,10 @@
 //!
 //! This module provides the stack item implementations used in the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
-use crate::Error;
-use crate::Result;
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::collections::BTreeMap;
@@ -135,7 +135,7 @@ impl StackItem {
     }
 
     /// Converts the stack item to a boolean.
-    pub fn as_bool(&self) -> Result<bool> {
+    pub fn as_bool(&self) -> VmResult<bool> {
         match self {
             StackItem::Null => Ok(false),
             StackItem::Boolean(b) => Ok(*b),
@@ -156,9 +156,11 @@ impl StackItem {
     }
 
     /// Converts the stack item to an integer.
-    pub fn as_int(&self) -> Result<BigInt> {
+    pub fn as_int(&self) -> VmResult<BigInt> {
         match self {
-            StackItem::Null => Err(Error::InvalidType("Cannot convert Null to Integer".into())),
+            StackItem::Null => Err(VmError::invalid_type_simple(
+                "Cannot convert Null to Integer",
+            )),
             StackItem::Boolean(b) => Ok(BigInt::from(if *b { 1 } else { 0 })),
             StackItem::Integer(i) => Ok(i.clone()),
             StackItem::ByteString(b) | StackItem::Buffer(b) => {
@@ -186,12 +188,12 @@ impl StackItem {
                     Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes))
                 }
             }
-            _ => Err(Error::InvalidType("Cannot convert to Integer".into())),
+            _ => Err(VmError::invalid_type_simple("Cannot convert to Integer")),
         }
     }
 
     /// Converts the stack item to a byte array.
-    pub fn as_bytes(&self) -> Result<Vec<u8>> {
+    pub fn as_bytes(&self) -> VmResult<Vec<u8>> {
         match self {
             StackItem::Null => Ok(vec![]),
             StackItem::Boolean(b) => Ok(vec![if *b { 1 } else { 0 }]),
@@ -215,28 +217,28 @@ impl StackItem {
                 Ok(bytes)
             }
             StackItem::ByteString(b) | StackItem::Buffer(b) => Ok(b.clone()),
-            _ => Err(Error::InvalidType("Cannot convert to ByteArray".into())),
+            _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
         }
     }
 
     /// Converts the stack item to an array.
-    pub fn as_array(&self) -> Result<&[StackItem]> {
+    pub fn as_array(&self) -> VmResult<&[StackItem]> {
         match self {
             StackItem::Array(a) | StackItem::Struct(a) => Ok(a),
-            _ => Err(Error::InvalidType("Cannot convert to Array".into())),
+            _ => Err(VmError::invalid_type_simple("Cannot convert to Array")),
         }
     }
 
     /// Converts the stack item to a map.
-    pub fn as_map(&self) -> Result<&BTreeMap<StackItem, StackItem>> {
+    pub fn as_map(&self) -> VmResult<&BTreeMap<StackItem, StackItem>> {
         match self {
             StackItem::Map(m) => Ok(m),
-            _ => Err(Error::InvalidType("Cannot convert to Map".into())),
+            _ => Err(VmError::invalid_type_simple("Cannot convert to Map")),
         }
     }
 
     /// Gets the interop interface from the stack item.
-    pub fn as_interface<T: InteropInterface + 'static>(&self) -> Result<&T> {
+    pub fn as_interface<T: InteropInterface + 'static>(&self) -> VmResult<&T> {
         match self {
             StackItem::InteropInterface(i) => {
                 // Attempt to downcast the Arc<dyn InteropInterface> to the specific type
@@ -246,9 +248,13 @@ impl StackItem {
                 // In Rust, we need proper type checking and downcasting to ensure type safety.
                 // This is a production implementation that provides proper error handling.
 
-                Err(Error::InvalidType("Type conversion not supported for InteropInterface in Rust - use proper type casting".into()))
+                Err(VmError::invalid_type_simple(
+                    "Type conversion not supported for InteropInterface in Rust - use proper type casting",
+                ))
             }
-            _ => Err(Error::InvalidType("Cannot convert to InteropInterface".into())),
+            _ => Err(VmError::invalid_type_simple(
+                "Cannot convert to InteropInterface",
+            )),
         }
     }
 
@@ -258,7 +264,10 @@ impl StackItem {
     }
 
     /// Creates a deep clone of the stack item with reference tracking to handle cycles.
-    fn deep_clone_with_refs(&self, refs: &mut std::collections::HashMap<*const StackItem, StackItem>) -> Self {
+    fn deep_clone_with_refs(
+        &self,
+        refs: &mut std::collections::HashMap<*const StackItem, StackItem>,
+    ) -> Self {
         // Check if we've already cloned this item
         let self_ptr = self as *const StackItem;
         if let Some(cloned) = refs.get(&self_ptr) {
@@ -287,7 +296,7 @@ impl StackItem {
                 }
 
                 StackItem::Array(array)
-            },
+            }
             StackItem::Struct(s) => {
                 let mut structure = Vec::with_capacity(s.len());
                 // Add a placeholder to the refs map to handle cycles
@@ -299,7 +308,7 @@ impl StackItem {
                 }
 
                 StackItem::Struct(structure)
-            },
+            }
             StackItem::Map(m) => {
                 let mut map = BTreeMap::new();
                 // Add a placeholder to the refs map to handle cycles
@@ -311,7 +320,7 @@ impl StackItem {
                 }
 
                 StackItem::Map(map)
-            },
+            }
         };
 
         // Update the refs map with the final result
@@ -337,7 +346,7 @@ impl StackItem {
     }
 
     /// Converts the stack item to the specified type.
-    pub fn convert_to(&self, item_type: StackItemType) -> Result<StackItem> {
+    pub fn convert_to(&self, item_type: StackItemType) -> VmResult<StackItem> {
         if self.stack_item_type() == item_type {
             return Ok(self.clone());
         }
@@ -347,17 +356,23 @@ impl StackItem {
             StackItemType::Integer => Ok(StackItem::Integer(self.as_int()?)),
             StackItemType::ByteString => Ok(StackItem::ByteString(self.as_bytes()?)),
             StackItemType::Buffer => Ok(StackItem::Buffer(self.as_bytes()?)),
-            _ => Err(Error::InvalidType(format!("Cannot convert to {item_type:?}")))
+            _ => Err(VmError::invalid_type_simple(format!(
+                "Cannot convert to {item_type:?}"
+            ))),
         }
     }
 
     /// Checks if two stack items are equal.
-    pub fn equals(&self, other: &StackItem) -> Result<bool> {
+    pub fn equals(&self, other: &StackItem) -> VmResult<bool> {
         self.equals_with_refs(other, &mut std::collections::HashSet::new())
     }
 
     /// Checks if two stack items are equal with reference tracking to handle cycles.
-    fn equals_with_refs(&self, other: &StackItem, visited: &mut std::collections::HashSet<(*const StackItem, *const StackItem)>) -> Result<bool> {
+    fn equals_with_refs(
+        &self,
+        other: &StackItem,
+        visited: &mut std::collections::HashSet<(*const StackItem, *const StackItem)>,
+    ) -> VmResult<bool> {
         // Check if we've already compared these items
         let self_ptr = self as *const StackItem;
         let other_ptr = other as *const StackItem;
@@ -417,8 +432,8 @@ impl StackItem {
 
                 for (ak, av) in a {
                     let found = b.iter().any(|(bk, bv)| {
-                        ak.equals_with_refs(bk, visited).unwrap_or(false) &&
-                        av.equals_with_refs(bv, visited).unwrap_or(false)
+                        ak.equals_with_refs(bk, visited).unwrap_or(false)
+                            && av.equals_with_refs(bv, visited).unwrap_or(false)
                     });
 
                     if !found {
@@ -539,12 +554,16 @@ impl Ord for StackItem {
                     (StackItem::Boolean(_), StackItem::Integer(_)) => std::cmp::Ordering::Less,
                     (StackItem::Integer(_), StackItem::Boolean(_)) => std::cmp::Ordering::Greater,
                     (StackItem::Boolean(_), StackItem::ByteString(_)) => std::cmp::Ordering::Less,
-                    (StackItem::ByteString(_), StackItem::Boolean(_)) => std::cmp::Ordering::Greater,
+                    (StackItem::ByteString(_), StackItem::Boolean(_)) => {
+                        std::cmp::Ordering::Greater
+                    }
                     (StackItem::Integer(_), StackItem::ByteString(_)) => std::cmp::Ordering::Less,
-                    (StackItem::ByteString(_), StackItem::Integer(_)) => std::cmp::Ordering::Greater,
+                    (StackItem::ByteString(_), StackItem::Integer(_)) => {
+                        std::cmp::Ordering::Greater
+                    }
                     _ => std::cmp::Ordering::Equal, // Same types that we haven't handled above
                 }
-            },
+            }
         }
     }
 }
@@ -609,10 +628,7 @@ mod tests {
         let array = StackItem::from_array(vec![
             StackItem::from_int(1),
             StackItem::from_int(2),
-            StackItem::from_array(vec![
-                StackItem::from_int(3),
-                StackItem::from_int(4),
-            ]),
+            StackItem::from_array(vec![StackItem::from_int(3), StackItem::from_int(4)]),
         ]);
 
         let cloned = array.deep_clone();
@@ -628,20 +644,11 @@ mod tests {
         assert!(a.equals(&b).unwrap());
         assert!(!a.equals(&c).unwrap());
 
-        let array1 = StackItem::from_array(vec![
-            StackItem::from_int(1),
-            StackItem::from_int(2),
-        ]);
+        let array1 = StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(2)]);
 
-        let array2 = StackItem::from_array(vec![
-            StackItem::from_int(1),
-            StackItem::from_int(2),
-        ]);
+        let array2 = StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(2)]);
 
-        let array3 = StackItem::from_array(vec![
-            StackItem::from_int(1),
-            StackItem::from_int(3),
-        ]);
+        let array3 = StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(3)]);
 
         assert!(array1.equals(&array2).unwrap());
         assert!(!array1.equals(&array3).unwrap());
@@ -678,15 +685,11 @@ mod tests {
     #[test]
     fn test_equals_with_cycles() {
         // Create two arrays with cycles
-        let mut array1 = StackItem::from_array(vec![
-            StackItem::from_int(1),
-            StackItem::from_int(2),
-        ]);
+        let mut array1 =
+            StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(2)]);
 
-        let mut array2 = StackItem::from_array(vec![
-            StackItem::from_int(1),
-            StackItem::from_int(2),
-        ]);
+        let mut array2 =
+            StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(2)]);
 
         // Add cycles
         let array1_clone = array1.clone();

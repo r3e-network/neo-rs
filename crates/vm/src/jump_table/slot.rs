@@ -2,13 +2,13 @@
 //!
 //! This module provides the slot operation handlers for the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::StackItem;
-use crate::Error;
-use crate::Result;
 use num_traits::ToPrimitive;
 
 /// Registers the slot operation handlers.
@@ -72,22 +72,38 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 /// Implements the INITSLOT operation.
-fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Check if slots are already initialized
     if context.local_variables().is_some() || context.arguments().is_some() {
-        return Err(Error::InvalidOperation("INITSLOT cannot be executed twice".into()));
+        return Err(VmError::invalid_operation_msg(
+            "INITSLOT cannot be executed twice",
+        ));
     }
 
     // Get the local and argument counts from the instruction
-    let local_count = instruction.operand().get(0).copied().ok_or_else(|| Error::InvalidInstruction("Missing local count".into()))? as usize;
-    let argument_count = instruction.operand().get(1).copied().ok_or_else(|| Error::InvalidInstruction("Missing argument count".into()))? as usize;
+    let local_count = instruction
+        .operand()
+        .get(0)
+        .copied()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing local count"))?
+        as usize;
+    let argument_count = instruction
+        .operand()
+        .get(1)
+        .copied()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing argument count"))?
+        as usize;
 
     // Check that at least one count is greater than 0
     if local_count == 0 && argument_count == 0 {
-        return Err(Error::InvalidOperation("The operand is invalid for OpCode.INITSLOT".into()));
+        return Err(VmError::invalid_operation_msg(
+            "The operand is invalid for OpCode.INITSLOT",
+        ));
     }
 
     // Initialize local variables (filled with null values)
@@ -116,12 +132,18 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<
 }
 
 /// Implements the LDSFLD operation.
-fn load_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn load_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the index from the instruction
-    let index = instruction.operand().get(0).copied().ok_or_else(|| Error::InvalidInstruction("Missing index".into()))? as usize;
+    let index = instruction
+        .operand()
+        .get(0)
+        .copied()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
     // Load the static field
     let value = context.load_static_field(index)?;
@@ -133,12 +155,18 @@ fn load_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) ->
 }
 
 /// Implements the STSFLD operation.
-fn store_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn store_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the index from the instruction
-    let index = instruction.operand().get(0).copied().ok_or_else(|| Error::InvalidInstruction("Missing index".into()))? as usize;
+    let index = instruction
+        .operand()
+        .get(0)
+        .copied()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
     // Pop the value from the stack
     let value = context.pop()?;
@@ -150,12 +178,18 @@ fn store_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -
 }
 
 /// Implements the LDLOC operation.
-fn load_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn load_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the index from the instruction
-    let index = instruction.operand().get(0).copied().ok_or_else(|| Error::InvalidInstruction("Missing index".into()))? as usize;
+    let index = instruction
+        .operand()
+        .get(0)
+        .copied()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
     // Load the local variable
     let value = context.load_local(index)?;
@@ -167,12 +201,18 @@ fn load_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result
 }
 
 /// Implements the STLOC operation.
-fn store_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn store_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the index from the instruction
-    let index = instruction.operand().get(0).copied().ok_or_else(|| Error::InvalidInstruction("Missing index".into()))? as usize;
+    let index = instruction
+        .operand()
+        .get(0)
+        .copied()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
     // Pop the value from the stack
     let value = context.pop()?;
@@ -184,12 +224,18 @@ fn store_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> Resul
 }
 
 /// Implements the LDARG operation.
-fn load_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn load_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the index from the instruction
-    let index = instruction.operand().get(0).copied().ok_or_else(|| Error::InvalidInstruction("Missing index".into()))? as usize;
+    let index = instruction
+        .operand()
+        .get(0)
+        .copied()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
     // Load the argument
     let value = context.load_argument(index)?;
@@ -201,12 +247,18 @@ fn load_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> Res
 }
 
 /// Implements the STARG operation.
-fn store_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn store_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the index from the instruction
-    let index = instruction.operand().get(0).copied().ok_or_else(|| Error::InvalidInstruction("Missing index".into()))? as usize;
+    let index = instruction
+        .operand()
+        .get(0)
+        .copied()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
     // Pop the value from the stack
     let value = context.pop()?;
@@ -218,16 +270,25 @@ fn store_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> Re
 }
 
 /// Implements the INITSSLOT operation.
-fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the static field count from the instruction
-    let static_count = instruction.operand().get(0).copied().ok_or_else(|| Error::InvalidInstruction("Missing static count".into()))? as usize;
+    let static_count = instruction
+        .operand()
+        .get(0)
+        .copied()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing static count"))?
+        as usize;
 
     // Check if static fields are already initialized
     if context.static_fields().is_some() {
-        return Err(Error::InvalidOperation("INITSSLOT cannot be executed twice".into()));
+        return Err(VmError::invalid_operation_msg(
+            "INITSSLOT cannot be executed twice",
+        ));
     }
 
     // Create a new slot with the specified count, filled with null values
@@ -244,112 +305,140 @@ fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> 
 
 // Static field operations (optimized for indices 0-6)
 /// Implements the LDSFLD0 operation.
-fn load_static_field_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_static_field_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_static_field(0)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDSFLD1 operation.
-fn load_static_field_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_static_field_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_static_field(1)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDSFLD2 operation.
-fn load_static_field_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_static_field_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_static_field(2)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDSFLD3 operation.
-fn load_static_field_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_static_field_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_static_field(3)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDSFLD4 operation.
-fn load_static_field_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_static_field_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_static_field(4)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDSFLD5 operation.
-fn load_static_field_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_static_field_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_static_field(5)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDSFLD6 operation.
-fn load_static_field_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_static_field_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_static_field(6)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the STSFLD0 operation.
-fn store_static_field_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_static_field_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_static_field(0, value)?;
     Ok(())
 }
 
 /// Implements the STSFLD1 operation.
-fn store_static_field_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_static_field_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_static_field(1, value)?;
     Ok(())
 }
 
 /// Implements the STSFLD2 operation.
-fn store_static_field_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_static_field_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_static_field(2, value)?;
     Ok(())
 }
 
 /// Implements the STSFLD3 operation.
-fn store_static_field_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_static_field_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_static_field(3, value)?;
     Ok(())
 }
 
 /// Implements the STSFLD4 operation.
-fn store_static_field_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_static_field_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_static_field(4, value)?;
     Ok(())
 }
 
 /// Implements the STSFLD5 operation.
-fn store_static_field_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_static_field_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_static_field(5, value)?;
     Ok(())
 }
 
 /// Implements the STSFLD6 operation.
-fn store_static_field_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_static_field_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_static_field(6, value)?;
     Ok(())
@@ -357,112 +446,140 @@ fn store_static_field_6(engine: &mut ExecutionEngine, _instruction: &Instruction
 
 // Local variable operations (optimized for indices 0-6)
 /// Implements the LDLOC0 operation.
-fn load_local_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_local_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_local(0)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDLOC1 operation.
-fn load_local_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_local_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_local(1)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDLOC2 operation.
-fn load_local_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_local_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_local(2)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDLOC3 operation.
-fn load_local_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_local_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_local(3)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDLOC4 operation.
-fn load_local_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_local_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_local(4)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDLOC5 operation.
-fn load_local_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_local_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_local(5)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDLOC6 operation.
-fn load_local_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_local_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_local(6)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the STLOC0 operation.
-fn store_local_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_local_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_local(0, value)?;
     Ok(())
 }
 
 /// Implements the STLOC1 operation.
-fn store_local_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_local_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_local(1, value)?;
     Ok(())
 }
 
 /// Implements the STLOC2 operation.
-fn store_local_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_local_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_local(2, value)?;
     Ok(())
 }
 
 /// Implements the STLOC3 operation.
-fn store_local_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_local_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_local(3, value)?;
     Ok(())
 }
 
 /// Implements the STLOC4 operation.
-fn store_local_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_local_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_local(4, value)?;
     Ok(())
 }
 
 /// Implements the STLOC5 operation.
-fn store_local_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_local_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_local(5, value)?;
     Ok(())
 }
 
 /// Implements the STLOC6 operation.
-fn store_local_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_local_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_local(6, value)?;
     Ok(())
@@ -470,112 +587,140 @@ fn store_local_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Re
 
 // Argument operations (optimized for indices 0-6)
 /// Implements the LDARG0 operation.
-fn load_argument_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_argument_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_argument(0)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDARG1 operation.
-fn load_argument_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_argument_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_argument(1)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDARG2 operation.
-fn load_argument_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_argument_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_argument(2)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDARG3 operation.
-fn load_argument_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_argument_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_argument(3)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDARG4 operation.
-fn load_argument_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_argument_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_argument(4)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDARG5 operation.
-fn load_argument_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_argument_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_argument(5)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the LDARG6 operation.
-fn load_argument_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn load_argument_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.load_argument(6)?;
     context.push(value)?;
     Ok(())
 }
 
 /// Implements the STARG0 operation.
-fn store_argument_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_argument_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_argument(0, value)?;
     Ok(())
 }
 
 /// Implements the STARG1 operation.
-fn store_argument_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_argument_1(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_argument(1, value)?;
     Ok(())
 }
 
 /// Implements the STARG2 operation.
-fn store_argument_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_argument_2(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_argument(2, value)?;
     Ok(())
 }
 
 /// Implements the STARG3 operation.
-fn store_argument_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_argument_3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_argument(3, value)?;
     Ok(())
 }
 
 /// Implements the STARG4 operation.
-fn store_argument_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_argument_4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_argument(4, value)?;
     Ok(())
 }
 
 /// Implements the STARG5 operation.
-fn store_argument_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_argument_5(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_argument(5, value)?;
     Ok(())
 }
 
 /// Implements the STARG6 operation.
-fn store_argument_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+fn store_argument_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
     let value = context.pop()?;
     context.store_argument(6, value)?;
     Ok(())

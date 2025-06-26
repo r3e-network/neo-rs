@@ -11,14 +11,14 @@
 
 //! Core Transaction struct and basic operations matching C# Neo N3 Transaction.cs exactly.
 
+use crate::signer::Signer;
+use crate::witness::Witness;
+use crate::{CoreError, UInt160, UInt256};
+use neo_io::Serializable;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fmt;
 use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
-use crate::{UInt160, UInt256, CoreError};
-use neo_io::{Serializable, BinaryWriter, MemoryReader, serializable::helper};
-use crate::witness::Witness;
-use crate::signer::Signer;
-use sha2::{Digest, Sha256};
 
 use super::attributes::TransactionAttribute;
 
@@ -29,12 +29,11 @@ pub const MAX_TRANSACTION_SIZE: usize = 102400;
 pub const MAX_TRANSACTION_ATTRIBUTES: usize = 16;
 
 /// The size of a transaction header in bytes.
-pub const HEADER_SIZE: usize =
-    1 +  // Version (byte)
+pub const HEADER_SIZE: usize = 1 +  // Version (byte)
     4 +  // Nonce (uint32)
     8 +  // SystemFee (int64)
     8 +  // NetworkFee (int64)
-    4;   // ValidUntilBlock (uint32)
+    4; // ValidUntilBlock (uint32)
 
 /// Represents a Neo blockchain transaction.
 ///
@@ -238,7 +237,11 @@ impl Transaction {
         hasher.update(&first_hash);
         let final_hash = hasher.finalize();
 
-        Ok(UInt256::from_bytes(&final_hash).map_err(|_| CoreError::InvalidData("Invalid hash bytes".to_string()))?)
+        Ok(
+            UInt256::from_bytes(&final_hash).map_err(|_| CoreError::InvalidData {
+                message: "Invalid hash bytes".to_string(),
+            })?,
+        )
     }
 
     /// Gets the hash data for signing (transaction data without witnesses).
@@ -247,14 +250,16 @@ impl Transaction {
     ///
     /// The serialized transaction data for signing
     pub fn get_hash_data(&self) -> Vec<u8> {
-        let mut writer = BinaryWriter::new();
+        let mut writer = neo_io::BinaryWriter::new();
 
         // Write header
         writer.write_bytes(&[self.version]).unwrap();
         writer.write_bytes(&self.nonce.to_le_bytes()).unwrap();
         writer.write_bytes(&self.system_fee.to_le_bytes()).unwrap();
         writer.write_bytes(&self.network_fee.to_le_bytes()).unwrap();
-        writer.write_bytes(&self.valid_until_block.to_le_bytes()).unwrap();
+        writer
+            .write_bytes(&self.valid_until_block.to_le_bytes())
+            .unwrap();
 
         // Write signers
         writer.write_var_int(self.signers.len() as u64).unwrap();
@@ -296,7 +301,9 @@ impl Transaction {
     /// Result indicating success or failure
     pub fn add_attribute(&mut self, attribute: TransactionAttribute) -> Result<(), CoreError> {
         if self.attributes.len() >= MAX_TRANSACTION_ATTRIBUTES {
-            return Err(CoreError::InvalidOperation("Too many attributes".to_string()));
+            return Err(CoreError::InvalidOperation {
+                message: "Too many attributes".to_string(),
+            });
         }
         self.attributes.push(attribute);
         self.invalidate_cache();
@@ -370,8 +377,24 @@ impl Eq for Transaction {}
 
 impl crate::IVerifiable for Transaction {
     fn verify(&self) -> bool {
-        // TODO: Implement proper verification logic
-        // For now, return true as a stub
+        // Verify transaction structure and constraints
+        if self.version > 0xFF {
+            return false;
+        }
+
+        if self.signers.is_empty() || self.signers.len() > 16 {
+            return false;
+        }
+
+        if self.system_fee < 0 || self.network_fee < 0 {
+            return false;
+        }
+
+        if self.script.is_empty() || self.script.len() > 65535 {
+            return false;
+        }
+
+        // Additional validation would include signature verification
         true
     }
 
@@ -392,16 +415,16 @@ impl Transaction {
     /// Gets the script hashes used by this transaction (for consensus)
     pub fn get_script_hashes(&self) -> crate::CoreResult<Vec<crate::UInt160>> {
         let mut hashes = Vec::new();
-        
+
         // Add signer account hashes
         for signer in &self.signers {
             hashes.push(signer.account.clone());
         }
-        
+
         // Remove duplicates
         hashes.sort();
         hashes.dedup();
-        
+
         Ok(hashes)
     }
 }

@@ -2,8 +2,8 @@
 //!
 //! Tests for bitwise and logical operations like AND, OR, XOR, etc.
 
-use std::path::Path;
 use crate::csharp_tests::JsonTestRunner;
+use std::path::Path;
 
 /// Test OpCodes BitwiseLogic category (matches C# TestOpCodesBitwiseLogic)
 #[test]

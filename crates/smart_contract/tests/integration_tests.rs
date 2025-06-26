@@ -1,8 +1,10 @@
 //! Integration tests for the smart contract module.
 
-use neo_smart_contract::*;
-use neo_smart_contract::manifest::{ContractPermissionDescriptor, WildcardContainer, ContractManifest, ContractPermission};
 use neo_core::{UInt160, UInt256};
+use neo_smart_contract::manifest::{
+    ContractManifest, ContractPermission, ContractPermissionDescriptor, WildcardContainer,
+};
+use neo_smart_contract::*;
 use neo_vm::TriggerType;
 
 #[test]

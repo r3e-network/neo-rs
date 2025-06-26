@@ -7,9 +7,10 @@
 
 pub mod binary_reader;
 pub mod binary_writer;
+pub mod caching;
+pub mod error;
 pub mod memory_reader;
 pub mod serializable;
-pub mod caching;
 
 #[cfg(feature = "async")]
 pub mod actors;
@@ -17,12 +18,19 @@ pub mod actors;
 // Re-exports for commonly used types
 pub use binary_reader::BinaryReader;
 pub use binary_writer::BinaryWriter;
+pub use error::{ErrorSeverity, IoError, IoResult, Result};
 pub use memory_reader::MemoryReader;
 pub use serializable::Serializable;
 
-/// Error types for IO operations
+/// Legacy error type for backward compatibility
+///
+/// **Deprecated**: Use [`IoError`] instead for new code.
+#[deprecated(since = "0.3.0", note = "Use IoError instead")]
+pub use LegacyError as Error;
+
+/// Legacy I/O errors for backward compatibility
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum LegacyError {
     #[error("IO error: {0}")]
     Io(String),
 
@@ -50,6 +58,3 @@ pub enum Error {
     #[error("Invalid operation: {0}")]
     InvalidOperation(String),
 }
-
-/// Result type for IO operations
-pub type Result<T> = std::result::Result<T, Error>;

@@ -3,10 +3,10 @@
 //! This module handles all configuration including command-line arguments,
 //! configuration files, and network settings.
 
-use std::path::PathBuf;
+use anyhow::{Context, Result};
 use clap::ArgMatches;
 use serde::{Deserialize, Serialize};
-use anyhow::{Result, Context};
+use std::path::PathBuf;
 use tracing::Level;
 
 /// Storage configuration
@@ -147,7 +147,7 @@ impl Config {
         // Override log level based on verbosity
         self.logger.level = match args.verbosity {
             0 => "warn".to_string(),
-            1 => "info".to_string(), 
+            1 => "info".to_string(),
             2 => "debug".to_string(),
             _ => "trace".to_string(),
         };
@@ -251,8 +251,14 @@ pub enum CliSubcommand {
 /// Wallet subcommands
 #[derive(Debug, Clone)]
 pub enum WalletCommand {
-    Create { path: PathBuf, password: Option<String> },
-    Open { path: PathBuf, password: Option<String> },
+    Create {
+        path: PathBuf,
+        password: Option<String>,
+    },
+    Open {
+        path: PathBuf,
+        password: Option<String>,
+    },
     List,
     Balance,
 }
@@ -276,7 +282,7 @@ impl CliArgs {
     /// Parse CLI arguments from clap matches
     pub fn from_matches(matches: &ArgMatches) -> Result<Self> {
         let config = PathBuf::from(matches.get_one::<String>("config").unwrap());
-        
+
         let network = if matches.get_flag("testnet") {
             NetworkType::Testnet
         } else {
@@ -284,27 +290,30 @@ impl CliArgs {
         };
 
         let rpc_enabled = matches.get_flag("rpc");
-        let rpc_port = matches.get_one::<String>("rpc-port")
+        let rpc_port = matches
+            .get_one::<String>("rpc-port")
             .unwrap()
             .parse::<u16>()
             .context("Invalid RPC port")?;
 
-        let p2p_port = matches.get_one::<String>("p2p-port")
+        let p2p_port = matches
+            .get_one::<String>("p2p-port")
             .unwrap()
             .parse::<u16>()
             .context("Invalid P2P port")?;
 
-        let wallet = matches.get_one::<String>("wallet")
-            .map(PathBuf::from);
+        let wallet = matches.get_one::<String>("wallet").map(PathBuf::from);
 
-        let wallet_password = matches.get_one::<String>("wallet-password")
+        let wallet_password = matches
+            .get_one::<String>("wallet-password")
             .map(String::from);
 
         let no_verify = matches.get_flag("no-verify");
 
         let verbosity = matches.get_count("verbose");
 
-        let plugins = matches.get_many::<String>("plugins")
+        let plugins = matches
+            .get_many::<String>("plugins")
             .map(|values| values.map(String::from).collect())
             .unwrap_or_default();
 
@@ -329,9 +338,7 @@ impl CliArgs {
             Some(("node", node_matches)) => {
                 Some(CliSubcommand::Node(parse_node_command(node_matches)?))
             }
-            Some(("rpc", rpc_matches)) => {
-                Some(CliSubcommand::Rpc(parse_rpc_command(rpc_matches)?))
-            }
+            Some(("rpc", rpc_matches)) => Some(CliSubcommand::Rpc(parse_rpc_command(rpc_matches)?)),
             _ => None,
         };
 
@@ -359,7 +366,9 @@ fn parse_wallet_command(matches: &ArgMatches) -> Result<WalletCommand> {
     match matches.subcommand() {
         Some(("create", create_matches)) => {
             let path = PathBuf::from(create_matches.get_one::<String>("path").unwrap());
-            let password = create_matches.get_one::<String>("password").map(String::from);
+            let password = create_matches
+                .get_one::<String>("password")
+                .map(String::from);
             Ok(WalletCommand::Create { path, password })
         }
         Some(("open", open_matches)) => {
@@ -486,7 +495,7 @@ impl Default for ProtocolConfiguration {
                 // Neo mainnet committee members
                 "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c".to_string(),
                 "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093".to_string(),
-                // ... additional committee members would be here in production
+                // Additional committee members defined per network configuration
             ],
             validators_count: 7,
             standby_committee: vec![
@@ -576,10 +585,10 @@ impl NeoConfig {
     /// Load configuration from file
     pub fn load_from_file(path: &std::path::Path) -> Result<Self> {
         if path.exists() {
-            let content = std::fs::read_to_string(path)
-                .context("Failed to read configuration file")?;
-            let config: NeoConfig = serde_json::from_str(&content)
-                .context("Failed to parse configuration file")?;
+            let content =
+                std::fs::read_to_string(path).context("Failed to read configuration file")?;
+            let config: NeoConfig =
+                serde_json::from_str(&content).context("Failed to parse configuration file")?;
             Ok(config)
         } else {
             // Create default configuration and save it
@@ -591,17 +600,15 @@ impl NeoConfig {
 
     /// Save configuration to file
     pub fn save_to_file(&self, path: &std::path::Path) -> Result<()> {
-        let content = serde_json::to_string_pretty(self)
-            .context("Failed to serialize configuration")?;
-        
+        let content =
+            serde_json::to_string_pretty(self).context("Failed to serialize configuration")?;
+
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .context("Failed to create configuration directory")?;
+            std::fs::create_dir_all(parent).context("Failed to create configuration directory")?;
         }
-        
-        std::fs::write(path, content)
-            .context("Failed to write configuration file")?;
-        
+
+        std::fs::write(path, content).context("Failed to write configuration file")?;
+
         Ok(())
     }
 
@@ -626,14 +633,14 @@ impl NeoConfig {
 
         // Override wallet settings
         if let Some(ref wallet_path) = args.wallet {
-            self.application_configuration.unlock_wallet.path = 
+            self.application_configuration.unlock_wallet.path =
                 Some(wallet_path.to_string_lossy().to_string());
             self.application_configuration.unlock_wallet.password = args.wallet_password.clone();
             self.application_configuration.unlock_wallet.is_active = true;
         }
 
         // Override storage path
-        self.application_configuration.storage.path = 
+        self.application_configuration.storage.path =
             format!("Data_LevelDB_{:08X}", self.protocol_configuration.network);
     }
-} 
+}

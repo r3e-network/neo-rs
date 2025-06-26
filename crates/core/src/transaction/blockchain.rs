@@ -11,10 +11,8 @@
 
 //! Blockchain integration for transactions matching C# Neo N3 exactly.
 
+use crate::{UInt160, UInt256};
 use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-use crate::{UInt160, UInt256, CoreResult, CoreError};
-use super::attributes::TransactionAttributeType;
 
 /// Blockchain snapshot for state queries (matches C# DataCache exactly).
 #[derive(Debug, Clone)]
@@ -175,10 +173,10 @@ pub struct CommitteeMember {
 pub trait PersistenceStore {
     /// Gets current header height (matches C# IStore.GetHeaderHeight exactly)
     fn get_header_height(&self) -> Result<u32, PersistenceError>;
-    
+
     /// Gets storage item by key (matches C# IStore.TryGet exactly)
     fn try_get_storage(&self, key: &StorageKey) -> Result<Option<StorageItem>, PersistenceError>;
-    
+
     /// Gets block by height (matches C# IStore.GetBlock exactly)
     fn get_block(&self, height: u32) -> Result<Option<BlockInfo>, PersistenceError>;
 }
@@ -227,63 +225,83 @@ impl BlockchainSnapshot {
 
         // NEO Token Contract (matches C# NeoToken exactly)
         let neo_hash = UInt160::from_bytes(&[
-            0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x84, 0x6b, 0x0a, 0x40, 0xb2,
-            0xa9, 0x7d, 0x4a, 0x38, 0x14, 0x39, 0x4b, 0x95, 0x2a, 0x85
-        ]).unwrap_or_else(|_| UInt160::zero());
-        contracts.insert(neo_hash, NativeContractInfo {
-            hash: neo_hash,
-            name: "NeoToken".to_string(),
-            id: -5,
-            active_block_index: 0,
-        });
+            0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x84, 0x6b, 0x0a, 0x40, 0xb2, 0xa9, 0x7d, 0x4a, 0x38,
+            0x14, 0x39, 0x4b, 0x95, 0x2a, 0x85,
+        ])
+        .unwrap_or_else(|_| UInt160::zero());
+        contracts.insert(
+            neo_hash,
+            NativeContractInfo {
+                hash: neo_hash,
+                name: "NeoToken".to_string(),
+                id: -5,
+                active_block_index: 0,
+            },
+        );
 
         // GAS Token Contract (matches C# GasToken exactly)
         let gas_hash = UInt160::from_bytes(&[
-            0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0x14, 0x28, 0x34,
-            0x7d, 0x9e, 0x32, 0x13, 0xc6, 0x8c, 0xc0, 0x8c, 0x60, 0x25
-        ]).unwrap_or_else(|_| UInt160::zero());
-        contracts.insert(gas_hash, NativeContractInfo {
-            hash: gas_hash,
-            name: "GasToken".to_string(),
-            id: -6,
-            active_block_index: 0,
-        });
+            0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0x14, 0x28, 0x34, 0x7d, 0x9e, 0x32, 0x13,
+            0xc6, 0x8c, 0xc0, 0x8c, 0x60, 0x25,
+        ])
+        .unwrap_or_else(|_| UInt160::zero());
+        contracts.insert(
+            gas_hash,
+            NativeContractInfo {
+                hash: gas_hash,
+                name: "GasToken".to_string(),
+                id: -6,
+                active_block_index: 0,
+            },
+        );
 
         // Policy Contract (matches C# PolicyContract exactly)
         let policy_hash = UInt160::from_bytes(&[
-            0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xe6, 0xd2, 0x6a, 0x7b, 0x32,
-            0xa4, 0x5c, 0x3d, 0x35, 0x0c, 0x34, 0x31, 0x56, 0xb6, 0x2d
-        ]).unwrap_or_else(|_| UInt160::zero());
-        contracts.insert(policy_hash, NativeContractInfo {
-            hash: policy_hash,
-            name: "PolicyContract".to_string(),
-            id: -7,
-            active_block_index: 0,
-        });
+            0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xe6, 0xd2, 0x6a, 0x7b, 0x32, 0xa4, 0x5c, 0x3d, 0x35,
+            0x0c, 0x34, 0x31, 0x56, 0xb6, 0x2d,
+        ])
+        .unwrap_or_else(|_| UInt160::zero());
+        contracts.insert(
+            policy_hash,
+            NativeContractInfo {
+                hash: policy_hash,
+                name: "PolicyContract".to_string(),
+                id: -7,
+                active_block_index: 0,
+            },
+        );
 
         // Role Management Contract (matches C# RoleManagement exactly)
         let role_hash = UInt160::from_bytes(&[
-            0x49, 0xcf, 0x4e, 0x5f, 0x4e, 0x94, 0x5d, 0x3b, 0x8c, 0x7c,
-            0x93, 0x7c, 0x8e, 0x1c, 0x48, 0x65, 0x3a, 0x2c, 0x7a, 0x83
-        ]).unwrap_or_else(|_| UInt160::zero());
-        contracts.insert(role_hash, NativeContractInfo {
-            hash: role_hash,
-            name: "RoleManagement".to_string(),
-            id: -8,
-            active_block_index: 0,
-        });
+            0x49, 0xcf, 0x4e, 0x5f, 0x4e, 0x94, 0x5d, 0x3b, 0x8c, 0x7c, 0x93, 0x7c, 0x8e, 0x1c,
+            0x48, 0x65, 0x3a, 0x2c, 0x7a, 0x83,
+        ])
+        .unwrap_or_else(|_| UInt160::zero());
+        contracts.insert(
+            role_hash,
+            NativeContractInfo {
+                hash: role_hash,
+                name: "RoleManagement".to_string(),
+                id: -8,
+                active_block_index: 0,
+            },
+        );
 
         // Oracle Contract (matches C# OracleContract exactly)
         let oracle_hash = UInt160::from_bytes(&[
-            0xfe, 0x92, 0x4b, 0x7c, 0xfd, 0xdf, 0x0c, 0x7b, 0x7e, 0x3b,
-            0x9c, 0xa9, 0x3a, 0xa8, 0x20, 0x8d, 0x6b, 0x9a, 0x9a, 0x9a
-        ]).unwrap_or_else(|_| UInt160::zero());
-        contracts.insert(oracle_hash, NativeContractInfo {
-            hash: oracle_hash,
-            name: "OracleContract".to_string(),
-            id: -9,
-            active_block_index: 0,
-        });
+            0xfe, 0x92, 0x4b, 0x7c, 0xfd, 0xdf, 0x0c, 0x7b, 0x7e, 0x3b, 0x9c, 0xa9, 0x3a, 0xa8,
+            0x20, 0x8d, 0x6b, 0x9a, 0x9a, 0x9a,
+        ])
+        .unwrap_or_else(|_| UInt160::zero());
+        contracts.insert(
+            oracle_hash,
+            NativeContractInfo {
+                hash: oracle_hash,
+                name: "OracleContract".to_string(),
+                id: -9,
+                active_block_index: 0,
+            },
+        );
 
         contracts
     }
@@ -291,23 +309,22 @@ impl BlockchainSnapshot {
     /// Tries to get storage item (matches C# DataCache.TryGet exactly).
     pub fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
         // Production-ready storage item retrieval (matches C# DataCache.TryGet exactly)
-        self.storage_cache.get(key).cloned()
-            .or_else(|| {
-                // Production-ready blockchain storage query
-                self.query_blockchain_storage_for_key(key)
-            })
+        self.storage_cache.get(key).cloned().or_else(|| {
+            // Production-ready blockchain storage query
+            self.query_blockchain_storage_for_key(key)
+        })
     }
 
     /// Gets current blockchain height (matches C# Blockchain.Height exactly).
     fn get_current_blockchain_height() -> u32 {
         // Production-ready blockchain height retrieval (matches C# Blockchain.Singleton.Height exactly)
         // This implements the C# logic: Blockchain.Singleton.Height for accurate height tracking
-        
+
         // 1. Try to get height from current blockchain context (production implementation)
         if let Some(height) = Self::try_get_height_from_blockchain_context() {
             return height;
         }
-        
+
         // 2. Fallback to persisted height from store (production fallback)
         Self::get_persisted_height_from_store()
     }
@@ -316,16 +333,16 @@ impl BlockchainSnapshot {
     fn try_get_height_from_blockchain_context() -> Option<u32> {
         // Production-ready blockchain context access (matches C# Blockchain.Singleton exactly)
         // This implements the C# logic: Blockchain.Singleton.CurrentSnapshot?.Height
-        
+
         // Production-ready blockchain singleton access (matches C# Blockchain.Singleton exactly)
         // This implements the C# logic: accessing the global blockchain instance with proper thread safety
-        
+
         // 1. Try to get blockchain singleton from global state (production implementation)
         // In production, this would be: BLOCKCHAIN_SINGLETON.try_get().map(|b| &b.view)
         if let Ok(blockchain) = crate::GLOBAL_BLOCKCHAIN.try_read() {
             return blockchain.as_ref().map(|b| b.get_snapshot_view());
         }
-        
+
         // Check if we have access to blockchain state
         if Self::has_blockchain_context() {
             // Get height from current snapshot
@@ -339,7 +356,7 @@ impl BlockchainSnapshot {
     fn has_blockchain_context() -> bool {
         // Production-ready context availability check (matches C# Blockchain.Singleton != null exactly)
         // This implements the C# logic: Blockchain.Singleton != null && Blockchain.Singleton.CurrentSnapshot != null
-        
+
         // 1. Check if blockchain singleton is initialized (production singleton access)
         if let Some(blockchain) = Self::get_blockchain_singleton() {
             // 2. Check if current snapshot is available (production snapshot validation)
@@ -354,10 +371,10 @@ impl BlockchainSnapshot {
     fn get_height_from_current_snapshot() -> u32 {
         // Production-ready snapshot height access (matches C# CurrentSnapshot.Height exactly)
         // This implements the C# logic: Blockchain.Singleton.CurrentSnapshot.Height
-        
+
         // In a full implementation, this would access the actual current snapshot
         // This would be the most up-to-date height including pending blocks
-        
+
         // Production-ready height fallback with proper error handling (matches C# Store.GetHeight exactly)
         // This implements the C# logic: fallback to persisted store height when blockchain singleton unavailable
         Self::get_persisted_height_from_store() // Safe fallback to genesis height
@@ -367,7 +384,7 @@ impl BlockchainSnapshot {
     fn get_persisted_height_from_store() -> u32 {
         // Production-ready store height retrieval (matches C# Store.GetHeaderHeight exactly)
         // This implements the C# logic: Store.GetHeaderHeight() for persistent height
-        
+
         // 1. Try to access the persistence store (production storage access)
         if let Some(height) = Self::get_persistence_store() {
             // 2. Return the height from store (production query)
@@ -382,7 +399,7 @@ impl BlockchainSnapshot {
     fn get_persistence_store() -> Option<u32> {
         // Production-ready store access (matches C# Store singleton exactly)
         // This implements the C# logic: accessing the global persistence store with proper thread safety
-        
+
         // 1. Try to access the global store singleton (production implementation)
         if let Ok(store_guard) = crate::GLOBAL_STORE.try_read() {
             if let Some(ref store) = *store_guard {
@@ -396,7 +413,7 @@ impl BlockchainSnapshot {
                 }
             }
         }
-        
+
         // 3. No store available - return genesis height (production fallback)
         // This matches C# behavior when Store.Singleton is not initialized
         Some(0) // Genesis height as safe default
@@ -406,7 +423,7 @@ impl BlockchainSnapshot {
     fn query_blockchain_storage_for_key(&self, key: &StorageKey) -> Option<StorageItem> {
         // Production-ready blockchain storage query (matches C# persistence layer exactly)
         // This implements the C# logic: snapshot.TryGet(storageKey, out var item)
-        
+
         // 1. Try to query the actual persistence store (production implementation)
         if let Ok(store_guard) = crate::GLOBAL_STORE.try_read() {
             if let Some(ref store) = *store_guard {
@@ -416,9 +433,12 @@ impl BlockchainSnapshot {
                     Ok(None) => {
                         // Storage key not found - check if it's a native contract default
                         if self.is_known_native_contract(&key.contract_hash) {
-                            return Some(StorageItem::new_with_contract_data(&key.contract_hash, &key.key_data));
+                            return Some(StorageItem::new_with_contract_data(
+                                &key.contract_hash,
+                                &key.key_data,
+                            ));
                         }
-                    },
+                    }
                     Err(_) => {
                         // Store error - return None for safety
                         return None;
@@ -426,11 +446,14 @@ impl BlockchainSnapshot {
                 }
             }
         }
-        
+
         // 3. Fallback to native contract detection (production safety)
         // This matches C# behavior when store is not available but contract is native
         if self.is_known_native_contract(&key.contract_hash) {
-            Some(StorageItem::new_with_contract_data(&key.contract_hash, &key.key_data))
+            Some(StorageItem::new_with_contract_data(
+                &key.contract_hash,
+                &key.key_data,
+            ))
         } else {
             None
         }
@@ -442,21 +465,24 @@ impl BlockchainSnapshot {
         let known_contracts = [
             // NEO contract hash
             UInt160::from_bytes(&[
-                0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x84, 0x6b, 0x0a, 0x40, 0xb2,
-                0xa9, 0x7d, 0x4a, 0x38, 0x14, 0x39, 0x4b, 0x95, 0x2a, 0x85
-            ]).unwrap_or_else(|_| UInt160::zero()),
+                0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x84, 0x6b, 0x0a, 0x40, 0xb2, 0xa9, 0x7d, 0x4a, 0x38,
+                0x14, 0x39, 0x4b, 0x95, 0x2a, 0x85,
+            ])
+            .unwrap_or_else(|_| UInt160::zero()),
             // GAS contract hash
             UInt160::from_bytes(&[
-                0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0x14, 0x28, 0x34,
-                0x7d, 0x9e, 0x32, 0x13, 0xc6, 0x8c, 0xc0, 0x8c, 0x60, 0x25
-            ]).unwrap_or_else(|_| UInt160::zero()),
+                0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0x14, 0x28, 0x34, 0x7d, 0x9e, 0x32, 0x13,
+                0xc6, 0x8c, 0xc0, 0x8c, 0x60, 0x25,
+            ])
+            .unwrap_or_else(|_| UInt160::zero()),
             // Policy contract hash
             UInt160::from_bytes(&[
-                0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xe6, 0xd2, 0x6a, 0x7b, 0x32,
-                0xa4, 0x5c, 0x3d, 0x35, 0x0c, 0x34, 0x31, 0x56, 0xb6, 0x2d
-            ]).unwrap_or_else(|_| UInt160::zero()),
+                0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xe6, 0xd2, 0x6a, 0x7b, 0x32, 0xa4, 0x5c, 0x3d, 0x35,
+                0x0c, 0x34, 0x31, 0x56, 0xb6, 0x2d,
+            ])
+            .unwrap_or_else(|_| UInt160::zero()),
         ];
-        
+
         known_contracts.contains(contract_hash)
     }
 
@@ -474,7 +500,7 @@ impl BlockchainSnapshot {
     fn get_blockchain_singleton() -> Option<BlockchainSingleton> {
         // Production-ready blockchain singleton access (matches C# Blockchain.Singleton exactly)
         // This implements the C# logic: accessing the global blockchain singleton with proper thread safety
-        
+
         // 1. Try to access the global blockchain singleton (production implementation)
         if let Ok(blockchain_guard) = crate::GLOBAL_BLOCKCHAIN.try_read() {
             if let Some(ref blockchain) = *blockchain_guard {
@@ -485,7 +511,7 @@ impl BlockchainSnapshot {
                 });
             }
         }
-        
+
         // 3. No blockchain singleton available - return None (production safety)
         // This matches C# behavior when Blockchain.Singleton is not initialized
         None
@@ -512,7 +538,7 @@ impl BlockchainSingleton {
         // Production-ready snapshot view access (matches C# CurrentSnapshot.Height exactly)
         self.height
     }
-    
+
     /// Checks if current snapshot is available (production implementation)
     fn has_current_snapshot(&self) -> bool {
         // Production-ready snapshot availability check (matches C# CurrentSnapshot != null exactly)
@@ -529,7 +555,10 @@ impl BlockchainSingleton {
 impl StorageKey {
     /// Creates new storage key (matches C# StorageKey constructor exactly).
     pub fn new(contract_hash: UInt160, key_data: Vec<u8>) -> Self {
-        Self { contract_hash, key_data }
+        Self {
+            contract_hash,
+            key_data,
+        }
     }
 }
 
@@ -686,19 +715,26 @@ impl CachedCommittee {
     /// Checks if any member matches account (matches C# committee.Any exactly).
     pub fn any_member_matches_account(&self, account: &UInt160) -> bool {
         // Production-ready member matching (matches C# committee.Any(member => member.PublicKey.ToScriptHash() == account) exactly)
-        self.members.iter().any(|member| &member.script_hash == account)
+        self.members
+            .iter()
+            .any(|member| &member.script_hash == account)
     }
 
     /// Gets committee member by script hash (production-ready implementation).
     pub fn get_member_by_script_hash(&self, script_hash: &UInt160) -> Option<&CommitteeMember> {
         // Production-ready member lookup (matches C# committee member access exactly)
-        self.members.iter().find(|member| &member.script_hash == script_hash)
+        self.members
+            .iter()
+            .find(|member| &member.script_hash == script_hash)
     }
 
     /// Gets all committee member script hashes (production-ready implementation).
     pub fn get_all_script_hashes(&self) -> Vec<UInt160> {
         // Production-ready script hash collection (matches C# committee.Select(m => m.PublicKey.ToScriptHash()) exactly)
-        self.members.iter().map(|member| member.script_hash).collect()
+        self.members
+            .iter()
+            .map(|member| member.script_hash)
+            .collect()
     }
 
     /// Loads committee members from blockchain (matches C# NEO.GetCommittee exactly).

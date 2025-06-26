@@ -2,10 +2,9 @@
 //!
 //! This module provides instruction representation and parsing functionality.
 
+use crate::error::{VmError, VmResult};
 use crate::io;
 use crate::op_code::OpCode;
-use crate::Error;
-use crate::Result;
 
 /// Represents the size of an operand for an instruction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,14 +41,14 @@ pub struct Instruction {
 
 impl Instruction {
     /// Parses an instruction from a byte array.
-    pub fn parse(script: &[u8], position: usize) -> Result<Self> {
+    pub fn parse(script: &[u8], position: usize) -> VmResult<Self> {
         if position >= script.len() {
-            return Err(Error::ParseError("Position out of bounds".to_string()));
+            return Err(VmError::parse("Position out of bounds"));
         }
 
         let opcode = script[position];
         let opcode = OpCode::try_from(opcode)
-            .map_err(|_| Error::ParseError(format!("Invalid opcode: {}", opcode)))?;
+            .map_err(|_| VmError::parse(format!("Invalid opcode: {}", opcode)))?;
 
         // Special handling for SYSCALL instruction
         let operand = if opcode == OpCode::SYSCALL {
@@ -57,7 +56,7 @@ impl Instruction {
             let operand_start = position + 1;
 
             if operand_start >= script.len() {
-                return Err(Error::ParseError("SYSCALL instruction missing length byte".to_string()));
+                return Err(VmError::parse("SYSCALL instruction missing length byte"));
             }
 
             let length = script[operand_start] as usize;
@@ -65,18 +64,26 @@ impl Instruction {
             let operand_end = operand_start + total_operand_size;
 
             if operand_end > script.len() {
-                return Err(Error::ParseError(format!("SYSCALL operand size exceeds script bounds: {} + {} > {}", operand_start, total_operand_size, script.len())));
+                return Err(VmError::parse(format!(
+                    "SYSCALL operand size exceeds script bounds: {} + {} > {}",
+                    operand_start,
+                    total_operand_size,
+                    script.len()
+                )));
             }
 
             script[operand_start..operand_end].to_vec()
-        } else if matches!(opcode, OpCode::PUSHDATA1 | OpCode::PUSHDATA2 | OpCode::PUSHDATA4) {
+        } else if matches!(
+            opcode,
+            OpCode::PUSHDATA1 | OpCode::PUSHDATA2 | OpCode::PUSHDATA4
+        ) {
             // Special handling for PUSHDATA instructions
             let operand_start = position + 1;
 
             match opcode {
                 OpCode::PUSHDATA1 => {
                     if operand_start >= script.len() {
-                        return Err(Error::ParseError("PUSHDATA1 missing length byte".to_string()));
+                        return Err(VmError::parse("PUSHDATA1 missing length byte"));
                     }
 
                     let length = script[operand_start] as usize;
@@ -84,14 +91,19 @@ impl Instruction {
 
                     // Check if we have enough data remaining
                     if operand_start + 1 + length > script.len() {
-                        return Err(Error::ParseError(format!("PUSHDATA1 operand size exceeds script bounds: {} + {} > {}", operand_start, 1 + length, script.len())));
+                        return Err(VmError::parse(format!(
+                            "PUSHDATA1 operand size exceeds script bounds: {} + {} > {}",
+                            operand_start,
+                            1 + length,
+                            script.len()
+                        )));
                     }
 
                     operand
                 }
                 OpCode::PUSHDATA2 => {
                     if operand_start + 1 >= script.len() {
-                        return Err(Error::ParseError("PUSHDATA2 missing length bytes".to_string()));
+                        return Err(VmError::parse("PUSHDATA2 missing length bytes"));
                     }
 
                     let length_bytes = [script[operand_start], script[operand_start + 1]];
@@ -100,33 +112,43 @@ impl Instruction {
 
                     // Check if we have enough data remaining
                     if operand_start + 2 + length > script.len() {
-                        return Err(Error::ParseError(format!("PUSHDATA2 operand size exceeds script bounds: {} + {} > {}", operand_start, 2 + length, script.len())));
+                        return Err(VmError::parse(format!(
+                            "PUSHDATA2 operand size exceeds script bounds: {} + {} > {}",
+                            operand_start,
+                            2 + length,
+                            script.len()
+                        )));
                     }
 
                     operand
                 }
                 OpCode::PUSHDATA4 => {
                     if operand_start + 3 >= script.len() {
-                        return Err(Error::ParseError("PUSHDATA4 missing length bytes".to_string()));
+                        return Err(VmError::parse("PUSHDATA4 missing length bytes"));
                     }
 
                     let length_bytes = [
                         script[operand_start],
                         script[operand_start + 1],
                         script[operand_start + 2],
-                        script[operand_start + 3]
+                        script[operand_start + 3],
                     ];
                     let length = u32::from_le_bytes(length_bytes) as usize;
                     let operand = length_bytes.to_vec(); // Only include the length bytes in operand
 
                     // Check if we have enough data remaining
                     if operand_start + 4 + length > script.len() {
-                        return Err(Error::ParseError(format!("PUSHDATA4 operand size exceeds script bounds: {} + {} > {}", operand_start, 4 + length, script.len())));
+                        return Err(VmError::parse(format!(
+                            "PUSHDATA4 operand size exceeds script bounds: {} + {} > {}",
+                            operand_start,
+                            4 + length,
+                            script.len()
+                        )));
                     }
 
                     operand
                 }
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         } else {
             // For other instructions, use the standard operand size
@@ -135,7 +157,10 @@ impl Instruction {
             let operand_end = operand_start + operand_size.size();
 
             if operand_end > script.len() {
-                return Err(Error::ParseError(format!("Operand size exceeds script bounds for opcode: {:?}", opcode)));
+                return Err(VmError::parse(format!(
+                    "Operand size exceeds script bounds for opcode: {:?}",
+                    opcode
+                )));
             }
 
             if operand_size.size() > 0 {
@@ -163,22 +188,22 @@ impl Instruction {
     }
 
     /// Parses an instruction from a neo-io MemoryReader.
-    pub fn parse_from_neo_io_reader(reader: &mut neo_io::MemoryReader) -> Result<Self> {
+    pub fn parse_from_neo_io_reader(reader: &mut neo_io::MemoryReader) -> VmResult<Self> {
         let pointer = reader.position();
 
         if pointer >= reader.len() {
-            return Err(Error::ParseError("Position out of bounds".to_string()));
+            return Err(VmError::parse("Position out of bounds"));
         }
 
         let opcode = reader.read_byte()?;
         let opcode = OpCode::try_from(opcode)
-            .map_err(|_| Error::ParseError(format!("Invalid opcode: {}", opcode)))?;
+            .map_err(|_| VmError::parse(format!("Invalid opcode: {}", opcode)))?;
 
         // Special handling for SYSCALL instruction
         let operand = if opcode == OpCode::SYSCALL {
             // For SYSCALL, the operand format is: length_byte + api_name_bytes
             if reader.position() >= reader.len() {
-                return Err(Error::ParseError("SYSCALL instruction missing length byte".to_string()));
+                return Err(VmError::parse("SYSCALL instruction missing length byte"));
             }
 
             let length = reader.read_byte()? as usize;
@@ -186,7 +211,12 @@ impl Instruction {
 
             if length > 0 {
                 if reader.position() + length > reader.len() {
-                    return Err(Error::ParseError(format!("SYSCALL operand size exceeds script bounds: {} + {} > {}", reader.position(), length, reader.len())));
+                    return Err(VmError::parse(format!(
+                        "SYSCALL operand size exceeds script bounds: {} + {} > {}",
+                        reader.position(),
+                        length,
+                        reader.len()
+                    )));
                 }
 
                 let api_name_bytes = reader.read_bytes(length)?;
@@ -194,7 +224,10 @@ impl Instruction {
             }
 
             operand
-        } else if matches!(opcode, OpCode::PUSHDATA1 | OpCode::PUSHDATA2 | OpCode::PUSHDATA4) {
+        } else if matches!(
+            opcode,
+            OpCode::PUSHDATA1 | OpCode::PUSHDATA2 | OpCode::PUSHDATA4
+        ) {
             // Special handling for PUSHDATA instructions
             match opcode {
                 OpCode::PUSHDATA1 => {
@@ -204,7 +237,12 @@ impl Instruction {
                     if length > 0 {
                         // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
-                            return Err(Error::ParseError(format!("PUSHDATA1 operand size exceeds script bounds: {} + {} > {}", reader.position(), length, reader.len())));
+                            return Err(VmError::parse(format!(
+                                "PUSHDATA1 operand size exceeds script bounds: {} + {} > {}",
+                                reader.position(),
+                                length,
+                                reader.len()
+                            )));
                         }
 
                         // Skip the data bytes but don't include them in the operand
@@ -221,7 +259,12 @@ impl Instruction {
                     if length > 0 {
                         // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
-                            return Err(Error::ParseError(format!("PUSHDATA2 operand size exceeds script bounds: {} + {} > {}", reader.position(), length, reader.len())));
+                            return Err(VmError::parse(format!(
+                                "PUSHDATA2 operand size exceeds script bounds: {} + {} > {}",
+                                reader.position(),
+                                length,
+                                reader.len()
+                            )));
                         }
 
                         // Skip the data bytes but don't include them in the operand
@@ -236,14 +279,19 @@ impl Instruction {
                         length_bytes[0],
                         length_bytes[1],
                         length_bytes[2],
-                        length_bytes[3]
+                        length_bytes[3],
                     ]) as usize;
                     let operand = length_bytes.to_vec(); // Only include the length bytes in operand
 
                     if length > 0 {
                         // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
-                            return Err(Error::ParseError(format!("PUSHDATA4 operand size exceeds script bounds: {} + {} > {}", reader.position(), length, reader.len())));
+                            return Err(VmError::parse(format!(
+                                "PUSHDATA4 operand size exceeds script bounds: {} + {} > {}",
+                                reader.position(),
+                                length,
+                                reader.len()
+                            )));
                         }
 
                         // Skip the data bytes but don't include them in the operand
@@ -252,7 +300,7 @@ impl Instruction {
 
                     operand
                 }
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         } else {
             // For other instructions, use the standard operand size
@@ -272,22 +320,22 @@ impl Instruction {
     }
 
     /// Parses an instruction from a reader.
-    pub fn parse_from_reader(reader: &mut io::MemoryReader) -> Result<Self> {
+    pub fn parse_from_reader(reader: &mut io::MemoryReader) -> VmResult<Self> {
         let pointer = reader.position();
 
         if pointer >= reader.len() {
-            return Err(Error::ParseError("Position out of bounds".to_string()));
+            return Err(VmError::parse("Position out of bounds"));
         }
 
         let opcode = reader.read_byte()?;
         let opcode = OpCode::try_from(opcode)
-            .map_err(|_| Error::ParseError(format!("Invalid opcode: {}", opcode)))?;
+            .map_err(|_| VmError::parse(format!("Invalid opcode: {}", opcode)))?;
 
         // Special handling for SYSCALL instruction
         let operand = if opcode == OpCode::SYSCALL {
             // For SYSCALL, the operand format is: length_byte + api_name_bytes
             if reader.position() >= reader.len() {
-                return Err(Error::ParseError("SYSCALL instruction missing length byte".to_string()));
+                return Err(VmError::parse("SYSCALL instruction missing length byte"));
             }
 
             let length = reader.read_byte()? as usize;
@@ -295,7 +343,12 @@ impl Instruction {
 
             if length > 0 {
                 if reader.position() + length > reader.len() {
-                    return Err(Error::ParseError(format!("SYSCALL operand size exceeds script bounds: {} + {} > {}", reader.position(), length, reader.len())));
+                    return Err(VmError::parse(format!(
+                        "SYSCALL operand size exceeds script bounds: {} + {} > {}",
+                        reader.position(),
+                        length,
+                        reader.len()
+                    )));
                 }
 
                 let api_name_bytes = reader.read_bytes(length)?;
@@ -303,7 +356,10 @@ impl Instruction {
             }
 
             operand
-        } else if matches!(opcode, OpCode::PUSHDATA1 | OpCode::PUSHDATA2 | OpCode::PUSHDATA4) {
+        } else if matches!(
+            opcode,
+            OpCode::PUSHDATA1 | OpCode::PUSHDATA2 | OpCode::PUSHDATA4
+        ) {
             // Special handling for PUSHDATA instructions
             match opcode {
                 OpCode::PUSHDATA1 => {
@@ -313,7 +369,12 @@ impl Instruction {
                     if length > 0 {
                         // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
-                            return Err(Error::ParseError(format!("PUSHDATA1 operand size exceeds script bounds: {} + {} > {}", reader.position(), length, reader.len())));
+                            return Err(VmError::parse(format!(
+                                "PUSHDATA1 operand size exceeds script bounds: {} + {} > {}",
+                                reader.position(),
+                                length,
+                                reader.len()
+                            )));
                         }
 
                         // Skip the data bytes but don't include them in the operand
@@ -330,7 +391,12 @@ impl Instruction {
                     if length > 0 {
                         // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
-                            return Err(Error::ParseError(format!("PUSHDATA2 operand size exceeds script bounds: {} + {} > {}", reader.position(), length, reader.len())));
+                            return Err(VmError::parse(format!(
+                                "PUSHDATA2 operand size exceeds script bounds: {} + {} > {}",
+                                reader.position(),
+                                length,
+                                reader.len()
+                            )));
                         }
 
                         // Skip the data bytes but don't include them in the operand
@@ -345,14 +411,19 @@ impl Instruction {
                         length_bytes[0],
                         length_bytes[1],
                         length_bytes[2],
-                        length_bytes[3]
+                        length_bytes[3],
                     ]) as usize;
                     let operand = length_bytes.to_vec(); // Only include the length bytes in operand
 
                     if length > 0 {
                         // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
-                            return Err(Error::ParseError(format!("PUSHDATA4 operand size exceeds script bounds: {} + {} > {}", reader.position(), length, reader.len())));
+                            return Err(VmError::parse(format!(
+                                "PUSHDATA4 operand size exceeds script bounds: {} + {} > {}",
+                                reader.position(),
+                                length,
+                                reader.len()
+                            )));
                         }
 
                         // Skip the data bytes but don't include them in the operand
@@ -361,7 +432,7 @@ impl Instruction {
 
                     operand
                 }
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         } else {
             // For other instructions, use the standard operand size
@@ -396,7 +467,7 @@ impl Instruction {
     }
 
     /// Returns the operand as a specific type.
-    pub fn operand_as<T: FromOperand>(&self) -> Result<T> {
+    pub fn operand_as<T: FromOperand>(&self) -> VmResult<T> {
         T::from_operand(&self.operand)
     }
 
@@ -406,27 +477,27 @@ impl Instruction {
     }
 
     /// Reads an i16 operand from the instruction.
-    pub fn read_i16_operand(&self) -> Result<i16> {
+    pub fn read_i16_operand(&self) -> VmResult<i16> {
         self.operand_as::<i16>()
     }
 
     /// Reads an i32 operand from the instruction.
-    pub fn read_i32_operand(&self) -> Result<i32> {
+    pub fn read_i32_operand(&self) -> VmResult<i32> {
         self.operand_as::<i32>()
     }
 
     /// Reads a u8 operand from the instruction.
-    pub fn read_u8_operand(&self) -> Result<u8> {
+    pub fn read_u8_operand(&self) -> VmResult<u8> {
         self.operand_as::<u8>()
     }
 
     /// Reads an i8 operand from the instruction.
-    pub fn read_i8_operand(&self) -> Result<i8> {
+    pub fn read_i8_operand(&self) -> VmResult<i8> {
         self.operand_as::<i8>()
     }
 
     /// Reads an i64 operand from the instruction.
-    pub fn read_i64_operand(&self) -> Result<i64> {
+    pub fn read_i64_operand(&self) -> VmResult<i64> {
         self.operand_as::<i64>()
     }
 
@@ -446,7 +517,8 @@ impl Instruction {
                 if self.operand.len() < 2 {
                     1
                 } else {
-                    let data_length = u16::from_le_bytes([self.operand[0], self.operand[1]]) as usize;
+                    let data_length =
+                        u16::from_le_bytes([self.operand[0], self.operand[1]]) as usize;
                     1 + 2 + data_length
                 }
             }
@@ -456,7 +528,10 @@ impl Instruction {
                     1
                 } else {
                     let data_length = u32::from_le_bytes([
-                        self.operand[0], self.operand[1], self.operand[2], self.operand[3]
+                        self.operand[0],
+                        self.operand[1],
+                        self.operand[2],
+                        self.operand[3],
                     ]) as usize;
                     1 + 4 + data_length
                 }
@@ -477,20 +552,20 @@ impl Instruction {
     }
 
     /// Returns the syscall name for a SYSCALL instruction.
-    pub fn syscall_name(&self) -> Result<String> {
+    pub fn syscall_name(&self) -> VmResult<String> {
         if self.opcode != OpCode::SYSCALL {
-            return Err(Error::InvalidOperation("Not a SYSCALL instruction".into()));
+            return Err(VmError::invalid_operation_msg("Not a SYSCALL instruction"));
         }
 
         if self.operand.is_empty() {
-            return Err(Error::InvalidOperand("Empty operand for SYSCALL".into()));
+            return Err(VmError::invalid_operand_msg("Empty operand for SYSCALL"));
         }
 
         // The first byte is the length of the syscall name
         let length = self.operand[0] as usize;
 
         if length == 0 || self.operand.len() < length + 1 {
-            return Err(Error::InvalidOperand("Invalid syscall name length".into()));
+            return Err(VmError::invalid_operand_msg("Invalid syscall name length"));
         }
 
         // The rest of the operand is the syscall name
@@ -498,7 +573,7 @@ impl Instruction {
 
         // Convert the bytes to a string
         String::from_utf8(name_bytes.to_vec())
-            .map_err(|_| Error::InvalidOperand("Invalid UTF-8 in syscall name".into()))
+            .map_err(|_| VmError::invalid_operand_msg("Invalid UTF-8 in syscall name"))
     }
 
     /// Returns the operand size for the given opcode.
@@ -517,13 +592,29 @@ impl Instruction {
             OpCode::PUSHDATA2 => OperandSizePrefix(2),
             OpCode::PUSHDATA4 => OperandSizePrefix(4),
             // Jump instructions with 1-byte offset
-            OpCode::JMP | OpCode::JMPIF | OpCode::JMPIFNOT | OpCode::CALL |
-            OpCode::JMPEQ | OpCode::JMPNE | OpCode::JMPGT | OpCode::JMPGE |
-            OpCode::JMPLT | OpCode::JMPLE | OpCode::ENDTRY => OperandSizePrefix(1),
+            OpCode::JMP
+            | OpCode::JMPIF
+            | OpCode::JMPIFNOT
+            | OpCode::CALL
+            | OpCode::JMPEQ
+            | OpCode::JMPNE
+            | OpCode::JMPGT
+            | OpCode::JMPGE
+            | OpCode::JMPLT
+            | OpCode::JMPLE
+            | OpCode::ENDTRY => OperandSizePrefix(1),
             // Jump instructions with 4-byte offset
-            OpCode::JMP_L | OpCode::JMPIF_L | OpCode::JMPIFNOT_L | OpCode::CALL_L |
-            OpCode::JMPEQ_L | OpCode::JMPNE_L | OpCode::JMPGT_L | OpCode::JMPGE_L |
-            OpCode::JMPLT_L | OpCode::JMPLE_L | OpCode::ENDTRY_L => OperandSizePrefix(4),
+            OpCode::JMP_L
+            | OpCode::JMPIF_L
+            | OpCode::JMPIFNOT_L
+            | OpCode::CALL_L
+            | OpCode::JMPEQ_L
+            | OpCode::JMPNE_L
+            | OpCode::JMPGT_L
+            | OpCode::JMPGE_L
+            | OpCode::JMPLT_L
+            | OpCode::JMPLE_L
+            | OpCode::ENDTRY_L => OperandSizePrefix(4),
             OpCode::SYSCALL => OperandSizePrefix(1), // The actual size varies, this is just the prefix
             // Slot operations with operands
             OpCode::INITSLOT => OperandSizePrefix(2), // local_count (1 byte) + argument_count (1 byte)
@@ -552,83 +643,87 @@ impl Instruction {
 /// A trait for types that can be converted from an operand.
 pub trait FromOperand: Sized {
     /// Converts an operand to this type.
-    fn from_operand(operand: &[u8]) -> Result<Self>;
+    fn from_operand(operand: &[u8]) -> VmResult<Self>;
 }
 
 impl FromOperand for i8 {
-    fn from_operand(operand: &[u8]) -> Result<Self> {
+    fn from_operand(operand: &[u8]) -> VmResult<Self> {
         if operand.is_empty() {
-            return Err(Error::InvalidOperand("Empty operand for i8".to_string()));
+            return Err(VmError::invalid_operand_msg("Empty operand for i8"));
         }
         Ok(operand[0] as i8)
     }
 }
 
 impl FromOperand for u8 {
-    fn from_operand(operand: &[u8]) -> Result<Self> {
+    fn from_operand(operand: &[u8]) -> VmResult<Self> {
         if operand.is_empty() {
-            return Err(Error::InvalidOperand("Empty operand for u8".to_string()));
+            return Err(VmError::invalid_operand_msg("Empty operand for u8"));
         }
         Ok(operand[0])
     }
 }
 
 impl FromOperand for i16 {
-    fn from_operand(operand: &[u8]) -> Result<Self> {
+    fn from_operand(operand: &[u8]) -> VmResult<Self> {
         if operand.len() < 2 {
-            return Err(Error::InvalidOperand("Operand too small for i16".to_string()));
+            return Err(VmError::invalid_operand_msg("Operand too small for i16"));
         }
         Ok(i16::from_le_bytes([operand[0], operand[1]]))
     }
 }
 
 impl FromOperand for u16 {
-    fn from_operand(operand: &[u8]) -> Result<Self> {
+    fn from_operand(operand: &[u8]) -> VmResult<Self> {
         if operand.len() < 2 {
-            return Err(Error::InvalidOperand("Operand too small for u16".to_string()));
+            return Err(VmError::invalid_operand_msg("Operand too small for u16"));
         }
         Ok(u16::from_le_bytes([operand[0], operand[1]]))
     }
 }
 
 impl FromOperand for i32 {
-    fn from_operand(operand: &[u8]) -> Result<Self> {
+    fn from_operand(operand: &[u8]) -> VmResult<Self> {
         if operand.len() < 4 {
-            return Err(Error::InvalidOperand("Operand too small for i32".to_string()));
+            return Err(VmError::invalid_operand_msg("Operand too small for i32"));
         }
-        Ok(i32::from_le_bytes([operand[0], operand[1], operand[2], operand[3]]))
+        Ok(i32::from_le_bytes([
+            operand[0], operand[1], operand[2], operand[3],
+        ]))
     }
 }
 
 impl FromOperand for u32 {
-    fn from_operand(operand: &[u8]) -> Result<Self> {
+    fn from_operand(operand: &[u8]) -> VmResult<Self> {
         if operand.len() < 4 {
-            return Err(Error::InvalidOperand("Operand too small for u32".to_string()));
+            return Err(VmError::invalid_operand_msg("Operand too small for u32"));
         }
-        Ok(u32::from_le_bytes([operand[0], operand[1], operand[2], operand[3]]))
+        Ok(u32::from_le_bytes([
+            operand[0], operand[1], operand[2], operand[3],
+        ]))
     }
 }
 
 impl FromOperand for i64 {
-    fn from_operand(operand: &[u8]) -> Result<Self> {
+    fn from_operand(operand: &[u8]) -> VmResult<Self> {
         if operand.len() < 8 {
-            return Err(Error::InvalidOperand("Operand too small for i64".to_string()));
+            return Err(VmError::invalid_operand_msg("Operand too small for i64"));
         }
         Ok(i64::from_le_bytes([
-            operand[0], operand[1], operand[2], operand[3],
-            operand[4], operand[5], operand[6], operand[7],
+            operand[0], operand[1], operand[2], operand[3], operand[4], operand[5], operand[6],
+            operand[7],
         ]))
     }
 }
 
 impl FromOperand for u64 {
-    fn from_operand(operand: &[u8]) -> Result<Self> {
+    fn from_operand(operand: &[u8]) -> VmResult<Self> {
         if operand.len() < 8 {
-            return Err(Error::InvalidOperand("Operand too small for u64".to_string()));
+            return Err(VmError::invalid_operand_msg("Operand too small for u64"));
         }
         Ok(u64::from_le_bytes([
-            operand[0], operand[1], operand[2], operand[3],
-            operand[4], operand[5], operand[6], operand[7],
+            operand[0], operand[1], operand[2], operand[3], operand[4], operand[5], operand[6],
+            operand[7],
         ]))
     }
 }
@@ -641,8 +736,13 @@ mod tests {
     fn test_instruction_parsing() {
         let script = vec![
             OpCode::PUSH1 as u8,
-            OpCode::JMP as u8, 0x10, // JMP to offset 0x10 (1-byte offset)
-            OpCode::PUSHDATA1 as u8, 0x03, 0x01, 0x02, 0x03, // PUSHDATA1 with 3 bytes: [1, 2, 3]
+            OpCode::JMP as u8,
+            0x10, // JMP to offset 0x10 (1-byte offset)
+            OpCode::PUSHDATA1 as u8,
+            0x03,
+            0x01,
+            0x02,
+            0x03, // PUSHDATA1 with 3 bytes: [1, 2, 3]
         ];
 
         // Parse PUSH1
@@ -670,8 +770,13 @@ mod tests {
     fn test_instruction_parsing_from_reader() {
         let script = vec![
             OpCode::PUSH1 as u8,
-            OpCode::JMP as u8, 0x10, // JMP with 1-byte offset
-            OpCode::PUSHDATA1 as u8, 0x03, 0x01, 0x02, 0x03,
+            OpCode::JMP as u8,
+            0x10, // JMP with 1-byte offset
+            OpCode::PUSHDATA1 as u8,
+            0x03,
+            0x01,
+            0x02,
+            0x03,
         ];
 
         let mut reader = io::MemoryReader::new(script);

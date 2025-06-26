@@ -2,34 +2,34 @@
 //!
 //! This module implements P2P configuration exactly matching C# Neo's ProtocolSettings.
 
+use super::{
+    CONNECTION_TIMEOUT_SECS, DEFAULT_PORT, HANDSHAKE_TIMEOUT_SECS, MAX_PEERS, MESSAGE_BUFFER_SIZE,
+    PING_INTERVAL_SECS,
+};
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, time::Duration};
-use super::{
-    DEFAULT_PORT, MAX_PEERS, CONNECTION_TIMEOUT_SECS, HANDSHAKE_TIMEOUT_SECS,
-    PING_INTERVAL_SECS, MESSAGE_BUFFER_SIZE,
-};
 
 /// P2P configuration (matches C# Neo ProtocolSettings)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct P2PConfig {
     /// Listen address for incoming connections
     pub listen_address: SocketAddr,
-    
+
     /// Maximum number of peers to maintain
     pub max_peers: usize,
-    
+
     /// Connection timeout duration
     pub connection_timeout: Duration,
-    
+
     /// Handshake timeout duration
     pub handshake_timeout: Duration,
-    
+
     /// Interval between ping messages
     pub ping_interval: Duration,
-    
+
     /// Message buffer size for channels
     pub message_buffer_size: usize,
-    
+
     /// Enable message compression
     pub enable_compression: bool,
 }
@@ -126,16 +126,17 @@ mod tests {
     fn test_p2p_config_default() {
         let config = P2PConfig::default();
         assert_eq!(config.max_peers, MAX_PEERS);
-        assert_eq!(config.connection_timeout, Duration::from_secs(CONNECTION_TIMEOUT_SECS));
+        assert_eq!(
+            config.connection_timeout,
+            Duration::from_secs(CONNECTION_TIMEOUT_SECS)
+        );
         assert_eq!(config.message_buffer_size, MESSAGE_BUFFER_SIZE);
         assert!(!config.enable_compression);
     }
 
     #[test]
     fn test_p2p_config_builder() {
-        let config = P2PConfig::new()
-            .with_max_peers(50)
-            .with_compression(true);
+        let config = P2PConfig::new().with_max_peers(50).with_compression(true);
 
         assert_eq!(config.max_peers, 50);
         assert!(config.enable_compression);
@@ -149,4 +150,4 @@ mod tests {
         let invalid_config = P2PConfig::default().with_max_peers(0);
         assert!(invalid_config.validate().is_err());
     }
-} 
+}

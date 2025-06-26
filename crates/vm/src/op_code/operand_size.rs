@@ -7,7 +7,7 @@
 pub struct OperandSize {
     /// The size of the operand, if fixed
     size: usize,
-    
+
     /// The size prefix of the operand, if variable
     size_prefix: usize,
 }
@@ -23,12 +23,12 @@ impl OperandSize {
     ///
     /// A new OperandSize with the specified fixed size
     pub fn fixed(size: usize) -> Self {
-        Self { 
-            size, 
+        Self {
+            size,
             size_prefix: 0,
         }
     }
-    
+
     /// Creates a new operand size with a size prefix.
     ///
     /// # Arguments
@@ -44,7 +44,7 @@ impl OperandSize {
             size_prefix,
         }
     }
-    
+
     /// Gets the fixed size of the operand.
     ///
     /// # Returns
@@ -53,7 +53,7 @@ impl OperandSize {
     pub fn size(&self) -> usize {
         self.size
     }
-    
+
     /// Gets the size prefix of the operand.
     ///
     /// # Returns
@@ -62,7 +62,7 @@ impl OperandSize {
     pub fn size_prefix(&self) -> usize {
         self.size_prefix
     }
-    
+
     /// Checks if the operand has a fixed size.
     ///
     /// # Returns
@@ -71,7 +71,7 @@ impl OperandSize {
     pub fn has_fixed_size(&self) -> bool {
         self.size > 0
     }
-    
+
     /// Checks if the operand has a size prefix.
     ///
     /// # Returns
@@ -85,7 +85,7 @@ impl OperandSize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_fixed_size() {
         let op_size = OperandSize::fixed(4);
@@ -94,7 +94,7 @@ mod tests {
         assert!(op_size.has_fixed_size());
         assert!(!op_size.has_size_prefix());
     }
-    
+
     #[test]
     fn test_size_prefix() {
         let op_size = OperandSize::prefix(2);
@@ -103,4 +103,4 @@ mod tests {
         assert!(!op_size.has_fixed_size());
         assert!(op_size.has_size_prefix());
     }
-} 
+}

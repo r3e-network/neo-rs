@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// A container that supports wildcard functionality.
-/// 
+///
 /// This matches the C# WildcardContainer<T> implementation exactly.
 /// It can either hold specific values or represent a wildcard (all values).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -248,4 +248,4 @@ mod tests {
         assert_eq!(container.get(0), Some(&"test1".to_string()));
         assert_eq!(container.get(1), Some(&"test2".to_string()));
     }
-} 
+}

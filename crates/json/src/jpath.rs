@@ -101,7 +101,9 @@ impl JPathToken {
             tokens.push(JPathToken::root());
             chars.next(); // consume '$'
         } else {
-            return Err(JsonError::ParseError("JSON path must start with '$'".to_string()));
+            return Err(JsonError::ParseError(
+                "JSON path must start with '$'".to_string(),
+            ));
         }
 
         while let Some(ch) = chars.next() {
@@ -128,7 +130,7 @@ impl JPathToken {
                     // Array access or slice
                     let mut bracket_content = String::new();
                     let mut bracket_depth = 1;
-                    
+
                     while let Some(next_ch) = chars.next() {
                         if next_ch == '[' {
                             bracket_depth += 1;
@@ -146,8 +148,16 @@ impl JPathToken {
                     } else if bracket_content.contains(':') {
                         // Array slice
                         let parts: Vec<&str> = bracket_content.split(':').collect();
-                        let start = if parts[0].is_empty() { None } else { parts[0].parse().ok() };
-                        let end = if parts.len() > 1 && !parts[1].is_empty() { parts[1].parse().ok() } else { None };
+                        let start = if parts[0].is_empty() {
+                            None
+                        } else {
+                            parts[0].parse().ok()
+                        };
+                        let end = if parts.len() > 1 && !parts[1].is_empty() {
+                            parts[1].parse().ok()
+                        } else {
+                            None
+                        };
                         tokens.push(JPathToken::array_slice(start, end));
                     } else if let Ok(index) = bracket_content.parse::<usize>() {
                         tokens.push(JPathToken::array_index(index));
@@ -162,7 +172,10 @@ impl JPathToken {
                 }
                 _ => {
                     // Unexpected character
-                    return Err(JsonError::ParseError(format!("Unexpected character '{}' in JSON path", ch)));
+                    return Err(JsonError::ParseError(format!(
+                        "Unexpected character '{}' in JSON path",
+                        ch
+                    )));
                 }
             }
         }
@@ -174,7 +187,8 @@ impl JPathToken {
     pub fn evaluate<'a>(tokens: &[JPathToken], root: &'a JToken) -> JsonResult<Vec<&'a JToken>> {
         let mut results = vec![root];
 
-        for token in tokens.iter().skip(1) { // Skip root token
+        for token in tokens.iter().skip(1) {
+            // Skip root token
             let mut new_results = Vec::new();
 
             for current in results {
@@ -201,25 +215,23 @@ impl JPathToken {
                             }
                         }
                     }
-                    JPathTokenType::Wildcard => {
-                        match current {
-                            JToken::Array(arr) => {
-                                for item in arr {
-                                    if let Some(token) = item {
-                                        new_results.push(token);
-                                    }
+                    JPathTokenType::Wildcard => match current {
+                        JToken::Array(arr) => {
+                            for item in arr {
+                                if let Some(token) = item {
+                                    new_results.push(token);
                                 }
                             }
-                            JToken::Object(obj) => {
-                                for value in obj.values() {
-                                    if let Some(token) = value {
-                                        new_results.push(token);
-                                    }
-                                }
-                            }
-                            _ => {}
                         }
-                    }
+                        JToken::Object(obj) => {
+                            for value in obj.values() {
+                                if let Some(token) = value {
+                                    new_results.push(token);
+                                }
+                            }
+                        }
+                        _ => {}
+                    },
                     JPathTokenType::ArraySlice => {
                         if let JToken::Array(arr) = current {
                             let start = token.start.unwrap_or(0);
@@ -250,7 +262,7 @@ impl JPathToken {
     /// Recursively searches for all nodes
     fn recursive_search<'a>(node: &'a JToken, results: &mut Vec<&'a JToken>) {
         results.push(node);
-        
+
         match node {
             JToken::Array(arr) => {
                 for item in arr {
@@ -332,7 +344,7 @@ mod tests {
 
         let tokens = JPathToken::parse("$.name").unwrap();
         let results = JPathToken::evaluate(&tokens, &root).unwrap();
-        
+
         assert_eq!(results.len(), 1);
         assert_eq!(results[0], &JToken::String("test".to_string()));
     }
@@ -347,7 +359,7 @@ mod tests {
 
         let tokens = JPathToken::parse("$[0]").unwrap();
         let results = JPathToken::evaluate(&tokens, &root).unwrap();
-        
+
         assert_eq!(results.len(), 1);
         assert_eq!(results[0], &JToken::String("first".to_string()));
     }
@@ -357,4 +369,4 @@ mod tests {
         let result = JPathToken::parse("invalid");
         assert!(result.is_err());
     }
-} 
+}

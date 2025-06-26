@@ -93,7 +93,7 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 /// Implements the SYSCALL operation.
-fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Production-ready syscall handling (matches C# ApplicationEngine.OnSysCall exactly)
     
     // Get the syscall hash from the instruction operand (matches C# instruction.TokenU32)
@@ -101,7 +101,7 @@ fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
     
     // Look up the interop descriptor (matches C# GetInteropDescriptor)
     let descriptor = get_interop_descriptor(syscall_hash)
-        .ok_or_else(|| Error::InvalidOperation(format!("Unknown syscall: 0x{:08x}", syscall_hash)))?;
+        .ok_or_else(|| VmError::invalid_operation_msg(format!("Unknown syscall: 0x{:08x}", syscall_hash)))?;
     
     // Validate call flags (matches C# ValidateCallFlags)
     validate_call_flags(engine, descriptor.required_call_flags)?;
@@ -113,7 +113,7 @@ fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
     let mut parameters = Vec::new();
     for param_type in descriptor.parameters.iter().rev() {
         let context = engine.current_context_mut()
-            .ok_or_else(|| Error::InvalidOperation("No current context".to_string()))?;
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context".to_string()))?;
         let stack = context.evaluation_stack_mut();
         let stack_item = stack.pop()?;
         let converted_param = convert_parameter(stack_item, param_type)?;
@@ -127,7 +127,7 @@ fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
     // Push return value if any (matches C# return value handling)
     if let Some(return_value) = result {
         let context = engine.current_context_mut()
-            .ok_or_else(|| Error::InvalidOperation("No current context".to_string()))?;
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context".to_string()))?;
         let stack = context.evaluation_stack_mut();
         stack.push(return_value);
     }
@@ -243,12 +243,12 @@ fn get_interop_descriptor(hash: u32) -> Option<SyscallDescriptor> {
 }
 
 /// Validates call flags (matches C# ApplicationEngine.ValidateCallFlags exactly)
-fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) -> Result<()> {
+fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) -> VmResult<()> {
     // Get current call flags from execution context
     let current_flags = get_current_call_flags(engine)?;
     
     if !current_flags.has_flag(required_flags) {
-        return Err(Error::InvalidOperation(
+        return Err(VmError::invalid_operation_msg(
             format!("Cannot call this SYSCALL with the flag {:?}. Required: {:?}", current_flags, required_flags)
         ));
     }
@@ -257,7 +257,7 @@ fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) -> R
 }
 
 /// Gets current call flags from execution context (matches C# ExecutionContextState.CallFlags)
-fn get_current_call_flags(engine: &ExecutionEngine) -> Result<CallFlags> {
+fn get_current_call_flags(engine: &ExecutionEngine) -> VmResult<CallFlags> {
     // Production implementation: Get call flags from execution context state (matches C# exactly)
     // In C# Neo: engine.CurrentContext.GetState<ExecutionContextState>().CallFlags
     
@@ -316,7 +316,7 @@ fn is_native_contract(script_hash: &[u8]) -> bool {
 }
 
 /// Adds gas fee (production-ready implementation matching C# ApplicationEngine.AddFee exactly)
-fn add_fee(engine: &mut ExecutionEngine, fee: u64) -> Result<()> {
+fn add_fee(engine: &mut ExecutionEngine, fee: u64) -> VmResult<()> {
     // Production-ready gas fee addition (matches C# ApplicationEngine.AddFee exactly)
     
     // 1. Calculate the actual fee based on ExecFeeFactor (matches C# logic exactly)
@@ -329,14 +329,14 @@ fn add_fee(engine: &mut ExecutionEngine, fee: u64) -> Result<()> {
     // 3. Production-ready gas limit checking (matches C# gas limit check exactly)
     if engine.gas_consumed() > engine.gas_limit() {
         engine.set_state(crate::execution_engine::VMState::FAULT);
-        return Err(Error::ExecutionHalted("Gas limit exceeded".to_string()));
+        return Err(VmError::execution_halted_msg("Gas limit exceeded".to_string()));
     }
     
     Ok(())
 }
 
 /// Converts stack item to parameter (matches C# ApplicationEngine.Convert exactly)
-fn convert_parameter(item: StackItem, param_type: &ParameterType) -> Result<InteropParameter> {
+fn convert_parameter(item: StackItem, param_type: &ParameterType) -> VmResult<InteropParameter> {
     match param_type {
         ParameterType::Boolean => {
             let value = item.as_bool()?;
@@ -353,13 +353,13 @@ fn convert_parameter(item: StackItem, param_type: &ParameterType) -> Result<Inte
         ParameterType::String => {
             let bytes = item.as_bytes()?;
             let value = String::from_utf8(bytes)
-                .map_err(|_| Error::InvalidOperation("Invalid UTF-8 string".to_string()))?;
+                .map_err(|_| VmError::invalid_operation_msg("Invalid UTF-8 string".to_string()))?;
             Ok(InteropParameter::String(value))
         }
         ParameterType::Hash160 => {
             let bytes = item.as_bytes()?;
             if bytes.len() != 20 {
-                return Err(Error::InvalidOperation("Invalid Hash160 length".to_string()));
+                return Err(VmError::invalid_operation_msg("Invalid Hash160 length".to_string()));
             }
             Ok(InteropParameter::Hash160(bytes))
         }
@@ -412,7 +412,7 @@ fn convert_parameter(item: StackItem, param_type: &ParameterType) -> Result<Inte
             Ok(InteropParameter::Any(item))
         }
         ParameterType::Void => {
-            Err(Error::InvalidOperation("Cannot convert to void parameter".to_string()))
+            Err(VmError::invalid_operation_msg("Cannot convert to void parameter".to_string()))
         }
     }
 }
@@ -422,7 +422,7 @@ fn invoke_interop_service(
     engine: &mut ExecutionEngine,
     service_name: &str,
     parameters: Vec<InteropParameter>,
-) -> Result<Option<StackItem>> {
+) -> VmResult<Option<StackItem>> {
     match service_name {
         "System.Runtime.Platform" => {
             // Matches C# ApplicationEngine.GetPlatform exactly
@@ -547,7 +547,7 @@ fn invoke_interop_service(
             
             // 1. Get current script hash (matches C# CurrentScriptHash exactly)
             let contract_hash = engine.current_script_hash()
-                .ok_or_else(|| Error::InvalidOperation("No current script context".to_string()))?;
+                .ok_or_else(|| VmError::invalid_operation_msg("No current script context".to_string()))?;
             
             // 2. Create storage context with proper permissions (matches C# StorageContext exactly)
             // In C# Neo: new StorageContext { ScriptHash = CurrentScriptHash, IsReadOnly = false }
@@ -565,7 +565,7 @@ fn invoke_interop_service(
             // This implements the C# logic: ApplicationEngine.Storage_Get(context, key)
             
             if parameters.len() < 2 {
-                return Err(Error::InvalidOperation("Storage.Get requires context and key parameters".to_string()));
+                return Err(VmError::invalid_operation_msg("Storage.Get requires context and key parameters".to_string()));
             }
             
             // 1. Extract and validate storage context (production security requirement)
@@ -575,21 +575,21 @@ fn invoke_interop_service(
                     if let Some(storage_context) = context_item.as_any().downcast_ref::<StorageContext>() {
                         storage_context
                     } else {
-                        return Err(Error::InvalidOperation("Invalid storage context type".to_string()));
+                        return Err(VmError::invalid_operation_msg("Invalid storage context type".to_string()));
                     }
                 }
-                _ => return Err(Error::InvalidOperation("First parameter must be storage context".to_string())),
+                _ => return Err(VmError::invalid_operation_msg("First parameter must be storage context".to_string())),
             };
             
             // 2. Extract key with validation
             let key = match &parameters[1] {
                 InteropParameter::ByteArray(k) => k,
-                _ => return Err(Error::InvalidOperation("Key must be byte array".to_string())),
+                _ => return Err(VmError::invalid_operation_msg("Key must be byte array".to_string())),
             };
             
             // 3. Validate key size (matches C# size limits exactly)
             if key.len() > 64 {
-                return Err(Error::InvalidOperation("Storage key too large (max 64 bytes)".to_string()));
+                return Err(VmError::invalid_operation_msg("Storage key too large (max 64 bytes)".to_string()));
             }
             
             // 4. Calculate and charge storage read fees (matches C# fee calculation exactly)
@@ -607,7 +607,7 @@ fn invoke_interop_service(
             // This implements the C# logic: ApplicationEngine.Storage_Put(context, key, value)
             
             if parameters.len() < 3 {
-                return Err(Error::InvalidOperation("Storage.Put requires context, key, and value parameters".to_string()));
+                return Err(VmError::invalid_operation_msg("Storage.Put requires context, key, and value parameters".to_string()));
             }
             
             // 1. Extract and validate storage context (production security requirement)
@@ -617,35 +617,35 @@ fn invoke_interop_service(
                     if let Some(storage_context) = context_item.as_any().downcast_ref::<StorageContext>() {
                         storage_context
                     } else {
-                        return Err(Error::InvalidOperation("Invalid storage context type".to_string()));
+                        return Err(VmError::invalid_operation_msg("Invalid storage context type".to_string()));
                     }
                 }
-                _ => return Err(Error::InvalidOperation("First parameter must be storage context".to_string())),
+                _ => return Err(VmError::invalid_operation_msg("First parameter must be storage context".to_string())),
             };
             
             // 2. Security check: verify context is not read-only (matches C# security exactly)
             if context.is_read_only {
-                return Err(Error::InvalidOperation("Cannot write to read-only storage context".to_string()));
+                return Err(VmError::invalid_operation_msg("Cannot write to read-only storage context".to_string()));
             }
             
             // 3. Extract key and value with validation (matches C# parameter validation exactly)
             let key = match &parameters[1] {
                 InteropParameter::ByteArray(k) => k,
-                _ => return Err(Error::InvalidOperation("Key must be byte array".to_string())),
+                _ => return Err(VmError::invalid_operation_msg("Key must be byte array".to_string())),
             };
             
             let value = match &parameters[2] {
                 InteropParameter::ByteArray(v) => v,
-                _ => return Err(Error::InvalidOperation("Value must be byte array".to_string())),
+                _ => return Err(VmError::invalid_operation_msg("Value must be byte array".to_string())),
             };
             
             // 4. Validate key and value sizes (matches C# size limits exactly)
             if key.len() > 64 {
-                return Err(Error::InvalidOperation("Storage key too large (max 64 bytes)".to_string()));
+                return Err(VmError::invalid_operation_msg("Storage key too large (max 64 bytes)".to_string()));
             }
             
             if value.len() > 65535 {
-                return Err(Error::InvalidOperation("Storage value too large (max 65535 bytes)".to_string()));
+                return Err(VmError::invalid_operation_msg("Storage value too large (max 65535 bytes)".to_string()));
             }
             
             // 5. Calculate and charge storage fees (matches C# fee calculation exactly)
@@ -662,7 +662,7 @@ fn invoke_interop_service(
             Ok(None)
         }
         _ => {
-            Err(Error::InvalidOperation(format!("Unknown interop service: {}", service_name)))
+            Err(VmError::invalid_operation_msg(format!("Unknown interop service: {}", service_name)))
         }
     }
 } 

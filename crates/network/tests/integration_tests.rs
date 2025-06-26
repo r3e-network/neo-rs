@@ -119,7 +119,7 @@ async fn test_network_error_handling() {
     let connection_error = Error::Connection("Test connection error".to_string());
     assert!(connection_error.to_string().contains("connection"));
     
-    let protocol_error = Error::Protocol("Test protocol error".to_string());
+    let protocol_error = Error::Protocol("Test protocol error".to_string());)
     assert!(protocol_error.to_string().contains("protocol"));
     
     println!("✅ Network error handling test passed");

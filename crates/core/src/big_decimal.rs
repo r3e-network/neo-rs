@@ -11,14 +11,14 @@
 
 //! Implementation of BigDecimal, a fixed-point number of arbitrary precision.
 
+use crate::CoreError;
+use num_bigint::BigInt;
+use num_integer::Integer;
+use num_traits::{One, Pow, Signed, Zero};
 use std::cmp::Ordering;
 use std::fmt;
-use std::str::FromStr;
 use std::ops::{Add, Mul};
-use num_bigint::BigInt;
-use num_traits::{One, Zero, Pow, Signed};
-use num_integer::Integer;
-use crate::CoreError;
+use std::str::FromStr;
 
 /// Represents a fixed-point number of arbitrary precision.
 #[derive(Clone, Debug, Eq)]
@@ -103,7 +103,9 @@ impl BigDecimal {
 
             // Ensure no loss of precision
             if !remainder.is_zero() {
-                return Err(CoreError::InvalidOperation("Cannot change decimals without losing precision".to_string()));
+                return Err(CoreError::InvalidOperation {
+                    message: "Cannot change decimals without losing precision".to_string(),
+                });
             }
 
             quotient
@@ -129,8 +131,9 @@ impl BigDecimal {
 
         if let Some(index) = s.find(|c| c == 'e' || c == 'E') {
             let e_str = &s[(index + 1)..];
-            e = e_str.parse::<i32>()
-                .map_err(|_| CoreError::InvalidFormat("Invalid exponent".to_string()))?;
+            e = e_str.parse::<i32>().map_err(|_| CoreError::InvalidFormat {
+                message: "Invalid exponent".to_string(),
+            })?;
             s = s[..index].to_string();
         }
 
@@ -150,12 +153,15 @@ impl BigDecimal {
         // Adjust for scientific notation
         let adjusted_decimals = decimal_places as i32 - e;
         if adjusted_decimals < 0 {
-            return Err(CoreError::InvalidFormat("Negative decimals not supported".to_string()));
+            return Err(CoreError::InvalidFormat {
+                message: "Negative decimals not supported".to_string(),
+            });
         }
 
         // Parse the integer part
-        let value = BigInt::from_str(&s)
-            .map_err(|_| CoreError::InvalidFormat("Invalid number format".to_string()))?;
+        let value = BigInt::from_str(&s).map_err(|_| CoreError::InvalidFormat {
+            message: "Invalid number format".to_string(),
+        })?;
 
         // Adjust to the requested number of decimals
         let mut result = Self::new(value, adjusted_decimals as u8);
@@ -222,7 +228,11 @@ impl fmt::Display for BigDecimal {
         if remainder_str.is_empty() {
             write!(f, "{}", quotient)
         } else {
-            let sign = if is_negative && quotient.is_zero() { "-" } else { "" };
+            let sign = if is_negative && quotient.is_zero() {
+                "-"
+            } else {
+                ""
+            };
             write!(f, "{}{}.{}", sign, quotient, remainder_str)
         }
     }

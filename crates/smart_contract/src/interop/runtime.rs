@@ -4,8 +4,8 @@ use crate::application_engine::{ApplicationEngine, StorageContext};
 use crate::interop::InteropService;
 use crate::{Error, Result};
 use neo_core::UInt160;
-use std::time::{SystemTime, UNIX_EPOCH};
 use neo_vm::TriggerType;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Log entry structure for smart contract logs.
 #[derive(Debug, Clone)]
@@ -30,7 +30,9 @@ impl InteropService for LogService {
 
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::InteropServiceError("Log requires a message argument".to_string()));
+            return Err(Error::InteropServiceError(
+                "Log requires a message argument".to_string(),
+            ));
         }
 
         let message = String::from_utf8(args[0].clone())
@@ -40,7 +42,9 @@ impl InteropService for LogService {
 
         // 1. Validate message length (Neo has a limit)
         if message.len() > 1024 {
-            return Err(Error::RuntimeError("Log message too long (max 1024 bytes)".to_string()));
+            return Err(Error::RuntimeError(
+                "Log message too long (max 1024 bytes)".to_string(),
+            ));
         }
 
         // 2. Get current contract context
@@ -70,10 +74,13 @@ impl InteropService for LogService {
         println!("Log entry created: {:?}", log_entry);
 
         // 6. Emit log event for external listeners
-        _engine.emit_event("Log", vec![
-            current_contract.as_bytes().to_vec(),
-            message.as_bytes().to_vec(),
-        ]);
+        _engine.emit_event(
+            "Log",
+            vec![
+                current_contract.as_bytes().to_vec(),
+                message.as_bytes().to_vec(),
+            ],
+        );
 
         // 7. Console output for debugging
         println!("[{}] Contract Log: {}", current_contract, message);
@@ -97,7 +104,7 @@ impl InteropService for NotifyService {
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
             return Err(Error::InteropServiceError(
-                "Notify requires event name and state arguments".to_string()
+                "Notify requires event name and state arguments".to_string(),
             ));
         }
 
@@ -183,7 +190,7 @@ impl InteropService for GetInvocationCounterService {
         // Increment the counter
         let new_counter = current_counter + 1;
         let counter_bytes = new_counter.to_le_bytes();
-        
+
         // Try to store the new counter, but continue if it fails (for test environments)
         let _ = engine.put_storage_item(&context, counter_key.as_bytes(), &counter_bytes);
 
@@ -238,8 +245,7 @@ impl InteropService for GetRandomService {
             Some(data) => {
                 if data.len() >= 8 {
                     u64::from_le_bytes([
-                        data[0], data[1], data[2], data[3],
-                        data[4], data[5], data[6], data[7]
+                        data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
                     ])
                 } else {
                     0u64
@@ -251,7 +257,7 @@ impl InteropService for GetRandomService {
         // Increment nonce for next call
         let new_nonce = current_nonce + 1;
         let nonce_bytes = new_nonce.to_le_bytes();
-        
+
         // Try to store the new nonce, but continue if it fails (for test environments)
         let _ = engine.put_storage_item(&context, nonce_key.as_bytes(), &nonce_bytes);
 
@@ -262,7 +268,10 @@ impl InteropService for GetRandomService {
         let random_bytes = &hash_result[0..4];
         let random_number = u32::from_le_bytes(random_bytes.try_into().unwrap());
 
-        println!("Generated deterministic random number: {} (nonce: {})", random_number, new_nonce);
+        println!(
+            "Generated deterministic random number: {} (nonce: {})",
+            random_number, new_nonce
+        );
         Ok(random_number.to_le_bytes().to_vec())
     }
 }
@@ -332,7 +341,7 @@ mod tests {
     fn test_log_service() {
         let service = LogService;
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        
+
         // Set a current script hash for the test
         engine.set_current_script_hash(Some(UInt160::zero()));
 
@@ -346,7 +355,7 @@ mod tests {
     fn test_notify_service() {
         let service = NotifyService;
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        
+
         // Set a current script hash for the test
         engine.set_current_script_hash(Some(UInt160::zero()));
 
@@ -370,7 +379,7 @@ mod tests {
     fn test_get_random_service() {
         let service = GetRandomService;
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        
+
         // Set a current script hash for the test - this is required for GetRandomService
         engine.set_current_script_hash(Some(UInt160::zero()));
 

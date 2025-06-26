@@ -175,7 +175,7 @@ async fn test_backup_operations() {
     let (storage, _temp_dir) = create_test_storage().await;
     
     let backup_config = BackupConfig {
-        output_path: "./test_backups".into(),
+        output_path: "./test_backups"),
         compression_algorithm: CompressionAlgorithm::Lz4,
         enable_verification: true,
         max_backup_size: None,

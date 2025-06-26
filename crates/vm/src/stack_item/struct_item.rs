@@ -2,11 +2,11 @@
 //!
 //! This module provides the Struct stack item implementation used in the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::StackItem;
 use crate::stack_item::stack_item_type::StackItemType;
-use crate::Error;
-use crate::Result;
 use std::sync::Arc;
 
 /// Represents a struct of stack items in the VM.
@@ -22,12 +22,12 @@ impl Struct {
     /// Creates a new struct with the specified items and reference counter.
     pub fn new(items: Vec<StackItem>, reference_counter: Option<Arc<ReferenceCounter>>) -> Self {
         let mut reference_id = None;
-        
+
         // Register with reference counter if provided
         if let Some(rc) = &reference_counter {
             reference_id = Some(rc.add_reference());
         }
-        
+
         Self {
             items,
             reference_id,
@@ -45,14 +45,19 @@ impl Struct {
     }
 
     /// Gets the item at the specified index.
-    pub fn get(&self, index: usize) -> Result<&StackItem> {
-        self.items.get(index).ok_or_else(|| Error::InvalidOperation(format!("Index out of range: {}", index)))
+    pub fn get(&self, index: usize) -> VmResult<&StackItem> {
+        self.items
+            .get(index)
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {}", index)))
     }
 
     /// Sets the item at the specified index.
-    pub fn set(&mut self, index: usize, item: StackItem) -> Result<()> {
+    pub fn set(&mut self, index: usize, item: StackItem) -> VmResult<()> {
         if index >= self.items.len() {
-            return Err(Error::InvalidOperation(format!("Index out of range: {}", index)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {}",
+                index
+            )));
         }
 
         self.items[index] = item;
@@ -65,8 +70,10 @@ impl Struct {
     }
 
     /// Removes and returns the last item in the struct.
-    pub fn pop(&mut self) -> Result<StackItem> {
-        self.items.pop().ok_or_else(|| Error::InvalidOperation("Struct is empty".into()))
+    pub fn pop(&mut self) -> VmResult<StackItem> {
+        self.items
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Struct is empty"))
     }
 
     /// Gets the number of items in the struct.
@@ -138,9 +145,36 @@ mod tests {
 
         let struct_item = Struct::new(items, None);
 
-        assert_eq!(struct_item.get(0).unwrap().as_int().unwrap().to_i32().unwrap(), 1);
-        assert_eq!(struct_item.get(1).unwrap().as_int().unwrap().to_i32().unwrap(), 2);
-        assert_eq!(struct_item.get(2).unwrap().as_int().unwrap().to_i32().unwrap(), 3);
+        assert_eq!(
+            struct_item
+                .get(0)
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            struct_item
+                .get(1)
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            struct_item
+                .get(2)
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            3
+        );
         assert!(struct_item.get(3).is_err());
     }
 
@@ -156,25 +190,58 @@ mod tests {
 
         struct_item.set(1, StackItem::from_int(42)).unwrap();
 
-        assert_eq!(struct_item.get(0).unwrap().as_int().unwrap().to_i32().unwrap(), 1);
-        assert_eq!(struct_item.get(1).unwrap().as_int().unwrap().to_i32().unwrap(), 42);
-        assert_eq!(struct_item.get(2).unwrap().as_int().unwrap().to_i32().unwrap(), 3);
+        assert_eq!(
+            struct_item
+                .get(0)
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            struct_item
+                .get(1)
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            42
+        );
+        assert_eq!(
+            struct_item
+                .get(2)
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            3
+        );
         assert!(struct_item.set(3, StackItem::from_int(4)).is_err());
     }
 
     #[test]
     fn test_struct_push_pop() {
-        let items = vec![
-            StackItem::from_int(1),
-            StackItem::from_int(2),
-        ];
+        let items = vec![StackItem::from_int(1), StackItem::from_int(2)];
 
         let mut struct_item = Struct::new(items, None);
 
         struct_item.push(StackItem::from_int(3));
 
         assert_eq!(struct_item.len(), 3);
-        assert_eq!(struct_item.get(2).unwrap().as_int().unwrap().to_i32().unwrap(), 3);
+        assert_eq!(
+            struct_item
+                .get(2)
+                .unwrap()
+                .as_int()
+                .unwrap()
+                .to_i32()
+                .unwrap(),
+            3
+        );
 
         let popped = struct_item.pop().unwrap();
 
@@ -203,26 +270,35 @@ mod tests {
         let items = vec![
             StackItem::from_int(1),
             StackItem::from_int(2),
-            StackItem::from_array(vec![
-                StackItem::from_int(3),
-                StackItem::from_int(4),
-            ]),
+            StackItem::from_array(vec![StackItem::from_int(3), StackItem::from_int(4)]),
         ];
 
         let struct_item = Struct::new(items, None);
         let copied = struct_item.deep_copy(None);
 
         assert_eq!(copied.len(), struct_item.len());
-        assert_eq!(copied.get(0).unwrap().as_int().unwrap(), struct_item.get(0).unwrap().as_int().unwrap());
-        assert_eq!(copied.get(1).unwrap().as_int().unwrap(), struct_item.get(1).unwrap().as_int().unwrap());
+        assert_eq!(
+            copied.get(0).unwrap().as_int().unwrap(),
+            struct_item.get(0).unwrap().as_int().unwrap()
+        );
+        assert_eq!(
+            copied.get(1).unwrap().as_int().unwrap(),
+            struct_item.get(1).unwrap().as_int().unwrap()
+        );
 
         // Check that the nested array was deep copied
         let nested_original = struct_item.get(2).unwrap().as_array().unwrap();
         let nested_copied = copied.get(2).unwrap().as_array().unwrap();
 
         assert_eq!(nested_copied.len(), nested_original.len());
-        assert_eq!(nested_copied[0].as_int().unwrap(), nested_original[0].as_int().unwrap());
-        assert_eq!(nested_copied[1].as_int().unwrap(), nested_original[1].as_int().unwrap());
+        assert_eq!(
+            nested_copied[0].as_int().unwrap(),
+            nested_original[0].as_int().unwrap()
+        );
+        assert_eq!(
+            nested_copied[1].as_int().unwrap(),
+            nested_original[1].as_int().unwrap()
+        );
     }
 
     #[test]

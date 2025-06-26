@@ -2,6 +2,7 @@
 //!
 //! This module provides exception handling functionality for the Neo VM.
 
+use crate::error::VmResult;
 use crate::stack_item::StackItem;
 
 /// Indicates the state of the ExceptionHandlingContext.
@@ -66,7 +67,13 @@ pub struct ExceptionHandlingContext {
 impl ExceptionHandlingContext {
     /// Creates a new exception handling context with try/catch/finally positions.
     /// This matches the expected API from the tests.
-    pub fn new(try_start: usize, try_end: usize, catch_start: usize, finally_start: usize, end_offset: usize) -> Self {
+    pub fn new(
+        try_start: usize,
+        try_end: usize,
+        catch_start: usize,
+        finally_start: usize,
+        end_offset: usize,
+    ) -> Self {
         Self {
             try_start,
             try_end,
@@ -87,8 +94,16 @@ impl ExceptionHandlingContext {
         Self {
             try_start: 0,
             try_end: 0,
-            catch_start: if catch_pointer >= 0 { catch_pointer as usize } else { 0 },
-            finally_start: if finally_pointer >= 0 { finally_pointer as usize } else { 0 },
+            catch_start: if catch_pointer >= 0 {
+                catch_pointer as usize
+            } else {
+                0
+            },
+            finally_start: if finally_pointer >= 0 {
+                finally_pointer as usize
+            } else {
+                0
+            },
             end_offset: 0,
             catch_pointer,
             finally_pointer,
@@ -188,9 +203,7 @@ impl ExceptionHandlingContext {
                     Ok(self.end_offset)
                 }
             }
-            ExceptionHandlingState::Finally => {
-                Ok(self.end_offset)
-            }
+            ExceptionHandlingState::Finally => Ok(self.end_offset),
         }
     }
 
@@ -244,7 +257,11 @@ impl ExceptionHandlingContext {
     /// This matches the C# implementation's EndPointer property setter.
     pub fn set_end_pointer(&mut self, end_pointer: i32) {
         self.end_pointer = end_pointer;
-        self.end_offset = if end_pointer >= 0 { end_pointer as usize } else { 0 };
+        self.end_offset = if end_pointer >= 0 {
+            end_pointer as usize
+        } else {
+            0
+        };
     }
 
     /// Sets the state.
@@ -261,7 +278,10 @@ impl ExceptionHandlingContext {
         // 1. The state is Catch (actively handling an exception)
         // 2. OR the state is Finally (executing finally block, possibly due to exception)
         // 3. OR there's an exception stored in this context
-        matches!(self.state, ExceptionHandlingState::Catch | ExceptionHandlingState::Finally) || self.exception.is_some()
+        matches!(
+            self.state,
+            ExceptionHandlingState::Catch | ExceptionHandlingState::Finally
+        ) || self.exception.is_some()
     }
 }
 
@@ -315,7 +335,10 @@ mod tests {
         context.set_exception(Some(exception.clone()));
 
         assert!(context.exception().is_some());
-        assert_eq!(context.exception().unwrap().as_bytes().unwrap(), exception.as_bytes().unwrap());
+        assert_eq!(
+            context.exception().unwrap().as_bytes().unwrap(),
+            exception.as_bytes().unwrap()
+        );
 
         context.set_exception(None);
         assert!(context.exception().is_none());

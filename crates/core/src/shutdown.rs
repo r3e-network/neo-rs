@@ -6,10 +6,10 @@
 
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, mpsc, RwLock, Notify};
-use tokio::time::{timeout, sleep};
-use tracing::{info, warn, error, debug};
 use thiserror::Error;
+use tokio::sync::{Notify, RwLock, broadcast};
+use tokio::time::{sleep, timeout};
+use tracing::{debug, error, info, warn};
 
 /// Maximum time to wait for graceful shutdown
 pub const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -22,13 +22,13 @@ pub const SHUTDOWN_STAGE_DELAY: Duration = Duration::from_millis(100);
 pub enum ShutdownError {
     #[error("Shutdown timeout exceeded")]
     Timeout,
-    
+
     #[error("Component failed to shutdown: {0}")]
     ComponentError(String),
-    
+
     #[error("Shutdown already in progress")]
     AlreadyInProgress,
-    
+
     #[error("Shutdown cancelled")]
     Cancelled,
 }
@@ -117,15 +117,15 @@ pub enum ShutdownEvent {
 pub trait Shutdown: Send + Sync {
     /// Component name for logging
     fn name(&self) -> &str;
-    
+
     /// Shutdown the component gracefully
     async fn shutdown(&self) -> Result<(), ShutdownError>;
-    
+
     /// Check if component is ready to shutdown
     async fn can_shutdown(&self) -> bool {
         true
     }
-    
+
     /// Priority for shutdown order (lower = earlier)
     fn shutdown_priority(&self) -> u32 {
         100
@@ -152,7 +152,7 @@ impl ShutdownCoordinator {
     /// Creates a new shutdown coordinator
     pub fn new() -> Self {
         let (event_sender, _) = broadcast::channel(100);
-        
+
         Self {
             current_stage: Arc::new(RwLock::new(None)),
             shutdown_notify: Arc::new(Notify::new()),
@@ -162,27 +162,27 @@ impl ShutdownCoordinator {
             shutdown_start_time: Arc::new(RwLock::new(None)),
         }
     }
-    
+
     /// Registers a component for graceful shutdown
     pub async fn register_component(&self, component: Arc<dyn Shutdown>) {
         info!("Registering component for shutdown: {}", component.name());
         let mut components = self.components.write().await;
         components.push(component);
-        
+
         // Sort by priority
         components.sort_by_key(|c| c.shutdown_priority());
     }
-    
+
     /// Subscribes to shutdown events
     pub fn subscribe_to_events(&self) -> broadcast::Receiver<ShutdownEvent> {
         self.event_sender.subscribe()
     }
-    
+
     /// Gets a shutdown signal that can be awaited
     pub fn get_shutdown_signal(&self) -> Arc<Notify> {
         Arc::clone(&self.shutdown_notify)
     }
-    
+
     /// Initiates graceful shutdown
     pub async fn initiate_shutdown(&self, reason: String) -> Result<(), ShutdownError> {
         // Check if shutdown is already in progress
@@ -193,60 +193,63 @@ impl ShutdownCoordinator {
             }
             *is_shutting_down = true;
         }
-        
+
         info!("🛑 Initiating graceful shutdown: {}", reason);
-        
+
         // Record start time
         *self.shutdown_start_time.write().await = Some(std::time::Instant::now());
-        
+
         // Emit shutdown initiated event
         let _ = self.event_sender.send(ShutdownEvent::Initiated {
             reason: reason.clone(),
             timestamp: std::time::SystemTime::now(),
         });
-        
+
         // Notify all waiters
         self.shutdown_notify.notify_waiters();
-        
+
         // Execute shutdown sequence
         match timeout(GRACEFUL_SHUTDOWN_TIMEOUT, self.execute_shutdown_sequence()).await {
             Ok(Ok(())) => {
-                let duration = self.shutdown_start_time.read().await
+                let duration = self
+                    .shutdown_start_time
+                    .read()
+                    .await
                     .map(|start| start.elapsed())
                     .unwrap_or_default();
-                    
+
                 info!("✅ Graceful shutdown completed in {:?}", duration);
-                
+
                 let _ = self.event_sender.send(ShutdownEvent::Completed {
                     total_duration: duration,
                     timestamp: std::time::SystemTime::now(),
                 });
-                
+
                 Ok(())
             }
             Ok(Err(e)) => {
                 error!("❌ Shutdown failed: {}", e);
-                
+
                 let _ = self.event_sender.send(ShutdownEvent::Failed {
                     error: e.to_string(),
                     timestamp: std::time::SystemTime::now(),
                 });
-                
+
                 Err(e)
             }
             Err(_) => {
                 error!("❌ Shutdown timeout exceeded");
-                
+
                 let _ = self.event_sender.send(ShutdownEvent::Failed {
                     error: "Timeout exceeded".to_string(),
                     timestamp: std::time::SystemTime::now(),
                 });
-                
+
                 Err(ShutdownError::Timeout)
             }
         }
     }
-    
+
     /// Executes the shutdown sequence
     async fn execute_shutdown_sequence(&self) -> Result<(), ShutdownError> {
         let stages = [
@@ -261,85 +264,85 @@ impl ShutdownCoordinator {
             ShutdownStage::Cleanup,
             ShutdownStage::Complete,
         ];
-        
+
         for stage in stages {
             self.execute_shutdown_stage(stage).await?;
-            
+
             // Small delay between stages
             if stage != ShutdownStage::Complete {
                 sleep(SHUTDOWN_STAGE_DELAY).await;
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Executes a specific shutdown stage
     async fn execute_shutdown_stage(&self, stage: ShutdownStage) -> Result<(), ShutdownError> {
         info!("📍 Shutdown stage: {}", stage);
-        
+
         // Update current stage
         *self.current_stage.write().await = Some(stage);
-        
+
         // Emit stage started event
         let stage_start = std::time::Instant::now();
         let _ = self.event_sender.send(ShutdownEvent::StageStarted {
             stage,
             timestamp: std::time::SystemTime::now(),
         });
-        
+
         // Execute stage-specific shutdown logic
         match stage {
             ShutdownStage::Prepare => {
                 // Prepare for shutdown - notify all components
                 debug!("Preparing components for shutdown");
             }
-            
+
             ShutdownStage::StopAcceptingConnections => {
                 // Stop accepting new connections
                 self.shutdown_components_by_priority(0..20).await?;
             }
-            
+
             ShutdownStage::StopConsensus => {
                 // Stop consensus activities
                 self.shutdown_components_by_priority(20..40).await?;
             }
-            
+
             ShutdownStage::StopNetwork => {
                 // Stop network services
                 self.shutdown_components_by_priority(40..60).await?;
             }
-            
+
             ShutdownStage::StopRpc => {
                 // Stop RPC services
                 self.shutdown_components_by_priority(60..80).await?;
             }
-            
+
             ShutdownStage::FlushTransactions => {
                 // Flush pending transactions
                 self.shutdown_components_by_priority(80..100).await?;
             }
-            
+
             ShutdownStage::SaveState => {
                 // Save blockchain state
                 self.shutdown_components_by_priority(100..120).await?;
             }
-            
+
             ShutdownStage::CloseDatabase => {
                 // Close database connections
                 self.shutdown_components_by_priority(120..140).await?;
             }
-            
+
             ShutdownStage::Cleanup => {
                 // Final cleanup
                 self.shutdown_components_by_priority(140..200).await?;
             }
-            
+
             ShutdownStage::Complete => {
                 // Nothing to do
             }
         }
-        
+
         // Emit stage completed event
         let stage_duration = stage_start.elapsed();
         let _ = self.event_sender.send(ShutdownEvent::StageCompleted {
@@ -347,28 +350,33 @@ impl ShutdownCoordinator {
             duration: stage_duration,
             timestamp: std::time::SystemTime::now(),
         });
-        
+
         Ok(())
     }
-    
+
     /// Shuts down components within a priority range
     async fn shutdown_components_by_priority(
         &self,
-        priority_range: std::ops::Range<u32>
+        priority_range: std::ops::Range<u32>,
     ) -> Result<(), ShutdownError> {
         let components = self.components.read().await;
-        
+
         for component in components.iter() {
             let priority = component.shutdown_priority();
             if priority_range.contains(&priority) {
-                debug!("Shutting down component: {} (priority: {})", 
-                       component.name(), priority);
-                
+                debug!(
+                    "Shutting down component: {} (priority: {})",
+                    component.name(),
+                    priority
+                );
+
                 // Check if component is ready to shutdown
                 if !component.can_shutdown().await {
-                    warn!("Component {} is not ready to shutdown, waiting...", 
-                          component.name());
-                    
+                    warn!(
+                        "Component {} is not ready to shutdown, waiting...",
+                        component.name()
+                    );
+
                     // Wait a bit and check again
                     for _ in 0..10 {
                         sleep(Duration::from_millis(100)).await;
@@ -377,31 +385,36 @@ impl ShutdownCoordinator {
                         }
                     }
                 }
-                
+
                 // Shutdown the component
                 match component.shutdown().await {
                     Ok(()) => {
                         debug!("✅ Component {} shutdown successfully", component.name());
                     }
                     Err(e) => {
-                        error!("❌ Failed to shutdown component {}: {}", 
-                               component.name(), e);
-                        return Err(ShutdownError::ComponentError(
-                            format!("{}: {}", component.name(), e)
-                        ));
+                        error!(
+                            "❌ Failed to shutdown component {}: {}",
+                            component.name(),
+                            e
+                        );
+                        return Err(ShutdownError::ComponentError(format!(
+                            "{}: {}",
+                            component.name(),
+                            e
+                        )));
                     }
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Gets the current shutdown stage
     pub async fn current_stage(&self) -> Option<ShutdownStage> {
         *self.current_stage.read().await
     }
-    
+
     /// Checks if shutdown is in progress
     pub async fn is_shutting_down(&self) -> bool {
         *self.is_shutting_down.read().await
@@ -426,25 +439,23 @@ impl SignalHandler {
             shutdown_coordinator,
         }
     }
-    
+
     /// Starts listening for shutdown signals
     pub async fn start(self) {
         tokio::spawn(async move {
             self.handle_signals().await;
         });
     }
-    
+
     #[cfg(unix)]
     async fn handle_signals(&self) {
-        use tokio::signal::unix::{signal, SignalKind};
-        
-        let mut sigterm = signal(SignalKind::terminate())
-            .expect("Failed to install SIGTERM handler");
-        let mut sigint = signal(SignalKind::interrupt())
-            .expect("Failed to install SIGINT handler");
-        let mut sighup = signal(SignalKind::hangup())
-            .expect("Failed to install SIGHUP handler");
-        
+        use tokio::signal::unix::{SignalKind, signal};
+
+        let mut sigterm =
+            signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+        let mut sigint = signal(SignalKind::interrupt()).expect("Failed to install SIGINT handler");
+        let mut sighup = signal(SignalKind::hangup()).expect("Failed to install SIGHUP handler");
+
         tokio::select! {
             _ = sigterm.recv() => {
                 info!("Received SIGTERM");
@@ -463,16 +474,18 @@ impl SignalHandler {
             }
         }
     }
-    
+
     #[cfg(windows)]
     async fn handle_signals(&self) {
         use tokio::signal;
-        
+
         match signal::ctrl_c().await {
             Ok(()) => {
                 info!("Received Ctrl+C");
-                let _ = self.shutdown_coordinator
-                    .initiate_shutdown("Ctrl+C received".to_string()).await;
+                let _ = self
+                    .shutdown_coordinator
+                    .initiate_shutdown("Ctrl+C received".to_string())
+                    .await;
             }
             Err(e) => {
                 error!("Failed to listen for Ctrl+C: {}", e);
@@ -484,59 +497,61 @@ impl SignalHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     struct TestComponent {
         name: String,
         priority: u32,
         shutdown_delay: Duration,
     }
-    
+
     #[async_trait::async_trait]
     impl Shutdown for TestComponent {
         fn name(&self) -> &str {
             &self.name
         }
-        
+
         async fn shutdown(&self) -> Result<(), ShutdownError> {
             sleep(self.shutdown_delay).await;
             Ok(())
         }
-        
+
         fn shutdown_priority(&self) -> u32 {
             self.priority
         }
     }
-    
+
     #[tokio::test]
     async fn test_shutdown_coordinator() {
         let coordinator = ShutdownCoordinator::new();
-        
+
         // Register test components
         let component1 = Arc::new(TestComponent {
             name: "Network".to_string(),
             priority: 50,
             shutdown_delay: Duration::from_millis(10),
         });
-        
+
         let component2 = Arc::new(TestComponent {
             name: "Database".to_string(),
             priority: 120,
             shutdown_delay: Duration::from_millis(10),
         });
-        
+
         coordinator.register_component(component1).await;
         coordinator.register_component(component2).await;
-        
+
         // Subscribe to events
         let mut events = coordinator.subscribe_to_events();
-        
+
         // Initiate shutdown
-        let result = coordinator.initiate_shutdown("Test shutdown".to_string()).await;
+        let result = coordinator
+            .initiate_shutdown("Test shutdown".to_string())
+            .await;
         assert!(result.is_ok());
-        
+
         // Verify shutdown completed
         assert!(coordinator.is_shutting_down().await);
-        
+
         // Check that we received events
         let mut event_count = 0;
         while let Ok(event) = events.try_recv() {
@@ -545,22 +560,22 @@ mod tests {
         }
         assert!(event_count > 0);
     }
-    
+
     #[tokio::test]
     async fn test_shutdown_signal() {
         let coordinator = ShutdownCoordinator::new();
         let shutdown_signal = coordinator.get_shutdown_signal();
-        
+
         // Spawn task that waits for shutdown
         let signal_clone = Arc::clone(&shutdown_signal);
         let wait_task = tokio::spawn(async move {
             signal_clone.notified().await;
             true
         });
-        
+
         // Initiate shutdown
         let _ = coordinator.initiate_shutdown("Test".to_string()).await;
-        
+
         // Verify signal was received
         let result = wait_task.await.unwrap();
         assert!(result);

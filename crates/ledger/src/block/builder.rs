@@ -2,10 +2,10 @@
 //!
 //! This module implements block building functionality exactly matching C# Neo's block construction.
 
+use super::{Block, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK, header::BlockHeader};
 use crate::{Error, Result};
-use neo_core::{Transaction, UInt256, UInt160, Witness};
+use neo_core::{Transaction, UInt160, UInt256, Witness};
 use neo_cryptography::MerkleTree;
-use super::{Block, header::BlockHeader, MAX_TRANSACTIONS_PER_BLOCK, MAX_BLOCK_SIZE};
 
 /// Block builder for constructing new blocks (matches C# Neo block construction)
 #[derive(Debug, Clone)]
@@ -135,21 +135,21 @@ impl BlockBuilder {
         let merkle_root = if self.transactions.is_empty() {
             UInt256::zero()
         } else {
-            let tx_hashes: std::result::Result<Vec<UInt256>, _> = self.transactions.iter()
-                .map(|tx| tx.hash())
-                .collect();
-            
+            let tx_hashes: std::result::Result<Vec<UInt256>, _> =
+                self.transactions.iter().map(|tx| tx.hash()).collect();
+
             match tx_hashes {
                 Ok(hashes) => {
-                    let hash_bytes: Vec<Vec<u8>> = hashes.iter()
-                        .map(|h| h.as_bytes().to_vec())
-                        .collect();
-                    
+                    let hash_bytes: Vec<Vec<u8>> =
+                        hashes.iter().map(|h| h.as_bytes().to_vec()).collect();
+
                     match MerkleTree::compute_root(&hash_bytes) {
-                        Some(root) => UInt256::from_bytes(&root).unwrap_or_else(|_| UInt256::zero()),
+                        Some(root) => {
+                            UInt256::from_bytes(&root).unwrap_or_else(|_| UInt256::zero())
+                        }
                         None => UInt256::zero(),
                     }
-                },
+                }
                 Err(_) => UInt256::zero(),
             }
         };
@@ -174,7 +174,9 @@ impl BlockBuilder {
 
         // Validate block size
         if block.size() > MAX_BLOCK_SIZE {
-            return Err(Error::InvalidOperation("Block size exceeds limit".to_string()));
+            return Err(Error::InvalidOperation(
+                "Block size exceeds limit".to_string(),
+            ));
         }
 
         Ok(block)
@@ -208,14 +210,18 @@ impl BlockBuilder {
     pub fn estimated_size(&self) -> usize {
         // Calculate estimated header size
         let header_size = 4 + 32 + 32 + 8 + 8 + 4 + 1 + 20; // Basic header fields
-        
+
         // Add witness data size
-        let witness_size: usize = self.witnesses.iter()
+        let witness_size: usize = self
+            .witnesses
+            .iter()
             .map(|w| w.invocation_script.len() + w.verification_script.len() + 8) // +8 for length prefixes
             .sum();
-        
+
         // Add transactions size (estimated)
-        let tx_size: usize = self.transactions.iter()
+        let tx_size: usize = self
+            .transactions
+            .iter()
             .map(|tx| {
                 use neo_io::BinaryWriter;
                 let mut writer = BinaryWriter::new();
@@ -223,7 +229,7 @@ impl BlockBuilder {
                 writer.to_bytes().len()
             })
             .sum();
-        
+
         header_size + witness_size + tx_size + 16 // +16 for various length prefixes
     }
 
@@ -284,9 +290,7 @@ mod tests {
     #[test]
     fn test_genesis_block_builder() {
         let next_consensus = UInt160::from_bytes(&[1; 20]).unwrap();
-        let block = BlockBuilder::genesis(next_consensus)
-            .build()
-            .unwrap();
+        let block = BlockBuilder::genesis(next_consensus).build().unwrap();
 
         assert!(block.is_genesis());
         assert_eq!(block.index(), 0);
@@ -297,9 +301,7 @@ mod tests {
     #[test]
     fn test_from_previous_block() {
         let next_consensus = UInt160::from_bytes(&[1; 20]).unwrap();
-        let genesis = BlockBuilder::genesis(next_consensus)
-            .build()
-            .unwrap();
+        let genesis = BlockBuilder::genesis(next_consensus).build().unwrap();
 
         let block = BlockBuilder::new()
             .from_previous(&genesis)
@@ -311,4 +313,4 @@ mod tests {
         assert_eq!(block.header.previous_hash, genesis.hash());
         assert_eq!(block.header.next_consensus, next_consensus);
     }
-} 
+}

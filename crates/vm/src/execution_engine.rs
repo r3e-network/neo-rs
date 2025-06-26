@@ -2,15 +2,15 @@
 //!
 //! This module provides the execution engine implementation for the Neo VM.
 
-use crate::execution_context::ExecutionContext;
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
+use crate::execution_context::ExecutionContext;
+use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::StackItem;
-use crate::Error;
-use crate::Result;
-use crate::instruction::Instruction;
 
 /// The VM state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -137,7 +137,7 @@ impl ExecutionEngine {
     }
 
     /// Called when an exception causes the VM to enter the FAULT state.
-    fn on_fault(&mut self, err: Error) {
+    fn on_fault(&mut self, err: VmError) {
         // Set the fault exception
         let message = err.to_string();
         let exception = StackItem::from_byte_string(message.as_bytes().to_vec());
@@ -249,7 +249,7 @@ impl ExecutionEngine {
     }
 
     /// Executes the next instruction.
-    pub fn execute_next(&mut self) -> Result<()> {
+    pub fn execute_next(&mut self) -> VmResult<()> {
         if self.state == VMState::HALT || self.state == VMState::FAULT {
             return Ok(());
         }
@@ -257,7 +257,9 @@ impl ExecutionEngine {
         self.is_jumping = false;
 
         // Get the current context
-        let context = self.current_context().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+        let context = self
+            .current_context()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
         // Check for instructions exceeding the script bounds
         if context.instruction_pointer() >= context.script().len() {
@@ -269,8 +271,15 @@ impl ExecutionEngine {
         let instruction = context.current_instruction()?;
 
         // Get the instruction handler
-        let handler = self.jump_table.get_handler(instruction.opcode())
-            .ok_or_else(|| Error::InvalidOperation(format!("No handler for opcode: {:?}", instruction.opcode())))?;
+        let handler = self
+            .jump_table
+            .get_handler(instruction.opcode())
+            .ok_or_else(|| {
+                VmError::invalid_operation_msg(format!(
+                    "No handler for opcode: {:?}",
+                    instruction.opcode()
+                ))
+            })?;
 
         // Execute the instruction
         handler(self, &instruction)?;
@@ -288,7 +297,7 @@ impl ExecutionEngine {
 
     /// Executes the next instruction - C# API compatibility
     /// This matches the C# ExecutionEngine.ExecuteNextInstruction() method exactly
-    pub fn execute_next_instruction(&mut self) -> Result<()> {
+    pub fn execute_next_instruction(&mut self) -> VmResult<()> {
         self.execute_next()
     }
 
@@ -320,9 +329,11 @@ impl ExecutionEngine {
     }
 
     /// Internal implementation of execute_next.
-    fn execute_next_internal(&mut self) -> Result<()> {
+    fn execute_next_internal(&mut self) -> VmResult<()> {
         // Get the current context
-        let context = self.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+        let context = self
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
         // Get the current instruction
         let instruction = match context.current_instruction() {
@@ -337,7 +348,7 @@ impl ExecutionEngine {
                     // Instruction parsing error - this should cause a FAULT
                     return Err(err);
                 }
-            },
+            }
         };
 
         // Pre-execute hook (for subclasses)
@@ -379,22 +390,22 @@ impl ExecutionEngine {
     }
 
     /// Called before executing an instruction.
-    fn pre_execute_instruction(&mut self, instruction: &Instruction) -> Result<()> {
+    fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         // This is a hook for subclasses to override
         Ok(())
     }
 
     /// Called after executing an instruction.
-    fn post_execute_instruction(&mut self, instruction: &Instruction) -> Result<()> {
+    fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         // This is a hook for subclasses to override
         Ok(())
     }
 
     /// Loads a context into the invocation stack.
-    pub fn load_context(&mut self, context: ExecutionContext) -> Result<()> {
+    pub fn load_context(&mut self, context: ExecutionContext) -> VmResult<()> {
         // Check if we've exceeded the maximum invocation stack size
         if self.invocation_stack.len() >= self.limits.max_invocation_stack_size {
-            return Err(Error::InvalidOperation(format!(
+            return Err(VmError::invalid_operation_msg(format!(
                 "MaxInvocationStackSize exceed: {}",
                 self.invocation_stack.len()
             )));
@@ -407,7 +418,7 @@ impl ExecutionEngine {
     }
 
     /// Unloads a context from the invocation stack.
-    pub fn unload_context(&mut self, context: &mut ExecutionContext) -> Result<()> {
+    pub fn unload_context(&mut self, context: &mut ExecutionContext) -> VmResult<()> {
         // Update current context
         if self.invocation_stack.is_empty() {
             // No more contexts
@@ -417,11 +428,14 @@ impl ExecutionEngine {
 
         // Clear references for static fields if they're not shared with the current context
         if let Some(static_fields) = context.static_fields_mut() {
-            let current_static_fields = self.current_context()
+            let current_static_fields = self
+                .current_context()
                 .and_then(|ctx| ctx.static_fields())
                 .map(|sf| sf as *const _);
 
-            if current_static_fields.is_none() || current_static_fields.unwrap() != static_fields as *const _ {
+            if current_static_fields.is_none()
+                || current_static_fields.unwrap() != static_fields as *const _
+            {
                 static_fields.clear_references();
             }
         }
@@ -440,10 +454,10 @@ impl ExecutionEngine {
     }
 
     /// Removes a context from the invocation stack.
-    pub fn remove_context(&mut self, context_index: usize) -> Result<ExecutionContext> {
+    pub fn remove_context(&mut self, context_index: usize) -> VmResult<ExecutionContext> {
         // Get the context
         if context_index >= self.invocation_stack.len() {
-            return Err(Error::InvalidOperation("Context index out of range".into()));
+            return Err(VmError::invalid_operation_msg("Context index out of range"));
         }
 
         // Remove the context
@@ -464,41 +478,57 @@ impl ExecutionEngine {
     }
 
     /// Creates a new context with the specified script.
-    pub fn create_context(&self, script: Script, rvcount: i32, initial_position: usize) -> ExecutionContext {
+    pub fn create_context(
+        &self,
+        script: Script,
+        rvcount: i32,
+        initial_position: usize,
+    ) -> ExecutionContext {
         let mut context = ExecutionContext::new(script, rvcount, &self.reference_counter);
         context.set_instruction_pointer(initial_position);
         context
     }
 
     /// Loads a script and creates a new context.
-    pub fn load_script(&mut self, script: Script, rvcount: i32, initial_position: usize) -> Result<ExecutionContext> {
+    pub fn load_script(
+        &mut self,
+        script: Script,
+        rvcount: i32,
+        initial_position: usize,
+    ) -> VmResult<ExecutionContext> {
         let context = self.create_context(script, rvcount, initial_position);
         self.load_context(context.clone())?;
         Ok(context)
     }
 
     /// Returns the item at the specified index from the top of the current stack without removing it.
-    pub fn peek(&self, index: isize) -> Result<&StackItem> {
-        let context = self.current_context().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    pub fn peek(&self, index: isize) -> VmResult<&StackItem> {
+        let context = self
+            .current_context()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
         context.evaluation_stack().peek(index)
     }
 
     /// Removes and returns the item at the top of the current stack.
-    pub fn pop(&mut self) -> Result<StackItem> {
-        let context = self.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    pub fn pop(&mut self) -> VmResult<StackItem> {
+        let context = self
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
         context.evaluation_stack_mut().pop()
     }
 
     /// Pushes an item onto the top of the current stack.
-    pub fn push(&mut self, item: StackItem) -> Result<()> {
-        let context = self.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    pub fn push(&mut self, item: StackItem) -> VmResult<()> {
+        let context = self
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
         context.evaluation_stack_mut().push(item);
         Ok(())
     }
 
     /// Adds gas consumed (stub implementation for base ExecutionEngine)
     /// ApplicationEngine overrides this with actual gas tracking
-    pub fn add_gas_consumed(&mut self, _gas: i64) -> Result<()> {
+    pub fn add_gas_consumed(&mut self, _gas: i64) -> VmResult<()> {
         // Base implementation does nothing
         Ok(())
     }
@@ -540,7 +570,9 @@ impl ExecutionEngine {
 
     /// Attempts to cast this ExecutionEngine to an ApplicationEngine (mutable)
     /// Returns None for base ExecutionEngine, Some for ApplicationEngine
-    pub fn as_application_engine_mut(&mut self) -> Option<&mut crate::application_engine::ApplicationEngine> {
+    pub fn as_application_engine_mut(
+        &mut self,
+    ) -> Option<&mut crate::application_engine::ApplicationEngine> {
         // Base ExecutionEngine cannot be cast to ApplicationEngine
         None
     }
@@ -554,14 +586,14 @@ impl ExecutionEngine {
 
     /// Emits a runtime log event (stub implementation for base ExecutionEngine)
     /// ApplicationEngine overrides this with actual event emission
-    pub fn emit_runtime_log_event(&mut self, _message: &str) -> Result<()> {
+    pub fn emit_runtime_log_event(&mut self, _message: &str) -> VmResult<()> {
         // Base implementation does nothing
         Ok(())
     }
 
     /// Adds an execution log (stub implementation for base ExecutionEngine)
     /// ApplicationEngine overrides this with actual log tracking
-    pub fn add_execution_log(&mut self, _message: String) -> Result<()> {
+    pub fn add_execution_log(&mut self, _message: String) -> VmResult<()> {
         // Base implementation does nothing
         Ok(())
     }
@@ -575,7 +607,10 @@ impl ExecutionEngine {
 
     /// Gets transaction by hash (stub implementation for base ExecutionEngine)
     /// ApplicationEngine overrides this with actual blockchain access
-    pub fn get_transaction_by_hash(&self, _hash: &[u8]) -> Option<crate::jump_table::control::Transaction> {
+    pub fn get_transaction_by_hash(
+        &self,
+        _hash: &[u8],
+    ) -> Option<crate::jump_table::control::Transaction> {
         // Base implementation returns None
         None
     }
@@ -694,17 +729,17 @@ mod tests {
         engine.push(StackItem::from_int(3)).unwrap();
 
         // Peek at the items
-        assert_eq!(engine.peek(0).unwrap().as_int().unwrap(), 3.into());
-        assert_eq!(engine.peek(1).unwrap().as_int().unwrap(), 2.into());
-        assert_eq!(engine.peek(2).unwrap().as_int().unwrap(), 1.into());
+        assert_eq!(engine.peek(0).unwrap().as_int().unwrap(), 3);
+        assert_eq!(engine.peek(1).unwrap().as_int().unwrap(), 2);
+        assert_eq!(engine.peek(2).unwrap().as_int().unwrap(), 1);
 
         // Pop an item
         let item = engine.pop().unwrap();
-        assert_eq!(item.as_int().unwrap(), 3.into());
+        assert_eq!(item.as_int().unwrap(), 3);
 
         // Peek again
-        assert_eq!(engine.peek(0).unwrap().as_int().unwrap(), 2.into());
-        assert_eq!(engine.peek(1).unwrap().as_int().unwrap(), 1.into());
+        assert_eq!(engine.peek(0).unwrap().as_int().unwrap(), 2);
+        assert_eq!(engine.peek(1).unwrap().as_int().unwrap(), 1);
     }
 
     #[test]

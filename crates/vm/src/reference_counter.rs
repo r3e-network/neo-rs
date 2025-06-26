@@ -126,42 +126,47 @@ impl ReferenceCounter {
     pub fn check_zero_referred(&self) -> usize {
         // Production-ready VM garbage collection (matches C# VM.ReferenceCounter exactly)
         // This implements the C# logic: CheckZeroReferredItems with comprehensive cycle detection
-        
+
         // 1. Lock all shared state atomically (production thread safety)
         let mut zero_referred = self.zero_referred.lock().unwrap();
         let mut tracked_items = self.tracked_items.lock().unwrap();
         let mut references = self.references.lock().unwrap();
-        
+
         // 2. If no zero referred items, return current count (production optimization)
         if zero_referred.is_empty() {
             return self.reference_count.load(Ordering::SeqCst);
         }
-        
+
         // 3. Process zero referred items using Tarjan's algorithm for cycle detection (production implementation)
         let zero_ref_items: Vec<usize> = zero_referred.drain().collect();
-        
+
         // 4. Use strongly connected components detection for circular references (production cycle handling)
         let mut processed_items = std::collections::HashSet::new();
         let mut cleanup_candidates = Vec::new();
-        
+
         for item_id in zero_ref_items {
             if processed_items.contains(&item_id) {
                 continue; // Already processed in a cycle
             }
-            
+
             // 5. Check if item is truly unreferenced (production validation)
             if let Some(&ref_count) = references.get(&item_id) {
                 if ref_count == 0 {
                     // 6. Find all items reachable from this zero-ref item (production graph traversal)
                     let mut connected_component = Vec::new();
-                    self.find_strongly_connected_component(item_id, &references, &mut connected_component, &mut processed_items);
-                    
+                    self.find_strongly_connected_component(
+                        item_id,
+                        &references,
+                        &mut connected_component,
+                        &mut processed_items,
+                    );
+
                     // 7. Add entire component to cleanup candidates (production cycle cleanup)
                     cleanup_candidates.extend(connected_component);
                 }
             }
         }
-        
+
         // 8. Remove all cleanup candidates from tracking (production cleanup)
         let mut cleaned_memory = 0usize;
         let candidates_count = cleanup_candidates.len();
@@ -171,13 +176,16 @@ impl ReferenceCounter {
             }
             references.remove(&item_id);
         }
-        
+
         // 9. Update reference count and log cleanup statistics (production monitoring)
         let current_count = self.reference_count.load(Ordering::SeqCst);
         if cleaned_memory > 0 {
-            println!("VM GC: Cleaned {} zero-ref items, freed ~{} bytes", candidates_count, cleaned_memory);
+            println!(
+                "VM GC: Cleaned {} zero-ref items, freed ~{} bytes",
+                candidates_count, cleaned_memory
+            );
         }
-        
+
         current_count
     }
 
@@ -191,25 +199,27 @@ impl ReferenceCounter {
     ) {
         // Production-ready strongly connected components detection (matches C# cycle detection exactly)
         // This implements Tarjan's algorithm for finding circular reference cycles
-        
+
         if processed.contains(&start_id) {
             return; // Already processed
         }
-        
+
         // 1. Mark as processed and add to component (production traversal)
         processed.insert(start_id);
         component.push(start_id);
-        
+
         // Note: In a full implementation, we would traverse the actual StackItem object graph
         // here to find all references between objects. For now, we use a simplified heuristic.
-        
+
         // 3. Check for potential references to other zero-count items (production heuristic)
         for (&other_id, &other_count) in references.iter() {
             if other_count == 0 && !processed.contains(&other_id) {
                 // Potential circular reference - check if items might reference each other
                 if self.items_might_reference_each_other(start_id, other_id) {
                     // Recursively find connected items
-                    self.find_strongly_connected_component(other_id, references, component, processed);
+                    self.find_strongly_connected_component(
+                        other_id, references, component, processed,
+                    );
                 }
             }
         }
@@ -219,7 +229,7 @@ impl ReferenceCounter {
     fn items_might_reference_each_other(&self, _item1: usize, _item2: usize) -> bool {
         // Production-ready reference detection heuristic (matches C# object graph analysis)
         // In a full implementation, this would analyze StackItem object graphs
-        
+
         // Simple heuristic: items with close IDs might be related
         // Real implementation would inspect Array/Struct/Map contents for references
         true // Conservative approach - assume potential references exist
@@ -244,13 +254,13 @@ impl ReferenceCounter {
     fn get_or_assign_item_id(&self, item: &StackItem) -> usize {
         // Production implementation: Use proper object identity system (matches C# ReferenceCounter exactly)
         // In C# Neo, each StackItem has a unique object identity based on its type and content
-        
+
         // Calculate a stable hash based on the item's type and content
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
-        
+
         // Hash the item type and content to create a stable identifier
         match item {
             StackItem::Null => {
@@ -298,7 +308,7 @@ impl ReferenceCounter {
                 ptr.hash(&mut hasher);
             }
         }
-        
+
         hasher.finish() as usize
     }
 
@@ -326,43 +336,46 @@ impl ReferenceCounter {
     fn process_zero_referred_items(&self) {
         // Production-ready VM garbage collection (matches C# VM.ReferenceCounter exactly)
         // This implements the C# logic: ProcessZeroReferredItems with proper cleanup cycles
-        
+
         // 1. Lock shared state for atomic operations (production thread safety)
         let mut tracked_items = self.tracked_items.lock().unwrap();
         let mut references = self.references.lock().unwrap();
-        
+
         // 2. Collect all zero-referenced items for cleanup (production cleanup)
         let zero_ref_items: Vec<usize> = references
             .iter()
             .filter_map(|(id, count)| if *count == 0 { Some(*id) } else { None })
             .collect();
-        
+
         if zero_ref_items.is_empty() {
             return; // No cleanup needed
         }
-        
+
         // 3. Process each zero-referenced item (production garbage collection)
         let mut cleaned_count = 0;
         let mut cleaned_memory = 0usize;
-        
+
         for item_id in zero_ref_items {
             // 4. Remove from tracked items (production state cleanup)
             if tracked_items.remove(&item_id) {
                 cleaned_memory += std::mem::size_of::<usize>(); // Approximate size
                 cleaned_count += 1;
-                
+
                 // 5. Process child references for recursive cleanup (production recursion)
                 // In a full implementation, this would analyze the actual StackItem structure
                 self.process_item_child_references(item_id, &[]);
             }
-            
+
             // 6. Remove from reference counts (production count cleanup)
             references.remove(&item_id);
         }
-        
+
         // 7. Update cleanup statistics (production monitoring)
         if cleaned_count > 0 {
-            println!("VM GC: Cleaned {} items, freed {} bytes", cleaned_count, cleaned_memory);
+            println!(
+                "VM GC: Cleaned {} items, freed {} bytes",
+                cleaned_count, cleaned_memory
+            );
         }
     }
 
@@ -370,40 +383,45 @@ impl ReferenceCounter {
     fn process_item_child_references(&self, item_id: usize, item_data: &[u8]) {
         // Production-ready child reference processing (matches C# recursive cleanup exactly)
         // This implements the C# logic: ProcessChildReferences for arrays, structs, etc.
-        
+
         // 1. Parse item data to identify reference patterns (production parsing)
         // In a full implementation, this would analyze the item structure
         // to find nested references and recursively decrement them
-        
+
         // 2. For compound objects, recursively process child items (production recursion)
         // This prevents memory leaks in complex object graphs
         if item_data.len() > 4 {
             // Simple heuristic: items larger than 4 bytes might contain references
             // In production, this would use proper type analysis
-            
+
             // 3. Scan for potential reference IDs in the data (production scanning)
             let mut pos = 0;
             while pos + 4 <= item_data.len() {
                 // Extract potential reference ID (little-endian)
                 let potential_ref = u32::from_le_bytes([
                     item_data[pos],
-                    item_data[pos + 1], 
+                    item_data[pos + 1],
                     item_data[pos + 2],
-                    item_data[pos + 3]
+                    item_data[pos + 3],
                 ]) as usize;
-                
+
                 // 4. If it looks like a valid reference, decrement it (production reference management)
                 if potential_ref != 0 && potential_ref != item_id {
                     self.decrement_reference(potential_ref);
                 }
-                
+
                 pos += 4;
             }
         }
-        
+
         // 5. Log child processing for debugging (production monitoring)
-        if item_data.len() > 100 { // Only log for larger items
-            println!("VM GC: Processed child references for item {} ({} bytes)", item_id, item_data.len());
+        if item_data.len() > 100 {
+            // Only log for larger items
+            println!(
+                "VM GC: Processed child references for item {} ({} bytes)",
+                item_id,
+                item_data.len()
+            );
         }
     }
 
@@ -411,32 +429,32 @@ impl ReferenceCounter {
     fn remove_item(&self, item_id: usize) {
         // Production-ready item removal (matches C# ReferenceCounter.RemoveStackReference exactly)
         // This implements the C# logic: ReferenceCounter.RemoveStackReference(item)
-        
+
         // 1. Atomic removal from tracking (production thread safety)
         let mut tracked_items = self.tracked_items.lock().unwrap();
         let mut references = self.references.lock().unwrap();
-        
+
         // 2. Check if item is tracked (production validation)
         if !tracked_items.contains(&item_id) {
             return; // Item not tracked, nothing to do
         }
-        
+
         // 3. Process child references before removal (production cleanup order)
         // In a full implementation, this would analyze the actual StackItem structure
         drop(tracked_items); // Release lock before recursive processing
         drop(references);
-        
+
         // Process child references without holding locks
         self.process_item_child_references(item_id, &[]);
-        
+
         // Reacquire locks for final cleanup
         tracked_items = self.tracked_items.lock().unwrap();
         references = self.references.lock().unwrap();
-        
+
         // 4. Remove from tracking structures (production cleanup)
         tracked_items.remove(&item_id);
         references.remove(&item_id);
-        
+
         // 5. Log removal for monitoring (production logging)
         println!("VM GC: Removed item {} from tracking", item_id);
     }
@@ -445,11 +463,11 @@ impl ReferenceCounter {
     fn decrement_reference(&self, item_id: usize) {
         // Production-ready reference decrement (matches C# exactly)
         let mut references = self.references.lock().unwrap();
-        
+
         if let Some(count) = references.get_mut(&item_id) {
             if *count > 0 {
                 *count -= 1;
-                
+
                 // If count reaches zero, it will be cleaned up in next GC cycle
                 if *count == 0 {
                     println!("VM GC: Item {} reference count reached zero", item_id);
@@ -457,7 +475,6 @@ impl ReferenceCounter {
             }
         }
     }
-
 }
 
 impl Default for ReferenceCounter {

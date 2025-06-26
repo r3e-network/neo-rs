@@ -114,9 +114,7 @@ impl WitnessCondition {
             WitnessCondition::Group { .. } => true,
             WitnessCondition::CalledByContract { .. } => true,
             WitnessCondition::CalledByGroup { .. } => true,
-            WitnessCondition::Not { condition } => {
-                condition.is_valid(max_depth - 1)
-            }
+            WitnessCondition::Not { condition } => condition.is_valid(max_depth - 1),
             WitnessCondition::And { conditions } | WitnessCondition::Or { conditions } => {
                 if conditions.is_empty() || conditions.len() > Self::MAX_SUBITEMS {
                     return false;
@@ -131,8 +129,12 @@ impl WitnessCondition {
         match self {
             WitnessCondition::Boolean { .. } => 1,
             WitnessCondition::Not { condition } => 1 + condition.len(),
-            WitnessCondition::And { conditions } => 1 + conditions.iter().map(|e| e.len()).sum::<usize>(),
-            WitnessCondition::Or { conditions } => 1 + conditions.iter().map(|e| e.len()).sum::<usize>(),
+            WitnessCondition::And { conditions } => {
+                1 + conditions.iter().map(|e| e.len()).sum::<usize>()
+            }
+            WitnessCondition::Or { conditions } => {
+                1 + conditions.iter().map(|e| e.len()).sum::<usize>()
+            }
             WitnessCondition::ScriptHash { .. } => 1 + 20, // 1 byte type + 20 bytes hash
             WitnessCondition::Group { group } => 1 + group.len(),
             WitnessCondition::CalledByEntry => 1,
@@ -185,10 +187,26 @@ impl fmt::Display for WitnessCondition {
             WitnessCondition::Boolean { value } => write!(f, "Boolean({})", value),
             WitnessCondition::Not { condition } => write!(f, "Not({})", condition),
             WitnessCondition::And { conditions } => {
-                write!(f, "And([{}])", conditions.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(", "))
+                write!(
+                    f,
+                    "And([{}])",
+                    conditions
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
             }
             WitnessCondition::Or { conditions } => {
-                write!(f, "Or([{}])", conditions.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(", "))
+                write!(
+                    f,
+                    "Or([{}])",
+                    conditions
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
             }
             WitnessCondition::ScriptHash { hash } => write!(f, "ScriptHash({})", hash),
             WitnessCondition::Group { group } => write!(f, "Group({:?})", group),
@@ -201,7 +219,11 @@ impl fmt::Display for WitnessCondition {
 
 impl fmt::Display for WitnessRule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "WitnessRule {{ action: {}, condition: {} }}", self.action, self.condition)
+        write!(
+            f,
+            "WitnessRule {{ action: {}, condition: {} }}",
+            self.action, self.condition
+        )
     }
 }
 

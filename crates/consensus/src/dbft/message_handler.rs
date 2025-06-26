@@ -3,11 +3,11 @@
 //! This module contains message processing logic for the dBFT consensus engine.
 
 use crate::{
+    ConsensusPayload, Error, Result,
     context::{ConsensusContext, ConsensusPhase},
     messages::{
         ChangeView, Commit, ConsensusMessage, ConsensusMessageData, PrepareRequest, PrepareResponse,
     },
-    ConsensusPayload, Error, Result,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,7 +31,10 @@ impl MessageHandler {
     }
 
     /// Handles an incoming consensus message
-    pub async fn handle_message(&mut self, message: ConsensusMessage) -> Result<MessageHandleResult> {
+    pub async fn handle_message(
+        &mut self,
+        message: ConsensusMessage,
+    ) -> Result<MessageHandleResult> {
         // Validate message
         message.validate()?;
 
@@ -44,8 +47,11 @@ impl MessageHandler {
 
         // Check if message is for current or future view
         if message.view_number() < current_round.view_number {
-            debug!("Ignoring message from old view: {} < {}",
-                   message.view_number().value(), current_round.view_number.value());
+            debug!(
+                "Ignoring message from old view: {} < {}",
+                message.view_number().value(),
+                current_round.view_number.value()
+            );
             return Ok(MessageHandleResult::Ignored);
         }
 
@@ -56,16 +62,20 @@ impl MessageHandler {
         // Process message based on type
         match &message.data {
             ConsensusMessageData::PrepareRequest(prepare_request) => {
-                self.handle_prepare_request(message.payload.clone(), prepare_request.clone()).await
+                self.handle_prepare_request(message.payload.clone(), prepare_request.clone())
+                    .await
             }
             ConsensusMessageData::PrepareResponse(prepare_response) => {
-                self.handle_prepare_response(message.payload.clone(), prepare_response.clone()).await
+                self.handle_prepare_response(message.payload.clone(), prepare_response.clone())
+                    .await
             }
             ConsensusMessageData::Commit(commit) => {
-                self.handle_commit(message.payload.clone(), commit.clone()).await
+                self.handle_commit(message.payload.clone(), commit.clone())
+                    .await
             }
             ConsensusMessageData::ChangeView(change_view) => {
-                self.handle_change_view(message.payload.clone(), change_view.clone()).await
+                self.handle_change_view(message.payload.clone(), change_view.clone())
+                    .await
             }
             ConsensusMessageData::RecoveryRequest(_) => {
                 // Recovery messages handled separately
@@ -84,24 +94,31 @@ impl MessageHandler {
         payload: ConsensusPayload,
         prepare_request: PrepareRequest,
     ) -> Result<MessageHandleResult> {
-        debug!("Handling prepare request from validator {}", payload.validator_index);
+        debug!(
+            "Handling prepare request from validator {}",
+            payload.validator_index
+        );
 
         // Validate that this is from the primary validator
         let current_round = self.context.get_current_round();
-        
+
         // Get the primary validator index for this view
         if let Some(validator_set) = self.context.get_validator_set() {
             if let Some(primary_validator) = validator_set.get_primary(current_round.view_number) {
                 if payload.validator_index != primary_validator.index {
                     return Err(Error::InvalidMessage(
-                        "Prepare request not from primary validator".to_string()
+                        "Prepare request not from primary validator".to_string(),
                     ));
                 }
             } else {
-                return Err(Error::InvalidMessage("No primary validator found".to_string()));
+                return Err(Error::InvalidMessage(
+                    "No primary validator found".to_string(),
+                ));
             }
         } else {
-            return Err(Error::InvalidMessage("No validator set available".to_string()));
+            return Err(Error::InvalidMessage(
+                "No validator set available".to_string(),
+            ));
         }
 
         // Validate prepare request
@@ -116,16 +133,20 @@ impl MessageHandler {
 
         // 2. Validate transaction hashes
         if prepare_request.transaction_hashes.is_empty() {
-            return Err(Error::InvalidBlock("Block must contain at least one transaction".to_string()));
+            return Err(Error::InvalidBlock(
+                "Block must contain at least one transaction".to_string(),
+            ));
         }
 
         // 3. Validate block data size
-        if prepare_request.block_data.len() > 1048576 { // 1MB limit
+        if prepare_request.block_data.len() > 1048576 {
+            // 1MB limit
             return Err(Error::InvalidBlock("Block data too large".to_string()));
         }
 
         // 4. Calculate and verify merkle root (matches C# Neo Block.MerkleRoot exactly)
-        let calculated_merkle_root = self.calculate_merkle_root(&prepare_request.transaction_hashes);
+        let calculated_merkle_root =
+            self.calculate_merkle_root(&prepare_request.transaction_hashes);
 
         // Extract merkle root from block data and verify it matches calculated root
         if prepare_request.block_data.len() >= 32 {
@@ -142,8 +163,10 @@ impl MessageHandler {
             }
         }
 
-        println!("Block proposal validation passed for block with {} transactions",
-                prepare_request.transaction_hashes.len());
+        println!(
+            "Block proposal validation passed for block with {} transactions",
+            prepare_request.transaction_hashes.len()
+        );
 
         // Update context
         self.context.update_round(|round| {
@@ -165,11 +188,16 @@ impl MessageHandler {
         payload: ConsensusPayload,
         prepare_response: PrepareResponse,
     ) -> Result<MessageHandleResult> {
-        debug!("Handling prepare response from validator {}", payload.validator_index);
+        debug!(
+            "Handling prepare response from validator {}",
+            payload.validator_index
+        );
 
         // Basic validation
         if prepare_response.preparation_hash == neo_core::UInt256::zero() {
-            return Err(Error::InvalidMessage("Invalid preparation hash".to_string()));
+            return Err(Error::InvalidMessage(
+                "Invalid preparation hash".to_string(),
+            ));
         }
 
         // Check if we have a prepare request
@@ -189,7 +217,10 @@ impl MessageHandler {
         let response_count = current_round.prepare_responses.len();
 
         if response_count >= required_responses {
-            info!("Received enough prepare responses ({}/{})", response_count, required_responses);
+            info!(
+                "Received enough prepare responses ({}/{})",
+                response_count, required_responses
+            );
             return Ok(MessageHandleResult::SendCommit);
         }
 
@@ -217,7 +248,10 @@ impl MessageHandler {
         let commit_count = self.context.get_current_round().commits.len();
 
         if commit_count >= required_commits {
-            info!("Received enough commits ({}/{})", commit_count, required_commits);
+            info!(
+                "Received enough commits ({}/{})",
+                commit_count, required_commits
+            );
             return Ok(MessageHandleResult::CommitBlock);
         }
 
@@ -230,8 +264,11 @@ impl MessageHandler {
         payload: ConsensusPayload,
         change_view: ChangeView,
     ) -> Result<MessageHandleResult> {
-        debug!("Handling change view from validator {} to view {}",
-               payload.validator_index, change_view.new_view_number.value());
+        debug!(
+            "Handling change view from validator {} to view {}",
+            payload.validator_index,
+            change_view.new_view_number.value()
+        );
 
         // Basic validation
         if change_view.new_view_number <= self.context.get_current_round().view_number {
@@ -245,12 +282,13 @@ impl MessageHandler {
 
         // Check if we have enough change view votes
         let required_votes = self.context.get_required_signatures();
-        let vote_count = self.context.get_current_round()
-            .change_views
-            .len();
+        let vote_count = self.context.get_current_round().change_views.len();
 
         if vote_count >= required_votes {
-            info!("Received enough change view votes ({}/{})", vote_count, required_votes);
+            info!(
+                "Received enough change view votes ({}/{})",
+                vote_count, required_votes
+            );
             return Ok(MessageHandleResult::ChangeView(change_view.new_view_number));
         }
 
@@ -260,19 +298,40 @@ impl MessageHandler {
     /// Handles a message for a future round
     fn handle_future_message(&mut self, message: ConsensusMessage) -> Result<MessageHandleResult> {
         if message.block_index() > self.context.get_current_round().block_index {
-            debug!("Buffering message for future block {}", message.block_index().value());
-            let key = (message.block_index().value(), message.view_number().value() as u8);
-            self.message_buffer.entry(key).or_insert_with(Vec::new).push(message);
+            debug!(
+                "Buffering message for future block {}",
+                message.block_index().value()
+            );
+            let key = (
+                message.block_index().value(),
+                message.view_number().value() as u8,
+            );
+            self.message_buffer
+                .entry(key)
+                .or_insert_with(Vec::new)
+                .push(message);
             return Ok(MessageHandleResult::Buffered);
         }
         Ok(MessageHandleResult::Ignored)
     }
 
     /// Handles a message for a future view
-    fn handle_future_view_message(&mut self, message: ConsensusMessage) -> Result<MessageHandleResult> {
-        debug!("Buffering message for future view {}", message.view_number().value());
-        let key = (message.block_index().value(), message.view_number().value() as u8);
-        self.message_buffer.entry(key).or_insert_with(Vec::new).push(message);
+    fn handle_future_view_message(
+        &mut self,
+        message: ConsensusMessage,
+    ) -> Result<MessageHandleResult> {
+        debug!(
+            "Buffering message for future view {}",
+            message.view_number().value()
+        );
+        let key = (
+            message.block_index().value(),
+            message.view_number().value() as u8,
+        );
+        self.message_buffer
+            .entry(key)
+            .or_insert_with(Vec::new)
+            .push(message);
         Ok(MessageHandleResult::Buffered)
     }
 
@@ -284,7 +343,8 @@ impl MessageHandler {
 
     /// Clears old buffered messages
     pub fn cleanup_old_messages(&mut self, current_block_index: u32) {
-        self.message_buffer.retain(|(block_index, _), _| *block_index >= current_block_index);
+        self.message_buffer
+            .retain(|(block_index, _), _| *block_index >= current_block_index);
     }
 
     /// Calculates merkle root from transaction hashes (matches C# Neo MerkleTree.ComputeRoot exactly)
@@ -366,7 +426,10 @@ mod tests {
 
     #[test]
     fn test_message_handle_result() {
-        assert_eq!(MessageHandleResult::Processed, MessageHandleResult::Processed);
+        assert_eq!(
+            MessageHandleResult::Processed,
+            MessageHandleResult::Processed
+        );
         assert_ne!(MessageHandleResult::Processed, MessageHandleResult::Ignored);
     }
 }

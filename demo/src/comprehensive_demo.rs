@@ -3,10 +3,10 @@
 //! This demo showcases the full capabilities of our production-ready Neo-Rust implementation,
 //! demonstrating performance advantages and real-world blockchain operations.
 
-use std::time::Instant;
-use neo_core::{UInt160, UInt256, Transaction, Witness, Signer, WitnessScope};
+use neo_core::{Signer, Transaction, UInt160, UInt256, Witness, WitnessScope};
 use neo_cryptography::{ecdsa::ECDsa, hash::sha256};
-use neo_persistence::{StorageKey, CompressionAlgorithm, storage::StorageConfig, Storage};
+use neo_persistence::{CompressionAlgorithm, Storage, StorageKey, storage::StorageConfig};
+use std::time::Instant;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -147,7 +147,7 @@ async fn demo_storage() -> Result<(), Box<dyn std::error::Error>> {
         compression_algorithm: CompressionAlgorithm::Lz4,
         compaction_strategy: neo_persistence::storage::CompactionStrategy::Level,
         max_open_files: Some(1000),
-        cache_size: Some(64 * 1024 * 1024), // 64MB
+        cache_size: Some(64 * 1024 * 1024),        // 64MB
         write_buffer_size: Some(16 * 1024 * 1024), // 16MB
         enable_statistics: true,
     };
@@ -161,7 +161,9 @@ async fn demo_storage() -> Result<(), Box<dyn std::error::Error>> {
     let block_key = StorageKey::new(0, block_hash.as_bytes().to_vec());
     let block_data = b"Sample block data for Neo blockchain".to_vec();
 
-    storage.put(&block_key.as_bytes(), block_data.clone()).await?;
+    storage
+        .put(&block_key.as_bytes(), block_data.clone())
+        .await?;
     println!("✅ Block data stored");
 
     // Retrieve the data
@@ -171,14 +173,19 @@ async fn demo_storage() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test compression
     let large_data = vec![0x42u8; 10000]; // 10KB of data
-    let compressed = neo_persistence::compression::compress(&large_data, CompressionAlgorithm::Lz4)?;
-    let decompressed = neo_persistence::compression::decompress(&compressed, CompressionAlgorithm::Lz4)?;
+    let compressed =
+        neo_persistence::compression::compress(&large_data, CompressionAlgorithm::Lz4)?;
+    let decompressed =
+        neo_persistence::compression::decompress(&compressed, CompressionAlgorithm::Lz4)?;
 
     assert_eq!(large_data, decompressed);
     println!("✅ LZ4 compression/decompression: PASSED");
     println!("   Original size: {} bytes", large_data.len());
     println!("   Compressed size: {} bytes", compressed.len());
-    println!("   Compression ratio: {:.2}%", (compressed.len() as f64 / large_data.len() as f64) * 100.0);
+    println!(
+        "   Compression ratio: {:.2}%",
+        (compressed.len() as f64 / large_data.len() as f64) * 100.0
+    );
 
     println!();
     Ok(())
@@ -203,7 +210,10 @@ async fn demo_performance() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ UInt256 creation benchmark:");
     println!("   {} operations in {:?}", iterations, duration);
     println!("   {:.0} operations/second", ops_per_sec);
-    println!("   {:.2} nanoseconds per operation", duration.as_nanos() as f64 / iterations as f64);
+    println!(
+        "   {:.2} nanoseconds per operation",
+        duration.as_nanos() as f64 / iterations as f64
+    );
 
     // Benchmark 2: Transaction hash calculation
     let start = Instant::now();
@@ -222,7 +232,10 @@ async fn demo_performance() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Transaction hash calculation benchmark:");
     println!("   {} operations in {:?}", iterations, duration);
     println!("   {:.0} operations/second", ops_per_sec);
-    println!("   {:.2} microseconds per operation", duration.as_micros() as f64 / iterations as f64);
+    println!(
+        "   {:.2} microseconds per operation",
+        duration.as_micros() as f64 / iterations as f64
+    );
 
     // Benchmark 3: SHA256 hashing
     let start = Instant::now();
@@ -239,7 +252,10 @@ async fn demo_performance() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ SHA256 hashing benchmark:");
     println!("   {} operations in {:?}", iterations, duration);
     println!("   {:.0} operations/second", ops_per_sec);
-    println!("   {:.2} microseconds per operation", duration.as_micros() as f64 / iterations as f64);
+    println!(
+        "   {:.2} microseconds per operation",
+        duration.as_micros() as f64 / iterations as f64
+    );
 
     println!();
     println!("🎯 Performance Summary:");

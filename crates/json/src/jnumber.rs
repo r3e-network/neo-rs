@@ -55,10 +55,16 @@ impl JNumber {
 
     /// Converts to i32 if possible
     pub fn to_i32(&self) -> JsonResult<i32> {
-        if self.value.fract() == 0.0 && self.value >= i32::MIN as f64 && self.value <= i32::MAX as f64 {
+        if self.value.fract() == 0.0
+            && self.value >= i32::MIN as f64
+            && self.value <= i32::MAX as f64
+        {
             Ok(self.value as i32)
         } else {
-            Err(JsonError::InvalidCast(format!("Cannot convert {} to i32", self.value)))
+            Err(JsonError::InvalidCast(format!(
+                "Cannot convert {} to i32",
+                self.value
+            )))
         }
     }
 
@@ -67,16 +73,25 @@ impl JNumber {
         if self.value.fract() == 0.0 && self.value >= 0.0 && self.value <= u32::MAX as f64 {
             Ok(self.value as u32)
         } else {
-            Err(JsonError::InvalidCast(format!("Cannot convert {} to u32", self.value)))
+            Err(JsonError::InvalidCast(format!(
+                "Cannot convert {} to u32",
+                self.value
+            )))
         }
     }
 
     /// Converts to i64 if possible
     pub fn to_i64(&self) -> JsonResult<i64> {
-        if self.value.fract() == 0.0 && self.value >= i64::MIN as f64 && self.value <= i64::MAX as f64 {
+        if self.value.fract() == 0.0
+            && self.value >= i64::MIN as f64
+            && self.value <= i64::MAX as f64
+        {
             Ok(self.value as i64)
         } else {
-            Err(JsonError::InvalidCast(format!("Cannot convert {} to i64", self.value)))
+            Err(JsonError::InvalidCast(format!(
+                "Cannot convert {} to i64",
+                self.value
+            )))
         }
     }
 
@@ -85,7 +100,10 @@ impl JNumber {
         if self.value.fract() == 0.0 && self.value >= 0.0 && self.value <= u64::MAX as f64 {
             Ok(self.value as u64)
         } else {
-            Err(JsonError::InvalidCast(format!("Cannot convert {} to u64", self.value)))
+            Err(JsonError::InvalidCast(format!(
+                "Cannot convert {} to u64",
+                self.value
+            )))
         }
     }
 
@@ -225,7 +243,7 @@ mod tests {
     fn test_jnumber_jtoken_conversion() {
         let jnum = JNumber::from(42.0);
         let token = jnum.clone().to_jtoken();
-        
+
         match token {
             JToken::Number(value) => assert_eq!(value, 42.0),
             _ => panic!("Expected JToken::Number"),
@@ -250,4 +268,4 @@ mod tests {
         jnum.set_value(20.5);
         assert_eq!(jnum.value(), 20.5);
     }
-} 
+}

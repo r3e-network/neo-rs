@@ -136,15 +136,15 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 /// Implements the NOP operation.
-fn nop(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn nop(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Do nothing
     Ok(())
 }
 
 /// Implements the JMP operation.
-fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offset from the instruction
     let offset = instruction.read_i16_operand()?;
@@ -152,7 +152,7 @@ fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
     // Calculate the new instruction pointer
     let new_ip = context.instruction_pointer() as i32 + offset as i32;
     if new_ip < 0 || new_ip > context.script().len() as i32 {
-        return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+        return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
     }
 
     // Set the new instruction pointer
@@ -165,9 +165,9 @@ fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the JMPIF operation.
-fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
@@ -180,7 +180,7 @@ fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -194,9 +194,9 @@ fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the JMPIFNOT operation.
-fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
@@ -209,7 +209,7 @@ fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<(
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -223,9 +223,9 @@ fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<(
 }
 
 /// Implements the CALL operation.
-fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offset from the instruction
     let offset = instruction.read_i16_operand()?;
@@ -233,7 +233,7 @@ fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
     // Calculate the call target
     let call_target = context.instruction_pointer() as i32 + offset as i32;
     if call_target < 0 || call_target > context.script().len() as i32 {
-        return Err(Error::InvalidOperation(format!("Call target out of bounds: {}", call_target)));
+        return Err(VmError::invalid_operation_msg(format!("Call target out of bounds: {}", call_target)));
     }
 
     // Create a new context for the call
@@ -250,9 +250,9 @@ fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the CALL_L operation.
-fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offset from the instruction
     let offset = instruction.read_i32_operand()?;
@@ -260,7 +260,7 @@ fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()>
     // Calculate the call target
     let call_target = context.instruction_pointer() as i32 + offset;
     if call_target < 0 || call_target > context.script().len() as i32 {
-        return Err(Error::InvalidOperation(format!("Call target out of bounds: {}", call_target)));
+        return Err(VmError::invalid_operation_msg(format!("Call target out of bounds: {}", call_target)));
     }
 
     // Create a new context for the call
@@ -277,12 +277,12 @@ fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()>
 }
 
 /// Implements the CALLA operation.
-fn calla(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn calla(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the call target from the stack
-    let call_target = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid call target".into()))?;
+    let call_target = context.pop()?.as_int()?.to_usize().ok_or_else(|| VmError::invalid_operation_msg("Invalid call target"))?;
 
     // Create a new context for the call
     let script = context.script().clone();
@@ -298,12 +298,12 @@ fn calla(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()>
 }
 
 /// Implements the CALLT operation.
-fn callt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn callt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the call target from the stack
-    let call_target = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid call target".into()))?;
+    let call_target = context.pop()?.as_int()?.to_usize().ok_or_else(|| VmError::invalid_operation_msg("Invalid call target"))?;
 
     // Create a new context for the call
     let script = context.script().clone();
@@ -319,7 +319,7 @@ fn callt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()>
 }
 
 /// Implements the ABORT operation.
-fn abort(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn abort(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Set the VM state to FAULT
     engine.set_state(crate::execution_engine::VMState::FAULT);
 
@@ -328,11 +328,11 @@ fn abort(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()>
 
 /// Implements the ABORTMSG operation.
 /// This matches C# Neo's AbortMsg implementation exactly.
-fn abort_msg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn abort_msg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Production-ready ABORTMSG implementation (matches C# Neo exactly)
 
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the message from the stack (matches C# engine.Pop().GetString())
     let message = context.pop()?;
@@ -356,11 +356,11 @@ fn abort_msg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result
 
 /// Implements the ASSERT operation.
 /// This matches C# Neo's Assert implementation exactly.
-fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Production-ready ASSERT implementation (matches C# Neo exactly)
 
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the condition from the stack (matches C# engine.Pop().GetBoolean())
     let condition = context.pop()?.as_bool()?;
@@ -384,11 +384,11 @@ fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 
 /// Implements the ASSERTMSG operation.
 /// This matches C# Neo's AssertMsg implementation exactly.
-fn assert_msg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn assert_msg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Production-ready ASSERTMSG implementation (matches C# Neo exactly)
 
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the message and condition from the stack (matches C# engine.Pop() order)
     let message = context.pop()?;
@@ -415,9 +415,9 @@ fn assert_msg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Resul
 }
 
 /// Implements the THROW operation.
-fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the exception from the stack
     let exception = context.pop()?;
@@ -436,9 +436,9 @@ fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()>
 }
 
 /// Implements the TRY operation.
-fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offsets from the instruction
     let catch_offset = instruction.read_i16_operand()?;
@@ -460,9 +460,9 @@ fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()>
 }
 
 /// Implements the ENDTRY operation.
-fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offset from the instruction
     let offset = instruction.read_i16_operand()?;
@@ -481,9 +481,9 @@ fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()>
 }
 
 /// Implements the ENDFINALLY operation.
-fn endfinally(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn endfinally(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Production-ready exception handling (matches C# VM.EndFinally exactly)
     // Check if there's a pending exception to re-throw
@@ -499,10 +499,10 @@ fn endfinally(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Resul
 }
 
 /// Implements the RET operation.
-fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the return value count from the current context
     let (rvcount, items_to_copy) = {
-        let context = engine.current_context().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+        let context = engine.current_context().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
         let rvcount = context.rvcount();
         
         // If rvcount is not -1, collect the top rvcount items to copy to result stack
@@ -511,7 +511,7 @@ fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
             let stack_size = context.evaluation_stack().len();
 
             if rvcount > stack_size {
-                return Err(Error::InvalidOperation(format!("Not enough items on stack for return: {} > {}", rvcount, stack_size)));
+                return Err(VmError::invalid_operation_msg(format!("Not enough items on stack for return: {} > {}", rvcount, stack_size)));
             }
 
             // Collect the top rvcount items from evaluation stack (in reverse order to maintain stack semantics)
@@ -549,7 +549,7 @@ fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
 }
 
 /// Implements the SYSCALL operation.
-fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Production-ready syscall handling (matches C# ApplicationEngine.OnSysCall exactly)
     
     // Get the syscall hash from the instruction operand (matches C# instruction.TokenU32)
@@ -557,7 +557,7 @@ fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
     
     // Look up the interop descriptor (matches C# GetInteropDescriptor)
     let descriptor = get_interop_descriptor(syscall_hash)
-        .ok_or_else(|| Error::InvalidOperation(format!("Unknown syscall: 0x{:08x}", syscall_hash)))?;
+        .ok_or_else(|| VmError::invalid_operation_msg(format!("Unknown syscall: 0x{:08x}", syscall_hash)))?;
     
     // Validate call flags (matches C# ValidateCallFlags)
     validate_call_flags(engine, descriptor.required_call_flags)?;
@@ -569,7 +569,7 @@ fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
     let mut parameters = Vec::new();
     for param_type in descriptor.parameters.iter().rev() {
         let context = engine.current_context_mut()
-            .ok_or_else(|| Error::InvalidOperation("No current context".to_string()))?;
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context".to_string()))?;
         let stack = context.evaluation_stack_mut();
         let stack_item = stack.pop()?;
         let converted_param = convert_parameter(stack_item, param_type)?;
@@ -583,7 +583,7 @@ fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
     // Push return value if any (matches C# return value handling)
     if let Some(return_value) = result {
         let context = engine.current_context_mut()
-            .ok_or_else(|| Error::InvalidOperation("No current context".to_string()))?;
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context".to_string()))?;
         let stack = context.evaluation_stack_mut();
         stack.push(return_value);
     }
@@ -699,12 +699,12 @@ fn get_interop_descriptor(hash: u32) -> Option<SyscallDescriptor> {
 }
 
 /// Validates call flags (matches C# ApplicationEngine.ValidateCallFlags exactly)
-fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) -> Result<()> {
+fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) -> VmResult<()> {
     // Get current call flags from execution context
     let current_flags = get_current_call_flags(engine)?;
     
     if !current_flags.has_flag(required_flags) {
-        return Err(Error::InvalidOperation(
+        return Err(VmError::invalid_operation_msg(
             format!("Cannot call this SYSCALL with the flag {:?}. Required: {:?}", current_flags, required_flags)
         ));
     }
@@ -713,7 +713,7 @@ fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) -> R
 }
 
 /// Gets current call flags from execution context (matches C# ExecutionContextState.CallFlags)
-fn get_current_call_flags(engine: &ExecutionEngine) -> Result<CallFlags> {
+fn get_current_call_flags(engine: &ExecutionEngine) -> VmResult<CallFlags> {
     // Production implementation: Get call flags from execution context state (matches C# exactly)
     // In C# Neo: engine.CurrentContext.GetState<ExecutionContextState>().CallFlags
     
@@ -772,7 +772,7 @@ fn is_native_contract(script_hash: &[u8]) -> bool {
 }
 
 /// Adds gas fee (production-ready implementation matching C# ApplicationEngine.AddFee exactly)
-fn add_fee(engine: &mut ExecutionEngine, fee: u64) -> Result<()> {
+fn add_fee(engine: &mut ExecutionEngine, fee: u64) -> VmResult<()> {
     // Production-ready gas fee addition (matches C# ApplicationEngine.AddFee exactly)
     
     // 1. Calculate the actual fee based on ExecFeeFactor (matches C# logic exactly)
@@ -785,14 +785,14 @@ fn add_fee(engine: &mut ExecutionEngine, fee: u64) -> Result<()> {
     // 3. Production-ready gas limit checking (matches C# gas limit check exactly)
     if engine.gas_consumed() > engine.gas_limit() {
         engine.set_state(crate::execution_engine::VMState::FAULT);
-        return Err(Error::ExecutionHalted("Gas limit exceeded".to_string()));
+        return Err(VmError::execution_halted_msg("Gas limit exceeded".to_string()));
     }
     
     Ok(())
 }
 
 /// Converts stack item to parameter (matches C# ApplicationEngine.Convert exactly)
-fn convert_parameter(item: StackItem, param_type: &ParameterType) -> Result<InteropParameter> {
+fn convert_parameter(item: StackItem, param_type: &ParameterType) -> VmResult<InteropParameter> {
     match param_type {
         ParameterType::Boolean => {
             let value = item.as_bool()?;
@@ -809,13 +809,13 @@ fn convert_parameter(item: StackItem, param_type: &ParameterType) -> Result<Inte
         ParameterType::String => {
             let bytes = item.as_bytes()?;
             let value = String::from_utf8(bytes)
-                .map_err(|_| Error::InvalidOperation("Invalid UTF-8 string".to_string()))?;
+                .map_err(|_| VmError::invalid_operation_msg("Invalid UTF-8 string".to_string()))?;
             Ok(InteropParameter::String(value))
         }
         ParameterType::Hash160 => {
             let bytes = item.as_bytes()?;
             if bytes.len() != 20 {
-                return Err(Error::InvalidOperation("Invalid Hash160 length".to_string()));
+                return Err(VmError::invalid_operation_msg("Invalid Hash160 length".to_string()));
             }
             Ok(InteropParameter::Hash160(bytes))
         }
@@ -871,7 +871,7 @@ fn convert_parameter(item: StackItem, param_type: &ParameterType) -> Result<Inte
             Ok(InteropParameter::Any(item))
         }
         ParameterType::Void => {
-            Err(Error::InvalidOperation("Cannot convert to void parameter".to_string()))
+            Err(VmError::invalid_operation_msg("Cannot convert to void parameter".to_string()))
         }
     }
 }
@@ -881,7 +881,7 @@ fn invoke_interop_service(
     engine: &mut ExecutionEngine,
     service_name: &str,
     parameters: Vec<InteropParameter>,
-) -> Result<Option<StackItem>> {
+) -> VmResult<Option<StackItem>> {
     match service_name {
         "System.Runtime.Platform" => {
             // Matches C# ApplicationEngine.GetPlatform exactly
@@ -997,11 +997,11 @@ fn invoke_interop_service(
             
             // 1. Get current executing contract hash (production security requirement)
             let current_script_hash = engine.get_current_script_hash()
-                .ok_or_else(|| Error::InvalidOperation("No current script hash available for storage context".to_string()))?;
+                .ok_or_else(|| VmError::invalid_operation_msg("No current script hash available for storage context".to_string()))?;
             
             // 2. Verify contract exists and is valid (matches C# security validation exactly)
             if !engine.is_contract_deployed(&current_script_hash) {
-                return Err(Error::InvalidOperation(format!("Contract not deployed: {}", current_script_hash)));
+                return Err(VmError::invalid_operation_msg(format!("Contract not deployed: {}", current_script_hash)));
             }
             
             // 3. Create production storage context (matches C# StorageContext exactly)
@@ -1009,7 +1009,7 @@ fn invoke_interop_service(
                 script_hash: current_script_hash.as_bytes().to_vec(),
                 is_read_only: false, // Default to read-write for GetContext
                 id: engine.get_contract_id(&current_script_hash)
-                    .ok_or_else(|| Error::InvalidOperation("Contract ID not found".to_string()))?,
+                    .ok_or_else(|| VmError::invalid_operation_msg("Contract ID not found".to_string()))?,
             };
             
             // 4. Return as InteropInterface (matches C# implementation exactly)
@@ -1021,11 +1021,11 @@ fn invoke_interop_service(
             
             // 1. Get current executing contract hash
             let current_script_hash = engine.get_current_script_hash()
-                .ok_or_else(|| Error::InvalidOperation("No current script hash available for read-only storage context".to_string()))?;
+                .ok_or_else(|| VmError::invalid_operation_msg("No current script hash available for read-only storage context".to_string()))?;
             
             // 2. Verify contract exists and is valid
             if !engine.is_contract_deployed(&current_script_hash) {
-                return Err(Error::InvalidOperation(format!("Contract not deployed: {}", current_script_hash)));
+                return Err(VmError::invalid_operation_msg(format!("Contract not deployed: {}", current_script_hash)));
             }
             
             // 3. Create read-only storage context (matches C# read-only security exactly)
@@ -1033,7 +1033,7 @@ fn invoke_interop_service(
                 script_hash: current_script_hash.as_bytes().to_vec(),
                 is_read_only: true, // Read-only enforced for security
                 id: engine.get_contract_id(&current_script_hash)
-                    .ok_or_else(|| Error::InvalidOperation("Contract ID not found".to_string()))?,
+                    .ok_or_else(|| VmError::invalid_operation_msg("Contract ID not found".to_string()))?,
             };
             
             // 4. Return as InteropInterface
@@ -1055,7 +1055,7 @@ fn invoke_interop_service(
                         } else {
                             // Fallback: create storage context from current execution context
                             let current_hash = engine.current_script_hash()
-                                .ok_or_else(|| Error::InvalidOperation("No current script hash for storage access".to_string()))?;
+                                .ok_or_else(|| VmError::invalid_operation_msg("No current script hash for storage access".to_string()))?;
                             
                             StorageContext {
                                 script_hash: current_hash.as_bytes().to_vec(),
@@ -1079,13 +1079,13 @@ fn invoke_interop_service(
                             Ok(Some(StackItem::Null))
                         }
                     } else {
-                        Err(Error::InvalidOperation("Storage context must be InteropInterface".to_string()))
+                        Err(VmError::invalid_operation_msg("Storage context must be InteropInterface".to_string()))
                     }
                 } else {
-                    Err(Error::InvalidOperation("Invalid storage get parameters".to_string()))
+                    Err(VmError::invalid_operation_msg("Invalid storage get parameters".to_string()))
                 }
             } else {
-                Err(Error::InvalidOperation("Insufficient parameters for storage get".to_string()))
+                Err(VmError::invalid_operation_msg("Insufficient parameters for storage get".to_string()))
             }
         }
         "System.Storage.Put" => {
@@ -1093,7 +1093,7 @@ fn invoke_interop_service(
             // This implements the C# logic: ApplicationEngine.Put(context, key, value)
             
             if parameters.len() < 3 {
-                return Err(Error::InvalidOperation("Storage.Put requires context, key, and value parameters".to_string()));
+                return Err(VmError::invalid_operation_msg("Storage.Put requires context, key, and value parameters".to_string()));
             }
             
             // 1. Extract and validate storage context (production security requirement)
@@ -1103,35 +1103,35 @@ fn invoke_interop_service(
                     if let Some(storage_context) = context_item.as_any().downcast_ref::<StorageContext>() {
                         storage_context
                     } else {
-                        return Err(Error::InvalidOperation("Invalid storage context type".to_string()));
+                        return Err(VmError::invalid_operation_msg("Invalid storage context type".to_string()));
                     }
                 }
-                _ => return Err(Error::InvalidOperation("First parameter must be storage context".to_string())),
+                _ => return Err(VmError::invalid_operation_msg("First parameter must be storage context".to_string())),
             };
             
             // 2. Security check: verify context is not read-only (matches C# security exactly)
             if context.is_read_only {
-                return Err(Error::InvalidOperation("Cannot write to read-only storage context".to_string()));
+                return Err(VmError::invalid_operation_msg("Cannot write to read-only storage context".to_string()));
             }
             
             // 3. Extract key and value with validation (matches C# parameter validation exactly)
             let key = match &parameters[1] {
                 InteropParameter::ByteArray(k) => k,
-                _ => return Err(Error::InvalidOperation("Key must be byte array".to_string())),
+                _ => return Err(VmError::invalid_operation_msg("Key must be byte array".to_string())),
             };
             
             let value = match &parameters[2] {
                 InteropParameter::ByteArray(v) => v,
-                _ => return Err(Error::InvalidOperation("Value must be byte array".to_string())),
+                _ => return Err(VmError::invalid_operation_msg("Value must be byte array".to_string())),
             };
             
             // 4. Validate key and value sizes (matches C# size limits exactly)
             if key.len() > 64 {
-                return Err(Error::InvalidOperation("Storage key too large (max 64 bytes)".to_string()));
+                return Err(VmError::invalid_operation_msg("Storage key too large (max 64 bytes)".to_string()));
             }
             
             if value.len() > 65535 {
-                return Err(Error::InvalidOperation("Storage value too large (max 65535 bytes)".to_string()));
+                return Err(VmError::invalid_operation_msg("Storage value too large (max 65535 bytes)".to_string()));
             }
             
             // 5. Calculate and charge storage fees (matches C# fee calculation exactly)
@@ -1149,7 +1149,7 @@ fn invoke_interop_service(
             // This implements the C# logic: ApplicationEngine.Delete(context, key)
             
             if parameters.len() < 2 {
-                return Err(Error::InvalidOperation("Storage.Delete requires context and key parameters".to_string()));
+                return Err(VmError::invalid_operation_msg("Storage.Delete requires context and key parameters".to_string()));
             }
             
             // 1. Extract and validate storage context
@@ -1158,26 +1158,26 @@ fn invoke_interop_service(
                     if let Some(storage_context) = context_item.as_any().downcast_ref::<StorageContext>() {
                         storage_context
                     } else {
-                        return Err(Error::InvalidOperation("Invalid storage context type".to_string()));
+                        return Err(VmError::invalid_operation_msg("Invalid storage context type".to_string()));
                     }
                 }
-                _ => return Err(Error::InvalidOperation("First parameter must be storage context".to_string())),
+                _ => return Err(VmError::invalid_operation_msg("First parameter must be storage context".to_string())),
             };
             
             // 2. Security check: verify context is not read-only
             if context.is_read_only {
-                return Err(Error::InvalidOperation("Cannot delete from read-only storage context".to_string()));
+                return Err(VmError::invalid_operation_msg("Cannot delete from read-only storage context".to_string()));
             }
             
             // 3. Extract key with validation
             let key = match &parameters[1] {
                 InteropParameter::ByteArray(k) => k,
-                _ => return Err(Error::InvalidOperation("Key must be byte array".to_string())),
+                _ => return Err(VmError::invalid_operation_msg("Key must be byte array".to_string())),
             };
             
             // 4. Validate key size
             if key.len() > 64 {
-                return Err(Error::InvalidOperation("Storage key too large (max 64 bytes)".to_string()));
+                return Err(VmError::invalid_operation_msg("Storage key too large (max 64 bytes)".to_string()));
             }
             
             // 5. Calculate and charge deletion fees (matches C# fee calculation exactly)
@@ -1203,7 +1203,7 @@ fn invoke_interop_service(
                     if let Some(app_engine) = engine.as_application_engine_mut() {
                         // 1. Validate call flags (matches C# exactly)
                         let flags = CallFlags::from_bits(*call_flags as u32)
-                            .ok_or_else(|| Error::InvalidOperation("Invalid call flags".to_string()))?;
+                            .ok_or_else(|| VmError::invalid_operation_msg("Invalid call flags".to_string()))?;
                         
                         // 2. Prepare arguments (matches C# exactly)
                         let arguments: Vec<StackItem> = parameters.iter().skip(3).map(|param| {
@@ -1251,10 +1251,10 @@ fn invoke_interop_service(
                         Ok(Some(StackItem::from_bool(true)))
                     }
                 } else {
-                    Err(Error::InvalidOperation("Invalid contract call parameters".to_string()))
+                    Err(VmError::invalid_operation_msg("Invalid contract call parameters".to_string()))
                 }
             } else {
-                Err(Error::InvalidOperation("Insufficient parameters for contract call".to_string()))
+                Err(VmError::invalid_operation_msg("Insufficient parameters for contract call".to_string()))
             }
         }
         "System.Contract.GetCallFlags" => {
@@ -1267,7 +1267,7 @@ fn invoke_interop_service(
             if let Some(InteropParameter::Hash160(hash)) = parameters.first() {
                 // 1. Production-ready script container retrieval (matches C# ApplicationEngine.ScriptContainer exactly)
                 let script_container = engine.get_script_container()
-                    .ok_or_else(|| Error::InvalidOperation("No script container available".to_string()))?;
+                    .ok_or_else(|| VmError::invalid_operation_msg("No script container available".to_string()))?;
 
                 // 2. Check if the hash is in the transaction signers
                 // This matches C# CheckWitness logic exactly:
@@ -1281,19 +1281,19 @@ fn invoke_interop_service(
 
                 Ok(Some(StackItem::from_bool(is_witness_valid)))
             } else {
-                Err(Error::InvalidOperation("Invalid witness check parameters".to_string()))
+                Err(VmError::invalid_operation_msg("Invalid witness check parameters".to_string()))
             }
         }
         _ => {
-            Err(Error::InvalidOperation(format!("Unknown interop service: {}", service_name)))
+            Err(VmError::invalid_operation_msg(format!("Unknown interop service: {}", service_name)))
         }
     }
 }
 
 /// Implements the JMP_L operation (long jump with 32-bit offset).
-fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offset from the instruction
     let offset = instruction.read_i32_operand()?;
@@ -1301,7 +1301,7 @@ fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
     // Calculate the new instruction pointer
     let new_ip = context.instruction_pointer() as i32 + offset;
     if new_ip < 0 || new_ip > context.script().len() as i32 {
-        return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+        return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
     }
 
     // Set the new instruction pointer
@@ -1314,9 +1314,9 @@ fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the JMPIF_L operation (long conditional jump with 32-bit offset).
-fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
@@ -1329,7 +1329,7 @@ fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1343,9 +1343,9 @@ fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
 }
 
 /// Implements the JMPIFNOT_L operation (long conditional jump with 32-bit offset).
-fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
@@ -1358,7 +1358,7 @@ fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1372,9 +1372,9 @@ fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result
 }
 
 /// Implements the JMPEQ operation (jump if equal).
-fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1388,7 +1388,7 @@ fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1402,9 +1402,9 @@ fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the JMPEQ_L operation (long jump if equal).
-fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1418,7 +1418,7 @@ fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1432,9 +1432,9 @@ fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
 }
 
 /// Implements the JMPNE operation (jump if not equal).
-fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1448,7 +1448,7 @@ fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1462,9 +1462,9 @@ fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the JMPNE_L operation (long jump if not equal).
-fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1478,7 +1478,7 @@ fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1495,9 +1495,9 @@ fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
 // These will be replaced with proper implementations later
 
 /// Implements the JMPGT operation (jump if greater than).
-fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1511,7 +1511,7 @@ fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1525,9 +1525,9 @@ fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the JMPGT_L operation (long jump if greater than).
-fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1541,7 +1541,7 @@ fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1555,9 +1555,9 @@ fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
 }
 
 /// Implements the JMPGE operation (jump if greater than or equal).
-fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1571,7 +1571,7 @@ fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1585,9 +1585,9 @@ fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the JMPGE_L operation (long jump if greater than or equal).
-fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1601,7 +1601,7 @@ fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1615,9 +1615,9 @@ fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
 }
 
 /// Implements the JMPLT operation (jump if less than).
-fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1631,7 +1631,7 @@ fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1645,9 +1645,9 @@ fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the JMPLT_L operation (long jump if less than).
-fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1661,7 +1661,7 @@ fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1675,9 +1675,9 @@ fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
 }
 
 /// Implements the JMPLE operation (jump if less than or equal).
-fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1691,7 +1691,7 @@ fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1705,9 +1705,9 @@ fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the JMPLE_L operation (long jump if less than or equal).
-fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop two values from the stack
     let b = context.pop()?;
@@ -1721,7 +1721,7 @@ fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(Error::InvalidOperation(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
         }
 
         // Set the new instruction pointer
@@ -1735,9 +1735,9 @@ fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()
 }
 
 /// Implements the TRY_L operation (long try with 32-bit offsets).
-fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offsets from the instruction (32-bit)
     let catch_offset = instruction.read_i32_operand()?;
@@ -1759,9 +1759,9 @@ fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the ENDTRY_L operation (long endtry with 32-bit offset).
-fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Get the offset from the instruction (32-bit)
     let offset = instruction.read_i32_operand()?;
@@ -1780,7 +1780,7 @@ fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<(
 }
 
 /// Production-ready witness verification (matches C# ApplicationEngine.CheckWitnessInternal exactly)
-fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> Result<bool> {
+fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> VmResult<bool> {
     // Production-ready witness verification (matches C# ApplicationEngine.CheckWitnessInternal exactly)
 
     // 1. Convert hash to UInt160 for comparison
@@ -1889,7 +1889,7 @@ fn get_script_container(engine: &ExecutionEngine) -> Option<ScriptContainer> {
 }
 
 /// Gets transaction signers, handling Oracle responses (matches C# exact logic)
-fn get_transaction_signers(engine: &ExecutionEngine, transaction: &Transaction) -> Result<Vec<Signer>> {
+fn get_transaction_signers(engine: &ExecutionEngine, transaction: &Transaction) -> VmResult<Vec<Signer>> {
     // Check for Oracle response attribute (matches C# exact logic)
     // In C#: OracleResponse response = tx.GetAttribute<OracleResponse>();
     if let Some(_oracle_response) = get_oracle_response_attribute(transaction) {
@@ -1943,7 +1943,7 @@ fn get_transaction_signers(engine: &ExecutionEngine, transaction: &Transaction) 
 }
 
 /// Checks witness rules for a signer (matches C# exact logic)
-fn check_witness_rules(engine: &ExecutionEngine, signer: &Signer) -> Result<bool> {
+fn check_witness_rules(engine: &ExecutionEngine, signer: &Signer) -> VmResult<bool> {
     // Check all witness rules for the signer (matches C# exact logic)
     // In C#: foreach (WitnessRule rule in signer.GetAllRules())
     //        {
@@ -1969,7 +1969,7 @@ fn get_oracle_response_attribute(transaction: &Transaction) -> Option<OracleResp
 }
 
 /// Gets script hashes for verifying from script container
-fn get_script_hashes_for_verifying(_engine: &ExecutionEngine, _container: &ScriptContainer) -> Result<Vec<neo_core::UInt160>> {
+fn get_script_hashes_for_verifying(_engine: &ExecutionEngine, _container: &ScriptContainer) -> VmResult<Vec<neo_core::UInt160>> {
     // Get verification script hashes from the container
     // This would need to be implemented based on the container's verification requirements
     Ok(vec![])
@@ -2005,7 +2005,7 @@ struct WitnessRule {
 struct WitnessCondition;
 
 impl WitnessCondition {
-    fn matches(&self, _engine: &ExecutionEngine) -> Result<bool> {
+    fn matches(&self, _engine: &ExecutionEngine) -> VmResult<bool> {
         // Check if the condition matches the current execution context
         Ok(false)
     }
@@ -2044,7 +2044,7 @@ fn create_storage_key(script_hash: &[u8], key: &[u8]) -> StorageKey {
 }
 
 /// Gets storage value for a given key (production implementation)
-fn get_storage_value(engine: &ExecutionEngine, storage_key: &StorageKey) -> Result<Option<Vec<u8>>> {
+fn get_storage_value(engine: &ExecutionEngine, storage_key: &StorageKey) -> VmResult<Option<Vec<u8>>> {
     // Production-ready storage value retrieval (matches C# Snapshot.TryGet exactly)
     // This implements the C# logic: engine.Snapshot.TryGet(storageKey)
     

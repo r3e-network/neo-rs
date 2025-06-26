@@ -2,7 +2,7 @@
 //!
 //! This module provides a wrapper around the ripemd crate for RIPEMD-160 hashing.
 
-use ripemd::{Ripemd160, Digest};
+use ripemd::{Digest, Ripemd160};
 
 /// Computes the RIPEMD-160 hash of the given data.
 ///
@@ -33,7 +33,7 @@ impl RIPEMD160Managed {
     pub fn new() -> Self {
         Self
     }
-    
+
     /// Computes the RIPEMD-160 hash of the given data.
     ///
     /// # Arguments
@@ -46,7 +46,7 @@ impl RIPEMD160Managed {
     pub fn hash(&self, data: &[u8]) -> [u8; 20] {
         ripemd160(data)
     }
-    
+
     /// Computes the RIPEMD-160 hash of the given data and returns it as a vector.
     ///
     /// # Arguments

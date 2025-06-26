@@ -2,25 +2,17 @@
 //!
 //! This module implements background task management exactly matching C# Neo's TaskManager pattern.
 
-use crate::{Error, NetworkMessage, NodeInfo, Result};
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    sync::Arc,
-    time::Duration,
-};
+use crate::{NetworkError, NetworkMessage, NetworkResult as Result, NodeInfo};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     net::TcpListener,
-    sync::{broadcast, RwLock},
+    sync::{RwLock, broadcast},
     task::JoinHandle,
     time::{interval, sleep},
 };
 use tracing::{debug, error, info, warn};
 
-use super::{
-    connection::PeerConnection,
-    events::P2PEvent,
-};
+use super::{connection::PeerConnection, events::P2PEvent};
 
 /// Task manager for P2P background operations (matches C# Neo TaskManager pattern)
 pub struct TaskManager {
@@ -46,16 +38,16 @@ impl TaskManager {
     ) {
         let handle = tokio::spawn(async move {
             info!("Connection acceptor task started");
-            
+
             while *running.read().await {
                 match listener.accept().await {
                     Ok((stream, addr)) => {
                         info!("Accepted connection from {}", addr);
-                        
+
                         // Create inbound connection
                         let connection = PeerConnection::new(stream, addr, true);
                         connections.write().await.insert(addr, connection);
-                        
+
                         // Emit connection event
                         let _ = event_tx.send(P2PEvent::PeerConnected {
                             peer_id: neo_core::UInt160::zero(), // Will be set during handshake
@@ -64,19 +56,19 @@ impl TaskManager {
                     }
                     Err(e) => {
                         error!("Failed to accept connection: {}", e);
-                        
+
                         // Emit connection failed event
                         let _ = event_tx.send(P2PEvent::ConnectionFailed {
                             address: "0.0.0.0:0".parse().unwrap(), // Unknown address
                             error: e.to_string(),
                         });
-                        
+
                         // Short delay before retrying
                         sleep(Duration::from_millis(100)).await;
                     }
                 }
             }
-            
+
             info!("Connection acceptor task stopped");
         });
 
@@ -92,23 +84,26 @@ impl TaskManager {
         running: Arc<RwLock<bool>>,
     ) {
         let handle = tokio::spawn(async move {
-            info!("Ping manager task started with interval: {:?}", ping_interval);
-            
+            info!(
+                "Ping manager task started with interval: {:?}",
+                ping_interval
+            );
+
             let mut interval = interval(ping_interval);
-            
+
             while *running.read().await {
                 interval.tick().await;
-                
+
                 let connections_read = connections.read().await;
                 for (address, connection) in connections_read.iter() {
                     if connection.state.is_ready() {
                         // Generate ping nonce
                         let nonce = rand::random::<u32>();
-                        
+
                         // Create ping message
                         let ping = crate::ProtocolMessage::ping();
-                        let ping_msg = NetworkMessage::new(magic, ping);
-                        
+                        let ping_msg = NetworkMessage::new(ping);
+
                         // Send ping (non-blocking)
                         if let Err(e) = connection.message_tx.send(ping_msg) {
                             warn!("Failed to send ping to {}: {}", address, e);
@@ -118,7 +113,7 @@ impl TaskManager {
                     }
                 }
             }
-            
+
             info!("Ping manager task stopped");
         });
 
@@ -133,15 +128,18 @@ impl TaskManager {
         running: Arc<RwLock<bool>>,
     ) {
         let handle = tokio::spawn(async move {
-            info!("Connection manager task started with timeout: {:?}", timeout);
-            
+            info!(
+                "Connection manager task started with timeout: {:?}",
+                timeout
+            );
+
             let mut interval = interval(Duration::from_secs(30)); // Check every 30 seconds
-            
+
             while *running.read().await {
                 interval.tick().await;
-                
+
                 let mut to_disconnect = Vec::new();
-                
+
                 {
                     let connections_read = connections.read().await;
                     for (address, connection) in connections_read.iter() {
@@ -151,7 +149,7 @@ impl TaskManager {
                         }
                     }
                 }
-                
+
                 // Disconnect stale connections
                 if !to_disconnect.is_empty() {
                     let mut connections_write = connections.write().await;
@@ -161,7 +159,7 @@ impl TaskManager {
                     }
                 }
             }
-            
+
             info!("Connection manager task stopped");
         });
 
@@ -179,7 +177,7 @@ impl TaskManager {
     ) {
         let handle = tokio::spawn(async move {
             info!("Connection handler started for {}", address);
-            
+
             loop {
                 // Get connection
                 let mut connection = {
@@ -196,8 +194,11 @@ impl TaskManager {
                 // Try to receive message
                 match connection.receive_message().await {
                     Ok(message) => {
-                        debug!("Received message from {}: {}", address, message.header.command);
-                        
+                        debug!(
+                            "Received message from {}: {}",
+                            address, message.header.command
+                        );
+
                         // Handle static message processing
                         if let Err(e) = Self::handle_message_static(
                             &connections,
@@ -206,16 +207,18 @@ impl TaskManager {
                             message,
                             magic,
                             &node_info,
-                        ).await {
+                        )
+                        .await
+                        {
                             warn!("Failed to handle message from {}: {}", address, e);
                         }
-                        
+
                         // Put connection back
                         connections.write().await.insert(address, connection);
                     }
                     Err(e) => {
                         error!("Failed to receive message from {}: {}", address, e);
-                        
+
                         // Emit disconnection event
                         if let Some(node_info) = &connection.node_info {
                             let _ = event_tx.send(P2PEvent::PeerDisconnected {
@@ -224,12 +227,12 @@ impl TaskManager {
                                 reason: e.to_string(),
                             });
                         }
-                        
+
                         break;
                     }
                 }
             }
-            
+
             info!("Connection handler stopped for {}", address);
         });
 
@@ -247,7 +250,10 @@ impl TaskManager {
     ) -> Result<()> {
         // Basic message validation
         if message.header.magic != magic {
-            return Err(Error::Protocol("Invalid magic number".to_string()));
+            return Err(NetworkError::ProtocolViolation {
+                peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
+                violation: "Invalid magic number".to_string(),
+            });
         }
 
         // Handle specific message types
@@ -259,15 +265,16 @@ impl TaskManager {
                 start_height,
                 ..
             } => {
-                info!("Received Version from {}: v{}, height={}", address, version, start_height);
-                
+                info!(
+                    "Received Version from {}: v{}, height={}",
+                    address, version, start_height
+                );
+
                 // Generate peer ID
-                let peer_id = super::protocol::ProtocolUtils::generate_peer_id(
-                    address, 
-                    *nonce, 
-                    user_agent
-                ).await;
-                
+                let peer_id =
+                    super::protocol::ProtocolUtils::generate_peer_id(address, *nonce, user_agent)
+                        .await;
+
                 // Update connection with peer info
                 if let Some(connection) = connections.write().await.get_mut(&address) {
                     let mut updated_node_info = node_info.clone();
@@ -277,8 +284,8 @@ impl TaskManager {
 
                 // Send verack response
                 let verack = crate::ProtocolMessage::Verack;
-                let verack_msg = NetworkMessage::new(magic, verack);
-                
+                let verack_msg = NetworkMessage::new(verack);
+
                 if let Some(connection) = connections.write().await.get_mut(&address) {
                     if let Err(e) = connection.send_message(verack_msg).await {
                         warn!("Failed to send verack to {}: {}", address, e);
@@ -299,14 +306,14 @@ impl TaskManager {
                     height: *start_height,
                 });
             }
-            
+
             crate::ProtocolMessage::Verack => {
                 info!("Received Verack from {}", address);
-                
+
                 // Mark connection as ready
                 if let Some(connection) = connections.write().await.get_mut(&address) {
                     connection.set_state(super::connection::ConnectionState::Ready);
-                    
+
                     if let Some(node_info) = &connection.node_info {
                         let _ = event_tx.send(P2PEvent::HandshakeCompleted {
                             peer_id: node_info.id,
@@ -316,33 +323,36 @@ impl TaskManager {
                     }
                 }
             }
-            
+
             crate::ProtocolMessage::Ping { nonce } => {
                 debug!("Received Ping from {}: nonce={}", address, nonce);
-                
+
                 // Send pong response
                 let pong = crate::ProtocolMessage::pong(*nonce);
-                let pong_msg = NetworkMessage::new(magic, pong);
-                
+                let pong_msg = NetworkMessage::new(pong);
+
                 if let Some(connection) = connections.write().await.get_mut(&address) {
                     if let Err(e) = connection.send_message(pong_msg).await {
                         warn!("Failed to send pong to {}: {}", address, e);
                     }
                 }
             }
-            
+
             crate::ProtocolMessage::Pong { nonce } => {
                 debug!("Received Pong from {}: nonce={}", address, nonce);
-                
+
                 // Emit ping completed event
                 let _ = event_tx.send(P2PEvent::PingCompleted {
                     address,
                     rtt_ms: 0, // Would calculate actual RTT in production
                 });
             }
-            
+
             _ => {
-                debug!("Received other message from {}: {}", address, message.header.command);
+                debug!(
+                    "Received other message from {}: {}",
+                    address, message.header.command
+                );
             }
         }
 
@@ -359,10 +369,7 @@ impl TaskManager {
             }
         };
 
-        let _ = event_tx.send(P2PEvent::MessageReceived {
-            peer_id,
-            message,
-        });
+        let _ = event_tx.send(P2PEvent::MessageReceived { peer_id, message });
 
         Ok(())
     }
@@ -376,25 +383,25 @@ impl TaskManager {
     ) {
         let handle = tokio::spawn(async move {
             info!("Statistics updater task started");
-            
+
             let mut interval = interval(Duration::from_secs(60)); // Update every minute
-            
+
             while *running.read().await {
                 interval.tick().await;
-                
+
                 let connections_read = connections.read().await;
                 let peer_count = connections_read.len();
                 let connected = peer_count > 0;
-                
+
                 // Emit network status event
                 let _ = event_tx.send(P2PEvent::NetworkStatus {
                     connected,
                     peer_count,
                 });
-                
+
                 debug!("Network status: {} peers connected", peer_count);
             }
-            
+
             info!("Statistics updater task stopped");
         });
 
@@ -404,12 +411,12 @@ impl TaskManager {
     /// Stops all background tasks
     pub async fn stop_all(&self) {
         info!("Stopping all background tasks");
-        
+
         let mut handles = self.task_handles.write().await;
         for handle in handles.drain(..) {
             handle.abort();
         }
-        
+
         info!("All background tasks stopped");
     }
 }
@@ -427,7 +434,7 @@ mod tests {
     #[tokio::test]
     async fn test_task_manager_creation() {
         let task_manager = TaskManager::new();
-        
+
         // Should start with no active tasks
         assert_eq!(task_manager.task_handles.read().await.len(), 0);
     }
@@ -435,10 +442,10 @@ mod tests {
     #[tokio::test]
     async fn test_task_manager_stop_all() {
         let task_manager = TaskManager::new();
-        
+
         // Stop all (should handle empty case gracefully)
         task_manager.stop_all().await;
-        
+
         assert_eq!(task_manager.task_handles.read().await.len(), 0);
     }
-} 
+}

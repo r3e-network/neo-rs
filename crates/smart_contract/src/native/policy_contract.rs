@@ -58,9 +58,10 @@ impl PolicyContract {
     pub fn new() -> Self {
         // Policy contract hash (well-known constant)
         let hash = UInt160::from_bytes(&[
-            0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xe6, 0xd2, 0x6a, 0x7b, 0x32,
-            0xa1, 0x1b, 0x62, 0x32, 0x79, 0x4c, 0x88, 0x52, 0x12, 0x3d,
-        ]).unwrap();
+            0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xe6, 0xd2, 0x6a, 0x7b, 0x32, 0xa1, 0x1b, 0x62, 0x32,
+            0x79, 0x4c, 0x88, 0x52, 0x12, 0x3d,
+        ])
+        .unwrap();
 
         let methods = vec![
             // Fee and limit getters (safe methods)
@@ -72,7 +73,6 @@ impl PolicyContract {
             NativeMethod::safe("getMaxBlockSize".to_string(), 1 << 15),
             NativeMethod::safe("getMaxBlockSystemFee".to_string(), 1 << 15),
             NativeMethod::safe("getMaxTraceableBlocks".to_string(), 1 << 15),
-
             // Fee and limit setters (unsafe methods requiring committee signature)
             NativeMethod::unsafe_method("setFeePerByte".to_string(), 1 << 15, 0x01),
             NativeMethod::unsafe_method("setExecFeeFactor".to_string(), 1 << 15, 0x01),
@@ -82,7 +82,6 @@ impl PolicyContract {
             NativeMethod::unsafe_method("setMaxBlockSize".to_string(), 1 << 15, 0x01),
             NativeMethod::unsafe_method("setMaxBlockSystemFee".to_string(), 1 << 15, 0x01),
             NativeMethod::unsafe_method("setMaxTraceableBlocks".to_string(), 1 << 15, 0x01),
-
             // Account blocking methods
             NativeMethod::safe("getBlockedAccounts".to_string(), 1 << 15),
             NativeMethod::unsafe_method("blockAccount".to_string(), 1 << 15, 0x01),
@@ -127,7 +126,10 @@ impl PolicyContract {
             "unblockAccount" => self.unblock_account(engine, args),
             "isBlocked" => self.is_blocked(engine, args),
 
-            _ => Err(Error::NativeContractError(format!("Unknown method: {}", method))),
+            _ => Err(Error::NativeContractError(format!(
+                "Unknown method: {}",
+                method
+            ))),
         }
     }
 
@@ -137,9 +139,15 @@ impl PolicyContract {
         Ok(max_tx.to_le_bytes().to_vec())
     }
 
-    fn set_max_transactions_per_block(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    fn set_max_transactions_per_block(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("setMaxTransactionsPerBlock requires value argument".to_string()));
+            return Err(Error::NativeContractError(
+                "setMaxTransactionsPerBlock requires value argument".to_string(),
+            ));
         }
 
         // Production-ready max transactions per block setting (matches C# PolicyContract.SetMaxTransactionsPerBlock exactly)
@@ -153,7 +161,9 @@ impl PolicyContract {
 
         // Validate range (1 to 1000)
         if value < 1 || value > 1000 {
-            return Err(Error::NativeContractError("Max transactions per block must be between 1 and 1000".to_string()));
+            return Err(Error::NativeContractError(
+                "Max transactions per block must be between 1 and 1000".to_string(),
+            ));
         }
 
         // Get storage context and store the value
@@ -170,9 +180,15 @@ impl PolicyContract {
         Ok(max_size.to_le_bytes().to_vec())
     }
 
-    fn set_max_block_size(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    fn set_max_block_size(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("setMaxBlockSize requires value argument".to_string()));
+            return Err(Error::NativeContractError(
+                "setMaxBlockSize requires value argument".to_string(),
+            ));
         }
 
         // Production-ready max block size setting (matches C# PolicyContract.SetMaxBlockSize exactly)
@@ -186,7 +202,9 @@ impl PolicyContract {
 
         // Validate range (1KB to 32MB)
         if value < 1024 || value > 32 * 1024 * 1024 {
-            return Err(Error::NativeContractError("Max block size must be between 1KB and 32MB".to_string()));
+            return Err(Error::NativeContractError(
+                "Max block size must be between 1KB and 32MB".to_string(),
+            ));
         }
 
         // Store to blockchain storage (matches C# PolicyContract.SetMaxBlockSize exactly)
@@ -201,9 +219,15 @@ impl PolicyContract {
         Ok(max_fee.to_le_bytes().to_vec())
     }
 
-    fn set_max_block_system_fee(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    fn set_max_block_system_fee(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("setMaxBlockSystemFee requires value argument".to_string()));
+            return Err(Error::NativeContractError(
+                "setMaxBlockSystemFee requires value argument".to_string(),
+            ));
         }
 
         // Production-ready max block system fee setting (matches C# PolicyContract.SetMaxBlockSystemFee exactly)
@@ -216,13 +240,20 @@ impl PolicyContract {
         };
 
         // Validate range (must be positive and reasonable)
-        if value <= 0 || value > 10_000_000_000_000 { // 100,000 GAS max
-            return Err(Error::NativeContractError("Max block system fee must be positive and reasonable".to_string()));
+        if value <= 0 || value > 10_000_000_000_000 {
+            // 100,000 GAS max
+            return Err(Error::NativeContractError(
+                "Max block system fee must be positive and reasonable".to_string(),
+            ));
         }
 
         // Store to blockchain storage (matches C# PolicyContract.SetMaxBlockSystemFee exactly)
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.put_storage_item(&context, Self::MAX_BLOCK_SYSTEM_FEE_KEY, &value.to_le_bytes())?;
+        engine.put_storage_item(
+            &context,
+            Self::MAX_BLOCK_SYSTEM_FEE_KEY,
+            &value.to_le_bytes(),
+        )?;
         Ok(vec![1]) // Return true for success
     }
 
@@ -256,9 +287,15 @@ impl PolicyContract {
         Ok(max_traceable.to_le_bytes().to_vec())
     }
 
-    fn set_fee_per_byte(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    fn set_fee_per_byte(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("setFeePerByte requires value argument".to_string()));
+            return Err(Error::NativeContractError(
+                "setFeePerByte requires value argument".to_string(),
+            ));
         }
 
         // Production-ready fee per byte setting (matches C# PolicyContract.SetFeePerByte exactly)
@@ -272,7 +309,9 @@ impl PolicyContract {
 
         // Validate range (0 to 100,000,000)
         if value < 0 || value > 100_000_000 {
-            return Err(Error::NativeContractError("Fee per byte must be between 0 and 100,000,000".to_string()));
+            return Err(Error::NativeContractError(
+                "Fee per byte must be between 0 and 100,000,000".to_string(),
+            ));
         }
 
         // Store to blockchain storage (matches C# PolicyContract.SetFeePerByte exactly)
@@ -281,9 +320,15 @@ impl PolicyContract {
         Ok(vec![1]) // Return true for success
     }
 
-    fn set_exec_fee_factor(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    fn set_exec_fee_factor(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("setExecFeeFactor requires value argument".to_string()));
+            return Err(Error::NativeContractError(
+                "setExecFeeFactor requires value argument".to_string(),
+            ));
         }
 
         // Production-ready exec fee factor setting (matches C# PolicyContract.SetExecFeeFactor exactly)
@@ -297,7 +342,9 @@ impl PolicyContract {
 
         // Validate range (1 to 1000 - reasonable execution fee multiplier)
         if value == 0 || value > 1000 {
-            return Err(Error::NativeContractError("Exec fee factor must be between 1 and 1000".to_string()));
+            return Err(Error::NativeContractError(
+                "Exec fee factor must be between 1 and 1000".to_string(),
+            ));
         }
 
         // Store to blockchain storage (matches C# PolicyContract.SetExecFeeFactor exactly)
@@ -306,9 +353,15 @@ impl PolicyContract {
         Ok(vec![1]) // Return true for success
     }
 
-    fn set_storage_price(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    fn set_storage_price(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("setStoragePrice requires value argument".to_string()));
+            return Err(Error::NativeContractError(
+                "setStoragePrice requires value argument".to_string(),
+            ));
         }
 
         // Production-ready storage price setting (matches C# PolicyContract.SetStoragePrice exactly)
@@ -322,7 +375,9 @@ impl PolicyContract {
 
         // Validate range (minimum 1 datoshi per byte, maximum 100,000 datoshi per byte)
         if value == 0 || value > 100_000 {
-            return Err(Error::NativeContractError("Storage price must be between 1 and 100,000 datoshi per byte".to_string()));
+            return Err(Error::NativeContractError(
+                "Storage price must be between 1 and 100,000 datoshi per byte".to_string(),
+            ));
         }
 
         // Store to blockchain storage (matches C# PolicyContract.SetStoragePrice exactly)
@@ -331,9 +386,15 @@ impl PolicyContract {
         Ok(vec![1]) // Return true for success
     }
 
-    fn set_attribute_fee(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    fn set_attribute_fee(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("setAttributeFee requires value argument".to_string()));
+            return Err(Error::NativeContractError(
+                "setAttributeFee requires value argument".to_string(),
+            ));
         }
 
         // Production-ready attribute fee setting (matches C# PolicyContract.SetAttributeFee exactly)
@@ -346,8 +407,11 @@ impl PolicyContract {
         };
 
         // Validate range (must be non-negative and reasonable)
-        if value < 0 || value > 1_000_000_000 { // Max 10 GAS
-            return Err(Error::NativeContractError("Attribute fee must be between 0 and 1,000,000,000 datoshi".to_string()));
+        if value < 0 || value > 1_000_000_000 {
+            // Max 10 GAS
+            return Err(Error::NativeContractError(
+                "Attribute fee must be between 0 and 1,000,000,000 datoshi".to_string(),
+            ));
         }
 
         // Store to blockchain storage (matches C# PolicyContract.SetAttributeFee exactly)
@@ -356,9 +420,15 @@ impl PolicyContract {
         Ok(vec![1]) // Return true for success
     }
 
-    fn set_max_traceable_blocks(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+    fn set_max_traceable_blocks(
+        &self,
+        engine: &mut ApplicationEngine,
+        args: &[Vec<u8>],
+    ) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("setMaxTraceableBlocks requires value argument".to_string()));
+            return Err(Error::NativeContractError(
+                "setMaxTraceableBlocks requires value argument".to_string(),
+            ));
         }
 
         // Production-ready max traceable blocks setting (matches C# PolicyContract.SetMaxTraceableBlocks exactly)
@@ -372,12 +442,18 @@ impl PolicyContract {
 
         // Validate range (minimum 1 block, maximum 2,102,400 blocks - about 1 year)
         if value == 0 || value > 2_102_400 {
-            return Err(Error::NativeContractError("Max traceable blocks must be between 1 and 2,102,400".to_string()));
+            return Err(Error::NativeContractError(
+                "Max traceable blocks must be between 1 and 2,102,400".to_string(),
+            ));
         }
 
         // Store to blockchain storage (matches C# PolicyContract.SetMaxTraceableBlocks exactly)
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.put_storage_item(&context, Self::MAX_TRACEABLE_BLOCKS_KEY, &value.to_le_bytes())?;
+        engine.put_storage_item(
+            &context,
+            Self::MAX_TRACEABLE_BLOCKS_KEY,
+            &value.to_le_bytes(),
+        )?;
         Ok(vec![1]) // Return true for success
     }
 
@@ -393,7 +469,9 @@ impl PolicyContract {
 
     fn block_account(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("blockAccount requires account argument".to_string()));
+            return Err(Error::NativeContractError(
+                "blockAccount requires account argument".to_string(),
+            ));
         }
 
         // Production-ready account blocking (matches C# PolicyContract.BlockAccount exactly)
@@ -401,12 +479,16 @@ impl PolicyContract {
 
         // Validate account hash (must be 20 bytes)
         if account_bytes.len() != 20 {
-            return Err(Error::NativeContractError("Invalid account hash length (must be 20 bytes)".to_string()));
+            return Err(Error::NativeContractError(
+                "Invalid account hash length (must be 20 bytes)".to_string(),
+            ));
         }
 
         // Validate account hash is not zero
         if account_bytes.iter().all(|&b| b == 0) {
-            return Err(Error::NativeContractError("Cannot block zero account hash".to_string()));
+            return Err(Error::NativeContractError(
+                "Cannot block zero account hash".to_string(),
+            ));
         }
 
         // Block account implementation (matches C# PolicyContract.BlockAccount exactly)
@@ -427,7 +509,9 @@ impl PolicyContract {
 
     fn unblock_account(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("unblockAccount requires account argument".to_string()));
+            return Err(Error::NativeContractError(
+                "unblockAccount requires account argument".to_string(),
+            ));
         }
 
         // Production-ready account unblocking (matches C# PolicyContract.UnblockAccount exactly)
@@ -435,7 +519,9 @@ impl PolicyContract {
 
         // Validate account hash (must be 20 bytes)
         if account_bytes.len() != 20 {
-            return Err(Error::NativeContractError("Invalid account hash length (must be 20 bytes)".to_string()));
+            return Err(Error::NativeContractError(
+                "Invalid account hash length (must be 20 bytes)".to_string(),
+            ));
         }
 
         // Unblock account implementation (matches C# PolicyContract.UnblockAccount exactly)
@@ -456,7 +542,9 @@ impl PolicyContract {
 
     fn is_blocked(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError("isBlocked requires account argument".to_string()));
+            return Err(Error::NativeContractError(
+                "isBlocked requires account argument".to_string(),
+            ));
         }
 
         // Production-ready blocked status check (matches C# PolicyContract.IsBlocked exactly)
@@ -464,7 +552,9 @@ impl PolicyContract {
 
         // Validate account hash (must be 20 bytes)
         if account_bytes.len() != 20 {
-            return Err(Error::NativeContractError("Invalid account hash length (must be 20 bytes)".to_string()));
+            return Err(Error::NativeContractError(
+                "Invalid account hash length (must be 20 bytes)".to_string(),
+            ));
         }
 
         // Check blocked accounts list (matches C# PolicyContract.IsBlocked exactly)
@@ -494,7 +584,11 @@ impl PolicyContract {
     }
 
     /// Store blocked accounts list to storage
-    fn store_blocked_accounts_list(&self, engine: &mut ApplicationEngine, accounts: &[UInt160]) -> Result<()> {
+    fn store_blocked_accounts_list(
+        &self,
+        engine: &mut ApplicationEngine,
+        accounts: &[UInt160],
+    ) -> Result<()> {
         let mut data = Vec::new();
         for account in accounts {
             data.extend_from_slice(account.as_bytes());
@@ -583,12 +677,12 @@ mod tests {
     fn test_block_account() {
         let policy = PolicyContract::new();
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        
+
         // Use a non-zero account hash (zero hash is explicitly forbidden)
         let mut account = vec![0u8; 20];
         account[0] = 1; // Make it non-zero
         let args = vec![account];
-        
+
         let result = policy.block_account(&mut engine, &args).unwrap();
         assert_eq!(result, vec![1]); // Success
     }

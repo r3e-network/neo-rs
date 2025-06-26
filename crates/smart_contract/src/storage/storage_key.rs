@@ -1,10 +1,10 @@
 //! Storage key implementation for smart contract storage.
 
+use crate::{Error, Result};
 use neo_core::UInt160;
 use neo_io::Serializable;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use crate::{Error, Result};
 
 /// Represents a key in the smart contract storage system.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
@@ -79,7 +79,10 @@ impl StorageKey {
     pub fn as_int(&self) -> Option<i32> {
         if self.key.len() == 4 {
             Some(i32::from_le_bytes([
-                self.key[0], self.key[1], self.key[2], self.key[3]
+                self.key[0],
+                self.key[1],
+                self.key[2],
+                self.key[3],
             ]))
         } else {
             None

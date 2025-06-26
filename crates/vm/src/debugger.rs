@@ -2,11 +2,11 @@
 //!
 //! This module provides debugging functionality for the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::{ExecutionEngine, VMState};
 use crate::instruction::Instruction;
-use crate::Error;
-use crate::Result;
 use std::collections::HashMap;
 
 /// Represents a breakpoint in the VM.
@@ -81,7 +81,10 @@ impl Debugger {
     /// Removes a breakpoint.
     pub fn remove_breakpoint(&mut self, breakpoint: &Breakpoint) {
         if let Some(breakpoints) = self.breakpoints.get_mut(breakpoint.script_hash()) {
-            if let Some(index) = breakpoints.iter().position(|&ip| ip == breakpoint.instruction_pointer()) {
+            if let Some(index) = breakpoints
+                .iter()
+                .position(|&ip| ip == breakpoint.instruction_pointer())
+            {
                 breakpoints.remove(index);
             }
         }
@@ -115,7 +118,7 @@ impl Debugger {
     }
 
     /// Executes the VM until a breakpoint is hit or the VM halts.
-    pub fn execute(&mut self) -> Result<VMState> {
+    pub fn execute(&mut self) -> VmResult<VMState> {
         while self.engine.state() != VMState::HALT && self.engine.state() != VMState::FAULT {
             // Check if we're at a breakpoint
             if let Some(context) = self.engine.current_context() {
@@ -138,7 +141,7 @@ impl Debugger {
     }
 
     /// Executes a single instruction.
-    pub fn step(&mut self) -> Result<VMState> {
+    pub fn step(&mut self) -> VmResult<VMState> {
         if self.engine.state() == VMState::BREAK {
             self.engine.set_state(VMState::NONE);
         }
@@ -152,7 +155,7 @@ impl Debugger {
     }
 
     /// Executes until the current context returns.
-    pub fn step_out(&mut self) -> Result<VMState> {
+    pub fn step_out(&mut self) -> VmResult<VMState> {
         if self.engine.state() == VMState::BREAK {
             self.engine.set_state(VMState::NONE);
         }
@@ -167,7 +170,10 @@ impl Debugger {
 
             // Check if we've stepped out of the current context
             if let Some(context) = &current_context {
-                if self.engine.current_context().is_none() || self.engine.current_context().unwrap().script().hash() != context.script().hash() {
+                if self.engine.current_context().is_none()
+                    || self.engine.current_context().unwrap().script().hash()
+                        != context.script().hash()
+                {
                     self.engine.set_state(VMState::BREAK);
                     return Ok(VMState::BREAK);
                 }
@@ -178,7 +184,7 @@ impl Debugger {
     }
 
     /// Executes until the next line in the current context.
-    pub fn step_over(&mut self) -> Result<VMState> {
+    pub fn step_over(&mut self) -> VmResult<VMState> {
         if self.engine.state() == VMState::BREAK {
             self.engine.set_state(VMState::NONE);
         }

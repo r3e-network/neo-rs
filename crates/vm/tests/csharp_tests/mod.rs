@@ -1,10 +1,10 @@
 //! C# JSON Test Suite for Neo VM
-//! 
+//!
 //! This module contains a comprehensive test suite that executes C# Neo VM JSON test files
 //! to ensure compatibility between the Rust and C# implementations.
-//! 
+//!
 //! ## Structure
-//! 
+//!
 //! - `common`: Shared data structures for JSON deserialization
 //! - `runner`: Test execution engine
 //! - `opcodes`: Tests organized by opcode categories
@@ -14,8 +14,8 @@
 pub mod common;
 pub mod runner;
 
-pub mod opcodes;
 pub mod integration;
+pub mod opcodes;
 pub mod unit;
 
 // Re-export commonly used items for convenience

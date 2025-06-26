@@ -5,15 +5,15 @@ use crate::JToken;
 pub trait JContainer {
     /// Clears all children from the container
     fn clear_container(&mut self);
-    
+
     /// Gets the children of the container
     fn children(&self) -> Vec<Option<&JToken>>;
-    
+
     /// Gets the number of children in the container
     fn count(&self) -> usize {
         self.children().len()
     }
-    
+
     /// Checks if the container is empty
     fn is_empty_container(&self) -> bool {
         self.count() == 0
@@ -25,7 +25,7 @@ impl JContainer for crate::JArray {
     fn clear_container(&mut self) {
         self.clear();
     }
-    
+
     fn children(&self) -> Vec<Option<&JToken>> {
         self.iter().collect()
     }
@@ -54,4 +54,4 @@ mod tests {
         assert!(array.is_empty_container());
         assert_eq!(array.count(), 0);
     }
-} 
+}

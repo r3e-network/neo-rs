@@ -10,8 +10,6 @@ pub use priority_message_queue::PriorityMessageQueue;
 
 use async_trait::async_trait;
 use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 /// A message that can be sent to an actor.
@@ -73,14 +71,17 @@ impl<M: Message> ActorHandle<M> {
     ///
     /// A future that resolves to the response to the message
     pub async fn send(&self, message: M) -> Result<M::Response, crate::Error> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (_tx, rx) = tokio::sync::oneshot::channel();
 
         let wrapped_message = message;
 
-        self.sender.send(wrapped_message).await
+        self.sender
+            .send(wrapped_message)
+            .await
             .map_err(|e| crate::Error::Io(format!("Failed to send message: {}", e)))?;
 
-        rx.await.map_err(|e| crate::Error::Io(format!("Failed to receive response: {}", e)))
+        rx.await
+            .map_err(|e| crate::Error::Io(format!("Failed to receive response: {}", e)))
     }
 }
 
@@ -94,8 +95,7 @@ impl<M: Message> Clone for ActorHandle<M> {
 
 impl<M: Message> fmt::Debug for ActorHandle<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ActorHandle")
-            .finish()
+        f.debug_struct("ActorHandle").finish()
     }
 }
 

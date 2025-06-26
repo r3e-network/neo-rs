@@ -3,8 +3,8 @@
 //! Tests that run the complete C# JSON test suite to ensure
 //! overall compatibility between Rust and C# implementations.
 
-use std::path::Path;
 use crate::csharp_tests::JsonTestRunner;
+use std::path::Path;
 
 /// Test Others category (matches C# TestOthers)
 #[test]

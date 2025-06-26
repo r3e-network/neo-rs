@@ -23,7 +23,7 @@ pub mod ripemd160;
 // Re-exports for commonly used types
 pub use ecc::{ECCurve, ECFieldElement, ECPoint};
 pub use ecdsa::ECDsa;
-pub use hash::{sha256, sha512, ripemd160, hash160, hash256};
+pub use hash::{hash160, hash256, ripemd160, sha256, sha512};
 pub use hash_algorithm::HashAlgorithm;
 pub use hasher::Hasher;
 pub use merkle_tree::MerkleTree;

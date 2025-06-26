@@ -76,7 +76,7 @@ where
     F: FnMut() -> Result<T, E>,
 {
     let mut delay = initial_delay_ms;
-    
+
     for attempt in 0..=max_retries {
         match operation() {
             Ok(result) => return Ok(result),
@@ -84,13 +84,13 @@ where
                 if attempt == max_retries {
                     return Err(e);
                 }
-                
+
                 tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
                 delay *= 2; // Exponential backoff
             }
         }
     }
-    
+
     unreachable!()
 }
 
@@ -190,7 +190,7 @@ mod tests {
         let now = current_timestamp();
         let datetime = timestamp_to_datetime(now);
         let back_to_timestamp = datetime_to_timestamp(&datetime);
-        
+
         // Allow for small differences due to precision
         assert!((now as i64 - back_to_timestamp as i64).abs() <= 1);
     }
@@ -270,9 +270,10 @@ mod tests {
             },
             5,
             1,
-        ).await;
+        )
+        .await;
 
         assert_eq!(result, Ok("success"));
         assert_eq!(attempts, 3);
     }
-} 
+}

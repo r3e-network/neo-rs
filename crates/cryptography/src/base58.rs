@@ -74,7 +74,9 @@ pub fn decode_check(s: &str) -> Result<Vec<u8>, Error> {
         .map_err(|e| Error::InvalidFormat(format!("Invalid Base58: {e}")))?;
 
     if decoded.len() < 4 {
-        return Err(Error::InvalidFormat("Invalid Base58Check string: too short".into()));
+        return Err(Error::InvalidFormat(
+            "Invalid Base58Check string: too short".to_string(),
+        ));
     }
 
     let data_len = decoded.len() - 4;

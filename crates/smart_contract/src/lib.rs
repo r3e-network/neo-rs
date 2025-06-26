@@ -5,8 +5,8 @@
 
 // Re-export from other crates for convenience
 pub use neo_core::{
-    UInt160, UInt256, Transaction, Witness, Signer, IVerifiable,
-    WitnessScope, WitnessCondition, TransactionAttributeType,
+    IVerifiable, Signer, Transaction, TransactionAttributeType, UInt160, UInt256, Witness,
+    WitnessCondition, WitnessScope,
 };
 pub use neo_cryptography::ECPoint;
 pub use neo_vm::{ApplicationEngine, TriggerType};
@@ -30,7 +30,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("VM error: {0}")]
-    VM(#[from] neo_vm::Error),
+    VM(#[from] neo_vm::VmError),
     #[error("Core error: {0}")]
     Core(String),
     #[error("IO error: {0}")]
@@ -86,18 +86,90 @@ pub enum Error {
 }
 
 // Add From trait implementations for error type conversions
-impl From<neo_io::Error> for Error {
-    fn from(err: neo_io::Error) -> Self {
+impl From<neo_io::IoError> for Error {
+    fn from(err: neo_io::IoError) -> Self {
         match err {
-            neo_io::Error::EndOfStream => Error::SerializationError("Unexpected end of stream".to_string()),
-            neo_io::Error::InvalidData(msg) => Error::SerializationError(msg),
-            neo_io::Error::FormatException => Error::SerializationError("Format exception".to_string()),
-            neo_io::Error::Deserialization(msg) => Error::SerializationError(msg),
-            neo_io::Error::InvalidOperation(msg) => Error::InvalidOperation(msg),
-            neo_io::Error::Io(msg) => Error::IO(std::io::Error::new(std::io::ErrorKind::Other, msg)),
-            neo_io::Error::Serialization(msg) => Error::SerializationError(msg),
-            neo_io::Error::InvalidFormat(msg) => Error::SerializationError(msg),
-            neo_io::Error::BufferOverflow => Error::SerializationError("Buffer overflow".to_string()),
+            neo_io::IoError::EndOfStream { .. } => {
+                Error::SerializationError("Unexpected end of stream".to_string())
+            }
+            neo_io::IoError::InvalidData { context, value } => {
+                Error::SerializationError(format!("{}: {}", context, value))
+            }
+            neo_io::IoError::FormatException { context, .. } => {
+                Error::SerializationError(format!("Format exception: {}", context))
+            }
+            neo_io::IoError::Deserialization {
+                expected, reason, ..
+            } => Error::SerializationError(format!(
+                "Deserialization failed: expected {}, reason: {}",
+                expected, reason
+            )),
+            neo_io::IoError::InvalidOperation { operation, context } => Error::InvalidOperation(
+                format!("Invalid operation: {} in context: {}", operation, context),
+            ),
+            neo_io::IoError::Operation { operation, reason } => Error::IO(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("{}: {}", operation, reason),
+            )),
+            neo_io::IoError::Serialization { type_name, reason } => {
+                Error::SerializationError(format!("{}: {}", type_name, reason))
+            }
+            neo_io::IoError::InvalidFormat {
+                expected_format,
+                reason,
+            } => Error::SerializationError(format!(
+                "Invalid format: expected {}, reason: {}",
+                expected_format, reason
+            )),
+            neo_io::IoError::BufferOverflow { .. } => {
+                Error::SerializationError("Buffer overflow".to_string())
+            }
+            neo_io::IoError::Encoding { reason, .. } => {
+                Error::SerializationError(format!("Encoding error: {}", reason))
+            }
+            // Handle remaining variants with appropriate mappings
+            neo_io::IoError::MemoryAllocation { .. } => {
+                Error::SerializationError("Memory allocation failed".to_string())
+            }
+            neo_io::IoError::StreamPosition { .. } => {
+                Error::SerializationError("Stream position error".to_string())
+            }
+            neo_io::IoError::StreamNotReadable { reason } => {
+                Error::SerializationError(format!("Stream not readable: {}", reason))
+            }
+            neo_io::IoError::StreamNotWritable { reason } => {
+                Error::SerializationError(format!("Stream not writable: {}", reason))
+            }
+            neo_io::IoError::ChecksumMismatch { .. } => {
+                Error::SerializationError("Checksum mismatch".to_string())
+            }
+            neo_io::IoError::Compression { algorithm, reason } => {
+                Error::SerializationError(format!("Compression error ({}): {}", algorithm, reason))
+            }
+            neo_io::IoError::TypeConversion { from, to, .. } => {
+                Error::SerializationError(format!("Type conversion from {} to {} failed", from, to))
+            }
+            neo_io::IoError::VersionMismatch { expected, actual } => Error::SerializationError(
+                format!("Version mismatch: expected {}, got {}", expected, actual),
+            ),
+            neo_io::IoError::Timeout { .. } => {
+                Error::InvalidOperation("Operation timed out".to_string())
+            }
+            neo_io::IoError::ResourceUnavailable { resource } => {
+                Error::InvalidOperation(format!("Resource unavailable: {}", resource))
+            }
+            neo_io::IoError::PermissionDenied {
+                operation,
+                resource,
+            } => {
+                Error::PermissionDenied(format!("Permission denied: {} on {}", operation, resource))
+            }
+            neo_io::IoError::ResourceExists { resource } => {
+                Error::InvalidOperation(format!("Resource already exists: {}", resource))
+            }
+            neo_io::IoError::ResourceNotFound { resource } => {
+                Error::InvalidOperation(format!("Resource not found: {}", resource))
+            }
         }
     }
 }
@@ -105,14 +177,37 @@ impl From<neo_io::Error> for Error {
 impl From<neo_core::CoreError> for Error {
     fn from(err: neo_core::CoreError) -> Self {
         match err {
-            neo_core::CoreError::InvalidFormat(msg) => Error::SerializationError(msg),
-            neo_core::CoreError::InvalidData(msg) => Error::SerializationError(msg),
-            neo_core::CoreError::IoError(io_err) => Error::IO(io_err),
-            neo_core::CoreError::SerializationError(msg) => Error::SerializationError(msg),
-            neo_core::CoreError::InvalidOperation(msg) => Error::InvalidOperation(msg),
-            neo_core::CoreError::SystemError(msg) => Error::Core(msg),
-            neo_core::CoreError::InsufficientGas => Error::InsufficientGas("Insufficient gas".to_string()),
-            neo_core::CoreError::CryptographicError(msg) => Error::InvalidSignature(msg),
+            neo_core::CoreError::InvalidFormat { message } => Error::SerializationError(message),
+            neo_core::CoreError::InvalidData { message } => Error::SerializationError(message),
+            neo_core::CoreError::Io { message } => Error::SerializationError(message),
+            neo_core::CoreError::Serialization { message } => Error::SerializationError(message),
+            neo_core::CoreError::InvalidOperation { message } => Error::InvalidOperation(message),
+            neo_core::CoreError::System { message } => Error::Core(message),
+            neo_core::CoreError::InsufficientGas {
+                required: _,
+                available: _,
+            } => Error::InsufficientGas("Insufficient gas".to_string()),
+            neo_core::CoreError::Cryptographic { message } => Error::InvalidSignature(message),
+            neo_core::CoreError::Deserialization { message } => Error::SerializationError(message),
+            neo_core::CoreError::BufferOverflow { .. } => {
+                Error::SerializationError("Buffer overflow".to_string())
+            }
+            neo_core::CoreError::EndOfStream => {
+                Error::SerializationError("End of stream".to_string())
+            }
+            neo_core::CoreError::Configuration { message } => Error::InvalidOperation(message),
+            neo_core::CoreError::Network { message } => Error::InvalidOperation(message),
+            neo_core::CoreError::Timeout { .. } => Error::InvalidOperation("Timeout".to_string()),
+            neo_core::CoreError::NotFound { resource } => {
+                Error::InvalidOperation(format!("Not found: {}", resource))
+            }
+            neo_core::CoreError::AlreadyExists { resource } => {
+                Error::InvalidOperation(format!("Already exists: {}", resource))
+            }
+            neo_core::CoreError::ValidationFailed { reason } => Error::InvalidOperation(reason),
+            neo_core::CoreError::TypeConversion { from, to } => {
+                Error::SerializationError(format!("Type conversion from {} to {} failed", from, to))
+            }
         }
     }
 }

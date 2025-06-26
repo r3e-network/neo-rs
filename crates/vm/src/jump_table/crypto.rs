@@ -2,13 +2,13 @@
 //!
 //! This module provides the cryptographic operation handlers for the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::StackItem;
-use crate::Error;
-use crate::Result;
 
 /// Registers the cryptographic operation handlers.
 pub fn register_handlers(_jump_table: &mut JumpTable) {
@@ -28,9 +28,11 @@ pub fn register_handlers(_jump_table: &mut JumpTable) {
 /// 3. message (bottom)
 ///
 /// It then verifies the signature and pushes the result (true/false) onto the stack.
-fn verify(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn verify(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the signature from the stack (top)
     let signature = context.pop()?;
@@ -58,7 +60,7 @@ fn verify(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
 ///
 /// This function implements the exact signature verification logic used in the C# Neo implementation.
 /// It supports ECDSA signature verification using the secp256r1 curve.
-fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> Result<bool> {
+fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> VmResult<bool> {
     // Validate input lengths
     if signature.len() != 64 {
         return Ok(false); // Invalid signature length
@@ -95,9 +97,21 @@ mod tests {
         let signature = vec![0x30; 64]; // DER signature format
 
         // Push test data onto the stack (in reverse order: message, public_key, signature)
-        engine.current_context_mut().unwrap().push(StackItem::from_byte_string(message.to_vec())).unwrap();
-        engine.current_context_mut().unwrap().push(StackItem::from_byte_string(public_key)).unwrap();
-        engine.current_context_mut().unwrap().push(StackItem::from_byte_string(signature)).unwrap();
+        engine
+            .current_context_mut()
+            .unwrap()
+            .push(StackItem::from_byte_string(message.to_vec()))
+            .unwrap();
+        engine
+            .current_context_mut()
+            .unwrap()
+            .push(StackItem::from_byte_string(public_key))
+            .unwrap();
+        engine
+            .current_context_mut()
+            .unwrap()
+            .push(StackItem::from_byte_string(signature))
+            .unwrap();
 
         // Call verify function
         // Note: VERIFY opcode doesn't exist in C# Neo implementation
@@ -125,9 +139,21 @@ mod tests {
         let signature = vec![0x30; 32]; // Invalid length (should be 64)
 
         // Push test data onto the stack
-        engine.current_context_mut().unwrap().push(StackItem::from_byte_string(message.to_vec())).unwrap();
-        engine.current_context_mut().unwrap().push(StackItem::from_byte_string(public_key)).unwrap();
-        engine.current_context_mut().unwrap().push(StackItem::from_byte_string(signature)).unwrap();
+        engine
+            .current_context_mut()
+            .unwrap()
+            .push(StackItem::from_byte_string(message.to_vec()))
+            .unwrap();
+        engine
+            .current_context_mut()
+            .unwrap()
+            .push(StackItem::from_byte_string(public_key))
+            .unwrap();
+        engine
+            .current_context_mut()
+            .unwrap()
+            .push(StackItem::from_byte_string(signature))
+            .unwrap();
 
         // Call verify function
         // Note: VERIFY opcode doesn't exist in C# Neo implementation
@@ -154,9 +180,21 @@ mod tests {
         let signature = vec![0x30; 64];
 
         // Push test data onto the stack
-        engine.current_context_mut().unwrap().push(StackItem::from_byte_string(message.to_vec())).unwrap();
-        engine.current_context_mut().unwrap().push(StackItem::from_byte_string(public_key)).unwrap();
-        engine.current_context_mut().unwrap().push(StackItem::from_byte_string(signature)).unwrap();
+        engine
+            .current_context_mut()
+            .unwrap()
+            .push(StackItem::from_byte_string(message.to_vec()))
+            .unwrap();
+        engine
+            .current_context_mut()
+            .unwrap()
+            .push(StackItem::from_byte_string(public_key))
+            .unwrap();
+        engine
+            .current_context_mut()
+            .unwrap()
+            .push(StackItem::from_byte_string(signature))
+            .unwrap();
 
         // Call verify function
         // Note: VERIFY opcode doesn't exist in C# Neo implementation

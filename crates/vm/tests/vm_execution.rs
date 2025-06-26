@@ -1,6 +1,7 @@
 //! Integration tests for the Neo VM execution.
 
 use neo_vm::application_engine::{ApplicationEngine, TriggerType};
+use neo_vm::call_flags::CallFlags;
 use neo_vm::execution_engine::{ExecutionEngine, VMState};
 use neo_vm::interop_service::{InteropDescriptor, InteropService};
 use neo_vm::jump_table::JumpTable;
@@ -8,7 +9,6 @@ use neo_vm::op_code::OpCode;
 use neo_vm::script::Script;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm::stack_item::StackItem;
-use neo_vm::call_flags::CallFlags;
 
 #[test]
 fn test_simple_addition() {
@@ -17,13 +17,21 @@ fn test_simple_addition() {
 
     // PUSH1 handler pushes 1 onto the stack
     jump_table.set(OpCode::PUSH1, |engine, _instruction| {
-        engine.current_context_mut().unwrap().evaluation_stack_mut().push(StackItem::from_int(1));
+        engine
+            .current_context_mut()
+            .unwrap()
+            .evaluation_stack_mut()
+            .push(StackItem::from_int(1));
         Ok(())
     });
 
     // PUSH2 handler pushes 2 onto the stack
     jump_table.set(OpCode::PUSH2, |engine, _instruction| {
-        engine.current_context_mut().unwrap().evaluation_stack_mut().push(StackItem::from_int(2));
+        engine
+            .current_context_mut()
+            .unwrap()
+            .evaluation_stack_mut()
+            .push(StackItem::from_int(2));
         Ok(())
     });
 
@@ -97,13 +105,21 @@ fn test_conditional_jump() {
 
     // PUSH1 handler pushes 1 onto the stack
     jump_table.set(OpCode::PUSH1, |engine, _instruction| {
-        engine.current_context_mut().unwrap().evaluation_stack_mut().push(StackItem::from_int(1));
+        engine
+            .current_context_mut()
+            .unwrap()
+            .evaluation_stack_mut()
+            .push(StackItem::from_int(1));
         Ok(())
     });
 
     // PUSH0 handler pushes 0 onto the stack
     jump_table.set(OpCode::PUSH0, |engine, _instruction| {
-        engine.current_context_mut().unwrap().evaluation_stack_mut().push(StackItem::from_int(0));
+        engine
+            .current_context_mut()
+            .unwrap()
+            .evaluation_stack_mut()
+            .push(StackItem::from_int(0));
         Ok(())
     });
 
@@ -133,16 +149,15 @@ fn test_conditional_jump() {
     });
 
     // NOP handler does nothing
-    jump_table.set(OpCode::NOP, |_engine, _instruction| {
-        Ok(())
-    });
+    jump_table.set(OpCode::NOP, |_engine, _instruction| Ok(()));
 
     // Create a script that skips an instruction if the condition is true
     let script_bytes = vec![
-        OpCode::PUSH1 as u8,            // Push 1 onto the stack
-        OpCode::JMPIF as u8, 0x03,      // Jump 3 bytes if the condition is true
-        OpCode::PUSH0 as u8,            // This instruction should be skipped
-        OpCode::NOP as u8,              // No operation
+        OpCode::PUSH1 as u8, // Push 1 onto the stack
+        OpCode::JMPIF as u8,
+        0x03,                // Jump 3 bytes if the condition is true
+        OpCode::PUSH0 as u8, // This instruction should be skipped
+        OpCode::NOP as u8,   // No operation
     ];
     let script = Script::new_relaxed(script_bytes);
 
@@ -154,7 +169,10 @@ fn test_conditional_jump() {
 
     // Execute the first instruction (PUSH1)
     engine.execute_next().unwrap();
-    assert_eq!(engine.current_context().unwrap().evaluation_stack().len(), 1);
+    assert_eq!(
+        engine.current_context().unwrap().evaluation_stack().len(),
+        1
+    );
 
     // Execute the second instruction (JMPIF)
     engine.execute_next().unwrap();
@@ -190,7 +208,9 @@ fn test_application_engine_with_interop() {
             println!("VM Log: {}", String::from_utf8_lossy(&message_bytes));
 
             // For testing, we'll just push a success value onto the stack
-            context.evaluation_stack_mut().push(StackItem::from_bool(true));
+            context
+                .evaluation_stack_mut()
+                .push(StackItem::from_bool(true));
 
             Ok(())
         },
@@ -201,9 +221,9 @@ fn test_application_engine_with_interop() {
     // Create a script that calls the interop method
     let mut builder = ScriptBuilder::new();
     builder
-        .emit_push_int(42)                  // Push an arbitrary value
+        .emit_push_int(42) // Push an arbitrary value
         .emit_syscall("System.Runtime.Log") // Call the log function
-        .emit_opcode(OpCode::RET);          // Return from the script
+        .emit_opcode(OpCode::RET); // Return from the script
 
     let script = builder.to_script();
 
@@ -226,10 +246,20 @@ fn test_application_engine_with_interop() {
     jump_table.set(OpCode::SYSCALL, |engine, instruction| {
         // Get the API name from the instruction operand
         let instruction_pointer = instruction.pointer() + 1;
-        let api_length = engine.current_context().unwrap().script().get_byte(instruction_pointer).unwrap() as usize;
+        let api_length = engine
+            .current_context()
+            .unwrap()
+            .script()
+            .get_byte(instruction_pointer)
+            .unwrap() as usize;
         let api_start = instruction_pointer + 1;
         let api_end = api_start + api_length;
-        let api_bytes = engine.current_context().unwrap().script().range(api_start, api_end).unwrap();
+        let api_bytes = engine
+            .current_context()
+            .unwrap()
+            .script()
+            .range(api_start, api_end)
+            .unwrap();
 
         // Call the interop service
         let app_engine = engine as *mut _ as *mut ApplicationEngine;

@@ -1,8 +1,9 @@
 //! Common types and structures for control operations.
 
 use crate::{
-    stack_item::StackItem,
     call_flags::CallFlags,
+    error::{VmError, VmResult},
+    stack_item::StackItem,
     stack_item::stack_item::InteropInterface,
 };
 use neo_core::{UInt160, UInt256};
@@ -153,7 +154,7 @@ pub struct WitnessRule {
 pub struct WitnessCondition;
 
 impl WitnessCondition {
-    pub fn matches(&self, _engine: &crate::execution_engine::ExecutionEngine) -> crate::Result<bool> {
+    pub fn matches(&self, _engine: &crate::execution_engine::ExecutionEngine) -> VmResult<bool> {
         // Check if the condition matches the current execution context
         Ok(false)
     }
@@ -204,18 +205,18 @@ impl Transaction {
     pub fn signers(&self) -> &[Signer] {
         &[]
     }
-    
+
     pub fn attributes(&self) -> &[TransactionAttribute] {
         &[]
     }
-    
+
     pub fn new_minimal() -> Self {
         Self
     }
 
     /// Deserializes transaction from bytes (production implementation matching C# exactly)
     /// In C# Neo: Transaction.DeserializeFrom(BinaryReader)
-    pub fn deserialize(_data: Vec<u8>) -> crate::Result<Transaction> {
+    pub fn deserialize(_data: Vec<u8>) -> VmResult<Transaction> {
         // In production this would deserialize actual transaction data
         // For now return a minimal transaction as placeholder
         Ok(Transaction::new_minimal())
@@ -223,7 +224,7 @@ impl Transaction {
 
     /// Creates transaction with default script (production implementation matching C# exactly)
     /// In C# Neo: Transaction with default witness script
-    pub fn default_with_script(_script: Vec<u8>) -> crate::Result<Transaction> {
+    pub fn default_with_script(_script: Vec<u8>) -> VmResult<Transaction> {
         // In production this would create transaction with proper script
         // For now return a minimal transaction as placeholder
         Ok(Transaction::new_minimal())
@@ -232,4 +233,4 @@ impl Transaction {
 
 /// Block type placeholder  
 #[derive(Debug, Clone, Copy)]
-pub struct Block; 
+pub struct Block;

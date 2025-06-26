@@ -1,10 +1,10 @@
 //! Stack operation OpCodes for the Neo Virtual Machine.
-//! 
+//!
 //! This module contains all OpCodes related to stack manipulation,
 //! including duplication, swapping, rotation, and stack management.
 
 /// Stack operation OpCodes.
-/// 
+///
 /// These opcodes manipulate the execution stack directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -114,7 +114,15 @@ impl StackOpCode {
     pub fn modifies_stack_size(&self) -> bool {
         matches!(
             self,
-            Self::DUP | Self::OVER | Self::TUCK | Self::DEPTH | Self::DROP | Self::NIP | Self::XDROP | Self::CLEAR | Self::PICK
+            Self::DUP
+                | Self::OVER
+                | Self::TUCK
+                | Self::DEPTH
+                | Self::DROP
+                | Self::NIP
+                | Self::XDROP
+                | Self::CLEAR
+                | Self::PICK
         )
     }
 
@@ -127,17 +135,17 @@ impl StackOpCode {
     /// Returns None for operations that depend on runtime values.
     pub fn net_stack_effect(&self) -> Option<i32> {
         match self {
-            Self::DUP => Some(1),      // Duplicates top item
-            Self::SWAP => Some(0),     // Swaps two items
-            Self::OVER => Some(1),     // Copies second item to top
-            Self::ROT => Some(0),      // Rotates three items
-            Self::TUCK => Some(1),     // Inserts copy of top before second
-            Self::DEPTH => Some(1),    // Pushes stack depth
-            Self::DROP => Some(-1),    // Removes top item
-            Self::NIP => Some(-1),     // Removes second item
-            Self::XDROP => None,       // Depends on n value
-            Self::CLEAR => None,       // Removes all items (depends on current depth)
-            Self::PICK => Some(0),     // Copies item n back to top (net effect is +1 but pops index)
+            Self::DUP => Some(1),   // Duplicates top item
+            Self::SWAP => Some(0),  // Swaps two items
+            Self::OVER => Some(1),  // Copies second item to top
+            Self::ROT => Some(0),   // Rotates three items
+            Self::TUCK => Some(1),  // Inserts copy of top before second
+            Self::DEPTH => Some(1), // Pushes stack depth
+            Self::DROP => Some(-1), // Removes top item
+            Self::NIP => Some(-1),  // Removes second item
+            Self::XDROP => None,    // Depends on n value
+            Self::CLEAR => None,    // Removes all items (depends on current depth)
+            Self::PICK => Some(0),  // Copies item n back to top (net effect is +1 but pops index)
         }
     }
 

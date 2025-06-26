@@ -2,10 +2,10 @@
 //!
 //! This module provides verification functionality exactly matching C# Neo blockchain verification.
 
-use crate::{Error, Result, BlockHeader};
-use neo_core::{UInt160, UInt256, Transaction, Witness};
-use neo_vm::{ApplicationEngine, TriggerType, VMState};
+use crate::{BlockHeader, Error, Result};
+use neo_core::{Transaction, UInt160, UInt256, Witness};
 use neo_cryptography::ECPoint;
+use neo_vm::{ApplicationEngine, TriggerType, VMState};
 
 /// Block verification result
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,7 +40,7 @@ impl BlockchainVerifier {
     pub fn new() -> Self {
         Self {
             max_verification_time: 1000, // 1 second
-            gas_limit: 50_000_000, // 0.5 GAS
+            gas_limit: 50_000_000,       // 0.5 GAS
         }
     }
 
@@ -94,13 +94,16 @@ impl BlockchainVerifier {
 
         // Check transaction size
         let tx_size = transaction.size();
-        if tx_size > 102400 { // 100KB limit
+        if tx_size > 102400 {
+            // 100KB limit
             return Err(Error::Validation("Transaction too large".to_string()));
         }
 
         // Check if transaction has witnesses
         if transaction.witnesses().is_empty() {
-            return Err(Error::Validation("Transaction has no witnesses".to_string()));
+            return Err(Error::Validation(
+                "Transaction has no witnesses".to_string(),
+            ));
         }
 
         // Validate transaction attributes
@@ -112,7 +115,10 @@ impl BlockchainVerifier {
     }
 
     /// Validates transaction attributes
-    fn validate_transaction_attribute(&self, _attribute: &neo_core::TransactionAttribute) -> Result<()> {
+    fn validate_transaction_attribute(
+        &self,
+        _attribute: &neo_core::TransactionAttribute,
+    ) -> Result<()> {
         // Implement attribute validation logic
         // This would include validation for OracleResponse, HighPriority, etc.
         Ok(())
@@ -122,14 +128,22 @@ impl BlockchainVerifier {
     async fn verify_transaction_witnesses(&self, transaction: &Transaction) -> Result<()> {
         for (index, witness) in transaction.witnesses().iter().enumerate() {
             if let Err(_) = self.verify_witness(transaction, witness, index).await {
-                return Err(Error::Validation(format!("Witness {} verification failed", index)));
+                return Err(Error::Validation(format!(
+                    "Witness {} verification failed",
+                    index
+                )));
             }
         }
         Ok(())
     }
 
     /// Verifies a single witness
-    async fn verify_witness(&self, transaction: &Transaction, witness: &Witness, _index: usize) -> Result<()> {
+    async fn verify_witness(
+        &self,
+        transaction: &Transaction,
+        witness: &Witness,
+        _index: usize,
+    ) -> Result<()> {
         // Create verification script from witness
         let verification_script = &witness.verification_script;
         if verification_script.is_empty() {
@@ -138,20 +152,26 @@ impl BlockchainVerifier {
 
         // Set up VM engine for witness verification
         let mut engine = ApplicationEngine::new(TriggerType::Verification, self.gas_limit);
-        
+
         // Load verification script
         let script = neo_vm::Script::new(verification_script.clone(), false)
             .map_err(|_| Error::Validation("Failed to create verification script".to_string()))?;
         if let Err(_) = engine.load_script(script, -1, 0) {
-            return Err(Error::Validation("Failed to load verification script".to_string()));
+            return Err(Error::Validation(
+                "Failed to load verification script".to_string(),
+            ));
         }
 
         // Load invocation script if present
         if !witness.invocation_script.is_empty() {
             let invocation_script = neo_vm::Script::new(witness.invocation_script.clone(), false)
-                .map_err(|_| Error::Validation("Failed to create invocation script".to_string()))?;
+                .map_err(|_| {
+                Error::Validation("Failed to create invocation script".to_string())
+            })?;
             if let Err(_) = engine.load_script(invocation_script, 0, 0) {
-                return Err(Error::Validation("Failed to load invocation script".to_string()));
+                return Err(Error::Validation(
+                    "Failed to load invocation script".to_string(),
+                ));
             }
         }
 
@@ -167,16 +187,20 @@ impl BlockchainVerifier {
                 if engine.result_stack().len() == 0 {
                     return Err(Error::Validation("Empty result stack".to_string()));
                 }
-                
+
                 // Get first stack item and check if it's true
                 match engine.result_stack().peek(0) {
                     Ok(result) => {
                         if !result.as_bool().unwrap_or(false) {
-                            return Err(Error::Validation("Verification script returned false".to_string()));
+                            return Err(Error::Validation(
+                                "Verification script returned false".to_string(),
+                            ));
                         }
-                    },
+                    }
                     Err(_) => {
-                        return Err(Error::Validation("Failed to get result from stack".to_string()));
+                        return Err(Error::Validation(
+                            "Failed to get result from stack".to_string(),
+                        ));
                     }
                 }
             }
@@ -207,9 +231,12 @@ impl BlockchainVerifier {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        
-        if header.timestamp > now + 15000 { // 15 seconds tolerance
-            return Err(Error::Validation("Header timestamp too far in future".to_string()));
+
+        if header.timestamp > now + 15000 {
+            // 15 seconds tolerance
+            return Err(Error::Validation(
+                "Header timestamp too far in future".to_string(),
+            ));
         }
 
         // Check if header has witnesses (skip for genesis block)
@@ -226,37 +253,53 @@ impl BlockchainVerifier {
         // In a full implementation, this would check against committee signatures
         for (index, witness) in header.witnesses.iter().enumerate() {
             if witness.verification_script.is_empty() {
-                return Err(Error::Validation(format!("Header witness {} has empty verification script", index)));
+                return Err(Error::Validation(format!(
+                    "Header witness {} has empty verification script",
+                    index
+                )));
             }
         }
         Ok(())
     }
 
     /// Verifies the consensus data in a block header
-    pub fn verify_consensus_data(&self, header: &BlockHeader, _committee: &[ECPoint]) -> Result<()> {
+    pub fn verify_consensus_data(
+        &self,
+        header: &BlockHeader,
+        _committee: &[ECPoint],
+    ) -> Result<()> {
         // Verify primary index
-        if header.primary_index as usize >= 7 { // Assuming 7 consensus nodes
+        if header.primary_index as usize >= 7 {
+            // Assuming 7 consensus nodes
             return Err(Error::Validation("Invalid primary index".to_string()));
         }
 
         // Verify consensus signature count
         let required_signatures = (7 * 2 / 3) + 1; // 2/3 + 1 majority
         if header.witnesses.len() < required_signatures {
-            return Err(Error::Validation("Insufficient consensus signatures".to_string()));
+            return Err(Error::Validation(
+                "Insufficient consensus signatures".to_string(),
+            ));
         }
 
         Ok(())
     }
 
     /// Creates a multisig redeem script from committee
-    fn create_multisig_redeem_script_from_committee(&self, _committee: &[ECPoint]) -> Option<Vec<u8>> {
+    fn create_multisig_redeem_script_from_committee(
+        &self,
+        _committee: &[ECPoint],
+    ) -> Option<Vec<u8>> {
         // This would create the committee multisig script
         // Implementation would follow C# Neo committee script generation
         None
     }
 
     /// Creates a multisig redeem script from validators
-    fn create_multisig_redeem_script_from_next_validators(&self, _validators: &[ECPoint]) -> Option<Vec<u8>> {
+    fn create_multisig_redeem_script_from_next_validators(
+        &self,
+        _validators: &[ECPoint],
+    ) -> Option<Vec<u8>> {
         // This would create the next validators multisig script
         // Implementation would follow C# Neo validator script generation
         None
@@ -303,12 +346,12 @@ mod tests {
     #[tokio::test]
     async fn test_basic_validation() {
         let verifier = BlockchainVerifier::new();
-        
+
         // Create a minimal transaction for testing
         let transaction = Transaction::default();
-        
+
         // This should fail due to empty witnesses
         let result = verifier.verify_transaction(&transaction).await.unwrap();
         assert_eq!(result, VerifyResult::Fail);
     }
-} 
+}

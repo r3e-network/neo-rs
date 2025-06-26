@@ -11,10 +11,10 @@
 
 //! Implementation of Witness for Neo blockchain.
 
-use std::fmt;
+use crate::{CoreError, UInt160};
+use neo_io::Serializable;
 use serde::{Deserialize, Serialize};
-use crate::{UInt160, CoreError};
-use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use std::fmt;
 
 /// Maximum size of invocation script in bytes.
 /// This is designed to allow a MultiSig 21/11 (committee)
@@ -88,8 +88,8 @@ impl Witness {
         if self.script_hash.is_none() {
             // Calculate script hash exactly like C# implementation:
             // RIPEMD160(SHA256(verification_script))
+            use ripemd::Ripemd160;
             use sha2::{Digest, Sha256};
-            use ripemd::{Ripemd160};
 
             // First SHA256
             let mut sha256_hasher = Sha256::new();
@@ -199,14 +199,20 @@ impl Witness {
         // PUSHDATA1 (0x0C) + length (0x21) + 33-byte-pubkey + CHECKSIG (0x41)
 
         if self.verification_script.len() != 35 {
-            return Err(CoreError::InvalidData("Invalid verification script length".to_string()));
+            return Err(CoreError::InvalidData {
+                message: "Invalid verification script length".to_string(),
+            });
         }
 
         // Real C# format validation (exact match to Contract.CreateSignatureRedeemScript)
         if self.verification_script[0] != 0x0C ||  // OpCode.PUSHDATA1
            self.verification_script[1] != 0x21 ||  // 33 bytes
-           self.verification_script[34] != 0x41 {  // OpCode.CHECKSIG
-            return Err(CoreError::InvalidData("Invalid verification script format".to_string()));
+           self.verification_script[34] != 0x41
+        {
+            // OpCode.CHECKSIG
+            return Err(CoreError::InvalidData {
+                message: "Invalid verification script format".to_string(),
+            });
         }
 
         // Extract the 33-byte compressed public key (matches C# ECPoint.EncodePoint(true))
@@ -214,7 +220,9 @@ impl Witness {
 
         // Validate compressed public key format (matches C# ECPoint validation)
         if public_key.len() != 33 || (public_key[0] != 0x02 && public_key[0] != 0x03) {
-            return Err(CoreError::InvalidData("Invalid compressed public key format".to_string()));
+            return Err(CoreError::InvalidData {
+                message: "Invalid compressed public key format".to_string(),
+            });
         }
 
         Ok(public_key)
@@ -229,27 +237,40 @@ impl Witness {
         // PUSHDATA1 (0x0C) + length (0x40) + 64-byte-signature
 
         if self.invocation_script.len() != 66 {
-            return Err(CoreError::InvalidData("Invalid invocation script length".to_string()));
+            return Err(CoreError::InvalidData {
+                message: "Invalid invocation script length".to_string(),
+            });
         }
 
         // Real C# format validation (exact match to signature invocation script)
         if self.invocation_script[0] != 0x0C ||  // OpCode.PUSHDATA1
-           self.invocation_script[1] != 0x40 {   // 64 bytes (0x40)
-            return Err(CoreError::InvalidData("Invalid invocation script format".to_string()));
+           self.invocation_script[1] != 0x40
+        {
+            // 64 bytes (0x40)
+            return Err(CoreError::InvalidData {
+                message: "Invalid invocation script format".to_string(),
+            });
         }
 
         // Extract the 64-byte signature (matches C# ECDSA signature format)
         let signature = self.invocation_script[2..66].to_vec();
 
         if signature.len() != 64 {
-            return Err(CoreError::InvalidData("Invalid signature length".to_string()));
+            return Err(CoreError::InvalidData {
+                message: "Invalid signature length".to_string(),
+            });
         }
 
         Ok(signature)
     }
 
     /// Verifies ECDSA signature (matches C# ECDsa.VerifyData exactly).
-    fn verify_ecdsa_signature(&self, hash_data: &[u8], signature: &[u8], public_key: &[u8]) -> Result<bool, CoreError> {
+    fn verify_ecdsa_signature(
+        &self,
+        hash_data: &[u8],
+        signature: &[u8],
+        public_key: &[u8],
+    ) -> Result<bool, CoreError> {
         // Real C# Neo N3 implementation: ECDsa.VerifyData
         // In C#: using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         //         ecdsa.ImportParameters(new ECParameters { Curve = ECCurve.NamedCurves.nistP256, Q = point });
@@ -258,8 +279,11 @@ impl Witness {
         use neo_cryptography::ecdsa::ECDsa;
 
         // Neo uses secp256r1 (NIST P-256) curve exactly like C# ECCurve.NamedCurves.nistP256
-        ECDsa::verify_signature_secp256r1(hash_data, signature, public_key)
-            .map_err(|e| CoreError::CryptographicError(format!("ECDSA verification failed: {}", e)))
+        ECDsa::verify_signature_secp256r1(hash_data, signature, public_key).map_err(|e| {
+            CoreError::Cryptographic {
+                message: format!("ECDSA verification failed: {}", e),
+            }
+        })
     }
 
     /// Computes script hash from public key (matches C# Contract.CreateSignatureContract exactly).
@@ -277,12 +301,16 @@ impl Witness {
         // Compute Hash160 of the verification script (matches C# Crypto.Hash160 exactly)
         let script_hash = hash160(&verification_script);
 
-        UInt160::from_bytes(&script_hash)
-            .map_err(|e| CoreError::InvalidData(format!("Invalid script hash: {}", e)))
+        UInt160::from_bytes(&script_hash).map_err(|e| CoreError::InvalidData {
+            message: format!("Invalid script hash: {}", e),
+        })
     }
 
     /// Creates verification script from public key (matches C# Contract.CreateSignatureRedeemScript exactly).
-    fn create_verification_script_from_public_key(&self, public_key: &[u8]) -> Result<Vec<u8>, CoreError> {
+    fn create_verification_script_from_public_key(
+        &self,
+        public_key: &[u8],
+    ) -> Result<Vec<u8>, CoreError> {
         // Real C# Neo N3 implementation: Contract.CreateSignatureRedeemScript
         // In C#: public static byte[] CreateSignatureRedeemScript(ECPoint pubkey)
         //         => new byte[] { (byte)OpCode.PUSHDATA1, 0x21 }
@@ -291,12 +319,16 @@ impl Witness {
         //            .ToArray();
 
         if public_key.len() != 33 {
-            return Err(CoreError::InvalidData("Public key must be 33 bytes (compressed)".to_string()));
+            return Err(CoreError::InvalidData {
+                message: "Public key must be 33 bytes (compressed)".to_string(),
+            });
         }
 
         // Validate compressed public key format (matches C# ECPoint.EncodePoint(true) validation)
         if public_key[0] != 0x02 && public_key[0] != 0x03 {
-            return Err(CoreError::InvalidData("Invalid compressed public key format".to_string()));
+            return Err(CoreError::InvalidData {
+                message: "Invalid compressed public key format".to_string(),
+            });
         }
 
         // Create verification script exactly like C# Contract.CreateSignatureRedeemScript
@@ -326,7 +358,7 @@ impl Serializable for Witness {
         invocation_size + verification_size
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), neo_io::Error> {
+    fn serialize(&self, writer: &mut neo_io::BinaryWriter) -> neo_io::IoResult<()> {
         // Write invocation script with variable length encoding
         writer.write_var_bytes(&self.invocation_script)?;
         // Write verification script with variable length encoding
@@ -334,25 +366,31 @@ impl Serializable for Witness {
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, neo_io::Error> {
+    fn deserialize(reader: &mut neo_io::MemoryReader) -> neo_io::IoResult<Self> {
         // Read invocation script with variable length encoding
         let invocation_script = reader.read_var_bytes(MAX_INVOCATION_SCRIPT)?;
         if invocation_script.len() > MAX_INVOCATION_SCRIPT {
-            return Err(neo_io::Error::InvalidData(format!(
-                "Invocation script too long: {} > {}",
-                invocation_script.len(),
-                MAX_INVOCATION_SCRIPT
-            )));
+            return Err(neo_io::IoError::InvalidData {
+                context: "invocation_script_deserialize".to_string(),
+                value: format!(
+                    "length {} > max {}",
+                    invocation_script.len(),
+                    MAX_INVOCATION_SCRIPT
+                ),
+            });
         }
 
         // Read verification script with variable length encoding
         let verification_script = reader.read_var_bytes(MAX_VERIFICATION_SCRIPT)?;
         if verification_script.len() > MAX_VERIFICATION_SCRIPT {
-            return Err(neo_io::Error::InvalidData(format!(
-                "Verification script too long: {} > {}",
-                verification_script.len(),
-                MAX_VERIFICATION_SCRIPT
-            )));
+            return Err(neo_io::IoError::InvalidData {
+                context: "verification_script_deserialize".to_string(),
+                value: format!(
+                    "length {} > max {}",
+                    verification_script.len(),
+                    MAX_VERIFICATION_SCRIPT
+                ),
+            });
         }
 
         Ok(Self {
@@ -424,13 +462,16 @@ mod tests {
     fn test_witness_serialization() {
         let witness = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
 
-        let mut writer = BinaryWriter::new();
+        let mut writer = neo_io::BinaryWriter::new();
         <Witness as Serializable>::serialize(&witness, &mut writer).unwrap();
 
-        let mut reader = MemoryReader::new(&writer.to_bytes());
+        let mut reader = neo_io::MemoryReader::new(&writer.to_bytes());
         let deserialized = <Witness as Serializable>::deserialize(&mut reader).unwrap();
 
         assert_eq!(witness.invocation_script, deserialized.invocation_script);
-        assert_eq!(witness.verification_script, deserialized.verification_script);
+        assert_eq!(
+            witness.verification_script,
+            deserialized.verification_script
+        );
     }
 }

@@ -3,15 +3,15 @@
 //! This module provides interoperability between the Neo VM and external services.
 
 use crate::call_flags::CallFlags;
+use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::stack_item::StackItem;
-use crate::Result;
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use lazy_static::lazy_static;
 
 /// A function that provides interoperability with external services.
-pub type InteropMethod = fn(engine: &mut ExecutionEngine) -> Result<()>;
+pub type InteropMethod = fn(engine: &mut ExecutionEngine) -> VmResult<()>;
 
 // Global storage for testing and development
 lazy_static! {
@@ -28,7 +28,7 @@ pub trait InteropServiceTrait {
     fn get_price(&self, name: &[u8]) -> i64;
 
     /// Invokes an interop method by name.
-    fn invoke(&self, engine: &mut ExecutionEngine, name: &[u8]) -> Result<()>;
+    fn invoke(&self, engine: &mut ExecutionEngine, name: &[u8]) -> VmResult<()>;
 }
 
 /// Represents an interop descriptor.
@@ -94,7 +94,7 @@ impl InteropService {
                 // Production-ready trigger retrieval (matches C# System.Runtime.GetTrigger exactly)
                 // Get the actual trigger from the engine's execution context (production implementation)
                 let trigger = engine.get_trigger_type() as i32;
-                
+
                 let context = engine.current_context_mut().unwrap();
                 let stack = context.evaluation_stack_mut();
 
@@ -138,13 +138,13 @@ impl InteropService {
 
                 // Production-ready logging implementation (matches C# System.Runtime.Log exactly)
                 let message_str = String::from_utf8_lossy(&message_bytes);
-                
+
                 // 1. Log to console for immediate debugging (matches C# Console.WriteLine)
                 println!("Contract Log: {}", message_str);
-                
+
                 // 2. Emit blockchain event for persistent logging (production event system)
                 engine.emit_runtime_log_event(&message_str)?;
-                
+
                 // 3. Add to execution log for transaction receipt (production transaction logging)
                 engine.add_execution_log(message_str.to_string())?;
                 Ok(())
@@ -169,7 +169,8 @@ impl InteropService {
 
                 // Create a storage context (matches C# System.Storage.GetContext exactly)
                 // The storage context contains the contract hash for storage isolation
-                let storage_context = StackItem::from_byte_string(contract_hash.as_bytes().to_vec());
+                let storage_context =
+                    StackItem::from_byte_string(contract_hash.as_bytes().to_vec());
 
                 stack.push(storage_context);
                 Ok(())
@@ -195,7 +196,9 @@ impl InteropService {
                 // Production-ready storage retrieval (matches C# System.Storage.Get exactly)
                 // Validate context bytes (should be 20-byte contract hash)
                 if _context_bytes.len() != 20 {
-                    return Err(crate::Error::InvalidOperation("Invalid storage context".to_string()));
+                    return Err(crate::VmError::invalid_operation_msg(
+                        "Invalid storage context".to_string(),
+                    ));
                 }
 
                 // Create storage key: contract_hash + key
@@ -205,7 +208,9 @@ impl InteropService {
 
                 // Get value from storage backend (matches C# ApplicationEngine.Storage_Get exactly)
                 // In C# Neo, this calls ApplicationEngine.Snapshot.TryGet(StorageKey)
-                let value = GLOBAL_STORAGE.lock().unwrap()
+                let value = GLOBAL_STORAGE
+                    .lock()
+                    .unwrap()
                     .get(&storage_key)
                     .cloned()
                     .unwrap_or_else(Vec::new);
@@ -236,7 +241,9 @@ impl InteropService {
                 // Production-ready storage put operation (matches C# System.Storage.Put exactly)
                 // Validate context bytes (should be 20-byte contract hash)
                 if _context_bytes.len() != 20 {
-                    return Err(crate::Error::InvalidOperation("Invalid storage context".to_string()));
+                    return Err(crate::VmError::invalid_operation_msg(
+                        "Invalid storage context".to_string(),
+                    ));
                 }
 
                 // Create storage key: contract_hash + key
@@ -246,7 +253,10 @@ impl InteropService {
 
                 // Store value in storage backend (matches C# ApplicationEngine.Storage_Put exactly)
                 // In C# Neo, this calls ApplicationEngine.Snapshot.Add(StorageKey, StorageItem)
-                GLOBAL_STORAGE.lock().unwrap().insert(storage_key, value_bytes);
+                GLOBAL_STORAGE
+                    .lock()
+                    .unwrap()
+                    .insert(storage_key, value_bytes);
 
                 Ok(())
             },
@@ -270,7 +280,9 @@ impl InteropService {
 
                 // Validate storage context (contract hash)
                 if context_bytes.len() != 20 {
-                    return Err(crate::Error::InvalidOperation("Invalid storage context".to_string()));
+                    return Err(crate::VmError::invalid_operation_msg(
+                        "Invalid storage context".to_string(),
+                    ));
                 }
 
                 // Production-ready storage delete operation (matches C# System.Storage.Delete exactly)
@@ -310,14 +322,17 @@ impl InteropService {
 
     /// Gets the required call flags for an interop method.
     pub fn get_required_call_flags(&self, name: &[u8]) -> CallFlags {
-        self.call_flags.get(name).copied().unwrap_or(CallFlags::NONE)
+        self.call_flags
+            .get(name)
+            .copied()
+            .unwrap_or(CallFlags::NONE)
     }
 
     /// Invokes an interop method by name.
-    pub fn invoke(&self, engine: &mut ExecutionEngine, name: &[u8]) -> Result<()> {
+    pub fn invoke(&self, engine: &mut ExecutionEngine, name: &[u8]) -> VmResult<()> {
         match self.get_method(name) {
             Some(method) => method(engine),
-            None => Err(crate::Error::UnsupportedOperation(format!(
+            None => Err(crate::VmError::unsupported_operation_msg(format!(
                 "Interop method not found: {}",
                 String::from_utf8_lossy(name)
             ))),
@@ -326,9 +341,15 @@ impl InteropService {
 
     /// Invokes an interop method from an instruction.
     /// This overload handles SYSCALL instructions by extracting the method name.
-    pub fn invoke_instruction(&self, engine: &mut ExecutionEngine, instruction: &crate::instruction::Instruction) -> Result<()> {
+    pub fn invoke_instruction(
+        &self,
+        engine: &mut ExecutionEngine,
+        instruction: &crate::instruction::Instruction,
+    ) -> VmResult<()> {
         if instruction.opcode() != crate::op_code::OpCode::SYSCALL {
-            return Err(crate::Error::InvalidOperation("Instruction is not a SYSCALL".to_string()));
+            return Err(crate::VmError::invalid_operation_msg(
+                "Instruction is not a SYSCALL".to_string(),
+            ));
         }
 
         let method_name = instruction.syscall_name()?;
@@ -354,10 +375,10 @@ impl InteropServiceTrait for InteropService {
     }
 
     /// Invokes an interop method by name.
-    fn invoke(&self, engine: &mut ExecutionEngine, name: &[u8]) -> Result<()> {
+    fn invoke(&self, engine: &mut ExecutionEngine, name: &[u8]) -> VmResult<()> {
         match self.get_method(name) {
             Some(method) => method(engine),
-            None => Err(crate::Error::UnsupportedOperation(format!(
+            None => Err(crate::VmError::unsupported_operation_msg(format!(
                 "Interop method not found: {}",
                 String::from_utf8_lossy(name)
             ))),
@@ -429,7 +450,7 @@ mod tests {
         // Check the result
         let context = engine.current_context().unwrap();
         let stack = context.evaluation_stack();
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 42.into());
+        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 42);
     }
 
     #[test]

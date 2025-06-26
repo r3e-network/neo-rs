@@ -91,11 +91,11 @@ fn test_application_engine_gas_calculation() {
     // Create a script with different instruction types
     let mut builder = ScriptBuilder::new();
     builder
-        .emit_push_int(1)                       // Simple instruction
-        .emit_push_int(2)                       // Simple instruction
-        .emit_opcode(OpCode::ADD)               // Simple instruction
-        .emit_syscall("System.Runtime.Log")     // Syscall (more expensive)
-        .emit_opcode(OpCode::RET);              // Simple instruction
+        .emit_push_int(1) // Simple instruction
+        .emit_push_int(2) // Simple instruction
+        .emit_opcode(OpCode::ADD) // Simple instruction
+        .emit_syscall("System.Runtime.Log") // Syscall (more expensive)
+        .emit_opcode(OpCode::RET); // Simple instruction
     let script = builder.to_script();
 
     // Execute the script
@@ -125,7 +125,10 @@ fn test_application_engine_notifications() {
     assert_eq!(engine.notifications()[0].name, "TestNotification");
     assert_eq!(engine.notifications()[0].script_hash, vec![1, 2, 3]);
     assert_eq!(engine.notifications()[0].arguments.len(), 1);
-    assert_eq!(engine.notifications()[0].arguments[0].as_int().unwrap(), 42.into());
+    assert_eq!(
+        engine.notifications()[0].arguments[0].as_int().unwrap(),
+        42.into()
+    );
 }
 
 #[test]
@@ -150,11 +153,11 @@ fn test_application_engine_with_storage_interop() {
     let mut builder = ScriptBuilder::new();
     builder
         .emit_syscall("System.Storage.GetContext")
-        .emit_push_byte_array(&[1, 2, 3])       // Key
-        .emit_push_byte_array(&[4, 5, 6])       // Value
+        .emit_push_byte_array(&[1, 2, 3]) // Key
+        .emit_push_byte_array(&[4, 5, 6]) // Value
         .emit_syscall("System.Storage.Put")
         .emit_syscall("System.Storage.GetContext")
-        .emit_push_byte_array(&[1, 2, 3])       // Key
+        .emit_push_byte_array(&[1, 2, 3]) // Key
         .emit_syscall("System.Storage.Get")
         .emit_opcode(OpCode::RET);
     let script = builder.to_script();
@@ -168,7 +171,11 @@ fn test_application_engine_with_storage_interop() {
 
     // Production-ready VM state validation (matches C# ApplicationEngine behavior exactly)
     // In production, storage operations should complete successfully
-    assert_eq!(state, VMState::HALT, "Storage operations should complete successfully");
+    assert_eq!(
+        state,
+        VMState::HALT,
+        "Storage operations should complete successfully"
+    );
 
     // Check that gas was consumed
     assert!(engine.gas_consumed() > 0);
@@ -460,7 +467,11 @@ fn test_exception_handling() {
 
     // Production-ready exception handling validation (matches C# ApplicationEngine exactly)
     // Division by zero should properly fault in production
-    assert_eq!(state, VMState::FAULT, "Division by zero should result in FAULT state");
+    assert_eq!(
+        state,
+        VMState::FAULT,
+        "Division by zero should result in FAULT state"
+    );
 }
 
 /// Test to verify BigInt zero detection works
@@ -506,7 +517,11 @@ fn test_division_operation_directly() {
     assert_eq!(state, VMState::HALT);
     // Production-ready division operation verification (matches C# VM behavior exactly)
     // Result stack validation confirms proper VM operation completion
-    assert_eq!(engine.result_stack().len(), 1, "Division should produce one result");
+    assert_eq!(
+        engine.result_stack().len(),
+        1,
+        "Division should produce one result"
+    );
 }
 
 #[test]
@@ -534,7 +549,13 @@ fn test_opcode_parsing() {
 
     // Test each byte in the script
     for (i, &byte) in script.as_bytes().iter().enumerate() {
-        println!("Script[{}] = {} (0x{:02X}): {:?}", i, byte, byte, OpCode::from_byte(byte));
+        println!(
+            "Script[{}] = {} (0x{:02X}): {:?}",
+            i,
+            byte,
+            byte,
+            OpCode::from_byte(byte)
+        );
     }
 }
 
@@ -553,8 +574,16 @@ fn test_simple_arithmetic() {
     let script = builder.to_script();
 
     println!("Script bytes: {:?}", script.as_bytes());
-    println!("ADD opcode value: 0x{:02X} ({})", OpCode::ADD as u8, OpCode::ADD as u8);
-    println!("RET opcode value: 0x{:02X} ({})", OpCode::RET as u8, OpCode::RET as u8);
+    println!(
+        "ADD opcode value: 0x{:02X} ({})",
+        OpCode::ADD as u8,
+        OpCode::ADD as u8
+    );
+    println!(
+        "RET opcode value: 0x{:02X} ({})",
+        OpCode::RET as u8,
+        OpCode::RET as u8
+    );
 
     // Test OpCode parsing directly
     println!("Testing OpCode::from_byte(99): {:?}", OpCode::from_byte(99));
@@ -562,7 +591,13 @@ fn test_simple_arithmetic() {
 
     // Test each byte in the script
     for (i, &byte) in script.as_bytes().iter().enumerate() {
-        println!("Script[{}] = {} (0x{:02X}): {:?}", i, byte, byte, OpCode::from_byte(byte));
+        println!(
+            "Script[{}] = {} (0x{:02X}): {:?}",
+            i,
+            byte,
+            byte,
+            OpCode::from_byte(byte)
+        );
     }
 
     let state = engine.execute(script);
@@ -573,7 +608,10 @@ fn test_simple_arithmetic() {
 
     // Check the evaluation stack before RET
     if let Some(context) = engine.current_context() {
-        println!("Evaluation stack length: {}", context.evaluation_stack().len());
+        println!(
+            "Evaluation stack length: {}",
+            context.evaluation_stack().len()
+        );
         if context.evaluation_stack().len() > 0 {
             let eval_result = context.evaluation_stack().peek(0).unwrap();
             println!("Evaluation stack top: {:?}", eval_result);
@@ -632,8 +670,8 @@ fn test_storage_put_operation() {
     let mut builder = ScriptBuilder::new();
     builder
         .emit_syscall("System.Storage.GetContext")
-        .emit_push_byte_array(&[1, 2, 3])       // Key
-        .emit_push_byte_array(&[4, 5, 6])       // Value
+        .emit_push_byte_array(&[1, 2, 3]) // Key
+        .emit_push_byte_array(&[4, 5, 6]) // Value
         .emit_syscall("System.Storage.Put")
         .emit_opcode(OpCode::RET);
     let script = builder.to_script();
@@ -647,5 +685,8 @@ fn test_storage_put_operation() {
 
     // Production-ready storage operation testing (matches C# ApplicationEngine behavior exactly)
     // Storage operations should complete successfully with proper error handling
-    assert!(state == VMState::HALT || state == VMState::FAULT, "Storage operations should complete with predictable state");
+    assert!(
+        state == VMState::HALT || state == VMState::FAULT,
+        "Storage operations should complete with predictable state"
+    );
 }

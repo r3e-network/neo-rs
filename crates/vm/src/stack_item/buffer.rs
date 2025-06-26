@@ -2,9 +2,9 @@
 //!
 //! This module provides the Buffer stack item implementation used in the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::stack_item::stack_item_type::StackItemType;
-use crate::Error;
-use crate::Result;
 use num_bigint::BigInt;
 use std::sync::Arc;
 
@@ -47,14 +47,20 @@ impl Buffer {
     }
 
     /// Gets the byte at the specified index.
-    pub fn get(&self, index: usize) -> Result<u8> {
-        self.data.get(index).copied().ok_or_else(|| Error::InvalidOperation(format!("Index out of range: {}", index)))
+    pub fn get(&self, index: usize) -> VmResult<u8> {
+        self.data
+            .get(index)
+            .copied()
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {}", index)))
     }
 
     /// Sets the byte at the specified index.
-    pub fn set(&mut self, index: usize, value: u8) -> Result<()> {
+    pub fn set(&mut self, index: usize, value: u8) -> VmResult<()> {
         if index >= self.data.len() {
-            return Err(Error::InvalidOperation(format!("Index out of range: {}", index)));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {}",
+                index
+            )));
         }
 
         self.data[index] = value;
@@ -66,7 +72,7 @@ impl Buffer {
     /// This matches the C# Neo implementation exactly:
     /// - Uses little-endian byte order (no reversal needed)
     /// - Handles negative numbers using .NET BigInteger format (not two's complement)
-    pub fn to_integer(&self) -> Result<BigInt> {
+    pub fn to_integer(&self) -> VmResult<BigInt> {
         if self.data.is_empty() {
             return Ok(BigInt::from(0));
         }

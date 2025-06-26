@@ -85,10 +85,10 @@ impl GasManager {
     /// Adds gas fee (production-ready implementation matching C# ApplicationEngine.AddFee exactly).
     pub fn add_fee(&mut self, fee: u64) -> Result<()> {
         // Production-ready gas fee addition (matches C# ApplicationEngine.AddFee exactly)
-        
+
         // 1. Calculate the actual fee based on ExecFeeFactor (matches C# logic exactly)
         let actual_fee = fee.saturating_mul(self.exec_fee_factor);
-        
+
         // 2. Production-ready gas consumption tracking (matches C# FeeConsumed property exactly)
         self.gas_consumed = self.gas_consumed.saturating_add(actual_fee as i64);
 
@@ -96,17 +96,19 @@ impl GasManager {
         if self.gas_consumed > self.gas_limit {
             return Err(Error::ExecutionHalted("Gas limit exceeded".to_string()));
         }
-        
+
         Ok(())
     }
 
     /// Consumes gas (production-ready implementation matching C# ApplicationEngine.ConsumeGas exactly).
     pub fn consume_gas(&mut self, gas: i64) -> Result<()> {
         // Production-ready gas consumption (matches C# ApplicationEngine.ConsumeGas exactly)
-        
+
         // 1. Validate gas amount (matches C# validation logic)
         if gas < 0 {
-            return Err(Error::InvalidArguments("Gas amount cannot be negative".to_string()));
+            return Err(Error::InvalidArguments(
+                "Gas amount cannot be negative".to_string(),
+            ));
         }
 
         // 2. Check if we have enough gas (matches C# gas availability check)
@@ -120,7 +122,10 @@ impl GasManager {
         // 4. Production-ready gas monitoring (matches C# debug output)
         #[cfg(feature = "std")]
         {
-            println!("Gas consumed: {} (total: {}/{})", gas, self.gas_consumed, self.gas_limit);
+            println!(
+                "Gas consumed: {} (total: {}/{})",
+                gas, self.gas_consumed, self.gas_limit
+            );
         }
 
         Ok(())
@@ -129,7 +134,9 @@ impl GasManager {
     /// Checks if enough gas is available.
     pub fn check_gas(&self, required_gas: i64) -> Result<()> {
         if self.gas_consumed + required_gas > self.gas_limit {
-            Err(Error::ExecutionHalted("Insufficient gas for operation".to_string()))
+            Err(Error::ExecutionHalted(
+                "Insufficient gas for operation".to_string(),
+            ))
         } else {
             Ok(())
         }
@@ -174,7 +181,7 @@ impl GasManager {
         new_value_size: usize,
     ) -> i64 {
         // Production-ready dynamic storage fee calculation (matches C# Neo exactly)
-        
+
         let new_data_size = if let Some(existing_size) = old_value_size {
             // Existing item - calculate incremental cost (matches C# logic exactly)
             if new_value_size == 0 {
@@ -198,18 +205,18 @@ impl GasManager {
     /// Updates VM gas counter (for integration with VM engine).
     pub fn update_vm_gas_counter(&mut self, vm_gas_consumed: i64) -> Result<()> {
         // Production-ready VM gas counter synchronization (matches C# ApplicationEngine exactly)
-        
+
         // 1. Calculate the difference between VM gas and our tracking
         let gas_diff = vm_gas_consumed - self.gas_consumed;
-        
+
         // 2. If VM consumed more gas, add the difference to our tracking
         if gas_diff > 0 {
             self.consume_gas(gas_diff)?;
         }
-        
+
         // 3. Synchronize our tracking with VM (matches C# synchronization logic)
         self.gas_consumed = vm_gas_consumed;
-        
+
         Ok(())
     }
 
@@ -217,36 +224,36 @@ impl GasManager {
     pub fn get_operation_gas_cost(&self, operation: &str) -> i64 {
         // Production-ready operation gas costs (matches C# ApplicationEngine operation costs exactly)
         match operation {
-            "PUSH1" => 8,        // 1 << 3
-            "PUSHINT8" => 8,     // 1 << 3
-            "PUSHINT16" => 8,    // 1 << 3
-            "PUSHINT32" => 8,    // 1 << 3
-            "PUSHINT64" => 8,    // 1 << 3
-            "PUSHINT128" => 16,  // 1 << 4
-            "PUSHINT256" => 16,  // 1 << 4
-            "PUSHA" => 16,       // 1 << 4
-            "PUSHNULL" => 8,     // 1 << 3
-            "PUSHDATA1" => 64,   // 1 << 6
-            "PUSHDATA2" => 512,  // 1 << 9
-            "PUSHDATA4" => 2048, // 1 << 11
-            "PACK" => 2048,      // 1 << 11
-            "UNPACK" => 2048,    // 1 << 11
-            "NEWARRAY" => 512,   // 1 << 9
-            "NEWARRAY_T" => 512, // 1 << 9
-            "NEWSTRUCT" => 512,  // 1 << 9
-            "NEWMAP" => 64,      // 1 << 6
-            "SIZE" => 16,        // 1 << 4
-            "HASKEY" => 65536,   // 1 << 16
-            "KEYS" => 16,        // 1 << 4
-            "VALUES" => 8192,    // 1 << 13
-            "PICKITEM" => 64,    // 1 << 6
-            "APPEND" => 8192,    // 1 << 13
-            "SETITEM" => 8192,   // 1 << 13
+            "PUSH1" => 8,         // 1 << 3
+            "PUSHINT8" => 8,      // 1 << 3
+            "PUSHINT16" => 8,     // 1 << 3
+            "PUSHINT32" => 8,     // 1 << 3
+            "PUSHINT64" => 8,     // 1 << 3
+            "PUSHINT128" => 16,   // 1 << 4
+            "PUSHINT256" => 16,   // 1 << 4
+            "PUSHA" => 16,        // 1 << 4
+            "PUSHNULL" => 8,      // 1 << 3
+            "PUSHDATA1" => 64,    // 1 << 6
+            "PUSHDATA2" => 512,   // 1 << 9
+            "PUSHDATA4" => 2048,  // 1 << 11
+            "PACK" => 2048,       // 1 << 11
+            "UNPACK" => 2048,     // 1 << 11
+            "NEWARRAY" => 512,    // 1 << 9
+            "NEWARRAY_T" => 512,  // 1 << 9
+            "NEWSTRUCT" => 512,   // 1 << 9
+            "NEWMAP" => 64,       // 1 << 6
+            "SIZE" => 16,         // 1 << 4
+            "HASKEY" => 65536,    // 1 << 16
+            "KEYS" => 16,         // 1 << 4
+            "VALUES" => 8192,     // 1 << 13
+            "PICKITEM" => 64,     // 1 << 6
+            "APPEND" => 8192,     // 1 << 13
+            "SETITEM" => 8192,    // 1 << 13
             "REVERSEITEMS" => 16, // 1 << 4
-            "REMOVE" => 16,      // 1 << 4
-            "CLEARITEMS" => 16,  // 1 << 4
-            "POPITEM" => 16,     // 1 << 4
-            _ => 32,             // Default cost for unknown operations
+            "REMOVE" => 16,       // 1 << 4
+            "CLEARITEMS" => 16,   // 1 << 4
+            "POPITEM" => 16,      // 1 << 4
+            _ => 32,              // Default cost for unknown operations
         }
     }
 }
@@ -255,4 +262,4 @@ impl Default for GasManager {
     fn default() -> Self {
         Self::new(10_000_000) // Default 10M gas limit
     }
-} 
+}

@@ -3,8 +3,8 @@
 //! This module provides hash functions commonly used in the Neo blockchain,
 //! including SHA-256, RIPEMD-160, and Neo-specific hash combinations.
 
-use sha2::{Digest, Sha256, Sha512};
 use ripemd::Ripemd160;
+use sha2::{Digest, Sha256, Sha512};
 
 /// Computes SHA-256 hash of the input data.
 pub fn sha256(data: &[u8]) -> [u8; 32] {
@@ -45,7 +45,7 @@ pub fn hash256(data: &[u8]) -> [u8; 32] {
 /// Computes Keccak-256 hash of the input data.
 /// This is used for some Neo smart contract operations.
 pub fn keccak256(data: &[u8]) -> [u8; 32] {
-    use sha3::{Keccak256, Digest};
+    use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
     hasher.update(data);
     hasher.finalize().into()
@@ -54,7 +54,7 @@ pub fn keccak256(data: &[u8]) -> [u8; 32] {
 /// Computes SHA-1 hash of the input data.
 /// This is used for some legacy Neo operations.
 pub fn sha1(data: &[u8]) -> [u8; 20] {
-    use sha1::{Sha1, Digest};
+    use sha1::{Digest, Sha1};
     let mut hasher = Sha1::new();
     hasher.update(data);
     hasher.finalize().into()

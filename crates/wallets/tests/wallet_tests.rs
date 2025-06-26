@@ -3,9 +3,9 @@
 //! These tests are converted from the C# Neo implementation to ensure
 //! exact compatibility and behavior matching.
 
-use neo_wallets::*;
-use neo_wallets::wallet_account::StandardWalletAccount;
 use neo_core::{UInt160, UInt256};
+use neo_wallets::wallet_account::StandardWalletAccount;
+use neo_wallets::*;
 use std::sync::Arc;
 use tokio;
 
@@ -45,7 +45,11 @@ impl Wallet for TestWallet {
         None // Test wallet doesn't have a file path
     }
 
-    async fn change_password(&mut self, _old_password: &str, _new_password: &str) -> WalletResult<bool> {
+    async fn change_password(
+        &mut self,
+        _old_password: &str,
+        _new_password: &str,
+    ) -> WalletResult<bool> {
         // Not implemented for test wallet
         Err(WalletError::Other("Not implemented".to_string()))
     }
@@ -62,17 +66,30 @@ impl Wallet for TestWallet {
         Ok(account)
     }
 
-    async fn create_account_watch_only(&mut self, script_hash: UInt160) -> WalletResult<Arc<dyn WalletAccount>> {
+    async fn create_account_watch_only(
+        &mut self,
+        script_hash: UInt160,
+    ) -> WalletResult<Arc<dyn WalletAccount>> {
         let account = Arc::new(StandardWalletAccount::new_watch_only(script_hash, None));
         self.accounts.insert(script_hash, account.clone());
         Ok(account)
     }
 
-    async fn create_account_with_contract(&mut self, contract: Contract, key_pair: Option<KeyPair>) -> WalletResult<Arc<dyn WalletAccount>> {
+    async fn create_account_with_contract(
+        &mut self,
+        contract: Contract,
+        key_pair: Option<KeyPair>,
+    ) -> WalletResult<Arc<dyn WalletAccount>> {
         let account = if let Some(key_pair) = key_pair {
-            Arc::new(StandardWalletAccount::new_with_key(key_pair, Some(contract.clone())))
+            Arc::new(StandardWalletAccount::new_with_key(
+                key_pair,
+                Some(contract.clone()),
+            ))
         } else {
-            Arc::new(StandardWalletAccount::new_watch_only(contract.script_hash(), Some(contract)))
+            Arc::new(StandardWalletAccount::new_watch_only(
+                contract.script_hash(),
+                Some(contract),
+            ))
         };
         self.accounts.insert(account.script_hash(), account.clone());
         Ok(account)
@@ -107,14 +124,21 @@ impl Wallet for TestWallet {
         self.create_account(&key_pair.private_key()).await
     }
 
-    async fn import_nep2(&mut self, nep2_key: &str, password: &str) -> WalletResult<Arc<dyn WalletAccount>> {
+    async fn import_nep2(
+        &mut self,
+        nep2_key: &str,
+        password: &str,
+    ) -> WalletResult<Arc<dyn WalletAccount>> {
         let key_pair = KeyPair::from_nep2(nep2_key.as_bytes(), password)?;
         self.create_account(&key_pair.private_key()).await
     }
 
     async fn sign(&self, data: &[u8], script_hash: &UInt160) -> WalletResult<Vec<u8>> {
         if let Some(account) = self.get_account(script_hash) {
-            account.sign(data).await.map_err(|e| WalletError::Other(e.to_string()))
+            account
+                .sign(data)
+                .await
+                .map_err(|e| WalletError::Other(e.to_string()))
         } else {
             Err(WalletError::AccountNotFound(*script_hash))
         }

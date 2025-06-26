@@ -62,7 +62,7 @@ async fn test_mainnet_connectivity() -> Result<(), Box<dyn std::error::Error>> {
     ]).await;
 
     if seed_nodes.is_empty() {
-        return Err("No MainNet seed nodes could be resolved".into());
+        return Err("No MainNet seed nodes could be resolved"));
     }
 
     info!("🌱 Resolved {} MainNet seed nodes", seed_nodes.len());
@@ -97,7 +97,7 @@ async fn test_testnet_connectivity() -> Result<(), Box<dyn std::error::Error>> {
     ]).await;
 
     if seed_nodes.is_empty() {
-        return Err("No TestNet seed nodes could be resolved".into());
+        return Err("No TestNet seed nodes could be resolved"));
     }
 
     info!("🌱 Resolved {} TestNet seed nodes", seed_nodes.len());
@@ -145,7 +145,7 @@ async fn resolve_hostname(hostname: &str) -> Result<SocketAddr, Box<dyn std::err
     }).await??;
     
     addrs.into_iter().find(|addr| addr.is_ipv4())
-        .ok_or_else(|| "No IPv4 address found".into())
+        .ok_or_else(|| "No IPv4 address found"))
 }
 
 async fn test_network_connection(

@@ -1,4 +1,4 @@
-use crate::{JToken, JContainer, OrderedDictionary};
+use crate::{JContainer, JToken, OrderedDictionary};
 
 /// Represents a JSON object
 /// This matches the C# JObject class
@@ -27,7 +27,9 @@ impl JObject {
 
     /// Gets the property with the specified name
     pub fn get(&self, name: &str) -> Option<&JToken> {
-        self.properties.get(&name.to_string()).and_then(|v| v.as_ref())
+        self.properties
+            .get(&name.to_string())
+            .and_then(|v| v.as_ref())
     }
 
     /// Sets the property with the specified name
@@ -70,11 +72,14 @@ mod tests {
     fn test_jobject_basic() {
         let mut obj = JObject::new();
         assert!(obj.properties().is_empty());
-        
-        obj.set("test".to_string(), Some(JToken::String("value".to_string())));
+
+        obj.set(
+            "test".to_string(),
+            Some(JToken::String("value".to_string())),
+        );
         assert_eq!(obj.properties().len(), 1);
         assert!(obj.contains_property("test"));
-        
+
         let value = obj.get("test").unwrap();
         assert_eq!(value.as_string(), "value");
     }
@@ -84,8 +89,8 @@ mod tests {
         let mut obj = JObject::new();
         obj.set("test".to_string(), Some(JToken::Number(42.0)));
         assert_eq!(obj.properties().len(), 1);
-        
+
         obj.clear();
         assert!(obj.properties().is_empty());
     }
-} 
+}

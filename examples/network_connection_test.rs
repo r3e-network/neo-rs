@@ -6,10 +6,14 @@
 //! Usage:
 //!   cargo run --example network_connection_test
 
+use neo_cli::{
+    CliArgs,
+    args::{LogLevel, Network},
+    service::MainService,
+};
 use std::time::Duration;
-use tokio::time::{timeout, sleep};
-use tracing::{info, warn, error, debug};
-use neo_cli::{CliArgs, args::{Network, LogLevel}, service::MainService};
+use tokio::time::{sleep, timeout};
+use tracing::{debug, error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,7 +30,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Network::Private => "Private Network",
         };
 
-        info!("🚀 Testing Neo Rust Node Network Connectivity for {}", network_name);
+        info!(
+            "🚀 Testing Neo Rust Node Network Connectivity for {}",
+            network_name
+        );
         info!("───────────────────────────────────────────");
 
         // Create CLI arguments for the test
@@ -67,13 +74,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         // Start the service with timeout
-        info!("🚀 Starting Neo Rust node and connecting to {}...", network_name);
+        info!(
+            "🚀 Starting Neo Rust node and connecting to {}...",
+            network_name
+        );
         info!("⏳ This may take a moment to connect to peers...");
-        
+
         match timeout(Duration::from_secs(30), service.start()).await {
             Ok(Ok(_)) => {
                 info!("✅ Neo Rust node started successfully!");
-                info!("🔗 Node is now attempting to connect to {} peers", network_name);
+                info!(
+                    "🔗 Node is now attempting to connect to {} peers",
+                    network_name
+                );
             }
             Ok(Err(e)) => {
                 error!("❌ Failed to start Neo Rust node: {}", e);
@@ -98,9 +111,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let peer_manager = p2p_node.peer_manager();
                 let stats = peer_manager.get_stats().await;
                 let peer_count = stats.connected_peers;
-                
+
                 if peer_count > 0 && !connection_established {
-                    info!("🎉 Successfully connected to {} network with {} peers!", network_name, peer_count);
+                    info!(
+                        "🎉 Successfully connected to {} network with {} peers!",
+                        network_name, peer_count
+                    );
                     connection_established = true;
                     break;
                 }
@@ -110,7 +126,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Final status report
         info!("───────────────────────────────────────────");
         if connection_established {
-            info!("🎯 SUCCESS: Neo Rust node successfully connected to {}!", network_name);
+            info!(
+                "🎯 SUCCESS: Neo Rust node successfully connected to {}!",
+                network_name
+            );
         } else {
             warn!("⚠️  No peer connections established for {}", network_name);
             warn!("   This could be due to network connectivity or seed node availability");
@@ -122,7 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             warn!("Warning during shutdown: {}", e);
         }
         info!("✅ Shutdown complete");
-        
+
         // Wait a moment before testing next network
         sleep(Duration::from_secs(2)).await;
     }
@@ -130,4 +149,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Overall test result
     info!("🏁 Neo N3 Network Connectivity Test Completed!");
     Ok(())
-} 
+}

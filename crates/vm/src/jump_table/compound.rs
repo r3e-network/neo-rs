@@ -2,13 +2,14 @@
 //!
 //! This module provides the compound operation handlers for the Neo VM.
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::StackItem;
-use crate::Error;
-use crate::Result;
+use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
 
@@ -38,9 +39,11 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 }
 
 /// Implements the NEWARRAY0 operation.
-fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Create a new empty array
     let array = StackItem::from_array(Vec::new());
@@ -52,12 +55,18 @@ fn new_array0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Resul
 }
 
 /// Implements the NEWARRAY operation.
-fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid array size".into()))?;
+    let count = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
     // Create a new array with the specified count
     let mut items = Vec::with_capacity(count);
@@ -72,15 +81,25 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result
 }
 
 /// Implements the NEWARRAY_T operation.
-fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid array size".into()))?;
+    let count = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
     // Get the type from the instruction
-    let type_byte = instruction.operand().get(0).copied().ok_or_else(|| Error::InvalidInstruction("Missing type operand".into()))?;
+    let type_byte = instruction
+        .operand()
+        .get(0)
+        .copied()
+        .ok_or_else(|| VmError::invalid_instruction_msg("Missing type operand"))?;
 
     // Create a new array with the specified count and type
     let mut items = Vec::with_capacity(count);
@@ -88,13 +107,18 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> Resul
         // Create a default value based on the type
         let default_value = match type_byte {
             0x00 => StackItem::Boolean(false),
-            0x01 => StackItem::Integer(0.into()),
+            0x01 => StackItem::Integer(BigInt::from(0)),
             0x02 => StackItem::ByteString(Vec::new()),
             0x03 => StackItem::Buffer(Vec::new()),
             0x04 => StackItem::Array(Vec::new()),
             0x05 => StackItem::Struct(Vec::new()),
             0x06 => StackItem::Map(BTreeMap::new()),
-            _ => return Err(Error::InvalidInstruction(format!("Invalid type: {}", type_byte))),
+            _ => {
+                return Err(VmError::invalid_instruction_msg(format!(
+                    "Invalid type: {}",
+                    type_byte
+                )));
+            }
         };
 
         items.push(default_value);
@@ -107,9 +131,11 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> Resul
 }
 
 /// Implements the NEWSTRUCT0 operation.
-fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Create a new empty struct
     let struct_item = StackItem::from_struct(Vec::new());
@@ -121,12 +147,18 @@ fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Resu
 }
 
 /// Implements the NEWSTRUCT operation.
-fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid struct size".into()))?;
+    let count = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
     // Create a new struct with the specified count
     let mut items = Vec::with_capacity(count);
@@ -141,9 +173,11 @@ fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Resul
 }
 
 /// Implements the NEWMAP operation.
-fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Create a new map
     let map = StackItem::from_map(BTreeMap::new());
@@ -155,9 +189,11 @@ fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<(
 }
 
 /// Implements the APPEND operation.
-fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the item and array from the stack
     let item = context.pop()?;
@@ -173,16 +209,18 @@ fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
             items.push(item);
             context.push(StackItem::from_struct(items))?;
         }
-        _ => return Err(Error::InvalidType("Expected Array or Struct".into())),
+        _ => return Err(VmError::invalid_type_simple("Expected Array or Struct")),
     }
 
     Ok(())
 }
 
 /// Implements the REVERSE operation.
-fn reverse(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn reverse(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the array from the stack
     let array = context.pop()?;
@@ -197,16 +235,18 @@ fn reverse(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<(
             items.reverse();
             context.push(StackItem::from_struct(items))?;
         }
-        _ => return Err(Error::InvalidType("Expected Array or Struct".into())),
+        _ => return Err(VmError::invalid_type_simple("Expected Array or Struct")),
     }
 
     Ok(())
 }
 
 /// Implements the REMOVE operation.
-fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the key and collection from the stack
     let key = context.pop()?;
@@ -215,17 +255,29 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
     // Remove the item from the collection
     match collection {
         StackItem::Array(mut items) => {
-            let index = key.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid array index".into()))?;
+            let index = key
+                .as_int()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
             if index >= items.len() {
-                return Err(Error::InvalidOperation(format!("Index out of range: {}", index)));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Index out of range: {}",
+                    index
+                )));
             }
             items.remove(index);
             context.push(StackItem::from_array(items))?;
         }
         StackItem::Struct(mut items) => {
-            let index = key.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid struct index".into()))?;
+            let index = key
+                .as_int()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
             if index >= items.len() {
-                return Err(Error::InvalidOperation(format!("Index out of range: {}", index)));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Index out of range: {}",
+                    index
+                )));
             }
             items.remove(index);
             context.push(StackItem::from_struct(items))?;
@@ -234,16 +286,22 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
             items.remove(&key);
             context.push(StackItem::from_map(items))?;
         }
-        _ => return Err(Error::InvalidType("Expected Array, Struct, or Map".into())),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected Array, Struct, or Map",
+            ));
+        }
     }
 
     Ok(())
 }
 
 /// Implements the CLEARITEMS operation.
-fn clear_items(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn clear_items(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the collection from the stack
     let collection = context.pop()?;
@@ -262,16 +320,22 @@ fn clear_items(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Resu
             items.clear();
             context.push(StackItem::from_map(items))?;
         }
-        _ => return Err(Error::InvalidType("Expected Array, Struct, or Map".into())),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected Array, Struct, or Map",
+            ));
+        }
     }
 
     Ok(())
 }
 
 /// Implements the POPITEM operation.
-fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the collection from the stack
     let collection = context.pop()?;
@@ -280,7 +344,9 @@ fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<
     match collection {
         StackItem::Array(mut items) => {
             if items.is_empty() {
-                return Err(Error::InvalidOperation("Cannot pop from empty array".into()));
+                return Err(VmError::invalid_operation_msg(
+                    "Cannot pop from empty array",
+                ));
             }
             let popped_item = items.pop().unwrap();
             context.push(StackItem::from_array(items))?;
@@ -288,22 +354,26 @@ fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<
         }
         StackItem::Struct(mut items) => {
             if items.is_empty() {
-                return Err(Error::InvalidOperation("Cannot pop from empty struct".into()));
+                return Err(VmError::invalid_operation_msg(
+                    "Cannot pop from empty struct",
+                ));
             }
             let popped_item = items.pop().unwrap();
             context.push(StackItem::from_struct(items))?;
             context.push(popped_item)?;
         }
-        _ => return Err(Error::InvalidType("Expected Array or Struct".into())),
+        _ => return Err(VmError::invalid_type_simple("Expected Array or Struct")),
     }
 
     Ok(())
 }
 
 /// Implements the HASKEY operation.
-fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the key and collection from the stack
     let key = context.pop()?;
@@ -312,17 +382,25 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<(
     // Check if the collection has the key
     let result = match collection {
         StackItem::Array(items) => {
-            let index = key.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid array index".into()))?;
+            let index = key
+                .as_int()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
             index < items.len()
         }
         StackItem::Struct(items) => {
-            let index = key.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid struct index".into()))?;
+            let index = key
+                .as_int()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
             index < items.len()
         }
-        StackItem::Map(items) => {
-            items.contains_key(&key)
+        StackItem::Map(items) => items.contains_key(&key),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected Array, Struct, or Map",
+            ));
         }
-        _ => return Err(Error::InvalidType("Expected Array, Struct, or Map".into())),
     };
 
     // Push the result onto the stack
@@ -332,9 +410,11 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<(
 }
 
 /// Implements the KEYS operation.
-fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the map from the stack
     let map = context.pop()?;
@@ -345,16 +425,18 @@ fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> 
             let keys: Vec<StackItem> = items.keys().cloned().collect();
             context.push(StackItem::from_array(keys))?;
         }
-        _ => return Err(Error::InvalidType("Expected Map".into())),
+        _ => return Err(VmError::invalid_type_simple("Expected Map")),
     }
 
     Ok(())
 }
 
 /// Implements the VALUES operation.
-fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the map from the stack
     let map = context.pop()?;
@@ -365,19 +447,25 @@ fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
             let values: Vec<StackItem> = items.values().cloned().collect();
             context.push(StackItem::from_array(values))?;
         }
-        _ => return Err(Error::InvalidType("Expected Map".into())),
+        _ => return Err(VmError::invalid_type_simple("Expected Map")),
     }
 
     Ok(())
 }
 
 /// Implements the PACKMAP operation.
-fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid map size".into()))?;
+    let count = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid map size"))?;
 
     // Create a new map
     let mut map = BTreeMap::new();
@@ -396,12 +484,18 @@ fn pack_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<
 }
 
 /// Implements the PACKSTRUCT operation.
-fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid struct size".into()))?;
+    let count = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
     // Create a new struct
     let mut items = Vec::with_capacity(count);
@@ -421,12 +515,18 @@ fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Resu
 }
 
 /// Implements the PACK operation.
-fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the count from the stack
-    let count = context.pop()?.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid array size".into()))?;
+    let count = context
+        .pop()?
+        .as_int()?
+        .to_usize()
+        .ok_or_else(|| VmError::invalid_operation_msg("Invalid array size"))?;
 
     // Create a new array
     let mut items = Vec::with_capacity(count);
@@ -446,9 +546,11 @@ fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> 
 }
 
 /// Implements the UNPACK operation.
-fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the array from the stack
     let array = context.pop()?;
@@ -464,16 +566,18 @@ fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()
             // Push the count onto the stack
             context.push(StackItem::from_int(items.len()))?;
         }
-        _ => return Err(Error::InvalidType("Expected Array or Struct".into())),
+        _ => return Err(VmError::invalid_type_simple("Expected Array or Struct")),
     }
 
     Ok(())
 }
 
 /// Implements the PICKITEM operation.
-fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the key and collection from the stack
     let key = context.pop()?;
@@ -482,23 +586,40 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result
     // Get the item from the collection
     let result = match collection {
         StackItem::Array(items) => {
-            let index = key.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid array index".into()))?;
+            let index = key
+                .as_int()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
             if index >= items.len() {
-                return Err(Error::InvalidOperation(format!("Index out of range: {}", index)));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Index out of range: {}",
+                    index
+                )));
             }
             items[index].clone()
         }
         StackItem::Struct(items) => {
-            let index = key.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid struct index".into()))?;
+            let index = key
+                .as_int()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
             if index >= items.len() {
-                return Err(Error::InvalidOperation(format!("Index out of range: {}", index)));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Index out of range: {}",
+                    index
+                )));
             }
             items[index].clone()
         }
-        StackItem::Map(items) => {
-            items.get(&key).cloned().ok_or_else(|| Error::InvalidOperation(format!("Key not found: {:?}", key)))?
+        StackItem::Map(items) => items
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {:?}", key)))?,
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected Array, Struct, or Map",
+            ));
         }
-        _ => return Err(Error::InvalidType("Expected Array, Struct, or Map".into())),
     };
 
     // Push the result onto the stack
@@ -508,9 +629,11 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result
 }
 
 /// Implements the SETITEM operation.
-fn set_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn set_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the value, key, and collection from the stack
     let value = context.pop()?;
@@ -520,17 +643,29 @@ fn set_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<
     // Set the item in the collection
     match collection {
         StackItem::Array(mut items) => {
-            let index = key.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid array index".into()))?;
+            let index = key
+                .as_int()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
             if index >= items.len() {
-                return Err(Error::InvalidOperation(format!("Index out of range: {}", index)));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Index out of range: {}",
+                    index
+                )));
             }
             items[index] = value;
             context.push(StackItem::from_array(items))?;
         }
         StackItem::Struct(mut items) => {
-            let index = key.as_int()?.to_usize().ok_or_else(|| Error::InvalidOperation("Invalid struct index".into()))?;
+            let index = key
+                .as_int()?
+                .to_usize()
+                .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
             if index >= items.len() {
-                return Err(Error::InvalidOperation(format!("Index out of range: {}", index)));
+                return Err(VmError::invalid_operation_msg(format!(
+                    "Index out of range: {}",
+                    index
+                )));
             }
             items[index] = value;
             context.push(StackItem::from_struct(items))?;
@@ -539,16 +674,22 @@ fn set_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<
             items.insert(key, value);
             context.push(StackItem::from_map(items))?;
         }
-        _ => return Err(Error::InvalidType("Expected Array, Struct, or Map".into())),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected Array, Struct, or Map",
+            ));
+        }
     }
 
     Ok(())
 }
 
 /// Implements the SIZE operation.
-fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine.current_context_mut().ok_or_else(|| Error::InvalidOperation("No current context".into()))?;
+    let context = engine
+        .current_context_mut()
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
     // Pop the collection from the stack
     let collection = context.pop()?;
@@ -560,7 +701,11 @@ fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> 
         StackItem::Map(items) => items.len(),
         StackItem::ByteString(data) => data.len(),
         StackItem::Buffer(data) => data.len(),
-        _ => return Err(Error::InvalidType("Expected Array, Struct, Map, ByteString, or Buffer".into())),
+        _ => {
+            return Err(VmError::invalid_type_simple(
+                "Expected Array, Struct, Map, ByteString, or Buffer",
+            ));
+        }
     };
 
     // Push the size onto the stack

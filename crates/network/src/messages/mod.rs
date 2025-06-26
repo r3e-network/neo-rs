@@ -11,17 +11,14 @@
 pub mod commands;
 pub mod header;
 pub mod inventory;
-pub mod protocol;
 pub mod network;
+pub mod protocol;
 pub mod validation;
 
 // Re-export main types for compatibility
-pub use commands::{MessageCommand, MessageType};
-pub use header::MessageHeader;
+pub use commands::{MessageCommand, MessageFlags, varlen};
+pub use header::{MAX_MESSAGE_SIZE, Neo3Message};
 pub use inventory::{InventoryItem, InventoryType};
-pub use protocol::ProtocolMessage;
 pub use network::NetworkMessage;
+pub use protocol::ProtocolMessage;
 pub use validation::MessageValidator;
-
-/// Maximum message payload size (1MB)
-pub const MAX_MESSAGE_SIZE: usize = 1_048_576; 

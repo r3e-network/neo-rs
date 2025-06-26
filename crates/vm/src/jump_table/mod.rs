@@ -13,15 +13,15 @@ pub mod splice;
 pub mod stack;
 pub mod types;
 
+use crate::error::VmError;
+use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::op_code::OpCode;
-use crate::Error;
-use crate::Result;
 use std::collections::HashMap;
 
 /// A handler for a VM instruction.
-pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> Result<()>;
+pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>;
 
 /// Represents a jump table for the VM.
 #[derive(Clone)]
@@ -93,7 +93,7 @@ impl JumpTable {
     }
 
     /// Executes an instruction.
-    pub fn execute(&self, engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
+    pub fn execute(&self, engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
         if let Some(handler) = self.get_handler(instruction.opcode()) {
             handler(engine, instruction)
         } else {
@@ -102,12 +102,19 @@ impl JumpTable {
     }
 
     /// Handles an invalid opcode.
-    pub fn invalid_opcode(&self, _engine: &mut ExecutionEngine, instruction: &Instruction) -> Result<()> {
-        Err(Error::UnsupportedOperation(format!("Unsupported opcode: {:?}", instruction.opcode())))
+    pub fn invalid_opcode(
+        &self,
+        _engine: &mut ExecutionEngine,
+        instruction: &Instruction,
+    ) -> VmResult<()> {
+        Err(VmError::unsupported_operation_msg(format!(
+            "Unsupported opcode: {:?}",
+            instruction.opcode()
+        )))
     }
 
     /// Executes a throw operation.
-    pub fn execute_throw(&self, engine: &mut ExecutionEngine, message: &str) -> Result<()> {
+    pub fn execute_throw(&self, engine: &mut ExecutionEngine, message: &str) -> VmResult<()> {
         // Create a byte string from the message
         let exception = crate::stack_item::StackItem::from_byte_string(message.as_bytes().to_vec());
 
@@ -162,7 +169,9 @@ impl std::ops::Index<OpCode> for JumpTable {
     type Output = InstructionHandler;
 
     fn index(&self, opcode: OpCode) -> &Self::Output {
-        self.handlers[opcode as usize].as_ref().expect("Unsupported opcode")
+        self.handlers[opcode as usize]
+            .as_ref()
+            .expect("Unsupported opcode")
     }
 }
 
@@ -171,13 +180,20 @@ impl std::ops::IndexMut<OpCode> for JumpTable {
         // This implementation is more complex with arrays since we can't easily return &mut Option<T>
         // We need to ensure the handler exists first
         if self.handlers[opcode as usize].is_none() {
-            self.handlers[opcode as usize] = Some(|_engine: &mut ExecutionEngine, instruction: &Instruction| -> Result<()> {
-                Err(Error::UnsupportedOperation(format!("Unsupported opcode: {:?}", instruction.opcode())))
-            });
+            self.handlers[opcode as usize] = Some(
+                |_engine: &mut ExecutionEngine, instruction: &Instruction| -> VmResult<()> {
+                    Err(VmError::unsupported_operation_msg(format!(
+                        "Unsupported opcode: {:?}",
+                        instruction.opcode()
+                    )))
+                },
+            );
         }
 
         // Now we can safely get a mutable reference
-        self.handlers[opcode as usize].as_mut().expect("Unsupported opcode")
+        self.handlers[opcode as usize]
+            .as_mut()
+            .expect("Unsupported opcode")
     }
 }
 
@@ -191,7 +207,11 @@ mod tests {
 
         // Check that all opcodes have handlers
         for opcode in OpCode::iter() {
-            assert!(jump_table.get(opcode).is_some(), "No handler for opcode: {:?}", opcode);
+            assert!(
+                jump_table.get(opcode).is_some(),
+                "No handler for opcode: {:?}",
+                opcode
+            );
         }
     }
 
@@ -200,7 +220,10 @@ mod tests {
         let mut jump_table = JumpTable::new();
 
         // Define a custom handler
-        fn custom_handler(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+        fn custom_handler(
+            _engine: &mut ExecutionEngine,
+            _instruction: &Instruction,
+        ) -> VmResult<()> {
             Ok(())
         }
 
@@ -219,7 +242,10 @@ mod tests {
         let mut jump_table = JumpTable::new();
 
         // Define a custom handler
-        fn custom_handler(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> Result<()> {
+        fn custom_handler(
+            _engine: &mut ExecutionEngine,
+            _instruction: &Instruction,
+        ) -> VmResult<()> {
             Ok(())
         }
 
@@ -240,7 +266,11 @@ mod tests {
 
         // Check that all opcodes have handlers
         for opcode in OpCode::iter() {
-            assert!(jump_table.get(opcode).is_some(), "No handler for opcode: {:?}", opcode);
+            assert!(
+                jump_table.get(opcode).is_some(),
+                "No handler for opcode: {:?}",
+                opcode
+            );
         }
     }
 

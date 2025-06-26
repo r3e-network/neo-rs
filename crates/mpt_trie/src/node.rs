@@ -1,8 +1,8 @@
-use crate::node_type::NodeType;
 use crate::error::{MptError, MptResult};
+use crate::node_type::NodeType;
 use neo_core::UInt256;
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// MPT Trie Node implementation
 /// This matches the C# Node class
@@ -11,14 +11,14 @@ pub struct Node {
     node_type: NodeType,
     hash: Option<UInt256>,
     reference: i32,
-    
+
     // Branch node data (16 children)
     children: Option<Vec<Option<Box<Node>>>>,
-    
+
     // Extension node data
     key: Option<Vec<u8>>,
     next: Option<Box<Node>>,
-    
+
     // Leaf node data
     value: Option<Vec<u8>>,
 }
@@ -100,7 +100,7 @@ impl Node {
     pub fn set_node_type(&mut self, node_type: NodeType) {
         self.node_type = node_type;
         self.set_dirty();
-        
+
         // Initialize appropriate data structures based on node type
         match node_type {
             NodeType::BranchNode => {
@@ -134,16 +134,16 @@ impl Node {
         if let Some(hash) = self.hash {
             return hash;
         }
-        
+
         // Production-ready node hashing (matches C# Neo MPT exactly)
         let data = self.to_array_without_reference();
         let hash_bytes = Sha256::digest(&data);
-        
+
         // Convert to UInt256 using proper byte ordering (matches C# Neo exactly)
         let mut hash_array = [0u8; 32];
         hash_array.copy_from_slice(&hash_bytes);
         let calculated_hash = UInt256::from_bytes(&hash_array).unwrap_or_default();
-        
+
         // Cache the calculated hash
         self.hash = Some(calculated_hash);
         calculated_hash
@@ -172,9 +172,10 @@ impl Node {
     /// Gets the children for branch nodes (returns Vec<Option<Node>> for compatibility)
     pub fn children(&self) -> Vec<Option<Node>> {
         match &self.children {
-            Some(children) => children.iter().map(|child| {
-                child.as_ref().map(|boxed_node| boxed_node.as_ref().clone())
-            }).collect(),
+            Some(children) => children
+                .iter()
+                .map(|child| child.as_ref().map(|boxed_node| boxed_node.as_ref().clone()))
+                .collect(),
             None => vec![None; Self::BRANCH_CHILD_COUNT],
         }
     }
@@ -194,11 +195,11 @@ impl Node {
         if index >= Self::BRANCH_CHILD_COUNT {
             return;
         }
-        
+
         if self.children.is_none() {
             self.children = Some(vec![None; Self::BRANCH_CHILD_COUNT]);
         }
-        
+
         if let Some(children) = &mut self.children {
             children[index] = child.map(Box::new);
             self.set_dirty();
@@ -242,12 +243,12 @@ impl Node {
     pub fn to_array_without_reference(&self) -> Vec<u8> {
         // Production-ready node serialization (matches C# Neo MPT format exactly)
         let mut result = Vec::new();
-        
+
         match &self.node_type {
             NodeType::BranchNode => {
                 // Production-ready BranchNode serialization (matches C# Neo exactly)
                 result.push(0x00); // BranchNode type marker
-                
+
                 // Serialize all 16 children (matches C# Neo format exactly)
                 if let Some(children) = &self.children {
                     for i in 0..16 {
@@ -266,7 +267,7 @@ impl Node {
                         result.push(0x00);
                     }
                 }
-                
+
                 // Serialize value if present (matches C# Neo exactly)
                 if let Some(ref value) = self.value {
                     result.push(0x01); // Value exists marker
@@ -279,7 +280,7 @@ impl Node {
             NodeType::ExtensionNode => {
                 // Production-ready ExtensionNode serialization (matches C# Neo exactly)
                 result.push(0x01); // ExtensionNode type marker
-                
+
                 // Serialize key (matches C# Neo format exactly)
                 if let Some(ref key) = self.key {
                     result.extend_from_slice(&(key.len() as u32).to_le_bytes());
@@ -287,7 +288,7 @@ impl Node {
                 } else {
                     result.extend_from_slice(&[0u8; 4]); // Zero length
                 }
-                
+
                 // Serialize next node hash (matches C# Neo exactly)
                 if let Some(ref next_node) = self.next {
                     let next_hash = next_node.hash.unwrap_or_default();
@@ -299,7 +300,7 @@ impl Node {
             NodeType::LeafNode => {
                 // Production-ready LeafNode serialization (matches C# Neo exactly)
                 result.push(0x02); // LeafNode type marker
-                
+
                 // Serialize key (matches C# Neo format exactly)
                 if let Some(ref key) = self.key {
                     result.extend_from_slice(&(key.len() as u32).to_le_bytes());
@@ -307,7 +308,7 @@ impl Node {
                 } else {
                     result.extend_from_slice(&[0u8; 4]); // Zero length
                 }
-                
+
                 // Serialize value (matches C# Neo exactly)
                 if let Some(ref value) = self.value {
                     result.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -319,7 +320,7 @@ impl Node {
             NodeType::HashNode => {
                 // Production-ready HashNode serialization (matches C# Neo exactly)
                 result.push(0x03); // HashNode type marker
-                
+
                 // Serialize hash directly (matches C# Neo exactly)
                 if let Some(ref hash) = self.hash {
                     result.extend_from_slice(hash.as_bytes());
@@ -333,7 +334,7 @@ impl Node {
                 // No additional data for empty nodes
             }
         }
-        
+
         result
     }
 
@@ -394,10 +395,10 @@ impl Node {
     pub fn to_bytes(&self) -> MptResult<Vec<u8>> {
         // Production-ready node serialization (matches C# Neo exactly)
         let mut result = self.to_array_without_reference();
-        
+
         // Add reference count
         result.extend_from_slice(&self.reference.to_le_bytes());
-        
+
         Ok(result)
     }
 
@@ -414,73 +415,85 @@ impl Node {
             0x00 => {
                 // BranchNode
                 let mut node = Node::new_branch();
-                
+
                 // Read 16 children
                 for i in 0..16 {
                     if offset >= data.len() {
-                        return Err(MptError::InvalidNode("Incomplete branch node data".to_string()));
+                        return Err(MptError::InvalidNode(
+                            "Incomplete branch node data".to_string(),
+                        ));
                     }
-                    
+
                     let has_child = data[offset];
                     offset += 1;
-                    
+
                     if has_child == 0x01 {
                         // Child exists - read hash
                         if offset + 32 > data.len() {
                             return Err(MptError::InvalidNode("Incomplete child hash".to_string()));
                         }
-                        
+
                         let mut hash_bytes = [0u8; 32];
                         hash_bytes.copy_from_slice(&data[offset..offset + 32]);
                         offset += 32;
-                        
+
                         let hash = UInt256::from_bytes(&hash_bytes)?;
                         node.set_child(i, Some(Node::new_hash(hash)));
                     }
                 }
-                
+
                 // Read value if present
                 if offset < data.len() {
                     let has_value = data[offset];
                     offset += 1;
-                    
+
                     if has_value == 0x01 && offset + 4 <= data.len() {
                         let value_len = u32::from_le_bytes([
-                            data[offset], data[offset + 1], data[offset + 2], data[offset + 3]
+                            data[offset],
+                            data[offset + 1],
+                            data[offset + 2],
+                            data[offset + 3],
                         ]) as usize;
                         offset += 4;
-                        
+
                         if offset + value_len <= data.len() {
                             let value = data[offset..offset + value_len].to_vec();
                             node.set_value(Some(value));
                         }
                     }
                 }
-                
+
                 Ok(node)
             }
             0x01 => {
                 // ExtensionNode
                 if offset + 4 > data.len() {
-                    return Err(MptError::InvalidNode("Incomplete extension node".to_string()));
+                    return Err(MptError::InvalidNode(
+                        "Incomplete extension node".to_string(),
+                    ));
                 }
-                
+
                 let key_len = u32::from_le_bytes([
-                    data[offset], data[offset + 1], data[offset + 2], data[offset + 3]
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
                 ]) as usize;
                 offset += 4;
-                
+
                 if offset + key_len + 32 > data.len() {
-                    return Err(MptError::InvalidNode("Incomplete extension node data".to_string()));
+                    return Err(MptError::InvalidNode(
+                        "Incomplete extension node data".to_string(),
+                    ));
                 }
-                
+
                 let key = data[offset..offset + key_len].to_vec();
                 offset += key_len;
-                
+
                 let mut hash_bytes = [0u8; 32];
                 hash_bytes.copy_from_slice(&data[offset..offset + 32]);
                 let hash = UInt256::from_bytes(&hash_bytes)?;
-                
+
                 let next_node = Node::new_hash(hash);
                 let mut node = Node::new_extension(key, next_node);
                 Ok(node)
@@ -490,30 +503,38 @@ impl Node {
                 if offset + 4 > data.len() {
                     return Err(MptError::InvalidNode("Incomplete leaf node".to_string()));
                 }
-                
+
                 let key_len = u32::from_le_bytes([
-                    data[offset], data[offset + 1], data[offset + 2], data[offset + 3]
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
                 ]) as usize;
                 offset += 4;
-                
+
                 if offset + key_len + 4 > data.len() {
-                    return Err(MptError::InvalidNode("Incomplete leaf node data".to_string()));
+                    return Err(MptError::InvalidNode(
+                        "Incomplete leaf node data".to_string(),
+                    ));
                 }
-                
+
                 let key = data[offset..offset + key_len].to_vec();
                 offset += key_len;
-                
+
                 let value_len = u32::from_le_bytes([
-                    data[offset], data[offset + 1], data[offset + 2], data[offset + 3]
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
                 ]) as usize;
                 offset += 4;
-                
+
                 if offset + value_len > data.len() {
                     return Err(MptError::InvalidNode("Incomplete leaf value".to_string()));
                 }
-                
+
                 let value = data[offset..offset + value_len].to_vec();
-                
+
                 let mut node = Node::new_leaf(value);
                 node.set_key(Some(key));
                 Ok(node)
@@ -523,18 +544,21 @@ impl Node {
                 if offset + 32 > data.len() {
                     return Err(MptError::InvalidNode("Incomplete hash node".to_string()));
                 }
-                
+
                 let mut hash_bytes = [0u8; 32];
                 hash_bytes.copy_from_slice(&data[offset..offset + 32]);
                 let hash = UInt256::from_bytes(&hash_bytes)?;
-                
+
                 Ok(Node::new_hash(hash))
             }
             0x04 => {
                 // Empty
                 Ok(Node::new())
             }
-            _ => Err(MptError::InvalidNode(format!("Unknown node type: {}", node_type_byte))),
+            _ => Err(MptError::InvalidNode(format!(
+                "Unknown node type: {}",
+                node_type_byte
+            ))),
         }
     }
 
@@ -554,7 +578,7 @@ impl Node {
         if let Some(ref next) = self.next {
             return Some(next.as_ref());
         }
-        
+
         // For branch nodes, this method doesn't make sense without an index
         // Return None as a fallback
         None
@@ -616,7 +640,7 @@ mod tests {
         let branch_node = Node::new_branch();
         println!("Branch node size: {}", branch_node.size());
         assert_eq!(branch_node.size(), 21); // 1 + 16 + 4 bytes
-        // Note: branch node size varies based on number of children and value presence in production implementation
+        // Note: branch node size varies based on number of children and value presence
         assert!(branch_node.size() > empty_node.size());
     }
 
@@ -624,11 +648,11 @@ mod tests {
     fn test_node_dirty() {
         let mut node = Node::new_leaf(vec![1, 2, 3]);
         assert!(node.hash.is_none());
-        
+
         let _hash = node.hash(); // This should compute and cache the hash
         assert!(node.hash.is_some());
-        
+
         node.set_dirty();
         assert!(node.hash.is_none());
     }
-} 
+}

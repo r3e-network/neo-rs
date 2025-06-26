@@ -1,10 +1,10 @@
 //! Flow control OpCodes for the Neo Virtual Machine.
-//! 
+//!
 //! This module contains all OpCodes related to program flow control,
 //! including jumps, calls, exceptions, and function returns.
 
 /// Flow control OpCodes.
-/// 
+///
 /// These opcodes control the execution flow of the virtual machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

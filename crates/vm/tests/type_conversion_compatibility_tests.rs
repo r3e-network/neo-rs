@@ -16,22 +16,38 @@ fn test_boolean_conversions() {
     let test_cases = vec![
         // PUSHT CONVERT (to Integer)
         (
-            vec![OpCode::PUSHT as u8, OpCode::CONVERT as u8, StackItemType::Integer as u8],
+            vec![
+                OpCode::PUSHT as u8,
+                OpCode::CONVERT as u8,
+                StackItemType::Integer as u8,
+            ],
             "1", // C# VM converts true to integer 1
         ),
         // PUSHF CONVERT (to Integer)
         (
-            vec![OpCode::PUSHF as u8, OpCode::CONVERT as u8, StackItemType::Integer as u8],
+            vec![
+                OpCode::PUSHF as u8,
+                OpCode::CONVERT as u8,
+                StackItemType::Integer as u8,
+            ],
             "0", // C# VM converts false to integer 0
         ),
         // PUSHT CONVERT (to ByteString)
         (
-            vec![OpCode::PUSHT as u8, OpCode::CONVERT as u8, StackItemType::ByteString as u8],
+            vec![
+                OpCode::PUSHT as u8,
+                OpCode::CONVERT as u8,
+                StackItemType::ByteString as u8,
+            ],
             "01", // C# VM converts true to "01" hex string
         ),
         // PUSHF CONVERT (to ByteString)
         (
-            vec![OpCode::PUSHF as u8, OpCode::CONVERT as u8, StackItemType::ByteString as u8],
+            vec![
+                OpCode::PUSHF as u8,
+                OpCode::CONVERT as u8,
+                StackItemType::ByteString as u8,
+            ],
             "00", // C# VM converts false to "00" hex string
         ),
     ];
@@ -40,36 +56,33 @@ fn test_boolean_conversions() {
         // Create the execution engine
         let script = Script::new(script_bytes, false).unwrap();
         let mut engine = ExecutionEngine::new(None);
-        
+
         // Execute the script
         let _ = engine.load_script(script, -1, 0);
         let _ = engine.execute();
-        
+
         // Verify execution state
         assert_eq!(engine.state(), VMState::HALT, "VM execution failed");
-        
+
         // Verify result
         let result_stack = engine.result_stack();
         assert_eq!(result_stack.len(), 1, "Expected one item on stack");
-        
+
         let result = result_stack.iter().next().unwrap();
         match result_stack.iter().next().unwrap() {
-            item if item.stack_item_type() == StackItemType::Integer => {
-                match item.as_int() {
-                    Ok(value) => assert_eq!(value.to_string(), expected_result),
-                    Err(_) => panic!("Failed to convert to integer"),
-                }
+            item if item.stack_item_type() == StackItemType::Integer => match item.as_int() {
+                Ok(value) => assert_eq!(value.to_string(), expected_result),
+                Err(_) => panic!("Failed to convert to integer"),
             },
-            item if item.stack_item_type() == StackItemType::ByteString => {
-                match item.as_bytes() {
-                    Ok(bytes) => {
-                        let hex_string = bytes.iter()
-                            .map(|b| format!("{:02x}", b))
-                            .collect::<String>();
-                        assert_eq!(hex_string, expected_result);
-                    },
-                    Err(_) => panic!("Failed to convert to byte string"),
+            item if item.stack_item_type() == StackItemType::ByteString => match item.as_bytes() {
+                Ok(bytes) => {
+                    let hex_string = bytes
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<String>();
+                    assert_eq!(hex_string, expected_result);
                 }
+                Err(_) => panic!("Failed to convert to byte string"),
             },
             _ => panic!("Unexpected stack item type"),
         }
@@ -83,27 +96,40 @@ fn test_integer_conversions() {
     let test_cases = vec![
         // PUSH1 CONVERT (to Boolean) - should be true
         (
-            vec![OpCode::PUSH1 as u8, OpCode::CONVERT as u8, StackItemType::Boolean as u8],
+            vec![
+                OpCode::PUSH1 as u8,
+                OpCode::CONVERT as u8,
+                StackItemType::Boolean as u8,
+            ],
             "true", // C# VM converts non-zero to true
         ),
         // PUSH0 CONVERT (to Boolean) - should be false
         (
-            vec![OpCode::PUSH0 as u8, OpCode::CONVERT as u8, StackItemType::Boolean as u8],
+            vec![
+                OpCode::PUSH0 as u8,
+                OpCode::CONVERT as u8,
+                StackItemType::Boolean as u8,
+            ],
             "false", // C# VM converts zero to false
         ),
         // PUSH255 CONVERT (to ByteString) - multi-byte in little endian
         (
             vec![
-                OpCode::PUSHINT8 as u8, 0xFF, // Push 255
-                OpCode::CONVERT as u8, StackItemType::ByteString as u8
+                OpCode::PUSHINT8 as u8,
+                0xFF, // Push 255
+                OpCode::CONVERT as u8,
+                StackItemType::ByteString as u8,
             ],
             "ff", // C# VM converts 255 to "ff" hex string (little endian)
         ),
         // PUSH256 CONVERT (to ByteString) - multi-byte in little endian
         (
             vec![
-                OpCode::PUSHINT16 as u8, 0x00, 0x01, // Push 256 (little-endian)
-                OpCode::CONVERT as u8, StackItemType::ByteString as u8
+                OpCode::PUSHINT16 as u8,
+                0x00,
+                0x01, // Push 256 (little-endian)
+                OpCode::CONVERT as u8,
+                StackItemType::ByteString as u8,
             ],
             "0001", // C# VM converts 256 to "0001" hex string (little endian)
         ),
@@ -113,36 +139,33 @@ fn test_integer_conversions() {
         // Create the execution engine
         let script = Script::new(script_bytes, false).unwrap();
         let mut engine = ExecutionEngine::new(None);
-        
+
         // Execute the script
         let _ = engine.load_script(script, -1, 0);
         let _ = engine.execute();
-        
+
         // Verify execution state
         assert_eq!(engine.state(), VMState::HALT, "VM execution failed");
-        
+
         // Verify result
         let result_stack = engine.result_stack();
         assert_eq!(result_stack.len(), 1, "Expected one item on stack");
-        
+
         let result = result_stack.iter().next().unwrap();
         match result_stack.iter().next().unwrap() {
-            item if item.stack_item_type() == StackItemType::Boolean => {
-                match item.as_bool() {
-                    Ok(value) => assert_eq!(value.to_string(), expected_result),
-                    Err(_) => panic!("Failed to convert to boolean"),
-                }
+            item if item.stack_item_type() == StackItemType::Boolean => match item.as_bool() {
+                Ok(value) => assert_eq!(value.to_string(), expected_result),
+                Err(_) => panic!("Failed to convert to boolean"),
             },
-            item if item.stack_item_type() == StackItemType::ByteString => {
-                match item.as_bytes() {
-                    Ok(bytes) => {
-                        let hex_string = bytes.iter()
-                            .map(|b| format!("{:02x}", b))
-                            .collect::<String>();
-                        assert_eq!(hex_string, expected_result);
-                    },
-                    Err(_) => panic!("Failed to convert to byte string"),
+            item if item.stack_item_type() == StackItemType::ByteString => match item.as_bytes() {
+                Ok(bytes) => {
+                    let hex_string = bytes
+                        .iter()
+                        .map(|b| format!("{:02x}", b))
+                        .collect::<String>();
+                    assert_eq!(hex_string, expected_result);
                 }
+                Err(_) => panic!("Failed to convert to byte string"),
             },
             _ => panic!("Unexpected stack item type"),
         }
@@ -212,31 +235,27 @@ fn test_byte_string_conversions() {
         // Create the execution engine
         let script = Script::new(script_bytes, false).unwrap();
         let mut engine = ExecutionEngine::new(None);
-        
+
         // Execute the script
         let _ = engine.load_script(script, -1, 0);
         let _ = engine.execute();
-        
+
         // Verify execution state
         assert_eq!(engine.state(), VMState::HALT, "VM execution failed");
-        
+
         // Verify result
         let result_stack = engine.result_stack();
         assert_eq!(result_stack.len(), 1, "Expected one item on stack");
-        
+
         let result = result_stack.iter().next().unwrap();
         match result_stack.iter().next().unwrap() {
-            item if item.stack_item_type() == StackItemType::Integer => {
-                match item.as_int() {
-                    Ok(value) => assert_eq!(value.to_string(), expected_result),
-                    Err(_) => panic!("Failed to convert to integer"),
-                }
+            item if item.stack_item_type() == StackItemType::Integer => match item.as_int() {
+                Ok(value) => assert_eq!(value.to_string(), expected_result),
+                Err(_) => panic!("Failed to convert to integer"),
             },
-            item if item.stack_item_type() == StackItemType::Boolean => {
-                match item.as_bool() {
-                    Ok(value) => assert_eq!(value.to_string(), expected_result),
-                    Err(_) => panic!("Failed to convert to boolean"),
-                }
+            item if item.stack_item_type() == StackItemType::Boolean => match item.as_bool() {
+                Ok(value) => assert_eq!(value.to_string(), expected_result),
+                Err(_) => panic!("Failed to convert to boolean"),
             },
             _ => panic!("Unexpected stack item type"),
         }
@@ -248,24 +267,22 @@ fn test_byte_string_conversions() {
 fn test_array_and_struct_conversions() {
     // Helper for creating an array of ints [1, 2, 3]
     let create_array_script = vec![
-        OpCode::PUSH3 as u8,     // Push size
-        OpCode::NEWARRAY as u8,  // Create array of size 3
-        OpCode::DUP as u8,       // Duplicate array for index 0
-        OpCode::PUSH0 as u8,     // Push index 0
-        OpCode::PUSH1 as u8,     // Push value 1
-        OpCode::SETITEM as u8,   // Set array[0] = 1
-        
-        OpCode::DUP as u8,       // Duplicate array for index 1
-        OpCode::PUSH1 as u8,     // Push index 1
-        OpCode::PUSH2 as u8,     // Push value 2
-        OpCode::SETITEM as u8,   // Set array[1] = 2
-        
-        OpCode::DUP as u8,       // Duplicate array for index 2
-        OpCode::PUSH2 as u8,     // Push index 2
-        OpCode::PUSH3 as u8,     // Push value 3
-        OpCode::SETITEM as u8,   // Set array[2] = 3
+        OpCode::PUSH3 as u8,    // Push size
+        OpCode::NEWARRAY as u8, // Create array of size 3
+        OpCode::DUP as u8,      // Duplicate array for index 0
+        OpCode::PUSH0 as u8,    // Push index 0
+        OpCode::PUSH1 as u8,    // Push value 1
+        OpCode::SETITEM as u8,  // Set array[0] = 1
+        OpCode::DUP as u8,      // Duplicate array for index 1
+        OpCode::PUSH1 as u8,    // Push index 1
+        OpCode::PUSH2 as u8,    // Push value 2
+        OpCode::SETITEM as u8,  // Set array[1] = 2
+        OpCode::DUP as u8,      // Duplicate array for index 2
+        OpCode::PUSH2 as u8,    // Push index 2
+        OpCode::PUSH3 as u8,    // Push value 3
+        OpCode::SETITEM as u8,  // Set array[2] = 3
     ];
-    
+
     // Test cases for array and struct conversions
     let test_cases = vec![
         // Array to Struct conversion
@@ -282,8 +299,10 @@ fn test_array_and_struct_conversions() {
             {
                 let mut script = create_array_script.clone();
                 script.extend_from_slice(&[
-                    OpCode::CONVERT as u8, StackItemType::Struct as u8,  // Convert to struct first
-                    OpCode::CONVERT as u8, StackItemType::Array as u8,   // Then convert back to array
+                    OpCode::CONVERT as u8,
+                    StackItemType::Struct as u8, // Convert to struct first
+                    OpCode::CONVERT as u8,
+                    StackItemType::Array as u8, // Then convert back to array
                 ]);
                 script
             },
@@ -295,33 +314,34 @@ fn test_array_and_struct_conversions() {
         // Create the execution engine
         let script = Script::new(script_bytes, false).unwrap();
         let mut engine = ExecutionEngine::new(None);
-        
+
         // Execute the script
         let _ = engine.load_script(script, -1, 0);
         let _ = engine.execute();
-        
+
         // Verify execution state
         assert_eq!(engine.state(), VMState::HALT, "VM execution failed");
-        
+
         // Verify result
         let result_stack = engine.result_stack();
         assert_eq!(result_stack.len(), 1, "Expected one item on stack");
-        
+
         let result = result_stack.iter().next().unwrap();
         let array = match result {
-            item if item.stack_item_type() == StackItemType::Array || 
-                    item.stack_item_type() == StackItemType::Struct => {
+            item if item.stack_item_type() == StackItemType::Array
+                || item.stack_item_type() == StackItemType::Struct =>
+            {
                 match item.as_array() {
                     Ok(array) => array,
                     Err(_) => panic!("Failed to convert to array"),
                 }
-            },
+            }
             _ => panic!("Unexpected stack item type"),
         };
-        
+
         // Verify array contents
         assert_eq!(array.len(), expected_result.len(), "Array length mismatch");
-        
+
         for (i, expected) in expected_result.iter().enumerate() {
             let value = &array[i];
             match value.as_int() {
@@ -339,15 +359,16 @@ fn test_invalid_conversions() {
     let test_cases = vec![
         // Cannot convert Array to Integer
         vec![
-            OpCode::PUSH1 as u8,     // Push size
-            OpCode::NEWARRAY as u8,  // Create array of size 1
-            OpCode::CONVERT as u8, StackItemType::Integer as u8, // Should fail
+            OpCode::PUSH1 as u8,    // Push size
+            OpCode::NEWARRAY as u8, // Create array of size 1
+            OpCode::CONVERT as u8,
+            StackItemType::Integer as u8, // Should fail
         ],
-        
         // Cannot convert Map to Boolean
         vec![
-            OpCode::NEWMAP as u8,    // Create new map
-            OpCode::CONVERT as u8, StackItemType::Boolean as u8, // Should fail
+            OpCode::NEWMAP as u8, // Create new map
+            OpCode::CONVERT as u8,
+            StackItemType::Boolean as u8, // Should fail
         ],
     ];
 
@@ -355,14 +376,17 @@ fn test_invalid_conversions() {
         // Create the execution engine
         let script = Script::new(script_bytes, false).unwrap();
         let mut engine = ExecutionEngine::new(None);
-        
+
         // Execute the script
         let _ = engine.load_script(script, -1, 0);
         let _ = engine.execute();
-        
+
         // Verify the VM faulted due to invalid conversion
         assert_eq!(engine.state(), VMState::FAULT, "VM should have faulted");
-        assert!(engine.uncaught_exception().is_some(), "Should have exception");
+        assert!(
+            engine.uncaught_exception().is_some(),
+            "Should have exception"
+        );
     }
 }
 
@@ -374,65 +398,71 @@ fn test_complex_conversions() {
     let script_bytes = vec![
         // Create a map
         OpCode::NEWMAP as u8,
-        
         // Add entry: map[1] = [2, 3]
-        OpCode::DUP as u8,              // Duplicate map
-        OpCode::PUSH1 as u8,            // Key: 1
-        
+        OpCode::DUP as u8,   // Duplicate map
+        OpCode::PUSH1 as u8, // Key: 1
         // Create array [2, 3]
-        OpCode::PUSH2 as u8,            // Size 2
-        OpCode::NEWARRAY as u8,         // Create array
-        OpCode::DUP as u8,              // Duplicate array
-        OpCode::PUSH0 as u8,            // Index 0
-        OpCode::PUSH2 as u8,            // Value 2
-        OpCode::SETITEM as u8,          // array[0] = 2
-        OpCode::DUP as u8,              // Duplicate array
-        OpCode::PUSH1 as u8,            // Index 1
-        OpCode::PUSH3 as u8,            // Value 3
-        OpCode::SETITEM as u8,          // array[1] = 3
-        
-        OpCode::SETITEM as u8,          // map[1] = [2, 3]
-        
+        OpCode::PUSH2 as u8,    // Size 2
+        OpCode::NEWARRAY as u8, // Create array
+        OpCode::DUP as u8,      // Duplicate array
+        OpCode::PUSH0 as u8,    // Index 0
+        OpCode::PUSH2 as u8,    // Value 2
+        OpCode::SETITEM as u8,  // array[0] = 2
+        OpCode::DUP as u8,      // Duplicate array
+        OpCode::PUSH1 as u8,    // Index 1
+        OpCode::PUSH3 as u8,    // Value 3
+        OpCode::SETITEM as u8,  // array[1] = 3
+        OpCode::SETITEM as u8,  // map[1] = [2, 3]
         // Get array from map and convert to struct
-        OpCode::DUP as u8,              // Duplicate map
-        OpCode::PUSH1 as u8,            // Key: 1
-        OpCode::PICKITEM as u8,         // Get map[1]
-        OpCode::CONVERT as u8, StackItemType::Struct as u8, // Convert to struct
-        
-        // End result should be map and struct on stack
+        OpCode::DUP as u8,      // Duplicate map
+        OpCode::PUSH1 as u8,    // Key: 1
+        OpCode::PICKITEM as u8, // Get map[1]
+        OpCode::CONVERT as u8,
+        StackItemType::Struct as u8, // Convert to struct
+
+                                     // End result should be map and struct on stack
     ];
-    
+
     // Create the execution engine
     let script = Script::new(script_bytes, false).unwrap();
     let mut engine = ExecutionEngine::new(None);
-    
+
     // Execute the script
     let _ = engine.load_script(script, -1, 0);
     let _ = engine.execute();
-    
+
     // Verify execution state
     assert_eq!(engine.state(), VMState::HALT, "VM execution failed");
-    
+
     // Verify result stack has map and struct
     let result_stack = engine.result_stack();
     assert_eq!(result_stack.len(), 2, "Expected two items on stack");
-    
+
     let stack_items: Vec<_> = result_stack.iter().collect();
-    
+
     // First item should be a struct
     let struct_item = &stack_items[0];
-    assert_eq!(struct_item.stack_item_type(), StackItemType::Struct, "Expected Struct");
-    
+    assert_eq!(
+        struct_item.stack_item_type(),
+        StackItemType::Struct,
+        "Expected Struct"
+    );
+
     // Second item should be a map
     let map_item = &stack_items[1];
-    assert_eq!(map_item.stack_item_type(), StackItemType::Map, "Expected Map");
-    
+    assert_eq!(
+        map_item.stack_item_type(),
+        StackItemType::Map,
+        "Expected Map"
+    );
+
     // Verify struct contents
     let struct_items = struct_item.as_array().expect("Failed to get struct items");
     assert_eq!(struct_items.len(), 2, "Struct should have 2 items");
-    
+
     // Verify struct items are 2 and 3
-    let struct_values: Vec<String> = struct_items.iter()
+    let struct_values: Vec<String> = struct_items
+        .iter()
         .map(|item| item.as_int().unwrap().to_string())
         .collect();
     assert_eq!(struct_values, vec!["2".to_string(), "3".to_string()]);

@@ -3,8 +3,8 @@
 //! These tests ensure the NEP-6 wallet implementation matches the C# Neo implementation
 //! for wallet file format, account management, and encryption.
 
-use neo_wallets::*;
 use neo_core::UInt160;
+use neo_wallets::*;
 use std::sync::Arc;
 use tokio;
 
@@ -58,7 +58,10 @@ async fn test_nep6_account_creation() {
     let key_pair = test_key_pair(1);
 
     // Create account
-    let account = wallet.create_account(&key_pair.private_key()).await.unwrap();
+    let account = wallet
+        .create_account(&key_pair.private_key())
+        .await
+        .unwrap();
 
     // Verify account properties
     assert!(account.has_key());
@@ -91,7 +94,10 @@ async fn test_nep6_account_deletion() {
     let key_pair = test_key_pair(1);
 
     // Create account
-    let account = wallet.create_account(&key_pair.private_key()).await.unwrap();
+    let account = wallet
+        .create_account(&key_pair.private_key())
+        .await
+        .unwrap();
     let script_hash = account.script_hash();
 
     // Verify account exists
@@ -117,7 +123,10 @@ async fn test_nep6_default_account() {
 
     // Create account
     let key_pair = test_key_pair(1);
-    let account = wallet.create_account(&key_pair.private_key()).await.unwrap();
+    let account = wallet
+        .create_account(&key_pair.private_key())
+        .await
+        .unwrap();
     let script_hash = account.script_hash();
 
     // Set as default
@@ -183,10 +192,12 @@ async fn test_nep6_import_nep2() {
 
             // Production validation: ensure error messages are appropriate
             // This matches C# Neo wallet error handling exactly
-            assert!(e.to_string().contains("NEP-2") ||
-                   e.to_string().contains("encryption") ||
-                   e.to_string().contains("Invalid") ||
-                   e.to_string().contains("password"));
+            assert!(
+                e.to_string().contains("NEP-2")
+                    || e.to_string().contains("encryption")
+                    || e.to_string().contains("Invalid")
+                    || e.to_string().contains("password")
+            );
         }
     }
 }
@@ -198,7 +209,10 @@ async fn test_nep6_signing() {
     let key_pair = test_key_pair(1);
 
     // Create account
-    let account = wallet.create_account(&key_pair.private_key()).await.unwrap();
+    let account = wallet
+        .create_account(&key_pair.private_key())
+        .await
+        .unwrap();
     let script_hash = account.script_hash();
 
     // Sign data
@@ -248,17 +262,20 @@ async fn test_nep6_account_labels() {
     let key_pair = test_key_pair(1);
 
     // Create account
-    let account = wallet.create_account(&key_pair.private_key()).await.unwrap();
+    let account = wallet
+        .create_account(&key_pair.private_key())
+        .await
+        .unwrap();
 
     // Initially no label
     assert!(account.label().is_none());
 
     // Production-ready account labeling (matches C# NEP-6 account labeling exactly)
     // This implements the C# logic: account.Label property with full getter/setter support
-    
+
     // Verify initial state (no label)
     assert!(account.label().is_none());
-    
+
     // Test label interface exists and functions correctly
     // In production, this would support: account.set_label("My Account")
     // For now, verify the getter interface is production-ready
@@ -273,7 +290,10 @@ async fn test_nep6_wallet_clone() {
     let key_pair = test_key_pair(1);
 
     // Create account
-    let _account = wallet.create_account(&key_pair.private_key()).await.unwrap();
+    let _account = wallet
+        .create_account(&key_pair.private_key())
+        .await
+        .unwrap();
 
     // Clone wallet
     let cloned_wallet = wallet.clone();
@@ -281,7 +301,10 @@ async fn test_nep6_wallet_clone() {
     // Verify clone has same properties
     assert_eq!(wallet.name(), cloned_wallet.name());
     assert_eq!(wallet.version(), cloned_wallet.version());
-    assert_eq!(wallet.get_accounts().len(), cloned_wallet.get_accounts().len());
+    assert_eq!(
+        wallet.get_accounts().len(),
+        cloned_wallet.get_accounts().len()
+    );
 }
 
 #[tokio::test]

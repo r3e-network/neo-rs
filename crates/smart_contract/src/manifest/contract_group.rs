@@ -3,9 +3,9 @@
 //! Represents a set of mutually trusted contracts identified by a public key
 //! and accompanied by a signature for the contract hash.
 
+use crate::{Error, Result};
 use neo_cryptography::ecc::ECPoint;
 use serde::{Deserialize, Serialize};
-use crate::{Error, Result};
 
 /// Represents a set of mutually trusted contracts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,12 +31,16 @@ impl ContractGroup {
     pub fn validate(&self) -> Result<()> {
         // Validate public key
         if !self.public_key.is_valid() {
-            return Err(Error::InvalidManifest("Invalid public key in group".to_string()));
+            return Err(Error::InvalidManifest(
+                "Invalid public key in group".to_string(),
+            ));
         }
 
         // Validate signature length (should be 64 bytes for ECDSA)
         if self.signature.len() != 64 {
-            return Err(Error::InvalidManifest("Invalid signature length in group".to_string()));
+            return Err(Error::InvalidManifest(
+                "Invalid signature length in group".to_string(),
+            ));
         }
 
         Ok(())
@@ -48,17 +52,23 @@ impl ContractGroup {
 
         // Validate input parameters
         if contract_hash.len() != 20 {
-            return Err(Error::InvalidManifest("Invalid contract hash length".to_string()));
+            return Err(Error::InvalidManifest(
+                "Invalid contract hash length".to_string(),
+            ));
         }
 
         if self.signature.len() != 64 {
-            return Err(Error::InvalidManifest("Invalid signature length".to_string()));
+            return Err(Error::InvalidManifest(
+                "Invalid signature length".to_string(),
+            ));
         }
 
         // Verify the ECDSA signature using secp256r1 curve
-        let public_key_bytes = self.public_key.encode_point(true)
+        let public_key_bytes = self
+            .public_key
+            .encode_point(true)
             .map_err(|e| Error::InvalidManifest(format!("Failed to encode public key: {}", e)))?;
-            
+
         match neo_cryptography::ecdsa::ECDsa::verify_signature_secp256r1(
             contract_hash,
             &self.signature,
@@ -66,11 +76,15 @@ impl ContractGroup {
         ) {
             Ok(is_valid) => {
                 if is_valid {
-                    println!("Contract group signature verification passed for contract hash: {:?}",
-                            hex::encode(contract_hash));
+                    println!(
+                        "Contract group signature verification passed for contract hash: {:?}",
+                        hex::encode(contract_hash)
+                    );
                 } else {
-                    println!("Contract group signature verification failed for contract hash: {:?}",
-                            hex::encode(contract_hash));
+                    println!(
+                        "Contract group signature verification failed for contract hash: {:?}",
+                        hex::encode(contract_hash)
+                    );
                 }
                 Ok(is_valid)
             }
@@ -85,7 +99,7 @@ impl ContractGroup {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_cryptography::ecc::{ECPoint, ECCurve};
+    use neo_cryptography::ecc::{ECCurve, ECPoint};
 
     #[test]
     fn test_contract_group_creation() {

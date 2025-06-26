@@ -1,13 +1,13 @@
 //! BLS12-381 signature types and operations.
 
+use crate::NEO_BLS_DST;
+use crate::constants::SIGNATURE_SIZE;
 use crate::error::{BlsError, BlsResult};
 use crate::keys::{PrivateKey, PublicKey};
 use crate::utils;
-use crate::constants::SIGNATURE_SIZE;
-use crate::NEO_BLS_DST;
 use bls12_381::{G1Affine, G2Affine, G2Projective, pairing};
 use group::Curve;
-use serde::{Deserialize, Serialize, Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// BLS signature schemes (matches C# Neo.Cryptography.BLS12_381 schemes)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,7 +86,11 @@ impl Signature {
     }
 
     /// Signs a message with a private key (matches C# Sign)
-    pub fn sign(private_key: &PrivateKey, message: &[u8], scheme: SignatureScheme) -> BlsResult<Signature> {
+    pub fn sign(
+        private_key: &PrivateKey,
+        message: &[u8],
+        scheme: SignatureScheme,
+    ) -> BlsResult<Signature> {
         if message.is_empty() {
             return Err(BlsError::EmptyInput);
         }
@@ -194,9 +198,10 @@ mod tests {
         let key_pair = KeyPair::generate(&mut rng);
         let message = b"Hello, BLS!";
 
-        let signature = Signature::sign(key_pair.private_key(), message, SignatureScheme::Basic).unwrap();
+        let signature =
+            Signature::sign(key_pair.private_key(), message, SignatureScheme::Basic).unwrap();
         assert!(signature.verify(key_pair.public_key(), message, SignatureScheme::Basic));
-        
+
         // Test with wrong message
         let wrong_message = b"Wrong message";
         assert!(!signature.verify(key_pair.public_key(), wrong_message, SignatureScheme::Basic));
@@ -208,9 +213,18 @@ mod tests {
         let key_pair = KeyPair::generate(&mut rng);
         let message = b"Augmented message";
 
-        let signature = Signature::sign(key_pair.private_key(), message, SignatureScheme::MessageAugmentation).unwrap();
-        assert!(signature.verify(key_pair.public_key(), message, SignatureScheme::MessageAugmentation));
-        
+        let signature = Signature::sign(
+            key_pair.private_key(),
+            message,
+            SignatureScheme::MessageAugmentation,
+        )
+        .unwrap();
+        assert!(signature.verify(
+            key_pair.public_key(),
+            message,
+            SignatureScheme::MessageAugmentation
+        ));
+
         // Should fail with basic scheme
         assert!(!signature.verify(key_pair.public_key(), message, SignatureScheme::Basic));
     }
@@ -221,8 +235,17 @@ mod tests {
         let key_pair = KeyPair::generate(&mut rng);
         let message = b"PoP message";
 
-        let signature = Signature::sign(key_pair.private_key(), message, SignatureScheme::ProofOfPossession).unwrap();
-        assert!(signature.verify(key_pair.public_key(), message, SignatureScheme::ProofOfPossession));
+        let signature = Signature::sign(
+            key_pair.private_key(),
+            message,
+            SignatureScheme::ProofOfPossession,
+        )
+        .unwrap();
+        assert!(signature.verify(
+            key_pair.public_key(),
+            message,
+            SignatureScheme::ProofOfPossession
+        ));
     }
 
     #[test]
@@ -231,14 +254,15 @@ mod tests {
         let key_pair = KeyPair::generate(&mut rng);
         let message = b"Serialize this signature";
 
-        let signature = Signature::sign(key_pair.private_key(), message, SignatureScheme::Basic).unwrap();
-        
+        let signature =
+            Signature::sign(key_pair.private_key(), message, SignatureScheme::Basic).unwrap();
+
         let bytes = signature.to_bytes();
         assert_eq!(bytes.len(), SIGNATURE_SIZE);
-        
+
         let deserialized = Signature::from_bytes(&bytes).unwrap();
         assert_eq!(signature, deserialized);
-        
+
         // Verify deserialized signature works
         assert!(deserialized.verify(key_pair.public_key(), message, SignatureScheme::Basic));
     }
@@ -249,8 +273,9 @@ mod tests {
         let key_pair = KeyPair::generate(&mut rng);
         let message = b"Hex signature test";
 
-        let signature = Signature::sign(key_pair.private_key(), message, SignatureScheme::Basic).unwrap();
-        
+        let signature =
+            Signature::sign(key_pair.private_key(), message, SignatureScheme::Basic).unwrap();
+
         let hex = signature.to_hex();
         let from_hex = Signature::from_hex(&hex).unwrap();
         assert_eq!(signature, from_hex);
@@ -265,7 +290,7 @@ mod tests {
 
         let sig1 = Signature::sign(key1.private_key(), message, SignatureScheme::Basic).unwrap();
         let sig2 = Signature::sign(key2.private_key(), message, SignatureScheme::Basic).unwrap();
-        
+
         let sum = sig1.add(&sig2);
         assert!(sum.is_valid());
     }
@@ -276,7 +301,11 @@ mod tests {
         let key_pair = KeyPair::generate(&mut rng);
         let empty_message = b"";
 
-        let result = Signature::sign(key_pair.private_key(), empty_message, SignatureScheme::Basic);
+        let result = Signature::sign(
+            key_pair.private_key(),
+            empty_message,
+            SignatureScheme::Basic,
+        );
         assert!(result.is_err());
     }
 
@@ -293,7 +322,8 @@ mod tests {
         let key_pair = KeyPair::generate(&mut rng);
         let message = b"Validation test";
 
-        let signature = Signature::sign(key_pair.private_key(), message, SignatureScheme::Basic).unwrap();
+        let signature =
+            Signature::sign(key_pair.private_key(), message, SignatureScheme::Basic).unwrap();
         assert!(signature.is_valid());
     }
-} 
+}

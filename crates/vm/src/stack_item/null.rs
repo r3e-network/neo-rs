@@ -14,22 +14,22 @@ impl Null {
     pub fn new() -> Self {
         Self
     }
-    
+
     /// Gets the type of the stack item.
     pub fn stack_item_type(&self) -> StackItemType {
         StackItemType::Any
     }
-    
+
     /// Converts the null to a boolean.
     pub fn to_boolean(&self) -> bool {
         false
     }
-    
+
     /// Converts the null to a byte array.
     pub fn to_bytes(&self) -> Vec<u8> {
         Vec::new()
     }
-    
+
     /// Creates a deep copy of the null.
     pub fn deep_copy(&self) -> Self {
         Self
@@ -39,33 +39,33 @@ impl Null {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_null_creation() {
         let null = Null::new();
-        
+
         assert_eq!(null.stack_item_type(), StackItemType::Any);
     }
-    
+
     #[test]
     fn test_null_to_boolean() {
         let null = Null::new();
-        
+
         assert_eq!(null.to_boolean(), false);
     }
-    
+
     #[test]
     fn test_null_to_bytes() {
         let null = Null::new();
-        
+
         assert_eq!(null.to_bytes(), Vec::<u8>::new());
     }
-    
+
     #[test]
     fn test_null_deep_copy() {
         let null = Null::new();
         let copied = null.deep_copy();
-        
+
         // Null is a unit struct, so they're always equal
         assert_eq!(copied, null);
     }

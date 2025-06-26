@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  # Neo-RS Node
+  neo-node:
+    build: .
+    container_name: neo-rs-node
+    restart: unless-stopped
+    ports:
+      - "10332:10332"  # RPC port
+      - "10333:10333"  # P2P port
+    volumes:
+      - neo_data:/data
+      - ./neo-config.toml:/etc/neo/neo-config.toml:ro
+    environment:
+      - RUST_LOG=info
+      - NEO_NETWORK=testnet
+    command: ["--testnet", "--rpc-port", "10332", "--p2p-port", "10333"]
+    healthcheck:
+      test: ["CMD", "neo-rs", "--health-check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - neo-network
+
+  # Prometheus monitoring (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: neo-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - neo-network
+    profiles:
+      - monitoring
+
+  # Grafana dashboard (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: neo-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - neo-network
+    profiles:
+      - monitoring
+    depends_on:
+      - prometheus
+
+  # Redis cache (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: neo-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - neo-network
+    profiles:
+      - cache
+
+  # Nginx reverse proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: neo-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - neo-network
+    profiles:
+      - proxy
+    depends_on:
+      - neo-node
+
+# Named volumes
+volumes:
+  neo_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# Networks
+networks:
+  neo-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

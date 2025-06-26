@@ -20,7 +20,8 @@ pub const AGGREGATE_PUBLIC_KEY_SIZE: usize = 48;
 
 /// BLS12-381 curve order (scalar field modulus)
 /// This is the order of the scalar field Fr
-pub const CURVE_ORDER: &str = "52435875175126190479447740508185965837690552500527637822603658699938581184513";
+pub const CURVE_ORDER: &str =
+    "52435875175126190479447740508185965837690552500527637822603658699938581184513";
 
 /// BLS12-381 field modulus (base field modulus)
 /// This is the modulus of the base field Fp
@@ -94,4 +95,4 @@ mod tests {
         assert_eq!(HASH_TO_CURVE_SECURITY_BITS, 128);
         assert!(EXPAND_MESSAGE_LENGTH >= 256);
     }
-} 
+}

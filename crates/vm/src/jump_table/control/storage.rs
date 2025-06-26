@@ -1,11 +1,11 @@
 //! Storage operations and utilities for the Neo Virtual Machine.
 
-use crate::{
-    stack_item::StackItem,
-    Error,
-};
 use super::types::StorageContext;
 use crate::stack_item::stack_item::InteropInterface;
+use crate::{
+    error::{VmError, VmResult},
+    stack_item::StackItem,
+};
 
 /// Calculates storage fee based on key and value size
 pub fn calculate_storage_fee(key_size: usize, value_size: usize) -> i64 {
@@ -32,19 +32,23 @@ pub fn calculate_storage_read_fee(key_size: usize) -> u64 {
 }
 
 /// Calculates storage put fee (matches C# ApplicationEngine fee calculation exactly)
-pub fn calculate_storage_put_fee(key_size: usize, value_size: usize, existing_value_size: usize) -> u64 {
+pub fn calculate_storage_put_fee(
+    key_size: usize,
+    value_size: usize,
+    existing_value_size: usize,
+) -> u64 {
     // Production-ready put fee calculation (matches C# exactly)
     let base_fee = 1000000; // 0.01 GAS base fee
     let key_fee = key_size as u64 * 1000; // 0.000001 GAS per key byte
     let value_fee = value_size as u64 * 10000; // 0.0001 GAS per value byte
-    
+
     // If replacing existing value, calculate difference
     let size_difference = if value_size > existing_value_size {
         (value_size - existing_value_size) as u64 * 10000
     } else {
         0 // No additional fee for smaller values
     };
-    
+
     base_fee + key_fee + value_fee + size_difference
 }
 
@@ -58,7 +62,7 @@ pub fn calculate_storage_delete_fee(key_size: usize) -> u64 {
 pub fn is_storage_context_readonly(context_item: &StackItem) -> bool {
     // Production-ready readonly check (matches C# StorageContext.IsReadOnly exactly)
     // This implements the C# logic: StorageContext.IsReadOnly property access
-    
+
     // 1. Extract storage context from stack item (production implementation)
     match context_item {
         StackItem::InteropInterface(interop_interface) => {
@@ -78,13 +82,15 @@ pub fn is_storage_context_readonly(context_item: &StackItem) -> bool {
             return false;
         }
     }
-    
+
     // 5. Unable to extract context or invalid context (production fallback)
     false
 }
 
 /// Extracts storage context data from interop interface
-pub fn extract_storage_context_data(interop_interface: &dyn InteropInterface) -> crate::Result<StorageContext> {
+pub fn extract_storage_context_data(
+    interop_interface: &dyn InteropInterface,
+) -> VmResult<StorageContext> {
     // Production-ready context data extraction (matches C# IInteropInterface.GetInterface<T> exactly)
     if interop_interface.interface_type() == "StorageContext" {
         // For now, create a default storage context
@@ -95,26 +101,29 @@ pub fn extract_storage_context_data(interop_interface: &dyn InteropInterface) ->
             id: 0,
         })
     } else {
-        Err(Error::InvalidOperation("Not a storage context".into()))
+        Err(VmError::invalid_operation_msg("Not a storage context"))
     }
 }
 
 /// Deserializes storage context from byte data
-pub fn deserialize_storage_context(bytes: &[u8]) -> crate::Result<StorageContext> {
+pub fn deserialize_storage_context(bytes: &[u8]) -> VmResult<StorageContext> {
     // Production-ready storage context deserialization (matches C# BinaryReader exactly)
-    if bytes.len() < 25 { // Minimum size: 20 bytes script_hash + 1 byte readonly + 4 bytes id
-        return Err(Error::InvalidOperation("Invalid storage context data".into()));
+    if bytes.len() < 25 {
+        // Minimum size: 20 bytes script_hash + 1 byte readonly + 4 bytes id
+        return Err(VmError::invalid_operation_msg(
+            "Invalid storage context data",
+        ));
     }
-    
+
     let mut script_hash = vec![0u8; 20];
     script_hash.copy_from_slice(&bytes[0..20]);
-    
+
     let is_read_only = bytes[20] != 0;
     let id = i32::from_le_bytes([bytes[21], bytes[22], bytes[23], bytes[24]]);
-    
+
     Ok(StorageContext {
         script_hash,
         is_read_only,
         id,
     })
-} 
+}

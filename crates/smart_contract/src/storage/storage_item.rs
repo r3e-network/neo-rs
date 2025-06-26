@@ -1,9 +1,9 @@
 //! Storage item implementation for smart contract storage.
 
+use crate::{Error, Result};
 use neo_io::Serializable;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use crate::{Error, Result};
 
 /// Represents a value in the smart contract storage system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -18,10 +18,7 @@ pub struct StorageItem {
 impl StorageItem {
     /// Creates a new storage item.
     pub fn new(value: Vec<u8>, is_constant: bool) -> Self {
-        Self {
-            value,
-            is_constant,
-        }
+        Self { value, is_constant }
     }
 
     /// Creates a new constant storage item.
@@ -75,7 +72,10 @@ impl StorageItem {
     pub fn as_int(&self) -> Option<i32> {
         if self.value.len() == 4 {
             Some(i32::from_le_bytes([
-                self.value[0], self.value[1], self.value[2], self.value[3]
+                self.value[0],
+                self.value[1],
+                self.value[2],
+                self.value[3],
             ]))
         } else {
             None
@@ -104,7 +104,9 @@ impl StorageItem {
     /// Sets the value of the storage item.
     pub fn set_value(&mut self, value: Vec<u8>) -> Result<()> {
         if self.is_constant {
-            return Err(Error::StorageError("Cannot modify constant storage item".to_string()));
+            return Err(Error::StorageError(
+                "Cannot modify constant storage item".to_string(),
+            ));
         }
         self.value = value;
         Ok(())
@@ -113,7 +115,9 @@ impl StorageItem {
     /// Appends data to the storage item value.
     pub fn append(&mut self, data: &[u8]) -> Result<()> {
         if self.is_constant {
-            return Err(Error::StorageError("Cannot modify constant storage item".to_string()));
+            return Err(Error::StorageError(
+                "Cannot modify constant storage item".to_string(),
+            ));
         }
         self.value.extend_from_slice(data);
         Ok(())
@@ -122,7 +126,9 @@ impl StorageItem {
     /// Clears the storage item value.
     pub fn clear(&mut self) -> Result<()> {
         if self.is_constant {
-            return Err(Error::StorageError("Cannot modify constant storage item".to_string()));
+            return Err(Error::StorageError(
+                "Cannot modify constant storage item".to_string(),
+            ));
         }
         self.value.clear();
         Ok(())
@@ -146,7 +152,7 @@ impl fmt::Display for StorageItem {
                 return write!(f, "\"{}\"", s);
             }
         }
-        
+
         // Otherwise, display as hex
         write!(f, "{}", self.to_hex_string())
     }

@@ -14,36 +14,25 @@
 //! - **Recovery**: View change and recovery mechanisms
 //! - **Service**: Main consensus service coordination
 
+pub mod context;
 pub mod dbft;
 pub mod messages;
-pub mod validators;
-pub mod context;
 pub mod proposal;
 pub mod recovery;
 pub mod service;
+pub mod validators;
 
 // Re-export main types
-pub use dbft::{DbftEngine, DbftConfig, DbftState, DbftStats};
+pub use context::{ConsensusContext, ConsensusPhase, ConsensusRound, ConsensusTimer};
+pub use dbft::{DbftConfig, DbftEngine, DbftState, DbftStats};
 pub use messages::{
-    ConsensusMessage, ConsensusMessageType, PrepareRequest, PrepareResponse,
-    Commit, ChangeView, RecoveryRequest, RecoveryResponse,
-    ViewChangeReason,
+    ChangeView, Commit, ConsensusMessage, ConsensusMessageType, PrepareRequest, PrepareResponse,
+    RecoveryRequest, RecoveryResponse, ViewChangeReason,
 };
-pub use validators::{
-    Validator, ValidatorSet, ValidatorManager, ValidatorConfig, ValidatorStats,
-};
-pub use context::{
-    ConsensusContext, ConsensusRound, ConsensusPhase, ConsensusTimer,
-};
-pub use proposal::{
-    BlockProposal, ProposalManager, ProposalConfig, ProposalStats,
-};
-pub use recovery::{
-    RecoveryManager, RecoveryConfig, RecoveryStats,
-};
-pub use service::{
-    ConsensusService, ConsensusServiceConfig, ConsensusEvent, ConsensusStats,
-};
+pub use proposal::{BlockProposal, ProposalConfig, ProposalManager, ProposalStats};
+pub use recovery::{RecoveryConfig, RecoveryManager, RecoveryStats};
+pub use service::{ConsensusEvent, ConsensusService, ConsensusServiceConfig, ConsensusStats};
+pub use validators::{Validator, ValidatorConfig, ValidatorManager, ValidatorSet, ValidatorStats};
 
 use neo_core::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
@@ -134,7 +123,7 @@ pub enum Error {
 
     /// Core error
     #[error("Core error: {0}")]
-    Core(#[from] neo_core::Error),
+    Core(#[from] neo_core::CoreError),
 
     /// Generic error
     #[error("Consensus error: {0}")]
@@ -143,35 +132,35 @@ pub enum Error {
     /// Invalid recovery session
     #[error("Invalid recovery session: {0}")]
     InvalidRecoverySession(String),
-    
+
     /// Invalid arguments
     #[error("Invalid arguments: {0}")]
     InvalidArguments(String),
-    
+
     /// Execution halted
     #[error("Execution halted: {0}")]
     ExecutionHalted(String),
-    
+
     /// VM error
     #[error("VM error: {0}")]
     VmError(String),
-    
+
     /// Contract not found
     #[error("Contract not found: {0}")]
     ContractNotFound(String),
-    
+
     /// Invalid operation
     #[error("Invalid operation: {0}")]
     InvalidOperation(String),
-    
+
     /// Insufficient funds
     #[error("Insufficient funds: {0}")]
     InsufficientFunds(String),
-    
+
     /// Serialization error
     #[error("Serialization error: {0}")]
     SerializationError(String),
-    
+
     /// Engine error
     #[error("Engine error: {0}")]
     EngineError(String),
@@ -301,7 +290,9 @@ impl ConsensusSignature {
         }
 
         if public_key.len() != 33 {
-            return Err(Error::InvalidPublicKey("Public key must be 33 bytes (compressed)".to_string()));
+            return Err(Error::InvalidPublicKey(
+                "Public key must be 33 bytes (compressed)".to_string(),
+            ));
         }
 
         if message.is_empty() {
@@ -312,7 +303,7 @@ impl ConsensusSignature {
         match neo_cryptography::ecdsa::ECDsa::verify_signature_secp256r1(
             message,
             &self.signature,
-            public_key
+            public_key,
         ) {
             Ok(is_valid) => {
                 if is_valid {
@@ -413,11 +404,11 @@ impl Default for ConsensusConfig {
     fn default() -> Self {
         Self {
             validator_count: 7,
-            block_time_ms: 15000, // 15 seconds
+            block_time_ms: 15000,   // 15 seconds
             view_timeout_ms: 20000, // 20 seconds
             max_view_changes: 6,
             enable_recovery: true,
-            recovery_timeout_ms: 30000, // 30 seconds
+            recovery_timeout_ms: 30000,  // 30 seconds
             max_block_size: 1024 * 1024, // 1 MB
             max_transactions_per_block: 512,
             enable_metrics: true,
@@ -430,31 +421,31 @@ impl ConsensusConfig {
     pub fn validate(&self) -> Result<()> {
         if self.validator_count < 4 {
             return Err(Error::Configuration(
-                "Validator count must be at least 4".to_string()
+                "Validator count must be at least 4".to_string(),
             ));
         }
 
         if self.validator_count % 3 != 1 {
             return Err(Error::Configuration(
-                "Validator count must be 3f+1 where f is the number of Byzantine nodes".to_string()
+                "Validator count must be 3f+1 where f is the number of Byzantine nodes".to_string(),
             ));
         }
 
         if self.block_time_ms < 1000 {
             return Err(Error::Configuration(
-                "Block time must be at least 1 second".to_string()
+                "Block time must be at least 1 second".to_string(),
             ));
         }
 
         if self.view_timeout_ms < self.block_time_ms {
             return Err(Error::Configuration(
-                "View timeout must be at least as long as block time".to_string()
+                "View timeout must be at least as long as block time".to_string(),
             ));
         }
 
         if self.max_view_changes == 0 {
             return Err(Error::Configuration(
-                "Max view changes must be greater than 0".to_string()
+                "Max view changes must be greater than 0".to_string(),
             ));
         }
 

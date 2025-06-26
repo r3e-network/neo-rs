@@ -1,6 +1,6 @@
 [package]
 name = "neo-rpc-client"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "Neo N3 RPC Client implementation matching C# Neo.Network.RPC exactly"
 license = "MIT"

@@ -1,7 +1,9 @@
 // VM EvaluationStack Comprehensive Tests - Converted from C# Neo.VM.Tests/UT_EvaluationStack.cs
 // Tests the EvaluationStack functionality exactly matching C# behavior
 
-use neo_vm::{evaluation_stack::EvaluationStack, reference_counter::ReferenceCounter, stack_item::StackItem};
+use neo_vm::{
+    evaluation_stack::EvaluationStack, reference_counter::ReferenceCounter, stack_item::StackItem,
+};
 use num_bigint::BigInt;
 
 /// Helper function to create an ordered stack (matches C# CreateOrderedStack)
@@ -14,7 +16,7 @@ fn create_ordered_stack(count: usize) -> EvaluationStack {
     }
 
     assert_eq!(count, stack.len());
-    
+
     // Verify the stack order matches C# expectations
     for i in 0..count {
         let item = stack.peek(i as isize).unwrap();
@@ -45,16 +47,18 @@ fn test_copy_to() {
 
     // Test copy with count 0 (copy nothing)
     copy_to_with_count(&stack, &mut copy, 0);
-    
+
     assert_eq!(3, stack.len());
     assert_eq!(0, copy.len());
-    
+
     // Verify original stack order: create_ordered_stack pushes 1, 2, 3
     // So stack has [1, 2, 3] from bottom to top
     let item0 = stack.peek(0).unwrap(); // top
     let item1 = stack.peek(1).unwrap(); // middle
     let item2 = stack.peek(2).unwrap(); // bottom
-    if let (StackItem::Integer(v0), StackItem::Integer(v1), StackItem::Integer(v2)) = (item0, item1, item2) {
+    if let (StackItem::Integer(v0), StackItem::Integer(v1), StackItem::Integer(v2)) =
+        (item0, item1, item2)
+    {
         assert_eq!(*v0, BigInt::from(3)); // top
         assert_eq!(*v1, BigInt::from(2)); // middle
         assert_eq!(*v2, BigInt::from(1)); // bottom
@@ -62,10 +66,10 @@ fn test_copy_to() {
 
     // Test copy with count -1 (copy all)
     copy_to_with_count(&stack, &mut copy, -1);
-    
+
     assert_eq!(3, stack.len());
     assert_eq!(3, copy.len());
-    
+
     // Both stacks should have the same order
     for i in 0..3 {
         let orig_item = stack.peek(i).unwrap();
@@ -75,10 +79,10 @@ fn test_copy_to() {
 
     // Test copy with specific count
     copy_to_with_count(&copy, &mut stack, 2);
-    
+
     assert_eq!(5, stack.len());
     assert_eq!(3, copy.len());
-    
+
     // Verify the stack now has the copied items on top
     // Original: [1, 2, 3] + copied top 2: [3, 2] = [1, 2, 3, 3, 2]
     let expected_values = [2, 3, 3, 2, 1]; // from top to bottom
@@ -99,24 +103,24 @@ fn test_move_to() {
 
     // Test move with count 0 (move nothing)
     move_to_with_count(&mut stack, &mut other, 0);
-    
+
     assert_eq!(3, stack.len());
     assert_eq!(0, other.len());
     verify_stack_order(&stack, &[1, 2, 3]);
 
     // Test move with count -1 (move all)
     move_to_with_count(&mut stack, &mut other, -1);
-    
+
     assert_eq!(0, stack.len());
     assert_eq!(3, other.len());
     verify_stack_order(&other, &[1, 2, 3]);
 
     // Test move with specific count
     move_to_with_count(&mut other, &mut stack, 2);
-    
+
     assert_eq!(2, stack.len());
     assert_eq!(1, other.len());
-    
+
     verify_stack_order(&stack, &[2, 3]);
     verify_stack_order(&other, &[1]);
 }
@@ -129,23 +133,31 @@ fn test_insert_peek() {
 
     // Insert items in specific order to match C# test
     // Note: insert uses Vec indexing, not stack indexing
-    stack.insert(0, StackItem::Integer(BigInt::from(3))).unwrap();
-    stack.insert(1, StackItem::Integer(BigInt::from(1))).unwrap();
-    stack.insert(1, StackItem::Integer(BigInt::from(2))).unwrap();
+    stack
+        .insert(0, StackItem::Integer(BigInt::from(3)))
+        .unwrap();
+    stack
+        .insert(1, StackItem::Integer(BigInt::from(1)))
+        .unwrap();
+    stack
+        .insert(1, StackItem::Integer(BigInt::from(2)))
+        .unwrap();
 
     // Test invalid insert position
     let result = stack.insert(4, StackItem::Integer(BigInt::from(2)));
     assert!(result.is_err(), "Insert at invalid position should fail");
 
     assert_eq!(3, stack.len());
-    
+
     // Let's check what the actual order is
     let item0 = stack.peek(0).unwrap();
     let item1 = stack.peek(1).unwrap();
     let item2 = stack.peek(2).unwrap();
-    
+
     // Verify the actual stack order based on how insert works
-    if let (StackItem::Integer(v0), StackItem::Integer(v1), StackItem::Integer(v2)) = (item0, item1, item2) {
+    if let (StackItem::Integer(v0), StackItem::Integer(v1), StackItem::Integer(v2)) =
+        (item0, item1, item2)
+    {
         // The stack should have: [3, 2, 1] from bottom to top after the inserts
         // peek(0) = top = 1, peek(1) = middle = 2, peek(2) = bottom = 3
         assert_eq!(*v0, BigInt::from(1)); // top
@@ -245,16 +257,16 @@ fn test_reverse() {
     let mut stack = create_ordered_stack(3);
 
     stack.reverse(3).unwrap();
-    
+
     let item = pop_as_integer(&mut stack).unwrap();
     assert_eq!(item, BigInt::from(1));
-    
+
     let item = pop_as_integer(&mut stack).unwrap();
     assert_eq!(item, BigInt::from(2));
-    
+
     let item = pop_as_integer(&mut stack).unwrap();
     assert_eq!(item, BigInt::from(3));
-    
+
     let result = pop_as_integer(&mut stack);
     assert!(result.is_err(), "Pop on empty stack should fail");
 
@@ -262,20 +274,23 @@ fn test_reverse() {
     let mut stack = create_ordered_stack(3);
 
     let result = stack.reverse(4);
-    assert!(result.is_err(), "Reverse with count > stack size should fail");
+    assert!(
+        result.is_err(),
+        "Reverse with count > stack size should fail"
+    );
 
     // Test reverse with count 1 (no change)
     stack.reverse(1).unwrap();
-    
+
     let item = pop_as_integer(&mut stack).unwrap();
     assert_eq!(item, BigInt::from(3));
-    
+
     let item = pop_as_integer(&mut stack).unwrap();
     assert_eq!(item, BigInt::from(2));
-    
+
     let item = pop_as_integer(&mut stack).unwrap();
     assert_eq!(item, BigInt::from(1));
-    
+
     let result = pop_as_integer(&mut stack);
     assert!(result.is_err(), "Pop on empty stack should fail");
 }
@@ -286,25 +301,31 @@ fn test_evaluation_stack_print() {
     let reference_counter = ReferenceCounter::new();
     let mut stack = EvaluationStack::new(reference_counter);
 
-    stack.insert(0, StackItem::Integer(BigInt::from(3))).unwrap();
-    stack.insert(1, StackItem::Integer(BigInt::from(1))).unwrap();
-    stack.insert(2, StackItem::from_byte_string("test")).unwrap();
+    stack
+        .insert(0, StackItem::Integer(BigInt::from(3)))
+        .unwrap();
+    stack
+        .insert(1, StackItem::Integer(BigInt::from(1)))
+        .unwrap();
+    stack
+        .insert(2, StackItem::from_byte_string("test"))
+        .unwrap();
     stack.insert(3, StackItem::Boolean(true)).unwrap();
 
     // Note: The exact string format might differ between C# and Rust implementations
     // We'll test that the stack contains the expected elements by checking individual items
     assert_eq!(stack.len(), 4);
-    
+
     // Verify the items are in the stack
     let item0 = stack.peek(0).unwrap();
     assert!(matches!(item0, StackItem::Boolean(true)));
-    
+
     let item1 = stack.peek(1).unwrap();
     assert!(matches!(item1, StackItem::ByteString(_)));
-    
+
     let item2 = stack.peek(2).unwrap();
     assert!(matches!(item2, StackItem::Integer(_)));
-    
+
     let item3 = stack.peek(3).unwrap();
     assert!(matches!(item3, StackItem::Integer(_)));
 }
@@ -314,15 +335,17 @@ fn test_print_invalid_utf8() {
     // Test stack with invalid UTF-8 bytes - C# TestPrintInvalidUTF8()
     let reference_counter = ReferenceCounter::new();
     let mut stack = EvaluationStack::new(reference_counter);
-    
+
     // Create byte array from hex string "4CC95219999D421243C8161E3FC0F4290C067845"
     // Convert hex manually without hex crate
     let hex_bytes = vec![
-        0x4C, 0xC9, 0x52, 0x19, 0x99, 0x9D, 0x42, 0x12, 0x43, 0xC8, 
-        0x16, 0x1E, 0x3F, 0xC0, 0xF4, 0x29, 0x0C, 0x06, 0x78, 0x45
+        0x4C, 0xC9, 0x52, 0x19, 0x99, 0x9D, 0x42, 0x12, 0x43, 0xC8, 0x16, 0x1E, 0x3F, 0xC0, 0xF4,
+        0x29, 0x0C, 0x06, 0x78, 0x45,
     ];
-    stack.insert(0, StackItem::from_byte_string(hex_bytes)).unwrap();
-    
+    stack
+        .insert(0, StackItem::from_byte_string(hex_bytes))
+        .unwrap();
+
     // The stack should handle invalid UTF-8 gracefully
     assert_eq!(stack.len(), 1);
     let item = stack.peek(0).unwrap();
@@ -335,7 +358,7 @@ fn copy_to_with_count(source: &EvaluationStack, target: &mut EvaluationStack, co
     if count == 0 {
         return;
     }
-    
+
     if count == -1 {
         // Copy all items
         source.copy_to(target);
@@ -353,7 +376,7 @@ fn move_to_with_count(source: &mut EvaluationStack, target: &mut EvaluationStack
     if count == 0 {
         return;
     }
-    
+
     if count == -1 {
         // Move all items
         while !source.is_empty() {
@@ -414,7 +437,7 @@ fn remove_as_integer(stack: &mut EvaluationStack, index: isize) -> Result<BigInt
 
 fn verify_stack_order(stack: &EvaluationStack, expected: &[i32]) {
     assert_eq!(stack.len(), expected.len(), "Stack size mismatch");
-    
+
     // The stack is LIFO, so peek(0) gets the top (last pushed) item
     // expected[0] should be the bottom item, expected[last] should be the top item
     for (i, &expected_value) in expected.iter().enumerate() {
@@ -422,9 +445,15 @@ fn verify_stack_order(stack: &EvaluationStack, expected: &[i32]) {
         let peek_index = (stack.len() - 1 - i) as isize;
         let item = stack.peek(peek_index).unwrap();
         if let StackItem::Integer(value) = item {
-            assert_eq!(*value, BigInt::from(expected_value), "Value mismatch at position {} (peek index {})", i, peek_index);
+            assert_eq!(
+                *value,
+                BigInt::from(expected_value),
+                "Value mismatch at position {} (peek index {})",
+                i,
+                peek_index
+            );
         } else {
             panic!("Expected Integer at position {}", i);
         }
     }
-} 
+}

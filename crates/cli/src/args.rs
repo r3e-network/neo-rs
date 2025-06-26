@@ -145,16 +145,16 @@ impl CliArgs {
 
     /// Get the effective database path
     pub fn get_db_path(&self) -> PathBuf {
-        self.db_path.clone().unwrap_or_else(|| {
-            self.get_data_dir().join("chain")
-        })
+        self.db_path
+            .clone()
+            .unwrap_or_else(|| self.get_data_dir().join("chain"))
     }
 
     /// Get the effective configuration file path
     pub fn get_config_path(&self) -> PathBuf {
-        self.config.clone().unwrap_or_else(|| {
-            PathBuf::from("config.json")
-        })
+        self.config
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("config.json"))
     }
 }
 
@@ -177,13 +177,17 @@ mod tests {
     fn test_cli_args_with_options() {
         let args = CliArgs::parse_from(&[
             "neo-cli",
-            "--config", "test.json",
-            "--wallet", "wallet.json",
-            "--verbose", "debug",
-            "--network", "testnet",
+            "--config",
+            "test.json",
+            "--wallet",
+            "wallet.json",
+            "--verbose",
+            "debug",
+            "--network",
+            "testnet",
             "--daemon",
         ]);
-        
+
         assert_eq!(args.config, Some(PathBuf::from("test.json")));
         assert_eq!(args.wallet, Some(PathBuf::from("wallet.json")));
         assert_eq!(args.verbose, LogLevel::Debug);
@@ -204,14 +208,14 @@ mod tests {
     #[test]
     fn test_path_methods() {
         let args = CliArgs::parse_from(&["neo-cli"]);
-        
+
         // Test default paths
         let data_dir = args.get_data_dir();
         assert!(data_dir.ends_with("neo"));
-        
+
         let db_path = args.get_db_path();
         assert!(db_path.ends_with("chain"));
-        
+
         let config_path = args.get_config_path();
         assert_eq!(config_path, PathBuf::from("config.json"));
     }
@@ -220,13 +224,16 @@ mod tests {
     fn test_custom_paths() {
         let args = CliArgs::parse_from(&[
             "neo-cli",
-            "--config", "custom.json",
-            "--data-dir", "/custom/data",
-            "--db-path", "/custom/db",
+            "--config",
+            "custom.json",
+            "--data-dir",
+            "/custom/data",
+            "--db-path",
+            "/custom/db",
         ]);
-        
+
         assert_eq!(args.get_config_path(), PathBuf::from("custom.json"));
         assert_eq!(args.get_data_dir(), PathBuf::from("/custom/data"));
         assert_eq!(args.get_db_path(), PathBuf::from("/custom/db"));
     }
-} 
+}
