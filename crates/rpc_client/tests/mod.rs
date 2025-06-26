@@ -8,7 +8,7 @@ mod rpc_client_tests;
 
 // Integration tests for complete RPC client workflows
 mod integration_tests {
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
 
     /// Test complete RPC client workflow (matches C# client usage patterns exactly)
     #[tokio::test]

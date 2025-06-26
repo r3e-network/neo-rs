@@ -4,7 +4,7 @@
 //! It provides full block validation, transaction management, and size calculations.
 
 use super::{
-    MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK, header::BlockHeader, verification::WitnessVerifier,
+    header::BlockHeader, verification::WitnessVerifier, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
 };
 use crate::{Error, Result, VerifyResult};
 use neo_core::{Transaction, UInt160, UInt256};
@@ -719,7 +719,7 @@ impl Block {
     /// Checks if script is a single signature script (production implementation)
     fn is_single_signature_script(&self, script: &[u8]) -> bool {
         // Single signature script pattern: PUSHDATA1 33 [public_key] PUSHNULL SYSCALL CheckWitness
-        script.len() >= 36 && 
+        script.len() >= 36 &&
         script[0] == 0x0C && // PUSHDATA1
         script[1] == 33 &&   // 33 bytes public key
         script[34] == 0x11 && // PUSHNULL

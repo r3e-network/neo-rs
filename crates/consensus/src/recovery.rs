@@ -4,9 +4,9 @@
 //! including view change handling, recovery requests, and state synchronization.
 
 use crate::{
-    BlockIndex, Error, Result, ViewNumber,
     context::ConsensusContext,
     messages::{RecoveryRequest, RecoveryResponse},
+    BlockIndex, Error, Result, ViewNumber,
 };
 use neo_core::UInt160;
 use parking_lot::RwLock;
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::time::{Interval, interval};
+use tokio::time::{interval, Interval};
 use tracing::{debug, info, warn};
 
 /// Recovery configuration

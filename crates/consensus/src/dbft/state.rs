@@ -3,7 +3,7 @@
 //! This module contains state definitions, statistics, and events for the dBFT consensus engine.
 
 use crate::{
-    BlockIndex, ConsensusSignature, ViewNumber, context::TimerType, messages::ViewChangeReason,
+    context::TimerType, messages::ViewChangeReason, BlockIndex, ConsensusSignature, ViewNumber,
 };
 use neo_core::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};

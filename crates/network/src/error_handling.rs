@@ -7,7 +7,7 @@ use crate::{NetworkError, NetworkMessage, NetworkResult as Result, PeerEvent};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{broadcast, RwLock};
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
@@ -563,14 +563,12 @@ mod tests {
 
         assert_eq!(context.retry_count, 1);
         assert!(context.last_error.is_some());
-        assert!(
-            context
-                .last_error
-                .as_ref()
-                .unwrap()
-                .to_string()
-                .contains("test error")
-        );
+        assert!(context
+            .last_error
+            .as_ref()
+            .unwrap()
+            .to_string()
+            .contains("test error"));
     }
 
     #[test]

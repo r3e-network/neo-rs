@@ -5,12 +5,12 @@
 
 use neo_core::{Block, BlockHeader, Transaction, UInt160, UInt256};
 use neo_network::{
-    NetworkConfig, NetworkServer, NetworkServerConfig, P2PConfig, P2PNode, ProtocolVersion,
-    RpcConfig, RpcServer,
     message::{
         AddrPayload, Message, MessageType, Payload, PingPayload, PongPayload, VersionPayload,
     },
     peer::{Peer, PeerInfo, PeerState},
+    NetworkConfig, NetworkServer, NetworkServerConfig, P2PConfig, P2PNode, ProtocolVersion,
+    RpcConfig, RpcServer,
 };
 use neo_rpc_client::{RpcClient, RpcConfig as ClientConfig};
 use std::net::SocketAddr;

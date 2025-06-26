@@ -4,7 +4,7 @@
 //! Tests are based on the C# Neo.Network.RPC test suite.
 
 use neo_rpc_client::{NeoRpcClient, Result, RpcError};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 #[cfg(test)]
 mod rpc_client_tests {

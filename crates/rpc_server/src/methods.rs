@@ -5,7 +5,7 @@
 use crate::types::*;
 use neo_ledger::Ledger;
 use neo_persistence::RocksDbStore;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{debug, warn};
 

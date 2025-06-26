@@ -13,12 +13,12 @@
 
 use crate::signer::Signer;
 use crate::witness::Witness;
-use neo_io::Serializable;
 use neo_io::serializable::helper::get_var_size;
+use neo_io::Serializable;
 use std::sync::Mutex;
 
 use super::attributes::TransactionAttribute;
-use super::core::{HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, Transaction};
+use super::core::{Transaction, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES};
 
 impl Serializable for Transaction {
     fn size(&self) -> usize {

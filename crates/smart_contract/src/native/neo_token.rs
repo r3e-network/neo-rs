@@ -6,8 +6,8 @@ use crate::native::{NativeContract, NativeMethod};
 use crate::{Error, NeoTokenError, Result};
 use hex;
 use neo_core::{
-    UInt160,
     transaction::blockchain::{BlockchainSnapshot, StorageItem, StorageKey},
+    UInt160,
 };
 use neo_cryptography::ECPoint;
 use num_bigint::BigInt;
@@ -1091,7 +1091,7 @@ impl NeoToken {
         // Production-ready RocksDB write operation (matches C# storage persistence exactly)
         // This implements the C# logic: database.Put(key, value) with atomic operations
 
-        use rocksdb::{DB, Options};
+        use rocksdb::{Options, DB};
         use std::path::Path;
 
         // 1. Open RocksDB connection (production database connection)
@@ -1142,7 +1142,7 @@ impl NeoToken {
         // Production-ready state persistence (matches C# StateManager persistence exactly)
         // This implements the C# logic: stateManager.Persist() for permanent storage
 
-        use rocksdb::{DB, Options};
+        use rocksdb::{Options, DB};
 
         // 1. Create state manager storage key (production key format)
         let mut state_key = Vec::with_capacity(25); // 5 bytes prefix + 20 bytes account
@@ -1172,7 +1172,7 @@ impl NeoToken {
         // Production-ready balance log persistence (matches C# balance change logging exactly)
         // This implements the C# logic: balanceChangeLog.Add(entry) with persistent storage
 
-        use rocksdb::{DB, Options};
+        use rocksdb::{Options, DB};
         use std::time::{SystemTime, UNIX_EPOCH};
 
         // 1. Create log entry with timestamp (production logging)
@@ -1219,7 +1219,7 @@ impl NeoToken {
         // Production-ready notification persistence (matches C# notification system exactly)
         // This implements the C# logic: notificationSystem.Emit(event) with persistent storage
 
-        use rocksdb::{DB, Options};
+        use rocksdb::{Options, DB};
         use std::time::{SystemTime, UNIX_EPOCH};
 
         // 1. Create notification with timestamp (production event tracking)
@@ -1268,7 +1268,7 @@ impl NeoToken {
         // Production-ready supply statistics persistence (matches C# supply tracking exactly)
         // This implements the C# logic: supplyManager.UpdateStatistics(amount, operation)
 
-        use rocksdb::{DB, Options};
+        use rocksdb::{Options, DB};
         use std::time::{SystemTime, UNIX_EPOCH};
 
         // 1. Create statistics with timestamp (production statistics tracking)
@@ -1314,7 +1314,7 @@ impl NeoToken {
         // Production-ready total supply persistence (matches C# GAS.UpdateTotalSupply exactly)
         // This implements the C# logic: gasContract.UpdateTotalSupply(engine, delta)
 
-        use rocksdb::{DB, Options};
+        use rocksdb::{Options, DB};
 
         // 1. Create total supply storage key (production key format)
         const TOTAL_SUPPLY_KEY: &[u8] = b"TOTAL_GAS_SUPPLY";

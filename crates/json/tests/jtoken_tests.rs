@@ -296,11 +296,9 @@ mod jtoken_tests {
         ]);
 
         // Test index setting
-        assert!(
-            array
-                .set_index(1, Some(JToken::String("modified".to_string())))
-                .is_ok()
-        );
+        assert!(array
+            .set_index(1, Some(JToken::String("modified".to_string())))
+            .is_ok());
         assert_eq!(
             array.get_index(1).unwrap(),
             Some(&JToken::String("modified".to_string()))

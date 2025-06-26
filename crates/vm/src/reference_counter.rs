@@ -280,27 +280,27 @@ impl ReferenceCounter {
             }
             StackItem::Buffer(buffer) => {
                 4u8.hash(&mut hasher); // Type identifier for Buffer
-                // For buffers, use memory address as they are mutable
+                                       // For buffers, use memory address as they are mutable
                 (buffer.as_ptr() as usize).hash(&mut hasher);
             }
             StackItem::Array(arr) => {
                 5u8.hash(&mut hasher); // Type identifier for Array
-                // For arrays, use memory address as they are mutable compound types
+                                       // For arrays, use memory address as they are mutable compound types
                 (arr.as_ptr() as usize).hash(&mut hasher);
             }
             StackItem::Struct(s) => {
                 6u8.hash(&mut hasher); // Type identifier for Struct
-                // For structs, use memory address as they are mutable compound types
+                                       // For structs, use memory address as they are mutable compound types
                 (s.as_ptr() as usize).hash(&mut hasher);
             }
             StackItem::Map(map) => {
                 7u8.hash(&mut hasher); // Type identifier for Map
-                // For maps, use memory address as they are mutable compound types
+                                       // For maps, use memory address as they are mutable compound types
                 (map as *const _ as usize).hash(&mut hasher);
             }
             StackItem::InteropInterface(iface) => {
                 8u8.hash(&mut hasher); // Type identifier for InteropInterface
-                // For interop interfaces, use memory address
+                                       // For interop interfaces, use memory address
                 (Arc::as_ptr(iface) as *const () as usize).hash(&mut hasher);
             }
             StackItem::Pointer(ptr) => {

@@ -5,13 +5,13 @@
 
 use crate::{Error, Result};
 use p256::{
-    PublicKey, SecretKey,
-    ecdsa::{Signature, SigningKey, VerifyingKey, signature::Signer, signature::Verifier},
+    ecdsa::{signature::Signer, signature::Verifier, Signature, SigningKey, VerifyingKey},
     elliptic_curve::sec1::ToEncodedPoint,
+    PublicKey, SecretKey,
 };
 use rand::rngs::OsRng;
 use secp256k1::{
-    Message, PublicKey as Secp256k1PublicKey, Secp256k1, ecdsa::Signature as Secp256k1Signature,
+    ecdsa::Signature as Secp256k1Signature, Message, PublicKey as Secp256k1PublicKey, Secp256k1,
 };
 
 /// Supported elliptic curves
@@ -47,8 +47,8 @@ impl ECDsa {
     /// This implementation uses the built-in deterministic signing from p256 crate.
     pub fn sign_deterministic(data: &[u8], private_key: &[u8; 32]) -> Result<Vec<u8>> {
         // Use p256's built-in deterministic signing which implements RFC 6979
+        use p256::ecdsa::{signature::Signer, SigningKey};
         use p256::SecretKey;
-        use p256::ecdsa::{SigningKey, signature::Signer};
 
         // Create secret key from bytes
         let secret_key = SecretKey::from_bytes(private_key.into())

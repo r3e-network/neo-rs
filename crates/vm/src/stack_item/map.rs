@@ -5,8 +5,8 @@
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
-use crate::stack_item::StackItem;
 use crate::stack_item::stack_item_type::StackItemType;
+use crate::stack_item::StackItem;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

@@ -7,8 +7,8 @@ use crate::error::VmResult;
 use crate::instruction::{Instruction, OperandSizePrefix};
 use crate::op_code::OpCode;
 use neo_io::MemoryReader;
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 

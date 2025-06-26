@@ -122,11 +122,9 @@ mod dbft_tests {
 
         // Check commit was sent
         let sent_messages = engine.get_sent_messages();
-        assert!(
-            sent_messages
-                .iter()
-                .any(|m| m.message_type() == ConsensusMessageType::Commit)
-        );
+        assert!(sent_messages
+            .iter()
+            .any(|m| m.message_type() == ConsensusMessageType::Commit));
     }
 
     /// Test backup node behavior (matches C# backup consensus flow exactly)
@@ -153,11 +151,9 @@ mod dbft_tests {
 
         // Should send PrepareResponse
         let sent_messages = engine.get_sent_messages();
-        assert!(
-            sent_messages
-                .iter()
-                .any(|m| m.message_type() == ConsensusMessageType::PrepareResponse)
-        );
+        assert!(sent_messages
+            .iter()
+            .any(|m| m.message_type() == ConsensusMessageType::PrepareResponse));
 
         // Simulate receiving other PrepareResponses
         for i in 2..6 {
@@ -170,11 +166,9 @@ mod dbft_tests {
 
         // Should have sent Commit
         let sent_messages = engine.get_sent_messages();
-        assert!(
-            sent_messages
-                .iter()
-                .any(|m| m.message_type() == ConsensusMessageType::Commit)
-        );
+        assert!(sent_messages
+            .iter()
+            .any(|m| m.message_type() == ConsensusMessageType::Commit));
     }
 
     /// Test view change mechanism (matches C# view change exactly)
@@ -200,11 +194,9 @@ mod dbft_tests {
 
         // Should have sent ChangeView message
         let sent_messages = engine.get_sent_messages();
-        assert!(
-            sent_messages
-                .iter()
-                .any(|m| m.message_type() == ConsensusMessageType::ChangeView)
-        );
+        assert!(sent_messages
+            .iter()
+            .any(|m| m.message_type() == ConsensusMessageType::ChangeView));
 
         // Simulate receiving ChangeView messages from other nodes
         for i in 0..5 {
@@ -249,11 +241,9 @@ mod dbft_tests {
 
         // Should send RecoveryRequest
         let sent_messages = engine.get_sent_messages();
-        assert!(
-            sent_messages
-                .iter()
-                .any(|m| m.message_type() == ConsensusMessageType::RecoveryRequest)
-        );
+        assert!(sent_messages
+            .iter()
+            .any(|m| m.message_type() == ConsensusMessageType::RecoveryRequest));
 
         // Simulate receiving RecoveryResponse
         let recovery_response = RecoveryResponse::new(
@@ -445,11 +435,9 @@ mod dbft_tests {
         engine2
             .start(BlockIndex::new(100), ViewNumber::new(0))
             .unwrap();
-        assert!(
-            engine2
-                .validate_prepare_response(2, &valid_response)
-                .is_err()
-        );
+        assert!(engine2
+            .validate_prepare_response(2, &valid_response)
+            .is_err());
 
         // Test Commit validation
         let valid_commit = Commit::new(vec![1; 64]);
@@ -515,11 +503,9 @@ mod dbft_tests {
         engine
             .start(BlockIndex::new(100), ViewNumber::new(0))
             .unwrap();
-        assert!(
-            engine
-                .start(BlockIndex::new(100), ViewNumber::new(0))
-                .is_err()
-        );
+        assert!(engine
+            .start(BlockIndex::new(100), ViewNumber::new(0))
+            .is_err());
 
         // Test view overflow
         engine.set_validator_index(0);
@@ -541,11 +527,9 @@ mod dbft_tests {
         // Test stop during consensus
         engine.stop().unwrap();
         assert_eq!(engine.state(), DbftState::Stopped);
-        assert!(
-            engine
-                .process_prepare_request(0, PrepareRequest::new(UInt256::zero(), 0, 0, vec![]))
-                .is_err()
-        );
+        assert!(engine
+            .process_prepare_request(0, PrepareRequest::new(UInt256::zero(), 0, 0, vec![]))
+            .is_err());
     }
 
     /// Test performance characteristics (matches C# performance exactly)

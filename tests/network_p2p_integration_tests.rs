@@ -5,9 +5,9 @@
 
 use neo_core::{UInt160, UInt256};
 use neo_network::{
+    messages::{GetBlocksMessage, PingMessage, PongMessage, VerAckMessage, VersionMessage},
     MessageType, NetworkConfig, NetworkMessage, NetworkServer, NetworkStats, P2PConfig, P2PNode,
     PeerManager, ProtocolVersion, RpcConfig,
-    messages::{GetBlocksMessage, PingMessage, PongMessage, VerAckMessage, VersionMessage},
 };
 use std::collections::HashMap;
 use std::net::SocketAddr;

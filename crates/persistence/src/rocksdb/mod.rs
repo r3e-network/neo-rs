@@ -7,7 +7,7 @@ use crate::storage::{
     IReadOnlyStore, IStore, IStoreSnapshot, IWriteStore, SeekDirection, StorageConfig,
     StorageProvider,
 };
-use rocksdb::{DB, Direction, IteratorMode, Options, WriteBatch};
+use rocksdb::{Direction, IteratorMode, Options, WriteBatch, DB};
 use std::sync::Arc;
 
 /// RocksDB store implementation (matches C# Neo RocksDB store)

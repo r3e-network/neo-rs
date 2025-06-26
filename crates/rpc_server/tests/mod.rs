@@ -8,7 +8,7 @@ mod rpc_server_tests;
 
 // Integration tests for complete RPC server workflows
 mod integration_tests {
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
 
     /// Test complete RPC server integration (matches C# server behavior exactly)
     #[test]

@@ -7,7 +7,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::sync::{Notify, RwLock, broadcast};
+use tokio::sync::{broadcast, Notify, RwLock};
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
@@ -449,7 +449,7 @@ impl SignalHandler {
 
     #[cfg(unix)]
     async fn handle_signals(&self) {
-        use tokio::signal::unix::{SignalKind, signal};
+        use tokio::signal::unix::{signal, SignalKind};
 
         let mut sigterm =
             signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");

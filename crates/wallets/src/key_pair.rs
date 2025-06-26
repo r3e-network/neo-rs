@@ -5,7 +5,7 @@
 
 use crate::{Error, Result};
 use neo_core::{UInt160, UInt256};
-use neo_cryptography::{ECC, ECDsa, ECPoint};
+use neo_cryptography::{ECDsa, ECPoint, ECC};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -191,8 +191,8 @@ impl KeyPair {
     fn encrypt_nep2(private_key: &[u8; 32], password: &str) -> Result<Vec<u8>> {
         use aes::Aes256;
         use cbc::{
-            Encryptor,
             cipher::{BlockEncryptMut, KeyIvInit},
+            Encryptor,
         };
         use scrypt::{Params, Scrypt};
 
@@ -229,7 +229,7 @@ impl KeyPair {
         let cipher = Encryptor::<Aes256>::new(derived_half2.into(), &[0u8; 16].into());
         let mut buffer = xor_key.to_vec();
         buffer.resize(32, 0); // Ensure exactly 32 bytes
-        // No padding needed since xor_key is exactly 32 bytes (multiple of 16)
+                              // No padding needed since xor_key is exactly 32 bytes (multiple of 16)
         let encrypted = cipher
             .encrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut buffer, 32)
             .map_err(|e| Error::Aes(e.to_string()))?;
@@ -249,8 +249,8 @@ impl KeyPair {
     fn decrypt_nep2(encrypted_key: &[u8], password: &str) -> Result<[u8; 32]> {
         use aes::Aes256;
         use cbc::{
-            Decryptor,
             cipher::{BlockDecryptMut, KeyIvInit},
+            Decryptor,
         };
         use scrypt::{Params, Scrypt};
 

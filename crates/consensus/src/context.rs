@@ -4,8 +4,8 @@
 //! including state management, round tracking, and timer handling.
 
 use crate::{
-    BlockIndex, ConsensusConfig, Result, ValidatorSet, ViewNumber,
     messages::{ChangeView, Commit, PrepareRequest, PrepareResponse, ViewChangeReason},
+    BlockIndex, ConsensusConfig, Result, ValidatorSet, ViewNumber,
 };
 use neo_core::{UInt160, UInt256};
 use parking_lot::RwLock;
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tokio::time::{Interval, interval};
+use tokio::time::{interval, Interval};
 
 /// Consensus phases
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

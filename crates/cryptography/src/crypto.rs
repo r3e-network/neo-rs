@@ -2,11 +2,11 @@
 //!
 //! This module provides core cryptographic functions used in the Neo blockchain.
 
-use crate::Error;
 use crate::ecc::ECPoint;
 use crate::hash_algorithm::HashAlgorithm;
 use crate::hasher::Hasher;
-use rand::{RngCore, rngs::OsRng};
+use crate::Error;
+use rand::{rngs::OsRng, RngCore};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -250,8 +250,8 @@ impl Crypto {
         recovery_id: u8,
     ) -> Result<ECPoint, Error> {
         use secp256k1::{
-            Message, Secp256k1,
             ecdsa::{RecoverableSignature, RecoveryId},
+            Message, Secp256k1,
         };
 
         // Create secp256k1 context

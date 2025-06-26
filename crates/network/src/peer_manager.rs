@@ -13,8 +13,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{RwLock, broadcast, mpsc};
-use tokio::time::{Duration, interval, timeout};
+use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::time::{interval, timeout, Duration};
 use tracing::{debug, error, info, warn};
 
 /// Peer connection state (matches C# Neo.Network.P2P.RemoteNode state exactly)

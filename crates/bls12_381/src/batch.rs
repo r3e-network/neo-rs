@@ -8,9 +8,9 @@ use crate::error::{BlsError, BlsResult};
 use crate::keys::PublicKey;
 use crate::signature::{Signature, SignatureScheme};
 use crate::utils;
-use bls12_381::{G1Affine, G2Affine, G2Projective, pairing};
+use bls12_381::{pairing, G1Affine, G2Affine, G2Projective};
 use group::Curve;
-use rand::{Rng, thread_rng};
+use rand::{thread_rng, Rng};
 
 /// Batch verifier for efficient verification of multiple BLS signatures
 /// This provides significant performance improvements when verifying many signatures
@@ -307,31 +307,27 @@ mod tests {
         let signature = keypair.sign(message, SignatureScheme::Basic).unwrap();
 
         // This should succeed
-        assert!(
-            verifier
-                .add(
-                    message,
-                    &signature,
-                    keypair.public_key(),
-                    SignatureScheme::Basic
-                )
-                .is_ok()
-        );
+        assert!(verifier
+            .add(
+                message,
+                &signature,
+                keypair.public_key(),
+                SignatureScheme::Basic
+            )
+            .is_ok());
 
         // This should fail due to scheme mismatch
         let signature2 = keypair
             .sign(message, SignatureScheme::MessageAugmentation)
             .unwrap();
-        assert!(
-            verifier
-                .add(
-                    message,
-                    &signature2,
-                    keypair.public_key(),
-                    SignatureScheme::MessageAugmentation
-                )
-                .is_err()
-        );
+        assert!(verifier
+            .add(
+                message,
+                &signature2,
+                keypair.public_key(),
+                SignatureScheme::MessageAugmentation
+            )
+            .is_err());
     }
 
     #[test]

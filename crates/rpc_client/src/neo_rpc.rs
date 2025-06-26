@@ -5,7 +5,7 @@
 
 use crate::{RpcClient, RpcError, RpcResult};
 use neo_core::{Transaction, UInt160, UInt256};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 
 /// Complete Neo N3 RPC interface implementation (matches C# RpcClient exactly)

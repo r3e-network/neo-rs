@@ -16,8 +16,8 @@ pub mod protocol;
 pub mod validation;
 
 // Re-export main types for compatibility
-pub use commands::{MessageCommand, MessageFlags, varlen};
-pub use header::{MAX_MESSAGE_SIZE, Neo3Message};
+pub use commands::{varlen, MessageCommand, MessageFlags};
+pub use header::{Neo3Message, MAX_MESSAGE_SIZE};
 pub use inventory::{InventoryItem, InventoryType};
 pub use network::NetworkMessage;
 pub use protocol::ProtocolMessage;

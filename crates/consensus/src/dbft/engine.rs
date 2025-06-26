@@ -4,15 +4,15 @@
 //! using the modular components.
 
 use super::{
-    DbftError, DbftResult,
     config::DbftConfig,
     message_handler::{MessageHandleResult, MessageHandler},
     state::{DbftEvent, DbftState, DbftStats},
+    DbftError, DbftResult,
 };
 use crate::{
-    BlockIndex, Error, ViewNumber,
     context::{ConsensusContext, TimerType},
     messages::{ConsensusMessage, ViewChangeReason},
+    BlockIndex, Error, ViewNumber,
 };
 use neo_core::UInt160;
 use neo_core::{Transaction, UInt256};

@@ -1,5 +1,5 @@
-use crate::JToken;
 use crate::error::{JsonError, JsonResult};
+use crate::JToken;
 use std::fmt;
 
 /// Represents a JSON string

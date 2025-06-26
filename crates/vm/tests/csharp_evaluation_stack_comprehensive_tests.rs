@@ -161,7 +161,7 @@ fn test_insert_peek() {
         // The stack should have: [3, 2, 1] from bottom to top after the inserts
         // peek(0) = top = 1, peek(1) = middle = 2, peek(2) = bottom = 3
         assert_eq!(*v0, BigInt::from(1)); // top
-        assert_eq!(*v1, BigInt::from(2)); // middle  
+        assert_eq!(*v1, BigInt::from(2)); // middle
         assert_eq!(*v2, BigInt::from(3)); // bottom
     }
 

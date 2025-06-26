@@ -12,7 +12,7 @@
 //! Transaction validation implementation matching C# Neo N3 exactly.
 
 use super::blockchain::BlockchainSnapshot;
-use super::core::{MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE, Transaction};
+use super::core::{Transaction, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE};
 use super::vm::ApplicationEngine;
 use crate::CoreError;
 

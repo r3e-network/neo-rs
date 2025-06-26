@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use neo_core::{UInt160, UInt256};
 use neo_extensions::error::{ExtensionError, ExtensionResult};
 use neo_vm::stack_item::StackItem;
-use rocksdb::{DB, Options};
+use rocksdb::{Options, DB};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;

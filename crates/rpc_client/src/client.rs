@@ -3,11 +3,11 @@
 //! This module provides the main RPC client implementation for communicating
 //! with Neo N3 nodes, matching the C# Neo.Network.RPC.RpcClient exactly.
 
-use crate::{JsonRpcRequest, JsonRpcResponse, RpcConfig, RpcError, RpcResult, rpc_methods};
+use crate::{rpc_methods, JsonRpcRequest, JsonRpcResponse, RpcConfig, RpcError, RpcResult};
 use reqwest::{Client, ClientBuilder};
 use serde_json::Value;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::debug;

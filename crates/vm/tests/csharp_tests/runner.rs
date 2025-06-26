@@ -460,7 +460,7 @@ impl JsonTestRunner {
         }
 
         // Check if this is a "fault expected" case - don't add RET for insufficient data tests
-        let is_insufficient_data_test = script.len() == 2 && 
+        let is_insufficient_data_test = script.len() == 2 &&
             script[0] == "PUSHDATA1" && 
             script[1].starts_with("0x05") && // Length 5 but insufficient data
             script[1].len() > 4; // Has combined length+data format

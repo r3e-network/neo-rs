@@ -11,10 +11,10 @@
 
 //! Core system for Neo blockchain.
 
-use crate::CoreError;
 use crate::transaction_type::ContainsTransactionType;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
+use crate::CoreError;
 use neo_cryptography;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};

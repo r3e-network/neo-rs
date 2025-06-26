@@ -233,8 +233,8 @@ impl AggregatePublicKey {
         aggregate_signature: &AggregateSignature,
         scheme: SignatureScheme,
     ) -> bool {
-        use crate::NEO_BLS_DST;
         use crate::utils;
+        use crate::NEO_BLS_DST;
         use bls12_381::pairing;
 
         if message.is_empty() {
@@ -274,8 +274,8 @@ impl AggregatePublicKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Bls12381;
     use crate::keys::KeyPair;
+    use crate::Bls12381;
     use rand::thread_rng;
 
     #[test]

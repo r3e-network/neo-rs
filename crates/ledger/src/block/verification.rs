@@ -261,8 +261,8 @@ impl WitnessVerifier {
 
         // 4. Execute actual secp256r1 cryptographic verification using p256 crate
         use p256::{
-            EncodedPoint,
             ecdsa::{Signature, VerifyingKey},
+            EncodedPoint,
         };
         use sha2::{Digest, Sha256};
 

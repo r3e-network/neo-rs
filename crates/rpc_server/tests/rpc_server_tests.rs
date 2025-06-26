@@ -3,7 +3,7 @@
 //! These tests ensure full compatibility with C# Neo's RPC server functionality.
 //! Tests are based on the C# Neo.Plugins.RpcServer test suite.
 
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 #[cfg(test)]
 mod rpc_server_tests {
@@ -95,10 +95,8 @@ mod rpc_server_tests {
                 if params.is_empty() {
                     return Err(RpcServerError::InvalidParams("Expected at least 1 parameter".to_string()));
                 }
-                
                 let _hash_or_index = &params[0];
                 let verbose = params.get(1).and_then(|v| v.as_bool()).unwrap_or(true);
-                
                 if verbose {
                     Ok(json!({
                         "hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",

@@ -1,11 +1,11 @@
 //! BLS12-381 signature types and operations.
 
-use crate::NEO_BLS_DST;
 use crate::constants::SIGNATURE_SIZE;
 use crate::error::{BlsError, BlsResult};
 use crate::keys::{PrivateKey, PublicKey};
 use crate::utils;
-use bls12_381::{G1Affine, G2Affine, G2Projective, pairing};
+use crate::NEO_BLS_DST;
+use bls12_381::{pairing, G1Affine, G2Affine, G2Projective};
 use group::Curve;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 

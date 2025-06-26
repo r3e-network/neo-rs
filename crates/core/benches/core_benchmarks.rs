@@ -4,7 +4,7 @@
 //! used frequently in blockchain processing, allowing us to compare against
 //! the C# implementation and identify optimization opportunities.
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use neo_core::{BigDecimal, Transaction, UInt160, UInt256, Witness};
 use num_bigint::BigInt;
 use std::str::FromStr;

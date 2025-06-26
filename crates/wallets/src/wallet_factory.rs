@@ -4,8 +4,8 @@
 //! converted from the C# Neo WalletFactory classes (@neo-sharp/src/Neo/Wallets/).
 
 use crate::{
-    Error, Result,
     wallet::{Wallet, WalletResult},
+    Error, Result,
 };
 use async_trait::async_trait;
 use std::path::Path;

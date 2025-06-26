@@ -4,7 +4,7 @@
 //! critical for blockchain performance, including ECDSA signing/verification,
 //! hashing operations, and key generation.
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use neo_cryptography::{
     ecdsa::{KeyPair, PrivateKey, PublicKey},
     hash::{hash160, hash256, sha256},

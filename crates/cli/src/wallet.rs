@@ -18,9 +18,9 @@ use hex;
 use neo_core::{Transaction, UInt160, UInt256};
 use neo_rpc_client;
 use neo_wallets::{
-    KeyPair, Nep6Wallet,
     wallet::Wallet as WalletTrait,
     wallet_account::{StandardWalletAccount, WalletAccount},
+    KeyPair, Nep6Wallet,
 };
 use std::collections::HashMap;
 use std::path::Path;
