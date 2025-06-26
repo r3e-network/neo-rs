@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, jimmy ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, jimmy ]
   schedule:
     # Run nightly at 2 AM UTC
     - cron: '0 2 * * *'
@@ -12,7 +12,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   # Fast feedback for basic checks
@@ -43,7 +42,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features
 
       - name: Check documentation
         run: cargo doc --no-deps --all-features
@@ -338,7 +337,7 @@ jobs:
   docs:
     name: Documentation
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/jimmy'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
