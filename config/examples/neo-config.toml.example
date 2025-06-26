@@ -1,0 +1,39 @@
+# Neo-RS Configuration Example
+# Copy this file to neo-config.toml and customize as needed
+
+[network]
+# Network type: "mainnet", "testnet", or "privatenet"
+network_type = "testnet"
+# P2P port for peer connections
+port = 10333
+# RPC port for JSON-RPC server
+rpc_port = 10332
+
+[consensus]
+# Enable consensus participation
+enabled = false
+# Validator private key (leave empty to disable)
+validator_key = ""
+
+[storage]
+# Database directory
+data_dir = "./data"
+# RocksDB options
+max_open_files = 1000
+block_cache_size = "64MB"
+
+[rpc]
+# Enable RPC server
+enabled = true
+# Bind address
+bind = "127.0.0.1"
+# Port number
+port = 10332
+# CORS origins (comma-separated)
+cors_origins = "*"
+
+[logging]
+# Log level: "error", "warn", "info", "debug", "trace"
+level = "info"
+# Log to file
+file = "./neo-rs.log"

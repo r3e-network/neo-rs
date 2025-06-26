@@ -1,5 +1,28 @@
+# Build outputs
 target/
 Cargo.lock
-*.log
+
+# Data directories
+data/
 testnet-data/
+node-data/
+
+# Development files
+dev/debug/*
+dev/logs/*
+dev/test-files/*
+*.log
+*.tmp
+
+# Configuration (use examples instead)
 neo-config.toml
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -349,6 +349,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## 📁 Project Structure
+
+```
+neo-rs/
+├── crates/              # Core library crates
+│   ├── core/           # Fundamental types and utilities
+│   ├── vm/             # Neo Virtual Machine
+│   ├── cryptography/   # Cryptographic operations
+│   ├── network/        # P2P networking
+│   ├── ledger/         # Blockchain state management
+│   ├── consensus/      # dBFT consensus implementation
+│   ├── rpc-server/     # JSON-RPC API server
+│   ├── smart-contract/ # Smart contract execution
+│   ├── persistence/    # Storage abstraction
+│   └── wallets/        # Wallet management
+├── node/               # Main node binary
+├── config/             # Configuration files and examples
+├── docs/               # Documentation and guides
+├── examples/           # Usage examples
+├── tests/              # Integration tests
+├── benches/            # Performance benchmarks
+├── dev/                # Development tools and scripts
+└── .github/            # CI/CD workflows
+```
+
+### Key Directories
+
+- **`crates/`** - Modular Rust crates with clear separation of concerns
+- **`node/`** - Main executable that combines all crates into a full node
+- **`config/`** - Configuration examples and build settings
+- **`docs/`** - Comprehensive documentation and implementation guides
+- **`dev/`** - Development tools, debug scripts, and test utilities (git-ignored)
+
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
