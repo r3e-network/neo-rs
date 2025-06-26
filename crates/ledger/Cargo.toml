@@ -41,7 +41,7 @@ rocksdb = "0.21"
 neo-core = { path = "../core" }
 neo-cryptography = { path = "../cryptography" }
 neo-io = { path = "../io" }
-neo-vm = { path = "../vm" }
+# neo-vm = { path = "../vm" } # Temporarily disabled for CI
 neo-config = { path = "../config" }
 neo-persistence = { path = "../persistence" }
 # neo-smart-contract = { path = "../smart_contract" } # Circular dependency

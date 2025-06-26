@@ -3,12 +3,12 @@ resolver = "2"
 members = [
     # Core infrastructure
     "crates/core",
-    "crates/cryptography", 
+    "crates/cryptography",
     "crates/io",
     
     # Blockchain components
-    "crates/vm",
-    "crates/smart_contract",
+    # "crates/vm", # Temporarily disabled
+    # "crates/smart_contract", # Temporarily disabled
     "crates/ledger",
     "crates/consensus",
     

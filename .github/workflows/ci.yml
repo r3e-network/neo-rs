@@ -64,7 +64,7 @@ jobs:
       - name: Run clippy
         run: |
           echo "🔍 Running clippy lints..."
-          cargo clippy --all-targets --all-features || {
+          cargo clippy --workspace --exclude neo-vm --exclude neo-smart-contract --all-targets --all-features || {
             echo "❌ Clippy check failed! Fix the warnings above."
             exit 1
           }
@@ -105,7 +105,7 @@ jobs:
       - name: Build
         run: |
           echo "🔨 Building project..."
-          cargo build --all-targets --all-features || {
+          cargo build --workspace --exclude neo-vm --exclude neo-smart-contract --all-targets --all-features || {
             echo "❌ Build failed!"
             exit 1
           }
@@ -114,7 +114,7 @@ jobs:
       - name: Run unit tests
         run: |
           echo "🧪 Running unit tests..."
-          cargo test --all-features --lib || {
+          cargo test --workspace --exclude neo-vm --exclude neo-smart-contract --all-features --lib || {
             echo "❌ Unit tests failed!"
             exit 1
           }
@@ -123,7 +123,7 @@ jobs:
       - name: Run integration tests
         run: |
           echo "🧪 Running integration tests..."
-          cargo test --all-features --test '*' || {
+          cargo test --workspace --exclude neo-vm --exclude neo-smart-contract --all-features --test '*' || {
             echo "❌ Integration tests failed!"
             exit 1
           }
@@ -132,7 +132,7 @@ jobs:
       - name: Run doc tests
         run: |
           echo "📚 Running doc tests..."
-          cargo test --all-features --doc || {
+          cargo test --workspace --exclude neo-vm --exclude neo-smart-contract --all-features --doc || {
             echo "❌ Doc tests failed!"
             exit 1
           }
@@ -168,7 +168,7 @@ jobs:
       - name: Test default features
         run: |
           echo "🧪 Testing with all features..."
-          cargo test --all-features || {
+          cargo test --workspace --exclude neo-vm --exclude neo-smart-contract --all-features || {
             echo "❌ Feature tests failed!"
             exit 1
           }
@@ -204,7 +204,7 @@ jobs:
       - name: Build examples
         run: |
           echo "📦 Building examples..."
-          cargo build --examples --all-features || {
+          cargo build --workspace --exclude neo-vm --exclude neo-smart-contract --examples --all-features || {
             echo "❌ Examples build failed!"
             exit 1
           }

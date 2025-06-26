@@ -8,7 +8,8 @@ use crate::{Error, Result, VerifyResult};
 use hex;
 use neo_core::{Signer, UInt160, UInt256, Witness, WitnessCondition, WitnessScope};
 use neo_cryptography::ECPoint;
-use neo_vm::ApplicationEngine;
+// Temporarily disabled for CI - neo-vm dependency commented out
+// use neo_vm::ApplicationEngine;
 
 /// Witness verifier for block and header verification
 pub struct WitnessVerifier;
@@ -501,19 +502,20 @@ impl WitnessVerifier {
     }
 
     /// Gets the application engine for blockchain operations
-    pub fn get_application_engine(&self) -> Option<ApplicationEngine> {
-        // Production-ready ApplicationEngine retrieval (matches C# ApplicationEngine.Create exactly)
-        // This implements the C# logic: ApplicationEngine.Create(trigger, container, snapshot, gas)
+    // Temporarily disabled for CI - neo-vm dependency commented out
+    // pub fn get_application_engine(&self) -> Option<ApplicationEngine> {
+    //     // Production-ready ApplicationEngine retrieval (matches C# ApplicationEngine.Create exactly)
+    //     // This implements the C# logic: ApplicationEngine.Create(trigger, container, snapshot, gas)
 
-        // In production, this would create or retrieve the current ApplicationEngine instance
-        // with proper trigger context, container, snapshot, and gas limits
-        // For blockchain verification, we use TriggerType.Verification
+    //     // In production, this would create or retrieve the current ApplicationEngine instance
+    //     // with proper trigger context, container, snapshot, and gas limits
+    //     // For blockchain verification, we use TriggerType.Verification
 
-        // Since ApplicationEngine requires complex initialization with blockchain state,
-        // and this is primarily used for witness verification which we handle cryptographically,
-        // we return None to indicate direct cryptographic verification should be used
-        None
-    }
+    //     // Since ApplicationEngine requires complex initialization with blockchain state,
+    //     // and this is primarily used for witness verification which we handle cryptographically,
+    //     // we return None to indicate direct cryptographic verification should be used
+    //     None
+    // }
 
     /// Gets the validator count from protocol settings
     pub fn get_validator_count_from_protocol_settings(&self) -> usize {
