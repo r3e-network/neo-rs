@@ -4,6 +4,7 @@
 //! discovers peers, and attempts to sync blocks.
 
 use neo_config::{NetworkConfig, NetworkType};
+use neo_core::UInt160;
 use neo_ledger::Blockchain;
 use neo_network::{NodeInfo, P2PNode};
 use neo_persistence::rocksdb::RocksDbStore;
@@ -78,12 +79,7 @@ async fn test_network_connectivity(
     }
 
     // Create node info
-    let node_info = NodeInfo {
-        user_agent: "Neo-Rust-Test/0.1.0".to_string(),
-        protocol_version: 3,
-        network: network_type,
-        port: network_config.port,
-    };
+    let node_info = NodeInfo::new(UInt160::zero(), 0);
 
     // Create temporary storage
     let temp_dir = std::env::temp_dir().join(format!("neo-rs-live-test-{}", network_name));

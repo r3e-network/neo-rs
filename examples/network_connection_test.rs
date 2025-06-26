@@ -7,6 +7,7 @@
 //!   cargo run --example network_connection_test
 
 use neo_config::{NetworkConfig, NetworkType};
+use neo_core::UInt160;
 use neo_ledger::Blockchain;
 use neo_network::{NodeInfo, P2PNode};
 use neo_persistence::rocksdb::RocksDbStore;
@@ -45,12 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         // Create node info
-        let node_info = NodeInfo {
-            user_agent: "Neo-Rust-Test/0.1.0".to_string(),
-            protocol_version: 3,
-            network: network_type,
-            port: network_config.port,
-        };
+        let node_info = NodeInfo::new(UInt160::zero(), 0);
 
         // Create temporary storage
         let temp_dir = std::env::temp_dir().join(format!("neo-rs-test-{}", network_type));
