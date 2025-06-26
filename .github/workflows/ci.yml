@@ -210,45 +210,45 @@ jobs:
           }
           echo "✅ Examples build successful"
 
-  # Documentation deployment (temporarily disabled for debugging)
-  # docs:
-  #   name: Documentation
-  #   runs-on: ubuntu-latest
-  #   if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/jimmy'
-  #   strategy:
-  #     fail-fast: true
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #
-  #     - name: Install Rust toolchain
-  #       uses: dtolnay/rust-toolchain@stable
-  #
-  #     - name: Cache Cargo registry
-  #       uses: actions/cache@v3
-  #       with:
-  #         path: |
-  #           ~/.cargo/registry
-  #           ~/.cargo/git
-  #           target
-  #         key: ${{ runner.os }}-docs-cargo-${{ hashFiles('**/Cargo.lock') }}
-  #
-  #     - name: Install system dependencies
-  #       run: |
-  #         sudo apt-get update
-  #         sudo apt-get install -y librocksdb-dev
-  #
-  #     - name: Build documentation
-  #       run: |
-  #         cargo doc --all-features
-  #         mkdir -p target/doc
-  #         echo '<meta http-equiv=refresh content=0;url=neo_core/index.html>' > target/doc/index.html
-  #
-  #     - name: Deploy to GitHub Pages
-  #       uses: peaceiris/actions-gh-pages@v3
-  #       with:
-  #         github_token: ${{ secrets.GITHUB_TOKEN }}
-  #         publish_dir: ./target/doc
+  # Documentation deployment
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/jimmy'
+    strategy:
+      fail-fast: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-docs-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librocksdb-dev
+
+      - name: Build documentation
+        run: |
+          cargo doc --all-features
+          mkdir -p target/doc
+          echo '<meta http-equiv=refresh content=0;url=neo_core/index.html>' > target/doc/index.html
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/doc
 
   # Final status check
   ci-success:
