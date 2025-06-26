@@ -1,5 +1,5 @@
-# Rustfmt configuration for Neo-RS
-# See https://rust-lang.github.io/rustfmt/ for all options
+# Rustfmt configuration for Neo-RS (Stable Rust only)
+# Only includes stable rustfmt features
 
 # === Basic formatting ===
 edition = "2021"
@@ -9,68 +9,13 @@ tab_spaces = 4
 
 # === Imports ===
 reorder_imports = true
-group_imports = "StdExternalCrate"
-imports_granularity = "Crate"
-merge_imports = true
-
-# === Functions and control flow ===
-fn_single_line = false
-control_brace_style = "AlwaysSameLine"
-brace_style = "SameLineWhere"
-
-# === Expressions ===
-overflow_delimited_expr = true
-combine_control_expr = true
-match_block_trailing_comma = false
-trailing_comma = "Vertical"
-trailing_semicolon = true
 
 # === Types and generics ===
 use_small_heuristics = "Default"
-where_single_line = false
-force_explicit_abi = true
-
-# === Comments and documentation ===
-comment_width = 100
-wrap_comments = true
-format_code_in_doc_comments = true
-normalize_comments = true
-normalize_doc_attributes = true
-
-# === Macro formatting ===
-format_macro_matchers = true
-format_macro_bodies = true
-
-# === String formatting ===
-format_strings = true
 
 # === Advanced options ===
 newline_style = "Unix"
-indent_style = "Block"
-empty_item_single_line = true
-struct_lit_single_line = true
-fn_params_layout = "Tall"
-version = "Two"
 
-# === Specific Neo-RS preferences ===
-# Force multiline for long function signatures
-fn_args_layout = "Tall"
-
-# Consistent array formatting
+# === Neo-RS preferences ===
 array_width = 60
-
-# Chain formatting for builder patterns
 chain_width = 60
-chains_overflow_last = false
-
-# Struct field alignment
-struct_field_align_threshold = 0
-
-# Use block indent for where clauses
-where_style = "Rfc"
-
-# Format generated code
-format_generated_files = true
-
-# Skip formatting for certain file patterns
-skip_children = false

@@ -45,7 +45,9 @@ pub enum CoreError {
     Cryptographic { message: String },
 
     /// Buffer overflow or underflow
-    #[error("Buffer overflow: attempted to read {requested} bytes, but only {available} available")]
+    #[error(
+        "Buffer overflow: attempted to read {requested} bytes, but only {available} available"
+    )]
     BufferOverflow { requested: usize, available: usize },
 
     /// Unexpected end of stream

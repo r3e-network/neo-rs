@@ -3,11 +3,11 @@
 //! This module contains message processing logic for the dBFT consensus engine.
 
 use crate::{
-    ConsensusPayload, Error, Result,
     context::{ConsensusContext, ConsensusPhase},
     messages::{
         ChangeView, Commit, ConsensusMessage, ConsensusMessageData, PrepareRequest, PrepareResponse,
     },
+    ConsensusPayload, Error, Result,
 };
 use std::collections::HashMap;
 use std::sync::Arc;

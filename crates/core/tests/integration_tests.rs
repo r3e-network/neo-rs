@@ -18,14 +18,14 @@ use neo_core::extensions::byte_extensions::ByteExtensions;
 use neo_core::hardfork::{Hardfork, HardforkManager};
 use neo_core::neo_system::{NeoSystem, ProtocolSettings};
 use neo_core::transaction_type::ContainsTransactionType;
-use neo_core::uint160::{UINT160_SIZE, UInt160};
-use neo_core::uint256::{UINT256_SIZE, UInt256};
+use neo_core::uint160::{UInt160, UINT160_SIZE};
+use neo_core::uint256::{UInt256, UINT256_SIZE};
 
 use num_bigint::BigInt;
 
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
 #[test]

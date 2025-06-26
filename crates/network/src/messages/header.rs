@@ -3,7 +3,7 @@
 //! This module provides the correct Neo 3 message format as implemented in the C# Neo source.
 //! Neo 3 uses a 2-byte header (Flags + Command) with variable-length payload encoding.
 
-use super::commands::{MessageCommand, MessageFlags, varlen};
+use super::commands::{varlen, MessageCommand, MessageFlags};
 use crate::{NetworkError, NetworkResult as Result};
 use serde::{Deserialize, Serialize};
 

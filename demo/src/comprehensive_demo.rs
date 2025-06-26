@@ -5,7 +5,7 @@
 
 use neo_core::{Signer, Transaction, UInt160, UInt256, Witness, WitnessScope};
 use neo_cryptography::{ecdsa::ECDsa, hash::sha256};
-use neo_persistence::{CompressionAlgorithm, Storage, StorageKey, storage::StorageConfig};
+use neo_persistence::{storage::StorageConfig, CompressionAlgorithm, Storage, StorageKey};
 use std::time::Instant;
 
 #[tokio::main]

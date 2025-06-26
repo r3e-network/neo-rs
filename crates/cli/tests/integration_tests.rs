@@ -195,11 +195,9 @@ mod integration_tests {
         for plugin_name in &plugin_names {
             // Test plugin name validation
             assert!(!plugin_name.is_empty());
-            assert!(
-                plugin_name
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == '.' || c == '_')
-            );
+            assert!(plugin_name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '.' || c == '_'));
         }
 
         // Test CLI with plugins

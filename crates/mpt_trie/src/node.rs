@@ -254,7 +254,7 @@ impl Node {
                     for i in 0..16 {
                         if let Some(Some(child)) = children.get(i) {
                             result.push(0x01); // Child exists marker
-                            // For child nodes, we use their hash
+                                               // For child nodes, we use their hash
                             let child_hash = child.hash.unwrap_or_default();
                             result.extend_from_slice(child_hash.as_bytes());
                         } else {
@@ -331,7 +331,7 @@ impl Node {
             NodeType::Empty => {
                 // Production-ready Empty node serialization (matches C# Neo exactly)
                 result.push(0x04); // Empty node type marker
-                // No additional data for empty nodes
+                                   // No additional data for empty nodes
             }
         }
 
@@ -640,7 +640,7 @@ mod tests {
         let branch_node = Node::new_branch();
         println!("Branch node size: {}", branch_node.size());
         assert_eq!(branch_node.size(), 21); // 1 + 16 + 4 bytes
-        // Note: branch node size varies based on number of children and value presence
+                                            // Note: branch node size varies based on number of children and value presence
         assert!(branch_node.size() > empty_node.size());
     }
 

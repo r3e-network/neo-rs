@@ -5,5 +5,5 @@
 
 mod error_handling_integration_test;
 mod integration_tests;
-mod protocol_tests;
 mod peer_tests;
+mod protocol_tests;

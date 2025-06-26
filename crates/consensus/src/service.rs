@@ -4,13 +4,13 @@
 //! consensus components and provides a unified interface for consensus operations.
 
 use crate::{
-    BlockIndex, ConsensusConfig, Error, Result, ViewNumber,
     context::{ConsensusContext, ConsensusRound, TimerType},
     dbft::{DbftEngine, DbftEvent},
     messages::{ConsensusMessage, ConsensusMessageType},
     proposal::{MemoryPool, MempoolConfig, ProposalManager},
     recovery::{RecoveryManager, RecoveryReason},
     validators::{ValidatorManager, ValidatorSet},
+    BlockIndex, ConsensusConfig, Error, Result, ViewNumber,
 };
 // TODO: Fix VM imports when VM module is available
 // use neo_vm::{ApplicationEngine, TriggerType, VMState};

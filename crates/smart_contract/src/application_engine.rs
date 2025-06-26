@@ -1987,11 +1987,9 @@ mod additional_tests {
 
         engine.current_script_hash = Some(contract_hash);
 
-        assert!(
-            engine
-                .notify("TestEvent".to_string(), b"test_data".to_vec())
-                .is_ok()
-        );
+        assert!(engine
+            .notify("TestEvent".to_string(), b"test_data".to_vec())
+            .is_ok());
         assert_eq!(engine.notifications().len(), 1);
 
         let notification = &engine.notifications()[0];

@@ -3,7 +3,7 @@
 //! This module provides storage functionality exactly matching C# Neo Storage classes.
 
 use crate::{Error, Result};
-use rocksdb::{DB, Options, Snapshot};
+use rocksdb::{Options, Snapshot, DB};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;

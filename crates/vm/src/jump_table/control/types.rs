@@ -3,8 +3,8 @@
 use crate::{
     call_flags::CallFlags,
     error::{VmError, VmResult},
-    stack_item::StackItem,
     stack_item::stack_item::InteropInterface,
+    stack_item::StackItem,
 };
 use neo_core::{UInt160, UInt256};
 

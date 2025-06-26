@@ -92,18 +92,14 @@ async fn test_wallet_import_export_workflow() {
     let nep2_signature = nep2_account.sign(test_data).await.unwrap();
 
     // Both should be able to verify each other's signatures
-    assert!(
-        wif_account
-            .verify(test_data, &nep2_signature)
-            .await
-            .unwrap()
-    );
-    assert!(
-        nep2_account
-            .verify(test_data, &wif_signature)
-            .await
-            .unwrap()
-    );
+    assert!(wif_account
+        .verify(test_data, &nep2_signature)
+        .await
+        .unwrap());
+    assert!(nep2_account
+        .verify(test_data, &wif_signature)
+        .await
+        .unwrap());
 }
 
 #[tokio::test]

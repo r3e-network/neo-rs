@@ -4,9 +4,9 @@
 //! error conditions, and stack operations.
 
 use neo_vm::{
-    ExecutionEngine, OpCode, Script, TriggerType, VMState, application_engine::ApplicationEngine,
-    evaluation_stack::EvaluationStack, execution_context::ExecutionContext,
-    reference_counter::ReferenceCounter, stack_item::StackItem,
+    application_engine::ApplicationEngine, evaluation_stack::EvaluationStack,
+    execution_context::ExecutionContext, reference_counter::ReferenceCounter,
+    stack_item::StackItem, ExecutionEngine, OpCode, Script, TriggerType, VMState,
 };
 use std::sync::Arc;
 

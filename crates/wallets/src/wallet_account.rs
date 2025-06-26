@@ -3,7 +3,7 @@
 //! This module provides the wallet account trait and functionality,
 //! converted from the C# Neo WalletAccount class (@neo-sharp/src/Neo/Wallets/WalletAccount.cs).
 
-use crate::{Error, Result, contract::Contract, key_pair::KeyPair};
+use crate::{contract::Contract, key_pair::KeyPair, Error, Result};
 use async_trait::async_trait;
 use neo_core::{Signer, Transaction, UInt160, UInt256, Witness};
 use std::sync::Arc;

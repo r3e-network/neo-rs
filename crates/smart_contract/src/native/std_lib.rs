@@ -112,7 +112,7 @@ impl StdLib {
             ));
         }
 
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
         let encoded = general_purpose::STANDARD.encode(&args[0]);
         Ok(encoded.into_bytes())
     }
@@ -128,7 +128,7 @@ impl StdLib {
         let string_data = String::from_utf8(args[0].clone())
             .map_err(|_| Error::NativeContractError("Invalid UTF-8 string".to_string()))?;
 
-        use base64::{Engine as _, engine::general_purpose};
+        use base64::{engine::general_purpose, Engine as _};
         let decoded = general_purpose::STANDARD
             .decode(&string_data)
             .map_err(|_| Error::NativeContractError("Invalid base64 data".to_string()))?;

@@ -13,46 +13,30 @@ fn test_interop_service_creation() {
     let service = InteropService::new();
 
     // Check that standard methods are registered
-    assert!(
-        service
-            .get_method("System.Runtime.Platform".as_bytes())
-            .is_some()
-    );
-    assert!(
-        service
-            .get_method("System.Runtime.GetTrigger".as_bytes())
-            .is_some()
-    );
-    assert!(
-        service
-            .get_method("System.Runtime.GetTime".as_bytes())
-            .is_some()
-    );
-    assert!(
-        service
-            .get_method("System.Runtime.Log".as_bytes())
-            .is_some()
-    );
-    assert!(
-        service
-            .get_method("System.Storage.GetContext".as_bytes())
-            .is_some()
-    );
-    assert!(
-        service
-            .get_method("System.Storage.Get".as_bytes())
-            .is_some()
-    );
-    assert!(
-        service
-            .get_method("System.Storage.Put".as_bytes())
-            .is_some()
-    );
-    assert!(
-        service
-            .get_method("System.Storage.Delete".as_bytes())
-            .is_some()
-    );
+    assert!(service
+        .get_method("System.Runtime.Platform".as_bytes())
+        .is_some());
+    assert!(service
+        .get_method("System.Runtime.GetTrigger".as_bytes())
+        .is_some());
+    assert!(service
+        .get_method("System.Runtime.GetTime".as_bytes())
+        .is_some());
+    assert!(service
+        .get_method("System.Runtime.Log".as_bytes())
+        .is_some());
+    assert!(service
+        .get_method("System.Storage.GetContext".as_bytes())
+        .is_some());
+    assert!(service
+        .get_method("System.Storage.Get".as_bytes())
+        .is_some());
+    assert!(service
+        .get_method("System.Storage.Put".as_bytes())
+        .is_some());
+    assert!(service
+        .get_method("System.Storage.Delete".as_bytes())
+        .is_some());
 }
 
 #[test]

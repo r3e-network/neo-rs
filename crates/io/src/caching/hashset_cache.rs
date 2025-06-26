@@ -328,7 +328,7 @@ mod tests {
 
         // Check that items were copied starting at index 1
         assert_eq!(array[0], 0); // Should be unchanged
-        // array[1] and array[2] should contain the items (order may vary)
+                                 // array[1] and array[2] should contain the items (order may vary)
         let copied_items = &array[1..3];
         assert!(copied_items.contains(&1));
         assert!(copied_items.contains(&2));

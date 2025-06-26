@@ -18,8 +18,8 @@ pub mod verify_result;
 
 // Re-export main types (matches C# Neo structure)
 pub use block::{Block, BlockHeader, Header};
-pub use blockchain::Blockchain;
 pub use blockchain::storage::{Storage, StorageItem, StorageKey};
+pub use blockchain::Blockchain;
 pub use header_cache::HeaderCache;
 pub use mempool::{MemoryPool, MempoolConfig, PooledTransaction};
 pub use verify_result::VerifyResult;

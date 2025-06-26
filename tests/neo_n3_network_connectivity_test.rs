@@ -3,7 +3,7 @@
 //! Comprehensive test to verify the Neo Rust node can connect to and synchronize
 //! with the real Neo N3 MainNet and TestNet networks.
 
-use neo_cli::{CliArgs, args::Network, service::MainService};
+use neo_cli::{args::Network, service::MainService, CliArgs};
 use neo_core::UInt160;
 use neo_network::{NetworkConfig, NodeInfo, P2PConfig, P2PNode, ProtocolVersion};
 use std::time::Duration;

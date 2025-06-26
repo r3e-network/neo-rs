@@ -5,15 +5,15 @@
 
 use crate::{NetworkError, NetworkResult as Result};
 use axum::{
-    Json, Router,
-    extract::{State, WebSocketUpgrade, ws::WebSocket},
+    extract::{ws::WebSocket, State, WebSocketUpgrade},
     response::{IntoResponse, Response},
     routing::{get, post},
+    Json, Router,
 };
 use neo_core::UInt256;
 use neo_ledger::{Block, Blockchain};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::str::FromStr;

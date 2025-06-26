@@ -6,7 +6,7 @@ use crate::{NetworkError, NetworkMessage, NetworkResult as Result, NodeInfo};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     net::TcpListener,
-    sync::{RwLock, broadcast},
+    sync::{broadcast, RwLock},
     task::JoinHandle,
     time::{interval, sleep},
 };

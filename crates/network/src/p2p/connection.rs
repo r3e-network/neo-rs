@@ -327,7 +327,11 @@ impl ConnectionInfo {
 
     /// Gets the connection direction as string
     pub fn direction(&self) -> &'static str {
-        if self.inbound { "Inbound" } else { "Outbound" }
+        if self.inbound {
+            "Inbound"
+        } else {
+            "Outbound"
+        }
     }
 }
 

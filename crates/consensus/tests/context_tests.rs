@@ -540,6 +540,6 @@ mod context_tests {
         // Test phase transitions from invalid states
         context.set_phase(ConsensusPhase::BlockSent);
         context.set_phase(ConsensusPhase::RequestSending); // Invalid transition
-        // Implementation should handle this gracefully
+                                                           // Implementation should handle this gracefully
     }
 }

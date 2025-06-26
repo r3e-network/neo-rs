@@ -4,13 +4,13 @@
 //! converted from the C# Neo NEP6Wallet class (@neo-sharp/src/Neo/Wallets/NEP6/).
 
 use crate::{
-    Error, Result, Version,
     contract::Contract,
     key_pair::KeyPair,
     scrypt_parameters::ScryptParameters,
     wallet::{Wallet, WalletError, WalletResult},
     wallet_account::{StandardWalletAccount, WalletAccount},
     wallet_factory::{IWalletFactory, WalletFactory},
+    Error, Result, Version,
 };
 use async_trait::async_trait;
 use neo_core::{Signer, Transaction, UInt160, UInt256, Witness};

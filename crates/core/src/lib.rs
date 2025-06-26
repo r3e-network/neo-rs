@@ -40,8 +40,8 @@ pub use shutdown::{
 };
 pub use signer::Signer;
 pub use transaction::{
-    HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE, OracleResponseCode, Transaction,
-    TransactionAttribute, TransactionAttributeType,
+    OracleResponseCode, Transaction, TransactionAttribute, TransactionAttributeType, HEADER_SIZE,
+    MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
 };
 pub use transaction_type::ContainsTransactionType;
 pub use uint160::UInt160;

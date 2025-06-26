@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use neo_core::{UInt160, UInt256};
 use neo_extensions::error::{ExtensionError, ExtensionResult};
-use rocksdb::{DB, IteratorMode, Options};
+use rocksdb::{IteratorMode, Options, DB};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;

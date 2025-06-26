@@ -4,7 +4,6 @@
 //! including validator management, block proposals, and consensus state management.
 
 use neo_consensus::{
-    ConsensusConfig, ConsensusService, ConsensusServiceConfig, ConsensusServiceState,
     context::{ConsensusContext, TimerType},
     messages::{
         Commit, ConsensusMessage, ConsensusMessageData, PrepareRequest, PrepareResponse,
@@ -13,6 +12,7 @@ use neo_consensus::{
     proposal::{BlockProposal, ProposalConfig, ProposalManager, TransactionSelectionStrategy},
     recovery::{RecoveryConfig, RecoveryManager, RecoveryReason, RecoveryStatus},
     validators::{Validator, ValidatorManager, ValidatorPerformance, ValidatorSet},
+    ConsensusConfig, ConsensusService, ConsensusServiceConfig, ConsensusServiceState,
 };
 use neo_core::{Signer, Transaction, UInt160, UInt256, Witness, WitnessScope};
 use neo_ledger::{Block, BlockHeader, Blockchain, VerifyResult};

@@ -1,6 +1,6 @@
-use crate::Result;
 use crate::application_engine::ApplicationEngine;
 use crate::native::{NativeContract, NativeMethod};
+use crate::Result;
 use neo_core::UInt160;
 pub struct CryptoLib {
     hash: UInt160,

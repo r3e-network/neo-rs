@@ -10,7 +10,7 @@ use neo_ledger::MemoryPool;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info, warn};
 
 /// Transaction relay events

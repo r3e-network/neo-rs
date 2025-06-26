@@ -9,7 +9,7 @@ use clap::{Arg, Command};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::signal;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info, warn};
 
 use neo_config::{LedgerConfig, NetworkType, RpcServerConfig};

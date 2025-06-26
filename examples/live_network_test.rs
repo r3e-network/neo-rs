@@ -3,15 +3,15 @@
 //! This example connects to the real Neo N3 network (mainnet or testnet),
 //! discovers peers, and attempts to sync blocks.
 
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
-use tracing::{info, warn, error};
-use std::net::{SocketAddr, ToSocketAddrs};
+use tracing::{error, info, warn};
 
-use neo_network::{NetworkServerBuilder, NetworkServerConfig};
-use neo_network::server::NetworkServerEvent;
 use neo_core::UInt160;
 use neo_ledger::{Blockchain, Storage};
+use neo_network::server::NetworkServerEvent;
+use neo_network::{NetworkServerBuilder, NetworkServerConfig};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -50,7 +50,7 @@ async fn test_mainnet_connectivity() -> Result<(), Box<dyn std::error::Error>> {
     // Real Neo N3 MainNet seed nodes
     let seed_nodes = resolve_seed_nodes(&[
         "seed1.neo.org:10333",
-        "seed2.neo.org:10333", 
+        "seed2.neo.org:10333",
         "seed3.neo.org:10333",
         "seed4.neo.org:10333",
         "seed5.neo.org:10333",
@@ -59,10 +59,11 @@ async fn test_mainnet_connectivity() -> Result<(), Box<dyn std::error::Error>> {
         "seed8.neo.org:10333",
         "seed9.neo.org:10333",
         "seed10.neo.org:10333",
-    ]).await;
+    ])
+    .await;
 
     if seed_nodes.is_empty() {
-        return Err("No MainNet seed nodes could be resolved"));
+        return Err("No MainNet seed nodes could be resolved".into());
     }
 
     info!("🌱 Resolved {} MainNet seed nodes", seed_nodes.len());
@@ -91,13 +92,14 @@ async fn test_testnet_connectivity() -> Result<(), Box<dyn std::error::Error>> {
     let seed_nodes = resolve_seed_nodes(&[
         "seed1t5.neo.org:20333",
         "seed2t5.neo.org:20333",
-        "seed3t5.neo.org:20333", 
+        "seed3t5.neo.org:20333",
         "seed4t5.neo.org:20333",
         "seed5t5.neo.org:20333",
-    ]).await;
+    ])
+    .await;
 
     if seed_nodes.is_empty() {
-        return Err("No TestNet seed nodes could be resolved"));
+        return Err("No TestNet seed nodes could be resolved".into());
     }
 
     info!("🌱 Resolved {} TestNet seed nodes", seed_nodes.len());
@@ -116,7 +118,7 @@ async fn test_testnet_connectivity() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn resolve_seed_nodes(hostnames: &[&str]) -> Vec<SocketAddr> {
     let mut resolved = Vec::new();
-    
+
     for hostname in hostnames {
         match timeout(Duration::from_secs(5), resolve_hostname(hostname)).await {
             Ok(Ok(addr)) => {
@@ -131,7 +133,7 @@ async fn resolve_seed_nodes(hostnames: &[&str]) -> Vec<SocketAddr> {
             }
         }
     }
-    
+
     resolved
 }
 
@@ -142,16 +144,19 @@ async fn resolve_hostname(hostname: &str) -> Result<SocketAddr, Box<dyn std::err
             let addrs: Vec<SocketAddr> = hostname.to_socket_addrs()?.collect();
             Ok(addrs)
         }
-    }).await??;
-    
-    addrs.into_iter().find(|addr| addr.is_ipv4())
-        .ok_or_else(|| "No IPv4 address found"))
+    })
+    .await??;
+
+    addrs
+        .into_iter()
+        .find(|addr| addr.is_ipv4())
+        .ok_or_else(|| "No IPv4 address found".into())
 }
 
 async fn test_network_connection(
-    network_name: &str, 
+    network_name: &str,
     config: NetworkServerConfig,
-    seed_nodes: Vec<SocketAddr>
+    seed_nodes: Vec<SocketAddr>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("🚀 Starting {} network test", network_name);
 
@@ -160,7 +165,10 @@ async fn test_network_connection(
     let blockchain = Arc::new(Blockchain::new(storage));
     blockchain.initialize().await?;
 
-    info!("⛓️  Blockchain initialized - Height: {}", blockchain.height().await);
+    info!(
+        "⛓️  Blockchain initialized - Height: {}",
+        blockchain.height().await
+    );
 
     // Create network server
     let server = NetworkServerBuilder::new()
@@ -179,59 +187,70 @@ async fn test_network_connection(
     let start_time = std::time::Instant::now();
     let test_duration = Duration::from_secs(60);
 
-    info!("⏱️  Monitoring network activity for {} seconds...", test_duration.as_secs());
+    info!(
+        "⏱️  Monitoring network activity for {} seconds...",
+        test_duration.as_secs()
+    );
 
     let mut peer_connected = false;
     let mut blocks_synced = false;
 
     while start_time.elapsed() < test_duration {
         match timeout(Duration::from_secs(5), event_receiver.recv()).await {
-            Ok(Ok(event)) => {
-                match event {
-                    NetworkServerEvent::P2P(p2p_event) => {
-                        match p2p_event {
-                            neo_network::P2PEvent::PeerConnected { peer_id, address } => {
-                                info!("🎉 Peer connected: {} ({})", address, peer_id);
-                                peer_connected = true;
-                            }
-                            neo_network::P2PEvent::PeerDisconnected { peer_id, address, reason } => {
-                                info!("👋 Peer disconnected: {} ({}): {}", address, peer_id, reason);
-                            }
-                            neo_network::P2PEvent::MessageReceived { peer_id, message } => {
-                                info!("📨 Message from {}: {:?}", peer_id, message.header.command);
-                            }
-                            _ => {}
-                        }
+            Ok(Ok(event)) => match event {
+                NetworkServerEvent::P2P(p2p_event) => match p2p_event {
+                    neo_network::P2PEvent::PeerConnected { peer_id, address } => {
+                        info!("🎉 Peer connected: {} ({})", address, peer_id);
+                        peer_connected = true;
                     }
-                    NetworkServerEvent::Sync(sync_event) => {
-                        match sync_event {
-                            neo_network::SyncEvent::SyncStarted { target_height } => {
-                                info!("🔄 Block synchronization started - target height: {}", target_height);
-                            }
-                            neo_network::SyncEvent::BlocksProgress { current, target } => {
-                                info!("📦 Block sync progress - Height: {}/{}", current, target);
-                                blocks_synced = true;
-                            }
-                            neo_network::SyncEvent::SyncCompleted { final_height } => {
-                                info!("✅ Synchronization completed at height {}", final_height);
-                                break;
-                            }
-                            _ => {}
-                        }
+                    neo_network::P2PEvent::PeerDisconnected {
+                        peer_id,
+                        address,
+                        reason,
+                    } => {
+                        info!(
+                            "👋 Peer disconnected: {} ({}): {}",
+                            address, peer_id, reason
+                        );
                     }
-                    NetworkServerEvent::StatsUpdated(stats) => {
-                        info!("📊 Stats - Peers: {}, Height: {}/{}", 
-                            stats.peer_count, stats.current_height, stats.best_known_height);
+                    neo_network::P2PEvent::MessageReceived { peer_id, message } => {
+                        info!("📨 Message from {}: {:?}", peer_id, message.header.command);
                     }
                     _ => {}
+                },
+                NetworkServerEvent::Sync(sync_event) => match sync_event {
+                    neo_network::SyncEvent::SyncStarted { target_height } => {
+                        info!(
+                            "🔄 Block synchronization started - target height: {}",
+                            target_height
+                        );
+                    }
+                    neo_network::SyncEvent::BlocksProgress { current, target } => {
+                        info!("📦 Block sync progress - Height: {}/{}", current, target);
+                        blocks_synced = true;
+                    }
+                    neo_network::SyncEvent::SyncCompleted { final_height } => {
+                        info!("✅ Synchronization completed at height {}", final_height);
+                        break;
+                    }
+                    _ => {}
+                },
+                NetworkServerEvent::StatsUpdated(stats) => {
+                    info!(
+                        "📊 Stats - Peers: {}, Height: {}/{}",
+                        stats.peer_count, stats.current_height, stats.best_known_height
+                    );
                 }
-            }
+                _ => {}
+            },
             Ok(Err(_)) => break, // Channel closed
             Err(_) => {
                 // Timeout - check current status
                 let stats = server.stats().await;
-                info!("📊 Status - Peers: {}, Height: {}/{}", 
-                    stats.peer_count, stats.current_height, stats.best_known_height);
+                info!(
+                    "📊 Status - Peers: {}, Height: {}/{}",
+                    stats.peer_count, stats.current_height, stats.best_known_height
+                );
             }
         }
 
@@ -244,15 +263,25 @@ async fn test_network_connection(
     let final_height = blockchain.height().await;
 
     info!("📋 {} Test Results:", network_name);
-    info!("   🔗 Peer connections: {} ({})", 
-        final_stats.peer_count, 
-        if peer_connected { "SUCCESS" } else { "FAILED" });
-    info!("   📦 Block sync: Height {} ({})", 
-        final_height, 
-        if blocks_synced || final_height > 0 { "SUCCESS" } else { "FAILED" });
-    info!("   📊 Data transfer: ↓{}KB ↑{}KB", 
-        final_stats.bytes_received / 1024, 
-        final_stats.bytes_sent / 1024);
+    info!(
+        "   🔗 Peer connections: {} ({})",
+        final_stats.peer_count,
+        if peer_connected { "SUCCESS" } else { "FAILED" }
+    );
+    info!(
+        "   📦 Block sync: Height {} ({})",
+        final_height,
+        if blocks_synced || final_height > 0 {
+            "SUCCESS"
+        } else {
+            "FAILED"
+        }
+    );
+    info!(
+        "   📊 Data transfer: ↓{}KB ↑{}KB",
+        final_stats.bytes_received / 1024,
+        final_stats.bytes_sent / 1024
+    );
 
     // Stop server
     server.stop().await;
@@ -266,4 +295,4 @@ async fn test_network_connection(
         error!("❌ {} connectivity test FAILED", network_name);
         Err(format!("{} connectivity test failed", network_name).into())
     }
-} 
+}

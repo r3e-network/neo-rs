@@ -7,10 +7,10 @@ use neo_core::{Block, BlockHeader, Transaction, UInt160, UInt256};
 use neo_network::NetworkConfig;
 use neo_rpc_client::{RpcClient, RpcClientConfig};
 use neo_rpc_server::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, RpcServer, RpcServerConfig};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::time::{Duration, timeout};
+use tokio::time::{timeout, Duration};
 use tokio_test;
 
 /// Test JSON-RPC server initialization and configuration

@@ -1,22 +1,20 @@
 //! Neo Rust Node - Real Network Connectivity Test
-//! 
+//!
 //! This example demonstrates the Rust Neo node's ability to connect to the real Neo N3 network
 //! using actual IP addresses of known Neo nodes, verify protocol compatibility, and communicate
 //! using the Neo protocol.
 
-use neo_network::{NetworkConfig, P2PNode, P2PEvent, NetworkMessage, ProtocolMessage, MessageType};
 use neo_core::UInt160;
+use neo_network::{MessageType, NetworkConfig, NetworkMessage, P2PEvent, P2PNode, ProtocolMessage};
 use std::net::SocketAddr;
-use std::time::Duration;
-use tokio::time::{timeout, sleep};
 use std::str::FromStr;
+use std::time::Duration;
+use tokio::time::{sleep, timeout};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing for debugging
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .init();
+    tracing_subscriber::fmt().with_env_filter("info").init();
 
     println!("🌐 Neo Rust Node - Live Network Connectivity Test");
     println!("==================================================");
@@ -24,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 1: Protocol Version Compatibility
     test_protocol_compatibility().await;
-    
+
     // Test 2: Message Format Compatibility
     test_message_format().await;
 
@@ -43,40 +41,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn test_protocol_compatibility() {
     println!("🔍 Testing Neo N3 Protocol Compatibility...");
-    
+
     let version = neo_network::ProtocolVersion::current();
     println!("  📋 Protocol Version: {}", version);
     assert_eq!(version.major, 3, "Should use Neo N3 protocol");
-    
+
     // Test compatibility matrix
     let older_patch = neo_network::ProtocolVersion::new(3, 6, 0);
     let older_minor = neo_network::ProtocolVersion::new(3, 5, 1);
     let incompatible = neo_network::ProtocolVersion::new(2, 6, 0);
-    
-    assert!(version.is_compatible(&older_patch), "Should be compatible with same version");
-    assert!(version.is_compatible(&older_minor), "Should be compatible with older minor");
-    assert!(!version.is_compatible(&incompatible), "Should not be compatible with different major");
-    
+
+    assert!(
+        version.is_compatible(&older_patch),
+        "Should be compatible with same version"
+    );
+    assert!(
+        version.is_compatible(&older_minor),
+        "Should be compatible with older minor"
+    );
+    assert!(
+        !version.is_compatible(&incompatible),
+        "Should not be compatible with different major"
+    );
+
     println!("  ✅ Protocol compatibility verified");
 }
 
 async fn test_message_format() {
     println!("📨 Testing Neo N3 Message Format...");
-    
+
     // Create a version message (used in handshake)
     let node_info = neo_network::NodeInfo::new(UInt160::zero(), 100);
     let version_message = ProtocolMessage::version(&node_info, 10333, true);
-    
+
     // Test with mainnet magic
     let mainnet_magic = 0x334f454e; // Neo N3 mainnet magic
     let network_message = NetworkMessage::new(mainnet_magic, version_message);
-    
+
     // Test serialization
     match network_message.to_bytes() {
         Ok(bytes) => {
             println!("  📤 Message serialized: {} bytes", bytes.len());
             assert!(bytes.len() >= 24, "Should have at least 24-byte header");
-            
+
             // Test deserialization
             match NetworkMessage::from_bytes(&bytes) {
                 Ok(deserialized) => {
@@ -97,45 +104,57 @@ async fn test_message_format() {
 
 async fn test_network_config() {
     println!("⚙️  Testing Network Configuration...");
-    
+
     let mainnet = NetworkConfig::default();
     let testnet = NetworkConfig::testnet();
     let private = NetworkConfig::private();
-    
+
     // Verify magic numbers match C# Neo
-    assert_eq!(mainnet.magic, 0x334f454e, "Mainnet magic should match C# Neo");
-    assert_eq!(testnet.magic, 0x3554334e, "Testnet magic should match C# Neo");
-    
+    assert_eq!(
+        mainnet.magic, 0x334f454e,
+        "Mainnet magic should match C# Neo"
+    );
+    assert_eq!(
+        testnet.magic, 0x3554334e,
+        "Testnet magic should match C# Neo"
+    );
+
     println!("  🌐 Mainnet magic: 0x{:08x}", mainnet.magic);
     println!("  🧪 Testnet magic: 0x{:08x}", testnet.magic);
     println!("  🏢 Private magic: 0x{:08x}", private.magic);
-    
+
     // Verify seed nodes
-    println!("  📡 Mainnet seeds: {} configured", mainnet.seed_nodes.len());
-    println!("  📡 Testnet seeds: {} configured", testnet.seed_nodes.len());
-    
+    println!(
+        "  📡 Mainnet seeds: {} configured",
+        mainnet.seed_nodes.len()
+    );
+    println!(
+        "  📡 Testnet seeds: {} configured",
+        testnet.seed_nodes.len()
+    );
+
     assert!(!mainnet.seed_nodes.is_empty(), "Should have mainnet seeds");
     assert!(!testnet.seed_nodes.is_empty(), "Should have testnet seeds");
-    
+
     println!("  ✅ Network configuration verified");
 }
 
 async fn test_real_network_connection() {
     println!("🔗 Testing Real Neo N3 Network Connection...");
-    
+
     // Known Neo N3 node IP addresses (backup if DNS fails)
     let known_nodes = vec![
         // These are example IP addresses - in production you'd use actual Neo node IPs
-        "127.0.0.1:10333",  // Local node (if running)
-        "127.0.0.1:20333",  // Local testnet node (if running)
+        "127.0.0.1:10333", // Local node (if running)
+        "127.0.0.1:20333", // Local testnet node (if running)
     ];
-    
+
     let mut connection_successful = false;
-    
+
     for node_addr in known_nodes {
         if let Ok(addr) = SocketAddr::from_str(node_addr) {
             println!("  🔍 Attempting connection to {}...", addr);
-            
+
             match test_node_connection(addr).await {
                 Ok(()) => {
                     println!("  ✅ Successfully connected to {}", addr);
@@ -148,7 +167,7 @@ async fn test_real_network_connection() {
             }
         }
     }
-    
+
     if !connection_successful {
         println!("  ℹ️  No local nodes running - testing protocol stack instead");
         test_protocol_stack().await;
@@ -158,58 +177,61 @@ async fn test_real_network_connection() {
 async fn test_node_connection(addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
     let config = NetworkConfig::default();
     let node_info = neo_network::NodeInfo::new(UInt160::zero(), 0);
-    
+
     // Create P2P node
     let p2p_node = P2PNode::new(config.p2p_config.clone(), node_info, config.magic);
-    
+
     // Start the node
     p2p_node.start().await?;
-    
+
     // Attempt connection with timeout
-    let connection_result = timeout(
-        Duration::from_secs(5),
-        p2p_node.connect_peer(addr)
-    ).await;
-    
+    let connection_result = timeout(Duration::from_secs(5), p2p_node.connect_peer(addr)).await;
+
     // Stop the node
     p2p_node.stop().await;
-    
+
     match connection_result {
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => Err(e.into()),
-        Err(_) => Err("Connection timeout")),
+        Err(_) => Err("Connection timeout".into()),
     }
 }
 
 async fn test_protocol_stack() {
     println!("  🔧 Testing Protocol Stack Components...");
-    
+
     // Test 1: P2P Node Creation
     let config = NetworkConfig::default();
     let node_info = neo_network::NodeInfo::new(UInt160::zero(), 0);
-    
-    match P2PNode::new(config.p2p_config.clone(), node_info, config.magic).start().await {
+
+    match P2PNode::new(config.p2p_config.clone(), node_info, config.magic)
+        .start()
+        .await
+    {
         Ok(_) => println!("    ✅ P2P node created and started successfully"),
         Err(e) => println!("    ❌ P2P node failed to start: {}", e),
     }
-    
+
     // Test 2: Message Creation
     let ping_msg = NetworkMessage::new(config.magic, ProtocolMessage::ping());
     let pong_msg = NetworkMessage::new(config.magic, ProtocolMessage::pong(12345));
-    
+
     println!("    ✅ Ping/Pong messages created");
-    
+
     // Test 3: Message Serialization
     if let (Ok(ping_bytes), Ok(pong_bytes)) = (ping_msg.to_bytes(), pong_msg.to_bytes()) {
-        println!("    ✅ Message serialization working ({} + {} bytes)", 
-                ping_bytes.len(), pong_bytes.len());
+        println!(
+            "    ✅ Message serialization working ({} + {} bytes)",
+            ping_bytes.len(),
+            pong_bytes.len()
+        );
     }
-    
+
     // Test 4: Node Information
     let info = neo_network::NodeInfo::new(UInt160::zero(), 0);
     println!("    ✅ Node info: {} v{}", info.user_agent, info.version);
     println!("    ✅ Capabilities: {:?}", info.capabilities);
-    
+
     println!("  ✅ Protocol stack verification complete");
 }
 
@@ -223,4 +245,4 @@ mod tests {
         test_message_format().await;
         test_network_config().await;
     }
-} 
+}

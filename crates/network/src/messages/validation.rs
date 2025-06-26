@@ -1047,11 +1047,9 @@ mod tests {
 
         // Verack and GetAddr have no payload, so they should always be valid
         assert!(validator.validate_payload(&ProtocolMessage::Verack).is_ok());
-        assert!(
-            validator
-                .validate_payload(&ProtocolMessage::GetAddr)
-                .is_ok()
-        );
+        assert!(validator
+            .validate_payload(&ProtocolMessage::GetAddr)
+            .is_ok());
     }
 
     #[test]

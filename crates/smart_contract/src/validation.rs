@@ -1053,10 +1053,8 @@ mod tests {
 
         let sender = UInt160::zero();
 
-        assert!(
-            validator
-                .validate_deployment(&nef, &manifest, &sender)
-                .is_ok()
-        );
+        assert!(validator
+            .validate_deployment(&nef, &manifest, &sender)
+            .is_ok());
     }
 }

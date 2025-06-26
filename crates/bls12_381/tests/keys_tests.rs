@@ -4,7 +4,7 @@
 //! Tests are based on the C# BLS12_381.Keys test suite.
 
 use bls12_381::*;
-use rand::{SeedableRng, thread_rng};
+use rand::{thread_rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 #[cfg(test)]

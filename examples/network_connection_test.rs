@@ -7,9 +7,9 @@
 //!   cargo run --example network_connection_test
 
 use neo_cli::{
-    CliArgs,
     args::{LogLevel, Network},
     service::MainService,
+    CliArgs,
 };
 use std::time::Duration;
 use tokio::time::{sleep, timeout};

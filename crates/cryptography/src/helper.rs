@@ -227,7 +227,7 @@ pub fn aes256_encrypt(
     nonce: &[u8],
     associated_data: Option<&[u8]>,
 ) -> Result<Vec<u8>, Error> {
-    use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
+    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
 
     if key.len() != 32 {
         return Err(Error::InvalidKey("Key must be 32 bytes".to_string()));
@@ -276,7 +276,7 @@ pub fn aes256_decrypt(
     key: &[u8],
     associated_data: Option<&[u8]>,
 ) -> Result<Vec<u8>, Error> {
-    use aes_gcm::{Aes256Gcm, KeyInit, Nonce, aead::Aead};
+    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
 
     if key.len() != 32 {
         return Err(Error::InvalidKey("Key must be 32 bytes".to_string()));
@@ -320,9 +320,9 @@ pub fn ecdh_derive_key(
     remote_public_key: &[u8],
 ) -> Result<Vec<u8>, Error> {
     // Use P-256 curve for ECDH (matches C# nistP256)
+    use p256::ecdh::diffie_hellman;
     use p256::PublicKey as P256PublicKey;
     use p256::SecretKey as P256SecretKey;
-    use p256::ecdh::diffie_hellman;
 
     // Parse local private key
     let local_secret = P256SecretKey::from_slice(local_private_key)

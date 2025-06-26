@@ -344,11 +344,9 @@ mod blockchain_tests {
             },
             ..valid_block.clone()
         };
-        assert!(
-            blockchain
-                .validate_consensus_data(&invalid_primary_block)
-                .is_err()
-        );
+        assert!(blockchain
+            .validate_consensus_data(&invalid_primary_block)
+            .is_err());
 
         // Test witness validation
         let no_witness_block = Block {

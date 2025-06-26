@@ -186,11 +186,9 @@ mod tests {
         assert!(StackItem::from_byte_string(vec![1u8]).as_bool().unwrap());
         assert!(!StackItem::from_byte_string(vec![]).as_bool().unwrap());
         assert!(!StackItem::from_byte_string(vec![0u8]).as_bool().unwrap());
-        assert!(
-            StackItem::from_byte_string(vec![0u8, 1u8])
-                .as_bool()
-                .unwrap()
-        );
+        assert!(StackItem::from_byte_string(vec![0u8, 1u8])
+            .as_bool()
+            .unwrap());
 
         // Test buffer values
         assert!(StackItem::Buffer(vec![1u8]).as_bool().unwrap());

@@ -2,7 +2,6 @@
 //!
 //! This module provides the push operation handlers for the Neo VM.
 
-use crate::VMState;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
@@ -10,6 +9,7 @@ use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::StackItem;
+use crate::VMState;
 use num_bigint::BigInt;
 
 /// Registers the push operation handlers.

@@ -7,7 +7,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::env;
 use std::process;
-use tracing::{Level, debug, error, info};
+use tracing::{debug, error, info, Level};
 use tracing_subscriber::filter::EnvFilter;
 
 mod args;

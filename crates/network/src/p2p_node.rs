@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast, mpsc};
-use tokio::time::{Duration, interval};
+use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::time::{interval, Duration};
 use tracing::{debug, error, info, warn};
 
 /// P2P Node capabilities (matches C# Neo.Network.P2P.NodeCapabilityType exactly)
@@ -708,7 +708,7 @@ mod tests {
     use super::*;
     use crate::{MessageCommand, NetworkMessage, ProtocolMessage};
     use std::net::{IpAddr, Ipv4Addr};
-    use tokio::time::{Duration, timeout};
+    use tokio::time::{timeout, Duration};
 
     /// Helper function to create test P2P node
     async fn create_test_node() -> (P2pNode, mpsc::Sender<NetworkCommand>) {

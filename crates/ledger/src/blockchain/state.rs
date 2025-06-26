@@ -1533,7 +1533,8 @@ impl BlockchainState {
         sorted_candidates.sort_by(|a, b| {
             b.vote_count
                 .cmp(&a.vote_count) // Descending order
-                .then_with(|| a.public_key.to_bytes().cmp(&b.public_key.to_bytes())) // Tie-breaker by key
+                .then_with(|| a.public_key.to_bytes().cmp(&b.public_key.to_bytes()))
+            // Tie-breaker by key
         });
 
         // 4. Take top 21 candidates (Neo N3 committee size) - matches C# Take(21) exactly

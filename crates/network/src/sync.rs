@@ -11,7 +11,7 @@ use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{broadcast, RwLock};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
 
@@ -930,7 +930,7 @@ mod tests {
     use crate::{NetworkConfig, P2pNode};
     use neo_ledger::Blockchain;
     use std::sync::Arc;
-    use tokio::time::{Duration, timeout};
+    use tokio::time::{timeout, Duration};
 
     /// Helper function to create test sync manager
     async fn create_test_sync_manager() -> (SyncManager, Arc<Blockchain>, Arc<P2pNode>) {
@@ -1231,7 +1231,7 @@ mod tests {
             stats.current_height = 50;
             stats.best_known_height = 100;
             stats.sync_speed = 5.0; // blocks per second
-            // Should need 50 more blocks at 5 blocks/sec = 10 seconds
+                                    // Should need 50 more blocks at 5 blocks/sec = 10 seconds
             stats.estimated_time_remaining = Some(Duration::from_secs(10));
         }
 

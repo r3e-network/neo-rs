@@ -2,7 +2,7 @@
 //!
 //! This module implements block building functionality exactly matching C# Neo's block construction.
 
-use super::{Block, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK, header::BlockHeader};
+use super::{header::BlockHeader, Block, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::{Error, Result};
 use neo_core::{Transaction, UInt160, UInt256, Witness};
 use neo_cryptography::MerkleTree;

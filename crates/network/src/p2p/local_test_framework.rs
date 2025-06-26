@@ -12,8 +12,8 @@ use neo_ledger::{Block, BlockHeader, Blockchain};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast, mpsc};
-use tokio::time::{Duration, Instant, interval};
+use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::time::{interval, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 /// Test node that simulates a Neo N3 peer

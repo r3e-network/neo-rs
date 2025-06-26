@@ -4,7 +4,7 @@
 //! These benchmarks ensure performance regressions are caught early.
 
 use criterion::{
-    BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
+    black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion, Throughput,
 };
 use neo_core::{Block, Transaction, UInt256};
 use neo_cryptography::{ecdsa::ECDsa, hash::sha256};

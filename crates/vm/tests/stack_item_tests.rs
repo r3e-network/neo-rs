@@ -1,7 +1,7 @@
 //! Integration tests for the Neo VM stack items.
 
-use neo_vm::stack_item::StackItem;
 use neo_vm::stack_item::stack_item_type::StackItemType;
+use neo_vm::stack_item::StackItem;
 use num_bigint::BigInt;
 use std::collections::BTreeMap;
 
