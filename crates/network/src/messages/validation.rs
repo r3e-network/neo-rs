@@ -257,8 +257,8 @@ impl MessageValidator {
         start_height: u32,
         relay: bool,
     ) -> Result<()> {
-        // 1. Validate protocol version
-        if version < MIN_PROTOCOL_VERSION || version > MAX_PROTOCOL_VERSION {
+        // 1. Validate protocol version (version is u32, so always >= 0)
+        if version > MAX_PROTOCOL_VERSION {
             return Err(NetworkError::InvalidMessage {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
                 message_type: "unknown".to_string(),

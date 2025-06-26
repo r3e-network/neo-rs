@@ -305,7 +305,7 @@ required-features = ["full"]
 [[example]]
 name = "network_test"
 path = "examples/network_test.rs"
-required-features = ["network"]
+required-features = ["full"]
 
 
 # Profiles
