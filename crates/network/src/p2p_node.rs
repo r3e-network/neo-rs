@@ -452,6 +452,11 @@ impl P2pNode {
         self.peers.read().await.values().cloned().collect()
     }
 
+    /// Gets connected peer addresses
+    pub async fn get_connected_peer_addresses(&self) -> Vec<SocketAddr> {
+        self.peers.read().await.keys().cloned().collect()
+    }
+
     /// Gets node status (matches C# LocalNode.Status exactly)
     pub async fn get_status(&self) -> NodeStatus {
         *self.status.read().await

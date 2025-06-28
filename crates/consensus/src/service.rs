@@ -14,8 +14,9 @@ use crate::{
 };
 // TODO: Fix VM imports when VM module is available
 // use neo_vm::{ApplicationEngine, TriggerType, VMState};
-use neo_core::UInt160;
-use neo_ledger::Block;
+use async_trait::async_trait;
+use neo_core::{Block, Transaction, UInt160, UInt256};
+use neo_cryptography::ECPoint;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -23,6 +24,40 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
+
+/// Ledger service trait for consensus integration
+#[async_trait]
+pub trait LedgerService {
+    async fn get_block(&self, height: u32) -> Result<Option<Block>>;
+    async fn get_block_by_hash(&self, hash: &UInt256) -> Result<Option<Block>>;
+    async fn get_current_height(&self) -> Result<u32>;
+    async fn add_block(&self, block: Block) -> Result<()>;
+    async fn get_transaction(&self, hash: &UInt256) -> Result<Option<Transaction>>;
+    async fn contains_transaction(&self, hash: &UInt256) -> Result<bool>;
+    async fn get_next_block_validators(&self) -> Result<Vec<ECPoint>>;
+    async fn get_validators(&self, height: u32) -> Result<Vec<ECPoint>>;
+    async fn validate_transaction(&self, transaction: &Transaction) -> Result<bool>;
+}
+
+/// Network service trait for consensus integration
+#[async_trait]
+pub trait NetworkService {
+    async fn broadcast_consensus_message(&self, message: Vec<u8>) -> Result<()>;
+    async fn send_consensus_message(&self, peer_id: &str, message: Vec<u8>) -> Result<()>;
+    async fn get_connected_peers(&self) -> Result<Vec<String>>;
+    async fn is_connected(&self) -> bool;
+}
+
+/// Mempool service trait for consensus integration
+#[async_trait]
+pub trait MempoolService {
+    async fn get_verified_transactions(&self, count: usize) -> Vec<Transaction>;
+    async fn contains_transaction(&self, hash: &UInt256) -> bool;
+    async fn add_transaction(&self, tx: Transaction) -> Result<()>;
+    async fn remove_transaction(&self, hash: &UInt256) -> Result<()>;
+    async fn get_transaction_count(&self) -> usize;
+    async fn clear(&self) -> Result<()>;
+}
 
 /// Consensus service configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,11 +221,11 @@ impl std::fmt::Display for ConsensusServiceState {
 
 /// Simple ledger interface for consensus
 #[derive(Debug)]
-pub struct Ledger {
+pub struct MockLedger {
     height: RwLock<u32>,
 }
 
-impl Ledger {
+impl MockLedger {
     pub fn new() -> Self {
         Self {
             height: RwLock::new(0),
@@ -209,7 +244,7 @@ impl Ledger {
 
 /// Simple network service interface for consensus
 #[derive(Debug)]
-pub struct NetworkService {
+pub struct MockNetworkService {
     /// Network message sender
     message_tx: mpsc::UnboundedSender<ConsensusMessage>,
     /// Connected peers for consensus
@@ -226,7 +261,7 @@ pub struct NetworkStats {
     pub peer_count: usize,
 }
 
-impl NetworkService {
+impl MockNetworkService {
     pub fn new() -> Self {
         let (message_tx, _message_rx) = mpsc::unbounded_channel();
 
@@ -425,9 +460,11 @@ pub struct ConsensusService {
     /// Consensus context
     context: Arc<ConsensusContext>,
     /// Ledger reference
-    ledger: Arc<Ledger>,
+    ledger: Arc<dyn LedgerService + Send + Sync>,
     /// Network service
-    network: Arc<NetworkService>,
+    network: Arc<dyn NetworkService + Send + Sync>,
+    /// Mempool service
+    mempool: Arc<dyn MempoolService + Send + Sync>,
     /// Event broadcaster
     event_tx: broadcast::Sender<ConsensusEvent>,
     /// Message receiver
@@ -445,9 +482,9 @@ impl ConsensusService {
     pub fn new(
         config: ConsensusServiceConfig,
         my_validator_hash: UInt160,
-        ledger: Arc<Ledger>,
-        network: Arc<NetworkService>,
-        mempool: Arc<MemoryPool>,
+        ledger: Arc<dyn LedgerService + Send + Sync>,
+        network: Arc<dyn NetworkService + Send + Sync>,
+        mempool: Arc<dyn MempoolService + Send + Sync>,
     ) -> Self {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
         let (event_tx, _) = broadcast::channel(1000);
@@ -498,6 +535,7 @@ impl ConsensusService {
             context,
             ledger,
             network,
+            mempool,
             event_tx,
             message_rx,
             message_tx,
@@ -614,7 +652,7 @@ impl ConsensusService {
             return Err(Error::NotReady("Service not running".to_string()));
         }
 
-        let current_height = self.ledger.get_height().await?;
+        let current_height = self.ledger.get_current_height().await?;
         let next_block_index = BlockIndex::new(current_height + 1);
 
         info!("Manually producing block {}", next_block_index.value());
@@ -903,7 +941,7 @@ impl ConsensusService {
                 interval.tick().await;
 
                 // Check if we should produce a block
-                if let Ok(current_height) = ledger.get_height().await {
+                if let Ok(current_height) = ledger.get_current_height().await {
                     let next_block_index = BlockIndex::new(current_height + 1);
 
                     if let Err(e) = dbft_engine.start_consensus_round(next_block_index).await {
@@ -1003,9 +1041,9 @@ mod tests {
         let config = ConsensusServiceConfig::default();
         let my_hash = UInt160::zero();
 
-        let ledger = Arc::new(Ledger::new());
+        let ledger = Arc::new(MockLedger::new());
 
-        let network = Arc::new(NetworkService::new());
+        let network = Arc::new(MockNetworkService::new());
 
         let mempool_config = MempoolConfig::default();
         let mempool = Arc::new(MemoryPool::new(mempool_config));

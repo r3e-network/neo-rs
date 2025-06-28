@@ -7,7 +7,8 @@ use crate::application_engine::ApplicationEngine;
 use crate::contract_state::{ContractState, NefFile};
 use crate::manifest::ContractManifest;
 use crate::manifest::ContractPermissionDescriptor;
-use crate::{ContractParameterType, Error, Result};
+use crate::{Error, Result};
+use crate::manifest::contract_abi::ContractParameterType;
 use neo_core::{IVerifiable, Signer, Transaction, UInt160, WitnessScope};
 use std::collections::HashSet;
 

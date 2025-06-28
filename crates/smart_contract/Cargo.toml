@@ -46,6 +46,6 @@ neo-core = { path = "../core" }
 neo-vm = { path = "../vm" }
 neo-cryptography = { path = "../cryptography" }
 neo-io = { path = "../io" }
-neo-ledger = { path = "../ledger" }
+# neo-ledger = { path = "../ledger" } # Removed to fix circular dependency
 
 [dev-dependencies]

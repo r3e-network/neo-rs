@@ -3,10 +3,9 @@
 //! This module provides verification functionality exactly matching C# Neo blockchain verification.
 
 use crate::{BlockHeader, Error, Result};
-use neo_core::{Transaction, Witness};
+use neo_core::{Transaction, UInt160, UInt256, Witness};
 use neo_cryptography::ECPoint;
-// Temporarily disabled for CI - neo-vm dependency commented out
-// use neo_vm::{ApplicationEngine, TriggerType, VMState};
+use neo_vm::{ApplicationEngine, TriggerType, VMState};
 
 /// Block verification result
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,93 +125,89 @@ impl BlockchainVerifier {
     }
 
     /// Verifies transaction witnesses using VM execution
-    /// TEMPORARILY DISABLED FOR CI - neo_vm dependency commented out
-    async fn verify_transaction_witnesses(&self, _transaction: &Transaction) -> Result<()> {
-        // DISABLED FOR CI: VM witness verification temporarily commented out
-        // for (index, witness) in transaction.witnesses().iter().enumerate() {
-        //     if let Err(_) = self.verify_witness(transaction, witness, index).await {
-        //         return Err(Error::Validation(format!(
-        //             "Witness {} verification failed",
-        //             index
-        //         )));
-        //     }
-        // }
+    async fn verify_transaction_witnesses(&self, transaction: &Transaction) -> Result<()> {
+        for (index, witness) in transaction.witnesses().iter().enumerate() {
+            if let Err(_) = self.verify_witness(transaction, witness, index).await {
+                return Err(Error::Validation(format!(
+                    "Witness {} verification failed",
+                    index
+                )));
+            }
+        }
         Ok(())
     }
 
     /// Verifies a single witness
-    /// TEMPORARILY DISABLED FOR CI - neo_vm dependency commented out
     async fn verify_witness(
         &self,
-        _transaction: &Transaction,
-        _witness: &Witness,
+        transaction: &Transaction,
+        witness: &Witness,
         _index: usize,
     ) -> Result<()> {
-        // DISABLED FOR CI: VM witness verification temporarily commented out
         // Create verification script from witness
-        // let verification_script = &witness.verification_script;
-        // if verification_script.is_empty() {
-        //     return Err(Error::Validation("Empty verification script".to_string()));
-        // }
+        let verification_script = &witness.verification_script;
+        if verification_script.is_empty() {
+            return Err(Error::Validation("Empty verification script".to_string()));
+        }
 
         // Set up VM engine for witness verification
-        // let mut engine = ApplicationEngine::new(TriggerType::Verification, self.gas_limit);
+        let mut engine = ApplicationEngine::new(TriggerType::Verification, self.gas_limit);
 
         // Load verification script
-        // let script = neo_vm::Script::new(verification_script.clone(), false)
-        //     .map_err(|_| Error::Validation("Failed to create verification script".to_string()))?;
-        // if let Err(_) = engine.load_script(script, -1, 0) {
-        //     return Err(Error::Validation(
-        //         "Failed to load verification script".to_string(),
-        //     ));
-        // }
+        let script = neo_vm::Script::new(verification_script.clone(), false)
+            .map_err(|_| Error::Validation("Failed to create verification script".to_string()))?;
+        if let Err(_) = engine.load_script(script, -1, 0) {
+            return Err(Error::Validation(
+                "Failed to load verification script".to_string(),
+            ));
+        }
 
         // Load invocation script if present
-        // if !witness.invocation_script.is_empty() {
-        //     let invocation_script = neo_vm::Script::new(witness.invocation_script.clone(), false)
-        //         .map_err(|_| {
-        //         Error::Validation("Failed to create invocation script".to_string())
-        //     })?;
-        //     if let Err(_) = engine.load_script(invocation_script, 0, 0) {
-        //         return Err(Error::Validation(
-        //             "Failed to load invocation script".to_string(),
-        //         ));
-        //     }
-        // }
+        if !witness.invocation_script.is_empty() {
+            let invocation_script = neo_vm::Script::new(witness.invocation_script.clone(), false)
+                .map_err(|_| {
+                Error::Validation("Failed to create invocation script".to_string())
+            })?;
+            if let Err(_) = engine.load_script(invocation_script, 0, 0) {
+                return Err(Error::Validation(
+                    "Failed to load invocation script".to_string(),
+                ));
+            }
+        }
 
         // Set script container (transaction)
-        // engine.set_script_container(transaction.clone());
+        engine.set_script_container(transaction.clone());
 
         // Execute verification
-        // let execution_script = neo_vm::Script::new(verification_script.clone(), false)
-        //     .map_err(|_| Error::Validation("Failed to create execution script".to_string()))?;
-        // match engine.execute(execution_script) {
-        //     VMState::HALT => {
-        //         // Check result stack
-        //         if engine.result_stack().len() == 0 {
-        //             return Err(Error::Validation("Empty result stack".to_string()));
-        //         }
+        let execution_script = neo_vm::Script::new(verification_script.clone(), false)
+            .map_err(|_| Error::Validation("Failed to create execution script".to_string()))?;
+        match engine.execute(execution_script) {
+            VMState::HALT => {
+                // Check result stack
+                if engine.result_stack().len() == 0 {
+                    return Err(Error::Validation("Empty result stack".to_string()));
+                }
 
-        //         // Get first stack item and check if it's true
-        //         match engine.result_stack().peek(0) {
-        //             Ok(result) => {
-        //                 if !result.as_bool().unwrap_or(false) {
-        //                     return Err(Error::Validation(
-        //                         "Verification script returned false".to_string(),
-        //                     ));
-        //                 }
-        //             }
-        //             Err(_) => {
-        //                 return Err(Error::Validation(
-        //                     "Failed to get result from stack".to_string(),
-        //                 ));
-        //             }
-        //         }
-        //     }
-        //     _ => {
-        //         return Err(Error::Validation("VM execution failed".to_string()));
-        //     }
-        // }
+                // Get first stack item and check if it's true
+                match engine.result_stack().peek(0) {
+                    Ok(result) => {
+                        if !result.as_bool().unwrap_or(false) {
+                            return Err(Error::Validation(
+                                "Verification script returned false".to_string(),
+                            ));
+                        }
+                    }
+                    Err(_) => {
+                        return Err(Error::Validation(
+                            "Failed to get result from stack".to_string(),
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(Error::Validation("VM execution failed".to_string()));
+            }
+        }
 
         Ok(())
     }

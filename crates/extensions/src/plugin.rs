@@ -313,10 +313,9 @@ impl PluginManager {
     }
 
     /// Get mutable plugin by name
-    // TODO: Fix lifetime issue - currently commented out to avoid compilation error
-    // pub fn get_plugin_mut(&mut self, name: &str) -> Option<&mut (dyn Plugin + '_)> {
-    //     self.plugins.get_mut(name).map(|p| p.as_mut())
-    // }
+    pub fn get_plugin_mut(&mut self, name: &str) -> Option<&mut Box<dyn Plugin>> {
+        self.plugins.get_mut(name)
+    }
 
     /// List all plugins
     pub fn list_plugins(&self) -> Vec<&PluginInfo> {

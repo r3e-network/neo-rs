@@ -7,8 +7,8 @@ members = [
     "crates/io",
     
     # Blockchain components
-    # "crates/vm", # Temporarily disabled
-    # "crates/smart_contract", # Temporarily disabled
+    "crates/vm",
+    "crates/smart_contract",
     "crates/ledger",
     "crates/consensus",
     
@@ -29,7 +29,7 @@ members = [
     "crates/rpc_client",
     
     # Applications
-    # "crates/cli", # Temporarily disabled due to API mismatches
+    "crates/cli",
     "crates/wallets",
     
     # Node implementations
@@ -207,10 +207,10 @@ neo-config.workspace = true
 neo-ledger.workspace = true
 neo-network.workspace = true
 neo-persistence.workspace = true
-# neo-cli.workspace = true # Temporarily disabled
-# neo-cryptography.workspace = true # Temporarily disabled
-# neo-smart-contract.workspace = true # Temporarily disabled
-# neo-vm.workspace = true # Temporarily disabled
+# neo-cli.workspace = true
+neo-cryptography.workspace = true
+neo-smart-contract.workspace = true
+neo-vm.workspace = true
 
 # Runtime and async
 tokio.workspace = true

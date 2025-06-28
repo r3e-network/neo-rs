@@ -20,8 +20,7 @@ use crate::native::{NativeContract, NativeRegistry};
 use crate::performance::PerformanceProfiler;
 use crate::storage::{StorageItem, StorageKey};
 use crate::{Error, Result};
-use neo_core::{IVerifiable, Transaction, UInt160, UInt256};
-use neo_ledger::Block;
+use neo_core::{Block, IVerifiable, Transaction, UInt160, UInt256};
 use neo_vm::call_flags::CallFlags;
 use neo_vm::{
     ApplicationEngine as VmApplicationEngine, ExecutionContext, Script, TriggerType, VMState,

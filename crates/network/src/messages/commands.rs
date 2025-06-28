@@ -55,6 +55,8 @@ pub enum MessageCommand {
     MerkleBlock = 0x38,
     /// Alert (0x40)
     Alert = 0x40,
+    /// Consensus (0x41)
+    Consensus = 0x41,
     /// Unknown/Undocumented command (0xbe) - seen in some peer implementations
     Unknown = 0xbe,
     /// Version with payload (0x55) - peer version with user agent
@@ -93,6 +95,7 @@ impl MessageCommand {
             0x32 => Ok(Self::FilterClear),
             0x38 => Ok(Self::MerkleBlock),
             0x40 => Ok(Self::Alert),
+            0x41 => Ok(Self::Consensus),
             0x55 => Ok(Self::VersionWithPayload),
             0xbe => Ok(Self::Unknown),
             _ => Err(crate::NetworkError::ProtocolViolation {
@@ -128,6 +131,7 @@ impl MessageCommand {
             "filterclear" => Ok(Self::FilterClear),
             "merkleblock" => Ok(Self::MerkleBlock),
             "alert" => Ok(Self::Alert),
+            "consensus" => Ok(Self::Consensus),
             "versionwithpayload" => Ok(Self::VersionWithPayload),
             "unknown" => Ok(Self::Unknown),
             _ => Err(crate::NetworkError::ProtocolViolation {
@@ -163,6 +167,7 @@ impl MessageCommand {
             Self::FilterClear => "filterclear",
             Self::MerkleBlock => "merkleblock",
             Self::Alert => "alert",
+            Self::Consensus => "consensus",
             Self::VersionWithPayload => "versionwithpayload",
             Self::Unknown => "unknown",
         }

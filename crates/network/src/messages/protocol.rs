@@ -111,6 +111,9 @@ pub enum ProtocolMessage {
         payload: Vec<u8>,
         signature: Vec<u8>,
     },
+
+    /// Consensus message
+    Consensus { payload: Vec<u8> },
 }
 
 impl ProtocolMessage {
@@ -140,6 +143,7 @@ impl ProtocolMessage {
             ProtocolMessage::FilterClear => MessageCommand::Reject, // Temporarily map to Reject
             ProtocolMessage::MerkleBlock { .. } => MessageCommand::Reject, // Temporarily map to Reject
             ProtocolMessage::Alert { .. } => MessageCommand::Reject, // Temporarily map to Reject
+            ProtocolMessage::Consensus { .. } => MessageCommand::Consensus,
         }
     }
 
@@ -337,6 +341,10 @@ impl ProtocolMessage {
                 writer.write_var_bytes(payload)?;
                 writer.write_var_bytes(signature)?;
             }
+
+            ProtocolMessage::Consensus { payload } => {
+                writer.write_var_bytes(payload)?;
+            }
         }
 
         Ok(writer.to_bytes())
@@ -430,6 +438,12 @@ impl ProtocolMessage {
             }
 
             cmd if *cmd == MessageCommand::Mempool => Ok(ProtocolMessage::Mempool),
+            
+            cmd if *cmd == MessageCommand::Consensus => {
+                let payload = reader.read_var_bytes(65536)?; // 64KB max for consensus messages
+                Ok(ProtocolMessage::Consensus { payload })
+            }
+
             // cmd if *cmd == MessageCommand::FilterClear => Ok(ProtocolMessage::FilterClear),
             _ => Err(NetworkError::ProtocolViolation {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
