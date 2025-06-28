@@ -31,7 +31,10 @@ pub use messages::{
 };
 pub use proposal::{BlockProposal, ProposalConfig, ProposalManager, ProposalStats};
 pub use recovery::{RecoveryConfig, RecoveryManager, RecoveryStats};
-pub use service::{ConsensusEvent, ConsensusService, ConsensusServiceConfig, ConsensusStats};
+pub use service::{
+    ConsensusEvent, ConsensusService, ConsensusServiceConfig, ConsensusStats, LedgerService,
+    MempoolService, NetworkService,
+};
 pub use validators::{Validator, ValidatorConfig, ValidatorManager, ValidatorSet, ValidatorStats};
 
 use neo_core::{UInt160, UInt256};

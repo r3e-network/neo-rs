@@ -11,7 +11,8 @@ pub use neo_core::{
 pub use neo_cryptography::ECPoint;
 pub use neo_vm::{ApplicationEngine, TriggerType};
 // Import types from ledger that are needed
-pub use neo_ledger::blockchain::state::{ContractParameterType, PermissionContract};
+// TODO: Move these types to neo-core to avoid circular dependency
+// pub use neo_ledger::blockchain::state::{ContractParameterType, PermissionContract};
 
 pub mod application_engine;
 pub mod contract_state;

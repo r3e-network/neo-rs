@@ -41,10 +41,10 @@ rocksdb = "0.21"
 neo-core = { path = "../core" }
 neo-cryptography = { path = "../cryptography" }
 neo-io = { path = "../io" }
-# neo-vm = { path = "../vm" } # Temporarily disabled for CI
+neo-vm = { path = "../vm" }
 neo-config = { path = "../config" }
 neo-persistence = { path = "../persistence" }
-# neo-smart-contract = { path = "../smart_contract" } # Circular dependency
+# neo-smart-contract = { path = "../smart_contract" } # Removed to fix circular dependency
 
 [dev-dependencies]
 tokio-test = "0.4"

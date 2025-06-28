@@ -9,7 +9,7 @@ authors = ["Neo Rust Team"]
 [dependencies]
 # Neo crates
 neo-core = { path = "../core" }
-# neo-vm = { path = "../vm" } # Temporarily disabled for CI
+neo-vm = { path = "../vm" }
 neo-ledger = { path = "../ledger" }
 neo-extensions = { path = "../extensions" }
 neo-io = { path = "../io" }

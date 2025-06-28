@@ -10,7 +10,7 @@ repository = "https://github.com/neo-project/neo-rs"
 # Internal crates
 neo-core = { workspace = true }
 neo-io = { workspace = true }
-# neo-vm = { workspace = true } # Temporarily disabled for CI
+neo-vm = { workspace = true }
 
 # External dependencies
 serde = { workspace = true }

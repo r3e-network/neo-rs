@@ -15,6 +15,7 @@
 
 // Module declarations
 pub mod big_decimal;
+pub mod block;
 pub mod builders;
 pub mod error;
 pub mod events;
@@ -33,6 +34,7 @@ pub mod witness_scope;
 
 // Re-exports
 pub use big_decimal::BigDecimal;
+pub use block::{Block, BlockHeader};
 pub use error::{CoreError, CoreResult, Result};
 pub use neo_system::NeoSystem;
 pub use shutdown::{
