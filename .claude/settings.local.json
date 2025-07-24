@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(cargo check:*)",
+      "Bash(rustup:*)",
+      "Bash(grep:*)",
+      "Bash(cargo test:*)",
+      "Bash(timeout 60 cargo test --package neo-vm test_interop_service -- --nocapture)",
+      "Bash(cargo build:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}

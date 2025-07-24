@@ -4,19 +4,24 @@
 //! It provides a complete implementation that can connect to the Neo N3 network,
 //! sync blocks, process transactions, and participate in consensus.
 
+mod constants;
+
 use anyhow::{Context, Result};
 use clap::{Arg, Command};
+use hex;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::signal;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info, warn};
-use hex;
 
 use neo_config::{LedgerConfig, NetworkType, RpcServerConfig};
 use neo_consensus::ConsensusServiceConfig;
 use neo_core::{ShutdownCoordinator, UInt160};
-use neo_cryptography::{hash::{Hash160, HashFunction}, ecc::generate_public_key};
+use neo_cryptography::{
+    ecc::generate_public_key,
+    hash::{Hash160, HashFunction},
+};
 use neo_ledger::{Blockchain, Ledger};
 use neo_network::{NetworkCommand, P2pNode, SyncManager, TransactionRelay, TransactionRelayConfig};
 use neo_persistence::RocksDbStore;
@@ -36,77 +41,33 @@ mod vm_integration;
 /// Enhance network configuration with additional seed nodes and optimizations
 fn enhance_seed_nodes(config: &mut neo_network::NetworkConfig, is_testnet: bool, is_mainnet: bool) {
     use std::net::SocketAddr;
-    
+
     if is_mainnet {
-        // Add additional mainnet seed nodes from community and ecosystem
-        let additional_seeds = vec![
-            // Neo Global Development community nodes
-            "seed1.neo.org:10333",
-            "seed2.neo.org:10333", 
-            "seed3.neo.org:10333",
-            "seed4.neo.org:10333",
-            "seed5.neo.org:10333",
-            // AxLabs seed nodes
-            "nodes.siderite.axlabs.net:10333",
-            // Red4Sec seed nodes  
-            "mainnet1.neo.red4sec.com:10333",
-            "mainnet2.neo.red4sec.com:10333",
-        ];
-        
-        for seed_str in additional_seeds {
-            if let Ok(addr) = seed_str.parse::<SocketAddr>() {
-                if !config.seed_nodes.contains(&addr) {
-                    config.seed_nodes.push(addr);
-                }
-            }
-        }
-        
-        // Optimize mainnet configuration for production
+        // Use mainnet configuration with optimized settings for production
         config.max_outbound_connections = 16;
         config.max_inbound_connections = 50;
         config.connection_timeout = 15; // Faster timeouts for mainnet
-        
     } else if is_testnet {
-        // Add additional testnet seed nodes
-        let additional_seeds = vec![
-            // Neo Global Development testnet nodes
-            "seed1t5.neo.org:20333",
-            "seed2t5.neo.org:20333",
-            "seed3t5.neo.org:20333", 
-            "seed4t5.neo.org:20333",
-            "seed5t5.neo.org:20333",
-            // Community testnet nodes
-            "testnet1.neo.red4sec.com:20333",
-            "testnet2.neo.red4sec.com:20333",
-        ];
-        
-        for seed_str in additional_seeds {
-            if let Ok(addr) = seed_str.parse::<SocketAddr>() {
-                if !config.seed_nodes.contains(&addr) {
-                    config.seed_nodes.push(addr);
-                }
-            }
-        }
-        
-        // Optimize testnet configuration for development
+        // Use testnet configuration with optimized settings for development
         config.max_outbound_connections = 12;
         config.max_inbound_connections = 30;
         config.connection_timeout = 20;
-        
     } else {
         // Private network - keep minimal configuration
         config.max_outbound_connections = 5;
         config.max_inbound_connections = 10;
         config.connection_timeout = 30;
     }
-    
+
     // Apply common optimizations
     config.handshake_timeout = 15; // Reasonable handshake timeout
     config.ping_interval = 25; // Regular ping to maintain connections
-    
-    tracing::info!("Enhanced network config with {} seed nodes", config.seed_nodes.len());
-}
 
+    tracing::info!(
+        "Enhanced network config with {} seed nodes",
+        config.seed_nodes.len()
+    );
+}
 
 /// Enhanced network health monitoring and diagnostics
 async fn check_network_health(
@@ -115,78 +76,106 @@ async fn check_network_health(
     sync_stats: &neo_network::sync::SyncStats,
     blocks_gained: u32,
 ) {
-    use tracing::{warn, error, info};
-    
+    use tracing::{error, info, warn};
+
     // Peer connectivity health checks
     if p2p_stats.peer_count == 0 {
         error!("🔴 CRITICAL: No peers connected! Node is isolated from network.");
         error!("   Try restarting the node or check firewall settings.");
     } else if p2p_stats.peer_count < 3 {
-        warn!("⚠️  Low peer count: {} peers. Recommended minimum: 3", p2p_stats.peer_count);
+        warn!(
+            "⚠️  Low peer count: {} peers. Recommended minimum: 3",
+            p2p_stats.peer_count
+        );
         warn!("   Node may have connectivity issues or be behind NAT/firewall.");
     } else if p2p_stats.peer_count < 8 {
-        info!("🟡 Moderate peer count: {} peers. Optimal range: 8-16", p2p_stats.peer_count);
+        info!(
+            "🟡 Moderate peer count: {} peers. Optimal range: 8-16",
+            p2p_stats.peer_count
+        );
     }
-    
+
     // Connection quality checks
     if p2p_stats.outbound_connections == 0 && p2p_stats.peer_count > 0 {
         warn!("⚠️  No outbound connections. All peers are inbound only.");
         warn!("   Node may not be able to discover new peers effectively.");
     }
-    
+
     let connection_ratio = if p2p_stats.peer_count > 0 {
         p2p_stats.outbound_connections as f32 / p2p_stats.peer_count as f32
     } else {
         0.0
     };
-    
+
     if connection_ratio < 0.3 && p2p_stats.peer_count >= 5 {
-        warn!("⚠️  Low outbound connection ratio: {:.1}%", connection_ratio * 100.0);
+        warn!(
+            "⚠️  Low outbound connection ratio: {:.1}%",
+            connection_ratio * 100.0
+        );
         warn!("   Consider checking outbound network connectivity.");
     }
-    
+
     // Synchronization health checks
     if sync_health.health_score < 30.0 {
-        error!("🔴 CRITICAL: Sync health critically low: {:.1}%", sync_health.health_score);
+        error!(
+            "🔴 CRITICAL: Sync health critically low: {:.1}%",
+            sync_health.health_score
+        );
         error!("   Node may be unable to synchronize with the network.");
     } else if sync_health.health_score < 50.0 {
-        warn!("⚠️  Sync health low: {:.1}%. Check network connectivity.", sync_health.health_score);
+        warn!(
+            "⚠️  Sync health low: {:.1}%. Check network connectivity.",
+            sync_health.health_score
+        );
     } else if sync_health.health_score < 80.0 {
-        info!("🟡 Sync health moderate: {:.1}%. Monitor for improvements.", sync_health.health_score);
+        info!(
+            "🟡 Sync health moderate: {:.1}%. Monitor for improvements.",
+            sync_health.health_score
+        );
     }
-    
+
     // Block synchronization checks
-    if sync_stats.current_height > 0 && blocks_gained == 0 && 
-       sync_stats.state != neo_network::sync::SyncState::Synchronized {
+    if sync_stats.current_height > 0
+        && blocks_gained == 0
+        && sync_stats.state != neo_network::sync::SyncState::Synchronized
+    {
         warn!("⚠️  No new blocks in 30 seconds. Sync may be stalled.");
-        
+
         if sync_stats.pending_requests == 0 {
             warn!("   No pending sync requests. Sync process may be stuck.");
         } else if sync_stats.pending_requests > 50 {
-            warn!("   High pending requests: {}. Network may be slow.", sync_stats.pending_requests);
+            warn!(
+                "   High pending requests: {}. Network may be slow.",
+                sync_stats.pending_requests
+            );
         }
     }
-    
-    // Data transfer health checks  
+
+    // Data transfer health checks
     let bytes_per_second = p2p_stats.bytes_received / p2p_stats.uptime_seconds.max(1);
     if bytes_per_second < 100 && p2p_stats.peer_count > 0 {
         warn!("⚠️  Low data transfer rate: {} bytes/sec", bytes_per_second);
         warn!("   Network may be congested or peers may be slow.");
     }
-    
+
     // Message activity checks
     let messages_per_second = p2p_stats.messages_received / p2p_stats.uptime_seconds.max(1);
     if messages_per_second < 1 && p2p_stats.peer_count > 2 {
         warn!("⚠️  Low message activity: {} msgs/sec", messages_per_second);
         warn!("   Peers may not be sending protocol messages.");
     }
-    
+
     // Positive health indicators
-    if p2p_stats.peer_count >= 8 && sync_health.health_score >= 90.0 && 
-       sync_stats.state == neo_network::sync::SyncState::Synchronized {
-        if p2p_stats.uptime_seconds > 300 && p2p_stats.uptime_seconds % 1800 == 0 { // Every 30 min
-            info!("✅ Network health excellent: {} peers, {:.1}% sync health", 
-                  p2p_stats.peer_count, sync_health.health_score);
+    if p2p_stats.peer_count >= 8
+        && sync_health.health_score >= 90.0
+        && sync_stats.state == neo_network::sync::SyncState::Synchronized
+    {
+        if p2p_stats.uptime_seconds > 300 && p2p_stats.uptime_seconds % 1800 == 0 {
+            // Every 30 min
+            info!(
+                "✅ Network health excellent: {} peers, {:.1}% sync health",
+                p2p_stats.peer_count, sync_health.health_score
+            );
         }
     }
 }
@@ -309,9 +298,9 @@ async fn run_node(
     custom_data_path: Option<String>,
 ) -> Result<()> {
     // Initialize error handler
-    use error_handler::{ErrorHandler, ErrorCategory, ErrorSeverity};
+    use error_handler::{ErrorCategory, ErrorHandler, ErrorSeverity};
     let error_handler = Arc::new(ErrorHandler::new());
-    
+
     // Initialize shutdown coordinator
     let shutdown_coordinator = Arc::new(ShutdownCoordinator::new());
 
@@ -324,17 +313,17 @@ async fn run_node(
     } else {
         NetworkType::Private
     };
-    
+
     // Initialize storage configuration
     info!("💾 Initializing blockchain storage...");
     use storage_config::StorageConfig;
-    
+
     let mut storage_config = if let Some(custom_path) = custom_data_path {
         StorageConfig::new(std::path::PathBuf::from(custom_path))
     } else {
         StorageConfig::default()
     };
-    
+
     // Optimize storage for network type
     match network_type {
         NetworkType::MainNet => {
@@ -351,39 +340,44 @@ async fn run_node(
             storage_config.write_buffer_size_mb = 32;
         }
     }
-    
+
     // Validate and create storage directories
-    storage_config.validate()
+    storage_config
+        .validate()
         .context("Storage configuration validation failed")?;
-    
-    let storage_path = storage_config.create_directories(network_type)
+
+    let storage_path = storage_config
+        .create_directories(network_type)
         .context("Failed to create storage directories")?;
-    
+
     info!("{}", storage_config.info());
     info!("📂 Blockchain storage path: {:?}", storage_path);
-    
+
     let blockchain_storage = match RocksDbStore::new(storage_path.to_str().unwrap()) {
         Ok(store) => Arc::new(store),
         Err(e) => {
             error!("Failed to create blockchain storage: {}", e);
-            
+
             // Try to handle storage error
             let storage_error = storage_error_handler::StorageError::DatabaseLocked {
                 path: storage_path.to_string_lossy().to_string(),
             };
-            
+
             storage_error_handler::handle_storage_error(
                 storage_error,
                 &storage_path,
                 error_handler.clone(),
-            ).await?;
-            
+            )
+            .await?;
+
             // Retry once after error handling
-            Arc::new(RocksDbStore::new(storage_path.to_str().unwrap())
-                .context("Failed to create blockchain storage after recovery")?)
+            Arc::new(
+                RocksDbStore::new(storage_path.to_str().unwrap())
+                    .context("Failed to create blockchain storage after recovery")?,
+            )
         }
     };
-    
+
     let blockchain = match Blockchain::new(network_type).await {
         Ok(blockchain) => {
             info!("✅ Blockchain initialized successfully");
@@ -392,15 +386,17 @@ async fn run_node(
         Err(e) => {
             error!("❌ Blockchain initialization failed: {}", e);
             error!("❌ Error details: {:?}", e);
-            
+
             // Handle critical blockchain initialization error
-            let action = error_handler.handle_error(
-                anyhow::anyhow!("Blockchain initialization failed: {}", e),
-                ErrorCategory::Storage,
-                ErrorSeverity::Critical,
-                "blockchain_init"
-            ).await?;
-            
+            let action = error_handler
+                .handle_error(
+                    anyhow::anyhow!("Blockchain initialization failed: {}", e),
+                    ErrorCategory::Storage,
+                    ErrorSeverity::Critical,
+                    "blockchain_init",
+                )
+                .await?;
+
             match action {
                 error_handler::RecoveryAction::Shutdown => {
                     return Err(anyhow::anyhow!("Failed to initialize blockchain: {}", e));
@@ -424,15 +420,18 @@ async fn run_node(
     // Update network config with user settings
     network_config.port = p2p_port;
     network_config.listen_address = format!("0.0.0.0:{}", p2p_port).parse().unwrap();
-    
+
     // Enhanced peer discovery - add additional well-known seed nodes
     enhance_seed_nodes(&mut network_config, is_testnet, is_mainnet);
-    
+
     info!("🔍 Network configuration:");
     info!("├─ Magic: 0x{:08x}", network_config.magic);
     info!("├─ Listen Address: {}", network_config.listen_address);
     info!("├─ Max Peers: {}", network_config.max_peers);
-    info!("├─ Seed Nodes: {} configured", network_config.seed_nodes.len());
+    info!(
+        "├─ Seed Nodes: {} configured",
+        network_config.seed_nodes.len()
+    );
     for (i, seed) in network_config.seed_nodes.iter().enumerate() {
         info!("│  └─ Seed {}: {}", i + 1, seed);
     }
@@ -449,10 +448,10 @@ async fn run_node(
         network_type,
         Some(500), // Track up to 500 peers
     ));
-    
+
     // Start peer management background tasks
     peer_manager.start_background_tasks().await;
-    
+
     info!("✅ Advanced peer management initialized");
 
     // Initialize P2P node
@@ -485,7 +484,7 @@ async fn run_node(
                     // Convert to array
                     let mut key_array = [0u8; 32];
                     key_array.copy_from_slice(&private_key_bytes);
-                    
+
                     // Generate public key from private key
                     match generate_public_key(&key_array) {
                         Ok(public_key) => {
@@ -494,7 +493,7 @@ async fn run_node(
                             script.extend_from_slice(&public_key);
                             script.push(0x41); // SYSCALL
                             script.extend_from_slice(&[0x9b, 0xf6, 0x67, 0xee]); // CheckSig interop hash
-                            
+
                             // Calculate script hash using Hash160
                             let hash160_hasher = Hash160;
                             let script_hash_bytes = hash160_hasher.hash(&script);
@@ -511,7 +510,9 @@ async fn run_node(
                 }
                 Ok(_) => {
                     error!("Invalid validator key length: expected 32 bytes");
-                    return Err(anyhow::anyhow!("Invalid validator key length: expected 32 bytes"));
+                    return Err(anyhow::anyhow!(
+                        "Invalid validator key length: expected 32 bytes"
+                    ));
                 }
                 Err(e) => {
                     error!("Invalid validator key hex format: {}", e);
@@ -539,10 +540,12 @@ async fn run_node(
         ));
 
         // Create real ledger adapter that uses the blockchain with native contracts
-        let consensus_ledger = Arc::new(consensus_integration::ConsensusLedgerAdapter::new_with_native_contracts(
-            blockchain.clone(),
-            native_contracts,
-        ));
+        let consensus_ledger = Arc::new(
+            consensus_integration::ConsensusLedgerAdapter::new_with_native_contracts(
+                blockchain.clone(),
+                native_contracts,
+            ),
+        );
 
         // Use the unified mempool (shared with ledger)
         let consensus_mempool = Arc::new(consensus_integration::UnifiedMempool::new(
@@ -649,14 +652,14 @@ async fn run_node(
 
     // Setup monitoring and status reporting
     let monitoring_handle = start_monitoring(
-        blockchain.clone(), 
-        p2p_node.clone(), 
+        blockchain.clone(),
+        p2p_node.clone(),
         sync_manager.clone(),
         peer_manager.clone(),
         error_handler.clone(),
         storage_path.to_path_buf(),
     );
-    
+
     // Start error monitoring tasks
     let network_monitor_handle = {
         let p2p = p2p_node.clone();
@@ -666,7 +669,7 @@ async fn run_node(
             network_error_handler::monitor_network_health(p2p, sync, err_handler).await;
         })
     };
-    
+
     let storage_monitor_handle = {
         let path = storage_path.to_path_buf();
         let err_handler = error_handler.clone();
@@ -674,7 +677,7 @@ async fn run_node(
             storage_error_handler::monitor_storage_health(&path, err_handler).await;
         })
     };
-    
+
     let backup_task_handle = {
         let path = storage_path.to_path_buf();
         tokio::spawn(async move {
@@ -804,13 +807,21 @@ fn start_monitoring(
             );
             info!("│  └─ Pending: {} requests", sync_stats.pending_requests);
             info!("├─ Peer Management:");
-            info!("│  ├─ Tracked: {} peers (avg reliability: {:.1}%)", 
-                  peer_stats.total_peers, peer_stats.avg_reliability * 100.0);
-            info!("│  ├─ Quality: {} high-quality, {} banned", 
-                  peer_stats.high_quality_peers, peer_stats.banned_peers);
-            info!("│  ├─ Recent: {} connected in last 5min", peer_stats.connected_recently);
+            info!(
+                "│  ├─ Tracked: {} peers (avg reliability: {:.1}%)",
+                peer_stats.total_peers,
+                peer_stats.avg_reliability * 100.0
+            );
+            info!(
+                "│  ├─ Quality: {} high-quality, {} banned",
+                peer_stats.high_quality_peers, peer_stats.banned_peers
+            );
+            info!(
+                "│  ├─ Recent: {} connected in last 5min",
+                peer_stats.connected_recently
+            );
             info!("│  └─ Seeds: {} configured", peer_stats.seed_nodes);
-            
+
             // Error statistics
             let error_stats = error_handler.get_error_stats().await;
             if error_stats.total_errors > 0 {
@@ -819,12 +830,14 @@ fn start_monitoring(
                 info!("│  ├─ Error Rate: {:.2}/hour", error_stats.errors_per_hour);
                 for cat_stat in &error_stats.stats_by_category {
                     if cat_stat.total_errors > 0 {
-                        info!("│  ├─ {:?}: {} errors ({} recent)", 
-                              cat_stat.category, cat_stat.total_errors, cat_stat.recent_errors);
+                        info!(
+                            "│  ├─ {:?}: {} errors ({} recent)",
+                            cat_stat.category, cat_stat.total_errors, cat_stat.recent_errors
+                        );
                     }
                 }
             }
-            
+
             info!("└─ Uptime: {}s", p2p_stats.uptime_seconds);
 
             // Enhanced network health checks

@@ -3,9 +3,10 @@
 //! This module provides comprehensive peer connection management that exactly matches
 //! the C# Neo peer management functionality for real P2P connections.
 
+use crate::p2p_node::PeerInfo;
 use crate::{
     MessageValidator, NetworkConfig, NetworkError, NetworkErrorHandler, NetworkMessage,
-    NetworkResult, NetworkResult as Result, NodeCapability, PeerInfo,
+    NetworkResult, NetworkResult as Result, NodeCapability,
 };
 use neo_core::{UInt160, UInt256};
 use std::collections::HashMap;
@@ -451,10 +452,50 @@ impl PeerManager {
 
     // ===== Private helper methods =====
 
-    /// Starts accepting incoming connections (original placeholder)
+    /// Handles an incoming TCP connection and returns peer info (public wrapper)
+    pub async fn accept_incoming_connection(
+        &self,
+        stream: TcpStream,
+        address: SocketAddr,
+    ) -> Result<PeerInfo> {
+        // Set timeouts on the stream
+        stream.set_nodelay(true)?;
+
+        // Use the existing private implementation
+        Self::handle_incoming_connection(
+            stream,
+            address,
+            self.peers.clone(),
+            self.event_sender.clone(),
+            self.config.clone(),
+            self.connection_stats.clone(),
+            self.message_validator.clone(),
+            self.error_handler.clone(),
+        )
+        .await?;
+
+        // Return peer info
+        // Note: The actual peer info would be returned from the handshake
+        // For now, create a basic peer info
+        let peer_info = PeerInfo {
+            address,
+            capabilities: vec![NodeCapability::TcpServer],
+            connected_at: std::time::SystemTime::now(),
+            last_message_at: std::time::SystemTime::now(),
+            version: 0,
+            user_agent: String::from("Unknown"),
+            start_height: 0,
+            is_outbound: false,
+            peer_id: UInt160::default(),
+        };
+
+        Ok(peer_info)
+    }
+
+    /// Starts accepting incoming connections (legacy interface)
     async fn start_accepting_connections(&self) -> Result<()> {
-        // This is now replaced by start_accepting_connections_impl
-        Ok(())
+        // Delegate to the actual implementation
+        self.start_accepting_connections_impl().await
     }
 
     /// Actual implementation for accepting incoming connections

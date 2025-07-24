@@ -91,7 +91,9 @@ where
         }
     }
 
-    unreachable!()
+    // This should never be reached since the loop handles all cases,
+    // but if it somehow is reached, run the operation one more time
+    operation()
 }
 
 /// Clamp value between min and max

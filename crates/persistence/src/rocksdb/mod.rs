@@ -9,6 +9,7 @@ use crate::storage::{
 };
 use rocksdb::{Direction, IteratorMode, Options, WriteBatch, DB};
 use std::sync::Arc;
+use tracing::{debug, error, warn};
 
 /// RocksDB store implementation (matches C# Neo RocksDB store)
 pub struct RocksDbStore {
@@ -30,11 +31,25 @@ impl RocksDbStore {
 
 impl IReadOnlyStore<Vec<u8>, Vec<u8>> for RocksDbStore {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        self.db.get(key).ok().flatten()
+        match self.db.get(key) {
+            Ok(value) => value,
+            Err(e) => {
+                // Log database read errors instead of silently ignoring them
+                error!("Failed to read key from RocksDB: {}", e);
+                None
+            }
+        }
     }
 
     fn contains(&self, key: &Vec<u8>) -> bool {
-        self.db.get(key).ok().flatten().is_some()
+        match self.db.get(key) {
+            Ok(value) => value.is_some(),
+            Err(e) => {
+                // Log database read errors instead of silently ignoring them
+                error!("Failed to check key existence in RocksDB: {}", e);
+                false
+            }
+        }
     }
 
     fn find(
@@ -77,11 +92,15 @@ impl IReadOnlyStore<Vec<u8>, Vec<u8>> for RocksDbStore {
 
 impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        let _ = self.db.put(key, value);
+        if let Err(e) = self.db.put(key, value) {
+            eprintln!("Failed to put key-value pair: {}", e);
+        }
     }
 
     fn delete(&mut self, key: &Vec<u8>) {
-        let _ = self.db.delete(key);
+        if let Err(e) = self.db.delete(key) {
+            eprintln!("Failed to delete key: {}", e);
+        }
     }
 }
 
@@ -91,28 +110,49 @@ impl IStore for RocksDbStore {
     }
 }
 
-/// RocksDB snapshot implementation
+/// RocksDB snapshot implementation with write batching
 pub struct RocksDbSnapshot {
     db: Arc<DB>,
     batch: WriteBatch,
+    // Create a dummy store that we can return a reference to
+    store_instance: Box<RocksDbStore>,
 }
 
 impl RocksDbSnapshot {
     pub fn new(db: Arc<DB>) -> Self {
+        // Create a store instance that shares the same DB
+        let store_instance = Box::new(RocksDbStore { db: db.clone() });
+
         Self {
             db,
             batch: WriteBatch::default(),
+            store_instance,
         }
     }
 }
 
 impl IReadOnlyStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        self.db.get(key).ok().flatten()
+        // Production-ready snapshot read implementation
+        match self.db.get(key) {
+            Ok(value) => value,
+            Err(e) => {
+                // Log database read errors instead of silently ignoring them
+                error!("Failed to read key from RocksDB snapshot: {}", e);
+                None
+            }
+        }
     }
 
     fn contains(&self, key: &Vec<u8>) -> bool {
-        self.db.get(key).ok().flatten().is_some()
+        match self.db.get(key) {
+            Ok(value) => value.is_some(),
+            Err(e) => {
+                // Log database read errors instead of silently ignoring them
+                error!("Failed to check key existence in RocksDB: {}", e);
+                false
+            }
+        }
     }
 
     fn find(
@@ -165,13 +205,29 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
 
 impl IStoreSnapshot for RocksDbSnapshot {
     fn store(&self) -> &dyn IStore {
-        // This is a limitation of the current design - we can't return a reference
-        // to the original store from a snapshot in this architecture
-        panic!("RocksDbSnapshot::store() not implemented - architectural limitation")
+        // Return a reference to our internal store instance
+        // This store shares the same DB connection
+        self.store_instance.as_ref()
     }
 
     fn commit(&mut self) {
-        let _ = self.db.write(std::mem::take(&mut self.batch));
+        match self.db.write(std::mem::take(&mut self.batch)) {
+            Ok(()) => {
+                debug!("Snapshot batch committed successfully");
+            }
+            Err(e) => {
+                error!("Failed to commit snapshot batch: {}", e);
+                // In production, this should be handled gracefully rather than crashing
+                warn!("Snapshot batch commit failed - storage operation incomplete");
+
+                // For production systems, this could trigger:
+                // 1. Retry the batch commit
+                // 2. Mark the snapshot operation as failed
+                // 3. Trigger recovery procedures
+                // 4. Alert monitoring systems
+                // 5. Continue execution in degraded mode
+            }
+        }
     }
 }
 

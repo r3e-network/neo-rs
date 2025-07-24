@@ -46,7 +46,12 @@ impl WitnessVerifier {
     }
 
     /// Verifies a single witness (comprehensive verification)
-    fn verify_single_witness(&self, witness: &Witness, message_hash: &UInt256, index: usize) -> VerifyResult {
+    fn verify_single_witness(
+        &self,
+        witness: &Witness,
+        message_hash: &UInt256,
+        index: usize,
+    ) -> VerifyResult {
         // 1. Check basic witness format
         if witness.invocation_script.is_empty() && witness.verification_script.is_empty() {
             return VerifyResult::InvalidWitness;
@@ -68,7 +73,9 @@ impl WitnessVerifier {
             }
         } else if self.is_multi_signature_script(&witness.verification_script) {
             // Multi-signature verification
-            if let VerifyResult::Succeed = self.verify_multi_signature_witness(witness, message_hash) {
+            if let VerifyResult::Succeed =
+                self.verify_multi_signature_witness(witness, message_hash)
+            {
                 // Continue
             } else {
                 return VerifyResult::InvalidSignature;
@@ -76,7 +83,7 @@ impl WitnessVerifier {
         } else {
             // Complex script verification using VM
             match self.verify_complex_witness(witness, message_hash, index) {
-                VerifyResult::Succeed => {},
+                VerifyResult::Succeed => {}
                 error_result => return error_result,
             }
         }
@@ -87,9 +94,9 @@ impl WitnessVerifier {
     /// Checks if this is a single signature verification script
     fn is_single_signature_script(&self, script: &[u8]) -> bool {
         // Single sig script: PUSHBYTES33 <pubkey> SYSCALL <CheckSig>
-        script.len() >= 35 && 
-        (script[0] == 0x21 || (script[0] == 0x0C && script[1] == 0x21)) &&
-        script.len() <= 41  // Max reasonable size for single sig script
+        script.len() >= 35
+            && (script[0] == 0x21 || (script[0] == 0x0C && script[1] == 0x21))
+            && script.len() <= 41 // Max reasonable size for single sig script
     }
 
     /// Checks if this is a multi-signature verification script
@@ -101,12 +108,17 @@ impl WitnessVerifier {
     }
 
     /// Verifies multi-signature witness
-    fn verify_multi_signature_witness(&self, witness: &Witness, message_hash: &UInt256) -> VerifyResult {
+    fn verify_multi_signature_witness(
+        &self,
+        witness: &Witness,
+        message_hash: &UInt256,
+    ) -> VerifyResult {
         // Parse multi-sig verification script
-        let (threshold, public_keys) = match self.parse_multi_sig_script(&witness.verification_script) {
-            Some((t, keys)) => (t, keys),
-            None => return VerifyResult::InvalidWitness,
-        };
+        let (threshold, public_keys) =
+            match self.parse_multi_sig_script(&witness.verification_script) {
+                Some((t, keys)) => (t, keys),
+                None => return VerifyResult::InvalidWitness,
+            };
 
         // Parse signatures from invocation script
         let signatures = match self.parse_multi_sig_invocation(&witness.invocation_script) {
@@ -123,7 +135,8 @@ impl WitnessVerifier {
         let mut valid_signatures = 0;
         for (sig_index, signature) in signatures.iter().enumerate() {
             if sig_index < public_keys.len() {
-                if self.verify_ecdsa_signature_raw(signature, &public_keys[sig_index], message_hash) {
+                if self.verify_ecdsa_signature_raw(signature, &public_keys[sig_index], message_hash)
+                {
                     valid_signatures += 1;
                 }
             }
@@ -158,7 +171,11 @@ impl WitnessVerifier {
                 // PUSHBYTES33 followed by 33-byte public key
                 public_keys.push(script[pos + 1..pos + 34].to_vec());
                 pos += 34;
-            } else if script[pos] == 0x0C && pos + 1 < script.len() && script[pos + 1] == 0x21 && pos + 35 < script.len() {
+            } else if script[pos] == 0x0C
+                && pos + 1 < script.len()
+                && script[pos + 1] == 0x21
+                && pos + 35 < script.len()
+            {
                 // PUSHDATA1 followed by 33-byte public key
                 public_keys.push(script[pos + 2..pos + 35].to_vec());
                 pos += 35;
@@ -184,7 +201,11 @@ impl WitnessVerifier {
                 // PUSHBYTES64 followed by 64-byte signature
                 signatures.push(script[pos + 1..pos + 65].to_vec());
                 pos += 65;
-            } else if script[pos] == 0x0C && pos + 1 < script.len() && script[pos + 1] == 0x40 && pos + 66 < script.len() {
+            } else if script[pos] == 0x0C
+                && pos + 1 < script.len()
+                && script[pos + 1] == 0x40
+                && pos + 66 < script.len()
+            {
                 // PUSHDATA1 followed by 64-byte signature
                 signatures.push(script[pos + 2..pos + 66].to_vec());
                 pos += 66;
@@ -201,7 +222,12 @@ impl WitnessVerifier {
     }
 
     /// Verifies complex witness using VM execution
-    fn verify_complex_witness(&self, witness: &Witness, message_hash: &UInt256, _index: usize) -> VerifyResult {
+    fn verify_complex_witness(
+        &self,
+        witness: &Witness,
+        message_hash: &UInt256,
+        _index: usize,
+    ) -> VerifyResult {
         // Use VM for complex verification scripts (matches C# Neo)
         match self.execute_witness_verification_vm(witness, message_hash) {
             Ok(true) => VerifyResult::Succeed,
@@ -211,7 +237,11 @@ impl WitnessVerifier {
     }
 
     /// Executes witness verification in VM (matches C# ApplicationEngine.LoadScript)
-    fn execute_witness_verification_vm(&self, witness: &Witness, message_hash: &UInt256) -> Result<bool> {
+    fn execute_witness_verification_vm(
+        &self,
+        witness: &Witness,
+        message_hash: &UInt256,
+    ) -> Result<bool> {
         // Create application engine for verification
         let mut engine = ApplicationEngine::new(
             neo_vm::TriggerType::Verification,
@@ -219,23 +249,26 @@ impl WitnessVerifier {
         );
 
         // Set message hash as script container
-        engine.set_script_container_hash(*message_hash);
+        // Set the script container with the message hash
+        engine.set_script_container(*message_hash);
 
-        // Load invocation script first (if present)
+        // Create a combined script with invocation script followed by verification script
+        let mut script_bytes = Vec::new();
+
+        // Add invocation script first (if present)
         if !witness.invocation_script.is_empty() {
-            let invocation_script = neo_vm::Script::new(witness.invocation_script.clone(), false)?;
-            engine.load_script(invocation_script, 0, 0)?;
+            script_bytes.extend_from_slice(&witness.invocation_script);
         }
 
-        // Load verification script
+        // Add verification script
         if !witness.verification_script.is_empty() {
-            let verification_script = neo_vm::Script::new(witness.verification_script.clone(), false)?;
-            engine.load_script(verification_script, -1, 0)?;
+            script_bytes.extend_from_slice(&witness.verification_script);
         }
 
-        // Execute verification
-        let result = engine.execute();
-        
+        // Create script and execute
+        let script = neo_vm::Script::new(script_bytes, true)?;
+        let result = engine.execute(script);
+
         match result {
             neo_vm::VMState::HALT => {
                 // Check if result is true on evaluation stack
@@ -289,16 +322,18 @@ impl WitnessVerifier {
         }
 
         // 3. Extract signature from invocation script
-        let signature = match self.extract_signature_from_invocation_script(&witness.invocation_script) {
-            Some(sig) => sig,
-            None => return false,
-        };
+        let signature =
+            match self.extract_signature_from_invocation_script(&witness.invocation_script) {
+                Some(sig) => sig,
+                None => return false,
+            };
 
         // 4. Extract public key from verification script
-        let public_key = match self.extract_public_key_from_verification_script(&witness.verification_script) {
-            Some(pk) => pk,
-            None => return false,
-        };
+        let public_key =
+            match self.extract_public_key_from_verification_script(&witness.verification_script) {
+                Some(pk) => pk,
+                None => return false,
+            };
 
         // 5. Verify ECDSA signature
         self.verify_ecdsa_signature_raw(&signature, &public_key, message_hash)
@@ -324,7 +359,7 @@ impl WitnessVerifier {
         // Neo verification scripts for single signature typically:
         // PUSHDATA1 <33-byte pubkey> SYSCALL <CheckSig>
         // Or: PUSHBYTES33 <33-byte pubkey> SYSCALL <CheckSig>
-        
+
         if script.len() >= 35 {
             if script[0] == 0x0C && script[1] == 0x21 {
                 // PUSHDATA1 followed by 33 bytes
@@ -341,7 +376,12 @@ impl WitnessVerifier {
     }
 
     /// Verifies ECDSA signature with raw components (matches C# Neo)
-    fn verify_ecdsa_signature_raw(&self, signature: &[u8], public_key: &[u8], message_hash: &UInt256) -> bool {
+    fn verify_ecdsa_signature_raw(
+        &self,
+        signature: &[u8],
+        public_key: &[u8],
+        message_hash: &UInt256,
+    ) -> bool {
         if signature.len() != 64 || public_key.len() != 33 {
             return false;
         }
@@ -350,7 +390,7 @@ impl WitnessVerifier {
         match neo_cryptography::ecdsa::ECDsa::verify_signature(
             message_hash.as_bytes(),
             signature,
-            public_key
+            public_key,
         ) {
             Ok(is_valid) => is_valid,
             Err(_) => false,

@@ -25,6 +25,8 @@ pub enum VerifyResult {
     InvalidAttribute,
     /// Indicates that the inventory has an invalid signature
     InvalidSignature,
+    /// Indicates that the witness is invalid
+    InvalidWitness,
     /// Indicates that the size of the inventory is not allowed
     OverSize,
     /// Indicates that the transaction has expired
@@ -59,9 +61,10 @@ impl From<u8> for VerifyResult {
             8 => VerifyResult::InvalidAttribute,
             9 => VerifyResult::InvalidScript,
             10 => VerifyResult::InvalidSignature,
-            11 => VerifyResult::OverSize,
-            12 => VerifyResult::UnableToVerify,
-            13 => VerifyResult::HasConflicts,
+            11 => VerifyResult::InvalidWitness,
+            12 => VerifyResult::OverSize,
+            13 => VerifyResult::UnableToVerify,
+            14 => VerifyResult::HasConflicts,
             _ => VerifyResult::Unknown,
         }
     }
@@ -87,6 +90,7 @@ impl std::fmt::Display for VerifyResult {
             VerifyResult::InvalidAttribute => write!(f, "InvalidAttribute"),
             VerifyResult::InvalidScript => write!(f, "InvalidScript"),
             VerifyResult::InvalidSignature => write!(f, "InvalidSignature"),
+            VerifyResult::InvalidWitness => write!(f, "InvalidWitness"),
             VerifyResult::OverSize => write!(f, "OverSize"),
             VerifyResult::UnableToVerify => write!(f, "UnableToVerify"),
             VerifyResult::HasConflicts => write!(f, "HasConflicts"),

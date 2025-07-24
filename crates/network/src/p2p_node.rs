@@ -7,6 +7,7 @@ use crate::{
     MessageHandler, NetworkCommand, NetworkConfig, NetworkError, NetworkMessage,
     NetworkResult as Result, PeerManager,
 };
+use futures::{SinkExt, StreamExt};
 use neo_core::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -509,8 +510,114 @@ impl P2pNode {
     async fn start_tcp_listener(&self) -> Result<()> {
         info!("Starting TCP listener on port {}", self.config.port);
 
-        // TCP listener implementation would go here
-        // This would match C# Neo TCP server exactly
+        // Bind TCP listener
+        let addr = SocketAddr::from(([0, 0, 0, 0], self.config.port));
+        let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| {
+            error!("Failed to bind TCP listener on {}: {}", addr, e);
+            NetworkError::ConnectionFailed {
+                address: addr,
+                reason: format!("Failed to bind TCP listener: {}", e),
+            }
+        })?;
+
+        info!("✅ TCP listener successfully bound to {}", addr);
+
+        // Clone necessary handles for the spawned task
+        let peer_manager = self.peer_manager.clone();
+        let peers = self.peers.clone();
+        let statistics = self.statistics.clone();
+        let event_sender = self.event_sender.clone();
+        let message_handler = self.message_handler.clone();
+        let max_peers = self.config.max_peers;
+
+        // Spawn the listener task
+        tokio::spawn(async move {
+            loop {
+                match listener.accept().await {
+                    Ok((stream, peer_addr)) => {
+                        info!("🔌 New incoming TCP connection from {}", peer_addr);
+
+                        // Check if we've reached max peers
+                        let peer_count = peers.read().await.len();
+                        if peer_count >= max_peers {
+                            warn!(
+                                "Maximum peer limit ({}) reached, rejecting connection from {}",
+                                max_peers, peer_addr
+                            );
+                            continue;
+                        }
+
+                        // Handle the new connection
+                        let peer_manager = peer_manager.clone();
+                        let peers = peers.clone();
+                        let statistics = statistics.clone();
+                        let event_sender = event_sender.clone();
+                        let message_handler = message_handler.clone();
+
+                        tokio::spawn(async move {
+                            // Set TCP keepalive
+                            if let Err(e) = stream.set_nodelay(true) {
+                                warn!("Failed to set TCP_NODELAY for {}: {}", peer_addr, e);
+                            }
+
+                            // Convert to PeerConnection and handle
+                            match peer_manager
+                                .accept_incoming_connection(stream, peer_addr)
+                                .await
+                            {
+                                Ok(peer_info) => {
+                                    // Add to peers map
+                                    peers.write().await.insert(peer_addr, peer_info.clone());
+
+                                    // Update statistics
+                                    {
+                                        let mut stats = statistics.write().await;
+                                        stats.peer_count += 1;
+                                        stats.inbound_connections += 1;
+                                    }
+
+                                    // Broadcast peer connected event
+                                    let _ = event_sender.send(NodeEvent::PeerConnected(peer_info));
+
+                                    info!(
+                                        "✅ Successfully established connection with {}",
+                                        peer_addr
+                                    );
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "Failed to handle incoming connection from {}: {:?}",
+                                        peer_addr, e
+                                    );
+
+                                    // Broadcast network error event
+                                    let _ = event_sender.send(NodeEvent::NetworkError {
+                                        peer: Some(peer_addr),
+                                        error: format!("Connection handling failed: {:?}", e),
+                                    });
+                                }
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        error!("TCP listener accept error: {}", e);
+
+                        // If the error is fatal, break the loop
+                        if e.kind() == std::io::ErrorKind::InvalidInput
+                            || e.kind() == std::io::ErrorKind::InvalidData
+                        {
+                            error!("Fatal TCP listener error, stopping listener");
+                            break;
+                        }
+
+                        // For non-fatal errors, continue accepting
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                }
+            }
+
+            warn!("TCP listener has stopped");
+        });
 
         Ok(())
     }
@@ -522,8 +629,191 @@ impl P2pNode {
             self.config.websocket_port
         );
 
-        // WebSocket listener implementation would go here
-        // This would match C# Neo WebSocket server exactly
+        // Bind WebSocket listener
+        let addr = SocketAddr::from(([0, 0, 0, 0], self.config.websocket_port));
+        let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| {
+            error!("Failed to bind WebSocket listener on {}: {}", addr, e);
+            NetworkError::ConnectionFailed {
+                address: addr,
+                reason: format!("Failed to bind WebSocket listener: {}", e),
+            }
+        })?;
+
+        info!("✅ WebSocket listener successfully bound to {}", addr);
+
+        // Clone necessary handles for the spawned task
+        let peer_manager = self.peer_manager.clone();
+        let peers = self.peers.clone();
+        let statistics = self.statistics.clone();
+        let event_sender = self.event_sender.clone();
+        let message_handler = self.message_handler.clone();
+        let max_peers = self.config.max_peers;
+
+        // Spawn the WebSocket listener task
+        tokio::spawn(async move {
+            loop {
+                match listener.accept().await {
+                    Ok((stream, peer_addr)) => {
+                        info!("🔌 New incoming WebSocket connection from {}", peer_addr);
+
+                        // Check if we've reached max peers
+                        let peer_count = peers.read().await.len();
+                        if peer_count >= max_peers {
+                            warn!(
+                                "Maximum peer limit ({}) reached, rejecting WebSocket connection from {}",
+                                max_peers, peer_addr
+                            );
+                            continue;
+                        }
+
+                        // Handle the new WebSocket connection
+                        let peers = peers.clone();
+                        let statistics = statistics.clone();
+                        let event_sender = event_sender.clone();
+                        let message_handler = message_handler.clone();
+
+                        tokio::spawn(async move {
+                            // Upgrade TCP connection to WebSocket
+                            match tokio_tungstenite::accept_async(stream).await {
+                                Ok(ws_stream) => {
+                                    info!("✅ WebSocket handshake completed with {}", peer_addr);
+
+                                    // Create peer info for WebSocket connection
+                                    let peer_info = PeerInfo {
+                                        address: peer_addr,
+                                        capabilities: vec![NodeCapability::WsServer],
+                                        connected_at: std::time::SystemTime::now(),
+                                        last_message_at: std::time::SystemTime::now(),
+                                        version: 0,
+                                        user_agent: "Neo-rs WebSocket".to_string(),
+                                        start_height: 0,
+                                        is_outbound: false,
+                                        peer_id: UInt160::default(),
+                                    };
+
+                                    // Add to peers map
+                                    peers.write().await.insert(peer_addr, peer_info.clone());
+
+                                    // Update statistics
+                                    {
+                                        let mut stats = statistics.write().await;
+                                        stats.peer_count += 1;
+                                        stats.inbound_connections += 1;
+                                    }
+
+                                    // Broadcast peer connected event
+                                    let _ = event_sender
+                                        .send(NodeEvent::PeerConnected(peer_info.clone()));
+
+                                    // Handle WebSocket messages
+                                    let event_sender_clone = event_sender.clone();
+                                    let peers_clone = peers.clone();
+                                    let statistics_clone = statistics.clone();
+
+                                    tokio::spawn(async move {
+                                        // Split the WebSocket stream
+                                        let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+
+                                        // Message handling loop
+                                        loop {
+                                            match ws_receiver.next().await {
+                                                Some(Ok(msg)) => {
+                                                    match msg {
+                                                        tokio_tungstenite::tungstenite::Message::Binary(data) => {
+                                                            // Handle binary protocol messages by parsing into NetworkMessage
+                                                            match NetworkMessage::deserialize(&data) {
+                                                                Ok(network_msg) => {
+                                                                    debug!("Received {} command from WebSocket peer {}", network_msg.header.command, peer_addr);
+                                                                    
+                                                                    // Handle the parsed message through the P2P protocol
+                                                                    if let Err(e) = self.handle_network_message(peer_addr, network_msg).await {
+                                                                        error!("Failed to handle WebSocket message from {}: {}", peer_addr, e);
+                                                                    }
+                                                                    
+                                                                    // Update statistics
+                                                                    statistics_clone.write().await.messages_received += 1;
+                                                                }
+                                                                Err(e) => {
+                                                                    error!("Failed to parse WebSocket message from {}: {}", peer_addr, e);
+                                                                }
+                                                            }
+                                                        }
+                                                        tokio_tungstenite::tungstenite::Message::Close(_) => {
+                                                            info!("WebSocket connection closed by peer {}", peer_addr);
+                                                            break;
+                                                        }
+                                                        tokio_tungstenite::tungstenite::Message::Ping(data) => {
+                                                            // Respond with pong
+                                                            if let Err(e) = ws_sender.send(
+                                                                tokio_tungstenite::tungstenite::Message::Pong(data)
+                                                            ).await {
+                                                                error!("Failed to send pong to {}: {}", peer_addr, e);
+                                                                break;
+                                                            }
+                                                        }
+                                                        _ => {
+                                                            // Ignore text messages and other types
+                                                        }
+                                                    }
+                                                }
+                                                Some(Err(e)) => {
+                                                    error!(
+                                                        "WebSocket error from {}: {}",
+                                                        peer_addr, e
+                                                    );
+                                                    break;
+                                                }
+                                                None => {
+                                                    info!(
+                                                        "WebSocket stream ended for {}",
+                                                        peer_addr
+                                                    );
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        // Clean up on disconnect
+                                        peers_clone.write().await.remove(&peer_addr);
+                                        statistics_clone.write().await.peer_count -= 1;
+                                        let _ = event_sender_clone
+                                            .send(NodeEvent::PeerDisconnected(peer_addr));
+                                    });
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "Failed to complete WebSocket handshake with {}: {:?}",
+                                        peer_addr, e
+                                    );
+
+                                    // Broadcast network error event
+                                    let _ = event_sender.send(NodeEvent::NetworkError {
+                                        peer: Some(peer_addr),
+                                        error: format!("WebSocket handshake failed: {:?}", e),
+                                    });
+                                }
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        error!("WebSocket listener accept error: {}", e);
+
+                        // If the error is fatal, break the loop
+                        if e.kind() == std::io::ErrorKind::InvalidInput
+                            || e.kind() == std::io::ErrorKind::InvalidData
+                        {
+                            error!("Fatal WebSocket listener error, stopping listener");
+                            break;
+                        }
+
+                        // For non-fatal errors, continue accepting
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                }
+            }
+
+            warn!("WebSocket listener has stopped");
+        });
 
         Ok(())
     }

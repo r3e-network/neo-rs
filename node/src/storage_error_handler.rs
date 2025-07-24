@@ -3,11 +3,11 @@
 //! This module provides specialized error handling for storage operations,
 //! including database errors, disk space issues, and data corruption.
 
-use std::sync::Arc;
-use std::path::Path;
+use crate::error_handler::{ErrorCategory, ErrorHandler, ErrorSeverity, RecoveryAction};
 use anyhow::{Context, Result};
-use tracing::{error, warn, info};
-use crate::error_handler::{ErrorHandler, ErrorCategory, ErrorSeverity, RecoveryAction};
+use std::path::Path;
+use std::sync::Arc;
+use tracing::{error, info, warn};
 
 /// Storage error types
 #[derive(Debug, Clone)]
@@ -39,8 +39,14 @@ pub async fn handle_storage_error(
             error!("Database corruption detected at {}: {}", path, details);
             (ErrorSeverity::Critical, "database_corruption")
         }
-        StorageError::DiskSpaceExhausted { available, required } => {
-            error!("Disk space exhausted: {} bytes available, {} required", available, required);
+        StorageError::DiskSpaceExhausted {
+            available,
+            required,
+        } => {
+            error!(
+                "Disk space exhausted: {} bytes available, {} required",
+                available, required
+            );
             (ErrorSeverity::Critical, "disk_space")
         }
         StorageError::WriteFailed { path, reason } => {
@@ -64,15 +70,17 @@ pub async fn handle_storage_error(
             (ErrorSeverity::Critical, "integrity_failed")
         }
     };
-    
+
     // Handle the error
-    let action = error_handler.handle_error(
-        anyhow::anyhow!("{:?}", error),
-        ErrorCategory::Storage,
-        severity,
-        context,
-    ).await?;
-    
+    let action = error_handler
+        .handle_error(
+            anyhow::anyhow!("{:?}", error),
+            ErrorCategory::Storage,
+            severity,
+            context,
+        )
+        .await?;
+
     // Execute recovery action
     match action {
         RecoveryAction::UseFallback(method) => {
@@ -96,19 +104,18 @@ pub async fn handle_storage_error(
             debug!("No specific recovery action for storage error");
         }
     }
-    
+
     Ok(())
 }
 
 /// Attempt to repair corrupted database
 async fn repair_database(storage_path: &Path) -> Result<()> {
     info!("Starting database repair process...");
-    
+
     // Create repair directory
     let repair_path = storage_path.join("repair");
-    std::fs::create_dir_all(&repair_path)
-        .context("Failed to create repair directory")?;
-    
+    std::fs::create_dir_all(&repair_path).context("Failed to create repair directory")?;
+
     // Run RocksDB repair
     let opts = rocksdb::Options::default();
     match rocksdb::DB::repair(&opts, storage_path) {
@@ -126,18 +133,18 @@ async fn repair_database(storage_path: &Path) -> Result<()> {
 /// Restore database from backup
 async fn restore_from_backup(storage_path: &Path) -> Result<()> {
     info!("Starting database restore from backup...");
-    
+
     let backup_path = storage_path.join("backup");
     if !backup_path.exists() {
         return Err(anyhow::anyhow!("No backup available at {:?}", backup_path));
     }
-    
+
     // Move current database to corrupted directory
     let corrupted_path = storage_path.join("corrupted");
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     let corrupted_backup = corrupted_path.join(format!("backup_{}", timestamp));
     std::fs::create_dir_all(&corrupted_backup)?;
-    
+
     // Copy current files to corrupted backup
     for entry in std::fs::read_dir(storage_path)? {
         let entry = entry?;
@@ -147,7 +154,7 @@ async fn restore_from_backup(storage_path: &Path) -> Result<()> {
             std::fs::copy(&path, corrupted_backup.join(filename))?;
         }
     }
-    
+
     // Restore files from backup
     for entry in std::fs::read_dir(&backup_path)? {
         let entry = entry?;
@@ -159,7 +166,7 @@ async fn restore_from_backup(storage_path: &Path) -> Result<()> {
             info!("Restored file: {:?}", filename);
         }
     }
-    
+
     info!("Backup restore completed successfully");
     Ok(())
 }
@@ -167,17 +174,16 @@ async fn restore_from_backup(storage_path: &Path) -> Result<()> {
 /// Clear storage caches
 async fn clear_storage_caches() -> Result<()> {
     info!("Clearing storage caches...");
-    
+
     // Force garbage collection and compaction
     // RocksDB automatically manages its own caches
     // We can hint the system to release memory
     #[cfg(target_os = "linux")]
     {
         // Advise kernel to drop caches
-        let _ = std::process::Command::new("sync")
-            .output();
+        let _ = std::process::Command::new("sync").output();
     }
-    
+
     info!("Storage cache clearing completed");
     Ok(())
 }
@@ -185,21 +191,21 @@ async fn clear_storage_caches() -> Result<()> {
 /// Create emergency backup before shutdown
 async fn emergency_backup(storage_path: &Path) -> Result<()> {
     warn!("Creating emergency backup before shutdown...");
-    
+
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     let backup_path = storage_path.join(format!("emergency_backup_{}", timestamp));
     std::fs::create_dir_all(&backup_path)?;
-    
+
     // Copy critical database files
     let critical_files = vec!["CURRENT", "MANIFEST-*", "*.log", "*.sst"];
     let mut backed_up = 0;
-    
+
     for pattern in critical_files {
         for entry in std::fs::read_dir(storage_path)? {
             let entry = entry?;
             let path = entry.path();
             let filename = path.file_name().unwrap().to_str().unwrap();
-            
+
             if pattern.contains('*') {
                 let prefix = pattern.trim_end_matches('*');
                 if filename.starts_with(prefix) {
@@ -212,19 +218,19 @@ async fn emergency_backup(storage_path: &Path) -> Result<()> {
             }
         }
     }
-    
-    info!("Emergency backup created at {:?} ({} files)", backup_path, backed_up);
+
+    info!(
+        "Emergency backup created at {:?} ({} files)",
+        backup_path, backed_up
+    );
     Ok(())
 }
 
 /// Monitor storage health
-pub async fn monitor_storage_health(
-    storage_path: &Path,
-    error_handler: Arc<ErrorHandler>,
-) {
+pub async fn monitor_storage_health(storage_path: &Path, error_handler: Arc<ErrorHandler>) {
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-        
+
         // Check disk space
         if let Ok(available) = get_available_disk_space(storage_path) {
             let min_required = 1_000_000_000; // 1GB minimum
@@ -236,10 +242,11 @@ pub async fn monitor_storage_health(
                     },
                     storage_path,
                     error_handler.clone(),
-                ).await;
+                )
+                .await;
             }
         }
-        
+
         // Check database integrity
         if should_check_integrity() {
             if let Err(e) = check_database_integrity(storage_path).await {
@@ -249,7 +256,8 @@ pub async fn monitor_storage_health(
                     },
                     storage_path,
                     error_handler.clone(),
-                ).await;
+                )
+                .await;
             }
         }
     }
@@ -259,15 +267,15 @@ pub async fn monitor_storage_health(
 fn get_available_disk_space(path: &Path) -> Result<u64> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::MetadataExt;
-        use std::ffi::CString;
         use libc::{statvfs, statvfs64};
-        
+        use std::ffi::CString;
+        use std::os::unix::fs::MetadataExt;
+
         let path_str = CString::new(path.to_str().unwrap())?;
         let mut stat: statvfs64 = unsafe { std::mem::zeroed() };
-        
+
         let result = unsafe { statvfs64(path_str.as_ptr(), &mut stat) };
-        
+
         if result == 0 {
             let available = stat.f_bavail * stat.f_bsize;
             Ok(available)
@@ -275,32 +283,32 @@ fn get_available_disk_space(path: &Path) -> Result<u64> {
             Err(anyhow::anyhow!("Failed to get disk space statistics"))
         }
     }
-    
+
     #[cfg(windows)]
     {
-        use winapi::um::fileapi::GetDiskFreeSpaceExW;
-        use std::ptr::null_mut;
         use std::os::windows::ffi::OsStrExt;
-        
+        use std::ptr::null_mut;
+        use winapi::um::fileapi::GetDiskFreeSpaceExW;
+
         let path_wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut available: u64 = 0;
-        
+
         let result = unsafe {
             GetDiskFreeSpaceExW(
                 path_wide.as_ptr(),
                 &mut available as *mut u64,
                 null_mut(),
-                null_mut()
+                null_mut(),
             )
         };
-        
+
         if result != 0 {
             Ok(available)
         } else {
             Err(anyhow::anyhow!("Failed to get disk space statistics"))
         }
     }
-    
+
     #[cfg(not(any(unix, windows)))]
     {
         // Fallback for other platforms
@@ -311,16 +319,16 @@ fn get_available_disk_space(path: &Path) -> Result<u64> {
 /// Check if integrity check should run
 fn should_check_integrity() -> bool {
     use std::sync::atomic::{AtomicU64, Ordering};
-    
+
     static LAST_CHECK: AtomicU64 = AtomicU64::new(0);
-    
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    
+
     let last = LAST_CHECK.load(Ordering::Relaxed);
-    
+
     // Check every hour (3600 seconds)
     if now - last > 3600 {
         LAST_CHECK.store(now, Ordering::Relaxed);
@@ -333,31 +341,34 @@ fn should_check_integrity() -> bool {
 /// Check database integrity
 async fn check_database_integrity(path: &Path) -> Result<()> {
     info!("Running database integrity check...");
-    
+
     // Check if database files exist and are readable
     let required_files = vec!["CURRENT", "IDENTITY", "LOCK"];
-    
+
     for file in required_files {
         let file_path = path.join(file);
         if !file_path.exists() {
             return Err(anyhow::anyhow!("Missing required database file: {}", file));
         }
-        
+
         // Check if file is readable
         std::fs::metadata(&file_path)
             .map_err(|e| anyhow::anyhow!("Cannot access {}: {}", file, e))?;
     }
-    
+
     // Verify CURRENT file points to valid manifest
     let current_file = path.join("CURRENT");
     let current_content = std::fs::read_to_string(&current_file)?;
     let manifest_name = current_content.trim();
-    
+
     let manifest_path = path.join(manifest_name);
     if !manifest_path.exists() {
-        return Err(anyhow::anyhow!("Manifest file {} referenced in CURRENT does not exist", manifest_name));
+        return Err(anyhow::anyhow!(
+            "Manifest file {} referenced in CURRENT does not exist",
+            manifest_name
+        ));
     }
-    
+
     info!("Database integrity check passed");
     Ok(())
 }
@@ -365,19 +376,24 @@ async fn check_database_integrity(path: &Path) -> Result<()> {
 /// Create periodic backups
 pub async fn periodic_backup_task(storage_path: &Path) {
     let backup_interval = std::time::Duration::from_secs(3600); // 1 hour
-    
+
     loop {
         tokio::time::sleep(backup_interval).await;
-        
+
         info!("Starting periodic backup...");
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-        let backup_path = storage_path.join("backup").join(format!("snapshot_{}", timestamp));
-        
+        let backup_path = storage_path
+            .join("backup")
+            .join(format!("snapshot_{}", timestamp));
+
         match create_backup(storage_path, &backup_path).await {
-            Ok(file_count) => info!("Periodic backup completed successfully ({} files)", file_count),
+            Ok(file_count) => info!(
+                "Periodic backup completed successfully ({} files)",
+                file_count
+            ),
             Err(e) => error!("Periodic backup failed: {}", e),
         }
-        
+
         // Clean old backups (keep last 24 hours)
         let _ = clean_old_backups(&storage_path.join("backup"), 24).await;
     }
@@ -386,18 +402,18 @@ pub async fn periodic_backup_task(storage_path: &Path) {
 /// Create backup
 async fn create_backup(source_path: &Path, backup_path: &Path) -> Result<usize> {
     std::fs::create_dir_all(backup_path)?;
-    
+
     let mut file_count = 0;
-    
+
     // Copy all database files
     for entry in std::fs::read_dir(source_path)? {
         let entry = entry?;
         let path = entry.path();
-        
+
         if path.is_file() {
             let filename = path.file_name().unwrap();
             let dest = backup_path.join(filename);
-            
+
             // Skip temporary files
             let name_str = filename.to_str().unwrap_or("");
             if !name_str.starts_with(".") && !name_str.ends_with(".tmp") {
@@ -406,19 +422,19 @@ async fn create_backup(source_path: &Path, backup_path: &Path) -> Result<usize> 
             }
         }
     }
-    
+
     Ok(file_count)
 }
 
 /// Clean old backup directories
 async fn clean_old_backups(backup_dir: &Path, keep_hours: u64) -> Result<()> {
     let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(keep_hours * 3600);
-    
+
     if backup_dir.exists() {
         for entry in std::fs::read_dir(backup_dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.is_dir() {
                 let metadata = std::fs::metadata(&path)?;
                 if let Ok(modified) = metadata.modified() {
@@ -430,23 +446,26 @@ async fn clean_old_backups(backup_dir: &Path, keep_hours: u64) -> Result<()> {
             }
         }
     }
-    
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_storage_error_types() {
         let error = StorageError::DiskSpaceExhausted {
             available: 1000,
             required: 5000,
         };
-        
+
         match error {
-            StorageError::DiskSpaceExhausted { available, required } => {
+            StorageError::DiskSpaceExhausted {
+                available,
+                required,
+            } => {
                 assert_eq!(available, 1000);
                 assert_eq!(required, 5000);
             }

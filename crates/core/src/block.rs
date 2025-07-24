@@ -32,10 +32,10 @@ impl BlockHeader {
     /// Calculate the hash of the block header
     pub fn hash(&self) -> crate::Result<UInt256> {
         use sha2::{Digest, Sha256};
-        
+
         // Create a buffer for serialization
         let mut buffer = Vec::new();
-        
+
         // Serialize header fields in the same order as C# Neo implementation
         buffer.extend_from_slice(&self.version.to_le_bytes());
         buffer.extend_from_slice(self.previous_hash.as_bytes());
@@ -45,15 +45,15 @@ impl BlockHeader {
         buffer.extend_from_slice(&self.index.to_le_bytes());
         buffer.push(self.primary_index);
         buffer.extend_from_slice(self.next_consensus.as_bytes());
-        
+
         // Calculate SHA256 hash
         let mut hasher = Sha256::new();
         hasher.update(&buffer);
         let hash = hasher.finalize();
-        
+
         // Convert to UInt256
-        UInt256::from_bytes(&hash).map_err(|e| crate::CoreError::Serialization { 
-            message: format!("Hash conversion failed: {}", e) 
+        UInt256::from_bytes(&hash).map_err(|e| crate::CoreError::Serialization {
+            message: format!("Hash conversion failed: {}", e),
         })
     }
 }
@@ -72,12 +72,12 @@ impl Block {
     pub fn hash(&self) -> crate::Result<UInt256> {
         Ok(self.header.hash()?)
     }
-    
+
     /// Get the block index
     pub fn index(&self) -> u32 {
         self.header.index
     }
-    
+
     /// Get the timestamp
     pub fn timestamp(&self) -> u64 {
         self.header.timestamp

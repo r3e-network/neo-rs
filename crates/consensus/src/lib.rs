@@ -16,10 +16,12 @@
 
 pub mod context;
 pub mod dbft;
+pub mod mempool_adapter;
 pub mod messages;
 pub mod proposal;
 pub mod recovery;
 pub mod service;
+pub mod signature;
 pub mod validators;
 
 // Re-export main types

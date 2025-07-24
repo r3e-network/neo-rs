@@ -5,10 +5,10 @@
 
 use crate::application_engine::ApplicationEngine;
 use crate::contract_state::{ContractState, NefFile};
+use crate::manifest::contract_abi::ContractParameterType;
 use crate::manifest::ContractManifest;
 use crate::manifest::ContractPermissionDescriptor;
 use crate::{Error, Result};
-use crate::manifest::contract_abi::ContractParameterType;
 use neo_core::{IVerifiable, Signer, Transaction, UInt160, WitnessScope};
 use std::collections::HashSet;
 
@@ -832,13 +832,21 @@ impl ContractValidator {
 
     /// Gets mempool statistics (production implementation)
     fn get_mempool_statistics(&self) -> Result<MempoolStats> {
-        // Production-ready mempool statistics retrieval
-        // For now, return default values - this would query the actual mempool in production
-        Ok(MempoolStats {
-            transaction_count: 1000,
-            average_fee_per_byte: 1000.0,
-            high_priority_count: 100,
-        })
+        // Production-ready mempool statistics retrieval from actual mempool
+        if let Some(mempool) = &self.mempool {
+            let stats = mempool.get_statistics();
+            Ok(MempoolStats {
+                transaction_count: stats.transaction_count,
+                average_fee_per_byte: stats.average_fee_per_byte,
+                high_priority_count: stats.high_priority_count,
+            })
+        } else {
+            Ok(MempoolStats {
+                transaction_count: 0,
+                average_fee_per_byte: 0.0,
+                high_priority_count: 0,
+            })
+        }
     }
 
     /// Gets network fee multiplier based on current load (production implementation)

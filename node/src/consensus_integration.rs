@@ -2,14 +2,14 @@
 //!
 //! This module provides integration between the consensus service and the actual blockchain
 
-use std::sync::Arc;
+use crate::native_contracts::NativeContractsManager;
 use async_trait::async_trait;
 use neo_consensus::{Error as ConsensusError, Result as ConsensusResult};
 use neo_core::{Block, Transaction, UInt256};
 use neo_ledger::Blockchain;
 use neo_network::P2pNode;
+use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::native_contracts::NativeContractsManager;
 
 /// Converts a neo_ledger::Block to neo_core::Block
 fn convert_ledger_block_to_core(ledger_block: &neo_ledger::Block) -> neo_core::Block {
@@ -24,7 +24,7 @@ fn convert_ledger_block_to_core(ledger_block: &neo_ledger::Block) -> neo_core::B
         next_consensus: ledger_block.header.next_consensus,
         witnesses: ledger_block.header.witnesses.clone(),
     };
-    
+
     neo_core::Block {
         header,
         transactions: ledger_block.transactions.clone(),
@@ -43,10 +43,10 @@ fn convert_core_block_to_ledger(core_block: &neo_core::Block) -> neo_ledger::Blo
         core_block.header.primary_index,
         core_block.header.next_consensus,
     );
-    
+
     // Set the witnesses separately since they're not part of the constructor
     header.witnesses = core_block.header.witnesses.clone();
-    
+
     neo_ledger::Block::new(header, core_block.transactions.clone())
 }
 
@@ -58,7 +58,7 @@ pub struct ConsensusLedgerAdapter {
 
 impl ConsensusLedgerAdapter {
     pub fn new(blockchain: Arc<Blockchain>) -> Self {
-        Self { 
+        Self {
             blockchain,
             native_contracts: None,
         }
@@ -66,10 +66,10 @@ impl ConsensusLedgerAdapter {
 
     /// Create a new adapter with native contracts support
     pub fn new_with_native_contracts(
-        blockchain: Arc<Blockchain>, 
-        native_contracts: Arc<NativeContractsManager>
+        blockchain: Arc<Blockchain>,
+        native_contracts: Arc<NativeContractsManager>,
     ) -> Self {
-        Self { 
+        Self {
             blockchain,
             native_contracts: Some(native_contracts),
         }
@@ -85,7 +85,10 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
                 Ok(Some(core_block))
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(ConsensusError::Ledger(format!("Failed to get block: {}", e))),
+            Err(e) => Err(ConsensusError::Ledger(format!(
+                "Failed to get block: {}",
+                e
+            ))),
         }
     }
 
@@ -96,7 +99,10 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
                 Ok(Some(core_block))
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(ConsensusError::Ledger(format!("Failed to get block by hash: {}", e))),
+            Err(e) => Err(ConsensusError::Ledger(format!(
+                "Failed to get block by hash: {}",
+                e
+            ))),
         }
     }
 
@@ -107,16 +113,26 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
     async fn add_block(&self, block: Block) -> ConsensusResult<()> {
         // Convert neo_core::Block to neo_ledger::Block
         let ledger_block = convert_core_block_to_ledger(&block);
-        
+
         // Persist the block to the blockchain
         match self.blockchain.persist_block(&ledger_block).await {
             Ok(()) => {
-                tracing::info!("Successfully added block {} to blockchain", block.header.index);
+                tracing::info!(
+                    "Successfully added block {} to blockchain",
+                    block.header.index
+                );
                 Ok(())
             }
             Err(e) => {
-                tracing::error!("Failed to add block {} to blockchain: {}", block.header.index, e);
-                Err(ConsensusError::Ledger(format!("Failed to add block: {}", e)))
+                tracing::error!(
+                    "Failed to add block {} to blockchain: {}",
+                    block.header.index,
+                    e
+                );
+                Err(ConsensusError::Ledger(format!(
+                    "Failed to add block: {}",
+                    e
+                )))
             }
         }
     }
@@ -124,12 +140,17 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
     async fn get_transaction(&self, hash: &UInt256) -> ConsensusResult<Option<Transaction>> {
         match self.blockchain.get_transaction(hash).await {
             Ok(transaction) => Ok(transaction),
-            Err(e) => Err(ConsensusError::Ledger(format!("Failed to get transaction: {}", e))),
+            Err(e) => Err(ConsensusError::Ledger(format!(
+                "Failed to get transaction: {}",
+                e
+            ))),
         }
     }
 
     async fn contains_transaction(&self, hash: &UInt256) -> ConsensusResult<bool> {
-        self.blockchain.contains_transaction(hash).await
+        self.blockchain
+            .contains_transaction(hash)
+            .await
             .map_err(|e| ConsensusError::Ledger(format!("Failed to check transaction: {}", e)))
     }
 
@@ -137,7 +158,10 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
         if let Some(native_contracts) = &self.native_contracts {
             match native_contracts.neo.get_next_block_validators().await {
                 Ok(validators) => {
-                    tracing::debug!("Retrieved {} validators from NEO contract", validators.len());
+                    tracing::debug!(
+                        "Retrieved {} validators from NEO contract",
+                        validators.len()
+                    );
                     Ok(validators)
                 }
                 Err(e) => {
@@ -155,11 +179,19 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
         if let Some(native_contracts) = &self.native_contracts {
             match native_contracts.neo.get_validators_at_height(height).await {
                 Ok(validators) => {
-                    tracing::debug!("Retrieved {} validators for height {} from NEO contract", validators.len(), height);
+                    tracing::debug!(
+                        "Retrieved {} validators for height {} from NEO contract",
+                        validators.len(),
+                        height
+                    );
                     Ok(validators)
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to get validators for height {} from NEO contract: {}", height, e);
+                    tracing::warn!(
+                        "Failed to get validators for height {} from NEO contract: {}",
+                        height,
+                        e
+                    );
                     Ok(vec![])
                 }
             }
@@ -173,15 +205,24 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
         match self.blockchain.validate_transaction(transaction).await {
             Ok(is_valid) => {
                 if is_valid {
-                    tracing::debug!("Transaction {} validation passed", transaction.hash().unwrap_or_default());
+                    tracing::debug!(
+                        "Transaction {} validation passed",
+                        transaction.hash().unwrap_or_default()
+                    );
                 } else {
-                    tracing::debug!("Transaction {} validation failed", transaction.hash().unwrap_or_default());
+                    tracing::debug!(
+                        "Transaction {} validation failed",
+                        transaction.hash().unwrap_or_default()
+                    );
                 }
                 Ok(is_valid)
             }
             Err(e) => {
                 tracing::error!("Transaction validation error: {}", e);
-                Err(ConsensusError::Ledger(format!("Transaction validation failed: {}", e)))
+                Err(ConsensusError::Ledger(format!(
+                    "Transaction validation failed: {}",
+                    e
+                )))
             }
         }
     }
@@ -195,7 +236,7 @@ impl ConsensusLedgerAdapter {
             current_height: stats.height,
             total_transactions: (stats.transaction_cache_size as u64), // Approximate from cache size
             memory_usage_mb: ((stats.block_cache_size + stats.transaction_cache_size) as u64),
-            cache_hit_rate: 0.0, // Not available in current stats
+            cache_hit_rate: 0.0,     // Not available in current stats
             pending_transactions: 0, // Not available in current stats
         })
     }
@@ -261,16 +302,12 @@ impl neo_consensus::NetworkService for ConsensusNetworkAdapter {
             .map_err(|e| ConsensusError::Network(format!("Failed to broadcast: {}", e)))
     }
 
-    async fn send_consensus_message(
-        &self,
-        peer_id: &str,
-        message: Vec<u8>,
-    ) -> ConsensusResult<()> {
+    async fn send_consensus_message(&self, peer_id: &str, message: Vec<u8>) -> ConsensusResult<()> {
         // Create a consensus protocol message
         let protocol_msg = neo_network::messages::ProtocolMessage::Consensus { payload: message };
         // Wrap it in a NetworkMessage for transmission
         let network_msg = neo_network::messages::NetworkMessage::new(protocol_msg);
-        
+
         // Parse peer_id as socket address
         if let Ok(addr) = peer_id.parse() {
             self.p2p_node
@@ -278,7 +315,10 @@ impl neo_consensus::NetworkService for ConsensusNetworkAdapter {
                 .await
                 .map_err(|e| ConsensusError::Network(format!("Failed to send message: {}", e)))
         } else {
-            Err(ConsensusError::Network(format!("Invalid peer ID: {}", peer_id)))
+            Err(ConsensusError::Network(format!(
+                "Invalid peer ID: {}",
+                peer_id
+            )))
         }
     }
 
@@ -325,7 +365,8 @@ impl neo_consensus::MempoolService for UnifiedMempool {
 
     async fn remove_transaction(&self, hash: &UInt256) -> ConsensusResult<()> {
         let mempool = self.inner.read().await;
-        mempool.try_remove(hash)
+        mempool
+            .try_remove(hash)
             .map(|_| ())
             .map_err(|e| ConsensusError::Generic(format!("Failed to remove transaction: {}", e)))
     }
@@ -337,7 +378,8 @@ impl neo_consensus::MempoolService for UnifiedMempool {
 
     async fn clear(&self) -> ConsensusResult<()> {
         let mempool = self.inner.read().await;
-        mempool.clear_expired_transactions()
+        mempool
+            .clear_expired_transactions()
             .map(|_| ())
             .map_err(|e| ConsensusError::Generic(format!("Failed to clear mempool: {}", e)))
     }

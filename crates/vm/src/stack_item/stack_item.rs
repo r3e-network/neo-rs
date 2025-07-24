@@ -16,6 +16,9 @@ use std::sync::Arc;
 pub trait InteropInterface: fmt::Debug + Send + Sync {
     /// Gets the type of the interop interface.
     fn interface_type(&self) -> &str;
+
+    /// Allows downcasting to concrete types
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Represents a value in the Neo VM.

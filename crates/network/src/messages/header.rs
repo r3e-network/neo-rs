@@ -172,23 +172,31 @@ impl Neo3Message {
     /// Compresses payload using LZ4 (if feature is enabled)
     #[cfg(feature = "compression")]
     fn compress_payload(payload: &[u8]) -> Result<Vec<u8>> {
-        // LZ4 compression implementation would go here
-        // For now, return error to indicate compression not available
-        Err(NetworkError::ProtocolViolation {
-            peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
-            violation: "LZ4 compression not implemented yet".to_string(),
-        })
+        use lz4::block::{compress, CompressionMode};
+
+        // Use high compression mode for better compression ratio
+        match compress(payload, Some(CompressionMode::HIGHCOMPRESSION(9)), true) {
+            Ok(compressed) => Ok(compressed),
+            Err(e) => Err(NetworkError::ProtocolViolation {
+                peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
+                violation: format!("LZ4 compression failed: {}", e),
+            }),
+        }
     }
 
     /// Decompresses payload using LZ4 (if feature is enabled)
     #[cfg(feature = "compression")]
     fn decompress_payload(compressed: &[u8]) -> Result<Vec<u8>> {
-        // LZ4 decompression implementation would go here
-        // For now, return error to indicate compression not available
-        Err(NetworkError::ProtocolViolation {
-            peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
-            violation: "LZ4 decompression not implemented yet".to_string(),
-        })
+        use lz4::block::decompress;
+
+        // Decompress with size limit to prevent DoS attacks
+        match decompress(compressed, Some(MAX_MESSAGE_SIZE as i32)) {
+            Ok(decompressed) => Ok(decompressed),
+            Err(e) => Err(NetworkError::ProtocolViolation {
+                peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
+                violation: format!("LZ4 decompression failed: {}", e),
+            }),
+        }
     }
 
     /// Checks if the message is compressed
@@ -306,5 +314,34 @@ mod tests {
             let deserialized = Neo3Message::from_bytes(&serialized).unwrap();
             assert_eq!(deserialized.flags, flags);
         }
+    }
+
+    #[test]
+    #[cfg(feature = "compression")]
+    fn test_lz4_compression() {
+        // Create a large compressible payload
+        let mut payload = vec![0u8; 200];
+        for i in 0..200 {
+            payload[i] = (i % 10) as u8; // Repetitive pattern for good compression
+        }
+
+        // Create message which should trigger compression
+        let message = Neo3Message::new(MessageCommand::Block, payload.clone());
+
+        // Should be compressed
+        assert!(message.is_compressed());
+        assert!(message.payload.len() < payload.len());
+
+        // Test decompression
+        let decompressed = message.get_payload().unwrap();
+        assert_eq!(decompressed, payload);
+
+        // Test serialization roundtrip
+        let serialized = message.to_bytes();
+        let deserialized = Neo3Message::from_bytes(&serialized).unwrap();
+        assert!(deserialized.is_compressed());
+
+        let final_payload = deserialized.get_payload().unwrap();
+        assert_eq!(final_payload, payload);
     }
 }

@@ -362,7 +362,10 @@ impl NeoNode {
                     Some(event) => {
                         match event {
                             NodeEvent::PeerConnected(peer_info) => {
-                                info!("✅ Peer connected: {} ({})", peer_info.address, peer_info.peer_id);
+                                info!(
+                                    "✅ Peer connected: {} ({})",
+                                    peer_info.address, peer_info.peer_id
+                                );
 
                                 let peer_data = PeerInfo {
                                     address: peer_info.address,
@@ -374,7 +377,10 @@ impl NeoNode {
                                     connected_at: std::time::Instant::now(),
                                 };
 
-                                connected_peers.write().await.insert(peer_info.address, peer_data);
+                                connected_peers
+                                    .write()
+                                    .await
+                                    .insert(peer_info.address, peer_data);
                             }
 
                             NodeEvent::PeerDisconnected(address) => {
@@ -388,7 +394,12 @@ impl NeoNode {
                                 // Handle messages with proper blockchain processing
                                 // Extract peer_id from connected peers
                                 // Generate a peer_id from the peer address (temporary solution)
-                                let peer_id = UInt160::from_bytes(&peer.to_string().as_bytes()[..20].try_into().unwrap_or([0u8; 20])).unwrap_or_default();
+                                let peer_id = UInt160::from_bytes(
+                                    &peer.to_string().as_bytes()[..20]
+                                        .try_into()
+                                        .unwrap_or([0u8; 20]),
+                                )
+                                .unwrap_or_default();
                                 if let Err(e) = Self::handle_p2p_message_production(
                                     message,
                                     peer_id,

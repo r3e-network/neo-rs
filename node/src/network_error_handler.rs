@@ -3,12 +3,12 @@
 //! This module provides specialized error handling for network operations,
 //! including connection failures, peer issues, and synchronization problems.
 
+use crate::error_handler::{ErrorCategory, ErrorHandler, ErrorSeverity, RecoveryAction};
+use anyhow::{Context, Result};
+use neo_network::{P2pNode, SyncManager};
 use std::sync::Arc;
 use std::time::Duration;
-use anyhow::{Context, Result};
-use tracing::{error, warn, info, debug};
-use neo_network::{P2pNode, SyncManager};
-use crate::error_handler::{ErrorHandler, ErrorCategory, ErrorSeverity, RecoveryAction};
+use tracing::{debug, error, info, warn};
 
 /// Network error types
 #[derive(Debug, Clone, PartialEq)]
@@ -66,18 +66,23 @@ pub async fn handle_network_error(
             (ErrorSeverity::Medium, "network_congestion")
         }
     };
-    
+
     // Handle the error
-    let action = error_handler.handle_error(
-        anyhow::anyhow!("{:?}", error),
-        ErrorCategory::Network,
-        severity,
-        context,
-    ).await?;
-    
+    let action = error_handler
+        .handle_error(
+            anyhow::anyhow!("{:?}", error),
+            ErrorCategory::Network,
+            severity,
+            context,
+        )
+        .await?;
+
     // Execute recovery action
     match action {
-        RecoveryAction::Retry { max_attempts, delay } => {
+        RecoveryAction::Retry {
+            max_attempts,
+            delay,
+        } => {
             info!("Retrying network operation (max {} attempts)", max_attempts);
             retry_network_operation(&error, p2p_node, sync_manager, max_attempts, delay).await?;
         }
@@ -100,7 +105,7 @@ pub async fn handle_network_error(
             debug!("No specific recovery action for network error");
         }
     }
-    
+
     Ok(())
 }
 
@@ -113,7 +118,7 @@ async fn retry_network_operation(
     initial_delay: Duration,
 ) -> Result<()> {
     use crate::error_handler::retry_with_backoff;
-    
+
     match error {
         NetworkError::ConnectionTimeout { peer, .. } | NetworkError::ConnectionRefused { peer } => {
             // Retry connection to peer
@@ -124,14 +129,16 @@ async fn retry_network_operation(
                 || -> Result<(), anyhow::Error> {
                     info!("Attempting to reconnect to peer {}", peer_str);
                     // Access P2P node's internal connection mechanism
-                    let addr = peer_str.parse::<std::net::SocketAddr>()
+                    let addr = peer_str
+                        .parse::<std::net::SocketAddr>()
                         .map_err(|e| anyhow::anyhow!("Invalid peer address: {}", e))?;
                     // P2P nodes automatically attempt connections through their internal mechanisms
                     Ok(())
                 },
                 max_attempts,
                 initial_delay,
-            ).await?;
+            )
+            .await?;
         }
         NetworkError::SyncStalled { .. } => {
             // Retry sync from different peer
@@ -145,30 +152,31 @@ async fn retry_network_operation(
                 },
                 max_attempts,
                 initial_delay,
-            ).await?;
+            )
+            .await?;
         }
         _ => {
             debug!("No retry strategy for this network error type");
         }
     }
-    
+
     Ok(())
 }
 
 /// Restart P2P node component
 async fn restart_p2p_node(p2p_node: Arc<P2pNode>) -> Result<()> {
     warn!("Restarting P2P node...");
-    
+
     // The P2P node manages its own lifecycle through the shutdown coordinator
     // Force disconnect all peers to trigger reconnection
     let stats = p2p_node.get_statistics().await;
     if stats.peer_count > 0 {
         warn!("Forcing peer reconnections for {} peers", stats.peer_count);
     }
-    
+
     // Wait for reconnection
     tokio::time::sleep(Duration::from_secs(2)).await;
-    
+
     info!("P2P node restart sequence completed");
     Ok(())
 }
@@ -176,15 +184,18 @@ async fn restart_p2p_node(p2p_node: Arc<P2pNode>) -> Result<()> {
 /// Restart sync manager
 async fn restart_sync_manager(sync_manager: Arc<SyncManager>) -> Result<()> {
     warn!("Restarting sync manager...");
-    
+
     // Sync manager internally handles state transitions
     // Force a resync by checking current state
     let stats = sync_manager.stats().await;
-    warn!("Current sync height: {}, forcing resync check", stats.current_height);
-    
+    warn!(
+        "Current sync height: {}, forcing resync check",
+        stats.current_height
+    );
+
     // Brief pause to allow state transition
     tokio::time::sleep(Duration::from_secs(1)).await;
-    
+
     info!("Sync manager restart sequence completed");
     Ok(())
 }
@@ -192,26 +203,26 @@ async fn restart_sync_manager(sync_manager: Arc<SyncManager>) -> Result<()> {
 /// Use alternative peer set
 async fn use_alternative_peers(p2p_node: Arc<P2pNode>) -> Result<()> {
     info!("Switching to alternative peer set");
-    
+
     // Get current statistics
     let stats = p2p_node.get_statistics().await;
     warn!("Disconnecting from {} current peers", stats.peer_count);
-    
+
     // Configure alternative seed nodes for fallback
     let alternative_seeds = vec![
         "seed1.ngd.network:10333",
-        "seed2.ngd.network:10333", 
+        "seed2.ngd.network:10333",
         "seed3.ngd.network:10333",
         "seed4.ngd.network:10333",
         "seed5.ngd.network:10333",
     ];
-    
+
     // The P2P node will automatically attempt connections to these seeds
     // through its internal discovery mechanism
     for seed in &alternative_seeds {
         info!("Queuing alternative seed for connection: {}", seed);
     }
-    
+
     info!("Alternative peer set configured, connections will be established automatically");
     Ok(())
 }
@@ -225,10 +236,10 @@ pub async fn monitor_network_health(
     let mut no_peers_duration = Duration::ZERO;
     let mut last_sync_height = 0u32;
     let mut sync_stall_duration = Duration::ZERO;
-    
+
     loop {
         tokio::time::sleep(Duration::from_secs(30)).await;
-        
+
         // Check peer count
         let stats = p2p_node.get_statistics().await;
         if stats.peer_count == 0 {
@@ -239,17 +250,19 @@ pub async fn monitor_network_health(
                     p2p_node.clone(),
                     sync_manager.clone(),
                     error_handler.clone(),
-                ).await;
+                )
+                .await;
                 no_peers_duration = Duration::ZERO;
             }
         } else {
             no_peers_duration = Duration::ZERO;
         }
-        
+
         // Check sync progress
         let sync_stats = sync_manager.stats().await;
-        if sync_stats.current_height == last_sync_height && 
-           sync_stats.state != neo_network::sync::SyncState::Synchronized {
+        if sync_stats.current_height == last_sync_height
+            && sync_stats.state != neo_network::sync::SyncState::Synchronized
+        {
             sync_stall_duration += Duration::from_secs(30);
             if sync_stall_duration > Duration::from_secs(300) {
                 let _ = handle_network_error(
@@ -260,7 +273,8 @@ pub async fn monitor_network_health(
                     p2p_node.clone(),
                     sync_manager.clone(),
                     error_handler.clone(),
-                ).await;
+                )
+                .await;
                 sync_stall_duration = Duration::ZERO;
             }
         } else {
@@ -273,14 +287,14 @@ pub async fn monitor_network_health(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_network_error_types() {
         let error = NetworkError::ConnectionTimeout {
             peer: "192.168.1.1:10333".to_string(),
             duration: Duration::from_secs(30),
         };
-        
+
         match error {
             NetworkError::ConnectionTimeout { peer, duration } => {
                 assert_eq!(peer, "192.168.1.1:10333");

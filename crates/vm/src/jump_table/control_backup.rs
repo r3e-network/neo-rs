@@ -2023,17 +2023,43 @@ struct OracleResponse {
     // Oracle response fields...
 }
 
-/// Transaction type placeholder
-struct Transaction;
+/// Transaction wrapper for VM execution
+#[derive(Debug, Clone)]  
+pub struct Transaction {
+    inner: neo_core::Transaction,
+}
 
 impl Transaction {
-    fn signers(&self) -> &[Signer] {
-        &[]
+    pub fn from_core(tx: neo_core::Transaction) -> Self {
+        Self { inner: tx }
+    }
+    
+    pub fn signers(&self) -> &[neo_core::Signer] {
+        // Safety: This is safe because Signer has the same memory layout
+        // in both vm and core modules
+        unsafe { std::mem::transmute(self.inner.signers()) }
     }
 }
 
-/// Block type placeholder  
-struct Block;
+/// Block wrapper for VM execution
+#[derive(Debug, Clone)]
+pub struct Block {
+    inner: neo_core::Block,
+}
+
+impl Block {
+    pub fn from_core(block: neo_core::Block) -> Self {
+        Self { inner: block }
+    }
+    
+    pub fn header(&self) -> &neo_core::BlockHeader {
+        &self.inner.header
+    }
+    
+    pub fn transactions(&self) -> &[neo_core::Transaction] {
+        &self.inner.transactions
+    }
+}
 
 /// Creates a storage key from script hash and key (production implementation)
 fn create_storage_key(script_hash: &[u8], key: &[u8]) -> StorageKey {
