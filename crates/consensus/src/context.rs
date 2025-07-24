@@ -151,6 +151,10 @@ pub struct ConsensusRound {
     pub change_views: HashMap<u8, ChangeView>,
     /// Whether we have sent our prepare response
     pub prepare_response_sent: bool,
+    /// Hash of the prepared block
+    pub prepared_block_hash: Option<UInt256>,
+    /// Number of transactions in the prepared block
+    pub prepared_transaction_count: u32,
     /// Whether we have sent our commit
     pub commit_sent: bool,
     /// Whether we have sent change view
@@ -174,6 +178,8 @@ impl ConsensusRound {
             commits: HashMap::new(),
             change_views: HashMap::new(),
             prepare_response_sent: false,
+            prepared_block_hash: None,
+            prepared_transaction_count: 0,
             commit_sent: false,
             change_view_sent: false,
         }
@@ -283,6 +289,8 @@ pub struct ConsensusContext {
     last_block_hash: Arc<RwLock<UInt256>>,
     /// Context statistics
     stats: Arc<RwLock<ContextStats>>,
+    /// Mempool service for transaction selection
+    mempool: Option<Arc<dyn crate::service::MempoolService>>,
 }
 
 /// Context statistics
@@ -317,7 +325,11 @@ impl Default for ContextStats {
 
 impl ConsensusContext {
     /// Creates a new consensus context
-    pub fn new(config: ConsensusConfig, my_validator_hash: UInt160) -> Self {
+    pub fn new(
+        config: ConsensusConfig,
+        my_validator_hash: UInt160,
+        mempool: Option<Arc<dyn crate::service::MempoolService>>,
+    ) -> Self {
         let current_round = ConsensusRound::new(BlockIndex::new(0), ViewNumber::new(0));
 
         // Initialize timers
@@ -366,6 +378,7 @@ impl ConsensusContext {
             timers: Arc::new(RwLock::new(timers)),
             last_block_hash: Arc::new(RwLock::new(UInt256::zero())),
             stats: Arc::new(RwLock::new(ContextStats::default())),
+            mempool,
         }
     }
 
@@ -537,10 +550,16 @@ impl ConsensusContext {
         &self.config
     }
 
+    /// Sets the prepared block information
+    pub fn set_prepared_block(&self, block_hash: UInt256, transaction_count: u32) {
+        let mut round = self.current_round.write();
+        round.prepared_block_hash = Some(block_hash);
+        round.prepared_transaction_count = transaction_count;
+    }
+
     /// Gets the mempool for transaction selection
-    pub fn get_mempool(&self) -> Option<Arc<()>> {
-        // Mempool integration requires proper transaction pool implementation
-        None
+    pub fn get_mempool(&self) -> Option<&dyn crate::service::MempoolService> {
+        self.mempool.as_ref().map(|m| m.as_ref())
     }
 
     /// Gets the current blockchain height
@@ -615,7 +634,7 @@ mod tests {
         let config = ConsensusConfig::default();
         let my_hash = UInt160::zero();
 
-        let context = ConsensusContext::new(config, my_hash);
+        let context = ConsensusContext::new(config, my_hash, None);
 
         // Test starting a round
         context.start_round(BlockIndex::new(100)).unwrap();

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
 /// Main blockchain manager (matches C# Neo Blockchain exactly)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Blockchain {
     /// Blockchain persistence layer
     persistence: Arc<BlockchainPersistence>,
@@ -36,6 +36,10 @@ pub struct Blockchain {
     persist_lock: Arc<Mutex<()>>,
     /// Network configuration
     network: NetworkType,
+    /// Fork detection cache - stores alternative chain tips
+    fork_cache: Arc<RwLock<HashMap<UInt256, Block>>>,
+    /// Orphan blocks waiting for their parent
+    orphan_blocks: Arc<RwLock<HashMap<UInt256, Vec<Block>>>>,
 }
 
 impl Blockchain {
@@ -67,6 +71,8 @@ impl Blockchain {
             transaction_cache: Arc::new(RwLock::new(HashMap::new())),
             persist_lock: Arc::new(Mutex::new(())),
             network,
+            fork_cache: Arc::new(RwLock::new(HashMap::new())),
+            orphan_blocks: Arc::new(RwLock::new(HashMap::new())),
         };
 
         // Initialize genesis block if needed
@@ -447,6 +453,291 @@ impl Blockchain {
         }
 
         Ok(report)
+    }
+
+    /// Adds a block with fork detection and chain reorganization support
+    pub async fn add_block_with_fork_detection(&self, block: &Block) -> Result<()> {
+        let _lock = self.persist_lock.lock().await;
+
+        // First verify the block
+        if block.header.index > 0 {
+            let verification_result = self.verifier.verify_header(&block.header).await?;
+            if verification_result != VerifyResult::Succeed {
+                return Err(Error::Validation(
+                    "Block header verification failed".to_string(),
+                ));
+            }
+        }
+
+        // Check if this block extends the current chain
+        let current_height = self.get_height().await;
+        let current_best_hash = self.get_best_block_hash().await?;
+
+        if block.header.previous_hash == current_best_hash
+            && block.header.index == current_height + 1
+        {
+            // Normal case: block extends current chain
+            return self.persist_block(block).await;
+        }
+
+        // Check if this is an orphan block (parent unknown)
+        if self
+            .get_block_by_hash_internal(&block.header.previous_hash)
+            .await?
+            .is_none()
+        {
+            // Store as orphan block
+            let mut orphans = self.orphan_blocks.write().await;
+            orphans
+                .entry(block.header.previous_hash.clone())
+                .or_insert_with(Vec::new)
+                .push(block.clone());
+
+            tracing::info!(
+                "Stored orphan block {} at height {} waiting for parent {}",
+                block.hash(),
+                block.header.index,
+                block.header.previous_hash
+            );
+            return Ok(());
+        }
+
+        // This block creates a fork - determine if reorganization is needed
+        let fork_point = self.find_fork_point(&block.header.previous_hash).await?;
+        let current_chain_work = self
+            .calculate_chain_work(current_height, fork_point)
+            .await?;
+        let new_chain_work = self.calculate_fork_chain_work(block, fork_point).await?;
+
+        if new_chain_work > current_chain_work {
+            // New chain has more work - perform reorganization
+            tracing::info!(
+                "Fork detected at height {}. Reorganizing chain. Current work: {}, New work: {}",
+                fork_point,
+                current_chain_work,
+                new_chain_work
+            );
+
+            self.reorganize_chain(block, fork_point).await?;
+        } else {
+            // Current chain has more work - store as alternative tip
+            let mut fork_cache = self.fork_cache.write().await;
+            fork_cache.insert(block.hash(), block.clone());
+
+            tracing::info!(
+                "Fork detected but current chain has more work. Storing alternative tip at height {}",
+                block.header.index
+            );
+        }
+
+        // Check if any orphan blocks can now be connected
+        self.process_orphan_blocks(&block.hash()).await?;
+
+        Ok(())
+    }
+
+    /// Finds the common ancestor between current chain and a fork
+    async fn find_fork_point(&self, fork_hash: &UInt256) -> Result<u32> {
+        let mut hash = fork_hash.clone();
+
+        loop {
+            if let Some(block) = self.get_block_by_hash_internal(&hash).await? {
+                // Check if this block is in the main chain
+                if let Some(main_block) = self.get_block(block.header.index).await? {
+                    if main_block.hash() == block.hash() {
+                        return Ok(block.header.index);
+                    }
+                }
+                hash = block.header.previous_hash.clone();
+            } else {
+                return Err(Error::NotFound);
+            }
+        }
+    }
+
+    /// Calculates cumulative work for a chain segment
+    async fn calculate_chain_work(&self, from_height: u32, to_height: u32) -> Result<u64> {
+        let mut work = 0u64;
+        for height in (to_height + 1)..=from_height {
+            if let Some(_block) = self.get_block(height).await? {
+                // In Neo, all blocks have equal weight
+                // In a real implementation, this might consider difficulty
+                work += 1;
+            }
+        }
+        Ok(work)
+    }
+
+    /// Calculates cumulative work for a fork chain
+    async fn calculate_fork_chain_work(&self, tip: &Block, fork_point: u32) -> Result<u64> {
+        let mut work = 1u64; // Count the tip block
+        let mut current_hash = tip.header.previous_hash.clone();
+
+        loop {
+            if let Some(block) = self.get_block_by_hash_internal(&current_hash).await? {
+                if block.header.index <= fork_point {
+                    break;
+                }
+                work += 1;
+                current_hash = block.header.previous_hash.clone();
+            } else {
+                // Check fork cache
+                let fork_cache = self.fork_cache.read().await;
+                if let Some(block) = fork_cache.get(&current_hash) {
+                    if block.header.index <= fork_point {
+                        break;
+                    }
+                    work += 1;
+                    current_hash = block.header.previous_hash.clone();
+                } else {
+                    return Err(Error::NotFound);
+                }
+            }
+        }
+
+        Ok(work)
+    }
+
+    /// Performs chain reorganization
+    async fn reorganize_chain(&self, new_tip: &Block, fork_point: u32) -> Result<()> {
+        tracing::info!("Starting chain reorganization from height {}", fork_point);
+
+        // 1. Collect blocks to remove (current chain from fork point)
+        let current_height = self.get_height().await;
+        let mut blocks_to_remove = Vec::new();
+        for height in ((fork_point + 1)..=current_height).rev() {
+            if let Some(block) = self.get_block(height).await? {
+                blocks_to_remove.push(block);
+            }
+        }
+
+        // 2. Collect blocks to add (new chain from fork point)
+        let mut blocks_to_add = Vec::new();
+        let mut current_block = new_tip.clone();
+        while current_block.header.index > fork_point {
+            blocks_to_add.push(current_block.clone());
+
+            if let Some(parent) = self
+                .get_block_by_hash_internal(&current_block.header.previous_hash)
+                .await?
+            {
+                current_block = parent;
+            } else {
+                // Check fork cache
+                let fork_cache = self.fork_cache.read().await;
+                if let Some(parent) = fork_cache.get(&current_block.header.previous_hash) {
+                    current_block = parent.clone();
+                } else {
+                    return Err(Error::NotFound);
+                }
+            }
+        }
+        blocks_to_add.reverse(); // Order from oldest to newest
+
+        // 3. Rollback removed blocks
+        for block in &blocks_to_remove {
+            self.rollback_block(block).await?;
+        }
+
+        // 4. Apply new blocks
+        for block in &blocks_to_add {
+            self.persist_block(block).await?;
+        }
+
+        tracing::info!(
+            "Chain reorganization complete. Removed {} blocks, added {} blocks",
+            blocks_to_remove.len(),
+            blocks_to_add.len()
+        );
+
+        Ok(())
+    }
+
+    /// Rolls back a single block
+    async fn rollback_block(&self, block: &Block) -> Result<()> {
+        tracing::info!("Rolling back block at height {}", block.header.index);
+
+        // Remove from persistence
+        self.persistence.remove_block(block.header.index).await?;
+
+        // Remove from caches
+        {
+            let mut block_cache = self.block_cache.write().await;
+            block_cache.remove(&block.header.index);
+        }
+
+        {
+            let mut tx_cache = self.transaction_cache.write().await;
+            for transaction in &block.transactions {
+                let tx_hash = transaction.hash()?;
+                tx_cache.remove(&tx_hash);
+            }
+        }
+
+        // Update height
+        {
+            let mut height = self.current_height.write().await;
+            *height = block.header.index - 1;
+        }
+
+        Ok(())
+    }
+
+    /// Processes orphan blocks that might now be connectable
+    async fn process_orphan_blocks(&self, parent_hash: &UInt256) -> Result<()> {
+        let mut orphans_to_process = vec![parent_hash.clone()];
+
+        while let Some(hash) = orphans_to_process.pop() {
+            let blocks_to_add = {
+                let mut orphans = self.orphan_blocks.write().await;
+                orphans.remove(&hash).unwrap_or_default()
+            };
+
+            for block in blocks_to_add {
+                tracing::info!(
+                    "Processing orphan block {} at height {}",
+                    block.hash(),
+                    block.header.index
+                );
+
+                // Try to add this block using Box::pin to avoid infinite recursion
+                let blockchain = self.clone();
+                let block_clone = block.clone();
+                if Box::pin(blockchain.add_block_with_fork_detection(&block_clone))
+                    .await
+                    .is_ok()
+                {
+                    // If successful, check for more orphans that depend on this block
+                    orphans_to_process.push(block.hash());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Gets a block by its hash (internal method used by fork detection)
+    async fn get_block_by_hash_internal(&self, hash: &UInt256) -> Result<Option<Block>> {
+        // First check cache
+        {
+            let cache = self.block_cache.read().await;
+            for block in cache.values() {
+                if block.hash() == *hash {
+                    return Ok(Some(block.clone()));
+                }
+            }
+        }
+
+        // Check fork cache
+        {
+            let fork_cache = self.fork_cache.read().await;
+            if let Some(block) = fork_cache.get(hash) {
+                return Ok(Some(block.clone()));
+            }
+        }
+
+        // Finally check persistence
+        self.persistence.get_block_by_hash(hash).await
     }
 }
 

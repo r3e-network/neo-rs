@@ -175,7 +175,7 @@ async fn test_backup_operations() {
     let (storage, _temp_dir) = create_test_storage().await;
 
     let backup_config = BackupConfig {
-        output_path: "./test_backups".to_string(),
+        output_path: "./test_backups".to_string().into(),
         compression_algorithm: CompressionAlgorithm::Lz4,
         enable_verification: true,
         max_backup_size: None,
@@ -287,8 +287,8 @@ async fn test_rocksdb_storage_large_data() {
 
     // Test stats
     let stats = storage.stats().await.unwrap();
-    assert_eq!(stats.total_keys, 0); // Placeholder implementation
-    assert_eq!(stats.total_size, 0); // Placeholder implementation
+    assert_eq!(stats.total_keys, 2); // We inserted 2 keys
+    assert!(stats.total_size > 0); // Should have some size from the data
 }
 
 #[tokio::test]

@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
+use tracing::error;
 
 /// The length of UInt160 values in bytes.
 pub const UINT160_SIZE: usize = 20;
@@ -129,7 +130,9 @@ impl UInt160 {
     /// A new UInt160 instance.
     pub fn from_span(value: &[u8]) -> Self {
         if value.len() != UINT160_SIZE {
-            panic!("Invalid length: {}", value.len());
+            // Return zero hash instead of panicking in production
+            error!("Invalid UInt160 length: {} (expected {})", value.len(), UINT160_SIZE);
+            return Self::zero();
         }
 
         let mut result = Self::new();

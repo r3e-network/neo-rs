@@ -151,12 +151,16 @@ pub trait TxVerifier: Send + Sync {
         transaction: &Transaction,
         pool_transactions: &[&Transaction],
     ) -> Result<bool>;
-    
+
     /// Called when transaction is added to mempool
     fn on_transaction_added(&self, transaction: &Transaction) -> Result<()>;
-    
+
     /// Called when transaction is removed from mempool
-    fn on_transaction_removed(&self, transaction: &Transaction, reason: RemovalReason) -> Result<()>;
+    fn on_transaction_removed(
+        &self,
+        transaction: &Transaction,
+        reason: RemovalReason,
+    ) -> Result<()>;
 }
 
 /// Reason for transaction removal from mempool (matches C# MemoryPool.RemovalReason)
@@ -210,20 +214,25 @@ impl TxVerifier for DefaultTxVerifier {
 
         // 5. Check transaction size limits
         let tx_size = transaction.size();
-        if tx_size > 102400 {  // 100KB max transaction size (C# Neo default)
+        if tx_size > 102400 {
+            // 100KB max transaction size (C# Neo default)
             debug!("Transaction rejected: size {} exceeds limit", tx_size);
             return Ok(false);
         }
 
         // 6. Check script length limits
-        if transaction.script().len() > 65536 {  // 64KB max script size
+        if transaction.script().len() > 65536 {
+            // 64KB max script size
             debug!("Transaction rejected: script too large");
             return Ok(false);
         }
 
         // 7. Validate version
         if transaction.version() != 0 {
-            debug!("Transaction rejected: unsupported version {}", transaction.version());
+            debug!(
+                "Transaction rejected: unsupported version {}",
+                transaction.version()
+            );
             return Ok(false);
         }
 
@@ -233,7 +242,10 @@ impl TxVerifier for DefaultTxVerifier {
             return Ok(false);
         }
 
-        debug!("Transaction {} passed basic verification", transaction.hash().unwrap_or_default());
+        debug!(
+            "Transaction {} passed basic verification",
+            transaction.hash().unwrap_or_default()
+        );
         Ok(true)
     }
 
@@ -256,7 +268,10 @@ impl TxVerifier for DefaultTxVerifier {
                 for pool_signer in pool_tx.signers() {
                     if signer.account == pool_signer.account {
                         // In a full implementation, check nonces or other conflict detection
-                        debug!("Potential signer conflict detected for account {}", signer.account);
+                        debug!(
+                            "Potential signer conflict detected for account {}",
+                            signer.account
+                        );
                     }
                 }
             }
@@ -264,15 +279,25 @@ impl TxVerifier for DefaultTxVerifier {
 
         Ok(false) // No conflicts
     }
-    
+
     fn on_transaction_added(&self, transaction: &Transaction) -> Result<()> {
-        info!("Transaction {} added to mempool", transaction.hash().unwrap_or_default());
+        info!(
+            "Transaction {} added to mempool",
+            transaction.hash().unwrap_or_default()
+        );
         Ok(())
     }
-    
-    fn on_transaction_removed(&self, transaction: &Transaction, reason: RemovalReason) -> Result<()> {
-        debug!("Transaction {} removed from mempool: {:?}", 
-               transaction.hash().unwrap_or_default(), reason);
+
+    fn on_transaction_removed(
+        &self,
+        transaction: &Transaction,
+        reason: RemovalReason,
+    ) -> Result<()> {
+        debug!(
+            "Transaction {} removed from mempool: {:?}",
+            transaction.hash().unwrap_or_default(),
+            reason
+        );
         Ok(())
     }
 }
@@ -430,33 +455,33 @@ impl MemoryPool {
     pub fn get_sorted_transactions(&self, max_count: usize) -> Vec<Transaction> {
         let transactions_guard = self.transactions.read().unwrap();
         let priority_queue_guard = self.priority_queue.read().unwrap();
-        
+
         let mut result = Vec::new();
         let mut total_size = 0usize;
         let max_block_size = 1024 * 1024; // 1MB max block size
-        
+
         // Iterate from highest to lowest priority
         for (_priority, tx_hashes) in priority_queue_guard.iter().rev() {
             for tx_hash in tx_hashes {
                 if result.len() >= max_count {
                     return result;
                 }
-                
+
                 if let Some(pooled_tx) = transactions_guard.get(tx_hash) {
                     let tx_size = pooled_tx.size;
                     if total_size + tx_size > max_block_size {
                         continue; // Skip if would exceed block size
                     }
-                    
+
                     result.push(pooled_tx.transaction.clone());
                     total_size += tx_size;
                 }
             }
         }
-        
+
         result
     }
-    
+
     /// Gets verified transactions (matches C# GetVerifiedTransactions)
     pub fn get_verified_transactions(&self) -> Vec<Transaction> {
         self.transactions
@@ -466,57 +491,61 @@ impl MemoryPool {
             .map(|pooled_tx| pooled_tx.transaction.clone())
             .collect()
     }
-    
+
     /// Invalidates transactions from a specific sender (matches C# InvalidateVerifiedTransactions)
     pub fn invalidate_transactions_from_sender(&self, sender: &UInt160) -> Result<Vec<UInt256>> {
         let mut invalidated = Vec::new();
-        
+
         if let Some(tx_hashes) = self.sender_map.read().unwrap().get(sender) {
             for tx_hash in tx_hashes.clone() {
                 if let Some(_) = self.try_remove(&tx_hash)? {
                     invalidated.push(tx_hash);
                     // Notify verifier of removal
                     if let Some(pooled_tx) = self.transactions.read().unwrap().get(&tx_hash) {
-                        let _ = self.verifier.on_transaction_removed(&pooled_tx.transaction, RemovalReason::Invalid);
+                        let _ = self
+                            .verifier
+                            .on_transaction_removed(&pooled_tx.transaction, RemovalReason::Invalid);
                     }
                 }
             }
         }
-        
+
         Ok(invalidated)
     }
-    
+
     /// Clears all transactions from pool (matches C# Clear)
     pub fn clear(&self) -> Result<()> {
         {
             let transactions = self.transactions.read().unwrap();
             for (_, pooled_tx) in transactions.iter() {
-                let _ = self.verifier.on_transaction_removed(&pooled_tx.transaction, RemovalReason::Invalid);
+                let _ = self
+                    .verifier
+                    .on_transaction_removed(&pooled_tx.transaction, RemovalReason::Invalid);
             }
         }
-        
+
         self.transactions.write().unwrap().clear();
         self.priority_queue.write().unwrap().clear();
         self.sender_map.write().unwrap().clear();
-        
+
         // Reset statistics
         let mut stats = self.stats.write().unwrap();
         *stats = MempoolStats::default();
-        
+
         info!("Cleared all transactions from mempool");
         Ok(())
     }
-    
+
     /// Gets pool statistics (matches C# MemoryPool properties)
     pub fn get_stats(&self) -> MempoolStats {
         self.stats.read().unwrap().clone()
     }
-    
+
     /// Gets current transaction count (matches C# Count property)
     pub fn count(&self) -> usize {
         self.transactions.read().unwrap().len()
     }
-    
+
     /// Gets memory usage in bytes (matches C# MemoryUsage property)
     pub fn memory_usage(&self) -> usize {
         self.transactions
@@ -526,12 +555,12 @@ impl MemoryPool {
             .map(|pooled_tx| pooled_tx.size)
             .sum()
     }
-    
+
     /// Removes expired transactions (matches C# CheckExpired)
     pub fn remove_expired_transactions(&self) -> Result<Vec<UInt256>> {
         let timeout = Duration::from_secs(self.config.transaction_timeout);
         let mut expired = Vec::new();
-        
+
         let tx_hashes: Vec<UInt256> = {
             let transactions = self.transactions.read().unwrap();
             transactions
@@ -545,81 +574,91 @@ impl MemoryPool {
                 })
                 .collect()
         };
-        
+
         for tx_hash in tx_hashes {
             if let Some(transaction) = self.try_remove(&tx_hash)? {
-                let _ = self.verifier.on_transaction_removed(&transaction, RemovalReason::Expired);
+                let _ = self
+                    .verifier
+                    .on_transaction_removed(&transaction, RemovalReason::Expired);
                 expired.push(tx_hash);
             }
         }
-        
+
         if !expired.is_empty() {
-            info!("Removed {} expired transactions from mempool", expired.len());
+            info!(
+                "Removed {} expired transactions from mempool",
+                expired.len()
+            );
         }
-        
+
         Ok(expired)
     }
-    
+
     /// Updates transactions when new block is persisted (matches C# UpdatePoolForBlockPersisted)
     pub fn update_for_block_persisted(&self, block_transactions: &[UInt256]) -> Result<()> {
         let mut removed_count = 0;
-        
+
         for tx_hash in block_transactions {
             if let Some(transaction) = self.try_remove(tx_hash)? {
-                let _ = self.verifier.on_transaction_removed(&transaction, RemovalReason::BlockPersisted);
+                let _ = self
+                    .verifier
+                    .on_transaction_removed(&transaction, RemovalReason::BlockPersisted);
                 removed_count += 1;
             }
         }
-        
+
         if removed_count > 0 {
-            info!("Removed {} transactions from mempool (included in block)", removed_count);
+            info!(
+                "Removed {} transactions from mempool (included in block)",
+                removed_count
+            );
         }
-        
+
         Ok(())
     }
-    
+
     // Private helper methods
-    
+
     /// Checks if transaction can be added to pool
     fn can_add_transaction(&self, transaction: &Transaction, high_priority: bool) -> Result<bool> {
         let current_count = self.count();
         let current_memory = self.memory_usage();
         let tx_size = transaction.size();
-        
+
         // Check transaction count limit
         if current_count >= self.config.max_transactions {
             return Ok(false);
         }
-        
+
         // Check memory usage limit
         if current_memory + tx_size > self.config.max_memory_usage {
             return Ok(false);
         }
-        
+
         // High priority transactions get preferential treatment
         if high_priority {
             return Ok(true);
         }
-        
+
         // Check if we're at 90% capacity for regular transactions
         let capacity_threshold = (self.config.max_transactions * 9) / 10;
         if current_count >= capacity_threshold {
             return Ok(false);
         }
-        
+
         Ok(true)
     }
-    
+
     /// Tries to make space for new transaction by removing lower priority ones
     fn try_make_space(&self, _new_transaction: &Transaction, high_priority: bool) -> Result<bool> {
         if !high_priority {
             return Ok(false); // Only make space for high priority transactions
         }
-        
+
         // Find lowest priority transaction to remove
         let mut lowest_priority_hash: Option<UInt256> = None;
         let mut lowest_priority = u64::MAX;
-        
+
         {
             let transactions = self.transactions.read().unwrap();
             for (hash, pooled_tx) in transactions.iter() {
@@ -629,26 +668,31 @@ impl MemoryPool {
                 }
             }
         }
-        
+
         if let Some(hash) = lowest_priority_hash {
             if let Some(transaction) = self.try_remove(&hash)? {
-                let _ = self.verifier.on_transaction_removed(&transaction, RemovalReason::CapacityExceeded);
+                let _ = self
+                    .verifier
+                    .on_transaction_removed(&transaction, RemovalReason::CapacityExceeded);
                 debug!("Evicted transaction {} to make space", hash);
                 return Ok(true);
             }
         }
-        
+
         Ok(false)
     }
-    
+
     /// Adds transaction to internal data structures
     fn add_to_pool(&self, pooled_tx: PooledTransaction) -> Result<()> {
         let tx_hash = pooled_tx.hash()?;
         let priority = pooled_tx.priority_score();
-        
+
         // Add to main map
-        self.transactions.write().unwrap().insert(tx_hash, pooled_tx.clone());
-        
+        self.transactions
+            .write()
+            .unwrap()
+            .insert(tx_hash, pooled_tx.clone());
+
         // Add to priority queue
         self.priority_queue
             .write()
@@ -656,7 +700,7 @@ impl MemoryPool {
             .entry(priority)
             .or_insert_with(Vec::new)
             .push(tx_hash);
-        
+
         // Add to sender map
         for sender in &pooled_tx.senders {
             self.sender_map
@@ -666,21 +710,21 @@ impl MemoryPool {
                 .or_insert_with(HashSet::new)
                 .insert(tx_hash);
         }
-        
+
         // Update statistics
         self.update_stats_on_add(&pooled_tx);
-        
+
         // Notify verifier
         self.verifier.on_transaction_added(&pooled_tx.transaction)?;
-        
+
         Ok(())
     }
-    
+
     /// Removes transaction from priority queue
     fn remove_from_priority_queue(&self, pooled_tx: &PooledTransaction) -> Result<()> {
         let tx_hash = pooled_tx.hash()?;
         let priority = pooled_tx.priority_score();
-        
+
         let mut priority_queue = self.priority_queue.write().unwrap();
         if let Some(tx_list) = priority_queue.get_mut(&priority) {
             tx_list.retain(|&hash| hash != tx_hash);
@@ -688,14 +732,14 @@ impl MemoryPool {
                 priority_queue.remove(&priority);
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Removes transaction from sender map
     fn remove_from_sender_map(&self, pooled_tx: &PooledTransaction) -> Result<()> {
         let tx_hash = pooled_tx.hash()?;
-        
+
         let mut sender_map = self.sender_map.write().unwrap();
         for sender in &pooled_tx.senders {
             if let Some(tx_set) = sender_map.get_mut(sender) {
@@ -705,42 +749,46 @@ impl MemoryPool {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Updates statistics when transaction is added
     fn update_stats_on_add(&self, pooled_tx: &PooledTransaction) {
         let mut stats = self.stats.write().unwrap();
         stats.transaction_count += 1;
         stats.memory_usage += pooled_tx.size;
         stats.transactions_added += 1;
-        
+
         if pooled_tx.high_priority {
             stats.high_priority_count += 1;
         }
-        
+
         // Update average fee per byte
-        let total_fees: u64 = stats.average_fee_per_byte as u64 * (stats.transaction_count - 1) as u64 + pooled_tx.fee_per_byte;
+        let total_fees: u64 = stats.average_fee_per_byte as u64
+            * (stats.transaction_count - 1) as u64
+            + pooled_tx.fee_per_byte;
         stats.average_fee_per_byte = total_fees as f64 / stats.transaction_count as f64;
-        
+
         // Update utilization percentage
-        stats.utilization_percentage = (stats.transaction_count as f64 / self.config.max_transactions as f64) * 100.0;
+        stats.utilization_percentage =
+            (stats.transaction_count as f64 / self.config.max_transactions as f64) * 100.0;
     }
-    
+
     /// Updates statistics when transaction is removed
     fn update_stats_on_remove(&self, pooled_tx: &PooledTransaction) {
         let mut stats = self.stats.write().unwrap();
         stats.transaction_count = stats.transaction_count.saturating_sub(1);
         stats.memory_usage = stats.memory_usage.saturating_sub(pooled_tx.size);
         stats.transactions_removed += 1;
-        
+
         if pooled_tx.high_priority {
             stats.high_priority_count = stats.high_priority_count.saturating_sub(1);
         }
-        
+
         // Update utilization percentage
-        stats.utilization_percentage = (stats.transaction_count as f64 / self.config.max_transactions as f64) * 100.0;
+        stats.utilization_percentage =
+            (stats.transaction_count as f64 / self.config.max_transactions as f64) * 100.0;
     }
 }
 

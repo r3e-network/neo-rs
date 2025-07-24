@@ -375,8 +375,7 @@ impl TransactionRelay {
         // Get current mempool transactions
         let inventory_items = {
             let mempool = self.mempool.read().await;
-            let transactions =
-                mempool.get_sorted_transactions(Some(self.config.max_relay_batch_size));
+            let transactions = mempool.get_sorted_transactions(self.config.max_relay_batch_size);
 
             transactions
                 .into_iter()
@@ -672,6 +671,6 @@ impl TransactionRelay {
     /// Gets mempool transaction count
     pub async fn get_mempool_transaction_count(&self) -> usize {
         let mempool = self.mempool.read().await;
-        mempool.get_all_transactions().len()
+        mempool.count()
     }
 }

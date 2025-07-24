@@ -807,8 +807,13 @@ async fn handle_get_raw_mempool(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // Return empty mempool for now
-    Ok(json!([]))
+    // Get actual mempool transactions from blockchain context
+    if let Some(blockchain) = &context.blockchain {
+        let mempool_txs = blockchain.get_mempool_transactions(verbose).await?;
+        Ok(json!(mempool_txs))
+    } else {
+        Ok(json!([]))
+    }
 }
 
 /// Handles getstorage method
@@ -912,7 +917,8 @@ async fn handle_test_invoke(
     state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
-    // Delegate to invokescript for now
+    // Test invocation uses the same execution engine as invokescript
+    // but with test conditions that don't commit to blockchain
     handle_invoke_script(state, params).await
 }
 

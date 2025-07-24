@@ -148,7 +148,12 @@ impl Instruction {
 
                     operand
                 }
-                _ => unreachable!(),
+                _ => {
+                    return Err(VmError::parse(format!(
+                        "Unexpected opcode in PUSHDATA handling: {:?}",
+                        opcode
+                    )));
+                }
             }
         } else {
             // For other instructions, use the standard operand size
@@ -300,7 +305,12 @@ impl Instruction {
 
                     operand
                 }
-                _ => unreachable!(),
+                _ => {
+                    return Err(VmError::parse(format!(
+                        "Unexpected opcode in PUSHDATA handling: {:?}",
+                        opcode
+                    )));
+                }
             }
         } else {
             // For other instructions, use the standard operand size
@@ -432,7 +442,12 @@ impl Instruction {
 
                     operand
                 }
-                _ => unreachable!(),
+                _ => {
+                    return Err(VmError::parse(format!(
+                        "Unexpected opcode in PUSHDATA handling: {:?}",
+                        opcode
+                    )));
+                }
             }
         } else {
             // For other instructions, use the standard operand size

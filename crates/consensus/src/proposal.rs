@@ -7,7 +7,7 @@ use crate::{BlockIndex, Error, Result, ViewNumber};
 use neo_core::{
     Signer, Transaction, TransactionAttributeType, UInt160, UInt256, Witness, WitnessScope,
 };
-use neo_ledger::{Block, BlockHeader, Blockchain};
+use neo_ledger::{Block, BlockHeader};
 use neo_smart_contract::manifest::ContractPermissionDescriptor;
 use neo_smart_contract::storage::StorageKey;
 use neo_smart_contract::{ApplicationEngine, TriggerType};
@@ -18,8 +18,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// Type alias for blockchain reference
-type BlockchainRef = Arc<Blockchain>;
+// Type alias for blockchain reference - now using LedgerAdapter
+type BlockchainRef = Arc<crate::service::LedgerAdapter>;
 
 /// Block proposal configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -384,19 +384,28 @@ impl BlockProposal {
                     }
                 }
                 TransactionAttributeType::OracleResponse => {
-                    // OracleResponse attribute validation
-                    // Note: attribute.data() method needs to be implemented or use proper field access
-                    // This is a placeholder validation
+                    // OracleResponse attribute validation - validate oracle response format
+                    if let Some(oracle_data) = attribute.get_oracle_response_data() {
+                        if !self.validate_oracle_response(&oracle_data) {
+                            return Err(Error::Generic("Invalid oracle response attribute".to_string()));
+                        }
+                    }
                 }
                 TransactionAttributeType::Conflicts => {
-                    // Conflicts attribute validation
-                    // Note: attribute.data() method needs to be implemented or use proper field access
-                    // This is a placeholder validation
+                    // Conflicts attribute validation - ensure conflict hash is valid
+                    if let Some(conflict_hash) = attribute.get_conflict_hash() {
+                        if !self.validate_conflict_hash(&conflict_hash) {
+                            return Err(Error::Generic("Invalid conflicts attribute".to_string()));
+                        }
+                    }
                 }
                 TransactionAttributeType::NotValidBefore => {
-                    // NotValidBefore attribute validation
-                    // Note: attribute.data() method needs to be implemented or use proper field access
-                    // This is a placeholder validation
+                    // NotValidBefore attribute validation - ensure timestamp is valid
+                    if let Some(timestamp) = attribute.get_not_valid_before_timestamp() {
+                        if !self.validate_not_valid_before_timestamp(timestamp) {
+                            return Err(Error::Generic("Invalid NotValidBefore attribute".to_string()));
+                        }
+                    }
                 }
                 _ => {
                     // Unknown attribute - perform basic validation
@@ -475,15 +484,9 @@ impl BlockProposal {
             }
 
             // 3. Validate account balance for transaction fees (Neo N3 account-based)
-            // TODO: Implement get_account_balance method on Blockchain
-            // if let Ok(blockchain) = self.get_blockchain_reference() {
-            //     let account_balance = blockchain.get_account_balance(account)?;
-            //     let required_fee = tx.network_fee() + tx.system_fee();
-            //
-            //     if account_balance < required_fee {
-            //         return Ok(true); // Insufficient balance conflict
-            //     }
-            // }
+            // Note: Account balance validation requires async blockchain access
+            // This check is typically done at the ProposalManager level which has blockchain access
+            // For BlockProposal validation, we assume the transaction has already passed balance checks
         }
 
         // 4. Check for script hash conflicts (Neo N3 contract execution conflicts)
@@ -570,10 +573,13 @@ impl BlockProposal {
         // This validation should be done by ProposalManager which has cache access
         // This implements the C# logic: TransactionCache for rapid transaction lookup
 
-        // 1. Access transaction cache if available (production caching)
-        // TODO: Implement transaction cache field on BlockProposal if needed
-        // For now, return None as fallback
-        None
+        // 1. Access transaction cache for efficient lookup
+        if let Some(cache) = &self.transaction_cache {
+            cache.get(&tx_hash).cloned()
+        } else {
+            // No cache available - transaction not found
+            None
+        }
     }
 
     /// Checks if two transactions conflict on storage modifications (production implementation)
@@ -964,8 +970,8 @@ pub struct ProposalManager {
     config: ProposalConfig,
     /// Memory pool reference
     mempool: Arc<MemoryPool>,
-    /// Blockchain reference
-    blockchain: Arc<Blockchain>,
+    /// Blockchain reference (using LedgerAdapter)
+    blockchain: BlockchainRef,
     /// Current proposals
     proposals: Arc<RwLock<HashMap<(BlockIndex, ViewNumber), BlockProposal>>>,
     /// Proposal statistics
@@ -1007,7 +1013,7 @@ impl ProposalManager {
     pub fn new(
         config: ProposalConfig,
         mempool: Arc<MemoryPool>,
-        blockchain: Arc<Blockchain>,
+        blockchain: BlockchainRef,
     ) -> Self {
         Self {
             config,
@@ -1310,6 +1316,36 @@ impl ProposalManager {
                 "Invalid ValidUntilBlock".to_string(),
             ));
         }
+
+        Ok(())
+    }
+
+    /// Validates a transaction with balance checks (async version for blockchain access)
+    pub async fn validate_transaction_with_balance(&self, tx: &Transaction) -> Result<()> {
+        // First perform comprehensive validation
+        self.validate_transaction_comprehensive(tx)?;
+
+        // Then check account balances for fees
+        let total_fee = tx.system_fee() + tx.network_fee();
+        if total_fee > 0 {
+            // Get the sender account (first signer)
+            let sender = tx
+                .sender()
+                .ok_or_else(|| Error::InvalidProposal("No sender in transaction".to_string()))?;
+
+            // Check account balance
+            let balance = self.blockchain.get_account_balance(&sender).await?;
+
+            if balance < total_fee as u64 {
+                return Err(Error::InvalidProposal(format!(
+                    "Insufficient balance: account {} has {} but needs {} for fees",
+                    sender, balance, total_fee
+                )));
+            }
+        }
+
+        // Additional async validation can be added here
+        // For example: checking contract states, verifying witness scripts, etc.
 
         Ok(())
     }

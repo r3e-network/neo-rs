@@ -137,11 +137,11 @@ impl ProtocolMessage {
             ProtocolMessage::Block { .. } => MessageCommand::Block,
             ProtocolMessage::NotFound { .. } => MessageCommand::NotFound,
             ProtocolMessage::Reject { .. } => MessageCommand::Reject,
-            // TODO: Add support for optional protocol extensions
-            ProtocolMessage::FilterLoad { .. } => MessageCommand::Reject, // Temporarily map to Reject
-            ProtocolMessage::FilterAdd { .. } => MessageCommand::Reject, // Temporarily map to Reject
-            ProtocolMessage::FilterClear => MessageCommand::Reject, // Temporarily map to Reject
-            ProtocolMessage::MerkleBlock { .. } => MessageCommand::Reject, // Temporarily map to Reject
+            // Optional protocol extensions for SPV/light client support
+            ProtocolMessage::FilterLoad { .. } => MessageCommand::FilterLoad,
+            ProtocolMessage::FilterAdd { .. } => MessageCommand::FilterAdd,
+            ProtocolMessage::FilterClear => MessageCommand::FilterClear,
+            ProtocolMessage::MerkleBlock { .. } => MessageCommand::MerkleBlock,
             ProtocolMessage::Alert { .. } => MessageCommand::Reject, // Temporarily map to Reject
             ProtocolMessage::Consensus { .. } => MessageCommand::Consensus,
         }
@@ -438,7 +438,7 @@ impl ProtocolMessage {
             }
 
             cmd if *cmd == MessageCommand::Mempool => Ok(ProtocolMessage::Mempool),
-            
+
             cmd if *cmd == MessageCommand::Consensus => {
                 let payload = reader.read_var_bytes(65536)?; // 64KB max for consensus messages
                 Ok(ProtocolMessage::Consensus { payload })

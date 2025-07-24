@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use crate::constants::{defaults, magic, ports, seed_nodes};
+
 /// Complete node configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeConfig {
@@ -126,8 +128,8 @@ impl Default for NodeConfig {
             logging: LoggingConfig::default(),
             is_testnet: false,
             is_mainnet: true, // Default to mainnet
-            rpc_port: 10332,
-            p2p_port: 10333,
+            rpc_port: ports::MAINNET_RPC,
+            p2p_port: ports::MAINNET_P2P,
             data_dir: PathBuf::from("./data"),
         }
     }
@@ -146,31 +148,91 @@ impl Default for NodeInfo {
 
 impl Default for NetworkConfig {
     fn default() -> Self {
+        Self::mainnet()
+    }
+}
+
+impl NetworkConfig {
+    /// Create mainnet network configuration
+    pub fn mainnet() -> Self {
         Self {
-            magic: 0x334f454e, // Neo mainnet magic
-            listen_addr: "0.0.0.0:10333".parse().unwrap(),
-            max_peers: 100,
-            seed_nodes: vec![
-                "seed1.neo.org:10333".parse().unwrap(),
-                "seed2.neo.org:10333".parse().unwrap(),
-                "seed3.neo.org:10333".parse().unwrap(),
-            ],
+            magic: magic::MAINNET,
+            listen_addr: format!("0.0.0.0:{}", ports::MAINNET_P2P).parse().unwrap(),
+            max_peers: defaults::MAX_PEERS,
+            seed_nodes: seed_nodes::parse_seed_nodes(seed_nodes::MAINNET),
             enable_upnp: false,
-            connection_timeout: 30,
-            ping_interval: 30,
+            connection_timeout: defaults::CONNECTION_TIMEOUT,
+            ping_interval: defaults::PING_INTERVAL,
+        }
+    }
+
+    /// Create testnet network configuration
+    pub fn testnet() -> Self {
+        Self {
+            magic: magic::TESTNET,
+            listen_addr: format!("0.0.0.0:{}", ports::TESTNET_P2P).parse().unwrap(),
+            max_peers: defaults::MAX_PEERS,
+            seed_nodes: seed_nodes::parse_seed_nodes(seed_nodes::TESTNET),
+            enable_upnp: false,
+            connection_timeout: defaults::CONNECTION_TIMEOUT,
+            ping_interval: defaults::PING_INTERVAL,
+        }
+    }
+
+    /// Create regtest/private network configuration
+    pub fn regtest() -> Self {
+        Self {
+            magic: magic::REGTEST,
+            listen_addr: format!("0.0.0.0:{}", ports::REGTEST_P2P).parse().unwrap(),
+            max_peers: 10, // Fewer peers for private network
+            seed_nodes: seed_nodes::parse_seed_nodes(seed_nodes::REGTEST),
+            enable_upnp: false,
+            connection_timeout: 10, // Faster timeouts for local testing
+            ping_interval: 15,
         }
     }
 }
 
 impl Default for RpcConfig {
     fn default() -> Self {
+        Self::mainnet()
+    }
+}
+
+impl RpcConfig {
+    /// Create mainnet RPC configuration
+    pub fn mainnet() -> Self {
         Self {
             enabled: true,
-            listen_addr: "127.0.0.1:10332".parse().unwrap(),
-            max_connections: 100,
-            request_timeout: 30,
-            enable_cors: true,
-            cors_origins: vec!["*".to_string()],
+            listen_addr: format!("127.0.0.1:{}", ports::MAINNET_RPC).parse().unwrap(),
+            max_connections: defaults::MAX_RPC_CONNECTIONS,
+            request_timeout: defaults::RPC_TIMEOUT,
+            enable_cors: false,   // More restrictive for mainnet
+            cors_origins: vec![], // No CORS origins for mainnet by default
+        }
+    }
+
+    /// Create testnet RPC configuration  
+    pub fn testnet() -> Self {
+        Self {
+            enabled: true,
+            listen_addr: format!("127.0.0.1:{}", ports::TESTNET_RPC).parse().unwrap(),
+            max_connections: defaults::MAX_RPC_CONNECTIONS,
+            request_timeout: defaults::RPC_TIMEOUT,
+            enable_cors: true,                   // More permissive for testing
+            cors_origins: vec!["*".to_string()], // Allow all origins for testing
+        }
+    }
+
+    /// Create regtest RPC configuration
+    pub fn regtest() -> Self {
+        Self {
+            enabled: true,
+            listen_addr: format!("127.0.0.1:{}", ports::REGTEST_RPC).parse().unwrap(),
+            max_connections: 50, // Fewer connections for development
+            request_timeout: 60, // Longer timeout for debugging
+            enable_cors: true,   // More permissive for development
+            cors_origins: vec!["*".to_string()], // Allow all origins for development
         }
     }
 }
@@ -261,24 +323,24 @@ impl NodeConfig {
     /// Create default configuration for testnet
     pub fn testnet() -> Self {
         let mut config = Self::default();
-        config.network.magic = 0x3554334e; // Testnet magic
-        config.network.listen_addr = "0.0.0.0:20333".parse().unwrap();
-        config.rpc.listen_addr = "127.0.0.1:20332".parse().unwrap();
+        config.network = NetworkConfig::testnet();
+        config.rpc = RpcConfig::testnet();
         config.is_testnet = true;
         config.is_mainnet = false;
-        config.rpc_port = 20332;
-        config.p2p_port = 20333;
+        config.rpc_port = ports::TESTNET_RPC;
+        config.p2p_port = ports::TESTNET_P2P;
         config
     }
 
     /// Create default configuration for regtest
     pub fn regtest() -> Self {
         let mut config = Self::default();
-        config.network.magic = 0x12345678; // Regtest magic
-        config.network.listen_addr = "0.0.0.0:30333".parse().unwrap();
-        config.rpc.listen_addr = "127.0.0.1:30332".parse().unwrap();
+        config.network = NetworkConfig::regtest();
+        config.rpc = RpcConfig::regtest();
         config.consensus.enabled = true; // Enable consensus for regtest
         config.consensus.block_time_ms = 1000; // 1 second for testing
+        config.rpc_port = ports::REGTEST_RPC;
+        config.p2p_port = ports::REGTEST_P2P;
         config
     }
 

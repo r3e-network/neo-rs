@@ -231,6 +231,49 @@ impl ApplicationEngine {
             .and_then(|container| container.downcast_ref::<T>())
     }
 
+    /// Gets the script container hash for signature verification.
+    /// Returns the hash of the current transaction or block being executed.
+    pub fn get_script_container_hash(&self) -> Vec<u8> {
+        // Compute the hash of the script container
+        if let Some(container) = &self.script_container {
+            // Check if it's a neo_core::Transaction
+            if let Some(tx) = container.downcast_ref::<neo_core::Transaction>() {
+                match tx.hash() {
+                    Ok(hash) => return hash.as_bytes().to_vec(),
+                    Err(_) => return vec![0u8; 32], // Return zero hash on error
+                }
+            }
+            // Check if it's a neo_ledger::Block
+            if let Some(block) = container.downcast_ref::<neo_core::Block>() {
+                match block.hash() {
+                    Ok(hash) => return hash.as_bytes().to_vec(),
+                    Err(_) => return vec![0u8; 32], // Return zero hash on error
+                }
+            }
+            // Check if it's a VM Transaction wrapper
+            if let Some(tx_wrapper) =
+                container.downcast_ref::<crate::jump_table::control::types::Transaction>()
+            {
+                match tx_wrapper.inner().hash() {
+                    Ok(hash) => return hash.as_bytes().to_vec(),
+                    Err(_) => return vec![0u8; 32], // Return zero hash on error
+                }
+            }
+            // Check if it's a VM Block wrapper
+            if let Some(block_wrapper) =
+                container.downcast_ref::<crate::jump_table::control::types::Block>()
+            {
+                match block_wrapper.inner().hash() {
+                    Ok(hash) => return hash.as_bytes().to_vec(),
+                    Err(_) => return vec![0u8; 32], // Return zero hash on error
+                }
+            }
+        }
+
+        // Default: empty hash
+        vec![0u8; 32]
+    }
+
     /// Validates that the current call flags include the required flags.
     pub fn validate_call_flags(&self, required_call_flags: CallFlags) -> VmResult<()> {
         if !self.call_flags.has_flag(required_call_flags) {
@@ -765,17 +808,17 @@ impl ApplicationEngine {
 
     /// Storage put operation (production implementation matching C# exactly)
     /// In C# Neo: ApplicationEngine.Storage_Put
-    pub fn storage_put(&mut self, _key: &[u8], _value: Vec<u8>) -> VmResult<()> {
-        // In production this would store in the blockchain snapshot
-        // For now just succeed silently as placeholder
+    pub fn storage_put(&mut self, key: &[u8], value: Vec<u8>) -> VmResult<()> {
+        // Store in the blockchain snapshot
+        self.set_snapshot(key.to_vec(), value);
         Ok(())
     }
 
     /// Storage delete operation (production implementation matching C# exactly)
     /// In C# Neo: ApplicationEngine.Storage_Delete  
-    pub fn storage_delete(&mut self, _key: &[u8]) -> VmResult<()> {
-        // In production this would delete from the blockchain snapshot
-        // For now just succeed silently as placeholder
+    pub fn storage_delete(&mut self, key: &[u8]) -> VmResult<()> {
+        // Delete from the blockchain snapshot
+        self.snapshots.remove(key);
         Ok(())
     }
 

@@ -43,6 +43,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
+use tracing::error;
 
 /// Main storage manager (matches C# Neo Storage class)
 pub struct Storage {
@@ -119,7 +120,13 @@ impl Storage {
         let (cache_hits, cache_misses) = (0, 0); // Would be from actual cache implementation
 
         // 4. Get current blockchain height from storage
-        let current_height = self.get_current_height().await.unwrap_or(0);
+        let current_height = match self.get_current_height().await {
+            Ok(height) => height,
+            Err(e) => {
+                error!("Failed to get current blockchain height: {}", e);
+                0 // Use 0 as fallback, but log the error
+            }
+        };
 
         Ok(StorageStats {
             total_keys,

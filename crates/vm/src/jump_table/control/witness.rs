@@ -43,7 +43,7 @@ pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> VmResult
                 let signers = get_transaction_signers(engine, &transaction)?;
 
                 // 5. Find matching signer (matches C# exact logic)
-                let signer = signers.iter().find(|s| s.account == target_hash);
+                let signer = signers.iter().find(|s| s.account() == &target_hash);
 
                 if let Some(signer) = signer {
                     // 6. Check witness rules (matches C# exact logic)
@@ -106,10 +106,10 @@ pub fn get_script_container(engine: &ExecutionEngine) -> Option<ScriptContainer>
         // 2. Determine container type (matches C# IVerifiable type checking exactly)
         if let Some(transaction) = container.as_any().downcast_ref::<Transaction>() {
             // Transaction container (most common case)
-            return Some(ScriptContainer::Transaction(*transaction));
+            return Some(ScriptContainer::Transaction(transaction.clone()));
         } else if let Some(block) = container.as_any().downcast_ref::<Block>() {
             // Block container (for consensus validation)
-            return Some(ScriptContainer::Block(*block));
+            return Some(ScriptContainer::Block(block.clone()));
         }
     }
 
@@ -172,8 +172,8 @@ pub fn check_witness_rules(engine: &ExecutionEngine, signer: &Signer) -> VmResul
     //        return false;
 
     for rule in signer.get_all_rules() {
-        if rule.condition.matches(engine)? {
-            return Ok(rule.action == super::types::WitnessRuleAction::Allow);
+        if rule.matches(engine)? {
+            return Ok(rule.action() == neo_core::WitnessRuleAction::Allow);
         }
     }
 

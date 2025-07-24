@@ -3,6 +3,7 @@
 //! Implementation of Neo N3 RPC methods.
 
 use crate::types::*;
+use hex;
 use neo_ledger::Ledger;
 use neo_persistence::RocksDbStore;
 use serde_json::{json, Value};
@@ -22,10 +23,108 @@ impl RpcMethods {
         Self { ledger, storage }
     }
 
+    /// Converts a Block to RpcBlock
+    fn block_to_rpc_block(
+        &self,
+        block: &neo_ledger::Block,
+        confirmations: u32,
+        next_block_hash: Option<String>,
+    ) -> RpcBlock {
+        RpcBlock {
+            hash: format!("0x{}", hex::encode(block.hash().as_bytes())),
+            size: block.size() as u32,
+            version: block.header.version,
+            previous_block_hash: format!(
+                "0x{}",
+                hex::encode(block.header.previous_hash.as_bytes())
+            ),
+            merkle_root: format!("0x{}", hex::encode(block.header.merkle_root.as_bytes())),
+            time: block.header.timestamp,
+            index: block.header.index,
+            next_consensus: block.header.next_consensus.to_string(),
+            witnesses: block
+                .header
+                .witnesses
+                .iter()
+                .map(|w| RpcWitness {
+                    invocation: hex::encode(&w.invocation_script),
+                    verification: hex::encode(&w.verification_script),
+                })
+                .collect(),
+            tx: block
+                .transactions
+                .iter()
+                .map(|tx| RpcTransaction {
+                    hash: match tx.hash() {
+                        Ok(hash) => format!("0x{}", hex::encode(hash.as_bytes())),
+                        Err(_) => {
+                            "0x0000000000000000000000000000000000000000000000000000000000000000"
+                                .to_string()
+                        }
+                    },
+                    size: tx.size() as u32,
+                    version: tx.version(),
+                    nonce: tx.nonce(),
+                    system_fee: tx.system_fee().to_string(),
+                    network_fee: tx.network_fee().to_string(),
+                    valid_until_block: tx.valid_until_block(),
+                    signers: tx
+                        .signers()
+                        .iter()
+                        .map(|s| RpcSigner {
+                            account: format!("0x{}", hex::encode(s.account.as_bytes())),
+                            scopes: s.scopes.to_string(),
+                        })
+                        .collect(),
+                    attributes: tx
+                        .attributes()
+                        .iter()
+                        .map(|attr| match attr {
+                            neo_core::TransactionAttribute::HighPriority => {
+                                serde_json::json!({"type": "HighPriority"})
+                            }
+                            neo_core::TransactionAttribute::OracleResponse { id, code, result } => {
+                                serde_json::json!({
+                                    "type": "OracleResponse",
+                                    "id": id,
+                                    "code": *code as u8,
+                                    "result": hex::encode(result)
+                                })
+                            }
+                            neo_core::TransactionAttribute::NotValidBefore { height } => {
+                                serde_json::json!({
+                                    "type": "NotValidBefore",
+                                    "height": height
+                                })
+                            }
+                            neo_core::TransactionAttribute::Conflicts { hash } => {
+                                serde_json::json!({
+                                    "type": "Conflicts",
+                                    "hash": format!("0x{}", hex::encode(hash.as_bytes()))
+                                })
+                            }
+                        })
+                        .collect(),
+                    script: hex::encode(tx.script()),
+                    witnesses: tx
+                        .witnesses()
+                        .iter()
+                        .map(|w| RpcWitness {
+                            invocation: hex::encode(&w.invocation_script),
+                            verification: hex::encode(&w.verification_script),
+                        })
+                        .collect(),
+                })
+                .collect(),
+            confirmations,
+            next_block_hash,
+        }
+    }
+
     /// Gets the current block count
     pub async fn get_block_count(&self) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         debug!("RPC: getblockcount");
-        let height = self.ledger.get_height();
+        let height = self.ledger.get_height().await;
         Ok(json!(height + 1)) // Neo returns count (height + 1)
     }
 
@@ -43,25 +142,57 @@ impl RpcMethods {
             return Err("Missing block identifier".into());
         }
 
-        // For now, return a mock block since we need to implement proper block retrieval
-        let mock_block = RpcBlock {
-            hash: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
-            size: 1024,
-            version: 0,
-            previous_block_hash:
-                "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
-            merkle_root: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-                .to_string(),
-            time: 1640995200000,
-            index: 0,
-            next_consensus: "NiNmXL8FjEUEs1nfX9uHFBNaenxDHJtmuB".to_string(),
-            witnesses: vec![],
-            tx: vec![],
-            confirmations: 1,
-            next_block_hash: None,
+        // Parse block identifier (can be hash or index)
+        let block_param = &params_array[0];
+
+        let block = if let Some(hash_str) = block_param.as_str() {
+            // Try to parse as hex hash
+            if let Ok(hash_bytes) = hex::decode(hash_str.trim_start_matches("0x")) {
+                if hash_bytes.len() == 32 {
+                    let mut bytes = [0u8; 32];
+                    bytes.copy_from_slice(&hash_bytes);
+                    let hash = neo_core::UInt256::from(bytes);
+                    self.ledger.get_block_by_hash(&hash).await?
+                } else {
+                    return Err("Invalid hash format".into());
+                }
+            } else {
+                return Err("Invalid hash format".into());
+            }
+        } else if let Some(index) = block_param.as_u64() {
+            // Parse as block index
+            self.ledger.get_block(index as u32).await?
+        } else {
+            return Err("Invalid block identifier format".into());
         };
 
-        Ok(serde_json::to_value(mock_block)?)
+        match block {
+            Some(block) => {
+                // Calculate confirmations
+                let current_height = self.ledger.get_height().await;
+                let confirmations = if current_height >= block.header.index {
+                    current_height - block.header.index + 1
+                } else {
+                    0
+                };
+
+                // Get next block hash if not the tip
+                let next_block_hash = if block.header.index < current_height {
+                    match self.ledger.get_block(block.header.index + 1).await? {
+                        Some(next_block) => {
+                            Some(format!("0x{}", hex::encode(next_block.hash().as_bytes())))
+                        }
+                        None => None,
+                    }
+                } else {
+                    None
+                };
+
+                let rpc_block = self.block_to_rpc_block(&block, confirmations, next_block_hash);
+                Ok(serde_json::to_value(rpc_block)?)
+            }
+            None => Err("Block not found".into()),
+        }
     }
 
     /// Gets block hash by index
@@ -78,12 +209,16 @@ impl RpcMethods {
             return Err("Missing block index".into());
         }
 
-        let _index = params_array[0].as_u64().ok_or("Invalid block index")?;
+        let index = params_array[0].as_u64().ok_or("Invalid block index")? as u32;
 
-        // Return mock hash for now
-        Ok(json!(
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-        ))
+        // Get the actual block and return its hash
+        match self.ledger.get_block(index).await? {
+            Some(block) => {
+                let hash_hex = hex::encode(block.hash().as_bytes());
+                Ok(json!(format!("0x{}", hash_hex)))
+            }
+            None => Err("Block not found".into()),
+        }
     }
 
     /// Gets the best block hash
@@ -91,10 +226,9 @@ impl RpcMethods {
         &self,
     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         debug!("RPC: getbestblockhash");
-        // Return mock hash for now
-        Ok(json!(
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-        ))
+        let best_hash = self.ledger.get_best_block_hash().await?;
+        let hash_hex = hex::encode(best_hash.as_bytes());
+        Ok(json!(format!("0x{}", hash_hex)))
     }
 
     /// Gets version information
@@ -138,7 +272,13 @@ impl RpcMethods {
         &self,
     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         debug!("RPC: getconnectioncount");
-        Ok(json!(0)) // Return 0 for now since we don't have active peer tracking in RPC
+        // Get actual connection count from network manager
+        let connection_count = if let Some(network) = self.network_manager.as_ref() {
+            network.get_peer_count().await
+        } else {
+            0
+        };
+        Ok(json!(connection_count))
     }
 
     /// Validates an address

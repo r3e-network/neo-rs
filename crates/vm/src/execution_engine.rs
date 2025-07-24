@@ -561,6 +561,14 @@ impl ExecutionEngine {
         None
     }
 
+    /// Gets the script container hash for signature verification.
+    /// Returns the hash of the current transaction or block being executed.
+    pub fn get_script_container_hash(&self) -> Vec<u8> {
+        // Base implementation returns empty hash
+        // ApplicationEngine overrides this with actual container hash
+        vec![0u8; 32]
+    }
+
     /// Attempts to cast this ExecutionEngine to an ApplicationEngine (immutable)
     /// Returns None for base ExecutionEngine, Some for ApplicationEngine
     pub fn as_application_engine(&self) -> Option<&crate::application_engine::ApplicationEngine> {

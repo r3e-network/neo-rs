@@ -3,12 +3,12 @@
 //! This module provides centralized error handling, recovery strategies,
 //! and graceful degradation for various edge cases in the Neo-RS node.
 
+use anyhow::{Context, Result};
+use dashmap::DashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use anyhow::{Context, Result};
-use tracing::{error, warn, info, debug};
 use tokio::sync::RwLock;
-use dashmap::DashMap;
+use tracing::{debug, error, info, warn};
 
 /// Error severity levels for categorizing issues
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -69,7 +69,10 @@ pub struct ErrorInfo {
 #[derive(Debug, Clone)]
 pub enum RecoveryStrategy {
     /// Retry the operation with exponential backoff
-    RetryWithBackoff { max_attempts: u32, initial_delay: Duration },
+    RetryWithBackoff {
+        max_attempts: u32,
+        initial_delay: Duration,
+    },
     /// Switch to an alternative method
     Fallback(String),
     /// Log and continue operation
@@ -106,16 +109,16 @@ impl ErrorHandler {
             total_errors: Arc::new(RwLock::new(0)),
             start_time: Instant::now(),
         };
-        
+
         // Initialize default recovery strategies
         handler.init_default_strategies();
         handler
     }
-    
+
     /// Initialize default recovery strategies
     fn init_default_strategies(&mut self) {
         use ErrorCategory::*;
-        
+
         // Network errors: retry with backoff
         self.recovery_strategies.insert(
             format!("{:?}", Network),
@@ -124,7 +127,7 @@ impl ErrorHandler {
                 initial_delay: Duration::from_secs(1),
             },
         );
-        
+
         // Storage errors: circuit breaker
         self.recovery_strategies.insert(
             format!("{:?}", Storage),
@@ -133,26 +136,26 @@ impl ErrorHandler {
                 timeout: Duration::from_secs(60),
             },
         );
-        
+
         // Consensus errors: restart component
         self.recovery_strategies.insert(
             format!("{:?}", Consensus),
             RecoveryStrategy::RestartComponent("consensus".to_string()),
         );
-        
+
         // VM errors: fallback to safe mode
         self.recovery_strategies.insert(
             format!("{:?}", VirtualMachine),
             RecoveryStrategy::Fallback("safe_vm_execution".to_string()),
         );
-        
+
         // Resource exhaustion: graceful shutdown
         self.recovery_strategies.insert(
             format!("{:?}", ResourceExhaustion),
             RecoveryStrategy::GracefulShutdown,
         );
     }
-    
+
     /// Handle an error with appropriate recovery strategy
     pub async fn handle_error(
         &self,
@@ -166,45 +169,64 @@ impl ErrorHandler {
             let mut total = self.total_errors.write().await;
             *total += 1;
         }
-        
+
         // Track error
         self.track_error(&error, category, severity).await;
-        
+
         // Log error based on severity
         match severity {
             ErrorSeverity::Critical => {
-                error!("🔴 CRITICAL ERROR in {}: {} - {}", context, category_name(category), error);
+                error!(
+                    "🔴 CRITICAL ERROR in {}: {} - {}",
+                    context,
+                    category_name(category),
+                    error
+                );
                 error!("   Stack trace: {:?}", error);
             }
             ErrorSeverity::High => {
-                error!("🟠 HIGH SEVERITY ERROR in {}: {} - {}", context, category_name(category), error);
+                error!(
+                    "🟠 HIGH SEVERITY ERROR in {}: {} - {}",
+                    context,
+                    category_name(category),
+                    error
+                );
             }
             ErrorSeverity::Medium => {
-                warn!("🟡 Medium severity error in {}: {} - {}", context, category_name(category), error);
+                warn!(
+                    "🟡 Medium severity error in {}: {} - {}",
+                    context,
+                    category_name(category),
+                    error
+                );
             }
             ErrorSeverity::Low => {
-                debug!("🔵 Low severity error in {}: {} - {}", context, category_name(category), error);
+                debug!(
+                    "🔵 Low severity error in {}: {} - {}",
+                    context,
+                    category_name(category),
+                    error
+                );
             }
         }
-        
+
         // Get recovery strategy
         let strategy = self.get_recovery_strategy(category, severity).await;
-        
+
         // Execute recovery
         match strategy {
-            RecoveryStrategy::RetryWithBackoff { max_attempts, initial_delay } => {
-                Ok(RecoveryAction::Retry {
-                    max_attempts,
-                    delay: initial_delay,
-                })
-            }
+            RecoveryStrategy::RetryWithBackoff {
+                max_attempts,
+                initial_delay,
+            } => Ok(RecoveryAction::Retry {
+                max_attempts,
+                delay: initial_delay,
+            }),
             RecoveryStrategy::Fallback(method) => {
                 info!("Falling back to alternative method: {}", method);
                 Ok(RecoveryAction::UseFallback(method))
             }
-            RecoveryStrategy::LogAndContinue => {
-                Ok(RecoveryAction::Continue)
-            }
+            RecoveryStrategy::LogAndContinue => Ok(RecoveryAction::Continue),
             RecoveryStrategy::RestartComponent(component) => {
                 warn!("Component restart required: {}", component);
                 Ok(RecoveryAction::RestartComponent(component))
@@ -224,11 +246,16 @@ impl ErrorHandler {
             }
         }
     }
-    
+
     /// Track error occurrence
-    async fn track_error(&self, error: &anyhow::Error, category: ErrorCategory, severity: ErrorSeverity) {
+    async fn track_error(
+        &self,
+        error: &anyhow::Error,
+        category: ErrorCategory,
+        severity: ErrorSeverity,
+    ) {
         let mut errors = self.error_stats.entry(category).or_insert_with(Vec::new);
-        
+
         // Check if this error already exists
         let error_msg = error.to_string();
         if let Some(existing) = errors.iter_mut().find(|e| e.message == error_msg) {
@@ -244,21 +271,25 @@ impl ErrorHandler {
                 last_occurrence: Instant::now(),
             });
         }
-        
+
         // Keep only recent errors (last 1000)
         if errors.len() > 1000 {
             let drain_count = errors.len() - 1000;
             errors.drain(0..drain_count);
         }
     }
-    
+
     /// Get recovery strategy for error
-    async fn get_recovery_strategy(&self, category: ErrorCategory, severity: ErrorSeverity) -> RecoveryStrategy {
+    async fn get_recovery_strategy(
+        &self,
+        category: ErrorCategory,
+        severity: ErrorSeverity,
+    ) -> RecoveryStrategy {
         // Check for custom strategy
         if let Some(strategy) = self.recovery_strategies.get(&format!("{:?}", category)) {
             return strategy.clone();
         }
-        
+
         // Default strategies based on severity
         match severity {
             ErrorSeverity::Critical => RecoveryStrategy::GracefulShutdown,
@@ -270,34 +301,39 @@ impl ErrorHandler {
             ErrorSeverity::Low => RecoveryStrategy::LogAndContinue,
         }
     }
-    
+
     /// Check circuit breaker status
     async fn check_circuit_breaker(&self, context: &str, threshold: u32) -> bool {
-        let mut breakers = self.circuit_breakers.entry(context.to_string())
+        let mut breakers = self
+            .circuit_breakers
+            .entry(context.to_string())
             .or_insert_with(|| CircuitBreaker::new(threshold, Duration::from_secs(60)));
-        
+
         breakers.record_failure();
         breakers.is_open()
     }
-    
+
     /// Get error statistics
     pub async fn get_error_stats(&self) -> ErrorStatistics {
         let total_errors = *self.total_errors.read().await;
         let uptime = self.start_time.elapsed();
-        
+
         let mut stats_by_category = Vec::new();
         for entry in self.error_stats.iter() {
             let (category, errors) = entry.pair();
             let total = errors.len() as u64;
-            let recent = errors.iter().filter(|e| e.last_occurrence.elapsed() < Duration::from_secs(300)).count() as u64;
-            
+            let recent = errors
+                .iter()
+                .filter(|e| e.last_occurrence.elapsed() < Duration::from_secs(300))
+                .count() as u64;
+
             stats_by_category.push(CategoryStats {
                 category: *category,
                 total_errors: total,
                 recent_errors: recent,
             });
         }
-        
+
         ErrorStatistics {
             total_errors,
             errors_per_hour: (total_errors as f64 / uptime.as_secs_f64()) * 3600.0,
@@ -305,11 +341,11 @@ impl ErrorHandler {
             stats_by_category,
         }
     }
-    
+
     /// Clear old error records
     pub async fn cleanup_old_errors(&self, max_age: Duration) {
         let now = Instant::now();
-        
+
         for mut entry in self.error_stats.iter_mut() {
             let errors = entry.value_mut();
             errors.retain(|e| now.duration_since(e.last_occurrence) < max_age);
@@ -344,23 +380,23 @@ impl CircuitBreaker {
             state: CircuitState::Closed,
         }
     }
-    
+
     fn record_failure(&mut self) {
         self.failure_count += 1;
         self.last_failure = Some(Instant::now());
-        
+
         if self.failure_count >= self.threshold {
             self.state = CircuitState::Open;
         }
     }
-    
+
     fn record_success(&mut self) {
         if self.state == CircuitState::HalfOpen {
             self.state = CircuitState::Closed;
             self.failure_count = 0;
         }
     }
-    
+
     fn is_open(&mut self) -> bool {
         match self.state {
             CircuitState::Closed => false,
@@ -442,12 +478,22 @@ where
     E: std::fmt::Display,
 {
     let mut delay = initial_delay;
-    
+
+    if max_attempts == 0 {
+        error!("Invalid max_attempts: cannot be 0");
+        // Since we can't return an error without knowing the error type,
+        // we'll run the operation once and return its result
+        return operation();
+    }
+
     for attempt in 1..=max_attempts {
         match operation() {
             Ok(result) => return Ok(result),
             Err(e) if attempt < max_attempts => {
-                warn!("Attempt {} failed: {}. Retrying in {:?}...", attempt, e, delay);
+                warn!(
+                    "Attempt {} failed: {}. Retrying in {:?}...",
+                    attempt, e, delay
+                );
                 tokio::time::sleep(delay).await;
                 delay *= 2; // Exponential backoff
             }
@@ -457,8 +503,11 @@ where
             }
         }
     }
-    
-    unreachable!()
+
+    // This should never be reached since the loop handles all cases,
+    // but if it somehow is reached, run the operation one more time
+    error!("Unexpected state in retry_with_backoff - this should not happen");
+    operation()
 }
 
 /// Async retry helper with exponential backoff
@@ -473,12 +522,22 @@ where
     E: std::fmt::Display,
 {
     let mut delay = initial_delay;
-    
+
+    if max_attempts == 0 {
+        error!("Invalid max_attempts: cannot be 0");
+        // Since we can't return an error without knowing the error type,
+        // we'll run the operation once and return its result
+        return operation().await;
+    }
+
     for attempt in 1..=max_attempts {
         match operation().await {
             Ok(result) => return Ok(result),
             Err(e) if attempt < max_attempts => {
-                warn!("Attempt {} failed: {}. Retrying in {:?}...", attempt, e, delay);
+                warn!(
+                    "Attempt {} failed: {}. Retrying in {:?}...",
+                    attempt, e, delay
+                );
                 tokio::time::sleep(delay).await;
                 delay *= 2; // Exponential backoff
             }
@@ -488,8 +547,11 @@ where
             }
         }
     }
-    
-    unreachable!()
+
+    // This should never be reached since the loop handles all cases,
+    // but if it somehow is reached, run the operation one more time
+    error!("Unexpected state in retry_with_backoff_async - this should not happen");
+    operation().await
 }
 
 /// Helper macro for handling errors with context
@@ -499,7 +561,9 @@ macro_rules! handle_error {
         match $result {
             Ok(val) => Ok(val),
             Err(e) => {
-                let action = $handler.handle_error(e.into(), $category, $severity, $context).await?;
+                let action = $handler
+                    .handle_error(e.into(), $category, $severity, $context)
+                    .await?;
                 match action {
                     RecoveryAction::Continue => Ok(Default::default()),
                     RecoveryAction::Shutdown => Err(anyhow::anyhow!("Shutdown required")),
@@ -513,44 +577,47 @@ macro_rules! handle_error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_error_handler_creation() {
         let handler = ErrorHandler::new();
         let stats = handler.get_error_stats().await;
         assert_eq!(stats.total_errors, 0);
     }
-    
+
     #[tokio::test]
     async fn test_error_tracking() {
         let handler = ErrorHandler::new();
-        
+
         let error = anyhow::anyhow!("Test network error");
-        handler.handle_error(
-            error,
-            ErrorCategory::Network,
-            ErrorSeverity::Medium,
-            "test_context"
-        ).await.unwrap();
-        
+        handler
+            .handle_error(
+                error,
+                ErrorCategory::Network,
+                ErrorSeverity::Medium,
+                "test_context",
+            )
+            .await
+            .unwrap();
+
         let stats = handler.get_error_stats().await;
         assert_eq!(stats.total_errors, 1);
     }
-    
+
     #[tokio::test]
     async fn test_circuit_breaker() {
         let mut breaker = CircuitBreaker::new(3, Duration::from_secs(60));
-        
+
         assert!(!breaker.is_open());
-        
+
         breaker.record_failure();
         breaker.record_failure();
         assert!(!breaker.is_open());
-        
+
         breaker.record_failure();
         assert!(breaker.is_open());
     }
-    
+
     #[tokio::test]
     async fn test_retry_with_backoff() {
         let mut counter = 0;
@@ -565,8 +632,9 @@ mod tests {
             },
             5,
             Duration::from_millis(10),
-        ).await;
-        
+        )
+        .await;
+
         assert_eq!(result.unwrap(), "Success");
         assert_eq!(counter, 3);
     }

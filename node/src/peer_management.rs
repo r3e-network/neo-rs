@@ -3,6 +3,7 @@
 //! This module provides enhanced peer discovery, connection quality monitoring,
 //! and adaptive peer management for optimal network performance.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -10,7 +11,6 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use tracing::{debug, info, warn};
-use serde::{Deserialize, Serialize};
 
 /// Peer quality metrics and connection information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,14 +72,14 @@ impl PeerQuality {
     pub fn record_successful_connection(&mut self, response_time_ms: Option<u64>) {
         self.last_connected = Some(SystemTime::now());
         self.successful_connections += 1;
-        
+
         if let Some(response_time) = response_time_ms {
             self.avg_response_time = Some(match self.avg_response_time {
                 Some(existing) => (existing + response_time) / 2,
                 None => response_time,
             });
         }
-        
+
         self.update_reliability_score();
     }
 
@@ -98,7 +98,7 @@ impl PeerQuality {
         }
 
         let success_rate = self.successful_connections as f64 / total_attempts as f64;
-        
+
         // Factor in response time if available
         let response_penalty = match self.avg_response_time {
             Some(time) if time > 5000 => 0.1, // Penalty for slow responses
@@ -110,9 +110,17 @@ impl PeerQuality {
         let recency_bonus = match self.last_connected {
             Some(last) => {
                 let age = SystemTime::now().duration_since(last).unwrap_or_default();
-                if age < Duration::from_secs(300) { 0.1 } // 5 minutes
-                else if age < Duration::from_secs(3600) { 0.05 } // 1 hour
-                else { 0.0 }
+                if age < Duration::from_secs(300) {
+                    0.1
+                }
+                // 5 minutes
+                else if age < Duration::from_secs(3600) {
+                    0.05
+                }
+                // 1 hour
+                else {
+                    0.0
+                }
             }
             None => 0.0,
         };
@@ -167,7 +175,7 @@ impl PeerManager {
         max_tracked_peers: Option<usize>,
     ) -> Self {
         let mut peers = HashMap::new();
-        
+
         // Initialize seed nodes with high initial reliability
         for seed in &seed_nodes {
             let mut peer = PeerQuality::new(*seed);
@@ -187,12 +195,17 @@ impl PeerManager {
     /// Get the best peers for connection attempts
     pub async fn get_best_peers(&self, count: usize) -> Vec<SocketAddr> {
         let peers = self.peers.read().await;
-        let mut peer_list: Vec<_> = peers.values()
+        let mut peer_list: Vec<_> = peers
+            .values()
             .filter(|p| !p.is_currently_banned())
             .collect();
 
         // Sort by reliability score (descending)
-        peer_list.sort_by(|a, b| b.reliability_score.partial_cmp(&a.reliability_score).unwrap());
+        peer_list.sort_by(|a, b| {
+            b.reliability_score
+                .partial_cmp(&a.reliability_score)
+                .unwrap()
+        });
 
         // Add some diversity - don't just pick the top rated ones
         let mut result = Vec::new();
@@ -205,7 +218,8 @@ impl PeerManager {
         }
 
         // Add some diverse peers (from different regions/IPs if possible)
-        let remaining_peers: Vec<_> = peer_list.iter()
+        let remaining_peers: Vec<_> = peer_list
+            .iter()
             .skip(high_quality_count)
             .take(diverse_count * 2) // Take more than needed for selection
             .collect();
@@ -222,26 +236,34 @@ impl PeerManager {
 
     /// Record a successful connection to a peer
     pub async fn record_successful_connection(
-        &self, 
-        address: SocketAddr, 
-        response_time_ms: Option<u64>
+        &self,
+        address: SocketAddr,
+        response_time_ms: Option<u64>,
     ) {
         let mut peers = self.peers.write().await;
-        let peer = peers.entry(address).or_insert_with(|| PeerQuality::new(address));
+        let peer = peers
+            .entry(address)
+            .or_insert_with(|| PeerQuality::new(address));
         peer.record_successful_connection(response_time_ms);
-        
-        debug!("Recorded successful connection to {}, reliability: {:.2}", 
-               address, peer.reliability_score);
+
+        debug!(
+            "Recorded successful connection to {}, reliability: {:.2}",
+            address, peer.reliability_score
+        );
     }
 
     /// Record a failed connection to a peer
     pub async fn record_failed_connection(&self, address: SocketAddr) {
         let mut peers = self.peers.write().await;
-        let peer = peers.entry(address).or_insert_with(|| PeerQuality::new(address));
+        let peer = peers
+            .entry(address)
+            .or_insert_with(|| PeerQuality::new(address));
         peer.record_failed_connection();
-        
-        debug!("Recorded failed connection to {}, reliability: {:.2}", 
-               address, peer.reliability_score);
+
+        debug!(
+            "Recorded failed connection to {}, reliability: {:.2}",
+            address, peer.reliability_score
+        );
 
         // Auto-ban peers with very poor reliability
         if peer.reliability_score < 0.1 && peer.failed_connections >= 5 {
@@ -269,8 +291,13 @@ impl PeerManager {
             // Enforce max tracked peers limit
             if peers.len() >= self.max_tracked_peers {
                 // Remove lowest quality peer to make room
-                if let Some(worst_peer) = peers.values()
-                    .min_by(|a, b| a.reliability_score.partial_cmp(&b.reliability_score).unwrap())
+                if let Some(worst_peer) = peers
+                    .values()
+                    .min_by(|a, b| {
+                        a.reliability_score
+                            .partial_cmp(&b.reliability_score)
+                            .unwrap()
+                    })
                     .map(|p| p.address)
                 {
                     peers.remove(&worst_peer);
@@ -282,16 +309,22 @@ impl PeerManager {
         }
 
         if added_count > 0 {
-            info!("Added {} new peers to tracking (total: {})", added_count, peers.len());
+            info!(
+                "Added {} new peers to tracking (total: {})",
+                added_count,
+                peers.len()
+            );
         }
     }
 
     /// Ban a peer for misbehavior
     pub async fn ban_peer(&self, address: SocketAddr, duration: Option<Duration>, reason: &str) {
         let mut peers = self.peers.write().await;
-        let peer = peers.entry(address).or_insert_with(|| PeerQuality::new(address));
+        let peer = peers
+            .entry(address)
+            .or_insert_with(|| PeerQuality::new(address));
         peer.ban(duration);
-        
+
         info!("Banned peer {} for {}: {:?}", address, reason, duration);
     }
 
@@ -319,10 +352,12 @@ impl PeerManager {
         let total_peers = peers.len();
         let banned_peers = peers.values().filter(|p| p.is_currently_banned()).count();
         let high_quality_peers = peers.values().filter(|p| p.reliability_score > 0.7).count();
-        let connected_recently = peers.values()
+        let connected_recently = peers
+            .values()
             .filter(|p| {
                 p.last_connected.map_or(false, |t| {
-                    SystemTime::now().duration_since(t).unwrap_or_default() < Duration::from_secs(300)
+                    SystemTime::now().duration_since(t).unwrap_or_default()
+                        < Duration::from_secs(300)
                 })
             })
             .count();
@@ -346,27 +381,29 @@ impl PeerManager {
     /// Start background peer management tasks
     pub async fn start_background_tasks(&self) {
         let peers_clone = self.peers.clone();
-        
+
         // Cleanup task - remove very old, poor quality peers
         tokio::spawn(async move {
             let mut cleanup_interval = interval(Duration::from_secs(300)); // Every 5 minutes
-            
+
             loop {
                 cleanup_interval.tick().await;
-                
+
                 let mut peers = peers_clone.write().await;
                 let mut to_remove = Vec::new();
-                
+
                 for (addr, peer) in peers.iter() {
                     // Remove peers that haven't connected in 24 hours and have poor reliability
-                    if peer.reliability_score < 0.2 && 
-                       peer.last_connected.map_or(true, |t| {
-                           SystemTime::now().duration_since(t).unwrap_or_default() > Duration::from_secs(86400)
-                       }) {
+                    if peer.reliability_score < 0.2
+                        && peer.last_connected.map_or(true, |t| {
+                            SystemTime::now().duration_since(t).unwrap_or_default()
+                                > Duration::from_secs(86400)
+                        })
+                    {
                         to_remove.push(*addr);
                     }
                 }
-                
+
                 for addr in to_remove {
                     peers.remove(&addr);
                 }
@@ -411,11 +448,11 @@ mod tests {
     #[test]
     fn test_peer_quality_updates() {
         let mut peer = PeerQuality::new("127.0.0.1:10333".parse().unwrap());
-        
+
         // Record successful connections
         peer.record_successful_connection(Some(100));
         assert!(peer.reliability_score > 0.5);
-        
+
         // Record failures
         peer.record_failed_connection();
         peer.record_failed_connection();
@@ -426,7 +463,7 @@ mod tests {
     fn test_ip_range_checking() {
         let ip = "192.168.1.100".parse().unwrap();
         let range_ip = "192.168.1.0".parse().unwrap();
-        
+
         assert!(ip_in_range(ip, range_ip, 24));
         assert!(!ip_in_range(ip, range_ip, 28));
     }

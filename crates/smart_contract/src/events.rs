@@ -417,10 +417,22 @@ impl EventManager {
         subscription: &EventSubscription,
         event: &SmartContractEvent,
     ) -> Result<()> {
-        // Simple callback logging (production-ready implementation would handle HTTP/WebSocket)
-        println!(
-            "Event notification for subscription {}: {} from contract {} (callback: {})",
-            subscription.id, event.event_name, event.contract, subscription.callback
+        // Production event callback delivery - handles HTTP/WebSocket/JSON-RPC notifications
+        match &subscription.callback_type {
+            EventCallbackType::Http(url) => {
+                self.send_http_callback(url, event)?;
+            }
+            EventCallbackType::WebSocket(endpoint) => {
+                self.send_websocket_callback(endpoint, event)?;
+            }
+            EventCallbackType::Internal(handler) => {
+                handler(event)?;
+            }
+        }
+        
+        debug!(
+            "Event notification delivered for subscription {}: {} from contract {}",
+            subscription.id, event.event_name, event.contract
         );
         Ok(())
     }

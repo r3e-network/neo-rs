@@ -28,7 +28,7 @@ pub use neo_config::{LedgerConfig, NetworkType};
 
 use neo_core::UInt160;
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::sync::Arc;
 use thiserror::Error;
 
 /// Result type for ledger operations
@@ -342,25 +342,36 @@ mod tests {
 pub struct Ledger {
     config: LedgerConfig,
     stats: BlockchainStats,
+    blockchain: Arc<Blockchain>,
 }
 
 impl Ledger {
     /// Creates a new Ledger instance
-    pub fn new(config: LedgerConfig) -> Result<Self> {
+    pub async fn new(config: LedgerConfig) -> Result<Self> {
+        // Use mainnet as default - in production this should be configurable
+        let blockchain = Arc::new(Blockchain::new(NetworkType::MainNet).await?);
+
         Ok(Self {
             config,
             stats: BlockchainStats::default(),
+            blockchain,
+        })
+    }
+
+    /// Creates a new Ledger instance with specific network
+    pub async fn new_with_network(config: LedgerConfig, network: NetworkType) -> Result<Self> {
+        let blockchain = Arc::new(Blockchain::new(network).await?);
+
+        Ok(Self {
+            config,
+            stats: BlockchainStats::default(),
+            blockchain,
         })
     }
 
     /// Gets the current blockchain statistics
     pub fn get_stats(&self) -> &BlockchainStats {
         &self.stats
-    }
-
-    /// Gets the current block height
-    pub fn get_height(&self) -> u32 {
-        self.stats.height
     }
 
     /// Gets the ledger configuration
@@ -370,20 +381,27 @@ impl Ledger {
 
     /// Gets the best block hash
     pub async fn get_best_block_hash(&self) -> Result<neo_core::UInt256> {
-        // Placeholder - return genesis block hash
-        Ok(neo_core::UInt256::zero())
+        self.blockchain.get_best_block_hash().await
     }
 
     /// Gets a block by hash
-    pub async fn get_block_by_hash(&self, _hash: &neo_core::UInt256) -> Result<Option<Block>> {
-        // Placeholder
-        Ok(None)
+    pub async fn get_block_by_hash(&self, hash: &neo_core::UInt256) -> Result<Option<Block>> {
+        self.blockchain.get_block_by_hash(hash).await
+    }
+
+    /// Gets a block by index
+    pub async fn get_block(&self, index: u32) -> Result<Option<Block>> {
+        self.blockchain.get_block(index).await
+    }
+
+    /// Gets the current blockchain height
+    pub async fn get_height(&self) -> u32 {
+        self.blockchain.get_height().await
     }
 
     /// Adds a new block to the blockchain
-    pub async fn add_block(&self, _block: Block) -> Result<()> {
-        // Placeholder
-        Ok(())
+    pub async fn add_block(&self, block: Block) -> Result<()> {
+        self.blockchain.add_block_with_fork_detection(&block).await
     }
 
     /// Persists a block to storage

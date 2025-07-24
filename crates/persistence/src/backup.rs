@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tracing::error;
 
 /// Backup types supported by the system
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -577,10 +578,31 @@ impl BackupManager {
 
             // Remove oldest backups
             let to_remove = backups.len() - self.max_backups;
+            let mut deletion_errors = Vec::new();
+
             for backup in backups.iter().take(to_remove) {
                 if let Err(e) = self.delete_backup(&backup.id) {
-                    eprintln!("Failed to delete old backup {}: {}", backup.id, e);
+                    // Log the error using proper logging instead of eprintln!
+                    error!("Failed to delete old backup {}: {}", backup.id, e);
+                    deletion_errors.push((backup.id.clone(), e));
                 }
+            }
+
+            // If any deletions failed, return an error with details
+            if !deletion_errors.is_empty() {
+                let error_summary = deletion_errors
+                    .iter()
+                    .map(|(id, e)| format!("{}: {}", id, e))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(crate::Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!(
+                        "Failed to delete {} old backups: {}",
+                        deletion_errors.len(),
+                        error_summary
+                    ),
+                )));
             }
         }
 
