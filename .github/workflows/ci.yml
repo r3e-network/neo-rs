@@ -50,7 +50,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y librocksdb-dev
+          # Install build essentials
+          sudo apt-get install -y build-essential gcc g++ cmake make pkg-config
+          # Install libclang for bindgen (required by librocksdb-sys)
+          sudo apt-get install -y llvm-14 libclang-14-dev clang-14
+          # Install RocksDB and compression libraries
+          sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev
+          # Set environment variables
+          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
       - name: Check formatting
         run: |
@@ -100,7 +107,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y librocksdb-dev
+          # Install build essentials
+          sudo apt-get install -y build-essential gcc g++ cmake make pkg-config
+          # Install libclang for bindgen (required by librocksdb-sys)
+          sudo apt-get install -y llvm-14 libclang-14-dev clang-14
+          # Install RocksDB and compression libraries
+          sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev
+          # Set environment variables
+          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
       - name: Build
         run: |
@@ -163,7 +177,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y librocksdb-dev
+          # Install build essentials
+          sudo apt-get install -y build-essential gcc g++ cmake make pkg-config
+          # Install libclang for bindgen (required by librocksdb-sys)
+          sudo apt-get install -y llvm-14 libclang-14-dev clang-14
+          # Install RocksDB and compression libraries
+          sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev
+          # Set environment variables
+          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
       - name: Test default features
         run: |
@@ -199,7 +220,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y librocksdb-dev
+          # Install build essentials
+          sudo apt-get install -y build-essential gcc g++ cmake make pkg-config
+          # Install libclang for bindgen (required by librocksdb-sys)
+          sudo apt-get install -y llvm-14 libclang-14-dev clang-14
+          # Install RocksDB and compression libraries
+          sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev
+          # Set environment variables
+          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
       - name: Build examples
         run: |
@@ -236,7 +264,14 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y librocksdb-dev
+          # Install build essentials
+          sudo apt-get install -y build-essential gcc g++ cmake make pkg-config
+          # Install libclang for bindgen (required by librocksdb-sys)
+          sudo apt-get install -y llvm-14 libclang-14-dev clang-14
+          # Install RocksDB and compression libraries
+          sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev
+          # Set environment variables
+          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
       - name: Build documentation
         run: |

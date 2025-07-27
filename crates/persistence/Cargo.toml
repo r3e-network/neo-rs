@@ -14,7 +14,7 @@ async-trait = "0.1"
 futures = "0.3"
 
 # Storage engines
-rocksdb = { version = "0.21", optional = true }
+rocksdb = { version = "0.21", optional = true, features = ["snappy", "lz4", "zstd", "zlib"] }
 sled = { version = "0.34", optional = true }
 
 # Serialization and encoding
