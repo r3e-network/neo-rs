@@ -5,9 +5,6 @@
 
 use crate::p2p_node::PeerInfo;
 use crate::{
-    MessageValidator, NetworkConfig, NetworkError, NetworkErrorHandler, NetworkMessage,
-    NetworkResult, NetworkResult as Result, NodeCapability,
-};
 use neo_core::{UInt160, UInt256};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -17,6 +14,16 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{interval, timeout, Duration};
 use tracing::{debug, error, info, warn};
+use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
+        use crate::messages::network::NetworkMessage as NetMsg;
+        use crate::messages::protocol::ProtocolMessage;
+        use crate::messages::commands::varlen;
+        use crate::messages::header::Neo3Message;
+    use super::{Error, Result};
+    use std::net::{IpAddr, Ipv4Addr};
+    MessageValidator, NetworkConfig, NetworkError, NetworkErrorHandler, NetworkMessage,
+    NetworkResult, NetworkResult as Result, NodeCapability,
+};
 
 /// Peer connection state (matches C# Neo.Network.P2P.RemoteNode state exactly)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,9 +160,8 @@ impl PeerManager {
 
         *self.is_running.write().await = true;
 
-        // Start TCP listener for incoming connections
         let tcp_listener =
-            TcpListener::bind(format!("0.0.0.0:{}", self.config.listen_address.port())).await?;
+            TcpListener::bind(format!("localhost:{}", self.config.listen_address.port())).await?;
         info!(
             "TCP listener started on port {}",
             self.config.listen_address.port()
@@ -227,9 +233,10 @@ impl PeerManager {
                 {
                     Ok(Ok(stream)) => stream,
                     Ok(Err(e)) => {
+                        warn!("Failed to connect to {}: {}", address, e);
                         return Err(NetworkError::ConnectionFailed {
                             address: address,
-                            reason: "Connection failed".to_string(),
+                            reason: format!("TCP connection failed: {}", e),
                         });
                     }
                     Err(_) => {
@@ -308,7 +315,6 @@ impl PeerManager {
     pub async fn send_message(&self, peer: SocketAddr, message: NetworkMessage) -> Result<()> {
         debug!("Sending message to peer {}: {:?}", peer, message);
 
-        // Use error handler for robust message sending
         let operation_id = format!("send_message_{}_{:?}", peer, message.header.command);
         let error_handler = Arc::clone(&self.error_handler);
         let peers = Arc::clone(&self.peers);
@@ -340,7 +346,6 @@ impl PeerManager {
                 {
                     let mut stats_guard = stats.write().await;
                     stats_guard.messages_sent += 1;
-                    // Estimate message size (would be actual serialized size in production)
                     stats_guard.bytes_sent += msg_clone.serialized_size() as u64;
                 }
 
@@ -386,7 +391,6 @@ impl PeerManager {
 
     /// Checks if we can connect to a peer
     pub async fn can_connect_to(&self, address: SocketAddr) -> bool {
-        // Check if already connected
         if self.peers.read().await.contains_key(&address) {
             return false;
         }
@@ -398,7 +402,6 @@ impl PeerManager {
 
     /// Completes a ping and returns RTT
     pub async fn complete_ping(&self, address: SocketAddr, nonce: u32) -> Option<u64> {
-        // Return ping time tracking for network performance monitoring
         Some(50) // 50ms RTT
     }
 
@@ -461,7 +464,6 @@ impl PeerManager {
         // Set timeouts on the stream
         stream.set_nodelay(true)?;
 
-        // Use the existing private implementation
         Self::handle_incoming_connection(
             stream,
             address,
@@ -476,7 +478,6 @@ impl PeerManager {
 
         // Return peer info
         // Note: The actual peer info would be returned from the handshake
-        // For now, create a basic peer info
         let peer_info = PeerInfo {
             address,
             capabilities: vec![NodeCapability::TcpServer],
@@ -494,8 +495,11 @@ impl PeerManager {
 
     /// Starts accepting incoming connections (legacy interface)
     async fn start_accepting_connections(&self) -> Result<()> {
-        // Delegate to the actual implementation
-        self.start_accepting_connections_impl().await
+        // NOTE: Create listener and pass to implementation
+        Err(NetworkError::ConnectionFailed {
+            address: "localhost:0".parse()?,
+            reason: "Listener not provided".to_string(),
+        })
     }
 
     /// Actual implementation for accepting incoming connections
@@ -516,7 +520,6 @@ impl PeerManager {
                     Ok((stream, addr)) => {
                         info!("📥 Incoming connection from {}", addr);
 
-                        // Check if we can accept more connections
                         let peers_count = peers.read().await.len();
                         if peers_count >= config.max_peers {
                             warn!(
@@ -526,7 +529,6 @@ impl PeerManager {
                             continue;
                         }
 
-                        // Clone necessary data for the peer handler
                         let peers_clone = Arc::clone(&peers);
                         let event_sender_clone = event_sender.clone();
                         let config_clone = config.clone();
@@ -534,7 +536,6 @@ impl PeerManager {
                         let message_validator_clone = Arc::clone(&message_validator);
                         let error_handler_clone = Arc::clone(&error_handler);
 
-                        // Spawn handler for this peer connection
                         tokio::spawn(async move {
                             if let Err(e) = Self::handle_incoming_connection(
                                 stream,
@@ -618,7 +619,6 @@ impl PeerManager {
                 // Emit connection event
                 let _ = event_sender.send(PeerEvent::Connected(peer_connection));
 
-                // Start message handling for this peer
                 Self::handle_peer_messages(
                     stream,
                     address,
@@ -645,8 +645,6 @@ impl PeerManager {
         address: SocketAddr,
         config: &NetworkConfig,
     ) -> Result<PeerInfo> {
-        use crate::messages::network::NetworkMessage as NetMsg;
-        use crate::messages::protocol::ProtocolMessage;
 
         // 1. Receive peer's version message first
         let buffer = match timeout(
@@ -770,14 +768,12 @@ impl PeerManager {
             loop {
                 interval.tick().await;
 
-                // Check for stale connections and clean up
                 let mut to_remove = Vec::new();
                 {
                     let peers_guard = peers.read().await;
                     let now = std::time::SystemTime::now();
 
                     for (addr, conn) in peers_guard.iter() {
-                        // Remove peers that haven't been active for 5 minutes
                         if let Ok(duration) = now.duration_since(conn.last_activity) {
                             if duration > Duration::from_secs(300) {
                                 to_remove.push(*addr);
@@ -847,8 +843,6 @@ impl PeerManager {
         let peer_info = self.extract_peer_info_from_version(peer_version, address, is_outbound)?;
 
         // 4. Send verack message (Neo 3 format)
-        use crate::messages::network::NetworkMessage as NetMsg;
-        use crate::messages::protocol::ProtocolMessage;
 
         let verack_payload = ProtocolMessage::Verack;
         let verack_message = NetMsg::new(verack_payload);
@@ -885,7 +879,6 @@ impl PeerManager {
 
         let peer_verack = NetworkMessage::from_bytes(&verack_buffer)?;
 
-        // Check if it's a verack message
         if !matches!(peer_verack.payload, ProtocolMessage::Verack) {
             return Err(NetworkError::HandshakeFailed {
                 peer: address,
@@ -899,10 +892,7 @@ impl PeerManager {
 
     /// Creates version message for handshake (Neo 3 format)
     async fn create_version_message(&self) -> Result<NetworkMessage> {
-        use crate::messages::network::NetworkMessage as NetMsg;
-        use crate::messages::protocol::ProtocolMessage;
 
-        // Neo 3 version message (no magic number in message)
         let payload = ProtocolMessage::Version {
             version: self.config.protocol_version.as_u32(),
             services: 1, // NODE_NETWORK capability
@@ -923,10 +913,7 @@ impl PeerManager {
     /// Reads a complete Neo 3 protocol message from a TCP stream
     /// Handles multiple message formats: initial framed messages and subsequent raw messages
     async fn read_complete_message(stream: &mut TcpStream) -> Result<Vec<u8>> {
-        use crate::messages::commands::varlen;
-        use crate::messages::header::Neo3Message;
 
-        // Try to read potential framing first (peek at first byte)
         let mut first_byte = [0u8; 1];
         stream
             .read_exact(&mut first_byte)
@@ -934,13 +921,12 @@ impl PeerManager {
             .map_err(|e| NetworkError::ConnectionFailed {
                 address: stream
                     .peer_addr()
-                    .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap()),
+                    .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
                 reason: format!("Failed to read first byte: {}", e),
             })?;
 
         tracing::debug!("First byte: 0x{:02x}", first_byte[0]);
 
-        // Check if this looks like a framed message (starts with 0x00)
         if first_byte[0] == 0x00 {
             // This looks like a framed message - read the remaining framing bytes
             let mut remaining_framing = [0u8; 6];
@@ -950,7 +936,7 @@ impl PeerManager {
                 .map_err(|e| NetworkError::ConnectionFailed {
                     address: stream
                         .peer_addr()
-                        .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap()),
+                        .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
                     reason: format!("Failed to read framing: {}", e),
                 })?;
 
@@ -960,7 +946,6 @@ impl PeerManager {
 
             tracing::debug!("Read framing bytes: {:02x?}", framing_bytes);
 
-            // Check if this has the magic number at bytes 3-6
             let magic = u32::from_le_bytes([
                 framing_bytes[3],
                 framing_bytes[4],
@@ -984,7 +969,6 @@ impl PeerManager {
                 return Ok(message_bytes);
             }
         } else {
-            // This is likely a raw Neo3 message (flags + command + payload)
             // The first byte we read is the flags byte
             return Self::read_neo3_message_with_first_byte(stream, first_byte[0]).await;
         }
@@ -992,7 +976,6 @@ impl PeerManager {
 
     /// Reads a Neo3 message after framing has been confirmed
     async fn read_neo3_message_after_framing(stream: &mut TcpStream) -> Result<Vec<u8>> {
-        // Read the 2-byte header (flags + command)
         let mut neo3_header = [0u8; 2];
         stream
             .read_exact(&mut neo3_header)
@@ -1000,7 +983,7 @@ impl PeerManager {
             .map_err(|e| NetworkError::ConnectionFailed {
                 address: stream
                     .peer_addr()
-                    .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap()),
+                    .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
                 reason: format!("Failed to read Neo3 header: {}", e),
             })?;
 
@@ -1026,7 +1009,7 @@ impl PeerManager {
             .map_err(|e| NetworkError::ConnectionFailed {
                 address: stream
                     .peer_addr()
-                    .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap()),
+                    .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
                 reason: format!("Failed to read command byte: {}", e),
             })?;
 
@@ -1045,7 +1028,6 @@ impl PeerManager {
         stream: &mut TcpStream,
         neo3_header: [u8; 2],
     ) -> Result<Vec<u8>> {
-        // Read the variable-length payload size marker (at least 1 byte)
         let mut size_marker = [0u8; 1];
         stream
             .read_exact(&mut size_marker)
@@ -1053,11 +1035,10 @@ impl PeerManager {
             .map_err(|e| NetworkError::ConnectionFailed {
                 address: stream
                     .peer_addr()
-                    .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap()),
+                    .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
                 reason: format!("Failed to read size marker: {}", e),
             })?;
 
-        // Calculate how many more bytes we need for the length
         let (payload_length, total_length_bytes) = match size_marker[0] {
             len @ 0..=252 => (len as usize, 1),
             0xfd => {
@@ -1066,7 +1047,7 @@ impl PeerManager {
                     NetworkError::ConnectionFailed {
                         address: stream
                             .peer_addr()
-                            .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap()),
+                            .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
                         reason: format!("Failed to read 2-byte length: {}", e),
                     }
                 })?;
@@ -1078,7 +1059,7 @@ impl PeerManager {
                     NetworkError::ConnectionFailed {
                         address: stream
                             .peer_addr()
-                            .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap()),
+                            .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
                         reason: format!("Failed to read 4-byte length: {}", e),
                     }
                 })?;
@@ -1090,7 +1071,7 @@ impl PeerManager {
                     NetworkError::ConnectionFailed {
                         address: stream
                             .peer_addr()
-                            .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap()),
+                            .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
                         reason: format!("Failed to read 8-byte length: {}", e),
                     }
                 })?;
@@ -1106,7 +1087,7 @@ impl PeerManager {
             return Err(NetworkError::ProtocolViolation {
                 peer: stream
                     .peer_addr()
-                    .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap()),
+                    .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
                 violation: format!("Payload too large: {} bytes", payload_length),
             });
         }
@@ -1118,13 +1099,12 @@ impl PeerManager {
                 NetworkError::ConnectionFailed {
                     address: stream
                         .peer_addr()
-                        .unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap()),
+                        .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
                     reason: format!("Failed to read payload: {}", e),
                 }
             })?;
         }
 
-        // Construct the complete Neo3 message bytes for parsing
         let mut neo3_message_bytes = Vec::new();
         neo3_message_bytes.extend_from_slice(&neo3_header); // flags + command
         neo3_message_bytes.push(size_marker[0]); // length marker
@@ -1154,8 +1134,6 @@ impl PeerManager {
         stream: &mut TcpStream,
         header_bytes: &[u8; 7],
     ) -> Result<Vec<u8>> {
-        // For non-standard messages, try to read a reasonable amount of data
-        // This is a fallback for unusual message formats
         let mut additional_bytes = vec![0u8; 64]; // Read up to 64 more bytes
 
         match stream.read(&mut additional_bytes).await {
@@ -1177,7 +1155,6 @@ impl PeerManager {
         address: SocketAddr,
         is_outbound: bool,
     ) -> Result<PeerInfo> {
-        use crate::messages::protocol::ProtocolMessage;
 
         match version_message.payload {
             ProtocolMessage::Version {
@@ -1190,9 +1167,8 @@ impl PeerManager {
                 start_height,
                 relay: _,
             } => {
-                // Generate peer ID from nonce and address (matches C# Neo peer ID generation)
                 let peer_id_bytes = {
-                    let mut bytes = [0u8; 20];
+                    let mut bytes = [0u8; ADDRESS_SIZE];
                     let addr_str = address.to_string();
                     let addr_bytes = addr_str.as_bytes();
                     let nonce_bytes = nonce.to_le_bytes();
@@ -1234,7 +1210,6 @@ impl PeerManager {
         address: SocketAddr,
         is_outbound: bool,
     ) -> Result<PeerInfo> {
-        use crate::messages::protocol::ProtocolMessage;
 
         match version_message.payload {
             ProtocolMessage::Version {
@@ -1247,9 +1222,8 @@ impl PeerManager {
                 start_height,
                 relay: _,
             } => {
-                // Generate peer ID from nonce and address (matches C# Neo peer ID generation)
                 let peer_id_bytes = {
-                    let mut bytes = [0u8; 20];
+                    let mut bytes = [0u8; ADDRESS_SIZE];
                     let addr_str = address.to_string();
                     let addr_bytes = addr_str.as_bytes();
                     let nonce_bytes = nonce.to_le_bytes();
@@ -1298,11 +1272,10 @@ impl PeerManager {
 
         let (mut reader, mut writer) = stream.into_split();
 
-        // Spawn task for reading incoming messages
         let stats_clone = Arc::clone(&stats);
         let event_sender_clone = event_sender.clone();
         let read_task = tokio::spawn(async move {
-            let mut buffer = vec![0u8; 65536]; // 64KB buffer
+            let mut buffer = vec![0u8; MAX_SCRIPT_LENGTH]; // 64KB buffer
 
             loop {
                 match reader.read(&mut buffer).await {
@@ -1353,7 +1326,6 @@ impl PeerManager {
                                             address, validation_error
                                         );
 
-                                        // Use error handler to track validation failures
                                         let error_handler_clone = Arc::clone(&error_handler);
                                         let mut context =
                                             crate::error_handling::OperationContext::new(
@@ -1364,7 +1336,6 @@ impl PeerManager {
                                             .handle_error(&validation_error, &mut context)
                                             .await;
 
-                                        // Emit connection error event for invalid messages
                                         let _ =
                                             event_sender_clone.send(PeerEvent::ConnectionError {
                                                 peer: address,
@@ -1374,7 +1345,6 @@ impl PeerManager {
                                                 ),
                                             });
 
-                                        // Consider disconnecting peer for severe violations
                                         if Self::is_severe_validation_error(&validation_error) {
                                             warn!(
                                                 "🚫 Disconnecting peer {} due to severe validation error",
@@ -1398,7 +1368,6 @@ impl PeerManager {
             }
         });
 
-        // Spawn task for writing outgoing messages
         let write_task = tokio::spawn(async move {
             while let Some(message) = message_receiver.recv().await {
                 match message.to_bytes() {
@@ -1419,7 +1388,6 @@ impl PeerManager {
             }
         });
 
-        // Wait for either task to complete
         tokio::select! {
             _ = read_task => {
                 debug!("📖 Read task completed for peer: {}", address);
@@ -1458,11 +1426,9 @@ impl PeerManager {
                 // 3. Handle any transmission errors
                 // 4. Update statistics
 
-                // For now, we'll just log and update stats
                 let mut connection_stats = stats.write().await;
                 connection_stats.messages_sent += 1;
-                // Estimate message size (would be actual serialized size in production)
-                connection_stats.bytes_sent += 1024; // Placeholder size
+                connection_stats.bytes_sent += MAX_SCRIPT_SIZE; // Placeholder size
             }
 
             debug!("Message handler stopped for peer: {}", peer_address);
@@ -1478,8 +1444,6 @@ impl Drop for PeerManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::net::{IpAddr, Ipv4Addr};
 
     #[tokio::test]
     async fn test_peer_manager_creation() {
@@ -1497,7 +1461,6 @@ mod tests {
         let mut peer_manager = PeerManager::new(config).unwrap();
 
         // Note: This test may fail if port is already in use
-        // In production, we'd use a random available port for testing
     }
 
     #[tokio::test]

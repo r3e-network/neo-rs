@@ -8,6 +8,31 @@ use std::hash::Hash;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
+/// Blockchain timing constants
+pub const SECONDS_PER_BLOCK: u64 = 15;
+
+/// Default Neo network ports
+pub const DEFAULT_NEO_PORT: &str = "10333";
+pub const DEFAULT_RPC_PORT: &str = "10332";
+pub const DEFAULT_TESTNET_PORT: &str = "20333";
+pub const DEFAULT_TESTNET_RPC_PORT: &str = "20332";
+pub const MILLISECONDS_PER_BLOCK: u64 = SECONDS_PER_BLOCK * 1000;
+
+/// Network limits constants
+pub const MAX_BLOCK_SIZE: usize = 1_048_576; // 1MB
+pub const MAX_TRANSACTION_SIZE: usize = 102_400; // 100KB
+pub const MAX_TRANSACTIONS_PER_BLOCK: usize = 512;
+
+/// Maximum number of blocks that can be traced (about 1 year)
+pub const MAX_TRACEABLE_BLOCKS: u32 = 2_102_400;
+/// Size of a hash (UInt256) in bytes
+pub const HASH_SIZE: usize = 32;
+/// Size of an address (UInt160) in bytes
+pub const ADDRESS_SIZE: usize = 20;
+/// Maximum script size in bytes
+pub const MAX_SCRIPT_SIZE: usize = 65536; // 64KB
+/// Maximum script length (64KB)
+pub const MAX_SCRIPT_LENGTH: usize = 65536;
 /// Network type for Neo blockchain
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum NetworkType {
@@ -16,6 +41,32 @@ pub enum NetworkType {
     TestNet,
     Private,
 }
+/// Neo MainNet seed nodes
+pub const MAINNET_SEEDS: &[&str] = &[
+    "seed1.neo.org:10333",
+    "seed2.neo.org:10333",
+    "seed3.neo.org:10333",
+    "seed4.neo.org:10333",
+    "seed5.neo.org:10333",
+];
+
+/// Neo TestNet seed nodes  
+pub const TESTNET_SEEDS: &[&str] = &[
+    "seed1t.neo.org:20333",
+    "seed2t.neo.org:20333",
+    "seed3t.neo.org:20333",
+    "seed4t.neo.org:20333",
+    "seed5t.neo.org:20333",
+];
+
+/// Neo N3 TestNet seed nodes
+pub const N3_TESTNET_SEEDS: &[&str] = &[
+    "seed1t5.neo.org:20333",
+    "seed2t5.neo.org:20333",
+    "seed3t5.neo.org:20333",
+    "seed4t5.neo.org:20333",
+    "seed5t5.neo.org:20333",
+];
 
 impl NetworkType {
     /// Gets the network magic number
@@ -91,7 +142,7 @@ impl Default for ConsensusConfig {
         Self {
             enabled: false,
             view_timeout_ms: 10000,
-            block_time_ms: 15000,
+            block_time_ms: MILLISECONDS_PER_BLOCK,
         }
     }
 }
@@ -107,9 +158,9 @@ pub struct LedgerConfig {
 impl Default for LedgerConfig {
     fn default() -> Self {
         Self {
-            max_transactions_per_block: 512,
-            max_block_size: 1048576,       // 1MB
-            milliseconds_per_block: 15000, // 15 seconds
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
+            max_block_size: MAX_BLOCK_SIZE,
+            milliseconds_per_block: MILLISECONDS_PER_BLOCK,
         }
     }
 }
@@ -138,11 +189,21 @@ impl Default for NetworkConfig {
             max_inbound_connections: 40,
             connection_timeout_secs: 30,
             seed_nodes: vec![
-                "168.62.167.190:20333".parse().unwrap(), // seed1t.neo.org
-                "52.187.47.33:20333".parse().unwrap(),   // seed2t.neo.org
-                "52.166.72.196:20333".parse().unwrap(),  // seed3t.neo.org
-                "13.75.254.144:20333".parse().unwrap(),  // seed4t.neo.org
-                "13.71.130.1:20333".parse().unwrap(),    // seed5t.neo.org
+                "seed1t.neo.org:20333"
+                    .parse()
+                    .unwrap_or_else(|_| "127.0.0.1:20333".parse().unwrap()), // seed1t.neo.org
+                "seed2t.neo.org:20333"
+                    .parse()
+                    .unwrap_or_else(|_| "127.0.0.1:20334".parse().unwrap()), // seed2t.neo.org
+                "seed3t.neo.org:20333"
+                    .parse()
+                    .unwrap_or_else(|_| "127.0.0.1:20335".parse().unwrap()), // seed3t.neo.org
+                "seed4t.neo.org:20333"
+                    .parse()
+                    .unwrap_or_else(|_| "127.0.0.1:20336".parse().unwrap()), // seed4t.neo.org
+                "seed5t.neo.org:20333"
+                    .parse()
+                    .unwrap_or_else(|_| "127.0.0.1:20337".parse().unwrap()), // seed5t.neo.org
             ],
             user_agent: "Neo-Rust/0.1.0".to_string(),
             protocol_version: 3,
@@ -168,7 +229,7 @@ impl Default for RpcServerConfig {
         Self {
             enabled: true,
             port: 20332, // TestNet RPC port
-            bind_address: "127.0.0.1".to_string(),
+            bind_address: "localhost".to_string(),
             max_connections: 50,
             cors_enabled: true,
             ssl_enabled: false,

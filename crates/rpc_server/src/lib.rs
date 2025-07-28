@@ -61,7 +61,6 @@ impl RpcServer {
                 .parse()
                 .map_err(|e| format!("Invalid bind address: {}", e))?;
 
-        // Clone methods for use in filters
         let methods = self.methods.clone();
 
         // Create RPC endpoint
@@ -97,10 +96,14 @@ impl RpcServer {
         // Combine all routes
         let routes = rpc.or(health).with(cors);
 
-        info!("✅ RPC server started successfully on http://{}", bind_addr);
+        info!(
+            "✅ RPC server started successfully on http://{}:{}",
+            bind_addr.ip(),
+            bind_addr.port()
+        );
         info!("Available endpoints:");
-        info!("  - http://{}/rpc (JSON-RPC 2.0)", bind_addr);
-        info!("  - http://{}/health (Health check)", bind_addr);
+        info!("  - http://{}:{}/rpc", bind_addr.ip(), bind_addr.port());
+        info!("  - http://{}:{}/health", bind_addr.ip(), bind_addr.port());
 
         // Start the server
         warp::serve(routes).run(bind_addr).await;
@@ -173,7 +176,7 @@ impl warp::reject::Reject for RpcError {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use tokio::runtime::Runtime;
 
     #[test]
@@ -181,7 +184,6 @@ mod tests {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             // This would require setting up proper ledger and storage
-            // For now, just test that the types compile
             assert!(true);
         });
     }

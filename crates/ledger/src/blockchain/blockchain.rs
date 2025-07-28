@@ -14,6 +14,7 @@ use neo_core::{Transaction, UInt160, UInt256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
+use neo_config::{MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 
 /// Main blockchain manager (matches C# Neo Blockchain exactly)
 #[derive(Debug, Clone)]
@@ -45,15 +46,28 @@ pub struct Blockchain {
 impl Blockchain {
     /// Creates a new blockchain instance (matches C# Neo Blockchain.Create exactly)
     pub async fn new(network: NetworkType) -> Result<Self> {
+        Self::new_with_storage_suffix(network, None).await
+    }
+    
+    /// Creates a new blockchain instance with optional storage suffix to avoid conflicts
+    pub async fn new_with_storage_suffix(network: NetworkType, suffix: Option<&str>) -> Result<Self> {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static BLOCKCHAIN_COUNT: AtomicU32 = AtomicU32::new(0);
+        let count = BLOCKCHAIN_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+        
+        tracing::info!("⚠️ BLOCKCHAIN CREATION #{} for network: {:?} (suffix: {:?})", count, network, suffix);
+        
         tracing::info!(
             "🔧 Creating new blockchain instance for network: {:?}",
             network
         );
 
-        // Initialize storage (RocksDB only)
         let storage = Arc::new(Storage::new_default().unwrap_or_else(|_| {
-            eprintln!("Warning: Failed to create default storage, using temporary RocksDB storage");
-            let temp_dir = format!("/tmp/neo-blockchain-{}", std::process::id());
+            elog::info!("Warning: Failed to create default storage, using temporary RocksDB storage");
+            let temp_dir = match suffix {
+                Some(suffix) => format!("/tmp/neo-blockchain-{}-{}", std::process::id(), suffix),
+                None => format!("/tmp/neo-blockchain-{}", std::process::id()),
+            };
             Storage::new_rocksdb(&temp_dir).expect("Failed to create temporary RocksDB storage")
         }));
         let persistence = Arc::new(BlockchainPersistence::new(storage.clone()));
@@ -75,7 +89,6 @@ impl Blockchain {
             orphan_blocks: Arc::new(RwLock::new(HashMap::new())),
         };
 
-        // Initialize genesis block if needed
         tracing::info!("🔧 Initializing genesis block...");
         match blockchain.initialize_genesis().await {
             Ok(()) => {
@@ -88,6 +101,7 @@ impl Blockchain {
         }
 
         tracing::info!("✅ Blockchain created successfully");
+        
         Ok(blockchain)
     }
 
@@ -96,7 +110,6 @@ impl Blockchain {
         let current_height = self.persistence.get_current_block_height().await?;
 
         if current_height == 0 {
-            // Check if genesis block exists
             if self.persistence.get_block(0).await?.is_none() {
                 // Create and persist genesis block
                 tracing::info!("Creating genesis block for network: {:?}", self.network);
@@ -213,7 +226,6 @@ impl Blockchain {
     pub async fn persist_block(&self, block: &Block) -> Result<()> {
         let _lock = self.persist_lock.lock().await;
 
-        // Skip validation for genesis block (index 0)
         if block.header.index > 0 {
             // Validate block first
             tracing::debug!(
@@ -247,7 +259,6 @@ impl Blockchain {
             // Genesis block should have index 0
             0
         } else {
-            // Regular blocks should have index = current_height + 1
             current_height + 1
         };
 
@@ -398,9 +409,8 @@ impl Blockchain {
     pub async fn get_memory_usage(&self) -> MemoryUsage {
         let stats = self.get_stats().await;
 
-        // Rough estimates (in bytes)
-        let block_cache_bytes = stats.block_cache_size * 1024; // ~1KB per cached block header
-        let tx_cache_bytes = stats.transaction_cache_size * 512; // ~512 bytes per cached transaction
+        let block_cache_bytes = stats.block_cache_size * MAX_SCRIPT_SIZE; // ~1KB per cached block header
+        let tx_cache_bytes = stats.transaction_cache_size * MAX_TRANSACTIONS_PER_BLOCK; // ~MAX_TRANSACTIONS_PER_BLOCK bytes per cached transaction
         let storage_cache_bytes =
             (stats.storage_read_cache_size + stats.storage_write_cache_size) * 128; // ~128 bytes per cache entry
 
@@ -422,7 +432,6 @@ impl Blockchain {
             if let Some(block) = self.get_block(i).await? {
                 report.blocks_checked += 1;
 
-                // Validate previous hash (except genesis)
                 if i > 0 {
                     if let Some(prev_block) = self.get_block(i - 1).await? {
                         if block.header.previous_hash != prev_block.hash() {
@@ -469,7 +478,6 @@ impl Blockchain {
             }
         }
 
-        // Check if this block extends the current chain
         let current_height = self.get_height().await;
         let current_best_hash = self.get_best_block_hash().await?;
 
@@ -480,7 +488,6 @@ impl Blockchain {
             return self.persist_block(block).await;
         }
 
-        // Check if this is an orphan block (parent unknown)
         if self
             .get_block_by_hash_internal(&block.header.previous_hash)
             .await?
@@ -502,7 +509,6 @@ impl Blockchain {
             return Ok(());
         }
 
-        // This block creates a fork - determine if reorganization is needed
         let fork_point = self.find_fork_point(&block.header.previous_hash).await?;
         let current_chain_work = self
             .calculate_chain_work(current_height, fork_point)
@@ -530,7 +536,6 @@ impl Blockchain {
             );
         }
 
-        // Check if any orphan blocks can now be connected
         self.process_orphan_blocks(&block.hash()).await?;
 
         Ok(())
@@ -542,7 +547,6 @@ impl Blockchain {
 
         loop {
             if let Some(block) = self.get_block_by_hash_internal(&hash).await? {
-                // Check if this block is in the main chain
                 if let Some(main_block) = self.get_block(block.header.index).await? {
                     if main_block.hash() == block.hash() {
                         return Ok(block.header.index);
@@ -700,14 +704,12 @@ impl Blockchain {
                     block.header.index
                 );
 
-                // Try to add this block using Box::pin to avoid infinite recursion
                 let blockchain = self.clone();
                 let block_clone = block.clone();
                 if Box::pin(blockchain.add_block_with_fork_detection(&block_clone))
                     .await
                     .is_ok()
                 {
-                    // If successful, check for more orphans that depend on this block
                     orphans_to_process.push(block.hash());
                 }
             }
@@ -789,17 +791,17 @@ impl IntegrityReport {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[tokio::test]
     async fn test_blockchain_creation() {
-        let blockchain = Blockchain::new(NetworkType::TestNet).await.unwrap();
+        let blockchain = Blockchain::new(NetworkType::TestNet).await?;
 
         // Should start with genesis block
         assert_eq!(blockchain.get_height().await, 0);
 
         // Genesis block should exist
-        let genesis = blockchain.get_block(0).await.unwrap();
+        let genesis = blockchain.get_block(0).await?;
         assert!(genesis.is_some());
     }
 
@@ -812,7 +814,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_blockchain_stats() {
-        let blockchain = Blockchain::new(NetworkType::TestNet).await.unwrap();
+        let blockchain = Blockchain::new(NetworkType::TestNet).await?;
         let stats = blockchain.get_stats().await;
 
         assert_eq!(stats.height, 0); // Only genesis block
@@ -821,8 +823,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_integrity_validation() {
-        let blockchain = Blockchain::new(NetworkType::TestNet).await.unwrap();
-        let report = blockchain.validate_integrity().await.unwrap();
+        let blockchain = Blockchain::new(NetworkType::TestNet).await?;
+        let report = blockchain.validate_integrity().await?;
 
         assert!(report.is_valid());
         assert_eq!(report.blocks_checked, 1); // Genesis block

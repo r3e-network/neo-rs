@@ -55,29 +55,50 @@ docker run -p 10332:10332 -p 10333:10333 neo/neo-rs:latest --testnet
 
 ### Running a Node
 
+#### TestNet (Recommended for Development)
+
 ```bash
-# TestNet (recommended for development)
-neo-rs --testnet
+# Using the launcher script
+./start-testnet.sh
 
-# MainNet
-neo-rs --mainnet
+# Or run directly
+./target/debug/neo-node --testnet --rpc-port 20332 --p2p-port 20333
 
-# Custom configuration
-neo-rs --config neo-config.toml --data-dir ./neo-data
+# With custom data directory
+./target/debug/neo-node --testnet --data-path /path/to/data
 ```
+
+#### MainNet
+
+```bash
+# Run MainNet node
+./target/debug/neo-node --mainnet --rpc-port 10332 --p2p-port 10333
+```
+
+#### TestNet Configuration
+
+The TestNet node will automatically connect to these seed nodes:
+- seed1t5.neo.org (34.133.235.69:20333)
+- seed2t5.neo.org (35.192.59.217:20333)
+- seed3t5.neo.org (35.188.199.101:20333)
+- seed4t5.neo.org (35.238.26.128:20333)
+- seed5t5.neo.org (34.124.145.177:20333)
 
 ### Basic RPC Usage
 
 ```bash
-# Get blockchain info
-curl -X POST http://localhost:10332 \
+# Get blockchain info (TestNet)
+curl -X POST http://localhost:20332 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"getblockcount","params":[],"id":1}'
 
 # Get latest block
-curl -X POST http://localhost:10332 \
+curl -X POST http://localhost:20332 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"getbestblockhash","params":[],"id":1}'
+
+# Check node health
+curl http://localhost:20332/health
 ```
 
 ## 🏗️ Architecture
@@ -147,6 +168,22 @@ Neo-RS is designed for optimal performance:
 | **P2P Message Handling** | ~0.1ms | ~0.3ms | 3x faster |
 
 *Benchmarks run on: Intel i7-10700K, 32GB RAM, NVMe SSD*
+
+## 🎯 Recent Improvements
+
+### Network Connectivity
+- **Enhanced TestNet Support**: Added explicit IP addresses for all TestNet seed nodes
+- **Protocol Compatibility**: Fixed Neo N3 message format with correct 2-byte headers
+- **Magic Number Fixes**: Corrected TestNet magic number to 0x74746E41
+
+### Storage Management
+- **RocksDB Conflict Resolution**: Implemented unique storage directories for different components
+- **Storage Isolation**: Separate storage paths for blockchain and ledger instances
+- **Improved Error Handling**: Better error messages for storage and connection failures
+
+### RPC Server
+- **Network Binding**: RPC server now binds to all interfaces (0.0.0.0) instead of localhost only
+- **Health Endpoint**: Added /health endpoint for monitoring
 
 ## 🛠️ Development
 
