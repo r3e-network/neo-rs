@@ -4,11 +4,13 @@
 //! Neo 3 uses a 2-byte header (flags + command) with variable-length payload.
 
 use super::{
+use crate::{NetworkError, NetworkResult as Result};
+    use super::{Message, Peer, NetworkError};
+        use super::super::commands::MessageCommand;
     commands::{MessageCommand, MessageFlags},
     header::Neo3Message,
     protocol::ProtocolMessage,
 };
-use crate::{NetworkError, NetworkResult as Result};
 
 /// Complete network message (Neo 3 format)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,7 +32,7 @@ impl NetworkMessage {
         let neo3_message = Neo3Message::new(command, serialized_payload);
         let header = HeaderCompat {
             command,
-            magic: 0x3554334e, // N3T5 TestNet magic
+            magic: 0x74746E41, // Neo N3 TestNet magic
             length: payload_length,
             checksum: 0, // Simplified for compatibility
         };
@@ -52,7 +54,6 @@ impl NetworkMessage {
         // Parse Neo3 message structure
         let neo3_message = Neo3Message::from_bytes(bytes)?;
 
-        // Get the actual payload data (decompress if needed)
         let payload_bytes = neo3_message.get_payload()?;
 
         // Deserialize payload based on command
@@ -61,7 +62,7 @@ impl NetworkMessage {
         // Create compatibility header
         let header = HeaderCompat {
             command: neo3_message.command,
-            magic: 0x3554334e, // N3T5 TestNet magic
+            magic: 0x74746E41, // Neo N3 TestNet magic
             length: payload_bytes.len() as u32,
             checksum: 0, // Simplified for compatibility
         };
@@ -100,11 +101,9 @@ pub struct HeaderCompat {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_neo3_network_message_serialization() {
-        use super::super::commands::MessageCommand;
         let payload = ProtocolMessage::Ping { nonce: 12345 };
 
         let message = NetworkMessage::new(payload.clone());
@@ -123,7 +122,6 @@ mod tests {
 
     #[test]
     fn test_neo3_network_message_verack() {
-        use super::super::commands::MessageCommand;
         let payload = ProtocolMessage::Verack;
 
         let message = NetworkMessage::new(payload);

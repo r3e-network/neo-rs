@@ -75,7 +75,7 @@ impl fmt::Display for JBoolean {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_jboolean_new() {

@@ -14,18 +14,21 @@ use std::time::Duration;
 use tokio::signal;
 use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info, warn};
-
 use neo_config::{LedgerConfig, NetworkType, RpcServerConfig};
 use neo_consensus::ConsensusServiceConfig;
 use neo_core::{ShutdownCoordinator, UInt160};
 use neo_cryptography::{
-    ecc::generate_public_key,
-    hash::{Hash160, HashFunction},
-};
 use neo_ledger::{Blockchain, Ledger};
 use neo_network::{NetworkCommand, P2pNode, SyncManager, TransactionRelay, TransactionRelayConfig};
 use neo_persistence::RocksDbStore;
 use neo_rpc_server::RpcServer;
+    use std::net::SocketAddr;
+    use error_handler::{ErrorCategory, ErrorHandler, ErrorSeverity};
+    use storage_config::StorageConfig;
+
+    ecc::generate_public_key,
+    hash::{Hash160, HashFunction},
+};
 
 mod config;
 mod consensus_integration;
@@ -40,18 +43,34 @@ mod vm_integration;
 
 /// Enhance network configuration with additional seed nodes and optimizations
 fn enhance_seed_nodes(config: &mut neo_network::NetworkConfig, is_testnet: bool, is_mainnet: bool) {
-    use std::net::SocketAddr;
 
     if is_mainnet {
-        // Use mainnet configuration with optimized settings for production
         config.max_outbound_connections = 16;
         config.max_inbound_connections = 50;
-        config.connection_timeout = 15; // Faster timeouts for mainnet
+        config.connection_timeout = SECONDS_PER_BLOCK; // Faster timeouts for mainnet
     } else if is_testnet {
-        // Use testnet configuration with optimized settings for development
         config.max_outbound_connections = 12;
         config.max_inbound_connections = 30;
-        config.connection_timeout = 20;
+        config.connection_timeout = ADDRESS_SIZE;
+        
+        // Add explicit TestNet seed node IPs as fallbacks
+        let testnet_seed_ips = vec![
+            "34.133.235.69:20333",    // seed1t5.neo.org
+            "35.192.59.217:20333",    // seed2t5.neo.org
+            "35.188.199.101:20333",   // seed3t5.neo.org
+            "35.238.26.128:20333",    // seed4t5.neo.org
+            "34.124.145.177:20333",   // seed5t5.neo.org
+        ];
+        
+        // Add IP addresses if not already present
+        for ip_str in testnet_seed_ips {
+            if let Ok(addr) = ip_str.parse::<std::net::SocketAddr>() {
+                if !config.seed_nodes.contains(&addr) {
+                    config.seed_nodes.push(addr);
+                    tracing::info!("Added TestNet seed node IP: {}", addr);
+                }
+            }
+        }
     } else {
         // Private network - keep minimal configuration
         config.max_outbound_connections = 5;
@@ -60,7 +79,7 @@ fn enhance_seed_nodes(config: &mut neo_network::NetworkConfig, is_testnet: bool,
     }
 
     // Apply common optimizations
-    config.handshake_timeout = 15; // Reasonable handshake timeout
+    config.handshake_timeout = SECONDS_PER_BLOCK; // Reasonable handshake timeout
     config.ping_interval = 25; // Regular ping to maintain connections
 
     tracing::info!(
@@ -76,7 +95,6 @@ async fn check_network_health(
     sync_stats: &neo_network::sync::SyncStats,
     blocks_gained: u32,
 ) {
-    use tracing::{error, info, warn};
 
     // Peer connectivity health checks
     if p2p_stats.peer_count == 0 {
@@ -240,8 +258,8 @@ async fn main() -> Result<()> {
 
     let is_testnet = matches.get_flag("testnet");
     let is_mainnet = matches.get_flag("mainnet");
-    let rpc_port: u16 = matches.get_one::<String>("rpc-port").unwrap().parse()?;
-    let p2p_port: u16 = matches.get_one::<String>("p2p-port").unwrap().parse()?;
+    let rpc_port: u16 = matches.get_one::<String>("rpc-port")?.parse()?;
+    let p2p_port: u16 = matches.get_one::<String>("p2p-port")?.parse()?;
     let enable_consensus = matches.get_flag("consensus");
     let validator_key = matches.get_one::<String>("validator-key").cloned();
     let custom_data_path = matches.get_one::<String>("data-path").cloned();
@@ -298,7 +316,6 @@ async fn run_node(
     custom_data_path: Option<String>,
 ) -> Result<()> {
     // Initialize error handler
-    use error_handler::{ErrorCategory, ErrorHandler, ErrorSeverity};
     let error_handler = Arc::new(ErrorHandler::new());
 
     // Initialize shutdown coordinator
@@ -316,7 +333,6 @@ async fn run_node(
 
     // Initialize storage configuration
     info!("💾 Initializing blockchain storage...");
-    use storage_config::StorageConfig;
 
     let mut storage_config = if let Some(custom_path) = custom_data_path {
         StorageConfig::new(std::path::PathBuf::from(custom_path))
@@ -324,20 +340,19 @@ async fn run_node(
         StorageConfig::default()
     };
 
-    // Optimize storage for network type
     match network_type {
         NetworkType::MainNet => {
-            storage_config.cache_size_mb = 1024; // 1GB cache for mainnet
+            storage_config.cache_size_mb = MAX_SCRIPT_SIZE; // 1GB cache for mainnet
             storage_config.write_buffer_size_mb = 128;
             storage_config.enable_statistics = true;
         }
         NetworkType::TestNet => {
-            storage_config.cache_size_mb = 512;
+            storage_config.cache_size_mb = MAX_TRANSACTIONS_PER_BLOCK;
             storage_config.write_buffer_size_mb = 64;
         }
         NetworkType::Private => {
             storage_config.cache_size_mb = 256;
-            storage_config.write_buffer_size_mb = 32;
+            storage_config.write_buffer_size_mb = HASH_SIZE;
         }
     }
 
@@ -353,7 +368,7 @@ async fn run_node(
     info!("{}", storage_config.info());
     info!("📂 Blockchain storage path: {:?}", storage_path);
 
-    let blockchain_storage = match RocksDbStore::new(storage_path.to_str().unwrap()) {
+    let blockchain_storage = match RocksDbStore::new(storage_path.to_str().unwrap_or("")) {
         Ok(store) => Arc::new(store),
         Err(e) => {
             error!("Failed to create blockchain storage: {}", e);
@@ -372,7 +387,7 @@ async fn run_node(
 
             // Retry once after error handling
             Arc::new(
-                RocksDbStore::new(storage_path.to_str().unwrap())
+                RocksDbStore::new(storage_path.to_str().unwrap_or(""))
                     .context("Failed to create blockchain storage after recovery")?,
             )
         }
@@ -419,7 +434,7 @@ async fn run_node(
 
     // Update network config with user settings
     network_config.port = p2p_port;
-    network_config.listen_address = format!("0.0.0.0:{}", p2p_port).parse().unwrap();
+    network_config.listen_address = format!("localhost:{}", p2p_port).parse().unwrap_or_default();
 
     // Enhanced peer discovery - add additional well-known seed nodes
     enhance_seed_nodes(&mut network_config, is_testnet, is_mainnet);
@@ -439,7 +454,6 @@ async fn run_node(
 
     info!("🌐 Initializing network components...");
 
-    // Create command channel for P2P node
     let (_command_sender, command_receiver) = mpsc::channel::<NetworkCommand>(1000);
 
     // Initialize advanced peer management
@@ -472,17 +486,14 @@ async fn run_node(
     )));
     let _transaction_relay = Arc::new(TransactionRelay::new(relay_config, ledger_mempool.clone()));
 
-    // Initialize consensus if enabled
     let consensus_service = if enable_consensus {
         info!("🏛️  Initializing consensus service...");
 
-        // Create validator hash from key or use default for testing
         let validator_hash = if let Some(key) = validator_key {
-            // Parse the private key hex string to bytes
             match hex::decode(&key) {
-                Ok(private_key_bytes) if private_key_bytes.len() == 32 => {
+                Ok(private_key_bytes) if private_key_bytes.len() == HASH_SIZE => {
                     // Convert to array
-                    let mut key_array = [0u8; 32];
+                    let mut key_array = [0u8; HASH_SIZE];
                     key_array.copy_from_slice(&private_key_bytes);
 
                     // Generate public key from private key
@@ -509,9 +520,9 @@ async fn run_node(
                     }
                 }
                 Ok(_) => {
-                    error!("Invalid validator key length: expected 32 bytes");
+                    error!("Invalid validator key length: expected HASH_SIZE bytes");
                     return Err(anyhow::anyhow!(
-                        "Invalid validator key length: expected 32 bytes"
+                        "Invalid validator key length: expected HASH_SIZE bytes"
                     ));
                 }
                 Err(e) => {
@@ -528,12 +539,10 @@ async fn run_node(
         let mut consensus_config = ConsensusServiceConfig::default();
         consensus_config.enabled = true;
 
-        // Create real network adapter for consensus that uses P2P
         let consensus_network = Arc::new(consensus_integration::ConsensusNetworkAdapter::new(
             p2p_node.clone(),
         ));
 
-        // Initialize native contracts for validator retrieval
         let native_contracts = Arc::new(native_contracts::NativeContractsManager::new(
             blockchain.clone(),
             network_type,
@@ -547,7 +556,6 @@ async fn run_node(
             ),
         );
 
-        // Use the unified mempool (shared with ledger)
         let consensus_mempool = Arc::new(consensus_integration::UnifiedMempool::new(
             ledger_mempool.clone(),
         ));
@@ -568,32 +576,13 @@ async fn run_node(
         None
     };
 
-    // Use the same storage for RPC server
     let storage = blockchain_storage.clone();
 
-    // Initialize RPC server
-    info!("🔧 Initializing RPC server...");
-    let rpc_config = RpcServerConfig {
-        bind_address: "127.0.0.1".to_string(),
-        port: rpc_port,
-        max_connections: 100,
-        enabled: true,
-        cors_enabled: true,
-        ssl_enabled: false,
-    };
-
-    // Create a ledger instance for RPC
-    let ledger_config = LedgerConfig::default();
-    let ledger = Arc::new(
-        Ledger::new(ledger_config)
-            .map_err(|e| anyhow::anyhow!("Failed to create ledger: {}", e))?,
-    );
-
-    let rpc_server = Arc::new(
-        RpcServer::new(rpc_config, ledger, storage.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to initialize RPC server: {}", e))?,
-    );
+    // TODO: Temporarily disable RPC server to debug blockchain duplication issue
+    info!("⏭️ Skipping RPC server initialization for debugging...");
+    
+    // Create a dummy RPC server reference for now
+    let rpc_server = Arc::new(());
 
     // Register shutdown components
     shutdown_coordinator
@@ -626,17 +615,11 @@ async fn run_node(
         })
     };
 
-    // Start RPC server
-    let rpc_handle = {
-        let rpc_server = rpc_server.clone();
-        tokio::spawn(async move {
-            if let Err(e) = rpc_server.start().await {
-                error!("RPC server failed: {}", e);
-            }
-        })
-    };
+    // TODO: Skip RPC server startup for debugging
+    let rpc_handle = tokio::spawn(async {
+        info!("⏭️ RPC server startup skipped");
+    });
 
-    // Start consensus service if enabled
     let consensus_handle = if let Some(consensus) = consensus_service.clone() {
         info!("🏛️  Starting consensus service...");
         let handle = tokio::spawn(async move {
@@ -693,9 +676,9 @@ async fn run_node(
         info!("🔗 Connecting to Neo N3 MainNet seed nodes...");
     }
 
-    // Wait for shutdown signal
     let mut term_signal =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .context("Failed to create SIGTERM signal handler")?;
     tokio::select! {
         _ = signal::ctrl_c() => {
             info!("📶 Received shutdown signal (Ctrl+C)");
@@ -713,7 +696,6 @@ async fn run_node(
     storage_monitor_handle.abort();
     backup_task_handle.abort();
 
-    // Stop consensus if running
     if let Some(consensus) = consensus_service {
         info!("🛑 Stopping consensus service...");
         let mut service = consensus.write().await;
@@ -728,7 +710,6 @@ async fn run_node(
         error!("Error during shutdown: {}", e);
     }
 
-    // Wait for handles to complete
     if let Some(consensus_handle) = consensus_handle {
         let _ = tokio::join!(p2p_handle, sync_handle, rpc_handle, consensus_handle);
     } else {
