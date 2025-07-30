@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-30T12:15:31.172Z
+Generated at: 2025-07-30T13:25:31.159Z
 
 ---
 
@@ -9,24 +9,24 @@ Generated at: 2025-07-30T12:15:31.172Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-30T12:15:03.341Z
+- **Last Updated**: 2025-07-30T13:25:03.875Z
 
 ## Statistics
-- **Total Files**: 2120
-- **Estimated Lines**: 395742
-- **Average File Size**: 9164 bytes
+- **Total Files**: 2132
+- **Estimated Lines**: 396984
+- **Average File Size**: 9174 bytes
 
 ## Languages
-- **csharp**: 927353 files
-- **rust**: 428381 files
-- **json**: 190495 files
-- **markdown**: 114105 files
-- **python**: 90898 files
-- **shellscript**: 46416 files
-- **javascript**: 8703 files
-- **yaml**: 1934 files
-- **css**: 1934 files
-- **html**: 1934 files
+- **csharp**: 5795237 files
+- **rust**: 2720290 files
+- **json**: 1187433 files
+- **markdown**: 723728 files
+- **python**: 270205 files
+- **shellscript**: 208815 files
+- **javascript**: 54387 files
+- **css**: 12086 files
+- **html**: 12086 files
+- **yaml**: 8958 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -84,12 +84,19 @@ No unfinished tasks
 ```
  M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
+ M .github/workflows/ci.yml
+ M crates/mpt_trie/src/cache.rs
+ M crates/mpt_trie/src/trie.rs
  m neo_csharp
+?? crates/mpt_trie/src/cache.rs.bak
+?? crates/mpt_trie/src/cache.rs.bak2
+?? crates/mpt_trie/src/cache.rs.bak3
 
 ```
 
 ### Recent Commits
 ```
+3f6b554 chore: update project context and task tracking
 9d19566 fix(network): resolve compilation errors and pattern matching issues
 2befb8a fix(network): complete TestNet protocol compatibility with direct payload format
 825864f feat(network): add dedicated TestNet message parser
@@ -99,7 +106,6 @@ ec3681f feat(monitoring): add comprehensive transaction and storage health monit
 af67828 fix(network): optimize TestNet handshake timeout handling and message reading
 1503a65 fix(ci): resolve GitHub Actions workflow issues and enable CI for jimmy-rocksdb branch
 85ed5cf fix(network): complete TestNet protocol implementation and code quality improvements
-c40c672 fix(network): resolve RPC server binding and TestNet connectivity issues
 
 ```
 
