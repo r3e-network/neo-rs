@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::signal;
 use tokio::sync::{mpsc, RwLock};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use error_handler::{ErrorCategory, ErrorHandler, ErrorSeverity};
 use storage_config::StorageConfig;
@@ -252,9 +252,11 @@ async fn check_storage_persistence_health(
     current_height: u32,
     blocks_gained: u32,
 ) {
+    use neo_persistence::storage::IReadOnlyStore;
+    
     // Basic storage connectivity check
-    match storage.get(b"latest_block_height") {
-        Ok(_) => {
+    match storage.try_get(&b"latest_block_height".to_vec()) {
+        Some(_) => {
             debug!("Storage connectivity verified - RocksDB responding normally");
             
             if blocks_gained > 0 {
@@ -276,8 +278,8 @@ async fn check_storage_persistence_health(
                 info!("  ℹ️  Storage: Idle (no new blocks to persist)");
             }
         }
-        Err(e) => {
-            error!("❌ Storage Health Check Failed: {}", e);
+        None => {
+            error!("❌ Storage Health Check Failed: Unable to read from RocksDB");
             error!("  🔴 RocksDB connection issue - data persistence at risk");
             
             // In production, this would trigger:
@@ -291,16 +293,13 @@ async fn check_storage_persistence_health(
     // Check state persistence capabilities
     if current_height > 0 {
         // Verify we can read blockchain state
-        match storage.get(format!("block_{}", current_height).as_bytes()) {
-            Ok(Some(_)) => {
+        match storage.try_get(&format!("block_{}", current_height).as_bytes().to_vec()) {
+            Some(_) => {
                 debug!("Latest block data successfully retrievable from storage");
                 info!("  📋 State Persistence: Latest block (#{}) accessible", current_height);
             }
-            Ok(None) => {
+            None => {
                 warn!("  ⚠️  Latest block data not found in storage - potential sync issue");
-            }
-            Err(e) => {
-                error!("  ❌ Failed to read latest block from storage: {}", e);
             }
         }
         
@@ -641,6 +640,24 @@ async fn run_node(
     // Start the node components
     info!("🚀 Starting node components/* implementation */;");
 
+    // Start event listener to forward peer heights to sync manager
+    let event_handle = {
+        let p2p_node = p2p_node.clone();
+        let sync_manager = sync_manager.clone();
+        tokio::spawn(async move {
+            let mut event_receiver = p2p_node.peer_manager().subscribe_to_events();
+            while let Ok(event) = event_receiver.recv().await {
+                match event {
+                    neo_network::PeerEvent::VersionReceived { peer, start_height, .. } => {
+                        info!("📊 Peer {} reported height: {}", peer, start_height);
+                        sync_manager.update_best_height(start_height, peer).await;
+                    }
+                    _ => {}
+                }
+            }
+        })
+    };
+
     // Start P2P node
     let p2p_handle = {
         let p2p_node = p2p_node.clone();
@@ -736,6 +753,7 @@ async fn run_node(
     network_monitor_handle.abort();
     storage_monitor_handle.abort();
     backup_task_handle.abort();
+    event_handle.abort();
 
     if let Some(_consensus) = consensus_service {
         info!("🛑 Stopping consensus service/* implementation */;");
