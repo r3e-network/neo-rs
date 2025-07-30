@@ -144,7 +144,7 @@ impl StorageDumperPlugin {
         if !self.config.output_dir.exists() {
             tokio::fs::create_dir_all(&self.config.output_dir)
                 .await
-                .map_err(|e| ExtensionError::IoError(e.to_string()))?;
+                .map_err(|e| ExtensionError::IoError(e))?;
             info!(
                 "Created dump output directory: {:?}",
                 self.config.output_dir
@@ -243,7 +243,7 @@ impl StorageDumperPlugin {
 
         let file = File::create(&file_path)
             .await
-            .map_err(|e| ExtensionError::IoError(e.to_string()))?;
+            .map_err(|e| ExtensionError::IoError(e))?;
         let mut writer = BufWriter::new(file);
 
         match self.config.format {
@@ -253,7 +253,7 @@ impl StorageDumperPlugin {
                 writer
                     .write_all(json_data.as_bytes())
                     .await
-                    .map_err(|e| ExtensionError::IoError(e.to_string()))?;
+                    .map_err(|e| ExtensionError::IoError(e))?;
             }
             DumpFormat::Binary => {
                 let binary_data = bincode::serialize(dump)
@@ -261,7 +261,7 @@ impl StorageDumperPlugin {
                 writer
                     .write_all(&binary_data)
                     .await
-                    .map_err(|e| ExtensionError::IoError(e.to_string()))?;
+                    .map_err(|e| ExtensionError::IoError(e))?;
             }
             DumpFormat::Csv => {
                 self.write_csv_dump(&mut writer, dump).await?;
@@ -271,7 +271,7 @@ impl StorageDumperPlugin {
         writer
             .flush()
             .await
-            .map_err(|e| ExtensionError::IoError(e.to_string()))?;
+            .map_err(|e| ExtensionError::IoError(e))?;
 
         info!("Dump saved to: {:?}", file_path);
         Ok(())
@@ -288,7 +288,7 @@ impl StorageDumperPlugin {
         writer
             .write_all(header.as_bytes())
             .await
-            .map_err(|e| ExtensionError::IoError(e.to_string()))?;
+            .map_err(|e| ExtensionError::IoError(e))?;
 
         // Write data rows
         for contract_dump in &dump.contracts {
@@ -300,7 +300,7 @@ impl StorageDumperPlugin {
                 writer
                     .write_all(row.as_bytes())
                     .await
-                    .map_err(|e| ExtensionError::IoError(e.to_string()))?;
+                    .map_err(|e| ExtensionError::IoError(e))?;
             }
         }
 
@@ -334,13 +334,13 @@ impl StorageDumperPlugin {
 
         let mut entries = tokio::fs::read_dir(&self.config.output_dir)
             .await
-            .map_err(|e| ExtensionError::IoError(e.to_string()))?;
+            .map_err(|e| ExtensionError::IoError(e))?;
 
         let mut dump_files = Vec::new();
         while let Some(entry) = entries
             .next_entry()
             .await
-            .map_err(|e| ExtensionError::IoError(e.to_string()))?
+            .map_err(|e| ExtensionError::IoError(e))?
         {
             let path = entry.path();
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {

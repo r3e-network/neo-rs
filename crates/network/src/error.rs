@@ -687,7 +687,7 @@ impl From<crate::Error> for NetworkError {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{NetworkError, NetworkResult};
 
     #[test]
     fn test_error_creation() {

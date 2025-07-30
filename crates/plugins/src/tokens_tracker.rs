@@ -252,7 +252,7 @@ impl TokensTrackerPlugin {
                 match item {
                     Ok((key, value)) => {
                         let key_str = String::from_utf8_lossy(&key);
-                        if key_str >= end_key {
+                        if key_str.as_ref() >= end_key.as_str() {
                             break;
                         }
 
@@ -298,7 +298,7 @@ impl TokensTrackerPlugin {
                 match item {
                     Ok((key, value)) => {
                         let key_str = String::from_utf8_lossy(&key);
-                        if key_str >= from_end {
+                        if key_str.as_ref() >= from_end.as_str() {
                             break;
                         }
 
@@ -327,7 +327,7 @@ impl TokensTrackerPlugin {
                 match item {
                     Ok((key, value)) => {
                         let key_str = String::from_utf8_lossy(&key);
-                        if key_str >= to_end {
+                        if key_str.as_ref() >= to_end.as_str() {
                             break;
                         }
 

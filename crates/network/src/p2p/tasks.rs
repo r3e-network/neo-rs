@@ -426,7 +426,7 @@ impl Default for TaskManager {
 
 #[cfg(test)]
 mod tests {
-    use super::{Message, NetworkError, Peer};
+    use crate::{NetworkError, PeerInfo};
 
     #[tokio::test]
     async fn test_task_manager_creation() {

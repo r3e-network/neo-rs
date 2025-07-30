@@ -160,6 +160,8 @@ impl CliArgs {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_cli_args_default() {
         let args = CliArgs::parse_from(&["neo-cli"]);
