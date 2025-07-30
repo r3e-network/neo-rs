@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-30T13:45:31.005Z
+Generated at: 2025-07-30T13:50:30.995Z
 
 ---
 
@@ -9,24 +9,24 @@ Generated at: 2025-07-30T13:45:31.005Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-30T13:45:03.833Z
+- **Last Updated**: 2025-07-30T13:50:03.799Z
 
 ## Statistics
 - **Total Files**: 2128
-- **Estimated Lines**: 396942
+- **Estimated Lines**: 396936
 - **Average File Size**: 9146 bytes
 
 ## Languages
-- **csharp**: 5903604 files
-- **rust**: 2770688 files
-- **json**: 1209694 files
-- **markdown**: 737062 files
-- **python**: 280827 files
-- **shellscript**: 214804 files
-- **javascript**: 55404 files
-- **css**: 12312 files
-- **html**: 12312 files
-- **yaml**: 9184 files
+- **csharp**: 5931415 files
+- **rust**: 2783622 files
+- **json**: 1215407 files
+- **markdown**: 740484 files
+- **python**: 283553 files
+- **shellscript**: 216341 files
+- **javascript**: 55665 files
+- **css**: 12370 files
+- **html**: 12370 files
+- **yaml**: 9242 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -82,17 +82,14 @@ No unfinished tasks
 
 ### Git Status
 ```
- M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
- M crates/plugins/src/sqlite_wallet.rs
- D crates/plugins/src/sqlite_wallet.rs.backup
- M crates/rpc_server/src/methods.rs
  m neo_csharp
 
 ```
 
 ### Recent Commits
 ```
+22afaa8 fix(rpc,cli): resolve compilation errors in rpc_server and cli crates
 5abbc44 fix(mpt_trie): update test imports and fix compilation errors
 3f6b554 chore: update project context and task tracking
 9d19566 fix(network): resolve compilation errors and pattern matching issues
@@ -102,7 +99,6 @@ No unfinished tasks
 b9b618d fix(network): add protocol compatibility for Neo N3 TestNet
 ec3681f feat(monitoring): add comprehensive transaction and storage health monitoring
 af67828 fix(network): optimize TestNet handshake timeout handling and message reading
-1503a65 fix(ci): resolve GitHub Actions workflow issues and enable CI for jimmy-rocksdb branch
 
 ```
 

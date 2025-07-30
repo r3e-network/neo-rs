@@ -489,7 +489,7 @@ impl Default for ProtocolConfiguration {
             network: 0x334F454E, // "NEO4" in hex (mainnet)
             address_version: 53,
             milliseconds_per_block: MILLISECONDS_PER_BLOCK,
-            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK as u32,
             memory_pool_max_transactions: 50000,
             max_trace_blocks: MAX_TRACEABLE_BLOCKS,
             initial_gas_distribution: 52000000_00000000, // 52M GAS
@@ -552,7 +552,7 @@ impl Default for P2PConfiguration {
             port: 10333,
             min_desired_connections: 10,
             max_connections: 40,
-            max_known_hashes: MAX_SCRIPT_SIZE,
+            max_known_hashes: MAX_SCRIPT_SIZE as u32,
             max_connections_per_address: 3,
         }
     }
