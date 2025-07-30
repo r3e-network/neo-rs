@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-30T13:25:31.159Z
+Generated at: 2025-07-30T13:45:31.005Z
 
 ---
 
@@ -9,24 +9,24 @@ Generated at: 2025-07-30T13:25:31.159Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-30T13:25:03.875Z
+- **Last Updated**: 2025-07-30T13:45:03.833Z
 
 ## Statistics
-- **Total Files**: 2132
-- **Estimated Lines**: 396984
-- **Average File Size**: 9174 bytes
+- **Total Files**: 2128
+- **Estimated Lines**: 396942
+- **Average File Size**: 9146 bytes
 
 ## Languages
-- **csharp**: 5795237 files
-- **rust**: 2720290 files
-- **json**: 1187433 files
-- **markdown**: 723728 files
-- **python**: 270205 files
-- **shellscript**: 208815 files
-- **javascript**: 54387 files
-- **css**: 12086 files
-- **html**: 12086 files
-- **yaml**: 8958 files
+- **csharp**: 5903604 files
+- **rust**: 2770688 files
+- **json**: 1209694 files
+- **markdown**: 737062 files
+- **python**: 280827 files
+- **shellscript**: 214804 files
+- **javascript**: 55404 files
+- **css**: 12312 files
+- **html**: 12312 files
+- **yaml**: 9184 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -84,18 +84,16 @@ No unfinished tasks
 ```
  M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
- M .github/workflows/ci.yml
- M crates/mpt_trie/src/cache.rs
- M crates/mpt_trie/src/trie.rs
+ M crates/plugins/src/sqlite_wallet.rs
+ D crates/plugins/src/sqlite_wallet.rs.backup
+ M crates/rpc_server/src/methods.rs
  m neo_csharp
-?? crates/mpt_trie/src/cache.rs.bak
-?? crates/mpt_trie/src/cache.rs.bak2
-?? crates/mpt_trie/src/cache.rs.bak3
 
 ```
 
 ### Recent Commits
 ```
+5abbc44 fix(mpt_trie): update test imports and fix compilation errors
 3f6b554 chore: update project context and task tracking
 9d19566 fix(network): resolve compilation errors and pattern matching issues
 2befb8a fix(network): complete TestNet protocol compatibility with direct payload format
@@ -105,7 +103,6 @@ b9b618d fix(network): add protocol compatibility for Neo N3 TestNet
 ec3681f feat(monitoring): add comprehensive transaction and storage health monitoring
 af67828 fix(network): optimize TestNet handshake timeout handling and message reading
 1503a65 fix(ci): resolve GitHub Actions workflow issues and enable CI for jimmy-rocksdb branch
-85ed5cf fix(network): complete TestNet protocol implementation and code quality improvements
 
 ```
 

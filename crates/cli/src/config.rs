@@ -3,14 +3,9 @@
 //! This module handles all configuration including command-line arguments,
 //! configuration files, and network settings.
 
-use crate::constants::MILLISECONDS_PER_BLOCK;
-use crate::constants::MILLISECONDS_PER_BLOCK;
-use crate::constants::MILLISECONDS_PER_BLOCK;
-use crate::constants::MILLISECONDS_PER_BLOCK;
-use crate::constants::MILLISECONDS_PER_BLOCK;
 use anyhow::{Context, Result};
 use clap::ArgMatches;
-use neo_config::MILLISECONDS_PER_BLOCK;
+use neo_config::{MILLISECONDS_PER_BLOCK, MAX_TRANSACTIONS_PER_BLOCK, MAX_TRACEABLE_BLOCKS, MAX_SCRIPT_SIZE};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::Level;

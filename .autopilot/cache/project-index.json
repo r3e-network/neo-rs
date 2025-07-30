@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "createdAt": "2025-07-30T08:30:28.464Z",
-  "lastUpdated": "2025-07-30T13:27:33.774Z",
+  "lastUpdated": "2025-07-30T13:48:33.817Z",
   "workspaceRoot": "/Users/jinghuiliao/git/r3e/neo-rs",
   "files": [
     [
@@ -4710,9 +4710,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/cli/src/config.rs",
         "relativePath": "crates/cli/src/config.rs",
-        "size": 19654,
-        "lastModified": "2025-07-30T12:23:49.930Z",
-        "hash": "304fbee8b0f72449e32b13793f927d96",
+        "size": 19493,
+        "lastModified": "2025-07-30T13:48:05.741Z",
+        "hash": "97bbb62a05c0cfe3f7770170a0b08e89",
         "language": "rust"
       }
     ],
@@ -7431,9 +7431,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/plugins/src/sqlite_wallet.rs",
         "relativePath": "crates/plugins/src/sqlite_wallet.rs",
-        "size": 4721,
-        "lastModified": "2025-07-30T12:23:49.978Z",
-        "hash": "0be28fc629b8ca56291128f2581c88f4",
+        "size": 4805,
+        "lastModified": "2025-07-30T13:40:18.265Z",
+        "hash": "1f836f3a04cfb8e7bf66a9f65978bfdb",
         "language": "rust"
       }
     ],
@@ -7594,9 +7594,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/rpc_server/src/methods.rs",
         "relativePath": "crates/rpc_server/src/methods.rs",
-        "size": 12991,
-        "lastModified": "2025-07-30T12:23:49.981Z",
-        "hash": "4deccc0a054975f5d25e40ef19fe58f7",
+        "size": 11659,
+        "lastModified": "2025-07-30T13:38:21.270Z",
+        "hash": "d524722831746048284370cd4239f41f",
         "language": "rust"
       }
     ],
@@ -28586,9 +28586,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/CLAUDE_CONTEXT.md",
         "relativePath": ".autopilot/CLAUDE_CONTEXT.md",
-        "size": 2860,
-        "lastModified": "2025-07-30T13:25:31.160Z",
-        "hash": "15a80ae213c8cc7698a64ce3ed204258",
+        "size": 2757,
+        "lastModified": "2025-07-30T13:45:31.006Z",
+        "hash": "ee6d264ef5c553fcbebdb2eeba4b1195",
         "language": "markdown"
       }
     ],
@@ -28598,7 +28598,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/sessions.json",
         "relativePath": ".autopilot/tasks/sessions.json",
         "size": 107,
-        "lastModified": "2025-07-30T13:27:33.690Z",
+        "lastModified": "2025-07-30T13:48:33.695Z",
         "hash": "07296db81391d25247fbeb727941b3f8",
         "language": "json"
       }
@@ -28609,7 +28609,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/tasks.json",
         "relativePath": ".autopilot/tasks/tasks.json",
         "size": 2,
-        "lastModified": "2025-07-30T13:27:33.690Z",
+        "lastModified": "2025-07-30T13:48:33.695Z",
         "hash": "d751713988987e9331980363e24189ce",
         "language": "json"
       }
@@ -29211,16 +29211,6 @@
         "lastModified": "2025-07-30T12:23:49.977Z",
         "hash": "2a5f972da8ae7dd188c84033eda0e724",
         "language": "rust"
-      }
-    ],
-    [
-      "crates/plugins/src/sqlite_wallet.rs.backup",
-      {
-        "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/plugins/src/sqlite_wallet.rs.backup",
-        "relativePath": "crates/plugins/src/sqlite_wallet.rs.backup",
-        "size": 26381,
-        "lastModified": "2025-07-30T12:23:49.978Z",
-        "hash": "63e61fa5af3c7dd6b4deb1bec12490bb"
       }
     ],
     [
@@ -30705,51 +30695,51 @@
     ]
   },
   "codebaseStats": {
-    "totalFiles": 2129,
-    "totalLines": 396984,
+    "totalFiles": 2128,
+    "totalLines": 396936,
     "filesByLanguage": [
       [
         "json",
-        1190191
+        1214225
       ],
       [
         "markdown",
-        725380
+        739776
       ],
       [
         "javascript",
-        54513
+        55611
       ],
       [
         "shellscript",
-        209557
+        216023
       ],
       [
         "python",
-        271521
+        282989
       ],
       [
         "rust",
-        2726534
+        2780946
       ],
       [
         "yaml",
-        8986
+        9230
       ],
       [
         "csharp",
-        5808663
+        5925661
       ],
       [
         "css",
-        12114
+        12358
       ],
       [
         "html",
-        12114
+        12358
       ]
     ],
-    "avgFileSize": 9155.249882573979,
+    "avgFileSize": 9146.444548872181,
     "largestFiles": [
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/network/examples/debug_testnet_standalone",
