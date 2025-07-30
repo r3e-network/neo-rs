@@ -1,4 +1,3 @@
-use crate::error::TrieError;
 use crate::error::{MptError, MptResult};
 use crate::helper::{common_prefix_length, from_nibbles, to_nibbles};
 use crate::{Cache, Node, NodeType};

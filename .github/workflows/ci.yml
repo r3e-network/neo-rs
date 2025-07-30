@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop, jimmy, jimmy-rocksdb ]
+    branches: [ main, develop, jimmy, jimmy-rocksdb, master ]
   pull_request:
-    branches: [ main, develop, jimmy, jimmy-rocksdb ]
+    branches: [ main, develop, jimmy, jimmy-rocksdb, master ]
   schedule:
     # Run nightly at 2 AM UTC
     - cron: '0 2 * * *'
@@ -242,7 +242,7 @@ jobs:
   docs:
     name: Documentation
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/jimmy'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/jimmy' || github.ref == 'refs/heads/master'
     strategy:
       fail-fast: true
     steps:
