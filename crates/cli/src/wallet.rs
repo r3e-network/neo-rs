@@ -466,7 +466,10 @@ impl WalletManager {
 
         // 3. Call balanceOf method on NEO contract (matches C# InvokeFunction exactly)
         let result = rpc_client
-            .call_raw("invokefunction".to_string(), serde_json::json!([contract_hash, "balanceOf", params]))
+            .call_raw(
+                "invokefunction".to_string(),
+                serde_json::json!([contract_hash, "balanceOf", params]),
+            )
             .await
             .map_err(|e| Box::new(WalletError(format!("RPC call failed: {}", e))))?;
 
@@ -709,8 +712,10 @@ impl WalletManager {
             .call_raw("getblockcount".to_string(), serde_json::json!([]))
             .await
             .map_err(|e| Box::new(WalletError(format!("Failed to get block count: {}", e))))?;
-        let block_count = block_count_result.as_u64()
-            .ok_or_else(|| Box::new(WalletError("Invalid block count format".to_string())))? as u32;
+        let block_count = block_count_result
+            .as_u64()
+            .ok_or_else(|| Box::new(WalletError("Invalid block count format".to_string())))?
+            as u32;
 
         // 2. Convert address to script hash format for RPC call (matches C# address encoding exactly)
         let address_bytes = address.as_bytes();
@@ -727,7 +732,10 @@ impl WalletManager {
 
         // 4. Call unclaimedGas method on NEO contract (matches C# InvokeFunction exactly)
         let result = rpc_client
-            .call_raw("invokefunction".to_string(), serde_json::json!([neo_contract_hash, "unclaimedGas", vec![params]]))
+            .call_raw(
+                "invokefunction".to_string(),
+                serde_json::json!([neo_contract_hash, "unclaimedGas", vec![params]]),
+            )
             .await
             .map_err(|e| Box::new(WalletError(format!("RPC call failed: {}", e))))?;
 

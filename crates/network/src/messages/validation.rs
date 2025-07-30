@@ -806,8 +806,8 @@ impl MessageValidator {
 
 #[cfg(test)]
 mod tests {
-    use super::{Message, NetworkError, Peer};
     use crate::{MessageCommand, NetworkMessage};
+    use crate::{NetworkError, PeerInfo};
     use neo_core::{BlockHeader, Transaction, UInt256, Witness};
     use neo_ledger::Block;
 

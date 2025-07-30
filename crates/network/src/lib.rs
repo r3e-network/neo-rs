@@ -59,6 +59,8 @@ pub type RpcServer = crate::rpc::RpcServer;
 pub type SyncManager = crate::sync::SyncManager;
 pub type SyncEvent = crate::sync::SyncEvent;
 
+// Configuration types are already defined in this file
+
 use neo_config::DEFAULT_NEO_PORT;
 use neo_config::DEFAULT_RPC_PORT;
 use neo_config::DEFAULT_TESTNET_PORT;
@@ -599,7 +601,7 @@ impl NetworkConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{Message, NetworkError, Peer};
+    use super::{NetworkError, PeerInfo};
 
     #[test]
     fn test_protocol_version() {

@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use rand;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::args::CliArgs;
@@ -17,7 +17,10 @@ use crate::wallet::WalletManager;
 use neo_config::NetworkType;
 use neo_ledger::{Blockchain, Storage};
 use neo_network::p2p::MessageHandler;
-use neo_network::{NetworkMessage, NodeInfo, P2PConfig, P2PNode, ProtocolVersion, SyncManager};
+use neo_network::{
+    NetworkCommand, NetworkConfig, NetworkMessage, NodeInfo, P2PConfig, P2PNode, ProtocolVersion,
+    SyncManager,
+};
 
 /// Main CLI service that coordinates all node operations
 pub struct MainService {
@@ -664,7 +667,20 @@ impl MainService {
             }
         );
 
-        let p2p_node = Arc::new(P2PNode::new(p2p_config, node_info, magic));
+        // Create network command channel
+        let (command_sender, command_receiver) = tokio::sync::mpsc::channel(100);
+
+        // Create NetworkConfig that wraps P2PConfig
+        let network_config = NetworkConfig {
+            magic,
+            protocol_version: ProtocolVersion::new(3, 0, 0),
+            user_agent: "neo-rs/0.1.0".to_string(),
+            listen_address: format!("localhost:{}", self.config.network.bind_port).parse()?,
+            p2p_config,
+        };
+
+        // Create P2P node with correct parameters
+        let p2p_node = Arc::new(P2PNode::new(network_config, command_receiver)?);
         self.p2p_node = Some(p2p_node.clone());
 
         // Start P2P node

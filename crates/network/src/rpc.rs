@@ -1013,7 +1013,7 @@ async fn handle_calculate_network_fee(
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{NetworkError, NetworkResult};
     use neo_ledger::Blockchain;
     use serde_json::json;
     use std::sync::Arc;

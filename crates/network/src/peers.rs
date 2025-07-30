@@ -649,7 +649,7 @@ pub enum BanType {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{NetworkError, NetworkResult};
 
     #[test]
     fn test_peer_info() {

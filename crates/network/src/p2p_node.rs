@@ -1000,8 +1000,8 @@ impl Drop for P2pNode {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
     use crate::{MessageCommand, NetworkMessage, ProtocolMessage};
+    use crate::{NetworkError, NetworkResult};
     use std::net::{IpAddr, Ipv4Addr};
     use tokio::time::{timeout, Duration};
 

@@ -303,8 +303,8 @@ impl Shutdown for TransactionPoolShutdown {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
     use crate::NetworkConfig;
+    use crate::{NetworkError, NetworkResult};
     use neo_core::{Shutdown, ShutdownCoordinator};
     use std::time::Duration;
     use tokio::time::timeout;
