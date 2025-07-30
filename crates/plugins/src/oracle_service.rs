@@ -164,7 +164,7 @@ impl OracleServicePlugin {
         let client = Client::builder()
             .timeout(Duration::from_secs(self.http_config.timeout_seconds))
             .redirect(reqwest::redirect::Policy::limited(
-                self.http_config.max_redirects,
+                self.http_config.max_redirects as usize,
             ))
             .user_agent(&self.http_config.user_agent)
             .build()

@@ -3,6 +3,7 @@
 //! This module handles all configuration including command-line arguments,
 //! configuration files, and network settings.
 
+use crate::args::{CliArgs as ArgsCliArgs, LogLevel, Network};
 use anyhow::{Context, Result};
 use clap::ArgMatches;
 use neo_config::{
@@ -117,7 +118,7 @@ impl Default for WalletConfig {
 
 impl Config {
     /// Load configuration from file and command-line arguments
-    pub async fn load(config_path: &PathBuf, args: &CliArgs) -> Result<Self> {
+    pub async fn load(config_path: &PathBuf, args: &ArgsCliArgs) -> Result<Self> {
         let mut config = if config_path.exists() {
             let content = tokio::fs::read_to_string(config_path).await?;
             serde_json::from_str(&content)?
@@ -132,9 +133,9 @@ impl Config {
     }
 
     /// Apply command-line arguments to override configuration
-    fn apply_args(&mut self, args: &CliArgs) {
+    fn apply_args(&mut self, args: &ArgsCliArgs) {
         // Override storage path based on data directory
-        self.storage.path = args.data_dir.to_string_lossy().to_string();
+        self.storage.path = args.get_data_dir().to_string_lossy().to_string();
 
         // Override wallet settings
         if let Some(wallet_path) = &args.wallet {
@@ -142,16 +143,17 @@ impl Config {
             self.wallet.is_active = true;
         }
 
-        if let Some(password) = &args.wallet_password {
+        if let Some(password) = &args.password {
             self.wallet.password = Some(password.clone());
         }
 
         // Override log level based on verbosity
-        self.logger.level = match args.verbosity {
-            0 => "warn".to_string(),
-            1 => "info".to_string(),
-            2 => "debug".to_string(),
-            _ => "trace".to_string(),
+        self.logger.level = match args.verbose {
+            LogLevel::Trace => "trace".to_string(),
+            LogLevel::Debug => "debug".to_string(),
+            LogLevel::Info => "info".to_string(),
+            LogLevel::Warn => "warn".to_string(),
+            LogLevel::Error => "error".to_string(),
         };
     }
 
@@ -179,6 +181,7 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use tempfile::TempDir;
 
     #[test]
@@ -220,7 +223,7 @@ mod tests {
     }
 }
 
-/// CLI Arguments parsed from command line
+/// Legacy CLI Arguments for backward compatibility
 #[derive(Debug, Clone)]
 pub struct CliArgs {
     pub config: PathBuf,
@@ -237,172 +240,49 @@ pub struct CliArgs {
     pub console: bool,
     pub log_level: Level,
     pub data_dir: PathBuf,
-    pub subcommand: Option<CliSubcommand>,
 }
 
-/// Supported network types
+/// Supported network types for legacy compatibility
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NetworkType {
     Mainnet,
     Testnet,
 }
 
-/// CLI subcommands
-#[derive(Debug, Clone)]
-pub enum CliSubcommand {
-    Wallet(WalletCommand),
-    Node(NodeCommand),
-    Rpc(RpcCommand),
-}
-
-/// Wallet subcommands
-#[derive(Debug, Clone)]
-pub enum WalletCommand {
-    Create {
-        path: PathBuf,
-        password: Option<String>,
-    },
-    Open {
-        path: PathBuf,
-        password: Option<String>,
-    },
-    List,
-    Balance,
-}
-
-/// Node subcommands
-#[derive(Debug, Clone)]
-pub enum NodeCommand {
-    Start,
-    Stop,
-    Status,
-}
-
-/// RPC subcommands
-#[derive(Debug, Clone)]
-pub enum RpcCommand {
-    Start,
-    Stop,
-}
-
-impl CliArgs {
-    /// Parse CLI arguments from clap matches
-    pub fn from_matches(matches: &ArgMatches) -> Result<Self> {
-        let config = PathBuf::from(matches.get_one::<String>("config").ok_or_else(|| anyhow::anyhow!("Missing config parameter"))?);
-
-        let network = if matches.get_flag("testnet") {
-            NetworkType::Testnet
-        } else {
-            NetworkType::Mainnet // Default to mainnet
+/// Converter from new ArgsCliArgs to legacy CliArgs
+impl From<ArgsCliArgs> for CliArgs {
+    fn from(args: ArgsCliArgs) -> Self {
+        let log_level = args.verbose.into();
+        let data_dir = args.get_data_dir();
+        let config = args.get_config_path();
+        let verbosity = match args.verbose {
+            LogLevel::Error => 0,
+            LogLevel::Warn => 1,
+            LogLevel::Info => 2,
+            LogLevel::Debug => 3,
+            LogLevel::Trace => 4,
         };
 
-        let rpc_enabled = matches.get_flag("rpc");
-        let rpc_port = matches
-            .get_one::<String>("rpc-port")
-            .ok_or_else(|| anyhow::anyhow!("Missing rpc-port parameter"))?
-            .parse::<u16>()
-            .context("Invalid RPC port")?;
-
-        let p2p_port = matches
-            .get_one::<String>("p2p-port")
-            .ok_or_else(|| anyhow::anyhow!("Missing p2p-port parameter"))?
-            .parse::<u16>()
-            .context("Invalid P2P port")?;
-
-        let wallet = matches.get_one::<String>("wallet").map(PathBuf::from);
-
-        let wallet_password = matches
-            .get_one::<String>("wallet-password")
-            .map(String::from);
-
-        let no_verify = matches.get_flag("no-verify");
-
-        let verbosity = matches.get_count("verbose");
-
-        let plugins = matches
-            .get_many::<String>("plugins")
-            .map(|values| values.map(String::from).collect())
-            .unwrap_or_default();
-
-        let daemon = matches.get_flag("daemon");
-        let console = matches.get_flag("console");
-
-        let log_level = match matches.get_one::<String>("log-level").ok_or_else(|| anyhow::anyhow!("Missing log-level parameter"))?.as_str() {
-            "error" => Level::ERROR,
-            "warn" => Level::WARN,
-            "info" => Level::INFO,
-            "debug" => Level::DEBUG,
-            "trace" => Level::TRACE,
-            _ => Level::INFO,
-        };
-
-        let data_dir = PathBuf::from(matches.get_one::<String>("data-dir").ok_or_else(|| anyhow::anyhow!("Missing data-dir parameter"))?);
-
-        let subcommand = match matches.subcommand() {
-            Some(("wallet", wallet_matches)) => {
-                Some(CliSubcommand::Wallet(parse_wallet_command(wallet_matches)?))
-            }
-            Some(("node", node_matches)) => {
-                Some(CliSubcommand::Node(parse_node_command(node_matches)?))
-            }
-            Some(("rpc", rpc_matches)) => Some(CliSubcommand::Rpc(parse_rpc_command(rpc_matches)?)),
-            _ => None,
-        };
-
-        Ok(Self {
+        Self {
             config,
-            network,
-            rpc_enabled,
-            rpc_port,
-            p2p_port,
-            wallet,
-            wallet_password,
-            no_verify,
+            network: match args.network {
+                Network::Mainnet => NetworkType::Mainnet,
+                Network::Testnet => NetworkType::Testnet,
+                Network::Private => NetworkType::Testnet, // Map private to testnet
+            },
+            rpc_enabled: true, // Default
+            rpc_port: args.rpc_port.unwrap_or(10332),
+            p2p_port: args.p2p_port.unwrap_or(10333),
+            wallet: args.wallet,
+            wallet_password: args.password,
+            no_verify: args.no_verify,
             verbosity,
-            plugins,
-            daemon,
-            console,
+            plugins: args.plugins,
+            daemon: args.daemon,
+            console: true, // Default
             log_level,
             data_dir,
-            subcommand,
-        })
-    }
-}
-
-fn parse_wallet_command(matches: &ArgMatches) -> Result<WalletCommand> {
-    match matches.subcommand() {
-        Some(("create", create_matches)) => {
-            let path = PathBuf::from(create_matches.get_one::<String>("path").ok_or_else(|| anyhow::anyhow!("Missing path parameter"))?);
-            let password = create_matches
-                .get_one::<String>("password")
-                .map(String::from);
-            Ok(WalletCommand::Create { path, password })
         }
-        Some(("open", open_matches)) => {
-            let path = PathBuf::from(open_matches.get_one::<String>("path").ok_or_else(|| anyhow::anyhow!("Missing path parameter"))?);
-            let password = open_matches.get_one::<String>("password").map(String::from);
-            Ok(WalletCommand::Open { path, password })
-        }
-        Some(("list", _)) => Ok(WalletCommand::List),
-        Some(("balance", _)) => Ok(WalletCommand::Balance),
-        _ => anyhow::bail!("Invalid wallet command"),
-    }
-}
-
-fn parse_node_command(matches: &ArgMatches) -> Result<NodeCommand> {
-    match matches.subcommand() {
-        Some(("start", _)) => Ok(NodeCommand::Start),
-        Some(("stop", _)) => Ok(NodeCommand::Stop),
-        Some(("status", _)) => Ok(NodeCommand::Status),
-        _ => anyhow::bail!("Invalid node command"),
-    }
-}
-
-fn parse_rpc_command(matches: &ArgMatches) -> Result<RpcCommand> {
-    match matches.subcommand() {
-        Some(("start", _)) => Ok(RpcCommand::Start),
-        Some(("stop", _)) => Ok(RpcCommand::Stop),
-        _ => anyhow::bail!("Invalid RPC command"),
     }
 }
 

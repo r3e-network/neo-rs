@@ -3,7 +3,6 @@
 //! This module provides comprehensive peer connection management that exactly matches
 //! the C# Neo peer management functionality for real P2P connections.
 
-use super::{Error, Result};
 use crate::messages::commands::varlen;
 use crate::messages::header::Neo3Message;
 use crate::messages::network::NetworkMessage as NetMsg;
@@ -137,7 +136,7 @@ pub struct ConnectionStats {
 
 impl PeerManager {
     /// Creates a new peer manager (matches C# Neo peer manager constructor exactly)
-    pub fn new(config: NetworkConfig) -> Result<Self> {
+    pub fn new(config: NetworkConfig) -> NetworkResult<Self> {
         let (event_sender, _) = broadcast::channel(1000);
 
         // Initialize message validator with network magic
@@ -159,7 +158,7 @@ impl PeerManager {
     }
 
     /// Starts the peer manager (matches C# Neo peer manager start exactly)
-    pub async fn start(&self) -> Result<()> {
+    pub async fn start(&self) -> NetworkResult<()> {
         info!(
             "Starting peer manager on port {}",
             self.config.listen_address.port()
@@ -189,7 +188,7 @@ impl PeerManager {
     }
 
     /// Stops the peer manager (matches C# Neo peer manager stop exactly)
-    pub async fn stop(&self) -> Result<()> {
+    pub async fn stop(&self) -> NetworkResult<()> {
         info!("Stopping peer manager");
 
         *self.is_running.write().await = false;
@@ -209,7 +208,7 @@ impl PeerManager {
     }
 
     /// Connects to a peer (matches C# Neo.Network.P2P.LocalNode.ConnectToPeer exactly)
-    pub async fn connect_to_peer(&self, address: SocketAddr) -> Result<PeerInfo> {
+    pub async fn connect_to_peer(&self, address: SocketAddr) -> NetworkResult<PeerInfo> {
         debug!("Attempting to connect to peer: {}", address);
 
         // 1. Update connection statistics
@@ -299,7 +298,7 @@ impl PeerManager {
     }
 
     /// Disconnects from a peer (matches C# Neo.Network.P2P.LocalNode.DisconnectPeer exactly)
-    pub async fn disconnect_peer(&self, address: SocketAddr) -> Result<()> {
+    pub async fn disconnect_peer(&self, address: SocketAddr) -> NetworkResult<()> {
         debug!("Disconnecting from peer: {}", address);
 
         // 1. Remove peer from connected peers
@@ -319,7 +318,11 @@ impl PeerManager {
     }
 
     /// Sends a message to a peer (matches C# Neo.Network.P2P.RemoteNode.SendMessage exactly)
-    pub async fn send_message(&self, peer: SocketAddr, message: NetworkMessage) -> Result<()> {
+    pub async fn send_message(
+        &self,
+        peer: SocketAddr,
+        message: NetworkMessage,
+    ) -> NetworkResult<()> {
         debug!("Sending message to peer {}: {:?}", peer, message);
 
         let operation_id = format!("send_message_{}_{:?}", peer, message.header.command);
@@ -467,7 +470,7 @@ impl PeerManager {
         &self,
         stream: TcpStream,
         address: SocketAddr,
-    ) -> Result<PeerInfo> {
+    ) -> NetworkResult<PeerInfo> {
         // Set timeouts on the stream
         stream.set_nodelay(true)?;
 
@@ -501,7 +504,7 @@ impl PeerManager {
     }
 
     /// Starts accepting incoming connections (legacy interface)
-    async fn start_accepting_connections(&self) -> Result<()> {
+    async fn start_accepting_connections(&self) -> NetworkResult<()> {
         // NOTE: Create listener and pass to implementation
         Err(NetworkError::ConnectionFailed {
             address: "localhost:0".parse()?,
@@ -510,7 +513,7 @@ impl PeerManager {
     }
 
     /// Actual implementation for accepting incoming connections
-    async fn start_accepting_connections_impl(&self, listener: TcpListener) -> Result<()> {
+    async fn start_accepting_connections_impl(&self, listener: TcpListener) -> NetworkResult<()> {
         let peers = Arc::clone(&self.peers);
         let event_sender = self.event_sender.clone();
         let config = self.config.clone();
@@ -586,7 +589,7 @@ impl PeerManager {
         stats: Arc<RwLock<ConnectionStats>>,
         message_validator: Arc<RwLock<MessageValidator>>,
         error_handler: Arc<NetworkErrorHandler>,
-    ) -> Result<()> {
+    ) -> NetworkResult<()> {
         info!("🤝 Starting handshake with incoming peer: {}", address);
 
         // Set timeouts on the stream
@@ -651,7 +654,7 @@ impl PeerManager {
         mut stream: &mut TcpStream,
         address: SocketAddr,
         config: &NetworkConfig,
-    ) -> Result<PeerInfo> {
+    ) -> NetworkResult<PeerInfo> {
         // 1. Receive peer's version message first
         let buffer = match timeout(
             Duration::from_secs(10),
@@ -753,7 +756,7 @@ impl PeerManager {
     }
 
     /// Starts maintenance tasks for peer management
-    async fn start_maintenance_tasks(&self) -> Result<()> {
+    async fn start_maintenance_tasks(&self) -> NetworkResult<()> {
         // Start error handler maintenance
         let error_handler = Arc::clone(&self.error_handler);
         tokio::spawn(async move {
@@ -805,7 +808,7 @@ impl PeerManager {
         mut stream: TcpStream,
         address: SocketAddr,
         is_outbound: bool,
-    ) -> Result<PeerInfo> {
+    ) -> NetworkResult<PeerInfo> {
         debug!("Performing handshake with peer: {}", address);
 
         // 1. Send version message (matches C# Neo version message exactly)
@@ -1059,7 +1062,7 @@ impl PeerManager {
     }
 
     /// Creates version message for handshake (Neo 3 format)
-    async fn create_version_message(&self) -> Result<NetworkMessage> {
+    async fn create_version_message(&self) -> NetworkResult<NetworkMessage> {
         let payload = ProtocolMessage::Version {
             version: self.config.protocol_version.as_u32(),
             services: 1, // NODE_NETWORK capability
@@ -1078,7 +1081,7 @@ impl PeerManager {
     }
 
     /// Decodes a variable-length integer from a byte slice (Neo N3 format)
-    fn decode_varlen_from_bytes(bytes: &[u8]) -> Result<(u32, usize)> {
+    fn decode_varlen_from_bytes(bytes: &[u8]) -> NetworkResult<(u32, usize)> {
         if bytes.is_empty() {
             return Err(NetworkError::ProtocolViolation {
                 peer: "0.0.0.0:0".parse().expect("failed to parse dummy address"),
@@ -1146,7 +1149,7 @@ impl PeerManager {
     }
 
     /// Reads a variable-length unsigned integer from the stream (Neo N3 format)
-    async fn read_varlen_uint(stream: &mut TcpStream) -> Result<u32> {
+    async fn read_varlen_uint(stream: &mut TcpStream) -> NetworkResult<u32> {
         let mut first_byte = [0u8; 1];
         stream
             .read_exact(&mut first_byte)
@@ -1212,7 +1215,7 @@ impl PeerManager {
     }
 
     /// Reads a TestNet direct payload message
-    async fn read_testnet_direct_payload(stream: &mut TcpStream) -> Result<Vec<u8>> {
+    async fn read_testnet_direct_payload(stream: &mut TcpStream) -> NetworkResult<Vec<u8>> {
         // TestNet sends direct payloads without standard Neo message envelope
         // Based on debug analysis, version response is 40 bytes total
 
@@ -1262,7 +1265,10 @@ impl PeerManager {
     }
 
     /// Converts TestNet direct payload to standard NetworkMessage
-    fn testnet_payload_to_message(payload: &[u8], expected_command: u8) -> Result<NetworkMessage> {
+    fn testnet_payload_to_message(
+        payload: &[u8],
+        expected_command: u8,
+    ) -> NetworkResult<NetworkMessage> {
         // TestNet version response structure (from debug analysis):
         // - Bytes 0-2: [00, 00, 25] - Padding/framing
         // - Bytes 3-6: "N3T5" network identifier
@@ -1356,7 +1362,7 @@ impl PeerManager {
     }
 
     /// Reads a complete message from a TCP stream
-    async fn read_complete_message(stream: &mut TcpStream) -> Result<Vec<u8>> {
+    async fn read_complete_message(stream: &mut TcpStream) -> NetworkResult<Vec<u8>> {
         // TestNet appears to send messages with a framing structure
         // First, try to read up to 7 bytes to check the pattern
         let mut initial_bytes = [0u8; 7];
@@ -1640,7 +1646,7 @@ impl PeerManager {
         version_message: NetworkMessage,
         address: SocketAddr,
         is_outbound: bool,
-    ) -> Result<PeerInfo> {
+    ) -> NetworkResult<PeerInfo> {
         match version_message.payload {
             ProtocolMessage::Version {
                 version,
@@ -1694,7 +1700,7 @@ impl PeerManager {
         version_message: NetworkMessage,
         address: SocketAddr,
         is_outbound: bool,
-    ) -> Result<PeerInfo> {
+    ) -> NetworkResult<PeerInfo> {
         match version_message.payload {
             ProtocolMessage::Version {
                 version,
@@ -1751,7 +1757,7 @@ impl PeerManager {
         stats: Arc<RwLock<ConnectionStats>>,
         message_validator: Arc<RwLock<MessageValidator>>,
         error_handler: Arc<NetworkErrorHandler>,
-    ) -> Result<()> {
+    ) -> NetworkResult<()> {
         info!("📨 Starting message handler for peer: {}", address);
 
         let (mut reader, mut writer) = stream.into_split();

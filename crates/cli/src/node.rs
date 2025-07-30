@@ -593,6 +593,6 @@ impl NeoNode {
             .keys()
             .next()
             .copied()
-            .unwrap_or_else(|| "DEFAULT_NEO_PORT".parse().unwrap_or_default())
+            .unwrap_or_else(|| "127.0.0.1:10333".parse().unwrap())
     }
 }

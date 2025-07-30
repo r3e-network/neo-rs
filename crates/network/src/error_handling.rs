@@ -531,7 +531,7 @@ impl Default for NetworkErrorHandler {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{NetworkError, NetworkResult};
     use std::time::Duration;
     use tokio::time::timeout;
 

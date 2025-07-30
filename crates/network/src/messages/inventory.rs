@@ -104,7 +104,7 @@ impl InventoryItem {
 
 #[cfg(test)]
 mod tests {
-    use super::{Message, NetworkError, Peer};
+    use crate::{NetworkError, PeerInfo};
 
     #[test]
     fn test_inventory_item() {

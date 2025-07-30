@@ -918,8 +918,8 @@ pub struct SyncHealthStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
     use crate::{NetworkConfig, P2pNode};
+    use crate::{NetworkError, NetworkResult};
     use neo_ledger::Blockchain;
     use std::sync::Arc;
     use tokio::time::{timeout, Duration};

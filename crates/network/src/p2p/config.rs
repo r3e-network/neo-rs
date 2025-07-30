@@ -126,7 +126,7 @@ impl P2PConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{Message, NetworkError, Peer};
+    use crate::{NetworkError, PeerInfo};
 
     #[test]
     fn test_p2p_config_default() {
