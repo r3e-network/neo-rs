@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "createdAt": "2025-07-30T08:30:28.464Z",
-  "lastUpdated": "2025-07-30T13:51:33.846Z",
+  "lastUpdated": "2025-07-30T13:54:33.936Z",
   "workspaceRoot": "/Users/jinghuiliao/git/r3e/neo-rs",
   "files": [
     [
@@ -4710,9 +4710,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/cli/src/config.rs",
         "relativePath": "crates/cli/src/config.rs",
-        "size": 19507,
-        "lastModified": "2025-07-30T13:50:49.594Z",
-        "hash": "e2c8ffdc687c7d21524b41eb9ec0c6d0",
+        "size": 19514,
+        "lastModified": "2025-07-30T13:53:23.903Z",
+        "hash": "d7bc39c603736bf106960807fc138c43",
         "language": "rust"
       }
     ],
@@ -6604,9 +6604,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/mpt_trie/src/cache.rs",
         "relativePath": "crates/mpt_trie/src/cache.rs",
-        "size": 22026,
-        "lastModified": "2025-07-30T13:24:33.742Z",
-        "hash": "1da00f6d4c6dc99e6642487dde45ac15",
+        "size": 21514,
+        "lastModified": "2025-07-30T13:53:24.235Z",
+        "hash": "26fe1e413b09c10dd2c85266bb8db26b",
         "language": "rust"
       }
     ],
@@ -7594,9 +7594,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/rpc_server/src/methods.rs",
         "relativePath": "crates/rpc_server/src/methods.rs",
-        "size": 11659,
-        "lastModified": "2025-07-30T13:38:21.270Z",
-        "hash": "d524722831746048284370cd4239f41f",
+        "size": 11541,
+        "lastModified": "2025-07-30T13:53:24.395Z",
+        "hash": "1e22d8db6006edd30eb23424a0ae34fe",
         "language": "rust"
       }
     ],
@@ -28598,7 +28598,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/sessions.json",
         "relativePath": ".autopilot/tasks/sessions.json",
         "size": 107,
-        "lastModified": "2025-07-30T13:51:33.711Z",
+        "lastModified": "2025-07-30T13:54:33.726Z",
         "hash": "07296db81391d25247fbeb727941b3f8",
         "language": "json"
       }
@@ -28609,7 +28609,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/tasks.json",
         "relativePath": ".autopilot/tasks/tasks.json",
         "size": 2,
-        "lastModified": "2025-07-30T13:51:33.711Z",
+        "lastModified": "2025-07-30T13:54:33.725Z",
         "hash": "d751713988987e9331980363e24189ce",
         "language": "json"
       }
@@ -30696,50 +30696,50 @@
   },
   "codebaseStats": {
     "totalFiles": 2128,
-    "totalLines": 396937,
+    "totalLines": 396916,
     "filesByLanguage": [
       [
         "json",
-        1217574
+        1220529
       ],
       [
         "markdown",
-        741782
+        743552
       ],
       [
         "javascript",
-        55764
+        55899
       ],
       [
         "shellscript",
-        216924
+        217719
       ],
       [
         "python",
-        284587
+        285997
       ],
       [
         "rust",
-        2788528
+        2795218
       ],
       [
         "yaml",
-        9264
+        9294
       ],
       [
         "csharp",
-        5941964
+        5956349
       ],
       [
         "css",
-        12392
+        12422
       ],
       [
         "html",
-        12392
+        12422
       ]
     ],
-    "avgFileSize": 9146.371240601504,
+    "avgFileSize": 9146.078477443609,
     "largestFiles": [
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/network/examples/debug_testnet_standalone",

@@ -5,7 +5,9 @@
 
 use anyhow::{Context, Result};
 use clap::ArgMatches;
-use neo_config::{MILLISECONDS_PER_BLOCK, MAX_TRANSACTIONS_PER_BLOCK, MAX_TRACEABLE_BLOCKS, MAX_SCRIPT_SIZE};
+use neo_config::{
+    MAX_SCRIPT_SIZE, MAX_TRACEABLE_BLOCKS, MAX_TRANSACTIONS_PER_BLOCK, MILLISECONDS_PER_BLOCK,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::Level;
