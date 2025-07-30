@@ -115,6 +115,9 @@ pub enum ProtocolMessage {
 
     /// Consensus message
     Consensus { payload: Vec<u8> },
+    
+    /// Unknown/Extended message - for TestNet compatibility
+    Unknown { command: u8, payload: Vec<u8> },
 }
 
 impl ProtocolMessage {
@@ -144,6 +147,7 @@ impl ProtocolMessage {
             ProtocolMessage::MerkleBlock { .. } => MessageCommand::MerkleBlock,
             ProtocolMessage::Alert { .. } => MessageCommand::Reject, // Implementation providedorarily map to Reject
             ProtocolMessage::Consensus { .. } => MessageCommand::Consensus,
+            ProtocolMessage::Unknown { .. } => MessageCommand::Unknown,
         }
     }
 
@@ -342,6 +346,11 @@ impl ProtocolMessage {
             ProtocolMessage::Consensus { payload } => {
                 writer.write_var_bytes(payload)?;
             }
+            
+            ProtocolMessage::Unknown { command: _, payload } => {
+                // For unknown messages, just write the payload as-is
+                writer.write_bytes(payload)?;
+            }
         }
 
         Ok(writer.to_bytes())
@@ -439,10 +448,14 @@ impl ProtocolMessage {
                 Ok(ProtocolMessage::Consensus { payload })
             }
 
-            _ => Err(NetworkError::ProtocolViolation {
-                peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
-                violation: "Invalid protocol message".to_string(),
-            }),
+            _ => {
+                // For TestNet compatibility, accept unknown commands
+                tracing::warn!("Unknown protocol message command: {:?}, treating as Unknown", command);
+                Ok(ProtocolMessage::Unknown {
+                    command: command.as_byte(),
+                    payload: bytes.to_vec(),
+                })
+            }
         }
     }
 
