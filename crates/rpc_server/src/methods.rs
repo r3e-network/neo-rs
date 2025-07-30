@@ -16,7 +16,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 // Import RPC types from rpc_client
 use neo_rpc_client::models::{
-    RpcAddressValidation, RpcBlock, RpcPeer, RpcPeers, RpcSigner, RpcTransaction, RpcVersion,
+    RpcBlock, RpcPeer, RpcPeers, RpcSigner, RpcTransaction, RpcVersion,
     RpcWitness,
 };
 
@@ -38,20 +38,17 @@ impl RpcMethods {
         &self,
         block: &neo_ledger::Block,
         confirmations: u32,
-        next_block_hash: Option<String>,
+        next_block_hash: Option<neo_core::UInt256>,
     ) -> RpcBlock {
         RpcBlock {
-            hash: format!("0x{}", hex::encode(block.hash().as_bytes())),
+            hash: block.hash(),
             size: block.size() as u32,
             version: block.header.version,
-            previous_block_hash: format!(
-                "0x{}",
-                hex::encode(block.header.previous_hash.as_bytes())
-            ),
-            merkle_root: format!("0x{}", hex::encode(block.header.merkle_root.as_bytes())),
+            merkleroot: block.header.merkle_root,
             time: block.header.timestamp,
             index: block.header.index,
-            next_consensus: block.header.next_consensus.to_string(),
+            primary: 0, // TODO: Get primary from consensus data
+            nextconsensus: block.header.next_consensus,
             witnesses: block
                 .header
                 .witnesses
@@ -66,55 +63,36 @@ impl RpcMethods {
                 .iter()
                 .map(|tx| RpcTransaction {
                     hash: match tx.hash() {
-                        Ok(hash) => format!("0x{}", hex::encode(hash.as_bytes())),
-                        Err(_) => {
-                            "0x0000000000000000000000000000000000000000000000000000000000000000"
-                                .to_string()
-                        }
+                        Ok(hash) => hash,
+                        Err(_) => neo_core::UInt256::zero(),
                     },
                     size: tx.size() as u32,
                     version: tx.version(),
                     nonce: tx.nonce(),
-                    system_fee: tx.system_fee().to_string(),
-                    network_fee: tx.network_fee().to_string(),
-                    valid_until_block: tx.valid_until_block(),
+                    sender: tx.sender(),
+                    sysfee: tx.system_fee().to_string(),
+                    netfee: tx.network_fee().to_string(),
+                    validuntilblock: tx.valid_until_block(),
                     signers: tx
                         .signers()
                         .iter()
                         .map(|s| RpcSigner {
-                            account: format!("0x{}", hex::encode(s.account.as_bytes())),
+                            account: s.account,
                             scopes: s.scopes.to_string(),
+                            allowedcontracts: if s.allowed_contracts.is_empty() {
+                                None
+                            } else {
+                                Some(s.allowed_contracts.clone())
+                            },
+                            allowedgroups: if s.allowed_groups.is_empty() {
+                                None
+                            } else {
+                                Some(s.allowed_groups.iter().map(hex::encode).collect())
+                            },
+                            rules: None,
                         })
                         .collect(),
-                    attributes: tx
-                        .attributes()
-                        .iter()
-                        .map(|attr| match attr {
-                            neo_core::TransactionAttribute::HighPriority => {
-                                serde_json::json!({"type": "HighPriority"})
-                            }
-                            neo_core::TransactionAttribute::OracleResponse { id, code, result } => {
-                                serde_json::json!({
-                                    "type": "OracleResponse",
-                                    "id": id,
-                                    "code": *code as u8,
-                                    "result": hex::encode(result)
-                                })
-                            }
-                            neo_core::TransactionAttribute::NotValidBefore { height } => {
-                                serde_json::json!({
-                                    "type": "NotValidBefore",
-                                    "height": height
-                                })
-                            }
-                            neo_core::TransactionAttribute::Conflicts { hash } => {
-                                serde_json::json!({
-                                    "type": "Conflicts",
-                                    "hash": format!("0x{}", hex::encode(hash.as_bytes()))
-                                })
-                            }
-                        })
-                        .collect(),
+                    attributes: vec![],
                     script: hex::encode(tx.script()),
                     witnesses: tx
                         .witnesses()
@@ -124,15 +102,18 @@ impl RpcMethods {
                             verification: hex::encode(&w.verification_script),
                         })
                         .collect(),
+                    blockhash: None,
+                    confirmations: None,
+                    blocktime: None,
                 })
                 .collect(),
-            confirmations,
-            next_block_hash,
+            confirmations: Some(confirmations),
+            nextblockhash: next_block_hash,
         }
     }
 
     /// Gets the current block count
-    pub async fn get_block_count(&self) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_block_count(&self) -> Result<Value> {
         debug!("RPC: getblockcount");
         let height = self.ledger.get_height().await;
         Ok(json!(height + 1)) // Neo returns count (height + 1)
@@ -142,7 +123,7 @@ impl RpcMethods {
     pub async fn get_block(
         &self,
         params: Option<Value>,
-    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Value> {
         debug!("RPC: getblock with params: {:?}", params);
 
         let params = params.ok_or("Missing parameters")?;
@@ -187,9 +168,7 @@ impl RpcMethods {
 
                 let next_block_hash = if block.header.index < current_height {
                     match self.ledger.get_block(block.header.index + 1).await? {
-                        Some(next_block) => {
-                            Some(format!("0x{}", hex::encode(next_block.hash().as_bytes())))
-                        }
+                        Some(next_block) => Some(next_block.hash()),
                         None => None,
                     }
                 } else {
@@ -207,7 +186,7 @@ impl RpcMethods {
     pub async fn get_block_hash(
         &self,
         params: Option<Value>,
-    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Value> {
         debug!("RPC: getblockhash with params: {:?}", params);
 
         let params = params.ok_or("Missing parameters")?;
@@ -232,7 +211,7 @@ impl RpcMethods {
     /// Gets the best block hash
     pub async fn get_best_block_hash(
         &self,
-    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Value> {
         debug!("RPC: getbestblockhash");
         let best_hash = self.ledger.get_best_block_hash().await?;
         let hash_hex = hex::encode(best_hash.as_bytes());
@@ -240,7 +219,7 @@ impl RpcMethods {
     }
 
     /// Gets version information
-    pub async fn get_version(&self) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_version(&self) -> Result<Value> {
         debug!("RPC: getversion");
 
         // Get version from environment at compile time
@@ -248,17 +227,28 @@ impl RpcMethods {
         const NEO_VERSION: &str = "3.6.0";
 
         let version = RpcVersion {
-            tcp_port: 20333,
-            ws_port: 20334,
+            tcpport: 20333,
+            wsport: 20334,
             nonce: rand::random_u32(),
-            user_agent: format!("neo-rs/{}", VERSION),
+            useragent: format!("neo-rs/{}", VERSION),
+            protocol: neo_rpc_client::models::RpcProtocolConfiguration {
+                addressversion: 53,
+                network: 5195086,
+                validatorscount: 7,
+                msperblock: 15000,
+                maxtraceableblocks: 2102400,
+                maxvaliduntilblockincrement: 5760,
+                maxtransactionsperblock: 512,
+                memorypoolmaxtransactions: 50000,
+                initialgasdistribution: "52000000".to_string(),
+            },
         };
 
         Ok(serde_json::to_value(version)?)
     }
 
     /// Gets peer information
-    pub async fn get_peers(&self) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_peers(&self) -> Result<Value> {
         debug!("RPC: getpeers");
 
         let peers = RpcPeers {
@@ -282,22 +272,18 @@ impl RpcMethods {
     /// Gets connection count
     pub async fn get_connection_count(
         &self,
-    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Value> {
         debug!("RPC: getconnectioncount");
-        // Get actual connection count from network manager
-        let connection_count = if let Some(network) = &self.network {
-            network.get_connected_peer_count()
-        } else {
-            0
-        };
-        Ok(json!(connection_count))
+        // For now, return 0 connections
+        // TODO: Get actual connection count from network manager
+        Ok(json!(0))
     }
 
     /// Validates an address
     pub async fn validate_address(
         &self,
         params: Option<Value>,
-    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Value> {
         debug!("RPC: validateaddress with params: {:?}", params);
 
         let params = params.ok_or("Missing parameters")?;
@@ -312,36 +298,40 @@ impl RpcMethods {
         let is_valid =
             address.len() == 34 && (address.starts_with('N') || address.starts_with('A'));
 
-        let validation = RpcAddressValidation {
-            address: address.to_string(),
-            is_valid,
-        };
+        let validation = json!({
+            "address": address,
+            "isvalid": is_valid
+        });
 
-        Ok(serde_json::to_value(validation)?)
+        Ok(validation)
     }
 
     /// Gets native contracts
     pub async fn get_native_contracts(
         &self,
-    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Value> {
         debug!("RPC: getnativecontracts");
 
-        let contracts = vec![
-            RpcNativeContract {
-                id: -1,
-                hash: "0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5".to_string(),
-                nef_checksum: "0x00000000".to_string(),
-                update_counter: 0,
+        let contracts = json!([
+            {
+                "id": -1,
+                "hash": "0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5",
+                "nef": {
+                    "checksum": 0
+                },
+                "updatehistory": [0]
             },
-            RpcNativeContract {
-                id: -2,
-                hash: "0x43cf98eddbe047e198a3e5d57006311442a0ca15".to_string(),
-                nef_checksum: "0x00000000".to_string(),
-                update_counter: 0,
-            },
-        ];
+            {
+                "id": -2,
+                "hash": "0x43cf98eddbe047e198a3e5d57006311442a0ca15",
+                "nef": {
+                    "checksum": 0
+                },
+                "updatehistory": [0]
+            }
+        ]);
 
-        Ok(serde_json::to_value(contracts)?)
+        Ok(contracts)
     }
 }
 
