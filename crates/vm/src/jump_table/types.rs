@@ -57,7 +57,6 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         (StackItem::Array(items), StackItemType::Array) => StackItem::from_array(items),
         (StackItem::Struct(items), StackItemType::Array) => StackItem::from_array(items),
 
-        // Convert to Struct
         (StackItem::Array(items), StackItemType::Struct) => StackItem::from_struct(items),
         (StackItem::Struct(items), StackItemType::Struct) => StackItem::from_struct(items),
 
@@ -82,7 +81,6 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())
@@ -109,7 +107,6 @@ fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     // Peek the item on the stack
     let item = context.peek(0)?;
 
-    // Check if the item is of the specified type
     let result = match (item.stack_item_type(), item_type) {
         // Any type can be converted to Boolean
         (_, StackItemType::Boolean) => true,
@@ -132,11 +129,9 @@ fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         (StackItemType::ByteString, StackItemType::Buffer) => true,
         (StackItemType::Buffer, StackItemType::Buffer) => true,
 
-        // Array and Struct can be converted to Array
         (StackItemType::Array, StackItemType::Array) => true,
         (StackItemType::Struct, StackItemType::Array) => true,
 
-        // Array and Struct can be converted to Struct
         (StackItemType::Array, StackItemType::Struct) => true,
         (StackItemType::Struct, StackItemType::Struct) => true,
 
@@ -153,7 +148,6 @@ fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         _ => false,
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -169,10 +163,8 @@ fn is_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     // Peek the item on the stack
     let item = context.peek(0)?;
 
-    // Check if the item is null
     let result = matches!(item, StackItem::Null);
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())

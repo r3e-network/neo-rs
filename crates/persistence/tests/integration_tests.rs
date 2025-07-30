@@ -5,10 +5,10 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 async fn create_test_storage() -> (Storage, TempDir) {
-    let temp_dir = TempDir::new().unwrap();
+    let final_dir = TempDir::new().unwrap();
 
     let config = StorageConfig {
-        path: temp_dir.path().to_path_buf(),
+        path: final_dir.path().to_path_buf(),
         compression_algorithm: CompressionAlgorithm::Lz4,
         compaction_strategy: CompactionStrategy::Level,
         max_open_files: Some(1000),
@@ -19,12 +19,12 @@ async fn create_test_storage() -> (Storage, TempDir) {
 
     let provider: Arc<dyn StorageProvider> = Arc::new(RocksDbStorageProvider::new());
     let storage = Storage::new(config, provider).await.unwrap();
-    (storage, temp_dir)
+    (storage, final_dir)
 }
 
 #[tokio::test]
 async fn test_storage_basic_operations() {
-    let (mut storage, _temp_dir) = create_test_storage().await;
+    let (mut storage, _final_dir) = create_test_storage().await;
 
     let key = b"test_key";
     let value = vec![1, 2, 3, 4, 5];
@@ -45,7 +45,7 @@ async fn test_storage_basic_operations() {
 
 #[tokio::test]
 async fn test_storage_batch_operations() {
-    let (mut storage, _temp_dir) = create_test_storage().await;
+    let (mut storage, _final_dir) = create_test_storage().await;
 
     let operations = vec![
         BatchOperation::Put {
@@ -71,7 +71,7 @@ async fn test_storage_batch_operations() {
 
 #[tokio::test]
 async fn test_storage_stats() {
-    let (storage, _temp_dir) = create_test_storage().await;
+    let (storage, _final_dir) = create_test_storage().await;
 
     let stats = storage.stats().await.unwrap();
     assert_eq!(stats.total_keys, 0);
@@ -121,7 +121,6 @@ async fn test_ttl_cache() {
     cache.put(key.clone(), value.clone());
     assert_eq!(cache.get(&key), Some(value));
 
-    // Wait for expiration
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     // Should be expired now
@@ -172,7 +171,7 @@ async fn test_hash_index() {
 
 #[tokio::test]
 async fn test_backup_operations() {
-    let (storage, _temp_dir) = create_test_storage().await;
+    let (storage, _final_dir) = create_test_storage().await;
 
     let backup_config = BackupConfig {
         output_path: "./test_backups".to_string().into(),
@@ -267,7 +266,7 @@ async fn test_serialization_utilities() {
 
 #[tokio::test]
 async fn test_rocksdb_storage_large_data() {
-    let (mut storage, _temp_dir) = create_test_storage().await;
+    let (mut storage, _final_dir) = create_test_storage().await;
 
     // Test basic operations with RocksDB
     let key = b"test_key";
@@ -293,8 +292,8 @@ async fn test_rocksdb_storage_large_data() {
 
 #[tokio::test]
 async fn test_rocksdb_persistence() {
-    let temp_dir = TempDir::new().unwrap();
-    let db_path = temp_dir.path().to_path_buf();
+    let final_dir = TempDir::new().unwrap();
+    let db_path = final_dir.path().to_path_buf();
 
     // Create first storage instance
     {

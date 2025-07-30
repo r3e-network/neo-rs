@@ -4,6 +4,10 @@
 //! with Neo N3 nodes, matching the C# Neo.Network.RPC.RpcClient exactly.
 
 use crate::{rpc_methods, JsonRpcRequest, JsonRpcResponse, RpcConfig, RpcError, RpcResult};
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use reqwest::{Client, ClientBuilder};
 use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -13,6 +17,7 @@ use tokio::time::sleep;
 use tracing::debug;
 use url::Url;
 
+/// Default Neo network ports
 /// Main RPC client for Neo N3 blockchain (matches C# RpcClient exactly)
 #[derive(Debug, Clone)]
 pub struct RpcClient {
@@ -87,7 +92,6 @@ impl RpcClient {
                     let is_retryable = error.is_retryable();
                     last_error_message = Some(error.to_string());
 
-                    // Check if error is retryable
                     if !is_retryable || attempt == self.config.max_retries {
                         return Err(error);
                     }
@@ -155,12 +159,10 @@ impl RpcClient {
             });
         }
 
-        // Check for RPC error
         if let Some(error) = rpc_response.error {
             return Err(RpcError::from(error));
         }
 
-        // Return result
         rpc_response
             .result
             .ok_or_else(|| RpcError::InvalidResponse {
@@ -235,24 +237,24 @@ impl RpcClientBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[tokio::test]
     async fn test_client_creation() {
-        let client = RpcClient::new("http://localhost:10332".to_string()).unwrap();
-        assert_eq!(client.endpoint(), "http://localhost:10332");
+        let client = RpcClient::new("http://DEFAULT_RPC_PORT".to_string()).unwrap();
+        assert_eq!(client.endpoint(), "http://DEFAULT_RPC_PORT");
     }
 
     #[tokio::test]
     async fn test_builder() {
         let client = RpcClientBuilder::new()
-            .endpoint("http://localhost:10332")
+            .endpoint("http://DEFAULT_RPC_PORT")
             .timeout(60)
             .max_retries(5)
             .user_agent("test-client")
             .header("X-Custom", "value")
             .build()
-            .unwrap();
+            .expect("operation should succeed");
 
         assert_eq!(client.config().timeout, 60);
         assert_eq!(client.config().max_retries, 5);
@@ -264,7 +266,7 @@ mod tests {
     async fn test_get_block_count_mock() {
         // Test that we can create a client and handle configuration properly
         let config = RpcConfig {
-            endpoint: "http://localhost:10332".to_string(),
+            endpoint: "http://DEFAULT_RPC_PORT".to_string(),
             timeout: 5,
             max_retries: 0,
             retry_delay: 0,
@@ -272,8 +274,8 @@ mod tests {
             headers: std::collections::HashMap::new(),
         };
 
-        let client = RpcClient::with_config(config).unwrap();
-        assert_eq!(client.endpoint(), "http://localhost:10332");
+        let client = RpcClient::with_config(config).expect("operation should succeed");
+        assert_eq!(client.endpoint(), "http://DEFAULT_RPC_PORT");
         assert_eq!(client.config().timeout, 5);
         assert_eq!(client.config().max_retries, 0);
 
@@ -297,7 +299,9 @@ mod tests {
             crate::RpcError::MethodNotFound { method } => {
                 assert_eq!(method, "Method not found");
             }
-            other_error => panic!("Expected MethodNotFound error, got: {:?}", other_error),
+            other_error => {
+                panic!("Expected MethodNotFound error, got: {:?}", other_error);
+            }
         }
 
         // Test other error codes
@@ -312,17 +316,20 @@ mod tests {
             crate::RpcError::InvalidParams(msg) => {
                 assert_eq!(msg, "Invalid params");
             }
-            other_error => panic!("Expected InvalidParams error, got: {:?}", other_error),
+            other_error => {
+                panic!("Expected InvalidParams error, got: {:?}", other_error);
+            }
         }
     }
 
     #[tokio::test]
     async fn test_basic_functionality_without_mock() {
         // Test basic client functionality without requiring external dependencies
-        let client = RpcClient::new("http://localhost:10332".to_string()).unwrap();
+        let client = RpcClient::new("http://DEFAULT_RPC_PORT".to_string())
+            .expect("operation should succeed");
 
         // Test configuration
-        assert_eq!(client.endpoint(), "http://localhost:10332");
+        assert_eq!(client.endpoint(), "http://DEFAULT_RPC_PORT");
         assert_eq!(client.config().timeout, 30);
         assert_eq!(client.config().max_retries, 3);
 
@@ -331,7 +338,7 @@ mod tests {
             .endpoint("http://test.example.com")
             .timeout(120)
             .build()
-            .unwrap();
+            .expect("operation should succeed");
 
         assert_eq!(builder_client.endpoint(), "http://test.example.com");
         assert_eq!(builder_client.config().timeout, 120);

@@ -14,7 +14,6 @@ mod messages_tests {
     /// Test PrepareRequest message compatibility (matches C# PrepareRequest exactly)
     #[test]
     fn test_prepare_request_compatibility() {
-        // Test basic PrepareRequest creation (matches C# PrepareRequest constructor exactly)
         let block_hash = UInt256::from_bytes(&[1u8; 32]).unwrap();
         let timestamp = 1234567890u64;
         let nonce = 42u64;
@@ -26,17 +25,14 @@ mod messages_tests {
 
         let prepare_request = PrepareRequest::new(block_hash, timestamp, nonce, tx_hashes.clone());
 
-        // Verify fields match C# implementation
         assert_eq!(prepare_request.block_hash(), block_hash);
         assert_eq!(prepare_request.timestamp(), timestamp);
         assert_eq!(prepare_request.nonce(), nonce);
         assert_eq!(prepare_request.transaction_hashes(), &tx_hashes);
 
-        // Test serialization (matches C# BinaryWriter exactly)
         let serialized = prepare_request.to_bytes().unwrap();
         assert!(!serialized.is_empty());
 
-        // Test deserialization (matches C# BinaryReader exactly)
         let deserialized = PrepareRequest::from_bytes(&serialized).unwrap();
         assert_eq!(deserialized.block_hash(), block_hash);
         assert_eq!(deserialized.timestamp(), timestamp);
@@ -53,7 +49,6 @@ mod messages_tests {
     /// Test PrepareResponse message compatibility (matches C# PrepareResponse exactly)
     #[test]
     fn test_prepare_response_compatibility() {
-        // Test PrepareResponse creation (matches C# PrepareResponse constructor exactly)
         let block_hash = UInt256::from_bytes(&[5u8; 32]).unwrap();
 
         let prepare_response = PrepareResponse::new(block_hash);
@@ -76,7 +71,6 @@ mod messages_tests {
     /// Test Commit message compatibility (matches C# Commit exactly)
     #[test]
     fn test_commit_message_compatibility() {
-        // Test Commit creation (matches C# Commit constructor exactly)
         let signature = vec![0x01, 0x02, 0x03, 0x04, 0x05];
 
         let commit = Commit::new(signature.clone());
@@ -96,7 +90,6 @@ mod messages_tests {
     /// Test ChangeView message compatibility (matches C# ChangeView exactly)
     #[test]
     fn test_change_view_compatibility() {
-        // Test ChangeView creation (matches C# ChangeView constructor exactly)
         let new_view = ViewNumber::new(3);
         let timestamp = 1234567890u64;
         let reason = ViewChangeReason::Timeout;
@@ -122,7 +115,6 @@ mod messages_tests {
     /// Test RecoveryRequest message compatibility (matches C# RecoveryRequest exactly)
     #[test]
     fn test_recovery_request_compatibility() {
-        // Test RecoveryRequest creation (matches C# RecoveryRequest constructor exactly)
         let timestamp = 1234567890u64;
 
         let recovery_request = RecoveryRequest::new(timestamp);
@@ -274,7 +266,6 @@ mod messages_tests {
     /// Test ViewChangeReason enum compatibility (matches C# ChangeViewReason exactly)
     #[test]
     fn test_view_change_reason_compatibility() {
-        // Test all enum values match C#
         let reasons = vec![
             ViewChangeReason::Timeout,
             ViewChangeReason::InvalidBlock,
@@ -298,7 +289,6 @@ mod messages_tests {
     /// Test message validation compatibility (matches C# message validation exactly)
     #[test]
     fn test_message_validation_compatibility() {
-        // Test PrepareRequest with empty transaction list (should be valid)
         let empty_prepare = PrepareRequest::new(
             UInt256::from_bytes(&[30u8; 32]).unwrap(),
             1234567890,
@@ -307,7 +297,6 @@ mod messages_tests {
         );
         assert!(empty_prepare.validate().is_ok());
 
-        // Test PrepareRequest with many transactions (matches C# MaxTransactionsPerBlock)
         let mut many_tx_hashes = Vec::new();
         for i in 0..512 {
             let mut hash_bytes = [0u8; 32];
@@ -324,7 +313,6 @@ mod messages_tests {
         );
         assert!(large_prepare.validate().is_ok());
 
-        // Test Commit with empty signature (should be invalid)
         let empty_commit = Commit::new(vec![]);
         assert!(empty_commit.validate().is_err());
 
@@ -332,7 +320,6 @@ mod messages_tests {
         let valid_commit = Commit::new(vec![0u8; 64]); // Typical ECDSA signature size
         assert!(valid_commit.validate().is_ok());
 
-        // Test ChangeView with future timestamp (should be valid)
         let future_change_view = ChangeView::new(
             ViewNumber::new(5),
             u64::MAX - 1000,
@@ -344,7 +331,6 @@ mod messages_tests {
     /// Test message size limits compatibility (matches C# message size constraints exactly)
     #[test]
     fn test_message_size_limits_compatibility() {
-        // Test maximum transaction hashes in PrepareRequest (matches C# limits)
         let max_tx_count = 65535; // C# ushort.MaxValue
         let mut tx_hashes = Vec::with_capacity(max_tx_count);
 
@@ -396,7 +382,6 @@ mod messages_tests {
 
         assert!(msg1.timestamp() < msg2.timestamp());
 
-        // Test message type ordering (matches C# enum order)
         let types = vec![
             ConsensusMessageType::PrepareRequest,
             ConsensusMessageType::PrepareResponse,
@@ -406,7 +391,6 @@ mod messages_tests {
             ConsensusMessageType::RecoveryResponse,
         ];
 
-        // Verify enum discriminant values match expected order
         for (i, msg_type) in types.iter().enumerate() {
             assert_eq!(*msg_type as u8, i as u8);
         }
@@ -467,7 +451,6 @@ mod messages_tests {
         let invalid_data = vec![0xFF, 0xFF, 0xFF, 0xFF];
         assert!(ConsensusMessage::from_bytes(&invalid_data).is_err());
 
-        // Test view number wrapping (matches C# byte behavior)
         let mut view = ViewNumber::new(255);
         view.increment();
         assert_eq!(view.value(), 0); // Should wrap around

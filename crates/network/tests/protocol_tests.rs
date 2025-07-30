@@ -3,19 +3,18 @@
 //! These tests ensure full compatibility with C# Neo.Network protocol implementation.
 //! Tests are based on the C# Neo.Network.P2P protocol test suite.
 
+use super::*;
 use neo_core::{Block, Transaction, UInt160, UInt256};
 use neo_network::protocol::*;
 use neo_network::*;
+use sha2::{Digest, Sha256};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 #[cfg(test)]
 mod protocol_tests {
-    use super::*;
-
     /// Test protocol message serialization (matches C# Message serialization exactly)
     #[test]
     fn test_protocol_message_serialization_compatibility() {
-        // Test Version message (matches C# VersionPayload exactly)
         let version_msg = VersionMessage {
             version: 0x00,
             services: NodeServices::NodeNetwork as u64,
@@ -41,7 +40,6 @@ mod protocol_tests {
     /// Test network addresses (matches C# NetworkAddress exactly)
     #[test]
     fn test_network_address_compatibility() {
-        // Test IPv4 address (matches C# NetworkAddress for IPv4 exactly)
         let ipv4_addr = NetworkAddress {
             timestamp: 1234567890,
             services: NodeServices::NodeNetwork as u64,
@@ -57,7 +55,6 @@ mod protocol_tests {
         assert_eq!(deserialized.address, ipv4_addr.address);
         assert_eq!(deserialized.port, ipv4_addr.port);
 
-        // Test IPv6 address (matches C# NetworkAddress for IPv6 exactly)
         let ipv6_addr = NetworkAddress {
             timestamp: 1234567890,
             services: NodeServices::NodeNetwork as u64,
@@ -74,7 +71,6 @@ mod protocol_tests {
     /// Test inventory messages (matches C# InvPayload exactly)
     #[test]
     fn test_inventory_message_compatibility() {
-        // Test inventory message with blocks (matches C# InvPayload exactly)
         let mut hashes = vec![];
         for i in 0..10 {
             hashes.push(UInt256::from_bytes(&[i; 32]).unwrap());
@@ -194,7 +190,6 @@ mod protocol_tests {
         assert_eq!(deserialized.timestamp, ping_msg.timestamp);
         assert_eq!(deserialized.nonce, ping_msg.nonce);
 
-        // Test Pong message (should be same structure)
         let pong_msg = PongMessage {
             timestamp: ping_msg.timestamp,
             nonce: ping_msg.nonce,
@@ -454,7 +449,6 @@ mod protocol_tests {
     /// Test message size limits (matches C# size constraints exactly)
     #[test]
     fn test_message_size_limits_compatibility() {
-        // Test maximum message size (C# limit is 0x02000000 bytes = 32MB)
         let max_payload_size = 0x02000000 - 24; // Subtract header size
 
         // Create large but valid message
@@ -505,8 +499,6 @@ mod protocol_tests {
         let test_data = vec![0x01, 0x02, 0x03, 0x04, 0x05];
         let checksum = calculate_checksum(&test_data);
 
-        // Calculate expected checksum (double SHA256, first 4 bytes)
-        use sha2::{Digest, Sha256};
         let hash1 = Sha256::digest(&test_data);
         let hash2 = Sha256::digest(&hash1);
         let expected = u32::from_le_bytes([hash2[0], hash2[1], hash2[2], hash2[3]]);
@@ -594,7 +586,6 @@ mod protocol_tests {
     }
 
     fn combine_hashes(hash1: &UInt256, hash2: &UInt256) -> UInt256 {
-        use sha2::{Digest, Sha256};
         let mut data = Vec::new();
         data.extend_from_slice(hash1.as_bytes());
         data.extend_from_slice(hash2.as_bytes());
@@ -603,7 +594,6 @@ mod protocol_tests {
     }
 
     fn calculate_checksum(data: &[u8]) -> u32 {
-        use sha2::{Digest, Sha256};
         let hash1 = Sha256::digest(data);
         let hash2 = Sha256::digest(&hash1);
         u32::from_le_bytes([hash2[0], hash2[1], hash2[2], hash2[3]])

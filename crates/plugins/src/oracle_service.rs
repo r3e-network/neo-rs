@@ -3,8 +3,11 @@
 //! This plugin provides Oracle node functionality for handling external data requests
 //! and submitting responses to the Neo blockchain through the Oracle contract.
 
+// Define constant locally
+const SECONDS_PER_HOUR: u64 = 3600;
 use crate::{Plugin, PluginCategory, PluginContext, PluginEvent, PluginInfo};
 use async_trait::async_trait;
+use neo_config::{MAX_BLOCK_SIZE, MAX_SCRIPT_SIZE};
 use neo_core::{UInt160, UInt256};
 use neo_extensions::error::{ExtensionError, ExtensionResult};
 use reqwest::Client;
@@ -17,7 +20,6 @@ use tokio::sync::RwLock;
 use tokio::time::{interval, timeout};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
-
 /// Oracle request information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OracleRequest {
@@ -111,7 +113,7 @@ impl Default for HttpConfig {
     fn default() -> Self {
         Self {
             timeout_seconds: 10,
-            max_response_size: 1024 * 1024, // 1MB
+            max_response_size: MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE,
             user_agent: "Neo Oracle Service".to_string(),
             max_redirects: 5,
             allowed_protocols: vec!["http".to_string(), "https".to_string()],
@@ -166,7 +168,7 @@ impl OracleServicePlugin {
             ))
             .user_agent(&self.http_config.user_agent)
             .build()
-            .map_err(|e| ExtensionError::NetworkError(e.to_string()))?;
+            .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
         self.http_client = Some(client);
         info!("Oracle HTTP client initialized");
@@ -226,14 +228,14 @@ impl OracleServicePlugin {
     fn validate_request(&self, request: &OracleRequest) -> ExtensionResult<()> {
         // Check URL protocol
         let url = url::Url::parse(&request.url)
-            .map_err(|_| ExtensionError::ValidationError("Invalid URL format".to_string()))?;
+            .map_err(|_| ExtensionError::InvalidConfiguration("Invalid URL format".to_string()))?;
 
         if !self
             .http_config
             .allowed_protocols
             .contains(&url.scheme().to_string())
         {
-            return Err(ExtensionError::ValidationError(format!(
+            return Err(ExtensionError::InvalidConfiguration(format!(
                 "Protocol {} not allowed",
                 url.scheme()
             )));
@@ -247,7 +249,7 @@ impl OracleServicePlugin {
                 .iter()
                 .any(|domain| host.contains(domain))
             {
-                return Err(ExtensionError::ValidationError(format!(
+                return Err(ExtensionError::InvalidConfiguration(format!(
                     "Domain {} is blocked",
                     host
                 )));
@@ -256,7 +258,7 @@ impl OracleServicePlugin {
 
         // Validate callback
         if request.callback.is_empty() {
-            return Err(ExtensionError::ValidationError(
+            return Err(ExtensionError::InvalidConfiguration(
                 "Callback method cannot be empty".to_string(),
             ));
         }
@@ -275,8 +277,8 @@ impl OracleServicePlugin {
             // Make HTTP request with timeout
             let response = timeout(self.request_timeout, client.get(&request.url).send())
                 .await
-                .map_err(|_| ExtensionError::NetworkError("Request timeout".to_string()))?
-                .map_err(|e| ExtensionError::NetworkError(e.to_string()))?;
+                .map_err(|_| ExtensionError::OperationFailed("Request timeout".to_string()))?
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
             // Check response status
             if !response.status().is_success() {
@@ -301,16 +303,15 @@ impl OracleServicePlugin {
             let body = response
                 .bytes()
                 .await
-                .map_err(|e| ExtensionError::NetworkError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
             // Check size limit
             if body.len() > self.http_config.max_response_size {
-                return Err(ExtensionError::ValidationError(
+                return Err(ExtensionError::InvalidConfiguration(
                     "Response size exceeds limit".to_string(),
                 ));
             }
 
-            // Apply filter if specified
             let filtered_data = if let Some(filter) = &request.filter {
                 self.apply_json_filter(&body, filter)?
             } else {
@@ -335,9 +336,8 @@ impl OracleServicePlugin {
     fn apply_json_filter(&self, data: &[u8], filter: &str) -> ExtensionResult<Vec<u8>> {
         // Parse JSON response
         let json_value: serde_json::Value = serde_json::from_slice(data)
-            .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+            .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
-        // Apply JSONPath filter for data extraction
         let filtered_value = if filter.starts_with('$') {
             // JSONPath filter
             self.apply_jsonpath_filter(&json_value, filter)?
@@ -349,9 +349,8 @@ impl OracleServicePlugin {
                 .unwrap_or(serde_json::Value::Null)
         };
 
-        // Serialize filtered result
         serde_json::to_vec(&filtered_value)
-            .map_err(|e| ExtensionError::SerializationError(e.to_string()))
+            .map_err(|e| ExtensionError::OperationFailed(e.to_string()))
     }
 
     /// Apply JSONPath filter
@@ -595,8 +594,8 @@ impl Plugin for OracleServicePlugin {
                         "max_response_size": {
                             "type": "integer",
                             "description": "Maximum response size in bytes",
-                            "default": 1048576,
-                            "minimum": 1024
+                            "default": MAX_BLOCK_SIZE,
+                            "minimum": MAX_SCRIPT_SIZE
                         },
                         "user_agent": {
                             "type": "string",
@@ -660,11 +659,11 @@ mod tests {
     use tempfile::tempdir;
 
     fn create_test_context() -> PluginContext {
-        let temp_dir = tempdir().unwrap();
+        let final_dir = tempdir().unwrap();
         PluginContext {
             neo_version: "3.6.0".to_string(),
-            config_dir: temp_dir.path().to_path_buf(),
-            data_dir: temp_dir.path().to_path_buf(),
+            config_dir: final_dir.path().to_path_buf(),
+            data_dir: final_dir.path().to_path_buf(),
             shared_data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -709,8 +708,9 @@ mod tests {
             timestamp: 1234567890,
         };
 
-        let json = serde_json::to_string(&response).unwrap();
-        let deserialized: OracleResponse = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&response).expect("operation should succeed");
+        let deserialized: OracleResponse =
+            serde_json::from_str(&json).expect("Failed to parse from string");
 
         assert_eq!(response.id, deserialized.id);
         assert_eq!(response.code, deserialized.code);

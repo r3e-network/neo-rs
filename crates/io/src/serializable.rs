@@ -1,12 +1,5 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// serializable.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Serialization traits and utilities for Neo objects.
@@ -50,7 +43,7 @@ pub trait SerializableExt: Serializable {
     /// Converts the object to a byte array.
     fn to_array(&self) -> Vec<u8> {
         let mut writer = BinaryWriter::new();
-        self.serialize(&mut writer).unwrap();
+        self.serialize(&mut writer).expect("Operation failed");
         writer.to_bytes()
     }
 
@@ -64,12 +57,12 @@ pub trait SerializableExt: Serializable {
     }
 }
 
-// Implement SerializableExt for all types that implement Serializable
 impl<T: Serializable> SerializableExt for T {}
 
 /// Helper functions for serialization.
 pub mod helper {
-    use super::*;
+    use super::Serializable;
+    use crate::{BinaryWriter, IoResult, MemoryReader};
 
     /// Serializes a collection of serializable objects.
     pub fn serialize_array<T: Serializable>(
@@ -122,6 +115,7 @@ pub mod helper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{BinaryWriter, IoResult, MemoryReader};
 
     #[derive(Debug, PartialEq)]
     struct TestStruct {
@@ -176,7 +170,7 @@ mod tests {
         assert_eq!(helper::get_var_size(0), 1);
         assert_eq!(helper::get_var_size(252), 1);
         assert_eq!(helper::get_var_size(253), 3);
-        assert_eq!(helper::get_var_size(65535), 3);
+        assert_eq!(helper::get_var_size(u16::MAX), 3);
         assert_eq!(helper::get_var_size(65536), 5);
         assert_eq!(helper::get_var_size(0xFFFFFFFF), 5);
         assert_eq!(helper::get_var_size(0x100000000), 9);

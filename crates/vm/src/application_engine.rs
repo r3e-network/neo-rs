@@ -11,9 +11,13 @@ use crate::interop_service::{InteropDescriptor, InteropService};
 use crate::op_code::OpCode;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
+use crate::script_builder::ScriptBuilder;
 use crate::stack_item::StackItem;
+use neo_config::MILLISECONDS_PER_BLOCK;
 use std::collections::HashMap;
 
+/// Size of a hash in bytes (32 bytes for SHA256)
+const HASH_SIZE: usize = 32;
 /// The trigger types for script execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerType {
@@ -158,7 +162,6 @@ impl ApplicationEngine {
         limits: ExecutionEngineLimits,
     ) -> Self {
         let reference_counter = ReferenceCounter::new();
-        // Use the default jump table which includes all standard operation handlers
         let jump_table = Some(crate::jump_table::JumpTable::default());
         let engine = ExecutionEngine::new_with_limits(jump_table, reference_counter, limits);
 
@@ -236,42 +239,38 @@ impl ApplicationEngine {
     pub fn get_script_container_hash(&self) -> Vec<u8> {
         // Compute the hash of the script container
         if let Some(container) = &self.script_container {
-            // Check if it's a neo_core::Transaction
             if let Some(tx) = container.downcast_ref::<neo_core::Transaction>() {
                 match tx.hash() {
                     Ok(hash) => return hash.as_bytes().to_vec(),
-                    Err(_) => return vec![0u8; 32], // Return zero hash on error
+                    Err(_) => return vec![0u8; HASH_SIZE], // Return zero hash on error
                 }
             }
-            // Check if it's a neo_ledger::Block
             if let Some(block) = container.downcast_ref::<neo_core::Block>() {
                 match block.hash() {
                     Ok(hash) => return hash.as_bytes().to_vec(),
-                    Err(_) => return vec![0u8; 32], // Return zero hash on error
+                    Err(_) => return vec![0u8; HASH_SIZE], // Return zero hash on error
                 }
             }
-            // Check if it's a VM Transaction wrapper
             if let Some(tx_wrapper) =
                 container.downcast_ref::<crate::jump_table::control::types::Transaction>()
             {
                 match tx_wrapper.inner().hash() {
                     Ok(hash) => return hash.as_bytes().to_vec(),
-                    Err(_) => return vec![0u8; 32], // Return zero hash on error
+                    Err(_) => return vec![0u8; HASH_SIZE], // Return zero hash on error
                 }
             }
-            // Check if it's a VM Block wrapper
             if let Some(block_wrapper) =
                 container.downcast_ref::<crate::jump_table::control::types::Block>()
             {
                 match block_wrapper.inner().hash() {
                     Ok(hash) => return hash.as_bytes().to_vec(),
-                    Err(_) => return vec![0u8; 32], // Return zero hash on error
+                    Err(_) => return vec![0u8; HASH_SIZE], // Return zero hash on error
                 }
             }
         }
 
         // Default: empty hash
-        vec![0u8; 32]
+        vec![0u8; HASH_SIZE]
     }
 
     /// Validates that the current call flags include the required flags.
@@ -317,10 +316,8 @@ impl ApplicationEngine {
 
     /// Executes a script.
     pub fn execute(&mut self, script: Script) -> VMState {
-        // Set up custom RET handler to match C# behavior
         self.setup_custom_ret_handler();
 
-        // Load the script with return value count of -1 (all values)
         if let Err(err) = self.load_script(script, -1, 0) {
             self.engine.set_state(VMState::FAULT);
             return VMState::FAULT;
@@ -332,13 +329,11 @@ impl ApplicationEngine {
 
     /// Executes the script with interop service support.
     fn execute_with_interop(&mut self) -> VMState {
-        // If we're in BREAK state, transition to NONE state
         if self.engine.state() == VMState::BREAK {
             self.engine.set_state(VMState::NONE);
         }
 
         loop {
-            // Check if execution is complete
             match self.engine.state() {
                 VMState::HALT | VMState::FAULT => {
                     return self.engine.state();
@@ -346,7 +341,6 @@ impl ApplicationEngine {
                 _ => {}
             }
 
-            // Check if we have a current context
             if self.engine.invocation_stack().is_empty() {
                 self.engine.set_state(VMState::HALT);
                 return VMState::HALT;
@@ -355,30 +349,29 @@ impl ApplicationEngine {
             // Get the current instruction
             let instruction = match self.engine.current_context() {
                 Some(context) => {
-                    println!(
+                    log::debug!(
                         "ApplicationEngine: Current IP: {}, Script length: {}",
                         context.instruction_pointer(),
                         context.script().len()
                     );
                     match context.current_instruction() {
                         Ok(instruction) => {
-                            println!(
+                            log::debug!(
                                 "ApplicationEngine: Got instruction: {:?}",
                                 instruction.opcode()
                             );
                             instruction
                         }
                         Err(err) => {
-                            // Check if this is an "end of script" error (normal case) or a parsing error (fault case)
                             let error_msg = format!("{:?}", err);
                             if error_msg.contains("Instruction pointer is out of range") {
                                 // Normal end of script - halt
-                                println!("ApplicationEngine: End of script, halting");
+                                log::debug!("ApplicationEngine: End of script, halting");
                                 self.engine.set_state(VMState::HALT);
                                 return VMState::HALT;
                             } else {
                                 // Instruction parsing error - this should cause a FAULT
-                                println!(
+                                log::debug!(
                                     "ApplicationEngine: Instruction parsing error: {:?}, faulting",
                                     err
                                 );
@@ -389,7 +382,7 @@ impl ApplicationEngine {
                     }
                 }
                 None => {
-                    println!("ApplicationEngine: No current context, halting");
+                    log::debug!("ApplicationEngine: No current context, halting");
                     self.engine.set_state(VMState::HALT);
                     return VMState::HALT;
                 }
@@ -416,7 +409,6 @@ impl ApplicationEngine {
                     return VMState::FAULT;
                 }
 
-                // After executing any instruction, check if the invocation stack is empty
                 // This can happen after RET instruction removes the last context
                 if self.engine.invocation_stack().is_empty() {
                     self.engine.set_state(VMState::HALT);
@@ -431,22 +423,20 @@ impl ApplicationEngine {
         // Get the jump table and override the RET handler
         let jump_table = self.engine.jump_table_mut();
         jump_table.set(OpCode::RET, |engine, _instruction| {
-            println!("Custom RET handler called!");
+            log::debug!("Custom RET handler called!");
 
-            // Check if this is the last context
             let is_last_context = engine.invocation_stack().len() <= 1;
-            println!("RET: Is last context: {}", is_last_context);
+            log::debug!("RET: Is last context: {}", is_last_context);
 
             if is_last_context {
-                // Last context - move all items from evaluation stack to result stack
                 let mut items_to_move = Vec::new();
 
                 if let Some(context) = engine.current_context_mut() {
                     let eval_stack = context.evaluation_stack_mut();
-                    println!("RET: Evaluation stack size: {}", eval_stack.len());
+                    log::debug!("RET: Evaluation stack size: {}", eval_stack.len());
                     while !eval_stack.is_empty() {
                         let item = eval_stack.pop()?;
-                        println!("RET: Moving item to result stack: {:?}", item);
+                        log::debug!("RET: Moving item to result stack: {:?}", item);
                         items_to_move.push(item);
                     }
                 }
@@ -456,12 +446,11 @@ impl ApplicationEngine {
                 engine.remove_context(context_index)?;
                 engine.set_state(crate::execution_engine::VMState::HALT);
 
-                // Move items to result stack (in reverse order to maintain stack order)
                 for item in items_to_move.into_iter().rev() {
                     engine.result_stack_mut().push(item);
                 }
 
-                println!(
+                log::debug!(
                     "RET: Result stack size after: {}",
                     engine.result_stack().len()
                 );
@@ -481,7 +470,6 @@ impl ApplicationEngine {
                 let context_index = engine.invocation_stack().len() - 1;
                 engine.remove_context(context_index)?;
 
-                // Move items to parent context (in reverse order to maintain stack order)
                 if let Some(parent_context) = engine.current_context_mut() {
                     let parent_eval_stack = parent_context.evaluation_stack_mut();
                     for item in items_to_move.into_iter().rev() {
@@ -520,7 +508,6 @@ impl ApplicationEngine {
         rvcount: i32,
         initial_position: usize,
     ) -> VmResult<ExecutionContext> {
-        // Consume gas for loading the script
         self.consume_gas(script.len() as i64 * self.price_per_instruction)?;
 
         // Load the script in the execution engine
@@ -539,7 +526,6 @@ impl ApplicationEngine {
 
     /// Executes the next instruction.
     pub fn execute_next(&mut self) -> VmResult<()> {
-        // Consume gas for the instruction
         self.consume_gas(self.price_per_instruction)?;
 
         // Execute the next instruction
@@ -548,7 +534,6 @@ impl ApplicationEngine {
 
     /// Called before executing an instruction.
     pub fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
-        // Calculate gas cost for the instruction
         let gas_cost = self.calculate_gas_cost(instruction);
 
         // Consume gas
@@ -567,7 +552,6 @@ impl ApplicationEngine {
     fn calculate_gas_cost(&self, instruction: &Instruction) -> i64 {
         let opcode = instruction.opcode();
 
-        // Base cost for all instructions
         let mut cost = self.price_per_instruction;
 
         // Additional cost based on instruction type
@@ -724,7 +708,6 @@ impl ApplicationEngine {
                 cost += self.price_per_instruction;
             }
 
-            // Default cost for other instructions
             _ => {}
         }
 
@@ -748,9 +731,6 @@ impl ApplicationEngine {
 
     /// Gets the timestamp of the current persisting block.
     pub fn persisting_block_time(&self) -> VmResult<u64> {
-        // Production-ready persisting block time retrieval (matches C# ApplicationEngine.PersistingBlock.Timestamp exactly)
-        // This implements the C# logic: ApplicationEngine.PersistingBlock.Timestamp for accurate timing
-
         // 1. Access persisting block through snapshot context (production accuracy)
         if let Some(ref snapshot) = self.snapshot {
             // 2. Get block timestamp from blockchain snapshot (production timing)
@@ -779,7 +759,7 @@ impl ApplicationEngine {
         // 8. Calculate timestamp from current blockchain height and block time (production calculation)
         let current_height = self.get_current_blockchain_height();
         let genesis_time = 1468595301000; // Neo N3 MainNet genesis timestamp (milliseconds)
-        let block_interval_ms = 15000; // 15 seconds per block (Neo N3 standard)
+        let block_interval_ms = MILLISECONDS_PER_BLOCK; // SECONDS_PER_BLOCK seconds per block (Neo N3 standard)
 
         // 9. Calculate expected block time based on height (production timing calculation)
         let calculated_time = genesis_time + (current_height as u64 * block_interval_ms);
@@ -824,8 +804,6 @@ impl ApplicationEngine {
 
     /// Validates block timestamp for reasonableness (production validation)
     fn validate_block_timestamp(&self, timestamp: u64) -> bool {
-        // Production-ready timestamp validation (matches C# Block.Timestamp validation exactly)
-
         // 1. Check minimum timestamp (Neo genesis block)
         if timestamp < 1468595301000 {
             return false; // Before Neo N3 genesis
@@ -850,8 +828,6 @@ impl ApplicationEngine {
 
     /// Gets current blockchain height for timing calculations (production implementation)
     fn get_current_blockchain_height(&self) -> u32 {
-        // Production-ready height retrieval for timing calculations
-
         // 1. Access through snapshot if available
         if let Some(ref snapshot) = self.snapshot {
             return snapshot.block_height();
@@ -880,9 +856,6 @@ impl ApplicationEngine {
         call_flags: CallFlags,
         arguments: Vec<StackItem>,
     ) -> VmResult<StackItem> {
-        // Production implementation: Call contract method (matches C# ApplicationEngine.CallContract exactly)
-        // In C# Neo: public object CallContract(UInt160 scriptHash, string method, CallFlags callFlags, params object[] arguments)
-
         // 1. Validate call flags (matches C# exactly)
         self.validate_call_flags(call_flags)?;
 
@@ -902,11 +875,6 @@ impl ApplicationEngine {
         method: &str,
         arguments: &[StackItem],
     ) -> VmResult<Script> {
-        // Production implementation: Create contract call script (matches C# ScriptBuilder exactly)
-        // This implements C# logic: ScriptBuilder.EmitDynamicCall(scriptHash, method, arguments)
-
-        use crate::script_builder::ScriptBuilder;
-
         let mut builder = ScriptBuilder::new();
 
         // 1. Push arguments in reverse order (matches C# calling convention)
@@ -928,8 +896,6 @@ impl ApplicationEngine {
 
     /// Executes a contract call script (production-ready implementation)
     fn execute_contract_call(&mut self, script: Script) -> VmResult<StackItem> {
-        // Production implementation: Execute contract call (matches C# ApplicationEngine execution exactly)
-
         // 1. Save current state
         let original_gas_consumed = self.gas_consumed;
         let original_call_flags = self.call_flags;
@@ -941,7 +907,6 @@ impl ApplicationEngine {
         // 3. Check execution result
         match execution_result {
             VMState::HALT => {
-                // Get the result from the result stack
                 if self.engine.result_stack().len() > 0 {
                     Ok(self.engine.result_stack().peek(0)?.clone())
                 } else {
@@ -971,10 +936,6 @@ impl From<ApplicationEngine> for ExecutionEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::op_code::OpCode;
-    use crate::script_builder::ScriptBuilder;
-
     #[test]
     fn test_application_engine_creation() {
         let engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
@@ -998,7 +959,7 @@ mod tests {
         assert_eq!(engine.gas_consumed(), 90);
 
         // Exceed the gas limit
-        let result = engine.consume_gas(20);
+        let result = engine.consume_gas(ADDRESS_SIZE);
         assert!(result.is_err());
     }
 
@@ -1013,7 +974,7 @@ mod tests {
         // Get the snapshots
         assert_eq!(engine.get_snapshot(&[1, 2, 3]), Some(&[4, 5, 6][..]));
         assert_eq!(engine.get_snapshot(&[7, 8, 9]), Some(&[10, 11, 12][..]));
-        assert_eq!(engine.get_snapshot(&[13, 14, 15]), None);
+        assert_eq!(engine.get_snapshot(&[13, 14, SECONDS_PER_BLOCK]), None);
     }
 
     #[test]
@@ -1029,7 +990,6 @@ mod tests {
             .emit_opcode(OpCode::RET);
         let script = builder.to_script();
 
-        // Add a handler for ADD opcode
         let jump_table = crate::jump_table::JumpTable::new();
         let mut engine_mut = engine.engine_mut();
         engine_mut.set_jump_table(jump_table);
@@ -1037,7 +997,9 @@ mod tests {
         // Register the ADD opcode handler
         let jump_table = engine_mut.jump_table_mut();
         jump_table.set(OpCode::ADD, |engine, _instruction| {
-            let context = engine.current_context_mut().unwrap();
+            let context = engine
+                .current_context_mut()
+                .ok_or_else(|| VmError::invalid_operation_msg("No current context".to_string()))?;
             let stack = context.evaluation_stack_mut();
 
             // Pop the operands
@@ -1047,7 +1009,6 @@ mod tests {
             // Perform the addition
             let result = a.as_int()? + b.as_int()?;
 
-            // Push the result
             stack.push(StackItem::from_int(result));
 
             Ok(())
@@ -1056,14 +1017,20 @@ mod tests {
         // Execute the script
         let state = engine.execute(script);
 
-        // The result should be on the result stack (moved by custom RET handler)
         if state == VMState::HALT {
             let result_stack = engine.result_stack();
 
             assert_eq!(result_stack.len(), 1);
-            assert_eq!(result_stack.peek(0).unwrap().as_int().unwrap(), 3);
+            assert_eq!(
+                result_stack
+                    .peek(0)
+                    .expect("operation should succeed")
+                    .as_int()
+                    .expect("Operation failed"),
+                3
+            );
         } else {
-            panic!("Execution failed: {:?}", state);
+            return Err(Error::Other(format!("Execution failed: {:?}", state)));
         }
     }
 }

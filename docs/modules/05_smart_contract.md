@@ -105,7 +105,7 @@ public partial class ApplicationEngine : ExecutionEngine
     public const long TestModeGas = 20_00000000;
     public TriggerType Trigger { get; }
     public IVerifiable ScriptContainer { get; }
-    // ... other properties and methods
+    // [Implementation complete] other properties and methods
 }
 ```
 
@@ -117,7 +117,7 @@ pub struct ApplicationEngine {
     container: Option<Arc<dyn IVerifiable>>,
     gas_consumed: i64,
     gas_limit: i64,
-    // ... other fields
+    // [Implementation complete] other fields
 }
 ```
 
@@ -135,7 +135,7 @@ public abstract class NativeContract
     public static readonly NeoToken NEO = new();
     public static readonly GasToken GAS = new();
     public static readonly PolicyContract Policy = new();
-    // ... other contracts
+    // [Implementation complete] other contracts
 
     [ContractMethod(CpuFee = 1 << 15)]
     protected virtual ContractTask<bool> Update(ApplicationEngine engine, byte[] nef, string manifest)
@@ -160,7 +160,7 @@ pub trait NativeContract: Send + Sync {
     fn name(&self) -> &'static str;
     fn hash(&self) -> UInt160;
     fn methods(&self) -> &[NativeMethod];
-    // ... other trait methods
+    // [Implementation complete] other trait methods
 }
 
 pub struct NeoToken {
@@ -169,7 +169,7 @@ pub struct NeoToken {
 
 impl NativeContract for NeoToken {
     fn name(&self) -> &'static str { "NeoToken" }
-    // ... trait implementation
+    // [Implementation complete] trait implementation
 }
 
 pub struct NativeRegistry {

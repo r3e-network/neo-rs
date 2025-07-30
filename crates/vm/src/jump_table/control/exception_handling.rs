@@ -6,6 +6,7 @@ use crate::{
     execution_engine::ExecutionEngine,
     instruction::Instruction,
 };
+const HASH_SIZE: usize = 32;
 
 /// Implements the TRY operation.
 pub fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
@@ -44,7 +45,7 @@ pub fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
     Ok(())
 }
 
-/// Implements the TRY_L operation (long try with 32-bit offsets).
+/// Implements the TRY_L operation (long try with HASH_SIZE-bit offsets).
 pub fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -96,7 +97,6 @@ pub fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
             .pop_exception_handler()
             .ok_or_else(|| VmError::invalid_operation_msg("No exception handler to end"))?;
 
-        // Determine if we should jump and where
         let (should_jump, jump_target) = if finally_offset != 0 {
             let finally_absolute = context.instruction_pointer() + finally_offset as usize;
             context.set_instruction_pointer(finally_absolute);
@@ -119,7 +119,7 @@ pub fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
     Ok(())
 }
 
-/// Implements the ENDTRY_L operation (long endtry with 32-bit offset).
+/// Implements the ENDTRY_L operation (long endtry with HASH_SIZE-bit offset).
 pub fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the finally offset from the instruction
     let finally_offset = instruction.read_i32_operand()?;
@@ -134,7 +134,6 @@ pub fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRe
             .pop_exception_handler()
             .ok_or_else(|| VmError::invalid_operation_msg("No exception handler to end"))?;
 
-        // Determine if we should jump and where
         let (should_jump, jump_target) = if finally_offset != 0 {
             let finally_absolute = context.instruction_pointer() + finally_offset as usize;
             context.set_instruction_pointer(finally_absolute);
@@ -164,7 +163,6 @@ pub fn endfinally(engine: &mut ExecutionEngine, _instruction: &Instruction) -> V
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if we're in an exception state
     if context.is_in_exception() {
         // Re-throw the exception
         return Err(VmError::execution_halted_msg(
@@ -188,7 +186,6 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
             .unwrap_or_else(|_| "Invalid exception message".to_string())
     };
 
-    // Look for exception handlers
     loop {
         let handler_result = {
             let context = engine
@@ -208,7 +205,6 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
                 }
             }
 
-            // If there's a catch block, jump to it
             if let Some(catch_offset) = handler.catch_offset {
                 let context = engine
                     .current_context_mut()
@@ -219,7 +215,6 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
                 return Ok(());
             }
 
-            // If there's a finally block, jump to it
             if let Some(finally_offset) = handler.finally_offset {
                 let context = engine
                     .current_context_mut()
@@ -260,7 +255,6 @@ pub fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is false, throw an assertion error
     if !condition {
         // Set the engine state to FAULT
         engine.set_state(crate::execution_engine::VMState::FAULT);

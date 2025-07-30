@@ -29,7 +29,6 @@ fn test_key_pair_constructor_c_sharp_compatibility() {
     // This matches UT_KeyPair.cs TestConstructor and TestGetPublicKeyHash
     let private_key = [
         0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
         0x01, 0x01,
     ];
 
@@ -61,7 +60,6 @@ fn test_key_pair_to_string_c_sharp_compatibility() {
     // This matches UT_KeyPair.cs TestToString
     let private_key = [
         0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
         0x01, 0x01,
     ];
 
@@ -79,7 +77,6 @@ fn test_key_pair_equals_c_sharp_compatibility() {
     // This matches UT_KeyPair.cs TestEquals
     let private_key = [
         0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
         0x01, 0x01,
     ];
 
@@ -92,7 +89,6 @@ fn test_key_pair_equals_c_sharp_compatibility() {
     // Different private keys should not be equal
     let different_private_key = [
         0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
-        0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,
         0x02, 0x02,
     ];
     let key_pair3 = KeyPair::from_private_key(&different_private_key).unwrap();
@@ -104,7 +100,6 @@ fn test_key_pair_export_c_sharp_compatibility() {
     // Test KeyPair WIF export matches C# implementation
     // This matches UT_KeyPair.cs TestExport
     let private_key = [
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
         0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
         0x01, 0x01,
     ];
@@ -168,9 +163,7 @@ fn test_wif_round_trip() {
 #[test]
 fn test_nep2_round_trip() {
     // Test NEP-2 encryption and decryption with a known private key
-    // Use a deterministic key to make debugging easier
     let private_key = [
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
         0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
         0x01, 0x01,
     ];
@@ -249,7 +242,6 @@ fn test_script_hash_generation() {
     // Verify script hash is valid UInt160
     assert_ne!(UInt160::new(), script_hash);
 
-    // Script hash should be deterministic for the same key
     let script_hash2 = key_pair.get_script_hash();
     assert_eq!(script_hash, script_hash2);
 }
@@ -273,8 +265,6 @@ fn test_public_key_point() {
     // Test getting public key as ECPoint
     let key_pair = KeyPair::generate().unwrap();
 
-    // Production-ready ECPoint testing (matches C# ECPoint behavior exactly)
-    // Test that ECPoint creation works correctly for valid secp256r1 keys
     match key_pair.get_public_key_point() {
         Ok(ec_point) => {
             // ECPoint should encode to the same compressed public key
@@ -285,8 +275,6 @@ fn test_public_key_point() {
             assert!(ec_point.is_valid());
         }
         Err(e) => {
-            // If ECPoint creation fails, it should be due to an invalid key
-            // This is expected behavior for edge cases
             println!("ECPoint creation failed for valid reason: {}", e);
         }
     }
@@ -310,22 +298,18 @@ fn test_key_pair_equality() {
 
 #[test]
 fn test_key_pair_display() {
-    // Test Display trait implementation (matches C# KeyPair.ToString())
     let key_pair = KeyPair::generate().unwrap();
     let display_string = format!("{}", key_pair);
 
-    // Should be the compressed public key as hex (66 characters)
     assert_eq!(66, display_string.len()); // 33 bytes * 2 = 66 hex chars
     assert!(display_string.chars().all(|c| c.is_ascii_hexdigit()));
 
-    // Should match the compressed public key
     let expected = hex::encode(key_pair.compressed_public_key());
     assert_eq!(expected, display_string);
 }
 
 #[test]
 fn test_invalid_private_key() {
-    // Test with invalid private key (all zeros)
     let invalid_private_key = [0u8; 32];
     let result = KeyPair::from_private_key(&invalid_private_key);
 
@@ -333,18 +317,13 @@ fn test_invalid_private_key() {
     // Note: secp256r1 may or may not accept all-zero key depending on implementation
     // The important thing is it doesn't panic
     match result {
-        Ok(_) => {
-            // If it accepts the key, that's fine
-        }
-        Err(_) => {
-            // If it rejects the key, that's also fine
-        }
+        Ok(_) => {}
+        Err(_) => {}
     }
 }
 
 #[test]
 fn test_invalid_wif() {
-    // Test with invalid WIF string
     let invalid_wif = "invalid_wif_string";
     let result = KeyPair::from_wif(invalid_wif);
     assert!(result.is_err());
@@ -352,7 +331,6 @@ fn test_invalid_wif() {
 
 #[test]
 fn test_invalid_nep2() {
-    // Test with invalid NEP-2 string
     let invalid_nep2 = b"invalid_nep2_data";
     let result = KeyPair::from_nep2(invalid_nep2, "password");
     assert!(result.is_err());

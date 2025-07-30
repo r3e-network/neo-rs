@@ -4,7 +4,7 @@
 //! including binary serialization, deserialization, and stream operations.
 
 use thiserror::Error;
-
+const DEFAULT_TIMEOUT_MS: u64 = 30000;
 /// I/O operation errors
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum IoError {
@@ -402,6 +402,12 @@ impl From<std::str::Utf8Error> for IoError {
     }
 }
 
+impl From<std::array::TryFromSliceError> for IoError {
+    fn from(error: std::array::TryFromSliceError) -> Self {
+        IoError::type_conversion("slice", "array", &error.to_string())
+    }
+}
+
 // Backward compatibility with old Error type
 impl From<IoError> for crate::Error {
     fn from(error: IoError) -> Self {
@@ -442,7 +448,7 @@ impl From<crate::Error> for IoError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_error_creation() {
@@ -456,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_error_classification() {
-        assert!(IoError::timeout("read", 5000).is_retryable());
+        assert!(IoError::timeout(DEFAULT_TIMEOUT_MS).is_retryable());
         assert!(!IoError::invalid_data("field", "value").is_retryable());
 
         assert!(IoError::invalid_format("json", "syntax error").is_user_error());
@@ -505,10 +511,10 @@ mod tests {
 
     #[test]
     fn test_specific_errors() {
-        let error = IoError::buffer_overflow("write", 1000, 512);
+        let error = IoError::buffer_overflow("write", 1000, MAX_TRANSACTIONS_PER_BLOCK);
         assert_eq!(
             error.to_string(),
-            "Buffer overflow: attempted to write 1000 bytes, capacity 512"
+            "Buffer overflow: attempted to write 1000 bytes, capacity MAX_TRANSACTIONS_PER_BLOCK"
         );
 
         let error = IoError::end_of_stream(10, "reading header");

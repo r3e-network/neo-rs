@@ -7,9 +7,8 @@ edition = "2021"
 default = ["compression"]
 compression = ["lz4"]
 
-
 [dependencies]
-# Core dependencies
+log = "0.4"# Core dependencies
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -56,6 +55,7 @@ neo-core = { workspace = true }
 neo-cryptography = { path = "../cryptography" }
 neo-io = { path = "../io" }
 neo-ledger = { workspace = true }
+neo-config = { path = "../config" }
 
 [dev-dependencies]
 tokio-test = "0.4"

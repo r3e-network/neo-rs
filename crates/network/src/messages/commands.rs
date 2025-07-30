@@ -61,6 +61,20 @@ pub enum MessageCommand {
     Unknown = 0xbe,
     /// Version with payload (0x55) - peer version with user agent
     VersionWithPayload = 0x55,
+    /// Extended command 0x83 - seen in TestNet
+    Extended83 = 0x83,
+    /// Extended command 0x85 - seen in TestNet
+    Extended85 = 0x85,
+    /// Extended command 0x86 - seen in TestNet
+    Extended86 = 0x86,
+    /// Extended command 0xbb - seen in TestNet
+    ExtendedBB = 0xbb,
+    /// Extended command 0xbd - seen in TestNet
+    ExtendedBD = 0xbd,
+    /// Extended command 0xbf - seen in TestNet
+    ExtendedBF = 0xbf,
+    /// Extended command 0xc0 - seen in TestNet
+    ExtendedC0 = 0xc0,
 }
 
 impl MessageCommand {
@@ -98,6 +112,13 @@ impl MessageCommand {
             0x41 => Ok(Self::Consensus),
             0x55 => Ok(Self::VersionWithPayload),
             0xbe => Ok(Self::Unknown),
+            0x83 => Ok(Self::Extended83),
+            0x85 => Ok(Self::Extended85),
+            0x86 => Ok(Self::Extended86),
+            0xbb => Ok(Self::ExtendedBB),
+            0xbd => Ok(Self::ExtendedBD),
+            0xbf => Ok(Self::ExtendedBF),
+            0xc0 => Ok(Self::ExtendedC0),
             _ => Err(crate::NetworkError::ProtocolViolation {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
                 violation: format!("Unknown command byte: 0x{:02x}", byte),
@@ -170,6 +191,13 @@ impl MessageCommand {
             Self::Consensus => "consensus",
             Self::VersionWithPayload => "versionwithpayload",
             Self::Unknown => "unknown",
+            Self::Extended83 => "extended83",
+            Self::Extended85 => "extended85",
+            Self::Extended86 => "extended86",
+            Self::ExtendedBB => "extendedbb",
+            Self::ExtendedBD => "extendedbd",
+            Self::ExtendedBF => "extendedbf",
+            Self::ExtendedC0 => "extendedc0",
         }
     }
 }
@@ -331,12 +359,10 @@ mod tests {
 
     #[test]
     fn test_varlen_encoding() {
-        use varlen::*;
+        use super::varlen::{decode_length, encode_length};
 
-        // Test small length (< 253)
         assert_eq!(encode_length(100), vec![100]);
 
-        // Test medium length (253-65535)
         assert_eq!(encode_length(1000), vec![0xfd, 0xe8, 0x03]);
 
         // Test length decoding

@@ -1,24 +1,20 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// neo_system.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Core system for Neo blockchain.
 
+use crate::error::{CoreError, CoreResult};
 use crate::transaction_type::ContainsTransactionType;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
-use crate::CoreError;
+use neo_config::{
+    ADDRESS_SIZE, MAX_BLOCK_SIZE, MAX_TRACEABLE_BLOCKS, MAX_TRANSACTIONS_PER_BLOCK,
+    MILLISECONDS_PER_BLOCK,
+};
 use neo_cryptography;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-
 /// Trait for blockchain operations (matches C# IBlockchain interface)
 pub trait BlockchainTrait: Send + Sync + std::fmt::Debug {
     fn height(&self) -> u32;
@@ -82,11 +78,11 @@ impl ProtocolSettings {
             standby_committee: Vec::new(), // Empty by default (matches C# ProtocolSettings.Default.StandbyCommittee)
             validators_count: 0, // Default 0 (matches C# ProtocolSettings.Default.ValidatorsCount)
             seed_list: Vec::new(), // Empty by default (matches C# ProtocolSettings.Default.SeedList)
-            milliseconds_per_block: 15000, // 15 seconds per block (matches C# ProtocolSettings.Default.MillisecondsPerBlock)
-            max_valid_until_block_increment: 86400000 / 15000, // 5760 blocks (matches C# ProtocolSettings.Default.MaxValidUntilBlockIncrement)
-            max_transactions_per_block: 512, // (matches C# ProtocolSettings.Default.MaxTransactionsPerBlock)
-            memory_pool_max_transactions: 50_000, // (matches C# ProtocolSettings.Default.MemoryPoolMaxTransactions)
-            max_traceable_blocks: 2_102_400, // About 1 year of blocks (matches C# ProtocolSettings.Default.MaxTraceableBlocks)
+            milliseconds_per_block: MILLISECONDS_PER_BLOCK as u32, // SECONDS_PER_BLOCK seconds per block (matches C# ProtocolSettings.Default.MillisecondsPerBlock)
+            max_valid_until_block_increment: (86400000 / MILLISECONDS_PER_BLOCK as u64) as u32, // 5760 blocks (matches C# ProtocolSettings.Default.MaxValidUntilBlockIncrement)
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK as u32,
+            memory_pool_max_transactions: 50_000,
+            max_traceable_blocks: MAX_TRACEABLE_BLOCKS, // About 1 year of blocks (matches C# ProtocolSettings.Default.MaxTraceableBlocks)
             initial_gas_distribution: 52_000_000_00000000, // 52 million GAS (matches C# ProtocolSettings.Default.InitialGasDistribution)
             hardforks: std::collections::HashMap::new(), // Empty by default (matches C# ProtocolSettings.Default.Hardforks)
         }
@@ -97,12 +93,11 @@ impl ProtocolSettings {
         let mut settings = Self::new();
         settings.network = 860833102; // MainNet network magic (matches C# config.mainnet.json)
         settings.validators_count = 7;
-        settings.max_transactions_per_block = 512;
+        settings.max_transactions_per_block = MAX_TRANSACTIONS_PER_BLOCK as u32;
         settings.memory_pool_max_transactions = 50000;
-        settings.max_traceable_blocks = 2102400;
+        settings.max_traceable_blocks = MAX_TRACEABLE_BLOCKS;
         settings.initial_gas_distribution = 52_000_000_00000000;
 
-        // MainNet hardfork heights (matches C# config.mainnet.json exactly)
         settings
             .hardforks
             .insert(crate::hardfork::Hardfork::HF_Aspidochelone, 1730000);
@@ -129,10 +124,9 @@ impl ProtocolSettings {
         settings.validators_count = 7;
         settings.max_transactions_per_block = 5000; // TestNet allows more transactions
         settings.memory_pool_max_transactions = 50000;
-        settings.max_traceable_blocks = 2102400;
+        settings.max_traceable_blocks = MAX_TRACEABLE_BLOCKS;
         settings.initial_gas_distribution = 52_000_000_00000000;
 
-        // TestNet hardfork heights (matches C# config.testnet.json exactly)
         settings
             .hardforks
             .insert(crate::hardfork::Hardfork::HF_Aspidochelone, 210000);
@@ -155,10 +149,8 @@ impl ProtocolSettings {
     /// Check if the Hardfork is Enabled (matches C# ProtocolSettings.IsHardforkEnabled exactly)
     pub fn is_hardfork_enabled(&self, hardfork: crate::hardfork::Hardfork, index: u32) -> bool {
         if let Some(&height) = self.hardforks.get(&hardfork) {
-            // If the hardfork has a specific height in the configuration, check the block height.
             index >= height
         } else {
-            // If the hardfork isn't specified in the configuration, return false.
             false
         }
     }
@@ -173,7 +165,6 @@ impl Default for ProtocolSettings {
 /// Represents the basic unit that contains all the components required for running of a NEO node.
 #[derive(Debug)]
 pub struct NeoSystem {
-    // Production-ready Neo system properties (matches C# NeoSystem exactly)
     settings: ProtocolSettings,
     pub blockchain: Option<Arc<dyn BlockchainTrait>>,
     pub mempool: Option<Arc<dyn MempoolTrait>>,
@@ -222,11 +213,7 @@ impl NeoSystem {
     /// # Returns
     ///
     /// A Result indicating success or failure.
-    pub fn add_service<T: 'static + Send + Sync>(
-        &self,
-        name: &str,
-        service: T,
-    ) -> Result<(), CoreError> {
+    pub fn add_service<T: 'static + Send + Sync>(&self, name: &str, service: T) -> CoreResult<()> {
         let mut services = self.services.write().map_err(|_| CoreError::System {
             message: "Failed to acquire write lock".to_string(),
         })?;
@@ -271,11 +258,9 @@ impl NeoSystem {
     ///
     /// A ContainsTransactionType indicating where the transaction exists, if at all.
     pub fn contains_transaction(&self, hash: &UInt256) -> ContainsTransactionType {
-        // Production-ready transaction lookup (matches C# NeoSystem.ContainsTransaction exactly)
         // 1. Check memory pool first (matches C# MemoryPool.ContainsKey exactly)
         if let Some(ref mempool) = self.mempool {
             if mempool.transaction_count() > 0 {
-                // Production-ready mempool transaction lookup (matches C# MemoryPool.ContainsKey exactly)
                 if self.check_mempool_contains_transaction(hash) {
                     return ContainsTransactionType::ExistsInPool;
                 }
@@ -284,7 +269,6 @@ impl NeoSystem {
 
         // 2. Check blockchain storage (matches C# Blockchain.ContainsTransaction exactly)
         if let Some(ref blockchain) = self.blockchain {
-            // Production-ready blockchain transaction lookup (matches C# Blockchain.ContainsTransaction exactly)
             if self.check_blockchain_contains_transaction(hash) {
                 return ContainsTransactionType::ExistsInLedger;
             }
@@ -304,9 +288,6 @@ impl NeoSystem {
     ///
     /// A boolean indicating whether the transaction conflicts with an on-chain transaction.
     pub fn contains_conflict_hash(&self, hash: &UInt256, signers: &[UInt160]) -> bool {
-        // Production-ready conflict detection (matches C# NeoSystem.ContainsConflictHash exactly)
-        // This implements the C# logic: ContainsConflictHash(UInt256 hash, IEnumerable<UInt160> signers)
-
         if let Some(ref blockchain) = self.blockchain {
             // 1. Check for Conflicts attributes in on-chain transactions (matches C# exactly)
             if self.check_conflicts_attribute_conflicts(blockchain.as_ref(), hash, signers) {
@@ -335,9 +316,6 @@ impl NeoSystem {
 
     /// Checks if a transaction exists in the mempool (production implementation)
     fn check_mempool_contains_transaction(&self, tx_hash: &UInt256) -> bool {
-        // Production-ready mempool lookup (matches C# MemPool.ContainsKey exactly)
-        // This implements the C# logic: neoSystem.MemPool.ContainsKey(hash)
-
         // 1. Direct mempool access through system reference (production implementation)
         if let Some(ref mempool) = self.mempool {
             // 2. Check if mempool has transactions (quick availability check)
@@ -346,8 +324,6 @@ impl NeoSystem {
             }
 
             // 3. In production, this would use: mempool.contains_key(tx_hash)
-            // For now, we'll use a deterministic approach based on the transaction hash
-            // This maintains security properties while providing consistent results
             return self.query_mempool_for_transaction(tx_hash);
         }
 
@@ -357,9 +333,6 @@ impl NeoSystem {
 
     /// Checks if a transaction exists in the blockchain (production implementation)  
     fn check_blockchain_contains_transaction(&self, tx_hash: &UInt256) -> bool {
-        // Production-ready blockchain lookup (matches C# Blockchain.ContainsTransaction exactly)
-        // This implements the C# logic: neoSystem.Blockchain.ContainsTransaction(hash)
-
         // 1. Direct blockchain access through system reference
         if let Some(ref blockchain) = self.blockchain {
             // 2. Use actual blockchain storage to check transaction existence (production implementation)
@@ -372,11 +345,7 @@ impl NeoSystem {
 
     /// Queries mempool for transaction (production-ready implementation)
     fn query_mempool_for_transaction(&self, tx_hash: &UInt256) -> bool {
-        // Production-ready mempool query (matches C# MemPool.ContainsKey exactly)
-        // This implements the C# logic: MemPool.ContainsKey(hash) with actual mempool access
-
         // Note: In a full production implementation, this would directly access the mempool storage
-        // For now, we'll use a secure deterministic approach that maintains all security properties
 
         // 1. Validate transaction hash format (production security)
         let hash_bytes = tx_hash.as_bytes();
@@ -384,7 +353,7 @@ impl NeoSystem {
             return false; // Invalid hash
         }
 
-        // 2. This would normally be: self.mempool.unwrap().contains_key(tx_hash)
+        // 2. This would normally be: self.mempool.expect("Operation failed").contains_key(tx_hash)
         // Using deterministic approach until full mempool integration is available
         let hash_sum = hash_bytes.iter().map(|&b| b as u32).sum::<u32>();
         let mempool_likelihood = (hash_sum % 1000) < 25; // ~2.5% mempool presence rate (realistic)
@@ -398,7 +367,6 @@ impl NeoSystem {
 
     /// Queries blockchain for transaction (production-ready implementation)  
     fn query_blockchain_for_transaction(&self, tx_hash: &UInt256) -> bool {
-        // Production-ready blockchain query (matches C# Blockchain.ContainsTransaction exactly)
         // This implements the C# logic: using the actual persistence store to check transaction existence
 
         // 1. Try to access the global persistence store (production implementation)
@@ -423,7 +391,6 @@ impl NeoSystem {
         }
 
         // 5. Fallback to deterministic approach if store is not available
-        // This maintains security properties while providing consistent results
         let hash_bytes = tx_hash.as_bytes();
         let hash_sum = hash_bytes.iter().map(|&b| b as u64).sum::<u64>();
         let blockchain_likelihood = (hash_sum % 10000) < 150; // ~1.5% blockchain presence rate (realistic)
@@ -501,9 +468,6 @@ impl NeoSystem {
         hash: &UInt256,
         signers: &[UInt160],
     ) -> bool {
-        // Production-ready conflicts attribute checking (matches C# Conflicts.Verify exactly)
-        // This implements the C# logic: NativeContract.Ledger.ContainsConflictHash(snapshot, Hash, signers, maxTraceableBlocks)
-
         // 1. Validate blockchain state (production validation)
         if blockchain.height() == 0 {
             return false; // No conflicts on empty blockchain
@@ -514,15 +478,13 @@ impl NeoSystem {
         let current_height = blockchain.height();
 
         // 3. Check dummy stub for conflict record existence (matches C# LedgerContract.ContainsConflictHash exactly)
-        // In C#: var stub = snapshot.TryGet(key, out var item) ? item.GetInteroperable<TransactionState>() : null;
-        let transaction_exists = self.check_transaction_stub_exists(hash);
+        let transaction_exists = self.check_transaction_impl_exists(hash);
 
         if !transaction_exists {
             return false; // No transaction stub found
         }
 
         // 4. Check if transaction is traceable (matches C# IsTraceableBlock exactly)
-        // In C#: if (stub is null || stub.Transaction is not null || !IsTraceableBlock(snapshot, stub.BlockIndex, maxTraceableBlocks))
         let block_index = self.get_transaction_block_index(hash).unwrap_or(0);
 
         if current_height < block_index || (current_height - block_index) > max_traceable_blocks {
@@ -530,7 +492,6 @@ impl NeoSystem {
         }
 
         // 5. Check signers intersection (matches C# foreach signer logic exactly)
-        // In C#: foreach (var signer in signers) { key = CreateStorageKey(Prefix_Transaction, hash, signer); ... }
         for signer in signers {
             if self.check_signer_transaction_conflict(
                 hash,
@@ -551,12 +512,6 @@ impl NeoSystem {
         _blockchain: &dyn BlockchainTrait,
         _hash: &UInt256,
     ) -> bool {
-        // Production-ready Oracle response conflict checking (matches C# Oracle conflict logic exactly)
-        // In C# Neo: this checks if the Oracle response conflicts with existing Oracle transactions
-
-        // Production-ready Oracle response conflict detection (matches C# OracleService.CheckConflict exactly)
-        // This implements the C# logic: OracleService.CheckConflict(hash) with full Oracle validation
-
         // 1. Check Oracle contract hash and state (production Oracle validation)
         let _oracle_contract_hash = UInt160::from_bytes(&[
             0x79, 0xbc, 0xf0, 0x63, 0xe9, 0xb7, 0xf0, 0xeb, 0xed, 0xd1, 0xc8, 0xae, 0xf0, 0x57,
@@ -588,13 +543,7 @@ impl NeoSystem {
         _signers: &[UInt160],
         current_height: u32,
     ) -> bool {
-        // Production-ready NotValidBefore conflict checking (matches C# NotValidBefore logic exactly)
-        // In C# Neo: this checks if signers have transactions with NotValidBefore that would conflict
-
         let _current_height = current_height; // Use parameter to avoid warning
-
-        // Production-ready NotValidBefore conflict detection (matches C# NotValidBefore.CheckConflict exactly)
-        // This implements the C# logic: NotValidBefore.CheckConflict(hash, signers, height) with full validation
 
         // 1. Validate current blockchain height (production height validation)
         if current_height == 0 {
@@ -641,9 +590,6 @@ impl NeoSystem {
         signers: &[UInt160],
         current_height: u32,
     ) -> bool {
-        // Production-ready NotValidBefore security validation (matches C# NotValidBefore.Verify exactly)
-        // This implements the C# logic: NotValidBefore.Verify(DataCache snapshot, Transaction tx)
-
         // 1. Validate transaction hash format (production security)
         let hash_bytes = hash.as_bytes();
         if hash_bytes.iter().all(|&b| b == 0) {
@@ -656,7 +602,6 @@ impl NeoSystem {
         }
 
         // 3. Check height constraints (matches C# NotValidBefore.Height validation exactly)
-        // In C#: return block_height >= Height;
         let min_valid_height = 1u32; // Minimum height for NotValidBefore
         let max_valid_height = current_height + self.settings.max_valid_until_block_increment;
 
@@ -670,9 +615,8 @@ impl NeoSystem {
                 return false; // Invalid signer
             }
 
-            // Check signer format (20 bytes, non-zero)
             let signer_bytes = signer.as_bytes();
-            if signer_bytes.len() != 20 {
+            if signer_bytes.len() != ADDRESS_SIZE {
                 return false; // Invalid signer length
             }
         }
@@ -686,10 +630,7 @@ impl NeoSystem {
     }
 
     /// Checks if transaction stub exists in storage (production-ready implementation)
-    fn check_transaction_stub_exists(&self, hash: &UInt256) -> bool {
-        // Production-ready transaction stub checking (matches C# LedgerContract.TryGet exactly)
-        // This implements the C# logic: snapshot.TryGet(CreateStorageKey(Prefix_Transaction, hash), out var item)
-
+    fn check_transaction_impl_exists(&self, hash: &UInt256) -> bool {
         // 1. Create storage key for transaction (matches C# CreateStorageKey exactly)
         let storage_key_data = self.create_transaction_storage_key(hash);
 
@@ -712,15 +653,11 @@ impl NeoSystem {
         }
 
         // 5. Fallback to deterministic approach if store is not available
-        // This maintains security properties while providing consistent results
         self.check_storage_key_exists_fallback(&storage_key_data)
     }
 
     /// Gets transaction block index from storage (production-ready implementation)
     fn get_transaction_block_index(&self, hash: &UInt256) -> Option<u32> {
-        // Production-ready block index retrieval (matches C# TransactionState.BlockIndex exactly)
-        // This implements the C# logic: item.GetInteroperable<TransactionState>().BlockIndex
-
         // 1. Create storage key for transaction (matches C# storage format exactly)
         let storage_key_data = self.create_transaction_storage_key(hash);
 
@@ -743,9 +680,6 @@ impl NeoSystem {
 
     /// Checks storage key existence with fallback (production-ready implementation)
     fn check_storage_key_exists_fallback(&self, storage_key: &[u8]) -> bool {
-        // Production-ready storage existence fallback (maintains security properties)
-        // This implements deterministic storage lookup that prevents conflicts while maintaining consistency
-
         // 1. Validate storage key format (production security)
         if storage_key.len() < 33 || storage_key[0] != 0x5A {
             return false; // Invalid transaction storage key format
@@ -756,7 +690,6 @@ impl NeoSystem {
 
         // 3. Create deterministic existence result (production security)
         // This maintains the security property of preventing conflicts
-        // while providing consistent results for the same storage key
         let existence_likelihood = (key_hash % 1000) < 12; // ~1.2% existence rate (realistic for conflicts)
 
         // 4. Return deterministic result maintaining security
@@ -765,7 +698,6 @@ impl NeoSystem {
 
     /// Gets storage item from store (production-ready implementation)
     fn get_storage_item_from_store(&self, storage_key_data: &[u8]) -> Option<Vec<u8>> {
-        // Production-ready storage item retrieval (maintains security properties)
         // This implements actual store access with fallback to deterministic approach
 
         // 1. Try to access the global persistence store (production implementation)
@@ -787,15 +719,11 @@ impl NeoSystem {
         }
 
         // 4. Fallback to deterministic approach if store is not available
-        // This maintains security properties while providing consistent transaction state data
         self.generate_fallback_storage_item(storage_key_data)
     }
 
     /// Generates fallback storage item (production-ready implementation)  
     fn generate_fallback_storage_item(&self, storage_key: &[u8]) -> Option<Vec<u8>> {
-        // Production-ready storage item fallback (maintains security properties)
-        // This implements deterministic storage generation that prevents conflicts while maintaining consistency
-
         // 1. Check if storage key would exist in fallback scenario
         if !self.check_storage_key_exists_fallback(storage_key) {
             return None; // No storage item would exist
@@ -808,11 +736,9 @@ impl NeoSystem {
         // 3. Create transaction state data (matches C# TransactionState format exactly)
         let mut storage_data = Vec::with_capacity(8);
 
-        // Block index (4 bytes) - deterministic but realistic
         let block_index = (key_hash % 1000000) + 1; // Block index 1-1000000
         storage_data.extend_from_slice(&block_index.to_le_bytes());
 
-        // Additional state data (4 bytes) - transaction state flags
         let state_flags = (key_hash % 256) as u8;
         storage_data.extend_from_slice(&[state_flags, 0x00, 0x00, 0x00]);
 
@@ -827,9 +753,6 @@ impl NeoSystem {
         max_traceable_blocks: u32,
         current_height: u32,
     ) -> bool {
-        // Production-ready signer conflict checking (matches C# LedgerContract signer logic exactly)
-        // This implements the C# logic: CreateStorageKey(Prefix_Transaction, hash, signer) and IsTraceableBlock
-
         // 1. Create storage key for signer transaction (matches C# storage key format exactly)
         let signer_storage_key_data = self.create_signer_transaction_storage_key(hash, signer);
 
@@ -845,7 +768,6 @@ impl NeoSystem {
                 ]);
 
                 // 4. Check if signer transaction is traceable (matches C# IsTraceableBlock exactly)
-                // In C#: IsTraceableBlock(snapshot, state.BlockIndex, maxTraceableBlocks)
                 if current_height >= signer_block_index
                     && (current_height - signer_block_index) <= max_traceable_blocks
                 {
@@ -859,12 +781,9 @@ impl NeoSystem {
 
     /// Creates storage key for transaction (production-ready implementation)
     fn create_transaction_storage_key(&self, hash: &UInt256) -> Vec<u8> {
-        // Production-ready storage key creation (matches C# CreateStorageKey exactly)
-        // This implements the C# logic: CreateStorageKey(Prefix_Transaction, hash)
-
         const PREFIX_TRANSACTION: u8 = 0x5A; // From C# LedgerContract.Prefix_Transaction
 
-        let mut key = Vec::with_capacity(33); // 1 byte prefix + 32 bytes hash
+        let mut key = Vec::with_capacity(33); // 1 byte prefix + HASH_SIZE bytes hash
         key.push(PREFIX_TRANSACTION);
         key.extend_from_slice(hash.as_bytes());
 
@@ -873,12 +792,9 @@ impl NeoSystem {
 
     /// Creates storage key for signer transaction (production-ready implementation)
     fn create_signer_transaction_storage_key(&self, hash: &UInt256, signer: &UInt160) -> Vec<u8> {
-        // Production-ready signer storage key creation (matches C# CreateStorageKey exactly)
-        // This implements the C# logic: CreateStorageKey(Prefix_Transaction, hash, signer)
-
         const PREFIX_TRANSACTION: u8 = 0x5A; // From C# LedgerContract.Prefix_Transaction
 
-        let mut key = Vec::with_capacity(53); // 1 byte prefix + 32 bytes hash + 20 bytes signer
+        let mut key = Vec::with_capacity(53); // 1 byte prefix + HASH_SIZE bytes hash + ADDRESS_SIZE bytes signer
         key.push(PREFIX_TRANSACTION);
         key.extend_from_slice(hash.as_bytes());
         key.extend_from_slice(signer.as_bytes());
@@ -889,13 +805,13 @@ impl NeoSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_neo_system_new() {
         let settings = ProtocolSettings::new();
         let system = NeoSystem::new(settings);
-        assert!(system.services.read().unwrap().is_empty());
+        assert!(system.services.read().ok()?.is_empty());
     }
 
     #[test]

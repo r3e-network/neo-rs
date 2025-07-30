@@ -1,12 +1,12 @@
 //! Utility functions for BLS12-381 operations.
 
+use crate::constants::HASH_SIZE;
 use bls12_381::{G2Projective, Scalar};
 use sha2::{Digest, Sha256};
 
 /// Hash a message to a G2 point using the specified domain separation tag
 /// Production-ready implementation matching C# Neo BLS12-381 exactly
 pub fn hash_to_g2(message: &[u8], dst: &[u8]) -> G2Projective {
-    // Use a cryptographically secure hash-to-curve implementation
     // This approach uses proper message domain separation and multiple hash rounds
     // to ensure different messages produce different G2 points
 
@@ -16,7 +16,6 @@ pub fn hash_to_g2(message: &[u8], dst: &[u8]) -> G2Projective {
     domain_separated_message.push(0x01); // Separator
     domain_separated_message.extend_from_slice(message);
 
-    // Step 2: Use multiple rounds of hashing to create two scalars
     // This ensures different messages create different points
     let hash1 = {
         let mut hasher = Sha256::new();
@@ -34,7 +33,6 @@ pub fn hash_to_g2(message: &[u8], dst: &[u8]) -> G2Projective {
         bytes_to_scalar_secure(&result)
     };
 
-    // Step 3: Use both scalars to create a point with better distribution
     // This approach ensures the resulting point varies significantly with message changes
     let generator = G2Projective::generator();
     let point1 = generator * hash1;
@@ -54,12 +52,11 @@ fn bytes_to_scalar_secure(bytes: &[u8]) -> Scalar {
     // This ensures uniform distribution over the scalar field
 
     let mut scalar_bytes = [0u8; 64]; // Use 64 bytes for better distribution
-    let copy_len = bytes.len().min(32);
+    let copy_len = bytes.len().min(HASH_SIZE);
 
-    // Copy the hash bytes and pad with the hash again for full 64-byte entropy
     scalar_bytes[..copy_len].copy_from_slice(&bytes[..copy_len]);
-    if copy_len < 32 {
-        scalar_bytes[copy_len..32].copy_from_slice(&bytes[..32 - copy_len]);
+    if copy_len < HASH_SIZE {
+        scalar_bytes[copy_len..HASH_SIZE].copy_from_slice(&bytes[..HASH_SIZE - copy_len]);
     }
 
     // Fill the second half with a different hash to increase entropy
@@ -67,9 +64,8 @@ fn bytes_to_scalar_secure(bytes: &[u8]) -> Scalar {
     hasher.update(bytes);
     hasher.update(b"_SCALAR_EXPAND");
     let expanded = hasher.finalize();
-    scalar_bytes[32..].copy_from_slice(&expanded[..32]);
+    scalar_bytes[32..].copy_from_slice(&expanded[..HASH_SIZE]);
 
-    // Use wide reduction for uniform scalar distribution
     Scalar::from_bytes_wide(&scalar_bytes)
 }
 
@@ -90,7 +86,7 @@ pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, hex::FromHexError> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_hash_to_g2() {

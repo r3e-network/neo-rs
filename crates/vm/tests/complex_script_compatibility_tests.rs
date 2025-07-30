@@ -45,8 +45,6 @@ fn assert_stack_values(engine: &ExecutionEngine, expected: &[&str]) {
 /// Tests a complex script with arithmetic operations
 #[test]
 fn test_complex_arithmetic_script() {
-    // This script calculates: (5 + 3) * (10 - 2) / 2
-    // Which equals: 8 * 8 / 2 = 32
     let script_bytes = vec![
         OpCode::PUSH5 as u8, // Push 5
         OpCode::PUSH3 as u8, // Push 3
@@ -71,7 +69,6 @@ fn test_complex_arithmetic_script() {
     // Verify execution state
     assert_eq!(engine.state(), VMState::HALT);
 
-    // Verify result - should be 32
     assert_stack_values(&engine, &["32"]);
 }
 
@@ -80,22 +77,8 @@ fn test_complex_arithmetic_script() {
 fn test_complex_control_flow() {
     // This script implements a complex control flow:
     // ```
-    // if (true) {
-    //    if (false) {
-    //       result = 1;
-    //    } else {
-    //       result = 2;
-    //    }
-    // } else {
-    //    result = 3;
-    // }
-    // ```
-    // Expected result is 2
 
     // Create JMP targets
-    // elseif_target = 11 (PUSHF)
-    // endif_target = 17 (PUSH3)
-    // end_target = 19 (after PUSH3 JMP)
 
     let script_bytes = vec![
         OpCode::PUSHT as u8, // if (true)
@@ -124,20 +107,17 @@ fn test_complex_control_flow() {
     // Verify execution state
     assert_eq!(engine.state(), VMState::HALT);
 
-    // Verify result - should be 2
     assert_stack_values(&engine, &["2"]);
 }
 
 /// Tests a complex script with function calls
 #[test]
 fn test_complex_function_calls() {
-    // This script implements a factorial function: factorial(4)
     // Function definition at offset 14
     // main:
     //   PUSH4
     //   CALL factorial
     //   RET
-    // factorial(n):
     //   DUP
     //   PUSH1
     //   LEQ?
@@ -154,18 +134,15 @@ fn test_complex_function_calls() {
     //   RET
 
     let script_bytes = vec![
-        // Main program: Call factorial(4)
         OpCode::PUSH4 as u8, // Push argument 4
         OpCode::CALL as u8,
-        0x0E,              // Call factorial function at offset 14
-        OpCode::RET as u8, // Return from main
-        // factorial(n) function starts at offset 14
+        0x0E,                // Call factorial function at offset 14
+        OpCode::RET as u8,   // Return from main
         OpCode::DUP as u8,   // Duplicate n
         OpCode::PUSH1 as u8, // Push 1
         OpCode::LE as u8,    // n <= 1?
         OpCode::JMPIF as u8,
-        0x1E, // Jump to return_one if n <= 1
-        // Recursive case: return n * factorial(n-1)
+        0x1E,                // Jump to return_one if n <= 1
         OpCode::DUP as u8,   // Duplicate n
         OpCode::PUSH1 as u8, // Push 1
         OpCode::SUB as u8,   // n - 1
@@ -190,7 +167,6 @@ fn test_complex_function_calls() {
     // Verify execution state
     assert_eq!(engine.state(), VMState::HALT);
 
-    // Verify result - factorial of 4 is 24
     assert_stack_values(&engine, &["24"]);
 }
 
@@ -198,23 +174,13 @@ fn test_complex_function_calls() {
 #[test]
 fn test_complex_exception_handling() {
     // This script implements nested try-catch-finally blocks
-    // try {
-    //   try {
     //     PUSH1
     //     THROW
-    //   } catch {
     //     PUSH2   // Should execute when inner try throws
-    //   } finally {
     //     PUSH3   // Should always execute
-    //   }
     //   PUSH4     // Should execute after inner catch + finally
-    // } catch {
     //   PUSH5     // Shouldn't execute as inner catch handles exception
-    // } finally {
     //   PUSH6     // Should always execute
-    // }
-
-    // Expected stack result: [6, 4, 3, 2] (from bottom to top)
 
     let script_bytes = vec![
         // Outer TRY with catch at offset 21 and finally at offset 24
@@ -228,18 +194,14 @@ fn test_complex_exception_handling() {
         // Inner Try block
         OpCode::PUSH1 as u8,
         OpCode::THROW as u8,
-        // Inner Catch block (offset 9)
         OpCode::PUSH2 as u8,
         OpCode::ENDTRY as u8,
-        // Inner Finally block (offset 12)
         OpCode::PUSH3 as u8,
         // Code after inner try-catch-finally
         OpCode::PUSH4 as u8,
         OpCode::ENDTRY as u8,
-        // Outer Catch block (offset 21)
         OpCode::PUSH5 as u8,
         OpCode::ENDTRY as u8,
-        // Outer Finally block (offset 24)
         OpCode::PUSH6 as u8,
     ];
 
@@ -276,13 +238,9 @@ fn test_complex_exception_handling() {
 #[test]
 fn test_complex_collections() {
     // This script creates a complex structure with both arrays and maps
-    // Final structure: map = { 1: [2, 3], "key": map2 }
-    // where map2 = { 4: 5 }
 
     let script_bytes = vec![
         // Create outer map
-        OpCode::NEWMAP as u8,
-        // Create inner map { 4: 5 }
         OpCode::NEWMAP as u8,
         OpCode::DUP as u8,     // Duplicate inner map
         OpCode::PUSH4 as u8,   // Key: 4
@@ -348,13 +306,11 @@ fn test_complex_collections() {
     // Verify execution state
     assert_eq!(engine.state(), VMState::HALT);
 
-    // Should have 2 values on stack: 5 (from inner_map[4]) and 3 (from array[1])
     let result_stack = engine.result_stack();
     assert_eq!(result_stack.len(), 2, "Expected 2 items on stack");
 
     let stack_items: Vec<_> = result_stack.iter().collect();
 
-    // First item (top of stack) should be 5
     match stack_items[0].as_int() {
         Ok(value) => assert_eq!(value.to_string(), "5"),
         Err(_) => panic!("Expected integer on stack"),
@@ -371,7 +327,6 @@ fn test_complex_collections() {
 #[test]
 fn test_complex_bitwise_operations() {
     // This script performs various bitwise operations
-    // ((5 & 3) | 8) ^ ~1
     // = ((1) | 8) ^ ~1
     // = (9) ^ (~1)
     // = 9 ^ (-2) in two's complement
@@ -400,7 +355,6 @@ fn test_complex_bitwise_operations() {
     // Verify execution state
     assert_eq!(engine.state(), VMState::HALT);
 
-    // Verify result
     assert_stack_values(&engine, &["11"]);
 }
 
@@ -408,21 +362,17 @@ fn test_complex_bitwise_operations() {
 #[test]
 fn test_complex_comparisons() {
     // This script performs a complex comparison operation
-    // max(min(8, 5), max(1, 3))
     // = max(5, 3)
     // = 5
 
     let script_bytes = vec![
-        // min(8, 5)
         OpCode::PUSH8 as u8, // Push 8
         OpCode::PUSH5 as u8, // Push 5
         OpCode::MIN as u8,   // min(8, 5) = 5
-        // max(1, 3)
         OpCode::PUSH1 as u8, // Push 1
         OpCode::PUSH3 as u8, // Push 3
         OpCode::MAX as u8,   // max(1, 3) = 3
-        // max(5, 3)
-        OpCode::MAX as u8, // max(5, 3) = 5
+        OpCode::MAX as u8,   // max(5, 3) = 5
     ];
 
     // Create the execution engine
@@ -436,6 +386,5 @@ fn test_complex_comparisons() {
     // Verify execution state
     assert_eq!(engine.state(), VMState::HALT);
 
-    // Verify result
     assert_stack_values(&engine, &["5"]);
 }

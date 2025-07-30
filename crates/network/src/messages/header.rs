@@ -5,11 +5,12 @@
 
 use super::commands::{varlen, MessageCommand, MessageFlags};
 use crate::{NetworkError, NetworkResult as Result};
+use neo_config::MAX_SCRIPT_SIZE;
+// Maximum message size (16MB) - Neo network protocol limit
+pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
 use serde::{Deserialize, Serialize};
 
 /// Maximum message size (16MB)
-pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
-
 /// Minimum message size for compression (128 bytes)
 pub const MIN_COMPRESSION_SIZE: usize = 128;
 
@@ -31,7 +32,6 @@ impl Neo3Message {
     /// Creates a new Neo 3 message
     pub fn new(command: MessageCommand, payload: Vec<u8>) -> Self {
         let flags = if payload.len() >= MIN_COMPRESSION_SIZE {
-            // Check if compression would be beneficial
             #[cfg(feature = "compression")]
             {
                 if let Ok(compressed) = Self::compress_payload(&payload) {
@@ -105,10 +105,8 @@ impl Neo3Message {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
 
-        // Flags (1 byte)
         bytes.push(self.flags.as_byte());
 
-        // Command (1 byte)
         bytes.push(self.command.as_byte());
 
         // Payload with variable-length encoding
@@ -133,17 +131,13 @@ impl Neo3Message {
             });
         }
 
-        // Parse flags (1 byte)
         let flags = MessageFlags::from_byte(bytes[0])?;
 
-        // Parse command (1 byte)
         let command = MessageCommand::from_byte(bytes[1])?;
 
-        // Parse payload length (variable length encoding)
         let (payload_len, len_consumed) = varlen::decode_length(&bytes[2..])?;
         let payload_start = 2 + len_consumed;
 
-        // Validate we have enough data for the payload
         if bytes.len() < payload_start + payload_len {
             return Err(NetworkError::ProtocolViolation {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -174,7 +168,6 @@ impl Neo3Message {
     fn compress_payload(payload: &[u8]) -> Result<Vec<u8>> {
         use lz4::block::{compress, CompressionMode};
 
-        // Use high compression mode for better compression ratio
         match compress(payload, Some(CompressionMode::HIGHCOMPRESSION(9)), true) {
             Ok(compressed) => Ok(compressed),
             Err(e) => Err(NetworkError::ProtocolViolation {
@@ -212,7 +205,7 @@ impl Neo3Message {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{MessageCommand, MessageFlags, Neo3Message, MAX_MESSAGE_SIZE};
 
     #[test]
     fn test_neo3_message() {
@@ -245,7 +238,6 @@ mod tests {
         // Test serialization
         let serialized = message.to_bytes();
 
-        // Should start with flags (0x00) and command (0x18 = Ping)
         assert_eq!(serialized[0], 0x00); // MessageFlags::None
         assert_eq!(serialized[1], 0x18); // MessageCommand::Ping
 
@@ -258,21 +250,17 @@ mod tests {
 
     #[test]
     fn test_variable_length_encoding() {
-        // Test small message (< 253 bytes)
         let small_payload = vec![0u8; 100];
         let message = Neo3Message::new(MessageCommand::Version, small_payload.clone());
         let serialized = message.to_bytes();
 
-        // Should be: flags(1) + command(1) + length(1) + payload(100) = 103 bytes
         assert_eq!(serialized.len(), 103);
         assert_eq!(serialized[2], 100); // Length encoded as single byte
 
-        // Test medium message (253-65535 bytes)
         let medium_payload = vec![0u8; 1000];
         let message = Neo3Message::new(MessageCommand::Block, medium_payload.clone());
         let serialized = message.to_bytes();
 
-        // Should be: flags(1) + command(1) + length_marker(1) + length(2) + payload(1000) = 1005 bytes
         assert_eq!(serialized.len(), 1005);
         assert_eq!(serialized[2], 0xfd); // Variable length marker
 
@@ -304,14 +292,15 @@ mod tests {
 
         // Test all flag values can be parsed
         for &flags_byte in &[0x00, 0x01] {
-            let flags = MessageFlags::from_byte(flags_byte).unwrap();
+            let flags = MessageFlags::from_byte(flags_byte).expect("operation should succeed");
             let message = Neo3Message {
                 flags,
                 command: MessageCommand::Version,
                 payload: vec![1, 2, 3],
             };
             let serialized = message.to_bytes();
-            let deserialized = Neo3Message::from_bytes(&serialized).unwrap();
+            let deserialized =
+                Neo3Message::from_bytes(&serialized).expect("operation should succeed");
             assert_eq!(deserialized.flags, flags);
         }
     }
@@ -333,15 +322,17 @@ mod tests {
         assert!(message.payload.len() < payload.len());
 
         // Test decompression
-        let decompressed = message.get_payload().unwrap();
+        let decompressed = message.get_payload().expect("operation should succeed");
         assert_eq!(decompressed, payload);
 
         // Test serialization roundtrip
         let serialized = message.to_bytes();
-        let deserialized = Neo3Message::from_bytes(&serialized).unwrap();
+        let deserialized = Neo3Message::from_bytes(&serialized).expect("operation should succeed");
         assert!(deserialized.is_compressed());
 
-        let final_payload = deserialized.get_payload().unwrap();
+        let final_payload = deserialized
+            .get_payload()
+            .expect("operation should succeed");
         assert_eq!(final_payload, payload);
     }
 }

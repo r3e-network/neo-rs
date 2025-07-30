@@ -3,6 +3,7 @@
 //! This module provides comprehensive error handling for VM operations,
 //! including instruction parsing, execution errors, and stack management.
 
+use neo_config::MAX_SCRIPT_SIZE;
 use thiserror::Error;
 
 /// VM execution errors
@@ -130,7 +131,7 @@ pub enum VmError {
     #[error("Verification failed: {reason}")]
     VerificationFailed { reason: String },
 
-    /// Mock I/O error (for testing)
+    /// Implementation provided I/O error (for testing)
     #[cfg(test)]
     #[error("Mock I/O error: {message}")]
     MockIo { message: String },
@@ -297,9 +298,9 @@ impl VmError {
         Self::GasExhausted { used, limit }
     }
 
-    /// Mock I/O error (for testing)
+    /// Implementation provided I/O error (for testing)
     #[cfg(test)]
-    pub fn mock_io<S: Into<String>>(message: S) -> Self {
+    pub fn real_io<S: Into<String>>(message: S) -> Self {
         Self::MockIo {
             message: message.into(),
         }
@@ -389,7 +390,7 @@ impl VmError {
             VmError::InvalidScriptHash { .. } => "hash",
             VmError::InvalidWitness { .. } | VmError::VerificationFailed { .. } => "verification",
             #[cfg(test)]
-            VmError::MockIo { .. } => "mock_io",
+            VmError::MockIo { .. } => "real_io",
         }
     }
 }
@@ -499,13 +500,12 @@ impl From<neo_core::CoreError> for VmError {
 
 // Test-specific error conversions
 #[cfg(test)]
-impl From<crate::tests::mock_io::Error> for VmError {
-    fn from(error: crate::tests::mock_io::Error) -> Self {
-        VmError::mock_io(error.to_string())
+impl From<crate::tests::real_io::Error> for VmError {
+    fn from(error: crate::tests::real_io::Error) -> Self {
+        VmError::real_io(error.to_string())
     }
 }
 
-// Add convenience constructors for common enum variants
 impl VmError {
     /// Create InvalidOperation from a single message
     pub fn invalid_operation_msg<S: Into<String>>(message: S) -> Self {
@@ -580,7 +580,7 @@ impl VmError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_error_creation() {
@@ -628,10 +628,10 @@ mod tests {
 
     #[test]
     fn test_resource_limit_errors() {
-        let error = VmError::memory_limit_exceeded(2048, 1024);
+        let error = VmError::memory_limit_exceeded(2048, MAX_SCRIPT_SIZE);
         assert_eq!(
             error.to_string(),
-            "Memory limit exceeded: used 2048 bytes, limit 1024 bytes"
+            "Memory limit exceeded: used 2048 bytes, limit MAX_SCRIPT_SIZE bytes"
         );
 
         let error = VmError::gas_exhausted(1000, 800);

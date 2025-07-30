@@ -33,7 +33,6 @@ impl BlockHeader {
     pub fn hash(&self) -> crate::Result<UInt256> {
         use sha2::{Digest, Sha256};
 
-        // Create a buffer for serialization
         let mut buffer = Vec::new();
 
         // Serialize header fields in the same order as C# Neo implementation

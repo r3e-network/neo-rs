@@ -86,7 +86,6 @@ impl SchemaMigration {
 
     /// Applies the migration (production implementation)
     pub fn apply(&mut self) -> Result<()> {
-        // Production-ready migration application (matches C# Neo database migration exactly)
         // In C# Neo: this would execute the migration script against the database
 
         // 1. Validate migration script
@@ -111,7 +110,6 @@ impl SchemaMigration {
 
     /// Reverts the migration (production implementation)
     pub fn revert(&mut self) -> Result<()> {
-        // Production-ready migration reversion (matches C# Neo database migration exactly)
         // In C# Neo: this would execute the rollback script against the database
 
         // 1. Check if migration can be reverted
@@ -162,7 +160,6 @@ impl MigrationManager {
 
     /// Applies all pending migrations (production implementation)
     pub fn apply_migrations(&mut self) -> Result<()> {
-        // Production-ready migration application (matches C# Neo database migration exactly)
         // In C# Neo: this would apply all pending migrations in order
 
         // 1. Get all pending migration versions
@@ -190,7 +187,6 @@ impl MigrationManager {
 
     /// Reverts to a specific version (production implementation)
     pub fn revert_to_version(&mut self, target_version: u32) -> Result<()> {
-        // Production-ready migration reversion (matches C# Neo database migration exactly)
         // In C# Neo: this would revert migrations back to the target version
 
         // 1. Get migration versions to revert (in reverse order)

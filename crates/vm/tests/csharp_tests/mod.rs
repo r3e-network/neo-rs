@@ -18,6 +18,5 @@ pub mod integration;
 pub mod opcodes;
 pub mod unit;
 
-// Re-export commonly used items for convenience
 pub use common::*;
 pub use runner::JsonTestRunner;

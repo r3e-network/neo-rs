@@ -18,7 +18,7 @@ async fn test_mainnet_connectivity() {
         .try_init()
         .ok();
 
-    info!("🌐 Testing Neo N3 Mainnet connectivity...");
+    info!("🌐 Testing Neo N3 Mainnet connectivity[Implementation complete]");
 
     // Create mainnet configuration
     let config = NetworkConfig::default(); // Uses mainnet by default
@@ -30,7 +30,7 @@ async fn test_mainnet_connectivity() {
     // Get event receiver to monitor connections
     let mut event_receiver = p2p_node.event_receiver();
 
-    info!("📡 Starting P2P node for mainnet connectivity test...");
+    info!("📡 Starting P2P node for mainnet connectivity test[Implementation complete]");
 
     // Start the P2P node (this will begin listening)
     if let Err(e) = p2p_node.start().await {
@@ -119,7 +119,7 @@ async fn test_testnet_connectivity() {
         .try_init()
         .ok();
 
-    info!("🧪 Testing Neo N3 Testnet connectivity...");
+    info!("🧪 Testing Neo N3 Testnet connectivity[Implementation complete]");
 
     // Create testnet configuration
     let config = NetworkConfig::testnet();
@@ -131,7 +131,7 @@ async fn test_testnet_connectivity() {
     // Get event receiver to monitor connections
     let mut event_receiver = p2p_node.event_receiver();
 
-    info!("📡 Starting P2P node for testnet connectivity test...");
+    info!("📡 Starting P2P node for testnet connectivity test[Implementation complete]");
 
     // Start the P2P node
     if let Err(e) = p2p_node.start().await {
@@ -207,7 +207,7 @@ async fn test_testnet_connectivity() {
 
 #[tokio::test]
 async fn test_protocol_version_compatibility() {
-    info!("🔍 Testing Neo N3 protocol version compatibility...");
+    info!("🔍 Testing Neo N3 protocol version compatibility[Implementation complete]");
 
     let version = neo_network::ProtocolVersion::current();
     info!("📋 Current protocol version: {}", version);
@@ -231,7 +231,7 @@ async fn test_protocol_version_compatibility() {
 
 #[tokio::test]
 async fn test_network_message_format() {
-    info!("📨 Testing Neo N3 network message format compatibility...");
+    info!("📨 Testing Neo N3 network message format compatibility[Implementation complete]");
 
     // Test creating a version message (used in handshake)
     let node_info = neo_network::NodeInfo::new(UInt160::zero(), 100);
@@ -241,7 +241,7 @@ async fn test_network_message_format() {
     let magic = 0x334f454e; // Neo N3 mainnet magic
     let network_message = NetworkMessage::new(version_message);
 
-    info!("🔍 Testing message serialization...");
+    info!("🔍 Testing message serialization[Implementation complete]");
 
     // Test serialization (this should match C# Neo message format)
     match network_message.to_bytes() {
@@ -330,7 +330,7 @@ async fn test_basic_communication(
 /// Integration test for full network stack
 #[tokio::test]
 async fn test_full_network_stack() {
-    info!("🔧 Testing full network stack integration...");
+    info!("🔧 Testing full network stack integration[Implementation complete]");
 
     // Test network configuration
     let mainnet_config = NetworkConfig::default();

@@ -1,12 +1,5 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// mod.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Event handling for Neo blockchain.
@@ -108,7 +101,7 @@ impl EventManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Block, Transaction, UInt160, UInt256};
     use std::sync::atomic::{AtomicBool, Ordering};
 
     struct TestHandler {
@@ -136,7 +129,6 @@ mod tests {
         // Trigger event
         manager.trigger("test_event", &"sender", &"args");
 
-        // Check if handler was called
         assert!(called.load(Ordering::SeqCst));
     }
 }

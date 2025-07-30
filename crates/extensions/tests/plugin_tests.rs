@@ -14,8 +14,8 @@ mod plugin_tests {
         let plugin_manager = PluginManager::new();
 
         // Test plugin registration
-        let mock_plugin = MockPlugin::new("test_plugin", "1.0.0");
-        plugin_manager.register_plugin(Box::new(mock_plugin));
+        let real_plugin = MockPlugin::new("test_plugin", "1.0.0");
+        plugin_manager.register_plugin(Box::new(real_plugin));
 
         assert_eq!(plugin_manager.plugin_count(), 1);
         assert!(plugin_manager.is_plugin_loaded("test_plugin"));

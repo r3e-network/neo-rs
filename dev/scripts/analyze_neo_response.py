@@ -78,7 +78,7 @@ if ua_start >= 0:
     print(f"Found user agent at offset {ua_start}: {response[ua_start:ua_start+11]}")
     
     # Work backwards from there
-    print("\nTrying to parse from user agent backwards...")
+    print("\nTrying to parse from user agent backwards"Implementation complete"")
     # The byte before /Neo: should be the length (11)
     if ua_start > 0:
         ua_len_byte = response[ua_start-1]

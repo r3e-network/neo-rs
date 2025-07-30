@@ -220,12 +220,9 @@ mod serialization_tests {
         let zero_private_result = Bls12381::private_key_from_bytes(&zero_private_bytes);
         match zero_private_result {
             Ok(zero_key) => {
-                // If parsing succeeds, key should be invalid
                 assert!(!Bls12381::validate_private_key(&zero_key));
             }
-            Err(_) => {
-                // Parsing failure is also acceptable for zero key
-            }
+            Err(_) => {}
         }
 
         // Test maximum private key value
@@ -233,12 +230,9 @@ mod serialization_tests {
         let max_private_result = Bls12381::private_key_from_bytes(&max_private_bytes);
         match max_private_result {
             Ok(max_key) => {
-                // If parsing succeeds, key should be invalid (exceeds curve order)
                 assert!(!Bls12381::validate_private_key(&max_key));
             }
-            Err(_) => {
-                // Parsing failure is also acceptable for max key
-            }
+            Err(_) => {}
         }
 
         // Test zero public key
@@ -431,7 +425,6 @@ mod serialization_tests {
     #[test]
     fn test_cross_platform_serialization_compatibility() {
         // Test with known test vectors that should work across platforms
-        // These values should match the C# implementation exactly
 
         let mut rng = thread_rng();
         let private_key = Bls12381::generate_private_key(&mut rng);
@@ -444,13 +437,11 @@ mod serialization_tests {
         let public_bytes = Bls12381::public_key_to_bytes(&public_key);
         let signature_bytes = Bls12381::signature_to_bytes(&signature);
 
-        // Test that serialized data uses big-endian format (matches C# convention)
         assert_eq!(private_bytes.len(), 32);
         assert_eq!(public_bytes.len(), 48);
         assert_eq!(signature_bytes.len(), 96);
 
         // Test byte order consistency
-        // Private key should not start with all zeros (extremely unlikely)
         assert!(private_bytes.iter().any(|&b| b != 0));
 
         // Public key should not be all zeros
@@ -531,7 +522,6 @@ mod serialization_tests {
         let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
         // All private and public key serializations should be identical
-        // (same keys), but signatures should be different (different messages)
         for (i, (thread_id, priv_bytes, pub_bytes, sig_bytes)) in results.iter().enumerate() {
             // All private key serializations should be same
             assert_eq!(
@@ -547,7 +537,6 @@ mod serialization_tests {
                 thread_id
             );
 
-            // All signature serializations should be same (same message, same key)
             assert_eq!(
                 sig_bytes, &results[0].3,
                 "Signature serialization differs in thread {}",

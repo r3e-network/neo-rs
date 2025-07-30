@@ -7,6 +7,7 @@ use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::StackItem;
+use num_traits::ToPrimitive;
 use std::sync::Arc;
 
 /// Represents a struct of stack items in the VM.
@@ -23,7 +24,6 @@ impl Struct {
     pub fn new(items: Vec<StackItem>, reference_counter: Option<Arc<ReferenceCounter>>) -> Self {
         let mut reference_id = None;
 
-        // Register with reference counter if provided
         if let Some(rc) = &reference_counter {
             reference_id = Some(rc.add_reference());
         }
@@ -116,10 +116,6 @@ impl Drop for Struct {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::stack_item::StackItem;
-    use num_traits::ToPrimitive;
-
     #[test]
     fn test_struct_creation() {
         let items = vec![
@@ -148,31 +144,31 @@ mod tests {
         assert_eq!(
             struct_item
                 .get(0)
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .as_int()
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .to_i32()
-                .unwrap(),
+                .ok_or_else(|| VmError::InvalidStackItem)?,
             1
         );
         assert_eq!(
             struct_item
                 .get(1)
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .as_int()
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .to_i32()
-                .unwrap(),
+                .ok_or_else(|| VmError::InvalidStackItem)?,
             2
         );
         assert_eq!(
             struct_item
                 .get(2)
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .as_int()
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .to_i32()
-                .unwrap(),
+                .ok_or_else(|| VmError::InvalidStackItem)?,
             3
         );
         assert!(struct_item.get(3).is_err());
@@ -188,36 +184,38 @@ mod tests {
 
         let mut struct_item = Struct::new(items, None);
 
-        struct_item.set(1, StackItem::from_int(42)).unwrap();
+        struct_item
+            .set(1, StackItem::from_int(42))
+            .ok_or_else(|| VmError::InvalidStackItem)?;
 
         assert_eq!(
             struct_item
                 .get(0)
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .as_int()
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .to_i32()
-                .unwrap(),
+                .ok_or_else(|| VmError::InvalidStackItem)?,
             1
         );
         assert_eq!(
             struct_item
                 .get(1)
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .as_int()
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .to_i32()
-                .unwrap(),
+                .ok_or_else(|| VmError::InvalidStackItem)?,
             42
         );
         assert_eq!(
             struct_item
                 .get(2)
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .as_int()
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .to_i32()
-                .unwrap(),
+                .ok_or_else(|| VmError::InvalidStackItem)?,
             3
         );
         assert!(struct_item.set(3, StackItem::from_int(4)).is_err());
@@ -235,18 +233,27 @@ mod tests {
         assert_eq!(
             struct_item
                 .get(2)
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .as_int()
-                .unwrap()
+                .ok_or_else(|| VmError::InvalidStackItem)?
                 .to_i32()
-                .unwrap(),
+                .ok_or_else(|| VmError::InvalidStackItem)?,
             3
         );
 
-        let popped = struct_item.pop().unwrap();
+        let popped = struct_item
+            .pop()
+            .ok_or_else(|| anyhow::anyhow!("Collection is empty"))?;
 
         assert_eq!(struct_item.len(), 2);
-        assert_eq!(popped.as_int().unwrap().to_i32().unwrap(), 3);
+        assert_eq!(
+            popped
+                .as_int()
+                .expect("intermediate value should exist")
+                .to_i32()
+                .ok_or_else(|| VmError::InvalidStackItem)?,
+            3
+        );
     }
 
     #[test]
@@ -278,36 +285,58 @@ mod tests {
 
         assert_eq!(copied.len(), struct_item.len());
         assert_eq!(
-            copied.get(0).unwrap().as_int().unwrap(),
-            struct_item.get(0).unwrap().as_int().unwrap()
+            copied
+                .first()
+                .ok_or("Empty collection")?
+                .as_int()
+                .ok_or_else(|| VmError::InvalidStackItem)?,
+            struct_item
+                .first()
+                .ok_or("Empty collection")?
+                .as_int()
+                .ok_or_else(|| VmError::InvalidStackItem)?
         );
         assert_eq!(
-            copied.get(1).unwrap().as_int().unwrap(),
-            struct_item.get(1).unwrap().as_int().unwrap()
+            copied
+                .get(0)
+                .ok_or("Index out of bounds")?
+                .as_int()
+                .ok_or_else(|| VmError::InvalidStackItem)?,
+            struct_item
+                .get(0)
+                .ok_or("Index out of bounds")?
+                .as_int()
+                .ok_or_else(|| VmError::InvalidStackItem)?
         );
 
         // Check that the nested array was deep copied
-        let nested_original = struct_item.get(2).unwrap().as_array().unwrap();
-        let nested_copied = copied.get(2).unwrap().as_array().unwrap();
+        let nested_original = struct_item
+            .get(0)
+            .ok_or("Index out of bounds")?
+            .as_array()
+            .expect("Operation failed");
+        let nested_copied = copied
+            .get(0)
+            .ok_or("Index out of bounds")?
+            .as_array()
+            .expect("Operation failed");
 
         assert_eq!(nested_copied.len(), nested_original.len());
         assert_eq!(
-            nested_copied[0].as_int().unwrap(),
-            nested_original[0].as_int().unwrap()
+            nested_copied[0].as_int().expect("Operation failed"),
+            nested_original[0].as_int().expect("Operation failed")
         );
         assert_eq!(
-            nested_copied[1].as_int().unwrap(),
-            nested_original[1].as_int().unwrap()
+            nested_copied[1].as_int().expect("Operation failed"),
+            nested_original[1].as_int().expect("Operation failed")
         );
     }
 
     #[test]
     fn test_struct_to_boolean() {
-        // Test empty struct
         let empty_struct = Struct::new(Vec::new(), None);
         assert_eq!(empty_struct.to_boolean(), false);
 
-        // Test non-empty struct
         let items = vec![StackItem::from_int(1)];
         let non_empty_struct = Struct::new(items, None);
         assert_eq!(non_empty_struct.to_boolean(), true);

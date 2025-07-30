@@ -78,7 +78,6 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if slots are already initialized
     if context.local_variables().is_some() || context.arguments().is_some() {
         return Err(VmError::invalid_operation_msg(
             "INITSLOT cannot be executed twice",
@@ -106,7 +105,6 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
         ));
     }
 
-    // Initialize local variables (filled with null values)
     if local_count > 0 {
         let local_items = vec![crate::stack_item::StackItem::null(); local_count];
         let reference_counter = context.evaluation_stack().reference_counter().clone();
@@ -114,10 +112,8 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
         context.set_local_variables(Some(local_slot));
     }
 
-    // Initialize arguments (pop values from the stack)
     if argument_count > 0 {
         let mut arg_items = Vec::with_capacity(argument_count);
-        // Pop values from the stack (C# implementation pops in order)
         for _ in 0..argument_count {
             let value = context.pop()?;
             arg_items.push(value);
@@ -284,7 +280,6 @@ fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> 
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing static count"))?
         as usize;
 
-    // Check if static fields are already initialized
     if context.static_fields().is_some() {
         return Err(VmError::invalid_operation_msg(
             "INITSSLOT cannot be executed twice",
@@ -294,7 +289,6 @@ fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> 
     // Create a new slot with the specified count, filled with null values
     if static_count > 0 {
         let static_items = vec![crate::stack_item::StackItem::null(); static_count];
-        // Get the reference counter from the evaluation stack (which has access to it)
         let reference_counter = context.evaluation_stack().reference_counter().clone();
         let static_slot = crate::execution_context::Slot::new(static_items, reference_counter);
         context.set_static_fields(Some(static_slot));
@@ -303,7 +297,6 @@ fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> 
     Ok(())
 }
 
-// Static field operations (optimized for indices 0-6)
 /// Implements the LDSFLD0 operation.
 fn load_static_field_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     let context = engine
@@ -444,7 +437,6 @@ fn store_static_field_6(engine: &mut ExecutionEngine, _instruction: &Instruction
     Ok(())
 }
 
-// Local variable operations (optimized for indices 0-6)
 /// Implements the LDLOC0 operation.
 fn load_local_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     let context = engine
@@ -585,7 +577,6 @@ fn store_local_6(engine: &mut ExecutionEngine, _instruction: &Instruction) -> Vm
     Ok(())
 }
 
-// Argument operations (optimized for indices 0-6)
 /// Implements the LDARG0 operation.
 fn load_argument_0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     let context = engine

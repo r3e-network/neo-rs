@@ -16,6 +16,11 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{interval, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
+/// Test framework constants
+const TEST_NODE_1: &str = "localhost:20001";
+const TEST_NODE_2: &str = "localhost:20002";
+const TEST_NODE_3: &str = "localhost:20003";
+
 /// Test node that simulates a Neo N3 peer
 #[derive(Debug)]
 pub struct TestNode {
@@ -60,7 +65,6 @@ impl TestNode {
             self.address, self.height
         );
 
-        // Generate test blocks for this node
         self.generate_test_blocks().await?;
 
         Ok(())
@@ -98,19 +102,18 @@ impl TestNode {
         let previous_hash = if height == 0 {
             UInt256::zero()
         } else {
-            // For testing, use a deterministic hash based on height
-            UInt256::from_bytes(&[height as u8; 32]).unwrap()
+            UInt256::from_bytes(&[height as u8; 32])?
         };
 
         let header = BlockHeader {
             version: 0,
             previous_hash,
-            merkle_root: UInt256::from_bytes(&[0x42; 32]).unwrap(), // Test merkle root
-            timestamp: 1640995200000 + (height as u64 * 15000),     // 15 second intervals
+            merkle_root: UInt256::from_bytes(&[0x42; 32])?, // Test merkle root
+            timestamp: 1640995200000 + (height as u64 * 15000), // 15 second intervals
             nonce: height as u64,
             index: height,
             primary_index: 0,
-            next_consensus: UInt160::from_bytes(&[0x33; 20]).unwrap(),
+            next_consensus: UInt160::from_bytes(&[0x33; 20])?,
             witnesses: Vec::new(),
         };
 
@@ -147,7 +150,6 @@ impl TestNode {
                 let start_height = if hash_start.is_empty() {
                     0
                 } else {
-                    // For testing, extract height from first hash
                     1 // Start from block 1
                 };
 
@@ -291,7 +293,6 @@ impl LocalTestFramework {
             self.nodes.len()
         );
 
-        // Start message handling for all nodes
         for (address, node) in &self.nodes {
             self.spawn_node_handler(*address).await;
         }
@@ -320,9 +321,6 @@ impl LocalTestFramework {
 
             while *running.read().await {
                 interval.tick().await;
-
-                // Handle messages for this node
-                // (Implementation would route messages between nodes)
             }
         });
     }
@@ -363,18 +361,21 @@ impl LocalTestFramework {
     pub async fn create_sync_test_scenario(&mut self) -> Result<TestSyncScenario> {
         // Create nodes with different heights to simulate sync scenario
         let addresses = vec![
-            "127.0.0.1:20001".parse().unwrap(),
-            "127.0.0.1:20002".parse().unwrap(),
-            "127.0.0.1:20003".parse().unwrap(),
+            TEST_NODE_1.parse().map_err(|e| {
+                NetworkError::configuration("address", &format!("Parse error: {}", e))
+            })?,
+            TEST_NODE_2.parse().map_err(|e| {
+                NetworkError::configuration("address", &format!("Parse error: {}", e))
+            })?,
+            TEST_NODE_3.parse().map_err(|e| {
+                NetworkError::configuration("address", &format!("Parse error: {}", e))
+            })?,
         ];
 
-        // Node 1: Behind (height 100)
         self.add_node(addresses[0], 100).await?;
 
-        // Node 2: Current (height 150)
         self.add_node(addresses[1], 150).await?;
 
-        // Node 3: Ahead (height 200)
         self.add_node(addresses[2], 200).await?;
 
         Ok(TestSyncScenario {
@@ -499,7 +500,7 @@ mod tests {
     async fn test_local_framework_creation() {
         let mut framework = LocalTestFramework::new();
 
-        let addr: SocketAddr = "127.0.0.1:20001".parse().unwrap();
+        let addr: SocketAddr = TEST_NODE_1.parse().unwrap();
         framework.add_node(addr, 100).await.unwrap();
 
         assert_eq!(framework.get_max_height(), 100);
@@ -507,7 +508,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_node_message_handling() {
-        let addr: SocketAddr = "127.0.0.1:20001".parse().unwrap();
+        let addr: SocketAddr = TEST_NODE_1.parse().expect("value should parse");
         let node = TestNode::new(addr, 50);
 
         let version_msg = NetworkMessage::new(
@@ -523,7 +524,10 @@ mod tests {
             },
         );
 
-        let response = node.handle_message(version_msg).await.unwrap();
+        let response = node
+            .handle_message(version_msg)
+            .await
+            .expect("operation should succeed");
         assert!(response.is_some());
     }
 }

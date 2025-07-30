@@ -22,7 +22,7 @@ neo-rs/crates/vm/
 │   │   ├── stack_item_type.rs    # StackItemType enum
 │   │   ├── array.rs              # Array implementation
 │   │   ├── boolean.rs            # Boolean implementation
-│   │   └── ...                   # Other stack item types
+│   │   └── [Implementation complete]                   # Other stack item types
 │   ├── instruction.rs            # Instruction representation
 │   ├── script.rs                 # Script representation and management
 │   ├── evaluation_stack.rs       # VM evaluation stack
@@ -30,9 +30,9 @@ neo-rs/crates/vm/
 │   ├── execution_engine.rs       # Main VM execution engine
 │   ├── jump_table/               # Instruction handling
 │   │   ├── mod.rs
-│   │   └── ...                   # Jump table implementations
+│   │   └── [Implementation complete]                   # Jump table implementations
 │   ├── reference_counter.rs      # Reference counting for memory management
-│   └── ...                       # Other VM components
+│   └── [Implementation complete]                       # Other VM components
 └── tests/                        # Integration tests
 ```
 

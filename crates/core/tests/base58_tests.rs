@@ -4,8 +4,6 @@
 use neo_cryptography::base58;
 
 // ============================================================================
-// Basic Base58 Tests - Implementation needs fixing for full compatibility
-// ============================================================================
 
 /// Test invalid Base58 characters
 #[test]
@@ -26,7 +24,6 @@ fn test_base58_invalid_characters() {
 /// Test Base58 edge cases that work
 #[test]
 fn test_base58_edge_cases() {
-    // Empty string
     assert_eq!("", base58::encode(&[]));
     assert_eq!(Vec::<u8>::new(), base58::decode("").unwrap());
 
@@ -42,7 +39,6 @@ fn test_base58_edge_cases() {
 /// Test Base58Check with too short input
 #[test]
 fn test_base58_check_too_short() {
-    // Base58Check requires at least 4 bytes for checksum
     let short_inputs = vec!["", "1", "11", "111"];
 
     for input in short_inputs {
@@ -59,7 +55,6 @@ fn test_base58_check_too_short() {
 #[test]
 fn test_base58_alphabet_consistency() {
     // Ensure our implementation uses the correct Base58 alphabet
-    // The alphabet should not contain: 0, O, I, l (to avoid confusion)
     let alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
     // Test that each character in the alphabet can be decoded
@@ -67,7 +62,6 @@ fn test_base58_alphabet_consistency() {
         let single_char_string = c.to_string();
         let result = base58::decode(&single_char_string);
 
-        // Should not error (though the result may vary)
         assert!(result.is_ok(), "Character '{}' should be decodable", c);
     }
 }
@@ -85,7 +79,6 @@ fn test_base58_functions_exist() {
     // Should not panic
     let _encoded_check = base58::encode_check(&test_data);
 
-    // Decoding should work (even if the result is wrong)
     let _decoded = base58::decode(&encoded);
 }
 

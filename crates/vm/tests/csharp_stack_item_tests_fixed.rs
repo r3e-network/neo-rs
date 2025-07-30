@@ -182,7 +182,6 @@ mod tests {
         assert!(!StackItem::Integer(BigInt::from(0)).as_bool().unwrap());
         assert!(StackItem::Integer(BigInt::from(-1)).as_bool().unwrap());
 
-        // Test byte string values
         assert!(StackItem::from_byte_string(vec![1u8]).as_bool().unwrap());
         assert!(!StackItem::from_byte_string(vec![]).as_bool().unwrap());
         assert!(!StackItem::from_byte_string(vec![0u8]).as_bool().unwrap());
@@ -199,7 +198,6 @@ mod tests {
         assert!(StackItem::Array(vec![StackItem::Null]).as_bool().unwrap());
         assert!(!StackItem::Array(vec![]).as_bool().unwrap());
 
-        // Test struct values
         assert!(StackItem::Struct(vec![StackItem::Null]).as_bool().unwrap());
         assert!(!StackItem::Struct(vec![]).as_bool().unwrap());
 
@@ -227,7 +225,6 @@ mod tests {
             BigInt::from(-42)
         );
 
-        // Test byte string to integer (little-endian)
         assert_eq!(
             StackItem::from_byte_string(vec![]).as_int().unwrap(),
             BigInt::from(0)
@@ -278,7 +275,6 @@ mod tests {
             vec![0u8, 1u8]
         );
 
-        // Test byte string to bytes
         let data = vec![1u8, 2u8, 3u8];
         assert_eq!(
             StackItem::from_byte_string(data.clone())
@@ -306,7 +302,6 @@ mod tests {
         assert_eq!(array_ref[1], StackItem::Integer(BigInt::from(2)));
         assert_eq!(array_ref[2], StackItem::Integer(BigInt::from(3)));
 
-        // Test struct as array
         let struct_item = StackItem::Struct(vec![
             StackItem::Integer(BigInt::from(4)),
             StackItem::Integer(BigInt::from(5)),

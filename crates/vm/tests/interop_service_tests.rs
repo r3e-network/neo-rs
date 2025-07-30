@@ -104,7 +104,6 @@ fn test_interop_service_invoke() {
         .invoke_instruction(&mut engine, &instruction)
         .unwrap();
 
-    // Check the result
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 1);
@@ -141,7 +140,6 @@ fn test_interop_service_platform() {
         .invoke_instruction(&mut engine, &instruction)
         .unwrap();
 
-    // Check the result
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 1);
@@ -185,7 +183,6 @@ fn test_interop_service_log() {
         .invoke_instruction(&mut engine, &instruction)
         .unwrap();
 
-    // Check that the stack is empty (the log method consumes the message)
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 0);
@@ -215,7 +212,6 @@ fn test_interop_service_storage() {
             .invoke_instruction(&mut engine, &instruction)
             .unwrap();
 
-        // Should have one item on stack (the context)
         let context = engine.current_context().unwrap();
         let stack = context.evaluation_stack();
         assert_eq!(stack.len(), 1);
@@ -228,7 +224,6 @@ fn test_interop_service_storage() {
         let script = builder.to_script();
         engine.load_script(script, -1, 0).unwrap();
 
-        // Set up stack for Put: [context, key, value]
         {
             let context = engine.current_context_mut().unwrap();
             let stack = context.evaluation_stack_mut();
@@ -261,7 +256,6 @@ fn test_interop_service_storage() {
         let script = builder.to_script();
         engine.load_script(script, -1, 0).unwrap();
 
-        // Set up stack for Get: [context, key]
         {
             let context = engine.current_context_mut().unwrap();
             let stack = context.evaluation_stack_mut();
@@ -285,7 +279,6 @@ fn test_interop_service_storage() {
         let stack = context.evaluation_stack();
         assert_eq!(stack.len(), 1);
 
-        // The result should be the stored value [4, 5, 6]
         let result = stack.peek(0).unwrap();
         let result_bytes = result.as_bytes().unwrap();
         assert_eq!(result_bytes, vec![4, 5, 6]);

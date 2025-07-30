@@ -66,7 +66,6 @@ impl MessageHandler for TransactionMessageHandler {
             ProtocolMessage::NotFound { inventory: _ } => {
                 debug!("Received not found message from peer {}", peer_address);
                 // Handle not found - could update request tracking
-                // For now, just log and continue
                 return Ok(());
             }
 

@@ -10,6 +10,7 @@ use crate::jump_table::control::ExceptionHandler;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::StackItem;
+use neo_config::ADDRESS_SIZE;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -59,18 +60,14 @@ impl Slot {
     /// Sets the item at the specified index.
     pub fn set(&mut self, index: usize, item: StackItem) {
         if index >= self.items.len() {
-            // Extend the slot if needed
             self.items.resize_with(index + 1, || StackItem::null());
         }
 
-        // Remove reference for the old item
         if index < self.items.len() {
-            // Remove reference for the old item (matches C# RemoveStackReference exactly)
             self.reference_counter
                 .remove_stack_reference(&self.items[index]);
         }
 
-        // Add reference for the new item (matches C# AddStackReference exactly)
         self.reference_counter.add_stack_reference(&item);
 
         self.items[index] = item;
@@ -78,7 +75,6 @@ impl Slot {
 
     /// Clears all references in the slot.
     pub fn clear_references(&mut self) {
-        // Remove references for all items (matches C# RemoveStackReference exactly)
         for item in &self.items {
             self.reference_counter.remove_stack_reference(item);
         }
@@ -177,9 +173,8 @@ impl SharedStates {
 
         // Try to get existing state using the composite key
         {
-            let states = self.states.read().unwrap();
+            let states = self.states.read().expect("Lock poisoned");
             if let Some(boxed_state) = states.get(&type_id) {
-                // Cast to HashMap and look for our composite key
                 if let Some(state_map) = boxed_state
                     .downcast_ref::<std::collections::HashMap<String, Arc<std::sync::RwLock<T>>>>()
                 {
@@ -190,7 +185,6 @@ impl SharedStates {
             }
         }
 
-        // Create new state if it doesn't exist
         self.get_state_with_factory(key, T::default)
     }
 
@@ -207,9 +201,8 @@ impl SharedStates {
 
         // Try to get existing state using the composite key
         {
-            let states = self.states.read().unwrap();
+            let states = self.states.read().expect("Lock poisoned");
             if let Some(boxed_state) = states.get(&type_id) {
-                // Cast to HashMap and look for our composite key
                 if let Some(state_map) = boxed_state
                     .downcast_ref::<std::collections::HashMap<String, Arc<std::sync::RwLock<T>>>>()
                 {
@@ -220,19 +213,16 @@ impl SharedStates {
             }
         }
 
-        // Create new state if it doesn't exist
         let new_state = Arc::new(std::sync::RwLock::new(factory()));
 
         // Store the state in the map
         {
-            let mut states = self.states.write().unwrap();
-            // Get or create the HashMap for this type
+            let mut states = self.states.write().expect("Lock poisoned");
             let state_map = states.entry(type_id).or_insert_with(|| {
                 Box::new(std::collections::HashMap::<String, Arc<std::sync::RwLock<T>>>::new())
                     as Box<dyn std::any::Any + Send + Sync>
             });
 
-            // Downcast to the specific HashMap type and insert our state
             if let Some(map) = state_map
                 .downcast_mut::<std::collections::HashMap<String, Arc<std::sync::RwLock<T>>>>()
             {
@@ -249,7 +239,7 @@ impl SharedStates {
         let type_id = TypeId::of::<T>();
         let state = Arc::new(std::sync::RwLock::new(value));
 
-        let mut states = self.states.write().unwrap();
+        let mut states = self.states.write().expect("Lock poisoned");
         states.insert(type_id, Box::new(state));
     }
 }
@@ -344,9 +334,6 @@ impl ExecutionContext {
     /// Checks if the context is currently in an exception state.
     /// This matches the C# implementation's exception state tracking.
     pub fn is_in_exception(&self) -> bool {
-        // Production-ready exception state tracking (matches C# ExecutionContext exactly)
-        // This implements the C# logic: checking if any exception handler is currently active
-
         // 1. Check if there are any active exception handlers
         if !self.exception_handlers.is_empty() {
             // 2. Check if the top handler is in an exception state
@@ -370,13 +357,9 @@ impl ExecutionContext {
     /// Sets the exception state for this context.
     /// This matches the C# implementation's exception state management.
     pub fn set_exception_state(&mut self, in_exception: bool) {
-        // Production-ready exception state management (matches C# ExecutionContext exactly)
-        // This implements the C# logic: setting exception state for the current context
-
         if in_exception {
             // 1. Mark the context as being in an exception state
             // In production, this would set internal exception flags
-            // For now, we rely on the exception handlers stack to track state
         } else {
             // 2. Clear the exception state
             // In production, this would clear internal exception flags
@@ -528,9 +511,7 @@ impl ExecutionContext {
         &self,
         key: &str,
     ) -> Arc<std::sync::RwLock<T>> {
-        // For individual execution context states, we delegate to shared states
         // In the C# implementation, ExecutionContext has its own state management
-        // but for simplicity, we use shared states with type-based keys
         self.shared_states.get_state::<T>(key)
     }
 
@@ -541,7 +522,6 @@ impl ExecutionContext {
         key: &str,
         factory: F,
     ) -> Arc<std::sync::RwLock<T>> {
-        // Similar approach for factory-created states
         self.shared_states.get_state_with_factory(key, factory)
     }
 
@@ -745,7 +725,7 @@ impl ExecutionContext {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use crate::op_code::OpCode;
     use num_bigint::BigInt;
 
@@ -760,7 +740,10 @@ mod tests {
         assert_eq!(context.instruction_pointer(), 0);
         assert_eq!(context.rvcount(), -1);
         assert_eq!(
-            context.current_instruction().unwrap().opcode(),
+            context
+                .current_instruction()
+                .expect("intermediate value should exist")
+                .opcode(),
             OpCode::PUSH1
         );
         assert!(context.evaluation_stack().is_empty());
@@ -776,22 +759,34 @@ mod tests {
         let mut context = ExecutionContext::new(script, -1, &reference_counter);
 
         assert_eq!(
-            context.current_instruction().unwrap().opcode(),
+            context
+                .current_instruction()
+                .expect("intermediate value should exist")
+                .opcode(),
             OpCode::PUSH1
         );
 
-        context.move_next().unwrap();
+        context.move_next().expect("VM operation should succeed");
         assert_eq!(context.instruction_pointer(), 1);
         assert_eq!(
-            context.current_instruction().unwrap().opcode(),
+            context
+                .current_instruction()
+                .expect("intermediate value should exist")
+                .opcode(),
             OpCode::PUSH2
         );
 
-        context.move_next().unwrap();
+        context.move_next().expect("VM operation should succeed");
         assert_eq!(context.instruction_pointer(), 2);
-        assert_eq!(context.current_instruction().unwrap().opcode(), OpCode::ADD);
+        assert_eq!(
+            context
+                .current_instruction()
+                .expect("intermediate value should exist")
+                .opcode(),
+            OpCode::ADD
+        );
 
-        context.move_next().unwrap();
+        context.move_next().expect("VM operation should succeed");
         assert_eq!(context.instruction_pointer(), 3);
         assert!(context.current_instruction().is_err());
     }
@@ -810,7 +805,7 @@ mod tests {
         // Create a try stack with one context
         use crate::exception_handling::{ExceptionHandlingContext, ExceptionHandlingState};
         let mut try_stack = Vec::new();
-        let try_context = ExceptionHandlingContext::new(0, 10, 10, 20, 30);
+        let try_context = ExceptionHandlingContext::new(0, 10, 10, ADDRESS_SIZE, 30);
         try_stack.push(try_context);
 
         // Set the try stack
@@ -818,9 +813,21 @@ mod tests {
 
         // Check that the try stack is set
         assert!(context.try_stack().is_some());
-        assert_eq!(context.try_stack().unwrap().len(), 1);
-        assert_eq!(context.try_stack().unwrap()[0].catch_pointer, 10);
-        assert_eq!(context.try_stack().unwrap()[0].finally_pointer, 20);
+        assert_eq!(
+            context
+                .try_stack()
+                .expect("intermediate value should exist")
+                .len(),
+            1
+        );
+        assert_eq!(
+            context.try_stack().expect("VM operation should succeed")[0].catch_pointer,
+            10
+        );
+        assert_eq!(
+            context.try_stack().expect("Operation failed")[0].finally_pointer,
+            ADDRESS_SIZE
+        );
 
         // Modify the try stack
         if let Some(stack) = context.try_stack_mut() {
@@ -830,7 +837,7 @@ mod tests {
 
         // Check that the modification was applied
         assert_eq!(
-            context.try_stack().unwrap()[0].state,
+            context.try_stack().expect("Operation failed")[0].state,
             ExceptionHandlingState::Catch
         );
     }
@@ -848,16 +855,46 @@ mod tests {
         let mut slot = Slot::new(items, reference_counter);
 
         assert_eq!(slot.len(), 3);
-        assert_eq!(slot.get(0).unwrap().as_int().unwrap(), 1);
-        assert_eq!(slot.get(1).unwrap().as_int().unwrap(), 2);
-        assert_eq!(slot.get(2).unwrap().as_int().unwrap(), 3);
+        assert_eq!(
+            slot.first()
+                .ok_or("Empty collection")?
+                .as_int()
+                .expect("VM operation should succeed"),
+            1
+        );
+        assert_eq!(
+            slot.get(1)
+                .ok_or("Index out of bounds")?
+                .as_int()
+                .expect("VM operation should succeed"),
+            2
+        );
+        assert_eq!(
+            slot.get(2)
+                .ok_or("Index out of bounds")?
+                .as_int()
+                .expect("VM operation should succeed"),
+            3
+        );
 
         slot.set(1, StackItem::from_int(42));
-        assert_eq!(slot.get(1).unwrap().as_int().unwrap(), 42);
+        assert_eq!(
+            slot.get(1)
+                .ok_or("Index out of bounds")?
+                .as_int()
+                .expect("VM operation should succeed"),
+            42
+        );
 
         slot.set(5, StackItem::from_int(5));
         assert_eq!(slot.len(), 6);
-        assert_eq!(slot.get(5).unwrap().as_int().unwrap(), 5);
+        assert_eq!(
+            slot.get(5)
+                .ok_or("Index out of bounds")?
+                .as_int()
+                .expect("VM operation should succeed"),
+            5
+        );
 
         slot.clear_references();
         assert_eq!(slot.len(), 0);
@@ -879,11 +916,15 @@ mod tests {
         let context = ExecutionContext::new(script, -1, &reference_counter);
 
         // Test current instruction
-        let current = context.current_instruction().unwrap();
+        let current = context
+            .current_instruction()
+            .expect("VM operation should succeed");
         assert_eq!(current.opcode(), OpCode::PUSH1);
 
         // Test next instruction
-        let next = context.next_instruction().unwrap();
+        let next = context
+            .next_instruction()
+            .expect("VM operation should succeed");
         assert_eq!(next.opcode(), OpCode::PUSH2);
     }
 
@@ -910,7 +951,12 @@ mod tests {
         // Check that the clone has the same script and stack
         assert_eq!(clone.script().to_array(), context.script().to_array());
         assert_eq!(
-            clone.evaluation_stack().peek(0).unwrap().as_int().unwrap(),
+            clone
+                .evaluation_stack()
+                .peek(0)
+                .expect("intermediate value should exist")
+                .as_int()
+                .expect("VM operation should succeed"),
             BigInt::from(42)
         );
 
@@ -938,28 +984,28 @@ mod tests {
         // Test getting state with type inference
         let state = context.get_state::<i32>("test");
         {
-            let mut value = state.write().unwrap();
+            let mut value = state.write().ok()?;
             *value = 42;
         }
 
         // Get the same state again - should be the same instance
         let state2 = context.get_state::<i32>("test");
         {
-            let value = state2.read().unwrap();
+            let value = state2.read().ok()?;
             assert_eq!(*value, 42);
         }
 
         // Test factory-created state
         let state_with_factory = context.get_state_with_factory("test2", || "hello".to_string());
         {
-            let value = state_with_factory.read().unwrap();
+            let value = state_with_factory.read().ok()?;
             assert_eq!(*value, "hello");
         }
 
         // Test different type has different state
         let int_state = context.get_state::<i32>("test3");
         {
-            let value = int_state.read().unwrap();
+            let value = int_state.read().ok()?;
             assert_eq!(*value, 0); // Default value
         }
     }
@@ -975,15 +1021,14 @@ mod tests {
         // Test getting shared state
         let state = context.get_shared_state::<i32>("test");
         {
-            let mut value = state.write().unwrap();
+            let mut value = state.write().ok()?;
             *value = 100;
         }
 
         // Test factory-created shared state with SAME key "test"
-        // Since the key already exists, factory should NOT be called and existing value (100) should be returned
         let state_with_factory = context.get_shared_state_with_factory("test", || 200);
         {
-            let value = state_with_factory.read().unwrap();
+            let value = state_with_factory.read().ok()?;
             assert_eq!(*value, 100); // Should return existing value, not factory value
         }
 
@@ -991,7 +1036,7 @@ mod tests {
         // Since this key doesn't exist, factory SHOULD be called
         let state_with_factory_new = context.get_shared_state_with_factory("test2", || 300);
         {
-            let value = state_with_factory_new.read().unwrap();
+            let value = state_with_factory_new.read().ok()?;
             assert_eq!(*value, 300); // Should return factory value for new key
         }
 
@@ -999,20 +1044,20 @@ mod tests {
         let clone = context.clone();
         let shared_state = clone.get_shared_state::<i32>("test");
         {
-            let value = shared_state.read().unwrap();
+            let value = shared_state.read().ok()?;
             assert_eq!(*value, 100); // Should be shared
         }
 
         // Modify shared state from clone
         {
-            let mut value = shared_state.write().unwrap();
+            let mut value = shared_state.write().ok()?;
             *value = 200;
         }
 
         // Check that original context sees the change
         let original_state = context.get_shared_state::<i32>("test");
         {
-            let value = original_state.read().unwrap();
+            let value = original_state.read().ok()?;
             assert_eq!(*value, 200); // Should be updated
         }
     }

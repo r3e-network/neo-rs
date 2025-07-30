@@ -218,8 +218,6 @@ impl<'a> IntoIterator for &'a mut JArray {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_jarray_new() {
         let array = JArray::new();
@@ -263,7 +261,7 @@ mod tests {
         array.add(Some(JToken::String("second".to_string())));
         array.add(Some(JToken::String("third".to_string())));
 
-        let removed = array.remove(1).unwrap();
+        let removed = array.remove(1);
         assert_eq!(removed, Some(JToken::String("second".to_string())));
         assert_eq!(array.len(), 2);
         assert_eq!(array.get(1), Some(&JToken::String("third".to_string())));
@@ -329,7 +327,7 @@ mod tests {
             _ => panic!("Expected JToken::Array"),
         }
 
-        let array2 = JArray::from_jtoken(token_clone).unwrap();
+        let array2 = JArray::from_jtoken(token_clone).expect("operation should succeed");
         assert_eq!(array, array2);
     }
 }

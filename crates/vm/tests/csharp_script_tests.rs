@@ -1,11 +1,9 @@
 // VM Script Tests - Converted from C# Neo.VM.Tests/UT_Script.cs
-// Tests the Script functionality for the Neo VM
 
 use neo_vm::{op_code::OpCode, script::Script, script_builder::ScriptBuilder};
 
 #[test]
 fn test_script_conversion() {
-    // Test script conversion - C# TestConversion()
     let mut builder = ScriptBuilder::new();
     builder.emit_opcode(OpCode::PUSH0);
     builder.emit_opcode(OpCode::CALL);
@@ -62,7 +60,6 @@ fn test_relaxed_mode() {
 
 #[test]
 fn test_script_parsing() {
-    // Test script parsing - C# TestParse()
     let mut builder = ScriptBuilder::new();
     builder.emit_opcode(OpCode::PUSH0);
     builder.emit_opcode(OpCode::CALL);
@@ -72,13 +69,11 @@ fn test_script_parsing() {
 
     let script = Script::new_relaxed(builder.to_array());
 
-    // Test first instruction (PUSH0)
     let ins = script.get_instruction(0).unwrap();
     assert_eq!(ins.opcode(), OpCode::PUSH0);
     assert_eq!(ins.operand().len(), 0);
     assert_eq!(ins.size(), 1);
 
-    // Test second instruction (CALL with operand)
     let ins = script.get_instruction(1).unwrap();
     assert_eq!(ins.opcode(), OpCode::CALL);
     // The operand and size might be parsed differently in Rust implementation
@@ -133,7 +128,6 @@ fn test_script_with_pushdata() {
     // Test script with PUSHDATA instructions
     let mut builder = ScriptBuilder::new();
 
-    // Add some data that will use PUSHDATA1
     let data = vec![0x42; 100]; // 100 bytes
     builder.emit_push(&data);
     builder.emit_opcode(OpCode::RET);
@@ -166,7 +160,6 @@ fn test_script_with_pushdata() {
         }
     }
 
-    // Should have at least one instruction (the push operation)
     assert!(
         instruction_count >= 1,
         "Should have at least one instruction"

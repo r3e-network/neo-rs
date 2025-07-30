@@ -41,7 +41,7 @@ pub struct CliArgs {
     pub plugins: Vec<String>,
 
     /// The verbose log level
-    #[arg(long = "verbose", value_enum, default_value = "info")]
+    #[arg(long = "verbose", value_enum, DEFAULT_VALUE = "info")]
     pub verbose: LogLevel,
 
     /// Run in daemon mode (background)
@@ -49,7 +49,7 @@ pub struct CliArgs {
     pub daemon: bool,
 
     /// Network to connect to
-    #[arg(long = "network", value_enum, default_value = "mainnet")]
+    #[arg(long = "network", value_enum, DEFAULT_VALUE = "mainnet")]
     pub network: Network,
 
     /// RPC server port
@@ -160,8 +160,6 @@ impl CliArgs {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_cli_args_default() {
         let args = CliArgs::parse_from(&["neo-cli"]);

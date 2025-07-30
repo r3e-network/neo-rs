@@ -23,7 +23,10 @@ pub use header_cache::HeaderCache;
 pub use mempool::{MemoryPool, MempoolConfig, PooledTransaction};
 pub use verify_result::VerifyResult;
 
-pub use neo_config::{LedgerConfig, NetworkType, SECONDS_PER_BLOCK, MILLISECONDS_PER_BLOCK, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
+pub use neo_config::{
+    LedgerConfig, NetworkType, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK, MILLISECONDS_PER_BLOCK,
+    SECONDS_PER_BLOCK,
+};
 
 use neo_core::UInt160;
 use serde::{Deserialize, Serialize};
@@ -284,7 +287,7 @@ impl Default for BlockchainStats {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result, ValidationResult, VerificationResult, BlockchainStats};
+    use super::{BlockchainStats, Error, Result, ValidationResult, VerificationResult};
 
     #[test]
     fn test_validation_result() {
@@ -320,7 +323,10 @@ mod tests {
         let config = LedgerConfig::default();
         assert_eq!(config.max_block_size, MAX_BLOCK_SIZE);
         assert_eq!(config.milliseconds_per_block, MILLISECONDS_PER_BLOCK);
-        assert_eq!(config.max_transactions_per_block, MAX_TRANSACTIONS_PER_BLOCK);
+        assert_eq!(
+            config.max_transactions_per_block,
+            MAX_TRANSACTIONS_PER_BLOCK
+        );
     }
 
     #[test]
@@ -346,7 +352,9 @@ pub struct Ledger {
 impl Ledger {
     /// Creates a new Ledger instance
     pub async fn new(config: LedgerConfig) -> Result<Self> {
-        let blockchain = Arc::new(Blockchain::new_with_storage_suffix(NetworkType::MainNet, Some("ledger-main")).await?);
+        let blockchain = Arc::new(
+            Blockchain::new_with_storage_suffix(NetworkType::MainNet, Some("ledger-main")).await?,
+        );
 
         Ok(Self {
             config,
@@ -357,7 +365,8 @@ impl Ledger {
 
     /// Creates a new Ledger instance with specific network
     pub async fn new_with_network(config: LedgerConfig, network: NetworkType) -> Result<Self> {
-        let blockchain = Arc::new(Blockchain::new_with_storage_suffix(network, Some("ledger")).await?);
+        let blockchain =
+            Arc::new(Blockchain::new_with_storage_suffix(network, Some("ledger")).await?);
 
         Ok(Self {
             config,

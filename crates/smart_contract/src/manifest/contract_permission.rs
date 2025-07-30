@@ -5,6 +5,7 @@
 
 use super::{ContractGroup, ContractManifest, WildcardContainer};
 use crate::{Error, Result};
+use neo_config::ADDRESS_SIZE;
 use neo_core::UInt160;
 use neo_cryptography::ecc::ECPoint;
 use serde::{Deserialize, Serialize};
@@ -24,7 +25,7 @@ pub struct ContractPermission {
 #[serde(untagged)]
 pub enum ContractPermissionDescriptor {
     /// Wildcard - applies to all contracts.
-    Wildcard(String), // "*"
+    Wildcard(String),
 
     /// Specific contract hash.
     Hash(UInt160),
@@ -69,9 +70,7 @@ impl ContractPermission {
             ContractPermissionDescriptor::Wildcard(_) => true,
             ContractPermissionDescriptor::Hash(hash) => hash == contract_hash,
             ContractPermissionDescriptor::Group(_group_key) => {
-                // Production-ready group permission check (matches C# ContractPermission.IsAllowed exactly)
                 // Group permission requires access to the application engine to verify group membership
-                // For now, return false as we don't have engine context here
                 // This would be properly implemented when engine context is available
                 false
             }
@@ -91,7 +90,7 @@ impl ContractPermission {
         // Contract descriptor size
         match &self.contract {
             ContractPermissionDescriptor::Wildcard(s) => size += s.len(),
-            ContractPermissionDescriptor::Hash(_) => size += 20, // UInt160 size
+            ContractPermissionDescriptor::Hash(_) => size += ADDRESS_SIZE, // UInt160 size
             ContractPermissionDescriptor::Group(_) => size += 33, // Compressed public key size
         }
 
@@ -168,7 +167,6 @@ impl ContractPermissionDescriptor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use neo_cryptography::ecc::{ECCurve, ECPoint};
 
     #[test]
@@ -188,7 +186,7 @@ mod tests {
         let permission = ContractPermission::for_contract(contract_hash, methods);
 
         assert!(permission.allows_contract(&contract_hash));
-        assert!(!permission.allows_contract(&UInt160::from_bytes(&[1u8; 20]).unwrap()));
+        assert!(!permission.allows_contract(&UInt160::from_bytes(&[1u8; ADDRESS_SIZE]).unwrap()));
         assert!(permission.allows_method("method1"));
         assert!(permission.allows_method("method2"));
         assert!(!permission.allows_method("method3"));

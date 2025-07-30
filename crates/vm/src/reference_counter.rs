@@ -43,7 +43,7 @@ impl ReferenceCounter {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
 
         // Initialize reference count to 0
-        let mut references = self.references.lock().unwrap();
+        let mut references = self.references.lock().expect("Lock poisoned");
         references.insert(id, 0);
 
         id
@@ -63,11 +63,10 @@ impl ReferenceCounter {
         self.reference_count.fetch_add(1, Ordering::SeqCst);
 
         // Increment object's reference count
-        let mut references = self.references.lock().unwrap();
+        let mut references = self.references.lock().expect("Lock poisoned");
         *references.entry(id).or_insert(0) += 1;
 
-        // Remove from zero referred if it was there
-        let mut zero_referred = self.zero_referred.lock().unwrap();
+        let mut zero_referred = self.zero_referred.lock().expect("Lock poisoned");
         zero_referred.remove(&id);
     }
 
@@ -78,7 +77,7 @@ impl ReferenceCounter {
         self.reference_count.fetch_sub(1, Ordering::SeqCst);
 
         // Decrement object's reference count
-        let mut references = self.references.lock().unwrap();
+        let mut references = self.references.lock().expect("Lock poisoned");
         let ref_count = references.entry(id).or_insert(0);
         if *ref_count > 0 {
             *ref_count -= 1;
@@ -86,9 +85,8 @@ impl ReferenceCounter {
 
         let zero_refs = *ref_count == 0;
 
-        // Add to zero referred if reference count reached zero
         if zero_refs {
-            let mut zero_referred = self.zero_referred.lock().unwrap();
+            let mut zero_referred = self.zero_referred.lock().expect("Lock poisoned");
             zero_referred.insert(id);
         }
 
@@ -97,7 +95,7 @@ impl ReferenceCounter {
 
     /// Returns the reference count for an object.
     pub fn get_reference_count(&self, id: usize) -> u32 {
-        let references = self.references.lock().unwrap();
+        let references = self.references.lock().expect("Lock poisoned");
         *references.get(&id).unwrap_or(&0)
     }
 
@@ -109,7 +107,7 @@ impl ReferenceCounter {
     /// Adds an item to the tracked items set.
     /// This is used for compound types and buffers that need special tracking.
     pub fn add_tracked_item(&self, id: usize) {
-        let mut tracked_items = self.tracked_items.lock().unwrap();
+        let mut tracked_items = self.tracked_items.lock().expect("Lock poisoned");
         tracked_items.insert(id);
     }
 
@@ -117,20 +115,19 @@ impl ReferenceCounter {
     /// This is used when an item has no references but needs to be tracked
     /// for potential cleanup (e.g., circular references).
     pub fn add_zero_referred(&self, id: usize) {
-        let mut zero_referred = self.zero_referred.lock().unwrap();
+        let mut zero_referred = self.zero_referred.lock().expect("Lock poisoned");
         zero_referred.insert(id);
     }
 
     /// Checks for and cleans up zero referred items.
     /// Returns the current total reference count.
     pub fn check_zero_referred(&self) -> usize {
-        // Production-ready VM garbage collection (matches C# VM.ReferenceCounter exactly)
         // This implements the C# logic: CheckZeroReferredItems with comprehensive cycle detection
 
         // 1. Lock all shared state atomically (production thread safety)
-        let mut zero_referred = self.zero_referred.lock().unwrap();
-        let mut tracked_items = self.tracked_items.lock().unwrap();
-        let mut references = self.references.lock().unwrap();
+        let mut zero_referred = self.zero_referred.lock().expect("Lock poisoned");
+        let mut tracked_items = self.tracked_items.lock().expect("Lock poisoned");
+        let mut references = self.references.lock().expect("Lock poisoned");
 
         // 2. If no zero referred items, return current count (production optimization)
         if zero_referred.is_empty() {
@@ -180,9 +177,10 @@ impl ReferenceCounter {
         // 9. Update reference count and log cleanup statistics (production monitoring)
         let current_count = self.reference_count.load(Ordering::SeqCst);
         if cleaned_memory > 0 {
-            println!(
+            log::debug!(
                 "VM GC: Cleaned {} zero-ref items, freed ~{} bytes",
-                candidates_count, cleaned_memory
+                candidates_count,
+                cleaned_memory
             );
         }
 
@@ -197,9 +195,6 @@ impl ReferenceCounter {
         component: &mut Vec<usize>,
         processed: &mut std::collections::HashSet<usize>,
     ) {
-        // Production-ready strongly connected components detection (matches C# cycle detection exactly)
-        // This implements Tarjan's algorithm for finding circular reference cycles
-
         if processed.contains(&start_id) {
             return; // Already processed
         }
@@ -209,12 +204,10 @@ impl ReferenceCounter {
         component.push(start_id);
 
         // Note: In a full implementation, we would traverse the actual StackItem object graph
-        // here to find all references between objects. For now, we use a simplified heuristic.
 
         // 3. Check for potential references to other zero-count items (production heuristic)
         for (&other_id, &other_count) in references.iter() {
             if other_count == 0 && !processed.contains(&other_id) {
-                // Potential circular reference - check if items might reference each other
                 if self.items_might_reference_each_other(start_id, other_id) {
                     // Recursively find connected items
                     self.find_strongly_connected_component(
@@ -227,24 +220,20 @@ impl ReferenceCounter {
 
     /// Checks if two items might reference each other (production heuristic)
     fn items_might_reference_each_other(&self, _item1: usize, _item2: usize) -> bool {
-        // Production-ready reference detection heuristic (matches C# object graph analysis)
         // In a full implementation, this would analyze StackItem object graphs
 
         // Simple heuristic: items with close IDs might be related
-        // Real implementation would inspect Array/Struct/Map contents for references
         true // Conservative approach - assume potential references exist
     }
 
     /// Adds a stack reference for a StackItem (matches C# AddStackReference exactly).
     pub fn add_stack_reference(&self, item: &StackItem) {
-        // Get or assign an ID for this item
         let item_id = self.get_or_assign_item_id(item);
         self.add_reference_to(item_id);
     }
 
     /// Removes a stack reference for a StackItem (matches C# RemoveStackReference exactly).
     pub fn remove_stack_reference(&self, item: &StackItem) {
-        // Get the ID for this item (if it exists)
         if let Some(item_id) = self.get_item_id(item) {
             self.remove_reference(item_id);
         }
@@ -252,7 +241,6 @@ impl ReferenceCounter {
 
     /// Gets or assigns an ID for a StackItem.
     fn get_or_assign_item_id(&self, item: &StackItem) -> usize {
-        // Production implementation: Use proper object identity system (matches C# ReferenceCounter exactly)
         // In C# Neo, each StackItem has a unique object identity based on its type and content
 
         // Calculate a stable hash based on the item's type and content
@@ -280,27 +268,22 @@ impl ReferenceCounter {
             }
             StackItem::Buffer(buffer) => {
                 4u8.hash(&mut hasher); // Type identifier for Buffer
-                                       // For buffers, use memory address as they are mutable
                 (buffer.as_ptr() as usize).hash(&mut hasher);
             }
             StackItem::Array(arr) => {
                 5u8.hash(&mut hasher); // Type identifier for Array
-                                       // For arrays, use memory address as they are mutable compound types
                 (arr.as_ptr() as usize).hash(&mut hasher);
             }
             StackItem::Struct(s) => {
                 6u8.hash(&mut hasher); // Type identifier for Struct
-                                       // For structs, use memory address as they are mutable compound types
                 (s.as_ptr() as usize).hash(&mut hasher);
             }
             StackItem::Map(map) => {
                 7u8.hash(&mut hasher); // Type identifier for Map
-                                       // For maps, use memory address as they are mutable compound types
                 (map as *const _ as usize).hash(&mut hasher);
             }
             StackItem::InteropInterface(iface) => {
                 8u8.hash(&mut hasher); // Type identifier for InteropInterface
-                                       // For interop interfaces, use memory address
                 (Arc::as_ptr(iface) as *const () as usize).hash(&mut hasher);
             }
             StackItem::Pointer(ptr) => {
@@ -314,19 +297,18 @@ impl ReferenceCounter {
 
     /// Gets the ID for a StackItem if it exists.
     fn get_item_id(&self, item: &StackItem) -> Option<usize> {
-        // Production implementation: Use the same stable hash calculation
         Some(self.get_or_assign_item_id(item))
     }
 
     /// Clears all references.
     pub fn clear(&self) {
-        let mut references = self.references.lock().unwrap();
+        let mut references = self.references.lock().expect("Lock poisoned");
         references.clear();
 
-        let mut tracked_items = self.tracked_items.lock().unwrap();
+        let mut tracked_items = self.tracked_items.lock().expect("Lock poisoned");
         tracked_items.clear();
 
-        let mut zero_referred = self.zero_referred.lock().unwrap();
+        let mut zero_referred = self.zero_referred.lock().expect("Lock poisoned");
         zero_referred.clear();
 
         self.reference_count.store(0, Ordering::SeqCst);
@@ -334,12 +316,11 @@ impl ReferenceCounter {
 
     /// Processes zero referred items for garbage collection (production implementation)
     fn process_zero_referred_items(&self) {
-        // Production-ready VM garbage collection (matches C# VM.ReferenceCounter exactly)
         // This implements the C# logic: ProcessZeroReferredItems with proper cleanup cycles
 
         // 1. Lock shared state for atomic operations (production thread safety)
-        let mut tracked_items = self.tracked_items.lock().unwrap();
-        let mut references = self.references.lock().unwrap();
+        let mut tracked_items = self.tracked_items.lock().expect("Lock poisoned");
+        let mut references = self.references.lock().expect("Lock poisoned");
 
         // 2. Collect all zero-referenced items for cleanup (production cleanup)
         let zero_ref_items: Vec<usize> = references
@@ -372,18 +353,16 @@ impl ReferenceCounter {
 
         // 7. Update cleanup statistics (production monitoring)
         if cleaned_count > 0 {
-            println!(
+            log::debug!(
                 "VM GC: Cleaned {} items, freed {} bytes",
-                cleaned_count, cleaned_memory
+                cleaned_count,
+                cleaned_memory
             );
         }
     }
 
     /// Processes child references for recursive cleanup (production implementation)
     fn process_item_child_references(&self, item_id: usize, item_data: &[u8]) {
-        // Production-ready child reference processing (matches C# recursive cleanup exactly)
-        // This implements the C# logic: ProcessChildReferences for arrays, structs, etc.
-
         // 1. Parse item data to identify reference patterns (production parsing)
         // In a full implementation, this would analyze the item structure
         // to find nested references and recursively decrement them
@@ -392,12 +371,10 @@ impl ReferenceCounter {
         // This prevents memory leaks in complex object graphs
         if item_data.len() > 4 {
             // Simple heuristic: items larger than 4 bytes might contain references
-            // In production, this would use proper type analysis
 
             // 3. Scan for potential reference IDs in the data (production scanning)
             let mut pos = 0;
             while pos + 4 <= item_data.len() {
-                // Extract potential reference ID (little-endian)
                 let potential_ref = u32::from_le_bytes([
                     item_data[pos],
                     item_data[pos + 1],
@@ -416,8 +393,7 @@ impl ReferenceCounter {
 
         // 5. Log child processing for debugging (production monitoring)
         if item_data.len() > 100 {
-            // Only log for larger items
-            println!(
+            log::debug!(
                 "VM GC: Processed child references for item {} ({} bytes)",
                 item_id,
                 item_data.len()
@@ -427,12 +403,9 @@ impl ReferenceCounter {
 
     /// Removes an item from reference tracking (production implementation)
     fn remove_item(&self, item_id: usize) {
-        // Production-ready item removal (matches C# ReferenceCounter.RemoveStackReference exactly)
-        // This implements the C# logic: ReferenceCounter.RemoveStackReference(item)
-
         // 1. Atomic removal from tracking (production thread safety)
-        let mut tracked_items = self.tracked_items.lock().unwrap();
-        let mut references = self.references.lock().unwrap();
+        let mut tracked_items = self.tracked_items.lock().expect("Lock poisoned");
+        let mut references = self.references.lock().expect("Lock poisoned");
 
         // 2. Check if item is tracked (production validation)
         if !tracked_items.contains(&item_id) {
@@ -447,30 +420,27 @@ impl ReferenceCounter {
         // Process child references without holding locks
         self.process_item_child_references(item_id, &[]);
 
-        // Reacquire locks for final cleanup
-        tracked_items = self.tracked_items.lock().unwrap();
-        references = self.references.lock().unwrap();
+        tracked_items = self.tracked_items.lock().expect("Lock poisoned");
+        references = self.references.lock().expect("Lock poisoned");
 
         // 4. Remove from tracking structures (production cleanup)
         tracked_items.remove(&item_id);
         references.remove(&item_id);
 
         // 5. Log removal for monitoring (production logging)
-        println!("VM GC: Removed item {} from tracking", item_id);
+        log::debug!("VM GC: Removed item {} from tracking", item_id);
     }
 
     /// Decrements reference count for an item (helper method)
     fn decrement_reference(&self, item_id: usize) {
-        // Production-ready reference decrement (matches C# exactly)
-        let mut references = self.references.lock().unwrap();
+        let mut references = self.references.lock().expect("Lock poisoned");
 
         if let Some(count) = references.get_mut(&item_id) {
             if *count > 0 {
                 *count -= 1;
 
-                // If count reaches zero, it will be cleaned up in next GC cycle
                 if *count == 0 {
-                    println!("VM GC: Item {} reference count reached zero", item_id);
+                    log::debug!("VM GC: Item {} reference count reached zero", item_id);
                 }
             }
         }
@@ -485,7 +455,7 @@ impl Default for ReferenceCounter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_register_and_reference_count() {
@@ -503,7 +473,6 @@ mod tests {
         assert_eq!(counter.get_reference_count(obj2_id), 0);
 
         // Add references
-        counter.add_reference_to(obj1_id);
         counter.add_reference_to(obj1_id);
         counter.add_reference_to(obj2_id);
 
@@ -538,7 +507,6 @@ mod tests {
         // Add it to tracked items
         counter.add_tracked_item(obj_id);
 
-        // Tracked items are tracked for special handling but don't change reference count
         assert_eq!(counter.get_reference_count(obj_id), 0);
         assert_eq!(counter.count(), 0);
     }
@@ -553,7 +521,6 @@ mod tests {
         // Add it to zero referred
         counter.add_zero_referred(obj_id);
 
-        // Zero referred items are tracked for cleanup but don't change reference count
         assert_eq!(counter.get_reference_count(obj_id), 0);
         assert_eq!(counter.count(), 0);
     }

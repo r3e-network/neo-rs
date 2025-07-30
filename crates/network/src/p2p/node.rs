@@ -87,7 +87,6 @@ impl P2PNode {
                 reason: format!("Invalid P2P config: {}", e) 
             })?;
 
-        // Start listening for incoming connections
         let listener = TcpListener::bind(self.config.listen_address).await
             .map_err(|e| NetworkError::ConnectionFailed { 
                 address: self.config.listen_address, 
@@ -140,7 +139,6 @@ impl P2PNode {
     pub async fn connect_peer(&self, address: SocketAddr) -> Result<()> {
         info!("Connecting to peer: {}", address);
 
-        // Check if already connected
         if self.connections.read().await.contains_key(&address) {
             warn!("Already connected to {}", address);
             return Ok(());
@@ -439,7 +437,6 @@ impl P2PNode {
             start_height,
         });
 
-        // Critical: Emit peer height for sync manager
         let _ = self.event_tx.send(P2PEvent::PeerHeight {
             address,
             height: start_height,
@@ -520,7 +517,7 @@ impl P2PNode {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Message, Peer, NetworkError};
     use crate::NodeInfo;
 
     #[tokio::test]

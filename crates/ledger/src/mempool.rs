@@ -4,6 +4,7 @@
 //! that exactly matches the C# Neo.Network.P2P.MemoryPool functionality.
 
 use crate::{Error, Result};
+use neo_config::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE, MAX_TRANSACTION_SIZE};
 use neo_core::{Transaction, UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -31,12 +32,12 @@ pub struct MempoolConfig {
 impl Default for MempoolConfig {
     fn default() -> Self {
         Self {
-            max_transactions: 50000,             // Matches C# Neo default
-            max_memory_usage: 100 * 1024 * 1024, // 100MB
-            transaction_timeout: 120,            // 2 minutes
-            min_fee_per_byte: 1000,              // 0.001 GAS per byte
+            max_transactions: 50000, // Matches C# Neo default
+            max_memory_usage: 100 * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE,
+            transaction_timeout: 120, // 2 minutes
+            min_fee_per_byte: 1000,   // 0.001 GAS per byte
             enable_replacement: true,
-            max_transaction_size: 102400, // 100KB
+            max_transaction_size: MAX_TRANSACTION_SIZE,
         }
     }
 }
@@ -186,8 +187,6 @@ pub struct DefaultTxVerifier;
 
 impl TxVerifier for DefaultTxVerifier {
     fn verify_transaction(&self, transaction: &Transaction) -> Result<bool> {
-        // Full transaction validation (matches C# Neo verification)
-
         // 1. Check basic format
         if transaction.script().is_empty() {
             debug!("Transaction rejected: empty script");
@@ -214,14 +213,13 @@ impl TxVerifier for DefaultTxVerifier {
 
         // 5. Check transaction size limits
         let tx_size = transaction.size();
-        if tx_size > 102400 {
-            // 100KB max transaction size (C# Neo default)
+        if tx_size > MAX_TRANSACTION_SIZE {
             debug!("Transaction rejected: size {} exceeds limit", tx_size);
             return Ok(false);
         }
 
         // 6. Check script length limits
-        if transaction.script().len() > 65536 {
+        if transaction.script().len() > MAX_SCRIPT_LENGTH {
             // 64KB max script size
             debug!("Transaction rejected: script too large");
             return Ok(false);
@@ -256,14 +254,12 @@ impl TxVerifier for DefaultTxVerifier {
     ) -> Result<bool> {
         let tx_hash = transaction.hash()?;
 
-        // Check for duplicate transaction hash
         for pool_tx in pool_transactions {
             if pool_tx.hash()? == tx_hash {
                 debug!("Transaction conflict: duplicate hash {}", tx_hash);
                 return Ok(true); // Conflict found
             }
 
-            // Check for conflicting signers with same nonce (if using nonce-based replay protection)
             for signer in transaction.signers() {
                 for pool_signer in pool_tx.signers() {
                     if signer.account == pool_signer.account {
@@ -383,7 +379,10 @@ impl MemoryPool {
 
         // 5. Check for conflicts
         {
-            let transactions_guard = self.transactions.read().unwrap();
+            let transactions_guard = self
+                .transactions
+                .read()
+                .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?;
             let pool_txs: Vec<&Transaction> = transactions_guard
                 .values()
                 .map(|pooled| &pooled.transaction)
@@ -416,7 +415,10 @@ impl MemoryPool {
 
     /// Removes a transaction from the pool (matches C# TryRemove)
     pub fn try_remove(&self, tx_hash: &UInt256) -> Result<Option<Transaction>> {
-        let mut transactions = self.transactions.write().unwrap();
+        let mut transactions = self
+            .transactions
+            .write()
+            .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?;
 
         if let Some(pooled_tx) = transactions.remove(tx_hash) {
             drop(transactions);
@@ -439,26 +441,35 @@ impl MemoryPool {
 
     /// Checks if a transaction exists in the pool (matches C# ContainsKey)
     pub fn contains(&self, tx_hash: &UInt256) -> bool {
-        self.transactions.read().unwrap().contains_key(tx_hash)
+        self.transactions
+            .read()
+            .map(|guard| guard.contains_key(tx_hash))
+            .unwrap_or(false)
     }
 
     /// Gets a transaction from the pool (matches C# TryGetValue)
     pub fn get_transaction(&self, tx_hash: &UInt256) -> Option<Transaction> {
         self.transactions
             .read()
-            .unwrap()
+            .expect("Operation failed")
             .get(tx_hash)
             .map(|pooled_tx| pooled_tx.transaction.clone())
     }
 
     /// Gets transactions for block creation (matches C# GetSortedTransactions)
     pub fn get_sorted_transactions(&self, max_count: usize) -> Vec<Transaction> {
-        let transactions_guard = self.transactions.read().unwrap();
-        let priority_queue_guard = self.priority_queue.read().unwrap();
+        let transactions_guard = match self.transactions.read() {
+            Ok(guard) => guard,
+            Err(_) => return Vec::new(),
+        };
+        let priority_queue_guard = match self.priority_queue.read() {
+            Ok(guard) => guard,
+            Err(_) => return Vec::new(),
+        };
 
         let mut result = Vec::new();
         let mut total_size = 0usize;
-        let max_block_size = 1024 * 1024; // 1MB max block size
+        let max_block_size = MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE; // 1MB max block size
 
         // Iterate from highest to lowest priority
         for (_priority, tx_hashes) in priority_queue_guard.iter().rev() {
@@ -486,7 +497,7 @@ impl MemoryPool {
     pub fn get_verified_transactions(&self) -> Vec<Transaction> {
         self.transactions
             .read()
-            .unwrap()
+            .expect("Operation failed")
             .values()
             .map(|pooled_tx| pooled_tx.transaction.clone())
             .collect()
@@ -496,12 +507,22 @@ impl MemoryPool {
     pub fn invalidate_transactions_from_sender(&self, sender: &UInt160) -> Result<Vec<UInt256>> {
         let mut invalidated = Vec::new();
 
-        if let Some(tx_hashes) = self.sender_map.read().unwrap().get(sender) {
+        if let Some(tx_hashes) = self
+            .sender_map
+            .read()
+            .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?
+            .get(sender)
+        {
             for tx_hash in tx_hashes.clone() {
                 if let Some(_) = self.try_remove(&tx_hash)? {
                     invalidated.push(tx_hash);
                     // Notify verifier of removal
-                    if let Some(pooled_tx) = self.transactions.read().unwrap().get(&tx_hash) {
+                    if let Some(pooled_tx) = self
+                        .transactions
+                        .read()
+                        .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?
+                        .get(&tx_hash)
+                    {
                         let _ = self
                             .verifier
                             .on_transaction_removed(&pooled_tx.transaction, RemovalReason::Invalid);
@@ -516,7 +537,10 @@ impl MemoryPool {
     /// Clears all transactions from pool (matches C# Clear)
     pub fn clear(&self) -> Result<()> {
         {
-            let transactions = self.transactions.read().unwrap();
+            let transactions = self
+                .transactions
+                .read()
+                .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?;
             for (_, pooled_tx) in transactions.iter() {
                 let _ = self
                     .verifier
@@ -524,12 +548,24 @@ impl MemoryPool {
             }
         }
 
-        self.transactions.write().unwrap().clear();
-        self.priority_queue.write().unwrap().clear();
-        self.sender_map.write().unwrap().clear();
+        self.transactions
+            .write()
+            .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?
+            .clear();
+        self.priority_queue
+            .write()
+            .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?
+            .clear();
+        self.sender_map
+            .write()
+            .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?
+            .clear();
 
         // Reset statistics
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = self
+            .stats
+            .write()
+            .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?;
         *stats = MempoolStats::default();
 
         info!("Cleared all transactions from mempool");
@@ -538,19 +574,25 @@ impl MemoryPool {
 
     /// Gets pool statistics (matches C# MemoryPool properties)
     pub fn get_stats(&self) -> MempoolStats {
-        self.stats.read().unwrap().clone()
+        self.stats
+            .read()
+            .map(|guard| guard.clone())
+            .unwrap_or_default()
     }
 
     /// Gets current transaction count (matches C# Count property)
     pub fn count(&self) -> usize {
-        self.transactions.read().unwrap().len()
+        self.transactions
+            .read()
+            .map(|guard| guard.len())
+            .unwrap_or(0)
     }
 
     /// Gets memory usage in bytes (matches C# MemoryUsage property)
     pub fn memory_usage(&self) -> usize {
         self.transactions
             .read()
-            .unwrap()
+            .expect("Operation failed")
             .values()
             .map(|pooled_tx| pooled_tx.size)
             .sum()
@@ -562,7 +604,10 @@ impl MemoryPool {
         let mut expired = Vec::new();
 
         let tx_hashes: Vec<UInt256> = {
-            let transactions = self.transactions.read().unwrap();
+            let transactions = self
+                .transactions
+                .read()
+                .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?;
             transactions
                 .iter()
                 .filter_map(|(hash, pooled_tx)| {
@@ -640,7 +685,6 @@ impl MemoryPool {
             return Ok(true);
         }
 
-        // Check if we're at 90% capacity for regular transactions
         let capacity_threshold = (self.config.max_transactions * 9) / 10;
         if current_count >= capacity_threshold {
             return Ok(false);
@@ -660,7 +704,10 @@ impl MemoryPool {
         let mut lowest_priority = u64::MAX;
 
         {
-            let transactions = self.transactions.read().unwrap();
+            let transactions = self
+                .transactions
+                .read()
+                .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?;
             for (hash, pooled_tx) in transactions.iter() {
                 if !pooled_tx.high_priority && pooled_tx.priority_score() < lowest_priority {
                     lowest_priority = pooled_tx.priority_score();
@@ -690,13 +737,13 @@ impl MemoryPool {
         // Add to main map
         self.transactions
             .write()
-            .unwrap()
+            .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?
             .insert(tx_hash, pooled_tx.clone());
 
         // Add to priority queue
         self.priority_queue
             .write()
-            .unwrap()
+            .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?
             .entry(priority)
             .or_insert_with(Vec::new)
             .push(tx_hash);
@@ -705,7 +752,7 @@ impl MemoryPool {
         for sender in &pooled_tx.senders {
             self.sender_map
                 .write()
-                .unwrap()
+                .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?
                 .entry(*sender)
                 .or_insert_with(HashSet::new)
                 .insert(tx_hash);
@@ -725,7 +772,10 @@ impl MemoryPool {
         let tx_hash = pooled_tx.hash()?;
         let priority = pooled_tx.priority_score();
 
-        let mut priority_queue = self.priority_queue.write().unwrap();
+        let mut priority_queue = self
+            .priority_queue
+            .write()
+            .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?;
         if let Some(tx_list) = priority_queue.get_mut(&priority) {
             tx_list.retain(|&hash| hash != tx_hash);
             if tx_list.is_empty() {
@@ -740,7 +790,10 @@ impl MemoryPool {
     fn remove_from_sender_map(&self, pooled_tx: &PooledTransaction) -> Result<()> {
         let tx_hash = pooled_tx.hash()?;
 
-        let mut sender_map = self.sender_map.write().unwrap();
+        let mut sender_map = self
+            .sender_map
+            .write()
+            .map_err(|_| Error::MempoolError("Failed to acquire lock".to_string()))?;
         for sender in &pooled_tx.senders {
             if let Some(tx_set) = sender_map.get_mut(sender) {
                 tx_set.remove(&tx_hash);
@@ -755,7 +808,10 @@ impl MemoryPool {
 
     /// Updates statistics when transaction is added
     fn update_stats_on_add(&self, pooled_tx: &PooledTransaction) {
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = match self.stats.write() {
+            Ok(stats) => stats,
+            Err(_) => return,
+        };
         stats.transaction_count += 1;
         stats.memory_usage += pooled_tx.size;
         stats.transactions_added += 1;
@@ -777,7 +833,10 @@ impl MemoryPool {
 
     /// Updates statistics when transaction is removed
     fn update_stats_on_remove(&self, pooled_tx: &PooledTransaction) {
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = match self.stats.write() {
+            Ok(stats) => stats,
+            Err(_) => return,
+        };
         stats.transaction_count = stats.transaction_count.saturating_sub(1);
         stats.memory_usage = stats.memory_usage.saturating_sub(pooled_tx.size);
         stats.transactions_removed += 1;
@@ -794,7 +853,7 @@ impl MemoryPool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use neo_core::{Signer, Transaction, UInt160, UInt256, Witness, WitnessScope};
 
     #[test]
@@ -821,7 +880,7 @@ mod tests {
         });
         tx.add_witness(Witness::default());
 
-        let pooled_tx = PooledTransaction::new(tx, false).unwrap();
+        let pooled_tx = PooledTransaction::new(tx, false).expect("operation should succeed");
         assert!(!pooled_tx.high_priority);
         assert!(pooled_tx.size > 0);
         assert_eq!(pooled_tx.senders.len(), 1);
@@ -844,8 +903,8 @@ mod tests {
         });
         tx.add_witness(Witness::default());
 
-        let tx_hash = tx.hash().unwrap();
-        let result = pool.try_add(tx, false).unwrap();
+        let tx_hash = tx.hash().expect("operation should succeed");
+        let result = pool.try_add(tx, false).expect("operation should succeed");
 
         assert!(result);
         assert!(pool.contains(&tx_hash));
@@ -874,13 +933,12 @@ mod tests {
             });
             tx.add_witness(Witness::default());
 
-            pool.try_add(tx, false).unwrap();
+            pool.try_add(tx, false).expect("operation should succeed");
         }
 
         let sorted_txs = pool.get_sorted_transactions(Some(3));
         assert_eq!(sorted_txs.len(), 3);
 
-        // Should be sorted by fee (highest first)
         assert!(sorted_txs[0].network_fee() >= sorted_txs[1].network_fee());
         assert!(sorted_txs[1].network_fee() >= sorted_txs[2].network_fee());
     }
@@ -905,12 +963,12 @@ mod tests {
             });
             tx.add_witness(Witness::default());
 
-            pool.try_add(tx, false).unwrap();
+            pool.try_add(tx, false).expect("operation should succeed");
         }
 
         assert_eq!(pool.get_stats().transaction_count, 3);
 
-        let cleared_count = pool.clear().unwrap();
+        let cleared_count = pool.clear().expect("operation should succeed");
         assert_eq!(cleared_count, 3);
         assert_eq!(pool.get_stats().transaction_count, 0);
     }

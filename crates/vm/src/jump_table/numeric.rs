@@ -64,7 +64,6 @@ fn inc(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Increment the value
     let result = value + BigInt::one();
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -83,7 +82,6 @@ fn dec(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Decrement the value
     let result = value - BigInt::one();
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -108,7 +106,6 @@ fn sign(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         -BigInt::one()
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -127,7 +124,6 @@ fn negate(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     // Negate the value
     let result = -value;
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -146,7 +142,6 @@ fn abs(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Get the absolute value
     let result = value.abs();
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -188,7 +183,6 @@ fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())
@@ -208,7 +202,6 @@ fn sub(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Subtract the values
     let result = a - b;
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -228,7 +221,6 @@ fn mul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Multiply the values
     let result = a * b;
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -245,7 +237,6 @@ fn div(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Check for division by zero
     if b.is_zero() {
         return Err(VmError::invalid_operation_msg("Division by zero"));
     }
@@ -253,7 +244,6 @@ fn div(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Divide the values
     let result = a / b;
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -270,7 +260,6 @@ fn modulo(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Check for division by zero
     if b.is_zero() {
         return Err(VmError::invalid_operation_msg("Division by zero"));
     }
@@ -278,7 +267,6 @@ fn modulo(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     // Calculate the modulo
     let result = a % b;
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -295,7 +283,6 @@ fn pow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Check if the exponent is negative
     if b.is_negative() {
         return Err(VmError::invalid_operation_msg("Negative exponent"));
     }
@@ -308,7 +295,6 @@ fn pow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Calculate the power
     let result = a.pow(exponent);
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -324,23 +310,18 @@ fn sqrt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     // Pop the value from the stack
     let value = context.pop()?.as_int()?;
 
-    // Check if the value is negative
     if value.is_negative() {
         return Err(VmError::invalid_operation_msg(
             "Square root of negative number",
         ));
     }
 
-    // Calculate the square root (production-ready implementation matching C# VM.Sqrt exactly)
-    // Use integer square root algorithm for precise results with large numbers
     let result = if value.is_zero() {
         BigInt::zero()
     } else {
-        // Newton's method for integer square root (matches C# BigInteger.Sqrt exactly)
         integer_sqrt(&value)
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -356,7 +337,6 @@ fn integer_sqrt(value: &BigInt) -> BigInt {
         return BigInt::from(1);
     }
 
-    // Newton's method: x_{n+1} = (x_n + value/x_n) / 2
     let mut x = value.clone();
     let mut y: BigInt = (value + 1) / 2;
 
@@ -379,7 +359,6 @@ fn shl(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Check if the shift amount is negative
     if b.is_negative() {
         return Err(VmError::invalid_operation_msg("Negative shift amount"));
     }
@@ -392,7 +371,6 @@ fn shl(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Perform the left shift
     let result = a << shift;
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -409,7 +387,6 @@ fn shr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Check if the shift amount is negative
     if b.is_negative() {
         return Err(VmError::invalid_operation_msg("Negative shift amount"));
     }
@@ -422,7 +399,6 @@ fn shr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Perform the right shift
     let result = a >> shift;
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -442,7 +418,6 @@ fn min(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Get the minimum value
     let result = if a < b { a } else { b };
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -462,7 +437,6 @@ fn max(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
     // Get the maximum value
     let result = if a > b { a } else { b };
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -480,10 +454,8 @@ fn within(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     let a = context.pop()?.as_int()?;
     let x = context.pop()?.as_int()?;
 
-    // Check if x is within the range [a, b)
     let result = a <= x && x < b;
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -496,20 +468,16 @@ fn lt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
-        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
             return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
-        // If 0 items, let the pop() fail naturally to cause FAULT
     }
 
     // Pop the values from the stack
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Handle null comparisons (null is less than any non-null value)
     let result = match (&a, &b) {
         (StackItem::Null, StackItem::Null) => false, // null < null is false
         (StackItem::Null, _) => true,                // null < anything is true
@@ -522,7 +490,6 @@ fn lt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         }
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -535,20 +502,16 @@ fn le(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
-        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
             return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
-        // If 0 items, let the pop() fail naturally to cause FAULT
     }
 
     // Pop the values from the stack
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Handle null comparisons (null is less than any non-null value)
     let result = match (&a, &b) {
         (StackItem::Null, StackItem::Null) => true, // null <= null is true
         (StackItem::Null, _) => true,               // null <= anything is true
@@ -561,7 +524,6 @@ fn le(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         }
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -574,20 +536,16 @@ fn gt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
-        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
             return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
-        // If 0 items, let the pop() fail naturally to cause FAULT
     }
 
     // Pop the values from the stack
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Handle null comparisons (null is less than any non-null value)
     let result = match (&a, &b) {
         (StackItem::Null, StackItem::Null) => false, // null > null is false
         (StackItem::Null, _) => false,               // null > anything is false
@@ -600,7 +558,6 @@ fn gt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         }
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -613,20 +570,16 @@ fn ge(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
-        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
             return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
-        // If 0 items, let the pop() fail naturally to cause FAULT
     }
 
     // Pop the values from the stack
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Handle null comparisons (null is less than any non-null value)
     let result = match (&a, &b) {
         (StackItem::Null, StackItem::Null) => true, // null >= null is true
         (StackItem::Null, _) => false,              // null >= anything is false
@@ -639,7 +592,6 @@ fn ge(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         }
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -652,25 +604,21 @@ fn numequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
-        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
             return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
-        // If 0 items, let the pop() fail naturally to cause FAULT
     }
 
     // Pop the values from the stack
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Handle different types for numeric equality
     let result = match (&a, &b) {
-        (StackItem::Null, StackItem::Null) => true, // null == null is true
-        (StackItem::Null, _) => false,              // null == anything is false
-        (_, StackItem::Null) => false,              // anything == null is false
-        (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool == b_bool, // boolean == boolean
+        (StackItem::Null, StackItem::Null) => true,
+        (StackItem::Null, _) => false,
+        (_, StackItem::Null) => false,
+        (StackItem::Boolean(a_bool), StackItem::Boolean(b_bool)) => a_bool == b_bool,
         (StackItem::Boolean(a_bool), _) => {
             // Convert boolean to integer and compare
             let a_int = if *a_bool { 1 } else { 0 };
@@ -691,7 +639,6 @@ fn numequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         }
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -704,20 +651,16 @@ fn numnotequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if we have enough items on the stack (need 2 for comparison)
     if context.evaluation_stack().len() < 2 {
-        // If we have 1 item, return InsufficientStackItems (should result in BREAK)
         if context.evaluation_stack().len() == 1 {
             return Err(VmError::insufficient_stack_items_msg(0, 0));
         }
-        // If 0 items, let the pop() fail naturally to cause FAULT
     }
 
     // Pop the values from the stack
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Handle different types for numeric inequality
     let result = match (&a, &b) {
         (StackItem::Null, StackItem::Null) => false, // null != null is false
         (StackItem::Null, _) => true,                // null != anything is true
@@ -743,7 +686,6 @@ fn numnotequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         }
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -767,7 +709,6 @@ fn not(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         _ => false,
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -787,7 +728,6 @@ fn booland(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     // Perform logical AND
     let result = a && b;
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -807,7 +747,6 @@ fn boolor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     // Perform logical OR
     let result = a || b;
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -823,10 +762,8 @@ fn nz(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
     // Pop the value from the stack
     let value = context.pop()?.as_int()?;
 
-    // Check if the value is not zero
     let result = !value.is_zero();
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -844,15 +781,12 @@ fn modmul(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Check for zero modulus
     if modulus.is_zero() {
         return Err(VmError::division_by_zero_msg("division"));
     }
 
-    // Perform modular multiplication: (a * b) % modulus
     let result = (a * b) % modulus;
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())
@@ -870,12 +804,10 @@ fn modpow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     let exponent = context.pop()?.as_int()?;
     let base = context.pop()?.as_int()?;
 
-    // Check for zero modulus
     if modulus.is_zero() {
         return Err(VmError::division_by_zero_msg("division"));
     }
 
-    // Check for negative exponent
     if exponent.is_negative() {
         return Err(VmError::invalid_operation_msg(
             "Negative exponent not supported",
@@ -885,7 +817,6 @@ fn modpow(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     // Perform modular exponentiation: base^exponent % modulus
     let result = base.modpow(&exponent, &modulus);
 
-    // Push the result onto the stack
     context.push(StackItem::from_int(result))?;
 
     Ok(())

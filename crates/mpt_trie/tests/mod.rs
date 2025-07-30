@@ -9,7 +9,6 @@ mod node_tests;
 mod proof_tests;
 mod trie_tests;
 
-// Integration tests for complete MPT Trie workflows
 mod integration_tests {
     use neo_core::UInt256;
     use neo_mpt_trie::*;
@@ -62,7 +61,6 @@ mod integration_tests {
     fn test_complex_key_patterns() {
         let mut trie = Trie::new(None, true);
 
-        // Test with keys that share prefixes (triggers branch and extension nodes)
         let complex_data = vec![
             (b"abcd".to_vec(), b"value_abcd".to_vec()),
             (b"ab".to_vec(), b"value_ab".to_vec()),
@@ -120,7 +118,6 @@ mod integration_tests {
         let mut reconstructed_trie = Trie::new(root_hash, true);
 
         // Note: In a real implementation, this would require storage backend
-        // This test verifies the structure for reconstruction
         assert_eq!(
             reconstructed_trie.root().hash(),
             original_trie.root().hash()
@@ -152,7 +149,6 @@ mod integration_tests {
     }
 }
 
-// Mock storage implementation for testing
 pub struct MockTrieStorage {
     data: std::collections::HashMap<UInt256, Vec<u8>>,
 }

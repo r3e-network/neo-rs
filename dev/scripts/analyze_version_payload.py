@@ -17,7 +17,7 @@ print("=== Analyzing as Raw Version Payload ===\n")
 # So nonce should be at 15-18 (4 bytes)
 # Port should be at 13-14 (2 bytes)
 # Timestamp should be at 5-12 (8 bytes)
-# Services should be at... wait, this doesn't align
+# Services should be at/* Implementation needed */ wait, this doesn't align
 
 # Let me try a different approach
 # What if the version uses different field sizes?
@@ -38,7 +38,7 @@ print(f"Port: {port}")
 
 # Now the issue - we have 13 bytes before port
 # Standard would be version(4) + services(8) = 12
-# But we have 13...
+# But we have 13/* Implementation needed */
 
 print("\nAttempt 2: What if timestamp is 4 bytes instead of 8?")
 # Version at 0-3

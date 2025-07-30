@@ -2,26 +2,73 @@ version: '3.8'
 
 services:
   # Neo-RS Node
-  neo-node:
-    build: .
+  neo-rs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: neo-rs:latest
     container_name: neo-rs-node
     restart: unless-stopped
+    
+    # Network configuration
     ports:
-      - "10332:10332"  # RPC port
-      - "10333:10333"  # P2P port
-    volumes:
-      - neo_data:/data
-      - ./neo-config.toml:/etc/neo/neo-config.toml:ro
+      - "30332:30332"  # RPC port
+      - "30334:30334"  # P2P port
+    
+    # Environment variables
     environment:
-      - RUST_LOG=info
       - NEO_NETWORK=testnet
-    command: ["--testnet", "--rpc-port", "10332", "--p2p-port", "10333"]
+      - NEO_RPC_PORT=30332
+      - NEO_P2P_PORT=30334
+      - NEO_DATA_PATH=/opt/neo-rs/data
+      - NEO_LOG_LEVEL=info
+      - NEO_MAX_PEERS=100
+      - NEO_RPC_BIND=0.0.0.0
+      - RUST_LOG=info
+    
+    # Volume mounts for persistence
+    volumes:
+      - neo-rs-data:/opt/neo-rs/data
+      - neo-rs-logs:/opt/neo-rs/logs
+      - ./config:/opt/neo-rs/config:ro
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    # Health check
     healthcheck:
-      test: ["CMD", "neo-rs", "--health-check"]
+      test: ["/opt/neo-rs/bin/healthcheck.sh"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    
+    # Security
+    user: "1000:1000"
+    read_only: false
+    security_opt:
+      - no-new-privileges:true
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    
+    # Labels
+    labels:
+      - "com.neo-rs.service=blockchain-node"
+      - "com.neo-rs.environment=production"
+      - "com.neo-rs.version=1.0"
+    
     networks:
       - neo-network
 
@@ -98,16 +145,30 @@ services:
     profiles:
       - proxy
     depends_on:
-      - neo-node
+      - neo-rs
 
-# Named volumes
+# Named volumes for data persistence
 volumes:
-  neo_data:
+  neo-rs-data:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+  
+  neo-rs-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./logs
+  
   prometheus_data:
     driver: local
+  
   grafana_data:
     driver: local
+  
   redis_data:
     driver: local
 

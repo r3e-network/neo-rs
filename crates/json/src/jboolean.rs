@@ -127,7 +127,8 @@ mod tests {
             _ => panic!("Expected JToken::Boolean"),
         }
 
-        let jbool2 = JBoolean::from_jtoken(JToken::Boolean(false)).unwrap();
+        let jbool2 =
+            JBoolean::from_jtoken(JToken::Boolean(false)).expect("operation should succeed");
         assert!(!jbool2.value());
 
         let result = JBoolean::from_jtoken(JToken::String("not a boolean".to_string()));

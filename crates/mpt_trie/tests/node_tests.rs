@@ -13,34 +13,29 @@ mod node_tests {
     /// Test Node creation and basic properties (matches C# Node tests exactly)
     #[test]
     fn test_node_creation_compatibility() {
-        // Test empty node creation (matches C# Node() constructor exactly)
         let empty_node = Node::new();
         assert_eq!(empty_node.node_type(), NodeType::Empty);
         assert!(empty_node.is_empty());
         assert!(empty_node.hash().is_none());
         assert_eq!(empty_node.reference(), 0);
 
-        // Test hash node creation (matches C# Node(NodeType.HashNode, hash) exactly)
         let test_hash = UInt256::from_slice(&[1u8; 32]).unwrap();
         let hash_node = Node::new_hash(test_hash);
         assert_eq!(hash_node.node_type(), NodeType::HashNode);
         assert!(!hash_node.is_empty());
         assert_eq!(hash_node.hash(), Some(test_hash));
 
-        // Test branch node creation (matches C# Node(NodeType.BranchNode) exactly)
         let branch_node = Node::new_branch();
         assert_eq!(branch_node.node_type(), NodeType::BranchNode);
         assert!(!branch_node.is_empty());
         assert_eq!(branch_node.children().len(), 16);
 
-        // Test leaf node creation (matches C# Node(NodeType.LeafNode, value) exactly)
         let test_value = b"test_leaf_value".to_vec();
         let leaf_node = Node::new_leaf(test_value.clone());
         assert_eq!(leaf_node.node_type(), NodeType::LeafNode);
         assert!(!leaf_node.is_empty());
         assert_eq!(leaf_node.value(), Some(&test_value));
 
-        // Test extension node creation (matches C# Node(NodeType.ExtensionNode, key, next) exactly)
         let test_key = b"extension_key".to_vec();
         let next_node = Node::new_leaf(b"next_value".to_vec());
         let extension_node = Node::new_extension(test_key.clone(), next_node);
@@ -91,7 +86,6 @@ mod node_tests {
         // Initially no hash
         assert!(leaf_node.hash().is_none());
 
-        // Calculate hash (matches C# hash calculation exactly)
         leaf_node.calculate_hash();
         assert!(leaf_node.hash().is_some());
 

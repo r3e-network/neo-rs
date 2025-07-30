@@ -116,7 +116,6 @@ fn bench_hash_operations(c: &mut Criterion) {
 fn bench_batch_crypto_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("batch_crypto_operations");
 
-    // Simulate transaction verification batch (common blockchain operation)
     group.bench_function("verify_transaction_batch", |b| {
         // Pre-generate keypairs and signatures
         let mut keypairs = Vec::new();
@@ -155,7 +154,6 @@ fn bench_batch_crypto_operations(c: &mut Criterion) {
         })
     });
 
-    // Simulate hash computation batch (like Merkle tree construction)
     group.bench_function("hash_computation_batch", |b| {
         let mut data_items = Vec::new();
         for i in 0..100 {

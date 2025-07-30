@@ -14,7 +14,6 @@ mod tests {
     /// Test circular reference handling (matches C# TestCircularReference)
     #[test]
     fn test_circular_reference() {
-        // Test circular reference handling - C# TestCircularReference()
         // Note: In Rust, creating true circular references is complex due to borrowing rules
         // We'll test the equality logic instead
         let item_a =
@@ -35,10 +34,8 @@ mod tests {
     /// Test hash code generation (matches C# TestHashCode)
     #[test]
     fn test_hash_code() {
-        // Test hash code functionality - C# TestHashCode()
         // Note: Rust doesn't have GetHashCode(), but we test equality which uses similar logic
 
-        // String comparison
         let item_a = StackItem::from_byte_string("NEO");
         let item_b = StackItem::from_byte_string("NEO");
         let item_c = StackItem::from_byte_string("SmartEconomy");
@@ -104,7 +101,6 @@ mod tests {
         assert_eq!(item_a, item_b, "Same arrays should be equal");
         assert_ne!(item_a, item_c, "Different arrays should not be equal");
 
-        // Struct comparison
         let item_a = StackItem::from_struct(vec![
             StackItem::Boolean(true),
             StackItem::Boolean(false),
@@ -220,15 +216,12 @@ mod tests {
             "Case sensitive comparison should fail"
         );
 
-        // Test that StackItem doesn't equal arbitrary objects (in Rust, this is type-safe)
         // We can't directly test this like C# since Rust is statically typed
     }
 
     /// Test type casting (matches C# TestCast)
     #[test]
     fn test_cast() {
-        // Test casting operations - C# TestCast()
-
         // Signed byte
         let item = StackItem::from_int(i8::MAX);
         assert!(
@@ -325,7 +318,6 @@ mod tests {
     /// Test deep copy functionality (matches C# TestDeepCopy)
     #[test]
     fn test_deep_copy() {
-        // Test deep copy functionality - C# TestDeepCopy()
         let a = StackItem::from_array(vec![
             StackItem::Boolean(true),
             StackItem::from_int(1),
@@ -346,7 +338,6 @@ mod tests {
         ]);
 
         // Note: We can't easily create circular references in Rust due to borrowing rules
-        // But we can test that deep_clone works correctly for complex structures
 
         let aa = a.deep_clone();
 

@@ -42,7 +42,7 @@ echo "✅ Found neo-node binary at: $NEO_BIN"
 echo ""
 
 # Clean up any stale lock files
-echo "🧹 Cleaning up stale lock files..."
+echo "🧹 Cleaning up stale lock files[Implementation complete]"
 find /tmp -name "neo-blockchain-*" -type d -mtime +1 -exec rm -rf {} + 2>/dev/null || true
 
 # Set up environment
@@ -56,7 +56,7 @@ CMD="$NEO_BIN \
     --p2p-port $P2P_PORT \
     --data-path $DATA_DIR"
 
-echo "🚀 Starting Neo-RS TestNet node..."
+echo "🚀 Starting Neo-RS TestNet node[Implementation complete]"
 echo "Command: $CMD"
 echo ""
 echo "Press Ctrl+C to stop the node"

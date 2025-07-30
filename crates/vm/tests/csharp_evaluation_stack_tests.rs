@@ -93,7 +93,6 @@ mod tests {
         let reference_counter = ReferenceCounter::new();
         let mut stack = EvaluationStack::new(reference_counter);
 
-        // Push items up to a reasonable limit for testing (100 items)
         // Note: The actual C# implementation has a limit of 2048, but we'll test with smaller number
         for i in 0..100 {
             stack.push(StackItem::Integer(BigInt::from(i)));
@@ -177,7 +176,6 @@ mod tests {
         stack.push(StackItem::Integer(BigInt::from(2)));
         stack.push(StackItem::Integer(BigInt::from(3)));
 
-        // Insert at position 1 (note: insert uses Vec indexing, not stack indexing)
         stack
             .insert(1, StackItem::Integer(BigInt::from(99)))
             .unwrap();
@@ -203,7 +201,6 @@ mod tests {
         stack.push(StackItem::Integer(BigInt::from(2)));
         stack.push(StackItem::Integer(BigInt::from(3)));
 
-        // Remove item at position 1 (uses Vec indexing)
         let removed = stack.remove(1).unwrap();
         if let StackItem::Integer(value) = removed {
             assert_eq!(value, BigInt::from(2), "Removed item should be 2");
@@ -230,8 +227,6 @@ mod tests {
         assert_eq!(stack.len(), 4, "Stack should still have 4 items");
 
         // After reversing top 3 items, the order should change
-        // Original: [1, 2, 3, 4] (bottom to top)
-        // After reverse(3): [1, 4, 3, 2] (bottom to top)
         let top = stack.peek(0).unwrap();
         if let StackItem::Integer(value) = top {
             assert_eq!(*value, BigInt::from(2), "Top should be 2 after reverse");

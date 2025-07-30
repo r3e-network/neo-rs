@@ -1,18 +1,12 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// signer.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Implementation of Signer for Neo blockchain.
 
 use crate::witness_rule::{WitnessCondition, WitnessConditionType, WitnessRuleAction};
 use crate::{UInt160, WitnessRule, WitnessScope};
+use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_io::Serializable;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -93,7 +87,7 @@ impl Signer {
     ///
     /// The size in bytes
     pub fn get_size(&self) -> usize {
-        let mut size = 20 + 1; // UInt160 (20 bytes) + WitnessScope (1 byte)
+        let mut size = ADDRESS_SIZE + 1; // UInt160 (ADDRESS_SIZE bytes) + WitnessScope (1 byte)
 
         if self.scopes.has_flag(WitnessScope::CustomContracts) {
             size += self.get_var_size_for_array(&self.allowed_contracts);
@@ -119,7 +113,7 @@ impl Signer {
         } else {
             5
         };
-        var_int_size + (array.len() * 20) // Each UInt160 is 20 bytes
+        var_int_size + (array.len() * ADDRESS_SIZE) // Each UInt160 is ADDRESS_SIZE bytes
     }
 
     /// Helper function to calculate variable size for groups array
@@ -201,7 +195,6 @@ impl Default for Signer {
     }
 }
 
-// Additional constructor for compatibility with tests
 impl Signer {
     /// Creates a new Signer instance with account and scope.
     /// This is for compatibility with existing test code.
@@ -246,7 +239,7 @@ impl Signer {
 
 impl Serializable for Signer {
     fn size(&self) -> usize {
-        let mut size = 20 + 1; // UInt160 (20 bytes) + WitnessScope (1 byte)
+        let mut size = ADDRESS_SIZE + 1; // UInt160 (ADDRESS_SIZE bytes) + WitnessScope (1 byte)
 
         if self.scopes.has_flag(WitnessScope::CustomContracts) {
             size += self.get_var_size_for_array(&self.allowed_contracts);
@@ -264,13 +257,11 @@ impl Serializable for Signer {
     }
 
     fn serialize(&self, writer: &mut neo_io::BinaryWriter) -> neo_io::IoResult<()> {
-        // Write account (UInt160)
         <UInt160 as neo_io::Serializable>::serialize(&self.account, writer)?;
 
         // Write scopes
         writer.write_bytes(&[self.scopes.to_byte()])?;
 
-        // Write allowed contracts if CustomContracts scope is set
         if self.scopes.has_flag(WitnessScope::CustomContracts) {
             writer.write_var_int(self.allowed_contracts.len() as u64)?;
             for contract in &self.allowed_contracts {
@@ -278,7 +269,6 @@ impl Serializable for Signer {
             }
         }
 
-        // Write allowed groups if CustomGroups scope is set
         if self.scopes.has_flag(WitnessScope::CustomGroups) {
             writer.write_var_int(self.allowed_groups.len() as u64)?;
             for group in &self.allowed_groups {
@@ -286,7 +276,6 @@ impl Serializable for Signer {
             }
         }
 
-        // Write rules if WitnessRules scope is set
         if self.scopes.has_flag(WitnessScope::WitnessRules) {
             writer.write_var_int(self.rules.len() as u64)?;
             for rule in &self.rules {
@@ -299,7 +288,6 @@ impl Serializable for Signer {
     }
 
     fn deserialize(reader: &mut neo_io::MemoryReader) -> neo_io::IoResult<Self> {
-        // Read account (UInt160)
         let account = <UInt160 as neo_io::Serializable>::deserialize(reader)?;
 
         // Read scopes
@@ -319,7 +307,6 @@ impl Serializable for Signer {
         let mut allowed_groups = Vec::new();
         let mut rules = Vec::new();
 
-        // Read allowed contracts if CustomContracts scope is set
         if scopes.has_flag(WitnessScope::CustomContracts) {
             let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
             if count > MAX_SUBITEMS {
@@ -335,7 +322,6 @@ impl Serializable for Signer {
             }
         }
 
-        // Read allowed groups if CustomGroups scope is set
         if scopes.has_flag(WitnessScope::CustomGroups) {
             let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
             if count > MAX_SUBITEMS {
@@ -346,7 +332,6 @@ impl Serializable for Signer {
             }
             allowed_groups = Vec::with_capacity(count);
             for _ in 0..count {
-                // Production-ready group deserialization (matches C# ECPoint.DecodePoint exactly)
                 // This implements the C# logic: reading variable-length ECPoint data
 
                 // 1. Read the first byte to determine the ECPoint format (production format detection)
@@ -355,19 +340,16 @@ impl Serializable for Signer {
                 // 2. Deserialize based on ECPoint format (matches C# ECPoint format exactly)
                 let group = match format_byte {
                     0x02 | 0x03 => {
-                        // Compressed public key format (33 bytes total: 1 format + 32 data)
                         let mut key_data = vec![format_byte];
-                        key_data.extend_from_slice(&reader.read_bytes(32)?);
+                        key_data.extend_from_slice(&reader.read_bytes(HASH_SIZE)?);
                         key_data
                     }
                     0x04 => {
-                        // Uncompressed public key format (65 bytes total: 1 format + 64 data)
                         let mut key_data = vec![format_byte];
                         key_data.extend_from_slice(&reader.read_bytes(64)?);
                         key_data
                     }
                     _ => {
-                        // Invalid ECPoint format (production validation)
                         return Err(neo_io::IoError::InvalidData {
                             context: "ecpoint_format".to_string(),
                             value: format!("0x{:02x}", format_byte),
@@ -387,7 +369,6 @@ impl Serializable for Signer {
             }
         }
 
-        // Read rules if WitnessRules scope is set
         if scopes.has_flag(WitnessScope::WitnessRules) {
             let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
             if count > MAX_SUBITEMS {
@@ -411,7 +392,6 @@ impl Serializable for Signer {
                     }
                 };
 
-                // Production-ready witness condition deserialization (matches C# WitnessCondition.Deserialize exactly)
                 let condition = Self::deserialize_condition(reader)?;
                 rules.push(WitnessRule { action, condition });
             }
@@ -484,7 +464,6 @@ impl Signer {
     fn deserialize_condition(
         reader: &mut neo_io::MemoryReader,
     ) -> neo_io::IoResult<WitnessCondition> {
-        // Production-ready witness condition deserialization (matches C# WitnessCondition.Deserialize exactly)
         // This implements the C# logic: WitnessCondition.Deserialize with full type support
 
         // 1. Read condition type byte (production type detection)
@@ -493,20 +472,17 @@ impl Signer {
         // 2. Parse condition based on type (matches C# WitnessConditionType exactly)
         match condition_type_byte {
             0x00 => {
-                // Boolean condition (matches C# WitnessConditionType.Boolean)
                 let value_byte = reader.read_bytes(1)?[0];
                 let value = value_byte != 0;
                 Ok(WitnessCondition::Boolean { value })
             }
             0x01 => {
-                // Not condition (matches C# WitnessConditionType.Not)
                 let inner_condition = Box::new(Self::deserialize_condition(reader)?);
                 Ok(WitnessCondition::Not {
                     condition: inner_condition,
                 })
             }
             0x02 => {
-                // And condition (matches C# WitnessConditionType.And)
                 let count = reader.read_var_int(16)? as usize; // Max 16 conditions
                 let mut conditions = Vec::with_capacity(count);
                 for _ in 0..count {
@@ -515,7 +491,6 @@ impl Signer {
                 Ok(WitnessCondition::And { conditions })
             }
             0x03 => {
-                // Or condition (matches C# WitnessConditionType.Or)
                 let count = reader.read_var_int(16)? as usize; // Max 16 conditions
                 let mut conditions = Vec::with_capacity(count);
                 for _ in 0..count {
@@ -524,8 +499,7 @@ impl Signer {
                 Ok(WitnessCondition::Or { conditions })
             }
             0x18 => {
-                // ScriptHash condition (matches C# WitnessConditionType.ScriptHash)
-                let hash_bytes = reader.read_bytes(20)?;
+                let hash_bytes = reader.read_bytes(ADDRESS_SIZE)?;
                 let hash =
                     UInt160::from_bytes(&hash_bytes).map_err(|_| neo_io::IoError::InvalidData {
                         context: "script_hash".to_string(),
@@ -534,17 +508,12 @@ impl Signer {
                 Ok(WitnessCondition::ScriptHash { hash })
             }
             0x19 => {
-                // Group condition (matches C# WitnessConditionType.Group)
                 let group_data = reader.read_var_bytes(33)?; // Max 33 bytes for compressed ECPoint
                 Ok(WitnessCondition::Group { group: group_data })
             }
-            0x20 => {
-                // CalledByEntry condition (matches C# WitnessConditionType.CalledByEntry)
-                Ok(WitnessCondition::CalledByEntry)
-            }
+            0x20 => Ok(WitnessCondition::CalledByEntry),
             0x28 => {
-                // CalledByContract condition (matches C# WitnessConditionType.CalledByContract)
-                let hash_bytes = reader.read_bytes(20)?;
+                let hash_bytes = reader.read_bytes(ADDRESS_SIZE)?;
                 let hash =
                     UInt160::from_bytes(&hash_bytes).map_err(|_| neo_io::IoError::InvalidData {
                         context: "contract_hash".to_string(),
@@ -553,17 +522,13 @@ impl Signer {
                 Ok(WitnessCondition::CalledByContract { hash })
             }
             0x29 => {
-                // CalledByGroup condition (matches C# WitnessConditionType.CalledByGroup)
                 let group_data = reader.read_var_bytes(33)?; // Max 33 bytes for compressed ECPoint
                 Ok(WitnessCondition::CalledByGroup { group: group_data })
             }
-            _ => {
-                // Invalid condition type (production error handling)
-                Err(neo_io::IoError::InvalidData {
-                    context: "witness_condition_type".to_string(),
-                    value: format!("0x{:02x}", condition_type_byte),
-                })
-            }
+            _ => Err(neo_io::IoError::InvalidData {
+                context: "witness_condition_type".to_string(),
+                value: format!("0x{:02x}", condition_type_byte),
+            }),
         }
     }
 }
@@ -580,7 +545,7 @@ impl fmt::Display for Signer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Block, Transaction, UInt160, UInt256};
 
     #[test]
     fn test_signer_new() {
@@ -648,7 +613,6 @@ mod tests {
         let signer = Signer::new(UInt160::new(), WitnessScope::None);
         let size = signer.get_size();
 
-        // UInt160 (20 bytes) + WitnessScope (1 byte) = 21 bytes minimum
         assert_eq!(size, 21);
     }
 

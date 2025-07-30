@@ -3,12 +3,8 @@
 //! This crate provides an implementation of the Neo Virtual Machine (NeoVM)
 //! used by the Neo blockchain for executing smart contracts.
 
-// Note: We always use std for now as the VM requires std library features
-// #![cfg_attr(not(feature = "std"), no_std)]
-
 // Always import standard library types
 extern crate std;
-use std::prelude::v1::*;
 
 use thiserror::Error;
 
@@ -30,7 +26,6 @@ pub mod script_builder;
 pub mod stack_item;
 pub mod strongly_connected_components;
 
-// For internal testing, we use mock modules
 #[cfg(test)]
 pub mod tests;
 
@@ -49,14 +44,12 @@ pub use op_code::OpCode;
 pub use reference_counter::ReferenceCounter;
 pub use script::Script;
 pub use script_builder::ScriptBuilder;
-pub use stack_item::StackItem;
+pub use stack_item::{StackItem, StackItemType};
 pub use strongly_connected_components::Tarjan;
 
-// We re-export the io module for internal testing
 #[cfg(test)]
-pub use crate::tests::mock_io as io;
+pub use crate::tests::real_io as io;
 
-// We use the actual neo-io crate in non-test builds
 #[cfg(not(test))]
 pub extern crate neo_io;
 #[cfg(not(test))]

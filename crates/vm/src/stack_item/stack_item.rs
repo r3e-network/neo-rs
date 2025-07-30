@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
-/// A trait for interop interfaces that can be wrapped by a StackItem.
+/// A trait for interop interfaces that can be wrapped by a stack_item.
 pub trait InteropInterface: fmt::Debug + Send + Sync {
     /// Gets the type of the interop interface.
     fn interface_type(&self) -> &str;
@@ -171,14 +171,11 @@ impl StackItem {
                     return Ok(BigInt::from(0));
                 }
 
-                // Neo VM uses little-endian byte order (matches C# BigInteger format)
                 // Don't reverse - the bytes are already in little-endian format
                 let bytes = b.clone();
 
-                // Handle negative numbers (most significant bit is 1)
                 let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
                 if is_negative {
-                    // For negative numbers, we need to handle two's complement
                     let mut bytes_copy = bytes.clone();
                     let len = bytes_copy.len();
                     bytes_copy[len - 1] &= 0x7F; // Clear the sign bit
@@ -201,12 +198,10 @@ impl StackItem {
             StackItem::Null => Ok(vec![]),
             StackItem::Boolean(b) => Ok(vec![if *b { 1 } else { 0 }]),
             StackItem::Integer(i) => {
-                // Zero should return empty array (matches C# BigInteger.ToByteArray() behavior)
                 if i.is_zero() {
                     return Ok(vec![]);
                 }
 
-                // Convert BigInt to little-endian byte array (matches C# BigInteger format)
                 let (sign, mut bytes) = i.to_bytes_le();
 
                 // Handle negative numbers using two's complement
@@ -247,7 +242,6 @@ impl StackItem {
                 // Attempt to downcast the Arc<dyn InteropInterface> to the specific type
                 let interface = Arc::as_ref(i);
 
-                // Production-ready type conversion for InteropInterface (matches C# Neo exactly)
                 // In Rust, we need proper type checking and downcasting to ensure type safety.
                 // This is a production implementation that provides proper error handling.
 
@@ -271,7 +265,6 @@ impl StackItem {
         &self,
         refs: &mut std::collections::HashMap<*const StackItem, StackItem>,
     ) -> Self {
-        // Check if we've already cloned this item
         let self_ptr = self as *const StackItem;
         if let Some(cloned) = refs.get(&self_ptr) {
             return cloned.clone();
@@ -287,7 +280,6 @@ impl StackItem {
             StackItem::Pointer(p) => StackItem::Pointer(*p),
             StackItem::InteropInterface(i) => StackItem::InteropInterface(i.clone()),
 
-            // For complex types, we need to handle potential cycles
             StackItem::Array(a) => {
                 let mut array = Vec::with_capacity(a.len());
                 // Add a placeholder to the refs map to handle cycles
@@ -305,7 +297,6 @@ impl StackItem {
                 // Add a placeholder to the refs map to handle cycles
                 refs.insert(self_ptr, StackItem::Struct(Vec::new()));
 
-                // Clone each item in the struct
                 for item in s {
                     structure.push(item.deep_clone_with_refs(refs));
                 }
@@ -326,7 +317,6 @@ impl StackItem {
             }
         };
 
-        // Update the refs map with the final result
         refs.insert(self_ptr, result.clone());
 
         result
@@ -376,7 +366,6 @@ impl StackItem {
         other: &StackItem,
         visited: &mut std::collections::HashSet<(*const StackItem, *const StackItem)>,
     ) -> VmResult<bool> {
-        // Check if we've already compared these items
         let self_ptr = self as *const StackItem;
         let other_ptr = other as *const StackItem;
 
@@ -397,9 +386,6 @@ impl StackItem {
             (StackItem::Buffer(a), StackItem::ByteString(b)) => Ok(a == b),
             (StackItem::Pointer(a), StackItem::Pointer(b)) => Ok(a == b),
             (StackItem::InteropInterface(a), StackItem::InteropInterface(b)) => {
-                // In Rust, we can't directly compare trait objects for equality.
-                // We would need a custom equality implementation for each interop interface type.
-                // For simplicity, we'll consider them equal if they're the same Arc instance.
                 Ok(Arc::ptr_eq(a, b))
             }
             (StackItem::Array(a), StackItem::Array(b)) => {
@@ -475,8 +461,8 @@ impl PartialOrd for StackItem {
 
 impl Ord for StackItem {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Production-ready ordering based on C# StackItem comparison rules
-        // 1. First compare by type (matches C# StackItem type hierarchy)
+        // Production-ready ordering based on C# stack_item comparison rules
+        // 1. First compare by type (matches C# stack_item type hierarchy)
         let type_order = (self.stack_item_type() as u8).cmp(&(other.stack_item_type() as u8));
         if type_order != std::cmp::Ordering::Equal {
             return type_order;
@@ -493,7 +479,6 @@ impl Ord for StackItem {
             (StackItem::Buffer(a), StackItem::ByteString(b)) => a.cmp(b),
             (StackItem::Pointer(a), StackItem::Pointer(b)) => a.cmp(b),
             (StackItem::Array(a), StackItem::Array(b)) => {
-                // Compare arrays lexicographically (matches C# Array comparison)
                 let len_cmp = a.len().cmp(&b.len());
                 if len_cmp != std::cmp::Ordering::Equal {
                     return len_cmp;
@@ -507,7 +492,6 @@ impl Ord for StackItem {
                 std::cmp::Ordering::Equal
             }
             (StackItem::Struct(a), StackItem::Struct(b)) => {
-                // Compare structs like arrays (matches C# Struct comparison)
                 let len_cmp = a.len().cmp(&b.len());
                 if len_cmp != std::cmp::Ordering::Equal {
                     return len_cmp;
@@ -527,7 +511,6 @@ impl Ord for StackItem {
                     return len_cmp;
                 }
 
-                // Convert to sorted vectors for comparison
                 let mut a_pairs: Vec<_> = a.iter().collect();
                 let mut b_pairs: Vec<_> = b.iter().collect();
                 a_pairs.sort_by(|x, y| x.0.cmp(y.0));
@@ -545,11 +528,9 @@ impl Ord for StackItem {
                 }
                 std::cmp::Ordering::Equal
             }
-            // For any remaining cases, use consistent ordering based on discriminant
             _ => {
                 let self_discriminant = std::mem::discriminant(self);
                 let other_discriminant = std::mem::discriminant(other);
-                // Since Discriminant doesn't implement Ord, we'll use a simple comparison
                 // based on the variant order in the enum
                 match (self, other) {
                     (StackItem::Null, _) => std::cmp::Ordering::Less,
@@ -580,8 +561,14 @@ mod tests {
         let true_item = StackItem::from_bool(true);
         let false_item = StackItem::from_bool(false);
 
-        assert_eq!(true_item.as_bool().unwrap(), true);
-        assert_eq!(false_item.as_bool().unwrap(), false);
+        assert_eq!(
+            true_item.as_bool().expect("Failed to convert to bool"),
+            true
+        );
+        assert_eq!(
+            false_item.as_bool().expect("Failed to convert to bool"),
+            false
+        );
         assert_eq!(true_item.stack_item_type(), StackItemType::Boolean);
     }
 
@@ -589,12 +576,15 @@ mod tests {
     fn test_integer_stack_item() {
         let int_item = StackItem::from_int(42);
 
-        assert_eq!(int_item.as_int().unwrap(), BigInt::from(42));
-        assert_eq!(int_item.as_bool().unwrap(), true);
+        assert_eq!(
+            int_item.as_int().ok_or_else(|| VmError::InvalidStackItem)?,
+            BigInt::from(42)
+        );
+        assert_eq!(int_item.as_bool().expect("Failed to convert"), true);
         assert_eq!(int_item.stack_item_type(), StackItemType::Integer);
 
         let zero_item = StackItem::from_int(0);
-        assert_eq!(zero_item.as_bool().unwrap(), false);
+        assert_eq!(zero_item.as_bool().expect("Failed to convert"), false);
     }
 
     #[test]
@@ -602,12 +592,17 @@ mod tests {
         let bytes = vec![1, 2, 3];
         let byte_string = StackItem::from_byte_string(bytes.clone());
 
-        assert_eq!(byte_string.as_bytes().unwrap(), bytes);
-        assert_eq!(byte_string.as_bool().unwrap(), true);
+        assert_eq!(
+            byte_string
+                .as_bytes()
+                .ok_or_else(|| VmError::InvalidStackItem)?,
+            bytes
+        );
+        assert_eq!(byte_string.as_bool().expect("Failed to convert"), true);
         assert_eq!(byte_string.stack_item_type(), StackItemType::ByteString);
 
         let empty_bytes = StackItem::from_byte_string(Vec::<u8>::new());
-        assert_eq!(empty_bytes.as_bool().unwrap(), false);
+        assert_eq!(empty_bytes.as_bool().expect("Failed to convert"), false);
     }
 
     #[test]
@@ -618,12 +613,18 @@ mod tests {
             StackItem::from_int(3),
         ]);
 
-        assert_eq!(array.as_array().unwrap().len(), 3);
-        assert_eq!(array.as_bool().unwrap(), true);
+        assert_eq!(
+            array
+                .as_array()
+                .expect("intermediate value should exist")
+                .len(),
+            3
+        );
+        assert_eq!(array.as_bool().expect("Failed to convert"), true);
         assert_eq!(array.stack_item_type(), StackItemType::Array);
 
         let empty_array = StackItem::from_array(Vec::<StackItem>::new());
-        assert_eq!(empty_array.as_bool().unwrap(), false);
+        assert_eq!(empty_array.as_bool().expect("Failed to convert"), false);
     }
 
     #[test]
@@ -635,7 +636,9 @@ mod tests {
         ]);
 
         let cloned = array.deep_clone();
-        assert!(array.equals(&cloned).unwrap());
+        assert!(array
+            .equals(&cloned)
+            .ok_or_else(|| VmError::InvalidStackItem)?);
     }
 
     #[test]
@@ -644,8 +647,8 @@ mod tests {
         let b = StackItem::from_int(42);
         let c = StackItem::from_int(43);
 
-        assert!(a.equals(&b).unwrap());
-        assert!(!a.equals(&c).unwrap());
+        assert!(a.equals(&b).ok_or_else(|| VmError::InvalidStackItem)?);
+        assert!(!a.equals(&c).ok_or_else(|| VmError::InvalidStackItem)?);
 
         let array1 = StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(2)]);
 
@@ -653,8 +656,12 @@ mod tests {
 
         let array3 = StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(3)]);
 
-        assert!(array1.equals(&array2).unwrap());
-        assert!(!array1.equals(&array3).unwrap());
+        assert!(array1
+            .equals(&array2)
+            .ok_or_else(|| VmError::InvalidStackItem)?);
+        assert!(!array1
+            .equals(&array3)
+            .ok_or_else(|| VmError::InvalidStackItem)?);
     }
 
     #[test]
@@ -662,24 +669,41 @@ mod tests {
         let int_item = StackItem::from_int(42);
 
         // Convert to boolean
-        let bool_item = int_item.convert_to(StackItemType::Boolean).unwrap();
+        let bool_item = int_item
+            .convert_to(StackItemType::Boolean)
+            .ok_or_else(|| VmError::InvalidStackItem)?;
         assert_eq!(bool_item.stack_item_type(), StackItemType::Boolean);
-        assert_eq!(bool_item.as_bool().unwrap(), true);
+        assert_eq!(bool_item.as_bool().expect("Failed to convert"), true);
 
-        // Convert to byte string
-        let byte_string = int_item.convert_to(StackItemType::ByteString).unwrap();
+        let byte_string = int_item
+            .convert_to(StackItemType::ByteString)
+            .ok_or_else(|| VmError::InvalidStackItem)?;
         assert_eq!(byte_string.stack_item_type(), StackItemType::ByteString);
-        assert_eq!(byte_string.as_bytes().unwrap(), vec![42]);
+        assert_eq!(
+            byte_string
+                .as_bytes()
+                .ok_or_else(|| VmError::InvalidStackItem)?,
+            vec![42]
+        );
 
         // Convert to buffer
-        let buffer = int_item.convert_to(StackItemType::Buffer).unwrap();
+        let buffer = int_item
+            .convert_to(StackItemType::Buffer)
+            .ok_or_else(|| VmError::InvalidStackItem)?;
         assert_eq!(buffer.stack_item_type(), StackItemType::Buffer);
-        assert_eq!(buffer.as_bytes().unwrap(), vec![42]);
+        assert_eq!(
+            buffer.as_bytes().ok_or_else(|| VmError::InvalidStackItem)?,
+            vec![42]
+        );
 
-        // Convert to same type (should return a clone)
-        let int_clone = int_item.convert_to(StackItemType::Integer).unwrap();
+        let int_clone = int_item
+            .convert_to(StackItemType::Integer)
+            .ok_or_else(|| VmError::InvalidStackItem)?;
         assert_eq!(int_clone.stack_item_type(), StackItemType::Integer);
-        assert_eq!(int_clone.as_int().unwrap(), BigInt::from(42));
+        assert_eq!(
+            int_clone.as_int().expect("Operation failed"),
+            BigInt::from(42)
+        );
 
         // Convert to unsupported type
         assert!(int_item.convert_to(StackItemType::Array).is_err());
@@ -706,6 +730,8 @@ mod tests {
         }
 
         // The arrays should be equal despite the cycles
-        assert!(array1.equals(&array2).unwrap());
+        assert!(array1
+            .equals(&array2)
+            .ok_or_else(|| VmError::InvalidStackItem)?);
     }
 }

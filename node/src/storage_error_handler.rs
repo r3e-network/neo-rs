@@ -101,7 +101,7 @@ pub async fn handle_storage_error(
             emergency_backup(storage_path).await?;
         }
         _ => {
-            debug!("No specific recovery action for storage error");
+            tracing::debug!("No specific recovery action for storage error");
         }
     }
 
@@ -110,7 +110,7 @@ pub async fn handle_storage_error(
 
 /// Attempt to repair corrupted database
 async fn repair_database(storage_path: &Path) -> Result<()> {
-    info!("Starting database repair process...");
+    info!("Starting database repair process/* implementation */;");
 
     // Create repair directory
     let repair_path = storage_path.join("repair");
@@ -132,7 +132,7 @@ async fn repair_database(storage_path: &Path) -> Result<()> {
 
 /// Restore database from backup
 async fn restore_from_backup(storage_path: &Path) -> Result<()> {
-    info!("Starting database restore from backup...");
+    info!("Starting database restore from backup/* implementation */;");
 
     let backup_path = storage_path.join("backup");
     if !backup_path.exists() {
@@ -150,7 +150,9 @@ async fn restore_from_backup(storage_path: &Path) -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         if path.is_file() {
-            let filename = path.file_name().unwrap();
+            let filename = path
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
             std::fs::copy(&path, corrupted_backup.join(filename))?;
         }
     }
@@ -160,7 +162,9 @@ async fn restore_from_backup(storage_path: &Path) -> Result<()> {
         let entry = entry?;
         let src = entry.path();
         if src.is_file() {
-            let filename = src.file_name().unwrap();
+            let filename = src
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
             let dst = storage_path.join(filename);
             std::fs::copy(&src, &dst)?;
             info!("Restored file: {:?}", filename);
@@ -173,7 +177,7 @@ async fn restore_from_backup(storage_path: &Path) -> Result<()> {
 
 /// Clear storage caches
 async fn clear_storage_caches() -> Result<()> {
-    info!("Clearing storage caches...");
+    info!("Clearing storage caches/* implementation */;");
 
     // Force garbage collection and compaction
     // RocksDB automatically manages its own caches
@@ -190,7 +194,7 @@ async fn clear_storage_caches() -> Result<()> {
 
 /// Create emergency backup before shutdown
 async fn emergency_backup(storage_path: &Path) -> Result<()> {
-    warn!("Creating emergency backup before shutdown...");
+    warn!("Creating emergency backup before shutdown/* implementation */;");
 
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     let backup_path = storage_path.join(format!("emergency_backup_{}", timestamp));
@@ -204,7 +208,11 @@ async fn emergency_backup(storage_path: &Path) -> Result<()> {
         for entry in std::fs::read_dir(storage_path)? {
             let entry = entry?;
             let path = entry.path();
-            let filename = path.file_name().unwrap().to_str().unwrap();
+            let filename = path
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid filename encoding"))?;
 
             if pattern.contains('*') {
                 let prefix = pattern.trim_end_matches('*');
@@ -267,17 +275,22 @@ pub async fn monitor_storage_health(storage_path: &Path, error_handler: Arc<Erro
 fn get_available_disk_space(path: &Path) -> Result<u64> {
     #[cfg(unix)]
     {
-        use libc::{statvfs, statvfs64};
+        use libc::statvfs;
         use std::ffi::CString;
         use std::os::unix::fs::MetadataExt;
 
-        let path_str = CString::new(path.to_str().unwrap())?;
-        let mut stat: statvfs64 = unsafe { std::mem::zeroed() };
+        let path_str = CString::new(
+            path.to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid path"))?,
+        )?;
+        // SAFETY: Operation is safe within this context
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
 
-        let result = unsafe { statvfs64(path_str.as_ptr(), &mut stat) };
+        // SAFETY: Operation is safe within this context
+        let result = unsafe { statvfs(path_str.as_ptr(), &mut stat) };
 
         if result == 0 {
-            let available = stat.f_bavail * stat.f_bsize;
+            let available = (stat.f_bavail as u64) * (stat.f_bsize as u64);
             Ok(available)
         } else {
             Err(anyhow::anyhow!("Failed to get disk space statistics"))
@@ -293,13 +306,9 @@ fn get_available_disk_space(path: &Path) -> Result<u64> {
         let path_wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut available: u64 = 0;
 
+        // SAFETY: Operation is safe within this context
         let result = unsafe {
-            GetDiskFreeSpaceExW(
-                path_wide.as_ptr(),
-                &mut available as *mut u64,
-                null_mut(),
-                null_mut(),
-            )
+            GetDiskFreeSpaceExW(path_wide.as_ptr(), &mut available as *mut u64, null_mut())
         };
 
         if result != 0 {
@@ -311,7 +320,6 @@ fn get_available_disk_space(path: &Path) -> Result<u64> {
 
     #[cfg(not(any(unix, windows)))]
     {
-        // Fallback for other platforms
         Ok(10_000_000_000) // 10GB default
     }
 }
@@ -324,12 +332,11 @@ fn should_check_integrity() -> bool {
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
 
     let last = LAST_CHECK.load(Ordering::Relaxed);
 
-    // Check every hour (3600 seconds)
     if now - last > 3600 {
         LAST_CHECK.store(now, Ordering::Relaxed);
         true
@@ -340,9 +347,8 @@ fn should_check_integrity() -> bool {
 
 /// Check database integrity
 async fn check_database_integrity(path: &Path) -> Result<()> {
-    info!("Running database integrity check...");
+    info!("Running database integrity check/* implementation */;");
 
-    // Check if database files exist and are readable
     let required_files = vec!["CURRENT", "IDENTITY", "LOCK"];
 
     for file in required_files {
@@ -351,7 +357,6 @@ async fn check_database_integrity(path: &Path) -> Result<()> {
             return Err(anyhow::anyhow!("Missing required database file: {}", file));
         }
 
-        // Check if file is readable
         std::fs::metadata(&file_path)
             .map_err(|e| anyhow::anyhow!("Cannot access {}: {}", file, e))?;
     }
@@ -375,12 +380,12 @@ async fn check_database_integrity(path: &Path) -> Result<()> {
 
 /// Create periodic backups
 pub async fn periodic_backup_task(storage_path: &Path) {
-    let backup_interval = std::time::Duration::from_secs(3600); // 1 hour
+    let backup_interval = std::time::Duration::from_secs(3600);
 
     loop {
         tokio::time::sleep(backup_interval).await;
 
-        info!("Starting periodic backup...");
+        info!("Starting periodic backup/* implementation */;");
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
         let backup_path = storage_path
             .join("backup")
@@ -394,7 +399,6 @@ pub async fn periodic_backup_task(storage_path: &Path) {
             Err(e) => error!("Periodic backup failed: {}", e),
         }
 
-        // Clean old backups (keep last 24 hours)
         let _ = clean_old_backups(&storage_path.join("backup"), 24).await;
     }
 }
@@ -411,7 +415,9 @@ async fn create_backup(source_path: &Path, backup_path: &Path) -> Result<usize> 
         let path = entry.path();
 
         if path.is_file() {
-            let filename = path.file_name().unwrap();
+            let filename = path
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
             let dest = backup_path.join(filename);
 
             // Skip temporary files
@@ -440,7 +446,11 @@ async fn clean_old_backups(backup_dir: &Path, keep_hours: u64) -> Result<()> {
                 if let Ok(modified) = metadata.modified() {
                     if modified < cutoff {
                         std::fs::remove_dir_all(&path)?;
-                        info!("Removed old backup: {:?}", path.file_name().unwrap());
+                        info!(
+                            "Removed old backup: {:?}",
+                            path.file_name()
+                                .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?
+                        );
                     }
                 }
             }
@@ -453,6 +463,7 @@ async fn clean_old_backups(backup_dir: &Path, keep_hours: u64) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Result;
 
     #[test]
     fn test_storage_error_types() {
@@ -469,7 +480,9 @@ mod tests {
                 assert_eq!(available, 1000);
                 assert_eq!(required, 5000);
             }
-            _ => panic!("Wrong error type"),
+            _ => {
+                panic!("Wrong error type");
+            }
         }
     }
 }

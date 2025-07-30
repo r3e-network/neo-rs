@@ -1,12 +1,5 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// serialization.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Transaction serialization implementation matching C# Neo N3 exactly.
@@ -231,8 +224,6 @@ impl Transaction {
 
     /// Validates the transaction structure during deserialization (production-ready implementation).
     fn validate_deserialized_structure(&self) -> neo_io::IoResult<()> {
-        // Production-ready structure validation (matches C# validation exactly)
-
         // Check basic constraints
         if self.signers.is_empty() {
             return Err(neo_io::IoError::InvalidData {
@@ -273,7 +264,7 @@ impl Transaction {
             });
         }
 
-        if self.script.len() > 65535 {
+        if self.script.len() > u16::MAX as usize {
             return Err(neo_io::IoError::InvalidData {
                 context: "script".to_string(),
                 value: format!("too large: {} bytes", self.script.len()),

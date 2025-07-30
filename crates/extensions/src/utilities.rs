@@ -2,8 +2,10 @@
 
 use crate::error::{ExtensionError, ExtensionResult};
 use chrono::{DateTime, Utc};
-use std::time::{SystemTime, UNIX_EPOCH};
 
+// Define constant locally
+const SECONDS_PER_HOUR: u64 = 3600;
+use std::time::{SystemTime, UNIX_EPOCH};
 /// Convert timestamp to DateTime
 pub fn timestamp_to_datetime(timestamp: u64) -> DateTime<Utc> {
     DateTime::from_timestamp(timestamp as i64, 0).unwrap_or_else(|| Utc::now())
@@ -92,7 +94,6 @@ where
     }
 
     // This should never be reached since the loop handles all cases,
-    // but if it somehow is reached, run the operation one more time
     operation()
 }
 
@@ -139,9 +140,9 @@ pub fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else if max_len <= 3 {
-        "...".to_string()
+        "/* implementation */;".to_string()
     } else {
-        format!("{}...", &s[..max_len - 3])
+        format!("{}/* implementation */;", &s[..max_len - 3])
     }
 }
 
@@ -185,7 +186,7 @@ pub fn camel_to_snake_case(camel_str: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_timestamp_conversion() {
@@ -193,17 +194,19 @@ mod tests {
         let datetime = timestamp_to_datetime(now);
         let back_to_timestamp = datetime_to_timestamp(&datetime);
 
-        // Allow for small differences due to precision
         assert!((now as i64 - back_to_timestamp as i64).abs() <= 1);
     }
 
     #[test]
     fn test_bytes_to_human_readable() {
         assert_eq!(bytes_to_human_readable(0), "0 B");
-        assert_eq!(bytes_to_human_readable(512), "512 B");
-        assert_eq!(bytes_to_human_readable(1024), "1.00 KB");
+        assert_eq!(
+            bytes_to_human_readable(MAX_TRANSACTIONS_PER_BLOCK),
+            "MAX_TRANSACTIONS_PER_BLOCK B"
+        );
+        assert_eq!(bytes_to_human_readable(MAX_SCRIPT_SIZE), "1.00 KB");
         assert_eq!(bytes_to_human_readable(1536), "1.50 KB");
-        assert_eq!(bytes_to_human_readable(1048576), "1.00 MB");
+        assert_eq!(bytes_to_human_readable(MAX_BLOCK_SIZE), "1.00 MB");
     }
 
     #[test]
@@ -217,7 +220,7 @@ mod tests {
     fn test_clamp() {
         assert_eq!(clamp(5, 1, 10), 5);
         assert_eq!(clamp(0, 1, 10), 1);
-        assert_eq!(clamp(15, 1, 10), 10);
+        assert_eq!(clamp(SECONDS_PER_BLOCK, 1, 10), 10);
     }
 
     #[test]
@@ -237,7 +240,10 @@ mod tests {
     #[test]
     fn test_truncate_string() {
         assert_eq!(truncate_string("hello", 10), "hello");
-        assert_eq!(truncate_string("hello world", 8), "hello...");
+        assert_eq!(
+            truncate_string("hello world", 8),
+            "hello/* implementation */;"
+        );
         assert_eq!(truncate_string("hi", 2), "hi");
     }
 

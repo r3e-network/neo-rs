@@ -119,7 +119,6 @@ fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is true, jump
     if condition {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -148,7 +147,6 @@ fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is true, jump
     if condition {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -177,7 +175,6 @@ fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is false, jump
     if !condition {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -206,7 +203,6 @@ fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is false, jump
     if !condition {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -236,7 +232,6 @@ fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Compare and jump if equal
     if a.equals(&b)? {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -266,7 +261,6 @@ fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Compare and jump if equal
     if a.equals(&b)? {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -296,7 +290,6 @@ fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Compare and jump if not equal
     if !a.equals(&b)? {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -326,7 +319,6 @@ fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Compare and jump if not equal
     if !a.equals(&b)? {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -356,7 +348,6 @@ fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Compare and jump if a > b
     if a > b {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -386,7 +377,6 @@ fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Compare and jump if a > b
     if a > b {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -416,7 +406,6 @@ fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Compare and jump if a >= b
     if a >= b {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -446,7 +435,6 @@ fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Compare and jump if a >= b
     if a >= b {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -476,7 +464,6 @@ fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Compare and jump if a < b
     if a < b {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -506,7 +493,6 @@ fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Compare and jump if a < b
     if a < b {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -536,7 +522,6 @@ fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Compare and jump if a <= b
     if a <= b {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -566,7 +551,6 @@ fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     let b = context.pop()?.as_int()?;
     let a = context.pop()?.as_int()?;
 
-    // Compare and jump if a <= b
     if a <= b {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -601,7 +585,6 @@ fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()>
         return Err(VmError::invalid_operation_msg(format!("Call target out of bounds: {}", call_target)));
     }
 
-    // Create a new context for the call
     let script = context.script().clone();
     let new_context = engine.create_context(script, -1, call_target as usize);
 
@@ -628,7 +611,6 @@ fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
         return Err(VmError::invalid_operation_msg(format!("Call target out of bounds: {}", call_target)));
     }
 
-    // Create a new context for the call
     let script = context.script().clone();
     let new_context = engine.create_context(script, -1, call_target as usize);
 
@@ -649,7 +631,6 @@ fn calla(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
     // Pop the call target from the stack
     let call_target = context.pop()?.as_int()?.to_usize().ok_or_else(|| VmError::invalid_operation_msg("Invalid call target"))?;
 
-    // Create a new context for the call
     let script = context.script().clone();
     let new_context = engine.create_context(script, -1, call_target);
 
@@ -670,7 +651,6 @@ fn callt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
     // Pop the call target from the stack
     let call_target = context.pop()?.as_int()?.to_usize().ok_or_else(|| VmError::invalid_operation_msg("Invalid call target"))?;
 
-    // Create a new context for the call
     let script = context.script().clone();
     let new_context = engine.create_context(script, -1, call_target);
 
@@ -694,21 +674,15 @@ fn abort(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
 /// Implements the ABORTMSG operation.
 /// This matches C# Neo's AbortMsg implementation exactly.
 fn abort_msg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Production-ready ABORTMSG implementation (matches C# Neo exactly)
-
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the message from the stack (matches C# engine.Pop().GetString())
     let message = context.pop()?;
     let message_bytes = message.as_bytes()?;
     let message_str = String::from_utf8_lossy(&message_bytes);
 
-    // In C#: throw new Exception($"{OpCode.ABORTMSG} is executed. Reason: {msg}");
-    // For production, this would emit to blockchain logs and set fault state
-    eprintln!("VM ABORT: {}", message_str);
+    log::error!("VM ABORT: {}", message_str);
 
-    // Set the VM state to FAULT (matches C# exception handling exactly)
     engine.set_state(crate::execution_engine::VMState::FAULT);
 
     Ok(())
@@ -717,19 +691,13 @@ fn abort_msg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 /// Implements the ASSERT operation.
 /// This matches C# Neo's Assert implementation exactly.
 fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Production-ready ASSERT implementation (matches C# Neo exactly)
-
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the condition from the stack (matches C# engine.Pop().GetBoolean())
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is false, set the VM state to FAULT (matches C# exception handling)
     if !condition {
-        // In C#: throw new Exception($"{OpCode.ASSERT} is executed with false result.");
-        // For production, this would emit to blockchain logs and set fault state
-        eprintln!("VM ASSERT FAILED: Assertion condition was false");
+        log::error!("VM ASSERT FAILED: Assertion condition was false");
 
         engine.set_state(crate::execution_engine::VMState::FAULT);
     }
@@ -740,23 +708,17 @@ fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// Implements the ASSERTMSG operation.
 /// This matches C# Neo's AssertMsg implementation exactly.
 fn assert_msg(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Production-ready ASSERTMSG implementation (matches C# Neo exactly)
-
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the message and condition from the stack (matches C# engine.Pop() order)
     let message = context.pop()?;
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is false, log the message and set the VM state to FAULT
     if !condition {
         let message_bytes = message.as_bytes()?;
         let message_str = String::from_utf8_lossy(&message_bytes);
 
-        // In C#: throw new Exception($"{OpCode.ASSERTMSG} is executed. Reason: {msg}");
-        // For production, this would emit to blockchain logs and set fault state
-        eprintln!("VM ASSERT FAILED: {}", message_str);
+        log::error!("VM ASSERT FAILED: {}", message_str);
 
         engine.set_state(crate::execution_engine::VMState::FAULT);
     }
@@ -775,8 +737,6 @@ fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
     // Set the uncaught exception
     engine.set_uncaught_exception(Some(exception));
 
-    // Production-ready exception handling (matches C# VM.Throw exactly)
-    // Search for exception handlers in the current context and parent contexts
     if !engine.handle_exception() {
         // No exception handler found, set VM state to FAULT
         engine.set_state(crate::execution_engine::VMState::FAULT);
@@ -794,7 +754,6 @@ fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
     let catch_offset = instruction.read_i16_operand()?;
     let finally_offset = instruction.read_i16_operand()?;
 
-    // Production-ready exception handling (matches C# VM.Try exactly)
     // Create exception handler frame
     let current_ip = context.instruction_pointer();
     let handler = ExceptionHandler {
@@ -818,7 +777,6 @@ fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     let catch_offset = instruction.read_i32_operand()?;
     let finally_offset = instruction.read_i32_operand()?;
 
-    // Production-ready exception handling (matches C# VM.Try exactly)
     // Create exception handler frame
     let current_ip = context.instruction_pointer();
     let handler = ExceptionHandler {
@@ -841,10 +799,8 @@ fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
     // Get the offset from the instruction
     let offset = instruction.read_i16_operand()?;
 
-    // Production-ready exception handling (matches C# VM.EndTry exactly)
     // Pop the current exception handler
     if let Some(handler) = context.pop_exception_handler() {
-        // If there's a finally block, jump to it
         if let Some(finally_offset) = handler.finally_offset {
             context.set_instruction_pointer(finally_offset);
             engine.is_jumping = true;
@@ -862,10 +818,8 @@ fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
     // Get the offset from the instruction
     let offset = instruction.read_i32_operand()?;
 
-    // Production-ready exception handling (matches C# VM.EndTry exactly)
     // Pop the current exception handler
     if let Some(handler) = context.pop_exception_handler() {
-        // If there's a finally block, jump to it
         if let Some(finally_offset) = handler.finally_offset {
             context.set_instruction_pointer(finally_offset);
             engine.is_jumping = true;
@@ -880,8 +834,6 @@ fn endfinally(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Production-ready exception handling (matches C# VM.EndFinally exactly)
-    // Check if there's a pending exception to re-throw
     if let Some(exception) = engine.get_uncaught_exception() {
         // Re-throw the exception after finally block execution
         engine.set_uncaught_exception(Some(exception.clone()));
@@ -895,16 +847,12 @@ fn endfinally(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 
 /// Implements the RET operation.
 fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Production-ready RET implementation (matches C# VM.Return exactly)
-    
-    // Check if we can return (must have more than one context)
     if engine.invocation_stack().len() <= 1 {
         // No more contexts to return to - halt execution
         engine.set_state(crate::execution_engine::VMState::HALT);
         return Ok(());
     }
     
-    // Unload current context (matches C# engine.UnloadContext())
     let _current_context = engine.unload_context()
         .ok_or_else(|| VmError::invalid_operation_msg("No context to unload"))?;
     

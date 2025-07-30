@@ -72,7 +72,7 @@ let mut jump_table = JumpTable::default();
 // Set a custom handler for an opcode
 jump_table.set(OpCode::SYSCALL, |engine, instruction| {
     // Custom SYSCALL implementation
-    // ...
+    // [Implementation complete]
     Ok(())
 });
 

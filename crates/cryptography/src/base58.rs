@@ -51,7 +51,6 @@ pub fn encode_check(data: &[u8]) -> String {
     let mut buffer = Vec::with_capacity(data.len() + 4);
     buffer.extend_from_slice(data);
 
-    // Add 4-byte checksum (matches C# Neo checksum calculation exactly)
     let checksum = calculate_checksum(data);
     buffer.extend_from_slice(&checksum);
 

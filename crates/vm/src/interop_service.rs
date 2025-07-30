@@ -3,17 +3,20 @@
 //! This module provides interoperability between the Neo VM and external services.
 
 use crate::call_flags::CallFlags;
+use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
+use crate::op_code::OpCode;
+use crate::script::Script;
 use crate::stack_item::StackItem;
 use lazy_static::lazy_static;
+use neo_config::ADDRESS_SIZE;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
 /// A function that provides interoperability with external services.
 pub type InteropMethod = fn(engine: &mut ExecutionEngine) -> VmResult<()>;
 
-// Global storage for testing and development
 lazy_static! {
     static ref GLOBAL_STORAGE: Mutex<HashMap<Vec<u8>, Vec<u8>>> = Mutex::new(HashMap::new());
 }
@@ -75,11 +78,12 @@ impl InteropService {
 
     /// Registers standard interop methods.
     fn register_standard_methods(&mut self) {
-        // System.Runtime methods
         self.register(InteropDescriptor {
             name: "System.Runtime.Platform".to_string(),
             handler: |engine| {
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
                 stack.push(StackItem::from_byte_string(b"NEO".to_vec()));
                 Ok(())
@@ -91,11 +95,11 @@ impl InteropService {
         self.register(InteropDescriptor {
             name: "System.Runtime.GetTrigger".to_string(),
             handler: |engine| {
-                // Production-ready trigger retrieval (matches C# System.Runtime.GetTrigger exactly)
-                // Get the actual trigger from the engine's execution context (production implementation)
                 let trigger = engine.get_trigger_type() as i32;
 
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
 
                 stack.push(StackItem::from_int(trigger));
@@ -108,16 +112,16 @@ impl InteropService {
         self.register(InteropDescriptor {
             name: "System.Runtime.GetTime".to_string(),
             handler: |engine| {
-                // Production-ready blockchain time retrieval (matches C# System.Runtime.GetTime exactly)
-
                 // 1. Get current block timestamp from the blockchain
                 let current_block_time = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
+                    .expect("Operation failed")
                     .as_millis() as u64;
 
                 // 2. Push timestamp onto the stack
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
                 stack.push(StackItem::from_int(current_block_time as i64));
                 Ok(())
@@ -129,18 +133,19 @@ impl InteropService {
         self.register(InteropDescriptor {
             name: "System.Runtime.Log".to_string(),
             handler: |engine| {
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
 
                 // Pop the message from the stack
                 let message = stack.pop()?;
                 let message_bytes = message.as_bytes()?;
 
-                // Production-ready logging implementation (matches C# System.Runtime.Log exactly)
                 let message_str = String::from_utf8_lossy(&message_bytes);
 
                 // 1. Log to console for immediate debugging (matches C# Console.WriteLine)
-                println!("Contract Log: {}", message_str);
+                log::info!("Contract Log: {}", message_str);
 
                 // 2. Emit blockchain event for persistent logging (production event system)
                 engine.emit_runtime_log_event(&message_str)?;
@@ -153,22 +158,23 @@ impl InteropService {
             required_call_flags: CallFlags::ALLOW_NOTIFY,
         });
 
-        // System.Storage methods
         self.register(InteropDescriptor {
             name: "System.Storage.GetContext".to_string(),
             handler: |engine| {
                 // Get the script hash first to avoid borrowing conflicts
                 let contract_hash = {
-                    let context = engine.current_context().unwrap();
+                    let context = engine.current_context().ok_or_else(|| {
+                        VmError::invalid_operation_msg("No current context".to_string())
+                    })?;
                     context.script_hash()
                 };
 
                 // Now get the mutable reference to the stack
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
 
-                // Create a storage context (matches C# System.Storage.GetContext exactly)
-                // The storage context contains the contract hash for storage isolation
                 let storage_context =
                     StackItem::from_byte_string(contract_hash.as_bytes().to_vec());
 
@@ -182,35 +188,32 @@ impl InteropService {
         self.register(InteropDescriptor {
             name: "System.Storage.Get".to_string(),
             handler: |engine| {
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
 
                 // Pop the key and context from the stack
                 let key = stack.pop()?;
                 let storage_context = stack.pop()?;
 
-                // Production-ready storage retrieval (matches C# System.Storage.Get exactly)
                 let key_bytes = key.as_bytes()?;
                 let _context_bytes = storage_context.as_bytes()?;
 
-                // Production-ready storage retrieval (matches C# System.Storage.Get exactly)
-                // Validate context bytes (should be 20-byte contract hash)
-                if _context_bytes.len() != 20 {
+                if _context_bytes.len() != ADDRESS_SIZE {
                     return Err(crate::VmError::invalid_operation_msg(
                         "Invalid storage context".to_string(),
                     ));
                 }
 
                 // Create storage key: contract_hash + key
-                let mut storage_key = Vec::with_capacity(20 + key_bytes.len());
+                let mut storage_key = Vec::with_capacity(ADDRESS_SIZE + key_bytes.len());
                 storage_key.extend_from_slice(&_context_bytes);
                 storage_key.extend_from_slice(&key_bytes);
 
-                // Get value from storage backend (matches C# ApplicationEngine.Storage_Get exactly)
-                // In C# Neo, this calls ApplicationEngine.Snapshot.TryGet(StorageKey)
                 let value = GLOBAL_STORAGE
                     .lock()
-                    .unwrap()
+                    .expect("Failed to acquire lock")
                     .get(&storage_key)
                     .cloned()
                     .unwrap_or_else(Vec::new);
@@ -225,7 +228,9 @@ impl InteropService {
         self.register(InteropDescriptor {
             name: "System.Storage.Put".to_string(),
             handler: |engine| {
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
 
                 // Pop the value, key, and context from the stack
@@ -233,29 +238,24 @@ impl InteropService {
                 let key = stack.pop()?;
                 let storage_context = stack.pop()?;
 
-                // Production-ready storage put operation (matches C# System.Storage.Put exactly)
                 let value_bytes = value.as_bytes()?;
                 let key_bytes = key.as_bytes()?;
                 let _context_bytes = storage_context.as_bytes()?;
 
-                // Production-ready storage put operation (matches C# System.Storage.Put exactly)
-                // Validate context bytes (should be 20-byte contract hash)
-                if _context_bytes.len() != 20 {
+                if _context_bytes.len() != ADDRESS_SIZE {
                     return Err(crate::VmError::invalid_operation_msg(
                         "Invalid storage context".to_string(),
                     ));
                 }
 
                 // Create storage key: contract_hash + key
-                let mut storage_key = Vec::with_capacity(20 + key_bytes.len());
+                let mut storage_key = Vec::with_capacity(ADDRESS_SIZE + key_bytes.len());
                 storage_key.extend_from_slice(&_context_bytes);
                 storage_key.extend_from_slice(&key_bytes);
 
-                // Store value in storage backend (matches C# ApplicationEngine.Storage_Put exactly)
-                // In C# Neo, this calls ApplicationEngine.Snapshot.Add(StorageKey, StorageItem)
                 GLOBAL_STORAGE
                     .lock()
-                    .unwrap()
+                    .expect("Failed to acquire lock")
                     .insert(storage_key, value_bytes);
 
                 Ok(())
@@ -267,32 +267,29 @@ impl InteropService {
         self.register(InteropDescriptor {
             name: "System.Storage.Delete".to_string(),
             handler: |engine| {
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
 
                 // Pop the key and context from the stack
                 let key = stack.pop()?;
                 let storage_context = stack.pop()?;
 
-                // Production-ready storage delete operation (matches C# System.Storage.Delete exactly)
                 let key_bytes = key.as_bytes()?;
                 let context_bytes = storage_context.as_bytes()?;
 
-                // Validate storage context (contract hash)
-                if context_bytes.len() != 20 {
+                if context_bytes.len() != ADDRESS_SIZE {
                     return Err(crate::VmError::invalid_operation_msg(
                         "Invalid storage context".to_string(),
                     ));
                 }
 
-                // Production-ready storage delete operation (matches C# System.Storage.Delete exactly)
                 // Create storage key: contract_hash + key
-                let mut storage_key = Vec::with_capacity(20 + key_bytes.len());
+                let mut storage_key = Vec::with_capacity(ADDRESS_SIZE + key_bytes.len());
                 storage_key.extend_from_slice(&context_bytes);
                 storage_key.extend_from_slice(&key_bytes);
 
-                // Delete from storage backend (matches C# ApplicationEngine.Storage_Delete exactly)
-                // In C# Neo, this calls ApplicationEngine.Snapshot.Delete(StorageKey)
                 // The actual storage operation would be handled by the ApplicationEngine
 
                 Ok(())
@@ -301,15 +298,15 @@ impl InteropService {
             required_call_flags: CallFlags::WRITE_STATES,
         });
 
-        // System.Crypto methods
         self.register(InteropDescriptor {
             name: "System.Crypto.CheckMultisig".to_string(),
             handler: |engine| {
-                // Get the message to verify (script container hash) before borrowing context
                 let message = engine.get_script_container_hash();
 
                 // Now work with the stack
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
 
                 // Pop the public keys array from the stack
@@ -348,7 +345,6 @@ impl InteropService {
                     }
                 };
 
-                // Production-ready multi-signature verification (matches C# System.Crypto.CheckMultisig exactly)
                 // This implements the standard multi-signature verification algorithm:
                 // 1. For each signature, find the corresponding public key that validates it
                 // 2. Public keys must be used in order (once a key is used, we can't go back)
@@ -372,9 +368,7 @@ impl InteropService {
                                 signature_valid = true;
                                 verified_count += 1;
                             }
-                            Ok(false) => {
-                                // This public key doesn't match this signature, try next
-                            }
+                            Ok(false) => {}
                             Err(_) => {
                                 // Invalid signature or public key format
                             }
@@ -388,15 +382,12 @@ impl InteropService {
                     }
 
                     if !signature_valid {
-                        // No valid public key found for this signature
                         break;
                     }
                 }
 
-                // All signatures must be verified for success
                 let all_valid = verified_count == signatures.len();
 
-                // Push the result onto the stack
                 stack.push(StackItem::from_bool(all_valid));
                 Ok(())
             },
@@ -491,11 +482,6 @@ impl InteropServiceTrait for InteropService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::op_code::OpCode;
-    use crate::script::Script;
-    use crate::stack_item::StackItem;
-
     #[test]
     fn test_interop_service_registration() {
         let mut service = InteropService::new();
@@ -504,7 +490,9 @@ mod tests {
         service.register(InteropDescriptor {
             name: "Test.Method".to_string(),
             handler: |engine| {
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
                 stack.push(StackItem::from_int(42));
                 Ok(())
@@ -513,7 +501,6 @@ mod tests {
             required_call_flags: CallFlags::NONE,
         });
 
-        // Check if the method was registered
         let name = b"Test.Method";
         assert!(service.get_method(name).is_some());
         assert_eq!(service.get_price(name), 10);
@@ -527,7 +514,9 @@ mod tests {
         service.register(InteropDescriptor {
             name: "Test.Method".to_string(),
             handler: |engine| {
-                let context = engine.current_context_mut().unwrap();
+                let context = engine.current_context_mut().ok_or_else(|| {
+                    VmError::invalid_operation_msg("No current context".to_string())
+                })?;
                 let stack = context.evaluation_stack_mut();
                 stack.push(StackItem::from_int(42));
                 Ok(())
@@ -544,16 +533,26 @@ mod tests {
         let script = Script::new_relaxed(script_bytes);
 
         // Load the script
-        engine.load_script(script, -1, 0).unwrap();
+        engine
+            .load_script(script, -1, 0)
+            .expect("operation should succeed");
 
         // Invoke the method
         let name = b"Test.Method";
-        service.invoke(&mut engine, name).unwrap();
+        service.invoke(&mut engine, name).expect("Operation failed");
 
-        // Check the result
-        let context = engine.current_context().unwrap();
+        let context = engine
+            .current_context()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context".to_string()))?;
         let stack = context.evaluation_stack();
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 42);
+        assert_eq!(
+            stack
+                .peek(0)
+                .expect("operation should succeed")
+                .as_int()
+                .expect("Operation failed"),
+            42
+        );
     }
 
     #[test]

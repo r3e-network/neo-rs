@@ -1,6 +1,7 @@
 //! Encoding utilities for Neo Extensions
 
 use crate::error::{ExtensionError, ExtensionResult};
+use base64::Engine;
 
 /// Encoding utilities
 pub struct Encoding;
@@ -29,13 +30,11 @@ impl Encoding {
 
     /// Encode bytes to base64 string
     pub fn to_base64(data: &[u8]) -> String {
-        use base64::Engine;
         base64::engine::general_purpose::STANDARD.encode(data)
     }
 
     /// Decode base64 string
     pub fn from_base64(base64_str: &str) -> ExtensionResult<Vec<u8>> {
-        use base64::Engine;
         base64::engine::general_purpose::STANDARD
             .decode(base64_str)
             .map_err(ExtensionError::from)
@@ -43,13 +42,11 @@ impl Encoding {
 
     /// Encode bytes to base64 URL-safe string
     pub fn to_base64_url(data: &[u8]) -> String {
-        use base64::Engine;
         base64::engine::general_purpose::URL_SAFE.encode(data)
     }
 
     /// Decode base64 URL-safe string
     pub fn from_base64_url(base64_str: &str) -> ExtensionResult<Vec<u8>> {
-        use base64::Engine;
         base64::engine::general_purpose::URL_SAFE
             .decode(base64_str)
             .map_err(ExtensionError::from)
@@ -79,7 +76,6 @@ impl Encoding {
 
     /// Validate base64 string format
     pub fn is_valid_base64(base64_str: &str) -> bool {
-        use base64::Engine;
         base64::engine::general_purpose::STANDARD
             .decode(base64_str)
             .is_ok()
@@ -190,8 +186,6 @@ impl EncodingExt for Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_hex_encoding() {
         let data = vec![0x01, 0x02, 0x03, 0x04];

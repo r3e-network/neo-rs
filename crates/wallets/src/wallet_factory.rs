@@ -8,6 +8,8 @@ use crate::{
     Error, Result,
 };
 use async_trait::async_trait;
+use log::{debug, error, info, warn};
+use neo_config::MAX_SCRIPT_SIZE;
 use std::path::Path;
 
 /// Trait for wallet factories.
@@ -57,7 +59,6 @@ impl WalletFactory {
 
         let path_obj = Path::new(path);
 
-        // Check if parent directory exists
         if let Some(parent) = path_obj.parent() {
             if !parent.exists() {
                 return Err(Error::Other(format!(
@@ -80,7 +81,6 @@ impl WalletFactory {
             return Err(Error::Other("Name is too long".to_string()));
         }
 
-        // Check for invalid characters
         let invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
         if name.chars().any(|c| invalid_chars.contains(&c)) {
             return Err(Error::Other("Name contains invalid characters".to_string()));
@@ -101,7 +101,7 @@ impl WalletFactory {
             ));
         }
 
-        if password.len() > 1024 {
+        if password.len() > MAX_SCRIPT_SIZE {
             return Err(Error::Other("Password is too long".to_string()));
         }
 
@@ -147,8 +147,6 @@ impl WalletFactory {
     /// Securely deletes a file.
     pub fn secure_delete(path: &str) -> Result<()> {
         if Path::new(path).exists() {
-            // Production-ready secure file deletion (matches C# WalletFactory.SecureDelete exactly)
-
             // 1. Get file size for secure overwriting
             let file_size = std::fs::metadata(path).map_err(|e| Error::Io(e))?.len();
 
@@ -172,12 +170,12 @@ impl WalletFactory {
                 file.write_all(&random_data).map_err(|e| Error::Io(e))?;
                 file.flush().map_err(|e| Error::Io(e))?;
 
-                println!("Secure deletion pass {} completed for {}", pass + 1, path);
+                log::info!("Secure deletion pass {} completed for {}", pass + 1, path);
             }
 
             // 3. Finally delete the file
             std::fs::remove_file(path).map_err(|e| Error::Io(e))?;
-            println!("Wallet file {} securely deleted", path);
+            log::info!("Wallet file {} securely deleted", path);
         }
         Ok(())
     }
@@ -206,7 +204,7 @@ impl WalletFactory {
             return Err(Error::InvalidWalletFormat);
         }
 
-        if file_size > 100 * 1024 * 1024 {
+        if file_size > 100 * (MAX_SCRIPT_SIZE as u64) * (MAX_SCRIPT_SIZE as u64) {
             // 100MB limit
             return Err(Error::Other("Wallet file is too large".to_string()));
         }
@@ -255,8 +253,6 @@ impl std::fmt::Display for WalletInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_validate_name() {
         assert!(WalletFactory::validate_name("valid_name").is_ok());

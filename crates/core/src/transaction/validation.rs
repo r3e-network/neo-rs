@@ -1,12 +1,5 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// validation.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Transaction validation implementation matching C# Neo N3 exactly.
@@ -14,7 +7,7 @@
 use super::blockchain::BlockchainSnapshot;
 use super::core::{Transaction, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE};
 use super::vm::ApplicationEngine;
-use crate::CoreError;
+use crate::error::{CoreError, CoreResult};
 
 impl Transaction {
     /// Verifies the transaction (matches C# IVerifiable.Verify exactly).
@@ -22,9 +15,7 @@ impl Transaction {
         &self,
         snapshot: &BlockchainSnapshot,
         gas_limit: Option<u64>,
-    ) -> Result<bool, CoreError> {
-        // Production-ready transaction verification (matches C# Transaction.Verify exactly)
-
+    ) -> CoreResult<bool> {
         // 1. Basic structure validation
         self.validate_basic_structure()?;
 
@@ -50,9 +41,7 @@ impl Transaction {
     }
 
     /// Validates basic transaction structure (production-ready implementation).
-    fn validate_basic_structure(&self) -> Result<(), CoreError> {
-        // Production-ready basic validation (matches C# Transaction validation exactly)
-
+    fn validate_basic_structure(&self) -> CoreResult<()> {
         // Check version
         if self.version > 0 {
             return Err(CoreError::InvalidData {
@@ -85,16 +74,13 @@ impl Transaction {
     }
 
     /// Validates transaction attributes (production-ready implementation).
-    fn validate_attributes(&self) -> Result<(), CoreError> {
-        // Production-ready attribute validation (matches C# Transaction.Attributes validation exactly)
-
+    fn validate_attributes(&self) -> CoreResult<()> {
         if self.attributes.len() > MAX_TRANSACTION_ATTRIBUTES {
             return Err(CoreError::InvalidData {
                 message: "Too many attributes".to_string(),
             });
         }
 
-        // Check for duplicate attributes that don't allow multiples
         let mut seen_types = std::collections::HashSet::new();
         for attribute in &self.attributes {
             if !attribute.allows_multiple() {
@@ -115,9 +101,7 @@ impl Transaction {
     }
 
     /// Validates transaction signers (production-ready implementation).
-    fn validate_signers(&self) -> Result<(), CoreError> {
-        // Production-ready signer validation (matches C# Transaction.Signers validation exactly)
-
+    fn validate_signers(&self) -> CoreResult<()> {
         if self.signers.is_empty() {
             return Err(CoreError::InvalidData {
                 message: "Transaction must have at least one signer".to_string(),
@@ -130,7 +114,6 @@ impl Transaction {
             });
         }
 
-        // Check for duplicate signers
         let mut seen_accounts = std::collections::HashSet::new();
         for signer in &self.signers {
             if seen_accounts.contains(&signer.account) {
@@ -145,16 +128,14 @@ impl Transaction {
     }
 
     /// Validates transaction script (production-ready implementation).
-    fn validate_script(&self) -> Result<(), CoreError> {
-        // Production-ready script validation (matches C# Transaction.Script validation exactly)
-
+    fn validate_script(&self) -> CoreResult<()> {
         if self.script.is_empty() {
             return Err(CoreError::InvalidData {
                 message: "Transaction script cannot be empty".to_string(),
             });
         }
 
-        if self.script.len() > 65535 {
+        if self.script.len() > u16::MAX as usize {
             return Err(CoreError::InvalidData {
                 message: "Transaction script too large".to_string(),
             });
@@ -167,9 +148,7 @@ impl Transaction {
     }
 
     /// Validates script opcodes (production-ready implementation).
-    fn validate_script_opcodes(&self) -> Result<(), CoreError> {
-        // Production-ready opcode validation (matches C# VM opcode validation exactly)
-
+    fn validate_script_opcodes(&self) -> CoreResult<()> {
         let mut pos = 0;
         while pos < self.script.len() {
             let opcode = self.script[pos];
@@ -226,9 +205,7 @@ impl Transaction {
     }
 
     /// Validates transaction size (production-ready implementation).
-    fn validate_size(&self) -> Result<(), CoreError> {
-        // Production-ready size validation (matches C# Transaction.Size validation exactly)
-
+    fn validate_size(&self) -> CoreResult<()> {
         let size = self.size();
         if size > MAX_TRANSACTION_SIZE {
             return Err(CoreError::InvalidData {
@@ -243,9 +220,7 @@ impl Transaction {
     }
 
     /// Validates transaction fees (production-ready implementation).
-    fn validate_fees(&self, snapshot: &BlockchainSnapshot) -> Result<(), CoreError> {
-        // Production-ready fee validation (matches C# Transaction fee validation exactly)
-
+    fn validate_fees(&self, snapshot: &BlockchainSnapshot) -> CoreResult<()> {
         // Validate network fee covers verification cost
         let verification_cost = self.calculate_verification_cost(snapshot)?;
         if self.network_fee < verification_cost {
@@ -257,13 +232,11 @@ impl Transaction {
             });
         }
 
-        // Validate system fee for script execution (matches C# Transaction.SystemFee validation exactly)
         if self.system_fee > 0 {
             // Real C# Neo N3 implementation: System fee validation
             // In C#: The system fee is validated against the actual execution cost
             //        by running the script in test mode and checking gas consumption
 
-            // Maximum system fee allowed (matches C# PolicyContract.GetMaxBlockSystemFee)
             let max_system_fee = 150_000_000_000i64; // 1500 GAS (C# default)
             if self.system_fee > max_system_fee {
                 return Err(CoreError::InvalidData {
@@ -285,12 +258,7 @@ impl Transaction {
     }
 
     /// Calculates verification cost (production-ready implementation).
-    fn calculate_verification_cost(
-        &self,
-        _snapshot: &BlockchainSnapshot,
-    ) -> Result<i64, CoreError> {
-        // Production-ready verification cost calculation (matches C# VerificationCost exactly)
-
+    fn calculate_verification_cost(&self, _snapshot: &BlockchainSnapshot) -> CoreResult<i64> {
         let mut total_cost = 0i64;
 
         // Base verification cost
@@ -310,9 +278,7 @@ impl Transaction {
         &self,
         snapshot: &BlockchainSnapshot,
         gas_limit: Option<u64>,
-    ) -> Result<bool, CoreError> {
-        // Production-ready witness verification (matches C# Transaction.VerifyWitnesses exactly)
-
+    ) -> CoreResult<bool> {
         if self.witnesses.len() != self.signers.len() {
             return Err(CoreError::InvalidData {
                 message: "Witness count must match signer count".to_string(),
@@ -322,7 +288,6 @@ impl Transaction {
         let hash_data = self.get_hash_data();
 
         for (i, (signer, witness)) in self.signers.iter().zip(self.witnesses.iter()).enumerate() {
-            // Create ApplicationEngine for witness verification
             let mut engine = ApplicationEngine::create_verification_engine(
                 snapshot.clone(),
                 gas_limit.unwrap_or(50_000_000), // 0.5 GAS default

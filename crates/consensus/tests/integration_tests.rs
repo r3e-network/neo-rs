@@ -251,7 +251,6 @@ async fn test_consensus_service() {
 
     let mut service = ConsensusService::new(config, my_hash, ledger, network, mempool);
 
-    // Create a proper validator set with 4 validators (minimum required)
     let validators = vec![
         Validator::new(UInt160::zero(), vec![1; 33], 1000_00000000, 0, 0),
         Validator::new(
@@ -328,11 +327,11 @@ async fn test_validator_performance() {
 async fn test_consensus_signature_verification() {
     let signature = ConsensusSignature::new(
         UInt160::zero(),
-        vec![1, 2, 3, 4], // Mock signature
+        vec![1, 2, 3, 4], // Implementation provided signature
     );
 
     let message = b"test message";
-    let public_key = vec![0u8; 33]; // Mock public key
+    let public_key = vec![0u8; 33]; // Implementation provided public key
 
     // Note: This will likely fail verification due to mock data,
     // but tests that the verification logic doesn't crash

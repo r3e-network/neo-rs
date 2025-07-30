@@ -3,8 +3,11 @@
 //! This module contains all the cryptographic constants used in BLS12-381 operations,
 //! matching the C# Neo.Cryptography.BLS12_381 constants exactly.
 
-/// Size of a private key in bytes (32 bytes for scalar field)
-pub const PRIVATE_KEY_SIZE: usize = 32;
+/// Size of a hash in bytes (32 bytes for SHA256)
+pub const HASH_SIZE: usize = 32;
+
+/// Size of a private key in bytes (HASH_SIZE bytes for scalar field)
+pub const PRIVATE_KEY_SIZE: usize = HASH_SIZE;
 
 /// Size of a public key in bytes (48 bytes for compressed G1 point)
 pub const PUBLIC_KEY_SIZE: usize = 48;
@@ -65,11 +68,9 @@ pub const EXPAND_MESSAGE_LENGTH: usize = 256;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_constants_sizes() {
-        assert_eq!(PRIVATE_KEY_SIZE, 32);
+        assert_eq!(PRIVATE_KEY_SIZE, HASH_SIZE);
         assert_eq!(PUBLIC_KEY_SIZE, 48);
         assert_eq!(SIGNATURE_SIZE, 96);
         assert_eq!(AGGREGATE_SIGNATURE_SIZE, 96);

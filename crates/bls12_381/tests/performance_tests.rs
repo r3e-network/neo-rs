@@ -51,7 +51,6 @@ mod performance_tests {
             assert!(Bls12381::validate_public_key(key_pair.public_key()));
         }
 
-        // Performance should be reasonable (regression test)
         assert!(
             private_key_duration.as_millis() < 5000,
             "Private key generation too slow: {:?}",
@@ -97,12 +96,10 @@ mod performance_tests {
             .collect();
         let signing_duration = start.elapsed();
 
-        // Verify all signatures are valid and identical (deterministic)
         for signature in &signatures {
             assert!(Bls12381::validate_signature(signature));
         }
 
-        // All signatures should be identical (signing is deterministic)
         for i in 1..signatures.len() {
             assert_eq!(signatures[0], signatures[i]);
         }
@@ -132,7 +129,6 @@ mod performance_tests {
             assert!(Bls12381::validate_signature(&signature));
 
             // Signing time should not significantly increase with message size
-            // (due to hashing before signing)
             assert!(
                 duration.as_millis() < 1000,
                 "Signing message of size {} too slow: {:?}",
@@ -555,7 +551,6 @@ mod performance_tests {
             total_operations, thread_count, concurrent_verification_duration
         );
 
-        // Verify all signatures are identical (deterministic signing)
         let first_signature = &all_signatures[0];
         for signature in &all_signatures {
             assert_eq!(first_signature, signature);
@@ -610,7 +605,6 @@ mod performance_tests {
             // Aggregate should be dropped here
         }
 
-        // If we reach here without OOM, memory usage is reasonable
         assert!(true);
     }
 

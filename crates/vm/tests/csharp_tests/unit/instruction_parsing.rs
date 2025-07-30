@@ -79,7 +79,6 @@ fn test_pushdata1_instruction_parsing() {
 /// Test instruction parsing with various operand sizes
 #[test]
 fn test_instruction_operand_sizes() {
-    // Test PUSHINT8 (1-byte operand)
     let script = vec![0x00, 0x42]; // PUSHINT8 + value
     let mut reader = MemoryReader::new(&script);
     let result = Instruction::parse_from_reader(&mut reader);
@@ -97,7 +96,6 @@ fn test_instruction_operand_sizes() {
         "PUSHINT8 operand should be 0x42"
     );
 
-    // Test PUSHINT16 (2-byte operand)
     let script = vec![0x01, 0x34, 0x12]; // PUSHINT16 + value (little-endian)
     let mut reader = MemoryReader::new(&script);
     let result = Instruction::parse_from_reader(&mut reader);
@@ -115,7 +113,6 @@ fn test_instruction_operand_sizes() {
         "PUSHINT16 operand should be [0x34, 0x12]"
     );
 
-    // Test PUSHINT32 (4-byte operand)
     let script = vec![0x02, 0x78, 0x56, 0x34, 0x12]; // PUSHINT32 + value (little-endian)
     let mut reader = MemoryReader::new(&script);
     let result = Instruction::parse_from_reader(&mut reader);
@@ -133,7 +130,6 @@ fn test_instruction_operand_sizes() {
         "PUSHINT32 operand should be [0x78, 0x56, 0x34, 0x12]"
     );
 
-    // Test PUSHINT64 (8-byte operand)
     let script = vec![0x03, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11]; // PUSHINT64 + value
     let mut reader = MemoryReader::new(&script);
     let result = Instruction::parse_from_reader(&mut reader);

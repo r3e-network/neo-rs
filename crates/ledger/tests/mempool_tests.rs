@@ -16,7 +16,6 @@ mod mempool_tests {
     /// Test mempool creation and configuration (matches C# MemoryPool exactly)
     #[test]
     fn test_mempool_creation_compatibility() {
-        // Test mempool creation (matches C# MemoryPool constructor exactly)
         let config = MemPoolConfig {
             capacity: 50000,
             max_tx_per_block: 500,
@@ -60,7 +59,6 @@ mod mempool_tests {
         let duplicate_result = mempool.try_add(tx.clone(), 100);
         assert_eq!(duplicate_result.unwrap(), MemPoolAddResult::AlreadyExists);
 
-        // Test conflict detection (same sender and nonce)
         let conflicting_tx = Transaction {
             network_fee: 50000, // Lower fee
             ..tx.clone()
@@ -87,7 +85,6 @@ mod mempool_tests {
         // Get sorted transactions
         let sorted = mempool.get_sorted_transactions(10);
 
-        // Should be sorted by fee per byte (descending)
         assert_eq!(sorted.len(), 3);
         assert_eq!(sorted[0].hash(), high_fee_tx.hash());
         assert_eq!(sorted[1].hash(), medium_fee_tx.hash());
@@ -111,12 +108,10 @@ mod mempool_tests {
 
         assert_eq!(mempool.size(), 100);
 
-        // Try to add when full (with low fee)
         let low_fee_tx = create_test_transaction(101, 100000, 10000); // Very low fee
         let result = mempool.try_add(low_fee_tx, 100);
         assert_eq!(result.unwrap(), MemPoolAddResult::CapacityExceeded);
 
-        // Add high fee transaction (should evict lowest fee tx)
         let high_fee_tx = create_test_transaction(102, 100000000, 10000000); // Very high fee
         let result = mempool.try_add(high_fee_tx.clone(), 100);
         assert_eq!(result.unwrap(), MemPoolAddResult::Added);
@@ -179,7 +174,6 @@ mod mempool_tests {
         mempool.try_add(expiring_tx.clone(), 100).unwrap();
         assert_eq!(mempool.size(), 1);
 
-        // Remove expired transactions (current block is 111)
         let removed = mempool.remove_expired(111);
         assert_eq!(removed.len(), 1);
         assert_eq!(removed[0].hash(), expiring_tx.hash());
@@ -212,13 +206,10 @@ mod mempool_tests {
             mempool.try_add(tx, 100).unwrap();
         }
 
-        // Mock verification function that fails for even nonces
         let verifier = |tx: &Transaction| -> bool { tx.nonce % 2 != 0 };
 
-        // Reverify at block 105 (should trigger reverification)
         let removed = mempool.reverify_transactions(105, verifier);
 
-        // Should remove 5 transactions (even nonces)
         assert_eq!(removed.len(), 5);
         assert_eq!(mempool.size(), 5);
 
@@ -239,7 +230,6 @@ mod mempool_tests {
         };
         let mut mempool = MemPool::new(config);
 
-        // Add low priority (free) transactions
         for i in 0..10 {
             let free_tx = Transaction {
                 system_fee: 0,
@@ -259,7 +249,6 @@ mod mempool_tests {
 
         assert_eq!(mempool.low_priority_count(), 5);
 
-        // Get transactions for block (should limit free transactions)
         let block_txs = mempool.get_transactions_for_block(10);
         let free_count = block_txs.iter().filter(|tx| tx.network_fee == 0).count();
         assert_eq!(free_count, 2); // Max free tx per block
@@ -297,7 +286,6 @@ mod mempool_tests {
         let result = mempool.try_add(tx2_low_fee, 100);
         assert_eq!(result.unwrap(), MemPoolAddResult::InsufficientFee);
 
-        // Try with higher fee (should replace)
         let tx2_high_fee = Transaction {
             network_fee: 200000, // Higher fee
             ..tx1.clone()

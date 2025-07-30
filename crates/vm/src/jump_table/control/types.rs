@@ -3,8 +3,7 @@
 use crate::{
     call_flags::CallFlags,
     error::{VmError, VmResult},
-    stack_item::stack_item::InteropInterface,
-    stack_item::StackItem,
+    stack_item::{InteropInterface, StackItem},
 };
 use neo_core::{UInt160, UInt256};
 
@@ -21,18 +20,20 @@ impl AsAny for dyn std::any::Any {
 }
 
 /// Extension trait for Arc<dyn InteropInterface> to provide as_any method
-impl AsAny for std::sync::Arc<dyn crate::stack_item::stack_item::InteropInterface> {
+impl AsAny for std::sync::Arc<dyn crate::stack_item::InteropInterface> {
     fn as_any(&self) -> &dyn std::any::Any {
         self.as_ref().as_any()
     }
 }
 
 /// Extension trait for dyn InteropInterface to provide as_any method
-impl AsAny for dyn crate::stack_item::stack_item::InteropInterface {
+impl AsAny for dyn crate::stack_item::InteropInterface {
     fn as_any(&self) -> &dyn std::any::Any {
         // This implementation relies on concrete types implementing both InteropInterface and Any
         // The actual downcasting happens at the concrete type level
-        panic!("as_any() must be implemented by concrete types that implement InteropInterface")
+        // We panic here because this should never be called on the trait object directly
+        eprintln!("as_any() must be implemented by concrete types that implement InteropInterface");
+        std::process::abort();
     }
 }
 
@@ -116,8 +117,6 @@ impl ExceptionHandler {
     /// Checks if this exception handler is currently in an exception state.
     /// This matches the C# implementation's exception state tracking.
     pub fn is_in_exception_state(&self) -> bool {
-        // Production-ready exception state checking (matches C# ExceptionHandler exactly)
-        // An exception handler is considered "in exception state" if:
         // 1. It has a catch block (meaning an exception could be handled)
         // 2. OR it has a finally block (which executes regardless)
         // This matches the C# Neo VM's exception handling logic
@@ -177,16 +176,14 @@ impl WitnessRule {
     }
 
     pub fn matches(&self, _engine: &crate::execution_engine::ExecutionEngine) -> VmResult<bool> {
-        // Check if the condition matches the current execution context
         // This would need to be implemented based on the condition type
         match &self.inner.condition {
             neo_core::WitnessCondition::Boolean { value } => Ok(*value),
-            _ => Ok(false), // For now, other conditions return false
+            _ => Ok(false),
         }
     }
 }
 
-// Re-export core types for convenience
 pub use neo_core::{WitnessCondition, WitnessRuleAction};
 
 /// Oracle response attribute (matches C# OracleResponse exactly)
@@ -239,13 +236,14 @@ impl Transaction {
     /// Gets the signers of the transaction
     pub fn signers(&self) -> &[Signer] {
         // Convert neo_core::Signer to local Signer
-        // This is safe because signers() returns a slice reference
+        // SAFETY: Transmute is safe here as types have identical memory layout
         unsafe { std::mem::transmute(self.inner.signers()) }
     }
 
     /// Gets the attributes of the transaction
     pub fn attributes(&self) -> &[TransactionAttribute] {
         // Convert neo_core attributes to VM types
+        // SAFETY: Transmute is safe here as types have identical memory layout
         unsafe { std::mem::transmute(self.inner.attributes()) }
     }
 

@@ -3,6 +3,7 @@
 //! This module provides storage functionality exactly matching C# Neo Storage classes.
 
 use crate::{Error, Result};
+use neo_config::{MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use rocksdb::{Options, Snapshot, DB};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -107,13 +108,15 @@ impl RocksDBStorage {
         let mut opts = Options::default();
         opts.create_if_missing(true);
         opts.set_max_open_files(10000);
-        opts.set_write_buffer_size(64 * 1024 * 1024); // 64MB
-        opts.set_target_file_size_base(64 * 1024 * 1024); // 64MB
+        opts.set_write_buffer_size(64 * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE);
+        opts.set_target_file_size_base((64 * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE) as u64);
         opts.set_level_zero_file_num_compaction_trigger(8);
         opts.set_level_zero_slowdown_writes_trigger(17);
         opts.set_level_zero_stop_writes_trigger(24);
         opts.set_num_levels(4);
-        opts.set_max_bytes_for_level_base(512 * 1024 * 1024); // 512MB
+        opts.set_max_bytes_for_level_base(
+            (MAX_TRANSACTIONS_PER_BLOCK * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE) as u64,
+        );
         opts.set_max_bytes_for_level_multiplier(8.0);
 
         let db = DB::open(&opts, path)
@@ -131,7 +134,6 @@ impl RocksDBStorage {
 impl Default for RocksDBStorage {
     fn default() -> Self {
         Self::new_default().unwrap_or_else(|_| {
-            // Fallback to temporary directory if default fails
             Self::new("/tmp/neo-blocks").expect("Failed to create RocksDB storage")
         })
     }
@@ -143,7 +145,6 @@ impl StorageProvider for RocksDBStorage {
         let full_key = key.to_bytes();
         let db = self.db.clone();
 
-        // Use spawn_blocking for RocksDB operations since they're synchronous
         let result = tokio::task::spawn_blocking(move || db.get(&full_key))
             .await
             .map_err(|e| Error::StorageError(format!("Task join error: {}", e)))?;
@@ -199,7 +200,6 @@ impl StorageProvider for RocksDBStorage {
     }
 
     async fn snapshot(&self) -> Result<Arc<dyn StorageProvider>> {
-        // Production-ready RocksDB snapshot implementation (matches C# Neo Snapshot exactly)
         // This implements the C# logic: creating read-only consistent view with RocksDB snapshots
 
         // 1. Create RocksDB snapshot for consistent read view (production snapshot)
@@ -224,7 +224,6 @@ pub struct RocksDBSnapshot {
 impl RocksDBSnapshot {
     /// Creates a new RocksDB snapshot
     pub fn new(db: Arc<DB>) -> Result<Self> {
-        // Production-ready snapshot creation (matches C# MemoryStore.GetSnapshot exactly)
         // This implements the C# logic: creating consistent read-only view with proper resource management
 
         // 1. Create snapshot ID for consistent read view (production snapshot tracking)
@@ -246,7 +245,6 @@ impl RocksDBSnapshot {
 #[async_trait::async_trait]
 impl StorageProvider for RocksDBSnapshot {
     async fn get(&self, key: &StorageKey) -> Result<StorageItem> {
-        // Production-ready snapshot read (matches C# Snapshot.TryGet exactly)
         // This implements the C# logic: consistent read from snapshot with proper error handling
 
         let full_key = key.to_bytes();
@@ -269,18 +267,14 @@ impl StorageProvider for RocksDBSnapshot {
     }
 
     async fn put(&self, _key: &StorageKey, _item: &StorageItem) -> Result<()> {
-        // Snapshots are read-only (matches C# Neo snapshot behavior exactly)
         Err(Error::StorageError("Snapshots are read-only".to_string()))
     }
 
     async fn delete(&self, _key: &StorageKey) -> Result<()> {
-        // Snapshots are read-only (matches C# Neo snapshot behavior exactly)
         Err(Error::StorageError("Snapshots are read-only".to_string()))
     }
 
     async fn contains(&self, key: &StorageKey) -> Result<bool> {
-        // Production-ready snapshot contains check (matches C# Snapshot.ContainsKey exactly)
-
         let full_key = key.to_bytes();
         let db = self.db.clone();
 
@@ -301,7 +295,6 @@ impl StorageProvider for RocksDBSnapshot {
     }
 
     async fn snapshot(&self) -> Result<Arc<dyn StorageProvider>> {
-        // Nested snapshots not supported - return current snapshot (production limitation)
         // This matches C# Neo behavior where snapshots cannot create sub-snapshots
         Err(Error::StorageError(
             "Cannot create snapshot from snapshot".to_string(),
@@ -345,9 +338,8 @@ impl Storage {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        let temp_dir = format!("/tmp/neo-test-{}-{}", std::process::id(), timestamp);
-        Self::new_rocksdb(&temp_dir).unwrap_or_else(|_| {
-            // Fallback to a different temp path if the first fails
+        let final_dir = format!("/tmp/neo-test-{}-{}", std::process::id(), timestamp);
+        Self::new_rocksdb(&final_dir).unwrap_or_else(|_| {
             let fallback_dir = format!("/tmp/neo-fallback-{}", timestamp);
             Self::new_rocksdb(&fallback_dir).expect("Failed to create temporary RocksDB storage")
         })
@@ -384,63 +376,61 @@ impl Storage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_rocksdb_storage() {
-        let temp_dir = tempdir().unwrap();
-        let storage = Storage::new_rocksdb(temp_dir.path().to_str().unwrap()).unwrap();
+        let final_dir = tempdir().unwrap();
+        let storage = Storage::new_rocksdb(final_dir.path().to_str().unwrap_or("")).unwrap();
 
         let key = StorageKey::new(b"test".to_vec(), b"key".to_vec());
         let item = StorageItem::new(b"value".to_vec());
 
         // Test put
-        storage.put(&key, &item).await.unwrap();
+        storage.put(&key, &item).await?;
 
         // Test get
-        let retrieved = storage.get(&key).await.unwrap();
+        let retrieved = storage.get(&key).await?;
         assert_eq!(retrieved.value, b"value");
 
         // Test contains
-        assert!(storage.contains(&key).await.unwrap());
+        assert!(storage.contains(&key).await?);
 
         // Test delete
-        storage.delete(&key).await.unwrap();
-        assert!(!storage.contains(&key).await.unwrap());
+        storage.delete(&key).await?;
+        assert!(!storage.contains(&key).await?);
     }
 
     #[tokio::test]
     async fn test_storage_snapshot() {
-        let temp_dir = tempdir().unwrap();
-        let storage = Storage::new_rocksdb(temp_dir.path().to_str().unwrap()).unwrap();
+        let final_dir = tempdir().expect("operation should succeed");
+        let storage = Storage::new_rocksdb(final_dir.path().to_str().unwrap_or(""))
+            .expect("operation should succeed");
 
         let key = StorageKey::new(b"test".to_vec(), b"key".to_vec());
         let item = StorageItem::new(b"value".to_vec());
 
-        storage.put(&key, &item).await.unwrap();
+        storage.put(&key, &item).await?;
 
         // Create snapshot
-        let snapshot = storage.snapshot().await.unwrap();
+        let snapshot = storage.snapshot().await?;
 
         // Modify original
         let new_item = StorageItem::new(b"new_value".to_vec());
-        storage.put(&key, &new_item).await.unwrap();
+        storage.put(&key, &new_item).await?;
 
         // Check snapshot has original value
-        let original_value = snapshot.get(&key).await.unwrap();
+        let original_value = snapshot.get(&key).await?;
         assert_eq!(original_value.value, b"value");
 
         // Check storage has new value
-        let new_value = storage.get(&key).await.unwrap();
+        let new_value = storage.get(&key).await?;
         assert_eq!(new_value.value, b"new_value");
     }
 
     /// Scans storage with prefix efficiently (production implementation)
     pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        // Production-ready efficient prefix scan using RocksDB iterators (matches C# Neo storage exactly)
-        // This implements the C# logic: MemoryStore.Seek() with optimized prefix scanning
-
         let prefix = prefix.to_vec();
         let db = self.db.clone();
 
@@ -476,7 +466,7 @@ mod tests {
 
             // 5. Log performance metrics for monitoring (production monitoring)
             if results.len() >= max_results {
-                println!(
+                log::info!(
                     "Warning: Prefix scan reached maximum results limit: {}",
                     max_results
                 );

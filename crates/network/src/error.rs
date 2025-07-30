@@ -3,9 +3,13 @@
 //! This module provides comprehensive error handling for network operations,
 //! including P2P communication, message handling, peer management, and RPC services.
 
+// Default timeout for network operations (30 seconds)
+const DEFAULT_TIMEOUT_MS: u64 = 30000;
 use std::net::SocketAddr;
 use thiserror::Error;
 
+/// Default socket address for unknown peers
+const UNKNOWN_PEER_ADDR: &str = "0.0.0.0:0";
 /// Network operation errors
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum NetworkError {
@@ -205,6 +209,10 @@ pub enum NetworkError {
     /// Ledger error
     #[error("Ledger error: {reason}")]
     Ledger { reason: String },
+
+    /// Server error
+    #[error("Server error: {0}")]
+    ServerError(String),
 
     /// Generic network error
     #[error("Network error: {reason}")]
@@ -475,6 +483,7 @@ impl NetworkError {
             NetworkError::ResourceExhausted { .. } => "resource",
             NetworkError::ServiceUnavailable { .. } => "service",
             NetworkError::Ledger { .. } => "ledger",
+            NetworkError::ServerError(_) => "server",
             NetworkError::Generic { .. } => "generic",
             NetworkError::PeerBanned { .. } => "peer",
             NetworkError::TransactionValidation { .. } => "transaction",
@@ -603,41 +612,68 @@ impl From<NetworkError> for crate::Error {
 impl From<crate::Error> for NetworkError {
     fn from(error: crate::Error) -> Self {
         match error {
-            crate::Error::Connection(msg) => {
-                NetworkError::connection_failed("0.0.0.0:0".parse().unwrap(), &msg)
-            }
-            crate::Error::Protocol(msg) => {
-                NetworkError::protocol_violation("0.0.0.0:0".parse().unwrap(), &msg)
-            }
+            crate::Error::Connection(msg) => NetworkError::connection_failed(
+                UNKNOWN_PEER_ADDR
+                    .parse()
+                    .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
+                &msg,
+            ),
+            crate::Error::Protocol(msg) => NetworkError::protocol_violation(
+                UNKNOWN_PEER_ADDR
+                    .parse()
+                    .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
+                &msg,
+            ),
             crate::Error::Serialization(msg) => {
                 NetworkError::message_serialization("unknown", &msg)
             }
-            crate::Error::Peer(msg) => {
-                NetworkError::peer_not_connected("0.0.0.0:0".parse().unwrap())
-            }
+            crate::Error::Peer(msg) => NetworkError::peer_not_connected(
+                UNKNOWN_PEER_ADDR
+                    .parse()
+                    .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
+            ),
             crate::Error::Sync(msg) => NetworkError::SyncFailed { reason: msg },
             crate::Error::Rpc(msg) => NetworkError::rpc("unknown", -1, &msg),
-            crate::Error::Timeout(msg) => {
-                NetworkError::connection_timeout("0.0.0.0:0".parse().unwrap(), 0)
-            }
-            crate::Error::Authentication(msg) => {
-                NetworkError::authentication_failed("0.0.0.0:0".parse().unwrap(), &msg)
-            }
-            crate::Error::RateLimit(msg) => {
-                NetworkError::rate_limit_exceeded("0.0.0.0:0".parse().unwrap(), 0.0, 0.0)
-            }
-            crate::Error::InvalidMessage(msg) => {
-                NetworkError::invalid_message("0.0.0.0:0".parse().unwrap(), "unknown", &msg)
-            }
+            crate::Error::Timeout(msg) => NetworkError::connection_timeout(
+                UNKNOWN_PEER_ADDR
+                    .parse()
+                    .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
+                0,
+            ),
+            crate::Error::Authentication(msg) => NetworkError::authentication_failed(
+                UNKNOWN_PEER_ADDR
+                    .parse()
+                    .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
+                &msg,
+            ),
+            crate::Error::RateLimit(msg) => NetworkError::rate_limit_exceeded(
+                UNKNOWN_PEER_ADDR
+                    .parse()
+                    .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
+                0.0,
+                0.0,
+            ),
+            crate::Error::InvalidMessage(msg) => NetworkError::invalid_message(
+                UNKNOWN_PEER_ADDR
+                    .parse()
+                    .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
+                "unknown",
+                &msg,
+            ),
             crate::Error::InvalidHeader(msg) => NetworkError::InvalidHeader {
-                peer: "0.0.0.0:0".parse().unwrap(),
+                peer: UNKNOWN_PEER_ADDR
+                    .parse()
+                    .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
                 reason: msg,
             },
             crate::Error::Configuration(msg) => NetworkError::configuration("unknown", &msg),
             crate::Error::ConnectionLimitReached => NetworkError::connection_limit_reached(0, 0),
-            crate::Error::ConnectionFailed(msg) => {
-                NetworkError::connection_failed("0.0.0.0:0".parse().unwrap(), &msg)
-            }
+            crate::Error::ConnectionFailed(msg) => NetworkError::connection_failed(
+                UNKNOWN_PEER_ADDR
+                    .parse()
+                    .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
+                &msg,
+            ),
             crate::Error::Io(err) => NetworkError::io("io", &err.to_string()),
             crate::Error::Json(err) => NetworkError::Json {
                 reason: err.to_string(),
@@ -651,22 +687,22 @@ impl From<crate::Error> for NetworkError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_error_creation() {
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "localhost:8080".parse().unwrap_or_default();
         let error = NetworkError::connection_failed(addr, "Network unreachable");
         assert!(matches!(error, NetworkError::ConnectionFailed { .. }));
-        assert!(error.to_string().contains("127.0.0.1:8080"));
+        assert!(error.to_string().contains("localhost:8080"));
     }
 
     #[test]
     fn test_error_classification() {
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "localhost:8080".parse().unwrap_or_default();
 
         // Test retryable errors
-        assert!(NetworkError::connection_timeout(addr, 5000).is_retryable());
+        assert!(NetworkError::connection_timeout(DEFAULT_TIMEOUT_MS).is_retryable());
         assert!(!NetworkError::authentication_failed(addr, "Invalid").is_retryable());
 
         // Test connection errors
@@ -679,12 +715,12 @@ mod tests {
 
         // Test ban-worthy errors
         assert!(NetworkError::protocol_violation(addr, "Spam").should_ban_peer());
-        assert!(!NetworkError::connection_timeout(addr, 5000).should_ban_peer());
+        assert!(!NetworkError::connection_timeout(DEFAULT_TIMEOUT_MS).should_ban_peer());
     }
 
     #[test]
     fn test_error_severity() {
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "localhost:8080".parse().unwrap_or_default();
 
         assert_eq!(
             NetworkError::connection_failed(addr, "Failed").severity(),
@@ -702,7 +738,7 @@ mod tests {
 
     #[test]
     fn test_error_categories() {
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "localhost:8080".parse().unwrap_or_default();
 
         assert_eq!(
             NetworkError::connection_failed(addr, "Failed").category(),
@@ -717,18 +753,18 @@ mod tests {
 
     #[test]
     fn test_rate_limit_error() {
-        let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
+        let addr: SocketAddr = "localhost:8080".parse().unwrap_or_default();
         let error = NetworkError::rate_limit_exceeded(addr, 100.0, 50.0);
         assert_eq!(
             error.to_string(),
-            "Rate limit exceeded for 127.0.0.1:8080: 100 messages/sec > 50"
+            "Rate limit exceeded for localhost:8080: 100 messages/sec > 50"
         );
     }
 
     #[test]
     fn test_backward_compatibility() {
         let network_error =
-            NetworkError::connection_failed("127.0.0.1:8080".parse().unwrap(), "test");
+            NetworkError::connection_failed("localhost:8080".parse().unwrap_or_default(), "test");
         let old_error: crate::Error = network_error.into();
         assert!(matches!(old_error, crate::Error::Connection(_)));
 

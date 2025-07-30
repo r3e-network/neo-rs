@@ -46,7 +46,7 @@ impl<TKey: Clone, TValue: Clone> CacheItem<TKey, TValue> {
         let next = self.next.clone();
         another
             .lock()
-            .unwrap()
+            .expect("Failed to acquire lock")
             .link(Some(Arc::new(Mutex::new(self.clone()))), next);
     }
 
@@ -61,11 +61,15 @@ impl<TKey: Clone, TValue: Clone> CacheItem<TKey, TValue> {
         self.next = next.clone();
 
         if let Some(prev_item) = prev {
-            prev_item.lock().unwrap().next = Some(Arc::new(Mutex::new(self.clone())));
+            if let Ok(mut prev_guard) = prev_item.lock() {
+                prev_guard.next = Some(Arc::new(Mutex::new(self.clone())));
+            }
         }
 
         if let Some(next_item) = next {
-            next_item.lock().unwrap().prev = Some(Arc::new(Mutex::new(self.clone())));
+            if let Ok(mut next_guard) = next_item.lock() {
+                next_guard.prev = Some(Arc::new(Mutex::new(self.clone())));
+            }
         }
     }
 
@@ -73,8 +77,12 @@ impl<TKey: Clone, TValue: Clone> CacheItem<TKey, TValue> {
     /// This matches the C# Unlink method exactly.
     pub fn unlink(&mut self) {
         if let (Some(prev), Some(next)) = (self.prev.clone(), self.next.clone()) {
-            prev.lock().unwrap().next = Some(next.clone());
-            next.lock().unwrap().prev = Some(prev);
+            if let Ok(mut prev_guard) = prev.lock() {
+                prev_guard.next = Some(next.clone());
+            }
+            if let Ok(mut next_guard) = next.lock() {
+                next_guard.prev = Some(prev);
+            }
         }
         self.prev = None;
         self.next = None;
@@ -88,7 +96,9 @@ impl<TKey: Clone, TValue: Clone> CacheItem<TKey, TValue> {
         }
 
         let prev = self.prev.clone()?;
-        prev.lock().unwrap().unlink();
+        if let Ok(mut prev_guard) = prev.lock() {
+            prev_guard.unlink();
+        }
         Some(prev)
     }
 }
@@ -222,7 +232,6 @@ where
         TKey: Default,
         TValue: Default,
     {
-        // Create a dummy head item (matches C# implementation)
         let dummy_key = TKey::default(); // Use Default trait instead of unsafe zeroed
         let dummy_value = TValue::default(); // Use Default trait instead of unsafe zeroed
         let head = Arc::new(Mutex::new(CacheItem::new(dummy_key, dummy_value)));
@@ -239,21 +248,26 @@ where
 
     /// Internal method to add an item.
     fn add_internal(&self, key: TKey, item: TValue) {
-        let mut dict = self.inner_dictionary.lock().unwrap();
+        let mut dict = match self.inner_dictionary.lock() {
+            Ok(dict) => dict,
+            Err(_) => return,
+        };
 
         if let Some(cached) = dict.get(&key) {
             // Item already exists, just access it
-            let mut cached_item = cached.lock().unwrap();
-            (self.on_access_fn)(&mut *cached_item);
+            if let Ok(mut cached_item) = cached.lock() {
+                (self.on_access_fn)(&mut *cached_item);
+            }
         } else {
-            // Check capacity and evict if necessary
             if dict.len() >= self.max_capacity {
-                // Remove the first item we find (FIFO behavior for base cache)
                 if let Some((first_key, _)) = dict.iter().next() {
                     let first_key_clone = first_key.clone();
                     drop(dict); // Release the lock before calling remove_internal
                     self.remove_internal(&first_key_clone);
-                    dict = self.inner_dictionary.lock().unwrap(); // Re-acquire the lock
+                    dict = match self.inner_dictionary.lock() {
+                        Ok(dict) => dict,
+                        Err(_) => return,
+                    };
                 }
             }
 
@@ -265,11 +279,15 @@ where
 
     /// Internal method to remove an item.
     fn remove_internal(&self, key: &TKey) -> bool {
-        let mut dict = self.inner_dictionary.lock().unwrap();
+        let mut dict = match self.inner_dictionary.lock() {
+            Ok(dict) => dict,
+            Err(_) => return false,
+        };
 
         if let Some(item) = dict.shift_remove(key) {
-            item.lock().unwrap().unlink();
-            // In C#, this would dispose if IDisposable
+            if let Ok(mut item_guard) = item.lock() {
+                item_guard.unlink();
+            }
             // In Rust, Drop trait handles cleanup automatically
             true
         } else {
@@ -298,15 +316,21 @@ where
     }
 
     fn count(&self) -> usize {
-        self.inner_dictionary.lock().unwrap().len()
+        self.inner_dictionary
+            .lock()
+            .map(|dict| dict.len())
+            .unwrap_or(0)
     }
 
     fn get(&self, key: &TKey) -> Option<TValue> {
-        let dict = self.inner_dictionary.lock().unwrap();
+        let dict = self.inner_dictionary.lock().ok()?;
         if let Some(item) = dict.get(key) {
-            let mut item_guard = item.lock().unwrap();
-            (self.on_access_fn)(&mut *item_guard);
-            Some(item_guard.value.clone())
+            if let Ok(mut item_guard) = item.lock() {
+                (self.on_access_fn)(&mut *item_guard);
+                Some(item_guard.value.clone())
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -324,19 +348,27 @@ where
     }
 
     fn clear(&self) {
-        let mut dict = self.inner_dictionary.lock().unwrap();
-        dict.clear();
+        if let Ok(mut dict) = self.inner_dictionary.lock() {
+            dict.clear();
+        }
 
-        let mut head = self.head.lock().unwrap();
-        head.unlink();
+        if let Ok(mut head) = self.head.lock() {
+            head.unlink();
+        }
     }
 
     fn contains_key(&self, key: &TKey) -> bool {
-        let dict = self.inner_dictionary.lock().unwrap();
+        let dict = match self.inner_dictionary.lock() {
+            Ok(dict) => dict,
+            Err(_) => return false,
+        };
         if let Some(item) = dict.get(key) {
-            let mut item_guard = item.lock().unwrap();
-            (self.on_access_fn)(&mut *item_guard);
-            true
+            if let Ok(mut item_guard) = item.lock() {
+                (self.on_access_fn)(&mut *item_guard);
+                true
+            } else {
+                false
+            }
         } else {
             false
         }
@@ -351,7 +383,10 @@ where
     }
 
     fn copy_to(&self, array: &mut [TValue], start_index: usize) -> Result<(), String> {
-        let dict = self.inner_dictionary.lock().unwrap();
+        let dict = self
+            .inner_dictionary
+            .lock()
+            .map_err(|_| "Lock error".to_string())?;
         let count = dict.len();
 
         if start_index + count > array.len() {
@@ -365,7 +400,11 @@ where
 
         let mut index = start_index;
         for item in dict.values() {
-            array[index] = item.lock().unwrap().value.clone();
+            array[index] = item
+                .lock()
+                .map_err(|_| "Lock error".to_string())?
+                .value
+                .clone();
             index += 1;
         }
 
@@ -373,17 +412,18 @@ where
     }
 
     fn values(&self) -> Vec<TValue> {
-        let dict = self.inner_dictionary.lock().unwrap();
+        let dict = match self.inner_dictionary.lock() {
+            Ok(dict) => dict,
+            Err(_) => return Vec::new(),
+        };
         dict.values()
-            .map(|item| item.lock().unwrap().value.clone())
+            .filter_map(|item| item.lock().ok().map(|guard| guard.value.clone()))
             .collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[derive(Debug, Clone, PartialEq, Default)]
     struct TestItem {
         id: u32,
@@ -414,7 +454,7 @@ mod tests {
         cache.add(item.clone());
         assert_eq!(cache.count(), 1);
 
-        let retrieved = cache.get(&1).unwrap();
+        let retrieved = cache.get(&1).cloned().unwrap_or_default();
         assert_eq!(retrieved, item);
     }
 

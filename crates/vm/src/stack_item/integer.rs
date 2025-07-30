@@ -46,7 +46,6 @@ impl Integer {
 
         // Handle negative numbers
         if matches!(sign, num_bigint::Sign::Minus) {
-            // Two's complement for negative numbers
             if let Some(last) = bytes.last_mut() {
                 *last |= 0x80;
             }
@@ -63,7 +62,7 @@ impl Integer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_integer_creation() {

@@ -12,7 +12,6 @@ mod jarray_tests {
     /// Test JArray creation and basic operations (matches C# JArray tests exactly)
     #[test]
     fn test_jarray_creation_compatibility() {
-        // Test empty array creation (matches C# new JArray() exactly)
         let empty_array = JArray::new();
         assert_eq!(empty_array.len(), 0);
         assert!(empty_array.is_empty());
@@ -340,7 +339,6 @@ mod jarray_tests {
             None,
         ];
 
-        // Add nested structure for deep clone testing
         let mut nested_obj = OrderedDictionary::new();
         nested_obj.insert(
             "nested_prop".to_string(),
@@ -494,7 +492,6 @@ mod jarray_tests {
             assert_eq!(array.get(i), Some(&JToken::String(expected_value)));
         }
 
-        // Test insertion performance (insert at beginning, which is expensive)
         let initial_len = array.len();
         array.insert(0, Some(JToken::String("inserted_at_start".to_string())));
         assert_eq!(array.len(), initial_len + 1);

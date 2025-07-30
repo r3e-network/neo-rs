@@ -5,6 +5,7 @@
 use crate::error::{VmError, VmResult};
 use crate::io;
 use crate::op_code::OpCode;
+const HASH_SIZE: usize = 32;
 
 /// Represents the size of an operand for an instruction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,9 +51,7 @@ impl Instruction {
         let opcode = OpCode::try_from(opcode)
             .map_err(|_| VmError::parse(format!("Invalid opcode: {}", opcode)))?;
 
-        // Special handling for SYSCALL instruction
         let operand = if opcode == OpCode::SYSCALL {
-            // For SYSCALL, the operand format is: length_byte + api_name_bytes
             let operand_start = position + 1;
 
             if operand_start >= script.len() {
@@ -77,7 +76,6 @@ impl Instruction {
             opcode,
             OpCode::PUSHDATA1 | OpCode::PUSHDATA2 | OpCode::PUSHDATA4
         ) {
-            // Special handling for PUSHDATA instructions
             let operand_start = position + 1;
 
             match opcode {
@@ -89,7 +87,6 @@ impl Instruction {
                     let length = script[operand_start] as usize;
                     let operand = vec![length as u8]; // Only include the length byte in operand
 
-                    // Check if we have enough data remaining
                     if operand_start + 1 + length > script.len() {
                         return Err(VmError::parse(format!(
                             "PUSHDATA1 operand size exceeds script bounds: {} + {} > {}",
@@ -110,7 +107,6 @@ impl Instruction {
                     let length = u16::from_le_bytes(length_bytes) as usize;
                     let operand = length_bytes.to_vec(); // Only include the length bytes in operand
 
-                    // Check if we have enough data remaining
                     if operand_start + 2 + length > script.len() {
                         return Err(VmError::parse(format!(
                             "PUSHDATA2 operand size exceeds script bounds: {} + {} > {}",
@@ -136,7 +132,6 @@ impl Instruction {
                     let length = u32::from_le_bytes(length_bytes) as usize;
                     let operand = length_bytes.to_vec(); // Only include the length bytes in operand
 
-                    // Check if we have enough data remaining
                     if operand_start + 4 + length > script.len() {
                         return Err(VmError::parse(format!(
                             "PUSHDATA4 operand size exceeds script bounds: {} + {} > {}",
@@ -156,7 +151,6 @@ impl Instruction {
                 }
             }
         } else {
-            // For other instructions, use the standard operand size
             let operand_size = Self::get_operand_size(opcode);
             let operand_start = position + 1;
             let operand_end = operand_start + operand_size.size();
@@ -204,9 +198,7 @@ impl Instruction {
         let opcode = OpCode::try_from(opcode)
             .map_err(|_| VmError::parse(format!("Invalid opcode: {}", opcode)))?;
 
-        // Special handling for SYSCALL instruction
         let operand = if opcode == OpCode::SYSCALL {
-            // For SYSCALL, the operand format is: length_byte + api_name_bytes
             if reader.position() >= reader.len() {
                 return Err(VmError::parse("SYSCALL instruction missing length byte"));
             }
@@ -233,14 +225,12 @@ impl Instruction {
             opcode,
             OpCode::PUSHDATA1 | OpCode::PUSHDATA2 | OpCode::PUSHDATA4
         ) {
-            // Special handling for PUSHDATA instructions
             match opcode {
                 OpCode::PUSHDATA1 => {
                     let length = reader.read_byte()? as usize;
                     let operand = vec![length as u8]; // Only include the length byte in operand
 
                     if length > 0 {
-                        // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
                             return Err(VmError::parse(format!(
                                 "PUSHDATA1 operand size exceeds script bounds: {} + {} > {}",
@@ -262,7 +252,6 @@ impl Instruction {
                     let operand = length_bytes.to_vec(); // Only include the length bytes in operand
 
                     if length > 0 {
-                        // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
                             return Err(VmError::parse(format!(
                                 "PUSHDATA2 operand size exceeds script bounds: {} + {} > {}",
@@ -289,7 +278,6 @@ impl Instruction {
                     let operand = length_bytes.to_vec(); // Only include the length bytes in operand
 
                     if length > 0 {
-                        // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
                             return Err(VmError::parse(format!(
                                 "PUSHDATA4 operand size exceeds script bounds: {} + {} > {}",
@@ -313,7 +301,6 @@ impl Instruction {
                 }
             }
         } else {
-            // For other instructions, use the standard operand size
             let operand_size = Self::get_operand_size(opcode);
             if operand_size.size() > 0 {
                 reader.read_bytes(operand_size.size())?.to_vec()
@@ -341,9 +328,7 @@ impl Instruction {
         let opcode = OpCode::try_from(opcode)
             .map_err(|_| VmError::parse(format!("Invalid opcode: {}", opcode)))?;
 
-        // Special handling for SYSCALL instruction
         let operand = if opcode == OpCode::SYSCALL {
-            // For SYSCALL, the operand format is: length_byte + api_name_bytes
             if reader.position() >= reader.len() {
                 return Err(VmError::parse("SYSCALL instruction missing length byte"));
             }
@@ -370,14 +355,12 @@ impl Instruction {
             opcode,
             OpCode::PUSHDATA1 | OpCode::PUSHDATA2 | OpCode::PUSHDATA4
         ) {
-            // Special handling for PUSHDATA instructions
             match opcode {
                 OpCode::PUSHDATA1 => {
                     let length = reader.read_byte()? as usize;
                     let operand = vec![length as u8]; // Only include the length byte in operand
 
                     if length > 0 {
-                        // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
                             return Err(VmError::parse(format!(
                                 "PUSHDATA1 operand size exceeds script bounds: {} + {} > {}",
@@ -399,7 +382,6 @@ impl Instruction {
                     let operand = length_bytes.to_vec(); // Only include the length bytes in operand
 
                     if length > 0 {
-                        // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
                             return Err(VmError::parse(format!(
                                 "PUSHDATA2 operand size exceeds script bounds: {} + {} > {}",
@@ -426,7 +408,6 @@ impl Instruction {
                     let operand = length_bytes.to_vec(); // Only include the length bytes in operand
 
                     if length > 0 {
-                        // Check if we have enough data remaining
                         if reader.position() + length > reader.len() {
                             return Err(VmError::parse(format!(
                                 "PUSHDATA4 operand size exceeds script bounds: {} + {} > {}",
@@ -450,7 +431,6 @@ impl Instruction {
                 }
             }
         } else {
-            // For other instructions, use the standard operand size
             let operand_size = Self::get_operand_size(opcode);
             if operand_size.size() > 0 {
                 reader.read_bytes(operand_size.size())?.to_vec()
@@ -520,7 +500,6 @@ impl Instruction {
     pub fn size(&self) -> usize {
         match self.opcode {
             OpCode::PUSHDATA1 => {
-                // Size = 1 (opcode) + 1 (length byte) + data_length
                 if self.operand.is_empty() {
                     1
                 } else {
@@ -528,7 +507,6 @@ impl Instruction {
                 }
             }
             OpCode::PUSHDATA2 => {
-                // Size = 1 (opcode) + 2 (length bytes) + data_length
                 if self.operand.len() < 2 {
                     1
                 } else {
@@ -538,7 +516,6 @@ impl Instruction {
                 }
             }
             OpCode::PUSHDATA4 => {
-                // Size = 1 (opcode) + 4 (length bytes) + data_length
                 if self.operand.len() < 4 {
                     1
                 } else {
@@ -552,7 +529,6 @@ impl Instruction {
                 }
             }
             OpCode::SYSCALL => {
-                // Size = 1 (opcode) + 1 (length byte) + api_name_length
                 if self.operand.is_empty() {
                     1
                 } else {
@@ -560,7 +536,6 @@ impl Instruction {
                 }
             }
             _ => {
-                // Standard size calculation for other instructions
                 1 + self.operand.len() // Opcode + operand
             }
         }
@@ -586,7 +561,6 @@ impl Instruction {
         // The rest of the operand is the syscall name
         let name_bytes = &self.operand[1..length + 1];
 
-        // Convert the bytes to a string
         String::from_utf8(name_bytes.to_vec())
             .map_err(|_| VmError::invalid_operand_msg("Invalid UTF-8 in syscall name"))
     }
@@ -602,7 +576,6 @@ impl Instruction {
             OpCode::PUSHINT128 => OperandSizePrefix(16),
             OpCode::PUSHINT256 => OperandSizePrefix(32),
             OpCode::PUSHA => OperandSizePrefix(4),
-            // PUSHDATA instructions (variable size with prefix)
             OpCode::PUSHDATA1 => OperandSizePrefix(1),
             OpCode::PUSHDATA2 => OperandSizePrefix(2),
             OpCode::PUSHDATA4 => OperandSizePrefix(4),
@@ -745,7 +718,7 @@ impl FromOperand for u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_instruction_parsing() {
@@ -761,24 +734,29 @@ mod tests {
         ];
 
         // Parse PUSH1
-        let instruction = Instruction::parse(&script, 0).unwrap();
+        let instruction = Instruction::parse(&script, 0).expect("VM operation should succeed");
         assert_eq!(instruction.opcode(), OpCode::PUSH1);
         assert_eq!(instruction.size(), 1);
         assert!(instruction.operand_data().is_empty());
 
         // Parse JMP
-        let instruction = Instruction::parse(&script, 1).unwrap();
+        let instruction = Instruction::parse(&script, 1).expect("VM operation should succeed");
         assert_eq!(instruction.opcode(), OpCode::JMP);
         assert_eq!(instruction.size(), 2); // Opcode + 1-byte offset
         assert_eq!(instruction.operand_data(), &[0x10]);
-        assert_eq!(instruction.operand_as::<i8>().unwrap(), 16);
+        assert_eq!(
+            instruction
+                .operand_as::<i8>()
+                .expect("VM operation should succeed"),
+            16
+        );
 
         // Parse PUSHDATA1
-        let instruction = Instruction::parse(&script, 3).unwrap();
+        let instruction = Instruction::parse(&script, 3).expect("Operation failed");
         assert_eq!(instruction.opcode(), OpCode::PUSHDATA1);
         assert_eq!(instruction.size(), 5); // Opcode + length byte + 3 data bytes
         assert_eq!(instruction.operand_data(), &[0x03]);
-        assert_eq!(instruction.operand_as::<u8>().unwrap(), 3);
+        assert_eq!(instruction.operand_as::<u8>().expect("Operation failed"), 3);
     }
 
     #[test]
@@ -797,21 +775,29 @@ mod tests {
         let mut reader = io::MemoryReader::new(script);
 
         // Parse PUSH1
-        let instruction = Instruction::parse_from_reader(&mut reader).unwrap();
+        let instruction =
+            Instruction::parse_from_reader(&mut reader).expect("VM operation should succeed");
         assert_eq!(instruction.opcode(), OpCode::PUSH1);
         assert_eq!(reader.position(), 1);
 
         // Parse JMP
-        let instruction = Instruction::parse_from_reader(&mut reader).unwrap();
+        let instruction =
+            Instruction::parse_from_reader(&mut reader).expect("VM operation should succeed");
         assert_eq!(instruction.opcode(), OpCode::JMP);
         assert_eq!(reader.position(), 3); // Position after 1-byte opcode + 1-byte operand
-        assert_eq!(instruction.operand_as::<i8>().unwrap(), 16);
+        assert_eq!(
+            instruction
+                .operand_as::<i8>()
+                .expect("VM operation should succeed"),
+            16
+        );
 
         // Parse PUSHDATA1
-        let instruction = Instruction::parse_from_reader(&mut reader).unwrap();
+        let instruction =
+            Instruction::parse_from_reader(&mut reader).expect("VM operation should succeed");
         assert_eq!(instruction.opcode(), OpCode::PUSHDATA1);
         assert_eq!(reader.position(), 8); // Position after 1-byte opcode + 1-byte size + 3 data bytes
-        assert_eq!(instruction.operand_as::<u8>().unwrap(), 3);
+        assert_eq!(instruction.operand_as::<u8>().expect("Operation failed"), 3);
     }
 
     #[test]
@@ -826,10 +812,12 @@ mod tests {
         assert_eq!(Instruction::get_operand_size(OpCode::PUSHINT32).size(), 4);
         assert_eq!(Instruction::get_operand_size(OpCode::PUSHINT64).size(), 8);
         assert_eq!(Instruction::get_operand_size(OpCode::PUSHINT128).size(), 16);
-        assert_eq!(Instruction::get_operand_size(OpCode::PUSHINT256).size(), 32);
+        assert_eq!(
+            Instruction::get_operand_size(OpCode::PUSHINT256).size(),
+            HASH_SIZE
+        );
         assert_eq!(Instruction::get_operand_size(OpCode::PUSHA).size(), 4);
 
-        // PUSHDATA instructions (variable size with prefix)
         assert_eq!(Instruction::get_operand_size(OpCode::PUSHDATA1).size(), 1);
         assert_eq!(Instruction::get_operand_size(OpCode::PUSHDATA2).size(), 2);
         assert_eq!(Instruction::get_operand_size(OpCode::PUSHDATA4).size(), 4);
@@ -852,23 +840,47 @@ mod tests {
     fn test_operand_conversion() {
         // Test i8/u8
         let operand = vec![0x42];
-        assert_eq!(i8::from_operand(&operand).unwrap(), 0x42);
-        assert_eq!(u8::from_operand(&operand).unwrap(), 0x42);
+        assert_eq!(
+            i8::from_operand(&operand).expect("VM operation should succeed"),
+            0x42
+        );
+        assert_eq!(
+            u8::from_operand(&operand).expect("VM operation should succeed"),
+            0x42
+        );
 
         // Test i16/u16
         let operand = vec![0x42, 0x01];
-        assert_eq!(i16::from_operand(&operand).unwrap(), 0x0142);
-        assert_eq!(u16::from_operand(&operand).unwrap(), 0x0142);
+        assert_eq!(
+            i16::from_operand(&operand).expect("VM operation should succeed"),
+            0x0142
+        );
+        assert_eq!(
+            u16::from_operand(&operand).expect("VM operation should succeed"),
+            0x0142
+        );
 
         // Test i32/u32
         let operand = vec![0x42, 0x01, 0x00, 0x00];
-        assert_eq!(i32::from_operand(&operand).unwrap(), 0x00000142);
-        assert_eq!(u32::from_operand(&operand).unwrap(), 0x00000142);
+        assert_eq!(
+            i32::from_operand(&operand).expect("VM operation should succeed"),
+            0x00000142
+        );
+        assert_eq!(
+            u32::from_operand(&operand).expect("VM operation should succeed"),
+            0x00000142
+        );
 
         // Test i64/u64
         let operand = vec![0x42, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-        assert_eq!(i64::from_operand(&operand).unwrap(), 0x0000000000000142);
-        assert_eq!(u64::from_operand(&operand).unwrap(), 0x0000000000000142);
+        assert_eq!(
+            i64::from_operand(&operand).expect("VM operation should succeed"),
+            0x0000000000000142
+        );
+        assert_eq!(
+            u64::from_operand(&operand).expect("VM operation should succeed"),
+            0x0000000000000142
+        );
 
         // Test error cases
         let operand = vec![];
@@ -894,7 +906,12 @@ mod tests {
         };
 
         // Test syscall_name
-        assert_eq!(instruction.syscall_name().unwrap(), syscall_name);
+        assert_eq!(
+            instruction
+                .syscall_name()
+                .expect("VM operation should succeed"),
+            syscall_name
+        );
 
         // Test with an invalid opcode
         let instruction = Instruction {

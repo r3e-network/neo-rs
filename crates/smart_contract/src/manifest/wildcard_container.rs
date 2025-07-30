@@ -143,7 +143,6 @@ impl<'a, T> IntoIterator for &'a WildcardContainer<T> {
     }
 }
 
-// Custom serialization module for wildcard
 mod wildcard_serde {
     use serde::{Deserialize, Deserializer, Serializer};
 
@@ -169,8 +168,6 @@ mod wildcard_serde {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_wildcard_container_create() {
         let container = WildcardContainer::create(vec!["test1".to_string(), "test2".to_string()]);
@@ -237,12 +234,14 @@ mod tests {
     fn test_wildcard_container_deserialization() {
         // Test wildcard deserialization
         let json = "\"*\"";
-        let container: WildcardContainer<String> = serde_json::from_str(json).unwrap();
+        let container: WildcardContainer<String> =
+            serde_json::from_str(json).expect("Failed to parse from string");
         assert!(container.is_wildcard());
 
         // Test values deserialization
         let json = "[\"test1\",\"test2\"]";
-        let container: WildcardContainer<String> = serde_json::from_str(json).unwrap();
+        let container: WildcardContainer<String> =
+            serde_json::from_str(json).expect("Failed to parse from string");
         assert!(!container.is_wildcard());
         assert_eq!(container.count(), 2);
         assert_eq!(container.get(0), Some(&"test1".to_string()));

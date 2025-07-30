@@ -116,7 +116,6 @@ impl JsonTestRunner {
 
     /// Execute a single test (matches C# ExecuteTest method)
     fn execute_test(&mut self, test: &VMUTTest) -> Result<(), Box<dyn std::error::Error>> {
-        // Convert script from string opcodes to bytes
         let script_bytes = self.compile_script(&test.script)?;
         let script = Script::new(script_bytes, false).unwrap();
 
@@ -132,7 +131,6 @@ impl JsonTestRunner {
                 self.execute_action(action)?;
             }
 
-            // Verify result
             self.verify_result(&step.result)?;
         }
 
@@ -259,7 +257,6 @@ impl JsonTestRunner {
             }
         }
 
-        // Add RET instruction if not present
         if bytes.is_empty() || bytes[bytes.len() - 1] != 0x40 {
             bytes.push(0x40); // RET
         }
@@ -308,15 +305,11 @@ impl JsonTestRunner {
             .into());
         }
 
-        // Verify invocation stack if present
         if let Some(expected_invocation_stack) = &expected.invocation_stack {
-            // Invocation stack verification - Future enhancement for complete test coverage
             println!("    Invocation stack verification not yet implemented");
         }
 
-        // Verify result stack if present
         if let Some(expected_result_stack) = &expected.result_stack {
-            // Result stack verification - Future enhancement for complete test coverage
             println!("    Result stack verification not yet implemented");
         }
 

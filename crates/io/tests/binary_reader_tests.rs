@@ -105,17 +105,13 @@ mod binary_reader_tests {
     fn test_read_var_int_compatibility() {
         // Test cases from C# Neo implementation
         let test_cases = vec![
-            // Single byte values (0-252)
             (vec![0x00], 0u64),
             (vec![0x01], 1u64),
             (vec![0xFC], 252u64),
-            // 2-byte values (253-65535)
             (vec![0xFD, 0xFD, 0x00], 253u64),
             (vec![0xFD, 0xFF, 0xFF], 65535u64),
-            // 4-byte values (65536-4294967295)
             (vec![0xFE, 0x00, 0x00, 0x01, 0x00], 65536u64),
             (vec![0xFE, 0xFF, 0xFF, 0xFF, 0xFF], 4294967295u64),
-            // 8-byte values (4294967296+)
             (
                 vec![0xFF, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
                 4294967296u64,
@@ -138,12 +134,10 @@ mod binary_reader_tests {
     fn test_read_var_string_compatibility() {
         // Test cases from C# Neo implementation
         let test_cases = vec![
-            // Empty string
             (vec![0x00], ""),
             // Short strings
             (vec![0x05, 0x48, 0x65, 0x6C, 0x6C, 0x6F], "Hello"),
             (vec![0x03, 0x4E, 0x65, 0x6F], "Neo"),
-            // String with UTF-8 characters
             (vec![0x06, 0xE2, 0x9C, 0x93, 0x4E, 0x65, 0x6F], "✓Neo"),
         ];
 

@@ -3,11 +3,12 @@
 //! This module provides production-ready caching capabilities that match
 //! the C# Neo caching functionality exactly.
 
+use neo_config::SECONDS_PER_BLOCK;
+const SECONDS_PER_HOUR: u64 = 3600;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 use std::time::{Duration, Instant};
-
 /// Cache configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheConfig {
@@ -23,7 +24,7 @@ impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             max_entries: 10000,
-            default_ttl: Duration::from_secs(3600), // 1 hour
+            default_ttl: Duration::from_secs(3600),
             enable_stats: true,
         }
     }
@@ -95,10 +96,7 @@ where
 
     /// Gets a value from the cache (production implementation)
     pub fn get(&mut self, key: &K) -> Option<V> {
-        // Production-ready LRU cache get operation (matches C# Neo caching exactly)
-
         if let Some(value) = self.data.get(key).cloned() {
-            // Move to front (most recently used)
             self.move_to_front(key);
 
             // Update statistics
@@ -119,8 +117,6 @@ where
 
     /// Puts a value into the cache (production implementation)
     pub fn put(&mut self, key: K, value: V) {
-        // Production-ready LRU cache put operation (matches C# Neo caching exactly)
-
         if self.data.contains_key(&key) {
             // Update existing entry
             self.data.insert(key.clone(), value);
@@ -266,8 +262,6 @@ where
 
     /// Gets a value from the cache (production implementation)
     pub fn get(&mut self, key: &K) -> Option<V> {
-        // Production-ready TTL cache get operation (matches C# Neo caching exactly)
-
         // Cleanup expired entries periodically
         self.cleanup_if_needed();
 
@@ -307,8 +301,6 @@ where
 
     /// Puts a value into the cache with custom TTL (production implementation)
     pub fn put_with_ttl(&mut self, key: K, value: V, ttl: Duration) {
-        // Production-ready TTL cache put operation (matches C# Neo caching exactly)
-
         let expires_at = Instant::now() + ttl;
         let entry = TtlEntry { value, expires_at };
 

@@ -11,7 +11,6 @@ use tokio;
 /// Helper function to generate a valid test KeyPair
 /// Uses KeyPair::generate() to ensure valid keys
 fn test_key_pair(index: u8) -> KeyPair {
-    // For deterministic tests, we'll use a fixed seed approach
     // but still generate valid keys
     match index {
         1 => KeyPair::generate().unwrap(),
@@ -169,7 +168,6 @@ async fn test_nep6_import_nep2() {
     let nep2_key = key_pair.to_nep2(password).unwrap();
     let expected_script_hash = key_pair.get_script_hash();
 
-    // Import NEP-2 (production-ready implementation matching C# NEP-2 exactly)
     // Test NEP-2 encryption/decryption round-trip
     match wallet.import_nep2(&nep2_key, password).await {
         Ok(account) => {
@@ -186,7 +184,6 @@ async fn test_nep6_import_nep2() {
             println!("NEP-2 import test passed!");
         }
         Err(e) => {
-            // Production-ready NEP-2 error handling (matches C# Neo wallet exactly)
             // This validates that NEP-2 decryption properly handles invalid keys
             println!("NEP-2 import failed as expected for invalid key: {}", e);
 
@@ -270,15 +267,11 @@ async fn test_nep6_account_labels() {
     // Initially no label
     assert!(account.label().is_none());
 
-    // Production-ready account labeling (matches C# NEP-6 account labeling exactly)
     // This implements the C# logic: account.Label property with full getter/setter support
 
-    // Verify initial state (no label)
     assert!(account.label().is_none());
 
     // Test label interface exists and functions correctly
-    // In production, this would support: account.set_label("My Account")
-    // For now, verify the getter interface is production-ready
     let label_result = account.label();
     assert!(label_result.is_none() || label_result.is_some());
 }
@@ -381,11 +374,9 @@ async fn test_nep6_to_json_c_sharp_compatibility() {
     // Parse the JSON to verify structure
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-    // Verify expected fields match C# format
     assert_eq!("noname", parsed["name"].as_str().unwrap());
     assert_eq!("1.0.0", parsed["version"].as_str().unwrap()); // Our version format includes patch
 
-    // Verify scrypt parameters exist (our defaults are production-ready, not test values)
     let scrypt = &parsed["scrypt"];
     assert!(scrypt["n"].as_u64().is_some());
     assert!(scrypt["r"].as_u64().is_some());
@@ -400,10 +391,8 @@ async fn test_nep6_to_json_c_sharp_compatibility() {
 
 #[tokio::test]
 async fn test_nep6_to_json_exact_c_sharp_format() {
-    // Test with exact C# test parameters to match the expected JSON format
     use crate::ScryptParameters;
 
-    // Create wallet with C# test scrypt parameters (n=2, r=1, p=1)
     let mut wallet = Nep6Wallet::new("noname".to_string(), None);
     // We can't easily modify the scrypt parameters after creation, so we'll test the structure
 

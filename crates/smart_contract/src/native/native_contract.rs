@@ -143,8 +143,6 @@ macro_rules! impl_native_contract {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_native_method_creation() {
         let method = NativeMethod::new("test".to_string(), 1000, true, 0);

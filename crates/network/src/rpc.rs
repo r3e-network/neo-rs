@@ -10,7 +10,13 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
+use neo_config::{MAX_TRACEABLE_BLOCKS, MILLISECONDS_PER_BLOCK};
 use neo_core::UInt256;
+use neo_ledger::block::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use neo_ledger::{Block, Blockchain};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -22,6 +28,7 @@ use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tracing::{debug, error, info, warn};
 
+/// Default Neo network ports
 /// RPC configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcConfig {
@@ -44,10 +51,16 @@ pub struct RpcConfig {
 impl Default for RpcConfig {
     fn default() -> Self {
         Self {
-            http_address: "0.0.0.0:10332".parse().unwrap(),
-            ws_address: Some("0.0.0.0:10334".parse().unwrap()),
+            http_address: "127.0.0.1:10332"
+                .parse()
+                .expect("network operation should succeed"),
+            ws_address: Some(
+                "127.0.0.1:10334"
+                    .parse()
+                    .expect("network operation should succeed"),
+            ),
             enable_cors: true,
-            max_request_size: 1_048_576, // 1MB
+            max_request_size: MAX_BLOCK_SIZE,
             request_timeout: 30,
             enable_auth: false,
             api_key: None,
@@ -238,16 +251,27 @@ impl RpcServer {
             })?;
 
         tokio::spawn(async move {
-            if let Err(e) = axum::Server::from_tcp(listener.into_std().unwrap())
-                .unwrap()
-                .serve(app.into_make_service())
-                .await
-            {
+            let std_listener = match listener.into_std() {
+                Ok(l) => l,
+                Err(e) => {
+                    error!("Failed to convert listener: {}", e);
+                    return;
+                }
+            };
+
+            let server = match axum::Server::from_tcp(std_listener) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to create server: {}", e);
+                    return;
+                }
+            };
+
+            if let Err(e) = server.serve(app.into_make_service()).await {
                 error!("HTTP server error: {}", e);
             }
         });
 
-        // Start WebSocket server if configured
         if let Some(ws_address) = self.config.ws_address {
             info!("Starting WebSocket server on {}", ws_address);
             // WebSocket server implementation would go here
@@ -577,10 +601,10 @@ async fn handle_get_version() -> std::result::Result<Value, RpcError> {
             "addressversion": 53,
             "network": 860833102,
             "validatorscount": 7,
-            "msperblock": 15000,
-            "maxtraceableblocks": 2102400,
+            "msperblock": MILLISECONDS_PER_BLOCK,
+            "maxtraceableblocks": MAX_TRACEABLE_BLOCKS,
             "maxvaliduntilblockincrement": 5760,
-            "maxtransactionsperblock": 512,
+            "maxtransactionsperblock": MAX_TRANSACTIONS_PER_BLOCK,
             "memorypoolmaxtransactions": 50000,
         }
     }))
@@ -798,22 +822,17 @@ async fn handle_get_next_block_validators(
 
 /// Handles getrawmempool method
 async fn handle_get_raw_mempool(
-    _state: &RpcState,
+    state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
-    let _should_get_unverified = params
+    let verbose = params
         .as_ref()
         .and_then(|p| p.get(0))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // Get actual mempool transactions from blockchain context
-    if let Some(blockchain) = &context.blockchain {
-        let mempool_txs = blockchain.get_mempool_transactions(verbose).await?;
-        Ok(json!(mempool_txs))
-    } else {
-        Ok(json!([]))
-    }
+    // Return empty array for now - TODO: implement proper mempool access
+    Ok(json!([]))
 }
 
 /// Handles getstorage method
@@ -846,7 +865,6 @@ async fn handle_get_transaction_height(
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
-    // Return transaction height (block index)
     Ok(json!(100))
 }
 
@@ -876,7 +894,6 @@ async fn handle_invoke_function(
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
-    // Return invocation result
     Ok(json!({
         "script": "VwIBeBAMFWNvbnRyYWN0LmNhbGwuZmFtZSxVFDuYkE=",
         "state": "HALT",
@@ -902,7 +919,6 @@ async fn handle_invoke_script(
         .and_then(|v| v.as_str())
         .ok_or_else(RpcError::invalid_params)?;
 
-    // Return script execution result
     Ok(json!({
         "script": "VwIBeBAMFWNvbnRyYWN0LmNhbGwuZmFtZSxVFDuYkE=",
         "state": "HALT",
@@ -997,7 +1013,7 @@ async fn handle_calculate_network_fee(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use neo_ledger::Blockchain;
     use serde_json::json;
     use std::sync::Arc;
@@ -1016,7 +1032,7 @@ mod tests {
         assert_eq!(config.http_address.port(), 10332);
         assert!(config.enable_cors);
         assert!(!config.enable_auth);
-        assert_eq!(config.max_request_size, 1_048_576);
+        assert_eq!(config.max_request_size, MAX_BLOCK_SIZE);
         assert_eq!(config.request_timeout, 30);
     }
 
@@ -1064,7 +1080,7 @@ mod tests {
     #[test]
     fn test_rpc_request_deserialization() {
         let json = r#"{"jsonrpc":"2.0","method":"getblockcount","id":1}"#;
-        let request: RpcRequest = serde_json::from_str(json).unwrap();
+        let request: RpcRequest = serde_json::from_str(json).expect("Failed to parse from string");
 
         assert_eq!(request.jsonrpc, "2.0");
         assert_eq!(request.method, "getblockcount");
@@ -1075,16 +1091,16 @@ mod tests {
     #[test]
     fn test_rpc_request_with_params() {
         let json = r#"{"jsonrpc":"2.0","method":"getblock","params":["0x123","true"],"id":2}"#;
-        let request: RpcRequest = serde_json::from_str(json).unwrap();
+        let request: RpcRequest = serde_json::from_str(json).expect("Failed to parse from string");
 
         assert_eq!(request.jsonrpc, "2.0");
         assert_eq!(request.method, "getblock");
         assert!(request.params.is_some());
         assert_eq!(request.id, Some(json!(2)));
 
-        let params = request.params.unwrap();
+        let params = request.params?;
         assert!(params.is_array());
-        let params_array = params.as_array().unwrap();
+        let params_array = params.as_array().expect("network operation should succeed");
         assert_eq!(params_array.len(), 2);
         assert_eq!(params_array[0], "0x123");
         assert_eq!(params_array[1], "true");
@@ -1106,7 +1122,8 @@ mod tests {
             id: Some(json!(1)),
         };
 
-        let serialized = serde_json::to_string(&response).unwrap();
+        let serialized =
+            serde_json::to_string(&response).expect("network operation should succeed");
         assert!(serialized.contains("\"jsonrpc\":\"2.0\""));
         assert!(serialized.contains("\"height\":100"));
         assert!(!serialized.contains("\"error\""));
@@ -1122,7 +1139,8 @@ mod tests {
             id: Some(json!(1)),
         };
 
-        let serialized = serde_json::to_string(&response).unwrap();
+        let serialized =
+            serde_json::to_string(&response).expect("network operation should succeed");
         assert!(serialized.contains("\"jsonrpc\":\"2.0\""));
         assert!(serialized.contains("\"error\""));
         assert!(serialized.contains("\"code\":-32601"));
@@ -1144,13 +1162,16 @@ mod tests {
         let blockchain = create_test_blockchain();
         let network_config = crate::NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = Arc::new(crate::P2pNode::new(network_config, command_receiver).unwrap());
+        let p2p_node = Arc::new(crate::P2pNode::new(network_config, command_receiver));
 
         let state = RpcState::with_p2p_node(blockchain.clone(), p2p_node.clone());
 
         assert!(Arc::ptr_eq(&state.blockchain, &blockchain));
         assert!(state.p2p_node.is_some());
-        assert!(Arc::ptr_eq(state.p2p_node.as_ref().unwrap(), &p2p_node));
+        assert!(Arc::ptr_eq(
+            state.p2p_node.as_ref().expect("Value should exist"),
+            &p2p_node
+        ));
     }
 
     #[tokio::test]
@@ -1179,7 +1200,7 @@ mod tests {
         let result = handle_get_block_count(&state).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_number());
     }
 
@@ -1188,10 +1209,10 @@ mod tests {
         let result = handle_get_version().await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_object());
 
-        let obj = value.as_object().unwrap();
+        let obj = value.as_object().expect("network operation should succeed");
         assert!(obj.contains_key("tcpport"));
         assert!(obj.contains_key("wsport"));
         assert!(obj.contains_key("useragent"));
@@ -1207,7 +1228,7 @@ mod tests {
         let result = handle_ping().await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert_eq!(value, json!(true));
     }
 
@@ -1217,10 +1238,10 @@ mod tests {
         let result = handle_validate_address(&params).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_object());
 
-        let obj = value.as_object().unwrap();
+        let obj = value.as_object().expect("network operation should succeed");
         assert!(obj.contains_key("address"));
         assert!(obj.contains_key("isvalid"));
         assert_eq!(obj["isvalid"], true);
@@ -1232,10 +1253,10 @@ mod tests {
         let result = handle_validate_address(&params).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_object());
 
-        let obj = value.as_object().unwrap();
+        let obj = value.as_object().expect("network operation should succeed");
         assert_eq!(obj["isvalid"], false);
     }
 
@@ -1254,7 +1275,7 @@ mod tests {
         let result = handle_get_connection_count(&state).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert_eq!(value, json!(0));
     }
 
@@ -1264,15 +1285,17 @@ mod tests {
         let result = handle_get_peers(&state).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_object());
 
-        let obj = value.as_object().unwrap();
+        let obj = value.as_object().expect("network operation should succeed");
         assert!(obj.contains_key("connected"));
         assert!(obj.contains_key("unconnected"));
         assert!(obj.contains_key("bad"));
 
-        let connected = obj["connected"].as_array().unwrap();
+        let connected = obj["connected"]
+            .as_array()
+            .expect("network operation should succeed");
         assert_eq!(connected.len(), 0);
     }
 
@@ -1282,15 +1305,15 @@ mod tests {
         let result = handle_get_committee(&state).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_array());
 
-        let committee = value.as_array().unwrap();
+        let committee = value.as_array().expect("network operation should succeed");
         assert_eq!(committee.len(), 7); // Standard committee size
 
         for member in committee {
             assert!(member.is_string());
-            let pubkey = member.as_str().unwrap();
+            let pubkey = member.as_str().expect("network operation should succeed");
             assert_eq!(pubkey.len(), 66); // Compressed public key length
             assert!(pubkey.starts_with("02") || pubkey.starts_with("03"));
         }
@@ -1302,15 +1325,17 @@ mod tests {
         let result = handle_get_validators(&state).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_array());
 
-        let validators = value.as_array().unwrap();
+        let validators = value.as_array().expect("network operation should succeed");
         assert!(!validators.is_empty());
 
         for validator in validators {
             assert!(validator.is_object());
-            let obj = validator.as_object().unwrap();
+            let obj = validator
+                .as_object()
+                .expect("network operation should succeed");
             assert!(obj.contains_key("publickey"));
             assert!(obj.contains_key("votes"));
             assert!(obj.contains_key("active"));
@@ -1324,10 +1349,10 @@ mod tests {
         let result = handle_get_raw_mempool(&state, &params).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_array());
 
-        let mempool = value.as_array().unwrap();
+        let mempool = value.as_array().expect("network operation should succeed");
         assert_eq!(mempool.len(), 0); // Empty for test
     }
 
@@ -1342,10 +1367,10 @@ mod tests {
         let result = handle_invoke_function(&state, &params).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_object());
 
-        let obj = value.as_object().unwrap();
+        let obj = value.as_object().expect("network operation should succeed");
         assert!(obj.contains_key("script"));
         assert!(obj.contains_key("state"));
         assert!(obj.contains_key("gasconsumed"));
@@ -1371,13 +1396,15 @@ mod tests {
         let result = handle_send_raw_transaction(&state, &params).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_object());
 
-        let obj = value.as_object().unwrap();
+        let obj = value.as_object().expect("network operation should succeed");
         assert!(obj.contains_key("hash"));
 
-        let hash = obj["hash"].as_str().unwrap();
+        let hash = obj["hash"]
+            .as_str()
+            .expect("network operation should succeed");
         assert_eq!(hash.len(), 66); // 0x + 64 hex chars
         assert!(hash.starts_with("0x"));
     }
@@ -1391,10 +1418,10 @@ mod tests {
         let result = handle_get_application_log(&state, &params).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_object());
 
-        let obj = value.as_object().unwrap();
+        let obj = value.as_object().expect("network operation should succeed");
         assert!(obj.contains_key("txid"));
         assert!(obj.contains_key("trigger"));
         assert!(obj.contains_key("vmstate"));
@@ -1413,13 +1440,15 @@ mod tests {
         let result = handle_calculate_network_fee(&state, &params).await;
 
         assert!(result.is_ok());
-        let value = result.unwrap();
+        let value = result?;
         assert!(value.is_object());
 
-        let obj = value.as_object().unwrap();
+        let obj = value.as_object().expect("network operation should succeed");
         assert!(obj.contains_key("networkfee"));
 
-        let fee = obj["networkfee"].as_str().unwrap();
+        let fee = obj["networkfee"]
+            .as_str()
+            .expect("network operation should succeed");
         assert!(!fee.is_empty());
         assert!(fee.parse::<u64>().is_ok());
     }
@@ -1460,6 +1489,12 @@ mod tests {
         let server = RpcServer::new(config, blockchain);
 
         // Just verify it creates without panicking
-        assert_eq!(*server.running.try_read().unwrap(), false);
+        assert_eq!(
+            *server
+                .running
+                .try_read()
+                .expect("network operation should succeed"),
+            false
+        );
     }
 }

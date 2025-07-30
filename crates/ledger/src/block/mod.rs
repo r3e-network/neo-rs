@@ -14,18 +14,18 @@ pub mod builder;
 pub mod header;
 pub mod verification;
 
-// Re-export main types for convenience
 pub use block::Block;
 pub use builder::BlockBuilder;
 pub use header::{BlockHeader, Header};
 
 use crate::{Error, Result, VerifyResult};
+use neo_config;
 
 /// Maximum number of transactions per block
-pub const MAX_TRANSACTIONS_PER_BLOCK: usize = 512;
+pub const MAX_TRANSACTIONS_PER_BLOCK: usize = neo_config::MAX_TRANSACTIONS_PER_BLOCK;
 
 /// Maximum block size in bytes
-pub const MAX_BLOCK_SIZE: usize = 262_144; // 256 KB
+pub const MAX_BLOCK_SIZE: usize = neo_config::MAX_BLOCK_SIZE;
 
 /// Helper trait to add script hash calculation to Vec<u8>
 pub trait ScriptHashExt {
@@ -37,7 +37,6 @@ impl ScriptHashExt for Vec<u8> {
         use ripemd::{Digest as RipemdDigest, Ripemd160};
         use sha2::{Digest, Sha256};
 
-        // Hash160 = RIPEMD160(SHA256(script)) - matches C# exactly
         let mut sha256_hasher = Sha256::new();
         sha256_hasher.update(self);
         let sha256_result = sha256_hasher.finalize();

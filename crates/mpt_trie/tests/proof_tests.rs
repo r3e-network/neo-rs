@@ -29,7 +29,6 @@ mod proof_tests {
             assert!(trie.put(key, value).is_ok());
         }
 
-        // Generate proof for existing key (matches C# Trie.GetProof exactly)
         let target_key = &test_data[0].0;
         let proof = trie.get_proof(target_key).unwrap();
         assert!(!proof.is_empty());
@@ -39,11 +38,9 @@ mod proof_tests {
             assert!(proof_node.is_valid());
         }
 
-        // Test proof for different existing key
         let proof2 = trie.get_proof(&test_data[1].0).unwrap();
         assert!(!proof2.is_empty());
 
-        // Proofs for different keys should be different (unless they share path)
         // This depends on the specific trie structure
     }
 
@@ -56,14 +53,11 @@ mod proof_tests {
         assert!(trie.put(b"existing_key", b"existing_value").is_ok());
         assert!(trie.put(b"another_key", b"another_value").is_ok());
 
-        // Generate proof for non-existing key (matches C# behavior exactly)
         let non_existing_key = b"non_existing_key";
         let proof = trie.get_proof(non_existing_key).unwrap();
 
-        // Proof should still be generated (proving non-existence)
         assert!(!proof.is_empty());
 
-        // Verify proof structure for non-existence
         for proof_node in &proof {
             assert!(proof_node.is_valid());
         }
@@ -83,7 +77,6 @@ mod proof_tests {
         let proof = trie.get_proof(&key).unwrap();
         let root_hash = trie.root().hash().unwrap();
 
-        // Verify proof (matches C# ProofVerifier.Verify exactly)
         let verifier = ProofVerifier::new();
         let verification_result = verifier.verify(&root_hash, &key, &proof).unwrap();
 
@@ -116,11 +109,9 @@ mod proof_tests {
             proof[0] = ProofNode::new_corrupted(); // Simulate corruption
         }
 
-        // Verification should fail for corrupted proof
         let verifier = ProofVerifier::new();
         let verification_result = verifier.verify(&root_hash, &key, &proof);
 
-        // Should either return error or None (depending on implementation)
         match verification_result {
             Ok(None) => {
                 // Proof verification correctly detected invalid proof
@@ -150,7 +141,6 @@ mod proof_tests {
         let proof = trie.get_proof(&key).unwrap();
         let _correct_root_hash = trie.root().hash().unwrap();
 
-        // Use wrong root hash
         let wrong_root_hash = UInt256::from_slice(&[255u8; 32]).unwrap();
 
         // Verification should fail with wrong root
@@ -193,7 +183,6 @@ mod proof_tests {
         let root_hash = trie.root().hash().unwrap();
         let verifier = ProofVerifier::new();
 
-        // Test proofs for all keys in complex structure
         for (key, expected_value) in &complex_data {
             let proof = trie.get_proof(key).unwrap();
             assert!(!proof.is_empty());
@@ -210,7 +199,6 @@ mod proof_tests {
             }
         }
 
-        // Test proof for non-existing key in complex structure
         let non_existing = b"complex_prefix_xyz";
         let non_existing_proof = trie.get_proof(non_existing).unwrap();
         let non_existing_result = verifier
@@ -232,7 +220,6 @@ mod proof_tests {
         // Generate proof
         let original_proof = trie.get_proof(&key).unwrap();
 
-        // Serialize proof (matches C# serialization format exactly)
         let serialized = serde_json::to_string(&original_proof).unwrap();
 
         // Deserialize proof
@@ -306,14 +293,12 @@ mod proof_tests {
     fn test_proof_edge_cases_compatibility() {
         let mut trie = Trie::new(None, true);
 
-        // Test proof for empty trie
         let empty_proof = trie.get_proof(b"any_key").unwrap();
         assert!(!empty_proof.is_empty()); // Should still generate proof structure
 
         // Add single key
         assert!(trie.put(b"single_key", b"single_value").is_ok());
 
-        // Test proof for single key trie
         let single_proof = trie.get_proof(b"single_key").unwrap();
         assert!(!single_proof.is_empty());
 
@@ -364,7 +349,6 @@ mod proof_tests {
             assert!(trie.put(key, &value).is_ok());
         }
 
-        // Generate proofs for all keys
         let mut proofs = Vec::new();
         for key in &keys {
             let proof = trie.get_proof(key).unwrap();

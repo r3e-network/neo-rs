@@ -7,11 +7,9 @@ pub mod categories;
 mod op_code;
 mod operand_size;
 
-// Use the corrected OpCode implementation
 pub use op_code::OpCode;
 pub use operand_size::OperandSize;
 
-// Re-export category types for convenience
 pub use categories::{
     ArithmeticOpCode, ConstantOpCode, FlowControlOpCode, OpCodeCategory, StackOpCode,
 };

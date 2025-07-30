@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 mod rpc_server_tests {
     use super::*;
 
-    /// Mock RPC server for testing (matches C# RPC server patterns exactly)
+    /// Implementation provided RPC server for testing (matches C# RPC server patterns exactly)
     struct MockRpcServer {
         methods: std::collections::HashMap<
             String,
@@ -32,7 +32,6 @@ mod rpc_server_tests {
                 Box<dyn Fn(Vec<Value>) -> Result<Value, RpcServerError> + Send + Sync>,
             > = std::collections::HashMap::new();
 
-            // getversion method (matches C# implementation exactly)
             methods.insert(
                 "getversion".to_string(),
                 Box::new(|_params| {
@@ -60,13 +59,11 @@ mod rpc_server_tests {
                 }),
             );
 
-            // getblockcount method (matches C# implementation exactly)
             methods.insert(
                 "getblockcount".to_string(),
                 Box::new(|_params| Ok(json!(100))),
             );
 
-            // getblockhash method (matches C# implementation exactly)
             methods.insert(
                 "getblockhash".to_string(),
                 Box::new(|params| {
@@ -90,7 +87,6 @@ mod rpc_server_tests {
                 }),
             );
 
-            // getblock method (matches C# implementation exactly)
             methods.insert("getblock".to_string(), Box::new(|params| {
                 if params.is_empty() {
                     return Err(RpcServerError::InvalidParams("Expected at least 1 parameter".to_string()));
@@ -121,7 +117,6 @@ mod rpc_server_tests {
         }
 
         fn handle_request(&self, request: Value) -> Value {
-            // Parse JSON-RPC 2.0 request (matches C# parsing exactly)
             let request_obj = match request.as_object() {
                 Some(obj) => obj,
                 None => return self.create_error_response(None, -32700, "Parse error"),
@@ -286,7 +281,6 @@ mod rpc_server_tests {
     fn test_getblock_method_compatibility() {
         let server = MockRpcServer::new();
 
-        // Test verbose = true (default)
         let request_verbose = json!({
             "jsonrpc": "2.0",
             "id": 5,
@@ -303,7 +297,6 @@ mod rpc_server_tests {
         assert!(result.get("hash").is_some());
         assert!(result.get("index").is_some());
 
-        // Test verbose = false
         let request_raw = json!({
             "jsonrpc": "2.0",
             "id": 6,
@@ -386,7 +379,6 @@ mod rpc_server_tests {
     fn test_batch_request_compatibility() {
         let server = MockRpcServer::new();
 
-        // Note: This is a simplified test as batch handling would require more complex server logic
         let requests = vec![
             json!({
                 "jsonrpc": "2.0",
@@ -471,7 +463,6 @@ mod rpc_server_tests {
         let response = server.handle_request(notification);
         let response_obj = response.as_object().unwrap();
 
-        // For notifications, the response should still contain the result but with null id
         assert_eq!(response_obj.get("id"), Some(&Value::Null));
         assert!(response_obj.contains_key("result"));
     }
@@ -479,7 +470,6 @@ mod rpc_server_tests {
     /// Test CORS and HTTP headers handling (matches C# web server configuration exactly)
     #[test]
     fn test_http_headers_compatibility() {
-        // Test proper HTTP response headers for RPC server
         fn get_cors_headers() -> std::collections::HashMap<String, String> {
             let mut headers = std::collections::HashMap::new();
             headers.insert("Access-Control-Allow-Origin".to_string(), "*".to_string());

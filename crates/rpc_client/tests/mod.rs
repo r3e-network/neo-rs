@@ -6,7 +6,6 @@
 
 mod rpc_client_tests;
 
-// Integration tests for complete RPC client workflows
 mod integration_tests {
     use serde_json::{json, Value};
 
@@ -42,7 +41,6 @@ mod integration_tests {
         assert!(invalid_result.is_err());
     }
 
-    // Mock client for testing
     struct MockNeoRpcClient {
         endpoint: String,
     }

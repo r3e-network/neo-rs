@@ -77,16 +77,13 @@ impl Buffer {
             return Ok(BigInt::from(0));
         }
 
-        // Neo uses little-endian format, so we use the bytes directly
         // The C# BigInteger constructor interprets the bytes as signed little-endian
         // but uses a special format where the sign bit indicates negativity
         let bytes = &self.data;
 
-        // Check if the number is negative (most significant bit is 1)
         let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
 
         if is_negative {
-            // For negative numbers in .NET BigInteger format:
             // The magnitude is stored in the bytes with the sign bit cleared
             let mut magnitude_bytes = bytes.to_vec();
             let len = magnitude_bytes.len();
@@ -98,7 +95,6 @@ impl Buffer {
             // Return the negative value
             Ok(-magnitude)
         } else {
-            // For positive numbers, use unsigned interpretation
             Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, bytes))
         }
     }
@@ -121,7 +117,7 @@ impl Buffer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_buffer_creation() {
@@ -138,16 +134,16 @@ mod tests {
         let data = vec![1, 2, 3];
         let mut buffer = Buffer::new(data);
 
-        assert_eq!(buffer.get(0).unwrap(), 1);
-        assert_eq!(buffer.get(1).unwrap(), 2);
-        assert_eq!(buffer.get(2).unwrap(), 3);
+        assert_eq!(buffer.first().ok_or("Empty collection")?, 1);
+        assert_eq!(buffer.get(1).ok_or("Index out of bounds")?, 2);
+        assert_eq!(buffer.get(2).ok_or("Index out of bounds")?, 3);
         assert!(buffer.get(3).is_err());
 
         buffer.set(1, 42).unwrap();
 
-        assert_eq!(buffer.get(0).unwrap(), 1);
-        assert_eq!(buffer.get(1).unwrap(), 42);
-        assert_eq!(buffer.get(2).unwrap(), 3);
+        assert_eq!(buffer.first().ok_or("Empty collection")?, 1);
+        assert_eq!(buffer.get(1).ok_or("Index out of bounds")?, 42);
+        assert_eq!(buffer.get(2).ok_or("Index out of bounds")?, 3);
         assert!(buffer.set(3, 4).is_err());
     }
 
@@ -155,19 +151,39 @@ mod tests {
     fn test_buffer_to_integer() {
         // Test empty buffer
         let empty_buffer = Buffer::new(vec![]);
-        assert_eq!(empty_buffer.to_integer().unwrap(), BigInt::from(0));
+        assert_eq!(
+            empty_buffer
+                .to_integer()
+                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
+            BigInt::from(0)
+        );
 
         // Test positive number
         let positive_buffer = Buffer::new(vec![1, 0, 0, 0]);
-        assert_eq!(positive_buffer.to_integer().unwrap(), BigInt::from(1));
+        assert_eq!(
+            positive_buffer
+                .to_integer()
+                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
+            BigInt::from(1)
+        );
 
         // Test larger positive number
         let larger_buffer = Buffer::new(vec![0xCD, 0xAB, 0, 0]);
-        assert_eq!(larger_buffer.to_integer().unwrap(), BigInt::from(0xABCD));
+        assert_eq!(
+            larger_buffer
+                .to_integer()
+                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
+            BigInt::from(0xABCD)
+        );
 
         // Test negative number
         let negative_buffer = Buffer::new(vec![1, 0, 0, 0x80]);
-        assert_eq!(negative_buffer.to_integer().unwrap(), BigInt::from(-1));
+        assert_eq!(
+            negative_buffer
+                .to_integer()
+                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
+            BigInt::from(-1)
+        );
     }
 
     #[test]

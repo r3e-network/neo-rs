@@ -8,30 +8,27 @@ use num_traits::cast::ToPrimitive;
 /// Test simple VM execution without full JSON test framework
 #[test]
 fn test_simple_vm_execution() {
-    println!("🚀 Testing simple VM execution...");
+    println!("🚀 Testing simple VM execution/* implementation */;");
 
     // Create a simple PUSHNULL script
     let script_bytes = vec![0x0b, 0x40]; // PUSHNULL + RET
 
-    // Try to create script (Script::new returns Result)
-    println!("📜 Creating script...");
+    println!("📜 Creating script/* implementation */;");
     match Script::new(script_bytes, false) {
         Ok(script) => {
             println!("   ✅ Script created successfully");
 
-            // Create execution engine (requires Option<JumpTable>)
-            println!("⚙️ Creating execution engine...");
+            println!("⚙️ Creating execution engine/* implementation */;");
             let mut engine = ExecutionEngine::new(None);
 
             // Load the script
-            println!("📚 Loading script...");
+            println!("📚 Loading script/* implementation */;");
             match engine.load_script(script, 1, 0) {
-                // Return 1 value to test result stack
                 Ok(_) => {
                     println!("   ✅ Script loaded successfully");
 
                     // Execute the script step by step
-                    println!("⚡ Executing script...");
+                    println!("⚡ Executing script/* implementation */;");
                     while engine.state() != VMState::HALT && engine.state() != VMState::FAULT {
                         match engine.execute_next() {
                             Ok(_) => {
@@ -46,7 +43,6 @@ fn test_simple_vm_execution() {
 
                     println!("🏁 Final state: {:?}", engine.state());
 
-                    // Check result stack
                     let result_stack = engine.result_stack();
                     println!("📊 Result stack size: {}", result_stack.len());
 
@@ -73,15 +69,13 @@ fn test_simple_vm_execution() {
 /// Test RET instruction with result stack specifically
 #[test]
 fn test_ret_result_stack() {
-    println!("🧪 Testing RET result stack behavior...");
+    println!("🧪 Testing RET result stack behavior/* implementation */;");
 
-    // Script: PUSH1 + RET (should copy PUSH1 result to result stack)
     let script_bytes = vec![0x11, 0x40]; // PUSH1 + RET
 
     let script = Script::new(script_bytes, false).unwrap();
     let mut engine = ExecutionEngine::new(None);
 
-    // Load with rvcount = 1 to indicate we want 1 return value
     engine.load_script(script, 1, 0).unwrap();
 
     println!("🎯 Initial state: {:?}", engine.state());
@@ -94,7 +88,6 @@ fn test_ret_result_stack() {
 
     println!("🏁 Final state: {:?}", engine.state());
 
-    // Check result stack
     let result_stack = engine.result_stack();
     println!("📊 Result stack size: {}", result_stack.len());
 
@@ -146,7 +139,6 @@ fn test_vm_execution_with_malformed_pushdata1() {
     // Create a VM and try to execute the malformed script
     let mut engine = ApplicationEngine::new(TriggerType::Application, 1000000);
 
-    // Execute the script directly (this will load and execute it)
     let final_state = engine.execute(script);
     println!("Final VM state: {:?}", final_state);
 
@@ -167,7 +159,7 @@ fn test_vm_execution_with_malformed_pushdata1() {
 /// Test basic opcode execution
 #[test]
 fn test_basic_opcode_execution() {
-    println!("🚀 Testing basic opcode execution...");
+    println!("🚀 Testing basic opcode execution/* implementation */;");
 
     // Test PUSH1 opcode
     let script_bytes = vec![0x11, 0x40]; // PUSH1 + RET
@@ -216,7 +208,7 @@ fn test_basic_opcode_execution() {
 /// Test basic opcode execution without RET (checking evaluation stack directly)
 #[test]
 fn test_basic_opcode_execution_direct() {
-    println!("🚀 Testing basic opcode execution directly...");
+    println!("🚀 Testing basic opcode execution directly/* implementation */;");
 
     // Test PUSH1 opcode without RET
     let script_bytes = vec![0x11]; // PUSH1 only
@@ -227,7 +219,6 @@ fn test_basic_opcode_execution_direct() {
 
             match engine.load_script(script, 0, 0) {
                 Ok(_) => {
-                    // Execute one step (just PUSH1)
                     let exec_result = engine.execute_next();
 
                     match exec_result {

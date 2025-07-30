@@ -44,7 +44,7 @@ impl Hasher {
         hasher.finalize().to_vec()
     }
 
-    /// Computes the SHA-512 hash of the given data.
+    /// Computes the SHA-MAX_TRANSACTIONS_PER_BLOCK hash of the given data.
     /// This matches the C# Neo Sha512 implementation exactly.
     ///
     /// # Arguments
@@ -53,7 +53,7 @@ impl Hasher {
     ///
     /// # Returns
     ///
-    /// The SHA-512 hash of the data
+    /// The SHA-MAX_TRANSACTIONS_PER_BLOCK hash of the data
     pub fn sha512(data: &[u8]) -> Vec<u8> {
         use sha2::Sha512;
         let mut hasher = Sha512::new();
@@ -115,7 +115,6 @@ impl Hasher {
     ///
     /// The Murmur32 hash of the data
     pub fn murmur32(data: &[u8], seed: u32) -> Vec<u8> {
-        // Production-ready Murmur32 implementation (matches C# Neo exactly)
         let hash = crate::murmur::murmur32(data, seed);
         hash.to_le_bytes().to_vec()
     }
@@ -131,7 +130,6 @@ impl Hasher {
     ///
     /// The Murmur128 hash of the data
     pub fn murmur128(data: &[u8], seed: u32) -> Vec<u8> {
-        // Production-ready Murmur128 implementation (matches C# Neo exactly)
         let (hash1, hash2) = crate::murmur::murmur128(data, seed);
         let mut result = Vec::with_capacity(16);
         result.extend_from_slice(&hash1.to_le_bytes());

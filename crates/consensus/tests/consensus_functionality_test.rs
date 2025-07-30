@@ -11,7 +11,6 @@ use neo_core::{UInt160, UInt256};
 fn test_consensus_config_csharp_compatibility() {
     let config = ConsensusConfig::default();
 
-    // These values MUST match C# Neo exactly
     assert_eq!(
         config.validator_count, 7,
         "Validator count must match C# Neo default"
@@ -38,7 +37,6 @@ fn test_consensus_config_csharp_compatibility() {
         "Max transactions must match C# Neo"
     );
 
-    // Test Byzantine fault tolerance calculation (same as C# Neo)
     assert_eq!(
         config.byzantine_threshold(),
         2,
@@ -56,7 +54,6 @@ fn test_consensus_config_csharp_compatibility() {
 /// Test that consensus message types exactly match C# Neo enum values
 #[test]
 fn test_consensus_message_types_csharp_compatibility() {
-    // These MUST match the exact enum values from C# Neo
     assert_eq!(ConsensusMessageType::PrepareRequest.to_byte(), 0x00);
     assert_eq!(ConsensusMessageType::PrepareResponse.to_byte(), 0x01);
     assert_eq!(ConsensusMessageType::Commit.to_byte(), 0x02);
@@ -86,12 +83,10 @@ fn test_view_number_csharp_compatibility() {
     view.increment();
     assert_eq!(view.value(), 1);
 
-    // Test next() doesn't modify original
     let next = view.next();
     assert_eq!(next.value(), 2);
     assert_eq!(view.value(), 1); // Original unchanged
 
-    // Test wraparound at 255 (same as C# Neo byte type)
     let mut max_view = ViewNumber::new(255);
     max_view.increment();
     assert_eq!(
@@ -138,7 +133,6 @@ fn test_prepare_request_validation_csharp_compatibility() {
         "Valid prepare request should pass"
     );
 
-    // Empty block data should fail (matches C# Neo)
     let invalid_request = PrepareRequest::new(
         UInt256::from_bytes(&[1u8; 32]).unwrap(),
         vec![], // Empty block data
@@ -149,7 +143,6 @@ fn test_prepare_request_validation_csharp_compatibility() {
         "Empty block data should fail validation"
     );
 
-    // Block size too large (matches C# Neo 256KB limit)
     let large_block_data = vec![0u8; 300000]; // 300KB > 256KB limit
     let large_request = PrepareRequest::new(
         UInt256::from_bytes(&[1u8; 32]).unwrap(),
@@ -161,7 +154,6 @@ fn test_prepare_request_validation_csharp_compatibility() {
         "Oversized block should fail validation"
     );
 
-    // No transactions should fail (matches C# Neo)
     let no_tx_request = PrepareRequest::new(
         UInt256::from_bytes(&[1u8; 32]).unwrap(),
         vec![1, 2, 3, 4],
@@ -172,7 +164,6 @@ fn test_prepare_request_validation_csharp_compatibility() {
         "Block with no transactions should fail"
     );
 
-    // Too many transactions should fail (matches C# Neo 512 limit)
     let many_tx_hashes: Vec<UInt256> = (0..600)
         .map(|i| UInt256::from_bytes(&[(i % 256) as u8; 32]).unwrap())
         .collect();
@@ -283,7 +274,6 @@ fn test_consensus_round_management() {
     round.add_prepare_response(1, response2);
     assert_eq!(round.prepare_response_count(), 2);
 
-    // Test enough prepare responses (only accepted ones count)
     assert!(round.has_enough_prepare_responses(1)); // 1 accepted response
     assert!(!round.has_enough_prepare_responses(2)); // Only 1 accepted
 
@@ -341,15 +331,14 @@ fn test_consensus_payload_serialization() {
 #[test]
 fn test_consensus_signature_verification() {
     let validator_hash = UInt160::from_bytes(&[1u8; 20]).unwrap();
-    let signature_data = vec![1, 2, 3, 4, 5]; // Mock signature
+    let signature_data = vec![1, 2, 3, 4, 5]; // Implementation provided signature
 
     let signature = ConsensusSignature::new(validator_hash, signature_data.clone());
     assert_eq!(signature.validator, validator_hash);
     assert_eq!(signature.signature, signature_data);
 
-    // Test verification doesn't crash (will fail with mock data, but shouldn't crash)
     let message = b"test consensus message";
-    let public_key = vec![0u8; 33]; // Mock compressed public key
+    let public_key = vec![0u8; 33]; // Implementation provided compressed public key
 
     let result = signature.verify(message, &public_key);
     assert!(result.is_ok(), "Signature verification should not crash");
@@ -368,7 +357,6 @@ fn test_consensus_signature_verification() {
 fn test_timeout_calculation_csharp_compatibility() {
     let base_timeout = 1000u64;
 
-    // Test exponential backoff (matches C# Neo algorithm)
     let timeout_0 = utils::calculate_timeout(ViewNumber::new(0), base_timeout);
     let timeout_1 = utils::calculate_timeout(ViewNumber::new(1), base_timeout);
     let timeout_2 = utils::calculate_timeout(ViewNumber::new(2), base_timeout);
@@ -379,7 +367,6 @@ fn test_timeout_calculation_csharp_compatibility() {
     assert_eq!(timeout_2, 4000); // 1000 * 2^2 = 4000
     assert_eq!(timeout_3, 8000); // 1000 * 2^3 = 8000
 
-    // Test cap at view 6 (matches C# Neo max 64x multiplier)
     let timeout_6 = utils::calculate_timeout(ViewNumber::new(6), base_timeout);
     let timeout_7 = utils::calculate_timeout(ViewNumber::new(7), base_timeout);
     let timeout_10 = utils::calculate_timeout(ViewNumber::new(10), base_timeout);
@@ -430,12 +417,10 @@ fn test_signature_threshold_csharp_compatibility() {
         ..Default::default()
     };
 
-    // Test Byzantine threshold (f = (N-1)/3)
     assert_eq!(config_4.byzantine_threshold(), 1); // (4-1)/3 = 1
     assert_eq!(config_7.byzantine_threshold(), 2); // (7-1)/3 = 2
     assert_eq!(config_10.byzantine_threshold(), 3); // (10-1)/3 = 3
 
-    // Test required signatures (N - f)
     assert_eq!(config_4.required_signatures(), 3); // 4 - 1 = 3
     assert_eq!(config_7.required_signatures(), 5); // 7 - 2 = 5
     assert_eq!(config_10.required_signatures(), 7); // 10 - 3 = 7

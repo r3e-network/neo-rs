@@ -4,11 +4,16 @@
 //! ensuring graceful shutdown in the correct order.
 
 use crate::{NetworkError, NetworkResult as Result, P2pNode, PeerManager, SyncManager};
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use neo_core::{Shutdown, ShutdownError};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+/// Default Neo network ports
 /// Shutdown implementation for PeerManager
 #[async_trait::async_trait]
 impl Shutdown for PeerManager {
@@ -21,7 +26,6 @@ impl Shutdown for PeerManager {
     }
 
     async fn can_shutdown(&self) -> bool {
-        // Check if we have any critical operations in progress
         let connected_peers = self.get_connected_peers().await;
         let active_peers = connected_peers.len();
 
@@ -29,7 +33,6 @@ impl Shutdown for PeerManager {
             debug!("PeerManager has {} active peers", active_peers);
         }
 
-        // We can always shutdown, but log if we have active connections
         true
     }
 
@@ -63,7 +66,6 @@ impl Shutdown for P2pNode {
     }
 
     async fn can_shutdown(&self) -> bool {
-        // Check if we're in a good state to shutdown
         let status = self.get_status().await;
 
         match status {
@@ -100,7 +102,6 @@ impl Shutdown for SyncManager {
     }
 
     async fn can_shutdown(&self) -> bool {
-        // Check if we're in the middle of syncing
         let status = self.stats().await;
 
         match status.state {
@@ -112,7 +113,6 @@ impl Shutdown for SyncManager {
                 };
                 debug!("SyncManager is syncing: {:.1}% complete", progress);
 
-                // Allow shutdown even if syncing, but warn
                 if progress < 95.0 {
                     warn!("Shutting down while sync is only {:.1}% complete", progress);
                 }
@@ -170,7 +170,6 @@ impl Shutdown for NetworkServerShutdown {
         info!("Shutting down NetworkServer components");
 
         // Components will be shut down in priority order by the coordinator
-        // This is just a marker for the overall network subsystem
 
         info!("NetworkServer shutdown coordination complete");
         Ok(())
@@ -304,7 +303,7 @@ impl Shutdown for TransactionPoolShutdown {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use crate::NetworkConfig;
     use neo_core::{Shutdown, ShutdownCoordinator};
     use std::time::Duration;
@@ -323,7 +322,7 @@ mod tests {
     #[tokio::test]
     async fn test_peer_manager_can_shutdown() {
         let config = NetworkConfig::testnet();
-        let peer_manager = PeerManager::new(config).unwrap();
+        let peer_manager = PeerManager::new(config).expect("operation should succeed");
 
         // Should be able to shutdown when no peers are connected
         let can_shutdown = peer_manager.can_shutdown().await;
@@ -333,7 +332,7 @@ mod tests {
     #[tokio::test]
     async fn test_peer_manager_shutdown_name() {
         let config = NetworkConfig::testnet();
-        let peer_manager = PeerManager::new(config).unwrap();
+        let peer_manager = PeerManager::new(config).expect("operation should succeed");
 
         assert_eq!(peer_manager.name(), "PeerManager");
         assert_eq!(peer_manager.shutdown_priority(), 40);
@@ -343,7 +342,7 @@ mod tests {
     async fn test_p2p_node_shutdown() {
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = P2pNode::new(config, command_receiver).unwrap();
+        let p2p_node = P2pNode::new(config, command_receiver).expect("operation should succeed");
 
         assert_eq!(p2p_node.name(), "P2pNode");
         assert_eq!(p2p_node.shutdown_priority(), 35);
@@ -357,7 +356,7 @@ mod tests {
     async fn test_p2p_node_can_shutdown() {
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = P2pNode::new(config, command_receiver).unwrap();
+        let p2p_node = P2pNode::new(config, command_receiver).expect("operation should succeed");
 
         // Should be able to shutdown when not starting
         let can_shutdown = p2p_node.can_shutdown().await;
@@ -369,7 +368,7 @@ mod tests {
         let blockchain = std::sync::Arc::new(neo_ledger::Blockchain::new_testnet());
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = std::sync::Arc::new(P2pNode::new(config, command_receiver).unwrap());
+        let p2p_node = std::sync::Arc::new(P2pNode::new(config, command_receiver));
         let sync_manager = SyncManager::new(blockchain, p2p_node);
 
         assert_eq!(sync_manager.name(), "SyncManager");
@@ -385,7 +384,7 @@ mod tests {
         let blockchain = std::sync::Arc::new(neo_ledger::Blockchain::new_testnet());
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = std::sync::Arc::new(P2pNode::new(config, command_receiver).unwrap());
+        let p2p_node = std::sync::Arc::new(P2pNode::new(config, command_receiver));
         let sync_manager = SyncManager::new(blockchain, p2p_node);
 
         // Should be able to shutdown when idle
@@ -399,11 +398,12 @@ mod tests {
         let blockchain = std::sync::Arc::new(neo_ledger::Blockchain::new_testnet());
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = std::sync::Arc::new(P2pNode::new(config.clone(), command_receiver).unwrap());
+        let p2p_node = std::sync::Arc::new(
+            P2pNode::new(config.clone(), command_receiver).expect("clone should succeed"),
+        );
         let sync_manager = SyncManager::new(blockchain, p2p_node.clone());
-        let peer_manager = PeerManager::new(config).unwrap();
+        let peer_manager = PeerManager::new(config).expect("operation should succeed");
 
-        // Verify priority ordering (lower numbers shut down first)
         assert!(sync_manager.shutdown_priority() < p2p_node.shutdown_priority());
         assert!(p2p_node.shutdown_priority() < peer_manager.shutdown_priority());
     }
@@ -413,7 +413,9 @@ mod tests {
         let blockchain = std::sync::Arc::new(neo_ledger::Blockchain::new_testnet());
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = std::sync::Arc::new(P2pNode::new(config.clone(), command_receiver).unwrap());
+        let p2p_node = std::sync::Arc::new(
+            P2pNode::new(config.clone(), command_receiver).expect("clone should succeed"),
+        );
         let sync_manager = std::sync::Arc::new(SyncManager::new(blockchain, p2p_node.clone()));
 
         let wrapper = NetworkServerShutdown::new(p2p_node, sync_manager);
@@ -428,7 +430,7 @@ mod tests {
     #[tokio::test]
     async fn test_rpc_server_shutdown() {
         let is_running = std::sync::Arc::new(tokio::sync::RwLock::new(true));
-        let bind_address = "127.0.0.1:10332".to_string();
+        let bind_address = "DEFAULT_RPC_PORT".to_string();
         let rpc_shutdown = RpcServerShutdown::new(is_running.clone(), bind_address);
 
         assert_eq!(rpc_shutdown.name(), "RpcServer");
@@ -501,7 +503,7 @@ mod tests {
         .await;
 
         assert!(shutdown_result.is_ok());
-        assert!(shutdown_result.unwrap().is_ok());
+        assert!(shutdown_result.expect("operation should succeed").is_ok());
 
         // Verify RPC server was stopped
         assert!(!*is_running.read().await);

@@ -1,12 +1,5 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// hardfork.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Hardfork configuration and detection for Neo blockchain.
@@ -48,7 +41,6 @@ impl HardforkManager {
     ///
     /// A new HardforkManager instance.
     pub fn new() -> Self {
-        // Default hardfork heights (can be overridden by configuration)
         let hardforks = HashMap::new();
         Self { hardforks }
     }
@@ -143,13 +135,12 @@ pub fn is_hardfork_enabled(hardfork: Hardfork, block_height: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Block, Transaction, UInt160, UInt256};
 
     #[test]
     fn test_hardfork_manager() {
         let mut manager = HardforkManager::new();
 
-        // Test initial state (no hardforks configured)
         assert!(!manager.is_enabled(Hardfork::HF_Aspidochelone, 0));
         assert!(!manager.is_enabled(Hardfork::HF_Basilisk, 0));
 
@@ -169,7 +160,6 @@ mod tests {
     fn test_mainnet_hardforks() {
         let manager = HardforkManager::mainnet();
 
-        // Test MainNet hardfork heights (matches C# config.mainnet.json exactly)
         assert!(manager.is_enabled(Hardfork::HF_Aspidochelone, 1730000));
         assert!(!manager.is_enabled(Hardfork::HF_Aspidochelone, 1729999));
 
@@ -184,7 +174,6 @@ mod tests {
     fn test_testnet_hardforks() {
         let manager = HardforkManager::testnet();
 
-        // Test TestNet hardfork heights (matches C# config.testnet.json exactly)
         assert!(manager.is_enabled(Hardfork::HF_Aspidochelone, 210000));
         assert!(!manager.is_enabled(Hardfork::HF_Aspidochelone, 209999));
 
@@ -203,7 +192,6 @@ mod tests {
             manager.register(Hardfork::HF_Aspidochelone, 300);
         }
 
-        // Check if the hardfork is enabled
         assert!(!is_hardfork_enabled(Hardfork::HF_Aspidochelone, 299));
         assert!(is_hardfork_enabled(Hardfork::HF_Aspidochelone, 300));
         assert!(is_hardfork_enabled(Hardfork::HF_Aspidochelone, 301));

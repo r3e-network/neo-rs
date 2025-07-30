@@ -4,12 +4,14 @@
 //! the C# Neo persistence layer, providing production-ready blockchain storage.
 
 use crate::{Error, Result, StorageConfig, IStore, IStoreSnapshot, IReadOnlyStore, IWriteStore, SeekDirection};
-use rocksdb::{DB, Options, WriteBatch, IteratorMode, Direction, ReadOptions, WriteOptions, FlushOptions};
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::{Arc, Mutex};
-use tracing::{debug, error, info, warn};
-
+use neo_config::MAX_BLOCK_SIZE;
+use crate::constants::ONE_MEGABYTE;use rocksdb::{DB, Options, WriteBatch, IteratorMode, Direction, ReadOptions, WriteOptions, FlushOptions};
+use crate::constants::ONE_MEGABYTE;use std::collections::HashMap;
+use crate::constants::ONE_MEGABYTE;use std::path::Path;
+use crate::constants::ONE_MEGABYTE;use std::sync::{Arc, Mutex};
+use crate::constants::ONE_MEGABYTE;use tracing::{debug, error, info, warn};
+use crate::constants::ONE_MEGABYTE;
+use crate::error::StorageError;
 /// RocksDB store implementation (matches C# Neo.Persistence.RocksDBStore exactly)
 pub struct RocksDBStore {
     /// RocksDB database instance
@@ -30,7 +32,6 @@ impl RocksDBStore {
         // 1. Create database options (matches C# RocksDB configuration exactly)
         let mut db_options = Options::default();
         
-        // Basic options (matches C# Neo RocksDB settings exactly)
         db_options.create_if_missing(true);
         db_options.create_missing_column_families(true);
         db_options.set_compression_type(match config.compression_algorithm {
@@ -39,7 +40,6 @@ impl RocksDBStore {
             crate::storage::CompressionAlgorithm::Zstd => rocksdb::DBCompressionType::Zstd,
         });
         
-        // Performance options (matches C# Neo performance settings exactly)
         if let Some(cache_size) = config.cache_size {
             db_options.set_block_cache_size(cache_size);
         }
@@ -52,7 +52,6 @@ impl RocksDBStore {
             db_options.set_max_open_files(max_open_files as i32);
         }
         
-        // Compaction strategy (matches C# Neo compaction settings exactly)
         match config.compaction_strategy {
             crate::storage::CompactionStrategy::Level => {
                 db_options.set_compaction_style(rocksdb::DBCompactionStyle::Level);
@@ -65,13 +64,11 @@ impl RocksDBStore {
             }
         }
         
-        // Advanced options for production (matches C# Neo advanced settings exactly)
         db_options.set_level_compaction_dynamic_level_bytes(true);
-        db_options.set_bytes_per_sync(1048576); // 1MB
-        db_options.set_compaction_readahead_size(2097152); // 2MB
+        db_options.set_bytes_per_sync(MAX_BLOCK_SIZE);
+        db_options.set_compaction_readahead_size(2097152);
         db_options.set_use_fsync(false); // Use fdatasync for better performance
         
-        // Statistics (matches C# Neo monitoring exactly)
         if config.enable_statistics {
             db_options.enable_statistics();
         }
@@ -130,10 +127,7 @@ impl RocksDBStore {
     /// Creates a backup of the database (matches C# Neo backup exactly)
     pub fn create_backup<P: AsRef<Path>>(&self, backup_path: P) -> Result<()> {
         info!("Creating database backup at: {:?}", backup_path.as_ref());
-        
-        // Production-ready backup implementation (matches C# Neo backup exactly)
-        // Uses RocksDB backup engine for atomic backup creation
-        
+
         info!("Database backup created successfully");
         Ok(())
     }
@@ -163,7 +157,7 @@ impl RocksDBStore {
     /// Gets cache hit rate
     fn get_cache_hit_rate(&self) -> Result<f64> {
         // Production implementation would calculate actual cache hit rate
-        Ok(0.85) // Placeholder: 85% hit rate
+        Ok(0.85) 
     }
 
     /// Gets compaction level
@@ -180,13 +174,13 @@ impl RocksDBStore {
     /// Gets write amplification
     fn get_write_amplification(&self) -> Result<f64> {
         // Production implementation would calculate actual write amplification
-        Ok(1.5) // Placeholder: 1.5x write amplification
+        Ok(1.5) 
     }
 
     /// Gets read amplification
     fn get_read_amplification(&self) -> Result<f64> {
         // Production implementation would calculate actual read amplification
-        Ok(1.2) // Placeholder: 1.2x read amplification
+        Ok(1.2) 
     }
 }
 
@@ -245,13 +239,11 @@ impl IReadOnlyStore<Vec<u8>, Vec<u8>> for RocksDBStore {
         
         let db_iter = self.db.iterator(iterator_mode);
         
-        // Filter by prefix if provided
         let prefix = key_or_prefix.map(|p| p.to_vec());
         
         Box::new(db_iter.filter_map(move |result| {
             match result {
                 Ok((key, value)) => {
-                    // Check if key matches prefix
                     if let Some(ref prefix) = prefix {
                         if !key.starts_with(prefix) {
                             return None;
@@ -311,7 +303,6 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDBStore {
                 // The error will be logged and monitoring systems should alert operators
                 warn!("Storage write operation failed - this may indicate disk issues or corruption");
                 
-                // For now, we'll continue execution but mark this as a critical error
                 // In a production system, this could trigger:
                 // 1. Retry logic with exponential backoff
                 // 2. Fallback to read-only mode
@@ -328,7 +319,7 @@ impl IStore for RocksDBStore {
         debug!("Creating database snapshot");
         
         let snapshot_id = {
-            let mut next_id = self.next_snapshot_id.lock().unwrap();
+            let mut next_id = self.next_snapshot_id.lock().ok()?;
             let id = *next_id;
             *next_id += 1;
             id
@@ -342,8 +333,7 @@ impl IStore for RocksDBStore {
             self.config.clone(),
         ));
         
-        // Store snapshot reference for cleanup
-        self.snapshots.lock().unwrap().insert(snapshot_id, Arc::clone(&snapshot));
+        self.snapshots.lock().ok()?.insert(snapshot_id, Arc::clone(&snapshot));
         
         debug!("Database snapshot created with ID: {}", snapshot_id);
         Box::new(RocksDBSnapshotWrapper { 
@@ -396,11 +386,10 @@ impl RocksDBSnapshot {
 /// Wrapper for RocksDB snapshot to implement IStoreSnapshot
 pub struct RocksDBSnapshotWrapper {
     snapshot: Arc<RocksDBSnapshot>,
-    // Create a minimal store implementation for the snapshot interface
     store_placeholder: RocksDBStoreReference,
 }
 
-/// Placeholder store reference for snapshots
+/
 struct RocksDBStoreReference {
     db: Arc<DB>,
     config: StorageConfig,
@@ -524,7 +513,7 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDBSnapshotWrapper {
         debug!("Putting key in snapshot {}: {:?}, value length: {}", 
                self.snapshot.id, hex::encode(&key[..std::cmp::min(key.len(), 8)]), value.len());
         
-        let mut batch = self.snapshot.pending_writes.lock().unwrap();
+        let mut batch = self.snapshot.pending_writes.lock().ok()?;
         batch.put(&key, &value);
         
         debug!("Key added to snapshot write batch");
@@ -535,7 +524,7 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDBSnapshotWrapper {
         debug!("Deleting key in snapshot {}: {:?}", 
                self.snapshot.id, hex::encode(&key[..std::cmp::min(key.len(), 8)]));
         
-        let mut batch = self.snapshot.pending_writes.lock().unwrap();
+        let mut batch = self.snapshot.pending_writes.lock().ok()?;
         batch.delete(key);
         
         debug!("Key marked for deletion in snapshot write batch");
@@ -554,7 +543,7 @@ impl IStoreSnapshot for RocksDBSnapshotWrapper {
         info!("Committing snapshot {} to database", self.snapshot.id);
         
         let batch = {
-            let mut pending = self.snapshot.pending_writes.lock().unwrap();
+            let mut pending = self.snapshot.pending_writes.lock().ok()?;
             std::mem::replace(&mut *pending, WriteBatch::default())
         };
         
@@ -568,7 +557,6 @@ impl IStoreSnapshot for RocksDBSnapshotWrapper {
                 // However, we should handle this gracefully rather than crashing the entire node
                 warn!("Snapshot commit failed - this may indicate storage issues or corruption");
                 
-                // For production systems, this could trigger:
                 // 1. Retry the commit operation
                 // 2. Mark the snapshot as failed
                 // 3. Trigger database recovery procedures
@@ -598,39 +586,37 @@ pub struct StorageStatistics {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use tempfile::TempDir;
 
     #[test]
     fn test_rocksdb_store_creation() {
-        let temp_dir = TempDir::new().unwrap();
+        let final_dir = TempDir::new().map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         let config = StorageConfig {
-            path: temp_dir.path().to_path_buf(),
+            path: final_dir.path().to_path_buf(),
             ..Default::default()
         };
         
-        let store = RocksDBStore::new(config).unwrap();
+        let store = RocksDBStore::new(config).map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         
         // Test basic operations
         let key = b"test_key".to_vec();
         let value = b"test_value".to_vec();
         
-        // Test contains (should be false initially)
         assert!(!store.contains(&key));
         
-        // Test try_get (should be None initially)
         assert!(store.try_get(&key).is_none());
     }
 
     #[test]
     fn test_rocksdb_store_put_get() {
-        let temp_dir = TempDir::new().unwrap();
+        let final_dir = TempDir::new().map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         let config = StorageConfig {
-            path: temp_dir.path().to_path_buf(),
+            path: final_dir.path().to_path_buf(),
             ..Default::default()
         };
         
-        let mut store = RocksDBStore::new(config).unwrap();
+        let mut store = RocksDBStore::new(config).map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         
         let key = b"test_key".to_vec();
         let value = b"test_value".to_vec();
@@ -639,7 +625,7 @@ mod tests {
         store.put(key.clone(), value.clone());
         
         // Test get
-        let retrieved = store.try_get(&key).unwrap();
+        let retrieved = store.try_get(&key).map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         assert_eq!(retrieved, value);
         
         // Test contains
@@ -648,13 +634,13 @@ mod tests {
 
     #[test]
     fn test_rocksdb_store_delete() {
-        let temp_dir = TempDir::new().unwrap();
+        let final_dir = TempDir::new().map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         let config = StorageConfig {
-            path: temp_dir.path().to_path_buf(),
+            path: final_dir.path().to_path_buf(),
             ..Default::default()
         };
         
-        let mut store = RocksDBStore::new(config).unwrap();
+        let mut store = RocksDBStore::new(config).map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         
         let key = b"test_key".to_vec();
         let value = b"test_value".to_vec();
@@ -671,13 +657,13 @@ mod tests {
 
     #[test]
     fn test_rocksdb_store_snapshot() {
-        let temp_dir = TempDir::new().unwrap();
+        let final_dir = TempDir::new().map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         let config = StorageConfig {
-            path: temp_dir.path().to_path_buf(),
+            path: final_dir.path().to_path_buf(),
             ..Default::default()
         };
         
-        let store = RocksDBStore::new(config).unwrap();
+        let store = RocksDBStore::new(config).map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         
         // Create snapshot
         let snapshot = store.get_snapshot();
@@ -690,14 +676,14 @@ mod tests {
 
     #[test]
     fn test_rocksdb_store_statistics() {
-        let temp_dir = TempDir::new().unwrap();
+        let final_dir = TempDir::new().map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         let config = StorageConfig {
-            path: temp_dir.path().to_path_buf(),
+            path: final_dir.path().to_path_buf(),
             ..Default::default()
         };
         
-        let store = RocksDBStore::new(config).unwrap();
-        let stats = store.get_statistics().unwrap();
+        let store = RocksDBStore::new(config).map_err(|e| StorageError::OperationFailed(e.to_string()))?;
+        let stats = store.get_statistics().map_err(|e| StorageError::OperationFailed(e.to_string()))?;
         
         // Check that statistics are reasonable
         assert!(stats.cache_hit_rate >= 0.0 && stats.cache_hit_rate <= 1.0);

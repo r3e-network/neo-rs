@@ -2,10 +2,17 @@
 //!
 //! This module implements P2P events exactly matching C# Neo's NetworkEventArgs and event system.
 
+use crate::{NetworkError, NetworkMessage as Message};
 use crate::{NetworkMessage, NodeInfo};
+use neo_config::ADDRESS_SIZE;
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use neo_core::UInt160;
 use std::net::SocketAddr;
 
+/// Default Neo network ports
 /// P2P events (matches C# Neo NetworkEventArgs exactly)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum P2PEvent {
@@ -225,12 +232,9 @@ impl P2PEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use neo_core::UInt160;
-
     #[test]
     fn test_p2p_event_creation() {
-        let peer_id = UInt160::from_bytes(&[1; 20]).unwrap();
+        let peer_id = UInt160::from_bytes(&[1; ADDRESS_SIZE]).unwrap();
         let address = "127.0.0.1:10333".parse().unwrap();
 
         let event = P2PEvent::peer_connected(peer_id, address);
@@ -261,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_event_classification() {
-        let peer_id = UInt160::from_bytes(&[1; 20]).unwrap();
+        let peer_id = UInt160::from_bytes(&[1; ADDRESS_SIZE]).unwrap();
         let address = "127.0.0.1:10333".parse().unwrap();
 
         let conn_event = P2PEvent::peer_connected(peer_id, address);

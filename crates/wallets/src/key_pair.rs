@@ -4,9 +4,16 @@
 //! converted from the C# Neo KeyPair class (@neo-sharp/src/Neo/Wallets/KeyPair.cs).
 
 use crate::{Error, Result};
+use aes::Aes256;
+use cbc::{
+    cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
+    Decryptor, Encryptor,
+};
+use neo_config::HASH_SIZE;
 use neo_core::{UInt160, UInt256};
-use neo_cryptography::{ECDsa, ECPoint, ECC};
+use neo_cryptography::{ECCurve, ECDsa, ECPoint, ECC};
 use rand::RngCore;
+use scrypt::{Params, Scrypt};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -15,7 +22,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// This matches the C# KeyPair class functionality.
 #[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KeyPair {
-    private_key: [u8; 32],
+    private_key: [u8; HASH_SIZE],
     public_key: Vec<u8>,
     compressed_public_key: Vec<u8>,
 }
@@ -23,18 +30,18 @@ pub struct KeyPair {
 impl KeyPair {
     /// Creates a new random key pair.
     pub fn generate() -> Result<Self> {
-        let mut private_key = [0u8; 32];
+        let mut private_key = [0u8; HASH_SIZE];
         rand::thread_rng().fill_bytes(&mut private_key);
         Self::from_private_key(&private_key)
     }
 
     /// Creates a key pair from a private key.
     pub fn from_private_key(private_key: &[u8]) -> Result<Self> {
-        if private_key.len() != 32 {
+        if private_key.len() != HASH_SIZE {
             return Err(Error::InvalidPrivateKey);
         }
 
-        let mut key_bytes = [0u8; 32];
+        let mut key_bytes = [0u8; HASH_SIZE];
         key_bytes.copy_from_slice(private_key);
 
         // Generate public key from private key
@@ -71,7 +78,7 @@ impl KeyPair {
     }
 
     /// Gets the private key.
-    pub fn private_key(&self) -> [u8; 32] {
+    pub fn private_key(&self) -> [u8; HASH_SIZE] {
         self.private_key
     }
 
@@ -87,7 +94,6 @@ impl KeyPair {
 
     /// Gets the public key as an ECPoint.
     pub fn get_public_key_point(&self) -> Result<neo_cryptography::ECPoint> {
-        use neo_cryptography::ECCurve;
         let curve = ECCurve::secp256r1();
         neo_cryptography::ECPoint::decode_compressed(&self.compressed_public_key, curve)
             .map_err(|e| Error::Other(format!("Failed to create ECPoint: {}", e)))
@@ -96,8 +102,6 @@ impl KeyPair {
     /// Gets the script hash for this key pair.
     /// This matches the C# KeyPair.PublicKeyHash property.
     pub fn get_script_hash(&self) -> UInt160 {
-        // C# implementation: PublicKey.EncodePoint(true).ToScriptHash()
-        // ToScriptHash computes Hash160 (RIPEMD160 of SHA256) of the compressed public key
         UInt160::from_script(&self.compressed_public_key)
     }
 
@@ -137,7 +141,7 @@ impl KeyPair {
     }
 
     /// Decodes a WIF string to a private key.
-    fn decode_wif(wif: &str) -> Result<[u8; 32]> {
+    fn decode_wif(wif: &str) -> Result<[u8; HASH_SIZE]> {
         let decoded = bs58::decode(wif)
             .into_vec()
             .map_err(|e| Error::Base58Decode(e.to_string()))?;
@@ -153,7 +157,6 @@ impl KeyPair {
             return Err(Error::InvalidWif);
         }
 
-        // Check total length (should be 38: 1 version + 32 key + 1 compressed + 4 checksum)
         if decoded.len() != 38 {
             return Err(Error::InvalidWif);
         }
@@ -168,13 +171,13 @@ impl KeyPair {
             return Err(Error::InvalidWif);
         }
 
-        let mut private_key = [0u8; 32];
+        let mut private_key = [0u8; HASH_SIZE];
         private_key.copy_from_slice(&data[1..33]);
         Ok(private_key)
     }
 
     /// Encodes a private key to WIF format.
-    fn encode_wif(private_key: &[u8; 32]) -> String {
+    fn encode_wif(private_key: &[u8; HASH_SIZE]) -> String {
         let mut data = Vec::with_capacity(37);
         data.push(0x80); // Version byte for mainnet
         data.extend_from_slice(private_key);
@@ -188,14 +191,7 @@ impl KeyPair {
     }
 
     /// Encrypts a private key using NEP-2 standard.
-    fn encrypt_nep2(private_key: &[u8; 32], password: &str) -> Result<Vec<u8>> {
-        use aes::Aes256;
-        use cbc::{
-            cipher::{BlockEncryptMut, KeyIvInit},
-            Encryptor,
-        };
-        use scrypt::{Params, Scrypt};
-
+    fn encrypt_nep2(private_key: &[u8; HASH_SIZE], password: &str) -> Result<Vec<u8>> {
         // NEP-2 parameters
         let n = 16384; // CPU cost
         let r = 8; // Memory cost
@@ -216,26 +212,23 @@ impl KeyPair {
             .map_err(|e| Error::Scrypt(e.to_string()))?;
 
         // Split derived key
-        let derived_half1 = &derived_key[0..32];
+        let derived_half1 = &derived_key[0..HASH_SIZE];
         let derived_half2 = &derived_key[32..64];
 
         // XOR private key with derived_half1
-        let mut xor_key = [0u8; 32];
-        for i in 0..32 {
+        let mut xor_key = [0u8; HASH_SIZE];
+        for i in 0..HASH_SIZE {
             xor_key[i] = private_key[i] ^ derived_half1[i];
         }
 
-        // Encrypt with AES-256-CBC (no padding, like C# implementation)
         let cipher = Encryptor::<Aes256>::new(derived_half2.into(), &[0u8; 16].into());
         let mut buffer = xor_key.to_vec();
-        buffer.resize(32, 0); // Ensure exactly 32 bytes
-                              // No padding needed since xor_key is exactly 32 bytes (multiple of 16)
+        buffer.resize(HASH_SIZE, 0); // Ensure exactly HASH_SIZE bytes
         let encrypted = cipher
-            .encrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut buffer, 32)
+            .encrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut buffer, HASH_SIZE)
             .map_err(|e| Error::Aes(e.to_string()))?;
         let encrypted = encrypted.to_vec();
 
-        // Build NEP-2 result
         let mut result = Vec::with_capacity(39);
         result.extend_from_slice(b"\x01\x42"); // NEP-2 prefix
         result.push(0xe0); // Flags
@@ -246,14 +239,7 @@ impl KeyPair {
     }
 
     /// Decrypts a NEP-2 encrypted private key.
-    fn decrypt_nep2(encrypted_key: &[u8], password: &str) -> Result<[u8; 32]> {
-        use aes::Aes256;
-        use cbc::{
-            cipher::{BlockDecryptMut, KeyIvInit},
-            Decryptor,
-        };
-        use scrypt::{Params, Scrypt};
-
+    fn decrypt_nep2(encrypted_key: &[u8], password: &str) -> Result<[u8; HASH_SIZE]> {
         if encrypted_key.len() != 39 {
             return Err(Error::InvalidNep2Key);
         }
@@ -280,10 +266,9 @@ impl KeyPair {
         scrypt::scrypt(password.as_bytes(), address_hash, &params, &mut derived_key)
             .map_err(|e| Error::Scrypt(e.to_string()))?;
 
-        let derived_half1 = &derived_key[0..32];
+        let derived_half1 = &derived_key[0..HASH_SIZE];
         let derived_half2 = &derived_key[32..64];
 
-        // Decrypt with AES-256-CBC (no padding, like C# implementation)
         let cipher = Decryptor::<Aes256>::new(derived_half2.into(), &[0u8; 16].into());
         let mut buffer = encrypted_data.to_vec();
         let decrypted = cipher
@@ -291,8 +276,8 @@ impl KeyPair {
             .map_err(|e| Error::Aes(e.to_string()))?;
 
         // XOR with derived_half1 to get private key
-        let mut private_key = [0u8; 32];
-        for i in 0..32 {
+        let mut private_key = [0u8; HASH_SIZE];
+        for i in 0..HASH_SIZE {
             private_key[i] = decrypted[i] ^ derived_half1[i];
         }
 
@@ -310,9 +295,9 @@ impl KeyPair {
     }
 
     /// Gets verification script for a private key (helper function).
-    fn get_verification_script_for_key(private_key: &[u8; 32]) -> Vec<u8> {
-        let public_key = ECC::generate_public_key(private_key).unwrap();
-        let compressed = ECC::compress_public_key(&public_key).unwrap();
+    fn get_verification_script_for_key(private_key: &[u8; HASH_SIZE]) -> Vec<u8> {
+        let public_key = ECC::generate_public_key(private_key).expect("Operation failed");
+        let compressed = ECC::compress_public_key(&public_key).expect("Operation failed");
 
         let mut script = Vec::new();
         script.push(0x0c); // PUSHDATA1
@@ -326,7 +311,6 @@ impl KeyPair {
 
 impl fmt::Display for KeyPair {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // C# KeyPair.ToString() returns the compressed public key as hex string
         write!(f, "{}", hex::encode(&self.compressed_public_key))
     }
 }
@@ -341,12 +325,10 @@ impl Eq for KeyPair {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_key_pair_generation() {
         let key_pair = KeyPair::generate().unwrap();
-        assert_eq!(key_pair.private_key().len(), 32);
+        assert_eq!(key_pair.private_key().len(), HASH_SIZE);
         assert!(!key_pair.public_key().is_empty());
         assert!(!key_pair.compressed_public_key().is_empty());
     }

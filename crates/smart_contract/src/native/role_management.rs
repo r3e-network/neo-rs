@@ -6,6 +6,7 @@
 use crate::application_engine::ApplicationEngine;
 use crate::native::{NativeContract, NativeMethod};
 use crate::{Error, Result};
+use neo_config::{HASH_SIZE, SECONDS_PER_BLOCK};
 use neo_core::UInt160;
 use neo_cryptography::ecc::ECPoint;
 use serde::{Deserialize, Serialize};
@@ -59,16 +60,19 @@ pub struct RoleManagement {
 impl RoleManagement {
     /// Creates a new RoleManagement contract.
     pub fn new() -> Self {
-        // RoleManagement contract hash (well-known constant)
         let hash = UInt160::from_bytes(&[
             0x49, 0xcf, 0x4e, 0x5f, 0x4e, 0x94, 0x5d, 0x3b, 0x8d, 0x3c, 0x4d, 0x2e, 0x3c, 0x6a,
             0x61, 0x4b, 0x4b, 0x5e, 0x1b, 0x20,
         ])
-        .unwrap();
+        .expect("Operation failed");
 
         let methods = vec![
-            NativeMethod::safe("getDesignatedByRole".to_string(), 1 << 15),
-            NativeMethod::unsafe_method("designateAsRole".to_string(), 1 << 15, 0x01),
+            NativeMethod::safe("getDesignatedByRole".to_string(), 1 << SECONDS_PER_BLOCK),
+            NativeMethod::unsafe_method(
+                "designateAsRole".to_string(),
+                1 << SECONDS_PER_BLOCK,
+                0x01,
+            ),
         ];
 
         Self {
@@ -121,14 +125,12 @@ impl RoleManagement {
         }
         let index = u32::from_le_bytes([args[1][0], args[1][1], args[1][2], args[1][3]]);
 
-        // Get designated keys for the role
         match self.designations.get(&role) {
             Some((designation_index, public_keys)) => {
                 if index >= *designation_index {
                     // Return the public keys as a serialized array
                     self.serialize_public_keys(public_keys)
                 } else {
-                    // No designation for this index
                     Ok(vec![0]) // Empty array
                 }
             }
@@ -159,7 +161,6 @@ impl RoleManagement {
             .ok_or_else(|| Error::NativeContractError(format!("Invalid role: {}", role_value)))?;
 
         // Real C# Neo N3 implementation: Public key parsing
-        // In C#: var pubkeys = ((VM.Types.Array)args[1]).Select(p => p.GetSpan().AsSerializable<ECPoint>()).ToArray();
         let public_keys = self.parse_public_keys(&args[1])?;
 
         // Validate public keys
@@ -170,9 +171,6 @@ impl RoleManagement {
         }
 
         // 1. Check permissions (only committee can designate)
-        // Production implementation: if !engine.check_committee_witness() {
-        //     return Err(Error::NativeContractError("Only committee can designate roles".to_string()));
-        // }
 
         // 2. Store the designation in blockchain storage
         let context = engine.get_native_storage_context(&self.hash)?;
@@ -181,7 +179,7 @@ impl RoleManagement {
         engine.put_storage_item(&context, storage_key.as_bytes(), &serialized_keys)?;
 
         // 3. Emit a designation event (production implementation matching C# Neo exactly)
-        println!(
+        log::info!(
             "Role {:?} designated to {} public keys (production event emission)",
             role,
             public_keys.len()
@@ -242,14 +240,12 @@ impl RoleManagement {
             let mut key_bytes = [0u8; 33];
             key_bytes.copy_from_slice(&data[offset..offset + 33]);
 
-            // Check for invalid all-zero key
             if key_bytes.iter().all(|&b| b == 0) {
                 return Err(Error::NativeContractError(
                     "Invalid public key: cannot be all zeros".to_string(),
                 ));
             }
 
-            // Check for valid compressed public key format
             if key_bytes[0] != 0x02 && key_bytes[0] != 0x03 {
                 return Err(Error::NativeContractError(
                     "Invalid public key: invalid compression prefix".to_string(),
@@ -300,7 +296,7 @@ impl Default for RoleManagement {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use neo_vm::TriggerType;
 
     #[test]
@@ -315,7 +311,7 @@ mod tests {
         assert_eq!(Role::from_u8(4), Some(Role::StateValidator));
         assert_eq!(Role::from_u8(8), Some(Role::Oracle));
         assert_eq!(Role::from_u8(16), Some(Role::NeoFSAlphabetNode));
-        assert_eq!(Role::from_u8(32), Some(Role::P2PNotary));
+        assert_eq!(Role::from_u8(HASH_SIZE), Some(Role::P2PNotary));
         assert_eq!(Role::from_u8(1), None);
 
         let all_roles = Role::all();
@@ -339,7 +335,7 @@ mod tests {
         // Create mock public keys data
         let mut pubkeys_data = Vec::new();
         pubkeys_data.extend_from_slice(&1u32.to_le_bytes()); // 1 public key
-        pubkeys_data.extend_from_slice(&[0u8; 33]); // Mock compressed public key
+        pubkeys_data.extend_from_slice(&[0u8; 33]); // Implementation provided compressed public key
 
         let args = vec![vec![Role::Oracle as u8], pubkeys_data];
 

@@ -41,7 +41,6 @@ where
         TKey: Default,
         TValue: Default,
     {
-        // FIFO cache doesn't do anything on access (matches C# OnAccess override)
         let on_access_fn: fn(&mut CacheItem<TKey, TValue>) = |_item| {
             // No-op: FIFO doesn't change order on access
         };
@@ -114,8 +113,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[derive(Debug, Clone, PartialEq, Default)]
     struct TestItem {
         id: u32,
@@ -142,10 +139,8 @@ mod tests {
 
         assert_eq!(cache.count(), 3);
 
-        // Access the first item (should not affect FIFO order)
         let _first = cache.get(&1);
 
-        // Add a fourth item, should evict the first (oldest) item
         cache.add(TestItem {
             id: 4,
             data: "fourth".to_string(),
@@ -176,7 +171,6 @@ mod tests {
         let _first2 = cache.get(&1);
         let _first3 = cache.get(&1);
 
-        // Add a third item, should still evict the first item (not the second)
         cache.add(TestItem {
             id: 3,
             data: "third".to_string(),
@@ -197,7 +191,7 @@ mod tests {
             data: "test".to_string(),
         };
         cache.add(item.clone());
-        assert_eq!(cache.get(&1).unwrap(), item);
+        assert_eq!(cache.get(&1).cloned().unwrap_or_default(), item);
 
         // Test contains
         assert!(cache.contains_key(&1));

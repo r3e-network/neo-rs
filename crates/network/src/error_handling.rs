@@ -4,16 +4,16 @@
 //! for all network operations, ensuring reliable P2P communication in the Neo network.
 
 use crate::{NetworkError, NetworkMessage, NetworkResult as Result, PeerEvent};
+use neo_core::constants::MAX_RETRY_ATTEMPTS;
+const DEFAULT_TIMEOUT_MS: u64 = 30000;
+const SECONDS_PER_HOUR: u64 = 3600;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, RwLock};
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
-
 /// Maximum number of retry attempts for network operations
-pub const MAX_RETRY_ATTEMPTS: u32 = 3;
-
 /// Base retry delay (exponential backoff)
 pub const BASE_RETRY_DELAY: Duration = Duration::from_millis(100);
 
@@ -294,7 +294,6 @@ impl NetworkErrorHandler {
             .insert(operation_id.clone(), context.clone());
 
         loop {
-            // Check for timeout
             if context.has_timed_out() {
                 self.active_operations.write().await.remove(&operation_id);
                 return Err(NetworkError::Generic {
@@ -483,7 +482,6 @@ impl NetworkErrorHandler {
         let failed_peers = self.failed_peers.read().await;
         let failed_count = failed_peers.values().filter(|info| info.is_failed).count();
 
-        // If more than 50% of known peers are failed, consider it a partition
         if failed_count > 0 && failed_count as f64 / failed_peers.len() as f64 > 0.5 {
             let affected_peers: Vec<SocketAddr> = failed_peers
                 .iter()
@@ -506,13 +504,12 @@ impl NetworkErrorHandler {
     pub async fn perform_maintenance(&self) {
         // Cleanup old failure information
         let mut failed_peers = self.failed_peers.write().await;
-        let cutoff_time = Instant::now() - Duration::from_secs(3600); // 1 hour
+        let cutoff_time = Instant::now() - Duration::from_secs(3600);
 
         failed_peers.retain(|_, info| info.last_failure > cutoff_time || info.is_failed);
 
         drop(failed_peers);
 
-        // Check for network partition
         if let Some(partition_event) = self.detect_network_partition().await {
             warn!("Network partition detected: {:?}", partition_event);
             let _ = self.event_sender.send(partition_event);
@@ -534,7 +531,7 @@ impl Default for NetworkErrorHandler {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use std::time::Duration;
     use tokio::time::timeout;
 
@@ -542,11 +539,11 @@ mod tests {
     fn test_operation_context_creation() {
         let context = OperationContext::new(
             "test_operation".to_string(),
-            "127.0.0.1:8080".parse().unwrap(),
+            "localhost:8080".parse().unwrap_or_default(),
         );
 
         assert_eq!(context.operation_id, "test_operation");
-        assert_eq!(context.peer.to_string(), "127.0.0.1:8080");
+        assert_eq!(context.peer.to_string(), "localhost:8080");
         assert_eq!(context.retry_count, 0);
         assert!(!context.has_exceeded_max_retries());
         assert!(context.last_error.is_none());
@@ -555,8 +552,10 @@ mod tests {
 
     #[test]
     fn test_operation_context_failure_recording() {
-        let mut context =
-            OperationContext::new("test_op".to_string(), "127.0.0.1:8080".parse().unwrap());
+        let mut context = OperationContext::new(
+            "test_op".to_string(),
+            "localhost:8080".parse().unwrap_or_default(),
+        );
 
         let error = NetworkError::ConnectionFailed("test error".to_string());
         context.record_failure(&error);
@@ -573,8 +572,10 @@ mod tests {
 
     #[test]
     fn test_operation_context_max_retries() {
-        let mut context =
-            OperationContext::new("test_op".to_string(), "127.0.0.1:8080".parse().unwrap());
+        let mut context = OperationContext::new(
+            "test_op".to_string(),
+            "localhost:8080".parse().unwrap_or_default(),
+        );
 
         // Should not exceed max retries initially
         assert!(!context.has_exceeded_max_retries());
@@ -621,8 +622,8 @@ mod tests {
         // Test medium errors
         assert_eq!(
             handler.classify_error_severity(&NetworkError::ConnectionTimeout {
-                address: "127.0.0.1:8080".parse().unwrap(),
-                timeout_ms: 30000
+                address: "localhost:8080".parse().unwrap_or_default(),
+                timeout_ms: DEFAULT_TIMEOUT_MS
             }),
             ErrorSeverity::Medium
         );
@@ -661,8 +662,8 @@ mod tests {
         // Test medium error recovery
         assert_eq!(
             handler.select_recovery_strategy(&NetworkError::ConnectionTimeout {
-                address: "127.0.0.1:8080".parse().unwrap(),
-                timeout_ms: 30000
+                address: "localhost:8080".parse().unwrap_or_default(),
+                timeout_ms: DEFAULT_TIMEOUT_MS
             }),
             RecoveryStrategy::RetryWithExponentialBackoff
         );
@@ -702,7 +703,7 @@ mod tests {
     #[tokio::test]
     async fn test_error_statistics_update() {
         let handler = NetworkErrorHandler::new();
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
         let error = NetworkError::ConnectionFailed("test".to_string());
 
         handler.update_error_statistics(&error, peer).await;
@@ -716,10 +717,9 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_error_statistics_updates() {
         let handler = NetworkErrorHandler::new();
-        let peer1 = "127.0.0.1:8080".parse().unwrap();
-        let peer2 = "127.0.0.1:8081".parse().unwrap();
+        let peer1 = "localhost:8080".parse().unwrap_or_default();
+        let peer2 = "localhost:8081".parse().unwrap_or_default();
 
-        // Add errors for multiple peers
         handler
             .update_error_statistics(&NetworkError::ConnectionFailed("test1".to_string()), peer1)
             .await;
@@ -727,7 +727,7 @@ mod tests {
             .update_error_statistics(
                 &NetworkError::ConnectionTimeout {
                     address: peer1,
-                    timeout_ms: 30000,
+                    timeout_ms: DEFAULT_TIMEOUT_MS,
                 },
                 peer1,
             )
@@ -746,7 +746,7 @@ mod tests {
     async fn test_record_error_event() {
         let handler = NetworkErrorHandler::new();
         let mut event_receiver = handler.subscribe_to_events();
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
         let error = NetworkError::ConnectionFailed("test error".to_string());
 
         // Record error
@@ -756,7 +756,7 @@ mod tests {
         let event = timeout(Duration::from_millis(100), event_receiver.recv()).await;
         assert!(event.is_ok());
 
-        let network_event = event.unwrap().unwrap();
+        let network_event = event?.expect("operation should succeed");
         match network_event {
             NetworkErrorEvent::ErrorOccurred {
                 peer: event_peer,
@@ -774,21 +774,21 @@ mod tests {
     async fn test_execute_with_retry_success() {
         let handler = NetworkErrorHandler::new();
         let operation_id = "test_success".to_string();
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
 
         let result = handler
             .execute_with_retry(operation_id, peer, || async { Ok("success".to_string()) })
             .await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "success");
+        assert_eq!(result?, "success");
     }
 
     #[tokio::test]
     async fn test_execute_with_retry_eventual_success() {
         let handler = NetworkErrorHandler::new();
         let operation_id = "test_eventual_success".to_string();
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
         let attempt_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
         let attempt_count_clone = attempt_count.clone();
@@ -800,7 +800,7 @@ mod tests {
                     if current < 2 {
                         Err(NetworkError::ConnectionTimeout {
                             address: peer,
-                            timeout_ms: 30000,
+                            timeout_ms: DEFAULT_TIMEOUT_MS,
                         })
                     } else {
                         Ok("success after retries".to_string())
@@ -810,7 +810,7 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "success after retries");
+        assert_eq!(result?, "success after retries");
         assert_eq!(attempt_count.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
@@ -818,7 +818,7 @@ mod tests {
     async fn test_execute_with_retry_max_attempts_exceeded() {
         let handler = NetworkErrorHandler::new();
         let operation_id = "test_max_attempts".to_string();
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
 
         let result = handler
             .execute_with_retry(operation_id, peer, || async {
@@ -827,7 +827,6 @@ mod tests {
             .await;
 
         assert!(result.is_err());
-        // Should have recorded the error for the peer
         let failed_peers = handler.get_failed_peers().await;
         assert!(!failed_peers.is_empty());
     }
@@ -835,7 +834,7 @@ mod tests {
     #[tokio::test]
     async fn test_mark_peer_as_failed() {
         let handler = NetworkErrorHandler::new();
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
 
         handler
             .mark_peer_as_failed(peer, &NetworkError::ConnectionFailed("test".to_string()))
@@ -851,7 +850,7 @@ mod tests {
     #[tokio::test]
     async fn test_mark_peer_as_recovered() {
         let handler = NetworkErrorHandler::new();
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
 
         // First mark as failed
         handler
@@ -871,7 +870,7 @@ mod tests {
     #[tokio::test]
     async fn test_perform_maintenance() {
         let handler = NetworkErrorHandler::new();
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
 
         // Add some errors and failed peers
         handler
@@ -895,7 +894,7 @@ mod tests {
         let mut receiver1 = handler.subscribe_to_events();
         let mut receiver2 = handler.subscribe_to_events();
 
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
         let error = NetworkError::ConnectionFailed("test".to_string());
 
         // Record error which should emit event
@@ -912,7 +911,7 @@ mod tests {
     #[tokio::test]
     async fn test_network_health_score_calculation() {
         let handler = NetworkErrorHandler::new();
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
 
         // Initial health should be 100%
         let initial_stats = handler.get_error_statistics().await;
@@ -932,7 +931,7 @@ mod tests {
 
     #[test]
     fn test_network_error_event_types() {
-        let peer = "127.0.0.1:8080".parse().unwrap();
+        let peer = "localhost:8080".parse().unwrap_or_default();
         let error = NetworkError::ConnectionFailed("test".to_string());
         let downtime = Duration::from_secs(30);
 

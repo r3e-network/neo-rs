@@ -11,7 +11,6 @@ mod lru_cache;
 mod reflection_cache;
 mod relay_cache;
 
-// Core cache infrastructure (matches C# exactly)
 pub use cache::{Cache, CacheItem, ConcreteCache};
 pub use fifo_cache::FIFOCache;
 pub use hashset_cache::HashSetCache;
@@ -87,7 +86,7 @@ impl<K: Hash + Eq + Clone, V> TimedCache<K, V> {
     /// A new timed cache
     pub fn new(capacity: usize, default_ttl: Duration) -> Self {
         Self {
-            cache: LruCache::new(NonZeroUsize::new(capacity).unwrap()),
+            cache: LruCache::new(NonZeroUsize::new(capacity).expect("Operation failed")),
             default_ttl,
         }
     }
@@ -131,7 +130,6 @@ impl<K: Hash + Eq + Clone, V> TimedCache<K, V> {
     ///
     /// A reference to the value if it exists and has not expired, or None otherwise
     pub fn get(&mut self, key: &K) -> Option<&V> {
-        // Check if expired first
         let is_expired = self
             .cache
             .peek(key)
@@ -156,7 +154,6 @@ impl<K: Hash + Eq + Clone, V> TimedCache<K, V> {
     ///
     /// A mutable reference to the value if it exists and has not expired, or None otherwise
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        // Check if expired first
         let is_expired = self
             .cache
             .peek(key)

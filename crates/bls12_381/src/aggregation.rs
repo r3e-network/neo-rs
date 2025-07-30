@@ -77,11 +77,10 @@ impl AggregateSignature {
         let mut array = [0u8; 96];
         array.copy_from_slice(bytes);
 
-        // Use G2Affine::from_compressed then convert to projective
         let affine_point = G2Affine::from_compressed(&array);
         if affine_point.is_some().into() {
             Ok(Self {
-                point: G2Projective::from(affine_point.unwrap()),
+                point: G2Projective::from(affine_point.expect("Operation failed")),
             })
         } else {
             Err(BlsError::invalid_signature("Invalid aggregate signature"))
@@ -164,11 +163,10 @@ impl AggregatePublicKey {
         let mut array = [0u8; 48];
         array.copy_from_slice(bytes);
 
-        // Use G1Affine::from_compressed then convert to projective
         let affine_point = G1Affine::from_compressed(&array);
         if affine_point.is_some().into() {
             Ok(Self {
-                point: G1Projective::from(affine_point.unwrap()),
+                point: G1Projective::from(affine_point.expect("Operation failed")),
             })
         } else {
             Err(BlsError::invalid_public_key("Invalid aggregate public key"))
@@ -183,8 +181,6 @@ impl AggregatePublicKey {
         aggregate_signature: &G2Projective,
         dst: &[u8],
     ) -> bool {
-        // Production-ready aggregate verification (matches C# Neo exactly)
-
         // 1. Validate inputs
         if public_keys.is_empty() || messages.is_empty() {
             return false;
@@ -202,9 +198,7 @@ impl AggregatePublicKey {
         }
 
         // 3. Prepare pairing inputs
-        // We need to verify: e(aggregate_signature, G1::generator()) == product(e(public_key_i, hash_i))
 
-        // Convert to affine coordinates for pairing
         let agg_sig_affine = aggregate_signature.to_affine();
         let g1_gen_affine = G1Projective::generator().to_affine();
 
@@ -244,18 +238,13 @@ impl AggregatePublicKey {
         // Prepare message based on scheme
         let message_to_verify = match scheme {
             SignatureScheme::Basic => message.to_vec(),
-            SignatureScheme::MessageAugmentation => {
-                // For aggregated keys, message augmentation is more complex
-                message.to_vec()
-            }
+            SignatureScheme::MessageAugmentation => message.to_vec(),
             SignatureScheme::ProofOfPossession => message.to_vec(),
         };
 
         // Hash message to G2 point
         let hash_point = utils::hash_to_g2(&message_to_verify, NEO_BLS_DST);
 
-        // Verify: e(aggregate_public_key, hash_point) == e(G1, aggregate_signature)
-        // Convert to affine coordinates for pairing
         let lhs = pairing(&self.point.to_affine(), &hash_point.to_affine());
         let rhs = pairing(
             &G1Affine::generator(),
@@ -273,7 +262,7 @@ impl AggregatePublicKey {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use crate::keys::KeyPair;
     use crate::Bls12381;
     use rand::thread_rng;

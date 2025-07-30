@@ -4,7 +4,10 @@
 //! handling transaction broadcasting, mempool integration, and peer synchronization.
 
 use crate::relay_cache::RelayCache;
+const DEFAULT_MAX_LIMIT: usize = 100;
+const DEFAULT_CHANNEL_SIZE: usize = 1000;
 use crate::{InventoryItem, InventoryType, NetworkError, NetworkResult, ProtocolMessage};
+use neo_config::MAX_TRANSACTION_SIZE;
 use neo_core::{Transaction, UInt256};
 use neo_ledger::MemoryPool;
 use std::collections::HashMap;
@@ -12,7 +15,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info, warn};
-
 /// Transaction relay events
 #[derive(Debug, Clone)]
 pub enum TransactionRelayEvent {
@@ -58,11 +60,11 @@ pub struct TransactionRelayConfig {
 impl Default for TransactionRelayConfig {
     fn default() -> Self {
         Self {
-            max_relay_batch_size: 100,
-            relay_cache_capacity: 10000,
+            max_relay_batch_size: DEFAULT_MAX_LIMIT,
+            relay_cache_capacity: DEFAULT_CHANNEL_SIZE,
             relay_cache_ttl: 300, // 5 minutes
             enable_validation: true,
-            max_transaction_size: 102400, // 100KB
+            max_transaction_size: MAX_TRANSACTION_SIZE,
         }
     }
 }
@@ -154,7 +156,6 @@ impl TransactionRelay {
             stats.transactions_received += 1;
         }
 
-        // Check if we've already seen this transaction
         {
             let relay_cache = self.relay_cache.read().await;
             if relay_cache.contains(&tx_hash) {
@@ -163,7 +164,6 @@ impl TransactionRelay {
             }
         }
 
-        // Validate transaction if enabled
         if self.config.enable_validation {
             if let Err(e) = self.validate_transaction(&transaction).await {
                 warn!("Transaction {} validation failed: {}", tx_hash, e);
@@ -244,7 +244,6 @@ impl TransactionRelay {
             relay_cache.insert(tx_hash);
         }
 
-        // Relay to other peers if we should
         if should_relay {
             self.relay_transaction_to_peers(tx_hash, from_peer).await?;
 
@@ -285,12 +284,10 @@ impl TransactionRelay {
             stats.inventory_requests_handled += 1;
         }
 
-        // Filter for transactions we don't have
         let mut missing_transactions = Vec::new();
 
         for item in inventory {
             if item.item_type == InventoryType::Transaction {
-                // Check if we already have this transaction
                 let mempool = self.mempool.read().await;
                 if !mempool.contains(&item.hash) {
                     // Check relay cache too
@@ -359,7 +356,6 @@ impl TransactionRelay {
                 .await?;
         }
 
-        // Send not found response if any items weren't found
         if !not_found_items.is_empty() {
             self.send_not_found_to_peer(from_peer, not_found_items)
                 .await?;
@@ -455,7 +451,6 @@ impl TransactionRelay {
         }
 
         // Note: Full transaction verification requires blockchain snapshot
-        // For now, just do basic validation. Full verification should be done
         // by the mempool when adding transactions.
 
         // Check basic transaction format
@@ -660,7 +655,6 @@ impl TransactionRelay {
     }
 }
 
-// Additional functionality for transaction relay
 impl TransactionRelay {
     /// Gets the number of connected peers
     pub async fn get_connected_peer_count(&self) -> usize {

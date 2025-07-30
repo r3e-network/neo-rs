@@ -95,7 +95,6 @@ pub struct StandardWalletAccount {
 impl StandardWalletAccount {
     /// Creates a new wallet account with a key pair.
     pub fn new_with_key(key_pair: KeyPair, contract: Option<Contract>) -> Self {
-        // Always use the KeyPair's script hash for consistency with C# implementation
         let script_hash = key_pair.get_script_hash();
 
         Self {
@@ -140,7 +139,6 @@ impl StandardWalletAccount {
     async fn decrypt_key(&self, password: &str) -> Result<KeyPair> {
         if let Some(ref encrypted_key) = self.encrypted_key {
             // Decrypt the key using the password
-            // This would use the same decryption logic as NEP-2
             KeyPair::from_nep2(encrypted_key, password)
         } else {
             Err(Error::Other("No encrypted key available".to_string()))

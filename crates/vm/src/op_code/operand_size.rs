@@ -84,7 +84,7 @@ impl OperandSize {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_fixed_size() {

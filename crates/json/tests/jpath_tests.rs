@@ -20,7 +20,6 @@ mod jpath_tests {
 
         let json = JToken::Object(root);
 
-        // Test simple property access (matches C# $.property exactly)
         let tokens = JPathToken::parse("$.name").unwrap();
         let results = JPathToken::evaluate(&tokens, &json).unwrap();
         assert_eq!(results.len(), 1);
@@ -60,7 +59,6 @@ mod jpath_tests {
 
         let json = JToken::Object(root);
 
-        // Test specific array index access (matches C# $[index] exactly)
         let tokens = JPathToken::parse("$.items[0]").unwrap();
         let results = JPathToken::evaluate(&tokens, &json).unwrap();
         assert_eq!(results.len(), 1);
@@ -86,7 +84,6 @@ mod jpath_tests {
         let results = JPathToken::evaluate(&tokens, &json).unwrap();
         assert_eq!(results.len(), 0);
 
-        // Test negative index (if supported)
         let tokens = JPathToken::parse("$.items[-1]").unwrap();
         let results = JPathToken::evaluate(&tokens, &json).unwrap();
         // Behavior depends on implementation - could be last element or empty
@@ -96,7 +93,6 @@ mod jpath_tests {
     /// Test JPath wildcard operations (matches C# JPath wildcard exactly)
     #[test]
     fn test_jpath_wildcard_compatibility() {
-        // Create structure with array for wildcard testing
         let items = vec![
             Some(JToken::String("item1".to_string())),
             Some(JToken::String("item2".to_string())),
@@ -110,7 +106,6 @@ mod jpath_tests {
 
         let json = JToken::Object(root);
 
-        // Test wildcard array access (matches C# $[*] exactly)
         let tokens = JPathToken::parse("$.data[*]").unwrap();
         let results = JPathToken::evaluate(&tokens, &json).unwrap();
         assert_eq!(results.len(), 5);
@@ -120,7 +115,6 @@ mod jpath_tests {
         assert_eq!(results[3], &JToken::Number(100.0));
         assert_eq!(results[4], &JToken::Boolean(true));
 
-        // Test wildcard on object properties (if supported)
         let mut obj_with_props = OrderedDictionary::new();
         obj_with_props.insert(
             "prop1".to_string(),
@@ -169,7 +163,6 @@ mod jpath_tests {
 
         let json = JToken::Object(level1);
 
-        // Test nested property access (matches C# $.prop.nested.value exactly)
         let tokens = JPathToken::parse("$.data.nested.value").unwrap();
         let results = JPathToken::evaluate(&tokens, &json).unwrap();
         assert_eq!(results.len(), 1);
@@ -217,7 +210,6 @@ mod jpath_tests {
 
         let json = JToken::Object(root);
 
-        // Test accessing property from all objects (matches C# $[*].prop exactly)
         let tokens = JPathToken::parse("$.objects[*].name").unwrap();
         let results = JPathToken::evaluate(&tokens, &json).unwrap();
         assert_eq!(results.len(), 3);
@@ -247,7 +239,6 @@ mod jpath_tests {
     /// Test JPath array slicing (matches C# JPath slice operations exactly)
     #[test]
     fn test_jpath_array_slicing_compatibility() {
-        // Create large array for slicing
         let mut items = Vec::new();
         for i in 0..10 {
             items.push(Some(JToken::Number(i as f64)));
@@ -258,7 +249,6 @@ mod jpath_tests {
 
         let json = JToken::Object(root);
 
-        // Test array slice access (matches C# $[start:end] exactly)
         let tokens = JPathToken::parse("$.numbers[2:5]").unwrap();
         let results = JPathToken::evaluate(&tokens, &json).unwrap();
         assert_eq!(results.len(), 3); // indices 2, 3, 4
@@ -315,7 +305,6 @@ mod jpath_tests {
         let results = JPathToken::evaluate(&tokens, &empty_json).unwrap();
         assert_eq!(results.len(), 0);
 
-        // Test type mismatches (accessing array index on non-array)
         let tokens = JPathToken::parse("$.test[0]").unwrap(); // test is string, not array
         let results = JPathToken::evaluate(&tokens, &json).unwrap();
         assert_eq!(results.len(), 0); // Should handle gracefully
@@ -369,7 +358,6 @@ mod jpath_tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0], &JToken::String("中文值".to_string()));
 
-        // Test property with spaces (might need quotes in real implementation)
         // This test depends on how the parser handles spaces
         if let Ok(tokens) = JPathToken::parse("$['property with spaces']") {
             let results = JPathToken::evaluate(&tokens, &json).unwrap();

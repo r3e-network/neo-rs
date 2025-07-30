@@ -77,7 +77,6 @@ fn test_vm_comparison_operations() {
     let script_bytes = vec![
         // Test EQUAL
         OpCode::PUSH5 as u8, // Push 5
-        OpCode::PUSH5 as u8, // Push 5
         OpCode::EQUAL as u8, // Should push 1 (true)
         // Test NOT
         OpCode::NOT as u8, // Should push 0 (false)
@@ -85,10 +84,9 @@ fn test_vm_comparison_operations() {
         OpCode::PUSH3 as u8,    // Push 3
         OpCode::PUSH7 as u8,    // Push 7
         OpCode::NUMEQUAL as u8, // Should push 0 (false)
-        // Test LT (less than)
-        OpCode::PUSH10 as u8, // Push 10
-        OpCode::PUSH16 as u8, // Push 16 (instead of PUSH20)
-        OpCode::LT as u8,     // Should push 1 (true, 10 < 16)
+        OpCode::PUSH10 as u8,   // Push 10
+        OpCode::PUSH16 as u8,   // Push 16 (instead of PUSH20)
+        OpCode::LT as u8,       // Should push 1 (true, 10 < 16)
         OpCode::RET as u8,
     ];
 
@@ -133,7 +131,6 @@ fn test_vm_jump_operations() {
         "Should have 2 items (1 and 2, not 16)"
     );
 
-    // Verify 16 was not pushed (jumped over)
     let top = result_stack.peek(0).unwrap();
     let second = result_stack.peek(1).unwrap();
     assert_eq!(top.as_int().unwrap().to_string(), "2");
@@ -145,7 +142,6 @@ fn test_vm_jump_operations() {
 /// Test conditional jumps
 #[test]
 fn test_vm_conditional_jumps() {
-    // Test JMPIF (jump if true)
     let script_bytes = vec![
         OpCode::PUSH1 as u8, // Push 1 (true)
         OpCode::JMPIF as u8,
@@ -253,7 +249,6 @@ fn test_vm_execution_context() {
 /// Test VM state management and error handling
 #[test]
 fn test_vm_state_and_error_handling() {
-    // Test script that should cause an error (divide by zero)
     let script_bytes = vec![
         OpCode::PUSH5 as u8, // Push 5
         OpCode::PUSH0 as u8, // Push 0
@@ -283,7 +278,6 @@ fn test_vm_state_and_error_handling() {
 /// Test complex nested operations
 #[test]
 fn test_vm_complex_operations() {
-    // Calculate (2 + 3) * (4 + 5) = 5 * 9 = 45
     let script_bytes = vec![
         // First calculation: 2 + 3
         OpCode::PUSH2 as u8,
@@ -355,7 +349,6 @@ fn test_vm_performance_scaling() {
         .unwrap();
     engine.execute();
 
-    // Test medium script (100 operations)
     let mut medium_script = Vec::new();
     for _ in 0..50 {
         medium_script.push(OpCode::PUSH1 as u8);
@@ -370,14 +363,12 @@ fn test_vm_performance_scaling() {
         .unwrap();
     engine.execute();
 
-    // Verify final result
     let result = engine.result_stack().peek(0).unwrap();
     assert_eq!(result.as_int().unwrap().to_string(), "8"); // Changed from 42 to 8
 
     let elapsed = start_time.elapsed();
     println!("✅ VM performance test completed in {:?}", elapsed);
 
-    // Should complete quickly (less than 1 second for these simple operations)
     assert!(elapsed.as_secs() < 1, "VM performance test should be fast");
 }
 

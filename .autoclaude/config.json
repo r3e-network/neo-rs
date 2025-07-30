@@ -1,0 +1,70 @@
+{
+  "scripts": [
+    {
+      "id": "production-readiness",
+      "name": "Production Readiness Check",
+      "description": "Checks for TODO, FIXME, placeholders, and incomplete implementations",
+      "enabled": true,
+      "predefined": true,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/production-readiness.js"
+    },
+    {
+      "id": "build-check",
+      "name": "Build Check",
+      "description": "Ensures the project can build successfully",
+      "enabled": false,
+      "predefined": true,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/build-check.js"
+    },
+    {
+      "id": "test-check",
+      "name": "Test Check",
+      "description": "Runs all tests and ensures they pass",
+      "enabled": false,
+      "predefined": true,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/test-check.js"
+    },
+    {
+      "id": "format-check",
+      "name": "Format Check",
+      "description": "Ensures code is properly formatted",
+      "enabled": false,
+      "predefined": true,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/format-check.js"
+    },
+    {
+      "id": "github-actions",
+      "name": "GitHub Actions Check",
+      "description": "Validates GitHub Actions workflows",
+      "enabled": false,
+      "predefined": true,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/github-actions.js"
+    },
+    {
+      "id": "tdd-automation",
+      "name": "Tdd Automation",
+      "description": "User-defined script: tdd-automation.js",
+      "enabled": false,
+      "predefined": false,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/tdd-automation.js"
+    },
+    {
+      "id": "ai-code-review",
+      "name": "Ai Code Review",
+      "description": "User-defined script: ai-code-review.js",
+      "enabled": false,
+      "predefined": false,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/ai-code-review.js"
+    },
+    {
+      "id": "doc-generator",
+      "name": "Doc Generator",
+      "description": "User-defined script: doc-generator.js",
+      "enabled": false,
+      "predefined": false,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/doc-generator.js"
+    }
+  ],
+  "maxIterations": 5,
+  "continueOnError": false
+}

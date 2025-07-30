@@ -57,7 +57,7 @@ impl BitOr for CallFlags {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_call_flags() {

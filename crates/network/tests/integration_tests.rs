@@ -55,7 +55,6 @@ async fn test_p2p_node_creation() {
 async fn test_blockchain_integration() {
     let blockchain = create_test_blockchain();
 
-    // Test blockchain creation - use height() instead of block_count()
     assert_eq!(blockchain.height().await, 0);
 
     println!("✅ Blockchain integration test passed");
@@ -103,9 +102,7 @@ async fn test_rpc_configuration() {
         http_address: "127.0.0.1:10332".parse().unwrap(),
         ws_address: Some("127.0.0.1:10334".parse().unwrap()),
         enable_cors: true,
-        // Use max_request_size instead of max_connections
         max_request_size: 1_048_576, // 1MB
-        // Use u64 instead of Duration
         request_timeout: 30,
         enable_auth: false,
         api_key: None,
@@ -155,7 +152,6 @@ async fn test_storage_integration() {
     let key = b"test_key";
     let value = b"test_value";
 
-    // Use proper storage API
     let storage_key = StorageKey::new(key.to_vec(), vec![]);
     let storage_item = StorageItem::new(value.to_vec());
 
@@ -170,12 +166,10 @@ async fn test_storage_integration() {
 async fn test_basic_blockchain_operations() {
     let blockchain = create_test_blockchain();
 
-    // Test initial state - use height() instead of block_count()
     assert_eq!(blockchain.height().await, 0);
 
     // Test that blockchain can handle queries
     let best_hash = blockchain.best_block_hash().await;
-    // Any hash is valid for an empty blockchain
     assert_eq!(best_hash.as_bytes().len(), 32);
 
     println!("✅ Basic blockchain operations test passed");

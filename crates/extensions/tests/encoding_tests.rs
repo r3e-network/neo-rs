@@ -12,7 +12,6 @@ mod encoding_tests {
     /// Test Base58 encoding compatibility (matches C# Base58 exactly)
     #[test]
     fn test_base58_encoding_compatibility() {
-        // Test basic encoding (matches C# Base58.Encode exactly)
         let data = vec![0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
         let encoded = Base58::encode(&data);
         let decoded = Base58::decode(&encoded).unwrap();

@@ -16,7 +16,6 @@ pub mod state;
 pub mod storage;
 pub mod verification;
 
-// Re-export main types for compatibility
 pub use blockchain::{Blockchain, BlockchainStats};
 pub use genesis::GenesisManager;
 pub use persistence::{BlockchainPersistence, BlockchainSnapshot};

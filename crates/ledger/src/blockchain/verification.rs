@@ -3,10 +3,10 @@
 //! This module provides verification functionality exactly matching C# Neo blockchain verification.
 
 use crate::{BlockHeader, Error, Result};
+use neo_config::{MAX_TRANSACTION_SIZE, MILLISECONDS_PER_BLOCK};
 use neo_core::{Transaction, UInt160, UInt256, Witness};
 use neo_cryptography::ECPoint;
 use neo_vm::{ApplicationEngine, TriggerType, VMState};
-
 /// Block verification result
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerifyResult {
@@ -66,7 +66,6 @@ impl BlockchainVerifier {
 
     /// Verifies a block header (matches C# Neo VerifyHeader exactly)
     pub async fn verify_header(&self, header: &BlockHeader) -> Result<VerifyResult> {
-        // Skip verification for genesis block (index 0)
         if header.index == 0 {
             tracing::debug!("Skipping verification for genesis block");
             return Ok(VerifyResult::Succeed);
@@ -94,12 +93,11 @@ impl BlockchainVerifier {
 
         // Check transaction size
         let tx_size = transaction.size();
-        if tx_size > 102400 {
+        if tx_size > MAX_TRANSACTION_SIZE {
             // 100KB limit
             return Err(Error::Validation("Transaction too large".to_string()));
         }
 
-        // Check if transaction has witnesses
         if transaction.witnesses().is_empty() {
             return Err(Error::Validation(
                 "Transaction has no witnesses".to_string(),
@@ -120,7 +118,6 @@ impl BlockchainVerifier {
         _attribute: &neo_core::TransactionAttribute,
     ) -> Result<()> {
         // Implement attribute validation logic
-        // This would include validation for OracleResponse, HighPriority, etc.
         Ok(())
     }
 
@@ -150,7 +147,6 @@ impl BlockchainVerifier {
             return Err(Error::Validation("Empty verification script".to_string()));
         }
 
-        // Set up VM engine for witness verification
         let mut engine = ApplicationEngine::new(TriggerType::Verification, self.gas_limit);
 
         // Load verification script
@@ -162,7 +158,6 @@ impl BlockchainVerifier {
             ));
         }
 
-        // Load invocation script if present
         if !witness.invocation_script.is_empty() {
             let invocation_script = neo_vm::Script::new(witness.invocation_script.clone(), false)
                 .map_err(|_| {
@@ -175,7 +170,6 @@ impl BlockchainVerifier {
             }
         }
 
-        // Set script container (transaction)
         engine.set_script_container(transaction.clone());
 
         // Execute verification
@@ -183,12 +177,10 @@ impl BlockchainVerifier {
             .map_err(|_| Error::Validation("Failed to create execution script".to_string()))?;
         match engine.execute(execution_script) {
             VMState::HALT => {
-                // Check result stack
                 if engine.result_stack().len() == 0 {
                     return Err(Error::Validation("Empty result stack".to_string()));
                 }
 
-                // Get first stack item and check if it's true
                 match engine.result_stack().peek(0) {
                     Ok(result) => {
                         if !result.as_bool().unwrap_or(false) {
@@ -214,7 +206,6 @@ impl BlockchainVerifier {
 
     /// Checks transaction against policy rules
     fn check_transaction_policy(&self, _transaction: &Transaction) -> Result<()> {
-        // Implement policy checks (fees, priorities, etc.)
         // This would check against PolicyContract rules
         Ok(())
     }
@@ -229,17 +220,16 @@ impl BlockchainVerifier {
         // Check timestamp
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| Error::BlockValidation(format!("Failed to get timestamp: {}", e)))?
             .as_millis() as u64;
 
-        if header.timestamp > now + 15000 {
-            // 15 seconds tolerance
+        if header.timestamp > now + MILLISECONDS_PER_BLOCK {
+            // SECONDS_PER_BLOCK seconds tolerance
             return Err(Error::Validation(
                 "Header timestamp too far in future".to_string(),
             ));
         }
 
-        // Check if header has witnesses (skip for genesis block)
         if header.index > 0 && header.witnesses.is_empty() {
             return Err(Error::Validation("Header has no witnesses".to_string()));
         }
@@ -328,7 +318,7 @@ impl BlockchainVerifier {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_verifier_creation() {
@@ -347,11 +337,10 @@ mod tests {
     async fn test_basic_validation() {
         let verifier = BlockchainVerifier::new();
 
-        // Create a minimal transaction for testing
         let transaction = Transaction::default();
 
         // This should fail due to empty witnesses
-        let result = verifier.verify_transaction(&transaction).await.unwrap();
+        let result = verifier.verify_transaction(&transaction).await?;
         assert_eq!(result, VerifyResult::Fail);
     }
 }

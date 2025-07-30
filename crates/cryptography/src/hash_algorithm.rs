@@ -2,6 +2,7 @@
 //!
 //! This module defines the hash algorithms used in the Neo blockchain.
 
+use neo_config::HASH_SIZE;
 use std::fmt;
 use std::str::FromStr;
 
@@ -24,8 +25,8 @@ impl HashAlgorithm {
     /// Returns the size of the hash in bytes.
     pub fn size(&self) -> usize {
         match self {
-            HashAlgorithm::Sha256 => 32,
-            HashAlgorithm::Keccak256 => 32,
+            HashAlgorithm::Sha256 => HASH_SIZE,
+            HashAlgorithm::Keccak256 => HASH_SIZE,
             HashAlgorithm::Sha512 => 64,
         }
     }

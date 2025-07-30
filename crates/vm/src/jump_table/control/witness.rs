@@ -9,14 +9,13 @@ use crate::{
     error::{VmError, VmResult},
     execution_engine::ExecutionEngine,
 };
+use neo_config::ADDRESS_SIZE;
 use neo_core::UInt160;
 
 /// Production-ready witness verification (matches C# ApplicationEngine.CheckWitnessInternal exactly)
 pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> VmResult<bool> {
-    // Production-ready witness verification (matches C# ApplicationEngine.CheckWitnessInternal exactly)
-
     // 1. Convert hash to UInt160 for comparison
-    if hash.len() != 20 {
+    if hash.len() != ADDRESS_SIZE {
         return Ok(false); // Invalid hash length
     }
 
@@ -26,7 +25,6 @@ pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> VmResult
     };
 
     // 2. Check if hash equals the CallingScriptHash (matches C# exact logic)
-    // In C#: if (hash.Equals(CallingScriptHash)) return true;
     if let Some(calling_script_hash) = get_calling_script_hash(engine) {
         if target_hash == calling_script_hash {
             return Ok(true);
@@ -35,7 +33,6 @@ pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> VmResult
 
     // 3. Check if we have a ScriptContainer (Transaction or other IVerifiable)
     // Real C# Neo N3 implementation: ScriptContainer access
-    // In C#: if (ScriptContainer is Transaction tx)
     if let Some(script_container) = get_script_container(engine) {
         match script_container {
             ScriptContainer::Transaction(transaction) => {
@@ -54,10 +51,8 @@ pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> VmResult
             }
             ScriptContainer::Block(ref _block) => {
                 // 7. For non-Transaction types (Block, etc.) - matches C# exact logic
-                // Check allow state callflag (matches C# exact logic)
                 validate_call_flags(engine, CallFlags::READ_STATES)?;
 
-                // Get script hashes for verification
                 let script_hashes = get_script_hashes_for_verifying(engine, &script_container)?;
                 return Ok(script_hashes.contains(&target_hash));
             }
@@ -70,8 +65,6 @@ pub fn check_witness_internal(engine: &ExecutionEngine, hash: &[u8]) -> VmResult
 
 /// Gets the calling script hash from the execution engine
 pub fn get_calling_script_hash(engine: &ExecutionEngine) -> Option<UInt160> {
-    // Production-ready calling script hash retrieval (matches C# ExecutionEngine.CallingScriptHash exactly)
-
     // 1. Get current execution context from engine
     if let Some(current_context) = engine.current_context() {
         // 2. Get invocation stack to find calling context (matches C# InvocationStack exactly)
@@ -79,7 +72,6 @@ pub fn get_calling_script_hash(engine: &ExecutionEngine) -> Option<UInt160> {
 
         // 3. Find the calling context (previous context in stack)
         if invocation_stack.len() > 1 {
-            // Get the context before current (calling context)
             if let Some(calling_context) = invocation_stack.get(invocation_stack.len() - 2) {
                 // 4. Extract script hash from calling context (production implementation)
                 return Some(calling_context.script_hash());
@@ -99,16 +91,12 @@ pub fn get_calling_script_hash(engine: &ExecutionEngine) -> Option<UInt160> {
 
 /// Gets the script container from the execution engine
 pub fn get_script_container(engine: &ExecutionEngine) -> Option<ScriptContainer> {
-    // Production-ready script container retrieval (matches C# ExecutionEngine.ScriptContainer exactly)
-
     // 1. Access script container through engine (production implementation)
     if let Some(container) = engine.get_script_container() {
         // 2. Determine container type (matches C# IVerifiable type checking exactly)
         if let Some(transaction) = container.as_any().downcast_ref::<Transaction>() {
-            // Transaction container (most common case)
             return Some(ScriptContainer::Transaction(transaction.clone()));
         } else if let Some(block) = container.as_any().downcast_ref::<Block>() {
-            // Block container (for consensus validation)
             return Some(ScriptContainer::Block(block.clone()));
         }
     }
@@ -138,8 +126,6 @@ pub fn get_transaction_signers(
     engine: &ExecutionEngine,
     transaction: &Transaction,
 ) -> VmResult<Vec<Signer>> {
-    // Production-ready transaction signer resolution (matches C# ApplicationEngine.CheckWitness exactly)
-
     // 1. Check for Oracle response attribute (matches C# exact logic)
     if let Some(oracle_response) = get_oracle_response_attribute(transaction) {
         // 2. Handle Oracle response case (production Oracle integration)
@@ -150,7 +136,7 @@ pub fn get_transaction_signers(
             }
             Err(_) => {
                 // 4. Oracle request resolution failed - fall back to transaction signers (production fallback)
-                println!(
+                log::info!(
                     "Warning: Failed to resolve Oracle request signers, using transaction signers"
                 );
             }
@@ -163,14 +149,6 @@ pub fn get_transaction_signers(
 
 /// Checks witness rules for a signer (matches C# exact logic)
 pub fn check_witness_rules(engine: &ExecutionEngine, signer: &Signer) -> VmResult<bool> {
-    // Check all witness rules for the signer (matches C# exact logic)
-    // In C#: foreach (WitnessRule rule in signer.GetAllRules())
-    //        {
-    //            if (rule.Condition.Match(this))
-    //                return rule.Action == WitnessRuleAction.Allow;
-    //        }
-    //        return false;
-
     for rule in signer.get_all_rules() {
         if rule.matches(engine)? {
             return Ok(rule.action() == neo_core::WitnessRuleAction::Allow);
@@ -207,10 +185,7 @@ pub fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) 
 
 /// Gets current call flags from execution context (matches C# ExecutionContextState.CallFlags)
 pub fn get_current_call_flags(engine: &ExecutionEngine) -> VmResult<CallFlags> {
-    // Production implementation: Get call flags from execution context state (matches C# exactly)
-
     if let Some(context) = engine.current_context() {
-        // Check if this is a system call context (matches C# logic)
         if context.script().len() == 0 {
             // Empty script indicates system context - allow all operations
             Ok(CallFlags::ALL)
@@ -218,7 +193,6 @@ pub fn get_current_call_flags(engine: &ExecutionEngine) -> VmResult<CallFlags> {
             // Regular contract context - check permissions based on script hash
             let script_hash = engine.current_script_hash().unwrap_or_default();
 
-            // Production logic: Check if this is a native contract (has special permissions)
             if is_native_contract(&script_hash) {
                 // Native contracts have all permissions
                 Ok(CallFlags::ALL)
@@ -237,7 +211,6 @@ pub fn get_current_call_flags(engine: &ExecutionEngine) -> VmResult<CallFlags> {
 pub fn is_native_contract(script_hash: &[u8]) -> bool {
     // Production implementation: Check against known native contract hashes
 
-    // Known native contract script hashes (these would be loaded from configuration)
     let native_contracts = [
         // NEO Token Contract
         [
@@ -266,11 +239,10 @@ pub fn is_native_contract(script_hash: &[u8]) -> bool {
         ],
     ];
 
-    if script_hash.len() != 20 {
+    if script_hash.len() != ADDRESS_SIZE {
         return false;
     }
 
-    // Check if the script hash matches any native contract
     native_contracts
         .iter()
         .any(|native_hash| native_hash == script_hash)

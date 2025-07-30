@@ -118,7 +118,6 @@ fn test_reference_counter_with_circular_references() {
     counter.add_reference(id1);
     counter.add_reference(id2);
 
-    // Create additional references (simulating circular references)
     counter.add_reference(id1);
     counter.add_reference(id2);
 

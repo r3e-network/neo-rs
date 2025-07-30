@@ -3,13 +3,13 @@
 //! This module provides data compression and decompression capabilities.
 
 use crate::CompressionAlgorithm;
+use neo_config::MAX_SCRIPT_SIZE;
 
 /// Compresses data using the specified algorithm (production-ready implementation)
 pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<Vec<u8>> {
     match algorithm {
         CompressionAlgorithm::None => Ok(data.to_vec()),
         CompressionAlgorithm::Lz4 => {
-            // Production-ready LZ4 compression (matches C# Neo compression exactly)
             #[cfg(feature = "compression")]
             {
                 use lz4_flex::compress_prepend_size;
@@ -22,7 +22,6 @@ pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<V
             }
         }
         CompressionAlgorithm::Zstd => {
-            // Production-ready Zstd compression (matches C# Neo compression exactly)
             #[cfg(feature = "compression")]
             {
                 zstd::bulk::compress(data, 3)
@@ -45,7 +44,6 @@ pub fn decompress(
     match algorithm {
         CompressionAlgorithm::None => Ok(compressed_data.to_vec()),
         CompressionAlgorithm::Lz4 => {
-            // Production-ready LZ4 decompression (matches C# Neo decompression exactly)
             #[cfg(feature = "compression")]
             {
                 use lz4_flex::decompress_size_prepended;
@@ -59,10 +57,9 @@ pub fn decompress(
             }
         }
         CompressionAlgorithm::Zstd => {
-            // Production-ready Zstd decompression (matches C# Neo decompression exactly)
             #[cfg(feature = "compression")]
             {
-                zstd::bulk::decompress(compressed_data, 1024 * 1024)
+                zstd::bulk::decompress(compressed_data, MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE)
                     .map_err(|e| crate::Error::CompressionError(e.to_string()))
             }
             #[cfg(not(feature = "compression"))]
@@ -87,7 +84,6 @@ pub fn estimate_compressed_size(data: &[u8], algorithm: CompressionAlgorithm) ->
     match algorithm {
         CompressionAlgorithm::None => data.len(),
         CompressionAlgorithm::Lz4 => {
-            // Production-ready LZ4 compression ratio estimation (matches C# Neo exactly)
             // Based on empirical data from Neo blockchain compression analysis
             // LZ4 typically achieves 1.8-2.2:1 compression ratio on blockchain data
             let base_ratio = 0.5; // Conservative 2:1 ratio
@@ -96,7 +92,6 @@ pub fn estimate_compressed_size(data: &[u8], algorithm: CompressionAlgorithm) ->
             (data.len() as f64 * estimated_ratio) as usize + 3 // +3 for our prefix
         }
         CompressionAlgorithm::Zstd => {
-            // Production-ready Zstd compression ratio estimation (matches C# Neo exactly)
             // Based on empirical data from Neo blockchain compression analysis
             // Zstd typically achieves 2.8-3.5:1 compression ratio on blockchain data
             let base_ratio = 0.33; // Conservative 3:1 ratio

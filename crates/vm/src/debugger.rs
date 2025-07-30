@@ -120,7 +120,6 @@ impl Debugger {
     /// Executes the VM until a breakpoint is hit or the VM halts.
     pub fn execute(&mut self) -> VmResult<VMState> {
         while self.engine.state() != VMState::HALT && self.engine.state() != VMState::FAULT {
-            // Check if we're at a breakpoint
             if let Some(context) = self.engine.current_context() {
                 let script_hash = context.script().hash();
                 let instruction_pointer = context.instruction_pointer();
@@ -168,10 +167,16 @@ impl Debugger {
                 return Err(err);
             }
 
-            // Check if we've stepped out of the current context
             if let Some(context) = &current_context {
                 if self.engine.current_context().is_none()
-                    || self.engine.current_context().unwrap().script().hash()
+                    || self
+                        .engine
+                        .current_context()
+                        .ok_or_else(|| {
+                            VmError::invalid_operation_msg("No current context".to_string())
+                        })?
+                        .script()
+                        .hash()
                         != context.script().hash()
                 {
                     self.engine.set_state(VMState::BREAK);
@@ -197,7 +202,6 @@ impl Debugger {
             return Err(err);
         }
 
-        // If the instruction was a call, execute until we return to the current context
         if let Some(context) = &current_context {
             if let Some(current_context) = self.engine.current_context() {
                 if current_context.script().hash() != context.script().hash() {
@@ -214,9 +218,10 @@ impl Debugger {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use crate::op_code::OpCode;
     use crate::script::Script;
+    use neo_config::ADDRESS_SIZE;
 
     #[test]
     fn test_debugger_creation() {
@@ -241,7 +246,7 @@ mod tests {
         assert_eq!(debugger.breakpoints()[0].instruction_pointer(), 10);
 
         assert!(debugger.has_breakpoint(&script_hash, 10));
-        assert!(!debugger.has_breakpoint(&script_hash, 20));
+        assert!(!debugger.has_breakpoint(&script_hash, ADDRESS_SIZE));
 
         debugger.remove_breakpoint(&breakpoint);
 

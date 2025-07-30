@@ -47,7 +47,6 @@ fn invert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())
@@ -70,10 +69,7 @@ fn and(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
             // Bitwise AND
             StackItem::from_int(a & b)
         }
-        (StackItem::Boolean(a), StackItem::Boolean(b)) => {
-            // Logical AND for booleans
-            StackItem::from_bool(*a && *b)
-        }
+        (StackItem::Boolean(a), StackItem::Boolean(b)) => StackItem::from_bool(*a && *b),
         (StackItem::ByteString(_), StackItem::ByteString(_)) => {
             // Convert ByteStrings to integers and perform bitwise AND
             let int_a = a.as_int()?;
@@ -81,7 +77,6 @@ fn and(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
             StackItem::from_int(int_a & int_b)
         }
         _ => {
-            // AND operation is not supported for these types
             return Err(VmError::invalid_operation_msg(format!(
                 "AND operation not supported for types: {:?} and {:?}",
                 a.stack_item_type(),
@@ -90,7 +85,6 @@ fn and(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())
@@ -113,10 +107,7 @@ fn or(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
             // Bitwise OR
             StackItem::from_int(a | b)
         }
-        (StackItem::Boolean(a), StackItem::Boolean(b)) => {
-            // Logical OR for booleans
-            StackItem::from_bool(*a || *b)
-        }
+        (StackItem::Boolean(a), StackItem::Boolean(b)) => StackItem::from_bool(*a || *b),
         (StackItem::ByteString(_), StackItem::ByteString(_)) => {
             // Convert ByteStrings to integers and perform bitwise OR
             let int_a = a.as_int()?;
@@ -124,7 +115,6 @@ fn or(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
             StackItem::from_int(int_a | int_b)
         }
         _ => {
-            // OR operation is not supported for these types
             return Err(VmError::invalid_operation_msg(format!(
                 "OR operation not supported for types: {:?} and {:?}",
                 a.stack_item_type(),
@@ -133,7 +123,6 @@ fn or(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())
@@ -156,10 +145,7 @@ fn xor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
             // Bitwise XOR
             StackItem::from_int(a ^ b)
         }
-        (StackItem::Boolean(a), StackItem::Boolean(b)) => {
-            // Logical XOR for booleans
-            StackItem::from_bool(*a != *b)
-        }
+        (StackItem::Boolean(a), StackItem::Boolean(b)) => StackItem::from_bool(*a != *b),
         (StackItem::ByteString(_), StackItem::ByteString(_)) => {
             // Convert ByteStrings to integers and perform bitwise XOR
             let int_a = a.as_int()?;
@@ -167,7 +153,6 @@ fn xor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
             StackItem::from_int(int_a ^ int_b)
         }
         _ => {
-            // XOR operation is not supported for these types
             return Err(VmError::invalid_operation_msg(format!(
                 "XOR operation not supported for types: {:?} and {:?}",
                 a.stack_item_type(),
@@ -176,7 +161,6 @@ fn xor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())
@@ -196,7 +180,6 @@ fn equal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
     // Compare the values
     let result = a.equals(&b)?;
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -216,7 +199,6 @@ fn not_equal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
     // Compare the values
     let result = !a.equals(&b)?;
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -225,129 +207,204 @@ fn not_equal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::execution_context::ExecutionContext;
+    use crate::execution_engine::ExecutionEngine;
+    use crate::instruction::Instruction;
+    use crate::op_code::OpCode;
     use crate::script::Script;
+    use crate::stack_item::StackItem;
+    use num_bigint::BigInt;
 
     #[test]
     fn test_invert() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine.load_script(script, -1, 0).unwrap();
+        let _context = engine
+            .load_script(script, -1, 0)
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
 
         // Test integer inversion
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_int(42))
-            .unwrap();
-        invert(&mut engine, &Instruction::new(OpCode::INVERT, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_int().unwrap(), BigInt::from(-43));
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+        invert(&mut engine, &Instruction::new(OpCode::INVERT, &[]))
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_int()
+                .map_err(|_| VmError::InvalidOperation("operation failed".into()))?,
+            BigInt::from(-43)
+        );
 
         // Test boolean inversion
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_bool(true))
-            .unwrap();
-        invert(&mut engine, &Instruction::new(OpCode::INVERT, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_bool().unwrap(), false);
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+        invert(&mut engine, &Instruction::new(OpCode::INVERT, &[]))
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_bool()
+                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+            false
+        );
     }
 
     #[test]
     fn test_and() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine.load_script(script, -1, 0).unwrap();
+        let _context = engine
+            .load_script(script, -1, 0)
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
 
         // Test integer AND
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_int(0b1010))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_int(0b1100))
-            .unwrap();
-        and(&mut engine, &Instruction::new(OpCode::AND, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_int().unwrap(), BigInt::from(0b1000));
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+        and(&mut engine, &Instruction::new(OpCode::AND, &[]))
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_int()
+                .map_err(|_| VmError::InvalidOperation("operation failed".into()))?,
+            BigInt::from(0b1000)
+        );
 
         // Test boolean AND
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_bool(true))
-            .unwrap();
+            .expect("Operation failed");
         engine
             .current_context_mut()
-            .unwrap()
+            .expect("Operation failed")
             .push(StackItem::from_bool(false))
-            .unwrap();
-        and(&mut engine, &Instruction::new(OpCode::AND, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_bool().unwrap(), false);
+            .expect("Operation failed");
+        and(&mut engine, &Instruction::new(OpCode::AND, &[])).expect("Operation failed");
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_bool()
+                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+            false
+        );
     }
 
     #[test]
     fn test_or() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine.load_script(script, -1, 0).unwrap();
+        let _context = engine
+            .load_script(script, -1, 0)
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
 
         // Test integer OR
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_int(0b1010))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_int(0b1100))
-            .unwrap();
-        or(&mut engine, &Instruction::new(OpCode::OR, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_int().unwrap(), BigInt::from(0b1110));
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+        or(&mut engine, &Instruction::new(OpCode::OR, &[]))
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_int()
+                .map_err(|_| VmError::InvalidOperation("operation failed".into()))?,
+            BigInt::from(0b1110)
+        );
 
         // Test boolean OR
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_bool(true))
-            .unwrap();
+            .expect("Operation failed");
         engine
             .current_context_mut()
-            .unwrap()
+            .expect("Operation failed")
             .push(StackItem::from_bool(false))
-            .unwrap();
-        or(&mut engine, &Instruction::new(OpCode::OR, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_bool().unwrap(), true);
+            .expect("Operation failed");
+        or(&mut engine, &Instruction::new(OpCode::OR, &[])).expect("Operation failed");
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_bool()
+                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+            true
+        );
     }
 
     #[test]
     fn test_xor() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine.load_script(script, -1, 0).unwrap();
+        let _context = engine
+            .load_script(script, -1, 0)
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
 
         // Test integer XOR
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_int(0b1010))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_int(0b1100))
-            .unwrap();
-        xor(&mut engine, &Instruction::new(OpCode::XOR, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+        xor(&mut engine, &Instruction::new(OpCode::XOR, &[]))
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
         assert_eq!(result.as_int().unwrap(), BigInt::from(0b0110));
 
         // Test boolean XOR
@@ -355,15 +412,24 @@ mod tests {
             .current_context_mut()
             .unwrap()
             .push(StackItem::from_bool(true))
-            .unwrap();
+            .expect("Operation failed");
         engine
             .current_context_mut()
-            .unwrap()
+            .expect("Operation failed")
             .push(StackItem::from_bool(false))
-            .unwrap();
-        xor(&mut engine, &Instruction::new(OpCode::XOR, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_bool().unwrap(), true);
+            .expect("Operation failed");
+        xor(&mut engine, &Instruction::new(OpCode::XOR, &[])).expect("Operation failed");
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_bool()
+                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+            true
+        );
     }
 
     #[test]
@@ -384,23 +450,41 @@ mod tests {
             .push(StackItem::from_int(42))
             .unwrap();
         equal(&mut engine, &Instruction::new(OpCode::EQUAL, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_bool().unwrap(), true);
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_bool()
+                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+            true
+        );
 
         // Test unequal integers
         engine
             .current_context_mut()
-            .unwrap()
+            .expect("Operation failed")
             .push(StackItem::from_int(42))
-            .unwrap();
+            .expect("Operation failed");
         engine
             .current_context_mut()
-            .unwrap()
+            .expect("Operation failed")
             .push(StackItem::from_int(43))
-            .unwrap();
-        equal(&mut engine, &Instruction::new(OpCode::EQUAL, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_bool().unwrap(), false);
+            .expect("Operation failed");
+        equal(&mut engine, &Instruction::new(OpCode::EQUAL, &[])).expect("Operation failed");
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_bool()
+                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+            false
+        );
     }
 
     #[test]
@@ -421,22 +505,40 @@ mod tests {
             .push(StackItem::from_int(42))
             .unwrap();
         not_equal(&mut engine, &Instruction::new(OpCode::NOTEQUAL, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_bool().unwrap(), false);
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_bool()
+                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+            false
+        );
 
         // Test unequal integers
         engine
             .current_context_mut()
-            .unwrap()
+            .expect("Operation failed")
             .push(StackItem::from_int(42))
-            .unwrap();
+            .expect("Operation failed");
         engine
             .current_context_mut()
-            .unwrap()
+            .expect("Operation failed")
             .push(StackItem::from_int(43))
-            .unwrap();
-        not_equal(&mut engine, &Instruction::new(OpCode::NOTEQUAL, &[])).unwrap();
-        let result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(result.as_bool().unwrap(), true);
+            .expect("Operation failed");
+        not_equal(&mut engine, &Instruction::new(OpCode::NOTEQUAL, &[])).expect("Operation failed");
+        let result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .pop()
+            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            result
+                .as_bool()
+                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+            true
+        );
     }
 }

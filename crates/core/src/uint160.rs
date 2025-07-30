@@ -1,25 +1,21 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// uint160.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Implementation of UInt160, a 160-bit unsigned integer.
 
-use crate::CoreError;
+use crate::error::{CoreError, CoreResult};
+use neo_config::{ADDRESS_SIZE, HASH_SIZE, SECONDS_PER_BLOCK};
+use ripemd::Ripemd160;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
 use tracing::error;
 
 /// The length of UInt160 values in bytes.
-pub const UINT160_SIZE: usize = 20;
+pub const UINT160_SIZE: usize = ADDRESS_SIZE;
 
 /// Represents a 160-bit unsigned integer.
 ///
@@ -58,7 +54,8 @@ impl UInt160 {
     }
 
     /// Returns the bytes representation of this UInt160.
-    pub fn as_bytes(&self) -> &[u8; 20] {
+    pub fn as_bytes(&self) -> &[u8; ADDRESS_SIZE] {
+        // SAFETY: Transmute is safe here as types have identical memory layout
         unsafe { std::mem::transmute(self) }
     }
 
@@ -90,7 +87,7 @@ impl UInt160 {
     /// # Returns
     ///
     /// A new UInt160 instance.
-    pub fn from_bytes(value: &[u8]) -> Result<Self, CoreError> {
+    pub fn from_bytes(value: &[u8]) -> CoreResult<Self> {
         if value.len() != UINT160_SIZE {
             return Err(CoreError::InvalidFormat {
                 message: format!("Invalid length: {}", value.len()),
@@ -99,18 +96,13 @@ impl UInt160 {
 
         let mut result = Self::new();
 
-        // Convert bytes to u64 and u32 values to match C# implementation
         let mut value1_bytes = [0u8; 8];
         let mut value2_bytes = [0u8; 8];
         let mut value3_bytes = [0u8; 4];
 
-        // For from_bytes, we treat the input as little-endian byte array
-        // bytes[0..8] -> value1 (least significant)
-        // bytes[8..16] -> value2 (middle)
-        // bytes[16..20] -> value3 (most significant)
         value1_bytes.copy_from_slice(&value[0..8]);
         value2_bytes.copy_from_slice(&value[8..16]);
-        value3_bytes.copy_from_slice(&value[16..20]);
+        value3_bytes.copy_from_slice(&value[16..ADDRESS_SIZE]);
 
         result.value1 = u64::from_le_bytes(value1_bytes);
         result.value2 = u64::from_le_bytes(value2_bytes);
@@ -131,20 +123,23 @@ impl UInt160 {
     pub fn from_span(value: &[u8]) -> Self {
         if value.len() != UINT160_SIZE {
             // Return zero hash instead of panicking in production
-            error!("Invalid UInt160 length: {} (expected {})", value.len(), UINT160_SIZE);
+            error!(
+                "Invalid UInt160 length: {} (expected {})",
+                value.len(),
+                UINT160_SIZE
+            );
             return Self::zero();
         }
 
         let mut result = Self::new();
 
-        // Convert bytes to u64 and u32 values to match C# implementation
         let mut value1_bytes = [0u8; 8];
         let mut value2_bytes = [0u8; 8];
         let mut value3_bytes = [0u8; 4];
 
         value1_bytes.copy_from_slice(&value[0..8]);
         value2_bytes.copy_from_slice(&value[8..16]);
-        value3_bytes.copy_from_slice(&value[16..20]);
+        value3_bytes.copy_from_slice(&value[16..ADDRESS_SIZE]);
 
         result.value1 = u64::from_le_bytes(value1_bytes);
         result.value2 = u64::from_le_bytes(value2_bytes);
@@ -167,7 +162,7 @@ impl UInt160 {
 
         result[0..8].copy_from_slice(&value1_bytes);
         result[8..16].copy_from_slice(&value2_bytes);
-        result[16..20].copy_from_slice(&value3_bytes);
+        result[16..ADDRESS_SIZE].copy_from_slice(&value3_bytes);
 
         result
     }
@@ -190,7 +185,7 @@ impl UInt160 {
     /// # Returns
     ///
     /// A Result containing either a new UInt160 instance or an error.
-    pub fn parse(s: &str) -> Result<Self, CoreError> {
+    pub fn parse(s: &str) -> CoreResult<Self> {
         let mut result = None;
         if !Self::try_parse(s, &mut result) {
             return Err(CoreError::InvalidFormat {
@@ -223,12 +218,10 @@ impl UInt160 {
             return false;
         }
 
-        // Check if all characters are valid hex
         if !s.chars().all(|c| c.is_ascii_hexdigit()) {
             return false;
         }
 
-        // Try to parse the hex string to bytes
         match hex::decode(s) {
             Ok(bytes) => {
                 // Map big-endian hex bytes to little-endian internal storage
@@ -236,29 +229,17 @@ impl UInt160 {
                 let mut value2_bytes = [0u8; 8];
                 let mut value3_bytes = [0u8; 4];
 
-                // For the hex "0x0000000000000000000000000000000000000001":
-                // bytes = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]
-                // We want bytes[19] (the 0x01) to end up in value3 = 0x01000000
-                // So bytes[16..20] should go to value3 (the last 4 bytes)
-
                 // Correct mapping:
-                // bytes[16..20] -> value3 (most significant in our structure)
-                // bytes[8..16] -> value2 (middle)
-                // bytes[0..8] -> value1 (least significant in our structure)
 
-                // For value3: bytes[16..20] with bytes[19] going to most significant byte
-                // To get 0x01000000 from bytes[19]=1, we need: value3_bytes[3] = bytes[19]
                 value3_bytes[3] = bytes[19];
                 value3_bytes[2] = bytes[18];
                 value3_bytes[1] = bytes[17];
                 value3_bytes[0] = bytes[16];
 
-                // For value2: bytes[8..16] reversed
                 for i in 0..8 {
                     value2_bytes[7 - i] = bytes[8 + i];
                 }
 
-                // For value1: bytes[0..8] reversed
                 for i in 0..8 {
                     value1_bytes[7 - i] = bytes[i];
                 }
@@ -269,7 +250,6 @@ impl UInt160 {
                 uint.value2 = u64::from_le_bytes(value2_bytes);
                 uint.value3 = u32::from_le_bytes(value3_bytes);
 
-                // Always set the result
                 *result = Some(uint);
 
                 true
@@ -284,31 +264,26 @@ impl UInt160 {
     ///
     /// A hexadecimal string representation of the UInt160.
     pub fn to_hex_string(&self) -> String {
-        // Convert from internal little-endian storage back to big-endian hex string
         let mut result_bytes = [0u8; UINT160_SIZE];
 
-        // Get the little-endian bytes for each value
         let value1_bytes = self.value1.to_le_bytes();
         let value2_bytes = self.value2.to_le_bytes();
         let value3_bytes = self.value3.to_le_bytes();
 
         // Reverse the parsing process:
-        // value3 -> bytes[16..20]
+        // value3 -> bytes[16..ADDRESS_SIZE]
         // value2 -> bytes[8..16]
         // value1 -> bytes[0..8]
 
-        // For value3: place in bytes[16..20] with value3_bytes[3] going to bytes[19]
         result_bytes[19] = value3_bytes[3];
         result_bytes[18] = value3_bytes[2];
         result_bytes[17] = value3_bytes[1];
         result_bytes[16] = value3_bytes[0];
 
-        // For value2: reverse and place in bytes[8..16]
         for i in 0..8 {
             result_bytes[15 - i] = value2_bytes[i];
         }
 
-        // For value1: reverse and place in bytes[0..8]
         for i in 0..8 {
             result_bytes[7 - i] = value1_bytes[i];
         }
@@ -320,7 +295,7 @@ impl UInt160 {
     ///
     /// # Returns
     ///
-    /// A 32-bit signed integer hash code.
+    /// A HASH_SIZE-bit signed integer hash code.
     pub fn get_hash_code(&self) -> i32 {
         // Combine the hash codes of the three fields, similar to C#'s HashCode.Combine
         let mut hash = 17;
@@ -340,10 +315,6 @@ impl UInt160 {
     ///
     /// A new UInt160 instance representing the script hash.
     pub fn from_script(script: &[u8]) -> Self {
-        // Compute Hash160 (RIPEMD160 of SHA256) of the script
-        use ripemd::Ripemd160;
-        use sha2::{Digest, Sha256};
-
         let mut sha256_hasher = Sha256::new();
         sha256_hasher.update(script);
         let sha256_hash = sha256_hasher.finalize();
@@ -361,14 +332,11 @@ impl UInt160 {
     ///
     /// A Neo address string in Base58Check format.
     pub fn to_address(&self) -> String {
-        // Neo address format: version byte (0x35) + script hash + checksum
         let version_byte = 0x35u8; // Neo N3 address version
         let mut data = Vec::with_capacity(21);
         data.push(version_byte);
         data.extend_from_slice(&self.to_array());
 
-        // Compute checksum (first 4 bytes of double SHA256)
-        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(&data);
         let first_hash = hasher.finalize();
@@ -393,7 +361,7 @@ impl UInt160 {
     /// # Returns
     ///
     /// A Result containing either a new UInt160 instance or an error.
-    pub fn from_address(address: &str) -> Result<Self, CoreError> {
+    pub fn from_address(address: &str) -> CoreResult<Self> {
         // Decode from Base58
         let decoded = bs58::decode(address)
             .into_vec()
@@ -418,7 +386,6 @@ impl UInt160 {
         let data = &decoded[0..21];
         let checksum = &decoded[21..25];
 
-        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(data);
         let first_hash = hasher.finalize();
@@ -434,13 +401,11 @@ impl UInt160 {
             });
         }
 
-        // Extract script hash (skip version byte)
         let script_hash = &decoded[1..21];
         Self::from_bytes(script_hash)
     }
 }
 
-// Implement Serializable trait to match C# ISerializable
 impl neo_io::Serializable for UInt160 {
     fn size(&self) -> usize {
         UINT160_SIZE
@@ -493,7 +458,6 @@ impl PartialOrd for UInt160 {
 
 impl Ord for UInt160 {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Compare in reverse order to match C# implementation
         // Most significant bytes first
         let result = self.value3.cmp(&other.value3);
         if result != Ordering::Equal {
@@ -509,14 +473,15 @@ impl Ord for UInt160 {
 
 impl From<[u8; UINT160_SIZE]> for UInt160 {
     fn from(data: [u8; UINT160_SIZE]) -> Self {
-        Self::from_bytes(&data).unwrap()
+        // This is safe because we have exactly UINT160_SIZE bytes
+        Self::from_bytes(&data).expect("Fixed-size array should always be valid")
     }
 }
 
 impl TryFrom<&[u8]> for UInt160 {
     type Error = CoreError;
 
-    fn try_from(data: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(data: &[u8]) -> std::result::Result<Self, Self::Error> {
         Self::from_bytes(data)
     }
 }
@@ -547,7 +512,7 @@ mod tests {
 
     #[test]
     fn test_uint160_from_bytes() {
-        let mut bytes = [0u8; 20];
+        let mut bytes = [0u8; ADDRESS_SIZE];
         bytes[0] = 1; // Set first byte to 1
 
         let uint = UInt160::from_bytes(&bytes).unwrap();
@@ -568,12 +533,9 @@ mod tests {
 
     #[test]
     fn test_uint160_parse() {
-        // Test parsing a hex string
         let hex_str = "0x0000000000000000000000000000000000000001";
         let uint = UInt160::parse(hex_str).unwrap();
 
-        // The hex string represents big-endian, the last byte (0x01) should end up in value3
-        // as the most significant byte: value3 = 0x01000000
         assert_eq!(uint.value1, 0);
         assert_eq!(uint.value2, 0);
         assert_eq!(uint.value3, 0x01000000);
@@ -583,18 +545,15 @@ mod tests {
     fn test_uint160_try_parse() {
         let mut result = None;
 
-        // Valid hex string
         assert!(UInt160::try_parse(
             "0x0000000000000000000000000000000000000001",
             &mut result
         ));
         assert!(result.is_some());
 
-        // Invalid hex string (wrong length)
         result = None;
         assert!(!UInt160::try_parse("0x01", &mut result));
 
-        // Invalid hex string (invalid characters)
         result = None;
         assert!(!UInt160::try_parse(
             "0x000000000000000000000000000000000000000g",
@@ -650,7 +609,6 @@ mod tests {
             value3: 1,
         };
 
-        // uint3 should be largest (most significant bytes first)
         assert!(uint3 > uint2);
         assert!(uint2 > uint1);
         assert!(uint3 > uint1);
@@ -724,7 +682,6 @@ mod tests {
             value3: 0x30303030,
         };
         let address = uint.to_address();
-        // Just verify it returns a valid Base58 string
         assert!(!address.is_empty());
         assert!(address.starts_with('N') || address.starts_with('A')); // Neo addresses typically start with N or A
     }

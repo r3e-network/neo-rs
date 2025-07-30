@@ -10,6 +10,7 @@ use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::StackItem;
 use crate::VMState;
+use neo_config::{HASH_SIZE, SECONDS_PER_BLOCK};
 use num_bigint::BigInt;
 
 /// Registers the push operation handlers.
@@ -145,9 +146,9 @@ fn push_int256(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 
     // Get the value from the instruction
     let bytes = instruction.operand();
-    if bytes.len() != 32 {
+    if bytes.len() != HASH_SIZE {
         return Err(VmError::invalid_instruction_msg(format!(
-            "Expected 32 bytes for PUSHINT256, got {}",
+            "Expected HASH_SIZE bytes for PUSHINT256, got {}",
             bytes.len()
         )));
     }
@@ -205,7 +206,6 @@ fn push_null(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 
 /// Implements the PUSHDATA1 operation.
 fn push_data1(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the operand (only contains the length byte)
     let operand = instruction.operand();
 
     if operand.is_empty() {
@@ -217,7 +217,6 @@ fn push_data1(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
     // First byte is the length
     let length = operand[0] as usize;
 
-    // Get script info for bounds checking (without mutable borrow)
     let (script_len, instruction_start) = {
         let context = engine
             .current_context()
@@ -225,11 +224,9 @@ fn push_data1(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
         (context.script().len(), instruction.pointer())
     };
 
-    // Data starts after: opcode(1) + length_byte(1) = 2 bytes from instruction start
     let data_start = instruction_start + 2;
     let data_end = data_start + length;
 
-    // Verify we have the correct amount of data - CRITICAL for C# compatibility
     if data_end > script_len {
         // This should FAULT exactly like C# Neo VM when insufficient data
         engine.set_state(VMState::FAULT);
@@ -240,7 +237,6 @@ fn push_data1(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
         )));
     }
 
-    // Now get mutable context for execution
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -261,7 +257,6 @@ fn push_data1(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
 
 /// Implements the PUSHDATA2 operation.
 fn push_data2(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the operand (only contains the length bytes)
     let operand = instruction.operand();
     if operand.len() < 2 {
         return Err(VmError::invalid_instruction_msg(
@@ -269,10 +264,8 @@ fn push_data2(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
         ));
     }
 
-    // First 2 bytes are the length (little endian)
     let length = u16::from_le_bytes([operand[0], operand[1]]) as usize;
 
-    // Get script info for bounds checking (without mutable borrow)
     let (script_len, instruction_start) = {
         let context = engine
             .current_context()
@@ -280,11 +273,9 @@ fn push_data2(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
         (context.script().len(), instruction.pointer())
     };
 
-    // Data starts after: opcode(1) + length_bytes(2) = 3 bytes from instruction start
     let data_start = instruction_start + 3;
     let data_end = data_start + length;
 
-    // Verify we have the correct amount of data - CRITICAL for C# compatibility
     if data_end > script_len {
         // This should FAULT exactly like C# Neo VM when insufficient data
         engine.set_state(VMState::FAULT);
@@ -295,7 +286,6 @@ fn push_data2(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
         )));
     }
 
-    // Now get mutable context for execution
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -316,7 +306,6 @@ fn push_data2(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
 
 /// Implements the PUSHDATA4 operation.
 fn push_data4(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Get the operand (only contains the length bytes)
     let operand = instruction.operand();
     if operand.len() < 4 {
         return Err(VmError::invalid_instruction_msg(
@@ -324,10 +313,8 @@ fn push_data4(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
         ));
     }
 
-    // First 4 bytes are the length (little endian)
     let length = u32::from_le_bytes([operand[0], operand[1], operand[2], operand[3]]) as usize;
 
-    // Get script info for bounds checking (without mutable borrow)
     let (script_len, instruction_start) = {
         let context = engine
             .current_context()
@@ -335,11 +322,9 @@ fn push_data4(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
         (context.script().len(), instruction.pointer())
     };
 
-    // Data starts after: opcode(1) + length_bytes(4) = 5 bytes from instruction start
     let data_start = instruction_start + 5;
     let data_end = data_start + length;
 
-    // Verify we have the correct amount of data - CRITICAL for C# compatibility
     if data_end > script_len {
         // This should FAULT exactly like C# Neo VM when insufficient data
         engine.set_state(VMState::FAULT);
@@ -350,7 +335,6 @@ fn push_data4(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
         )));
     }
 
-    // Now get mutable context for execution
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -584,8 +568,8 @@ fn push_15(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Push 15 onto the stack
-    context.push(StackItem::from_int(15))?;
+    // Push SECONDS_PER_BLOCK onto the stack
+    context.push(StackItem::from_int(SECONDS_PER_BLOCK))?;
 
     Ok(())
 }

@@ -25,9 +25,8 @@ fn test_all_csharp_json_tests() {
     if Path::new(base_test_path).exists() {
         let mut runner = JsonTestRunner::new();
 
-        println!("Running comprehensive C# JSON test suite...");
+        println!("Running comprehensive C# JSON test suite/* implementation */;");
 
-        // Test each category individually for better error reporting
         let categories = vec![
             "Others",
             "OpCodes/Arrays",

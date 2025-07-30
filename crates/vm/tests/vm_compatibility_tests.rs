@@ -60,7 +60,6 @@ impl ExpectedStackItem {
             }
             ExpectedStackItem::ByteString(expected) => {
                 if let Ok(actual_bytes) = actual.as_bytes() {
-                    // Compare hex encodings - use simple hex comparison for now
                     let expected_bytes = if expected.len() % 2 == 0 {
                         (0..expected.len())
                             .step_by(2)
@@ -169,7 +168,6 @@ mod tests {
         // Create a simple script: PUSH1 PUSH2 ADD
         let script = vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8, OpCode::ADD as u8];
 
-        // Define expected result
         let expected = ExpectedExecutionResult {
             vm_state: VMState::HALT,
             result_stack: vec![ExpectedStackItem::Integer("3".to_string())],
@@ -189,7 +187,6 @@ mod tests {
             OpCode::BOOLAND as u8,
         ];
 
-        // Define expected result
         let expected = ExpectedExecutionResult {
             vm_state: VMState::HALT,
             result_stack: vec![ExpectedStackItem::Boolean(false)],
@@ -205,7 +202,6 @@ mod tests {
         // Create a script that should cause a fault: PUSH1 PUSH0 DIV
         let script = vec![OpCode::PUSH1 as u8, OpCode::PUSH0 as u8, OpCode::DIV as u8];
 
-        // Define expected result
         let expected = ExpectedExecutionResult {
             vm_state: VMState::FAULT,
             result_stack: vec![],
@@ -221,7 +217,6 @@ mod tests {
     fn test_vm_compatibility_basic_operations() {
         // Test data: Simple arithmetic operations
         let test_cases = vec![
-            // (script_bytes, expected_stack_values)
             (
                 vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8, OpCode::ADD as u8],
                 vec!["3"],
@@ -280,7 +275,6 @@ mod tests {
                 vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8, OpCode::SWAP as u8],
                 vec!["1", "2"],
             ),
-            // ROT operation (rotate top 3 items)
             (
                 vec![
                     OpCode::PUSH1 as u8,
@@ -322,14 +316,7 @@ mod tests {
     fn test_comparison_operations_compatibility() {
         let test_cases = vec![
             // EQUAL operation
-            (
-                vec![
-                    OpCode::PUSH5 as u8,
-                    OpCode::PUSH5 as u8,
-                    OpCode::EQUAL as u8,
-                ],
-                vec!["1"],
-            ), // true
+            (vec![OpCode::PUSH5 as u8, OpCode::EQUAL as u8], vec!["1"]), // true
             (
                 vec![
                     OpCode::PUSH5 as u8,
@@ -339,14 +326,7 @@ mod tests {
                 vec!["0"],
             ), // false
             // NUMEQUAL operation
-            (
-                vec![
-                    OpCode::PUSH5 as u8,
-                    OpCode::PUSH5 as u8,
-                    OpCode::NUMEQUAL as u8,
-                ],
-                vec!["1"],
-            ), // true
+            (vec![OpCode::PUSH5 as u8, OpCode::NUMEQUAL as u8], vec!["1"]), // true
             (
                 vec![
                     OpCode::PUSH5 as u8,

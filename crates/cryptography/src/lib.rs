@@ -20,7 +20,6 @@ pub mod merkle_tree;
 pub mod murmur;
 pub mod ripemd160;
 
-// Re-exports for commonly used types
 pub use ecc::{ECCurve, ECFieldElement, ECPoint};
 pub use ecdsa::ECDsa;
 pub use hash::{hash160, hash256, ripemd160, sha256, sha512};
@@ -28,7 +27,6 @@ pub use hash_algorithm::HashAlgorithm;
 pub use hasher::Hasher;
 pub use merkle_tree::MerkleTree;
 
-// Convenience re-exports for wallet compatibility
 pub use ecc as ECC;
 
 /// Error types for cryptography operations
@@ -48,6 +46,9 @@ pub enum Error {
 
     #[error("Unsupported algorithm: {0}")]
     UnsupportedAlgorithm(String),
+
+    #[error("Lock error")]
+    LockError,
 
     #[error("Internal error: {0}")]
     Internal(String),

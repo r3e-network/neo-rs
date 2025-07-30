@@ -64,7 +64,7 @@ impl BenchmarkSuite {
 
     /// Runs all benchmarks.
     pub fn run_all(&mut self) -> Result<()> {
-        println!("Running Smart Contract Benchmark Suite...\n");
+        log::info!("Running Smart Contract Benchmark Suite/* implementation */;\n");
 
         // Core operation benchmarks
         self.benchmark_storage_operations()?;
@@ -77,7 +77,7 @@ impl BenchmarkSuite {
         self.benchmark_nep17_operations()?;
         self.benchmark_complex_workflows()?;
 
-        println!("Benchmark suite completed!\n");
+        log::info!("Benchmark suite completed!\n");
         self.print_summary();
 
         Ok(())
@@ -136,13 +136,12 @@ impl BenchmarkSuite {
             let start = Instant::now();
 
             // Call various native contract methods
-            let neo_token = registry.get(&crate::native::NeoToken::new().hash()).unwrap();
+            let neo_token = registry.get(&crate::native::NeoToken::new().hash()).ok_or_else(|| "Item not found")?;
             let _symbol = neo_token.invoke(&mut engine, "symbol", &[])?;
 
-            let gas_token = registry.get(&crate::native::GasToken::new().hash()).unwrap();
+            let gas_token = registry.get(&crate::native::GasToken::new().hash()).ok_or_else(|| "Item not found")?;
             let _decimals = gas_token.invoke(&mut engine, "decimals", &[])?;
 
-            self.profiler.record_native_call();
             self.profiler.record_native_call();
 
             times.push(start.elapsed());
@@ -460,12 +459,12 @@ impl BenchmarkSuite {
 
     /// Prints a summary of all benchmark results.
     fn print_summary(&self) {
-        println!("=== Benchmark Summary ===");
-        println!("{:<25} {:>10} {:>15} {:>15} {:>15}", "Benchmark", "Iterations", "Avg Time", "Ops/Sec", "Total Gas");
-        println!("{}", "-".repeat(80));
+        log::info!("=== Benchmark Summary ===");
+        log::info!("{:<25} {:>10} {:>15} {:>15} {:>15}", "Benchmark", "Iterations", "Avg Time", "Ops/Sec", "Total Gas");
+        log::info!("{}", "-".repeat(80));
 
         for result in &self.results {
-            println!(
+            log::info!(
                 "{:<25} {:>10} {:>13.2?} {:>13.2} {:>15}",
                 result.name,
                 result.iterations,
@@ -475,15 +474,15 @@ impl BenchmarkSuite {
             );
         }
 
-        println!("\n=== Performance Analysis ===");
+        log::info!("\n=== Performance Analysis ===");
         let total_ops: u32 = self.results.iter().map(|r| r.iterations).sum();
         let total_time: Duration = self.results.iter().map(|r| r.total_time).sum();
         let total_gas: i64 = self.results.iter().map(|r| r.metrics.gas_consumed).sum();
 
-        println!("Total Operations: {}", total_ops);
-        println!("Total Time: {:?}", total_time);
-        println!("Total Gas Consumed: {}", total_gas);
-        println!("Overall Ops/Sec: {:.2}", total_ops as f64 / total_time.as_secs_f64());
+        log::info!("Total Operations: {}", total_ops);
+        log::info!("Total Time: {:?}", total_time);
+        log::info!("Total Gas Consumed: {}", total_gas);
+        log::info!("Overall Ops/Sec: {:.2}", total_ops as f64 / total_time.as_secs_f64());
     }
 
     /// Gets all benchmark results.
