@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-30T16:10:37.205Z
+Generated at: 2025-07-30T16:35:37.178Z
 
 ---
 
@@ -9,23 +9,23 @@ Generated at: 2025-07-30T16:10:37.205Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-30T16:10:34.542Z
+- **Last Updated**: 2025-07-30T16:35:34.602Z
 
 ## Statistics
-- **Total Files**: 1912
-- **Estimated Lines**: 372654
-- **Average File Size**: 8463 bytes
+- **Total Files**: 1916
+- **Estimated Lines**: 375718
+- **Average File Size**: 8493 bytes
 
 ## Languages
-- **csharp**: 844879 files
-- **rust**: 385878 files
-- **json**: 173553 files
-- **markdown**: 73122 files
-- **shellscript**: 2670 files
-- **yaml**: 1762 files
-- **css**: 1762 files
-- **html**: 1762 files
-- **javascript**: 1762 files
+- **csharp**: 1076957 files
+- **rust**: 492060 files
+- **json**: 221227 files
+- **markdown**: 93208 files
+- **shellscript**: 3638 files
+- **yaml**: 2246 files
+- **css**: 2246 files
+- **html**: 2246 files
+- **javascript**: 2246 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -81,36 +81,21 @@ No unfinished tasks
 
 ### Git Status
 ```
- M crates/cli/src/args.rs
- M crates/cli/src/config.rs
- M crates/cli/src/node.rs
- M crates/cli/src/service.rs
- M crates/network/src/error.rs
- M crates/network/src/error_handling.rs
- M crates/network/src/lib.rs
- M crates/network/src/messages/inventory.rs
- M crates/network/src/messages/protocol.rs
- M crates/network/src/messages/validation.rs
- M crates/network/src/p2p/config.rs
- M crates/network/src/p2p/connection.rs
- M crates/network/src/p2p/tasks.rs
- M crates/network/src/p2p_node.rs
- M crates/network/src/peer_manager.rs
- M crates/network/src/peers.rs
- M crates/network/src/rpc.rs
- M crates/network/src/server.rs
- M crates/network/src/shutdown_impl.rs
- M crates/network/src/sync.rs
- M crates/plugins/src/oracle_service.rs
- M crates/plugins/src/storage_dumper.rs
- M crates/plugins/src/tokens_tracker.rs
-?? .autoclaude/
-?? .autopilot/
+ M .autopilot/CLAUDE_CONTEXT.md
+ M .autopilot/cache/project-index.json
+ M .autopilot/tasks/sessions.json
+ M crates/cli/src/main.rs
+ M crates/core/src/lib.rs
+?? crates/cli/src/service_complete.rs
+?? crates/core/src/blockchain_complete.rs
+?? crates/core/src/native_contracts.rs
+?? crates/core/src/neo_system_complete.rs
 
 ```
 
 ### Recent Commits
 ```
+2711293 fix: complete network pattern matching and enhance production readiness
 b41b213 fix: complete remaining CLI compilation errors
 563e552 chore: clean up intermediate files and documentation
 8621234 chore: apply cargo fmt formatting changes
@@ -120,7 +105,6 @@ d9a8bad fix(cli): cast usize constants to u32 for type compatibility
 3f6b554 chore: update project context and task tracking
 9d19566 fix(network): resolve compilation errors and pattern matching issues
 2befb8a fix(network): complete TestNet protocol compatibility with direct payload format
-825864f feat(network): add dedicated TestNet message parser
 
 ```
 
