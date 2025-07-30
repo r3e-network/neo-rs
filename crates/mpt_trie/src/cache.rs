@@ -460,15 +460,11 @@ mod tests {
         let node2 = create_test_node(2);
 
         // Put first node
-        cache
-            .put(key, node1)
-            .expect("operation should succeed");
+        cache.put(key, node1).expect("operation should succeed");
         assert_eq!(cache.len(), 1);
 
         // Update with second node
-        cache
-            .put(key, node2)
-            .expect("operation should succeed");
+        cache.put(key, node2).expect("operation should succeed");
         assert_eq!(cache.len(), 1); // Still one entry
 
         // Get updated node
@@ -486,9 +482,7 @@ mod tests {
         let node = create_test_node(42);
 
         // Put and remove
-        cache
-            .put(key, node)
-            .expect("operation should succeed");
+        cache.put(key, node).expect("operation should succeed");
         assert_eq!(cache.len(), 1);
 
         cache.remove(&key).expect("remove should succeed");
@@ -510,9 +504,7 @@ mod tests {
             key_bytes[0] = i;
             let key = UInt256::from_bytes(&key_bytes).expect("operation should succeed");
             let node = create_test_node(i);
-            cache
-                .put(key, node)
-                .expect("operation should succeed");
+            cache.put(key, node).expect("operation should succeed");
         }
 
         assert_eq!(cache.len(), 10);
@@ -531,43 +523,29 @@ mod tests {
         let mut cache = Cache::with_capacity(1000, 2); // Only 2 entries max
 
         let key1 = UInt256::zero();
-        let key2 =
-            UInt256::from_bytes(&[1u8; HASH_SIZE]).expect("operation should succeed");
-        let key3 =
-            UInt256::from_bytes(&[2u8; HASH_SIZE]).expect("operation should succeed");
+        let key2 = UInt256::from_bytes(&[1u8; HASH_SIZE]).expect("operation should succeed");
+        let key3 = UInt256::from_bytes(&[2u8; HASH_SIZE]).expect("operation should succeed");
 
         let node1 = create_test_node(1);
         let node2 = create_test_node(2);
         let node3 = create_test_node(3);
 
         // Fill cache to capacity
-        cache
-            .put(key1, node1)
-            .expect("operation should succeed");
-        cache
-            .put(key2, node2)
-            .expect("operation should succeed");
+        cache.put(key1, node1).expect("operation should succeed");
+        cache.put(key2, node2).expect("operation should succeed");
         assert_eq!(cache.len(), 2);
 
         // Access first key to make it recently used
         let _ = cache.get(&key1).expect("operation should succeed");
 
         // Add third key, should trigger eviction due to entry limit
-        cache
-            .put(key3, node3)
-            .expect("operation should succeed");
+        cache.put(key3, node3).expect("operation should succeed");
 
         // Should still have at most 2 entries
         assert!(cache.len() <= 2);
 
-        assert!(cache
-            .get(&key1)
-            .expect("get should succeed")
-            .is_some());
-        assert!(cache
-            .get(&key3)
-            .expect("get should succeed")
-            .is_some());
+        assert!(cache.get(&key1).expect("get should succeed").is_some());
+        assert!(cache.get(&key3).expect("get should succeed").is_some());
 
         // At least one eviction should have occurred
         assert!(cache.stats().evictions >= 1);
@@ -582,20 +560,15 @@ mod tests {
         // Initial stats
         assert_eq!(cache.stats().hit_ratio(), 0.0);
 
-        cache
-            .put(key, node)
-            .expect("operation should succeed");
+        cache.put(key, node).expect("operation should succeed");
         let _ = cache.get(&key).expect("operation should succeed");
         assert_eq!(cache.stats().hits, 1);
         assert_eq!(cache.stats().misses, 0);
         assert_eq!(cache.stats().hit_ratio(), 1.0);
 
         // Miss
-        let other_key =
-            UInt256::from_bytes(&[1u8; HASH_SIZE]).expect("operation should succeed");
-        let _ = cache
-            .get(&other_key)
-            .expect("operation should succeed");
+        let other_key = UInt256::from_bytes(&[1u8; HASH_SIZE]).expect("operation should succeed");
+        let _ = cache.get(&other_key).expect("operation should succeed");
         assert_eq!(cache.stats().hits, 1);
         assert_eq!(cache.stats().misses, 1);
         assert_eq!(cache.stats().hit_ratio(), 0.5);
@@ -615,9 +588,7 @@ mod tests {
         // Add some data
         let key = UInt256::zero();
         let node = create_test_node(42);
-        cache
-            .put(key, node)
-            .expect("operation should succeed");
+        cache.put(key, node).expect("operation should succeed");
 
         let utilization = cache.utilization();
         assert!(utilization > 0.0);
@@ -660,9 +631,7 @@ mod tests {
         let node = create_test_node(42);
 
         // Test put and get
-        storage
-            .put(&key, &node)
-            .expect("operation should succeed");
+        storage.put(&key, &node).expect("operation should succeed");
         let result = storage.get(&key).expect("operation should succeed");
         assert!(result.is_some());
         assert_eq!(
@@ -671,9 +640,7 @@ mod tests {
         );
 
         // Test delete
-        storage
-            .delete(&key)
-            .expect("operation should succeed");
+        storage.delete(&key).expect("operation should succeed");
         let result = storage.get(&key).expect("operation should succeed");
         assert!(result.is_none());
 
@@ -686,15 +653,11 @@ mod tests {
         let key = UInt256::zero();
         let node = create_test_node(42);
 
-        cache
-            .put(key, node)
-            .expect("operation should succeed");
+        cache.put(key, node).expect("operation should succeed");
         assert_eq!(cache.len(), 1);
 
         // Maintenance should not remove recently accessed entries
-        cache
-            .maintenance()
-            .expect("operation should succeed");
+        cache.maintenance().expect("operation should succeed");
         assert_eq!(cache.len(), 1);
     }
 
@@ -704,9 +667,7 @@ mod tests {
         let key = UInt256::zero();
         let node = create_test_node(42);
 
-        cache
-            .put(key, node)
-            .expect("operation should succeed");
+        cache.put(key, node).expect("operation should succeed");
 
         // Commit without storage should not error
         cache.commit().expect("operation should succeed");
