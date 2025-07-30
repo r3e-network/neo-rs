@@ -707,23 +707,22 @@ impl PeerManager {
         // 4. Receive peer's verack (TestNet may not send one)
         // Try to read a response but don't fail if TestNet doesn't send verack
         let mut buffer = vec![0u8; 256];
-        match timeout(
-            Duration::from_secs(3),
-            stream.read(&mut buffer),
-        )
-        .await
-        {
-            Ok(Ok(n)) if n > 0 => {
-                buffer.truncate(n);
-                info!("TestNet sent {} bytes after our version (incoming): {:02x?}", n, &buffer[..std::cmp::min(20, n)]);
-                // Process whatever TestNet sent
-            }
+        match timeout(Duration::from_secs(3), stream.read(&mut buffer)).await {
             Ok(Ok(0)) => {
                 warn!("TestNet closed connection during incoming handshake");
                 return Err(NetworkError::HandshakeFailed {
                     peer: address,
                     reason: "Connection closed during handshake".to_string(),
                 });
+            }
+            Ok(Ok(n)) => {
+                buffer.truncate(n);
+                info!(
+                    "TestNet sent {} bytes after our version (incoming): {:02x?}",
+                    n,
+                    &buffer[..std::cmp::min(20, n)]
+                );
+                // Process whatever TestNet sent
             }
             Ok(Err(e)) => {
                 warn!("Error reading TestNet verack response (incoming): {}", e);
@@ -738,7 +737,7 @@ impl PeerManager {
         // 5. Send our verack (TestNet expects direct payload format)
         // For TestNet, send verack as direct payload without message envelope
         let verack_bytes = vec![0x01]; // Simple verack command byte
-        
+
         if let Err(e) = stream.write_all(&verack_bytes).await {
             return Err(NetworkError::HandshakeFailed {
                 peer: address,
@@ -823,7 +822,7 @@ impl PeerManager {
         // 2. Receive peer's version message (matches C# Neo version parsing exactly)
         // Check if we're on TestNet by magic number
         let is_testnet = self.config.magic == 0x74746e41; // TestNet magic
-        
+
         let peer_version = if is_testnet {
             // TestNet sends version as direct payload
             let payload = match timeout(
@@ -841,26 +840,43 @@ impl PeerManager {
                     });
                 }
                 Err(_) => {
-                    warn!("Handshake timeout with peer {} during version exchange", address);
+                    warn!(
+                        "Handshake timeout with peer {} during version exchange",
+                        address
+                    );
                     return Err(NetworkError::HandshakeTimeout {
                         peer: address,
                         timeout_ms: 5000,
                     });
                 }
             };
-            
+
             // Debug log the version payload
-            info!("📊 TestNet version payload from {}: {} bytes", address, payload.len());
+            info!(
+                "📊 TestNet version payload from {}: {} bytes",
+                address,
+                payload.len()
+            );
             if payload.len() >= 40 {
                 info!("  Full payload: {:02x?}", &payload[..40]);
-                info!("  Bytes 30-33 (potential height): {:02x} {:02x} {:02x} {:02x} = {}", 
-                    payload[30], payload[31], payload[32], payload[33],
-                    u32::from_le_bytes([payload[30], payload[31], payload[32], payload[33]]));
-                info!("  Bytes 34-37 (potential height): {:02x} {:02x} {:02x} {:02x} = {}", 
-                    payload[34], payload[35], payload[36], payload[37],
-                    u32::from_le_bytes([payload[34], payload[35], payload[36], payload[37]]));
+                info!(
+                    "  Bytes 33-36 (correct height): {:02x} {:02x} {:02x} {:02x} = {} blocks",
+                    payload[33],
+                    payload[34],
+                    payload[35],
+                    payload[36],
+                    u32::from_le_bytes([payload[33], payload[34], payload[35], payload[36]])
+                );
+                info!(
+                    "  Bytes 34-37 (old incorrect): {:02x} {:02x} {:02x} {:02x} = {} blocks",
+                    payload[34],
+                    payload[35],
+                    payload[36],
+                    payload[37],
+                    u32::from_le_bytes([payload[34], payload[35], payload[36], payload[37]])
+                );
             }
-            
+
             // Convert TestNet direct payload to version message
             Self::testnet_payload_to_message(&payload, 0x00)? // 0x00 = version
         } else {
@@ -880,7 +896,10 @@ impl PeerManager {
                     });
                 }
                 Err(_) => {
-                    warn!("Handshake timeout with peer {} during version exchange", address);
+                    warn!(
+                        "Handshake timeout with peer {} during version exchange",
+                        address
+                    );
                     return Err(NetworkError::HandshakeTimeout {
                         peer: address,
                         timeout_ms: 5000,
@@ -893,11 +912,13 @@ impl PeerManager {
 
         // 3. Extract peer information from version message (matches C# Neo version parsing exactly)
         let peer_info = self.extract_peer_info_from_version(peer_version, address, is_outbound)?;
-        
+
         // Debug log the extracted peer info
-        info!("📊 Extracted peer info from {}: version={}, height={}, ua={}", 
-            address, peer_info.version, peer_info.start_height, peer_info.user_agent);
-        
+        info!(
+            "📊 Extracted peer info from {}: version={}, height={}, ua={}",
+            address, peer_info.version, peer_info.start_height, peer_info.user_agent
+        );
+
         // Emit version received event
         let _ = self.event_sender.send(PeerEvent::VersionReceived {
             peer: address,
@@ -909,7 +930,7 @@ impl PeerManager {
         // 4. Send verack message
         // Check if we're on TestNet
         let is_testnet = self.config.magic == 0x74746e41; // TestNet magic
-        
+
         let verack_bytes = if is_testnet {
             // TestNet expects direct payload format for verack
             vec![0x01] // Simple verack command byte
@@ -930,7 +951,10 @@ impl PeerManager {
         // 5. Receive peer's verack (matches C# Neo verack verification exactly)
         // Check if we're on TestNet by magic number
         let is_testnet = self.config.magic == 0x74746e41; // TestNet magic
-        info!("DEBUG: Magic number 0x{:08x}, is_testnet: {}", self.config.magic, is_testnet);
+        info!(
+            "DEBUG: Magic number 0x{:08x}, is_testnet: {}",
+            self.config.magic, is_testnet
+        );
         let peer_verack = if is_testnet {
             // TestNet uses direct payload format
             // Try to read ANY response after sending verack
@@ -941,21 +965,25 @@ impl PeerManager {
             )
             .await
             {
-                Ok(Ok(n)) if n > 0 => {
-                    buffer.truncate(n);
-                    warn!("DEBUG: After sending verack, TestNet sent {} bytes: {:02x?}", n, &buffer[..std::cmp::min(20, n)]);
-                    
-                    // For TestNet, we'll accept any response as acknowledgment
-                    // Create a dummy verack message
-                    let verack_msg = ProtocolMessage::Verack;
-                    NetworkMessage::new(verack_msg)
-                }
                 Ok(Ok(0)) => {
                     warn!("TestNet closed connection after our verack");
                     return Err(NetworkError::HandshakeFailed {
                         peer: address,
                         reason: "Connection closed after verack".to_string(),
                     });
+                }
+                Ok(Ok(n)) => {
+                    buffer.truncate(n);
+                    warn!(
+                        "DEBUG: After sending verack, TestNet sent {} bytes: {:02x?}",
+                        n,
+                        &buffer[..std::cmp::min(20, n)]
+                    );
+
+                    // For TestNet, we'll accept any response as acknowledgment
+                    // Create a dummy verack message
+                    let verack_msg = ProtocolMessage::Verack;
+                    NetworkMessage::new(verack_msg)
                 }
                 Ok(Err(e)) => {
                     warn!("Failed to read verack response from {}: {}", address, e);
@@ -965,7 +993,9 @@ impl PeerManager {
                     });
                 }
                 Err(_) => {
-                    info!("TestNet verack exchange timeout - this is expected, treating as success");
+                    info!(
+                        "TestNet verack exchange timeout - this is expected, treating as success"
+                    );
                     // For TestNet, timeout is normal after verack - they don't send a response
                     // Create a dummy verack message to proceed
                     let verack_msg = ProtocolMessage::Verack;
@@ -989,7 +1019,10 @@ impl PeerManager {
                     });
                 }
                 Err(_) => {
-                    warn!("Handshake timeout with peer {} during verack exchange", address);
+                    warn!(
+                        "Handshake timeout with peer {} during verack exchange",
+                        address
+                    );
                     return Err(NetworkError::HandshakeTimeout {
                         peer: address,
                         timeout_ms: 3000,
@@ -1182,7 +1215,7 @@ impl PeerManager {
     async fn read_testnet_direct_payload(stream: &mut TcpStream) -> Result<Vec<u8>> {
         // TestNet sends direct payloads without standard Neo message envelope
         // Based on debug analysis, version response is 40 bytes total
-        
+
         // First, let's read a chunk to analyze
         let mut buffer = vec![0u8; 1024]; // Read up to 1KB
         let n = match timeout(Duration::from_secs(5), stream.read(&mut buffer)).await {
@@ -1212,15 +1245,19 @@ impl PeerManager {
                 });
             }
         };
-        
+
         buffer.truncate(n);
-        tracing::debug!("Read {} bytes from TestNet: {:02x?}", n, &buffer[..std::cmp::min(40, n)]);
-        
+        tracing::debug!(
+            "Read {} bytes from TestNet: {:02x?}",
+            n,
+            &buffer[..std::cmp::min(40, n)]
+        );
+
         // Look for N3T5 pattern to identify message type
         if buffer.len() >= 7 && &buffer[2..6] == b"N3T5" {
             tracing::debug!("Detected TestNet version response with N3T5 identifier");
         }
-        
+
         Ok(buffer)
     }
 
@@ -1231,7 +1268,7 @@ impl PeerManager {
         // - Bytes 3-6: "N3T5" network identifier
         // - Bytes 7-10: Version/command data
         // - Remaining: Version payload data
-        
+
         // TestNet version message is typically 40 bytes
         if payload.len() < 30 {
             return Err(NetworkError::ProtocolViolation {
@@ -1239,7 +1276,7 @@ impl PeerManager {
                 violation: format!("TestNet payload too short: {} bytes", payload.len()),
             });
         }
-        
+
         // For version response (command 0x00), parse the TestNet format
         // TestNet version format (30 bytes observed):
         // - Bytes 0-1: Version (0x0000)
@@ -1262,11 +1299,12 @@ impl PeerManager {
             // [16, cf, 7c, 00] - Start height (4 bytes LE - 0x007ccf16 = 8,179,478)
             // [01] - Relay flag
             // [6d, 4f] - Additional data?
-            
+
             let version = u16::from_le_bytes([payload[0], payload[1]]) as u32;
-            let timestamp = u32::from_le_bytes([payload[3], payload[4], payload[5], payload[6]]) as u64;
+            let timestamp =
+                u32::from_le_bytes([payload[3], payload[4], payload[5], payload[6]]) as u64;
             let services = u16::from_le_bytes([payload[7], payload[8]]) as u64;
-            
+
             // Extract user agent
             let ua_start = 10;
             let ua_len = payload[9] as usize;
@@ -1275,24 +1313,24 @@ impl PeerManager {
             } else {
                 "/Neo:3.8.2/".to_string() // Default
             };
-            
+
             // Extract start height - it's at a fixed position in TestNet format
-            // Based on observed data from 40-byte payloads, height is at bytes 34-37
-            let start_height = if payload.len() >= 38 {
-                u32::from_le_bytes([
-                    payload[34],
-                    payload[35],
-                    payload[36],
-                    payload[37],
-                ])
+            // Analysis shows height is at bytes 33-36 (yields ~8M blocks, correct for TestNet)
+            let start_height = if payload.len() >= 37 {
+                u32::from_le_bytes([payload[33], payload[34], payload[35], payload[36]])
             } else {
                 0
             };
-            
+
             let nonce = rand::random::<u32>(); // Generate our own nonce
-            
-            tracing::debug!("Parsed TestNet version: v{}, height={}, ua={}", version, start_height, user_agent);
-            
+
+            tracing::debug!(
+                "Parsed TestNet version: v{}, height={}, ua={}",
+                version,
+                start_height,
+                user_agent
+            );
+
             let version_msg = ProtocolMessage::Version {
                 version,
                 services,
@@ -1303,17 +1341,17 @@ impl PeerManager {
                 start_height,
                 relay: true,
             };
-            
+
             // Create NetworkMessage using the new constructor
             return Ok(NetworkMessage::new(version_msg));
         }
-        
+
         // For other messages, try to parse as Unknown
         let unknown_msg = ProtocolMessage::Unknown {
             command: expected_command,
             payload: payload.to_vec(),
         };
-        
+
         Ok(NetworkMessage::new(unknown_msg))
     }
 
@@ -1373,18 +1411,19 @@ impl PeerManager {
 
             // For Neo N3, we need to read the variable-length payload size
             // This is typically encoded as a variable-length integer
-            let payload_length = match timeout(Duration::from_secs(1), Self::read_varlen_uint(stream)).await {
-                Ok(Ok(len)) => len,
-                Ok(Err(e)) => return Err(e),
-                Err(_) => {
-                    return Err(NetworkError::ConnectionFailed {
-                        address: stream.peer_addr().unwrap_or_else(|_| {
-                            "0.0.0.0:0".parse().expect("failed to parse dummy address")
-                        }),
-                        reason: "Timeout reading variable-length payload size".to_string(),
-                    });
-                }
-            };
+            let payload_length =
+                match timeout(Duration::from_secs(1), Self::read_varlen_uint(stream)).await {
+                    Ok(Ok(len)) => len,
+                    Ok(Err(e)) => return Err(e),
+                    Err(_) => {
+                        return Err(NetworkError::ConnectionFailed {
+                            address: stream.peer_addr().unwrap_or_else(|_| {
+                                "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                            }),
+                            reason: "Timeout reading variable-length payload size".to_string(),
+                        });
+                    }
+                };
 
             tracing::debug!("Neo N3 payload length: {} bytes", payload_length);
 
@@ -1411,7 +1450,7 @@ impl PeerManager {
             // Read the payload if present
             if payload_length > 0 {
                 let mut payload = vec![0u8; payload_length as usize];
-                
+
                 // Add timeout for payload reading to prevent hanging
                 match timeout(Duration::from_secs(5), stream.read_exact(&mut payload)).await {
                     Ok(Ok(_)) => {
@@ -1423,7 +1462,11 @@ impl PeerManager {
                         }
                     }
                     Ok(Err(e)) => {
-                        tracing::error!("Failed to read payload of {} bytes: {}", payload_length, e);
+                        tracing::error!(
+                            "Failed to read payload of {} bytes: {}",
+                            payload_length,
+                            e
+                        );
                         // Check if connection was closed
                         if e.kind() == std::io::ErrorKind::UnexpectedEof {
                             tracing::warn!("Connection closed by peer while reading payload");
@@ -1436,7 +1479,10 @@ impl PeerManager {
                         });
                     }
                     Err(_) => {
-                        tracing::error!("Timeout reading payload of {} bytes after 5 seconds", payload_length);
+                        tracing::error!(
+                            "Timeout reading payload of {} bytes after 5 seconds",
+                            payload_length
+                        );
                         return Err(NetworkError::ConnectionFailed {
                             address: stream.peer_addr().unwrap_or_else(|_| {
                                 "0.0.0.0:0".parse().expect("failed to parse dummy address")

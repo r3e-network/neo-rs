@@ -1019,7 +1019,10 @@ mod tests {
     use std::sync::Arc;
 
     fn create_test_blockchain() -> Arc<Blockchain> {
-        Arc::new(Blockchain::new_testnet())
+        use neo_config::NetworkType;
+        Arc::new(tokio_test::block_on(async {
+            Blockchain::new(NetworkType::TestNet).await.unwrap()
+        }))
     }
 
     fn create_test_state() -> RpcState {

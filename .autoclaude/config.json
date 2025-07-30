@@ -63,6 +63,54 @@
       "enabled": false,
       "predefined": false,
       "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/doc-generator.js"
+    },
+    {
+      "id": "code-understanding-check",
+      "name": "Code Understanding Check",
+      "description": "User-defined script: code-understanding-check.sh",
+      "enabled": false,
+      "predefined": false,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/code-understanding-check.sh"
+    },
+    {
+      "id": "context-check",
+      "name": "Context Check",
+      "description": "User-defined script: context-check.sh",
+      "enabled": false,
+      "predefined": false,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/context-check.sh"
+    },
+    {
+      "id": "dependency-check",
+      "name": "Dependency Check",
+      "description": "User-defined script: dependency-check.sh",
+      "enabled": false,
+      "predefined": false,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/dependency-check.sh"
+    },
+    {
+      "id": "integration-testing-check",
+      "name": "Integration Testing Check",
+      "description": "User-defined script: integration-testing-check.sh",
+      "enabled": false,
+      "predefined": false,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/integration-testing-check.sh"
+    },
+    {
+      "id": "performance-check",
+      "name": "Performance Check",
+      "description": "User-defined script: performance-check.sh",
+      "enabled": false,
+      "predefined": false,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/performance-check.sh"
+    },
+    {
+      "id": "security-audit-check",
+      "name": "Security Audit Check",
+      "description": "User-defined script: security-audit-check.sh",
+      "enabled": false,
+      "predefined": false,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/security-audit-check.sh"
     }
   ],
   "maxIterations": 5,
