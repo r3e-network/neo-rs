@@ -17,6 +17,9 @@ pub mod events;
 pub mod extensions;
 pub mod hardfork;
 pub mod neo_system;
+pub mod neo_system_complete;
+pub mod native_contracts;
+pub mod blockchain_complete;
 pub mod shutdown;
 pub mod signer;
 pub mod transaction;
@@ -32,6 +35,9 @@ pub use big_decimal::BigDecimal;
 pub use block::{Block, BlockHeader};
 pub use error::{CoreError, CoreResult, Result};
 pub use neo_system::NeoSystem;
+pub use neo_system_complete::{NeoSystem as CompleteNeoSystem, ProtocolSettings, MemoryPool as CompleteMemoryPool};
+pub use native_contracts::{NativeContracts, NeoToken, GasToken, PolicyContract, LedgerContract};
+pub use blockchain_complete::{CompleteBlockchain, BlockchainSnapshot, BlockchainEvent, VerificationResult};
 pub use shutdown::{
     Shutdown, ShutdownCoordinator, ShutdownError, ShutdownEvent, ShutdownStage, SignalHandler,
 };
