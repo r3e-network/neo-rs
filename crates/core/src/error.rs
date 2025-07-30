@@ -81,6 +81,10 @@ pub enum CoreError {
     /// Type conversion failed
     #[error("Type conversion failed: cannot convert {from} to {to}")]
     TypeConversion { from: String, to: String },
+
+    /// Validation error
+    #[error("Validation error: {message}")]
+    Validation { message: String },
 }
 
 impl CoreError {
@@ -204,6 +208,13 @@ impl CoreError {
         }
     }
 
+    /// Create a new validation error
+    pub fn validation<S: Into<String>>(message: S) -> Self {
+        Self::Validation {
+            message: message.into(),
+        }
+    }
+
     /// Check if this error is retryable
     pub fn is_retryable(&self) -> bool {
         matches!(
@@ -249,6 +260,7 @@ impl CoreError {
             CoreError::NotFound { .. } | CoreError::AlreadyExists { .. } => "resource",
             CoreError::ValidationFailed { .. } => "validation",
             CoreError::TypeConversion { .. } => "conversion",
+            CoreError::Validation { .. } => "validation",
         }
     }
 }
