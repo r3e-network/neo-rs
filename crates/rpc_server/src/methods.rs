@@ -16,8 +16,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 // Import RPC types from rpc_client
 use neo_rpc_client::models::{
-    RpcBlock, RpcPeer, RpcPeers, RpcSigner, RpcTransaction, RpcVersion,
-    RpcWitness,
+    RpcBlock, RpcPeer, RpcPeers, RpcSigner, RpcTransaction, RpcVersion, RpcWitness,
 };
 
 /// RPC methods implementation
@@ -120,10 +119,7 @@ impl RpcMethods {
     }
 
     /// Gets a block by hash or index
-    pub async fn get_block(
-        &self,
-        params: Option<Value>,
-    ) -> Result<Value> {
+    pub async fn get_block(&self, params: Option<Value>) -> Result<Value> {
         debug!("RPC: getblock with params: {:?}", params);
 
         let params = params.ok_or("Missing parameters")?;
@@ -183,10 +179,7 @@ impl RpcMethods {
     }
 
     /// Gets block hash by index
-    pub async fn get_block_hash(
-        &self,
-        params: Option<Value>,
-    ) -> Result<Value> {
+    pub async fn get_block_hash(&self, params: Option<Value>) -> Result<Value> {
         debug!("RPC: getblockhash with params: {:?}", params);
 
         let params = params.ok_or("Missing parameters")?;
@@ -209,9 +202,7 @@ impl RpcMethods {
     }
 
     /// Gets the best block hash
-    pub async fn get_best_block_hash(
-        &self,
-    ) -> Result<Value> {
+    pub async fn get_best_block_hash(&self) -> Result<Value> {
         debug!("RPC: getbestblockhash");
         let best_hash = self.ledger.get_best_block_hash().await?;
         let hash_hex = hex::encode(best_hash.as_bytes());
@@ -270,9 +261,7 @@ impl RpcMethods {
     }
 
     /// Gets connection count
-    pub async fn get_connection_count(
-        &self,
-    ) -> Result<Value> {
+    pub async fn get_connection_count(&self) -> Result<Value> {
         debug!("RPC: getconnectioncount");
         // For now, return 0 connections
         // TODO: Get actual connection count from network manager
@@ -280,10 +269,7 @@ impl RpcMethods {
     }
 
     /// Validates an address
-    pub async fn validate_address(
-        &self,
-        params: Option<Value>,
-    ) -> Result<Value> {
+    pub async fn validate_address(&self, params: Option<Value>) -> Result<Value> {
         debug!("RPC: validateaddress with params: {:?}", params);
 
         let params = params.ok_or("Missing parameters")?;
@@ -307,9 +293,7 @@ impl RpcMethods {
     }
 
     /// Gets native contracts
-    pub async fn get_native_contracts(
-        &self,
-    ) -> Result<Value> {
+    pub async fn get_native_contracts(&self) -> Result<Value> {
         debug!("RPC: getnativecontracts");
 
         let contracts = json!([
