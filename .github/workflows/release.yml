@@ -17,7 +17,6 @@ jobs:
   # Create GitHub release
   create-release:
     name: Create Release
-    needs: build-binaries
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -59,7 +58,6 @@ jobs:
   # Build binaries for multiple platforms
   build-binaries:
     name: Build Binaries
-    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -161,7 +159,7 @@ jobs:
   # Build and upload Docker images
   docker:
     name: Build Docker Images
-    needs: build-binaries
+    needs: [create-release, build-binaries]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
