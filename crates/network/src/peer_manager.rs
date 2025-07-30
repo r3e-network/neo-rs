@@ -816,22 +816,24 @@ impl PeerManager {
 
         // 2. Receive peer's version message (matches C# Neo version parsing exactly)
         let buffer = match timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(5), // Reduced timeout for faster failure detection
             Self::read_complete_message(&mut stream),
         )
         .await
         {
             Ok(Ok(data)) => data,
             Ok(Err(e)) => {
+                warn!("Failed to read version message from {}: {}", address, e);
                 return Err(NetworkError::HandshakeFailed {
                     peer: address,
                     reason: format!("Failed to read version message: {}", e),
                 });
             }
             Err(_) => {
+                warn!("Handshake timeout with peer {} during version exchange", address);
                 return Err(NetworkError::HandshakeTimeout {
                     peer: address,
-                    timeout_ms: 10000,
+                    timeout_ms: 5000,
                 });
             }
         };
@@ -856,22 +858,24 @@ impl PeerManager {
 
         // 5. Receive peer's verack (matches C# Neo verack verification exactly)
         let verack_buffer = match timeout(
-            Duration::from_secs(10),
+            Duration::from_secs(3), // Shorter timeout for verack
             Self::read_complete_message(&mut stream),
         )
         .await
         {
             Ok(Ok(data)) => data,
             Ok(Err(e)) => {
+                warn!("Failed to read verack message from {}: {}", address, e);
                 return Err(NetworkError::HandshakeFailed {
                     peer: address,
                     reason: format!("Failed to read verack message: {}", e),
                 });
             }
             Err(_) => {
+                warn!("Handshake timeout with peer {} during verack exchange", address);
                 return Err(NetworkError::HandshakeTimeout {
                     peer: address,
-                    timeout_ms: 10000,
+                    timeout_ms: 3000,
                 });
             }
         };
@@ -1098,7 +1102,18 @@ impl PeerManager {
 
             // For Neo N3, we need to read the variable-length payload size
             // This is typically encoded as a variable-length integer
-            let payload_length = Self::read_varlen_uint(stream).await?;
+            let payload_length = match timeout(Duration::from_secs(1), Self::read_varlen_uint(stream)).await {
+                Ok(Ok(len)) => len,
+                Ok(Err(e)) => return Err(e),
+                Err(_) => {
+                    return Err(NetworkError::ConnectionFailed {
+                        address: stream.peer_addr().unwrap_or_else(|_| {
+                            "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                        }),
+                        reason: "Timeout reading variable-length payload size".to_string(),
+                    });
+                }
+            };
 
             tracing::debug!("Neo N3 payload length: {} bytes", payload_length);
 
@@ -1125,14 +1140,29 @@ impl PeerManager {
             // Read the payload if present
             if payload_length > 0 {
                 let mut payload = vec![0u8; payload_length as usize];
-                stream.read_exact(&mut payload).await.map_err(|e| {
-                    NetworkError::ConnectionFailed {
-                        address: stream.peer_addr().unwrap_or_else(|_| {
-                            "0.0.0.0:0".parse().expect("failed to parse dummy address")
-                        }),
-                        reason: format!("Failed to read payload: {}", e),
+                
+                // Add timeout for payload reading to prevent hanging
+                match timeout(Duration::from_secs(2), stream.read_exact(&mut payload)).await {
+                    Ok(Ok(_)) => {
+                        tracing::debug!("Successfully read payload of {} bytes", payload_length);
                     }
-                })?;
+                    Ok(Err(e)) => {
+                        return Err(NetworkError::ConnectionFailed {
+                            address: stream.peer_addr().unwrap_or_else(|_| {
+                                "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                            }),
+                            reason: format!("Failed to read payload: {}", e),
+                        });
+                    }
+                    Err(_) => {
+                        return Err(NetworkError::ConnectionFailed {
+                            address: stream.peer_addr().unwrap_or_else(|_| {
+                                "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                            }),
+                            reason: format!("Timeout reading payload of {} bytes", payload_length),
+                        });
+                    }
+                }
                 message_bytes.extend_from_slice(&payload);
             }
 
