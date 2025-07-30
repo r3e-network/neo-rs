@@ -119,10 +119,11 @@ impl MessageCommand {
             0xbd => Ok(Self::ExtendedBD),
             0xbf => Ok(Self::ExtendedBF),
             0xc0 => Ok(Self::ExtendedC0),
-            _ => Err(crate::NetworkError::ProtocolViolation {
-                peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
-                violation: format!("Unknown command byte: 0x{:02x}", byte),
-            }),
+            // For TestNet compatibility, accept any command as Unknown
+            _ => {
+                tracing::warn!("Unknown command byte: 0x{:02x}, treating as Unknown", byte);
+                Ok(Self::Unknown)
+            }
         }
     }
 
