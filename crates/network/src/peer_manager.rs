@@ -698,9 +698,9 @@ impl PeerManager {
         }
 
         // 4. Receive peer's verack
-        let verack_response = match timeout(
+        let peer_verack = match timeout(
             Duration::from_secs(10),
-            Self::read_neo_n3_message(&mut stream, network.magic()),
+            Self::read_testnet_message(&mut stream),
         )
         .await
         {
@@ -718,8 +718,6 @@ impl PeerManager {
                 });
             }
         };
-
-        let peer_verack = verack_response;
 
         // Handle verack response - accept Unknown messages for TestNet compatibility
         match &peer_verack.payload {
@@ -873,30 +871,55 @@ impl PeerManager {
         }
 
         // 5. Receive peer's verack (matches C# Neo verack verification exactly)
-        let verack_response = match timeout(
-            Duration::from_secs(3), // Shorter timeout for verack
-            Self::read_neo_n3_message(&mut stream, network.magic()),
-        )
-        .await
-        {
-            Ok(Ok(msg)) => msg,
-            Ok(Err(e)) => {
-                warn!("Failed to read verack message from {}: {}", address, e);
-                return Err(NetworkError::HandshakeFailed {
-                    peer: address,
-                    reason: format!("Failed to read verack message: {}", e),
-                });
+        let peer_verack = if network == NetworkType::TestNet {
+            // TestNet uses special message format with prefix
+            match timeout(
+                Duration::from_secs(3), // Shorter timeout for verack
+                Self::read_testnet_message(&mut stream),
+            )
+            .await
+            {
+                Ok(Ok(msg)) => msg,
+                Ok(Err(e)) => {
+                    warn!("Failed to read verack message from {}: {}", address, e);
+                    return Err(NetworkError::HandshakeFailed {
+                        peer: address,
+                        reason: format!("Failed to read verack message: {}", e),
+                    });
+                }
+                Err(_) => {
+                    warn!("Handshake timeout with peer {} during verack exchange", address);
+                    return Err(NetworkError::HandshakeTimeout {
+                        peer: address,
+                        timeout_ms: 3000,
+                    });
+                }
             }
-            Err(_) => {
-                warn!("Handshake timeout with peer {} during verack exchange", address);
-                return Err(NetworkError::HandshakeTimeout {
-                    peer: address,
-                    timeout_ms: 3000,
-                });
+        } else {
+            // MainNet/PrivNet use standard format
+            match timeout(
+                Duration::from_secs(3), // Shorter timeout for verack
+                Self::read_complete_message(&mut stream),
+            )
+            .await
+            {
+                Ok(Ok(data)) => NetworkMessage::from_bytes(&data)?,
+                Ok(Err(e)) => {
+                    warn!("Failed to read verack message from {}: {}", address, e);
+                    return Err(NetworkError::HandshakeFailed {
+                        peer: address,
+                        reason: format!("Failed to read verack message: {}", e),
+                    });
+                }
+                Err(_) => {
+                    warn!("Handshake timeout with peer {} during verack exchange", address);
+                    return Err(NetworkError::HandshakeTimeout {
+                        peer: address,
+                        timeout_ms: 3000,
+                    });
+                }
             }
         };
-
-        let peer_verack = verack_response;
 
         // Debug log what we received
         match &peer_verack.payload {
@@ -1076,6 +1099,74 @@ impl PeerManager {
                 Ok(value as u32)
             }
         }
+    }
+
+    /// Reads a complete TestNet message (always expects padding+magic prefix)
+    async fn read_testnet_message(stream: &mut TcpStream) -> Result<NetworkMessage> {
+        // TestNet messages always start with [00, 00, 25, 4e, 33, 54, 35]
+        let mut prefix = [0u8; 7];
+        stream.read_exact(&mut prefix).await.map_err(|e| {
+            NetworkError::ConnectionFailed {
+                address: stream.peer_addr().unwrap_or_else(|_| {
+                    "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                }),
+                reason: format!("Failed to read TestNet prefix: {}", e),
+            }
+        })?;
+        
+        tracing::debug!("Read TestNet prefix: {:02x?}", prefix);
+        
+        // Verify it's the TestNet prefix
+        if prefix != [0x00, 0x00, 0x25, 0x4e, 0x33, 0x54, 0x35] {
+            tracing::warn!("Unexpected TestNet prefix: {:02x?}", prefix);
+        }
+        
+        // Now read the Neo N3 message: flags + command
+        let mut header = [0u8; 2];
+        stream.read_exact(&mut header).await.map_err(|e| {
+            NetworkError::ConnectionFailed {
+                address: stream.peer_addr().unwrap_or_else(|_| {
+                    "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                }),
+                reason: format!("Failed to read message header: {}", e),
+            }
+        })?;
+        
+        let flags = header[0];
+        let command = header[1];
+        
+        tracing::debug!("TestNet message: flags=0x{:02x}, command=0x{:02x}", flags, command);
+        
+        // Read variable-length payload size
+        let payload_length = Self::read_varlen_uint(stream).await?;
+        tracing::debug!("TestNet message payload length: {} bytes", payload_length);
+        
+        // Read payload if present
+        let payload_bytes = if payload_length > 0 {
+            let mut payload = vec![0u8; payload_length as usize];
+            stream.read_exact(&mut payload).await.map_err(|e| {
+                NetworkError::ConnectionFailed {
+                    address: stream.peer_addr().unwrap_or_else(|_| {
+                        "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                    }),
+                    reason: format!("Failed to read payload of {} bytes: {}", payload_length, e),
+                }
+            })?;
+            payload
+        } else {
+            vec![]
+        };
+        
+        // Construct Neo N3 format message for parsing
+        let mut message_bytes = Vec::new();
+        message_bytes.push(flags);
+        message_bytes.push(command);
+        let payload_len_bytes = Self::encode_varlen_uint(payload_length);
+        message_bytes.extend_from_slice(&payload_len_bytes);
+        message_bytes.extend_from_slice(&payload_bytes);
+        
+        // Parse as NetworkMessage
+        NetworkMessage::from_bytes(&message_bytes)
     }
 
     /// Reads a complete message from a TCP stream
