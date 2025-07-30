@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop, jimmy ]
+    branches: [ main, develop, jimmy, jimmy-rocksdb ]
   pull_request:
-    branches: [ main, develop, jimmy ]
+    branches: [ main, develop, jimmy, jimmy-rocksdb ]
   schedule:
     # Run nightly at 2 AM UTC
     - cron: '0 2 * * *'
