@@ -16,7 +16,7 @@ type WalletResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 use hex;
 use neo_config::HASH_SIZE;
 use neo_core::{Transaction, UInt160, UInt256};
-use neo_rpc_client;
+use neo_rpc_client::{RpcClient, RpcClientBuilder};
 use neo_wallets::{
     wallet::Wallet as WalletTrait,
     wallet_account::{StandardWalletAccount, WalletAccount},
@@ -24,6 +24,7 @@ use neo_wallets::{
 };
 use std::collections::HashMap;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::fs;
 
@@ -168,7 +169,7 @@ impl WalletManager {
             .map_err(|e| Box::new(WalletError(format!("Failed to generate key pair: {}", e))))?;
 
         let account = wallet
-            .create_account(&key_pair.private_key())
+            .create_account(key_pair.private_key())
             .await
             .map_err(|e| Box::new(WalletError(format!("Failed to create account: {}", e))))?;
 
@@ -379,8 +380,7 @@ impl WalletManager {
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:20332".to_string())
-            .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
+        let rpc_client = RpcClient::new("http://localhost:20332".to_string());
 
         // 2. NEO native contract hash (matches C# NativeContract.NEO.Hash exactly)
         // This uses the exact same hash as defined in the native contract implementation
@@ -417,8 +417,7 @@ impl WalletManager {
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:20332".to_string())
-            .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
+        let rpc_client = RpcClient::new("http://localhost:20332".to_string());
 
         // 2. GAS native contract hash (matches C# NativeContract.GAS.Hash exactly)
         // This uses the exact same hash as defined in the native contract implementation
@@ -460,14 +459,14 @@ impl WalletManager {
         let address_hex = format!("0x{}", hex::encode(address_bytes));
 
         // 2. Prepare parameters for balanceOf call (matches C# contract invocation exactly)
-        let params = serde_json::json!([{
+        let params = vec![serde_json::json!({
             "type": "Hash160",
             "value": address_hex
-        }]);
+        })];
 
         // 3. Call balanceOf method on NEO contract (matches C# InvokeFunction exactly)
         let result = rpc_client
-            .invoke_function(contract_hash.to_string(), "balanceOf".to_string(), params)
+            .call_raw("invokefunction".to_string(), serde_json::json!([contract_hash, "balanceOf", params]))
             .await
             .map_err(|e| Box::new(WalletError(format!("RPC call failed: {}", e))))?;
 
@@ -489,19 +488,23 @@ impl WalletManager {
         let address_hex = format!("0x{}", hex::encode(address_bytes));
 
         // 2. Prepare parameters for balanceOf call (matches C# contract invocation exactly)
-        let params = serde_json::json!([{
+        let params = vec![serde_json::json!({
             "type": "Hash160",
             "value": address_hex
-        }]);
+        })];
 
         // 3. Call balanceOf method on GAS contract (matches C# InvokeFunction exactly)
+        let contract_address = UInt160::from_str(contract_hash)
+            .map_err(|e| Box::new(WalletError(format!("Invalid contract hash: {}", e))))?;
         let result = rpc_client
-            .invoke_function(contract_hash.to_string(), "balanceOf".to_string(), params)
+            .invoke_function(&contract_address, "balanceOf", params)
             .await
             .map_err(|e| Box::new(WalletError(format!("RPC call failed: {}", e))))?;
 
         // 4. Parse result from smart contract response (matches C# result parsing exactly)
-        let raw_balance = self.parse_balance_result(&result, 8)?; // GAS has 8 decimals
+        let result_json = serde_json::to_value(&result)
+            .map_err(|e| Box::new(WalletError(format!("Failed to convert result: {}", e))))?;
+        let raw_balance = self.parse_balance_result(&result_json, 8)?; // GAS has 8 decimals
 
         Ok(raw_balance)
     }
@@ -567,7 +570,9 @@ impl WalletManager {
         }
 
         // Create RPC client
-        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:20332".to_string())
+        let rpc_client = RpcClientBuilder::new()
+            .endpoint("http://localhost:20332")
+            .build()
             .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 
         let mut all_balances = Vec::new();
@@ -663,8 +668,7 @@ impl WalletManager {
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:20332".to_string())
-            .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
+        let rpc_client = RpcClient::new("http://localhost:20332".to_string());
 
         // 2. NEO native contract hash for unclaimed GAS queries (matches C# exactly)
         let neo_contract_hash = "0xef4c73d42d95f62b9b599a2a5c1e0e5b1e6c6f6c";
@@ -701,10 +705,12 @@ impl WalletManager {
         address: &UInt160,
     ) -> WalletResult<i64> {
         // 1. Get current block count for unclaimed GAS calculation
-        let block_count = rpc_client
-            .get_block_count()
+        let block_count_result = rpc_client
+            .call_raw("getblockcount".to_string(), serde_json::json!([]))
             .await
             .map_err(|e| Box::new(WalletError(format!("Failed to get block count: {}", e))))?;
+        let block_count = block_count_result.as_u64()
+            .ok_or_else(|| Box::new(WalletError("Invalid block count format".to_string())))? as u32;
 
         // 2. Convert address to script hash format for RPC call (matches C# address encoding exactly)
         let address_bytes = address.as_bytes();
@@ -721,11 +727,7 @@ impl WalletManager {
 
         // 4. Call unclaimedGas method on NEO contract (matches C# InvokeFunction exactly)
         let result = rpc_client
-            .invoke_function(
-                neo_contract_hash.to_string(),
-                "unclaimedGas".to_string(),
-                params,
-            )
+            .call_raw("invokefunction".to_string(), serde_json::json!([neo_contract_hash, "unclaimedGas", vec![params]]))
             .await
             .map_err(|e| Box::new(WalletError(format!("RPC call failed: {}", e))))?;
 

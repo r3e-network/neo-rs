@@ -41,7 +41,7 @@ pub struct CliArgs {
     pub plugins: Vec<String>,
 
     /// The verbose log level
-    #[arg(long = "verbose", value_enum, DEFAULT_VALUE = "info")]
+    #[arg(long = "verbose", value_enum, default_value = "info")]
     pub verbose: LogLevel,
 
     /// Run in daemon mode (background)
@@ -49,7 +49,7 @@ pub struct CliArgs {
     pub daemon: bool,
 
     /// Network to connect to
-    #[arg(long = "network", value_enum, DEFAULT_VALUE = "mainnet")]
+    #[arg(long = "network", value_enum, default_value = "mainnet")]
     pub network: Network,
 
     /// RPC server port

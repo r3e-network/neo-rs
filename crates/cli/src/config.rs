@@ -288,7 +288,7 @@ pub enum RpcCommand {
 impl CliArgs {
     /// Parse CLI arguments from clap matches
     pub fn from_matches(matches: &ArgMatches) -> Result<Self> {
-        let config = PathBuf::from(matches.get_one::<String>("config")?);
+        let config = PathBuf::from(matches.get_one::<String>("config").ok_or_else(|| anyhow::anyhow!("Missing config parameter"))?);
 
         let network = if matches.get_flag("testnet") {
             NetworkType::Testnet
@@ -298,12 +298,14 @@ impl CliArgs {
 
         let rpc_enabled = matches.get_flag("rpc");
         let rpc_port = matches
-            .get_one::<String>("rpc-port")?
+            .get_one::<String>("rpc-port")
+            .ok_or_else(|| anyhow::anyhow!("Missing rpc-port parameter"))?
             .parse::<u16>()
             .context("Invalid RPC port")?;
 
         let p2p_port = matches
-            .get_one::<String>("p2p-port")?
+            .get_one::<String>("p2p-port")
+            .ok_or_else(|| anyhow::anyhow!("Missing p2p-port parameter"))?
             .parse::<u16>()
             .context("Invalid P2P port")?;
 
@@ -325,7 +327,7 @@ impl CliArgs {
         let daemon = matches.get_flag("daemon");
         let console = matches.get_flag("console");
 
-        let log_level = match matches.get_one::<String>("log-level")?.as_str() {
+        let log_level = match matches.get_one::<String>("log-level").ok_or_else(|| anyhow::anyhow!("Missing log-level parameter"))?.as_str() {
             "error" => Level::ERROR,
             "warn" => Level::WARN,
             "info" => Level::INFO,
@@ -334,7 +336,7 @@ impl CliArgs {
             _ => Level::INFO,
         };
 
-        let data_dir = PathBuf::from(matches.get_one::<String>("data-dir")?);
+        let data_dir = PathBuf::from(matches.get_one::<String>("data-dir").ok_or_else(|| anyhow::anyhow!("Missing data-dir parameter"))?);
 
         let subcommand = match matches.subcommand() {
             Some(("wallet", wallet_matches)) => {
@@ -370,14 +372,14 @@ impl CliArgs {
 fn parse_wallet_command(matches: &ArgMatches) -> Result<WalletCommand> {
     match matches.subcommand() {
         Some(("create", create_matches)) => {
-            let path = PathBuf::from(create_matches.get_one::<String>("path")?);
+            let path = PathBuf::from(create_matches.get_one::<String>("path").ok_or_else(|| anyhow::anyhow!("Missing path parameter"))?);
             let password = create_matches
                 .get_one::<String>("password")
                 .map(String::from);
             Ok(WalletCommand::Create { path, password })
         }
         Some(("open", open_matches)) => {
-            let path = PathBuf::from(open_matches.get_one::<String>("path")?);
+            let path = PathBuf::from(open_matches.get_one::<String>("path").ok_or_else(|| anyhow::anyhow!("Missing path parameter"))?);
             let password = open_matches.get_one::<String>("password").map(String::from);
             Ok(WalletCommand::Open { path, password })
         }
@@ -490,7 +492,7 @@ impl Default for ProtocolConfiguration {
         Self {
             network: 0x334F454E, // "NEO4" in hex (mainnet)
             address_version: 53,
-            milliseconds_per_block: MILLISECONDS_PER_BLOCK,
+            milliseconds_per_block: MILLISECONDS_PER_BLOCK as u32,
             max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK as u32,
             memory_pool_max_transactions: 50000,
             max_trace_blocks: MAX_TRACEABLE_BLOCKS,
