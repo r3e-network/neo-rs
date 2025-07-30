@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-30T16:35:37.178Z
+Generated at: 2025-07-30T23:40:38.031Z
 
 ---
 
@@ -9,23 +9,23 @@ Generated at: 2025-07-30T16:35:37.178Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-30T16:35:34.602Z
+- **Last Updated**: 2025-07-30T23:40:31.959Z
 
 ## Statistics
-- **Total Files**: 1916
-- **Estimated Lines**: 375718
-- **Average File Size**: 8493 bytes
+- **Total Files**: 1922
+- **Estimated Lines**: 376235
+- **Average File Size**: 8478 bytes
 
 ## Languages
-- **csharp**: 1076957 files
-- **rust**: 492060 files
-- **json**: 221227 files
-- **markdown**: 93208 files
-- **shellscript**: 3638 files
-- **yaml**: 2246 files
-- **css**: 2246 files
-- **html**: 2246 files
-- **javascript**: 2246 files
+- **csharp**: 4592651 files
+- **rust**: 2119329 files
+- **json**: 947107 files
+- **markdown**: 397687 files
+- **shellscript**: 18651 files
+- **yaml**: 9578 files
+- **css**: 9578 files
+- **html**: 9578 files
+- **javascript**: 9578 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -83,18 +83,21 @@ No unfinished tasks
 ```
  M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
- M .autopilot/tasks/sessions.json
- M crates/cli/src/main.rs
- M crates/core/src/lib.rs
-?? crates/cli/src/service_complete.rs
-?? crates/core/src/blockchain_complete.rs
-?? crates/core/src/native_contracts.rs
-?? crates/core/src/neo_system_complete.rs
+ M crates/core/src/block.rs
+ M crates/core/src/blockchain_complete.rs
+ M crates/core/src/error.rs
+ M crates/core/src/neo_system_complete.rs
+ M crates/core/src/transaction/core.rs
+?? .autoclaude/README.md
+?? .autoclaude/hooks/
+?? .autoclaude/scripts/unit-test-coverage-check.sh
+?? config.testnet.json
 
 ```
 
 ### Recent Commits
 ```
+908560a feat: implement complete Neo node matching C# functionality exactly
 2711293 fix: complete network pattern matching and enhance production readiness
 b41b213 fix: complete remaining CLI compilation errors
 563e552 chore: clean up intermediate files and documentation
@@ -104,7 +107,6 @@ d9a8bad fix(cli): cast usize constants to u32 for type compatibility
 5abbc44 fix(mpt_trie): update test imports and fix compilation errors
 3f6b554 chore: update project context and task tracking
 9d19566 fix(network): resolve compilation errors and pattern matching issues
-2befb8a fix(network): complete TestNet protocol compatibility with direct payload format
 
 ```
 

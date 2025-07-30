@@ -146,6 +146,17 @@ impl Transaction {
         self.valid_until_block
     }
 
+    /// Gets the valid until block result of the transaction for error handling.
+    pub fn valid_until_block_result(&self) -> CoreResult<u32> {
+        Ok(self.valid_until_block)
+    }
+
+    /// Gets the total fee of the transaction (system fee + network fee).
+    /// This matches the C# Fee property behavior.
+    pub fn fee(&self) -> CoreResult<i64> {
+        Ok(self.system_fee.saturating_add(self.network_fee))
+    }
+
     /// Sets the valid until block of the transaction (matches C# ValidUntilBlock setter exactly).
     pub fn set_valid_until_block(&mut self, value: u32) {
         self.valid_until_block = value;
