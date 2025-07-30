@@ -1,16 +1,10 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// witness_rule.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Implementation of WitnessRule (matches C# WitnessRule exactly).
 
+use neo_config::ADDRESS_SIZE;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -135,10 +129,10 @@ impl WitnessCondition {
             WitnessCondition::Or { conditions } => {
                 1 + conditions.iter().map(|e| e.len()).sum::<usize>()
             }
-            WitnessCondition::ScriptHash { .. } => 1 + 20, // 1 byte type + 20 bytes hash
+            WitnessCondition::ScriptHash { .. } => 1 + ADDRESS_SIZE, // 1 byte type + ADDRESS_SIZE bytes hash
             WitnessCondition::Group { group } => 1 + group.len(),
             WitnessCondition::CalledByEntry => 1,
-            WitnessCondition::CalledByContract { .. } => 1 + 20, // 1 byte type + 20 bytes hash
+            WitnessCondition::CalledByContract { .. } => 1 + ADDRESS_SIZE, // 1 byte type + ADDRESS_SIZE bytes hash
             WitnessCondition::CalledByGroup { group } => 1 + group.len(),
         }
     }
@@ -229,7 +223,7 @@ impl fmt::Display for WitnessRule {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Block, Transaction, UInt160, UInt256};
 
     #[test]
     fn test_witness_rule_action_values() {

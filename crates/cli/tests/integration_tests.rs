@@ -18,11 +18,10 @@ mod integration_tests {
     /// Test complete CLI startup workflow (matches C# Neo CLI startup exactly)
     #[tokio::test]
     async fn test_complete_startup_workflow_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("integration_config.json");
-        let wallet_path = temp_dir.path().join("integration_wallet.json");
+        let final_dir = TempDir::new().unwrap();
+        let config_path = final_dir.path().join("integration_config.json");
+        let wallet_path = final_dir.path().join("integration_wallet.json");
 
-        // Create realistic config file (matches C# production config)
         let config_content = r#"
         {
             "ApplicationConfiguration": {
@@ -98,7 +97,6 @@ mod integration_tests {
 
         fs::write(&config_path, config_content).await.unwrap();
 
-        // Create realistic wallet file (matches C# wallet format)
         let wallet_content = r#"
         {
             "version": "1.0",
@@ -213,8 +211,8 @@ mod integration_tests {
     /// Test CLI RPC server integration (matches C# RPC functionality exactly)
     #[tokio::test]
     async fn test_rpc_server_integration_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("rpc_config.json");
+        let final_dir = TempDir::new().unwrap();
+        let config_path = final_dir.path().join("rpc_config.json");
 
         // Create RPC-focused configuration
         let rpc_config = r#"
@@ -290,9 +288,9 @@ mod integration_tests {
     /// Test CLI consensus integration (matches C# consensus participation exactly)
     #[tokio::test]
     async fn test_consensus_integration_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("consensus_config.json");
-        let wallet_path = temp_dir.path().join("consensus_wallet.json");
+        let final_dir = TempDir::new().unwrap();
+        let config_path = final_dir.path().join("consensus_config.json");
+        let wallet_path = final_dir.path().join("consensus_wallet.json");
 
         // Create consensus-ready configuration
         let consensus_config = r#"
@@ -353,7 +351,6 @@ mod integration_tests {
 
         fs::write(&config_path, consensus_config).await.unwrap();
 
-        // Create consensus wallet (matches C# consensus wallet format)
         let consensus_wallet = r#"
         {
             "version": "1.0",
@@ -416,9 +413,9 @@ mod integration_tests {
     /// Test CLI database operations (matches C# database management exactly)
     #[tokio::test]
     async fn test_database_operations_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
-        let db_path = temp_dir.path().join("blockchain_data");
-        let config_path = temp_dir.path().join("db_config.json");
+        let final_dir = TempDir::new().unwrap();
+        let db_path = final_dir.path().join("blockchain_data");
+        let config_path = final_dir.path().join("db_config.json");
 
         // Create database-focused configuration
         let db_config = r#"
@@ -490,7 +487,7 @@ mod integration_tests {
             .arg("--db-path")
             .arg(&db_path)
             .arg("--data-dir")
-            .arg(temp_dir.path())
+            .arg(final_dir.path())
             .arg("--help");
         cmd.assert().success();
     }
@@ -498,8 +495,8 @@ mod integration_tests {
     /// Test CLI network synchronization (matches C# P2P networking exactly)
     #[tokio::test]
     async fn test_network_sync_integration_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("sync_config.json");
+        let final_dir = TempDir::new().unwrap();
+        let config_path = final_dir.path().join("sync_config.json");
 
         // Create network synchronization configuration
         let sync_config = r#"
@@ -582,9 +579,9 @@ mod integration_tests {
     /// Test CLI logging and monitoring (matches C# logging infrastructure exactly)
     #[tokio::test]
     async fn test_logging_monitoring_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("logging_config.json");
-        let log_dir = temp_dir.path().join("logs");
+        let final_dir = TempDir::new().unwrap();
+        let config_path = final_dir.path().join("logging_config.json");
+        let log_dir = final_dir.path().join("logs");
 
         // Create logging configuration
         let logging_config = r#"
@@ -652,10 +649,10 @@ mod integration_tests {
     /// Test CLI error recovery scenarios (matches C# error handling exactly)
     #[tokio::test]
     async fn test_error_recovery_scenarios_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
+        let final_dir = TempDir::new().unwrap();
 
         // Test recovery from corrupted config
-        let corrupted_config_path = temp_dir.path().join("corrupted_config.json");
+        let corrupted_config_path = final_dir.path().join("corrupted_config.json");
         fs::write(&corrupted_config_path, "{ corrupted json")
             .await
             .unwrap();
@@ -683,7 +680,7 @@ mod integration_tests {
 
         // Test recovery from permission issues
         if cfg!(unix) {
-            let readonly_config_path = temp_dir.path().join("readonly_config.json");
+            let readonly_config_path = final_dir.path().join("readonly_config.json");
             fs::write(&readonly_config_path, r#"{"test": true}"#)
                 .await
                 .unwrap();
@@ -717,7 +714,6 @@ mod integration_tests {
 
         let startup_duration = start_time.elapsed();
 
-        // Startup should be fast (less than 5 seconds for help)
         assert!(startup_duration < std::time::Duration::from_secs(5));
 
         // Test memory efficiency
@@ -728,8 +724,8 @@ mod integration_tests {
             .stdout(predicate::str::contains("neo-cli"));
 
         // Test with complex configuration
-        let temp_dir = TempDir::new().unwrap();
-        let complex_config_path = temp_dir.path().join("complex_config.json");
+        let final_dir = TempDir::new().unwrap();
+        let complex_config_path = final_dir.path().join("complex_config.json");
 
         // Create large configuration
         let large_config = r#"
@@ -836,10 +832,10 @@ mod integration_tests {
     /// Test CLI upgrade and migration scenarios (matches C# version migration exactly)
     #[tokio::test]
     async fn test_upgrade_migration_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
+        let final_dir = TempDir::new().unwrap();
 
         // Test with old version configuration format
-        let legacy_config_path = temp_dir.path().join("legacy_config.json");
+        let legacy_config_path = final_dir.path().join("legacy_config.json");
         let legacy_config = r#"
         {
             "ApplicationConfiguration": {
@@ -869,7 +865,7 @@ mod integration_tests {
         cmd.assert().success();
 
         // Test with future version compatibility
-        let future_config_path = temp_dir.path().join("future_config.json");
+        let future_config_path = final_dir.path().join("future_config.json");
         let future_config = r#"
         {
             "ApplicationConfiguration": {

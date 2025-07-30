@@ -22,14 +22,12 @@ mod validation_tests {
             assert!(private_key.is_valid());
         }
 
-        // Test zero private key (should be invalid)
         let zero_bytes = vec![0u8; 32];
         if let Ok(zero_key) = Bls12381::private_key_from_bytes(&zero_bytes) {
             assert!(!Bls12381::validate_private_key(&zero_key));
             assert!(!zero_key.is_valid());
         }
 
-        // Test maximum value private key (should be invalid - exceeds curve order)
         let max_bytes = vec![0xFFu8; 32];
         if let Ok(max_key) = Bls12381::private_key_from_bytes(&max_bytes) {
             assert!(!Bls12381::validate_private_key(&max_key));
@@ -38,10 +36,8 @@ mod validation_tests {
 
         // Test specific invalid values
         let invalid_test_vectors = vec![
-            // Curve order (should be invalid)
             hex::decode("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001")
                 .unwrap(),
-            // Curve order + 1 (should be invalid)
             hex::decode("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000002")
                 .unwrap(),
         ];
@@ -70,14 +66,12 @@ mod validation_tests {
             assert!(public_key.is_valid());
         }
 
-        // Test zero public key (should be invalid)
         let zero_bytes = vec![0u8; 48];
         if let Ok(zero_key) = Bls12381::public_key_from_bytes(&zero_bytes) {
             assert!(!Bls12381::validate_public_key(&zero_key));
             assert!(!zero_key.is_valid());
         }
 
-        // Test maximum value public key (should be invalid)
         let max_bytes = vec![0xFFu8; 48];
         if let Ok(max_key) = Bls12381::public_key_from_bytes(&max_bytes) {
             assert!(!Bls12381::validate_public_key(&max_key));
@@ -116,14 +110,12 @@ mod validation_tests {
             assert!(signature.is_valid());
         }
 
-        // Test zero signature (should be invalid)
         let zero_bytes = vec![0u8; 96];
         if let Ok(zero_sig) = Bls12381::signature_from_bytes(&zero_bytes) {
             assert!(!Bls12381::validate_signature(&zero_sig));
             assert!(!zero_sig.is_valid());
         }
 
-        // Test maximum value signature (should be invalid)
         let max_bytes = vec![0xFFu8; 96];
         if let Ok(max_sig) = Bls12381::signature_from_bytes(&max_bytes) {
             assert!(!Bls12381::validate_signature(&max_sig));
@@ -162,7 +154,6 @@ mod validation_tests {
         assert!(Bls12381::validate_private_key(&private_key));
         assert!(Bls12381::validate_public_key(&public_key));
 
-        // Consistency: if private key is valid, derived public key should be valid
         assert!(private_key.is_valid());
         assert!(public_key.is_valid());
 
@@ -174,7 +165,6 @@ mod validation_tests {
         assert!(Bls12381::validate_signature(&signature));
         assert!(signature.is_valid());
 
-        // If all components are valid, verification should pass
         assert!(Bls12381::verify(&public_key, message, &signature));
 
         // Serialize and deserialize - should maintain validity
@@ -204,7 +194,6 @@ mod validation_tests {
     fn test_validation_edge_cases_compatibility() {
         // Test validation with boundary values
 
-        // Private key: value 1 (should be valid)
         let one_bytes = {
             let mut bytes = vec![0u8; 32];
             bytes[31] = 1;
@@ -215,7 +204,6 @@ mod validation_tests {
             assert!(Bls12381::validate_private_key(&one_key));
         }
 
-        // Private key: curve order - 1 (should be valid)
         let order_minus_one =
             hex::decode("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000")
                 .unwrap();
@@ -229,7 +217,6 @@ mod validation_tests {
         let public_key = Bls12381::derive_public_key(&private_key);
         let public_bytes = Bls12381::public_key_to_bytes(&public_key);
 
-        // Should be compressed format (48 bytes)
         assert_eq!(public_bytes.len(), 48);
 
         // First byte should indicate compression
@@ -401,7 +388,6 @@ mod validation_tests {
             handles.push(handle);
         }
 
-        // Wait for all threads to complete
         let thread_ids: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
         // All threads should have completed successfully
@@ -469,7 +455,6 @@ mod validation_tests {
     #[test]
     fn test_validation_error_messages_compatibility() {
         // Test that validation methods return appropriate boolean results
-        // (not testing specific error messages as they may vary)
 
         // Invalid private key
         let zero_private_bytes = vec![0u8; 32];
@@ -492,7 +477,6 @@ mod validation_tests {
             assert!(!is_valid); // Should be false, not panic
         }
 
-        // Validation should never panic, only return false for invalid data
         // This matches the C# behavior where validation methods return boolean
     }
 }

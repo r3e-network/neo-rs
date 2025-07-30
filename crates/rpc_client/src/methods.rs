@@ -2,7 +2,10 @@
 //!
 //! This module contains specific RPC method implementations.
 
-use crate::models::*;
+use crate::models::{
+    RpcApplicationLog, RpcBlock, RpcExecution, RpcNep17Balance, RpcPeers, RpcRequest, RpcResponse,
+    RpcTransaction, RpcValidator, RpcVersion,
+};
 use neo_core::{UInt160, UInt256};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -380,7 +383,7 @@ impl RpcMethods {
 
     /// Creates standard RPC error responses
     pub fn create_error_response(code: i32, message: String, id: Option<Value>) -> RpcResponse {
-        RpcResponse::error(RpcError::new(code, message), id)
+        RpcResponse::error(crate::models::RpcError::new(code, message), id)
     }
 
     /// Parses standard RPC parameters

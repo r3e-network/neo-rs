@@ -60,9 +60,8 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::SYSCALL, syscall::syscall);
 }
 
-// Re-export commonly used types and functions for convenience
 pub use oracle::{get_oracle_request_signers, get_oracle_response_attribute};
 pub use storage::{calculate_storage_fee, construct_storage_key};
 pub use syscall::syscall;
-pub use types::*;
+pub use types::{Block, ExceptionHandler, Transaction};
 pub use witness::check_witness_internal;

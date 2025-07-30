@@ -5,6 +5,7 @@
 
 use crate::vm_integration::VmExecutor;
 use anyhow::Result;
+use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use neo_core::UInt160;
 use neo_cryptography::ECPoint;
 use neo_ledger::Blockchain;
@@ -25,28 +26,39 @@ pub struct NativeContractHashes {
     pub oracle: UInt160,
 }
 
+// Mainnet contract hashes as constants
+const NEO_HASH: &str = "ef4073a0f2b305a38ec4050e4d3d28bc40ea63f5";
+const GAS_HASH: &str = "d2a4cff31913016155e38e474a2c06d08be276cf";
+const POLICY_HASH: &str = "cc5e4edd78e5d7b5ac9dd9b048b8d24e7fb76b3c";
+const ROLE_MANAGEMENT_HASH: &str = "49cf4e5378ffcd4dec034fd98a174c5491e395e2";
+const ORACLE_HASH: &str = "fe924b7cfe89ddd271abaf7210a80a7e11178758";
+
 impl NativeContractHashes {
     /// Get native contract hashes for mainnet
-    pub fn mainnet() -> Self {
-        Self {
+    pub fn mainnet() -> Result<Self> {
+        Ok(Self {
             // These are the actual Neo N3 mainnet contract hashes
-            neo: UInt160::parse("ef4073a0f2b305a38ec4050e4d3d28bc40ea63f5").unwrap(),
-            gas: UInt160::parse("d2a4cff31913016155e38e474a2c06d08be276cf").unwrap(),
-            policy: UInt160::parse("cc5e4edd78e5d7b5ac9dd9b048b8d24e7fb76b3c").unwrap(),
-            role_management: UInt160::parse("49cf4e5378ffcd4dec034fd98a174c5491e395e2").unwrap(),
-            oracle: UInt160::parse("fe924b7cfe89ddd271abaf7210a80a7e11178758").unwrap(),
-        }
+            neo: UInt160::parse(NEO_HASH)
+                .map_err(|e| anyhow::anyhow!("Failed to parse NEO contract hash: {}", e))?,
+            gas: UInt160::parse(GAS_HASH)
+                .map_err(|e| anyhow::anyhow!("Failed to parse GAS contract hash: {}", e))?,
+            policy: UInt160::parse(POLICY_HASH)
+                .map_err(|e| anyhow::anyhow!("Failed to parse Policy contract hash: {}", e))?,
+            role_management: UInt160::parse(ROLE_MANAGEMENT_HASH).map_err(|e| {
+                anyhow::anyhow!("Failed to parse RoleManagement contract hash: {}", e)
+            })?,
+            oracle: UInt160::parse(ORACLE_HASH)
+                .map_err(|e| anyhow::anyhow!("Failed to parse Oracle contract hash: {}", e))?,
+        })
     }
 
     /// Get native contract hashes for testnet
-    pub fn testnet() -> Self {
-        // Testnet uses the same hashes as mainnet for native contracts
+    pub fn testnet() -> Result<Self> {
         Self::mainnet()
     }
 
     /// Get native contract hashes for private network
-    pub fn private() -> Self {
-        // Private networks use the same hashes
+    pub fn private() -> Result<Self> {
         Self::mainnet()
     }
 }
@@ -73,7 +85,6 @@ impl NeoContract {
     pub async fn get_committee(&self) -> Result<Vec<ECPoint>> {
         tracing::debug!("Getting committee members from NEO contract using VM");
 
-        // Try to call the actual NEO.getCommittee() method using VM
         match self
             .vm_executor
             .get_neo_committee(&self.contract_hash)
@@ -107,7 +118,6 @@ impl NeoContract {
         match self.get_validators_from_blockchain_state().await {
             Ok(validators) if !validators.is_empty() => {
                 // Committee is typically larger than validator set
-                // For testing, we'll use the same set but could expand it
                 tracing::debug!(
                     "Retrieved {} committee members from blockchain state fallback",
                     validators.len()
@@ -115,7 +125,6 @@ impl NeoContract {
                 Ok(validators)
             }
             Ok(_) => {
-                // If no validators in blockchain state, use default committee
                 tracing::debug!("No committee found in blockchain state, using default");
                 self.get_default_committee().await
             }
@@ -128,7 +137,6 @@ impl NeoContract {
 
     /// Get a default committee for testing purposes
     async fn get_default_committee(&self) -> Result<Vec<ECPoint>> {
-        // Generate a minimal committee for testing
         tracing::debug!("Using default committee for testing");
 
         let mut committee = Vec::new();
@@ -136,7 +144,7 @@ impl NeoContract {
         // Generate a few test committee members
         for i in 1..=4 {
             // Generate 4 committee members
-            let key_seed = [i; 32];
+            let key_seed = [i; HASH_SIZE];
             match neo_cryptography::ecc::generate_public_key(&key_seed) {
                 Ok(pubkey) => match ECPoint::from_bytes(&pubkey) {
                     Ok(ec_point) => {
@@ -163,7 +171,6 @@ impl NeoContract {
     pub async fn get_next_block_validators(&self) -> Result<Vec<ECPoint>> {
         tracing::debug!("Getting next block validators from NEO contract using VM");
 
-        // Try to call the actual NEO.getNextBlockValidators() method using VM
         match self
             .vm_executor
             .get_next_block_validators(&self.contract_hash)
@@ -196,8 +203,6 @@ impl NeoContract {
         // Try to get the committee first
         match self.get_committee().await {
             Ok(committee) if !committee.is_empty() => {
-                // For next block validators, we take the first N validators from the committee
-                // where N is typically the number of validators needed for consensus
                 let validator_count = std::cmp::min(committee.len(), 7); // Neo typically uses 7 validators
                 let validators = committee.into_iter().take(validator_count).collect();
                 tracing::debug!(
@@ -206,10 +211,7 @@ impl NeoContract {
                 );
                 Ok(validators)
             }
-            Ok(_) => {
-                // If no committee is available, try to get from blockchain state
-                self.get_validators_from_blockchain_state().await
-            }
+            Ok(_) => self.get_validators_from_blockchain_state().await,
             Err(e) => {
                 tracing::warn!("Failed to get committee for next block validators: {}", e);
                 self.get_validators_from_blockchain_state().await
@@ -234,7 +236,6 @@ impl NeoContract {
                 Ok(validators)
             }
             Ok(_) => {
-                // If no validators found, return a default set for testing
                 tracing::warn!(
                     "No validators found for height {}, using default validator set",
                     height
@@ -302,8 +303,6 @@ impl NeoContract {
 
         tracing::debug!("Attempting to get validators from blockchain state");
 
-        // For now, try to get validator information from blockchain configuration
-        // Use VM integration to query the blockchain state
         match self.get_validators_from_config().await {
             Ok(validators) if !validators.is_empty() => {
                 tracing::debug!("Found {} validators from configuration", validators.len());
@@ -321,14 +320,14 @@ impl NeoContract {
         tracing::debug!("Attempting to get validators from blockchain configuration");
 
         // Try to get the genesis block and extract validator information
-        match self.blockchain.get_genesis_block().await {
-            Ok(genesis_block) => {
+        match self.blockchain.get_block(0).await {
+            Ok(Some(genesis_block)) => {
                 // Extract validators from genesis block witness scripts
                 let mut validators = Vec::new();
 
-                // Check if there are any witness scripts in the genesis block
-                for witness in &genesis_block.witnesses {
-                    if let Some(verification_script) = &witness.verification_script {
+                for witness in &genesis_block.header.witnesses {
+                    let verification_script = &witness.verification_script;
+                    if !verification_script.is_empty() {
                         // Try to extract public key from verification script
                         if verification_script.len() >= 35 {
                             // PUSH21 + 33-byte pubkey + CheckSig
@@ -355,12 +354,15 @@ impl NeoContract {
                 }
 
                 if validators.is_empty() {
-                    // If no validators found in genesis, try to read from blockchain metadata
                     self.get_validators_from_metadata().await
                 } else {
                     tracing::debug!("Found {} validators from genesis block", validators.len());
                     Ok(validators)
                 }
+            }
+            Ok(None) => {
+                tracing::debug!("Genesis block not found, trying metadata");
+                self.get_validators_from_metadata().await
             }
             Err(e) => {
                 tracing::debug!("Failed to get genesis block: {}, trying metadata", e);
@@ -373,24 +375,25 @@ impl NeoContract {
     async fn get_validators_from_metadata(&self) -> Result<Vec<ECPoint>> {
         tracing::debug!("Attempting to get validators from blockchain metadata");
 
-        // Try to get the current height to determine if blockchain is initialized
         let current_height = self.blockchain.get_height().await;
 
         if current_height > 0 {
             // Try to get the latest block and extract validator information
-            match self.blockchain.get_latest_block().await {
-                Ok(latest_block) => {
+            match self.blockchain.get_block(current_height).await {
+                Ok(Some(latest_block)) => {
                     // Extract validators from the block's consensus data
                     let mut validators = Vec::new();
 
                     // Check the block's next consensus information
-                    if let Some(next_consensus) = latest_block.header.next_consensus {
+                    let next_consensus = &latest_block.header.next_consensus;
+                    // Check if next_consensus is not zero (default/empty)
+                    if *next_consensus != UInt160::zero() {
                         // The next_consensus field contains the script hash of the next validators
                         // We would need to map this back to the individual validator public keys
-                        // For now, we'll use the witnesses to extract available public keys
 
-                        for witness in &latest_block.witnesses {
-                            if let Some(verification_script) = &witness.verification_script {
+                        for witness in &latest_block.header.witnesses {
+                            let verification_script = &witness.verification_script;
+                            if !verification_script.is_empty() {
                                 // Extract public keys from multi-sig verification scripts
                                 let pubkeys = self.extract_pubkeys_from_script(verification_script);
                                 validators.extend(pubkeys);
@@ -409,6 +412,10 @@ impl NeoContract {
                         Ok(vec![])
                     }
                 }
+                Ok(None) => {
+                    tracing::debug!("Latest block not found");
+                    Ok(vec![])
+                }
                 Err(e) => {
                     tracing::debug!("Failed to get latest block: {}", e);
                     Ok(vec![])
@@ -426,7 +433,6 @@ impl NeoContract {
         let mut i = 0;
 
         while i < script.len() {
-            // Look for PUSH21 opcode (0x21) followed by 33-byte public key
             if script[i] == 0x21 && i + 34 < script.len() {
                 let pubkey_bytes = &script[i + 1..i + 34];
                 match ECPoint::from_bytes(pubkey_bytes) {
@@ -450,12 +456,11 @@ impl NeoContract {
     async fn get_default_validator_set(&self) -> Result<Vec<ECPoint>> {
         tracing::debug!("Using default validator set for testing");
 
-        // Use well-known test validator keys for deterministic testing
         let test_keys = [
-            [1u8; 32], // Test validator 1
-            [2u8; 32], // Test validator 2
-            [3u8; 32], // Test validator 3
-            [4u8; 32], // Test validator 4
+            [1u8; HASH_SIZE], // Test validator 1
+            [2u8; HASH_SIZE], // Test validator 2
+            [3u8; HASH_SIZE], // Test validator 3
+            [4u8; HASH_SIZE], // Test validator 4
         ];
 
         let mut validators = Vec::new();
@@ -591,7 +596,7 @@ impl PolicyContract {
                     "VM call to Policy.getMaxTransactionsPerBlock() failed: {}, returning default",
                     e
                 );
-                Ok(512) // Default value
+                Ok(MAX_TRANSACTIONS_PER_BLOCK as u32) // Default value
             }
         }
     }
@@ -614,7 +619,7 @@ impl PolicyContract {
                     "VM call to Policy.getMaxBlockSize() failed: {}, returning default",
                     e
                 );
-                Ok(1024 * 1024) // 1 MB default
+                Ok((MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE) as u32) // 1 MB default
             }
         }
     }
@@ -648,25 +653,26 @@ pub struct NativeContractsManager {
 
 impl NativeContractsManager {
     /// Create a new native contracts manager
-    pub fn new(blockchain: Arc<Blockchain>, network_type: neo_config::NetworkType) -> Self {
+    pub fn new(
+        blockchain: Arc<Blockchain>,
+        network_type: neo_config::NetworkType,
+    ) -> anyhow::Result<Self> {
         let hashes = match network_type {
-            neo_config::NetworkType::MainNet => NativeContractHashes::mainnet(),
-            neo_config::NetworkType::TestNet => NativeContractHashes::testnet(),
-            neo_config::NetworkType::Private => NativeContractHashes::private(),
+            neo_config::NetworkType::MainNet => NativeContractHashes::mainnet()?,
+            neo_config::NetworkType::TestNet => NativeContractHashes::testnet()?,
+            neo_config::NetworkType::Private => NativeContractHashes::private()?,
         };
 
-        Self {
+        Ok(Self {
             neo: NeoContract::new(blockchain.clone(), hashes.neo),
             gas: GasContract::new(blockchain.clone(), hashes.gas),
             policy: PolicyContract::new(blockchain.clone(), hashes.policy),
-        }
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_native_contract_hashes() {
         let mainnet_hashes = NativeContractHashes::mainnet();

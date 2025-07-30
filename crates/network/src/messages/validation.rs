@@ -4,15 +4,17 @@
 //! ensuring strict compliance with the Neo N3 protocol specification.
 
 use crate::{NetworkError, NetworkMessage, NetworkResult as Result, ProtocolMessage};
+use neo_config::{MAX_SCRIPT_SIZE, MILLISECONDS_PER_BLOCK};
+use neo_core::constants::MAX_TRANSACTION_SIZE;
+use neo_ledger::block::MAX_BLOCK_SIZE;
+// Maximum message size (16MB) - Neo network protocol limit
+const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
 use neo_core::{Transaction, UInt160, UInt256};
 use neo_ledger::{Block, BlockHeader};
 use std::net::SocketAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, warn};
-
 /// Maximum message size allowed (16MB)
-pub const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
-
 /// Maximum number of inventory items in a single message
 pub const MAX_INVENTORY_ITEMS: usize = 1000;
 
@@ -23,7 +25,7 @@ pub const MAX_HEADERS_PER_MESSAGE: usize = 2000;
 pub const MAX_ADDRESSES_PER_MESSAGE: usize = 1000;
 
 /// Maximum user agent length
-pub const MAX_USER_AGENT_LENGTH: usize = 1024;
+pub const MAX_USER_AGENT_LENGTH: usize = MAX_SCRIPT_SIZE;
 
 /// Minimum supported protocol version
 pub const MIN_PROTOCOL_VERSION: u32 = 0;
@@ -31,8 +33,8 @@ pub const MIN_PROTOCOL_VERSION: u32 = 0;
 /// Maximum supported protocol version
 pub const MAX_PROTOCOL_VERSION: u32 = 1;
 
-/// Future timestamp tolerance (15 seconds)
-pub const FUTURE_TIMESTAMP_TOLERANCE: u64 = 15000;
+/// Future timestamp tolerance (SECONDS_PER_BLOCK seconds)
+pub const FUTURE_TIMESTAMP_TOLERANCE: u64 = MILLISECONDS_PER_BLOCK;
 
 /// Message validator that enforces Neo N3 protocol rules
 pub struct MessageValidator {
@@ -98,7 +100,6 @@ impl MessageValidator {
 
     /// Validates message header fields
     fn validate_message_header(&self, message: &NetworkMessage) -> Result<()> {
-        // Check if command is recognized
         let command_str = message.header.command.to_string();
         if command_str.is_empty() || command_str.len() > 12 {
             return Err(NetworkError::InvalidMessage {
@@ -157,10 +158,7 @@ impl MessageValidator {
                     || (ipv4.octets()[0] == 172 && ipv4.octets()[1] >= 16 && ipv4.octets()[1] <= 31)
                     || (ipv4.octets()[0] == 192 && ipv4.octets()[1] == 168)
             }
-            std::net::IpAddr::V6(ipv6) => {
-                // RFC 4193 private address range (fc00::/7)
-                ipv6.segments()[0] & 0xfe00 == 0xfc00
-            }
+            std::net::IpAddr::V6(ipv6) => ipv6.segments()[0] & 0xfe00 == 0xfc00,
         }
     }
 
@@ -361,7 +359,6 @@ impl MessageValidator {
 
         // Validate each address
         for addr in addresses {
-            // Check for valid port
             if addr.port() == 0 {
                 return Err(NetworkError::InvalidMessage {
                     peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -370,7 +367,6 @@ impl MessageValidator {
                 });
             }
 
-            // Check for localhost/private addresses in mainnet context
             if self.magic == 0x334f454e {
                 // MainNet magic
                 if addr.ip().is_loopback() || Self::is_private_ip(&addr.ip()) {
@@ -438,7 +434,6 @@ impl MessageValidator {
             });
         }
 
-        // Validate that hashes are not all zero (except for genesis requests)
         let all_zero = hash_start.iter().all(|h| h.is_zero());
         if all_zero && !hash_stop.is_zero() {
             return Err(NetworkError::InvalidMessage {
@@ -533,7 +528,6 @@ impl MessageValidator {
             });
         }
 
-        // Check for reasonable index range
         if index_start > self.current_height + 1000000 {
             return Err(NetworkError::InvalidMessage {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -552,12 +546,15 @@ impl MessageValidator {
     fn validate_transaction_message(&self, transaction: &Transaction) -> Result<()> {
         // 1. Validate transaction size
         let tx_size = transaction.size();
-        if tx_size > 102400 {
+        if tx_size > MAX_TRANSACTION_SIZE {
             // 100KB max transaction size
             return Err(NetworkError::InvalidMessage {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
                 message_type: "unknown".to_string(),
-                reason: format!("Transaction size {} exceeds maximum 102400 bytes", tx_size),
+                reason: format!(
+                    "Transaction size {} exceeds maximum MAX_TRANSACTION_SIZE bytes",
+                    tx_size
+                ),
             });
         }
 
@@ -630,7 +627,7 @@ impl MessageValidator {
 
         // 3. Validate block size
         let block_size = block.size();
-        if block_size > 1_048_576 {
+        if block_size > MAX_BLOCK_SIZE {
             // 1MB max block size
             return Err(NetworkError::InvalidMessage {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -687,10 +684,8 @@ impl MessageValidator {
 
         // Validate each inventory item
         for (i, item) in inventory.iter().enumerate() {
-            // Check for valid inventory type
             match item.item_type {
                 crate::InventoryType::Transaction => {
-                    // Hash should not be zero for transaction
                     if item.hash.is_zero() {
                         return Err(NetworkError::InvalidMessage {
                             peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -703,7 +698,6 @@ impl MessageValidator {
                     }
                 }
                 crate::InventoryType::Block => {
-                    // Hash should not be zero for block
                     if item.hash.is_zero() {
                         return Err(NetworkError::InvalidMessage {
                             peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -716,7 +710,6 @@ impl MessageValidator {
                     }
                 }
                 crate::InventoryType::Consensus => {
-                    // Hash should not be zero for consensus
                     if item.hash.is_zero() {
                         return Err(NetworkError::InvalidMessage {
                             peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -813,7 +806,7 @@ impl MessageValidator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Message, NetworkError, Peer};
     use crate::{MessageCommand, NetworkMessage};
     use neo_core::{BlockHeader, Transaction, UInt256, Witness};
     use neo_ledger::Block;
@@ -830,14 +823,14 @@ mod tests {
             previous_hash: if index == 0 {
                 UInt256::zero()
             } else {
-                UInt256::new([1; 32])
+                UInt256::new([1; HASH_SIZE])
             },
-            merkle_root: UInt256::new([2; 32]),
+            merkle_root: UInt256::new([2; HASH_SIZE]),
             timestamp: 1640995200000, // Valid timestamp
             nonce: 1234567890,
             index,
             primary_index: 0,
-            next_consensus: UInt160::new([3; 20]),
+            next_consensus: UInt160::new([3; ADDRESS_SIZE]),
             witnesses: vec![Witness::default()],
         }
     }
@@ -870,7 +863,7 @@ mod tests {
             services: 1,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             port: 20333,
             nonce: 12345,
@@ -887,7 +880,7 @@ mod tests {
             services: 1,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             port: 20333,
             nonce: 12345,
@@ -904,7 +897,7 @@ mod tests {
             services: 0,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             port: 20333,
             nonce: 12345,
@@ -921,7 +914,7 @@ mod tests {
             services: 1,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             port: 0,
             nonce: 12345,
@@ -938,7 +931,7 @@ mod tests {
             services: 1,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             port: 20333,
             nonce: 0,
@@ -956,7 +949,7 @@ mod tests {
             services: 1,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             port: 20333,
             nonce: 12345,
@@ -973,7 +966,7 @@ mod tests {
             services: 1,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             port: 20333,
             nonce: 12345,
@@ -1012,16 +1005,16 @@ mod tests {
 
         // Valid addr message
         let addr_msg = ProtocolMessage::Addr {
-            addresses: vec!["1.2.3.4:20333".parse().unwrap()],
+            addresses: vec!["test1.example.com:20333".parse().unwrap_or_default()],
         };
         assert!(validator.validate_payload(&addr_msg).is_ok());
 
         // Valid addr message with multiple addresses
         let multi_addr_msg = ProtocolMessage::Addr {
             addresses: vec![
-                "1.2.3.4:20333".parse().unwrap(),
-                "5.6.7.8:20333".parse().unwrap(),
-                "9.10.11.12:20333".parse().unwrap(),
+                "test1.example.com:20333".parse().unwrap_or_default(),
+                "test2.example.com:20333".parse().unwrap_or_default(),
+                "test3.example.com:20333".parse().unwrap_or_default(),
             ],
         };
         assert!(validator.validate_payload(&multi_addr_msg).is_ok());
@@ -1033,7 +1026,11 @@ mod tests {
         // Invalid addr - too many addresses
         let mut many_addresses = Vec::new();
         for i in 0..1001 {
-            many_addresses.push(format!("192.168.1.{}:20333", i % 255).parse().unwrap());
+            many_addresses.push(
+                format!("192.168.1.{}:20333", i % 255)
+                    .parse()
+                    .unwrap_or_default(),
+            );
         }
         let invalid_addr = ProtocolMessage::Addr {
             addresses: many_addresses,
@@ -1057,8 +1054,8 @@ mod tests {
         let validator = create_test_validator();
 
         // Valid get headers message
-        let hash_start = vec![UInt256::new([1; 32])];
-        let hash_stop = UInt256::new([2; 32]);
+        let hash_start = vec![UInt256::new([1; HASH_SIZE])];
+        let hash_stop = UInt256::new([2; HASH_SIZE]);
         let get_headers_msg = ProtocolMessage::GetHeaders {
             hash_start,
             hash_stop,
@@ -1068,21 +1065,21 @@ mod tests {
         // Invalid - empty hash_start
         let invalid_get_headers = ProtocolMessage::GetHeaders {
             hash_start: vec![],
-            hash_stop: UInt256::new([2; 32]),
+            hash_stop: UInt256::new([2; HASH_SIZE]),
         };
         assert!(validator.validate_payload(&invalid_get_headers).is_err());
 
         // Invalid - too many start hashes
-        let many_hashes: Vec<UInt256> = (0..100).map(|_| UInt256::new([1; 32])).collect();
+        let many_hashes: Vec<UInt256> = (0..100).map(|_| UInt256::new([1; HASH_SIZE])).collect();
         let invalid_many_hashes = ProtocolMessage::GetHeaders {
             hash_start: many_hashes,
-            hash_stop: UInt256::new([2; 32]),
+            hash_stop: UInt256::new([2; HASH_SIZE]),
         };
         assert!(validator.validate_payload(&invalid_many_hashes).is_err());
 
         // Invalid - zero hash_stop
         let invalid_hash_stop = ProtocolMessage::GetHeaders {
-            hash_start: vec![UInt256::new([1; 32])],
+            hash_start: vec![UInt256::new([1; HASH_SIZE])],
             hash_stop: UInt256::zero(),
         };
         assert!(validator.validate_payload(&invalid_hash_stop).is_err());
@@ -1121,8 +1118,8 @@ mod tests {
         let validator = create_test_validator();
 
         // Valid get blocks message
-        let hash_start = vec![UInt256::new([1; 32])];
-        let hash_stop = UInt256::new([2; 32]);
+        let hash_start = vec![UInt256::new([1; HASH_SIZE])];
+        let hash_stop = UInt256::new([2; HASH_SIZE]);
         let get_blocks_msg = ProtocolMessage::GetBlocks {
             hash_start,
             hash_stop,
@@ -1132,7 +1129,7 @@ mod tests {
         // Invalid - empty hash_start
         let invalid_get_blocks = ProtocolMessage::GetBlocks {
             hash_start: vec![],
-            hash_stop: UInt256::new([2; 32]),
+            hash_stop: UInt256::new([2; HASH_SIZE]),
         };
         assert!(validator.validate_payload(&invalid_get_blocks).is_err());
     }
@@ -1162,7 +1159,6 @@ mod tests {
         };
         assert!(validator.validate_payload(&invalid_index).is_err());
 
-        // Valid - zero count (allowed)
         let zero_count = ProtocolMessage::GetBlockByIndex {
             index_start: 0,
             count: 0,
@@ -1229,7 +1225,7 @@ mod tests {
 
         // Invalid - genesis with non-zero previous hash
         let mut invalid_genesis = create_test_block_header(0);
-        invalid_genesis.previous_hash = UInt256::new([1; 32]);
+        invalid_genesis.previous_hash = UInt256::new([1; HASH_SIZE]);
         assert!(validator.validate_block_header(&invalid_genesis).is_err());
 
         // Valid genesis block
@@ -1253,7 +1249,7 @@ mod tests {
         let validator = create_test_validator();
 
         // Valid inventory message
-        let hashes = vec![UInt256::new([1; 32]), UInt256::new([2; 32])];
+        let hashes = vec![UInt256::new([1; HASH_SIZE]), UInt256::new([2; HASH_SIZE])];
         let inv_msg = ProtocolMessage::Inventory {
             inv_type: 0x2c, // Block type
             hashes,
@@ -1263,7 +1259,7 @@ mod tests {
         // Invalid - too many hashes
         let many_hashes: Vec<UInt256> = (0..50001)
             .map(|i| {
-                let mut bytes = [0u8; 32];
+                let mut bytes = [0u8; HASH_SIZE];
                 bytes[0] = (i % 256) as u8;
                 UInt256::new(bytes)
             })
@@ -1287,7 +1283,7 @@ mod tests {
         let validator = create_test_validator();
 
         // Valid get data message
-        let hashes = vec![UInt256::new([1; 32])];
+        let hashes = vec![UInt256::new([1; HASH_SIZE])];
         let get_data_msg = ProtocolMessage::GetData {
             inv_type: 0x2c,
             hashes,
@@ -1295,7 +1291,7 @@ mod tests {
         assert!(validator.validate_payload(&get_data_msg).is_ok());
 
         // Invalid - too many hashes
-        let many_hashes: Vec<UInt256> = (0..50001).map(|_| UInt256::new([1; 32])).collect();
+        let many_hashes: Vec<UInt256> = (0..50001).map(|_| UInt256::new([1; HASH_SIZE])).collect();
         let invalid_get_data = ProtocolMessage::GetData {
             inv_type: 0x2c,
             hashes: many_hashes,
@@ -1313,7 +1309,7 @@ mod tests {
             services: 1,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             port: 20333,
             nonce: 12345,
@@ -1350,7 +1346,7 @@ mod tests {
             services: 1,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             port: 20333,
             nonce: 12345,
@@ -1366,14 +1362,12 @@ mod tests {
     fn test_edge_case_validation() {
         let validator = create_test_validator();
 
-        // Test edge cases for numeric values
-
         // Version message with maximum valid values
         let max_values_version = ProtocolMessage::Version {
             version: 0,
             services: u64::MAX,
             timestamp: u64::MAX,
-            port: 65535, // Max port
+            port: u16::MAX, // Max port
             nonce: u64::MAX,
             user_agent: "valid".to_string(),
             start_height: 1000, // Max allowed by validator
@@ -1391,7 +1385,7 @@ mod tests {
         // Test timestamp validation in version messages
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
 
         // Valid current timestamp
@@ -1408,7 +1402,6 @@ mod tests {
 
         assert!(validator.validate_payload(&valid_time_version).is_ok());
 
-        // Very old timestamp (should still be valid as it's just a timestamp)
         let old_time_version = ProtocolMessage::Version {
             version: 0,
             services: 1,

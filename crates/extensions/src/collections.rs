@@ -324,8 +324,6 @@ impl Collections {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_vec_extensions() {
         let mut vec = vec![1, 2, 2, 3, 1, 4];
@@ -368,7 +366,7 @@ mod tests {
         assert_eq!(values, vec![Some(&1), Some(&2), None]);
 
         let filtered = map.filter_values(|&v| v > 2);
-        assert_eq!(filtered.len(), 2); // c=3, d=4
+        assert_eq!(filtered.len(), 2);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Implementation of the OpCode enum for the Neo Virtual Machine.
 
 use super::operand_size::OperandSize;
+use neo_config::{HASH_SIZE};
 
 /// Represents the opcode of an instruction in the Neo Virtual Machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1173,7 +1174,7 @@ impl OpCode {
             Self::PUSHINT32 => OperandSize::fixed(4),
             Self::PUSHINT64 => OperandSize::fixed(8),
             Self::PUSHINT128 => OperandSize::fixed(16),
-            Self::PUSHINT256 => OperandSize::fixed(32),
+            Self::PUSHINT256 => OperandSize::fixed(HASH_SIZE),
             Self::PUSHA => OperandSize::fixed(4),
             Self::PUSHDATA1 => OperandSize::prefix(1),
             Self::PUSHDATA2 => OperandSize::prefix(2),
@@ -1339,7 +1340,6 @@ impl OpCode {
             Self::TRY_L => "TRY_L",
             Self::ENDTRY_L => "ENDTRY_L",
             Self::NEWARRAY_T => "NEWARRAY_T",
-            // Add wildcard for remaining cases
             _ => "UNKNOWN",
         }
     }
@@ -1361,7 +1361,6 @@ impl OpCode {
                 | Self::JMPEQ
                 | Self::JMPEQ_L
                 | Self::JMPNE
-                // ... (additional cases will be added)
         )
     }
 
@@ -1403,7 +1402,6 @@ impl OpCode {
             | Self::PUSH14
             | Self::PUSH15
             | Self::PUSH16 => 1,
-            // ... (additional cases will be added)
             _ => 0,
         }
     }
@@ -1417,7 +1415,6 @@ impl OpCode {
         match self {
             Self::JMPIF | Self::JMPIF_L | Self::JMPIFNOT | Self::JMPIFNOT_L => 1,
             Self::JMPEQ | Self::JMPEQ_L | Self::JMPNE => 2,
-            // ... (additional cases will be added)
             _ => 0,
         }
     }
@@ -1425,7 +1422,7 @@ impl OpCode {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_from_byte() {

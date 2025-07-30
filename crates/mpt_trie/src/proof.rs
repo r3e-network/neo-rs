@@ -1,5 +1,6 @@
 use crate::helper::{common_prefix_length, from_nibbles, to_nibbles};
-use crate::{MptError, MptResult, Node, NodeType};
+use crate::{MptError, MptResult, Node, NodeType, Trie};
+use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_core::UInt256;
 use sha2::{Digest, Sha256};
 
@@ -26,16 +27,14 @@ impl ProofNode {
             hash: UInt256::zero(),
         };
 
-        // Handle children for branch nodes
         if node.node_type() == NodeType::BranchNode {
             let mut children_hashes = vec![None; 16];
             let children = node.children();
             for (i, child) in children.iter().enumerate() {
                 if let Some(child_node) = child {
-                    // Production-ready child node hash computation (matches C# Neo exactly)
                     let child_data = child_node.to_bytes()?;
                     let child_hash = Sha256::digest(&child_data);
-                    let mut hash_array = [0u8; 32];
+                    let mut hash_array = [0u8; HASH_SIZE];
                     hash_array.copy_from_slice(&child_hash);
                     children_hashes[i] = Some(UInt256::from_bytes(&hash_array).unwrap_or_default());
                 }
@@ -43,10 +42,8 @@ impl ProofNode {
             proof_node.children = Some(children_hashes);
         }
 
-        // Handle next for extension nodes
         if node.node_type() == NodeType::ExtensionNode {
             if let Some(next_node) = node.next() {
-                // Production-ready next node hash extraction (matches C# StateProof exactly)
                 // This implements the C# logic: accessing the next node hash from MPT node structure
 
                 // 1. Try to get the actual next node hash (production implementation)
@@ -54,22 +51,20 @@ impl ProofNode {
                     proof_node.next = Some(next_hash);
                 } else {
                     // 2. Calculate hash from node data if not cached (production hash calculation)
-                    // For proof generation, we can use a temporary hash or serialize the node
                     let node_data = next_node.to_bytes()?;
                     let hash_bytes = Sha256::digest(&node_data);
-                    let mut hash_array = [0u8; 32];
-                    hash_array.copy_from_slice(&hash_bytes[..32]);
+                    let mut hash_array = [0u8; HASH_SIZE];
+                    hash_array.copy_from_slice(&hash_bytes[..HASH_SIZE]);
                     let calculated_hash = UInt256::from_bytes(&hash_array).unwrap_or_default();
                     proof_node.next = Some(calculated_hash);
                 }
             }
         }
 
-        // Calculate hash for this node
         let node_data = node.to_bytes()?;
         let hash_bytes = Sha256::digest(&node_data);
-        let mut hash_array = [0u8; 32];
-        hash_array.copy_from_slice(&hash_bytes[..32]);
+        let mut hash_array = [0u8; HASH_SIZE];
+        hash_array.copy_from_slice(&hash_bytes[..HASH_SIZE]);
         proof_node.hash = UInt256::from_bytes(&hash_array).unwrap_or_default();
 
         Ok(proof_node)
@@ -98,7 +93,6 @@ impl ProofNode {
                     }
                 }
 
-                // Serialize value if present
                 if let Some(value) = &self.value {
                     result.extend_from_slice(&(value.len() as u32).to_le_bytes());
                     result.extend_from_slice(value);
@@ -119,7 +113,7 @@ impl ProofNode {
                 if let Some(next_hash) = &self.next {
                     result.extend_from_slice(next_hash.as_bytes());
                 } else {
-                    result.extend_from_slice(&[0u8; 32]);
+                    result.extend_from_slice(&[0u8; HASH_SIZE]);
                 }
             }
             NodeType::LeafNode => {
@@ -154,8 +148,8 @@ impl ProofNode {
     pub fn verify_hash(&self) -> MptResult<bool> {
         let data = self.to_bytes()?;
         let computed_hash_bytes = Sha256::digest(&data);
-        let mut computed_hash_array = [0u8; 32];
-        computed_hash_array.copy_from_slice(&computed_hash_bytes[..32]);
+        let mut computed_hash_array = [0u8; HASH_SIZE];
+        computed_hash_array.copy_from_slice(&computed_hash_bytes[..HASH_SIZE]);
         let computed_hash = UInt256::from_bytes(&computed_hash_array).unwrap_or_default();
 
         Ok(computed_hash == self.hash)
@@ -187,8 +181,8 @@ impl ProofVerifier {
 
             // Verify the hash matches
             let computed_hash_bytes = Sha256::digest(node_data);
-            let mut computed_hash_array = [0u8; 32];
-            computed_hash_array.copy_from_slice(&computed_hash_bytes[..32]);
+            let mut computed_hash_array = [0u8; HASH_SIZE];
+            computed_hash_array.copy_from_slice(&computed_hash_bytes[..HASH_SIZE]);
             let computed_hash = UInt256::from_bytes(&computed_hash_array).unwrap_or_default();
 
             if computed_hash != current_hash {
@@ -202,7 +196,6 @@ impl ProofVerifier {
                         return Ok(false);
                     }
 
-                    // Check if the key matches
                     if let Some(node_key) = &proof_node.key {
                         let remaining_path = &nibbles[path_index..];
                         if node_key == remaining_path
@@ -234,7 +227,6 @@ impl ProofVerifier {
                 }
                 NodeType::BranchNode => {
                     if path_index >= nibbles.len() {
-                        // We're at the end of the path, check if this branch has the value
                         return Ok(proof_node.value.as_ref() == Some(&value.to_vec()));
                     }
 
@@ -284,8 +276,8 @@ impl ProofVerifier {
 
             // Verify the hash matches
             let computed_hash_bytes = Sha256::digest(node_data);
-            let mut computed_hash_array = [0u8; 32];
-            computed_hash_array.copy_from_slice(&computed_hash_bytes[..32]);
+            let mut computed_hash_array = [0u8; HASH_SIZE];
+            computed_hash_array.copy_from_slice(&computed_hash_bytes[..HASH_SIZE]);
             let computed_hash = UInt256::from_bytes(&computed_hash_array).unwrap_or_default();
 
             if computed_hash != current_hash {
@@ -294,7 +286,6 @@ impl ProofVerifier {
 
             match proof_node.node_type {
                 NodeType::LeafNode => {
-                    // If we reach a leaf, the key should not match
                     if let Some(node_key) = &proof_node.key {
                         let remaining_path = &nibbles[path_index..];
                         return Ok(node_key != remaining_path);
@@ -322,7 +313,6 @@ impl ProofVerifier {
                 }
                 NodeType::BranchNode => {
                     if path_index >= nibbles.len() {
-                        // We're at the end of the path, key doesn't exist if no value
                         return Ok(proof_node.value.is_none());
                     }
 
@@ -367,9 +357,7 @@ impl ProofVerifier {
             return Ok(false);
         }
 
-        // For simplicity, verify each key-value pair individually
         for (key, value) in keys.iter().zip(values.iter()) {
-            // Check if key is in range
             if let Some(start) = start_key {
                 if key.as_slice() < start {
                     return Ok(false);
@@ -419,10 +407,10 @@ impl ProofVerifier {
                     }
                     if data[offset] == 1 {
                         offset += 1;
-                        if offset + 32 <= data.len() {
-                            let hash_bytes = &data[offset..offset + 32];
+                        if offset + HASH_SIZE <= data.len() {
+                            let hash_bytes = &data[offset..offset + HASH_SIZE];
                             children[i] = Some(UInt256::from_bytes(hash_bytes).unwrap_or_default());
-                            offset += 32;
+                            offset += HASH_SIZE;
                         }
                     } else {
                         offset += 1;
@@ -461,8 +449,8 @@ impl ProofVerifier {
                 }
 
                 // Parse next hash
-                if offset + 32 <= data.len() {
-                    let hash_bytes = &data[offset..offset + 32];
+                if offset + HASH_SIZE <= data.len() {
+                    let hash_bytes = &data[offset..offset + HASH_SIZE];
                     proof_node.next = Some(UInt256::from_bytes(hash_bytes).unwrap_or_default());
                 }
             }
@@ -497,8 +485,8 @@ impl ProofVerifier {
                 }
             }
             NodeType::HashNode => {
-                if offset + 32 <= data.len() {
-                    let hash_bytes = &data[offset..offset + 32];
+                if offset + HASH_SIZE <= data.len() {
+                    let hash_bytes = &data[offset..offset + HASH_SIZE];
                     proof_node.hash = UInt256::from_bytes(hash_bytes).unwrap_or_default();
                 }
             }
@@ -517,7 +505,6 @@ impl ProofVerifier {
         key: &[u8],
         value: &[u8],
     ) -> MptResult<UInt256> {
-        // Production-ready root hash calculation from proof nodes (matches C# Neo MPT proof exactly)
         // In C# Neo: this would reconstruct the trie path and calculate the root hash
 
         if proof_nodes.is_empty() {
@@ -527,7 +514,6 @@ impl ProofVerifier {
         // Start from the leaf and work backwards to calculate the root hash
         let mut current_hash = self.calculate_leaf_hash(key, value)?;
 
-        // Process proof nodes in reverse order (from leaf to root)
         for proof_node in proof_nodes.iter().rev() {
             current_hash = self.calculate_node_hash_with_child(proof_node, &current_hash)?;
         }
@@ -537,9 +523,6 @@ impl ProofVerifier {
 
     /// Calculates hash for a leaf node
     fn calculate_leaf_hash(&self, key: &[u8], value: &[u8]) -> MptResult<UInt256> {
-        // Production-ready leaf hash calculation (matches C# Neo exactly)
-        use sha2::{Digest, Sha256};
-
         let mut hasher = Sha256::new();
         hasher.update(b"leaf");
         hasher.update(key);
@@ -555,9 +538,6 @@ impl ProofVerifier {
         proof_node: &ProofNode,
         child_hash: &UInt256,
     ) -> MptResult<UInt256> {
-        // Production-ready node hash calculation with child (matches C# Neo exactly)
-        use sha2::{Digest, Sha256};
-
         let mut hasher = Sha256::new();
         hasher.update(b"node");
         if let Some(key) = &proof_node.key {
@@ -572,9 +552,6 @@ impl ProofVerifier {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{Node, Trie};
-
     fn create_test_node(node_type: NodeType, key: Option<Vec<u8>>, value: Option<Vec<u8>>) -> Node {
         let mut node = Node::new();
         node.set_node_type(node_type);
@@ -612,7 +589,6 @@ mod tests {
         let node = create_test_node(NodeType::LeafNode, Some(vec![1]), Some(vec![2]));
         let proof_node = ProofNode::from_node(&node).unwrap();
 
-        // Hash verification should pass for a properly constructed proof node
         // Production-ready test with comprehensive hash verification
         assert!(proof_node.verify_hash().is_ok());
     }
@@ -653,7 +629,7 @@ mod tests {
     fn test_proof_verifier_range() {
         let root_hash = UInt256::zero();
         let keys = vec![vec![1], vec![2], vec![3]];
-        let values = vec![vec![10], vec![20], vec![30]];
+        let values = vec![vec![10], vec![ADDRESS_SIZE], vec![30]];
         let proof = vec![]; // Production-ready empty proof for testing edge cases
 
         let result = ProofVerifier::verify_range(
@@ -690,7 +666,6 @@ mod tests {
         assert!(result.is_ok());
         assert!(!result.unwrap());
 
-        // Test with mismatched key-value lengths for range proof
         let keys = vec![vec![1]];
         let values = vec![vec![1], vec![2]]; // Different length
         let result = ProofVerifier::verify_range(&root_hash, None, None, &keys, &values, &[]);

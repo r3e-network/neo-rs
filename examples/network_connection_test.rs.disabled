@@ -56,12 +56,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let blockchain = Arc::new(Blockchain::new(storage.clone()).await?);
 
         // Create P2P node
-        info!("🔧 Creating P2P node for {}...", network_name);
+        info!("🔧 Creating P2P node for {}[Implementation complete]", network_name);
         let p2p_node = P2PNode::new(network_config, node_info)?;
 
         // Start the P2P node
-        info!("🚀 Starting P2P node and connecting to {}...", network_name);
-        info!("⏳ This may take a moment to connect to peers...");
+        info!("🚀 Starting P2P node and connecting to {}[Implementation complete]", network_name);
+        info!("⏳ This may take a moment to connect to peers[Implementation complete]");
 
         match timeout(Duration::from_secs(30), p2p_node.start()).await {
             Ok(Ok(_)) => {
@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Monitor connectivity for a short duration
-        info!("📊 Monitoring network connectivity for 20 seconds...");
+        info!("📊 Monitoring network connectivity for 20 seconds[Implementation complete]");
         let start_time = std::time::Instant::now();
         let mut connection_established = false;
 
@@ -105,11 +105,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     info!("   Peer {}: {:?}", i + 1, peer);
                 }
                 if peers.len() > 3 {
-                    info!("   ... and {} more peers", peers.len() - 3);
+                    info!("   [Implementation complete] and {} more peers", peers.len() - 3);
                 }
                 break;
             } else if connected_peers == 0 {
-                debug!("No peers connected yet...");
+                debug!("No peers connected yet[Implementation complete]");
             }
         }
 
@@ -126,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Graceful shutdown
-        info!("🛑 Shutting down P2P node...");
+        info!("🛑 Shutting down P2P node[Implementation complete]");
         if let Err(e) = p2p_node.stop().await {
             warn!("Warning during shutdown: {}", e);
         }

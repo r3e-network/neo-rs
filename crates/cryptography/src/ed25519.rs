@@ -4,6 +4,7 @@
 
 use crate::Error;
 use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature, Signer, Verifier};
+use neo_config::HASH_SIZE;
 use rand_core::OsRng;
 use std::convert::TryFrom;
 
@@ -36,7 +37,7 @@ impl Ed25519 {
     ///
     /// The derived public key or an error
     pub fn private_key_to_public_key(private_key: &[u8]) -> Result<Vec<u8>, Error> {
-        if private_key.len() != 32 {
+        if private_key.len() != HASH_SIZE {
             return Err(Error::InvalidKey("Invalid private key length".to_string()));
         }
 
@@ -61,7 +62,7 @@ impl Ed25519 {
     ///
     /// The signature or an error
     pub fn sign(private_key: &[u8], message: &[u8]) -> Result<Vec<u8>, Error> {
-        if private_key.len() != 32 {
+        if private_key.len() != HASH_SIZE {
             return Err(Error::InvalidKey("Invalid private key length".to_string()));
         }
 
@@ -90,7 +91,7 @@ impl Ed25519 {
     ///
     /// `true` if the signature is valid, `false` otherwise
     pub fn verify(public_key: &[u8], message: &[u8], signature: &[u8]) -> bool {
-        if signature.len() != 64 || public_key.len() != 32 {
+        if signature.len() != 64 || public_key.len() != HASH_SIZE {
             return false;
         }
 

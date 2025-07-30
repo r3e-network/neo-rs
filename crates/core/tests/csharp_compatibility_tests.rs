@@ -70,7 +70,6 @@ fn test_uint160_get_hash_code() {
 
     // Equal objects should have equal hash codes
     assert_eq!(hash_code1, hash_code2);
-    // Different objects should have different hash codes (usually)
     assert_ne!(hash_code1, hash_code3);
 }
 
@@ -317,6 +316,5 @@ fn test_witness_max_size() {
     witness.verification_script = large_script.clone();
     let size = witness.size();
 
-    // Verify size calculation for large witnesses
     assert!(size > max_script_size * 2);
 }

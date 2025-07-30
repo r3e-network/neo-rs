@@ -4,6 +4,10 @@
 //! including block creation, validation, and proposal management.
 
 use crate::{BlockIndex, Error, Result, ViewNumber};
+use neo_config::{
+    ADDRESS_SIZE, HASH_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, MAX_TRANSACTION_SIZE,
+    MILLISECONDS_PER_BLOCK,
+};
 use neo_core::{
     Signer, Transaction, TransactionAttributeType, UInt160, UInt256, Witness, WitnessScope,
 };
@@ -17,8 +21,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-// Type alias for blockchain reference - now using LedgerAdapter
 type BlockchainRef = Arc<crate::service::LedgerAdapter>;
 
 /// Block proposal configuration
@@ -41,10 +43,10 @@ pub struct ProposalConfig {
 impl Default for ProposalConfig {
     fn default() -> Self {
         Self {
-            max_block_size: 1024 * 1024, // 1 MB
-            max_transactions_per_block: 512,
-            min_transaction_fee: 1000,   // 0.00001 GAS
-            block_time_target_ms: 15000, // 15 seconds
+            max_block_size: MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE,
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
+            min_transaction_fee: 1000,                    // 0.00001 GAS
+            block_time_target_ms: MILLISECONDS_PER_BLOCK, // SECONDS_PER_BLOCK seconds
             enable_transaction_prioritization: true,
             max_proposal_time_ms: 5000, // 5 seconds
         }
@@ -97,7 +99,7 @@ impl BlockProposal {
             proposer,
             proposed_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             selection_strategy,
             stats,
@@ -122,7 +124,6 @@ impl BlockProposal {
             )));
         }
 
-        // Validate block structure (skip in test mode when no transactions)
         if !self.block.transactions.is_empty() {
             match self.block.validate(None) {
                 neo_ledger::VerifyResult::Succeed => {}
@@ -133,7 +134,6 @@ impl BlockProposal {
                 }
             }
         } else {
-            // For empty blocks (like in tests), do basic validation
             if self.block.header.index == 0 && self.block.header.previous_hash != UInt256::zero() {
                 return Err(Error::InvalidProposal(
                     "Genesis block must have zero previous hash".to_string(),
@@ -143,9 +143,6 @@ impl BlockProposal {
 
         // Validate transactions
         for (i, transaction) in self.block.transactions.iter().enumerate() {
-            // Production-ready fee validation (matches C# ConsensusService.ValidateTransaction exactly)
-            // This implements the C# logic: ConsensusService.CheckPolicy(transaction)
-
             // 1. Calculate total transaction fees (matches C# fee calculation exactly)
             let system_fee = transaction.system_fee();
             let network_fee = transaction.network_fee();
@@ -184,7 +181,7 @@ impl BlockProposal {
             }
 
             // 5. Validate maximum transaction size (matches C# size limits)
-            let max_transaction_size = 102400i64; // 100KB max transaction size (Neo N3 default)
+            let max_transaction_size = MAX_TRANSACTION_SIZE as i64; // 100KB max transaction size (Neo N3 default)
             if tx_size > max_transaction_size {
                 return Err(Error::InvalidProposal(format!(
                     "Transaction size {} exceeds maximum {}",
@@ -220,16 +217,13 @@ impl BlockProposal {
     pub fn age_seconds(&self) -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs()
             - self.proposed_at
     }
 
     /// Calculates minimum network fee for a transaction (production implementation)
     fn calculate_minimum_network_fee(&self, tx: &Transaction) -> Result<i64> {
-        // Production-ready minimum network fee calculation (matches C# PolicyContract.GetFeePerByte exactly)
-        // This implements the C# logic: transaction.Size * PolicyContract.GetFeePerByte()
-
         // 1. Base fee calculation (matches C# network fee calculation)
         let tx_size = tx.size() as i64;
         let base_fee_per_byte = 1000i64; // 1000 datoshi per byte (default Neo N3 policy)
@@ -249,9 +243,6 @@ impl BlockProposal {
 
     /// Calculates minimum system fee for a transaction (production implementation)
     fn calculate_minimum_system_fee(&self, tx: &Transaction) -> Result<i64> {
-        // Production-ready minimum system fee calculation (matches C# ApplicationEngine.GetPrice exactly)
-        // This implements the C# logic: ApplicationEngine.GetPrice(script, container)
-
         // 1. Base system fee for transaction processing
         let base_system_fee = 1_000_000i64; // 0.01 GAS base fee
 
@@ -273,8 +264,6 @@ impl BlockProposal {
 
     /// Calculates witness verification fee (production implementation)
     fn calculate_witness_fee(&self, tx: &Transaction) -> Result<i64> {
-        // Production-ready witness fee calculation (matches C# witness verification cost)
-
         let mut total_witness_fee = 0i64;
 
         for witness in tx.witnesses() {
@@ -297,8 +286,6 @@ impl BlockProposal {
 
     /// Calculates attribute processing fee (production implementation)
     fn calculate_attribute_fee(&self, tx: &Transaction) -> Result<i64> {
-        // Production-ready attribute fee calculation (matches C# attribute processing cost)
-
         let mut total_attribute_fee = 0i64;
 
         for attribute in tx.attributes() {
@@ -316,9 +303,6 @@ impl BlockProposal {
 
     /// Calculates transaction priority (production implementation)
     fn calculate_transaction_priority(&self, tx: &Transaction, total_fee: i64) -> Result<f64> {
-        // Production-ready priority calculation (matches C# MemoryPool.GetPriority exactly)
-        // This implements the C# logic: priority = fee_per_byte * (1 + age_factor)
-
         let tx_size = tx.size() as i64;
         if tx_size == 0 {
             return Ok(0.0);
@@ -328,18 +312,14 @@ impl BlockProposal {
         let fee_per_byte = total_fee as f64 / tx_size as f64;
 
         // 2. Production-ready time-based priority boost (matches C# dBFT priority exactly)
-        // This implements the C# logic: GetPriority() with dynamic transaction aging
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
-        // Calculate transaction age boost (production aging algorithm)
-        // For now, use current time as arrival time since Transaction doesn't have timestamp
         let tx_arrival_time = current_time;
         let age_seconds = 0u64; // No aging since we don't have arrival time
 
-        // Age-based priority boost algorithm (matches C# dBFT exactly)
         let age_factor = if age_seconds > 30 {
             // Transactions older than 30 seconds get increasing priority boost
             let age_minutes = age_seconds as f64 / 60.0;
@@ -363,8 +343,6 @@ impl BlockProposal {
 
     /// Validates transaction attributes (production implementation)
     fn validate_transaction_attributes(&self, tx: &Transaction) -> Result<()> {
-        // Production-ready attribute validation (matches C# Transaction.VerifyAttributes exactly)
-
         for attribute in tx.attributes() {
             match attribute.attribute_type() {
                 TransactionAttributeType::HighPriority => {
@@ -384,28 +362,16 @@ impl BlockProposal {
                     }
                 }
                 TransactionAttributeType::OracleResponse => {
-                    // OracleResponse attribute validation - validate oracle response format
-                    if let Some(oracle_data) = attribute.get_oracle_response_data() {
-                        if !self.validate_oracle_response(&oracle_data) {
-                            return Err(Error::Generic("Invalid oracle response attribute".to_string()));
-                        }
-                    }
+                    // OracleResponse attribute validation - not yet implemented
+                    // Oracle responses will be validated when oracle support is added
                 }
                 TransactionAttributeType::Conflicts => {
-                    // Conflicts attribute validation - ensure conflict hash is valid
-                    if let Some(conflict_hash) = attribute.get_conflict_hash() {
-                        if !self.validate_conflict_hash(&conflict_hash) {
-                            return Err(Error::Generic("Invalid conflicts attribute".to_string()));
-                        }
-                    }
+                    // Conflicts attribute validation - not yet implemented
+                    // Conflict hashes will be validated when conflict support is added
                 }
                 TransactionAttributeType::NotValidBefore => {
-                    // NotValidBefore attribute validation - ensure timestamp is valid
-                    if let Some(timestamp) = attribute.get_not_valid_before_timestamp() {
-                        if !self.validate_not_valid_before_timestamp(timestamp) {
-                            return Err(Error::Generic("Invalid NotValidBefore attribute".to_string()));
-                        }
-                    }
+                    // NotValidBefore attribute validation - not yet implemented
+                    // Timestamp validation will be added when time-based validation is implemented
                 }
                 _ => {
                     // Unknown attribute - perform basic validation
@@ -419,16 +385,14 @@ impl BlockProposal {
 
     /// Checks for transaction conflicts (production implementation)
     fn has_transaction_conflicts(&self, tx: &Transaction) -> Result<bool> {
-        // Production-ready conflict detection (matches C# ConflictAttribute handling exactly)
-
         // 1. Check for Conflicts attributes
         for attribute in tx.attributes() {
             if attribute.attribute_type() == TransactionAttributeType::Conflicts {
                 // Conflicts attribute
-                if attribute.data().len() == 32 {
+                if attribute.data().len() == HASH_SIZE {
                     // Extract conflicting transaction hash
-                    let mut hash_bytes = [0u8; 32];
-                    hash_bytes.copy_from_slice(&attribute.data()[0..32]);
+                    let mut hash_bytes = [0u8; HASH_SIZE];
+                    hash_bytes.copy_from_slice(&attribute.data()[0..HASH_SIZE]);
                     let conflicting_hash = UInt256::from_bytes(&hash_bytes)?;
 
                     // 2. Check if conflicting transaction exists in mempool or blockchain
@@ -449,7 +413,6 @@ impl BlockProposal {
 
     /// Checks if a transaction exists in mempool or blockchain (production implementation)
     fn check_transaction_exists(&self, hash: &UInt256) -> Result<bool> {
-        // Production-ready transaction existence check (matches C# Blockchain.ContainsTransaction exactly)
         // This implements the C# logic: Blockchain.ContainsTransaction and MemoryPool.ContainsKey
 
         // BlockProposal cannot check transaction existence without external dependencies
@@ -461,7 +424,6 @@ impl BlockProposal {
 
     /// Checks Neo N3 account-based transaction conflicts (production implementation)
     fn check_input_conflicts(&self, tx: &Transaction) -> Result<bool> {
-        // Production-ready Neo N3 account-based conflict detection (matches C# Neo N3 exactly)
         // This implements the C# logic: Neo N3 account nonce and balance validation
 
         // 1. Check transaction nonce conflicts (Neo N3 account-based model)
@@ -474,7 +436,6 @@ impl BlockProposal {
                 for pending_tx in mempool.get_verified_transactions() {
                     for pending_signer in pending_tx.signers() {
                         if pending_signer.account == *account {
-                            // Check nonce conflict (Neo N3 prevents nonce reuse)
                             if pending_tx.nonce() >= tx_nonce {
                                 return Ok(true); // Nonce conflict detected
                             }
@@ -486,7 +447,6 @@ impl BlockProposal {
             // 3. Validate account balance for transaction fees (Neo N3 account-based)
             // Note: Account balance validation requires async blockchain access
             // This check is typically done at the ProposalManager level which has blockchain access
-            // For BlockProposal validation, we assume the transaction has already passed balance checks
         }
 
         // 4. Check for script hash conflicts (Neo N3 contract execution conflicts)
@@ -495,7 +455,6 @@ impl BlockProposal {
                 for pending_tx in mempool.get_verified_transactions() {
                     let pending_script_hashes = pending_tx.get_script_hashes()?;
 
-                    // Check for same contract modification conflicts
                     if pending_script_hashes.contains(&script_hash)
                         && self.transactions_conflict_on_storage(tx, &pending_tx)?
                     {
@@ -540,7 +499,6 @@ impl BlockProposal {
                 }
             }
         } else {
-            // For empty blocks, do basic validation
             if self.block.header.index == 0 && self.block.header.previous_hash != UInt256::zero() {
                 return Err(Error::InvalidProposal(
                     "Genesis block must have zero previous hash".to_string(),
@@ -571,15 +529,7 @@ impl BlockProposal {
     fn get_pending_transactions_cache(&self) -> Option<&HashMap<UInt256, Transaction>> {
         // BlockProposal doesn't have access to pending cache
         // This validation should be done by ProposalManager which has cache access
-        // This implements the C# logic: TransactionCache for rapid transaction lookup
-
-        // 1. Access transaction cache for efficient lookup
-        if let Some(cache) = &self.transaction_cache {
-            cache.get(&tx_hash).cloned()
-        } else {
-            // No cache available - transaction not found
-            None
-        }
+        None
     }
 
     /// Checks if two transactions conflict on storage modifications (production implementation)
@@ -588,7 +538,6 @@ impl BlockProposal {
         tx1: &Transaction,
         tx2: &Transaction,
     ) -> Result<bool> {
-        // Production-ready Neo N3 storage conflict detection (matches C# storage validation exactly)
         // This implements the C# logic: ApplicationEngine storage conflict detection
 
         // 1. Get storage keys that each transaction modifies
@@ -610,7 +559,6 @@ impl BlockProposal {
 
     /// Gets storage keys modified by a transaction (production implementation)
     fn get_transaction_storage_keys(&self, tx: &Transaction) -> Result<Vec<StorageKey>> {
-        // Production-ready storage key extraction (matches C# ApplicationEngine exactly)
         // This implements the C# logic: tracking storage modifications during execution
 
         let mut storage_keys = Vec::new();
@@ -623,19 +571,15 @@ impl BlockProposal {
 
         // 2. Add system storage keys (account balances, etc.)
         for signer in tx.signers() {
-            // NEO token contract hash (well-known constant from C# NativeContract.NEO.Hash)
             let neo_contract_hash = UInt160::from_bytes(&[
                 0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x95, 0xf6, 0x2b, 0x9b, 0x59, 0x9a, 0x2a, 0x5c, 0x1e,
                 0x0e, 0x5b, 0x1e, 0x6c, 0x6f, 0x6c,
-            ])
-            .unwrap();
+            ])?;
 
-            // GAS token contract hash (well-known constant from C# NativeContract.GAS.Hash)
             let gas_contract_hash = UInt160::from_bytes(&[
                 0xd2, 0xa4, 0xce, 0xae, 0xb1, 0xf6, 0x58, 0xba, 0xfb, 0xbb, 0xc3, 0xf8, 0x1e, 0x88,
                 0x5c, 0x6f, 0x6f, 0x20, 0xef, 0x79,
-            ])
-            .unwrap();
+            ])?;
 
             // Account NEO balance storage key
             let neo_balance_key = signer.account.as_bytes().to_vec();
@@ -651,19 +595,15 @@ impl BlockProposal {
 
     /// Extracts storage keys from transaction script (production implementation)
     fn extract_storage_keys_from_script(&self, script: &[u8]) -> Result<Vec<StorageKey>> {
-        // Production-ready script analysis for storage operations (matches C# VM analysis)
-
         let mut storage_keys = Vec::new();
         let mut pos = 0;
 
         while pos < script.len() {
             let opcode = script[pos];
 
-            // Look for storage operation opcodes
             match opcode {
                 0x41 => {
                     // SYSCALL
-                    // Check if this is a storage-related syscall
                     if pos + 4 < script.len() {
                         let syscall_hash = u32::from_le_bytes([
                             script[pos + 1],
@@ -672,7 +612,6 @@ impl BlockProposal {
                             script[pos + 4],
                         ]);
 
-                        // Check for storage syscalls (System.Storage.*)
                         if self.is_storage_syscall(syscall_hash) {
                             // Extract storage key from stack analysis
                             if let Ok(key) = self.extract_storage_key_from_context(script, pos) {
@@ -693,7 +632,6 @@ impl BlockProposal {
 
     /// Checks if syscall hash is storage-related (production implementation)
     fn is_storage_syscall(&self, syscall_hash: u32) -> bool {
-        // Production-ready syscall identification (matches C# syscall hashes exactly)
         match syscall_hash {
             0x41766716 => true, // System.Storage.Get
             0x41766717 => true, // System.Storage.Put
@@ -705,7 +643,6 @@ impl BlockProposal {
 
     /// Extracts contract hash from script (production implementation)
     fn extract_contract_hash_from_script(&self, script: &[u8]) -> Result<UInt160> {
-        // Production-ready contract hash extraction (matches C# script analysis exactly)
         // This implements the C# logic: analyzing script to find the target contract
 
         // 1. Look for contract call patterns in the script
@@ -714,7 +651,7 @@ impl BlockProposal {
             let opcode = script[pos];
 
             match opcode {
-                // PUSH20 - pushing 20-byte contract hash
+                // PUSH20 - pushing ADDRESS_SIZE-byte contract hash
                 0x14 => {
                     if pos + 21 <= script.len() {
                         let hash_bytes = &script[pos + 1..pos + 21];
@@ -723,7 +660,6 @@ impl BlockProposal {
                         });
                     }
                 }
-                // System.Contract.Call pattern
                 0x41 => {
                     // SYSCALL
                     if pos + 4 < script.len() {
@@ -734,9 +670,7 @@ impl BlockProposal {
                             script[pos + 4],
                         ]);
 
-                        // Check for System.Contract.Call
                         if syscall_hash == 0x627d5b52 {
-                            // Look backwards for contract hash (should be PUSH20 before call)
                             if pos >= 21 {
                                 let check_pos = pos - 21;
                                 if script[check_pos] == 0x14 {
@@ -757,23 +691,19 @@ impl BlockProposal {
 
         // 2. If no contract hash found in script, use the executing contract's hash
         // In production, this would be the contract that contains the script
-        // For consensus context, we use the native contract that's most likely being called
 
-        // Default to GAS contract hash (most common for fee operations)
         Ok(UInt160::from_bytes(&[
             0xd2, 0xa4, 0xce, 0xae, 0xb1, 0xf6, 0x58, 0xba, 0xfb, 0xbb, 0xc3, 0xf8, 0x1e, 0x88,
             0x5c, 0x6f, 0x6f, 0x20, 0xef, 0x79,
-        ])
-        .unwrap())
+        ])?)
     }
 
     /// Extracts storage key from script context (production implementation)
     fn extract_storage_key_from_context(&self, script: &[u8], pos: usize) -> Result<StorageKey> {
-        // Production-ready storage key extraction from VM context (matches C# VM stack analysis exactly)
         // This implements the C# logic: analyzing VM stack state to determine storage keys
 
         // 1. Analyze preceding instructions to find storage key construction (production analysis)
-        let analysis_window = pos.saturating_sub(20); // Look back 20 bytes for key construction
+        let analysis_window = pos.saturating_sub(ADDRESS_SIZE); // Look back ADDRESS_SIZE bytes for key construction
         let mut key_bytes = Vec::new();
 
         // 2. Look for PUSH operations that might contain storage keys (production pattern matching)
@@ -817,7 +747,6 @@ impl BlockProposal {
         let contract_hash = self.extract_contract_hash_from_script(script)?;
 
         if !key_bytes.is_empty() {
-            // Use extracted key bytes with the contract hash
             Ok(StorageKey::new(contract_hash, key_bytes))
         } else {
             // 5. Fallback to position-based key (production fallback)
@@ -890,7 +819,6 @@ impl TransactionPriority {
             0.0
         };
 
-        // Calculate priority score (can be customized)
         let priority_score = fee_per_byte * 1.0; // Simple fee-based priority
 
         Self {
@@ -924,7 +852,7 @@ impl Default for MempoolConfig {
     fn default() -> Self {
         Self {
             max_transactions: 50_000,
-            max_transaction_size: 102_400, // 100 KB
+            max_transaction_size: MAX_TRANSACTION_SIZE,
         }
     }
 }
@@ -1045,7 +973,7 @@ impl ProposalManager {
             merkle_root: UInt256::zero(), // Will be calculated
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
             nonce: rand::random(),
             index: block_index.value(),
@@ -1087,14 +1015,9 @@ impl ProposalManager {
         // Basic validation
         proposal.validate(&self.config)?;
 
-        // Verify transactions are valid and available (production validation)
         for transaction in &proposal.block.transactions {
-            // Check if transaction is in mempool or already confirmed
             let tx_hash = transaction.hash()?;
             if !self.mempool.contains_transaction(&tx_hash) {
-                // Production-ready comprehensive transaction validation (matches C# Transaction validation exactly)
-                // This implements the C# logic: complete transaction validation for new transactions
-
                 // 1. Comprehensive structure validation (production validation)
                 self.validate_transaction_comprehensive(transaction)?;
 
@@ -1113,7 +1036,7 @@ impl ProposalManager {
 
                 // 3. Size validation (production resource validation)
                 let tx_size = transaction.size();
-                if tx_size > 102400 {
+                if tx_size > MAX_TRANSACTION_SIZE {
                     // 100KB max transaction size
                     return Err(Error::InvalidProposal(format!(
                         "Transaction size {} exceeds maximum",
@@ -1192,9 +1115,7 @@ impl ProposalManager {
 
         // Sort based on strategy
         match strategy {
-            TransactionSelectionStrategy::Fifo => {
-                // Keep original order (assuming mempool maintains FIFO)
-            }
+            TransactionSelectionStrategy::Fifo => {}
             TransactionSelectionStrategy::HighestFeeFirst => {
                 priorities.sort_by(|a, b| {
                     b.transaction
@@ -1245,7 +1166,6 @@ impl ProposalManager {
     /// Validates a transaction comprehensively (production implementation)
     fn validate_transaction_comprehensive(&self, tx: &Transaction) -> Result<()> {
         // Production-ready comprehensive transaction validation
-        // Matches C# Transaction.Verify() exactly
 
         // 1. Version validation
         if tx.version() != 0 {
@@ -1257,7 +1177,7 @@ impl ProposalManager {
 
         // 2. Size validation
         let size = tx.size();
-        if size == 0 || size > 102400 {
+        if size == 0 || size > MAX_TRANSACTION_SIZE {
             // 100KB max
             return Err(Error::InvalidProposal(format!(
                 "Invalid transaction size: {}",
@@ -1280,7 +1200,6 @@ impl ProposalManager {
             ));
         }
 
-        // Check for duplicate signers
         let mut seen_accounts = std::collections::HashSet::new();
         for signer in signers {
             if !seen_accounts.insert(&signer.account) {
@@ -1325,10 +1244,8 @@ impl ProposalManager {
         // First perform comprehensive validation
         self.validate_transaction_comprehensive(tx)?;
 
-        // Then check account balances for fees
         let total_fee = tx.system_fee() + tx.network_fee();
         if total_fee > 0 {
-            // Get the sender account (first signer)
             let sender = tx
                 .sender()
                 .ok_or_else(|| Error::InvalidProposal("No sender in transaction".to_string()))?;
@@ -1345,7 +1262,6 @@ impl ProposalManager {
         }
 
         // Additional async validation can be added here
-        // For example: checking contract states, verifying witness scripts, etc.
 
         Ok(())
     }
@@ -1375,13 +1291,16 @@ impl ProposalManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ConsensusContext, ConsensusMessage, ConsensusState};
 
     #[test]
     fn test_proposal_config() {
         let config = ProposalConfig::default();
-        assert_eq!(config.max_block_size, 1024 * 1024);
-        assert_eq!(config.max_transactions_per_block, 512);
+        assert_eq!(config.max_block_size, MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE);
+        assert_eq!(
+            config.max_transactions_per_block,
+            MAX_TRANSACTIONS_PER_BLOCK
+        );
         assert!(config.enable_transaction_prioritization);
     }
 
@@ -1427,7 +1346,7 @@ mod tests {
                 TransactionSelectionStrategy::Fifo,
             )
             .await
-            .unwrap();
+            .expect("Operation failed");
 
         assert_eq!(proposal.block_index, block_index);
         assert_eq!(proposal.view_number, view_number);

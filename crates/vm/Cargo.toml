@@ -9,7 +9,7 @@ license = "MIT"
 readme = "README.md"
 
 [dependencies]
-# External dependencies
+log = "0.4"# External dependencies
 num-bigint = "0.4"
 num-traits = "0.2"
 thiserror = "1.0"
@@ -21,6 +21,7 @@ paste = "1.0"
 lazy_static = "1.4"
 
 # Internal dependencies
+neo-config = { path = "../config" }
 neo-cryptography = { path = "../cryptography" }
 neo-io = { path = "../io" }
 neo-core = { path = "../core" }

@@ -15,7 +15,6 @@ mod context_tests {
     /// Test ConsensusContext creation and initialization (matches C# ConsensusContext exactly)
     #[test]
     fn test_consensus_context_creation_compatibility() {
-        // Test context creation (matches C# ConsensusContext constructor exactly)
         let validator_count = 7;
         let my_index = 2;
         let block_index = BlockIndex::new(1000);
@@ -51,7 +50,6 @@ mod context_tests {
         // Initial state
         assert_eq!(context.phase(), ConsensusPhase::Initial);
 
-        // Transition to RequestSending (primary only)
         context.set_phase(ConsensusPhase::RequestSending);
         assert_eq!(context.phase(), ConsensusPhase::RequestSending);
 
@@ -97,7 +95,6 @@ mod context_tests {
             let expected_primary = (view as usize) % validator_count;
             assert_eq!(context.primary_index(), expected_primary);
 
-            // Test is_primary for each validator
             for i in 0..validator_count {
                 let validator_context = ConsensusContext::new(
                     validator_count,
@@ -141,7 +138,6 @@ mod context_tests {
         }
         assert_eq!(context.prepare_responses_count(), 5);
 
-        // Test duplicate handling (should not increase count)
         let duplicate_response = PrepareResponse::new(UInt256::from_bytes(&[1u8; 32]).unwrap());
         context.add_prepare_response(0, duplicate_response);
         assert_eq!(context.prepare_responses_count(), 5);
@@ -320,7 +316,6 @@ mod context_tests {
     fn test_view_timeout_calculation_compatibility() {
         let base_timeout_ms = 15000; // 15 seconds base
 
-        // Test timeout calculation for different views
         assert_eq!(
             ConsensusContext::calculate_view_timeout(ViewNumber::new(0), base_timeout_ms),
             15000
@@ -338,7 +333,6 @@ mod context_tests {
             120000
         );
 
-        // Test maximum timeout cap (view 6 and above)
         assert_eq!(
             ConsensusContext::calculate_view_timeout(ViewNumber::new(6), base_timeout_ms),
             960000
@@ -406,7 +400,6 @@ mod context_tests {
         );
         assert!(context.validate_message(&wrong_block_msg).is_err());
 
-        // Test wrong view (except ChangeView which can be for higher views)
         let wrong_view_msg = ConsensusMessage::new(
             2,
             BlockIndex::new(100),
@@ -424,7 +417,6 @@ mod context_tests {
         );
         assert!(context.validate_message(&invalid_validator_msg).is_err());
 
-        // Test ChangeView for future view (should be valid)
         let future_view_msg = ConsensusMessage::new(
             2,
             BlockIndex::new(100),
@@ -457,7 +449,6 @@ mod context_tests {
             assert_eq!(context.f_count(), expected_f);
             assert_eq!(context.required_signatures(), expected_required);
 
-            // Test M calculation (minimum honest nodes)
             assert_eq!(context.m_count(), expected_f + 1);
         }
     }
@@ -525,7 +516,6 @@ mod context_tests {
         wrap_context.change_view(ViewNumber::new(0)); // Wraps to 0
         assert_eq!(wrap_context.view_number(), ViewNumber::new(0));
 
-        // Test adding messages for invalid validator indices
         let mut context = ConsensusContext::new(7, 0, BlockIndex::new(100), ViewNumber::new(0));
 
         // Should handle gracefully

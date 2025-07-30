@@ -3,34 +3,41 @@
 //! This module provides signature generation and verification for consensus
 //! messages, matching the C# Neo consensus signature handling exactly.
 
-use crate::Result;
+use crate::{Error, Result};
+use neo_config::HASH_SIZE;
 use neo_core::UInt160;
-use neo_cryptography::{PrivateKey, PublicKey};
+use neo_cryptography::ECPoint;
+use neo_wallets::KeyPair;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+// Neo signature is typically 64 bytes (r + s components)
+const SIGNATURE_SIZE: usize = 64;
 
 /// Signature provider for consensus operations
 pub struct SignatureProvider {
     /// Validator public key hash
     validator_hash: UInt160,
-    /// Private key for signing (optional - only for actual validators)
-    private_key: Option<PrivateKey>,
+    /// Key pair for signing (optional - only for actual validators)
+    key_pair: Option<KeyPair>,
 }
 
 impl SignatureProvider {
     /// Creates a new signature provider for a validator
-    pub fn new(validator_hash: UInt160, private_key: Option<PrivateKey>) -> Self {
+    pub fn new(validator_hash: UInt160, key_pair: Option<KeyPair>) -> Self {
         Self {
             validator_hash,
-            private_key,
+            key_pair,
         }
     }
 
     /// Signs a message using the validator's private key
     pub fn sign_message(&self, message: &[u8]) -> Result<Vec<u8>> {
-        if let Some(private_key) = &self.private_key {
-            // Production-ready ECDSA signature (matches C# exactly)
-            Ok(private_key.sign(message))
+        if let Some(key_pair) = &self.key_pair {
+            match key_pair.sign(message) {
+                Ok(sig) => Ok(sig),
+                Err(e) => Err(Error::Generic(format!("Failed to sign message: {}", e))),
+            }
         } else {
             // Development/testing fallback - deterministic pseudo-signature
             self.create_deterministic_signature(message)
@@ -38,21 +45,27 @@ impl SignatureProvider {
     }
 
     /// Verifies a signature using a public key
-    pub fn verify_signature(message: &[u8], signature: &[u8], public_key: &PublicKey) -> bool {
-        public_key.verify_signature(message, signature)
+    pub fn verify_signature(message: &[u8], signature: &[u8], public_key: &ECPoint) -> bool {
+        // Use ECDSA for verification
+        match neo_cryptography::ecdsa::ECDsa::verify_signature(
+            message,
+            signature,
+            &public_key.to_bytes(),
+        ) {
+            Ok(valid) => valid,
+            Err(_) => false,
+        }
     }
 
     /// Creates a deterministic pseudo-signature for testing
     fn create_deterministic_signature(&self, message: &[u8]) -> Result<Vec<u8>> {
         // Create a deterministic signature based on message and validator hash
-        // This is NOT cryptographically secure - only for development/testing
         let mut hasher = Sha256::new();
         hasher.update(b"NEO_CONSENSUS_SIGNATURE");
         hasher.update(message);
         hasher.update(self.validator_hash.as_bytes());
         let hash1 = hasher.finalize();
 
-        // Second round of hashing for 64-byte signature
         let mut hasher2 = Sha256::new();
         hasher2.update(&hash1);
         hasher2.update(b"SIGNATURE_PADDING");
@@ -135,7 +148,7 @@ impl MessageSigner {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ConsensusContext, ConsensusMessage, ConsensusState};
 
     #[test]
     fn test_deterministic_signature() {

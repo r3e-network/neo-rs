@@ -15,7 +15,6 @@ mod storage_tests {
     /// Test LevelDB storage compatibility (matches C# LevelDBStore exactly)
     #[test]
     fn test_leveldb_storage_compatibility() {
-        // Test storage creation (matches C# LevelDBStore constructor exactly)
         let config = LevelDBConfig {
             path: "./test_leveldb".to_string(),
             create_if_missing: true,
@@ -54,7 +53,6 @@ mod storage_tests {
     /// Test RocksDB storage compatibility (matches C# RocksDBStore exactly)
     #[test]
     fn test_rocksdb_storage_compatibility() {
-        // Test storage creation (matches C# RocksDBStore options exactly)
         let config = RocksDBConfig {
             path: "./test_rocksdb".to_string(),
             create_if_missing: true,
@@ -142,7 +140,6 @@ mod storage_tests {
     /// Test storage areas compatibility (matches C# StoragePrefix exactly)
     #[test]
     fn test_storage_areas_compatibility() {
-        // Test all storage area prefixes match C#
         assert_eq!(StorageArea::Block as u8, 0x01);
         assert_eq!(StorageArea::Transaction as u8, 0x02);
         assert_eq!(StorageArea::Contract as u8, 0x04);

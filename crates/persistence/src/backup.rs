@@ -3,8 +3,10 @@
 //! This module provides production-ready backup and restore capabilities
 //! that match the C# Neo backup functionality exactly.
 
-use crate::{Result, Storage};
+use crate::{Error, Result, Storage};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::SystemTime;
 use tokio::fs;
@@ -110,8 +112,6 @@ impl BackupManager {
         storage: &Storage,
         backup_type: BackupType,
     ) -> Result<BackupMetadata> {
-        // Production-ready backup creation (matches C# Neo backup functionality exactly)
-
         // 1. Generate unique backup ID
         let backup_id = self.generate_backup_id(backup_type).await?;
 
@@ -169,8 +169,6 @@ impl BackupManager {
         backup_path: &PathBuf,
         storage: &mut Storage,
     ) -> Result<()> {
-        // Production-ready backup restoration (matches C# Neo restore functionality exactly)
-
         // 1. Verify backup file exists and is valid
         if !backup_path.exists() {
             return Err(crate::Error::BackupError(format!(
@@ -204,8 +202,6 @@ impl BackupManager {
 
     /// Lists all available backups (production implementation)
     pub fn list_backups(&self) -> Result<Vec<BackupMetadata>> {
-        // Production-ready backup listing (matches C# Neo backup management exactly)
-
         let mut backups = Vec::new();
 
         // 1. Scan backup directory for backup files
@@ -234,8 +230,6 @@ impl BackupManager {
 
     /// Deletes a backup (production implementation)
     pub fn delete_backup(&mut self, backup_id: &str) -> Result<()> {
-        // Production-ready backup deletion (matches C# Neo backup management exactly)
-
         // 1. Find backup by ID
         let backups = self.list_backups()?;
         let backup = backups
@@ -259,8 +253,6 @@ impl BackupManager {
 
     /// Verifies a backup's integrity (production implementation)
     pub fn verify_backup(&self, backup_path: &PathBuf) -> Result<bool> {
-        // Production-ready backup verification (matches C# Neo backup verification exactly)
-
         // 1. Check if backup file exists
         if !backup_path.exists() {
             return Ok(false);
@@ -290,7 +282,7 @@ impl BackupManager {
     async fn generate_backup_id(&self, backup_type: BackupType) -> Result<String> {
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| Error::BackupError(format!("Failed to get timestamp: {}", e)))?
             .as_secs();
 
         let type_prefix = match backup_type {
@@ -341,7 +333,6 @@ impl BackupManager {
                 }
             }
             BackupType::Incremental | BackupType::Snapshot => {
-                // Production-ready incremental and snapshot backup implementation (matches C# backup exactly)
                 // This implements the C# logic: BackupService.CreateBackup with proper backup type handling
 
                 let data = match backup_type {
@@ -390,7 +381,6 @@ impl BackupManager {
         let mut data = Vec::new();
         file.read_to_end(&mut data).await?;
 
-        // Decompress if needed
         let final_data = if self.enable_compression {
             self.decompress_data(&data)?
         } else {
@@ -412,7 +402,7 @@ impl BackupManager {
         header.extend_from_slice(
             &SystemTime::now()
                 .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
+                .map_err(|e| Error::BackupError(format!("Failed to get timestamp: {}", e)))?
                 .as_secs()
                 .to_le_bytes(),
         );
@@ -457,35 +447,27 @@ impl BackupManager {
 
     /// Compresses data using LZ4
     fn compress_data(&self, data: &[u8]) -> Result<Vec<u8>> {
-        // Production-ready data compression (matches C# Neo backup compression exactly)
-        // In C# Neo: this would use LZ4 compression for optimal speed/ratio balance
         if self.enable_compression {
             let compressed = lz4_flex::compress_prepend_size(data);
             Ok(compressed)
         } else {
-            // Return uncompressed data if compression is disabled
             Ok(data.to_vec())
         }
     }
 
     /// Decompresses data using LZ4
     fn decompress_data(&self, data: &[u8]) -> Result<Vec<u8>> {
-        // Production-ready data decompression (matches C# Neo backup decompression exactly)
-        // In C# Neo: this would use LZ4 decompression for optimal speed
         if self.enable_compression && !data.is_empty() {
             let decompressed = lz4_flex::decompress_size_prepended(data)
                 .map_err(|e| crate::Error::CompressionError(e.to_string()))?;
             Ok(decompressed)
         } else {
-            // Return data as-is if compression is disabled or data is empty
             Ok(data.to_vec())
         }
     }
 
     /// Calculates backup checksum
     async fn calculate_backup_checksum(&self, backup_path: &PathBuf) -> Result<String> {
-        use sha2::{Digest, Sha256};
-
         let mut file = fs::File::open(backup_path).await?;
         let mut hasher = Sha256::new();
         let mut buffer = vec![0u8; 8192];
@@ -503,9 +485,6 @@ impl BackupManager {
 
     /// Calculates backup checksum synchronously
     fn calculate_backup_checksum_sync(&self, backup_path: &PathBuf) -> Result<String> {
-        use sha2::{Digest, Sha256};
-        use std::io::Read;
-
         let mut file = std::fs::File::open(backup_path)?;
         let mut hasher = Sha256::new();
         let mut buffer = vec![0u8; 8192];
@@ -573,7 +552,6 @@ impl BackupManager {
         let mut backups = self.list_backups()?;
 
         if backups.len() > self.max_backups {
-            // Sort by creation time (oldest first)
             backups.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
             // Remove oldest backups
@@ -588,7 +566,6 @@ impl BackupManager {
                 }
             }
 
-            // If any deletions failed, return an error with details
             if !deletion_errors.is_empty() {
                 let error_summary = deletion_errors
                     .iter()
@@ -611,9 +588,6 @@ impl BackupManager {
 
     /// Gets the height of the last backup (production implementation)
     pub async fn get_last_backup_height(&self) -> Result<u32> {
-        // Production-ready last backup height retrieval (matches C# Neo backup tracking exactly)
-        // This implements the C# logic: BackupManager.GetLastBackupHeight() with proper height tracking
-
         // 1. Get all available backups
         let backups = self.list_backups()?;
 

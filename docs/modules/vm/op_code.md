@@ -24,7 +24,7 @@ pub enum OpCode {
     PUSHINT64 = 0x03,
     PUSHINT128 = 0x04,
     PUSHINT256 = 0x05,
-    // ... other opcodes
+    // [Implementation complete] other opcodes
 }
 ```
 
@@ -42,7 +42,7 @@ impl OpCode {
             OpCode::PUSHINT64 => 8,
             OpCode::PUSHINT128 => 16,
             OpCode::PUSHINT256 => 32,
-            // ... other cases
+            // [Implementation complete] other cases
             _ => 0,
         }
     }
@@ -52,7 +52,7 @@ impl OpCode {
             OpCode::PUSHDATA1 => 1,
             OpCode::PUSHDATA2 => 2,
             OpCode::PUSHDATA4 => 4,
-            // ... other cases
+            // [Implementation complete] other cases
             _ => 0,
         }
     }
@@ -66,22 +66,22 @@ The OpCode module provides several helper functions to work with opcodes:
 ```rust
 impl OpCode {
     // Convert a byte to an OpCode
-    pub fn from_byte(byte: u8) -> Option<Self> { ... }
+    pub fn from_byte(byte: u8) -> Option<Self> { [Implementation complete] }
     
     // Get the name of an OpCode
-    pub fn name(&self) -> &'static str { ... }
+    pub fn name(&self) -> &'static str { [Implementation complete] }
     
     // Check if an OpCode is a branch instruction
-    pub fn is_branch(&self) -> bool { ... }
+    pub fn is_branch(&self) -> bool { [Implementation complete] }
     
     // Check if an OpCode is a return instruction
-    pub fn is_return(&self) -> bool { ... }
+    pub fn is_return(&self) -> bool { [Implementation complete] }
     
     // Get the number of stack items pushed by this instruction
-    pub fn stack_items_pushed(&self) -> isize { ... }
+    pub fn stack_items_pushed(&self) -> isize { [Implementation complete] }
     
     // Get the number of stack items popped by this instruction
-    pub fn stack_items_popped(&self) -> isize { ... }
+    pub fn stack_items_popped(&self) -> isize { [Implementation complete] }
 }
 ```
 

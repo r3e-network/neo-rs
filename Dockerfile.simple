@@ -1,0 +1,4 @@
+# Simple test Dockerfile to verify Docker works
+FROM alpine:latest
+RUN echo "Docker build test successful"
+CMD ["echo", "Hello from Neo-RS Docker"]

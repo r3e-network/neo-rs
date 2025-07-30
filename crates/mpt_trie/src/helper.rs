@@ -58,7 +58,7 @@ pub fn concat_bytes(a: &[u8], b: &[u8]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_to_nibbles() {
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_from_nibbles_invalid_value() {
-        let input = vec![0x0A, 0x10]; // 0x10 > 15
+        let input = vec![0x0A, 0x10]; // 0x10 > SECONDS_PER_BLOCK
         assert!(from_nibbles(&input).is_err());
     }
 

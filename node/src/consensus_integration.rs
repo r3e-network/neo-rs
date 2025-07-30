@@ -294,7 +294,6 @@ impl neo_consensus::NetworkService for ConsensusNetworkAdapter {
     async fn broadcast_consensus_message(&self, message: Vec<u8>) -> ConsensusResult<()> {
         // Create a consensus protocol message
         let protocol_msg = neo_network::messages::ProtocolMessage::Consensus { payload: message };
-        // Wrap it in a NetworkMessage for transmission
         let network_msg = neo_network::messages::NetworkMessage::new(protocol_msg);
         self.p2p_node
             .broadcast_message(network_msg)
@@ -305,7 +304,6 @@ impl neo_consensus::NetworkService for ConsensusNetworkAdapter {
     async fn send_consensus_message(&self, peer_id: &str, message: Vec<u8>) -> ConsensusResult<()> {
         // Create a consensus protocol message
         let protocol_msg = neo_network::messages::ProtocolMessage::Consensus { payload: message };
-        // Wrap it in a NetworkMessage for transmission
         let network_msg = neo_network::messages::NetworkMessage::new(protocol_msg);
 
         // Parse peer_id as socket address

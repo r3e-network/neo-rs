@@ -3,6 +3,7 @@
 use crate::application_engine::ApplicationEngine;
 use crate::native::{NativeContract, NativeMethod};
 use crate::{Error, Result};
+use neo_config::{ADDRESS_SIZE, SECONDS_PER_BLOCK};
 use neo_core::UInt160;
 
 /// The GAS token native contract.
@@ -14,18 +15,17 @@ pub struct GasToken {
 impl GasToken {
     /// Creates a new GAS token contract.
     pub fn new() -> Self {
-        // GAS token contract hash (well-known constant)
         let hash = UInt160::from_bytes(&[
             0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0xd5, 0x18, 0x4c, 0x19, 0xf2, 0xc0, 0xeb,
             0xb3, 0x77, 0xd3, 0x1a, 0x8c, 0x16,
         ])
-        .unwrap();
+        .expect("Operation failed");
 
         let methods = vec![
             NativeMethod::safe("symbol".to_string(), 0),
             NativeMethod::safe("decimals".to_string(), 0),
-            NativeMethod::safe("totalSupply".to_string(), 1 << 15),
-            NativeMethod::safe("balanceOf".to_string(), 1 << 15),
+            NativeMethod::safe("totalSupply".to_string(), 1 << SECONDS_PER_BLOCK),
+            NativeMethod::safe("balanceOf".to_string(), 1 << SECONDS_PER_BLOCK),
             NativeMethod::unsafe_method("transfer".to_string(), 1 << 17, 0x01),
         ];
 
@@ -61,15 +61,10 @@ impl GasToken {
     }
 
     fn total_supply(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
-        // GAS total supply is dynamic and stored in blockchain state (matches C# FungibleToken.TotalSupply exactly)
-
-        // Get storage context for this contract
         let context = engine.get_native_storage_context(&self.hash)?;
 
-        // Create storage key for total supply: prefix_total_supply
         let storage_key = vec![0x0B]; // Prefix_TotalSupply = 0x0B (matches C# exactly)
 
-        // Get total supply from storage (production implementation matching C# exactly)
         let total_supply = match engine.get_storage_item(&context, &storage_key) {
             Some(value) => {
                 if value.len() == 8 {
@@ -91,21 +86,17 @@ impl GasToken {
             ));
         }
 
-        // Production-ready balance lookup from storage (matches C# GasToken.BalanceOf exactly)
         let account = &args[0];
-        if account.len() != 20 {
+        if account.len() != ADDRESS_SIZE {
             return Err(Error::NativeContractError(
                 "Invalid account length".to_string(),
             ));
         }
 
-        // Get storage context for this contract
         let context = engine.get_native_storage_context(&self.hash)?;
 
-        // Create storage key for balance: account
         let storage_key = account.to_vec();
 
-        // Get balance from storage (production implementation)
         let balance = match engine.get_storage_item(&context, &storage_key) {
             Some(value) => {
                 if value.len() == 8 {
@@ -127,13 +118,12 @@ impl GasToken {
             ));
         }
 
-        // Production-ready transfer implementation (matches C# GasToken.Transfer exactly)
         let from = &args[0];
         let to = &args[1];
         let amount_bytes = &args[2];
 
         // Validate addresses
-        if from.len() != 20 || to.len() != 20 {
+        if from.len() != ADDRESS_SIZE || to.len() != ADDRESS_SIZE {
             return Err(Error::NativeContractError(
                 "Invalid address length".to_string(),
             ));
@@ -153,12 +143,10 @@ impl GasToken {
             ));
         }
 
-        // Check if from and to are the same
         if from == to {
             return Ok(vec![1]); // Transfer to self is always successful
         }
 
-        // Get storage context for this contract
         let context = engine.get_native_storage_context(&self.hash)?;
 
         // Create storage keys
@@ -201,7 +189,6 @@ impl GasToken {
         engine.put_storage_item(&context, &from_key, &new_from_balance.to_le_bytes())?;
         engine.put_storage_item(&context, &to_key, &new_to_balance.to_le_bytes())?;
 
-        // Emit transfer event (production implementation matching C# Neo exactly)
         // In production implementation, this would emit a proper Transfer event
         Ok(vec![1]) // Return true for success
     }
@@ -238,7 +225,7 @@ impl Default for GasToken {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use neo_vm::TriggerType;
 
     #[test]
@@ -274,7 +261,7 @@ mod tests {
     fn test_gas_token_balance_of() {
         let gas = GasToken::new();
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        let args = vec![vec![0u8; 20]]; // Dummy account
+        let args = vec![vec![0u8; ADDRESS_SIZE]]; // Dummy account
         let result = gas.balance_of(&mut engine, &args).unwrap();
         assert_eq!(result.len(), 8); // i64 balance
     }
@@ -284,9 +271,8 @@ mod tests {
         let gas = GasToken::new();
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
 
-        // Set up initial balance for the from account
-        let from_account = vec![0u8; 20];
-        let to_account = vec![1u8; 20];
+        let from_account = vec![0u8; ADDRESS_SIZE];
+        let to_account = vec![1u8; ADDRESS_SIZE];
         let context = engine.get_native_storage_context(&gas.hash).unwrap();
 
         // Give the from account 5000 GAS initial balance
@@ -296,9 +282,9 @@ mod tests {
             .unwrap();
 
         let args = vec![
-            from_account.clone(),           // from
-            to_account.clone(),             // to
-            1000i64.to_le_bytes().to_vec(), // amount
+            from_account.clone(),
+            to_account.clone(),
+            1000i64.to_le_bytes().to_vec(),
         ];
 
         let result = gas.transfer(&mut engine, &args).unwrap();
@@ -306,13 +292,25 @@ mod tests {
 
         // Verify balances after transfer
         let from_balance_args = vec![from_account];
-        let from_balance_result = gas.balance_of(&mut engine, &from_balance_args).unwrap();
-        let from_balance = i64::from_le_bytes(from_balance_result.try_into().unwrap());
+        let from_balance_result = gas
+            .balance_of(&mut engine, &from_balance_args)
+            .expect("Operation failed");
+        let from_balance = i64::from_le_bytes(
+            from_balance_result
+                .try_into()
+                .expect("Conversion should succeed"),
+        );
         assert_eq!(from_balance, 4000); // 5000 - 1000
 
         let to_balance_args = vec![to_account];
-        let to_balance_result = gas.balance_of(&mut engine, &to_balance_args).unwrap();
-        let to_balance = i64::from_le_bytes(to_balance_result.try_into().unwrap());
+        let to_balance_result = gas
+            .balance_of(&mut engine, &to_balance_args)
+            .expect("Operation failed");
+        let to_balance = i64::from_le_bytes(
+            to_balance_result
+                .try_into()
+                .expect("Conversion should succeed"),
+        );
         assert_eq!(to_balance, 1000); // Received 1000
     }
 }

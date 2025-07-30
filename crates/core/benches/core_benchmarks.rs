@@ -175,7 +175,6 @@ fn bench_batch_operations(c: &mut Criterion) {
                 transactions.push(tx);
             }
 
-            // Process each transaction (simulate hash calculation)
             for tx in &transactions {
                 black_box(tx.get_hash_data());
             }

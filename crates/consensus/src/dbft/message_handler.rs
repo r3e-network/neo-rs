@@ -9,16 +9,16 @@ use crate::{
     },
     ConsensusPayload, Error, Result,
 };
+use neo_config::{HASH_SIZE, MAX_BLOCK_SIZE};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
-
 /// Message handler for dBFT consensus
 pub struct MessageHandler {
     /// Consensus context
     context: Arc<ConsensusContext>,
     /// Buffered messages for future rounds/views
-    message_buffer: HashMap<(u32, u8), Vec<ConsensusMessage>>, // (block_index, view) -> messages
+    message_buffer: HashMap<(u32, u8), Vec<ConsensusMessage>>,
 }
 
 impl MessageHandler {
@@ -40,12 +40,10 @@ impl MessageHandler {
 
         let current_round = self.context.get_current_round();
 
-        // Check if message is for current round
         if message.block_index() != current_round.block_index {
             return self.handle_future_message(message);
         }
 
-        // Check if message is for current or future view
         if message.view_number() < current_round.view_number {
             debug!(
                 "Ignoring message from old view: {} < {}",
@@ -102,7 +100,6 @@ impl MessageHandler {
         // Validate that this is from the primary validator
         let current_round = self.context.get_current_round();
 
-        // Get the primary validator index for this view
         if let Some(validator_set) = self.context.get_validator_set() {
             if let Some(primary_validator) = validator_set.get_primary(current_round.view_number) {
                 if payload.validator_index != primary_validator.index {
@@ -124,8 +121,6 @@ impl MessageHandler {
         // Validate prepare request
         prepare_request.validate()?;
 
-        // Production-ready block proposal validation (matches C# dBFT.ValidatePrepareRequest exactly)
-
         // 1. Validate block header
         if prepare_request.block_hash == neo_core::UInt256::zero() {
             return Err(Error::InvalidBlock("Block hash cannot be zero".to_string()));
@@ -139,7 +134,7 @@ impl MessageHandler {
         }
 
         // 3. Validate block data size
-        if prepare_request.block_data.len() > 1048576 {
+        if prepare_request.block_data.len() > MAX_BLOCK_SIZE {
             // 1MB limit
             return Err(Error::InvalidBlock("Block data too large".to_string()));
         }
@@ -149,7 +144,7 @@ impl MessageHandler {
             self.calculate_merkle_root(&prepare_request.transaction_hashes);
 
         // Extract merkle root from block data and verify it matches calculated root
-        if prepare_request.block_data.len() >= 32 {
+        if prepare_request.block_data.len() >= HASH_SIZE {
             // In Neo block format, merkle root is at a specific offset
             // This matches the C# Neo Block.MerkleRoot verification exactly
             let block_merkle_root_bytes = &prepare_request.block_data[36..68]; // Merkle root offset in block header
@@ -163,7 +158,7 @@ impl MessageHandler {
             }
         }
 
-        println!(
+        log::info!(
             "Block proposal validation passed for block with {} transactions",
             prepare_request.transaction_hashes.len()
         );
@@ -174,7 +169,6 @@ impl MessageHandler {
             round.phase = ConsensusPhase::WaitingForPrepareResponses;
         })?;
 
-        // If we're not the primary, send prepare response
         if !self.context.am_i_primary() {
             return Ok(MessageHandleResult::SendPrepareResponse);
         }
@@ -200,7 +194,6 @@ impl MessageHandler {
             ));
         }
 
-        // Check if we have a prepare request
         let current_round = self.context.get_current_round();
         if current_round.prepare_request.is_none() {
             warn!("Received prepare response without prepare request");
@@ -212,7 +205,6 @@ impl MessageHandler {
             round.add_prepare_response(payload.validator_index, prepare_response);
         })?;
 
-        // Check if we have enough responses
         let required_responses = self.context.get_required_signatures() - 1; // Exclude primary
         let response_count = current_round.prepare_responses.len();
 
@@ -243,7 +235,6 @@ impl MessageHandler {
             round.add_commit(payload.validator_index, commit);
         })?;
 
-        // Check if we have enough commits
         let required_commits = self.context.get_required_signatures();
         let commit_count = self.context.get_current_round().commits.len();
 
@@ -280,7 +271,6 @@ impl MessageHandler {
             round.add_change_view(payload.validator_index, change_view.clone());
         })?;
 
-        // Check if we have enough change view votes
         let required_votes = self.context.get_required_signatures();
         let vote_count = self.context.get_current_round().change_views.len();
 
@@ -358,7 +348,6 @@ impl MessageHandler {
             return transaction_hashes[0];
         }
 
-        // Build merkle tree bottom-up (matches C# Neo algorithm exactly)
         let mut current_level: Vec<neo_core::UInt256> = transaction_hashes.to_vec();
 
         while current_level.len() > 1 {
@@ -370,7 +359,6 @@ impl MessageHandler {
                     // Hash the concatenation of two hashes
                     self.hash_pair(chunk[0], chunk[1])
                 } else {
-                    // Odd number of elements - duplicate the last one (Neo protocol rule)
                     self.hash_pair(chunk[0], chunk[0])
                 };
                 next_level.push(combined_hash);
@@ -386,13 +374,11 @@ impl MessageHandler {
     fn hash_pair(&self, left: neo_core::UInt256, right: neo_core::UInt256) -> neo_core::UInt256 {
         use sha2::{Digest, Sha256};
 
-        // Concatenate the two hashes and double-SHA256 (Neo protocol)
         let mut hasher = Sha256::new();
         hasher.update(left.as_bytes());
         hasher.update(right.as_bytes());
         let first_hash = hasher.finalize();
 
-        // Second SHA256 pass (double hashing as per Neo protocol)
         let mut hasher = Sha256::new();
         hasher.update(&first_hash);
         let final_hash = hasher.finalize();
@@ -422,7 +408,7 @@ pub enum MessageHandleResult {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_message_handle_result() {

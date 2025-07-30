@@ -95,7 +95,6 @@ impl std::fmt::Debug for HeaderCache {
     }
 }
 
-// Implement iterator support (matches C# IEnumerable<Header>)
 impl IntoIterator for HeaderCache {
     type Item = Header;
     type IntoIter = std::vec::IntoIter<Header>;

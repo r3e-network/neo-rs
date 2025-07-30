@@ -4,6 +4,7 @@
 
 use crate::error::VmResult;
 use crate::stack_item::StackItem;
+use neo_config::ADDRESS_SIZE;
 
 /// Indicates the state of the ExceptionHandlingContext.
 /// This matches the C# implementation's ExceptionHandlingState enum exactly.
@@ -273,8 +274,6 @@ impl ExceptionHandlingContext {
     /// Checks if this exception handling context is currently in an exception state.
     /// This matches the C# implementation's exception state tracking.
     pub fn is_in_exception(&self) -> bool {
-        // Production-ready exception state checking (matches C# ExceptionHandlingContext exactly)
-        // An exception handling context is considered "in exception state" if:
         // 1. The state is Catch (actively handling an exception)
         // 2. OR the state is Finally (executing finally block, possibly due to exception)
         // 3. OR there's an exception stored in this context
@@ -287,7 +286,7 @@ impl ExceptionHandlingContext {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_exception_handling_context_creation() {
@@ -302,10 +301,10 @@ mod tests {
 
     #[test]
     fn test_exception_handling_context_full_creation() {
-        let context = ExceptionHandlingContext::new(10, 20, 30, 40, 50);
+        let context = ExceptionHandlingContext::new(10, ADDRESS_SIZE, 30, 40, 50);
 
         assert_eq!(context.try_start(), 10);
-        assert_eq!(context.try_end(), 20);
+        assert_eq!(context.try_end(), ADDRESS_SIZE);
         assert_eq!(context.catch_start(), 30);
         assert_eq!(context.finally_start(), 40);
         assert_eq!(context.end_offset(), 50);

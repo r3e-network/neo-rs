@@ -13,7 +13,6 @@ use std::collections::HashMap;
 
 #[test]
 fn test_emit_basic() {
-    // Test basic emit functionality - C# TestEmit()
     let mut sb = ScriptBuilder::new();
     sb.emit_opcode(OpCode::PUSH0);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
@@ -21,7 +20,6 @@ fn test_emit_basic() {
 
 #[test]
 fn test_emit_push_uint160() {
-    // Test pushing UInt160 - C# TestEmitPush1()
     let mut sb = ScriptBuilder::new();
     let uint160 = UInt160::zero();
     sb.emit_push(&uint160.to_array());
@@ -33,7 +31,6 @@ fn test_emit_push_uint160() {
 
 #[test]
 fn test_emit_push_boolean() {
-    // Test pushing boolean values - C# TestEmitPush2Boolean()
     let mut sb = ScriptBuilder::new();
     sb.emit_push_bool(false);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
@@ -45,7 +42,6 @@ fn test_emit_push_boolean() {
 
 #[test]
 fn test_emit_push_integer() {
-    // Test pushing various integer values - C# TestEmitPush2Integer()
     let mut sb = ScriptBuilder::new();
     sb.emit_push_int(0);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
@@ -60,7 +56,6 @@ fn test_emit_push_integer() {
 
     sb = ScriptBuilder::new();
     sb.emit_push_int(100);
-    // For values > 16, should use PUSHINT8 or similar encoding
     let result = sb.to_array();
     assert!(result.len() > 1);
     assert!(result[0] == OpCode::PUSHINT8 as u8 || result[0] == OpCode::PUSHDATA1 as u8);
@@ -68,7 +63,6 @@ fn test_emit_push_integer() {
 
 #[test]
 fn test_emit_push_string() {
-    // Test pushing string values - C# TestEmitPush2String()
     let mut sb = ScriptBuilder::new();
     sb.emit_push("".as_bytes());
     assert_eq!(vec![0x00], sb.to_array()); // Empty string
@@ -82,7 +76,6 @@ fn test_emit_push_string() {
 
 #[test]
 fn test_emit_push_byte_array() {
-    // Test pushing byte arrays - C# TestEmitPush2ByteArray()
     let mut sb = ScriptBuilder::new();
     sb.emit_push(&[]);
     assert_eq!(vec![0x00], sb.to_array()); // Empty array
@@ -95,7 +88,6 @@ fn test_emit_push_byte_array() {
 
 #[test]
 fn test_emit_syscall() {
-    // Test emitting SYSCALL instruction - C# TestEmitSysCall()
     let mut sb = ScriptBuilder::new();
     sb.emit_syscall("test");
 
@@ -108,12 +100,10 @@ fn test_emit_syscall() {
 
 #[test]
 fn test_emit_dynamic_call_simple() {
-    // Test dynamic call without parameters - C# TestEmitAppCall1()
     let mut sb = ScriptBuilder::new();
     let contract_hash = UInt160::zero();
     let operation = "AAAAA";
 
-    // Simulate EmitDynamicCall(UInt160.Zero, "AAAAA")
     sb.emit_opcode(OpCode::NEWARRAY0);
     sb.emit_push_int(15); // CallFlags.All
     sb.emit_push(operation.as_bytes());
@@ -127,7 +117,6 @@ fn test_emit_dynamic_call_simple() {
 
 #[test]
 fn test_emit_dynamic_call_with_args() {
-    // Test dynamic call with parameters - C# TestEmitAppCall2()
     let mut sb = ScriptBuilder::new();
     let contract_hash = UInt160::zero();
     let operation = "AAAAA";
@@ -148,7 +137,6 @@ fn test_emit_dynamic_call_with_args() {
 
 #[test]
 fn test_create_array() {
-    // Test creating arrays - C# TestEmitArray()
     let mut sb = ScriptBuilder::new();
 
     // Create array with elements [1, 2, 3]
@@ -165,7 +153,6 @@ fn test_create_array() {
 
 #[test]
 fn test_create_empty_array() {
-    // Test creating empty array - C# TestEmitArray()
     let mut sb = ScriptBuilder::new();
     sb.emit_opcode(OpCode::NEWARRAY0);
 
@@ -174,10 +161,8 @@ fn test_create_empty_array() {
 
 #[test]
 fn test_create_struct() {
-    // Test creating structs - C# TestEmitStruct()
     let mut sb = ScriptBuilder::new();
 
-    // Create struct with elements [1, 2]
     sb.emit_push_int(1);
     sb.emit_push_int(2);
     sb.emit_push_int(2); // Count
@@ -190,10 +175,8 @@ fn test_create_struct() {
 
 #[test]
 fn test_create_map() {
-    // Test creating maps - C# TestEmitMap()
     let mut sb = ScriptBuilder::new();
 
-    // Create map with {1: 2, 3: 4}
     sb.emit_opcode(OpCode::NEWMAP);
     sb.emit_push_int(1);
     sb.emit_push_int(2);
@@ -209,13 +192,11 @@ fn test_create_map() {
 
 #[test]
 fn test_make_script() {
-    // Test MakeScript functionality - C# TestMakeScript()
     let mut sb = ScriptBuilder::new();
     let contract_hash = UInt160::zero();
     let operation = "balanceOf";
     let parameter = UInt160::zero();
 
-    // Simulate contract.MakeScript("balanceOf", UInt160.Zero)
     sb.emit_push(&parameter.to_array());
     sb.emit_push_int(1); // Parameter count
     sb.emit_opcode(OpCode::PACK);
@@ -231,8 +212,6 @@ fn test_make_script() {
 
 #[test]
 fn test_stack_item_json_serialization() {
-    // Test StackItem JSON serialization - C# TestToJson()
-
     // Test Integer
     let item = StackItem::Integer(5.into());
     let json_str = format!("{{\"type\":\"Integer\",\"value\":\"5\"}}");
@@ -254,8 +233,6 @@ fn test_stack_item_json_serialization() {
 
 #[test]
 fn test_stack_item_to_parameter() {
-    // Test StackItem to ContractParameter conversion - C# TestToParameter()
-
     // Test Integer
     let item = StackItem::Integer(1000.into());
     // Should convert to ContractParameterType::Integer
@@ -276,11 +253,6 @@ fn test_stack_item_to_parameter() {
 
 #[test]
 fn test_parameter_to_stack_item() {
-    // Test ContractParameter to StackItem conversion - C# TestToStackItem()
-
-    // Production-ready ContractParameter to StackItem conversion (matches C# exactly)
-    // This implements the C# logic: ContractParameter.ToStackItem() with full type support
-
     // Test Integer parameter -> StackItem
     let item = StackItem::Integer(1000.into());
     match item {
@@ -301,44 +273,34 @@ fn test_parameter_to_stack_item() {
 
 #[test]
 fn test_emit_push_various_types() {
-    // Test pushing various primitive types - C# TestEmitPush3()
-
-    // Test sbyte (i8)
     let mut sb = ScriptBuilder::new();
     sb.emit_push_int(0);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
 
-    // Test byte (u8)
     sb = ScriptBuilder::new();
     sb.emit_push_int(0);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
 
-    // Test short (i16)
     sb = ScriptBuilder::new();
     sb.emit_push_int(0);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
 
-    // Test ushort (u16)
     sb = ScriptBuilder::new();
     sb.emit_push_int(0);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
 
-    // Test int (i32)
     sb = ScriptBuilder::new();
     sb.emit_push_int(0);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
 
-    // Test uint (u32)
     sb = ScriptBuilder::new();
     sb.emit_push_int(0);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
 
-    // Test long (i64)
     sb = ScriptBuilder::new();
     sb.emit_push_int(0);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
 
-    // Test ulong (u64)
     sb = ScriptBuilder::new();
     sb.emit_push_int(0);
     assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
@@ -346,7 +308,6 @@ fn test_emit_push_various_types() {
 
 #[test]
 fn test_emit_push_uint256() {
-    // Test pushing UInt256 - C# TestEmitPush2Hash256()
     let mut sb = ScriptBuilder::new();
     let uint256 = UInt256::zero();
     sb.emit_push(&uint256.to_array());
@@ -358,7 +319,6 @@ fn test_emit_push_uint256() {
 
 #[test]
 fn test_emit_push_signature() {
-    // Test pushing signature (64 bytes) - C# TestEmitPush2Signature()
     let mut sb = ScriptBuilder::new();
     let signature = vec![0u8; 64];
     sb.emit_push(&signature);
@@ -370,7 +330,6 @@ fn test_emit_push_signature() {
 
 #[test]
 fn test_emit_push_public_key() {
-    // Test pushing public key (33 bytes compressed) - C# TestEmitPush2PublicKey()
     let mut sb = ScriptBuilder::new();
     let pk_bytes = vec![0u8; 33]; // Compressed public key format
     sb.emit_push(&pk_bytes);
@@ -382,12 +341,10 @@ fn test_emit_push_public_key() {
 
 #[test]
 fn test_cyclic_reference_handling() {
-    // Test that we can handle potential cyclic references - C# TestCyclicReference()
     // This is more of a safety test to ensure we don't get infinite loops
 
     let mut sb = ScriptBuilder::new();
 
-    // Create a simple "cyclic" structure (map referencing itself conceptually)
     sb.emit_opcode(OpCode::NEWMAP);
     sb.emit_push_int(1);
     sb.emit_push_int(1); // Self-referential in value
@@ -453,7 +410,6 @@ fn test_script_builder_chaining() {
 
 #[test]
 fn test_char_as_uint16() {
-    // Test character handling as uint16 - C# TestCharAsUInt16()
     let mut sb = ScriptBuilder::new();
     let char_value = 'A' as u16; // 65
     sb.emit_push_int(char_value as i64);
@@ -467,7 +423,6 @@ fn test_char_as_uint16() {
 fn test_emit_push_data_size_boundaries() {
     // Test different PUSHDATA instruction boundaries
 
-    // Direct push: 1-75 bytes use length as opcode
     let mut sb = ScriptBuilder::new();
     let data_small = vec![0x42; 75]; // 75 bytes (max for direct push)
     sb.emit_push(&data_small);

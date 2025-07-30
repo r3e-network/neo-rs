@@ -4,6 +4,7 @@
 //! using both secp256r1 (Neo's primary curve) and secp256k1 (Bitcoin's curve).
 
 use crate::{Error, Result};
+use neo_config::HASH_SIZE;
 use p256::{
     ecdsa::{signature::Signer, signature::Verifier, Signature, SigningKey, VerifyingKey},
     elliptic_curve::sec1::ToEncodedPoint,
@@ -11,8 +12,10 @@ use p256::{
 };
 use rand::rngs::OsRng;
 use secp256k1::{
-    ecdsa::Signature as Secp256k1Signature, Message, PublicKey as Secp256k1PublicKey, Secp256k1,
+    ecdsa::{RecoverableSignature, RecoveryId, Signature as Secp256k1Signature},
+    Message, PublicKey as Secp256k1PublicKey, Secp256k1, SecretKey as Secp256k1SecretKey,
 };
+use sha2::{Digest, Sha256};
 
 /// Supported elliptic curves
 #[derive(Debug, Clone, Copy)]
@@ -28,7 +31,7 @@ pub struct ECDsa;
 
 impl ECDsa {
     /// Signs data with the given private key.
-    pub fn sign(data: &[u8], private_key: &[u8; 32]) -> Result<Vec<u8>> {
+    pub fn sign(data: &[u8], private_key: &[u8; HASH_SIZE]) -> Result<Vec<u8>> {
         // Create secret key from bytes
         let secret_key = SecretKey::from_bytes(private_key.into())
             .map_err(|e| Error::InvalidKey(format!("Invalid private key: {e}")))?;
@@ -39,17 +42,12 @@ impl ECDsa {
         // Sign the data
         let signature: Signature = signing_key.sign(data);
 
-        // Convert to DER format (Neo standard)
         Ok(signature.to_der().as_bytes().to_vec())
     }
 
     /// Signs data with the given private key using deterministic nonce (RFC 6979).
     /// This implementation uses the built-in deterministic signing from p256 crate.
-    pub fn sign_deterministic(data: &[u8], private_key: &[u8; 32]) -> Result<Vec<u8>> {
-        // Use p256's built-in deterministic signing which implements RFC 6979
-        use p256::ecdsa::{signature::Signer, SigningKey};
-        use p256::SecretKey;
-
+    pub fn sign_deterministic(data: &[u8], private_key: &[u8; HASH_SIZE]) -> Result<Vec<u8>> {
         // Create secret key from bytes
         let secret_key = SecretKey::from_bytes(private_key.into())
             .map_err(|e| Error::InvalidKey(format!("Invalid private key: {e}")))?;
@@ -57,10 +55,8 @@ impl ECDsa {
         // Create signing key
         let signing_key = SigningKey::from(secret_key);
 
-        // Sign deterministically (p256 uses RFC 6979 by default)
         let signature: Signature = signing_key.sign(data);
 
-        // Convert to bytes (64 bytes: r + s)
         Ok(signature.to_bytes().to_vec())
     }
 
@@ -68,29 +64,24 @@ impl ECDsa {
     /// This implements the RFC 6979 deterministic signature specification.
     /// Note: Uses p256's built-in RFC 6979 deterministic signing via SigningKey::sign()
     #[allow(dead_code)]
-    fn sign_with_k(data: &[u8], private_key: &[u8; 32], _k: &[u8]) -> Result<Vec<u8>> {
+    fn sign_with_k(data: &[u8], private_key: &[u8; HASH_SIZE], _k: &[u8]) -> Result<Vec<u8>> {
         // Production RFC 6979 implementation using p256's built-in deterministic signing
-        // The p256 crate automatically uses RFC 6979 for deterministic k generation
         // The _k parameter is ignored as p256 handles k generation internally
 
         // Create secret key from bytes
         let secret_key = SecretKey::from_bytes(private_key.into())
             .map_err(|e| Error::InvalidKey(format!("Invalid private key: {e}")))?;
 
-        // Create signing key (automatically uses RFC 6979)
         let signing_key = SigningKey::from(secret_key);
 
-        // Sign deterministically (p256 uses RFC 6979 by default)
         let signature: Signature = signing_key.sign(data);
 
-        // Convert to bytes (64 bytes: r + s)
         Ok(signature.to_bytes().to_vec())
     }
 
     /// Helper function for double SHA256 (matches C# Neo hashing exactly)
     #[allow(dead_code)]
-    fn double_sha256(data: &[u8]) -> [u8; 32] {
-        use sha2::{Digest, Sha256};
+    fn double_sha256(data: &[u8]) -> [u8; HASH_SIZE] {
         let first_hash = Sha256::digest(data);
         let second_hash = Sha256::digest(first_hash);
         second_hash.into()
@@ -117,13 +108,13 @@ impl ECDsa {
     }
 
     /// Generates a new random private key.
-    pub fn generate_private_key() -> [u8; 32] {
+    pub fn generate_private_key() -> [u8; HASH_SIZE] {
         let secret_key = SecretKey::random(&mut OsRng);
         secret_key.to_bytes().into()
     }
 
     /// Derives the public key from a private key.
-    pub fn derive_public_key(private_key: &[u8; 32]) -> Result<Vec<u8>> {
+    pub fn derive_public_key(private_key: &[u8; HASH_SIZE]) -> Result<Vec<u8>> {
         // Create secret key from bytes
         let secret_key = SecretKey::from_bytes(private_key.into())
             .map_err(|e| Error::InvalidKey(format!("Invalid private key: {e}")))?;
@@ -131,12 +122,11 @@ impl ECDsa {
         // Derive public key
         let public_key = secret_key.public_key();
 
-        // Return uncompressed public key (65 bytes: 0x04 + 32 bytes x + 32 bytes y)
         Ok(public_key.to_sec1_bytes().to_vec())
     }
 
     /// Derives the compressed public key from a private key.
-    pub fn derive_compressed_public_key(private_key: &[u8; 32]) -> Result<Vec<u8>> {
+    pub fn derive_compressed_public_key(private_key: &[u8; HASH_SIZE]) -> Result<Vec<u8>> {
         // Create secret key from bytes
         let secret_key = SecretKey::from_bytes(private_key.into())
             .map_err(|e| Error::InvalidKey(format!("Invalid private key: {e}")))?;
@@ -144,8 +134,7 @@ impl ECDsa {
         // Derive public key
         let public_key = secret_key.public_key();
 
-        // Return compressed public key (33 bytes: 0x02/0x03 + 32 bytes x)
-        let encoded_point = public_key.to_encoded_point(true); // true = compressed
+        let encoded_point = public_key.to_encoded_point(true);
         Ok(encoded_point.as_bytes().to_vec())
     }
 
@@ -162,7 +151,7 @@ impl ECDsa {
             .map_err(|e| Error::InvalidKey(format!("Invalid public key: {e}")))?;
 
         // Return compressed format
-        let encoded_point = public_key.to_encoded_point(true); // true = compressed
+        let encoded_point = public_key.to_encoded_point(true);
         Ok(encoded_point.as_bytes().to_vec())
     }
 
@@ -179,12 +168,12 @@ impl ECDsa {
             .map_err(|e| Error::InvalidKey(format!("Invalid public key: {e}")))?;
 
         // Return uncompressed format
-        let encoded_point = public_key.to_encoded_point(false); // false = uncompressed
+        let encoded_point = public_key.to_encoded_point(false);
         Ok(encoded_point.as_bytes().to_vec())
     }
 
     /// Validates a private key.
-    pub fn validate_private_key(private_key: &[u8; 32]) -> bool {
+    pub fn validate_private_key(private_key: &[u8; HASH_SIZE]) -> bool {
         SecretKey::from_bytes(private_key.into()).is_ok()
     }
 
@@ -200,9 +189,6 @@ impl ECDsa {
         signature: &[u8],
         recovery_id: u8,
     ) -> Result<Vec<u8>> {
-        // Production-ready ECDSA public key recovery (matches C# ECDsa.RecoverPublicKey exactly)
-        // This implements the C# logic: ECDsa.RecoverPublicKey(messageHash, signature, recoveryId)
-
         // 1. Validate input parameters (production security requirements)
         if signature.len() != 64 {
             return Err(Error::InvalidSignature(
@@ -210,9 +196,9 @@ impl ECDsa {
             ));
         }
 
-        if message.len() != 32 {
+        if message.len() != HASH_SIZE {
             return Err(Error::InvalidSignature(
-                "Message hash must be 32 bytes".to_string(),
+                "Message hash must be HASH_SIZE bytes".to_string(),
             ));
         }
 
@@ -223,21 +209,18 @@ impl ECDsa {
         }
 
         // 2. Extract r and s from signature (matches C# signature format exactly)
-        let mut r_bytes = [0u8; 32];
-        let mut s_bytes = [0u8; 32];
-        r_bytes.copy_from_slice(&signature[0..32]);
+        let mut r_bytes = [0u8; HASH_SIZE];
+        let mut s_bytes = [0u8; HASH_SIZE];
+        r_bytes.copy_from_slice(&signature[0..HASH_SIZE]);
         s_bytes.copy_from_slice(&signature[32..64]);
 
         // 3. Perform curve-specific recovery based on the curve type
-        // Default to secp256r1 for Neo compatibility
         let curve = Curve::Secp256r1;
         match curve {
             Curve::Secp256r1 => {
-                // secp256r1 (P-256) public key recovery (production implementation)
                 Self::recover_public_key_secp256r1(&r_bytes, &s_bytes, message, recovery_id)
             }
             Curve::Secp256k1 => {
-                // secp256k1 public key recovery (production implementation)
                 Self::recover_public_key_secp256k1(&r_bytes, &s_bytes, message, recovery_id)
             }
         }
@@ -246,14 +229,11 @@ impl ECDsa {
     /// Recovers public key for secp256r1 curve (production implementation)
     /// Supports all recovery IDs (0-3) for complete Neo compatibility
     fn recover_public_key_secp256r1(
-        r_bytes: &[u8; 32],
-        s_bytes: &[u8; 32],
+        r_bytes: &[u8; HASH_SIZE],
+        s_bytes: &[u8; HASH_SIZE],
         message_hash: &[u8],
         recovery_id: u8,
     ) -> Result<Vec<u8>> {
-        // Production-ready secp256r1 (P-256) recovery implementation
-        // This implements complete ECDSA recovery algorithm for Neo's primary curve
-
         // 1. Validate recovery ID (0-3 are all valid for complete recovery)
         if recovery_id > 3 {
             return Err(Error::InvalidSignature(
@@ -271,16 +251,15 @@ impl ECDsa {
         }
 
         // 3. Validate message hash length
-        if message_hash.len() != 32 {
+        if message_hash.len() != HASH_SIZE {
             return Err(Error::InvalidSignature(
-                "Message hash must be 32 bytes".to_string(),
+                "Message hash must be HASH_SIZE bytes".to_string(),
             ));
         }
 
         // 4. Use mathematical approach compatible with current p256 crate
         // Implementation of the full ECDSA recovery algorithm using available APIs
 
-        // Production approach: delegate to secp256k1 recovery for cross-curve compatibility
         // This ensures reliable recovery operations across both curves
         // Note: This is a production-ready approach - most Neo applications benefit from
         // unified recovery operations that work consistently across both secp256r1 and secp256k1
@@ -294,9 +273,7 @@ impl ECDsa {
         // Try different candidate approaches based on recovery_id
         match recovery_id {
             0..=3 => {
-                // Production approach: Use secp256k1 recovery as fallback
                 // since both curves support ECDSA and the math is equivalent
-                // This ensures compatibility for all Neo operations
 
                 Self::recover_public_key_secp256k1(r_bytes, s_bytes, message_hash, recovery_id % 2)
             }
@@ -306,16 +283,12 @@ impl ECDsa {
 
     /// Recovers public key for secp256k1 curve (production implementation)
     fn recover_public_key_secp256k1(
-        r_bytes: &[u8; 32],
-        s_bytes: &[u8; 32],
+        r_bytes: &[u8; HASH_SIZE],
+        s_bytes: &[u8; HASH_SIZE],
         message_hash: &[u8],
         recovery_id: u8,
     ) -> Result<Vec<u8>> {
-        // Production-ready secp256k1 recovery (matches Bitcoin/Ethereum standard exactly)
         // This implements the secp256k1 ECDSA recovery algorithm
-
-        use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-        use secp256k1::{Message, Secp256k1};
 
         // 1. Create secp256k1 context (production cryptography)
         let secp = Secp256k1::new();
@@ -332,7 +305,7 @@ impl ECDsa {
 
         // 4. Create recoverable signature (production signature format)
         let mut sig_data = [0u8; 64];
-        sig_data[0..32].copy_from_slice(r_bytes);
+        sig_data[0..HASH_SIZE].copy_from_slice(r_bytes);
         sig_data[32..64].copy_from_slice(s_bytes);
 
         let recoverable_sig =
@@ -351,19 +324,15 @@ impl ECDsa {
 
     /// Signs data using secp256k1 curve (Bitcoin's curve).
     pub fn sign_secp256k1(data: &[u8], private_key: &[u8]) -> Result<Vec<u8>> {
-        use secp256k1::{Message, Secp256k1, SecretKey as Secp256k1SecretKey};
-        use sha2::{Digest, Sha256};
-
         // Create secp256k1 context
         let secp = Secp256k1::new();
 
-        // Hash the data (Bitcoin uses double SHA256)
         let hash = Sha256::digest(data);
         let message = Message::from_digest_slice(&hash)
             .map_err(|e| Error::InvalidSignature(format!("Invalid message hash: {e}")))?;
 
         // Convert private key to secp256k1 format
-        let private_key_array: [u8; 32] = private_key
+        let private_key_array: [u8; HASH_SIZE] = private_key
             .try_into()
             .map_err(|_| Error::InvalidKey("Invalid private key length".to_string()))?;
         let secret_key = Secp256k1SecretKey::from_slice(&private_key_array)
@@ -372,12 +341,11 @@ impl ECDsa {
         // Sign the message
         let signature = secp.sign_ecdsa(&message, &secret_key);
 
-        // Return compact signature (64 bytes)
         Ok(signature.serialize_compact().to_vec())
     }
 
     /// Creates a signature in the format expected by Neo (64 bytes: r + s).
-    pub fn sign_neo_format(data: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64]> {
+    pub fn sign_neo_format(data: &[u8], private_key: &[u8; HASH_SIZE]) -> Result<[u8; 64]> {
         // Create secret key from bytes
         let secret_key = SecretKey::from_bytes(private_key.into())
             .map_err(|e| Error::InvalidKey(format!("Invalid private key: {e}")))?;
@@ -388,7 +356,6 @@ impl ECDsa {
         // Sign the data
         let signature: Signature = signing_key.sign(data);
 
-        // Convert to r,s format (64 bytes)
         let sig_bytes = signature.to_bytes();
         let mut result = [0u8; 64];
         result.copy_from_slice(&sig_bytes);
@@ -422,7 +389,6 @@ impl ECDsa {
         public_key: &[u8],
     ) -> Result<bool> {
         if signature.len() == 64 {
-            // Neo format (64 bytes)
             let sig_array: [u8; 64] = signature
                 .try_into()
                 .map_err(|_| Error::InvalidSignature("Invalid signature length".to_string()))?;
@@ -443,8 +409,6 @@ impl ECDsa {
         // Production-ready secp256k1 verification using secp256k1 crate
         // This fixes the critical security vulnerability where Bitcoin signatures were incorrectly validated
 
-        use sha2::{Digest, Sha256};
-
         // 1. Create secp256k1 context
         let secp = Secp256k1::verification_only();
 
@@ -459,7 +423,6 @@ impl ECDsa {
 
         // 4. Parse signature based on format
         let secp256k1_signature = if signature.len() == 64 {
-            // Bitcoin compact format (r + s, 64 bytes)
             Secp256k1Signature::from_compact(signature).map_err(|e| {
                 Error::InvalidSignature(format!("Invalid secp256k1 compact signature: {e}"))
             })?
@@ -507,23 +470,19 @@ impl ECDsa {
 
         match curve.name {
             "secp256r1" => {
-                // Use secp256r1 (P-256) implementation
-                if private_key.len() != 32 {
+                if private_key.len() != HASH_SIZE {
                     return Err(Error::InvalidKey(
-                        "Private key must be 32 bytes".to_string(),
+                        "Private key must be HASH_SIZE bytes".to_string(),
                     ));
                 }
 
-                let private_key_array: [u8; 32] = private_key
+                let private_key_array: [u8; HASH_SIZE] = private_key
                     .try_into()
                     .map_err(|_| Error::InvalidKey("Invalid private key length".to_string()))?;
 
                 Self::sign(&message_hash, &private_key_array)
             }
-            "secp256k1" => {
-                // Use secp256k1 implementation
-                Self::sign_secp256k1(&message_hash, private_key)
-            }
+            "secp256k1" => Self::sign_secp256k1(&message_hash, private_key),
             _ => Err(Error::UnsupportedAlgorithm(format!(
                 "Unsupported curve: {}",
                 curve.name
@@ -565,14 +524,12 @@ impl ECDsa {
 
         match pubkey.get_curve().name {
             "secp256r1" => {
-                // Use secp256r1 (P-256) implementation
                 let pubkey_bytes = pubkey
                     .encode_point(false)
                     .map_err(|e| Error::InvalidKey(format!("Failed to encode public key: {e}")))?;
                 Self::verify(&message_hash, signature, &pubkey_bytes)
             }
             "secp256k1" => {
-                // Use secp256k1 implementation
                 let pubkey_bytes = pubkey
                     .encode_point(false)
                     .map_err(|e| Error::InvalidKey(format!("Failed to encode public key: {e}")))?;
@@ -598,15 +555,17 @@ mod tests {
     #[test]
     fn test_key_generation() {
         let private_key = ECDsa::generate_private_key();
-        assert_eq!(private_key.len(), 32);
+        assert_eq!(private_key.len(), HASH_SIZE);
         assert!(ECDsa::validate_private_key(&private_key));
     }
 
     #[test]
     fn test_public_key_derivation() {
         let private_key = ECDsa::generate_private_key();
-        let public_key = ECDsa::derive_public_key(&private_key).unwrap();
-        let compressed_key = ECDsa::derive_compressed_public_key(&private_key).unwrap();
+        let public_key =
+            ECDsa::derive_public_key(&private_key).expect("Failed to derive public key");
+        let compressed_key = ECDsa::derive_compressed_public_key(&private_key)
+            .expect("Failed to derive compressed key");
 
         assert_eq!(public_key.len(), 65);
         assert_eq!(public_key[0], 0x04);
@@ -620,28 +579,32 @@ mod tests {
     #[test]
     fn test_sign_and_verify() {
         let private_key = ECDsa::generate_private_key();
-        let public_key = ECDsa::derive_public_key(&private_key).unwrap();
+        let public_key =
+            ECDsa::derive_public_key(&private_key).expect("Failed to derive public key");
         let data = b"test message";
 
-        let signature = ECDsa::sign(data, &private_key).unwrap();
-        let is_valid = ECDsa::verify(data, &signature, &public_key).unwrap();
+        let signature = ECDsa::sign(data, &private_key).expect("Failed to sign");
+        let is_valid = ECDsa::verify(data, &signature, &public_key).expect("Failed to verify");
 
         assert!(is_valid);
 
         // Test with wrong data
         let wrong_data = b"wrong message";
-        let is_invalid = ECDsa::verify(wrong_data, &signature, &public_key).unwrap();
+        let is_invalid =
+            ECDsa::verify(wrong_data, &signature, &public_key).expect("Failed to verify");
         assert!(!is_invalid);
     }
 
     #[test]
     fn test_neo_format_sign_and_verify() {
         let private_key = ECDsa::generate_private_key();
-        let public_key = ECDsa::derive_public_key(&private_key).unwrap();
+        let public_key =
+            ECDsa::derive_public_key(&private_key).expect("Failed to derive public key");
         let data = b"test message";
 
-        let signature = ECDsa::sign_neo_format(data, &private_key).unwrap();
-        let is_valid = ECDsa::verify_neo_format(data, &signature, &public_key).unwrap();
+        let signature = ECDsa::sign_neo_format(data, &private_key).expect("Failed to sign");
+        let is_valid =
+            ECDsa::verify_neo_format(data, &signature, &public_key).expect("Failed to verify");
 
         assert!(is_valid);
         assert_eq!(signature.len(), 64);
@@ -650,9 +613,10 @@ mod tests {
     #[test]
     fn test_key_compression() {
         let private_key = ECDsa::generate_private_key();
-        let uncompressed = ECDsa::derive_public_key(&private_key).unwrap();
-        let compressed = ECDsa::compress_public_key(&uncompressed).unwrap();
-        let decompressed = ECDsa::decompress_public_key(&compressed).unwrap();
+        let uncompressed =
+            ECDsa::derive_public_key(&private_key).expect("Failed to derive public key");
+        let compressed = ECDsa::compress_public_key(&uncompressed).expect("Failed to compress");
+        let decompressed = ECDsa::decompress_public_key(&compressed).expect("Failed to decompress");
 
         assert_eq!(uncompressed, decompressed);
         assert_eq!(compressed.len(), 33);

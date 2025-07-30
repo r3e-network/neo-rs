@@ -19,7 +19,6 @@ mod config_tests {
         // Test default configuration structure
         let config = CliConfig::default();
 
-        // Verify default values match C# Neo CLI defaults
         assert_eq!(config.application.logger.console_output, true);
         assert_eq!(config.application.logger.active, true);
         assert_eq!(config.application.storage.engine, "RocksDB");
@@ -49,8 +48,8 @@ mod config_tests {
     /// Test configuration loading from JSON file (matches C# JSON config parsing exactly)
     #[tokio::test]
     async fn test_config_json_loading_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("config.json");
+        let final_dir = TempDir::new().unwrap();
+        let config_path = final_dir.path().join("config.json");
 
         // Create JSON config that matches C# Neo CLI format exactly
         let config_json = r#"
@@ -102,7 +101,6 @@ mod config_tests {
         // Test loading configuration
         let config = CliConfig::load_from_file(&config_path).await.unwrap();
 
-        // Verify loaded values match C# behavior
         assert_eq!(config.application.logger.path, "logs");
         assert_eq!(config.application.logger.console_output, true);
         assert_eq!(config.application.storage.engine, "RocksDB");
@@ -122,7 +120,6 @@ mod config_tests {
         // Test valid configuration
         assert!(config.validate().is_ok());
 
-        // Test invalid port numbers (matches C# port validation)
         config.application.rpc.port = 0;
         assert!(config.validate().is_err());
 
@@ -456,8 +453,8 @@ mod config_tests {
     /// Test configuration file watching (matches C# file monitoring exactly)
     #[tokio::test]
     async fn test_config_file_watching_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("watch_config.json");
+        let final_dir = TempDir::new().unwrap();
+        let config_path = final_dir.path().join("watch_config.json");
 
         // Create initial config
         let initial_config = CliConfig::default();
@@ -484,15 +481,15 @@ mod config_tests {
     /// Test configuration error handling (matches C# error scenarios exactly)
     #[tokio::test]
     async fn test_config_error_handling_compatibility() {
-        let temp_dir = TempDir::new().unwrap();
+        let final_dir = TempDir::new().unwrap();
 
         // Test loading non-existent file
-        let non_existent_path = temp_dir.path().join("nonexistent.json");
+        let non_existent_path = final_dir.path().join("nonexistent.json");
         let result = CliConfig::load_from_file(&non_existent_path).await;
         assert!(result.is_err());
 
         // Test loading invalid JSON
-        let invalid_json_path = temp_dir.path().join("invalid.json");
+        let invalid_json_path = final_dir.path().join("invalid.json");
         fs::write(&invalid_json_path, "{ invalid json }")
             .await
             .unwrap();
@@ -500,7 +497,7 @@ mod config_tests {
         assert!(result.is_err());
 
         // Test loading incomplete config
-        let incomplete_config_path = temp_dir.path().join("incomplete.json");
+        let incomplete_config_path = final_dir.path().join("incomplete.json");
         fs::write(
             &incomplete_config_path,
             r#"
@@ -516,7 +513,6 @@ mod config_tests {
         .await
         .unwrap();
         let result = CliConfig::load_from_file(&incomplete_config_path).await;
-        // Should load with defaults for missing fields
         assert!(result.is_ok());
     }
 

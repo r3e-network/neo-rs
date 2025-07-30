@@ -105,7 +105,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     let mut items = Vec::with_capacity(count);
     for _ in 0..count {
         // Create a default value based on the type
-        let default_value = match type_byte {
+        let DEFAULT_VALUE = match type_byte {
             0x00 => StackItem::Boolean(false),
             0x01 => StackItem::Integer(BigInt::from(0)),
             0x02 => StackItem::ByteString(Vec::new()),
@@ -121,7 +121,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
             }
         };
 
-        items.push(default_value);
+        items.push(DEFAULT_VALUE);
     }
 
     // Push the array onto the stack
@@ -137,10 +137,8 @@ fn new_struct0(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Create a new empty struct
     let struct_item = StackItem::from_struct(Vec::new());
 
-    // Push the struct onto the stack
     context.push(struct_item)?;
 
     Ok(())
@@ -160,13 +158,11 @@ fn new_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
-    // Create a new struct with the specified count
     let mut items = Vec::with_capacity(count);
     for _ in 0..count {
         items.push(StackItem::Null);
     }
 
-    // Push the struct onto the stack
     context.push(StackItem::from_struct(items))?;
 
     Ok(())
@@ -348,7 +344,9 @@ fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
                     "Cannot pop from empty array",
                 ));
             }
-            let popped_item = items.pop().unwrap();
+            let popped_item = items
+                .pop()
+                .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
             context.push(StackItem::from_array(items))?;
             context.push(popped_item)?;
         }
@@ -358,7 +356,9 @@ fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
                     "Cannot pop from empty struct",
                 ));
             }
-            let popped_item = items.pop().unwrap();
+            let popped_item = items
+                .pop()
+                .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
             context.push(StackItem::from_struct(items))?;
             context.push(popped_item)?;
         }
@@ -379,7 +379,6 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     let key = context.pop()?;
     let collection = context.pop()?;
 
-    // Check if the collection has the key
     let result = match collection {
         StackItem::Array(items) => {
             let index = key
@@ -403,7 +402,6 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         }
     };
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -497,7 +495,6 @@ fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct size"))?;
 
-    // Create a new struct
     let mut items = Vec::with_capacity(count);
 
     // Pop items from the stack
@@ -505,10 +502,8 @@ fn pack_struct(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         items.push(context.pop()?);
     }
 
-    // Reverse the items (since they were popped in reverse order)
     items.reverse();
 
-    // Push the struct onto the stack
     context.push(StackItem::from_struct(items))?;
 
     Ok(())
@@ -536,7 +531,6 @@ fn pack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         items.push(context.pop()?);
     }
 
-    // Reverse the items (since they were popped in reverse order)
     items.reverse();
 
     // Push the array onto the stack
@@ -622,7 +616,6 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())

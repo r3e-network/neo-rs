@@ -1,4 +1,3 @@
-// Production-ready error handling for CLI wallet operations
 use std::fmt;
 
 #[derive(Debug)]
@@ -15,6 +14,7 @@ impl std::error::Error for WalletError {}
 type WalletResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 use hex;
+use neo_config::HASH_SIZE;
 use neo_core::{Transaction, UInt160, UInt256};
 use neo_rpc_client;
 use neo_wallets::{
@@ -27,6 +27,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::fs;
 
+/// Default Neo network ports
 /// Wallet manager for Neo CLI
 /// This matches the C# Neo wallet management functionality exactly
 pub struct WalletManager {
@@ -75,8 +76,6 @@ impl WalletManager {
 
     /// Open an existing wallet (matches C# Wallet.Open exactly)
     pub async fn open_wallet(&mut self, path: &Path, password: &str) -> WalletResult<()> {
-        // Production-ready wallet opening (matches C# Neo wallet opening exactly)
-
         // 1. Verify wallet file exists
         if !path.exists() {
             return Err(Box::new(WalletError(format!(
@@ -120,7 +119,6 @@ impl WalletManager {
             let account = self.load_wallet_account(account_json, password).await?;
             let address = account.script_hash();
 
-            // Set first account as default if none specified
             if default_account.is_none() {
                 default_account = Some(address);
             }
@@ -153,8 +151,6 @@ impl WalletManager {
         password: &str,
         name: Option<&str>,
     ) -> WalletResult<()> {
-        // Production-ready wallet creation (matches C# Neo wallet creation exactly)
-
         // 1. Check if wallet file already exists
         if path.exists() {
             return Err(Box::new(WalletError(format!(
@@ -228,7 +224,6 @@ impl WalletManager {
     /// Create a new account in the current wallet (matches C# Wallet.CreateAccount exactly)
     pub async fn create_account(&mut self) -> WalletResult<UInt160> {
         if let Some(wallet) = &mut self.current_wallet {
-            // Production-ready account creation (matches C# account creation exactly)
             let key_pair = KeyPair::generate().map_err(|e| {
                 Box::new(WalletError(format!("Failed to generate key pair: {}", e)))
             })?;
@@ -241,7 +236,6 @@ impl WalletManager {
             let address = account.script_hash();
             self.accounts.insert(address, account);
 
-            // Set as default if this is the first account
             if self.default_account.is_none() {
                 self.default_account = Some(address);
             }
@@ -259,13 +253,12 @@ impl WalletManager {
         _password: &str,
     ) -> WalletResult<UInt160> {
         if let Some(wallet) = &mut self.current_wallet {
-            // Production-ready private key import (matches C# import exactly)
             let private_key_bytes = hex::decode(private_key_hex)
                 .map_err(|e| Box::new(WalletError(format!("Invalid private key hex: {}", e))))?;
 
-            if private_key_bytes.len() != 32 {
+            if private_key_bytes.len() != HASH_SIZE {
                 return Err(Box::new(WalletError(
-                    "Private key must be 32 bytes".to_string(),
+                    "Private key must be HASH_SIZE bytes".to_string(),
                 )));
             }
 
@@ -276,7 +269,6 @@ impl WalletManager {
 
             let address = account.script_hash();
 
-            // Check if account already exists
             if self.accounts.contains_key(&address) {
                 return Err(Box::new(WalletError(
                     "Account already exists in wallet".to_string(),
@@ -285,7 +277,6 @@ impl WalletManager {
 
             self.accounts.insert(address, account);
 
-            // Set as default if this is the first account
             if self.default_account.is_none() {
                 self.default_account = Some(address);
             }
@@ -311,7 +302,6 @@ impl WalletManager {
             .get(address)
             .ok_or_else(|| Box::new(WalletError("Account not found".to_string())))?;
 
-        // Production-ready private key export (matches C# export exactly)
         let wif = account
             .export_wif()
             .await
@@ -323,7 +313,6 @@ impl WalletManager {
     /// Sign a transaction with wallet accounts (matches C# Wallet.Sign exactly)
     pub async fn sign_transaction(&self, transaction: &mut Transaction) -> WalletResult<()> {
         if let Some(wallet) = &self.current_wallet {
-            // Production-ready transaction signing (matches C# transaction signing exactly)
             wallet
                 .sign_transaction(transaction)
                 .await
@@ -343,7 +332,6 @@ impl WalletManager {
                 .get(address)
                 .ok_or_else(|| Box::new(WalletError("Account not found".to_string())))?;
 
-            // Production-ready balance retrieval (matches C# balance checking exactly)
             let balance = wallet
                 .get_available_balance(asset_id)
                 .await
@@ -361,7 +349,6 @@ impl WalletManager {
         account_json: &serde_json::Value,
         password: &str,
     ) -> WalletResult<Arc<dyn WalletAccount>> {
-        // Production-ready account loading (matches C# NEP-6 account loading exactly)
         let address_str = account_json
             .get("address")
             .and_then(|v| v.as_str())
@@ -375,7 +362,6 @@ impl WalletManager {
             let encrypted_key = hex::decode(key_str)
                 .map_err(|e| Box::new(WalletError(format!("Invalid encrypted key hex: {}", e))))?;
 
-            // Create account from encrypted key (matches C# account creation)
             let account =
                 StandardWalletAccount::new_from_encrypted(script_hash, encrypted_key, None);
             Ok(Arc::new(account))
@@ -388,14 +374,12 @@ impl WalletManager {
 
     /// Get total NEO balance across all accounts (production-ready implementation matching C# exactly)
     pub async fn total_neo_balance(&self) -> WalletResult<i64> {
-        // Production-ready NEO balance retrieval (matches C# WalletAPI.GetNeoBalanceAsync exactly)
-
         if self.accounts.is_empty() {
             return Ok(0);
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:10332".to_string())
+        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:20332".to_string())
             .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 
         // 2. NEO native contract hash (matches C# NativeContract.NEO.Hash exactly)
@@ -414,10 +398,10 @@ impl WalletManager {
                     total_balance = total_balance.saturating_add(balance);
                 }
                 Err(e) => {
-                    // Log error but continue with other accounts (matches C# error handling)
-                    eprintln!(
+                    log::error!(
                         "Warning: Failed to get NEO balance for account {}: {}",
-                        address, e
+                        address,
+                        e
                     );
                 }
             }
@@ -428,14 +412,12 @@ impl WalletManager {
 
     /// Get total GAS balance across all accounts (production-ready implementation matching C# exactly)
     pub async fn total_gas_balance(&self) -> WalletResult<i64> {
-        // Production-ready GAS balance retrieval (matches C# WalletAPI.GetGasBalanceAsync exactly)
-
         if self.accounts.is_empty() {
             return Ok(0);
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:10332".to_string())
+        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:20332".to_string())
             .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 
         // 2. GAS native contract hash (matches C# NativeContract.GAS.Hash exactly)
@@ -454,10 +436,10 @@ impl WalletManager {
                     total_balance = total_balance.saturating_add(balance);
                 }
                 Err(e) => {
-                    // Log error but continue with other accounts (matches C# error handling)
-                    eprintln!(
+                    log::error!(
                         "Warning: Failed to get GAS balance for account {}: {}",
-                        address, e
+                        address,
+                        e
                     );
                 }
             }
@@ -473,14 +455,11 @@ impl WalletManager {
         contract_hash: &str,
         address: &UInt160,
     ) -> WalletResult<i64> {
-        // Production-ready NEO balance query (matches C# Nep17API.BalanceOfAsync exactly)
-
         // 1. Convert address to script hash format for RPC call (matches C# address encoding exactly)
         let address_bytes = address.as_bytes();
         let address_hex = format!("0x{}", hex::encode(address_bytes));
 
         // 2. Prepare parameters for balanceOf call (matches C# contract invocation exactly)
-        // Using NEP-17 standard format: balanceOf(account)
         let params = serde_json::json!([{
             "type": "Hash160",
             "value": address_hex
@@ -505,14 +484,11 @@ impl WalletManager {
         contract_hash: &str,
         address: &UInt160,
     ) -> WalletResult<i64> {
-        // Production-ready GAS balance query (matches C# Nep17API.BalanceOfAsync exactly)
-
         // 1. Convert address to script hash format for RPC call (matches C# address encoding exactly)
         let address_bytes = address.as_bytes();
         let address_hex = format!("0x{}", hex::encode(address_bytes));
 
         // 2. Prepare parameters for balanceOf call (matches C# contract invocation exactly)
-        // Using NEP-17 standard format: balanceOf(account)
         let params = serde_json::json!([{
             "type": "Hash160",
             "value": address_hex
@@ -532,8 +508,6 @@ impl WalletManager {
 
     /// Parse balance result from smart contract response (matches C# result parsing exactly)
     fn parse_balance_result(&self, result: &serde_json::Value, decimals: u8) -> WalletResult<i64> {
-        // Production-ready balance parsing (matches C# ApplicationEngine result parsing exactly)
-
         // 1. Check if invocation was successful (matches C# VMState check exactly)
         let state = result
             .get("state")
@@ -583,34 +557,31 @@ impl WalletManager {
 
         // 5. For raw display purposes, return the balance in its smallest unit
         // Note: In C# Neo, GAS balances are typically displayed as GAS units (dividing by 10^8)
-        // but for internal storage and calculations, raw values are used
         Ok(raw_balance)
     }
 
     /// Get NEP-17 token balance for all accounts (production-ready implementation)
     pub async fn get_nep17_balances(&self) -> WalletResult<Vec<TokenBalance>> {
-        // Production-ready NEP-17 balance retrieval (matches C# GetNep17BalancesAsync exactly)
-
         if self.accounts.is_empty() {
             return Ok(vec![]);
         }
 
         // Create RPC client
-        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:10332".to_string())
+        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:20332".to_string())
             .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 
         let mut all_balances = Vec::new();
 
-        // Query balances for each account
         for (address, _account) in &self.accounts {
             match self.get_account_nep17_balances(&rpc_client, address).await {
                 Ok(mut balances) => {
                     all_balances.append(&mut balances);
                 }
                 Err(e) => {
-                    eprintln!(
+                    log::error!(
                         "Warning: Failed to get NEP-17 balances for account {}: {}",
-                        address, e
+                        address,
+                        e
                     );
                 }
             }
@@ -625,7 +596,6 @@ impl WalletManager {
         rpc_client: &neo_rpc_client::RpcClient,
         address: &UInt160,
     ) -> WalletResult<Vec<TokenBalance>> {
-        // Convert address to string format
         let address_str = address.to_string();
 
         // Call getnep17balances RPC method
@@ -688,14 +658,12 @@ impl WalletManager {
 
     /// Get total unclaimed GAS across all accounts (production-ready implementation matching C# exactly)
     pub async fn total_unclaimed_gas(&self) -> WalletResult<i64> {
-        // Production-ready unclaimed GAS retrieval (matches C# WalletAPI.GetUnclaimedGasAsync exactly)
-
         if self.accounts.is_empty() {
             return Ok(0);
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:10332".to_string())
+        let rpc_client = neo_rpc_client::RpcClient::new("http://localhost:20332".to_string())
             .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 
         // 2. NEO native contract hash for unclaimed GAS queries (matches C# exactly)
@@ -713,10 +681,10 @@ impl WalletManager {
                     total_unclaimed = total_unclaimed.saturating_add(unclaimed);
                 }
                 Err(e) => {
-                    // Log error but continue with other accounts (matches C# error handling)
-                    eprintln!(
+                    log::error!(
                         "Warning: Failed to get unclaimed GAS for account {}: {}",
-                        address, e
+                        address,
+                        e
                     );
                 }
             }
@@ -732,8 +700,6 @@ impl WalletManager {
         neo_contract_hash: &str,
         address: &UInt160,
     ) -> WalletResult<i64> {
-        // Production-ready unclaimed GAS query (matches C# WalletAPI.GetUnclaimedGasAsync exactly)
-
         // 1. Get current block count for unclaimed GAS calculation
         let block_count = rpc_client
             .get_block_count()
@@ -745,7 +711,6 @@ impl WalletManager {
         let address_hex = format!("0x{}", hex::encode(address_bytes));
 
         // 3. Prepare parameters for unclaimedGas call (matches C# contract invocation exactly)
-        // Using NEO contract unclaimedGas(account, blockHeight) method
         let params = serde_json::json!([{
             "type": "Hash160",
             "value": address_hex

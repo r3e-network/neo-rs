@@ -197,7 +197,7 @@ impl fmt::Display for JNumber {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_jnumber_new() {
@@ -219,9 +219,17 @@ mod tests {
     fn test_jnumber_conversions() {
         let jnum = JNumber::from(123);
         assert_eq!(jnum.to_i32().unwrap(), 123);
-        assert_eq!(jnum.to_u32().unwrap(), 123);
+        assert_eq!(
+            jnum.to_u32()
+                .ok_or_else(|| anyhow::anyhow!("Cannot convert to u32"))?,
+            123
+        );
         assert_eq!(jnum.to_i64().unwrap(), 123);
-        assert_eq!(jnum.to_u64().unwrap(), 123);
+        assert_eq!(
+            jnum.to_u64()
+                .ok_or_else(|| anyhow::anyhow!("Cannot convert to u64"))?,
+            123
+        );
 
         let float_num = JNumber::from(123.5);
         assert!(float_num.to_i32().is_err());
@@ -249,7 +257,7 @@ mod tests {
             _ => panic!("Expected JToken::Number"),
         }
 
-        let jnum2 = JNumber::from_jtoken(JToken::Number(123.5)).unwrap();
+        let jnum2 = JNumber::from_jtoken(JToken::Number(123.5)).expect("operation should succeed");
         assert_eq!(jnum2.value(), 123.5);
 
         let result = JNumber::from_jtoken(JToken::String("not a number".to_string()));

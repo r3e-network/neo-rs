@@ -1,17 +1,12 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// attributes.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Transaction attributes implementation matching C# Neo N3 exactly.
 
-use crate::{CoreError, UInt256};
+use crate::error::{CoreError, CoreResult};
+use crate::UInt256;
+use neo_config::HASH_SIZE;
 use neo_io::serializable::helper::get_var_size;
 use neo_io::{BinaryWriter, MemoryReader};
 use serde::{Deserialize, Serialize};
@@ -102,37 +97,31 @@ impl TransactionAttribute {
         match self {
             TransactionAttribute::HighPriority => 1, // Just the type byte
             TransactionAttribute::OracleResponse { result, .. } => {
-                1 + // type
+                1 +
                 8 + // id (u64)
                 1 + // code (u8)
                 get_var_size(result.len() as u64) + result.len() // result with var length
             }
             TransactionAttribute::NotValidBefore { .. } => {
-                1 + // type
-                4 // height (u32)
+                1 + 4 // height (u32)
             }
             TransactionAttribute::Conflicts { .. } => {
-                1 + // type
-                32 // hash (UInt256)
+                1 + HASH_SIZE // hash (UInt256)
             }
         }
     }
 
     /// Validates the attribute (matches C# Verify method exactly).
-    pub fn verify(&self) -> Result<(), CoreError> {
+    pub fn verify(&self) -> CoreResult<()> {
         match self {
-            TransactionAttribute::HighPriority => {
-                // High priority attributes are always valid (matches C# behavior)
-                Ok(())
-            }
+            TransactionAttribute::HighPriority => Ok(()),
             TransactionAttribute::OracleResponse { id, result, .. } => {
-                // Validate oracle response (matches C# OracleResponse.Verify)
                 if *id == 0 {
                     return Err(CoreError::InvalidData {
                         message: "Oracle ID cannot be zero".to_string(),
                     });
                 }
-                if result.len() > 65535 {
+                if result.len() > u16::MAX as usize {
                     return Err(CoreError::InvalidData {
                         message: "Oracle result too large".to_string(),
                     });
@@ -140,7 +129,6 @@ impl TransactionAttribute {
                 Ok(())
             }
             TransactionAttribute::NotValidBefore { height } => {
-                // Validate not valid before height (matches C# NotValidBefore.Verify)
                 if *height == 0 {
                     return Err(CoreError::InvalidData {
                         message: "Height cannot be zero".to_string(),
@@ -149,7 +137,6 @@ impl TransactionAttribute {
                 Ok(())
             }
             TransactionAttribute::Conflicts { hash } => {
-                // Validate conflicts hash (matches C# Conflicts.Verify)
                 if hash.is_zero() {
                     return Err(CoreError::InvalidData {
                         message: "Conflict hash cannot be zero".to_string(),
@@ -192,7 +179,7 @@ impl TransactionAttribute {
     }
 
     /// Serializes the attribute to binary format (matches C# Serialize method exactly).
-    pub fn serialize(&self, writer: &mut BinaryWriter) -> Result<(), CoreError> {
+    pub fn serialize(&self, writer: &mut BinaryWriter) -> CoreResult<()> {
         // Write attribute type
         writer
             .write_bytes(&[self.attribute_type() as u8])
@@ -202,11 +189,8 @@ impl TransactionAttribute {
 
         // Write attribute data
         match self {
-            TransactionAttribute::HighPriority => {
-                // No additional data for high priority (matches C# behavior)
-            }
+            TransactionAttribute::HighPriority => {}
             TransactionAttribute::OracleResponse { id, code, result } => {
-                // Write oracle response data (matches C# OracleResponse.Serialize)
                 writer
                     .write_bytes(&id.to_le_bytes())
                     .map_err(|e| CoreError::Serialization {
@@ -224,7 +208,6 @@ impl TransactionAttribute {
                     })?;
             }
             TransactionAttribute::NotValidBefore { height } => {
-                // Write not valid before data (matches C# NotValidBefore.Serialize)
                 writer.write_bytes(&height.to_le_bytes()).map_err(|e| {
                     CoreError::Serialization {
                         message: e.to_string(),
@@ -232,7 +215,6 @@ impl TransactionAttribute {
                 })?;
             }
             TransactionAttribute::Conflicts { hash } => {
-                // Write conflicts data (matches C# Conflicts.Serialize)
                 writer
                     .write_bytes(hash.as_bytes())
                     .map_err(|e| CoreError::Serialization {
@@ -245,19 +227,15 @@ impl TransactionAttribute {
     }
 
     /// Deserializes an attribute from binary format (matches C# Deserialize method exactly).
-    pub fn deserialize(reader: &mut MemoryReader) -> Result<Self, CoreError> {
+    pub fn deserialize(reader: &mut MemoryReader) -> CoreResult<Self> {
         // Read attribute type
         let attribute_type = reader.read_byte().map_err(|e| CoreError::Serialization {
             message: e.to_string(),
         })?;
 
         match attribute_type {
-            0x01 => {
-                // High priority attribute (matches C# HighPriority deserialization)
-                Ok(TransactionAttribute::HighPriority)
-            }
+            0x01 => Ok(TransactionAttribute::HighPriority),
             0x11 => {
-                // Oracle response attribute (matches C# OracleResponse deserialization)
                 let id = reader.read_u64().map_err(|e| CoreError::Serialization {
                     message: e.to_string(),
                 })?;
@@ -281,29 +259,27 @@ impl TransactionAttribute {
                         });
                     }
                 };
-                let result =
-                    reader
-                        .read_var_bytes(65535)
-                        .map_err(|e| CoreError::Serialization {
-                            message: e.to_string(),
-                        })?;
+                let result = reader.read_var_bytes(u16::MAX as usize).map_err(|e| {
+                    CoreError::Serialization {
+                        message: e.to_string(),
+                    }
+                })?;
 
                 Ok(TransactionAttribute::OracleResponse { id, code, result })
             }
             0x20 => {
-                // Not valid before attribute (matches C# NotValidBefore deserialization)
                 let height = reader.read_u32().map_err(|e| CoreError::Serialization {
                     message: e.to_string(),
                 })?;
                 Ok(TransactionAttribute::NotValidBefore { height })
             }
             0x21 => {
-                // Conflicts attribute (matches C# Conflicts deserialization)
-                let hash_bytes = reader
-                    .read_bytes(32)
-                    .map_err(|e| CoreError::Serialization {
-                        message: e.to_string(),
-                    })?;
+                let hash_bytes =
+                    reader
+                        .read_bytes(HASH_SIZE)
+                        .map_err(|e| CoreError::Serialization {
+                            message: e.to_string(),
+                        })?;
                 let hash =
                     UInt256::from_bytes(&hash_bytes).map_err(|e| CoreError::InvalidData {
                         message: format!("Invalid hash: {}", e),

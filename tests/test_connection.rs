@@ -13,9 +13,8 @@ async fn test_basic_connection() -> Result<(), Box<dyn std::error::Error>> {
     let magic = 0x3554334e_u32.to_le_bytes(); // Neo N3 testnet magic
     let command = b"version\0\0\0\0\0"; // 12 bytes, zero-padded
     let length = 38_u32.to_le_bytes(); // Version message is ~38 bytes
-    let checksum = 0_u32.to_le_bytes(); // We'll use 0 for now
+    let checksum = 0_u32.to_le_bytes();
 
-    // Construct header (24 bytes)
     let mut header = Vec::new();
     header.extend_from_slice(&magic);
     header.extend_from_slice(command);

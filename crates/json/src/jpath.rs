@@ -119,7 +119,11 @@ impl JPathToken {
                             if next_ch == '.' || next_ch == '[' {
                                 break;
                             }
-                            prop_name.push(chars.next().unwrap());
+                            prop_name.push(chars.next().ok_or_else(|| {
+                                crate::error::JsonError::ParseError(
+                                    "Iterator exhausted".to_string(),
+                                )
+                            })?);
                         }
                         if !prop_name.is_empty() {
                             tokens.push(JPathToken::property(prop_name));
@@ -162,7 +166,6 @@ impl JPathToken {
                     } else if let Ok(index) = bracket_content.parse::<usize>() {
                         tokens.push(JPathToken::array_index(index));
                     } else {
-                        // Property name in brackets (quoted)
                         let prop_name = bracket_content.trim_matches(|c| c == '"' || c == '\'');
                         tokens.push(JPathToken::property(prop_name.to_string()));
                     }
@@ -285,7 +288,7 @@ impl JPathToken {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use crate::OrderedDictionary;
 
     #[test]

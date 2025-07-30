@@ -6,7 +6,6 @@
 
 mod network_type_tests;
 
-// Integration tests for complete configuration workflows
 mod integration_tests {
     use neo_config::NetworkType;
 
@@ -131,7 +130,6 @@ mod integration_tests {
             }
 
             fn validate(&self) -> Result<(), String> {
-                // Validation rules that match C# validation patterns
                 if self.max_peers == 0 {
                     return Err("Max peers must be greater than 0".to_string());
                 }

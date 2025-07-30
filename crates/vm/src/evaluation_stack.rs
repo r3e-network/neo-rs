@@ -2,8 +2,7 @@
 //!
 //! This module represents a stack used by the Neo VM for executing scripts.
 
-use crate::error::VmError;
-use crate::error::VmResult;
+use crate::error::{VmError, VmResult};
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::StackItem;
 
@@ -33,7 +32,6 @@ impl EvaluationStack {
 
     /// Pushes an item onto the stack.
     pub fn push(&mut self, item: StackItem) {
-        // Add a stack reference to the item (matches C# AddStackReference exactly)
         self.reference_counter.add_stack_reference(&item);
         self.stack.push(item);
     }
@@ -42,7 +40,6 @@ impl EvaluationStack {
     pub fn pop(&mut self) -> VmResult<StackItem> {
         match self.stack.pop() {
             Some(item) => {
-                // Remove a stack reference from the item (matches C# RemoveStackReference exactly)
                 self.reference_counter.remove_stack_reference(&item);
                 Ok(item)
             }
@@ -107,7 +104,6 @@ impl EvaluationStack {
         // Remove the item at the specified index
         let item = self.stack.remove(index);
 
-        // Remove a stack reference from the item (matches C# RemoveStackReference exactly)
         self.reference_counter.remove_stack_reference(&item);
 
         Ok(item)
@@ -119,7 +115,6 @@ impl EvaluationStack {
             return Err(VmError::invalid_operation_msg("Insert index out of range"));
         }
 
-        // Add a stack reference to the item (matches C# AddStackReference exactly)
         self.reference_counter.add_stack_reference(&item);
 
         // Insert the item at the specified index
@@ -161,7 +156,6 @@ impl EvaluationStack {
     /// Copies items from this stack to another stack.
     pub fn copy_to(&self, target: &mut EvaluationStack) {
         for item in &self.stack {
-            // Add a stack reference for each item (matches C# AddStackReference exactly)
             target.reference_counter.add_stack_reference(item);
 
             target.stack.push(item.clone());
@@ -170,7 +164,6 @@ impl EvaluationStack {
 
     /// Clears the stack.
     pub fn clear(&mut self) {
-        // Remove a stack reference for each item (matches C# RemoveStackReference exactly)
         for item in &self.stack {
             self.reference_counter.remove_stack_reference(item);
         }
@@ -198,9 +191,6 @@ impl Drop for EvaluationStack {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::stack_item::StackItem;
-
     #[test]
     fn test_push_pop() {
         let reference_counter = ReferenceCounter::new();
@@ -215,8 +205,8 @@ mod tests {
         assert_eq!(stack.len(), 3);
 
         // Pop an item
-        let item = stack.pop().unwrap();
-        assert_eq!(item.as_int().unwrap(), 3);
+        let item = stack.pop().ok_or_else(|| VmError::StackUnderflow)?;
+        assert_eq!(item.as_int().map_err(|_| VmError::StackOperationFailed)?, 3);
 
         // Check updated stack size
         assert_eq!(stack.len(), 2);
@@ -233,15 +223,23 @@ mod tests {
         stack.push(StackItem::from_int(3));
 
         // Peek at items
-        let item0 = stack.peek(0).unwrap();
-        let item1 = stack.peek(1).unwrap();
-        let item2 = stack.peek(2).unwrap();
+        let item0 = stack.peek(0).map_err(|_| VmError::StackOperationFailed)?;
+        let item1 = stack.peek(1).map_err(|_| VmError::StackOperationFailed)?;
+        let item2 = stack.peek(2).map_err(|_| VmError::StackOperationFailed)?;
 
-        assert_eq!(item0.as_int().unwrap(), 3);
-        assert_eq!(item1.as_int().unwrap(), 2);
-        assert_eq!(item2.as_int().unwrap(), 1);
+        assert_eq!(
+            item0.as_int().map_err(|_| VmError::StackOperationFailed)?,
+            3
+        );
+        assert_eq!(
+            item1.as_int().map_err(|_| VmError::StackOperationFailed)?,
+            2
+        );
+        assert_eq!(
+            item2.as_int().map_err(|_| VmError::StackOperationFailed)?,
+            1
+        );
 
-        // Check stack size (peek doesn't change the stack)
         assert_eq!(stack.len(), 3);
     }
 
@@ -255,20 +253,57 @@ mod tests {
         stack.push(StackItem::from_int(3));
 
         // Insert an item
-        stack.insert(1, StackItem::from_int(2)).unwrap();
+        stack
+            .insert(1, StackItem::from_int(2))
+            .map_err(|_| VmError::StackOperationFailed)?;
 
         // Check stack
-        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 1);
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2);
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 3);
+        assert_eq!(
+            stack
+                .peek(2)
+                .expect("intermediate value should exist")
+                .as_int()
+                .map_err(|_| VmError::StackOperationFailed)?,
+            1
+        );
+        assert_eq!(
+            stack
+                .peek(1)
+                .expect("intermediate value should exist")
+                .as_int()
+                .map_err(|_| VmError::StackOperationFailed)?,
+            2
+        );
+        assert_eq!(
+            stack
+                .peek(0)
+                .expect("intermediate value should exist")
+                .as_int()
+                .map_err(|_| VmError::StackOperationFailed)?,
+            3
+        );
 
         // Remove an item
-        let item = stack.remove(1).unwrap();
-        assert_eq!(item.as_int().unwrap(), 2);
+        let item = stack.remove(1).ok_or("Key not found")?;
+        assert_eq!(item.as_int().map_err(|_| VmError::StackOperationFailed)?, 2);
 
         // Check stack
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 1);
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 3);
+        assert_eq!(
+            stack
+                .peek(1)
+                .expect("intermediate value should exist")
+                .as_int()
+                .map_err(|_| VmError::StackOperationFailed)?,
+            1
+        );
+        assert_eq!(
+            stack
+                .peek(0)
+                .expect("intermediate value should exist")
+                .as_int()
+                .map_err(|_| VmError::StackOperationFailed)?,
+            3
+        );
     }
 
     #[test]
@@ -282,12 +317,35 @@ mod tests {
         stack.push(StackItem::from_int(3));
 
         // Swap items
-        stack.swap(0, 2).unwrap();
+        stack
+            .swap(0, 2)
+            .map_err(|_| VmError::StackOperationFailed)?;
 
         // Check stack
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1);
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2);
-        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 3);
+        assert_eq!(
+            stack
+                .peek(0)
+                .expect("intermediate value should exist")
+                .as_int()
+                .map_err(|_| VmError::StackOperationFailed)?,
+            1
+        );
+        assert_eq!(
+            stack
+                .peek(1)
+                .expect("intermediate value should exist")
+                .as_int()
+                .map_err(|_| VmError::StackOperationFailed)?,
+            2
+        );
+        assert_eq!(
+            stack
+                .peek(2)
+                .expect("intermediate value should exist")
+                .as_int()
+                .map_err(|_| VmError::StackOperationFailed)?,
+            3
+        );
     }
 
     #[test]
@@ -303,11 +361,27 @@ mod tests {
         stack.push(StackItem::from_int(5));
 
         // Reverse the top 3 items
-        stack.reverse(3).unwrap();
+        stack
+            .reverse(3)
+            .map_err(|_| VmError::StackOperationFailed)?;
 
         // Check stack
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 3);
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 4);
+        assert_eq!(
+            stack
+                .peek(0)
+                .expect("intermediate value should exist")
+                .as_int()
+                .map_err(|_| VmError::StackOperationFailed)?,
+            3
+        );
+        assert_eq!(
+            stack
+                .peek(1)
+                .unwrap()
+                .as_int()
+                .map_err(|_| VmError::StackOperationFailed)?,
+            4
+        );
         assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 5);
         assert_eq!(stack.peek(3).unwrap().as_int().unwrap(), 2);
         assert_eq!(stack.peek(4).unwrap().as_int().unwrap(), 1);
@@ -317,23 +391,40 @@ mod tests {
 
         // Check stack
         assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1);
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2);
-        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 5);
-        assert_eq!(stack.peek(3).unwrap().as_int().unwrap(), 4);
-        assert_eq!(stack.peek(4).unwrap().as_int().unwrap(), 3);
+        assert_eq!(
+            stack.peek(1).unwrap().as_int().expect("Operation failed"),
+            2
+        );
+        assert_eq!(
+            stack.peek(2).unwrap().as_int().expect("Operation failed"),
+            5
+        );
+        assert_eq!(
+            stack.peek(3).unwrap().as_int().expect("Operation failed"),
+            4
+        );
+        assert_eq!(
+            stack.peek(4).unwrap().as_int().expect("Operation failed"),
+            3
+        );
 
-        // Reverse 0 items (no change)
-        stack.reverse(0).unwrap();
+        stack.reverse(0).expect("Operation failed");
 
-        // Check stack (unchanged)
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1);
-        assert_eq!(stack.peek(1).unwrap().as_int().unwrap(), 2);
+        assert_eq!(
+            stack.peek(0).unwrap().as_int().expect("Operation failed"),
+            1
+        );
+        assert_eq!(
+            stack.peek(1).unwrap().as_int().expect("Operation failed"),
+            2
+        );
 
-        // Reverse 1 item (no change)
-        stack.reverse(1).unwrap();
+        stack.reverse(1).expect("Operation failed");
 
-        // Check stack (unchanged)
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1);
+        assert_eq!(
+            stack.peek(0).unwrap().as_int().expect("Operation failed"),
+            1
+        );
 
         // Try to reverse more items than on the stack
         assert!(stack.reverse(10).is_err());

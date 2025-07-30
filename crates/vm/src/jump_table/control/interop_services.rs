@@ -28,17 +28,14 @@ pub fn invoke_interop_service(
             Ok(Some(StackItem::from_byte_string(b"NEO".to_vec())))
         }
         "System.Runtime.GetTrigger" => {
-            // Production implementation: Get actual trigger from ApplicationEngine (matches C# exactly)
             if let Some(app_engine) = engine.as_application_engine() {
                 let trigger_value = app_engine.trigger().as_byte() as i64;
                 Ok(Some(StackItem::from_int(trigger_value)))
             } else {
-                // Fallback for non-application engines
                 Ok(Some(StackItem::from_int(0x40))) // Application trigger
             }
         }
         "System.Runtime.GetTime" => {
-            // Production implementation: Get persisting block timestamp (matches C# exactly)
             if let Some(app_engine) = engine.as_application_engine() {
                 // Get timestamp from persisting block
                 let timestamp = app_engine
@@ -52,7 +49,6 @@ pub fn invoke_interop_service(
                     });
                 Ok(Some(StackItem::from_int(timestamp as i64)))
             } else {
-                // Fallback for non-application engines
                 let current_timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -61,7 +57,6 @@ pub fn invoke_interop_service(
             }
         }
         "System.Runtime.Log" => {
-            // Production implementation: Emit log notification (matches C# exactly)
             if let Some(InteropParameter::String(message)) = parameters.first() {
                 // Production-ready log event emission
                 let script_hash = engine.current_script_hash().unwrap_or_default().to_vec();
@@ -78,13 +73,11 @@ pub fn invoke_interop_service(
                     app_engine.add_notification(log_event);
                 }
 
-                // Also output to console for debugging
-                println!("Log: {}", message);
+                log::info!("Log: {}", message);
             }
             Ok(None)
         }
         "System.Runtime.Notify" => {
-            // Production implementation: Emit notification event (matches C# exactly)
             if parameters.len() >= 2 {
                 if let (Some(InteropParameter::String(event_name)), Some(state_param)) =
                     (parameters.get(0), parameters.get(1))
@@ -93,7 +86,7 @@ pub fn invoke_interop_service(
                     let script_hash = engine.current_script_hash().unwrap_or_default().to_vec();
 
                     if let Some(app_engine) = engine.as_application_engine_mut() {
-                        // Convert state parameter to StackItem
+                        // Convert state parameter to stack_item
                         let state_item = convert_parameter_to_stack_item(state_param);
 
                         // Create notification event
@@ -107,15 +100,12 @@ pub fn invoke_interop_service(
                         app_engine.add_notification(notification_event);
                     }
 
-                    // Also output to console for debugging
-                    println!("Notify: {}", event_name);
+                    log::info!("Notify: {}", event_name);
                 }
             }
             Ok(None)
         }
         "System.Storage.GetContext" => {
-            // Production implementation: Get storage context (matches C# exactly)
-
             // 1. Get current script hash
             let contract_hash = engine.current_script_hash().ok_or_else(|| {
                 VmError::invalid_operation_msg("No current script context".to_string())
@@ -139,7 +129,6 @@ pub fn invoke_interop_service(
                     Some(InteropParameter::ByteArray(_key)),
                 ) = (parameters.get(0), parameters.get(1))
                 {
-                    // Simplified storage get - return null for now
                     // In production this would query the blockchain storage
                     Ok(Some(StackItem::Null))
                 } else {
@@ -180,7 +169,7 @@ pub fn invoke_interop_service(
                                 "Storage key too large".to_string(),
                             ));
                         }
-                        if value.len() > 65535 {
+                        if value.len() > u16::MAX as usize {
                             return Err(VmError::invalid_operation_msg(
                                 "Storage value too large".to_string(),
                             ));
@@ -319,7 +308,6 @@ pub fn invoke_interop_service(
 
                         Ok(Some(result))
                     } else {
-                        // Fallback for non-application engines
                         Ok(Some(StackItem::Null))
                     }
                 } else {

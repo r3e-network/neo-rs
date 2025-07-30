@@ -3,8 +3,11 @@
 
 use hex;
 use neo_cryptography::base58;
+use neo_cryptography::crypto::Crypto;
 use neo_cryptography::ecdsa::ECDsa;
 use neo_cryptography::hash;
+use neo_cryptography::hash_algorithm::HashAlgorithm;
+use neo_cryptography::helper;
 
 // ============================================================================
 // C# Neo Unit Test Conversions - ECDSA Tests
@@ -52,11 +55,9 @@ fn test_ecdsa_secp256r1_compatibility() {
     // Test ECDSA with secp256r1 curve exactly like C# Neo
     let _message = b"Neo blockchain test message";
 
-    // Generate a key pair for testing
     let private_key = ECDsa::generate_private_key();
     let public_key = ECDsa::derive_public_key(&private_key).unwrap();
 
-    // Test key generation and validation (interface test)
     // This tests that the ECDSA interface is working correctly
     assert!(ECDsa::validate_private_key(&private_key));
     assert!(ECDsa::validate_public_key(&public_key));
@@ -116,7 +117,6 @@ fn test_ripemd160_hash() {
 /// Test converted from C# UT_Crypto.TestHash160
 #[test]
 fn test_hash160() {
-    // Test Hash160 (SHA256 + RIPEMD160) exactly like C# Neo
     let input = b"Neo blockchain";
 
     let hash_bytes = hash::hash160(input);
@@ -130,7 +130,6 @@ fn test_hash160() {
 /// Test converted from C# UT_Crypto.TestHash256
 #[test]
 fn test_hash256() {
-    // Test Hash256 (double SHA256) exactly like C# Neo
     let input = b"Neo double hash test";
 
     let hash_bytes = hash::hash256(input);
@@ -182,7 +181,6 @@ fn test_base58_decode() {
         assert!(result.is_ok());
         let decoded = result.unwrap();
 
-        // For round-trip testing, encode the decoded value and check if it matches input
         let re_encoded = base58::encode(&decoded);
         if re_encoded == input {
             // Perfect round-trip, this is the correct behavior
@@ -193,7 +191,6 @@ fn test_base58_decode() {
             if input.is_empty() {
                 assert!(decoded.is_empty());
             } else {
-                // For non-empty inputs, just verify decode worked
                 println!(
                     "Decode result for '{}': {:?} (re-encodes to '{}')",
                     input, decoded, re_encoded
@@ -237,7 +234,6 @@ fn test_base58_check_decode() {
             assert_eq!(encoded, re_encoded);
         }
         Err(_) => {
-            // If decode fails, at least verify the encoding worked
             assert!(!encoded.is_empty());
             println!(
                 "Base58Check decode failed, but encoding worked: {}",
@@ -309,9 +305,6 @@ fn test_merkle_tree_operations() {
 /// Test Crypto class static methods exactly like C# Neo
 #[test]
 fn test_crypto_class_methods() {
-    use neo_cryptography::crypto::Crypto;
-    use neo_cryptography::hash_algorithm::HashAlgorithm;
-
     let test_data = b"Neo blockchain test data";
 
     // Test Hash160 and Hash256 static methods
@@ -334,8 +327,6 @@ fn test_crypto_class_methods() {
 /// Test Crypto signature validation helpers
 #[test]
 fn test_crypto_validation_methods() {
-    use neo_cryptography::crypto::Crypto;
-
     let valid_signature = vec![0u8; 64];
     let invalid_signature = vec![0u8; 63];
     let valid_hash = vec![0u8; 32];
@@ -353,8 +344,6 @@ fn test_crypto_validation_methods() {
 /// Test Helper AES encryption/decryption exactly like C# Neo
 #[test]
 fn test_helper_aes_encryption() {
-    use neo_cryptography::helper;
-
     let plaintext = b"Hello, Neo blockchain!";
     let key = vec![0u8; 32]; // 256-bit key
     let nonce = vec![1u8; 12]; // 96-bit nonce
@@ -379,8 +368,6 @@ fn test_helper_aes_encryption() {
 /// Test Helper rotation functions exactly like C# Neo
 #[test]
 fn test_helper_rotation_functions() {
-    use neo_cryptography::helper;
-
     // Test 32-bit rotation
     let value_u32 = 0x12345678u32;
     let rotated_u32 = helper::rotate_left_u32(value_u32, 8);
@@ -397,8 +384,6 @@ fn test_helper_rotation_functions() {
 /// Test Helper hash slice functions exactly like C# Neo
 #[test]
 fn test_helper_hash_slice_functions() {
-    use neo_cryptography::helper;
-
     let test_data = b"This is a long test string for slice hashing";
 
     // Test SHA-256 slice hashing

@@ -53,7 +53,6 @@ impl BatchVerifier {
         public_key: &PublicKey,
         scheme: SignatureScheme,
     ) -> BlsResult<()> {
-        // Check if we're enforcing a specific scheme
         if let Some(expected_scheme) = self.scheme {
             if scheme != expected_scheme {
                 return Err(BlsError::InvalidSignatureScheme);
@@ -65,7 +64,6 @@ impl BatchVerifier {
             return Err(BlsError::BatchTooLarge);
         }
 
-        // Convert to affine coordinates for efficient pairing
         let signature_affine = signature.point().to_affine();
         let public_key_affine = public_key.point();
 
@@ -86,12 +84,10 @@ impl BatchVerifier {
             return true;
         }
 
-        // For small batches, use individual verification
         if self.items.len() < BATCH_VERIFICATION_THRESHOLD {
             return self.verify_individually();
         }
 
-        // Use randomized batch verification for larger batches
         self.verify_batch_randomized()
     }
 
@@ -113,7 +109,6 @@ impl BatchVerifier {
     fn verify_batch_randomized(&self) -> bool {
         let mut rng = thread_rng();
 
-        // Generate random coefficients for each signature
         let coefficients: Vec<u64> = (0..self.items.len())
             .map(|_| rng.gen_range(1..=u64::MAX))
             .collect();
@@ -123,7 +118,6 @@ impl BatchVerifier {
         let mut left_g2 = G2Projective::identity();
 
         for (item, &coeff) in self.items.iter().zip(coefficients.iter()) {
-            // Prepare message for the specific scheme
             let prepared_message = match item.scheme {
                 SignatureScheme::Basic => item.message.clone(),
                 SignatureScheme::MessageAugmentation => {
@@ -140,10 +134,8 @@ impl BatchVerifier {
             // Accumulate with random coefficient
             let coeff_scalar = bls12_381::Scalar::from(coeff);
 
-            // left_g1 += coeff * public_key
             left_g1 = (left_g1 + (item.public_key * coeff_scalar)).to_affine();
 
-            // left_g2 += coeff * message_point
             left_g2 += message_point * coeff_scalar;
         }
 
@@ -156,7 +148,6 @@ impl BatchVerifier {
             right_g2 += G2Projective::from(item.signature) * coeff_scalar;
         }
 
-        // Verify the pairing equation: e(left_g1, left_g2) == e(right_g1, right_g2)
         let left_pairing = pairing(&left_g1, &left_g2.to_affine());
         let right_pairing = pairing(&right_g1, &right_g2.to_affine());
 
@@ -192,7 +183,6 @@ impl Default for BatchVerifier {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::keys::KeyPair;
     use rand::thread_rng;
 
@@ -277,7 +267,6 @@ mod tests {
             )
             .unwrap();
 
-        // Add invalid signature (wrong message)
         let keypair2 = KeyPair::generate(&mut rng);
         let message2 = b"test message 2";
         let wrong_message = b"wrong message";
@@ -291,7 +280,7 @@ mod tests {
                 keypair2.public_key(),
                 SignatureScheme::Basic,
             )
-            .unwrap();
+            .expect("Operation failed");
 
         assert_eq!(verifier.len(), 2);
         assert!(!verifier.verify()); // Should fail due to invalid signature

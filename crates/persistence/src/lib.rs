@@ -12,7 +12,6 @@
 pub mod rocksdb;
 pub mod storage;
 
-// Production-ready modules for comprehensive persistence functionality
 pub mod backup;
 pub mod cache;
 pub mod compression;
@@ -20,7 +19,6 @@ pub mod index;
 pub mod migration;
 pub mod serialization;
 
-// Re-export main types (matches C# Neo structure) - RocksDB only
 pub use rocksdb::{RocksDbSnapshot, RocksDbStorageProvider, RocksDbStore};
 pub use storage::{
     BatchOperation, CompactionStrategy, CompressionAlgorithm, IReadOnlyStore, IStore,
@@ -101,7 +99,6 @@ impl Storage {
 
     /// Gets storage statistics (production implementation for comprehensive monitoring)
     pub async fn stats(&self) -> Result<StorageStats> {
-        // Production-ready storage statistics collection (matches C# Neo storage monitoring exactly)
         // In C# Neo: this would collect comprehensive storage metrics
 
         // 1. Get basic storage metrics from the underlying store
@@ -139,7 +136,6 @@ impl Storage {
 
     /// Gets the current blockchain height from storage
     pub async fn get_current_height(&self) -> Result<u32> {
-        // Production-ready height retrieval (matches C# Neo exactly)
         match self.get(b"SYS:CurrentHeight").await? {
             Some(height_bytes) => {
                 if height_bytes.len() >= 4 {
@@ -181,7 +177,6 @@ impl Storage {
 
     /// Exports all data from storage (production implementation)
     pub async fn export_all_data(&self) -> Result<Vec<u8>> {
-        // Production-ready data export (matches C# Neo backup functionality exactly)
         let mut exported_data = Vec::new();
 
         // Export all key-value pairs from storage
@@ -197,8 +192,6 @@ impl Storage {
 
     /// Imports all data into storage (production implementation)
     pub async fn import_all_data(&mut self, data: &[u8]) -> Result<()> {
-        // Production-ready data import (matches C# Neo restore functionality exactly)
-
         // Deserialize the data
         let entries: Vec<(Vec<u8>, Vec<u8>)> =
             bincode::deserialize(data).map_err(|e| Error::SerializationError(e.to_string()))?;
@@ -217,7 +210,6 @@ impl Storage {
         last_backup_height: u32,
         current_height: u32,
     ) -> Result<Vec<u8>> {
-        // Production-ready incremental data export (matches C# Neo backup functionality exactly)
         // This implements the C# logic: exporting only changes since the last backup
 
         let mut incremental_data = Vec::new();
@@ -246,7 +238,6 @@ impl Storage {
 
     /// Exports snapshot data at current state (production implementation)
     pub async fn export_snapshot_data(&self) -> Result<Vec<u8>> {
-        // Production-ready snapshot data export (matches C# Neo backup functionality exactly)
         // This implements the C# logic: creating a point-in-time snapshot of the blockchain state
 
         let mut snapshot_data = Vec::new();

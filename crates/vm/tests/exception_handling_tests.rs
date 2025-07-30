@@ -81,7 +81,6 @@ fn test_exception_handling_context() {
 
 #[test]
 fn test_try_catch_finally() {
-    // Create a jump table with handlers for the operations we need
     let mut jump_table = JumpTable::new();
 
     // TRY handler
@@ -101,7 +100,6 @@ fn test_try_catch_finally() {
         // Create an exception handling context
         let exception_context = ExceptionHandlingContext::new(
             try_start,
-            catch_start as usize,
             catch_start as usize,
             finally_start as usize,
             0, // End offset will be set by ENDTRY
@@ -144,7 +142,6 @@ fn test_try_catch_finally() {
         // Pop the exception handling context from the stack
         let exception_context = context.try_stack_mut().pop().unwrap();
 
-        // Check if there's an uncaught exception
         if engine.uncaught_exception().is_some() {
             // Get the next instruction pointer
             let next_ip = exception_context.get_next_instruction_pointer(true)?;
@@ -170,7 +167,6 @@ fn test_try_catch_finally() {
         // Set the uncaught exception
         engine.set_uncaught_exception(Some(exception));
 
-        // Check if there's an exception handling context
         if !context.try_stack().is_empty() {
             // Get the exception handling context
             let mut exception_context = context.try_stack_mut().pop().unwrap();

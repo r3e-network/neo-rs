@@ -8,7 +8,7 @@ license = "MIT"
 description = "Neo wallet implementation in Rust"
 
 [dependencies]
-# Core dependencies
+log = "0.4"# Core dependencies
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
@@ -38,6 +38,7 @@ reqwest = { version = "0.11", features = ["json"] }
 neo-core = { path = "../core" }
 neo-cryptography = { path = "../cryptography" }
 neo-io = { path = "../io" }
+neo-config = { path = "../config" }
 
 [dev-dependencies]
 tokio-test = "0.4"

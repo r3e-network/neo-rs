@@ -8,6 +8,7 @@ authors = ["Neo Rust Team"]
 
 [dependencies]
 # Neo crates
+neo-config = { path = "../config" }
 neo-core = { path = "../core" }
 neo-vm = { path = "../vm" }
 neo-ledger = { path = "../ledger" }
@@ -26,7 +27,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Database
-rusqlite = { version = "0.29", features = ["bundled"] }
+# rusqlite = { version = "0.29", features = ["bundled"] } # Commented out due to thread safety issues
 rocksdb = "0.21"
 
 # Utilities
@@ -44,3 +45,6 @@ reqwest = { version = "0.11", features = ["json"] }
 
 # Web server for APIs
 hyper = { version = "0.14", features = ["full"] }
+
+# Temporary files for testing
+tempfile = "3"

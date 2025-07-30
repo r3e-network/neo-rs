@@ -17,13 +17,14 @@ jobs:
   # Create GitHub release
   create-release:
     name: Create Release
+    needs: build-binaries
     runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      release_id: ${{ steps.create_release.outputs.id }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v3
 
       - name: Get tag version
         id: get_version
@@ -43,15 +44,17 @@ jobs:
 
       - name: Create Release
         id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.get_version.outputs.VERSION }}
-          release_name: Neo-RS ${{ steps.get_version.outputs.VERSION }}
+          name: Neo-RS ${{ steps.get_version.outputs.VERSION }}
           body_path: release_notes.md
           draft: false
           prerelease: ${{ contains(steps.get_version.outputs.VERSION, '-') }}
+          files: |
+            */*.tar.gz
+            */*.zip
 
   # Build binaries for multiple platforms
   build-binaries:
@@ -149,20 +152,16 @@ jobs:
             tar czvf ../../../${{ matrix.artifact_name }}.tar.gz ${{ matrix.binary_name }}
           fi
 
-      - name: Upload binary to release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v3
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ${{ matrix.artifact_name }}.${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
-          asset_name: ${{ matrix.artifact_name }}.${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
-          asset_content_type: ${{ matrix.os == 'windows-latest' && 'application/zip' || 'application/gzip' }}
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
 
   # Build and upload Docker images
   docker:
     name: Build Docker Images
-    needs: create-release
+    needs: build-binaries
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

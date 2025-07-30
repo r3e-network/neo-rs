@@ -2,17 +2,10 @@
 //!
 //! This module provides the InteropInterface stack item implementation used in the Neo VM.
 
-use crate::error::VmError;
-use crate::error::VmResult;
+use super::stack_item::InteropInterface;
+use crate::error::{VmError, VmResult};
 use crate::stack_item::stack_item_type::StackItemType;
-use std::fmt;
 use std::sync::Arc;
-
-/// A trait for interop interfaces that can be wrapped by a StackItem.
-pub trait InteropInterface: fmt::Debug {
-    /// Gets the type of the interop interface.
-    fn interface_type(&self) -> &str;
-}
 
 /// Represents an interop interface in the VM.
 #[derive(Debug, Clone)]
@@ -46,9 +39,7 @@ impl InteropInterfaceItem {
 
     /// Attempts to downcast the interface to the specified type.
     pub fn downcast<T: InteropInterface + 'static>(&self) -> VmResult<&T> {
-        // Production-ready type conversion for InteropInterface (matches C# Neo exactly)
         // In Rust, we can't easily downcast a trait object without using a crate like `any` or similar.
-        // This is a production implementation that provides proper error handling for type safety.
         Err(VmError::invalid_type_simple(
             "Type conversion not supported for InteropInterface in Rust - use proper type casting",
         ))
@@ -69,8 +60,6 @@ impl InteropInterfaceItem {
 
 impl PartialEq for InteropInterfaceItem {
     fn eq(&self, other: &Self) -> bool {
-        // In Rust, we can't directly compare trait objects for equality.
-        // We'll consider them equal if they're the same Arc instance.
         Arc::ptr_eq(&self.interface, &other.interface)
     }
 }
@@ -105,11 +94,15 @@ impl InteropInterface for TestInteropInterface {
     fn interface_type(&self) -> &str {
         &self.interface_type
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VmError};
 
     #[test]
     fn test_interop_interface_creation() {

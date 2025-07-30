@@ -87,16 +87,12 @@ impl JToken {
     }
 
     /// Converts the current JSON token to an enum value
-    pub fn as_enum<T>(&self, default_value: T, _ignore_case: bool) -> T
+    pub fn as_enum<T>(&self, DEFAULT_VALUE: T, _ignore_case: bool) -> T
     where
         T: Clone + std::str::FromStr + std::convert::TryFrom<u32>,
     {
-        // Production-ready enum parsing with proper type conversion (matches C# JToken.ToObject exactly)
-        // This implements the C# logic: JToken.ToObject<T>() with full enum value mapping
-
         // 1. Try to parse enum from string value (production implementation)
         if let JToken::String(str_value) = self {
-            // Parse enum by name (case-insensitive matching like C#)
             if let Ok(parsed_value) = str_value.parse::<T>() {
                 return parsed_value;
             }
@@ -104,10 +100,8 @@ impl JToken {
 
         // 2. Try to parse enum from integer value (production fallback)
         if let JToken::Number(num_value) = self {
-            // Check if the number is finite and non-negative
             if num_value.is_finite() && *num_value >= 0.0 {
                 let int_value = *num_value as u64;
-                // Convert integer to enum (matches C# enum conversion exactly)
                 if let Ok(enum_value) = T::try_from(int_value as u32) {
                     return enum_value;
                 }
@@ -115,7 +109,7 @@ impl JToken {
         }
 
         // 3. Return default value if parsing fails (production error handling)
-        default_value
+        DEFAULT_VALUE
     }
 
     /// Converts the current JSON token to a floating point number
@@ -165,7 +159,6 @@ impl JToken {
 
         // 2. Try to parse enum from integer value
         if let JToken::Number(num_value) = self {
-            // Check if the number is finite and non-negative
             if num_value.is_finite() && *num_value >= 0.0 {
                 let int_value = *num_value as u64;
                 // Convert integer to enum
@@ -321,7 +314,6 @@ impl fmt::Display for JToken {
     }
 }
 
-// Implicit conversions (matching C# implicit operators)
 impl From<bool> for JToken {
     fn from(value: bool) -> Self {
         JToken::Boolean(value)
@@ -360,8 +352,6 @@ impl From<Vec<Option<JToken>>> for JToken {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_jtoken_boolean() {
         let token = JToken::Boolean(true);
@@ -389,13 +379,15 @@ mod tests {
     #[test]
     fn test_jtoken_parse() {
         let json = r#"{"name": "test", "value": 42}"#;
-        let token = JToken::parse_string(json, 64).unwrap().unwrap();
+        let token = JToken::parse_string(json, 64)
+            .expect("Failed to unwrap")
+            .expect("Failed second unwrap");
 
         if let JToken::Object(_) = token {
             assert_eq!(token.get_property("name").unwrap().as_string(), "test");
             assert_eq!(token.get_property("value").unwrap().as_number(), 42.0);
         } else {
-            panic!("Expected object token");
+            return Err(Error::Other("Expected object token".to_string()));
         }
     }
 
@@ -408,8 +400,22 @@ mod tests {
         ];
         let token = JToken::Array(arr);
 
-        assert_eq!(token.get_index(0).unwrap().unwrap().as_number(), 1.0);
-        assert_eq!(token.get_index(1).unwrap().unwrap().as_string(), "test");
+        assert_eq!(
+            token
+                .get_index(0)
+                .expect("Failed to unwrap")
+                .expect("Failed second unwrap")
+                .as_number(),
+            1.0
+        );
+        assert_eq!(
+            token
+                .get_index(1)
+                .expect("Failed to unwrap")
+                .expect("Failed second unwrap")
+                .as_string(),
+            "test"
+        );
         assert!(token.get_index(2).unwrap().is_none());
     }
 }

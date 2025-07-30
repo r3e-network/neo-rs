@@ -316,7 +316,6 @@ futures.workspace = true
 # path = "examples/network_test.rs"
 # required-features = ["full"]
 
-
 # Profiles
 [profile.release]
 opt-level = 3
@@ -329,10 +328,12 @@ strip = true
 opt-level = 0
 debug = true
 overflow-checks = true
+lto = false
 
 [profile.test]
 opt-level = 1
 debug = true
+lto = false
 
 [profile.bench]
 opt-level = 3

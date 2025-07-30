@@ -13,12 +13,10 @@ mod collections_tests {
     /// Test Vec extensions compatibility (matches C# IEnumerable extensions exactly)
     #[test]
     fn test_vec_dedup_preserve_order_compatibility() {
-        // Test basic deduplication (matches C# Distinct() behavior exactly)
         let mut vec = vec![1, 2, 2, 3, 1, 4, 3, 5];
         vec.dedup_preserve_order();
         assert_eq!(vec, vec![1, 2, 3, 4, 5]);
 
-        // Test with strings (matches C# string Distinct() exactly)
         let mut string_vec = vec!["apple", "banana", "apple", "cherry", "banana"];
         string_vec.dedup_preserve_order();
         assert_eq!(string_vec, vec!["apple", "banana", "cherry"]);
@@ -42,12 +40,10 @@ mod collections_tests {
     /// Test Vec chunking compatibility (matches C# Chunk() method exactly)
     #[test]
     fn test_vec_chunks_exact_compatibility() {
-        // Test even division (matches C# Chunk behavior exactly)
         let vec = vec![1, 2, 3, 4, 5, 6];
         let chunks = vec.chunks_exact_vec(2);
         assert_eq!(chunks, vec![vec![1, 2], vec![3, 4], vec![5, 6]]);
 
-        // Test with remainder (matches C# behavior with partial chunks)
         let vec = vec![1, 2, 3, 4, 5];
         let chunks = vec.chunks_exact_vec(2);
         assert_eq!(chunks, vec![vec![1, 2], vec![3, 4], vec![5]]);
@@ -57,7 +53,6 @@ mod collections_tests {
         let chunks = vec.chunks_exact_vec(5);
         assert_eq!(chunks, vec![vec![1, 2, 3]]);
 
-        // Test zero chunk size (should return empty)
         let vec = vec![1, 2, 3, 4];
         let chunks = vec.chunks_exact_vec(0);
         assert_eq!(chunks, Vec::<Vec<i32>>::new());
@@ -71,11 +66,9 @@ mod collections_tests {
     /// Test Vec argmax/argmin compatibility (matches C# LINQ extensions exactly)
     #[test]
     fn test_vec_argmax_argmin_compatibility() {
-        // Test argmax (matches C# Select((v, i) => new {v, i}).MaxBy(x => x.v).i exactly)
         let vec = vec![3, 1, 4, 1, 5, 9, 2, 6];
         assert_eq!(vec.argmax(), Some(5)); // Index of 9
 
-        // Test argmin (matches C# Select((v, i) => new {v, i}).MinBy(x => x.v).i exactly)
         assert_eq!(vec.argmin(), Some(1)); // Index of first 1
 
         // Test with floats
@@ -93,7 +86,6 @@ mod collections_tests {
         assert_eq!(single_vec.argmax(), Some(0));
         assert_eq!(single_vec.argmin(), Some(0));
 
-        // Test with equal elements (should return first occurrence)
         let equal_vec = vec![5, 5, 5, 5];
         assert_eq!(equal_vec.argmax(), Some(0));
         assert_eq!(equal_vec.argmin(), Some(0));
@@ -102,7 +94,6 @@ mod collections_tests {
     /// Test Vec sorting check compatibility (matches C# IsSorted extension exactly)
     #[test]
     fn test_vec_is_sorted_compatibility() {
-        // Test sorted ascending (matches C# SequenceEqual(OrderBy(x => x)) exactly)
         let sorted_vec = vec![1, 2, 3, 4, 5];
         assert!(sorted_vec.is_sorted());
 
@@ -110,19 +101,15 @@ mod collections_tests {
         let unsorted_vec = vec![1, 3, 2, 4, 5];
         assert!(!unsorted_vec.is_sorted());
 
-        // Test reverse sorted (should be false for ascending check)
         let reverse_vec = vec![5, 4, 3, 2, 1];
         assert!(!reverse_vec.is_sorted());
 
-        // Test empty vector (considered sorted)
         let empty_vec: Vec<i32> = vec![];
         assert!(empty_vec.is_sorted());
 
-        // Test single element (considered sorted)
         let single_vec = vec![42];
         assert!(single_vec.is_sorted());
 
-        // Test with duplicates (should be sorted)
         let dup_vec = vec![1, 2, 2, 3, 3, 3, 4];
         assert!(dup_vec.is_sorted());
 
@@ -139,12 +126,10 @@ mod collections_tests {
     fn test_vec_first_last_n_compatibility() {
         let vec = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-        // Test first_n (matches C# Take(n) exactly)
         assert_eq!(vec.first_n(3), &[1, 2, 3]);
         assert_eq!(vec.first_n(0), &[]);
         assert_eq!(vec.first_n(15), &vec[..]); // Request more than available
 
-        // Test last_n (matches C# TakeLast(n) exactly)
         assert_eq!(vec.last_n(3), &[8, 9, 10]);
         assert_eq!(vec.last_n(0), &[]);
         assert_eq!(vec.last_n(15), &vec[..]); // Request more than available
@@ -167,7 +152,6 @@ mod collections_tests {
     fn test_hashmap_get_or_insert_default_compatibility() {
         let mut map: HashMap<String, i32> = HashMap::new();
 
-        // Test get_or_insert_default (matches C# GetValueOrDefault pattern exactly)
         let value = map.get_or_insert_default("key1".to_string());
         *value = 42;
         assert_eq!(map.get("key1"), Some(&42));
@@ -176,9 +160,8 @@ mod collections_tests {
         let existing_value = map.get_or_insert_default("key1".to_string());
         assert_eq!(*existing_value, 42);
 
-        // Test with default value for new key
-        let default_value = map.get_or_insert_default("key2".to_string());
-        assert_eq!(*default_value, 0); // Default for i32
+        let DEFAULT_VALUE = map.get_or_insert_default("key2".to_string());
+        assert_eq!(*DEFAULT_VALUE, 0); // Default for i32
 
         // Test with custom types that implement Default
         let mut string_map: HashMap<i32, String> = HashMap::new();
@@ -201,7 +184,6 @@ mod collections_tests {
         map2.insert("d", 4);
         map2.insert("a", 10); // Should overwrite existing key
 
-        // Test merge (matches C# Dictionary.Union behavior exactly)
         map1.merge(map2);
 
         assert_eq!(map1.get("a"), Some(&10)); // Overwritten value
@@ -236,7 +218,6 @@ mod collections_tests {
         map.insert("b", 2);
         map.insert("c", 3);
 
-        // Test get_many (matches C# batch dictionary lookups exactly)
         let keys = vec!["a", "b", "x", "c", "y"];
         let values = map.get_many(&keys);
 
@@ -273,7 +254,6 @@ mod collections_tests {
         map.insert("four", 4);
         map.insert("five", 5);
 
-        // Test filter_values (matches C# Where().ToDictionary() exactly)
         let even_values = map.filter_values(|&v| v % 2 == 0);
         assert_eq!(even_values.len(), 2);
         assert_eq!(even_values.get("two"), Some(&2));
@@ -287,7 +267,6 @@ mod collections_tests {
         let all_values = map.filter_values(|&v| v > 0);
         assert_eq!(all_values.len(), 5);
 
-        // Test filter with string values
         let mut string_map = HashMap::new();
         string_map.insert(1, "hello".to_string());
         string_map.insert(2, "world".to_string());
@@ -308,13 +287,11 @@ mod collections_tests {
         let set3: HashSet<i32> = [2, 3].iter().cloned().collect();
         let set4: HashSet<i32> = [6, 7, 8].iter().cloned().collect();
 
-        // Test is_subset_of (matches C# IsSubsetOf exactly)
         assert!(set3.is_subset_of(&set1)); // {2,3} ⊆ {1,2,3}
         assert!(set1.is_subset_of(&set2)); // {1,2,3} ⊆ {1,2,3,4,5}
         assert!(!set1.is_subset_of(&set3)); // {1,2,3} ⊄ {2,3}
         assert!(!set1.is_subset_of(&set4)); // {1,2,3} ⊄ {6,7,8}
 
-        // Test is_superset_of (matches C# IsSupersetOf exactly)
         assert!(set1.is_superset_of(&set3)); // {1,2,3} ⊇ {2,3}
         assert!(set2.is_superset_of(&set1)); // {1,2,3,4,5} ⊇ {1,2,3}
         assert!(!set3.is_superset_of(&set1)); // {2,3} ⊅ {1,2,3}
@@ -339,17 +316,14 @@ mod collections_tests {
         let set1: HashSet<i32> = [1, 2, 3, 4].iter().cloned().collect();
         let set2: HashSet<i32> = [3, 4, 5, 6].iter().cloned().collect();
 
-        // Test intersection_with (matches C# Intersect exactly)
         let intersection = set1.intersection_with(&set2);
         let expected_intersection: HashSet<i32> = [3, 4].iter().cloned().collect();
         assert_eq!(intersection, expected_intersection);
 
-        // Test union_with (matches C# Union exactly)
         let union = set1.union_with(&set2);
         let expected_union: HashSet<i32> = [1, 2, 3, 4, 5, 6].iter().cloned().collect();
         assert_eq!(union, expected_union);
 
-        // Test difference_with (matches C# Except exactly)
         let difference = set1.difference_with(&set2);
         let expected_difference: HashSet<i32> = [1, 2].iter().cloned().collect();
         assert_eq!(difference, expected_difference);
@@ -366,7 +340,6 @@ mod collections_tests {
         let difference_empty = set1.difference_with(&empty_set);
         assert_eq!(difference_empty, set1);
 
-        // Test symmetric difference (set1 - set2)
         let reverse_difference = set2.difference_with(&set1);
         let expected_reverse: HashSet<i32> = [5, 6].iter().cloned().collect();
         assert_eq!(reverse_difference, expected_reverse);
@@ -388,7 +361,6 @@ mod collections_tests {
     /// Test Collections utility functions compatibility (matches C# LINQ helpers exactly)
     #[test]
     fn test_collections_hashmap_from_pairs_compatibility() {
-        // Test hashmap_from_pairs (matches C# Dictionary<TKey, TValue>(IEnumerable<KeyValuePair<TKey, TValue>>) exactly)
         let pairs = vec![("apple", 5), ("banana", 3), ("cherry", 8), ("date", 2)];
 
         let map = Collections::hashmap_from_pairs(pairs);
@@ -403,7 +375,6 @@ mod collections_tests {
         let empty_map = Collections::hashmap_from_pairs(empty_pairs);
         assert_eq!(empty_map.len(), 0);
 
-        // Test with duplicate keys (last value wins)
         let duplicate_pairs = vec![("key", 1), ("key", 2), ("key", 3)];
         let dup_map = Collections::hashmap_from_pairs(duplicate_pairs);
         assert_eq!(dup_map.len(), 1);
@@ -413,7 +384,6 @@ mod collections_tests {
     /// Test Collections hashset creation compatibility (matches C# HashSet constructor exactly)
     #[test]
     fn test_collections_hashset_from_values_compatibility() {
-        // Test hashset_from_values (matches C# HashSet<T>(IEnumerable<T>) exactly)
         let values = vec![1, 2, 3, 2, 4, 1, 5];
         let set = Collections::hashset_from_values(values);
 
@@ -434,7 +404,6 @@ mod collections_tests {
         let unique_set = Collections::hashset_from_values(unique_values);
         assert_eq!(unique_set.len(), 4);
 
-        // Test with string values
         let string_values = vec!["a".to_string(), "b".to_string(), "a".to_string()];
         let string_set = Collections::hashset_from_values(string_values);
         assert_eq!(string_set.len(), 2);
@@ -445,7 +414,6 @@ mod collections_tests {
     /// Test Collections group_by compatibility (matches C# GroupBy exactly)
     #[test]
     fn test_collections_group_by_compatibility() {
-        // Test group_by (matches C# GroupBy().ToDictionary() exactly)
         let items = vec![
             ("apple", 5),
             ("banana", 6),
@@ -488,7 +456,6 @@ mod collections_tests {
     /// Test Collections count_occurrences compatibility (matches C# GroupBy/Count exactly)
     #[test]
     fn test_collections_count_occurrences_compatibility() {
-        // Test count_occurrences (matches C# GroupBy().ToDictionary(g => g.Key, g => g.Count()) exactly)
         let items = vec![1, 2, 3, 2, 1, 4, 2, 1, 3, 5];
         let counts = Collections::count_occurrences(&items);
 
@@ -523,12 +490,10 @@ mod collections_tests {
     /// Test Collections most_common compatibility (matches C# MaxBy(Count) exactly)
     #[test]
     fn test_collections_most_common_compatibility() {
-        // Test most_common (matches C# GroupBy().MaxBy(g => g.Count()).Key exactly)
         let items = vec![1, 2, 3, 2, 1, 4, 2, 1, 3, 2];
         let most_common = Collections::most_common(&items);
         assert_eq!(most_common, Some(2)); // Appears 4 times
 
-        // Test with tie (implementation defined which one is returned)
         let tied_items = vec![1, 1, 2, 2, 3];
         let tied_common = Collections::most_common(&tied_items);
         assert!(tied_common == Some(1) || tied_common == Some(2)); // Both appear twice
@@ -557,7 +522,6 @@ mod collections_tests {
     /// Test Collections partition compatibility (matches C# Where/Where(Not) exactly)
     #[test]
     fn test_collections_partition_compatibility() {
-        // Test partition (matches C# Where() and Where(predicate negated) exactly)
         let numbers = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         let (evens, odds) = Collections::partition(numbers, |&x| x % 2 == 0);
 

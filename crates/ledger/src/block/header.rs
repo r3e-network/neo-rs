@@ -5,10 +5,13 @@
 
 use super::verification::WitnessVerifier;
 use crate::{Error, Result, VerifyResult};
+use neo_config::{ADDRESS_SIZE, MILLISECONDS_PER_BLOCK};
 use neo_core::{Signer, UInt160, UInt256, Witness, WitnessCondition, WitnessScope};
 use neo_cryptography::ECPoint;
+use neo_io::BinaryWriter;
 use neo_vm::ApplicationEngine;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Header type alias (matches C# Neo Header)
@@ -73,9 +76,6 @@ impl BlockHeader {
     /// Calculates the hash of this block header (matches C# Header.Hash property).
     /// Uses proper serialization and double SHA256 hash like the C# implementation.
     pub fn hash(&self) -> UInt256 {
-        use neo_io::BinaryWriter;
-        use sha2::{Digest, Sha256};
-
         // Serialize the header exactly like C# implementation
         let mut writer = BinaryWriter::new();
 
@@ -89,7 +89,6 @@ impl BlockHeader {
         let _ = writer.write_u8(self.primary_index);
         let _ = writer.write_bytes(self.next_consensus.as_bytes());
 
-        // Production-ready witness serialization (matches C# Neo Block.Serialize exactly)
         let _ = writer.write_var_int(self.witnesses.len() as u64);
         for witness in &self.witnesses {
             let _ = <Witness as neo_io::Serializable>::serialize(witness, &mut writer);
@@ -111,31 +110,25 @@ impl BlockHeader {
 
     /// Validates the block header (matches C# Header.Verify exactly)
     pub fn validate(&self, previous_header: Option<&BlockHeader>) -> VerifyResult {
-        // Check version (matches C# validation)
         if self.version != 0 {
             return VerifyResult::Invalid;
         }
 
-        // Check primary index (matches C# validation)
         // Production implementation: Check against ValidatorsCount from protocol settings
-        // In C# Neo: if (PrimaryIndex >= ProtocolSettings.ValidatorsCount) return false;
         let validators_count = self.get_protocol_settings_validators_count();
         if self.primary_index >= validators_count {
             return VerifyResult::Invalid;
         }
 
-        // Check timestamp (matches C# validation)
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
 
-        // Allow up to 15 seconds in the future (matches C# consensus rules)
-        if self.timestamp > current_time + 15_000 {
+        if self.timestamp > current_time + MILLISECONDS_PER_BLOCK {
             return VerifyResult::Invalid;
         }
 
-        // Check previous block relationship (matches C# validation exactly)
         if let Some(prev) = previous_header {
             if self.index != prev.index + 1 {
                 return VerifyResult::Invalid;
@@ -159,12 +152,10 @@ impl BlockHeader {
             }
         }
 
-        // Production-ready witness validation (matches C# Header.VerifyWitnesses exactly)
         if self.witnesses.is_empty() {
             return VerifyResult::Invalid;
         }
 
-        // Use witness verifier for production-ready verification
         let verifier = WitnessVerifier::new();
         verifier.verify_header_witnesses(self)
     }
@@ -195,7 +186,7 @@ impl BlockHeader {
     pub fn current_timestamp() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64
     }
 
@@ -207,7 +198,7 @@ impl BlockHeader {
             UInt256::zero(),           // merkle_root (will be calculated)
             Self::current_timestamp(), // timestamp
             0,                         // nonce
-            0,                         // index
+            0,                         // index (genesis block)
             0,                         // primary_index
             next_consensus,            // next_consensus
         )
@@ -220,8 +211,6 @@ impl BlockHeader {
 
     /// Gets the size of the header in bytes
     pub fn size(&self) -> usize {
-        use neo_io::BinaryWriter;
-
         let mut writer = BinaryWriter::new();
         let _ = writer.write_u32(self.version);
         let _ = writer.write_bytes(self.previous_hash.as_bytes());
@@ -244,17 +233,12 @@ impl BlockHeader {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_block_header_creation() {
         let header = BlockHeader::new(
             0,
             UInt256::zero(),
-            UInt256::zero(),
             1609459200000, // 2021-01-01 00:00:00 UTC
-            0,
-            0,
             0,
             UInt160::zero(),
         );
@@ -272,16 +256,7 @@ mod tests {
 
     #[test]
     fn test_block_header_hash() {
-        let header = BlockHeader::new(
-            0,
-            UInt256::zero(),
-            UInt256::zero(),
-            1609459200000,
-            0,
-            0,
-            0,
-            UInt160::zero(),
-        );
+        let header = BlockHeader::new(0, UInt256::zero(), 1609459200000, 0, UInt160::zero());
 
         let hash = header.hash();
         assert_ne!(hash, UInt256::zero());
@@ -293,7 +268,8 @@ mod tests {
 
     #[test]
     fn test_genesis_header() {
-        let next_consensus = UInt160::from_bytes(&[1; 20]).unwrap();
+        let next_consensus = UInt160::from_bytes(&[1; ADDRESS_SIZE])
+            .expect("Fixed-size array should be valid UInt160");
         let header = BlockHeader::genesis(next_consensus);
 
         assert!(header.is_genesis());

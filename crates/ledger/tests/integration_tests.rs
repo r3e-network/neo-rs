@@ -49,13 +49,10 @@ async fn test_block_processing() {
     // Test transaction verification
     let verification_result = blockchain.on_transaction(tx.clone()).await.unwrap();
 
-    // Transaction should be verified (may fail due to missing balance, but should not error)
     match verification_result {
         VerifyResult::Succeed
         | VerifyResult::InsufficientFunds
-        | VerifyResult::InvalidSignature => {
-            // These are all valid results for a test transaction
-        }
+        | VerifyResult::InvalidSignature => {}
         other => panic!("Unexpected verification result: {:?}", other),
     }
 }
@@ -84,13 +81,10 @@ async fn test_transaction_validation() {
     let valid_tx = create_test_transaction(1_000_000, 1);
     let result = blockchain.on_transaction(valid_tx).await.unwrap();
 
-    // Result should be one of the expected verification results
     match result {
         VerifyResult::Succeed
         | VerifyResult::InsufficientFunds
-        | VerifyResult::InvalidSignature => {
-            // These are acceptable results for test transactions
-        }
+        | VerifyResult::InvalidSignature => {}
         other => panic!("Unexpected result: {:?}", other),
     }
 
@@ -186,7 +180,6 @@ async fn test_multiple_transactions() {
     let result2 = blockchain.on_transaction(tx2).await.unwrap();
     let result3 = blockchain.on_transaction(tx3).await.unwrap();
 
-    // All should have valid verification results (even if not successful)
     let valid_results = [
         VerifyResult::Succeed,
         VerifyResult::InsufficientFunds,

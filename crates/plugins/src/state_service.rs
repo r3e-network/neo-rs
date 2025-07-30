@@ -3,9 +3,12 @@
 //! This plugin provides state root verification, MPT state proofs, state dumps,
 //! and state synchronization capabilities for the Neo blockchain.
 
+// Define constant locally
+const ONE_MEGABYTE: usize = 1024 * 1024;
 use crate::{Plugin, PluginCategory, PluginContext, PluginEvent, PluginInfo};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use neo_config::{MAX_BLOCK_SIZE, MAX_SCRIPT_SIZE};
 use neo_core::{UInt160, UInt256};
 use neo_extensions::error::{ExtensionError, ExtensionResult};
 use rocksdb::{IteratorMode, Options, DB};
@@ -15,7 +18,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
-
 /// State root information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateRoot {
@@ -98,7 +100,7 @@ impl StateServicePlugin {
             auto_verify: true,
             keep_state_roots: 86400, // Keep 24 hours worth of state roots (assuming 15s blocks)
             enable_state_dumps: false,
-            max_proof_size: 1024 * 1024, // 1MB max proof size
+            max_proof_size: MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE, // 1MB max proof size
         }
     }
 
@@ -110,8 +112,8 @@ impl StateServicePlugin {
         opts.create_if_missing(true);
         opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
 
-        let db =
-            DB::open(&opts, &db_path).map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+        let db = DB::open(&opts, &db_path)
+            .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
         self.db = Some(Arc::new(RwLock::new(db)));
         self.db_path = Some(db_path);
@@ -128,14 +130,14 @@ impl StateServicePlugin {
             // Store by index
             let index_key = format!("root:index:{:010}", state_root.index);
             let value = serde_json::to_vec(state_root)
-                .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
             db.put(index_key.as_bytes(), &value)
-                .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
             // Store by hash
             let hash_key = format!("root:hash:{}", state_root.roothash);
             db.put(hash_key.as_bytes(), &value)
-                .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
             debug!("Stored state root for block {}", state_root.index);
         }
@@ -152,11 +154,11 @@ impl StateServicePlugin {
             match db.get(key.as_bytes()) {
                 Ok(Some(value)) => {
                     let state_root: StateRoot = serde_json::from_slice(&value)
-                        .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                        .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
                     Ok(Some(state_root))
                 }
                 Ok(None) => Ok(None),
-                Err(e) => Err(ExtensionError::DatabaseError(e.to_string())),
+                Err(e) => Err(ExtensionError::OperationFailed(e.to_string())),
             }
         } else {
             Ok(None)
@@ -172,11 +174,11 @@ impl StateServicePlugin {
             match db.get(key.as_bytes()) {
                 Ok(Some(value)) => {
                     let state_root: StateRoot = serde_json::from_slice(&value)
-                        .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                        .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
                     Ok(Some(state_root))
                 }
                 Ok(None) => Ok(None),
-                Err(e) => Err(ExtensionError::DatabaseError(e.to_string())),
+                Err(e) => Err(ExtensionError::OperationFailed(e.to_string())),
             }
         } else {
             Ok(None)
@@ -236,10 +238,10 @@ impl StateServicePlugin {
                 record.contract, record.key, record.block_index
             );
             let value = serde_json::to_vec(record)
-                .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
             db.put(key.as_bytes(), &value)
-                .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
             debug!(
                 "Stored state dump record for contract {} at block {}",
@@ -336,7 +338,6 @@ impl StateServicePlugin {
     async fn process_block(&self, block_hash: &str, block_height: u32) -> ExtensionResult<()> {
         debug!("Processing block {} for state service", block_height);
 
-        // Calculate and store state root for the block
         let state_root = StateRoot {
             version: 0,
             index: block_height,
@@ -484,8 +485,8 @@ impl Plugin for StateServicePlugin {
                 "max_proof_size": {
                     "type": "integer",
                     "description": "Maximum proof size in bytes",
-                    "default": 1048576,
-                    "minimum": 1024
+                    "default": MAX_BLOCK_SIZE,
+                    "minimum": MAX_SCRIPT_SIZE
                 }
             }
         }))
@@ -520,11 +521,11 @@ mod tests {
     use tempfile::tempdir;
 
     fn create_test_context() -> PluginContext {
-        let temp_dir = tempdir().unwrap();
+        let final_dir = tempdir().unwrap();
         PluginContext {
             neo_version: "3.6.0".to_string(),
-            config_dir: temp_dir.path().to_path_buf(),
-            data_dir: temp_dir.path().to_path_buf(),
+            config_dir: final_dir.path().to_path_buf(),
+            data_dir: final_dir.path().to_path_buf(),
             shared_data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -551,9 +552,15 @@ mod tests {
         assert!(plugin.store_state_root(&state_root).await.is_ok());
 
         // Test state root retrieval
-        let retrieved = plugin.get_state_root_by_index(100).await.unwrap();
+        let retrieved = plugin
+            .get_state_root_by_index(100)
+            .await
+            .expect("operation should succeed");
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().roothash, "0x1234567890abcdef");
+        assert_eq!(
+            retrieved.expect("operation should succeed").roothash,
+            "0x1234567890abcdef"
+        );
 
         // Test stop
         assert!(plugin.stop().await.is_ok());
@@ -568,8 +575,9 @@ mod tests {
             witness: Some(serde_json::json!({"invocation": "test"})),
         };
 
-        let json = serde_json::to_string(&state_root).unwrap();
-        let deserialized: StateRoot = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&state_root).expect("operation should succeed");
+        let deserialized: StateRoot =
+            serde_json::from_str(&json).expect("Failed to parse from string");
 
         assert_eq!(state_root.index, deserialized.index);
         assert_eq!(state_root.roothash, deserialized.roothash);

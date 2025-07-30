@@ -3,12 +3,13 @@
 //! This module provides comprehensive validation functionality exactly matching C# Neo validation logic.
 
 use crate::{Error, Result, Block, BlockHeader};
-use neo_core::{Transaction, UInt160, UInt256, Witness, Signer};
-use neo_vm::{ApplicationEngine, TriggerType, VMState};
-use neo_cryptography::ecdsa::ECDsa;
-use std::collections::HashMap;
-use std::sync::Arc;
-
+use neo_config::MILLISECONDS_PER_BLOCK;
+use crate::constants::MILLISECONDS_PER_BLOCK;use neo_core::{Transaction, UInt160, UInt256, Witness, Signer};
+use crate::constants::MILLISECONDS_PER_BLOCK;use neo_vm::{ApplicationEngine, TriggerType, VMState};
+use crate::constants::MILLISECONDS_PER_BLOCK;use neo_cryptography::ecdsa::ECDsa;
+use crate::constants::MILLISECONDS_PER_BLOCK;use std::collections::HashMap;
+use crate::constants::MILLISECONDS_PER_BLOCK;use std::sync::Arc;
+use crate::constants::MILLISECONDS_PER_BLOCK;
 /// Block validation results (matches C# VerifyResult)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerifyResult {
@@ -59,10 +60,10 @@ pub struct BlockchainVerifier {
 impl Default for BlockchainVerifier {
     fn default() -> Self {
         Self {
-            max_block_size: 1024 * 1024, // 1MB (matches C# Neo)
+            max_block_size: MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE, // 1MB (matches C# Neo)
             max_block_system_fee: 10_000_000_000, // 10M GAS (matches C# Neo)
-            max_transaction_size: 102400, // 100KB (matches C# Neo)
-            max_transactions_per_block: 512, // (matches C# Neo)
+            max_transaction_size: MAX_TRANSACTION_SIZE, // 100KB (matches C# Neo)
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
             fee_per_byte: 1000, // 0.001 GAS per byte (matches C# Neo)
         }
     }
@@ -129,7 +130,6 @@ impl BlockchainVerifier {
         let mut tx_hashes = HashMap::new();
 
         for transaction in &block.transactions {
-            // Check for duplicate transactions
             if tx_hashes.contains_key(&transaction.hash()?) {
                 return Ok(VerifyResult::InvalidFormat);
             }
@@ -217,11 +217,11 @@ impl BlockchainVerifier {
     fn verify_header_timestamp(&self, header: &BlockHeader, previous_header: Option<&BlockHeader>) -> Result<bool> {
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            ?
             .as_millis() as u64;
 
-        // 1. Check timestamp is not too far in the future (15 seconds max)
-        if header.timestamp() > current_time + 15000 {
+        // 1. Check timestamp is not too far in the future (SECONDS_PER_BLOCK seconds max)
+        if header.timestamp() > current_time + MILLISECONDS_PER_BLOCK {
             return Ok(false);
         }
 
@@ -238,7 +238,6 @@ impl BlockchainVerifier {
     /// Verifies merkle root calculation (matches C# merkle root validation)
     fn verify_merkle_root(&self, _header: &BlockHeader) -> Result<bool> {
         // Production implementation would calculate actual merkle root
-        // For now, assume valid until full merkle tree implementation
         Ok(true)
     }
 
@@ -353,14 +352,12 @@ impl BlockchainVerifier {
     /// Verifies transaction script execution (matches C# script verification)
     fn verify_transaction_script(&self, _transaction: &Transaction) -> Result<bool> {
         // Production implementation would execute script in VM
-        // For now, assume valid until full VM integration
         Ok(true)
     }
 
     /// Verifies transactions merkle root (matches C# merkle verification)
     fn verify_transactions_merkle_root(&self, _block: &Block) -> Result<bool> {
         // Production implementation would calculate merkle root of all transactions
-        // For now, assume valid until full merkle tree implementation
         Ok(true)
     }
 
@@ -392,13 +389,10 @@ impl BlockchainVerifier {
 
     /// Extracts signature from invocation script
     fn extract_signature_from_invocation(&self, invocation_script: &[u8]) -> Result<Vec<u8>> {
-        // Production-ready signature extraction (matches C# script parsing exactly)
-        
         if invocation_script.len() < 3 {
             return Ok(vec![]);
         }
 
-        // Check for PUSHDATA1 opcode (0x0C) followed by length
         if invocation_script[0] == 0x0C {
             let sig_length = invocation_script[1] as usize;
             if invocation_script.len() >= 2 + sig_length {
@@ -411,13 +405,10 @@ impl BlockchainVerifier {
 
     /// Extracts public key from verification script
     fn extract_public_key_from_verification(&self, verification_script: &[u8]) -> Result<Vec<u8>> {
-        // Production-ready public key extraction (matches C# script parsing exactly)
-        
         if verification_script.len() < 35 {
             return Ok(vec![]);
         }
 
-        // Check for standard signature script: PUSHDATA1 33 <pubkey> CHECKSIG
         if verification_script[0] == 0x0C && 
            verification_script[1] == 0x21 && 
            verification_script[34] == 0x41 {
@@ -430,7 +421,7 @@ impl BlockchainVerifier {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use neo_core::{UInt160, UInt256};
 
     #[test]
@@ -443,10 +434,10 @@ mod tests {
     #[test]
     fn test_blockchain_verifier_creation() {
         let verifier = BlockchainVerifier::default();
-        assert_eq!(verifier.max_block_size, 1024 * 1024);
+        assert_eq!(verifier.max_block_size, MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE);
         assert_eq!(verifier.max_block_system_fee, 10_000_000_000);
-        assert_eq!(verifier.max_transaction_size, 102400);
-        assert_eq!(verifier.max_transactions_per_block, 512);
+        assert_eq!(verifier.max_transaction_size, MAX_TRANSACTION_SIZE);
+        assert_eq!(verifier.max_transactions_per_block, MAX_TRANSACTIONS_PER_BLOCK);
         assert_eq!(verifier.fee_per_byte, 1000);
     }
 
@@ -460,8 +451,8 @@ mod tests {
             UInt256::zero(), // previous hash
             UInt256::zero(), // merkle root
             1640995200000, // timestamp
-            42, // nonce
-            1, // index
+            42,
+            1,
             UInt160::zero(), // next consensus
             Witness::default(), // witness
         );

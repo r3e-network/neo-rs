@@ -8,9 +8,13 @@ use crate::shutdown_impl::{
     DatabaseShutdown, NetworkServerShutdown, RpcServerShutdown, TransactionPoolShutdown,
 };
 use crate::{
-    NetworkConfig, NetworkStats, P2PConfig, P2PEvent, P2pNode, PeerManager, Result, SyncEvent,
-    SyncManager,
+    NetworkConfig, NetworkError, NetworkStats, P2PConfig, P2PEvent, P2pNode, PeerManager, Result,
+    SyncEvent, SyncManager,
 };
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use neo_core::{ShutdownCoordinator, SignalHandler, UInt160};
 use neo_ledger::{Blockchain, Ledger};
 
@@ -22,6 +26,7 @@ use tokio::sync::{broadcast, RwLock};
 use tokio::time::interval;
 use tracing::{info, warn};
 
+/// Default Neo network ports
 /// Network server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkServerConfig {
@@ -54,9 +59,15 @@ impl Default for NetworkServerConfig {
             sync_check_interval: 30,
             stats_interval: 10,
             seed_nodes: vec![
-                "127.0.0.1:10333".parse().unwrap(),
-                "127.0.0.1:10334".parse().unwrap(),
-                "127.0.0.1:10335".parse().unwrap(),
+                "127.0.0.1:10333"
+                    .parse()
+                    .expect("Failed to parse hardcoded address"),
+                "127.0.0.1:10334"
+                    .parse()
+                    .expect("Failed to parse hardcoded address"),
+                "127.0.0.1:10335"
+                    .parse()
+                    .expect("Failed to parse hardcoded address"),
             ],
         }
     }
@@ -68,17 +79,29 @@ impl NetworkServerConfig {
         Self {
             magic: 0x3554334e, // Neo N3 testnet magic
             p2p_config: P2PConfig {
-                listen_address: "0.0.0.0:20333".parse().unwrap(),
+                listen_address: "127.0.0.1:20333"
+                    .parse()
+                    .expect("Failed to parse hardcoded address"),
                 ..Default::default()
             },
             rpc_config: Some(InternalRpcConfig {
-                http_address: "0.0.0.0:20332".parse().unwrap(),
-                ws_address: Some("0.0.0.0:20334".parse().unwrap()),
+                http_address: "127.0.0.1:20332"
+                    .parse()
+                    .expect("Failed to parse hardcoded address"),
+                ws_address: Some(
+                    "127.0.0.1:20334"
+                        .parse()
+                        .expect("Failed to parse hardcoded address"),
+                ),
                 ..Default::default()
             }),
             seed_nodes: vec![
-                "127.0.0.1:20333".parse().unwrap(),
-                "127.0.0.1:20334".parse().unwrap(),
+                "127.0.0.1:20333"
+                    .parse()
+                    .expect("Failed to parse hardcoded address"),
+                "127.0.0.1:20334"
+                    .parse()
+                    .expect("Failed to parse hardcoded address"),
             ],
             ..Default::default()
         }
@@ -89,13 +112,21 @@ impl NetworkServerConfig {
         Self {
             magic: 0x12345678, // Custom magic for private network
             p2p_config: P2PConfig {
-                listen_address: "0.0.0.0:30333".parse().unwrap(),
+                listen_address: "127.0.0.1:30333"
+                    .parse()
+                    .expect("Failed to parse hardcoded address"),
                 max_peers: 10,
                 ..Default::default()
             },
             rpc_config: Some(InternalRpcConfig {
-                http_address: "0.0.0.0:30332".parse().unwrap(),
-                ws_address: Some("0.0.0.0:30334".parse().unwrap()),
+                http_address: "127.0.0.1:30332"
+                    .parse()
+                    .expect("Failed to parse hardcoded address"),
+                ws_address: Some(
+                    "127.0.0.1:30334"
+                        .parse()
+                        .expect("Failed to parse hardcoded address"),
+                ),
                 ..Default::default()
             }),
             seed_nodes: vec![], // No seed nodes for private network
@@ -191,7 +222,6 @@ impl NetworkServer {
         // Register components with shutdown coordinator
         self.register_shutdown_handlers().await?;
 
-        // Start signal handler for graceful shutdown
         let signal_handler = SignalHandler::new(Arc::clone(&self.shutdown_coordinator));
         signal_handler.start().await;
 
@@ -201,7 +231,6 @@ impl NetworkServer {
         // Start sync manager
         self.sync_manager.start().await?;
 
-        // Start RPC server if configured
         if let Some(rpc_server) = &self.rpc_server {
             rpc_server.start().await?;
         }
@@ -260,17 +289,14 @@ impl NetworkServer {
     async fn register_shutdown_handlers(&self) -> Result<()> {
         info!("Registering shutdown handlers");
 
-        // Register sync manager (priority 30)
         self.shutdown_coordinator
             .register_component(Arc::clone(&self.sync_manager) as Arc<dyn neo_core::Shutdown>)
             .await;
 
-        // Register P2P node (priority 35)
         self.shutdown_coordinator
             .register_component(Arc::clone(&self.p2p_node) as Arc<dyn neo_core::Shutdown>)
             .await;
 
-        // Register network server wrapper (priority 25)
         let network_wrapper = Arc::new(NetworkServerShutdown::new(
             Arc::clone(&self.p2p_node),
             Arc::clone(&self.sync_manager),
@@ -279,24 +305,31 @@ impl NetworkServer {
             .register_component(network_wrapper)
             .await;
 
-        // Register RPC server if enabled (priority 60)
         if let Some(rpc_server) = &self.rpc_server {
             let rpc_shutdown = Arc::new(RpcServerShutdown::new(
                 Arc::clone(&self.running),
-                format!("{}", self.config.rpc_config.as_ref().unwrap().http_address),
+                format!(
+                    "{}",
+                    self.config
+                        .rpc_config
+                        .as_ref()
+                        .ok_or_else(|| NetworkError::configuration(
+                            "rpc_config",
+                            "RPC configuration not found"
+                        ))?
+                        .http_address
+                ),
             ));
             self.shutdown_coordinator
                 .register_component(rpc_shutdown)
                 .await;
         }
 
-        // Register database shutdown handler (priority 120)
         let db_shutdown = Arc::new(DatabaseShutdown::new("BlockchainDB".to_string()));
         self.shutdown_coordinator
             .register_component(db_shutdown)
             .await;
 
-        // Register transaction pool shutdown handler (priority 80)
         let tx_pool_shutdown = Arc::new(TransactionPoolShutdown::new(
             Arc::new(RwLock::new(0)), // In real implementation, this would track actual pending tx count
         ));
@@ -541,7 +574,7 @@ impl Default for NetworkServerBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Message, NetworkError, Peer};
 
     #[test]
     fn test_network_config() {
@@ -563,10 +596,13 @@ mod tests {
         let builder = NetworkServerBuilder::new()
             .node_id(UInt160::zero())
             .magic(0x12345678)
-            .p2p_address("127.0.0.1:10333".parse().unwrap())
+            .p2p_address(
+                "127.0.0.1:10333"
+                    .parse()
+                    .map_err(|_| NetworkError::ServerError("operation failed".into()))?,
+            )
             .enable_rpc(true);
 
         // Would need a blockchain instance to complete the test
-        // let server = builder.build(blockchain);
     }
 }

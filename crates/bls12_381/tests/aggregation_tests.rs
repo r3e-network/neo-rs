@@ -62,7 +62,6 @@ mod aggregation_tests {
         let aggregate_public_key = Bls12381::aggregate_public_keys(&public_keys).unwrap();
 
         // Aggregate should be valid
-        // (Note: Individual validation may depend on implementation details)
         assert!(true); // Structure test - aggregation should succeed
     }
 
@@ -110,7 +109,6 @@ mod aggregation_tests {
         let mut rng = thread_rng();
         let message = b"Large aggregation test";
 
-        // Generate many key pairs (stress test)
         let key_pairs: Vec<_> = (0..100)
             .map(|_| {
                 let private_key = Bls12381::generate_private_key(&mut rng);
@@ -150,7 +148,6 @@ mod aggregation_tests {
         // Create signature
         let signature = Bls12381::sign(&private_key, message).unwrap();
 
-        // Use same signature multiple times
         let signatures = vec![signature.clone(), signature.clone(), signature.clone()];
         let public_keys = vec![public_key.clone(), public_key.clone(), public_key.clone()];
 
@@ -158,7 +155,6 @@ mod aggregation_tests {
         let aggregate_signature = Bls12381::aggregate_signatures(&signatures).unwrap();
 
         // Note: In BLS, aggregating same signature is mathematically valid
-        // but may not be the intended use case. The behavior should match C#.
         assert!(Bls12381::fast_aggregate_verify(
             &public_keys,
             message,
@@ -192,7 +188,6 @@ mod aggregation_tests {
 
             // Aggregation with invalid signature should handle gracefully
             let result = Bls12381::aggregate_signatures(&mixed_signatures);
-            // Behavior depends on implementation - should match C#
         }
     }
 
@@ -218,7 +213,6 @@ mod aggregation_tests {
         reversed_signatures.reverse();
         let aggregate2 = Bls12381::aggregate_signatures(&reversed_signatures).unwrap();
 
-        // Results should be identical (BLS aggregation is commutative)
         assert_eq!(aggregate1, aggregate2);
     }
 
@@ -243,7 +237,6 @@ mod aggregation_tests {
         let partial1 = Bls12381::aggregate_signatures(&signatures[0..2]).unwrap();
         let partial2 = Bls12381::aggregate_signatures(&signatures[2..5]).unwrap();
         let combined_aggregate = Bls12381::aggregate_signatures(&[
-            // Convert aggregate signatures back to individual signatures for this test
             // This depends on the specific API design
         ]);
 
@@ -290,7 +283,6 @@ mod aggregation_tests {
             &aggregate_signature
         ));
 
-        // Test with subset of public keys (should fail)
         let subset_keys = vec![public_keys[0].clone()];
         assert!(!Bls12381::fast_aggregate_verify(
             &subset_keys,
@@ -298,7 +290,6 @@ mod aggregation_tests {
             &aggregate_signature
         ));
 
-        // Test with extra public key (should fail)
         let extra_key = Bls12381::derive_public_key(&Bls12381::generate_private_key(&mut rng));
         let mut extended_keys = public_keys.clone();
         extended_keys.push(extra_key);
@@ -308,7 +299,6 @@ mod aggregation_tests {
             &aggregate_signature
         ));
 
-        // Test with reordered public keys (should still work - order shouldn't matter)
         let mut reordered_keys = public_keys.clone();
         reordered_keys.reverse();
         assert!(Bls12381::fast_aggregate_verify(
@@ -331,7 +321,6 @@ mod aggregation_tests {
         ];
 
         for (i, message) in test_messages.iter().enumerate() {
-            // Generate key pairs for this message
             let key_pairs: Vec<_> = (0..3)
                 .map(|_| {
                     let private_key = Bls12381::generate_private_key(&mut rng);
@@ -379,9 +368,7 @@ mod aggregation_tests {
         // Aggregate signatures
         let original_aggregate = Bls12381::aggregate_signatures(&signatures).unwrap();
 
-        // Test serialization (if aggregate signatures support serialization)
         // This depends on the specific implementation of AggregateSignature
-        // The test structure should match the C# serialization behavior
 
         // Note: Actual serialization testing would require the aggregate signature
         // to implement serialization methods similar to individual signatures

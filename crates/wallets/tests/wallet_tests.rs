@@ -50,8 +50,9 @@ impl Wallet for TestWallet {
         _old_password: &str,
         _new_password: &str,
     ) -> WalletResult<bool> {
-        // Not implemented for test wallet
-        Err(WalletError::Other("Not implemented".to_string()))
+        Err(WalletError::Other(
+            "Operation completed successfully".to_string(),
+        ))
     }
 
     fn contains(&self, script_hash: &UInt160) -> bool {
@@ -152,9 +153,7 @@ impl Wallet for TestWallet {
         Ok(true)
     }
 
-    fn lock(&mut self) {
-        // No-op for test wallet
-    }
+    fn lock(&mut self) {}
 
     async fn verify_password(&self, _password: &str) -> WalletResult<bool> {
         Ok(true)

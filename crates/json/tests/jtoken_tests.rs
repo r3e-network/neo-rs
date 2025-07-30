@@ -12,18 +12,15 @@ mod jtoken_tests {
     /// Test JToken creation and basic properties (matches C# JToken tests exactly)
     #[test]
     fn test_jtoken_creation_compatibility() {
-        // Test null token (matches C# JToken.Null exactly)
         let null_token = JToken::Null;
         assert_eq!(null_token, JToken::Null);
 
-        // Test boolean tokens (matches C# JToken boolean handling exactly)
         let true_token = JToken::Boolean(true);
         let false_token = JToken::Boolean(false);
         assert_eq!(true_token, JToken::Boolean(true));
         assert_eq!(false_token, JToken::Boolean(false));
         assert_ne!(true_token, false_token);
 
-        // Test number tokens (matches C# JToken number handling exactly)
         let int_token = JToken::Number(42.0);
         let float_token = JToken::Number(3.14159);
         let zero_token = JToken::Number(0.0);
@@ -34,7 +31,6 @@ mod jtoken_tests {
         assert_eq!(zero_token, JToken::Number(0.0));
         assert_eq!(negative_token, JToken::Number(-123.456));
 
-        // Test string tokens (matches C# JToken string handling exactly)
         let string_token = JToken::String("test string".to_string());
         let empty_string_token = JToken::String("".to_string());
         let unicode_token = JToken::String("Hello 世界 🌍".to_string());
@@ -195,7 +191,6 @@ mod jtoken_tests {
         assert_eq!(JToken::Number(0.0), JToken::Number(0.0));
         assert_ne!(JToken::Number(1.0), JToken::Number(2.0));
 
-        // Test string equality
         assert_eq!(
             JToken::String("test".to_string()),
             JToken::String("test".to_string())
@@ -335,7 +330,6 @@ mod jtoken_tests {
         assert!(matches!(large_number, JToken::Number(_)));
         assert!(matches!(small_number, JToken::Number(_)));
 
-        // Test string with special characters
         let special_string =
             JToken::String("Line1\nLine2\tTab\"Quote'Apostrophe\\Backslash".to_string());
         assert!(matches!(special_string, JToken::String(_)));

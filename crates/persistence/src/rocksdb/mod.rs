@@ -74,7 +74,7 @@ impl IReadOnlyStore<Vec<u8>, Vec<u8>> for RocksDbStore {
         let items: Vec<(Vec<u8>, Vec<u8>)> = db
             .iterator(iter_mode)
             .map(|result| {
-                let (key, value) = result.unwrap();
+                let (key, value) = result.expect("Operation failed");
                 (key.to_vec(), value.to_vec())
             })
             .filter(|(key, _)| {
@@ -93,13 +93,13 @@ impl IReadOnlyStore<Vec<u8>, Vec<u8>> for RocksDbStore {
 impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDbStore {
     fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
         if let Err(e) = self.db.put(key, value) {
-            eprintln!("Failed to put key-value pair: {}", e);
+            log::debug!("Failed to put key-value pair: {}", e);
         }
     }
 
     fn delete(&mut self, key: &Vec<u8>) {
         if let Err(e) = self.db.delete(key) {
-            eprintln!("Failed to delete key: {}", e);
+            log::debug!("Failed to delete key: {}", e);
         }
     }
 }
@@ -177,7 +177,7 @@ impl IReadOnlyStore<Vec<u8>, Vec<u8>> for RocksDbSnapshot {
         let items: Vec<(Vec<u8>, Vec<u8>)> = db
             .iterator(iter_mode)
             .map(|result| {
-                let (key, value) = result.unwrap();
+                let (key, value) = result.expect("Operation failed");
                 (key.to_vec(), value.to_vec())
             })
             .filter(|(key, _)| {
@@ -220,7 +220,6 @@ impl IStoreSnapshot for RocksDbSnapshot {
                 // In production, this should be handled gracefully rather than crashing
                 warn!("Snapshot batch commit failed - storage operation incomplete");
 
-                // For production systems, this could trigger:
                 // 1. Retry the batch commit
                 // 2. Mark the snapshot operation as failed
                 // 3. Trigger recovery procedures

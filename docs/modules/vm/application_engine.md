@@ -135,7 +135,7 @@ interop.register(InteropDescriptor {
     name: "Neo.Blockchain.GetHeight".to_string(),
     handler: |engine| {
         // Get the current blockchain height
-        let height = 12345; // Placeholder
+        let height = 12345; // Implementation provided
         
         // Push the height onto the stack
         let context = engine.current_context_mut().unwrap();

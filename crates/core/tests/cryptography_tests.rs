@@ -34,7 +34,6 @@ fn test_verify_signature() {
         &wrong_public_key
     ));
 
-    // Test with malformed public key (wrong length)
     let malformed_key = vec![0u8; 32]; // Wrong length
     assert!(!Crypto::verify_signature(
         message,
@@ -98,7 +97,6 @@ fn test_ec_recover() {
     // Recover public key
     let recovered_key = helper::recover_public_key(message, &recoverable_signature).unwrap();
 
-    // Compare keys (handle format differences)
     if public_key.len() != recovered_key.len() {
         if public_key.len() == 33 && recovered_key.len() == 65 {
             let compressed_recovered = compress_public_key(&recovered_key);
@@ -159,19 +157,15 @@ fn test_hash_functions() {
     let ripemd160_result = Crypto::ripemd160(test_data);
     assert_eq!(20, ripemd160_result.len());
 
-    // Test Hash160 (RIPEMD160(SHA256))
     let hash160_result = Crypto::hash160(test_data);
     assert_eq!(20, hash160_result.len());
 
-    // Verify Hash160 is RIPEMD160(SHA256)
     let manual_hash160 = Crypto::ripemd160(&Crypto::sha256(test_data));
     assert_eq!(hash160_result, manual_hash160);
 
-    // Test Hash256 (SHA256(SHA256))
     let hash256_result = Crypto::hash256(test_data);
     assert_eq!(32, hash256_result.len());
 
-    // Verify Hash256 is SHA256(SHA256)
     let manual_hash256 = Crypto::sha256(&Crypto::sha256(test_data));
     assert_eq!(hash256_result, manual_hash256);
 }
@@ -198,7 +192,6 @@ fn test_key_generation_and_derivation() {
         hex::decode("0000000000000000000000000000000000000000000000000000000000000001").unwrap();
     let test_public_key = helper::private_key_to_public_key(&test_private_key).unwrap();
 
-    // This should produce a known public key for private key = 1
     assert_eq!(33, test_public_key.len()); // Compressed format
     assert!(test_public_key[0] == 0x02 || test_public_key[0] == 0x03);
 }
@@ -254,8 +247,6 @@ fn test_recoverable_signature_round_trip() {
     // Recover public key
     let recovered_public_key = helper::recover_public_key(message, &recoverable_signature).unwrap();
 
-    // The recovered public key should match the original (both should be in same format)
-    // If formats differ, convert to same format for comparison
     if public_key.len() != recovered_public_key.len() {
         if public_key.len() == 33 && recovered_public_key.len() == 65 {
             // Original is compressed, recovered is uncompressed
@@ -271,7 +262,6 @@ fn test_recoverable_signature_round_trip() {
         assert_eq!(public_key, recovered_public_key);
     }
 
-    // Verify the signature (without recovery byte)
     let signature_without_recovery = &recoverable_signature[..64];
     assert!(Crypto::verify_signature(
         message,
@@ -314,7 +304,6 @@ fn test_error_cases() {
 
     for invalid_key in invalid_private_keys {
         if invalid_key.len() == 32 && invalid_key.iter().all(|&b| b == 0) {
-            // All zeros is technically invalid for secp256k1
             assert!(helper::private_key_to_public_key(&invalid_key).is_err());
         } else if invalid_key.len() != 32 {
             assert!(helper::private_key_to_public_key(&invalid_key).is_err());
@@ -373,7 +362,6 @@ fn compress_public_key(uncompressed: &[u8]) -> Vec<u8> {
     let x = &uncompressed[1..33];
     let y = &uncompressed[33..65];
 
-    // Check if y is even or odd
     let y_is_even = y[31] & 1 == 0;
 
     let mut compressed = Vec::with_capacity(33);
@@ -386,14 +374,12 @@ fn compress_public_key(uncompressed: &[u8]) -> Vec<u8> {
 /// Test the compress_public_key helper function
 #[test]
 fn test_compress_public_key_helper() {
-    // Test with known uncompressed public key (valid hex string)
     let uncompressed = hex::decode("04fd0a8c1ce5ae5570fdd46e7599c16b175bf0ebdfe9c178f1ab848fb16dac74a5d301b0534c7bcf1b3760881f0c420d17084907edd771e1c9c8e941bbf6ff9108").unwrap();
     let compressed = compress_public_key(&uncompressed);
 
     assert_eq!(33, compressed.len());
     assert!(compressed[0] == 0x02 || compressed[0] == 0x03);
 
-    // Test with already compressed key (should return as-is) - fix hex length
     let already_compressed =
         hex::decode("02fd0a8c1ce5ae5570fdd46e7599c16b175bf0ebdfe9c178f1ab848fb16dac74a5").unwrap();
     let result = compress_public_key(&already_compressed);

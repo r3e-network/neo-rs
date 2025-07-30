@@ -117,8 +117,6 @@ fn test_script_get_jump_offset() {
         OpCode::PUSH2 as u8, // PUSH2
         OpCode::JMP_L as u8,
         0xFF,
-        0xFF,
-        0xFF,
         0xFC,              // JMP -4
         OpCode::RET as u8, // RET (skipped)
     ];
@@ -149,7 +147,6 @@ fn test_script_get_jump_target() {
         OpCode::PUSH2 as u8, // PUSH2
         OpCode::JMP_L as u8,
         0xFC,
-        0xFF,
         0xFF,
         0xFF,              // JMP -4
         OpCode::RET as u8, // RET (skipped)
@@ -187,11 +184,7 @@ fn test_script_get_try_offsets() {
         OpCode::PUSH1 as u8, // PUSH1
         OpCode::THROW as u8, // THROW
         OpCode::NOP as u8,   // NOP
-        OpCode::NOP as u8,   // NOP
         OpCode::NOP as u8,   // Catch block
-        OpCode::NOP as u8,   // NOP
-        OpCode::NOP as u8,   // NOP
-        OpCode::NOP as u8,   // NOP
         OpCode::NOP as u8,   // NOP
         OpCode::NOP as u8,   // Finally block
         OpCode::RET as u8,   // RET

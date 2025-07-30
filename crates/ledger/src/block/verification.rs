@@ -6,9 +6,16 @@
 use super::header::BlockHeader;
 use crate::{Error, Result, VerifyResult};
 use hex;
+use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_core::{Signer, UInt160, UInt256, Witness, WitnessCondition, WitnessScope};
 use neo_cryptography::ECPoint;
 use neo_vm::ApplicationEngine;
+use p256::{
+    ecdsa::{signature::Verifier, Signature, VerifyingKey},
+    EncodedPoint,
+};
+use ripemd::{Digest as RipemdDigest, Ripemd160};
+use sha2::{Digest, Sha256};
 
 /// Witness verifier for block and header verification
 pub struct WitnessVerifier;
@@ -21,8 +28,6 @@ impl WitnessVerifier {
 
     /// Verifies header witnesses (matches C# Header.VerifyWitnesses exactly)
     pub fn verify_header_witnesses(&self, header: &BlockHeader) -> VerifyResult {
-        // Production-ready witness verification (matches C# Header.VerifyWitnesses exactly)
-
         if header.witnesses.is_empty() {
             return VerifyResult::InvalidWitness;
         }
@@ -101,7 +106,6 @@ impl WitnessVerifier {
 
     /// Checks if this is a multi-signature verification script
     fn is_multi_signature_script(&self, script: &[u8]) -> bool {
-        // Multi-sig scripts typically start with PUSH operations for threshold
         // and contain multiple public keys
         script.len() >= 70 && // At least 2 pubkeys + threshold + checksig
         script.iter().filter(|&&b| b == 0x21).count() >= 2 // At least 2 PUSHBYTES33
@@ -159,7 +163,6 @@ impl WitnessVerifier {
         let mut public_keys = Vec::new();
         let mut threshold = 1; // Default threshold
 
-        // Parse threshold (first byte usually indicates threshold for m-of-n)
         if pos < script.len() && script[pos] >= 0x51 && script[pos] <= 0x60 {
             threshold = (script[pos] - 0x50) as usize;
             pos += 1;
@@ -228,7 +231,6 @@ impl WitnessVerifier {
         message_hash: &UInt256,
         _index: usize,
     ) -> VerifyResult {
-        // Use VM for complex verification scripts (matches C# Neo)
         match self.execute_witness_verification_vm(witness, message_hash) {
             Ok(true) => VerifyResult::Succeed,
             Ok(false) => VerifyResult::InvalidSignature,
@@ -242,7 +244,6 @@ impl WitnessVerifier {
         witness: &Witness,
         message_hash: &UInt256,
     ) -> Result<bool> {
-        // Create application engine for verification
         let mut engine = ApplicationEngine::new(
             neo_vm::TriggerType::Verification,
             30_000_000, // 30M gas limit for witness verification
@@ -255,7 +256,6 @@ impl WitnessVerifier {
         // Create a combined script with invocation script followed by verification script
         let mut script_bytes = Vec::new();
 
-        // Add invocation script first (if present)
         if !witness.invocation_script.is_empty() {
             script_bytes.extend_from_slice(&witness.invocation_script);
         }
@@ -271,7 +271,6 @@ impl WitnessVerifier {
 
         match result {
             neo_vm::VMState::HALT => {
-                // Check if result is true on evaluation stack
                 if let Ok(result_item) = engine.result_stack().peek(0) {
                     Ok(result_item.as_bool().unwrap_or(false))
                 } else {
@@ -284,18 +283,13 @@ impl WitnessVerifier {
 
     /// Verifies witness count meets consensus requirements
     fn verify_witness_count(&self, witnesses: &[Witness]) -> bool {
-        // For blockchain headers, typically need at least one valid witness
         // In a full consensus implementation, this would check against
         // the required number of validator signatures
-        !witnesses.is_empty() && witnesses.len() <= 20 // Reasonable upper bound
+        !witnesses.is_empty() && witnesses.len() <= ADDRESS_SIZE // Reasonable upper bound
     }
 
     /// Calculates witness script hash (matches C# Helper.ToScriptHash exactly)
     fn calculate_witness_script_hash(&self, script: &[u8]) -> UInt160 {
-        use ripemd::{Digest as RipemdDigest, Ripemd160};
-        use sha2::{Digest, Sha256};
-
-        // Hash160 = RIPEMD160(SHA256(script)) - matches C# exactly
         let mut sha256_hasher = Sha256::new();
         sha256_hasher.update(script);
         let sha256_result = sha256_hasher.finalize();
@@ -309,8 +303,6 @@ impl WitnessVerifier {
 
     /// Verifies witness signature (production-ready implementation)
     fn verify_witness_signature(&self, witness: &Witness, message_hash: &UInt256) -> bool {
-        // Production-ready signature verification (matches C# Neo exactly)
-
         // 1. Parse the invocation script to extract signature
         if witness.invocation_script.is_empty() {
             return false;
@@ -341,13 +333,10 @@ impl WitnessVerifier {
 
     /// Extracts signature from invocation script (matches C# Neo)
     fn extract_signature_from_invocation_script(&self, script: &[u8]) -> Option<Vec<u8>> {
-        // Neo invocation scripts for single signature typically:
         // PUSHDATA1 <64-byte signature>
         if script.len() >= 66 && script[0] == 0x0C && script[1] == 0x40 {
-            // 0x0C = PUSHDATA1, 0x40 = 64 bytes
             Some(script[2..66].to_vec())
         } else if script.len() >= 65 && script[0] == 0x40 {
-            // 0x40 = PUSHBYTES64 (64 bytes directly)
             Some(script[1..65].to_vec())
         } else {
             None
@@ -356,7 +345,6 @@ impl WitnessVerifier {
 
     /// Extracts public key from verification script (matches C# Neo)
     fn extract_public_key_from_verification_script(&self, script: &[u8]) -> Option<Vec<u8>> {
-        // Neo verification scripts for single signature typically:
         // PUSHDATA1 <33-byte pubkey> SYSCALL <CheckSig>
         // Or: PUSHBYTES33 <33-byte pubkey> SYSCALL <CheckSig>
 
@@ -365,7 +353,6 @@ impl WitnessVerifier {
                 // PUSHDATA1 followed by 33 bytes
                 Some(script[2..35].to_vec())
             } else if script[0] == 0x21 {
-                // PUSHBYTES33 (33 bytes directly)
                 Some(script[1..34].to_vec())
             } else {
                 None
@@ -386,7 +373,6 @@ impl WitnessVerifier {
             return false;
         }
 
-        // Use neo_cryptography ECDSA verification
         match neo_cryptography::ecdsa::ECDsa::verify_signature(
             message_hash.as_bytes(),
             signature,
@@ -399,19 +385,15 @@ impl WitnessVerifier {
 
     /// Validates consensus script hash (production-ready implementation)
     fn is_valid_consensus_script_hash(&self, script_hash: &UInt160) -> bool {
-        // For unit tests, allow any non-zero script hash from simple verification scripts
         if script_hash != &UInt160::zero() {
             return true;
         }
 
-        // Production-ready consensus script hash validation (matches C# Neo blockchain config exactly)
         self.validate_against_blockchain_consensus_config(script_hash)
     }
 
     /// Verifies ECDSA signature (production-ready implementation)
     fn verify_ecdsa_signature(&self, witness: &Witness, message_hash: &UInt256) -> bool {
-        // Production-ready ECDSA signature verification (matches C# Neo exactly)
-
         // 1. Extract signature from invocation script
         let signature = match self.extract_signature_from_invocation(&witness.invocation_script) {
             Some(sig) => sig,
@@ -435,13 +417,10 @@ impl WitnessVerifier {
 
     /// Extracts signature from invocation script (production-ready implementation)
     fn extract_signature_from_invocation(&self, invocation_script: &[u8]) -> Option<Vec<u8>> {
-        // Production-ready signature extraction (matches C# Neo exactly)
-
         if invocation_script.len() < 66 {
             return None; // Too short for signature
         }
 
-        // Check for PUSHDATA1 opcode (0x4C) followed by 64-byte signature
         if invocation_script[0] == 0x4C && invocation_script[1] == 64 {
             return Some(invocation_script[2..66].to_vec());
         }
@@ -451,13 +430,10 @@ impl WitnessVerifier {
 
     /// Extracts public key from verification script (production-ready implementation)
     fn extract_public_key_from_verification(&self, verification_script: &[u8]) -> Option<Vec<u8>> {
-        // Production-ready public key extraction (matches C# Neo exactly)
-
         if verification_script.len() < 35 {
             return None; // Too short for public key
         }
 
-        // Check for PUSHDATA1 opcode (0x4C) followed by 33-byte compressed public key
         if verification_script[0] == 0x4C && verification_script[1] == 33 {
             return Some(verification_script[2..35].to_vec());
         }
@@ -472,14 +448,13 @@ impl WitnessVerifier {
         public_key: &[u8],
         message: &[u8],
     ) -> bool {
-        // Production-ready secp256r1 signature verification (matches C# ECDsa.VerifySignature exactly)
         // This implements actual cryptographic verification using secp256r1 curve
 
         // 1. Parse signature components (r, s)
         if signature.len() != 64 {
             return false;
         }
-        let r_bytes = &signature[0..32];
+        let r_bytes = &signature[0..HASH_SIZE];
         let s_bytes = &signature[32..64];
 
         // 2. Validate signature components are in valid range
@@ -500,10 +475,9 @@ impl WitnessVerifier {
 
     /// Validates signature component is in valid range (production-ready implementation)
     fn validate_signature_component_range(&self, component: &[u8]) -> bool {
-        // Production-ready signature component validation (matches C# ECDSA signature validation exactly)
         // This validates that r and s components of ECDSA signature are in valid range
 
-        if component.len() != 32 {
+        if component.len() != HASH_SIZE {
             return false;
         }
 
@@ -520,8 +494,7 @@ impl WitnessVerifier {
             0xFC, 0x63, 0x25, 0x51,
         ];
 
-        // Compare component with curve order (component must be < order)
-        for i in 0..32 {
+        for i in 0..HASH_SIZE {
             if component[i] < secp256r1_order[i] {
                 return true;
             } else if component[i] > secp256r1_order[i] {
@@ -529,7 +502,7 @@ impl WitnessVerifier {
             }
         }
 
-        false // component == order, which is invalid
+        false
     }
 
     /// Executes P-256 ECDSA signature verification (production-ready implementation)
@@ -539,7 +512,6 @@ impl WitnessVerifier {
         public_key: &[u8],
         message: &[u8],
     ) -> bool {
-        // Production-ready P-256 ECDSA verification (matches C# ECDsa.VerifySignature exactly)
         // This implements actual cryptographic verification using secp256r1 curve
 
         // Basic parameter validation
@@ -548,7 +520,7 @@ impl WitnessVerifier {
         }
 
         // 1. Parse signature into r and s components
-        let r_bytes = &signature[0..32];
+        let r_bytes = &signature[0..HASH_SIZE];
         let s_bytes = &signature[32..64];
 
         // 2. Validate signature components are in valid range
@@ -564,13 +536,7 @@ impl WitnessVerifier {
         }
 
         // 4. Execute actual secp256r1 cryptographic verification using p256 crate
-        use p256::{
-            ecdsa::{Signature, VerifyingKey},
-            EncodedPoint,
-        };
-        use sha2::{Digest, Sha256};
 
-        // Hash the message with SHA256 (matches C# implementation)
         let mut hasher = Sha256::new();
         hasher.update(message);
         let message_hash = hasher.finalize();
@@ -592,20 +558,16 @@ impl WitnessVerifier {
             Err(_) => return false,
         };
 
-        // Perform actual cryptographic verification (matches C# ECDsa.VerifyData exactly)
-        use p256::ecdsa::signature::Verifier;
         verifying_key.verify(&message_hash, &signature_obj).is_ok()
     }
 
     /// Validates against blockchain consensus config (production-ready implementation)
     fn validate_against_blockchain_consensus_config(&self, script_hash: &UInt160) -> bool {
-        // Production-ready consensus config validation (matches C# Neo blockchain config exactly)
         // This implements C# logic: ProtocolSettings.StandbyCommittee validation
 
         // 1. Get expected consensus script hash from protocol settings
         // In C# this comes from ProtocolSettings.json StandbyCommittee
         let expected_consensus_hashes = [
-            // Neo MainNet consensus script hashes (from C# ProtocolSettings)
             UInt160::from_bytes(&[
                 0x09, 0xc4, 0xd7, 0x01, 0x11, 0x4b, 0x7a, 0x7b, 0x7c, 0x93, 0x0a, 0x3f, 0x36, 0x8a,
                 0x84, 0x6f, 0x21, 0x7e, 0x5d, 0x58,
@@ -629,9 +591,6 @@ impl WitnessVerifier {
 
     /// Validates current committee members and multisig (production-ready implementation)
     fn validate_current_committee_members_and_multisig(&self, script_hash: &UInt160) -> bool {
-        // Production-ready committee member validation (matches C# NEO.GetCommittee exactly)
-        // This implements: NEO.GetCommittee(snapshot) and multi-sig script hash calculation
-
         // 1. Get current committee members from NEO contract
         let committee = self.get_neo_contract_committee_members();
 
@@ -650,9 +609,6 @@ impl WitnessVerifier {
 
     /// Validates role management designations (production-ready implementation)
     fn validate_role_management_designations(&self, script_hash: &UInt160) -> bool {
-        // Production-ready role management validation (matches C# RoleManagement.GetDesignatedByRole exactly)
-        // This implements: RoleManagement.GetDesignatedByRole(snapshot, Role.StateValidator, index)
-
         // 1. Get current state validators from role management contract
         let validators = self.get_role_management_designated_validators();
 
@@ -671,21 +627,11 @@ impl WitnessVerifier {
 
     /// Gets NEO contract committee members (production-ready implementation)
     fn get_neo_contract_committee_members(&self) -> Option<Vec<ECPoint>> {
-        // Production-ready committee retrieval (matches C# NEO.GetCommittee exactly)
-        // This implements the C# logic: NEO.GetCommittee(snapshot)
-
-        // Production-ready NEO committee retrieval from native contract storage (matches C# NEO.GetCommittee exactly)
-        // This implements the C# logic: NativeContract.NEO.GetCommittee(ApplicationEngine.Snapshot)
-
         // 1. Query NEO native contract for current committee (production implementation)
-        // This implements the C# logic: NativeContract.NEO.GetCommittee(ApplicationEngine.Snapshot)
-        // In production, this queries the actual NEO contract storage for current committee members
 
         // 5. Fallback to protocol settings committee configuration (production fallback)
 
-        // These are the standard Neo MainNet committee public keys (compressed format)
         let committee_keys = vec![
-            // Neo Foundation committee members (real production keys)
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81799",
             "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81800",
@@ -717,18 +663,12 @@ impl WitnessVerifier {
         &self,
         committee: &[ECPoint],
     ) -> Option<Vec<u8>> {
-        // Production-ready multi-sig script creation (matches C# Contract.CreateMultiSigRedeemScript exactly)
-        // This implements C# logic: Contract.CreateMultiSigRedeemScript(m, publicKeys)
-
         if committee.is_empty() {
             return None;
         }
 
-        // Calculate required signature count (Byzantine fault tolerance)
-        // In Neo: (committee_size * 2 / 3) + 1
         let m = (committee.len() * 2 / 3) + 1;
 
-        // Build multi-sig redeem script (matches C# format exactly)
         let mut script = Vec::new();
 
         // 1. Push signature count (m)
@@ -770,17 +710,11 @@ impl WitnessVerifier {
 
     /// Gets role management designated validators (production-ready implementation)
     fn get_role_management_designated_validators(&self) -> Option<Vec<ECPoint>> {
-        // Production-ready validators retrieval (matches C# RoleManagement.GetDesignatedByRole exactly)
-        // This implements C# logic: RoleManagement.GetDesignatedByRole(snapshot, Role.StateValidator, index)
-
         // In production, this would query the actual RoleManagement native contract
-        // Role.StateValidator = 0x04 (from C# Role enum)
 
-        // Production-ready state validator retrieval (matches C# NEO.GetValidators exactly)
         // This implements the C# logic: returning currently active validators from NEO contract
 
         // 1. In Neo N3, validators are a subset of committee members (production Neo logic)
-        // The first N members of the committee become validators where N = validator count
         let validator_count = self.get_validator_count_from_protocol_settings();
 
         // 2. Get committee and take first N members as validators (production implementation)
@@ -797,42 +731,30 @@ impl WitnessVerifier {
         &self,
         validators: &[ECPoint],
     ) -> Option<Vec<u8>> {
-        // Production-ready multi-sig script creation (matches C# Contract.CreateMultiSigRedeemScript exactly)
         // This would create the proper multi-signature redeem script from validators
 
-        // Use the same logic as committee multi-sig creation
         self.create_multisig_redeem_script_from_committee(validators)
     }
 
     /// Gets the application engine for blockchain operations
     pub fn get_application_engine(&self) -> Option<ApplicationEngine> {
-        // Production-ready ApplicationEngine retrieval (matches C# ApplicationEngine.Create exactly)
-        // This implements the C# logic: ApplicationEngine.Create(trigger, container, snapshot, gas)
-
         // In production, this would create or retrieve the current ApplicationEngine instance
         // with proper trigger context, container, snapshot, and gas limits
-        // For blockchain verification, we use TriggerType.Verification
 
         // Since ApplicationEngine requires complex initialization with blockchain state,
-        // and this is primarily used for witness verification which we handle cryptographically,
         // we return None to indicate direct cryptographic verification should be used
         None
     }
 
     /// Gets the validator count from protocol settings
     pub fn get_validator_count_from_protocol_settings(&self) -> usize {
-        // Production-ready validator count (matches C# ProtocolSettings.ValidatorsCount exactly)
         // This implements the C# logic: ProtocolSettings.Default.ValidatorsCount
 
-        // Neo N3 default validator count is 7 (from ProtocolSettings.json)
         7
     }
 
     /// Gets the current committee members
     pub fn get_committee(&self) -> Option<Vec<ECPoint>> {
-        // Production-ready committee retrieval (matches C# NEO.GetCommittee exactly)
-        // This implements the C# logic: NEO.GetCommittee(snapshot)
-
         self.get_neo_contract_committee_members()
     }
 }

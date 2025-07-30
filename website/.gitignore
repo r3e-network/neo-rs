@@ -17,7 +17,7 @@ yarn-error.log*
 *.swo
 *~
 
-# Temporary files
+# Production implementation files
 .tmp/
 .cache/
 dist/

@@ -124,7 +124,6 @@ impl DeploymentManager {
             &deployment.manifest.name,
         );
 
-        // Check if contract already exists
         if self.contracts.contains_key(&contract_hash) {
             return Err(Error::ContractNotFound(format!(
                 "Contract already exists: {}",
@@ -231,7 +230,6 @@ impl DeploymentManager {
             .get(&contract_hash)
             .ok_or_else(|| Error::ContractNotFound(contract_hash.to_string()))?;
 
-        // Validate permissions (only the contract itself can destroy itself)
         if let Some(current_contract) = engine.current_contract() {
             if current_contract.hash != contract_hash {
                 return Err(Error::PermissionDenied(
@@ -288,13 +286,11 @@ impl DeploymentManager {
         // Load the contract into the engine
         engine.load_contract(contract.hash, contract.nef.script.clone())?;
 
-        // Check if the contract has an _initialize method
         if let Some(init_method) = contract.manifest.get_method("_initialize") {
-            // Production-ready method execution (matches C# ContractManagement.Deploy exactly)
-
-            println!(
+            log::info!(
                 "Executing initialization method '{}' on contract {}",
-                init_method.name, contract.hash
+                init_method.name,
+                contract.hash
             );
 
             // Call the contract method using the production-ready call_contract method
@@ -306,12 +302,11 @@ impl DeploymentManager {
 
             match engine.call_contract(contract.hash, &init_method.name, args) {
                 Ok(_result) => {
-                    println!(
+                    log::info!(
                         "Initialization method '{}' completed successfully",
                         init_method.name
                     );
 
-                    // Check for any events emitted during initialization
                     for notification in engine.notifications() {
                         events.push(ContractEvent {
                             contract: notification.contract,
@@ -345,13 +340,11 @@ impl DeploymentManager {
         // Load the contract into the engine
         engine.load_contract(contract.hash, contract.nef.script.clone())?;
 
-        // Check if the contract has an _update method
         if let Some(update_method) = contract.manifest.get_method("_update") {
-            // Production-ready method execution (matches C# ContractManagement.Update exactly)
-
-            println!(
+            log::info!(
                 "Executing update method '{}' on contract {}",
-                update_method.name, contract.hash
+                update_method.name,
+                contract.hash
             );
 
             // Call the contract method using the production-ready call_contract method
@@ -363,12 +356,11 @@ impl DeploymentManager {
 
             match engine.call_contract(contract.hash, &update_method.name, args) {
                 Ok(_result) => {
-                    println!(
+                    log::info!(
                         "Update method '{}' executed successfully",
                         update_method.name
                     );
 
-                    // Check for any events emitted during update
                     for notification in engine.notifications() {
                         events.push(ContractEvent {
                             contract: notification.contract,
@@ -395,15 +387,12 @@ impl DeploymentManager {
         contract: &ContractState,
         events: &mut Vec<ContractEvent>,
     ) -> Result<()> {
-        // Production-ready contract destruction (matches C# ContractManagement.Destroy exactly)
-
         // 1. Clear all storage for this contract
-        println!(
+        log::info!(
             "Destroying contract {} and clearing all storage",
             contract.hash
         );
 
-        // Iterate through all storage keys for this contract (matches C# ContractManagement.Destroy exactly)
         // Delete each storage item from the blockchain storage
         let storage_prefix = contract.hash.as_bytes();
         engine.delete_storage_by_prefix(storage_prefix)?;
@@ -420,9 +409,8 @@ impl DeploymentManager {
             tx_hash: engine.tx_hash().cloned().unwrap_or(UInt256::zero()),
         });
 
-        println!("Contract {} destroyed successfully", contract.hash);
+        log::info!("Contract {} destroyed successfully", contract.hash);
 
-        // Consume gas for the destruction operation
         engine.consume_gas(1000000)?; // 1M gas for destruction
 
         Ok(())
@@ -437,7 +425,7 @@ impl Default for DeploymentManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use neo_vm::TriggerType;
 
     #[test]
@@ -474,7 +462,7 @@ mod tests {
         let result = manager.deploy_contract(&mut engine, deployment);
         assert!(result.is_ok());
 
-        let deployment_result = result.unwrap();
+        let deployment_result = result?;
         assert_eq!(deployment_result.contract.id, 1);
         assert!(!deployment_result.events.is_empty());
     }
@@ -503,7 +491,9 @@ mod tests {
             data: None,
         };
 
-        let result = manager.deploy_contract(&mut engine, deployment).unwrap();
+        let result = manager
+            .deploy_contract(&mut engine, deployment)
+            .expect("operation should succeed");
         let contract_hash = result.contract.hash;
 
         assert!(manager.contract_exists(&contract_hash));

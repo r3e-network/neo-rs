@@ -4,6 +4,7 @@
 //! ensuring all components shut down cleanly and in the correct order, matching
 //! the C# Neo implementation exactly.
 
+use neo_config::ADDRESS_SIZE;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -185,7 +186,6 @@ impl ShutdownCoordinator {
 
     /// Initiates graceful shutdown
     pub async fn initiate_shutdown(&self, reason: String) -> Result<(), ShutdownError> {
-        // Check if shutdown is already in progress
         {
             let mut is_shutting_down = self.is_shutting_down.write().await;
             if *is_shutting_down {
@@ -294,7 +294,6 @@ impl ShutdownCoordinator {
         // Execute stage-specific shutdown logic
         match stage {
             ShutdownStage::Prepare => {
-                // Prepare for shutdown - notify all components
                 debug!("Preparing components for shutdown");
             }
 
@@ -370,10 +369,9 @@ impl ShutdownCoordinator {
                     priority
                 );
 
-                // Check if component is ready to shutdown
                 if !component.can_shutdown().await {
                     warn!(
-                        "Component {} is not ready to shutdown, waiting...",
+                        "Component {} is not ready to shutdown, waiting/* implementation */;",
                         component.name()
                     );
 
@@ -496,7 +494,7 @@ impl SignalHandler {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     struct TestComponent {
         name: String,
@@ -556,7 +554,7 @@ mod tests {
         let mut event_count = 0;
         while let Ok(event) = events.try_recv() {
             event_count += 1;
-            println!("Received event: {:?}", event);
+            log::info!("Received event: {:?}", event);
         }
         assert!(event_count > 0);
     }
@@ -566,7 +564,6 @@ mod tests {
         let coordinator = ShutdownCoordinator::new();
         let shutdown_signal = coordinator.get_shutdown_signal();
 
-        // Spawn task that waits for shutdown
         let signal_clone = Arc::clone(&shutdown_signal);
         let wait_task = tokio::spawn(async move {
             signal_clone.notified().await;
@@ -577,7 +574,7 @@ mod tests {
         let _ = coordinator.initiate_shutdown("Test".to_string()).await;
 
         // Verify signal was received
-        let result = wait_task.await.unwrap();
+        let result = wait_task.await.expect("operation should succeed");
         assert!(result);
     }
 }

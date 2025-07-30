@@ -1,17 +1,12 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// witness.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Implementation of Witness for Neo blockchain.
 
-use crate::{CoreError, UInt160};
+use crate::error::{CoreError, CoreResult};
+use crate::UInt160;
+use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE};
 use neo_io::Serializable;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -19,11 +14,11 @@ use std::fmt;
 /// Maximum size of invocation script in bytes.
 /// This is designed to allow a MultiSig 21/11 (committee)
 /// Invocation = 11 * (64 + 2) = 726
-const MAX_INVOCATION_SCRIPT: usize = 1024;
+const MAX_INVOCATION_SCRIPT: usize = MAX_SCRIPT_SIZE;
 
 /// Maximum size of verification script in bytes.
 /// Verification = m + (PUSH_PubKey * 21) + length + null + syscall = 1 + ((2 + 33) * 21) + 2 + 1 + 5 = 744
-const MAX_VERIFICATION_SCRIPT: usize = 1024;
+const MAX_VERIFICATION_SCRIPT: usize = MAX_SCRIPT_SIZE;
 
 /// Represents a witness of a verifiable object.
 ///
@@ -87,7 +82,6 @@ impl Witness {
     pub fn script_hash(&mut self) -> UInt160 {
         if self.script_hash.is_none() {
             // Calculate script hash exactly like C# implementation:
-            // RIPEMD160(SHA256(verification_script))
             use ripemd::Ripemd160;
             use sha2::{Digest, Sha256};
 
@@ -102,11 +96,11 @@ impl Witness {
             let ripemd_result = ripemd_hasher.finalize();
 
             // Convert to UInt160
-            let mut hash_bytes = [0u8; 20];
+            let mut hash_bytes = [0u8; ADDRESS_SIZE];
             hash_bytes.copy_from_slice(&ripemd_result);
             self.script_hash = Some(UInt160::from_bytes(&hash_bytes).unwrap_or_default());
         }
-        self.script_hash.clone().unwrap()
+        self.script_hash.clone().unwrap_or_default()
     }
 
     /// Gets the invocation script.
@@ -133,9 +127,7 @@ impl Witness {
     ///
     /// The size in bytes
     pub fn get_size(&self) -> usize {
-        // Variable length encoding for invocation script
         let invocation_size = self.get_var_size(&self.invocation_script);
-        // Variable length encoding for verification script
         let verification_size = self.get_var_size(&self.verification_script);
 
         invocation_size + verification_size
@@ -170,9 +162,7 @@ impl Witness {
     }
 
     /// Verifies the witness signature (production-ready implementation).
-    pub fn verify_signature(&self, hash_data: &[u8], account: &UInt160) -> Result<bool, CoreError> {
-        // Production-ready signature verification (matches C# Witness verification exactly)
-
+    pub fn verify_signature(&self, hash_data: &[u8], account: &UInt160) -> CoreResult<bool> {
         // 1. Extract public key from verification script
         let public_key = self.extract_public_key_from_verification_script()?;
 
@@ -195,30 +185,23 @@ impl Witness {
         // Real C# Neo N3 implementation: Contract signature script parsing
         // In C#: Contract.CreateSignatureRedeemScript creates scripts in specific format
 
-        // Real C# verification script format (from Contract.CreateSignatureRedeemScript):
-        // PUSHDATA1 (0x0C) + length (0x21) + 33-byte-pubkey + CHECKSIG (0x41)
-
         if self.verification_script.len() != 35 {
             return Err(CoreError::InvalidData {
                 message: "Invalid verification script length".to_string(),
             });
         }
 
-        // Real C# format validation (exact match to Contract.CreateSignatureRedeemScript)
         if self.verification_script[0] != 0x0C ||  // OpCode.PUSHDATA1
            self.verification_script[1] != 0x21 ||  // 33 bytes
            self.verification_script[34] != 0x41
         {
-            // OpCode.CHECKSIG
             return Err(CoreError::InvalidData {
                 message: "Invalid verification script format".to_string(),
             });
         }
 
-        // Extract the 33-byte compressed public key (matches C# ECPoint.EncodePoint(true))
         let public_key = self.verification_script[2..34].to_vec();
 
-        // Validate compressed public key format (matches C# ECPoint validation)
         if public_key.len() != 33 || (public_key[0] != 0x02 && public_key[0] != 0x03) {
             return Err(CoreError::InvalidData {
                 message: "Invalid compressed public key format".to_string(),
@@ -231,10 +214,6 @@ impl Witness {
     /// Extracts signature from invocation script (matches C# signature extraction exactly).
     fn extract_signature_from_invocation_script(&self) -> Result<Vec<u8>, CoreError> {
         // Real C# Neo N3 implementation: Invocation script signature extraction
-        // In C#: Invocation scripts are created by ContractParametersContext.GetWitnesses()
-
-        // Real C# invocation script format for single signature:
-        // PUSHDATA1 (0x0C) + length (0x40) + 64-byte-signature
 
         if self.invocation_script.len() != 66 {
             return Err(CoreError::InvalidData {
@@ -242,17 +221,14 @@ impl Witness {
             });
         }
 
-        // Real C# format validation (exact match to signature invocation script)
         if self.invocation_script[0] != 0x0C ||  // OpCode.PUSHDATA1
            self.invocation_script[1] != 0x40
         {
-            // 64 bytes (0x40)
             return Err(CoreError::InvalidData {
                 message: "Invalid invocation script format".to_string(),
             });
         }
 
-        // Extract the 64-byte signature (matches C# ECDSA signature format)
         let signature = self.invocation_script[2..66].to_vec();
 
         if signature.len() != 64 {
@@ -270,15 +246,11 @@ impl Witness {
         hash_data: &[u8],
         signature: &[u8],
         public_key: &[u8],
-    ) -> Result<bool, CoreError> {
+    ) -> CoreResult<bool> {
         // Real C# Neo N3 implementation: ECDsa.VerifyData
-        // In C#: using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        //         ecdsa.ImportParameters(new ECParameters { Curve = ECCurve.NamedCurves.nistP256, Q = point });
-        //         return ecdsa.VerifyData(message, signature, HashAlgorithmName.SHA256);
 
         use neo_cryptography::ecdsa::ECDsa;
 
-        // Neo uses secp256r1 (NIST P-256) curve exactly like C# ECCurve.NamedCurves.nistP256
         ECDsa::verify_signature_secp256r1(hash_data, signature, public_key).map_err(|e| {
             CoreError::Cryptographic {
                 message: format!("ECDSA verification failed: {}", e),
@@ -287,18 +259,13 @@ impl Witness {
     }
 
     /// Computes script hash from public key (matches C# Contract.CreateSignatureContract exactly).
-    fn compute_script_hash_from_public_key(&self, public_key: &[u8]) -> Result<UInt160, CoreError> {
-        // Real C# Neo N3 implementation: Contract.CreateSignatureContract
-        // In C#: public static Contract CreateSignatureContract(ECPoint publicKey)
-        //         => new Contract { Script = CreateSignatureRedeemScript(publicKey) };
-        //         Script.ToScriptHash() => new UInt160(Crypto.Hash160(script))
+    fn compute_script_hash_from_public_key(&self, public_key: &[u8]) -> CoreResult<UInt160> {
+        // Implements C# Contract.CreateSignatureContract functionality
 
         use neo_cryptography::hash::hash160;
 
-        // Create verification script from public key (matches C# CreateSignatureRedeemScript exactly)
         let verification_script = self.create_verification_script_from_public_key(public_key)?;
 
-        // Compute Hash160 of the verification script (matches C# Crypto.Hash160 exactly)
         let script_hash = hash160(&verification_script);
 
         UInt160::from_bytes(&script_hash).map_err(|e| CoreError::InvalidData {
@@ -311,12 +278,7 @@ impl Witness {
         &self,
         public_key: &[u8],
     ) -> Result<Vec<u8>, CoreError> {
-        // Real C# Neo N3 implementation: Contract.CreateSignatureRedeemScript
-        // In C#: public static byte[] CreateSignatureRedeemScript(ECPoint pubkey)
-        //         => new byte[] { (byte)OpCode.PUSHDATA1, 0x21 }
-        //            .Concat(pubkey.EncodePoint(true))
-        //            .Append((byte)OpCode.CHECKSIG)
-        //            .ToArray();
+        // Implements C# Contract.CreateSignatureRedeemScript functionality
 
         if public_key.len() != 33 {
             return Err(CoreError::InvalidData {
@@ -324,7 +286,6 @@ impl Witness {
             });
         }
 
-        // Validate compressed public key format (matches C# ECPoint.EncodePoint(true) validation)
         if public_key[0] != 0x02 && public_key[0] != 0x03 {
             return Err(CoreError::InvalidData {
                 message: "Invalid compressed public key format".to_string(),
@@ -350,9 +311,7 @@ impl Default for Witness {
 
 impl Serializable for Witness {
     fn size(&self) -> usize {
-        // Variable length encoding for invocation script
         let invocation_size = self.get_var_size(&self.invocation_script);
-        // Variable length encoding for verification script
         let verification_size = self.get_var_size(&self.verification_script);
 
         invocation_size + verification_size
@@ -414,7 +373,7 @@ impl fmt::Display for Witness {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_witness_new() {
@@ -445,7 +404,6 @@ mod tests {
     fn test_witness_size() {
         let witness = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
         let size = witness.get_size();
-        // Each script has 3 bytes + 1 byte for length encoding = 4 bytes each
         assert_eq!(size, 8);
     }
 

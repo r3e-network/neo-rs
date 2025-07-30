@@ -12,14 +12,12 @@ mod helper_tests {
     /// Test nibble conversion functions (matches C# nibble handling exactly)
     #[test]
     fn test_nibble_conversion_compatibility() {
-        // Test to_nibbles function (matches C# ToNibbles exactly)
         let input_bytes = vec![0x12, 0x34, 0x56, 0xAB, 0xCD, 0xEF];
         let nibbles = to_nibbles(&input_bytes);
 
         let expected_nibbles = vec![0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF];
         assert_eq!(nibbles, expected_nibbles);
 
-        // Test from_nibbles function (matches C# FromNibbles exactly)
         let reconstructed_bytes = from_nibbles(&nibbles);
         assert_eq!(reconstructed_bytes, input_bytes);
 
@@ -62,7 +60,6 @@ mod helper_tests {
             assert_eq!(reconstructed, single_byte);
         }
 
-        // Test odd number of nibbles (should handle gracefully)
         let odd_nibbles = vec![0x1, 0x2, 0x3];
         let odd_result = from_nibbles(&odd_nibbles);
         // Implementation should handle odd nibbles appropriately
@@ -194,7 +191,6 @@ mod helper_tests {
     /// Test byte key conversion utilities (matches C# key conversion exactly)
     #[test]
     fn test_byte_key_conversion_compatibility() {
-        // Test string to byte key conversion patterns commonly used in C#
         let test_strings = vec![
             "test_key",
             "another_key",
@@ -226,7 +222,6 @@ mod helper_tests {
     /// Test hash key utilities (matches C# hash-based key operations exactly)
     #[test]
     fn test_hash_key_utilities_compatibility() {
-        // Test hash-like byte arrays (32 bytes)
         let hash_like_key = vec![0u8; 32];
         let nibbles = to_nibbles(&hash_like_key);
         assert_eq!(nibbles.len(), 64); // 32 bytes * 2 nibbles per byte

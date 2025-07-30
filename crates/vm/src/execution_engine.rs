@@ -11,6 +11,7 @@ use crate::jump_table::JumpTable;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::StackItem;
+use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE};
 
 /// The VM state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,8 +50,8 @@ impl ExecutionEngineLimits {
     /// The default execution engine limits.
     pub const DEFAULT: Self = Self {
         max_stack_size: 2048,
-        max_item_size: 1024 * 1024,
-        max_invocation_stack_size: 1024,
+        max_item_size: MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE,
+        max_invocation_stack_size: MAX_SCRIPT_SIZE,
         catch_engine_exceptions: true,
     };
 }
@@ -124,7 +125,6 @@ impl ExecutionEngine {
 
     /// Sets the state of the VM.
     pub fn set_state(&mut self, state: VMState) {
-        // If the state is changing, call on_state_changed
         if self.state != state {
             self.state = state;
             self.on_state_changed();
@@ -132,9 +132,7 @@ impl ExecutionEngine {
     }
 
     /// Called when the VM state changes.
-    fn on_state_changed(&mut self) {
-        // This is a hook for subclasses to override
-    }
+    fn on_state_changed(&mut self) {}
 
     /// Called when an exception causes the VM to enter the FAULT state.
     fn on_fault(&mut self, err: VmError) {
@@ -233,7 +231,6 @@ impl ExecutionEngine {
 
     /// Starts execution of the VM.
     pub fn execute(&mut self) -> VMState {
-        // If we're in BREAK state, transition to NONE state
         if self.state == VMState::BREAK {
             self.set_state(VMState::NONE);
         }
@@ -261,7 +258,6 @@ impl ExecutionEngine {
             .current_context()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-        // Check for instructions exceeding the script bounds
         if context.instruction_pointer() >= context.script().len() {
             self.set_state(VMState::HALT);
             return Ok(());
@@ -284,7 +280,6 @@ impl ExecutionEngine {
         // Execute the instruction
         handler(self, &instruction)?;
 
-        // Move the instruction pointer if not jumping
         if !self.is_jumping {
             if let Some(context) = self.current_context_mut() {
                 let next_position = context.instruction_pointer() + instruction.size();
@@ -304,7 +299,6 @@ impl ExecutionEngine {
     /// Executes the next instruction in step mode (for debugging/testing).
     /// This matches C# ExecuteNext behavior for step-by-step execution.
     pub fn step_next(&mut self) -> VMState {
-        // If the invocation stack is empty, halt the VM
         if self.invocation_stack.is_empty() {
             self.set_state(VMState::HALT);
             return self.state;
@@ -313,7 +307,6 @@ impl ExecutionEngine {
         // Try to execute the next instruction
         match self.execute_next_internal() {
             Ok(_) => {
-                // After successful execution, set to BREAK state for step mode
                 // unless we're already in HALT or FAULT state
                 if self.state != VMState::HALT && self.state != VMState::FAULT {
                     self.set_state(VMState::BREAK);
@@ -321,7 +314,6 @@ impl ExecutionEngine {
                 self.state
             }
             Err(err) => {
-                // Call on_fault to handle the error (this sets state to FAULT)
                 self.on_fault(err);
                 self.state
             }
@@ -339,10 +331,8 @@ impl ExecutionEngine {
         let instruction = match context.current_instruction() {
             Ok(instruction) => instruction,
             Err(err) => {
-                // Check if this is an "end of script" error (normal case) or a parsing error (fault case)
                 let error_msg = format!("{:?}", err);
                 if error_msg.contains("Instruction pointer is out of range") {
-                    // Normal end of script - use RET
                     Instruction::ret()
                 } else {
                     // Instruction parsing error - this should cause a FAULT
@@ -351,7 +341,6 @@ impl ExecutionEngine {
             }
         };
 
-        // Pre-execute hook (for subclasses)
         self.pre_execute_instruction(&instruction)?;
 
         // Execute the instruction
@@ -360,7 +349,6 @@ impl ExecutionEngine {
         let mut jump_table = std::mem::take(&mut self.jump_table);
         let result = jump_table.execute(self, &instruction);
 
-        // Handle errors if needed
         if let Err(err) = result {
             if self.limits.catch_engine_exceptions {
                 // Execute the throw operation
@@ -375,10 +363,8 @@ impl ExecutionEngine {
             self.jump_table = jump_table;
         }
 
-        // Post-execute hook (for subclasses)
         self.post_execute_instruction(&instruction)?;
 
-        // Move to the next instruction if we're not jumping
         if !self.is_jumping {
             if let Some(context) = self.current_context_mut() {
                 let _ = context.move_next(); // Ignore errors here
@@ -391,19 +377,16 @@ impl ExecutionEngine {
 
     /// Called before executing an instruction.
     fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
-        // This is a hook for subclasses to override
         Ok(())
     }
 
     /// Called after executing an instruction.
     fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
-        // This is a hook for subclasses to override
         Ok(())
     }
 
     /// Loads a context into the invocation stack.
     pub fn load_context(&mut self, context: ExecutionContext) -> VmResult<()> {
-        // Check if we've exceeded the maximum invocation stack size
         if self.invocation_stack.len() >= self.limits.max_invocation_stack_size {
             return Err(VmError::invalid_operation_msg(format!(
                 "MaxInvocationStackSize exceed: {}",
@@ -426,7 +409,6 @@ impl ExecutionEngine {
             // Get the new current context
         }
 
-        // Clear references for static fields if they're not shared with the current context
         if let Some(static_fields) = context.static_fields_mut() {
             let current_static_fields = self
                 .current_context()
@@ -434,18 +416,16 @@ impl ExecutionEngine {
                 .map(|sf| sf as *const _);
 
             if current_static_fields.is_none()
-                || current_static_fields.unwrap() != static_fields as *const _
+                || current_static_fields.expect("Operation failed") != static_fields as *const _
             {
                 static_fields.clear_references();
             }
         }
 
-        // Clear references for local variables
         if let Some(local_variables) = context.local_variables_mut() {
             local_variables.clear_references();
         }
 
-        // Clear references for arguments
         if let Some(arguments) = context.arguments_mut() {
             arguments.clear_references();
         }
@@ -463,7 +443,6 @@ impl ExecutionEngine {
         // Remove the context
         let mut context = self.invocation_stack.remove(context_index);
 
-        // Update the VM state if the invocation stack is empty
         if self.invocation_stack.is_empty() {
             self.set_state(VMState::HALT);
         }
@@ -471,7 +450,6 @@ impl ExecutionEngine {
         // Unload the context
         self.unload_context(&mut context)?;
 
-        // Check for zero referred items
         self.reference_counter.check_zero_referred();
 
         Ok(context)
@@ -566,7 +544,7 @@ impl ExecutionEngine {
     pub fn get_script_container_hash(&self) -> Vec<u8> {
         // Base implementation returns empty hash
         // ApplicationEngine overrides this with actual container hash
-        vec![0u8; 32]
+        vec![0u8; HASH_SIZE]
     }
 
     /// Attempts to cast this ExecutionEngine to an ApplicationEngine (immutable)
@@ -588,7 +566,6 @@ impl ExecutionEngine {
     /// Gets the trigger type for this execution (stub implementation for base ExecutionEngine)
     /// ApplicationEngine overrides this with actual trigger type
     pub fn get_trigger_type(&self) -> u8 {
-        // Base implementation returns Application trigger (0x40)
         0x40
     }
 
@@ -654,7 +631,7 @@ impl Drop for ExecutionEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use crate::op_code::OpCode;
 
     #[test]
@@ -678,7 +655,9 @@ mod tests {
         ];
         let script = Script::new_relaxed(script_bytes);
 
-        let context = engine.load_script(script, -1, 0).unwrap();
+        let context = engine
+            .load_script(script, -1, 0)
+            .expect("VM operation should succeed");
 
         assert_eq!(engine.invocation_stack().len(), 1);
         assert_eq!(context.instruction_pointer(), 0);
@@ -729,25 +708,70 @@ mod tests {
         let script = Script::new_relaxed(script_bytes);
 
         // Load the script
-        engine.load_script(script, -1, 0).unwrap();
+        engine
+            .load_script(script, -1, 0)
+            .expect("VM operation should succeed");
 
         // Push some items onto the stack
-        engine.push(StackItem::from_int(1)).unwrap();
-        engine.push(StackItem::from_int(2)).unwrap();
-        engine.push(StackItem::from_int(3)).unwrap();
+        engine
+            .push(StackItem::from_int(1))
+            .expect("VM operation should succeed");
+        engine
+            .push(StackItem::from_int(2))
+            .expect("VM operation should succeed");
+        engine
+            .push(StackItem::from_int(3))
+            .expect("VM operation should succeed");
 
         // Peek at the items
-        assert_eq!(engine.peek(0).unwrap().as_int().unwrap(), 3);
-        assert_eq!(engine.peek(1).unwrap().as_int().unwrap(), 2);
-        assert_eq!(engine.peek(2).unwrap().as_int().unwrap(), 1);
+        assert_eq!(
+            engine
+                .peek(0)
+                .expect("intermediate value should exist")
+                .as_int()
+                .expect("VM operation should succeed"),
+            3
+        );
+        assert_eq!(
+            engine
+                .peek(1)
+                .expect("intermediate value should exist")
+                .as_int()
+                .expect("VM operation should succeed"),
+            2
+        );
+        assert_eq!(
+            engine
+                .peek(2)
+                .expect("intermediate value should exist")
+                .as_int()
+                .expect("VM operation should succeed"),
+            1
+        );
 
         // Pop an item
-        let item = engine.pop().unwrap();
-        assert_eq!(item.as_int().unwrap(), 3);
+        let item = engine
+            .pop()
+            .ok_or_else(|| anyhow::anyhow!("Collection is empty"))?;
+        assert_eq!(item.as_int().expect("Operation failed"), 3);
 
         // Peek again
-        assert_eq!(engine.peek(0).unwrap().as_int().unwrap(), 2);
-        assert_eq!(engine.peek(1).unwrap().as_int().unwrap(), 1);
+        assert_eq!(
+            engine
+                .peek(0)
+                .expect("intermediate value should exist")
+                .as_int()
+                .expect("Operation failed"),
+            2
+        );
+        assert_eq!(
+            engine
+                .peek(1)
+                .expect("intermediate value should exist")
+                .as_int()
+                .expect("Operation failed"),
+            1
+        );
     }
 
     #[test]
@@ -764,14 +788,22 @@ mod tests {
         let script = Script::new_relaxed(script_bytes);
 
         // Load the script
-        let context = engine.load_script(script, -1, 0).unwrap();
+        let context = engine
+            .load_script(script, -1, 0)
+            .expect("VM operation should succeed");
 
         // Push some items onto the stack
-        engine.push(StackItem::from_int(1)).unwrap();
-        engine.push(StackItem::from_int(2)).unwrap();
+        engine
+            .push(StackItem::from_int(1))
+            .expect("VM operation should succeed");
+        engine
+            .push(StackItem::from_int(2))
+            .expect("VM operation should succeed");
 
         // Remove the context
-        let mut context = engine.remove_context(0).unwrap();
+        let mut context = engine
+            .remove_context(0)
+            .expect("VM operation should succeed");
 
         // Check that the invocation stack is empty
         assert!(engine.invocation_stack().is_empty());

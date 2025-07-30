@@ -27,6 +27,13 @@ pub mod shutdown_impl;
 pub mod sync;
 pub mod transaction_relay;
 
+// Constants
+const UNKNOWN_PEER_ADDR: &str = "0.0.0.0:0";
+const DEFAULT_MAINNET_PORT: &str = "10333";
+const DEFAULT_PRIVNET_PORT: &str = "30333";
+const DEFAULT_WS_PORT: &str = "10334";
+const LOCALHOST: &str = "127.0.0.1";
+
 // Re-export main types
 pub use crate::error_handling::{
     ErrorStatistics, NetworkErrorEvent, NetworkErrorHandler, OperationContext, RecoveryStrategy,
@@ -46,19 +53,24 @@ pub use crate::transaction_relay::{
 };
 pub use error::{ErrorSeverity, NetworkError, NetworkResult, Result};
 
-// Type aliases for network component integration
 pub type P2PEvent = NodeEvent;
 pub type P2PNode = P2pNode;
 pub type RpcServer = crate::rpc::RpcServer;
 pub type SyncManager = crate::sync::SyncManager;
 pub type SyncEvent = crate::sync::SyncEvent;
 
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
+use neo_config::{MAINNET_SEEDS, N3_TESTNET_SEEDS};
 use neo_core::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::net::SocketAddr;
 use thiserror::Error;
 
+/// Default Neo network ports
 /// Legacy error type for backward compatibility
 ///
 /// **Deprecated**: Use [`NetworkError`] instead for new code.
@@ -217,7 +229,6 @@ impl ProtocolVersion {
 
     /// Converts to a single u32 value (for network protocol compatibility)
     pub fn as_u32(&self) -> u32 {
-        // Encode version as: major (8 bits) | minor (8 bits) | patch (16 bits)
         ((self.major & 0xFF) << 24) | ((self.minor & 0xFF) << 16) | (self.patch & 0xFFFF)
     }
 
@@ -277,7 +288,7 @@ impl NodeInfo {
             start_height,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("Operation failed")
                 .as_secs(),
             nonce: rand::random(),
         }
@@ -447,7 +458,9 @@ pub struct P2PConfig {
 impl Default for P2PConfig {
     fn default() -> Self {
         Self {
-            listen_address: "0.0.0.0:10333".parse().unwrap(),
+            listen_address: format!("{}:{}", LOCALHOST, DEFAULT_MAINNET_PORT)
+                .parse()
+                .expect("value should parse"),
             max_peers: 100,
             connection_timeout: std::time::Duration::from_secs(30),
             handshake_timeout: std::time::Duration::from_secs(10),
@@ -473,11 +486,19 @@ impl Default for RpcConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            bind_address: "127.0.0.1".to_string(),
+            bind_address: "localhost".to_string(),
             port: 10332,
             max_connections: 100,
-            http_address: Some("127.0.0.1:10332".parse().unwrap()),
-            ws_address: Some("127.0.0.1:10334".parse().unwrap()),
+            http_address: Some(
+                format!("{}:{}", LOCALHOST, DEFAULT_RPC_PORT)
+                    .parse()
+                    .expect("value should parse"),
+            ),
+            ws_address: Some(
+                format!("{}:{}", LOCALHOST, DEFAULT_WS_PORT)
+                    .parse()
+                    .expect("value should parse"),
+            ),
         }
     }
 }
@@ -488,7 +509,9 @@ impl Default for NetworkConfig {
             magic: 0x00746E41, // Neo N3 mainnet magic ("Ant" in little-endian)
             protocol_version: ProtocolVersion::current(),
             user_agent: "neo-rs/0.1.0".to_string(),
-            listen_address: "0.0.0.0:10333".parse().unwrap(),
+            listen_address: format!("{}:{}", LOCALHOST, DEFAULT_MAINNET_PORT)
+                .parse()
+                .expect("value should parse"),
             p2p_config: P2PConfig::default(),
             rpc_config: Some(RpcConfig::default()),
             max_peers: 100,
@@ -498,14 +521,13 @@ impl Default for NetworkConfig {
             handshake_timeout: 10,
             ping_interval: 30,
             enable_relay: true,
-            seed_nodes: vec![
-                // Real Neo N3 MainNet seed nodes (IP addresses)
-                "34.133.235.69:10333".parse().unwrap(), // seed1.neo.org
-                "35.192.59.217:10333".parse().unwrap(), // seed2.neo.org
-                "35.188.199.101:10333".parse().unwrap(), // seed3.neo.org
-                "35.238.26.128:10333".parse().unwrap(), // seed4.neo.org
-                "34.124.145.177:10333".parse().unwrap(), // seed5.neo.org
-            ],
+            seed_nodes: MAINNET_SEEDS
+                .iter()
+                .map(|s| {
+                    s.parse()
+                        .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse"))
+                })
+                .collect(),
             port: 10333,
             websocket_enabled: false,
             websocket_port: 10334,
@@ -522,9 +544,13 @@ impl NetworkConfig {
     pub fn testnet() -> Self {
         Self {
             magic: 0x74746E41, // Neo N3 testnet magic (1953787457 in decimal)
-            listen_address: "0.0.0.0:20333".parse().unwrap(),
+            listen_address: format!("{}:{}", LOCALHOST, DEFAULT_TESTNET_PORT)
+                .parse()
+                .expect("value should parse"),
             p2p_config: P2PConfig {
-                listen_address: "0.0.0.0:20333".parse().unwrap(),
+                listen_address: format!("{}:{}", LOCALHOST, DEFAULT_TESTNET_PORT)
+                    .parse()
+                    .expect("value should parse"),
                 max_peers: 100,
                 connection_timeout: std::time::Duration::from_secs(30),
                 handshake_timeout: std::time::Duration::from_secs(10),
@@ -532,14 +558,13 @@ impl NetworkConfig {
                 message_buffer_size: 1000,
                 enable_compression: false,
             },
-            seed_nodes: vec![
-                // Real Neo N3 TestNet seed nodes (IP addresses)
-                "34.133.235.69:20333".parse().unwrap(), // seed1t5.neo.org
-                "35.192.59.217:20333".parse().unwrap(), // seed2t5.neo.org
-                "35.188.199.101:20333".parse().unwrap(), // seed3t5.neo.org
-                "35.238.26.128:20333".parse().unwrap(), // seed4t5.neo.org
-                "34.124.145.177:20333".parse().unwrap(), // seed5t5.neo.org
-            ],
+            seed_nodes: N3_TESTNET_SEEDS
+                .iter()
+                .map(|s| {
+                    s.parse()
+                        .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse"))
+                })
+                .collect(),
             port: 20333,
             websocket_enabled: false,
             websocket_port: 20334,
@@ -551,9 +576,13 @@ impl NetworkConfig {
     pub fn private() -> Self {
         Self {
             magic: 0x12345678, // Custom magic for private network
-            listen_address: "0.0.0.0:30333".parse().unwrap(),
+            listen_address: format!("{}:{}", LOCALHOST, DEFAULT_PRIVNET_PORT)
+                .parse()
+                .expect("value should parse"),
             p2p_config: P2PConfig {
-                listen_address: "0.0.0.0:30333".parse().unwrap(),
+                listen_address: format!("{}:{}", LOCALHOST, DEFAULT_PRIVNET_PORT)
+                    .parse()
+                    .expect("value should parse"),
                 max_peers: 10,
                 connection_timeout: std::time::Duration::from_secs(30),
                 handshake_timeout: std::time::Duration::from_secs(10),
@@ -570,7 +599,7 @@ impl NetworkConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Message, NetworkError, Peer};
 
     #[test]
     fn test_protocol_version() {

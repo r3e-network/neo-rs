@@ -59,7 +59,7 @@ impl TaskManager {
 
                         // Emit connection failed event
                         let _ = event_tx.send(P2PEvent::ConnectionFailed {
-                            address: "0.0.0.0:0".parse().unwrap(), // Unknown address
+                            address: "0.0.0.0:0".parse().expect("value should parse"), // Unknown address
                             error: e.to_string(),
                         });
 
@@ -104,7 +104,6 @@ impl TaskManager {
                         let ping = crate::ProtocolMessage::ping();
                         let ping_msg = NetworkMessage::new(ping);
 
-                        // Send ping (non-blocking)
                         if let Err(e) = connection.message_tx.send(ping_msg) {
                             warn!("Failed to send ping to {}: {}", address, e);
                         } else {
@@ -143,7 +142,6 @@ impl TaskManager {
                 {
                     let connections_read = connections.read().await;
                     for (address, connection) in connections_read.iter() {
-                        // Check for stale connections
                         if connection.is_stale(timeout) {
                             to_disconnect.push(*address);
                         }
@@ -300,7 +298,6 @@ impl TaskManager {
                     start_height: *start_height,
                 });
 
-                // Critical: Emit peer height for sync
                 let _ = event_tx.send(P2PEvent::PeerHeight {
                     address,
                     height: *start_height,
@@ -429,7 +426,7 @@ impl Default for TaskManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Message, NetworkError, Peer};
 
     #[tokio::test]
     async fn test_task_manager_creation() {
@@ -443,7 +440,6 @@ mod tests {
     async fn test_task_manager_stop_all() {
         let task_manager = TaskManager::new();
 
-        // Stop all (should handle empty case gracefully)
         task_manager.stop_all().await;
 
         assert_eq!(task_manager.task_handles.read().await.len(), 0);

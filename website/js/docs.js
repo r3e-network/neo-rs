@@ -91,7 +91,6 @@
         try {
             document.execCommand('copy');
         } catch (err) {
-            console.error('Failed to copy text: ', err);
         }
         
         document.body.removeChild(textArea);

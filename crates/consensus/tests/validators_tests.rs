@@ -14,7 +14,6 @@ mod validators_tests {
     /// Test Validator structure compatibility (matches C# Validator exactly)
     #[test]
     fn test_validator_creation_compatibility() {
-        // Test validator creation (matches C# Validator constructor exactly)
         let public_key = vec![
             0x02, 0x48, 0x6f, 0xd1, 0x57, 0x02, 0xc4, 0x49, 0x0a, 0x26, 0x70, 0x31, 0x12, 0xa5,
             0xcc, 0x1d, 0x09, 0x23, 0xfd, 0x69, 0x7a, 0x33, 0x40, 0x6b, 0xd5, 0xa1, 0xc0, 0x0e,
@@ -25,13 +24,11 @@ mod validators_tests {
 
         let validator = Validator::new(public_key.clone(), script_hash, votes);
 
-        // Verify fields match C# implementation
         assert_eq!(validator.public_key(), &public_key);
         assert_eq!(validator.script_hash(), script_hash);
         assert_eq!(validator.votes(), votes);
         assert!(validator.is_active());
 
-        // Test validator index (should be unset initially)
         assert_eq!(validator.index(), None);
 
         // Test with index
@@ -43,7 +40,6 @@ mod validators_tests {
     /// Test ValidatorSet functionality (matches C# ValidatorSet exactly)
     #[test]
     fn test_validator_set_compatibility() {
-        // Create test validators (matches C# test data exactly)
         let validators = vec![
             Validator::new(
                 vec![0x02; 33],
@@ -88,7 +84,6 @@ mod validators_tests {
         // Test size
         assert_eq!(validator_set.count(), 7);
 
-        // Test validators are sorted by votes (descending) and indexed
         let sorted_validators = validator_set.validators();
         assert_eq!(sorted_validators[0].votes(), 5000000);
         assert_eq!(sorted_validators[0].index(), Some(0));
@@ -141,7 +136,6 @@ mod validators_tests {
         // Test standby validators
         assert_eq!(manager.standby_validators().len(), 7);
 
-        // Test validator selection algorithm (matches C# GetValidators exactly)
         let block_height = 1000u32;
         let mut elected_validators = vec![
             (vec![0x02; 33], 5000000u64),
@@ -155,7 +149,6 @@ mod validators_tests {
             .unwrap();
         assert_eq!(validators.count(), 7); // Should include standby validators
 
-        // Test primary selection (matches C# GetPrimaryIndex exactly)
         let view = ViewNumber::new(0);
         let primary_index = manager.calculate_primary_index(view, validators.count());
         assert_eq!(primary_index, 0);
@@ -203,7 +196,6 @@ mod validators_tests {
         let mut validator_set = ValidatorSet::new(validators);
         let ranked = validator_set.validators();
 
-        // Should be sorted by votes descending, then by public key for ties
         assert_eq!(ranked[0].votes(), 1500);
         assert_eq!(ranked[1].votes(), 1500);
         assert_eq!(ranked[0].public_key()[0], 0x02); // Lower public key comes first for ties
@@ -256,7 +248,6 @@ mod validators_tests {
         };
         assert!(valid_config.validate().is_ok());
 
-        // Test invalid max validators (not 3f+1)
         let invalid_max = ValidatorConfig {
             max_validators: 8, // Not 3f+1
             min_validators: 4,
@@ -287,7 +278,6 @@ mod validators_tests {
     /// Test validator public key validation (matches C# public key validation exactly)
     #[test]
     fn test_validator_public_key_validation_compatibility() {
-        // Test valid compressed public key (33 bytes)
         let valid_compressed = vec![0x02; 33];
         let validator = Validator::new(
             valid_compressed.clone(),
@@ -351,7 +341,6 @@ mod validators_tests {
     /// Test validator performance and limits (matches C# performance characteristics exactly)
     #[test]
     fn test_validator_performance_limits_compatibility() {
-        // Test with maximum validator count (matches C# limits)
         let max_validators = 1024; // C# practical limit
         let mut validators = Vec::new();
 
@@ -415,7 +404,6 @@ mod validators_tests {
         assert_eq!(single_set.count(), 1);
         assert_eq!(single_set.get_by_index(0).unwrap().votes(), 0);
 
-        // Test validator with same votes (tie-breaking by public key)
         let validator1 = Validator::new(
             vec![0x03; 33],
             UInt160::from_bytes(&[1u8; 20]).unwrap(),

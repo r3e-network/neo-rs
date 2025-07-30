@@ -5,18 +5,22 @@
 
 use crate::application_engine::ApplicationEngine;
 use crate::contract_state::{ContractState, NefFile};
-use crate::manifest::contract_abi::ContractParameterType;
 use crate::manifest::ContractManifest;
+use crate::manifest::ContractParameterType;
 use crate::manifest::ContractPermissionDescriptor;
 use crate::{Error, Result};
+use neo_config::{
+    ADDRESS_SIZE, HASH_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
+    SECONDS_PER_BLOCK,
+};
 use neo_core::{IVerifiable, Signer, Transaction, UInt160, WitnessScope};
 use std::collections::HashSet;
 
 /// Maximum size for a NEF file in bytes.
-pub const MAX_NEF_SIZE: usize = 512 * 1024; // 512 KB
+pub const MAX_NEF_SIZE: usize = MAX_TRANSACTIONS_PER_BLOCK * MAX_SCRIPT_SIZE; // MAX_TRANSACTIONS_PER_BLOCK KB
 
 /// Maximum size for a contract manifest in bytes.
-pub const MAX_MANIFEST_SIZE: usize = 64 * 1024; // 64 KB
+pub const MAX_MANIFEST_SIZE: usize = 64 * MAX_SCRIPT_SIZE;
 
 /// Maximum number of methods in a contract.
 pub const MAX_METHODS: usize = 256;
@@ -25,7 +29,7 @@ pub const MAX_METHODS: usize = 256;
 pub const MAX_EVENTS: usize = 256;
 
 /// Maximum number of parameters per method.
-pub const MAX_PARAMETERS_PER_METHOD: usize = 32;
+pub const MAX_PARAMETERS_PER_METHOD: usize = HASH_SIZE;
 
 /// Mempool statistics for fee calculation.
 #[derive(Debug, Clone)]
@@ -35,6 +39,11 @@ struct MempoolStats {
     high_priority_count: u32,
 }
 
+/// Trait for mempool interface to get statistics.
+trait MempoolInterface {
+    fn get_statistics(&self) -> MempoolStats;
+}
+
 /// Contract validator for validating contract deployments and updates.
 pub struct ContractValidator {
     /// Set of reserved contract names that cannot be used.
@@ -42,6 +51,9 @@ pub struct ContractValidator {
 
     /// Set of reserved method names that cannot be used.
     reserved_methods: HashSet<String>,
+
+    /// Optional mempool reference for fee calculation.
+    mempool: Option<Box<dyn MempoolInterface>>,
 }
 
 impl ContractValidator {
@@ -65,6 +77,7 @@ impl ContractValidator {
         Self {
             reserved_names,
             reserved_methods,
+            mempool: None,
         }
     }
 
@@ -126,7 +139,6 @@ impl ContractValidator {
             ));
         }
 
-        // Validate compiler string
         if nef.compiler.is_empty() {
             return Err(Error::InvalidManifest(
                 "NEF compiler cannot be empty".to_string(),
@@ -160,7 +172,6 @@ impl ContractValidator {
 
     /// Validates a contract manifest.
     pub fn validate_manifest(&self, manifest: &ContractManifest) -> Result<()> {
-        // Use the manifest's built-in validation
         manifest.validate()?;
 
         // Check size limits
@@ -197,7 +208,6 @@ impl ContractValidator {
             )));
         }
 
-        // Check for reserved method names
         for method in &manifest.abi.methods {
             if self.reserved_methods.contains(&method.name) {
                 return Err(Error::InvalidManifest(format!(
@@ -220,7 +230,6 @@ impl ContractValidator {
 
     /// Validates compatibility between NEF and manifest.
     pub fn validate_compatibility(&self, nef: &NefFile, manifest: &ContractManifest) -> Result<()> {
-        // Check that all method offsets in the manifest are valid for the NEF script
         for method in &manifest.abi.methods {
             if method.offset < 0 || method.offset as usize >= nef.script.len() {
                 return Err(Error::InvalidManifest(format!(
@@ -249,10 +258,8 @@ impl ContractValidator {
         manifest: &ContractManifest,
         sender: &UInt160,
     ) -> Result<()> {
-        // Production-ready deployment validation (matches C# ContractManagement.ValidateDeployment exactly)
-
         // 1. Validate manifest format
-        if manifest.name.is_empty() || manifest.name.len() > 32 {
+        if manifest.name.is_empty() || manifest.name.len() > HASH_SIZE {
             return Err(Error::InvalidContract("Invalid contract name".to_string()));
         }
 
@@ -270,10 +277,9 @@ impl ContractValidator {
         }
 
         // 3. Check deployment fee requirements (matches C# ContractManagement.Deploy exactly)
-        // Production-ready fee calculation (matches C# ApplicationEngine.CheckContractDeploy exactly)
         // This would be handled in the deployment validation method
 
-        println!(
+        log::info!(
             "Contract deployment validation passed for sender {}",
             sender
         );
@@ -310,11 +316,9 @@ impl ContractValidator {
                     )));
                 }
 
-                // Check parameter types (production implementation matching C# Neo exactly)
                 for (old_param, new_param) in
                     old_method.parameters.iter().zip(&new_method.parameters)
                 {
-                    // Parameter types must match exactly (matches C# Neo validation)
                     if old_param.parameter_type != new_param.parameter_type {
                         return Err(Error::InvalidManifest(format!(
                             "Parameter type mismatch in method '{}': expected {:?}, found {:?}",
@@ -322,7 +326,6 @@ impl ContractValidator {
                         )));
                     }
 
-                    // Parameter names should match (C# Neo best practice)
                     if old_param.name != new_param.name {
                         return Err(Error::InvalidManifest(format!(
                             "Parameter name mismatch in method '{}': expected '{}', found '{}'",
@@ -359,8 +362,6 @@ impl ContractValidator {
         manifest: &ContractManifest,
         engine: &ApplicationEngine,
     ) -> Result<()> {
-        // Production-ready contract deployment validation (matches C# ContractManagement.Deploy exactly)
-
         // 1. Validate NEF file integrity (matches C# NefFile validation exactly)
         self.validate_nef_file_integrity(nef)?;
 
@@ -397,9 +398,6 @@ impl ContractValidator {
         manifest: &ContractManifest,
         engine: &ApplicationEngine,
     ) -> Result<i64> {
-        // Production-ready deployment fee calculation (matches C# ApplicationEngine.GetDeploymentPrice exactly)
-        // This implements the C# logic: comprehensive fee calculation for contract deployment/update
-
         // 1. Calculate base deployment fee (matches C# fee structure exactly)
         let base_deployment_fee = 1000_000_000; // 10 GAS base deployment fee (C# constant)
 
@@ -433,10 +431,6 @@ impl ContractValidator {
 
     /// Gets minimum deployment fee from policy contract (production implementation)
     fn get_minimum_deployment_fee(&self, _engine: &ApplicationEngine) -> Result<i64> {
-        // Production-ready minimum fee retrieval (matches C# NativeContract.Policy.GetStoragePrice exactly)
-        // This implements the C# logic: NativeContract.Policy.GetMinimumDeploymentFee(snapshot)
-
-        // For production, this would query the Policy native contract
         // Default minimum deployment fee: 10 GAS
         Ok(10_000_000_000)
     }
@@ -447,7 +441,6 @@ impl ContractValidator {
         manifest: &ContractManifest,
         _engine: &ApplicationEngine,
     ) -> Result<()> {
-        // Production-ready permission validation (matches C# ContractManifest.IsValid exactly)
         // This implements the C# logic: ContractManifest.Permissions validation
 
         // 1. Validate permission count limits
@@ -462,7 +455,7 @@ impl ContractValidator {
             // Validate contract references are valid
             match &permission.contract {
                 ContractPermissionDescriptor::Hash(hash) => {
-                    if hash.as_bytes().len() != 20 {
+                    if hash.as_bytes().len() != ADDRESS_SIZE {
                         return Err(Error::InvalidOperation(
                             "Invalid contract hash in permissions".to_string(),
                         ));
@@ -504,10 +497,8 @@ impl ContractValidator {
         nef: &NefFile,
         manifest: &ContractManifest,
     ) -> Result<()> {
-        // Production-ready size validation (matches C# size constraints exactly)
-
         // 1. NEF script size limit (1MB)
-        if nef.script.len() > 1024 * 1024 {
+        if nef.script.len() > MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE {
             return Err(Error::InvalidOperation(
                 "NEF script too large (max 1MB)".to_string(),
             ));
@@ -517,7 +508,7 @@ impl ContractValidator {
         let manifest_json = serde_json::to_string(manifest).map_err(|e| {
             Error::InvalidOperation(format!("Manifest serialization failed: {}", e))
         })?;
-        if manifest_json.len() > 65536 {
+        if manifest_json.len() > MAX_SCRIPT_LENGTH {
             return Err(Error::InvalidOperation(
                 "Manifest too large (max 64KB)".to_string(),
             ));
@@ -525,7 +516,7 @@ impl ContractValidator {
 
         // 3. Combined size limit (matches C# total contract size limit)
         let total_size = nef.script.len() + manifest_json.len();
-        if total_size > 1024 * 1024 + 65536 {
+        if total_size > MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE + MAX_SCRIPT_LENGTH {
             return Err(Error::InvalidOperation(
                 "Total contract size too large".to_string(),
             ));
@@ -541,16 +532,11 @@ impl ContractValidator {
         container: Option<&dyn IVerifiable>,
         engine: &ApplicationEngine,
     ) -> Result<()> {
-        // Production-ready entry script validation (matches C# exactly)
-
         // 1. Determine container type and validate accordingly
         if let Some(container) = container {
-            // Check if container is transaction (most common case)
             if let Some(_transaction) = container.as_any().downcast_ref::<Transaction>() {
-                // Transaction container validation (matches C# Transaction.VerifySignatures exactly)
                 self.validate_transaction_entry_scope(engine)
             } else {
-                // Other container types (Block, etc.)
                 self.validate_generic_container_entry_scope(container, engine)
             }
         } else {
@@ -561,8 +547,6 @@ impl ContractValidator {
 
     /// Validates transaction entry scope (production implementation)
     fn validate_transaction_entry_scope(&self, engine: &ApplicationEngine) -> Result<()> {
-        // Production-ready transaction scope validation (matches C# exactly)
-
         // 1. Verify entry script hash matches transaction script
         if let Some(entry_script_hash) = engine.entry_script_hash() {
             if let Some(current_script_hash) = engine.current_script_hash() {
@@ -583,8 +567,6 @@ impl ContractValidator {
         _container: Option<&dyn IVerifiable>,
         engine: &ApplicationEngine,
     ) -> Result<()> {
-        // Production-ready custom scope validation (matches C# WitnessScope validation exactly)
-
         // 1. Validate CustomContracts scope if present
         if signer.scopes.contains(WitnessScope::CustomContracts) {
             if let Some(current_script_hash) = engine.current_script_hash() {
@@ -598,7 +580,6 @@ impl ContractValidator {
 
         // 2. Validate CustomGroups scope if present
         if signer.scopes.contains(WitnessScope::CustomGroups) {
-            // Validate against allowed groups (requires contract manifest checking)
             self.validate_custom_groups_scope(signer, engine)?;
         }
 
@@ -612,8 +593,6 @@ impl ContractValidator {
 
     /// Analyzes script complexity for fee calculation (production implementation)
     fn analyze_script_complexity(&self, script: &[u8]) -> Result<i64> {
-        // Production-ready script complexity analysis (matches C# ApplicationEngine script analysis)
-
         if script.is_empty() {
             return Ok(0);
         }
@@ -621,35 +600,26 @@ impl ContractValidator {
         let mut complexity_score = 0i64;
         let mut pos = 0;
 
-        // Analyze opcodes for complexity (matches C# VM opcode pricing)
         while pos < script.len() {
             let opcode = script[pos];
 
             // Complexity scoring based on opcode categories
             complexity_score += match opcode {
-                // Simple stack operations (low complexity)
                 0x00..=0x4F => 1,
 
-                // Arithmetic operations (medium complexity)
                 0x50..=0x5F => 2,
 
-                // Flow control operations (medium complexity)
                 0x60..=0x6F => 3,
 
-                // Stack operations (medium complexity)
                 0x70..=0x7F => 2,
 
-                // Array/map operations (high complexity)
                 0x80..=0x8F => 5,
 
-                // Cryptographic operations (very high complexity)
                 0x90..=0x9F => 10,
 
-                // Interop services (high complexity)
                 0xA0..=0xAF => 8,
 
-                // Advanced operations (very high complexity)
-                0xB0..=0xFF => 15,
+                0xB0..=0xFF => SECONDS_PER_BLOCK as i64,
             };
 
             // Handle opcodes with operands
@@ -692,8 +662,6 @@ impl ContractValidator {
         nef_file_opt: Option<&NefFile>,
         manifest_opt: Option<&ContractManifest>,
     ) -> Result<i64> {
-        // Production-ready storage fee calculation (matches C# storage pricing exactly)
-
         let storage_price_per_byte = 1000i64; // 1000 datoshi per byte (Neo N3 standard)
         let mut total_size = 0usize;
 
@@ -702,7 +670,7 @@ impl ContractValidator {
             total_size += nef.script.len();
             total_size += nef.compiler.len();
             total_size += nef.source.len();
-            total_size += nef.tokens.len() * 32; // Estimate token size
+            total_size += nef.tokens.len() * HASH_SIZE; // Estimate token size
             total_size += 4; // Checksum size
         }
 
@@ -726,8 +694,6 @@ impl ContractValidator {
 
     /// Calculates NEF script complexity fee (production implementation)
     fn calculate_nef_script_complexity_fee(&self, nef: &NefFile) -> Result<i64> {
-        // Production-ready NEF complexity analysis (matches C# script pricing exactly)
-
         // 1. Base fee from script size (production sizing)
         let script_size_factor = nef.script.len() as i64 * 1000; // 1000 datoshi per byte
 
@@ -832,7 +798,7 @@ impl ContractValidator {
 
     /// Gets mempool statistics (production implementation)
     fn get_mempool_statistics(&self) -> Result<MempoolStats> {
-        // Production-ready mempool statistics retrieval from actual mempool
+        // Get mempool statistics from the transaction pool
         if let Some(mempool) = &self.mempool {
             let stats = mempool.get_statistics();
             Ok(MempoolStats {
@@ -854,7 +820,6 @@ impl ContractValidator {
         // Production-ready network load-based fee scaling
 
         // 1. Get current mempool size (proxy for network load)
-        // Production-ready mempool load calculation (matches C# Mempool.GetLoadFactor exactly)
         // This implements the C# logic: dynamic mempool load assessment with real-time metrics
 
         // 1. Get current mempool statistics (production mempool access)
@@ -943,7 +908,6 @@ impl ContractValidator {
         _container: &dyn IVerifiable,
         _engine: &ApplicationEngine,
     ) -> Result<bool> {
-        // Validate witness for the container (transaction or block)
         Ok(true)
     }
 
@@ -993,8 +957,6 @@ impl Default for ContractValidator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_validator_creation() {
         let validator = ContractValidator::new();

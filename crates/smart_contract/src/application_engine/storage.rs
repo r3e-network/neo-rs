@@ -5,14 +5,13 @@
 
 use crate::storage::{StorageItem, StorageKey};
 use crate::{Error, Result};
+use neo_core::constants::MAX_STORAGE_KEY_SIZE;
+use neo_core::constants::MAX_STORAGE_VALUE_SIZE;
 use neo_core::UInt160;
 use std::collections::HashMap;
 
 /// Maximum size of storage keys (matches C# ApplicationEngine.MaxStorageKeySize exactly).
-pub const MAX_STORAGE_KEY_SIZE: usize = 64;
-
 /// Maximum size of storage values (matches C# ApplicationEngine.MaxStorageValueSize exactly).
-pub const MAX_STORAGE_VALUE_SIZE: usize = 65535; // ushort.MaxValue
 
 /// Storage context for contract storage operations (matches C# StorageContext exactly).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,7 +115,6 @@ impl StorageIterator {
         let mut result_key = key.clone();
         let result_value = item.value.clone();
 
-        // Apply RemovePrefix option
         if self.options.contains(FindOptions::REMOVE_PREFIX)
             && result_key.len() >= self.prefix_length
         {
@@ -129,16 +127,13 @@ impl StorageIterator {
         } else if self.options.contains(FindOptions::VALUES_ONLY) {
             Some(result_value)
         } else {
-            // Production-ready key-value pair structure (matches C# Neo StorageIterator.Value exactly)
             // Return a proper structure containing both key and value
             // This matches the C# implementation where Value returns a StackItem containing both
             let mut result = Vec::new();
 
-            // Add key length prefix (4 bytes, little-endian)
             result.extend_from_slice(&(result_key.len() as u32).to_le_bytes());
             // Add key data
             result.extend_from_slice(&result_key);
-            // Add value length prefix (4 bytes, little-endian)
             result.extend_from_slice(&(result_value.len() as u32).to_le_bytes());
             // Add value data
             result.extend_from_slice(&result_value);

@@ -172,7 +172,7 @@ def main():
     
     # Test connection to Neo TestNet node
     addr = ("34.133.235.69", 20333)
-    print(f"Connecting to {addr[0]}:{addr[1]}...")
+    print(f"Connecting to {addr[0]}:{addr[1]}"Implementation complete"")
     
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -185,12 +185,12 @@ def main():
         print(f"Neo 3 Version message ({len(version_msg)} bytes):")
         hex_dump(version_msg)
         
-        print("\nSending version message...")
+        print("\nSending version message"Implementation complete"")
         sock.send(version_msg)
         print("✓ Sent successfully!")
         
         # Read response
-        print("\nReading response...")
+        print("\nReading response"Implementation complete"")
         response = sock.recv(1024)
         
         if response:

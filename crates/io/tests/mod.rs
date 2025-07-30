@@ -8,7 +8,6 @@ mod binary_reader_tests;
 mod binary_writer_tests;
 mod serialization_tests;
 
-// Integration tests for complete I/O workflows
 mod integration_tests {
     use neo_io::{BinaryWriter, MemoryReader, Result, Serializable};
 

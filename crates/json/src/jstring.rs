@@ -99,7 +99,7 @@ impl fmt::Display for JString {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_jstring_new() {
@@ -150,7 +150,8 @@ mod tests {
             _ => panic!("Expected JToken::String"),
         }
 
-        let jstr2 = JString::from_jtoken(JToken::String("hello".to_string())).unwrap();
+        let jstr2 = JString::from_jtoken(JToken::String("hello".to_string()))
+            .expect("operation should succeed");
         assert_eq!(jstr2.value(), "hello");
 
         let result = JString::from_jtoken(JToken::Number(42.0));

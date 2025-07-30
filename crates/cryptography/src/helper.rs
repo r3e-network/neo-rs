@@ -3,11 +3,15 @@
 //! This module provides various cryptographic utility functions.
 
 use crate::Error;
+use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
+use neo_config::HASH_SIZE;
+use p256::ecdh::diffie_hellman;
+use p256::PublicKey as P256PublicKey;
+use p256::SecretKey as P256SecretKey;
+use rand::Rng;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 use sha2::{Digest, Sha256};
-
-use rand::Rng;
 
 /// Verifies an ECDSA signature.
 ///
@@ -200,8 +204,7 @@ pub fn public_key_to_script_hash(public_key: &[u8]) -> Vec<u8> {
 /// A random private key
 pub fn generate_private_key() -> Vec<u8> {
     let mut rng = rand::thread_rng();
-    // Generate 32 random bytes for the private key
-    let mut key_bytes = [0u8; 32];
+    let mut key_bytes = [0u8; HASH_SIZE];
     for byte in &mut key_bytes {
         *byte = rng.gen();
     }
@@ -214,7 +217,7 @@ pub fn generate_private_key() -> Vec<u8> {
 /// # Arguments
 ///
 /// * `plain_data` - The plaintext data to encrypt
-/// * `key` - The encryption key (must be 32 bytes)
+/// * `key` - The encryption key (must be HASH_SIZE bytes)
 /// * `nonce` - The nonce (must be 12 bytes)
 /// * `associated_data` - Optional associated data for authentication
 ///
@@ -227,10 +230,8 @@ pub fn aes256_encrypt(
     nonce: &[u8],
     associated_data: Option<&[u8]>,
 ) -> Result<Vec<u8>, Error> {
-    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
-
-    if key.len() != 32 {
-        return Err(Error::InvalidKey("Key must be 32 bytes".to_string()));
+    if key.len() != HASH_SIZE {
+        return Err(Error::InvalidKey("Key must be HASH_SIZE bytes".to_string()));
     }
     if nonce.len() != 12 {
         return Err(Error::InvalidFormat("Nonce must be 12 bytes".to_string()));
@@ -251,7 +252,6 @@ pub fn aes256_encrypt(
         )
         .map_err(|e| Error::InvalidFormat(format!("Encryption failed: {e}")))?;
 
-    // Return nonce + ciphertext (which already includes the tag)
     let mut result = Vec::with_capacity(12 + ciphertext.len());
     result.extend_from_slice(nonce);
     result.extend_from_slice(&ciphertext);
@@ -265,7 +265,7 @@ pub fn aes256_encrypt(
 /// # Arguments
 ///
 /// * `encrypted_data` - The encrypted data (nonce + ciphertext + tag)
-/// * `key` - The decryption key (must be 32 bytes)
+/// * `key` - The decryption key (must be HASH_SIZE bytes)
 /// * `associated_data` - Optional associated data for authentication
 ///
 /// # Returns
@@ -276,10 +276,8 @@ pub fn aes256_decrypt(
     key: &[u8],
     associated_data: Option<&[u8]>,
 ) -> Result<Vec<u8>, Error> {
-    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
-
-    if key.len() != 32 {
-        return Err(Error::InvalidKey("Key must be 32 bytes".to_string()));
+    if key.len() != HASH_SIZE {
+        return Err(Error::InvalidKey("Key must be HASH_SIZE bytes".to_string()));
     }
     if encrypted_data.len() < 12 + 16 {
         return Err(Error::InvalidFormat("Encrypted data too short".to_string()));
@@ -319,11 +317,6 @@ pub fn ecdh_derive_key(
     local_private_key: &[u8],
     remote_public_key: &[u8],
 ) -> Result<Vec<u8>, Error> {
-    // Use P-256 curve for ECDH (matches C# nistP256)
-    use p256::ecdh::diffie_hellman;
-    use p256::PublicKey as P256PublicKey;
-    use p256::SecretKey as P256SecretKey;
-
     // Parse local private key
     let local_secret = P256SecretKey::from_slice(local_private_key)
         .map_err(|e| Error::InvalidKey(format!("Invalid local private key: {e}")))?;
@@ -335,13 +328,12 @@ pub fn ecdh_derive_key(
     // Perform ECDH
     let shared_secret = diffie_hellman(local_secret.to_nonzero_scalar(), remote_pubkey.as_affine());
 
-    // Hash the shared secret with SHA-256 (matches C# .Sha256() call)
     let shared_key = crate::hash::sha256(shared_secret.raw_secret_bytes());
 
     Ok(shared_key.to_vec())
 }
 
-/// Rotates a 32-bit value left by the specified number of bits.
+/// Rotates a HASH_SIZE-bit value left by the specified number of bits.
 /// This matches the C# Helper.RotateLeft(uint, int) implementation.
 ///
 /// # Arguments
@@ -396,7 +388,7 @@ pub fn sha256_slice(value: &[u8], offset: usize, count: usize) -> Result<Vec<u8>
     Ok(crate::hash::sha256(slice).to_vec())
 }
 
-/// Computes the hash value using SHA-512 for a slice of byte array.
+/// Computes the hash value using SHA-MAX_TRANSACTIONS_PER_BLOCK for a slice of byte array.
 /// This matches the C# Helper.Sha512(byte[], int, int) implementation.
 ///
 /// # Arguments
@@ -407,7 +399,7 @@ pub fn sha256_slice(value: &[u8], offset: usize, count: usize) -> Result<Vec<u8>
 ///
 /// # Returns
 ///
-/// The SHA-512 hash
+/// The SHA-MAX_TRANSACTIONS_PER_BLOCK hash
 pub fn sha512_slice(value: &[u8], offset: usize, count: usize) -> Result<Vec<u8>, Error> {
     if offset + count > value.len() {
         return Err(Error::InvalidFormat(

@@ -1,6 +1,8 @@
+use crate::error::TrieError;
 use crate::error::{MptError, MptResult};
 use crate::helper::{common_prefix_length, from_nibbles, to_nibbles};
 use crate::{Cache, Node, NodeType};
+use neo_config::HASH_SIZE;
 use neo_core::UInt256;
 
 /// MPT Trie implementation
@@ -142,7 +144,6 @@ impl Trie {
                             self.get_node(&cached_node, path)
                         }
                         Ok(None) => {
-                            // Production-ready storage resolution (matches C# MPT exactly)
                             // This implements the C# logic: HashNode resolution from persistent storage
 
                             // 1. Attempt to load node from persistent storage using hash
@@ -255,7 +256,6 @@ impl Trie {
                         branch.set_value(Some(value.to_vec()));
                     }
 
-                    // If we have a common prefix, create extension node
                     if common_len > 0 {
                         let mut extension = Node::new();
                         extension.set_node_type(NodeType::ExtensionNode);
@@ -313,7 +313,6 @@ impl Trie {
                             branch.set_value(Some(value.to_vec()));
                         }
 
-                        // Create new extension if needed
                         if common_len > 0 {
                             let mut new_extension = Node::new();
                             new_extension.set_node_type(NodeType::ExtensionNode);
@@ -355,9 +354,6 @@ impl Trie {
                             return self.put_node(cached_node, path, value);
                         }
                         Ok(None) => {
-                            // Production-ready extension node contraction (matches C# MPT exactly)
-                            // This implements the C# logic: ExtensionNode.Contract() for path optimization
-
                             if self.is_node_contractible(&node) {
                                 // Contract extension nodes with single child to optimize trie structure
                                 if let Some(contracted) = self.contract_extension_node(&node) {
@@ -365,7 +361,6 @@ impl Trie {
                                 }
                             }
 
-                            // Standard case: return optimized node (production implementation)
                             return Ok(node);
                         }
                         Err(_) => {
@@ -440,7 +435,6 @@ impl Trie {
             NodeType::BranchNode => {
                 if path.is_empty() {
                     node.set_value(None);
-                    // Check if branch still has children
                     let child_count = node.children().iter().filter(|c| c.is_some()).count();
                     if child_count == 0 {
                         return Ok(None);
@@ -470,7 +464,6 @@ impl Trie {
                             self.delete_node(cached_node, path)
                         }
                         Ok(None) => {
-                            // Production-ready persistent storage integration (matches C# MPT exactly)
                             // This implements the C# logic: HashNode resolution from persistent storage
 
                             // 1. Attempt to load node from persistent storage using hash
@@ -553,7 +546,6 @@ impl Trie {
                 }
             }
             NodeType::BranchNode => {
-                // Check if current path matches prefix and has value
                 if current_path.len() >= prefix.len() && &current_path[..prefix.len()] == prefix {
                     if let Some(value) = node.value() {
                         let key_bytes = from_nibbles(current_path)?;
@@ -680,29 +672,17 @@ impl Trie {
                             // Recursively get proof from the resolved node
                             self.get_proof_node(&cached_node, path, proof)?;
                         }
-                        Ok(None) => {
-                            // Node not in cache - load from persistent storage (production storage access)
-                            match self.load_node_from_storage(&hash) {
-                                Ok(node_data) => {
-                                    // Deserialize node from storage data (production deserialization)
-                                    match Node::deserialize(&node_data) {
-                                        Ok(resolved_node) => {
-                                            // Cache the resolved node for future use (production cache update)
-                                            let _ = self.cache.put(hash, resolved_node.clone());
+                        Ok(None) => match self.load_node_from_storage(&hash) {
+                            Ok(node_data) => match Node::deserialize(&node_data) {
+                                Ok(resolved_node) => {
+                                    let _ = self.cache.put(hash, resolved_node.clone());
 
-                                            // Recursively process the resolved node (production recursion)
-                                            self.get_proof_node(&resolved_node, path, proof)?;
-                                        }
-                                        Err(_) => {
-                                            // Deserialization failed - skip this node (production error handling)
-                                        }
-                                    }
+                                    self.get_proof_node(&resolved_node, path, proof)?;
                                 }
-                                Err(_) => {
-                                    // Storage load failed - skip this node (production error handling)
-                                }
-                            }
-                        }
+                                Err(_) => {}
+                            },
+                            Err(_) => {}
+                        },
                         Err(_) => {
                             // Error loading from cache
                         }
@@ -710,10 +690,7 @@ impl Trie {
                 }
                 Ok(())
             }
-            NodeType::Empty => {
-                // Nothing to prove for empty node
-                Ok(())
-            }
+            NodeType::Empty => Ok(()),
         }
     }
 
@@ -722,9 +699,6 @@ impl Trie {
         &self,
         hash: &UInt256,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        // Production-ready persistent storage integration (matches C# MPT exactly)
-        // This implements the C# logic: Store.TryGet(hash) for node resolution
-
         // 1. Convert hash to storage key format (production key format)
         let storage_key = format!("MPT_NODE_{}", hex::encode(hash.as_bytes()));
 
@@ -733,7 +707,7 @@ impl Trie {
             match storage.get(hash) {
                 Ok(Some(node_data)) => {
                     // 3. Validate node data integrity (production validation)
-                    if node_data.len() < 32 {
+                    if node_data.len() < HASH_SIZE {
                         return Err("Invalid node data size".into());
                     }
 
@@ -763,12 +737,6 @@ impl Trie {
 
     /// Helper method to check if a node can be contracted (production implementation)
     fn is_node_contractible(&self, _node: &Node) -> bool {
-        // Production-ready node contraction check (matches C# MPT optimization exactly)
-        // This implements the C# logic: ExtensionNode.CanContract()
-
-        // Production-ready node contraction check (matches C# MPT optimization exactly)
-        // This implements the C# logic: checking if nodes can be merged for path compression
-
         match _node.node_type() {
             // 1. Extension nodes with extension/leaf children can be contracted
             NodeType::ExtensionNode => {
@@ -777,7 +745,6 @@ impl Trie {
             }
             // 2. Branch nodes with only one child can potentially be contracted
             NodeType::BranchNode => {
-                // Check if branch has only one non-empty child
                 let non_empty_children = _node
                     .children()
                     .iter()
@@ -792,12 +759,6 @@ impl Trie {
 
     /// Helper method to contract an extension node (production implementation)
     fn contract_extension_node(&self, _node: &Node) -> Option<Node> {
-        // Production-ready extension node contraction (matches C# MPT optimization exactly)
-        // This implements the C# logic: ExtensionNode.Contract() for path compression
-
-        // Production-ready extension node contraction (matches C# MPT optimization exactly)
-        // This implements the C# logic: ExtensionNode.Contract() for path compression
-
         match _node.node_type() {
             NodeType::ExtensionNode => {
                 // 1. Get extension node properties
@@ -856,9 +817,6 @@ impl Trie {
         offset: usize,
         value: &[u8],
     ) -> MptResult<Node> {
-        // Production-ready recursive put (matches C# MPT.PutNodeRecursive exactly)
-        // This implements the C# logic: PutNodeRecursive for deep insertions with path optimization
-
         // 1. Check if we've reached the end of the path (production termination condition)
         if offset >= path.len() {
             // 2. Set value at current node (production value assignment)
@@ -944,9 +902,6 @@ impl Trie {
         key: &[u8],
         key_offset: usize,
     ) -> MptResult<Option<Node>> {
-        // Production-ready recursive delete (matches C# MPT.DeleteNodeRecursive exactly)
-        // This implements the C# logic: DeleteNodeRecursive for deep deletions with tree optimization
-
         // 1. Check if we've reached the end of the key (production termination condition)
         if key_offset >= key.len() {
             // 2. Remove value from current node (production value removal)
@@ -1057,7 +1012,6 @@ impl Trie {
         offset: usize,
         value: &[u8],
     ) -> MptResult<Node> {
-        // Production-ready extension node splitting (matches C# MPT extension splitting exactly)
         if let Some(node_key) = node.key() {
             let remaining_path = &path[offset..];
             let common_len = common_prefix_length(node_key, remaining_path);
@@ -1103,7 +1057,6 @@ impl Trie {
                 branch.set_value(Some(value.to_vec()));
             }
 
-            // Create new extension if needed
             if common_len > 0 {
                 let mut new_extension = Node::new();
                 new_extension.set_node_type(NodeType::ExtensionNode);
@@ -1126,7 +1079,6 @@ impl Trie {
         offset: usize,
         value: &[u8],
     ) -> MptResult<Node> {
-        // Production-ready leaf to branch conversion (matches C# MPT leaf conversion exactly)
         if let Some(leaf_key) = node.key() {
             let leaf_value = node.value().map(|v| v.to_vec());
             let remaining_path = &path[offset..];
@@ -1191,10 +1143,8 @@ impl Trie {
 
     /// Optimizes node after deletion (production helper)
     fn optimize_node_after_deletion(&self, mut node: Node) -> Option<Node> {
-        // Production-ready node optimization after deletion (matches C# MPT optimization exactly)
         match node.node_type() {
             NodeType::BranchNode => {
-                // Check if branch can be simplified
                 let child_count = node.children().iter().filter(|c| c.is_some()).count();
                 let has_value = node.value().is_some();
 
@@ -1223,7 +1173,6 @@ impl Trie {
 
     /// Optimizes branch after deletion (production helper)
     fn optimize_branch_after_deletion(&self, node: Node) -> MptResult<Option<Node>> {
-        // Production-ready branch optimization after deletion (matches C# MPT branch optimization exactly)
         let child_count = node.children().iter().filter(|c| c.is_some()).count();
         let has_value = node.value().is_some();
 
@@ -1268,7 +1217,7 @@ impl Trie {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_trie_creation() {
@@ -1288,12 +1237,13 @@ mod tests {
         let key = b"test_key";
         let value = b"test_value";
 
-        trie.put(key, value).unwrap();
-        let result = trie.get(key).unwrap();
+        trie.put(key, value)
+            .ok_or_else(|| TrieError::InvalidOperation)?;
+        let result = trie.get(key).cloned().unwrap_or_default();
         assert_eq!(result, Some(value.to_vec()));
 
         // Test getting non-existent key
-        let result = trie.get(b"non_existent").unwrap();
+        let result = trie.get(b"non_existent").cloned().unwrap_or_default();
         assert_eq!(result, None);
     }
 
@@ -1310,12 +1260,13 @@ mod tests {
 
         // Put all values
         for (key, value) in &keys_values {
-            trie.put(key, value).unwrap();
+            trie.put(key, value)
+                .ok_or_else(|| TrieError::InvalidOperation)?;
         }
 
         // Get all values
         for (key, expected_value) in &keys_values {
-            let result = trie.get(key).unwrap();
+            let result = trie.get(key).cloned().unwrap_or_default();
             assert_eq!(result, Some(expected_value.to_vec()));
         }
     }
@@ -1329,13 +1280,15 @@ mod tests {
         let value2 = b"value2";
 
         // Put initial value
-        trie.put(key, value1).unwrap();
-        let result = trie.get(key).unwrap();
+        trie.put(key, value1)
+            .ok_or_else(|| TrieError::InvalidOperation)?;
+        let result = trie.get(key).cloned().unwrap_or_default();
         assert_eq!(result, Some(value1.to_vec()));
 
         // Update value
-        trie.put(key, value2).unwrap();
-        let result = trie.get(key).unwrap();
+        trie.put(key, value2)
+            .ok_or_else(|| TrieError::InvalidOperation)?;
+        let result = trie.get(key).cloned().unwrap_or_default();
         assert_eq!(result, Some(value2.to_vec()));
     }
 
@@ -1347,20 +1300,25 @@ mod tests {
         let value = b"delete_value";
 
         // Put value
-        trie.put(key, value).unwrap();
-        let result = trie.get(key).unwrap();
+        trie.put(key, value)
+            .ok_or_else(|| TrieError::InvalidOperation)?;
+        let result = trie.get(key).cloned().unwrap_or_default();
         assert_eq!(result, Some(value.to_vec()));
 
         // Delete value
-        let deleted = trie.delete(key).unwrap();
+        let deleted = trie
+            .delete(key)
+            .ok_or_else(|| TrieError::InvalidOperation)?;
         assert!(deleted);
 
         // Verify deletion
-        let result = trie.get(key).unwrap();
+        let result = trie.get(key).cloned().unwrap_or_default();
         assert_eq!(result, None);
 
         // Delete non-existent key
-        let deleted = trie.delete(b"non_existent").unwrap();
+        let deleted = trie
+            .delete(b"non_existent")
+            .ok_or_else(|| TrieError::InvalidOperation)?;
         assert!(deleted); // Returns true even if key doesn't exist
     }
 
@@ -1377,11 +1335,14 @@ mod tests {
         ];
 
         for (key, value) in &keys_values {
-            trie.put(key, value).unwrap();
+            trie.put(key, value)
+                .ok_or_else(|| TrieError::InvalidOperation)?;
         }
 
         // Find keys with prefix "prefix"
-        let results = trie.find(b"prefix").unwrap();
+        let results = trie
+            .find(b"prefix")
+            .ok_or_else(|| anyhow::anyhow!("Element not found"))?;
         assert_eq!(results.len(), 3);
 
         // Verify all results have the correct prefix
@@ -1390,7 +1351,9 @@ mod tests {
         }
 
         // Find with non-matching prefix
-        let results = trie.find(b"nomatch").unwrap();
+        let results = trie
+            .find(b"nomatch")
+            .ok_or_else(|| anyhow::anyhow!("Element not found"))?;
         assert_eq!(results.len(), 0);
     }
 
@@ -1401,10 +1364,13 @@ mod tests {
         let key = b"proof_key";
         let value = b"proof_value";
 
-        trie.put(key, value).unwrap();
+        trie.put(key, value)
+            .ok_or_else(|| TrieError::InvalidOperation)?;
 
         // Generate proof
-        let proof = trie.get_proof(key).unwrap();
+        let proof = trie
+            .get_proof(key)
+            .ok_or_else(|| TrieError::InvalidOperation)?;
         assert!(!proof.is_empty());
 
         // Proof should contain serialized nodes
@@ -1429,26 +1395,38 @@ mod tests {
 
         // Insert all data
         for (key, value) in &test_data {
-            trie.put(key, value).unwrap();
+            trie.put(key, value)
+                .ok_or_else(|| TrieError::InvalidOperation)?;
         }
 
         // Verify all data can be retrieved
         for (key, expected_value) in &test_data {
-            let result = trie.get(key).unwrap();
+            let result = trie.get(key).cloned().unwrap_or_default();
             assert_eq!(result, Some(expected_value.to_vec()));
         }
 
         // Test partial deletions
-        trie.delete(b"abc").unwrap();
-        assert_eq!(trie.get(b"abc").unwrap(), None);
-        assert_eq!(trie.get(b"ab").unwrap(), Some(b"value_ab".to_vec()));
-        assert_eq!(trie.get(b"abd").unwrap(), Some(b"value_abd".to_vec()));
+        trie.delete(b"abc")
+            .ok_or_else(|| TrieError::InvalidOperation)?;
+        assert_eq!(trie.get(b"abc").cloned().unwrap_or_default(), None);
+        assert_eq!(
+            trie.get(b"ab").cloned().unwrap_or_default(),
+            Some(b"value_ab".to_vec())
+        );
+        assert_eq!(
+            trie.get(b"abd").cloned().unwrap_or_default(),
+            Some(b"value_abd".to_vec())
+        );
 
         // Test find operations
-        let a_results = trie.find(b"a").unwrap();
+        let a_results = trie
+            .find(b"a")
+            .ok_or_else(|| anyhow::anyhow!("Element not found"))?;
         assert!(a_results.len() >= 2); // Should find "a", "ab", "abd"
 
-        let b_results = trie.find(b"b").unwrap();
+        let b_results = trie
+            .find(b"b")
+            .ok_or_else(|| anyhow::anyhow!("Element not found"))?;
         assert!(b_results.len() >= 2); // Should find "b", "bc"
     }
 
@@ -1457,13 +1435,22 @@ mod tests {
         let mut trie = Trie::new(None, false);
 
         // Test operations on empty trie
-        assert_eq!(trie.get(b"any_key").unwrap(), None);
-        assert!(trie.delete(b"any_key").unwrap());
-        assert_eq!(trie.find(b"any_prefix").unwrap().len(), 0);
+        assert_eq!(trie.get(b"any_key").cloned().unwrap_or_default(), None);
+        assert!(trie
+            .delete(b"any_key")
+            .ok_or_else(|| TrieError::InvalidOperation)?);
+        assert_eq!(
+            trie.find(b"any_prefix")
+                .ok_or_else(|| anyhow::anyhow!("Element not found"))?
+                .len(),
+            0
+        );
 
-        let proof = trie.get_proof(b"any_key").unwrap();
+        let proof = trie
+            .get_proof(b"any_key")
+            .ok_or_else(|| TrieError::InvalidOperation)?;
         // Empty trie may generate empty proof or minimal proof data
         // This is acceptable behavior
-        println!("Empty trie proof length: {}", proof.len());
+        log::debug!("Empty trie proof length: {}", proof.len());
     }
 }

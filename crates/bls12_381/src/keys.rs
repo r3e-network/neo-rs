@@ -1,5 +1,6 @@
 //! BLS12-381 key types and operations.
 
+use crate::constants::HASH_SIZE;
 use crate::constants::{PRIVATE_KEY_SIZE, PUBLIC_KEY_SIZE};
 use crate::error::{BlsError, BlsResult};
 use crate::signature::{Signature, SignatureScheme};
@@ -42,7 +43,7 @@ impl PrivateKey {
         let scalar = Scalar::from_bytes(&array);
         if scalar.is_some().into() {
             Ok(Self {
-                scalar: scalar.unwrap(),
+                scalar: scalar.expect("Operation failed"),
             })
         } else {
             Err(BlsError::invalid_private_key("Invalid scalar value"))
@@ -72,7 +73,6 @@ impl PrivateKey {
 
     /// Validates the private key
     pub fn is_valid(&self) -> bool {
-        // A private key is valid if it's not zero
         !bool::from(self.scalar.is_zero())
     }
 
@@ -147,7 +147,7 @@ impl PublicKey {
         let point = G1Affine::from_compressed(&array);
         if point.is_some().into() {
             Ok(Self {
-                point: point.unwrap(),
+                point: point.expect("Operation failed"),
             })
         } else {
             Err(BlsError::invalid_public_key("Invalid G1 point"))
@@ -171,7 +171,6 @@ impl PublicKey {
 
     /// Validates the public key
     pub fn is_valid(&self) -> bool {
-        // Check if the point is on the curve and not at infinity
         !bool::from(self.point.is_identity())
     }
 
@@ -302,7 +301,6 @@ impl Drop for KeyPair {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rand::thread_rng;
 
     #[test]
@@ -402,7 +400,7 @@ mod tests {
         assert!(invalid_private.is_err());
 
         // Test invalid public key size
-        let invalid_public = PublicKey::from_bytes(&[0u8; 32]);
+        let invalid_public = PublicKey::from_bytes(&[0u8; HASH_SIZE]);
         assert!(invalid_public.is_err());
 
         // Test invalid key pair size

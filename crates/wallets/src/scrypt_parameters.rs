@@ -4,8 +4,10 @@
 //! converted from the C# Neo ScryptParameters class (@neo-sharp/src/Neo/Wallets/ScryptParameters.cs).
 
 use crate::{Error, Result};
+use neo_config::{MAX_BLOCK_SIZE, MAX_SCRIPT_SIZE};
 use serde::{Deserialize, Serialize};
 
+const ONE_MEGABYTE: usize = 1024 * 1024;
 /// Scrypt parameters for key derivation.
 /// This matches the C# ScryptParameters class.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,7 +57,7 @@ impl ScryptParameters {
     /// Gets the default scrypt parameters for NEP-2.
     pub fn default_nep2() -> Self {
         Self {
-            n: 16384, // 2^14
+            n: 16384,
             r: 8,
             p: 8,
             dklen: Some(64),
@@ -65,7 +67,7 @@ impl ScryptParameters {
     /// Gets the default scrypt parameters for NEP-6.
     pub fn default_nep6() -> Self {
         Self {
-            n: 16384, // 2^14
+            n: 16384,
             r: 8,
             p: 8,
             dklen: Some(64),
@@ -75,7 +77,7 @@ impl ScryptParameters {
     /// Gets fast scrypt parameters (for testing).
     pub fn fast() -> Self {
         Self {
-            n: 1024, // 2^10
+            n: MAX_SCRIPT_SIZE as u32,
             r: 1,
             p: 1,
             dklen: Some(64),
@@ -85,7 +87,7 @@ impl ScryptParameters {
     /// Gets slow scrypt parameters (high security).
     pub fn slow() -> Self {
         Self {
-            n: 1048576, // 2^20
+            n: MAX_BLOCK_SIZE as u32, // 2^ADDRESS_SIZE
             r: 8,
             p: 8,
             dklen: Some(64),
@@ -111,7 +113,6 @@ impl ScryptParameters {
             return Err(Error::Other("P must be greater than 0".to_string()));
         }
 
-        // Check for overflow conditions
         if self.r > u32::MAX / 128 {
             return Err(Error::Other("R parameter is too large".to_string()));
         }
@@ -132,7 +133,7 @@ impl ScryptParameters {
                 ));
             }
 
-            if dklen > 1024 * 1024 {
+            if (dklen as u64) > ((MAX_SCRIPT_SIZE as u64) * (MAX_SCRIPT_SIZE as u64)) {
                 // 1MB limit
                 return Err(Error::Other("Derived key length is too large".to_string()));
             }
@@ -161,7 +162,9 @@ impl ScryptParameters {
 
     /// Checks if the parameters are suitable for production use.
     pub fn is_production_ready(&self) -> bool {
-        self.is_secure() && self.memory_usage() <= 128 * 1024 * 1024 // 128MB limit
+        self.is_secure()
+            && self.memory_usage() <= 128 * (MAX_SCRIPT_SIZE as u64) * (MAX_SCRIPT_SIZE as u64)
+        // 128MB limit
     }
 
     /// Gets the log2 of N parameter.
@@ -221,7 +224,7 @@ impl ScryptPresets {
     /// Interactive parameters (fast, for real-time use).
     pub fn interactive() -> ScryptParameters {
         ScryptParameters {
-            n: 32768, // 2^15
+            n: 32768, // 2^SECONDS_PER_BLOCK
             r: 8,
             p: 1,
             dklen: Some(64),
@@ -236,7 +239,7 @@ impl ScryptPresets {
     /// Paranoid parameters (maximum security).
     pub fn paranoid() -> ScryptParameters {
         ScryptParameters {
-            n: 1048576, // 2^20
+            n: MAX_BLOCK_SIZE as u32, // 2^ADDRESS_SIZE
             r: 8,
             p: 8,
             dklen: Some(64),
@@ -246,7 +249,7 @@ impl ScryptPresets {
     /// Test parameters (very fast, for testing only).
     pub fn test() -> ScryptParameters {
         ScryptParameters {
-            n: 16, // 2^4
+            n: 16,
             r: 1,
             p: 1,
             dklen: Some(64),
@@ -256,8 +259,6 @@ impl ScryptPresets {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_scrypt_parameters_validation() {
         assert!(ScryptParameters::new(16384, 8, 8).is_ok());
@@ -306,7 +307,8 @@ mod tests {
     fn test_serialization() {
         let params = ScryptParameters::default_nep6();
         let json = serde_json::to_string(&params).unwrap();
-        let deserialized: ScryptParameters = serde_json::from_str(&json).unwrap();
+        let deserialized: ScryptParameters =
+            serde_json::from_str(&json).expect("Failed to parse from string");
         assert_eq!(params, deserialized);
     }
 }

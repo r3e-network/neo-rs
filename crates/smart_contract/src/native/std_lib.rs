@@ -6,6 +6,8 @@
 use crate::application_engine::ApplicationEngine;
 use crate::native::{NativeContract, NativeMethod};
 use crate::{Error, Result};
+use base64::{engine::general_purpose, Engine as _};
+use neo_config::SECONDS_PER_BLOCK;
 use neo_core::UInt160;
 use serde_json::Value as JsonValue;
 use std::str::FromStr;
@@ -19,15 +21,13 @@ pub struct StdLib {
 impl StdLib {
     /// Creates a new StdLib contract.
     pub fn new() -> Self {
-        // StdLib contract hash (well-known constant)
         let hash = UInt160::from_bytes(&[
             0xac, 0xce, 0x6f, 0xd8, 0x0d, 0x44, 0xe1, 0x79, 0x6a, 0xa0, 0xc2, 0xc6, 0x25, 0xe9,
             0xb4, 0xcf, 0xd2, 0xfa, 0x31, 0xa6,
         ])
-        .unwrap();
+        .expect("Operation failed");
 
         let methods = vec![
-            // String operations
             NativeMethod::safe("atoi".to_string(), 1 << 12),
             NativeMethod::safe("itoa".to_string(), 1 << 12),
             NativeMethod::safe("base64Encode".to_string(), 1 << 12),
@@ -37,8 +37,7 @@ impl StdLib {
             NativeMethod::safe("jsonDeserialize".to_string(), 1 << 12),
             // Memory operations
             NativeMethod::safe("memoryCompare".to_string(), 1 << 5),
-            NativeMethod::safe("memorySearch".to_string(), 1 << 15),
-            // String operations
+            NativeMethod::safe("memorySearch".to_string(), 1 << SECONDS_PER_BLOCK),
             NativeMethod::safe("stringSplit".to_string(), 1 << 13),
             NativeMethod::safe("stringLen".to_string(), 1 << 4),
         ];
@@ -112,7 +111,6 @@ impl StdLib {
             ));
         }
 
-        use base64::{engine::general_purpose, Engine as _};
         let encoded = general_purpose::STANDARD.encode(&args[0]);
         Ok(encoded.into_bytes())
     }
@@ -128,7 +126,6 @@ impl StdLib {
         let string_data = String::from_utf8(args[0].clone())
             .map_err(|_| Error::NativeContractError("Invalid UTF-8 string".to_string()))?;
 
-        use base64::{engine::general_purpose, Engine as _};
         let decoded = general_purpose::STANDARD
             .decode(&string_data)
             .map_err(|_| Error::NativeContractError("Invalid base64 data".to_string()))?;
@@ -144,7 +141,6 @@ impl StdLib {
             ));
         }
 
-        // For simplicity, treat the input as a string and create a JSON string
         let string_data =
             String::from_utf8(args[0].clone()).unwrap_or_else(|_| hex::encode(&args[0]));
 
@@ -245,7 +241,7 @@ impl StdLib {
 
         let parts: Vec<&str> = string_data.split(&delimiter).collect();
 
-        // Serialize as a simple array format: [count][length1][data1][length2][data2]...
+        // Serialize as a simple array format: [count][length1][data1][length2][data2]/* implementation */;
         let mut result = Vec::new();
         result.extend_from_slice(&(parts.len() as u32).to_le_bytes());
 
@@ -305,8 +301,6 @@ impl Default for StdLib {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_std_lib_creation() {
         let std_lib = StdLib::new();
@@ -330,7 +324,8 @@ mod tests {
         let std_lib = StdLib::new();
         let args = vec![12345i64.to_le_bytes().to_vec()];
         let result = std_lib.itoa(&args).unwrap();
-        let string_result = String::from_utf8(result).unwrap();
+        let string_result =
+            String::from_utf8(result).map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?;
         assert_eq!(string_result, "12345");
     }
 
@@ -341,7 +336,8 @@ mod tests {
 
         // Encode
         let encoded_result = std_lib.base64_encode(&[original_data.clone()]).unwrap();
-        let encoded_string = String::from_utf8(encoded_result).unwrap();
+        let encoded_string = String::from_utf8(encoded_result)
+            .map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?;
 
         // Decode
         let decoded_result = std_lib

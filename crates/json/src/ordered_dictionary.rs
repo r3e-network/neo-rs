@@ -91,12 +91,14 @@ where
 
     /// Returns an iterator over the values in insertion order
     pub fn values(&self) -> impl Iterator<Item = &V> {
-        self.keys.iter().map(move |k| self.map.get(k).unwrap())
+        self.keys.iter().filter_map(move |k| self.map.get(k))
     }
 
     /// Returns an iterator over key-value pairs in insertion order
     pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-        self.keys.iter().map(move |k| (k, self.map.get(k).unwrap()))
+        self.keys
+            .iter()
+            .filter_map(move |k| self.map.get(k).map(|v| (k, v)))
     }
 }
 
@@ -128,14 +130,12 @@ where
     V: Clone,
 {
     fn index_mut(&mut self, key: &K) -> &mut Self::Output {
-        self.map.get_mut(key).unwrap()
+        self.map.get_mut(key).expect("Key not found")
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_ordered_dictionary_basic() {
         let mut dict = OrderedDictionary::new();

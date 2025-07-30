@@ -26,23 +26,26 @@ pub mod validators;
 
 // Re-export main types
 pub use context::{ConsensusContext, ConsensusPhase, ConsensusRound, ConsensusTimer};
+const DEFAULT_TIMEOUT_MS: u64 = 30000;
 pub use dbft::{DbftConfig, DbftEngine, DbftState, DbftStats};
+use log::{debug, error, info, warn};
 pub use messages::{
     ChangeView, Commit, ConsensusMessage, ConsensusMessageType, PrepareRequest, PrepareResponse,
     RecoveryRequest, RecoveryResponse, ViewChangeReason,
 };
+use neo_config::{MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, MILLISECONDS_PER_BLOCK};
+use neo_core::{UInt160, UInt256};
 pub use proposal::{BlockProposal, ProposalConfig, ProposalManager, ProposalStats};
 pub use recovery::{RecoveryConfig, RecoveryManager, RecoveryStats};
+use serde::{Deserialize, Serialize};
 pub use service::{
     ConsensusEvent, ConsensusService, ConsensusServiceConfig, ConsensusStats, LedgerService,
     MempoolService, NetworkService,
 };
-pub use validators::{Validator, ValidatorConfig, ValidatorManager, ValidatorSet, ValidatorStats};
-
-use neo_core::{UInt160, UInt256};
-use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fmt;
 use thiserror::Error;
+pub use validators::{Validator, ValidatorConfig, ValidatorManager, ValidatorSet, ValidatorStats};
 
 /// Result type for consensus operations
 pub type Result<T> = std::result::Result<T, Error>;
@@ -288,8 +291,6 @@ impl ConsensusSignature {
 
     /// Verifies the signature
     pub fn verify(&self, message: &[u8], public_key: &[u8]) -> Result<bool> {
-        // Production-ready signature verification (matches C# ConsensusPayload.Verify exactly)
-
         if self.signature.is_empty() {
             return Ok(false);
         }
@@ -304,7 +305,6 @@ impl ConsensusSignature {
             return Err(Error::InvalidMessage("Message cannot be empty".to_string()));
         }
 
-        // Verify ECDSA signature using secp256r1 curve (same as C# Neo)
         match neo_cryptography::ecdsa::ECDsa::verify_signature_secp256r1(
             message,
             &self.signature,
@@ -312,14 +312,14 @@ impl ConsensusSignature {
         ) {
             Ok(is_valid) => {
                 if is_valid {
-                    println!("Consensus signature verification PASSED for validator");
+                    log::info!("Consensus signature verification PASSED for validator");
                 } else {
-                    println!("Consensus signature verification FAILED for validator");
+                    log::info!("Consensus signature verification FAILED for validator");
                 }
                 Ok(is_valid)
             }
             Err(e) => {
-                println!("Error verifying consensus signature: {}", e);
+                log::info!("Error verifying consensus signature: {}", e);
                 Ok(false)
             }
         }
@@ -355,7 +355,7 @@ impl ConsensusPayload {
             view_number,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("Operation failed")
                 .as_secs(),
             data,
         }
@@ -363,7 +363,6 @@ impl ConsensusPayload {
 
     /// Gets the payload hash
     pub fn hash(&self) -> UInt256 {
-        use sha2::{Digest, Sha256};
         let serialized = bincode::serialize(self).unwrap_or_default();
         let hash = Sha256::digest(&serialized);
         UInt256::from_bytes(&hash).unwrap_or_default()
@@ -409,13 +408,13 @@ impl Default for ConsensusConfig {
     fn default() -> Self {
         Self {
             validator_count: 7,
-            block_time_ms: 15000,   // 15 seconds
-            view_timeout_ms: 20000, // 20 seconds
+            block_time_ms: MILLISECONDS_PER_BLOCK, // SECONDS_PER_BLOCK seconds
+            view_timeout_ms: 20000,                // ADDRESS_SIZE seconds
             max_view_changes: 6,
             enable_recovery: true,
-            recovery_timeout_ms: 30000,  // 30 seconds
-            max_block_size: 1024 * 1024, // 1 MB
-            max_transactions_per_block: 512,
+            recovery_timeout_ms: DEFAULT_TIMEOUT_MS, // 30 seconds
+            max_block_size: MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE,
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
             enable_metrics: true,
         }
     }
@@ -470,7 +469,7 @@ impl ConsensusConfig {
 
 /// Consensus utilities
 pub mod utils {
-    use super::*;
+    use super::{ConsensusConfig, ViewNumber};
 
     /// Calculates the primary validator index for a view
     pub fn calculate_primary_index(view: ViewNumber, validator_count: usize) -> usize {
@@ -495,8 +494,6 @@ pub mod utils {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_view_number() {
         let mut view = ViewNumber::new(0);
@@ -528,7 +525,7 @@ mod tests {
         let config = ConsensusConfig::default();
         assert!(config.validate().is_ok());
 
-        assert_eq!(config.byzantine_threshold(), 2); // (7-1)/3 = 2
+        assert_eq!(config.byzantine_threshold(), 2);
         assert_eq!(config.required_signatures(), 5); // 7-2 = 5
 
         let invalid_config = ConsensusConfig {

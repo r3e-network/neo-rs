@@ -27,7 +27,6 @@ mod keys_tests {
             assert!(key.is_valid());
         }
 
-        // All keys should be different (extremely high probability)
         for i in 0..keys.len() {
             for j in i + 1..keys.len() {
                 assert_ne!(keys[i], keys[j]);
@@ -47,7 +46,6 @@ mod keys_tests {
         let mut rng2 = ChaCha8Rng::from_seed(seed);
         let key2 = Bls12381::generate_private_key(&mut rng2);
 
-        // Should be identical (matches C# deterministic behavior)
         assert_eq!(key1, key2);
         assert!(Bls12381::validate_private_key(&key1));
         assert!(Bls12381::validate_private_key(&key2));
@@ -64,7 +62,6 @@ mod keys_tests {
         let public_key2 = Bls12381::derive_public_key(&private_key);
         let public_key3 = private_key.public_key();
 
-        // All derivations should be identical (deterministic)
         assert_eq!(public_key1, public_key2);
         assert_eq!(public_key1, public_key3);
 
@@ -110,7 +107,6 @@ mod keys_tests {
     /// Test private key validation edge cases (matches C# validation exactly)
     #[test]
     fn test_private_key_validation_edge_cases_compatibility() {
-        // Test zero private key (should be invalid)
         let zero_bytes = vec![0u8; 32];
         let zero_key_result = Bls12381::private_key_from_bytes(&zero_bytes);
 
@@ -120,7 +116,6 @@ mod keys_tests {
             Err(_) => {} // Also acceptable - zero key rejected during parsing
         }
 
-        // Test maximum private key (should be invalid - exceeds curve order)
         let max_bytes = vec![0xFFu8; 32];
         let max_key_result = Bls12381::private_key_from_bytes(&max_bytes);
 
@@ -134,7 +129,6 @@ mod keys_tests {
     /// Test public key validation edge cases (matches C# validation exactly)
     #[test]
     fn test_public_key_validation_edge_cases_compatibility() {
-        // Test zero public key (should be invalid)
         let zero_bytes = vec![0u8; 48];
         let zero_key_result = Bls12381::public_key_from_bytes(&zero_bytes);
 
@@ -160,7 +154,6 @@ mod keys_tests {
         let private_key = Bls12381::generate_private_key(&mut rng);
         let public_key = Bls12381::derive_public_key(&private_key);
 
-        // Test serialized sizes match constants
         let private_key_bytes = Bls12381::private_key_to_bytes(&private_key);
         let public_key_bytes = Bls12381::public_key_to_bytes(&public_key);
 
@@ -282,7 +275,6 @@ mod keys_tests {
         let key2 = Bls12381::generate_private_key(&mut chacha_rng);
         assert!(Bls12381::validate_private_key(&key2));
 
-        // Keys from different RNGs should be different (high probability)
         assert_ne!(key1, key2);
 
         // Both should produce valid public keys

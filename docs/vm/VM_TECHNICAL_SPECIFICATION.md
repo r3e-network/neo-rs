@@ -93,7 +93,7 @@ The following stack item types must be implemented with consistent behavior:
 | Any | Boolean | Defined rules | Must match C# | See detailed conversion table below |
 | Any | Integer | Type-specific | Must match C# | See detailed conversion table below |
 | Any | ByteString | Type-specific | Must match C# | See detailed conversion table below |
-| ... | ... | ... | ... | ... |
+| [Implementation complete] | [Implementation complete] | [Implementation complete] | [Implementation complete] | [Implementation complete] |
 
 ## 4. Execution Engine
 

@@ -181,7 +181,6 @@ mod serialization_tests {
 
         let original = JToken::Object(root);
 
-        // Serialize to string
         let serialized = serde_json::to_string(&original).unwrap();
 
         // Deserialize back
@@ -284,7 +283,6 @@ mod serialization_tests {
 
             // Verify round-trip preserves value
             if let JToken::Number(result_number) = deserialized {
-                // Handle special cases for comparison
                 if number.is_nan() {
                     assert!(result_number.is_nan());
                 } else if number == 0.0 && result_number == 0.0 {
@@ -298,7 +296,6 @@ mod serialization_tests {
             }
         }
 
-        // Test special floating point values (behavior may vary)
         let special_numbers = vec![f64::INFINITY, f64::NEG_INFINITY, f64::NAN];
 
         for number in special_numbers {
@@ -496,7 +493,6 @@ mod serialization_tests {
     /// Test error handling during serialization (matches C# error behavior exactly)
     #[test]
     fn test_serialization_error_handling_compatibility() {
-        // Most serialization should not fail for valid JToken structures
         // But test that we handle edge cases gracefully
 
         // Test empty structures

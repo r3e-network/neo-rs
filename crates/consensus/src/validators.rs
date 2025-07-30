@@ -4,6 +4,7 @@
 //! including validator selection, rotation, and performance tracking.
 
 use crate::{Error, NodeRole, Result, ViewNumber};
+use neo_config::ADDRESS_SIZE;
 use neo_core::UInt160;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -80,7 +81,7 @@ impl Validator {
             registered_at,
             last_activity: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             performance: ValidatorPerformance::default(),
         }
@@ -90,7 +91,7 @@ impl Validator {
     pub fn update_activity(&mut self) {
         self.last_activity = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
     }
 
@@ -98,7 +99,7 @@ impl Validator {
     pub fn is_online(&self, timeout_seconds: u64) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         now - self.last_activity <= timeout_seconds
@@ -158,7 +159,7 @@ impl ValidatorPerformance {
             0.0
         };
 
-        // Weighted score: 40% participation, 40% signing, 20% uptime
+        // Weighted score: 40% participation, 40% signing, ADDRESS_SIZE% uptime
         (participation_rate * 0.4) + (signing_rate * 0.4) + (self.uptime_percentage / 100.0 * 0.2)
     }
 
@@ -219,7 +220,7 @@ impl ValidatorSet {
             block_height,
             created_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
         }
     }
@@ -309,7 +310,6 @@ impl ValidatorSet {
             ));
         }
 
-        // Check for duplicate validators
         let mut seen = HashSet::new();
         for validator in &self.validators {
             if !seen.insert(&validator.public_key_hash) {
@@ -498,7 +498,6 @@ impl ValidatorManager {
     pub fn select_next_validator_set(&self, target_size: usize) -> Result<ValidatorSet> {
         let all_validators = self.all_validators.read();
 
-        // Get eligible validators (active with sufficient performance)
         let mut eligible: Vec<_> = all_validators
             .values()
             .filter(|v| v.active && v.performance_score() >= self.config.min_performance_score)
@@ -515,12 +514,11 @@ impl ValidatorManager {
             )));
         }
 
-        // Sort by stake (descending) and performance score (descending)
         eligible.sort_by(|a, b| {
             b.stake.cmp(&a.stake).then_with(|| {
                 b.performance_score()
                     .partial_cmp(&a.performance_score())
-                    .unwrap()
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
         });
 
@@ -543,7 +541,6 @@ impl ValidatorManager {
 
     /// Updates internal statistics safely without holding multiple locks
     fn update_stats_safe(&self) {
-        // Collect data while holding minimal locks
         let (
             total_validators,
             active_validators,
@@ -601,7 +598,7 @@ impl ValidatorManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ConsensusContext, ConsensusMessage, ConsensusState};
 
     #[test]
     fn test_validator_creation() {
@@ -644,21 +641,21 @@ mod tests {
         let validators = vec![
             Validator::new(UInt160::zero(), vec![1], 1000, 0, 100),
             Validator::new(
-                UInt160::from_bytes(&[1; 20]).unwrap(),
+                UInt160::from_bytes(&[1; ADDRESS_SIZE]).unwrap(),
                 vec![2],
                 2000,
                 1,
                 100,
             ),
             Validator::new(
-                UInt160::from_bytes(&[2; 20]).unwrap(),
+                UInt160::from_bytes(&[2; ADDRESS_SIZE]).unwrap(),
                 vec![3],
                 3000,
                 2,
                 100,
             ),
             Validator::new(
-                UInt160::from_bytes(&[3; 20]).unwrap(),
+                UInt160::from_bytes(&[3; ADDRESS_SIZE]).unwrap(),
                 vec![4],
                 4000,
                 3,
@@ -674,11 +671,11 @@ mod tests {
         // Test primary selection
         let primary = validator_set.get_primary(ViewNumber::new(0));
         assert!(primary.is_some());
-        assert_eq!(primary.unwrap().index, 0);
+        assert_eq!(primary?.index, 0);
 
         let primary = validator_set.get_primary(ViewNumber::new(1));
         assert!(primary.is_some());
-        assert_eq!(primary.unwrap().index, 1);
+        assert_eq!(primary?.index, 1);
 
         // Test backup selection
         let backups = validator_set.get_backups(ViewNumber::new(0));
@@ -705,7 +702,7 @@ mod tests {
         // Check validator exists
         let validator = manager.get_validator(&hash);
         assert!(validator.is_some());
-        assert_eq!(validator.unwrap().stake, stake);
+        assert_eq!(validator?.stake, stake);
 
         // Update stake
         manager.update_validator_stake(&hash, stake * 2).unwrap();

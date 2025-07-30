@@ -88,12 +88,11 @@ impl SharedStates {
             .get_mut(&type_id)
             .and_then(|value| value.downcast_mut::<T>())
             .unwrap_or_else(|| {
-                // If the type exists but the type doesn't match, replace it
                 self.states.insert(type_id, Box::new(T::default()));
                 self.states
                     .get_mut(&type_id)
                     .and_then(|value| value.downcast_mut::<T>())
-                    .unwrap()
+                    .expect("Operation failed")
             })
     }
 
@@ -110,19 +109,18 @@ impl SharedStates {
             .get_mut(&type_id)
             .and_then(|value| value.downcast_mut::<T>())
             .unwrap_or_else(|| {
-                // If the type exists but the type doesn't match, replace it
                 self.states.insert(type_id, Box::new(factory()));
                 self.states
                     .get_mut(&type_id)
                     .and_then(|value| value.downcast_mut::<T>())
-                    .unwrap()
+                    .expect("Operation failed")
             })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_shared_states_creation() {

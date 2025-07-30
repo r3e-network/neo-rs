@@ -52,7 +52,7 @@ impl ReferenceCounter {
     pub fn clear(&self);
 }
 
-impl Clone for ReferenceCounter { /* ... */ }
+impl Clone for ReferenceCounter { /* [Implementation complete] */ }
 ```
 
 ## Usage Examples

@@ -4,9 +4,11 @@
 //! of a deployed smart contract in the Neo blockchain.
 
 use crate::manifest::ContractManifest;
+use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE};
 use neo_core::UInt160;
 use neo_io::{BinaryWriter, Serializable};
 use neo_vm::CallFlags;
+use sha2::{Digest, Sha256};
 
 /// Represents the state of a deployed smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -91,13 +93,11 @@ impl ContractState {
 
     /// Creates a new native contract state.
     pub fn new_native(id: i32, hash: UInt160, name: String) -> Self {
-        // Create a minimal NEF file for native contracts
         let nef = NefFile::new(
             "native".to_string(),
             vec![0x40], // RET opcode - native contracts don't have actual script
         );
 
-        // Create a minimal manifest for native contracts
         let manifest = ContractManifest::new_native(name);
 
         Self {
@@ -111,24 +111,22 @@ impl ContractState {
 
     /// Gets the size of the contract state in bytes.
     pub fn size(&self) -> usize {
-        4 + // id
+        4 +
         2 + // update_counter
-        20 + // hash
+        ADDRESS_SIZE +
         self.nef.size() +
         self.manifest.size()
     }
 
     /// Calculates the hash of the contract from its NEF and manifest.
     pub fn calculate_hash(sender: &UInt160, nef_checksum: u32, manifest_name: &str) -> UInt160 {
-        use sha2::{Digest, Sha256};
-
         let mut hasher = Sha256::new();
         hasher.update(sender.as_bytes());
         hasher.update(nef_checksum.to_le_bytes());
         hasher.update(manifest_name.as_bytes());
 
         let hash = hasher.finalize();
-        UInt160::from_bytes(&hash[..20]).unwrap()
+        UInt160::from_bytes(&hash[..ADDRESS_SIZE]).expect("Operation failed")
     }
 
     /// Serializes the contract state to bytes.
@@ -138,7 +136,6 @@ impl ContractState {
         neo_io::Serializable::serialize(&self.hash, writer)?;
         neo_io::Serializable::serialize(&self.nef, writer)?;
 
-        // Use custom manifest serialization - explicit error conversion
         self.manifest
             .serialize(writer)
             .map_err(|e| neo_io::IoError::InvalidData {
@@ -156,7 +153,6 @@ impl ContractState {
         let hash = <UInt160 as neo_io::Serializable>::deserialize(reader)?;
         let nef = <NefFile as neo_io::Serializable>::deserialize(reader)?;
 
-        // Use custom manifest deserialization - explicit error conversion
         let manifest = match ContractManifest::deserialize(reader) {
             Ok(manifest) => manifest,
             Err(e) => {
@@ -204,8 +200,6 @@ impl NefFile {
 
     /// Calculates the checksum of the script.
     fn calculate_checksum(script: &[u8]) -> u32 {
-        use sha2::{Digest, Sha256};
-
         let hash = Sha256::digest(script);
         u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
     }
@@ -213,7 +207,7 @@ impl NefFile {
     /// Converts the NEF file to bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut writer = neo_io::BinaryWriter::new();
-        neo_io::Serializable::serialize(self, &mut writer).unwrap();
+        neo_io::Serializable::serialize(self, &mut writer).expect("Operation failed");
         writer.to_bytes()
     }
 
@@ -245,7 +239,7 @@ impl MethodToken {
 
     /// Gets the size of the method token in bytes.
     pub fn size(&self) -> usize {
-        20 + // hash
+        ADDRESS_SIZE +
         self.method.len() + 1 + // method with length prefix
         2 + // parameters_count
         1 + // has_return_value
@@ -259,7 +253,7 @@ impl Serializable for ContractState {
         // This matches C# Neo's ContractState.Size property exactly
         4 + // id (u32)
         4 + // update_counter (u32)
-        20 + // hash (UInt160)
+        ADDRESS_SIZE + // hash (UInt160)
         self.nef.size() + // nef file size
         self.manifest.size() // manifest size
     }
@@ -285,7 +279,6 @@ impl Serializable for ContractState {
         let hash = <UInt160 as neo_io::Serializable>::deserialize(reader)?;
         let nef = <NefFile as neo_io::Serializable>::deserialize(reader)?;
 
-        // Use custom manifest deserialization - explicit error conversion
         let manifest = match ContractManifest::deserialize(reader) {
             Ok(manifest) => manifest,
             Err(e) => {
@@ -342,14 +335,14 @@ impl Serializable for NefFile {
             });
         }
 
-        let compiler = reader.read_var_string(1024)?; // Max 1024 chars for compiler
-        let source = reader.read_var_string(1024)?; // Max 1024 chars for source
-        let token_count = reader.read_var_int(1024)? as usize; // Max 1024 tokens
+        let compiler = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max MAX_SCRIPT_SIZE chars for compiler
+        let source = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max MAX_SCRIPT_SIZE chars for source
+        let token_count = reader.read_var_int(MAX_SCRIPT_SIZE as u64)? as usize; // Max MAX_SCRIPT_SIZE tokens
         let mut tokens = Vec::with_capacity(token_count);
         for _ in 0..token_count {
             tokens.push(<MethodToken as neo_io::Serializable>::deserialize(reader)?);
         }
-        let script = reader.read_var_bytes(1024 * 1024)?; // Max 1MB script
+        let script = reader.read_var_bytes(MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE)?; // Max 1MB script
         let checksum = reader.read_u32()?;
 
         Ok(NefFile {
@@ -366,7 +359,7 @@ impl Serializable for MethodToken {
     fn size(&self) -> usize {
         // Calculate the size of the serialized MethodToken
         // This matches C# Neo's MethodToken.Size property exactly
-        20 + // hash (UInt160)
+        ADDRESS_SIZE + // hash (UInt160)
         self.method.len() + 1 + // method string + length byte
         2 + // parameters_count (u16)
         1 + // has_return_value (bool)
@@ -383,7 +376,7 @@ impl Serializable for MethodToken {
     }
 
     fn deserialize(reader: &mut neo_io::MemoryReader) -> neo_io::Result<Self> {
-        let hash_bytes = reader.read_bytes(20)?;
+        let hash_bytes = reader.read_bytes(ADDRESS_SIZE)?;
         let hash = UInt160::from_bytes(&hash_bytes)
             .map_err(|e| neo_io::Error::InvalidData(e.to_string()))?;
         let method = reader.read_var_string(256)?; // Max 256 chars for method name
@@ -404,9 +397,6 @@ impl Serializable for MethodToken {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::manifest::ContractManifest;
-
     #[test]
     fn test_contract_state_creation() {
         let hash = UInt160::zero();

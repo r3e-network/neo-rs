@@ -5,6 +5,7 @@ use crate::{
     execution_engine::ExecutionEngine,
     instruction::Instruction,
 };
+const HASH_SIZE: usize = 32;
 use num_traits::ToPrimitive;
 
 /// Implements the NOP operation.
@@ -41,7 +42,7 @@ pub fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     Ok(())
 }
 
-/// Implements the JMP_L operation (long jump with 32-bit offset).
+/// Implements the JMP_L operation (long jump with HASH_SIZE-bit offset).
 pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -79,7 +80,6 @@ pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is true, jump
     if condition {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -103,7 +103,7 @@ pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     Ok(())
 }
 
-/// Implements the JMPIF_L operation (long conditional jump with 32-bit offset).
+/// Implements the JMPIF_L operation (long conditional jump with HASH_SIZE-bit offset).
 pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -113,7 +113,6 @@ pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is true, jump
     if condition {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -147,7 +146,6 @@ pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRe
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is false, jump
     if !condition {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -171,7 +169,7 @@ pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRe
     Ok(())
 }
 
-/// Implements the JMPIFNOT_L operation (long conditional jump with 32-bit offset).
+/// Implements the JMPIFNOT_L operation (long conditional jump with HASH_SIZE-bit offset).
 pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -181,7 +179,6 @@ pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Vm
     // Pop the condition from the stack
     let condition = context.pop()?.as_bool()?;
 
-    // If the condition is false, jump
     if !condition {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -216,7 +213,6 @@ pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if they are equal
     if a.equals(&b)? {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -251,7 +247,6 @@ pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if they are equal
     if a.equals(&b)? {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -286,7 +281,6 @@ pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if they are not equal
     if !a.equals(&b)? {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -321,7 +315,6 @@ pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if they are not equal
     if !a.equals(&b)? {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -356,7 +349,6 @@ pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if a > b
     if a.as_int()? > b.as_int()? {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -391,7 +383,6 @@ pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if a > b
     if a.as_int()? > b.as_int()? {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -426,7 +417,6 @@ pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if a >= b
     if a.as_int()? >= b.as_int()? {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -461,7 +451,6 @@ pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if a >= b
     if a.as_int()? >= b.as_int()? {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -496,7 +485,6 @@ pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if a < b
     if a.as_int()? < b.as_int()? {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -531,7 +519,6 @@ pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if a < b
     if a.as_int()? < b.as_int()? {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -566,7 +553,6 @@ pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if a <= b
     if a.as_int()? <= b.as_int()? {
         // Get the offset from the instruction
         let offset = instruction.read_i16_operand()?;
@@ -601,7 +587,6 @@ pub fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     let b = context.pop()?;
     let a = context.pop()?;
 
-    // Check if a <= b
     if a.as_int()? <= b.as_int()? {
         // Get the offset from the instruction
         let offset = instruction.read_i32_operand()?;
@@ -644,7 +629,6 @@ pub fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
         )));
     }
 
-    // Create a new context for the call
     let script = context.script().clone();
     let new_context = engine.create_context(script, -1, call_target as usize);
 
@@ -676,7 +660,6 @@ pub fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
         )));
     }
 
-    // Create a new context for the call
     let script = context.script().clone();
     let new_context = engine.create_context(script, -1, call_target as usize);
 
@@ -703,7 +686,6 @@ pub fn calla(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid call target"))?;
 
-    // Create a new context for the call
     let script = context.script().clone();
     let new_context = engine.create_context(script, -1, call_target);
 
@@ -730,7 +712,6 @@ pub fn callt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid call target"))?;
 
-    // Create a new context for the call
     let script = context.script().clone();
     let new_context = engine.create_context(script, -1, call_target);
 
@@ -752,7 +733,6 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
         let rvcount = context.rvcount();
 
-        // If rvcount is not -1, collect the top rvcount items to copy to result stack
         let items_to_copy = if rvcount != -1 {
             let rvcount = rvcount as usize;
             let stack_size = context.evaluation_stack().len();
@@ -779,7 +759,6 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         (rvcount, items_to_copy)
     };
 
-    // Copy items to result stack
     if rvcount != -1 && !items_to_copy.is_empty() {
         let result_stack = engine.result_stack_mut();
         for item in items_to_copy {

@@ -5,6 +5,7 @@
 use crate::error::VmResult;
 use crate::op_code::OpCode;
 use crate::script::Script;
+use neo_config::ADDRESS_SIZE;
 use std::convert::TryFrom;
 
 /// Helps construct VM scripts programmatically.
@@ -42,7 +43,6 @@ impl ScriptBuilder {
         let len = data.len();
 
         if len <= 0x75 {
-            // For small data (1-75 bytes), use direct push opcodes
             self.emit(len as u8);
             self.script.extend_from_slice(data);
         } else if len <= 0xFF {
@@ -71,7 +71,6 @@ impl ScriptBuilder {
 
     /// Emits a push operation for an integer.
     pub fn emit_push_int(&mut self, value: i64) -> &mut Self {
-        // Handle special cases for small integers
         if value == -1 {
             return self.emit_opcode(OpCode::PUSHM1);
         }
@@ -81,7 +80,6 @@ impl ScriptBuilder {
             return self;
         }
 
-        // For larger integers, encode as bytes
         let mut bytes = Vec::new();
         let mut v = value;
 
@@ -94,7 +92,10 @@ impl ScriptBuilder {
         // Handle sign bit
         if v == -1 && (bytes.last().unwrap_or(&0) & 0x80) == 0 {
             bytes.push(0xFF);
-        } else if v == 0 && !bytes.is_empty() && (bytes.last().unwrap() & 0x80) != 0 {
+        } else if v == 0
+            && !bytes.is_empty()
+            && (bytes.last().expect("collection should not be empty") & 0x80) != 0
+        {
             bytes.push(0x00);
         }
 
@@ -140,12 +141,10 @@ impl ScriptBuilder {
                 self.emit_push_bool(b);
             }
             StackItem::Integer(i) => {
-                // Convert BigInt to i64 for emission
                 use num_traits::ToPrimitive;
                 if let Some(value) = i.to_i64() {
                     self.emit_push_int(value);
                 } else {
-                    // For very large integers, convert to bytes
                     let bytes = i.to_bytes_le().1;
                     self.emit_push(&bytes);
                 }
@@ -163,9 +162,6 @@ impl ScriptBuilder {
                 self.emit_pack();
             }
             StackItem::Map(map) => {
-                // Production-ready map serialization (matches C# ScriptBuilder.EmitPush exactly)
-                // This implements the C# logic: EmitPush(IDictionary) for map conversion
-
                 // 1. Emit map size (production map format)
                 self.emit_push_int(map.len() as i64);
 
@@ -174,7 +170,6 @@ impl ScriptBuilder {
 
                 // 3. Emit key-value pairs (production map population)
                 for (key, value) in map {
-                    // Duplicate the map for each insertion
                     self.emit_opcode(OpCode::DUP);
 
                     // Push key and value onto stack
@@ -265,7 +260,7 @@ impl Default for ScriptBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_emit_opcode() {
@@ -301,7 +296,6 @@ mod tests {
         assert_eq!(script[1], OpCode::PUSH0 as u8);
         assert_eq!(script[2], OpCode::PUSH10 as u8);
 
-        // Check larger integers (implementation-dependent, so just check length)
         assert!(script.len() > 5);
     }
 
@@ -323,28 +317,20 @@ mod tests {
         let small_array = [1, 2, 3];
         builder.emit_push_byte_array(&small_array);
 
-        // Medium array (uses PUSHDATA1 for 76-255 bytes)
         let medium_array = [0; 200];
         builder.emit_push_byte_array(&medium_array);
 
-        // Large array (uses PUSHDATA2 for 256+ bytes)
         let large_array = [0; 65000];
         builder.emit_push_byte_array(&large_array);
 
         let script = builder.to_array();
 
-        // Check small array (direct push: length + data)
-        // For arrays <= 75 bytes, Neo uses direct push opcodes
         assert_eq!(script[0], 3); // Length as opcode
         assert_eq!(&script[1..4], &[1, 2, 3]);
 
-        // Check medium array (PUSHDATA1 + length + data)
-        // Offset: 1 (length) + 3 (small array data) = 4
         assert_eq!(script[4], OpCode::PUSHDATA1 as u8);
         assert_eq!(script[5], 200); // Length as single byte
 
-        // Check large array (PUSHDATA2 + length + data)
-        // Offset: 4 (small array) + 2 (PUSHDATA1 header) + 200 (medium array data) = 206
         let large_array_offset = 4 + 2 + 200;
         assert_eq!(script[large_array_offset], OpCode::PUSHDATA2 as u8);
         assert_eq!(script[large_array_offset + 1], (65000 & 0xFF) as u8);
@@ -374,8 +360,7 @@ mod tests {
         // Check length - "System.Runtime.Log" is 18 characters
         assert_eq!(script[1], 18);
 
-        // Check API string
-        let api_bytes = &script[2..20];
+        let api_bytes = &script[2..ADDRESS_SIZE];
         assert_eq!(api_bytes, b"System.Runtime.Log");
     }
 

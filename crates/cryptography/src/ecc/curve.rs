@@ -31,24 +31,23 @@ pub struct ECCurve {
 impl ECCurve {
     /// Returns the secp256r1 (P-256) curve parameters.
     pub fn secp256r1() -> Self {
-        // Production-ready secp256r1 parameters (matches C# ECCurve.Secp256r1 exactly)
         Self {
             a: BigInt::from(-3),
             b: BigInt::parse_bytes(
                 b"5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b",
                 16,
             )
-            .unwrap(),
+            .expect("Operation failed"),
             p: BigInt::parse_bytes(
                 b"ffffffff00000001000000000000000000000000ffffffffffffffffffffffff",
                 16,
             )
-            .unwrap(),
+            .expect("Operation failed"),
             n: BigInt::parse_bytes(
                 b"ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
                 16,
             )
-            .unwrap(),
+            .expect("Operation failed"),
             g: [
                 0x04, // Uncompressed point format
                 0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47, 0xf8, 0xbc, 0xe6, 0xe5, 0x63, 0xa4,
@@ -64,7 +63,6 @@ impl ECCurve {
 
     /// Returns the secp256k1 curve parameters.
     pub fn secp256k1() -> Self {
-        // Production-ready secp256k1 parameters (matches C# ECCurve.Secp256k1 exactly)
         Self {
             a: BigInt::from(0),
             b: BigInt::from(7),
@@ -72,12 +70,12 @@ impl ECCurve {
                 b"fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f",
                 16,
             )
-            .unwrap(),
+            .expect("Operation failed"),
             n: BigInt::parse_bytes(
                 b"fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
                 16,
             )
-            .unwrap(),
+            .expect("Operation failed"),
             g: [
                 0x04, // Uncompressed point format
                 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce, 0x87,

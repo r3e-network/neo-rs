@@ -66,8 +66,6 @@ impl Default for JObject {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_jobject_basic() {
         let mut obj = JObject::new();
@@ -80,7 +78,7 @@ mod tests {
         assert_eq!(obj.properties().len(), 1);
         assert!(obj.contains_property("test"));
 
-        let value = obj.get("test").unwrap();
+        let value = obj.get("test").ok_or_else(|| anyhow!("Key not found"))?;
         assert_eq!(value.as_string(), "value");
     }
 

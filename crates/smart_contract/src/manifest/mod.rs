@@ -9,7 +9,9 @@ pub mod contract_manifest;
 pub mod contract_permission;
 pub mod wildcard_container;
 
-pub use contract_abi::{ContractAbi, ContractEvent, ContractMethod, ContractParameter};
+pub use contract_abi::{
+    ContractAbi, ContractEvent, ContractMethod, ContractParameter, ContractParameterType,
+};
 pub use contract_group::ContractGroup;
 pub use contract_manifest::ContractManifest;
 pub use contract_permission::{ContractPermission, ContractPermissionDescriptor};

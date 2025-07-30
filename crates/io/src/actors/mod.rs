@@ -131,15 +131,12 @@ pub fn spawn<A: Actor>(actor: A, mailbox_size: usize) -> ActorHandle<A::Message>
 async fn run_actor<A: Actor>(mut actor: A, mut receiver: Receiver<A::Message>) {
     while let Some(message) = receiver.recv().await {
         let _response = actor.handle(message).await;
-        // Production-ready response handling (matches C# Actor.ProcessMessage exactly)
 
-        // Production-ready actor response handling (matches C# Actor.ProcessMessage exactly)
         // 1. Send response back to the sender via response channel (handled by actor's handle method)
         // 2. Update actor statistics (message count, processing time) - would be implemented with metrics
         // 3. Handle any errors in message processing - errors are propagated through the Result type
         // 4. Log successful message processing - would integrate with logging system
 
-        // The response is properly handled by the actor's handle method which returns the appropriate result
         // This follows the standard actor model pattern used in C# Neo implementation
     }
 }

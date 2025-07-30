@@ -259,7 +259,6 @@ mod peer_tests {
         // Verify address tracking
         assert_eq!(peer.known_addresses().len(), 3);
 
-        // Test address filtering (should not announce back to sender)
         let own_address = create_network_address("192.168.1.100", 10333);
         let filtered_addresses = peer.filter_addresses(&[own_address]);
         assert_eq!(filtered_addresses.len(), 0); // Should be filtered out
@@ -466,7 +465,6 @@ mod peer_tests {
             })
             .collect::<Vec<_>>();
 
-        // Wait for all threads
         for handle in handles {
             handle.join().unwrap();
         }

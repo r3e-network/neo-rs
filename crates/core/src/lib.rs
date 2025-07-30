@@ -1,12 +1,5 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// lib.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! # Neo Core
@@ -17,7 +10,9 @@
 pub mod big_decimal;
 pub mod block;
 pub mod builders;
+pub mod constants;
 pub mod error;
+pub mod error_utils;
 pub mod events;
 pub mod extensions;
 pub mod hardfork;
@@ -52,7 +47,6 @@ pub use witness::Witness;
 pub use witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
 pub use witness_scope::WitnessScope;
 
-// Global singletons (matches C# Blockchain.Singleton and Store.Singleton exactly)
 use once_cell::sync::Lazy;
 use std::sync::{Arc, RwLock};
 
@@ -66,7 +60,6 @@ pub static GLOBAL_STORE: Lazy<
     Arc<RwLock<Option<Box<dyn transaction::blockchain::PersistenceStore + Send + Sync>>>>,
 > = Lazy::new(|| Arc::new(RwLock::new(None)));
 
-// Add IVerifiable trait for compatibility
 pub trait IVerifiable: std::any::Any {
     /// Verify the object
     fn verify(&self) -> bool;

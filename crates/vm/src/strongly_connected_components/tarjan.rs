@@ -3,6 +3,7 @@
 //! This module provides an implementation of Tarjan's algorithm for finding
 //! strongly connected components in a directed graph.
 
+use crate::error::VmError;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
@@ -78,7 +79,6 @@ where
 
     /// Performs the strong connect operation on a vertex.
     fn strong_connect(&mut self, vertex: T) {
-        // Set the depth index for vertex
         self.index.insert(vertex.clone(), self.current_index);
         self.lowlink.insert(vertex.clone(), self.current_index);
         self.current_index += 1;
@@ -89,7 +89,6 @@ where
         if let Some(successors) = self.graph.get(&vertex).cloned() {
             for successor in successors {
                 if !self.index.contains_key(&successor) {
-                    // Successor has not yet been visited; recurse on it
                     self.strong_connect(successor.clone());
 
                     // Update lowlink of vertex
@@ -107,14 +106,13 @@ where
             }
         }
 
-        // If vertex is a root node, pop the stack and generate an SCC
         let vertex_index = self.index.get(&vertex).cloned().unwrap_or(0);
         let vertex_lowlink = self.lowlink.get(&vertex).cloned().unwrap_or(0);
 
         if vertex_index == vertex_lowlink {
             let mut component = Vec::new();
             loop {
-                let w = self.stack.pop().unwrap();
+                let w = self.stack.pop().expect("Stack should not be empty");
                 self.on_stack.remove(&w);
                 component.push(w.clone());
                 if w == vertex {
@@ -128,7 +126,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_tarjan_simple() {

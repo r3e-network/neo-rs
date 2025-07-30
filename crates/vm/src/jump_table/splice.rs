@@ -161,7 +161,6 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())
@@ -226,7 +225,6 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())
@@ -284,7 +282,6 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())
@@ -342,7 +339,6 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
         }
     };
 
-    // Push the result onto the stack
     context.push(result)?;
 
     Ok(())

@@ -61,7 +61,6 @@ fn tuck(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if there are at least 2 items on the stack
     if context.evaluation_stack().len() < 2 {
         return Err(VmError::stack_underflow_msg(0, 0));
     }
@@ -85,7 +84,6 @@ fn over(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if there are at least 2 items on the stack
     if context.evaluation_stack().len() < 2 {
         return Err(VmError::stack_underflow_msg(0, 0));
     }
@@ -106,7 +104,6 @@ fn rot(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if there are at least 3 items on the stack
     if context.evaluation_stack().len() < 3 {
         return Err(VmError::stack_underflow_msg(0, 0));
     }
@@ -160,7 +157,6 @@ fn nip(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Check if there are at least 2 items on the stack
     if context.evaluation_stack().len() < 2 {
         return Err(VmError::stack_underflow_msg(0, 0));
     }
@@ -189,7 +185,6 @@ fn xdrop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
 
-    // Check if there are enough items on the stack
     if context.evaluation_stack().len() <= n {
         return Err(VmError::stack_underflow_msg(0, 0));
     }
@@ -238,7 +233,6 @@ fn pick(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
 
-    // Check if there are enough items on the stack
     if context.evaluation_stack().len() <= n {
         return Err(VmError::stack_underflow_msg(0, 0));
     }
@@ -262,7 +256,6 @@ fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     // Pop the index from the stack
     let n = context.pop()?.as_int()?;
 
-    // Check for negative values (matches C# behavior exactly)
     if n.sign() == Sign::Minus {
         return Err(VmError::invalid_operation_msg(format!(
             "The negative value {} is invalid for OpCode.ROLL",
@@ -274,12 +267,10 @@ fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid index"))?;
 
-    // If n is 0, do nothing (matches C# behavior)
     if n == 0 {
         return Ok(());
     }
 
-    // Check if there are enough items on the stack
     if context.evaluation_stack().len() <= n {
         return Err(VmError::stack_underflow_msg(0, 0));
     }
@@ -311,7 +302,6 @@ fn reverse3(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Reverse the top 3 items (matches C# behavior exactly)
     context.evaluation_stack_mut().reverse(3)?;
 
     Ok(())
@@ -324,7 +314,6 @@ fn reverse4(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Reverse the top 4 items (matches C# behavior exactly)
     context.evaluation_stack_mut().reverse(4)?;
 
     Ok(())
@@ -340,7 +329,6 @@ fn reversen(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
     // Pop the count from the stack
     let n = context.pop()?.as_int()?;
 
-    // Convert to usize, but first check for negative values (matches C# behavior exactly)
     if n.sign() == Sign::Minus {
         return Err(VmError::invalid_operation_msg(format!(
             "Reverse count out of range: {}",
@@ -352,7 +340,6 @@ fn reversen(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .to_usize()
         .ok_or_else(|| VmError::invalid_operation_msg("Invalid count"))?;
 
-    // Reverse the top n items (matches C# behavior exactly)
     context.evaluation_stack_mut().reverse(n)?;
 
     Ok(())

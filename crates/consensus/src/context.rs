@@ -170,7 +170,7 @@ impl ConsensusRound {
             phase: ConsensusPhase::Initial,
             started_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             primary_validator: None,
             prepare_request: None,
@@ -248,10 +248,10 @@ impl ConsensusRound {
     pub fn duration(&self) -> Duration {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
-        Duration::from_secs(now - self.started_at)
+        Duration::from_secs(now.saturating_sub(self.started_at))
     }
 
     /// Resets the round for a new view
@@ -260,7 +260,7 @@ impl ConsensusRound {
         self.phase = ConsensusPhase::Initial;
         self.started_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         self.primary_validator = None;
         self.prepare_request = None;
@@ -317,7 +317,7 @@ impl Default for ContextStats {
             avg_round_duration_ms: 0.0,
             current_round_start: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_millis() as u64,
         }
     }
@@ -411,7 +411,7 @@ impl ConsensusContext {
         stats.rounds_participated += 1;
         stats.current_round_start = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis() as u64;
 
         Ok(())
@@ -578,7 +578,7 @@ impl ConsensusContext {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ConsensusContext, ConsensusMessage, ConsensusState};
 
     #[test]
     fn test_consensus_phase() {
@@ -637,7 +637,9 @@ mod tests {
         let context = ConsensusContext::new(config, my_hash, None);
 
         // Test starting a round
-        context.start_round(BlockIndex::new(100)).unwrap();
+        context
+            .start_round(BlockIndex::new(100))
+            .expect("consensus operation should succeed");
 
         let round = context.get_current_round();
         assert_eq!(round.block_index.value(), 100);
@@ -646,7 +648,7 @@ mod tests {
         // Test changing view
         context
             .change_view(ViewNumber::new(1), ViewChangeReason::PrepareRequestTimeout)
-            .unwrap();
+            .expect("consensus operation should succeed");
 
         let round = context.get_current_round();
         assert_eq!(round.view_number.value(), 1);

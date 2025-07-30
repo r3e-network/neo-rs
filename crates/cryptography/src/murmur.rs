@@ -2,7 +2,7 @@
 //!
 //! This module provides Murmur32 and Murmur128 hash functions.
 
-use neo_config::{HASH_SIZE, SECONDS_PER_BLOCK};
+// No config imports needed - using literal values
 
 /// Computes the Murmur32 hash of the given data.
 ///
@@ -17,7 +17,7 @@ use neo_config::{HASH_SIZE, SECONDS_PER_BLOCK};
 pub fn murmur32(data: &[u8], seed: u32) -> u32 {
     const C1: u32 = 0xcc9e2d51;
     const C2: u32 = 0x1b873593;
-    const R1: u32 = SECONDS_PER_BLOCK;
+    const R1: u32 = 15;
     const R2: u32 = 13;
     const M: u32 = 5;
     const N: u32 = 0xe6546b64;
@@ -130,7 +130,7 @@ pub fn murmur128(data: &[u8], seed: u32) -> (u64, u64) {
             data[i * 16 + 12],
             data[i * 16 + 13],
             data[i * 16 + 14],
-            data[i * 16 + SECONDS_PER_BLOCK],
+            data[i * 16 + 15],
         ]);
 
         k1 = k1.wrapping_mul(C1);
@@ -154,16 +154,16 @@ pub fn murmur128(data: &[u8], seed: u32) -> (u64, u64) {
     let mut k1 = 0u64;
     let mut k2 = 0u64;
     let offset = nblocks * 16;
-    let remaining = len & SECONDS_PER_BLOCK;
+    let remaining = len & 15;
 
-    if remaining >= SECONDS_PER_BLOCK {
+    if remaining >= 15 {
         k2 ^= (data[offset + 14] as u64) << 48;
     }
     if remaining >= 14 {
         k2 ^= (data[offset + 13] as u64) << 40;
     }
     if remaining >= 13 {
-        k2 ^= (data[offset + 12] as u64) << HASH_SIZE;
+        k2 ^= (data[offset + 12] as u64) << 32;
     }
     if remaining >= 12 {
         k2 ^= (data[offset + 11] as u64) << 24;
@@ -192,7 +192,7 @@ pub fn murmur128(data: &[u8], seed: u32) -> (u64, u64) {
         k1 ^= (data[offset + 5] as u64) << 40;
     }
     if remaining >= 5 {
-        k1 ^= (data[offset + 4] as u64) << HASH_SIZE;
+        k1 ^= (data[offset + 4] as u64) << 32;
     }
     if remaining >= 4 {
         k1 ^= (data[offset + 3] as u64) << 24;

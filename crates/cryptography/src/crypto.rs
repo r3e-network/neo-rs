@@ -6,11 +6,11 @@ use crate::ecc::ECPoint;
 use crate::hash_algorithm::HashAlgorithm;
 use crate::hasher::Hasher;
 use crate::Error;
+use neo_config::HASH_SIZE;
 use rand::{rngs::OsRng, RngCore};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-// ECDsa cache for performance optimization (matches C# implementation)
 lazy_static::lazy_static! {
     static ref ECDSA_CACHE: Mutex<HashMap<Vec<u8>, Vec<u8>>> = Mutex::new(HashMap::new());
 }
@@ -72,13 +72,13 @@ impl Crypto {
         let curve = ec_curve.unwrap_or(crate::ecc::ECCurve::secp256r1());
 
         // Validate private key length
-        if pri_key.len() != 32 {
+        if pri_key.len() != HASH_SIZE {
             return Err(Error::InvalidKey(
-                "Private key must be 32 bytes".to_string(),
+                "Private key must be HASH_SIZE bytes".to_string(),
             ));
         }
 
-        let private_key_array: [u8; 32] = pri_key
+        let private_key_array: [u8; HASH_SIZE] = pri_key
             .try_into()
             .map_err(|_| Error::InvalidKey("Invalid private key length".to_string()))?;
 
@@ -86,14 +86,8 @@ impl Crypto {
         let message_hash = Self::get_message_hash(message, hash_algorithm)?;
 
         match curve.name {
-            "secp256r1" => {
-                // Use secp256r1 (P-256) implementation
-                crate::ecdsa::ECDsa::sign(&message_hash, &private_key_array)
-            }
-            "secp256k1" => {
-                // Use secp256k1 implementation
-                crate::ecdsa::ECDsa::sign_secp256k1(&message_hash, pri_key)
-            }
+            "secp256r1" => crate::ecdsa::ECDsa::sign(&message_hash, &private_key_array),
+            "secp256k1" => crate::ecdsa::ECDsa::sign_secp256k1(&message_hash, pri_key),
             _ => Err(Error::UnsupportedAlgorithm(format!(
                 "Unsupported curve: {}",
                 curve.name
@@ -132,7 +126,6 @@ impl Crypto {
 
         match pubkey.get_curve().name {
             "secp256r1" => {
-                // Use secp256r1 (P-256) implementation
                 let pubkey_bytes = match pubkey.encode_point(false) {
                     Ok(bytes) => bytes,
                     Err(_) => return false,
@@ -141,7 +134,6 @@ impl Crypto {
                     .unwrap_or(false)
             }
             "secp256k1" => {
-                // Use secp256k1 implementation
                 let pubkey_bytes = match pubkey.encode_point(false) {
                     Ok(bytes) => bytes,
                     Err(_) => return false,
@@ -184,8 +176,8 @@ impl Crypto {
     ///
     /// # Arguments
     ///
-    /// * `signature` - Signature, either 65 bytes (r[32] || s[32] || v[1]) or 64 bytes in "compact" form (r[32] || yParityAndS[32])
-    /// * `hash` - 32-byte message hash
+    /// * `signature` - Signature, either 65 bytes (r[HASH_SIZE] || s[HASH_SIZE] || v[1]) or 64 bytes in "compact" form (r[HASH_SIZE] || yParityAndS[HASH_SIZE])
+    /// * `hash` - HASH_SIZE-byte message hash
     ///
     /// # Returns
     ///
@@ -200,20 +192,18 @@ impl Crypto {
                 "Signature must be 65 or 64 bytes".to_string(),
             ));
         }
-        if hash.len() != 32 {
+        if hash.len() != HASH_SIZE {
             return Err(Error::InvalidSignature(
-                "Message hash must be 32 bytes".to_string(),
+                "Message hash must be HASH_SIZE bytes".to_string(),
             ));
         }
 
-        // Use secp256k1 for ECRecover (matches C# implementation)
         if signature.len() == 65 {
-            // Format: r[32] || s[32] || v[1]
-            let r = &signature[0..32];
+            // Format: r[HASH_SIZE] || s[HASH_SIZE] || v[1]
+            let r = &signature[0..HASH_SIZE];
             let s = &signature[32..64];
             let v = signature[64];
 
-            // v could be 0..3 or 27..30 (Ethereum style).
             let rec_id = if v >= 27 { v - 27 } else { v };
             if rec_id > 3 {
                 return Err(Error::InvalidSignature(
@@ -223,15 +213,15 @@ impl Crypto {
 
             Self::recover_public_key_secp256k1(r, s, hash, rec_id)
         } else {
-            // 64 bytes "compact" format: r[32] || yParityAndS[32]
-            let r = &signature[0..32];
+            // 64 bytes "compact" format: r[HASH_SIZE] || yParityAndS[HASH_SIZE]
+            let r = &signature[0..HASH_SIZE];
             let y_parity_and_s = &signature[32..64];
 
             // Extract yParity from the top bit of s
             let y_parity = (y_parity_and_s[0] & 0x80) != 0;
 
             // Create s without the top bit
-            let mut s = [0u8; 32];
+            let mut s = [0u8; HASH_SIZE];
             s.copy_from_slice(y_parity_and_s);
             s[0] &= 0x7F; // Clear the top bit
 
@@ -267,7 +257,7 @@ impl Crypto {
 
         // Create signature data
         let mut sig_data = [0u8; 64];
-        sig_data[0..32].copy_from_slice(r_bytes);
+        sig_data[0..HASH_SIZE].copy_from_slice(r_bytes);
         sig_data[32..64].copy_from_slice(s_bytes);
 
         // Create recoverable signature
@@ -420,20 +410,18 @@ impl Crypto {
 
         // Check cache first
         {
-            let cache = ECDSA_CACHE.lock().unwrap();
+            let cache = ECDSA_CACHE.lock().map_err(|_| Error::LockError)?;
             if let Some(cached) = cache.get(&key) {
                 return Ok(cached.clone());
             }
         }
 
-        // Create new ECDSA object (production implementation)
         // In production, this would contain the actual ECDSA context and validation state
-        // For compatibility with the C# implementation, we store the encoded public key
         let ecdsa_data = key.clone();
 
         // Add to cache
         {
-            let mut cache = ECDSA_CACHE.lock().unwrap();
+            let mut cache = ECDSA_CACHE.lock().map_err(|_| Error::LockError)?;
             cache.insert(key, ecdsa_data.clone());
         }
 
@@ -463,8 +451,6 @@ impl Crypto {
         let secp256k1_public_key = Secp256k1PublicKey::from_slice(public_key)
             .map_err(|e| Error::InvalidKey(format!("Invalid public key: {e}")))?;
 
-        // Compute shared secret using ECDH (multiply public key by private key)
-        // For ECDH, we need to use the ecdh module from secp256k1
         use secp256k1::ecdh::SharedSecret;
 
         let shared_secret = SharedSecret::new(&secp256k1_public_key, &secret_key);
@@ -590,17 +576,15 @@ impl Crypto {
     ///
     /// The decompressed public key or an error
     pub fn decompress_secp256k1_key(x_coord_bytes: &[u8], y_bit: bool) -> Result<Vec<u8>, Error> {
-        if x_coord_bytes.len() != 32 {
+        if x_coord_bytes.len() != HASH_SIZE {
             return Err(Error::InvalidKey(
-                "X coordinate must be 32 bytes".to_string(),
+                "X coordinate must be HASH_SIZE bytes".to_string(),
             ));
         }
 
-        // Create compressed key format: prefix (0x02 or 0x03) + x coordinate
         let mut compressed_key = vec![if y_bit { 0x03 } else { 0x02 }];
         compressed_key.extend_from_slice(x_coord_bytes);
 
-        // Use secp256k1 to decompress
         use secp256k1::PublicKey as Secp256k1PublicKey;
 
         match Secp256k1PublicKey::from_slice(&compressed_key) {
@@ -637,7 +621,7 @@ impl Crypto {
     ///
     /// true if the hash format is valid; otherwise, false
     pub fn validate_hash_format(hash: &[u8]) -> bool {
-        // Standard message hash is 32 bytes
-        hash.len() == 32
+        // Standard message hash is HASH_SIZE bytes
+        hash.len() == HASH_SIZE
     }
 }

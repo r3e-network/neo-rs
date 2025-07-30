@@ -7,8 +7,11 @@ use crate::interop::InteropService;
 use crate::manifest::ContractAbi;
 use crate::manifest::ContractManifest;
 use crate::{Error, Result};
+use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE, SECONDS_PER_BLOCK};
 use neo_core::UInt160;
+use neo_vm::TriggerType;
 use serde_json;
+use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicI32, Ordering};
 
 /// Service for calling other contracts.
@@ -20,7 +23,7 @@ impl InteropService for CallService {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -31,7 +34,7 @@ impl InteropService for CallService {
         }
 
         // Parse contract hash
-        if args[0].len() != 20 {
+        if args[0].len() != ADDRESS_SIZE {
             return Err(Error::InteropServiceError(
                 "Invalid contract hash length".to_string(),
             ));
@@ -43,10 +46,8 @@ impl InteropService for CallService {
         let method = String::from_utf8(args[1].clone())
             .map_err(|_| Error::InteropServiceError("Invalid UTF-8 in method name".to_string()))?;
 
-        // Parse arguments (remaining args)
         let call_args = args[2..].to_vec();
 
-        // Check if the contract exists
         if engine.get_contract(&contract_hash).is_none() {
             return Err(Error::InteropServiceError(format!(
                 "Contract not found: {}",
@@ -68,7 +69,7 @@ impl InteropService for GetContractService {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -78,7 +79,7 @@ impl InteropService for GetContractService {
             ));
         }
 
-        if args[0].len() != 20 {
+        if args[0].len() != ADDRESS_SIZE {
             return Err(Error::InteropServiceError(
                 "Invalid contract hash length".to_string(),
             ));
@@ -89,8 +90,6 @@ impl InteropService for GetContractService {
 
         match engine.get_contract(&contract_hash) {
             Some(contract) => {
-                // Production-ready contract state serialization (matches C# System.Contract.GetContract exactly)
-
                 // 1. Serialize contract manifest
                 let manifest_json = serde_json::to_string(&contract.manifest)
                     .map_err(|e| Error::SerializationError(e.to_string()))?;
@@ -98,13 +97,10 @@ impl InteropService for GetContractService {
                 // 2. Create contract state structure (matches C# ContractState serialization)
                 let mut contract_state = Vec::new();
 
-                // Contract ID (4 bytes)
                 contract_state.extend_from_slice(&contract.id.to_le_bytes());
 
-                // Update counter (2 bytes)
                 contract_state.extend_from_slice(&contract.update_counter.to_le_bytes());
 
-                // Contract hash (20 bytes)
                 contract_state.extend_from_slice(contract.hash.as_bytes());
 
                 // NEF data length + NEF data
@@ -117,7 +113,7 @@ impl InteropService for GetContractService {
                 contract_state.extend_from_slice(&(manifest_bytes.len() as u32).to_le_bytes());
                 contract_state.extend_from_slice(manifest_bytes);
 
-                println!(
+                log::info!(
                     "Contract state serialized: {} bytes for contract {}",
                     contract_state.len(),
                     contract.hash
@@ -143,8 +139,6 @@ impl InteropService for CreateService {
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        // Production-ready contract creation (matches C# ContractManagement.Deploy exactly)
-
         if args.len() < 2 {
             return Err(Error::InteropServiceError(
                 "Deploy requires nefFile and manifest arguments".to_string(),
@@ -238,9 +232,10 @@ impl InteropService for CreateService {
         // 14. Return contract state as serialized data
         let contract_serialized = self.serialize_contract_state(&contract_state)?;
 
-        println!(
+        log::info!(
             "Contract deployed successfully: {} (ID: {})",
-            contract_hash, contract_id
+            contract_hash,
+            contract_id
         );
         Ok(contract_serialized)
     }
@@ -254,7 +249,6 @@ impl CreateService {
         nef_size: usize,
         manifest_size: usize,
     ) -> Result<i64> {
-        // Production-ready storage fee calculation (matches C# ApplicationEngine.StoragePrice exactly)
         let storage_price_per_byte = 1000; // Default storage price when engine method is available
         let total_size = nef_size + manifest_size;
         Ok(storage_price_per_byte * total_size as i64)
@@ -262,21 +256,18 @@ impl CreateService {
 
     /// Gets minimum deployment fee (matches C# GetMinimumDeploymentFee exactly)
     fn get_minimum_deployment_fee(&self, _engine: &ApplicationEngine) -> Result<i64> {
-        // Production-ready minimum fee retrieval (matches C# exactly)
         let default_fee = 10_00000000i64; // 10 GAS in datoshi
         Ok(default_fee)
     }
 
     /// Parses NEF file from bytes (matches C# NefFile.Parse exactly)
     fn parse_nef_file(&self, nef_data: &[u8]) -> Result<NefFile> {
-        // Production-ready NEF parsing (matches C# NefFile deserialization exactly)
         NefFile::parse(nef_data)
             .map_err(|e| Error::InteropServiceError(format!("Invalid NEF file: {}", e)))
     }
 
     /// Parses contract manifest from bytes (matches C# ContractManifest.Parse exactly)
     fn parse_contract_manifest(&self, manifest_data: &[u8]) -> Result<ContractManifest> {
-        // Production-ready manifest parsing (matches C# ContractManifest.Parse exactly)
         let manifest_json = String::from_utf8(manifest_data.to_vec()).map_err(|_| {
             Error::InteropServiceError("Invalid manifest UTF-8 encoding".to_string())
         })?;
@@ -287,8 +278,6 @@ impl CreateService {
 
     /// Validates script against ABI (matches C# Helper.Check exactly)
     fn validate_script_against_abi(&self, script: &[u8], _abi: &ContractAbi) -> Result<()> {
-        // Production-ready script validation (matches C# Helper.Check exactly)
-
         // 1. Basic script validation
         if script.is_empty() {
             return Err(Error::InteropServiceError(
@@ -297,7 +286,7 @@ impl CreateService {
         }
 
         // 2. Validate script size limits
-        if script.len() > 1024 * 1024 {
+        if script.len() > MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE {
             // 1MB limit
             return Err(Error::InteropServiceError("Script too large".to_string()));
         }
@@ -309,7 +298,7 @@ impl CreateService {
             ));
         }
 
-        println!("Script validation passed: {} bytes", script.len());
+        log::info!("Script validation passed: {} bytes", script.len());
         Ok(())
     }
 
@@ -320,9 +309,6 @@ impl CreateService {
         nef_checksum: u32,
         manifest_name: &str,
     ) -> Result<UInt160> {
-        // Production-ready contract hash calculation (matches C# Helper.GetContractHash exactly)
-        use sha2::{Digest, Sha256};
-
         let mut hasher = Sha256::new();
 
         // Hash components in the same order as C# Neo
@@ -331,8 +317,8 @@ impl CreateService {
         hasher.update(manifest_name.as_bytes()); // Manifest name
 
         let hash_result = hasher.finalize();
-        let mut hash_bytes = [0u8; 20];
-        hash_bytes.copy_from_slice(&hash_result[..20]);
+        let mut hash_bytes = [0u8; ADDRESS_SIZE];
+        hash_bytes.copy_from_slice(&hash_result[..ADDRESS_SIZE]);
 
         Ok(UInt160::from_bytes(&hash_bytes)?)
     }
@@ -343,9 +329,6 @@ impl CreateService {
         engine: &ApplicationEngine,
         contract_hash: &UInt160,
     ) -> Result<bool> {
-        // Production-ready blocking check (matches C# Policy.IsBlocked exactly)
-        // This implements the C# logic: NativeContract.Policy.IsBlocked(snapshot, hash)
-
         // 1. Get Policy contract instance
         let policy_contract_hash = UInt160::parse("0xcc5e4edd78e6d26a7b32a45c3d350c343156b62d")
             .unwrap_or_else(|_| UInt160::zero());
@@ -362,7 +345,6 @@ impl CreateService {
 
             // 4. Check if contract is in blocked list
             if let Some(blocked_data) = engine.get_storage_item(&storage_context, &blocked_key) {
-                // Contract is blocked if key exists with non-zero value
                 return Ok(!blocked_data.is_empty() && blocked_data[0] != 0);
             }
         }
@@ -373,10 +355,6 @@ impl CreateService {
 
     /// Gets next available contract ID (matches C# GetNextAvailableId exactly)
     fn get_next_available_contract_id(&self, engine: &mut ApplicationEngine) -> Result<i32> {
-        // Production-ready ID generation (matches C# GetNextAvailableId exactly)
-        // This implements the C# logic: ContractManagement.GetNextAvailableId()
-
-        // Thread-safe atomic counter for contract IDs
         static NEXT_CONTRACT_ID: AtomicI32 = AtomicI32::new(1);
 
         // 1. Get current highest contract ID from storage (production implementation)
@@ -401,14 +379,12 @@ impl CreateService {
         // 5. Store the new max ID for persistence (production implementation)
         self.update_max_contract_id_in_storage(engine, next_id)?;
 
-        println!("Generated contract ID: {} (thread-safe atomic)", next_id);
+        log::info!("Generated contract ID: {} (thread-safe atomic)", next_id);
         Ok(next_id)
     }
 
     /// Gets maximum contract ID from storage (production implementation)
     fn get_max_contract_id_from_storage(&self, engine: &ApplicationEngine) -> Result<i32> {
-        // Production-ready max ID retrieval (matches C# storage exactly)
-
         // 1. Create storage key for max contract ID
         let max_id_key = b"max_contract_id";
 
@@ -446,8 +422,6 @@ impl CreateService {
         engine: &mut ApplicationEngine,
         new_max_id: i32,
     ) -> Result<()> {
-        // Production-ready max ID storage (matches C# storage exactly)
-
         // 1. Create storage key for max contract ID
         let max_id_key = b"max_contract_id";
         let max_id_value = new_max_id.to_le_bytes().to_vec();
@@ -476,8 +450,6 @@ impl CreateService {
         contract_hash: &UInt160,
         _engine: &ApplicationEngine,
     ) -> Result<bool> {
-        // Production-ready manifest validation (matches C# ContractManifest.IsValid exactly)
-
         // 1. Validate manifest name
         if manifest.name.is_empty() || manifest.name.len() > 64 {
             return Ok(false);
@@ -488,7 +460,7 @@ impl CreateService {
             return Ok(false);
         }
 
-        println!("Manifest validation passed for contract: {}", contract_hash);
+        log::info!("Manifest validation passed for contract: {}", contract_hash);
         Ok(true)
     }
 
@@ -499,10 +471,10 @@ impl CreateService {
         contract_id: i32,
         contract_hash: &UInt160,
     ) -> Result<()> {
-        // Production-ready hash mapping storage (matches C# exactly)
-        println!(
+        log::info!(
             "Stored contract hash mapping: ID {} -> {}",
-            contract_id, contract_hash
+            contract_id,
+            contract_hash
         );
         Ok(())
     }
@@ -515,8 +487,6 @@ impl CreateService {
         _data: &[u8],
         is_update: bool,
     ) -> Result<()> {
-        // Production-ready deploy method invocation (matches C# OnDeployAsync exactly)
-
         // 1. Check if contract has _deploy method
         if let Some(_deploy_method) = contract
             .manifest
@@ -525,8 +495,8 @@ impl CreateService {
             .iter()
             .find(|m| m.name == "_deploy")
         {
-            println!("Calling _deploy method for contract: {}", contract.hash);
-            println!(
+            log::info!("Calling _deploy method for contract: {}", contract.hash);
+            log::info!(
                 "_deploy method invoked successfully (update: {})",
                 is_update
             );
@@ -537,7 +507,6 @@ impl CreateService {
 
     /// Validates script opcodes (basic validation)
     fn validate_script_opcodes(&self, script: &[u8]) -> Result<bool> {
-        // Basic opcode validation - check for obviously invalid opcodes
         for &opcode in script {
             if opcode > 0xFF {
                 return Ok(false);
@@ -551,13 +520,10 @@ impl CreateService {
         // Production-ready contract state serialization
         let mut serialized = Vec::new();
 
-        // Contract ID (4 bytes)
         serialized.extend_from_slice(&contract.id.to_le_bytes());
 
-        // Update counter (2 bytes)
         serialized.extend_from_slice(&contract.update_counter.to_le_bytes());
 
-        // Contract hash (20 bytes)
         serialized.extend_from_slice(contract.hash.as_bytes());
 
         Ok(serialized)
@@ -608,7 +574,7 @@ impl InteropService for DestroyService {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, _args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -654,11 +620,6 @@ impl ContractService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::contract_state::{ContractState, NefFile};
-    use crate::manifest::ContractManifest;
-    use neo_vm::TriggerType;
-
     #[test]
     fn test_get_contract_service() {
         let service = GetContractService;
@@ -670,7 +631,7 @@ mod tests {
         let args = vec![contract_hash.as_bytes().to_vec()];
         let result = service.execute(&mut engine, &args);
         assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        assert!(result?.is_empty());
 
         // Add a contract and test again
         let nef = NefFile::new("neo-core-v3.0".to_string(), vec![0x40]);
@@ -680,9 +641,9 @@ mod tests {
 
         let result = service.execute(&mut engine, &args);
         assert!(result.is_ok());
-        let contract_data = result.unwrap();
+        let contract_data = result?;
         assert!(!contract_data.is_empty()); // Should return serialized contract state
-        assert!(contract_data.len() > 20); // Should be more than just the hash
+        assert!(contract_data.len() > ADDRESS_SIZE); // Should be more than just the hash
     }
 
     #[test]
@@ -708,11 +669,11 @@ mod tests {
     fn test_service_names_and_costs() {
         let call_service = CallService;
         assert_eq!(call_service.name(), "System.Contract.Call");
-        assert_eq!(call_service.gas_cost(), 1 << 15);
+        assert_eq!(call_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
 
         let get_service = GetContractService;
         assert_eq!(get_service.name(), "System.Contract.GetContract");
-        assert_eq!(get_service.gas_cost(), 1 << 15);
+        assert_eq!(get_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
 
         let create_service = CreateService;
         assert_eq!(create_service.name(), "System.Contract.Create");

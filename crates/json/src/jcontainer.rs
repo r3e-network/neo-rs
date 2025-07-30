@@ -20,7 +20,6 @@ pub trait JContainer {
     }
 }
 
-// Implementation for JArray
 impl JContainer for crate::JArray {
     fn clear_container(&mut self) {
         self.clear();
@@ -33,7 +32,6 @@ impl JContainer for crate::JArray {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::{JArray, JToken};
 
     #[test]

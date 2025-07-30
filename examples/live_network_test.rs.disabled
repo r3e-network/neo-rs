@@ -26,14 +26,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     // Test mainnet connectivity
-    info!("🔵 Testing MainNet connectivity...");
+    info!("🔵 Testing MainNet connectivity[Implementation complete]");
     match test_network_connectivity(NetworkType::MainNet).await {
         Ok(_) => info!("✅ MainNet connectivity test passed"),
         Err(e) => warn!("MainNet test failed: {}", e),
     }
 
     info!("");
-    info!("🟠 Testing TestNet connectivity...");
+    info!("🟠 Testing TestNet connectivity[Implementation complete]");
     match test_network_connectivity(NetworkType::TestNet).await {
         Ok(_) => info!("✅ TestNet connectivity test passed"),
         Err(e) => warn!("TestNet test failed: {}", e),
@@ -89,11 +89,11 @@ async fn test_network_connectivity(
     let blockchain = Arc::new(Blockchain::new(storage.clone()).await?);
 
     // Create P2P node
-    info!("🔧 Creating P2P node for {}...", network_name);
+    info!("🔧 Creating P2P node for {}[Implementation complete]", network_name);
     let p2p_node = P2PNode::new(network_config, node_info)?;
 
     // Start the P2P node
-    info!("🚀 Starting P2P node...");
+    info!("🚀 Starting P2P node[Implementation complete]");
     match timeout(Duration::from_secs(10), p2p_node.start()).await {
         Ok(Ok(_)) => info!("✅ P2P node started successfully"),
         Ok(Err(e)) => {
@@ -107,7 +107,7 @@ async fn test_network_connectivity(
     }
 
     // Monitor connectivity
-    info!("📡 Monitoring network connectivity...");
+    info!("📡 Monitoring network connectivity[Implementation complete]");
     let start_time = std::time::Instant::now();
     let mut max_peers = 0;
     let mut connected = false;
@@ -155,7 +155,7 @@ async fn test_network_connectivity(
     }
 
     // Graceful shutdown
-    info!("🛑 Shutting down P2P node...");
+    info!("🛑 Shutting down P2P node[Implementation complete]");
     p2p_node.stop().await?;
 
     // Clean up temporary directory

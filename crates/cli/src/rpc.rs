@@ -3,18 +3,19 @@
 //! This module provides a complete production-ready JSON-RPC server for the Neo CLI
 //! that implements all standard Neo RPC methods exactly like the C# Neo node.
 
+use crate::node::NeoNode;
 use anyhow::Result;
+use neo_config::MILLISECONDS_PER_BLOCK;
+use neo_core::{Transaction, UInt160, UInt256};
+use neo_ledger::{Block, Blockchain};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
-
-use crate::node::NeoNode;
-use neo_core::{Transaction, UInt160, UInt256};
-use neo_ledger::{Block, Blockchain};
-
 /// Complete JSON-RPC server implementation - Production Ready
 pub struct RpcServer {
     /// Neo node instance
@@ -261,15 +262,12 @@ impl RpcServer {
         info!("Starting JSON-RPC server on {}", self.listen_address);
         *self.running.write().await = true;
 
-        // Clone values for the spawned task
         let node = self.node.clone();
         let running = self.running.clone();
         let listen_address = self.listen_address;
 
         // Spawn the server task
         let handle = tokio::spawn(async move {
-            use tokio::net::TcpListener;
-
             let listener = match TcpListener::bind(listen_address).await {
                 Ok(listener) => {
                     info!("✅ JSON-RPC server listening on {}", listen_address);
@@ -322,8 +320,6 @@ impl RpcServer {
         node: Arc<NeoNode>,
         running: Arc<RwLock<bool>>,
     ) {
-        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-
         let (reader, mut writer) = stream.into_split();
         let mut buf_reader = BufReader::new(reader);
         let mut line = String::new();
@@ -406,15 +402,10 @@ impl RpcServer {
         match method {
             // Blockchain methods
             "getbestblockhash" => {
-                // Production-ready best block hash retrieval (matches C# RpcServer.GetBestBlockHash exactly)
                 // This implements the C# logic: Blockchain.Singleton.CurrentSnapshot.CurrentBlockHash
                 match node.get_best_block_hash().await {
-                    Ok(hash) => {
-                        // Return actual best block hash (production accuracy)
-                        Ok(json!(format!("0x{}", hash)))
-                    }
+                    Ok(hash) => Ok(json!(format!("0x{}", hash))),
                     Err(_) => {
-                        // Fallback to genesis block hash for robustness (production safety)
                         let genesis_hash =
                             "0x0000000000000000000000000000000000000000000000000000000000000000";
                         Ok(json!(genesis_hash))
@@ -462,7 +453,6 @@ impl RpcServer {
                 // Get current block height + 1
                 match node.blockchain_height().await {
                     Ok(height) => {
-                        // Production-ready height formatting (matches C# JsonRPC getblockcount exactly)
                         // This implements the C# logic: return current blockchain height as decimal number
                         Ok(json!(height))
                     }
@@ -636,10 +626,10 @@ impl RpcServer {
                         "addressversion": 53,
                         "network": 860833102,
                         "validatorscount": 7,
-                        "msperblock": 15000,
-                        "maxtraceablocks": 2102400,
+                        "msperblock": MILLISECONDS_PER_BLOCK,
+                        "maxtraceablocks": neo_config::MAX_TRACEABLE_BLOCKS,
                         "maxvaliduntilblockincrement": 5760,
-                        "maxtransactionsperblock": 512,
+                        "maxtransactionsperblock": neo_config::MAX_TRANSACTIONS_PER_BLOCK,
                         "memorypoolmaxtransactions": 50000,
                         "initialgasdistribution": 5200000000000000i64
                     }
@@ -647,10 +637,8 @@ impl RpcServer {
             }
 
             "sendrawtransaction" => {
-                // Broadcast raw transaction (production-ready implementation)
                 if let Some(params) = params {
                     if let Some(tx_hex) = params.get(0).and_then(|v| v.as_str()) {
-                        // Production-ready transaction broadcasting (matches C# Neo RPC exactly)
                         // This implements the C# logic: RpcServer.SendRawTransaction with full validation
 
                         // 1. Decode hex transaction data (production hex parsing)

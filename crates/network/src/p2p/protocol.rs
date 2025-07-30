@@ -3,8 +3,16 @@
 //! This module implements protocol message handling exactly matching C# Neo's RemoteNode message handling.
 
 use crate::{NetworkError, NetworkMessage, NetworkResult};
+use crate::{NetworkError as Error, NetworkResult as Result};
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
+use ripemd::{Digest as RipemdDigest, Ripemd160};
+use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
 
+/// Default Neo network ports
 /// Message handler trait (matches C# Neo IMessageHandler pattern)
 #[async_trait::async_trait]
 pub trait MessageHandler: Send + Sync {
@@ -26,10 +34,6 @@ impl ProtocolUtils {
         nonce: u32,
         user_agent: &str,
     ) -> neo_core::UInt160 {
-        use ripemd::{Digest as RipemdDigest, Ripemd160};
-        use sha2::{Digest, Sha256};
-
-        // Create a unique identifier based on connection data (matches C# Neo exactly)
         let mut hasher = Sha256::new();
 
         // Add address components
@@ -42,7 +46,6 @@ impl ProtocolUtils {
         // Add user agent
         hasher.update(user_agent.as_bytes());
 
-        // Add current timestamp for uniqueness (use nanoseconds for better precision)
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
@@ -72,7 +75,6 @@ impl ProtocolUtils {
             });
         }
 
-        // Validate command length (MessageCommand is already limited to 12 bytes)
         // No need to validate since MessageCommand ensures this constraint
 
         // Validate payload size
@@ -84,7 +86,6 @@ impl ProtocolUtils {
             });
         }
 
-        // Validate checksum if payload exists
         if message.header.length > 0 {
             let message_bytes =
                 message
@@ -111,8 +112,6 @@ impl ProtocolUtils {
 
     /// Calculates message checksum (matches C# Neo checksum calculation exactly)
     pub fn calculate_checksum(payload: &[u8]) -> u32 {
-        use sha2::{Digest, Sha256};
-
         let mut hasher = Sha256::new();
         hasher.update(payload);
         let hash = hasher.finalize();
@@ -202,7 +201,6 @@ impl MessageHandler for DefaultMessageHandler {
         // Validate the message first
         ProtocolUtils::validate_message(message)?;
 
-        // Log message details for debugging
         tracing::trace!(
             "Message details - Magic: 0x{:08x}, Command: {}, Length: {}, Checksum: 0x{:08x}",
             message.header.magic,
@@ -217,9 +215,6 @@ impl MessageHandler for DefaultMessageHandler {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::net::SocketAddr;
-
     #[tokio::test]
     async fn test_peer_id_generation() {
         let address: SocketAddr = "127.0.0.1:10333".parse().unwrap();

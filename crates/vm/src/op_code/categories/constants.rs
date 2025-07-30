@@ -54,7 +54,7 @@ pub enum ConstantOpCode {
     /// ```
     PUSHINT128 = 0x04,
 
-    /// Pushes a 32-byte signed integer onto the stack.
+    /// Pushes a HASH_SIZE-byte signed integer onto the stack.
     ///
     /// # Stack
     /// ```text
@@ -270,7 +270,7 @@ pub enum ConstantOpCode {
     /// ```
     PUSH14 = 0x1E,
 
-    /// Pushes the number 15 onto the stack.
+    /// Pushes the number SECONDS_PER_BLOCK onto the stack.
     ///
     /// # Stack
     /// ```text

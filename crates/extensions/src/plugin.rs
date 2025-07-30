@@ -276,7 +276,6 @@ impl PluginManager {
                     }
                     Err(e) => {
                         warn!("Error stopping plugin {}: {}", plugin_name, e);
-                        // Continue stopping other plugins even if one fails
                     }
                 }
             }
@@ -359,7 +358,6 @@ macro_rules! register_plugin {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
     use tempfile::tempdir;
 
@@ -415,11 +413,11 @@ mod tests {
     }
 
     fn create_test_context() -> PluginContext {
-        let temp_dir = tempdir().unwrap();
+        let final_dir = tempdir().expect("Operation failed");
         PluginContext {
             neo_version: "3.6.0".to_string(),
-            config_dir: temp_dir.path().to_path_buf(),
-            data_dir: temp_dir.path().to_path_buf(),
+            config_dir: final_dir.path().to_path_buf(),
+            data_dir: final_dir.path().to_path_buf(),
             shared_data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -433,23 +431,33 @@ mod tests {
         let plugin1 = Box::new(TestPlugin::new("plugin1", 10));
         let plugin2 = Box::new(TestPlugin::new("plugin2", 5));
 
-        manager.register_plugin(plugin1).unwrap();
-        manager.register_plugin(plugin2).unwrap();
+        manager
+            .register_plugin(plugin1)
+            .expect("operation should succeed");
+        manager
+            .register_plugin(plugin2)
+            .expect("operation should succeed");
 
         assert_eq!(manager.plugin_count(), 2);
         assert!(manager.has_plugin("plugin1"));
         assert!(manager.has_plugin("plugin2"));
 
         // Initialize and start
-        manager.initialize_all().await.unwrap();
-        manager.start_all().await.unwrap();
+        manager
+            .initialize_all()
+            .await
+            .expect("operation should succeed");
+        manager.start_all().await.expect("operation should succeed");
 
         // Test event broadcasting
         let event = PluginEvent::NodeStarted;
-        manager.broadcast_event(&event).await.unwrap();
+        manager
+            .broadcast_event(&event)
+            .await
+            .expect("operation should succeed");
 
         // Stop plugins
-        manager.stop_all().await.unwrap();
+        manager.stop_all().await.expect("operation should succeed");
     }
 
     #[test]

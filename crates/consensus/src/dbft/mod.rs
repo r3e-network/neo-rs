@@ -8,10 +8,10 @@ pub mod engine;
 pub mod message_handler;
 pub mod state;
 
-// Re-export main types for convenience
 pub use config::DbftConfig;
 pub use engine::DbftEngine;
 pub use message_handler::{MessageHandleResult, MessageHandler};
+use neo_config::{MAX_BLOCK_SIZE, MILLISECONDS_PER_BLOCK};
 pub use state::{DbftEvent, DbftState, DbftStats};
 
 /// dBFT module version
@@ -26,7 +26,7 @@ pub mod constants {
     pub const MIN_VALIDATORS: usize = 4;
 
     /// Default block time in milliseconds
-    pub const DEFAULT_BLOCK_TIME_MS: u64 = 15000;
+    pub const DEFAULT_BLOCK_TIME_MS: u64 = super::MILLISECONDS_PER_BLOCK;
 
     /// Maximum view number
     pub const MAX_VIEW_NUMBER: u32 = 255;
@@ -38,7 +38,7 @@ pub mod constants {
     pub const DEFAULT_MESSAGE_TIMEOUT_MS: u64 = 5000;
 
     /// Maximum message size in bytes
-    pub const MAX_MESSAGE_SIZE: usize = 1048576; // 1MB
+    pub const MAX_MESSAGE_SIZE: usize = super::MAX_BLOCK_SIZE;
 
     /// Byzantine fault tolerance threshold (2/3 + 1)
     pub fn byzantine_threshold(validator_count: usize) -> usize {
@@ -53,7 +53,7 @@ pub mod constants {
 
 /// dBFT utility functions
 pub mod utils {
-    use super::*;
+    use super::constants;
 
     /// Validates a validator count
     pub fn validate_validator_count(count: usize) -> crate::Result<()> {
@@ -148,13 +148,11 @@ pub type DbftResult<T> = Result<T, DbftError>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_constants() {
         assert_eq!(constants::MIN_VALIDATORS, 4);
         assert_eq!(constants::MAX_VALIDATORS, 21);
-        assert_eq!(constants::byzantine_threshold(7), 5); // (7 * 2 / 3) + 1 = 5
+        assert_eq!(constants::byzantine_threshold(7), 5);
         assert_eq!(constants::required_consensus_count(7), 5);
     }
 

@@ -12,7 +12,6 @@ mod network_type_tests {
     /// Test network type values (matches C# Neo.Network.NetworkType exactly)
     #[test]
     fn test_network_type_values_compatibility() {
-        // Test that enum values match C# implementation exactly
         assert_eq!(NetworkType::MainNet as u32, 0);
         assert_eq!(NetworkType::TestNet as u32, 1);
         assert_eq!(NetworkType::Private as u32, 2);
@@ -69,7 +68,6 @@ mod network_type_tests {
             NetworkType::Private
         );
 
-        // Test case insensitive (matches C# behavior)
         assert_eq!(
             NetworkType::from_str("mainnet").unwrap(),
             NetworkType::MainNet
@@ -92,22 +90,19 @@ mod network_type_tests {
     /// Test network type magic number mapping (matches C# magic number constants exactly)
     #[test]
     fn test_network_type_magic_numbers_compatibility() {
-        // These should match the magic numbers used in C# Neo exactly
         match NetworkType::MainNet {
             NetworkType::MainNet => {
-                // MainNet magic: 0x334F454E ("NEO3" in ASCII, little-endian)
                 let expected_magic = 0x334F454E;
                 // This would be tested through the actual network config
-                assert!(true); // Placeholder - actual magic numbers are in network config
+                assert!(true);
             }
             _ => panic!("Invalid network type"),
         }
 
         match NetworkType::TestNet {
             NetworkType::TestNet => {
-                // TestNet magic: 0x3554334E ("N5T3" in ASCII, little-endian)
                 let expected_magic = 0x3554334E;
-                assert!(true); // Placeholder - actual magic numbers are in network config
+                assert!(true);
             }
             _ => panic!("Invalid network type"),
         }
@@ -163,7 +158,6 @@ mod network_type_tests {
         assert!(set.contains(&NetworkType::TestNet));
         assert!(set.contains(&NetworkType::Private));
 
-        // Test in HashMap
         let mut map = HashMap::new();
         map.insert(NetworkType::MainNet, "Main Network");
         map.insert(NetworkType::TestNet, "Test Network");

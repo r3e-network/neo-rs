@@ -4,6 +4,7 @@
 //! It provides notification events, logs, and runtime system interactions.
 
 use crate::{Error, Result};
+use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE};
 use neo_core::UInt160;
 
 /// Represents a notification event emitted by a smart contract.
@@ -127,8 +128,6 @@ impl RuntimeManager {
         event_name: String,
         state: Vec<u8>,
     ) -> Result<()> {
-        // Production-ready notification emission (matches C# ApplicationEngine.RuntimeNotify exactly)
-
         // 1. Validate event name (matches C# validation logic)
         if event_name.is_empty() {
             return Err(Error::InvalidArguments(
@@ -136,12 +135,12 @@ impl RuntimeManager {
             ));
         }
 
-        if event_name.len() > 32 {
+        if event_name.len() > HASH_SIZE {
             return Err(Error::InvalidArguments("Event name too long".to_string()));
         }
 
         // 2. Validate state size (matches C# state size limits)
-        if state.len() > 1024 * 1024 {
+        if state.len() > MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE {
             return Err(Error::InvalidArguments("Event state too large".to_string()));
         }
 
@@ -152,7 +151,7 @@ impl RuntimeManager {
         self.notifications.push(notification);
 
         // 5. Also output to console for debugging (matches C# debug output)
-        println!("Notify: {} from contract {:?}", event_name, contract_hash);
+        log::info!("Notify: {} from contract {:?}", event_name, contract_hash);
 
         Ok(())
     }
@@ -160,10 +159,8 @@ impl RuntimeManager {
     /// Emits a log message (production-ready implementation matching C# Neo exactly).
     /// This matches C# ApplicationEngine.RuntimeLog method exactly.
     pub fn log(&mut self, contract_hash: UInt160, message: String) -> Result<()> {
-        // Production-ready log emission (matches C# ApplicationEngine.RuntimeLog exactly)
-
         // 1. Validate message length (matches C# validation logic)
-        if message.len() > 1024 {
+        if message.len() > MAX_SCRIPT_SIZE {
             return Err(Error::InvalidArguments("Log message too long".to_string()));
         }
 
@@ -174,7 +171,7 @@ impl RuntimeManager {
         self.logs.push(log_event);
 
         // 4. Also output to console for debugging (matches C# debug output)
-        println!("Log: {} from contract {:?}", message, contract_hash);
+        log::info!("Log: {} from contract {:?}", message, contract_hash);
 
         Ok(())
     }
@@ -186,8 +183,6 @@ impl RuntimeManager {
         event_name: &str,
         args: Vec<Vec<u8>>,
     ) -> Result<()> {
-        // Production-ready event emission (matches C# ApplicationEngine event handling exactly)
-
         // 1. Validate event name
         if event_name.is_empty() {
             return Err(Error::InvalidArguments(
@@ -205,7 +200,6 @@ impl RuntimeManager {
         // 3. Serialize arguments to state bytes (matches C# serialization exactly)
         let mut state = Vec::new();
         for arg in &args {
-            // Add argument length prefix (4 bytes, little-endian)
             state.extend_from_slice(&(arg.len() as u32).to_le_bytes());
             // Add argument data
             state.extend_from_slice(arg);

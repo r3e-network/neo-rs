@@ -104,7 +104,7 @@ impl Default for InteropRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_interop_registry_creation() {
@@ -122,7 +122,6 @@ mod tests {
         let registry = InteropRegistry::new();
         let mut engine = ApplicationEngine::new(neo_vm::TriggerType::Application, 10_000_000);
 
-        // Set up the required current script hash for the Log service
         engine.set_current_script_hash(Some(neo_core::UInt160::zero()));
 
         // Test log service

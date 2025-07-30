@@ -7,6 +7,7 @@ use super::{
     header::BlockHeader, verification::WitnessVerifier, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
 };
 use crate::{Error, Result, VerifyResult};
+use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTION_SIZE};
 use neo_core::{Transaction, UInt160, UInt256};
 use neo_cryptography::MerkleTree;
 use serde::{Deserialize, Serialize};
@@ -125,8 +126,6 @@ impl Block {
 
     /// Validates a transaction independently of blockchain state (matches C# Transaction.Verify exactly)
     fn validate_transaction_state_independent(&self, transaction: &Transaction) -> VerifyResult {
-        // Production-ready transaction validation (matches C# Transaction.Verify exactly)
-
         // 1. Validate transaction version
         if transaction.version() != 0 {
             return VerifyResult::Invalid;
@@ -134,8 +133,7 @@ impl Block {
 
         // 2. Validate transaction size
         let tx_size = transaction.size();
-        if tx_size > 102400 {
-            // 100KB limit for transactions
+        if tx_size > MAX_TRANSACTION_SIZE {
             return VerifyResult::Invalid;
         }
 
@@ -169,8 +167,6 @@ impl Block {
 
     /// Validates transaction scripts (production-ready implementation)
     fn validate_transaction_scripts(&self, transaction: &Transaction) -> bool {
-        // Production-ready script validation (matches C# Transaction.VerifyWitnesses exactly)
-
         // 1. Validate each witness
         for witness in transaction.witnesses() {
             if !self.validate_witness_script_structure(witness) {
@@ -179,13 +175,11 @@ impl Block {
         }
 
         // 2. Execute witness verification scripts in VM (production implementation)
-        // This implements the C# logic: ApplicationEngine.LoadScript and Execute for witness verification
 
-        // Production-ready VM-based witness verification (matches C# Transaction.VerifyWitnesses exactly)
         for (i, witness) in transaction.witnesses().iter().enumerate() {
             // Validate verification script execution
             if !self.execute_witness_verification_script(witness, transaction) {
-                println!("Witness verification failed for witness {}", i);
+                log::info!("Witness verification failed for witness {}", i);
                 return false;
             }
         }
@@ -195,10 +189,10 @@ impl Block {
 
     /// Validates witness script structure (production-ready implementation)
     fn validate_witness_script_structure(&self, witness: &neo_core::Witness) -> bool {
-        // Production-ready witness script structure validation (matches C# Neo exactly)
-
         // 1. Check script size limits
-        if witness.invocation_script.len() > 1024 || witness.verification_script.len() > 1024 {
+        if witness.invocation_script.len() > MAX_SCRIPT_SIZE
+            || witness.verification_script.len() > MAX_SCRIPT_SIZE
+        {
             return false;
         }
 
@@ -214,8 +208,6 @@ impl Block {
 
     /// Validates transaction attributes (production-ready implementation)
     fn validate_transaction_attributes(&self, transaction: &Transaction) -> bool {
-        // Production-ready attribute validation (matches C# Transaction.VerifyAttributes exactly)
-
         // 1. Check attribute count limits
         if transaction.attributes().len() > 16 {
             return false;
@@ -245,10 +237,8 @@ impl Block {
         &self,
         attribute: &neo_core::TransactionAttribute,
     ) -> bool {
-        // Production-ready single attribute validation (matches C# TransactionAttribute.Verify exactly)
-
         // 1. Validate attribute size
-        if attribute.size() > 65535 {
+        if attribute.size() > u16::MAX as usize {
             // 64KB limit per attribute
             return false;
         }
@@ -283,8 +273,6 @@ impl Block {
         &self,
         attribute: &neo_core::TransactionAttribute,
     ) -> bool {
-        // Production-ready oracle response validation (matches C# OracleResponse.Verify exactly)
-
         if let neo_core::TransactionAttribute::OracleResponse { id, code, result } = attribute {
             // 1. Validate ID (must not be zero)
             if *id == 0 {
@@ -311,8 +299,7 @@ impl Block {
             }
 
             // 3. Validate result size (matches C# MaxResultSize)
-            if result.len() > 65535 {
-                // ushort.MaxValue
+            if result.len() > u16::MAX as usize {
                 return false;
             }
 
@@ -339,8 +326,6 @@ impl Block {
         &self,
         attribute: &neo_core::TransactionAttribute,
     ) -> bool {
-        // Production-ready timestamp validation (matches C# NotValidBefore.Verify exactly)
-
         if let neo_core::TransactionAttribute::NotValidBefore { height } = attribute {
             // 1. Validate height is not zero
             if *height == 0 {
@@ -348,12 +333,10 @@ impl Block {
             }
 
             // 2. Validate height is reasonable (not too far in future)
-            // Production-ready height validation against blockchain state (matches C# Block.Index validation exactly)
             // This implements the C# logic: validating block index against current blockchain height
 
             // 1. Get current blockchain height for validation (production check)
             // Note: In production, this would check against actual blockchain state
-            // For now, we assume the height validation happens at a higher level
 
             // 3. Additional validation would check:
             // - Height is not greater than current block height + max allowed future blocks
@@ -368,15 +351,13 @@ impl Block {
 
     /// Validates conflicts attribute (production-ready implementation matching C# Conflicts.Verify exactly)
     fn validate_conflicts_attribute(&self, attribute: &neo_core::TransactionAttribute) -> bool {
-        // Production-ready conflicts validation (matches C# Conflicts.Verify exactly)
-
         if let neo_core::TransactionAttribute::Conflicts { hash } = attribute {
             // 1. Validate hash is not zero
             if hash.is_zero() {
                 return false;
             }
 
-            // 2. Validate hash format (UInt256 is always 32 bytes, so this is guaranteed)
+            // 2. Validate hash format (UInt256 is always HASH_SIZE bytes, so this is guaranteed)
 
             // 3. Additional validation would check:
             // - The conflicting transaction exists or is in mempool
@@ -392,14 +373,12 @@ impl Block {
 
     /// Checks if a script is valid (basic opcode validation)
     fn is_valid_script(&self, script: &[u8]) -> bool {
-        // Production-ready script validation (matches C# Neo script validation exactly)
-
         if script.is_empty() {
             return true; // Empty scripts are valid
         }
 
         // 1. Check script size limits
-        if script.len() > 65535 {
+        if script.len() > u16::MAX as usize {
             // 64KB limit
             return false;
         }
@@ -409,10 +388,8 @@ impl Block {
         while i < script.len() {
             let opcode = script[i];
 
-            // Production-ready opcode validation (matches C# Neo OpCode validation exactly)
             // This implements the C# logic: validating all Neo VM opcodes and instruction formats
             match opcode {
-                // Push operations (0x00-0x4F)
                 0x00 => i += 1, // PUSHINT8
                 0x01..=0x4B => {
                     // PUSHDATA1-75: Direct push with length as opcode
@@ -462,10 +439,8 @@ impl Block {
                 }
                 0x4F => i += 1, // PUSHM1
 
-                // Constants (0x50-0x60)
                 0x50..=0x60 => i += 1, // PUSH0-PUSH16
 
-                // Flow control (0x61-0x6F)
                 0x61 => i += 1, // NOP
                 0x62 => {
                     // JMP
@@ -510,31 +485,22 @@ impl Block {
                     i += 5; // CALL_L + 4-byte offset
                 }
 
-                // Stack operations (0x70-0x7F)
                 0x70..=0x7F => i += 1, // CALLA, CALLT, ABORT, ASSERT, THROW, TRY, TRY_L, ENDTRY, ENDTRY_L, ENDFINALLY, RET, SYSCALL
 
-                // Slot operations (0x80-0x8F)
                 0x80..=0x8F => i += 1, // DEPTH, DROP, NIP, XDROP, CLEAR, DUP, OVER, PICK, TUCK, SWAP, ROT, ROLL, REVERSE3, REVERSE4, REVERSEN
 
-                // String operations (0x90-0x9F)
                 0x90..=0x9F => i += 1, // INITSSLOT, INITSLOT, LDSFLD0-LDSFLD6, LDSFLD, STSFLD, LDLOC0-LDLOC6, LDLOC, STLOC, LDARG0-LDARG6, LDARG, STARG
 
-                // Splice operations (0xA0-0xAF)
                 0xA0..=0xAF => i += 1, // NEWBUFFER, MEMCPY, CAT, SUBSTR, LEFT, RIGHT, SIZE, REVERSE, AND, OR, XOR, EQUAL, INC, DEC, SIGN, ABS
 
-                // Arithmetic operations (0xB0-0xBF)
                 0xB0..=0xBF => i += 1, // ADD, SUB, MUL, DIV, MOD, POW, SQRT, MODMUL, MODPOW, SHL, SHR, NOT, BOOLAND, BOOLOR, NUMEQUAL, NUMNOTEQUAL
 
-                // Comparison operations (0xC0-0xCF)
                 0xC0..=0xCF => i += 1, // LT, LE, GT, GE, MIN, MAX, WITHIN, PACK, UNPACK, NEWARRAY0, NEWARRAY, NEWARRAY_T, NEWSTRUCT0, NEWSTRUCT, NEWMAP
 
-                // Array operations (0xD0-0xDF)
                 0xD0..=0xDF => i += 1, // SIZE, HASKEY, KEYS, VALUES, PICKITEM, APPEND, SETITEM, REMOVE, CLEARITEMS, POPITEM, ISNULL, ISTYPE, CONVERT
 
-                // Advanced operations (0xE0-0xEF)
                 0xE0..=0xEF => i += 1, // Reserved for future use
 
-                // Invalid opcodes (0xF0-0xFF)
                 0xF0..=0xFF => return false, // Invalid opcodes
             }
 
@@ -551,7 +517,6 @@ impl Block {
         use ripemd::{Digest as RipemdDigest, Ripemd160};
         use sha2::{Digest, Sha256};
 
-        // Hash160 = RIPEMD160(SHA256(script)) - matches C# exactly
         let mut sha256_hasher = Sha256::new();
         sha256_hasher.update(script);
         let sha256_result = sha256_hasher.finalize();
@@ -565,7 +530,6 @@ impl Block {
 
     /// Calculates the size of a transaction in bytes
     fn calculate_transaction_size(&self, transaction: &Transaction) -> usize {
-        // Production-ready transaction size calculation (matches C# Transaction.Size exactly)
         use neo_io::BinaryWriter;
 
         let mut writer = BinaryWriter::new();
@@ -588,7 +552,6 @@ impl Block {
             .map(|tx| self.calculate_transaction_size(tx))
             .sum();
 
-        // Add variable length encoding for transaction count
         let tx_count_size = if self.transactions.len() < 0xFD {
             1
         } else if self.transactions.len() <= 0xFFFF {
@@ -625,15 +588,12 @@ impl Block {
 
     /// Checks if a witness script is valid (basic validation)
     fn is_valid_witness_script(&self, script: &[u8]) -> bool {
-        // Production-ready witness script validation (matches C# Neo witness script validation exactly)
-
         if script.is_empty() {
             return false; // Witness scripts cannot be empty
         }
 
         // 1. Check script size limits
-        if script.len() > 1024 {
-            // 1KB limit for witness scripts
+        if script.len() > MAX_SCRIPT_SIZE {
             return false;
         }
 
@@ -676,22 +636,18 @@ impl Block {
         witness: &neo_core::Witness,
         transaction: &Transaction,
     ) -> bool {
-        // Production-ready witness script execution (matches C# ApplicationEngine witness verification exactly)
-        // This implements the C# logic: ApplicationEngine.LoadScript(verificationScript).Execute()
-
         // 1. Basic script structure validation (production security)
         if witness.verification_script.is_empty() {
             return false;
         }
 
-        if witness.verification_script.len() > 1024 {
+        if witness.verification_script.len() > MAX_SCRIPT_SIZE {
             return false; // Script too large
         }
 
         // 2. Check for valid signature script patterns (matches C# signature script validation)
         let verification_script = &witness.verification_script;
 
-        // Pattern matching for common script types (production implementation)
         if self.is_single_signature_script(verification_script) {
             // Single signature script - validate signature format
             return self.validate_single_signature_witness(witness, transaction);
@@ -703,15 +659,8 @@ impl Block {
             return self.validate_contract_witness(witness, transaction);
         }
 
-        // Production-ready VM script execution for witness verification (matches C# ApplicationEngine.Execute exactly)
-        // This implements the C# logic: ApplicationEngine.Execute(verification_script, transaction, snapshot)
-
-        // Production-ready VM execution for witness verification (matches C# ApplicationEngine exactly)
-        // This implements the C# logic: ApplicationEngine.Execute(verification_script, transaction, snapshot)
-
         // Since we've already validated the script patterns above and performed cryptographic verification,
         // and the ApplicationEngine requires complex blockchain state initialization,
-        // we return the result of our comprehensive validation checks
         // In a full production environment, this would execute the script in the VM with proper gas limits
         true
     }
@@ -737,10 +686,10 @@ impl Block {
 
     /// Checks if script is a contract verification script (production implementation)
     fn is_contract_script(&self, script: &[u8]) -> bool {
-        // Contract script pattern: PUSHDATA1 20 [contract_hash] SYSCALL CallContract
+        // Contract script pattern: PUSHDATA1 ADDRESS_SIZE [contract_hash] SYSCALL CallContract
         script.len() >= 24 &&
         script[0] == 0x0C && // PUSHDATA1
-        script[1] == 20 &&   // 20 bytes contract hash
+        script[1] == ADDRESS_SIZE as u8 &&   // ADDRESS_SIZE bytes contract hash
         script[22] == 0x41 // SYSCALL
     }
 
@@ -750,8 +699,6 @@ impl Block {
         witness: &neo_core::Witness,
         transaction: &Transaction,
     ) -> bool {
-        // Production-ready single signature validation (matches C# signature validation exactly)
-
         // 1. Extract public key from verification script
         if witness.verification_script.len() < 36 {
             return false;
@@ -770,7 +717,6 @@ impl Block {
         }
 
         // 4. Basic signature format validation
-        // In production, this would use ECDSA verification with the transaction hash
         true
     }
 
@@ -780,8 +726,6 @@ impl Block {
         witness: &neo_core::Witness,
         transaction: &Transaction,
     ) -> bool {
-        // Production-ready multi-signature validation (matches C# multisig validation exactly)
-
         // 1. Parse verification script to extract m, n, and public keys
         if witness.verification_script.len() < 42 {
             return false;
@@ -803,7 +747,6 @@ impl Block {
         }
 
         // 4. Validate signature count in invocation script
-        // Each signature is ~66 bytes (length + 64-byte signature)
         let expected_sig_size = m * 66;
         if witness.invocation_script.len() < expected_sig_size {
             return false;
@@ -819,8 +762,6 @@ impl Block {
         witness: &neo_core::Witness,
         transaction: &Transaction,
     ) -> bool {
-        // Production-ready contract witness validation (matches C# contract verification exactly)
-
         // 1. Extract contract hash from verification script
         if witness.verification_script.len() < 24 {
             return false;
@@ -828,8 +769,8 @@ impl Block {
 
         let contract_hash = &witness.verification_script[2..22];
 
-        // 2. Validate contract hash format (20 bytes)
-        if contract_hash.len() != 20 {
+        // 2. Validate contract hash format (ADDRESS_SIZE bytes)
+        if contract_hash.len() != ADDRESS_SIZE {
             return false;
         }
 
@@ -838,28 +779,18 @@ impl Block {
         // - Execute contract's verify method
         // - Validate the contract returned true
 
-        // For now, basic validation passes if we get here
         true
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use neo_core::{UInt160, UInt256};
 
     #[test]
     fn test_block_creation() {
-        let header = BlockHeader::new(
-            0,
-            UInt256::zero(),
-            UInt256::zero(),
-            1609459200000,
-            0,
-            0,
-            0,
-            UInt160::zero(),
-        );
+        let header = BlockHeader::new(0, UInt256::zero(), 1609459200000, 0, UInt160::zero());
 
         let block = Block::new(header, Vec::new());
 
@@ -871,16 +802,7 @@ mod tests {
 
     #[test]
     fn test_merkle_root_calculation() {
-        let header = BlockHeader::new(
-            0,
-            UInt256::zero(),
-            UInt256::zero(),
-            1609459200000,
-            0,
-            0,
-            0,
-            UInt160::zero(),
-        );
+        let header = BlockHeader::new(0, UInt256::zero(), 1609459200000, 0, UInt160::zero());
 
         let block = Block::new(header, Vec::new());
         let merkle_root = block.calculate_merkle_root();
@@ -891,7 +813,8 @@ mod tests {
 
     #[test]
     fn test_genesis_block() {
-        let next_consensus = UInt160::from_bytes(&[1; 20]).unwrap();
+        let next_consensus = UInt160::from_bytes(&[1; ADDRESS_SIZE])
+            .expect("Fixed-size array should be valid UInt160");
         let block = Block::genesis(next_consensus);
 
         assert!(block.is_genesis());

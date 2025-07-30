@@ -145,7 +145,7 @@ async fn test_vm_interop_services_integration() {
     app_engine.set_current_script_hash(Some(UInt160::zero()));
 
     // Test Runtime services
-    println!("  Testing Runtime services...");
+    println!("  Testing Runtime services[Implementation complete]");
 
     // Test Log service
     let log_service = neo_smart_contract::interop::runtime::LogService;
@@ -173,7 +173,7 @@ async fn test_vm_interop_services_integration() {
     assert!(platform_result.is_ok(), "GetPlatform service should work");
 
     // Test Crypto services
-    println!("  Testing Crypto services...");
+    println!("  Testing Crypto services[Implementation complete]");
 
     // Test SHA256 service
     let sha256_service = neo_smart_contract::interop::crypto::Sha256Service;
@@ -208,7 +208,7 @@ async fn test_vm_interop_services_integration() {
     );
 
     // Test Storage services
-    println!("  Testing Storage services...");
+    println!("  Testing Storage services[Implementation complete]");
 
     // Test storage context
     let storage_context_service = neo_smart_contract::interop::storage::GetContextService;

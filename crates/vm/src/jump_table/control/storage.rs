@@ -1,23 +1,20 @@
 //! Storage operations and utilities for the Neo Virtual Machine.
 
 use super::types::StorageContext;
-use crate::stack_item::stack_item::InteropInterface;
 use crate::{
     error::{VmError, VmResult},
-    stack_item::StackItem,
+    stack_item::{InteropInterface, StackItem},
 };
+use neo_config::ADDRESS_SIZE;
 
 /// Calculates storage fee based on key and value size
 pub fn calculate_storage_fee(key_size: usize, value_size: usize) -> i64 {
-    // Production implementation: Calculate storage fee (matches C# exactly)
-    // In C# Neo: StoragePrice * (key.Length + value.Length)
     let storage_price = 100000; // 0.001 GAS per byte
     ((key_size + value_size) as i64) * storage_price
 }
 
 /// Constructs a storage key from script hash and key (matches C# StorageKey exactly)
 pub fn construct_storage_key(script_hash: &[u8], key: &[u8]) -> Vec<u8> {
-    // Production-ready storage key construction (matches C# StorageKey.CreateSearchPrefix exactly)
     let mut storage_key = Vec::with_capacity(script_hash.len() + key.len());
     storage_key.extend_from_slice(script_hash);
     storage_key.extend_from_slice(key);
@@ -26,8 +23,6 @@ pub fn construct_storage_key(script_hash: &[u8], key: &[u8]) -> Vec<u8> {
 
 /// Calculates storage read fee (matches C# ApplicationEngine fee calculation exactly)
 pub fn calculate_storage_read_fee(key_size: usize) -> u64 {
-    // Production-ready read fee calculation (matches C# exactly)
-    // Base fee for storage read operation
     1000000 + (key_size as u64 * 1000) // 0.01 GAS + 0.000001 GAS per byte
 }
 
@@ -37,12 +32,10 @@ pub fn calculate_storage_put_fee(
     value_size: usize,
     existing_value_size: usize,
 ) -> u64 {
-    // Production-ready put fee calculation (matches C# exactly)
     let base_fee = 1000000; // 0.01 GAS base fee
     let key_fee = key_size as u64 * 1000; // 0.000001 GAS per key byte
     let value_fee = value_size as u64 * 10000; // 0.0001 GAS per value byte
 
-    // If replacing existing value, calculate difference
     let size_difference = if value_size > existing_value_size {
         (value_size - existing_value_size) as u64 * 10000
     } else {
@@ -54,13 +47,11 @@ pub fn calculate_storage_put_fee(
 
 /// Calculates storage delete fee (matches C# ApplicationEngine fee calculation exactly)
 pub fn calculate_storage_delete_fee(key_size: usize) -> u64 {
-    // Production-ready delete fee calculation (matches C# exactly)
     1000000 + (key_size as u64 * 1000) // 0.01 GAS + 0.000001 GAS per key byte
 }
 
 /// Checks if storage context is readonly (production-ready implementation)
 pub fn is_storage_context_readonly(context_item: &StackItem) -> bool {
-    // Production-ready readonly check (matches C# StorageContext.IsReadOnly exactly)
     // This implements the C# logic: StorageContext.IsReadOnly property access
 
     // 1. Extract storage context from stack item (production implementation)
@@ -91,12 +82,10 @@ pub fn is_storage_context_readonly(context_item: &StackItem) -> bool {
 pub fn extract_storage_context_data(
     interop_interface: &dyn InteropInterface,
 ) -> VmResult<StorageContext> {
-    // Production-ready context data extraction (matches C# IInteropInterface.GetInterface<T> exactly)
     if interop_interface.interface_type() == "StorageContext" {
-        // For now, create a default storage context
         // In production, this would properly extract the context data
         Ok(StorageContext {
-            script_hash: vec![0u8; 20],
+            script_hash: vec![0u8; ADDRESS_SIZE],
             is_read_only: false,
             id: 0,
         })
@@ -107,18 +96,17 @@ pub fn extract_storage_context_data(
 
 /// Deserializes storage context from byte data
 pub fn deserialize_storage_context(bytes: &[u8]) -> VmResult<StorageContext> {
-    // Production-ready storage context deserialization (matches C# BinaryReader exactly)
     if bytes.len() < 25 {
-        // Minimum size: 20 bytes script_hash + 1 byte readonly + 4 bytes id
+        // Minimum size: ADDRESS_SIZE bytes script_hash + 1 byte readonly + 4 bytes id
         return Err(VmError::invalid_operation_msg(
             "Invalid storage context data",
         ));
     }
 
-    let mut script_hash = vec![0u8; 20];
-    script_hash.copy_from_slice(&bytes[0..20]);
+    let mut script_hash = vec![0u8; ADDRESS_SIZE];
+    script_hash.copy_from_slice(&bytes[0..ADDRESS_SIZE]);
 
-    let is_read_only = bytes[20] != 0;
+    let is_read_only = bytes[ADDRESS_SIZE] != 0;
     let id = i32::from_le_bytes([bytes[21], bytes[22], bytes[23], bytes[24]]);
 
     Ok(StorageContext {

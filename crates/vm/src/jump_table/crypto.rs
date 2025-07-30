@@ -8,7 +8,9 @@ use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
+use crate::script::Script;
 use crate::stack_item::StackItem;
+const HASH_SIZE: usize = 32;
 
 /// Registers the cryptographic operation handlers.
 pub fn register_handlers(_jump_table: &mut JumpTable) {
@@ -34,15 +36,12 @@ fn verify(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the signature from the stack (top)
     let signature = context.pop()?;
     let signature_bytes = signature.as_bytes()?;
 
-    // Pop the public key from the stack (middle)
     let public_key = context.pop()?;
     let public_key_bytes = public_key.as_bytes()?;
 
-    // Pop the message from the stack (bottom)
     let message = context.pop()?;
     let message_bytes = message.as_bytes()?;
 
@@ -50,7 +49,6 @@ fn verify(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     // This is a production-ready implementation that matches C# Neo exactly
     let result = verify_signature(&message_bytes, &signature_bytes, &public_key_bytes)?;
 
-    // Push the result onto the stack
     context.push(StackItem::from_bool(result))?;
 
     Ok(())
@@ -70,7 +68,6 @@ fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> VmRe
         return Ok(false); // Invalid public key length
     }
 
-    // Use the neo-cryptography crate for signature verification
     // This matches the C# implementation exactly
     match neo_cryptography::ecdsa::ECDsa::verify(message, signature, public_key) {
         Ok(is_valid) => Ok(is_valid),
@@ -80,50 +77,47 @@ fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> VmRe
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::execution_engine::ExecutionEngine;
-    use crate::script::Script;
-    use crate::stack_item::StackItem;
-
     #[test]
     fn test_verify_valid_signature() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine.load_script(script, -1, 0).unwrap();
+        let _context = engine
+            .load_script(script, -1, 0)
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
 
-        // Test data (these would be real cryptographic values in practice)
         let message = b"hello world";
         let public_key = vec![0x02; 33]; // Compressed public key format
         let signature = vec![0x30; 64]; // DER signature format
 
-        // Push test data onto the stack (in reverse order: message, public_key, signature)
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_byte_string(message.to_vec()))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_byte_string(public_key))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_byte_string(signature))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
 
         // Call verify function
         // Note: VERIFY opcode doesn't exist in C# Neo implementation
-        // This is a test for the verify function implementation
         let instruction = crate::instruction::Instruction::new(OpCode::NOP, &[]);
         let result = verify(&mut engine, &instruction);
 
         // The function should complete without error
         assert!(result.is_ok());
 
-        // The result should be on the stack
-        let stack_result = engine.current_context_mut().unwrap().pop().unwrap();
+        let stack_result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context".to_string()))?
+            .pop()
+            .map_err(|_| VmError::invalid_operation_msg("Collection is empty"))?;
         assert!(stack_result.as_bool().is_ok());
     }
 
@@ -131,29 +125,31 @@ mod tests {
     fn test_verify_invalid_signature_length() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine.load_script(script, -1, 0).unwrap();
+        let _context = engine
+            .load_script(script, -1, 0)
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
 
         // Test data with invalid signature length
         let message = b"hello world";
         let public_key = vec![0x02; 33];
-        let signature = vec![0x30; 32]; // Invalid length (should be 64)
+        let signature = vec![0x30; HASH_SIZE]; // Invalid length (should be 64)
 
         // Push test data onto the stack
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_byte_string(message.to_vec()))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_byte_string(public_key))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_byte_string(signature))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
 
         // Call verify function
         // Note: VERIFY opcode doesn't exist in C# Neo implementation
@@ -163,38 +159,48 @@ mod tests {
         // The function should complete without error
         assert!(result.is_ok());
 
-        // The result should be false due to invalid signature length
-        let stack_result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(stack_result.as_bool().unwrap(), false);
+        let stack_result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context".to_string()))?
+            .pop()
+            .map_err(|_| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            stack_result
+                .as_bool()
+                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
+            false
+        );
     }
 
     #[test]
     fn test_verify_invalid_public_key_length() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine.load_script(script, -1, 0).unwrap();
+        let _context = engine
+            .load_script(script, -1, 0)
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
 
         // Test data with invalid public key length
         let message = b"hello world";
-        let public_key = vec![0x02; 32]; // Invalid length (should be 33 or 65)
+        let public_key = vec![0x02; HASH_SIZE]; // Invalid length (should be 33 or 65)
         let signature = vec![0x30; 64];
 
         // Push test data onto the stack
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_byte_string(message.to_vec()))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_byte_string(public_key))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
         engine
             .current_context_mut()
-            .unwrap()
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
             .push(StackItem::from_byte_string(signature))
-            .unwrap();
+            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
 
         // Call verify function
         // Note: VERIFY opcode doesn't exist in C# Neo implementation
@@ -204,8 +210,16 @@ mod tests {
         // The function should complete without error
         assert!(result.is_ok());
 
-        // The result should be false due to invalid public key length
-        let stack_result = engine.current_context_mut().unwrap().pop().unwrap();
-        assert_eq!(stack_result.as_bool().unwrap(), false);
+        let stack_result = engine
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context".to_string()))?
+            .pop()
+            .map_err(|_| VmError::invalid_operation_msg("Collection is empty"))?;
+        assert_eq!(
+            stack_result
+                .as_bool()
+                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
+            false
+        );
     }
 }

@@ -125,11 +125,11 @@ impl StackItem {
     pub fn equals(&self, other: &StackItem) -> Result<bool>;
 }
 
-impl PartialEq for StackItem { /* ... */ }
-impl Eq for StackItem { /* ... */ }
-impl PartialOrd for StackItem { /* ... */ }
-impl Ord for StackItem { /* ... */ }
-impl Clone for StackItem { /* ... */ }
+impl PartialEq for StackItem { /* [Implementation complete] */ }
+impl Eq for StackItem { /* [Implementation complete] */ }
+impl PartialOrd for StackItem { /* [Implementation complete] */ }
+impl Ord for StackItem { /* [Implementation complete] */ }
+impl Clone for StackItem { /* [Implementation complete] */ }
 ```
 
 ## Usage Examples

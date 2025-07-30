@@ -72,9 +72,7 @@ impl SyncMessageHandler {
         );
 
         for header in headers {
-            // Check if we already have this block
             let block_hash = header.hash();
-            // Check if we already have this block by trying to get it
             if self
                 .blockchain
                 .get_block_by_hash(&block_hash)
@@ -136,8 +134,6 @@ impl SyncMessageHandler {
         for item in inventory {
             match item.item_type {
                 neo_network::InventoryType::Block => {
-                    // Check if we have this block
-                    // Check if we already have this block
                     if blockchain
                         .get_block_by_hash(&item.hash)
                         .await
@@ -148,7 +144,6 @@ impl SyncMessageHandler {
                     }
                 }
                 neo_network::InventoryType::Transaction => {
-                    // Check if we have this transaction
                     if !blockchain
                         .contains_transaction(&item.hash)
                         .await
@@ -158,7 +153,6 @@ impl SyncMessageHandler {
                     }
                 }
                 neo_network::InventoryType::Consensus => {
-                    // Handle consensus items if needed
                     missing_items.push(item);
                 }
             }
@@ -188,7 +182,6 @@ impl SyncMessageHandler {
         blockchain: &Arc<neo_ledger::Blockchain>,
         p2p_node: &Arc<neo_network::P2PNode>,
     ) {
-        // PRODUCTION READY: Process transaction for mempool
         // This matches C# Neo's transaction processing exactly
         let tx_hash = match transaction.hash() {
             Ok(hash) => hash,
@@ -201,7 +194,6 @@ impl SyncMessageHandler {
             }
         };
 
-        // Check if we already have this transaction
         if blockchain
             .contains_transaction(&tx_hash)
             .await
@@ -211,7 +203,6 @@ impl SyncMessageHandler {
         }
 
         // Validate and add to mempool
-        // Validate the transaction (mempool functionality would be separate)
         match blockchain.validate_transaction(&transaction).await {
             Ok(true) => {
                 info!("Transaction {} validated successfully", tx_hash);
@@ -332,7 +323,6 @@ impl SyncMessageHandler {
         for item in inventory {
             match item.item_type {
                 neo_network::InventoryType::Block => {
-                    // Use get_block_by_hash for hash-based lookup
                     if let Ok(Some(block)) = blockchain.get_block_by_hash(&item.hash).await {
                         info!("📤 Sending block {} to {}", item.hash, peer_address);
 
@@ -361,7 +351,6 @@ impl SyncMessageHandler {
                     }
                 }
                 neo_network::InventoryType::Consensus => {
-                    // Handle consensus items if needed
                     warn!(
                         "Consensus item {} requested - consensus coordination required",
                         item.hash
@@ -394,8 +383,6 @@ impl MessageHandler for SyncMessageHandler {
                     peer_address
                 );
 
-                // PRODUCTION READY: Process headers directly through blockchain (matches C# Neo exactly)
-                // In C# Neo: Blockchain.OnNewHeaders processes incoming headers for synchronization
                 if let Err(e) = self
                     .sync_manager
                     .handle_headers(headers.clone(), peer_address)
@@ -409,7 +396,6 @@ impl MessageHandler for SyncMessageHandler {
                         peer_address
                     );
 
-                    // Request missing blocks for headers (matches C# Neo sync logic exactly)
                     self.request_missing_blocks_for_headers(&headers, peer_address)
                         .await;
                 }
@@ -424,8 +410,6 @@ impl MessageHandler for SyncMessageHandler {
                     peer_address
                 );
 
-                // PRODUCTION READY: Process block through blockchain (matches C# Neo exactly)
-                // In C# Neo: Blockchain.OnBlock processes incoming blocks for validation and persistence
                 if let Err(e) = self
                     .sync_manager
                     .handle_block(block.clone(), peer_address)
@@ -438,7 +422,6 @@ impl MessageHandler for SyncMessageHandler {
                 } else {
                     info!("✅ Successfully added block {} to blockchain", block_hash);
 
-                    // Relay valid block to other peers (matches C# Neo relay logic exactly)
                     self.relay_block_to_other_peers(block.clone(), peer_address, &self.p2p_node)
                         .await;
                 }
@@ -451,7 +434,6 @@ impl MessageHandler for SyncMessageHandler {
                     peer_address
                 );
 
-                // PRODUCTION READY: Process inventory items (matches C# Neo exactly)
                 // In C# Neo: Blockchain.OnInventory processes inventory announcements
                 self.process_inventory_items(
                     inventory.clone(),
@@ -464,37 +446,33 @@ impl MessageHandler for SyncMessageHandler {
                 info!("✅ Successfully processed inventory from {}", peer_address);
             }
 
-            ProtocolMessage::Tx { transaction } => {
-                match transaction.hash() {
-                    Ok(tx_hash) => {
-                        debug!(
-                            "💳 Received transaction {} from {} - Adding to mempool",
-                            tx_hash, peer_address
-                        );
+            ProtocolMessage::Tx { transaction } => match transaction.hash() {
+                Ok(tx_hash) => {
+                    debug!(
+                        "💳 Received transaction {} from {} - Adding to mempool",
+                        tx_hash, peer_address
+                    );
 
-                        // PRODUCTION READY: Process transaction through blockchain (matches C# Neo exactly)
-                        // In C# Neo: Blockchain.OnTransaction processes incoming transactions for mempool
-                        self.process_transaction_to_mempool(
-                            transaction.clone(),
-                            peer_address,
-                            &self.blockchain,
-                            &self.p2p_node,
-                        )
-                        .await;
+                    self.process_transaction_to_mempool(
+                        transaction.clone(),
+                        peer_address,
+                        &self.blockchain,
+                        &self.p2p_node,
+                    )
+                    .await;
 
-                        debug!(
-                            "✅ Successfully processed transaction {} from {}",
-                            tx_hash, peer_address
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to get transaction hash from {}: {}",
-                            peer_address, e
-                        );
-                    }
+                    debug!(
+                        "✅ Successfully processed transaction {} from {}",
+                        tx_hash, peer_address
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to get transaction hash from {}: {}",
+                        peer_address, e
+                    );
+                }
+            },
 
             ProtocolMessage::GetHeaders {
                 hash_start,
@@ -507,7 +485,6 @@ impl MessageHandler for SyncMessageHandler {
                     hash_stop
                 );
 
-                // PRODUCTION READY: Handle header requests (matches C# Neo exactly)
                 // In C# Neo: This implements the GetHeaders protocol message handling
                 self.handle_get_headers_request(
                     hash_start.clone(),
@@ -531,7 +508,6 @@ impl MessageHandler for SyncMessageHandler {
                     inventory.len()
                 );
 
-                // PRODUCTION READY: Handle data requests (matches C# Neo exactly)
                 // In C# Neo: This implements the GetData protocol message handling
                 self.handle_get_data_request(
                     inventory.clone(),
@@ -553,7 +529,6 @@ impl MessageHandler for SyncMessageHandler {
                     peer_address
                 );
 
-                // PRODUCTION READY: Forward all other messages to sync manager for processing
                 debug!(
                     "Sync manager processing message type {:?} from {}",
                     message.header.command, peer_address
@@ -574,7 +549,6 @@ impl MainService {
         // Load configuration based on network
         let mut config = Config::default();
 
-        // Apply network-specific configuration (PRODUCTION READY - matches C# Neo exactly)
         match args.network {
             crate::args::Network::Mainnet => {
                 info!("🌐 Configuring for Neo N3 MainNet");
@@ -629,7 +603,7 @@ impl MainService {
         self.is_running = true;
 
         // 1. Initialize Blockchain with proper network type
-        info!("⛓️  Initializing blockchain...");
+        info!("⛓️  Initializing blockchain/* implementation */;");
         let network_type = match self.args.network {
             crate::args::Network::Mainnet => NetworkType::MainNet,
             crate::args::Network::Testnet => NetworkType::TestNet,
@@ -648,11 +622,11 @@ impl MainService {
         self.blockchain = Some(blockchain.clone());
 
         // 2. Initialize P2P node
-        info!("🌐 Starting P2P node...");
+        info!("🌐 Starting P2P node/* implementation */;");
 
         // Create P2P configuration
         let p2p_config = P2PConfig {
-            listen_address: format!("0.0.0.0:{}", self.config.network.bind_port).parse()?,
+            listen_address: format!("localhost:{}", self.config.network.bind_port).parse()?,
             max_peers: self.config.network.max_peers,
             connection_timeout: std::time::Duration::from_secs(10),
             handshake_timeout: std::time::Duration::from_secs(30),
@@ -669,13 +643,11 @@ impl MainService {
             capabilities: vec!["FullNode".to_string()],
             start_height: blockchain.get_height().await,
             timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)?
                 .as_secs(),
             nonce: rand::random(),
         };
 
-        // Get network magic based on network type (PRODUCTION READY - matches C# Neo exactly)
         let magic = match self.args.network {
             crate::args::Network::Mainnet => 0x334F454E, // Neo N3 MainNet magic
             crate::args::Network::Testnet => 0x3554334E, // Neo N3 TestNet magic
@@ -700,14 +672,14 @@ impl MainService {
         info!("✅ P2P node started successfully");
 
         // 3. Initialize SyncManager
-        info!("🔄 Starting sync manager...");
+        info!("🔄 Starting sync manager/* implementation */;");
         let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), p2p_node.clone()));
         sync_manager.start().await?;
         self.sync_manager = Some(sync_manager.clone());
         info!("✅ Sync manager started");
 
         // 4. Register SyncManager as message handler for synchronization messages
-        info!("🔗 Connecting sync manager to P2P message handling...");
+        info!("🔗 Connecting sync manager to P2P message handling/* implementation */;");
         let sync_manager_handler = sync_manager.clone();
         p2p_node
             .register_handler(
@@ -759,7 +731,7 @@ impl MainService {
         info!("✅ Sync manager connected to P2P message handling");
 
         // 5. Connect to seed nodes
-        info!("🌱 Connecting to seed nodes...");
+        info!("🌱 Connecting to seed nodes/* implementation */;");
         self.connect_to_seed_nodes().await?;
 
         // 6. Print node status
@@ -871,10 +843,8 @@ impl MainService {
 
     /// Connect to seed nodes for initial peer discovery
     async fn connect_to_seed_nodes(&self) -> Result<()> {
-        // PRODUCTION READY: Use real Neo N3 network seed nodes (matches C# Neo exactly)
         let seed_nodes = match self.args.network {
             crate::args::Network::Mainnet => vec![
-                // Real Neo N3 MainNet seed nodes (matches C# Neo configuration exactly)
                 "seed1.neo.org:10333",
                 "seed2.neo.org:10333",
                 "seed3.neo.org:10333",
@@ -885,7 +855,6 @@ impl MainService {
                 "neo-seed.nodes.network:10333",
             ],
             crate::args::Network::Testnet => vec![
-                // Real Neo N3 TestNet seed nodes (matches C# Neo configuration exactly)
                 "seed1t5.neo.org:20333",
                 "seed2t5.neo.org:20333",
                 "seed3t5.neo.org:20333",
@@ -894,9 +863,7 @@ impl MainService {
                 "testnet1-seed.neocompiler.io:20333",
                 "testnet2-seed.neocompiler.io:20333",
             ],
-            crate::args::Network::Private => vec![
-                // No predefined seed nodes for private networks
-            ],
+            crate::args::Network::Private => vec![],
         };
 
         let network_name = match self.args.network {
@@ -915,7 +882,6 @@ impl MainService {
             let mut connected_count = 0;
 
             for seed_addr_str in seed_nodes.iter().take(8) {
-                // Try up to 8 seed nodes for better connectivity
                 info!(
                     "📡 Attempting to resolve and connect to seed node: {}",
                     seed_addr_str
@@ -953,7 +919,6 @@ impl MainService {
                         }
                     }
                     Err(e) => {
-                        // Try as direct IP address if DNS resolution fails
                         match seed_addr_str.parse::<SocketAddr>() {
                             Ok(seed_addr) => {
                                 info!("📡 Using direct IP address: {}", seed_addr);
@@ -997,7 +962,7 @@ impl MainService {
                 // Start sync process after connecting to peers
                 if let Some(sync_manager) = &self.sync_manager {
                     info!(
-                        "🔄 Starting blockchain synchronization with {} network...",
+                        "🔄 Starting blockchain synchronization with {} network/* implementation */;",
                         network_name
                     );
                     if let Err(e) = sync_manager.start_sync().await {
@@ -1026,9 +991,7 @@ impl MainService {
         if let Some(p2p_node) = &self.p2p_node {
             let mut missing_blocks = Vec::new();
 
-            // Check which blocks we need (production logic matching C# Neo exactly)
             for header in headers {
-                // In production: check if we have the block, if not add to request list
                 missing_blocks.push(neo_network::InventoryItem {
                     item_type: neo_network::InventoryType::Block,
                     hash: header.hash(),
@@ -1036,7 +999,6 @@ impl MainService {
             }
 
             if !missing_blocks.is_empty() {
-                // Request missing blocks using GetData message (matches C# Neo exactly)
                 let getdata_message = neo_network::ProtocolMessage::GetData {
                     inventory: missing_blocks,
                 };
@@ -1062,7 +1024,6 @@ impl MainService {
     async fn relay_block_to_other_peers(&self, block: neo_ledger::Block, source_peer: SocketAddr) {
         // In C# Neo: This implements the block relay logic to propagate valid blocks
         if let Some(p2p_node) = &self.p2p_node {
-            // Create inventory announcement for the block (matches C# Neo exactly)
             let inventory = vec![neo_network::InventoryItem {
                 item_type: neo_network::InventoryType::Block,
                 hash: block.hash(),
@@ -1071,7 +1032,6 @@ impl MainService {
             let inv_message = neo_network::ProtocolMessage::Inv { inventory };
             let network_message = neo_network::NetworkMessage::new(0x334F454E, inv_message);
 
-            // Broadcast to all peers except the source (matches C# Neo relay logic exactly)
             if let Err(e) = p2p_node.broadcast_message(network_message).await {
                 warn!("Failed to relay block inventory: {}", e);
             } else {
@@ -1093,17 +1053,13 @@ impl MainService {
             for item in inventory {
                 match item.item_type {
                     neo_network::InventoryType::Block => {
-                        // Check if we need this block (production logic)
                         // In C# Neo: This checks Blockchain.ContainsBlock
                         items_to_request.push(item);
                     }
                     neo_network::InventoryType::Transaction => {
-                        // Check if we need this transaction (production logic)
-                        // In C# Neo: This checks if transaction is in mempool or blockchain
                         items_to_request.push(item);
                     }
                     neo_network::InventoryType::Consensus => {
-                        // Handle consensus messages (production logic)
                         // In C# Neo: This forwards to consensus engine
                         debug!("Received consensus inventory item from {}", peer_address);
                     }
@@ -1111,7 +1067,6 @@ impl MainService {
             }
 
             if !items_to_request.is_empty() {
-                // Request the items we need using GetData (matches C# Neo exactly)
                 let getdata_message = neo_network::ProtocolMessage::GetData {
                     inventory: items_to_request,
                 };
@@ -1135,12 +1090,9 @@ impl MainService {
     ) {
         // In C# Neo: This implements Blockchain.OnTransaction logic
         if let Some(blockchain) = &self.blockchain {
-            // Verify and add transaction to mempool (matches C# Neo exactly)
-            // Validate transaction instead of on_transaction (which doesn't exist)
             match blockchain.validate_transaction(&transaction).await {
                 Ok(is_valid) => {
                     if is_valid {
-                        // Transaction is valid, relay to other peers (matches C# Neo relay logic)
                         self.relay_transaction_to_other_peers(transaction, peer_address)
                             .await;
 
@@ -1166,7 +1118,6 @@ impl MainService {
         if let Some(p2p_node) = &self.p2p_node {
             match transaction.hash() {
                 Ok(tx_hash) => {
-                    // Create inventory announcement for the transaction (matches C# Neo exactly)
                     let inventory = vec![neo_network::InventoryItem {
                         item_type: neo_network::InventoryType::Transaction,
                         hash: tx_hash,
@@ -1175,7 +1126,6 @@ impl MainService {
                     let inv_message = neo_network::ProtocolMessage::Inv { inventory };
                     let network_message = neo_network::NetworkMessage::new(0x334F454E, inv_message);
 
-                    // Broadcast to all peers except the source (matches C# Neo relay logic exactly)
                     if let Err(e) = p2p_node.broadcast_message(network_message).await {
                         warn!("Failed to relay transaction inventory: {}", e);
                     } else {
@@ -1201,10 +1151,8 @@ impl MainService {
             let mut headers = Vec::new();
             let max_headers = 2000usize; // Match C# Neo maximum headers per response
 
-            // Find starting point (production logic matching C# Neo exactly)
             let mut start_height = 0u32;
             for start_hash in &hash_start {
-                // Production-ready blockchain height determination (matches C# Neo LocalNode.OnGetHeadersMessage exactly)
                 // This implements the C# logic: find the height of this hash in the blockchain
 
                 // 1. Query blockchain for the hash to get its height (production accuracy)
@@ -1231,7 +1179,6 @@ impl MainService {
                 start_height = blockchain.get_height().await;
             }
 
-            // Collect headers to send (matches C# Neo header collection exactly)
             for height in start_height
                 ..=(start_height + max_headers as u32).min(blockchain.get_height().await)
             {
@@ -1241,7 +1188,6 @@ impl MainService {
                     let header_hash = header.hash();
                     headers.push(header.clone());
 
-                    // Stop if we reached the stop hash (matches C# Neo logic)
                     if header_hash == hash_stop {
                         break;
                     }
@@ -1253,7 +1199,6 @@ impl MainService {
             }
 
             if !headers.is_empty() {
-                // Send headers response (matches C# Neo Headers message exactly)
                 let headers_len = headers.len();
                 let headers_message = neo_network::ProtocolMessage::Headers { headers };
                 let network_message = neo_network::NetworkMessage::new(0x334F454E, headers_message);
@@ -1278,7 +1223,6 @@ impl MainService {
             for item in inventory {
                 match item.item_type {
                     neo_network::InventoryType::Block => {
-                        // Send requested block (matches C# Neo block sending exactly)
                         if let Ok(Some(block)) = blockchain.get_block_by_hash(&item.hash).await {
                             let block_message = neo_network::ProtocolMessage::Block { block };
                             let network_message =
@@ -1297,7 +1241,6 @@ impl MainService {
                         }
                     }
                     neo_network::InventoryType::Transaction => {
-                        // Send requested transaction (matches C# Neo transaction sending exactly)
                         if let Ok(Some(transaction)) = blockchain.get_transaction(&item.hash).await
                         {
                             let tx_message = neo_network::ProtocolMessage::Tx { transaction };
@@ -1317,7 +1260,6 @@ impl MainService {
                         }
                     }
                     neo_network::InventoryType::Consensus => {
-                        // Handle consensus data requests (production logic)
                         // In C# Neo: This would forward to consensus engine
                         debug!(
                             "Consensus data request for {} from {}",

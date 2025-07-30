@@ -3,6 +3,7 @@
 //! This module centralizes all hardcoded network values to make the codebase
 //! more maintainable and configurable for different network types.
 
+use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, SECONDS_PER_BLOCK};
 use std::net::SocketAddr;
 
 /// Default network ports for different Neo networks
@@ -35,8 +36,6 @@ pub mod magic {
 
 /// Seed nodes for different Neo networks
 pub mod seed_nodes {
-    use super::*;
-
     /// Mainnet seed nodes (production-ready nodes from community)
     pub const MAINNET: &[&str] = &[
         // Neo Global Development community nodes
@@ -69,7 +68,7 @@ pub mod seed_nodes {
     pub const REGTEST: &[&str] = &[];
 
     /// Convert string array to SocketAddr vector
-    pub fn parse_seed_nodes(seeds: &[&str]) -> Vec<SocketAddr> {
+    pub fn parse_seed_nodes(seeds: &[&str]) -> Vec<std::net::SocketAddr> {
         seeds
             .iter()
             .filter_map(|&addr_str| addr_str.parse().ok())
@@ -94,8 +93,8 @@ pub mod defaults {
     /// Default maximum RPC connections
     pub const MAX_RPC_CONNECTIONS: usize = 100;
 
-    /// Default maximum request size (1MB)
-    pub const MAX_REQUEST_SIZE: usize = 1024 * 1024;
+    /// Default maximum request size (1MB)  
+    pub const MAX_REQUEST_SIZE: usize = 1024 * 1024; // 1MB constant value
 }
 
 /// Network-specific optimizations
@@ -104,14 +103,14 @@ pub mod optimizations {
     pub mod mainnet {
         pub const MAX_OUTBOUND_CONNECTIONS: usize = 16;
         pub const MAX_INBOUND_CONNECTIONS: usize = 50;
-        pub const CONNECTION_TIMEOUT: u64 = 15; // Faster timeouts for mainnet
+        pub const CONNECTION_TIMEOUT: u64 = 15; // 15 seconds timeout for mainnet
     }
 
     /// Testnet connection settings (development optimized)
     pub mod testnet {
         pub const MAX_OUTBOUND_CONNECTIONS: usize = 12;
         pub const MAX_INBOUND_CONNECTIONS: usize = 30;
-        pub const CONNECTION_TIMEOUT: u64 = 20;
+        pub const CONNECTION_TIMEOUT: u64 = 20; // 20 bytes (typical address size)
     }
 
     /// Regtest connection settings (local testing optimized)
@@ -124,8 +123,6 @@ pub mod optimizations {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_seed_node_parsing() {
         let mainnet_seeds = seed_nodes::parse_seed_nodes(seed_nodes::MAINNET);
@@ -149,7 +146,6 @@ mod tests {
 
     #[test]
     fn test_port_assignments() {
-        // Ensure different network types use different ports
         assert_ne!(ports::MAINNET_P2P, ports::TESTNET_P2P);
         assert_ne!(ports::MAINNET_P2P, ports::REGTEST_P2P);
         assert_ne!(ports::TESTNET_P2P, ports::REGTEST_P2P);
