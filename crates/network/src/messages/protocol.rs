@@ -115,7 +115,7 @@ pub enum ProtocolMessage {
 
     /// Consensus message
     Consensus { payload: Vec<u8> },
-    
+
     /// Unknown/Extended message - for TestNet compatibility
     Unknown { command: u8, payload: Vec<u8> },
 }
@@ -346,8 +346,11 @@ impl ProtocolMessage {
             ProtocolMessage::Consensus { payload } => {
                 writer.write_var_bytes(payload)?;
             }
-            
-            ProtocolMessage::Unknown { command: _, payload } => {
+
+            ProtocolMessage::Unknown {
+                command: _,
+                payload,
+            } => {
                 // For unknown messages, just write the payload as-is
                 writer.write_bytes(payload)?;
             }
@@ -450,7 +453,10 @@ impl ProtocolMessage {
 
             _ => {
                 // For TestNet compatibility, accept unknown commands
-                tracing::warn!("Unknown protocol message command: {:?}, treating as Unknown", command);
+                tracing::warn!(
+                    "Unknown protocol message command: {:?}, treating as Unknown",
+                    command
+                );
                 Ok(ProtocolMessage::Unknown {
                     command: command.as_byte(),
                     payload: bytes.to_vec(),
