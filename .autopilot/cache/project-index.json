@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "createdAt": "2025-07-30T08:30:28.464Z",
-  "lastUpdated": "2025-07-30T09:43:31.791Z",
+  "lastUpdated": "2025-07-30T12:17:33.325Z",
   "workspaceRoot": "/Users/jinghuiliao/git/r3e/neo-rs",
   "files": [
     [
@@ -29682,9 +29682,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/CLAUDE_CONTEXT.md",
         "relativePath": ".autopilot/CLAUDE_CONTEXT.md",
-        "size": 3135,
-        "lastModified": "2025-07-30T09:40:31.241Z",
-        "hash": "8ad885a2de4d447d8bf3a77d29de813c",
+        "size": 2676,
+        "lastModified": "2025-07-30T12:15:31.173Z",
+        "hash": "ab713979914ee7df3e2705440d5d2b89",
         "language": "markdown"
       }
     ],
@@ -29694,7 +29694,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/sessions.json",
         "relativePath": ".autopilot/tasks/sessions.json",
         "size": 107,
-        "lastModified": "2025-07-30T09:43:31.706Z",
+        "lastModified": "2025-07-30T12:17:33.239Z",
         "hash": "07296db81391d25247fbeb727941b3f8",
         "language": "json"
       }
@@ -29705,7 +29705,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/tasks.json",
         "relativePath": ".autopilot/tasks/tasks.json",
         "size": 2,
-        "lastModified": "2025-07-30T09:43:31.706Z",
+        "lastModified": "2025-07-30T12:17:33.239Z",
         "hash": "d751713988987e9331980363e24189ce",
         "language": "json"
       }
@@ -29728,46 +29728,46 @@
     "filesByLanguage": [
       [
         "json",
-        65203
+        192662
       ],
       [
         "markdown",
-        39057
+        115403
       ],
       [
         "javascript",
-        2979
+        8802
       ],
       [
         "shellscript",
-        15888
+        46944
       ],
       [
         "python",
-        31114
+        91932
       ],
       [
         "rust",
-        146633
+        433254
       ],
       [
         "yaml",
-        662
+        1956
       ],
       [
         "csharp",
-        317429
+        937902
       ],
       [
         "css",
-        662
+        1956
       ],
       [
         "html",
-        662
+        1956
       ]
     ],
-    "avgFileSize": 9164.496698113207,
+    "avgFileSize": 9164.280188679246,
     "largestFiles": [
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/network/examples/debug_testnet_standalone",
