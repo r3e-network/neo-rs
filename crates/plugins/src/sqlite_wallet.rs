@@ -73,6 +73,8 @@ impl SqliteWalletPlugin {
                 author: "Neo Rust Team".to_string(),
                 category: PluginCategory::Wallet,
                 dependencies: vec![],
+                min_neo_version: "3.0.0".to_string(),
+                priority: 10,
             },
             enabled: false,
             wallets: Arc::new(RwLock::new(HashMap::new())),
