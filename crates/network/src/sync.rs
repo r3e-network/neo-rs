@@ -4,7 +4,11 @@
 //! including block downloading, header verification, and consensus coordination.
 
 use crate::{NetworkError, NetworkMessage, NetworkResult, P2pNode, ProtocolMessage};
+use neo_config::MILLISECONDS_PER_BLOCK;
+use neo_core::constants::MAX_RETRY_ATTEMPTS;
+use neo_core::constants::MAX_TRANSACTION_SIZE;
 use neo_core::{UInt160, UInt256};
+use neo_ledger::block::MAX_BLOCK_SIZE;
 use neo_ledger::{Block, BlockHeader};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -14,7 +18,6 @@ use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, RwLock};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
-
 /// Maximum number of blocks to request at once (Conservative for reliability)
 pub const MAX_BLOCKS_PER_REQUEST: u16 = 100;
 
@@ -25,8 +28,6 @@ pub const MAX_HEADERS_PER_REQUEST: usize = 500;
 pub const SYNC_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Maximum retry attempts for failed requests
-pub const MAX_RETRY_ATTEMPTS: u32 = 3;
-
 /// Delay between sync retries
 pub const RETRY_DELAY: Duration = Duration::from_secs(5);
 
@@ -229,7 +230,6 @@ impl SyncManager {
                 .event_tx
                 .send(SyncEvent::NewBestHeight { height, peer });
 
-            // Start sync if we're behind
             let current_height = self.blockchain.get_height().await;
             if height > current_height && *self.state.read().await == SyncState::Idle {
                 drop(best_known);
@@ -275,7 +275,6 @@ impl SyncManager {
         // Remove from pending requests
         self.pending_requests.write().await.remove(&block.index());
 
-        // Queue block for processing
         self.blocks_queue.write().await.push_back(block);
 
         // Process blocks
@@ -308,7 +307,6 @@ impl SyncManager {
             });
         }
 
-        // Use the best peer (highest height)
         let best_peer = peers
             .into_iter()
             .max_by_key(|p| p.start_height)
@@ -396,8 +394,6 @@ impl SyncManager {
         let mut processed = 0;
 
         while let Some(header) = headers_queue.pop_front() {
-            // Production-ready header validation (matches C# Blockchain.ValidateHeader exactly)
-
             // 1. Validate header structure
             if header.index == 0 {
                 // Genesis block validation
@@ -416,7 +412,6 @@ impl SyncManager {
                     });
                 }
 
-                // Check if previous block exists
                 let previous_block = self
                     .blockchain
                     .get_block_by_hash(&header.previous_hash)
@@ -455,11 +450,11 @@ impl SyncManager {
             // 2. Validate timestamp
             let current_time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("Operation failed")
                 .as_millis() as u64;
 
-            if header.timestamp > current_time + 15000 {
-                // 15 second tolerance
+            if header.timestamp > current_time + MILLISECONDS_PER_BLOCK {
+                // SECONDS_PER_BLOCK second tolerance
                 return Err(NetworkError::InvalidHeader {
                     peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
                     reason: "Block timestamp too far in future".to_string(),
@@ -482,7 +477,7 @@ impl SyncManager {
                 });
             }
 
-            println!("Header validation passed for block {}", header.index);
+            log::debug!("Header validation passed for block {}", header.index);
 
             processed += 1;
         }
@@ -490,7 +485,6 @@ impl SyncManager {
         if processed > 0 {
             debug!("Processed {} headers", processed);
 
-            // Check if we should start downloading blocks
             let current_height = self.blockchain.get_height().await;
             let best_known = *self.best_known_height.read().await;
 
@@ -533,7 +527,6 @@ impl SyncManager {
         if processed > 0 {
             debug!("Processed {} blocks", processed);
 
-            // Check if sync is complete
             let current_height = self.blockchain.get_height().await;
             let best_known = *self.best_known_height.read().await;
 
@@ -577,7 +570,6 @@ impl SyncManager {
                     let best_known = *best_known_height.read().await;
 
                     if best_known > current_height {
-                        // Auto-start sync if we're behind
                         *state.write().await = SyncState::SyncingHeaders;
                     }
                 }
@@ -735,7 +727,7 @@ impl SyncManager {
 
         // 3. Validate block size
         let block_size = block.size();
-        if block_size > 1_048_576 {
+        if block_size > MAX_BLOCK_SIZE {
             // 1MB max block size
             return Err(NetworkError::SyncFailed {
                 reason: format!("Block size {} exceeds maximum of 1MB", block_size),
@@ -774,7 +766,7 @@ impl SyncManager {
     /// Validates a transaction (basic checks)
     async fn validate_transaction(&self, tx: &neo_core::Transaction) -> NetworkResult<()> {
         // 1. Check transaction size
-        if tx.size() > 102400 {
+        if tx.size() > MAX_TRANSACTION_SIZE {
             // 100KB max transaction size
             return Err(NetworkError::SyncFailed {
                 reason: format!("Transaction size {} exceeds maximum", tx.size()),
@@ -926,7 +918,7 @@ pub struct SyncHealthStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use crate::{NetworkConfig, P2pNode};
     use neo_ledger::Blockchain;
     use std::sync::Arc;
@@ -937,7 +929,7 @@ mod tests {
         let blockchain = Arc::new(Blockchain::new_testnet());
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = Arc::new(P2pNode::new(config, command_receiver).unwrap());
+        let p2p_node = Arc::new(P2pNode::new(config, command_receiver));
         let sync_manager = SyncManager::new(blockchain.clone(), p2p_node.clone());
         (sync_manager, blockchain, p2p_node)
     }
@@ -961,7 +953,8 @@ mod tests {
 
         for state in states {
             let serialized = serde_json::to_string(&state).unwrap();
-            let deserialized: SyncState = serde_json::from_str(&serialized).unwrap();
+            let deserialized: SyncState =
+                serde_json::from_str(&serialized).expect("Failed to parse from string");
             assert_eq!(state, deserialized);
         }
     }
@@ -975,7 +968,7 @@ mod tests {
             progress_percentage: 50.0,
             pending_requests: 10,
             sync_speed: 5.0,
-            estimated_time_remaining: Some(Duration::from_secs(20)),
+            estimated_time_remaining: Some(Duration::from_secs(ADDRESS_SIZE)),
         };
 
         assert_eq!(stats.state, SyncState::SyncingBlocks);
@@ -986,8 +979,10 @@ mod tests {
         assert_eq!(stats.sync_speed, 5.0);
         assert!(stats.estimated_time_remaining.is_some());
         assert_eq!(
-            stats.estimated_time_remaining.unwrap(),
-            Duration::from_secs(20)
+            stats
+                .estimated_time_remaining
+                .expect("operation should succeed"),
+            Duration::from_secs(ADDRESS_SIZE)
         );
     }
 
@@ -1000,11 +995,12 @@ mod tests {
             progress_percentage: 50.0,
             pending_requests: 10,
             sync_speed: 5.0,
-            estimated_time_remaining: Some(Duration::from_secs(20)),
+            estimated_time_remaining: Some(Duration::from_secs(ADDRESS_SIZE)),
         };
 
-        let serialized = serde_json::to_string(&stats).unwrap();
-        let deserialized: SyncStats = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&stats).expect("operation should succeed");
+        let deserialized: SyncStats =
+            serde_json::from_str(&serialized).expect("Failed to parse from string");
 
         assert_eq!(stats.state, deserialized.state);
         assert_eq!(stats.current_height, deserialized.current_height);
@@ -1039,7 +1035,6 @@ mod tests {
         // Stop sync manager
         sync_manager.stop().await;
 
-        // Should be idle again (eventually)
         tokio::time::sleep(Duration::from_millis(100)).await;
         let stats = sync_manager.stats().await;
         // Note: Actual state depends on implementation details
@@ -1074,7 +1069,7 @@ mod tests {
         let (sync_manager, _, _) = create_test_sync_manager().await;
 
         // Test requesting a block
-        let peer_addr = "127.0.0.1:20333".parse().unwrap();
+        let peer_addr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
         let block_height = 100;
 
         let result = sync_manager.request_block(peer_addr, block_height).await;
@@ -1090,7 +1085,7 @@ mod tests {
         let (sync_manager, _, _) = create_test_sync_manager().await;
 
         // Test requesting headers
-        let peer_addr = "127.0.0.1:20333".parse().unwrap();
+        let peer_addr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
         let start_height = 0;
         let count = 2000;
 
@@ -1104,14 +1099,13 @@ mod tests {
     async fn test_sync_duplicate_request_prevention() {
         let (sync_manager, _, _) = create_test_sync_manager().await;
 
-        let peer_addr = "127.0.0.1:20333".parse().unwrap();
+        let peer_addr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
         let block_height = 100;
 
         // First request should succeed
         let result1 = sync_manager.request_block(peer_addr, block_height).await;
         assert!(result1.is_ok());
 
-        // Second request for same block should be rejected
         let result2 = sync_manager.request_block(peer_addr, block_height).await;
         assert!(result2.is_err());
 
@@ -1124,23 +1118,21 @@ mod tests {
     async fn test_sync_request_timeout_handling() {
         let (sync_manager, _, _) = create_test_sync_manager().await;
 
-        let peer_addr = "127.0.0.1:20333".parse().unwrap();
+        let peer_addr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
         let block_height = 100;
 
         // Make a request
         sync_manager
             .request_block(peer_addr, block_height)
             .await
-            .unwrap();
+            .expect("operation should succeed");
 
         // Verify request exists
         assert_eq!(sync_manager.pending_requests.read().await.len(), 1);
 
-        // Process maintenance (should handle timeouts)
         let result = sync_manager.process_maintenance().await;
         assert!(result.is_ok());
 
-        // For this test, we can't easily simulate a timeout without waiting
         // but we can verify the maintenance process runs without errors
     }
 
@@ -1231,7 +1223,6 @@ mod tests {
             stats.current_height = 50;
             stats.best_known_height = 100;
             stats.sync_speed = 5.0; // blocks per second
-                                    // Should need 50 more blocks at 5 blocks/sec = 10 seconds
             stats.estimated_time_remaining = Some(Duration::from_secs(10));
         }
 
@@ -1247,7 +1238,7 @@ mod tests {
         let (sync_manager, _, _) = create_test_sync_manager().await;
 
         // Test requesting block with invalid height
-        let peer_addr = "127.0.0.1:20333".parse().unwrap();
+        let peer_addr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
         let invalid_height = u32::MAX;
 
         let result = sync_manager.request_block(peer_addr, invalid_height).await;
@@ -1290,8 +1281,9 @@ mod tests {
             last_block_time: None,
         };
 
-        let serialized = serde_json::to_string(&health).unwrap();
-        let deserialized: SyncHealthStatus = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&health).expect("operation should succeed");
+        let deserialized: SyncHealthStatus =
+            serde_json::from_str(&serialized).expect("Failed to parse from string");
 
         assert_eq!(health.state, deserialized.state);
         assert_eq!(health.current_height, deserialized.current_height);
@@ -1306,7 +1298,11 @@ mod tests {
 
         // Test concurrent block requests
         let peer_addrs: Vec<std::net::SocketAddr> = (0..5)
-            .map(|i| format!("127.0.0.{}:20333", i + 1).parse().unwrap())
+            .map(|i| {
+                format!("127.0.0.{}:20333", i + 1)
+                    .parse()
+                    .unwrap_or_default()
+            })
             .collect();
 
         let mut handles = vec![];
@@ -1320,9 +1316,8 @@ mod tests {
             }));
         }
 
-        // Wait for all requests
         for handle in handles {
-            let result = handle.await.unwrap();
+            let result = handle.await.expect("operation should succeed");
             assert!(result.is_ok());
         }
 
@@ -1337,7 +1332,9 @@ mod tests {
 
         // Add many requests
         for i in 0..100 {
-            let peer_addr = format!("127.0.0.1:{}", 20333 + i).parse().unwrap();
+            let peer_addr = format!("localhost:{}", 20333 + i)
+                .parse()
+                .unwrap_or_default();
             let _ = sync_manager.request_block(peer_addr, i).await;
         }
 
@@ -1345,7 +1342,6 @@ mod tests {
         let initial_count = sync_manager.pending_requests.read().await.len();
         assert_eq!(initial_count, 100);
 
-        // Process maintenance (should clean up old requests eventually)
         let result = sync_manager.process_maintenance().await;
         assert!(result.is_ok());
 

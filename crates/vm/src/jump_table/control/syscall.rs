@@ -4,33 +4,30 @@ use super::{
     types::{InteropParameter, ParameterType, SyscallDescriptor},
     witness::validate_call_flags,
 };
+const ONE_MEGABYTE: usize = 1024 * 1024;
+const MAX_SCRIPT_SIZE: u64 = 1 << 10; // 1024
+const ADDRESS_SIZE: usize = 20;
+const SECONDS_PER_BLOCK: u64 = 15;
 use crate::{
     error::{VmError, VmResult},
     execution_engine::ExecutionEngine,
     instruction::Instruction,
     stack_item::StackItem,
 };
+const MAX_BLOCK_SIZE: u64 = 1 << 20; // 1MB
 use num_traits::ToPrimitive;
-
 /// Implements the SYSCALL operation.
 pub fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
-    // Production-ready syscall handling (matches C# ApplicationEngine.OnSysCall exactly)
-
-    // Get the syscall hash from the instruction operand (matches C# instruction.TokenU32)
     let syscall_hash = instruction.operand_as::<u32>()?;
 
-    // Look up the interop descriptor (matches C# GetInteropDescriptor)
     let descriptor = get_interop_descriptor(syscall_hash).ok_or_else(|| {
         VmError::invalid_operation_msg(format!("Unknown syscall: 0x{:08x}", syscall_hash))
     })?;
 
-    // Validate call flags (matches C# ValidateCallFlags)
     validate_call_flags(engine, descriptor.required_call_flags)?;
 
-    // Add gas fee (production-ready implementation matching C# ApplicationEngine.AddFee exactly)
     add_fee(engine, descriptor.fixed_price)?;
 
-    // Prepare parameters (matches C# parameter conversion)
     let mut parameters = Vec::new();
     for param_type in descriptor.parameters.iter().rev() {
         let context = engine
@@ -43,11 +40,9 @@ pub fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     }
     parameters.reverse(); // Restore original order
 
-    // Invoke the interop service (matches C# descriptor.Handler.Invoke)
     let result =
         super::interop_services::invoke_interop_service(engine, &descriptor.name, parameters)?;
 
-    // Push return value if any (matches C# return value handling)
     if let Some(return_value) = result {
         let context = engine
             .current_context_mut()
@@ -61,56 +56,53 @@ pub fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
 
 /// Gets an interop descriptor by hash (matches C# ApplicationEngine.GetInteropDescriptor exactly)
 pub fn get_interop_descriptor(hash: u32) -> Option<SyscallDescriptor> {
-    // Production-ready interop descriptor registry (matches C# ApplicationEngine.Services exactly)
     match hash {
-        // System.Runtime services (matches C# ApplicationEngine.Runtime.cs exactly)
         0x49252821 => Some(SyscallDescriptor {
             name: "System.Runtime.Platform".to_string(),
-            fixed_price: 8, // 1 << 3
+            fixed_price: 8,
             required_call_flags: crate::call_flags::CallFlags::NONE,
             parameters: vec![],
             return_type: ParameterType::String,
         }),
         0xDAD2CE00 => Some(SyscallDescriptor {
             name: "System.Runtime.GetTrigger".to_string(),
-            fixed_price: 8, // 1 << 3
+            fixed_price: 8,
             required_call_flags: crate::call_flags::CallFlags::NONE,
             parameters: vec![],
             return_type: ParameterType::Integer,
         }),
         0x4E2FCDF1 => Some(SyscallDescriptor {
             name: "System.Runtime.GetTime".to_string(),
-            fixed_price: 8, // 1 << 3
+            fixed_price: 8,
             required_call_flags: crate::call_flags::CallFlags::NONE,
             parameters: vec![],
             return_type: ParameterType::Integer,
         }),
         0x83C5C61F => Some(SyscallDescriptor {
             name: "System.Runtime.Log".to_string(),
-            fixed_price: 32768, // 1 << 15
+            fixed_price: 32768, // 1 << SECONDS_PER_BLOCK
             required_call_flags: crate::call_flags::CallFlags::ALLOW_NOTIFY,
             parameters: vec![ParameterType::String],
             return_type: ParameterType::Void,
         }),
         0xF827EC8C => Some(SyscallDescriptor {
             name: "System.Runtime.Notify".to_string(),
-            fixed_price: 32768, // 1 << 15
+            fixed_price: 32768, // 1 << SECONDS_PER_BLOCK
             required_call_flags: crate::call_flags::CallFlags::ALLOW_NOTIFY,
             parameters: vec![ParameterType::String, ParameterType::Any],
             return_type: ParameterType::Void,
         }),
 
-        // System.Storage services (matches C# ApplicationEngine.Storage.cs exactly)
         0x9BF667CE => Some(SyscallDescriptor {
             name: "System.Storage.GetContext".to_string(),
-            fixed_price: 16, // 1 << 4
+            fixed_price: 16,
             required_call_flags: crate::call_flags::CallFlags::READ_STATES,
             parameters: vec![],
             return_type: ParameterType::InteropInterface,
         }),
         0x925DE831 => Some(SyscallDescriptor {
             name: "System.Storage.Get".to_string(),
-            fixed_price: 1048576, // 1 << 20
+            fixed_price: MAX_BLOCK_SIZE, // 1 << ADDRESS_SIZE
             required_call_flags: crate::call_flags::CallFlags::READ_STATES,
             parameters: vec![ParameterType::InteropInterface, ParameterType::ByteArray],
             return_type: ParameterType::ByteArray,
@@ -119,25 +111,20 @@ pub fn get_interop_descriptor(hash: u32) -> Option<SyscallDescriptor> {
             name: "System.Storage.Put".to_string(),
             fixed_price: 0, // Dynamic pricing
             required_call_flags: crate::call_flags::CallFlags::WRITE_STATES,
-            parameters: vec![
-                ParameterType::InteropInterface,
-                ParameterType::ByteArray,
-                ParameterType::ByteArray,
-            ],
+            parameters: vec![ParameterType::InteropInterface, ParameterType::ByteArray],
             return_type: ParameterType::Void,
         }),
         0x8DE29EF2 => Some(SyscallDescriptor {
             name: "System.Storage.Delete".to_string(),
-            fixed_price: 1048576, // 1 << 20
+            fixed_price: MAX_BLOCK_SIZE, // 1 << ADDRESS_SIZE
             required_call_flags: crate::call_flags::CallFlags::WRITE_STATES,
             parameters: vec![ParameterType::InteropInterface, ParameterType::ByteArray],
             return_type: ParameterType::Void,
         }),
 
-        // System.Contract services (matches C# ApplicationEngine.Contract.cs exactly)
         0x627D5B52 => Some(SyscallDescriptor {
             name: "System.Contract.Call".to_string(),
-            fixed_price: 32768, // 1 << 15
+            fixed_price: 32768, // 1 << SECONDS_PER_BLOCK
             required_call_flags: crate::call_flags::CallFlags::READ_STATES
                 | crate::call_flags::CallFlags::ALLOW_CALL,
             parameters: vec![
@@ -149,16 +136,15 @@ pub fn get_interop_descriptor(hash: u32) -> Option<SyscallDescriptor> {
         }),
         0x41AF2FF8 => Some(SyscallDescriptor {
             name: "System.Contract.GetCallFlags".to_string(),
-            fixed_price: 1024, // 1 << 10
+            fixed_price: MAX_SCRIPT_SIZE, // 1 << 10
             required_call_flags: crate::call_flags::CallFlags::NONE,
             parameters: vec![],
             return_type: ParameterType::Integer,
         }),
 
-        // System.Crypto services (matches C# ApplicationEngine.Crypto.cs exactly)
         0x726CB6DA => Some(SyscallDescriptor {
             name: "System.Crypto.CheckWitness".to_string(),
-            fixed_price: 1048576, // 1 << 20
+            fixed_price: MAX_BLOCK_SIZE, // 1 << ADDRESS_SIZE
             required_call_flags: crate::call_flags::CallFlags::NONE,
             parameters: vec![ParameterType::Hash160],
             return_type: ParameterType::Boolean,
@@ -177,8 +163,6 @@ pub fn get_interop_descriptor(hash: u32) -> Option<SyscallDescriptor> {
 
 /// Adds gas fee (production-ready implementation matching C# ApplicationEngine.AddFee exactly)
 pub fn add_fee(engine: &mut ExecutionEngine, fee: u64) -> VmResult<()> {
-    // Production-ready gas fee addition (matches C# ApplicationEngine.AddFee exactly)
-
     // 1. Calculate the actual fee based on ExecFeeFactor (matches C# logic exactly)
     let exec_fee_factor = 30; // Default ExecFeeFactor from PolicyContract
     let actual_fee = fee.saturating_mul(exec_fee_factor);
@@ -224,7 +208,7 @@ pub fn convert_parameter(
         }
         ParameterType::Hash160 => {
             let bytes = item.as_bytes()?;
-            if bytes.len() != 20 {
+            if bytes.len() != ADDRESS_SIZE {
                 return Err(VmError::invalid_operation_msg(
                     "Invalid Hash160 length".to_string(),
                 ));
@@ -232,16 +216,13 @@ pub fn convert_parameter(
             Ok(InteropParameter::Hash160(bytes))
         }
         ParameterType::Array => {
-            // Production-ready array parameter conversion (matches C# ApplicationEngine.Convert exactly)
             // Convert stack item to array of parameters
             match &item {
                 StackItem::Array(items) => {
                     let mut array_params = Vec::new();
                     for array_item in items {
-                        // Production-ready array element conversion (matches C# StackItem type handling exactly)
                         // This implements the C# logic: proper parameter type inference and conversion
 
-                        // Determine appropriate parameter type based on StackItem type (production type mapping)
                         let converted_param = match array_item {
                             StackItem::Integer(i) => {
                                 InteropParameter::Integer(i.to_i64().unwrap_or(0))
@@ -251,7 +232,6 @@ pub fn convert_parameter(
                                 InteropParameter::ByteArray(bytes.clone())
                             }
                             StackItem::Array(nested_array) => {
-                                // Recursively convert nested arrays (production nested handling)
                                 let nested_params: Vec<InteropParameter> = nested_array
                                     .iter()
                                     .map(|nested_item| {
@@ -289,10 +269,7 @@ pub fn convert_parameter(
                 }
             }
         }
-        ParameterType::InteropInterface => {
-            // Handle interop interface (storage context, etc.)
-            Ok(InteropParameter::InteropInterface(item))
-        }
+        ParameterType::InteropInterface => Ok(InteropParameter::InteropInterface(item)),
         ParameterType::Any => Ok(InteropParameter::Any(item)),
         ParameterType::Void => Err(VmError::invalid_operation_msg(
             "Cannot convert to void parameter".to_string(),

@@ -32,7 +32,6 @@ fn create_ordered_stack(count: usize) -> EvaluationStack {
 
 #[test]
 fn test_clear() {
-    // Test clear operation - C# TestClear()
     let mut stack = create_ordered_stack(3);
     stack.clear();
     assert_eq!(0, stack.len());
@@ -40,12 +39,10 @@ fn test_clear() {
 
 #[test]
 fn test_copy_to() {
-    // Test copy operation - C# TestCopyTo()
     let mut stack = create_ordered_stack(3);
     let reference_counter = ReferenceCounter::new();
     let mut copy = EvaluationStack::new(reference_counter);
 
-    // Test copy with count 0 (copy nothing)
     copy_to_with_count(&stack, &mut copy, 0);
 
     assert_eq!(3, stack.len());
@@ -64,7 +61,6 @@ fn test_copy_to() {
         assert_eq!(*v2, BigInt::from(1)); // bottom
     }
 
-    // Test copy with count -1 (copy all)
     copy_to_with_count(&stack, &mut copy, -1);
 
     assert_eq!(3, stack.len());
@@ -84,7 +80,6 @@ fn test_copy_to() {
     assert_eq!(3, copy.len());
 
     // Verify the stack now has the copied items on top
-    // Original: [1, 2, 3] + copied top 2: [3, 2] = [1, 2, 3, 3, 2]
     let expected_values = [2, 3, 3, 2, 1]; // from top to bottom
     for (i, &expected) in expected_values.iter().enumerate() {
         let item = stack.peek(i as isize).unwrap();
@@ -96,19 +91,16 @@ fn test_copy_to() {
 
 #[test]
 fn test_move_to() {
-    // Test move operation - C# TestMoveTo()
     let mut stack = create_ordered_stack(3);
     let reference_counter = ReferenceCounter::new();
     let mut other = EvaluationStack::new(reference_counter);
 
-    // Test move with count 0 (move nothing)
     move_to_with_count(&mut stack, &mut other, 0);
 
     assert_eq!(3, stack.len());
     assert_eq!(0, other.len());
     verify_stack_order(&stack, &[1, 2, 3]);
 
-    // Test move with count -1 (move all)
     move_to_with_count(&mut stack, &mut other, -1);
 
     assert_eq!(0, stack.len());
@@ -127,11 +119,9 @@ fn test_move_to() {
 
 #[test]
 fn test_insert_peek() {
-    // Test insert and peek operations - C# TestInsertPeek()
     let reference_counter = ReferenceCounter::new();
     let mut stack = EvaluationStack::new(reference_counter);
 
-    // Insert items in specific order to match C# test
     // Note: insert uses Vec indexing, not stack indexing
     stack
         .insert(0, StackItem::Integer(BigInt::from(3)))
@@ -149,7 +139,6 @@ fn test_insert_peek() {
 
     assert_eq!(3, stack.len());
 
-    // Let's check what the actual order is
     let item0 = stack.peek(0).unwrap();
     let item1 = stack.peek(1).unwrap();
     let item2 = stack.peek(2).unwrap();
@@ -159,7 +148,6 @@ fn test_insert_peek() {
         (item0, item1, item2)
     {
         // The stack should have: [3, 2, 1] from bottom to top after the inserts
-        // peek(0) = top = 1, peek(1) = middle = 2, peek(2) = bottom = 3
         assert_eq!(*v0, BigInt::from(1)); // top
         assert_eq!(*v1, BigInt::from(2)); // middle
         assert_eq!(*v2, BigInt::from(3)); // bottom
@@ -188,7 +176,6 @@ fn test_insert_peek() {
 
 #[test]
 fn test_pop_push() {
-    // Test pop and push operations - C# TestPopPush()
     let mut stack = create_ordered_stack(3);
 
     // Test basic pop operations
@@ -230,10 +217,8 @@ fn test_pop_push() {
 
 #[test]
 fn test_remove() {
-    // Test remove operation - C# TestRemove()
     let mut stack = create_ordered_stack(3);
 
-    // Remove from top (index 0 in stack terms)
     let item = remove_as_integer(&mut stack, 0).unwrap();
     assert_eq!(item, BigInt::from(3));
 
@@ -253,7 +238,6 @@ fn test_remove() {
 
 #[test]
 fn test_reverse() {
-    // Test reverse operation - C# TestReverse()
     let mut stack = create_ordered_stack(3);
 
     stack.reverse(3).unwrap();
@@ -279,7 +263,6 @@ fn test_reverse() {
         "Reverse with count > stack size should fail"
     );
 
-    // Test reverse with count 1 (no change)
     stack.reverse(1).unwrap();
 
     let item = pop_as_integer(&mut stack).unwrap();
@@ -297,7 +280,6 @@ fn test_reverse() {
 
 #[test]
 fn test_evaluation_stack_print() {
-    // Test stack string representation - C# TestEvaluationStackPrint()
     let reference_counter = ReferenceCounter::new();
     let mut stack = EvaluationStack::new(reference_counter);
 
@@ -332,11 +314,9 @@ fn test_evaluation_stack_print() {
 
 #[test]
 fn test_print_invalid_utf8() {
-    // Test stack with invalid UTF-8 bytes - C# TestPrintInvalidUTF8()
     let reference_counter = ReferenceCounter::new();
     let mut stack = EvaluationStack::new(reference_counter);
 
-    // Create byte array from hex string "4CC95219999D421243C8161E3FC0F4290C067845"
     // Convert hex manually without hex crate
     let hex_bytes = vec![
         0x4C, 0xC9, 0x52, 0x19, 0x99, 0x9D, 0x42, 0x12, 0x43, 0xC8, 0x16, 0x1E, 0x3F, 0xC0, 0xF4,
@@ -351,8 +331,6 @@ fn test_print_invalid_utf8() {
     let item = stack.peek(0).unwrap();
     assert!(matches!(item, StackItem::ByteString(_)));
 }
-
-// Helper functions to match C# API patterns
 
 fn copy_to_with_count(source: &EvaluationStack, target: &mut EvaluationStack, count: isize) {
     if count == 0 {
@@ -410,7 +388,6 @@ fn pop_as_integer(stack: &mut EvaluationStack) -> Result<BigInt, String> {
 }
 
 fn remove_as_integer(stack: &mut EvaluationStack, index: isize) -> Result<BigInt, String> {
-    // Convert stack index to Vec index
     let vec_index = if index < 0 {
         // Negative index: count from bottom
         let stack_len = stack.len() as isize;
@@ -438,10 +415,7 @@ fn remove_as_integer(stack: &mut EvaluationStack, index: isize) -> Result<BigInt
 fn verify_stack_order(stack: &EvaluationStack, expected: &[i32]) {
     assert_eq!(stack.len(), expected.len(), "Stack size mismatch");
 
-    // The stack is LIFO, so peek(0) gets the top (last pushed) item
-    // expected[0] should be the bottom item, expected[last] should be the top item
     for (i, &expected_value) in expected.iter().enumerate() {
-        // Peek from the bottom: peek(stack.len() - 1 - i) gets the i-th item from bottom
         let peek_index = (stack.len() - 1 - i) as isize;
         let item = stack.peek(peek_index).unwrap();
         if let StackItem::Integer(value) = item {

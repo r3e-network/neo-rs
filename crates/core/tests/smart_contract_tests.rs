@@ -46,7 +46,6 @@ fn test_crypto_murmur32() {
         "Murmur32 should be deterministic"
     );
 
-    // Test with different input produces different result
     let different_input = b"Different input";
     let different_hash = murmur::murmur32(different_input, 0);
     assert_ne!(
@@ -115,7 +114,6 @@ fn test_transaction_hash_computation() {
 /// Test basic cryptographic operations used in smart contracts
 #[test]
 fn test_smart_contract_crypto_operations() {
-    // Test Hash160 (commonly used for address generation)
     let data = b"test data for hash160";
     let hash160_result = hash::hash160(data);
     assert_eq!(
@@ -124,7 +122,6 @@ fn test_smart_contract_crypto_operations() {
         "Hash160 should produce 20-byte result"
     );
 
-    // Test Hash256 (commonly used for double hashing)
     let hash256_result = hash::hash256(data);
     assert_eq!(
         32,
@@ -152,16 +149,12 @@ fn test_standard_account_creation() {
     let public_key =
         hex::decode("024b817ef37f2fc3d4a33fe36687e592d9f30fe24b3e28187dc8f12b3b3b2b839e").unwrap();
 
-    // Create script hash from public key (this is how standard accounts are created)
     let script = create_signature_redeem_script(&public_key);
     let script_hash = UInt160::from_script(&script);
 
-    // Production-ready contract hash validation (matches C# ContractParametersContext exactly)
     // Verify the hash matches the deployed contract hash format
-    // Test updated for current script generation implementation
     let result = hex::encode(script_hash.to_array());
 
-    // Verify it's a valid hash (not zero and consistent)
     assert_ne!("0000000000000000000000000000000000000000", result);
 
     // Test consistency
@@ -179,7 +172,6 @@ fn test_signature_verification_data() {
     let mut tx = Transaction::new();
     tx.set_script(vec![0x01, 0x02, 0x03]);
 
-    // Get hash data for signing (this is what gets signed in smart contract verification)
     let hash_data = tx.get_hash_data();
     assert!(!hash_data.is_empty(), "Hash data should not be empty");
 
@@ -235,7 +227,6 @@ fn test_transaction_with_signers() {
 fn test_serialization_for_smart_contracts() {
     use neo_io::{BinaryWriter, MemoryReader, Serializable};
 
-    // Test UInt160 serialization (commonly stored in smart contracts)
     let uint160 = UInt160::from_str("0x0000000000000000000000000000000000000001").unwrap();
 
     let mut writer = BinaryWriter::new();
@@ -276,7 +267,6 @@ fn test_serialization_for_smart_contracts() {
 fn create_signature_redeem_script(public_key: &[u8]) -> Vec<u8> {
     let mut script = Vec::new();
 
-    // PUSHDATA1 opcode (0x0C) followed by length and public key
     script.push(0x0C); // PUSHDATA1
     script.push(public_key.len() as u8); // Length
     script.extend_from_slice(public_key); // Public key
@@ -298,7 +288,6 @@ fn create_signature_redeem_script(public_key: &[u8]) -> Vec<u8> {
 #[test]
 #[ignore] // Ignore until VM infrastructure is ready
 fn test_vm_execution_engine() {
-    // Future: Move VM tests to neo-vm crate for better organization
     // - Basic VM execution
     // - OpCode operations
     // - Stack management
@@ -308,7 +297,6 @@ fn test_vm_execution_engine() {
 #[test]
 #[ignore] // Ignore until smart contract infrastructure is ready
 fn test_application_engine() {
-    // Future: Move contract tests to neo-smart-contract crate for better organization
     // - ApplicationEngine creation
     // - Interop service calls
     // - Gas consumption
@@ -318,7 +306,6 @@ fn test_application_engine() {
 #[test]
 #[ignore] // Ignore until storage infrastructure is ready
 fn test_storage_operations() {
-    // Future: Move contract tests to neo-smart-contract crate for better organization
     // - Storage context management
     // - Get/Put/Delete operations
     // - Read-only contexts
@@ -328,7 +315,6 @@ fn test_storage_operations() {
 #[test]
 #[ignore] // Ignore until contract infrastructure is ready
 fn test_contract_operations() {
-    // Future: Move contract tests to neo-smart-contract crate for better organization
     // - Contract deployment
     // - Contract calls
     // - Contract destruction
@@ -338,7 +324,6 @@ fn test_contract_operations() {
 #[test]
 #[ignore] // Ignore until notification system is ready
 fn test_notification_system() {
-    // Future: Move contract tests to neo-smart-contract crate for better organization
     // - Event emission
     // - Notification retrieval
     // - Event filtering
@@ -348,7 +333,6 @@ fn test_notification_system() {
 #[test]
 #[ignore] // Ignore until blockchain infrastructure is ready
 fn test_blockchain_queries() {
-    // Future: Move ledger tests to neo-ledger crate for better organization
     // - Block queries
     // - Transaction queries
     // - Height queries

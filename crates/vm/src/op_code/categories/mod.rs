@@ -95,7 +95,7 @@ impl OpCodeCategory {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_category_names() {

@@ -10,7 +10,6 @@ mod console_tests;
 mod integration_tests;
 mod wallet_tests;
 
-// Integration tests for complete CLI workflows
 mod cli_integration_tests {
     use assert_cmd::Command;
     use neo_cli::*;
@@ -66,8 +65,8 @@ mod cli_integration_tests {
     /// Test CLI with configuration files (matches C# config handling exactly)
     #[test]
     fn test_cli_with_config_files() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("config.json");
+        let final_dir = TempDir::new().unwrap();
+        let config_path = final_dir.path().join("config.json");
 
         // Create mock config file
         std::fs::write(
@@ -128,8 +127,8 @@ mod cli_integration_tests {
     /// Test CLI with wallet operations (matches C# wallet CLI patterns exactly)
     #[test]
     fn test_cli_wallet_operations() {
-        let temp_dir = TempDir::new().unwrap();
-        let wallet_path = temp_dir.path().join("test.json");
+        let final_dir = TempDir::new().unwrap();
+        let wallet_path = final_dir.path().join("test.json");
 
         // Create mock wallet file
         std::fs::write(
@@ -263,8 +262,8 @@ mod cli_integration_tests {
     /// Test CLI with database options (matches C# database configuration exactly)
     #[test]
     fn test_cli_database_options() {
-        let temp_dir = TempDir::new().unwrap();
-        let db_path = temp_dir.path().join("blockchain");
+        let final_dir = TempDir::new().unwrap();
+        let db_path = final_dir.path().join("blockchain");
 
         // Test database engine
         let mut cmd = Command::cargo_bin("neo-cli").unwrap();
@@ -280,7 +279,7 @@ mod cli_integration_tests {
 
         // Test data directory
         let mut cmd = Command::cargo_bin("neo-cli").unwrap();
-        cmd.arg("--data-dir").arg(temp_dir.path());
+        cmd.arg("--data-dir").arg(final_dir.path());
         cmd.arg("--help");
         cmd.assert().success();
     }

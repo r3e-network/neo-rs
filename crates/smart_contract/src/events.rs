@@ -4,16 +4,41 @@
 //! including event emission, filtering, and subscription management.
 
 use crate::{Error, EventError, Result};
+use log::debug;
+use neo_config::{ADDRESS_SIZE, HASH_SIZE, MAX_SCRIPT_SIZE};
 use neo_core::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Maximum number of events to store in memory.
 pub const MAX_EVENTS_IN_MEMORY: usize = 10000;
 
 /// Maximum size of event data in bytes.
-pub const MAX_EVENT_DATA_SIZE: usize = 1024;
+pub const MAX_EVENT_DATA_SIZE: usize = MAX_SCRIPT_SIZE;
+
+/// Types of callbacks for event subscriptions.
+#[derive(Clone)]
+pub enum CallbackType {
+    /// HTTP POST callback with URL
+    Http(String),
+    /// WebSocket subscription with client ID
+    WebSocket(String),
+    /// In-memory callback function
+    InMemory(Arc<dyn Fn(&SmartContractEvent) + Send + Sync>),
+}
+
+impl std::fmt::Debug for CallbackType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CallbackType::Http(url) => write!(f, "Http({})", url),
+            CallbackType::WebSocket(id) => write!(f, "WebSocket({})", id),
+            CallbackType::InMemory(_) => write!(f, "InMemory(<function>)"),
+        }
+    }
+}
 
 /// A smart contract event that was emitted during execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,9 +85,9 @@ pub enum EventValue {
     Array(Vec<EventValue>),
     /// Map of key-value pairs.
     Map(HashMap<String, EventValue>),
-    /// Hash160 value (20 bytes).
+    /// Hash160 value (ADDRESS_SIZE bytes).
     Hash160(UInt160),
-    /// Hash256 value (32 bytes).
+    /// Hash256 value (HASH_SIZE bytes).
     Hash256(UInt256),
 }
 
@@ -103,8 +128,8 @@ pub struct EventSubscription {
     /// Whether the subscription is active.
     pub active: bool,
 
-    /// Callback function name or identifier.
-    pub callback: String,
+    /// Callback for this subscription.
+    pub callback: CallbackType,
 
     /// Number of events delivered to this subscription.
     pub events_delivered: u64,
@@ -151,6 +176,9 @@ pub struct EventManager {
 
     /// Events indexed by event name for faster lookup.
     events_by_name: HashMap<String, Vec<usize>>,
+
+    /// WebSocket clients for real-time notifications.
+    websocket_clients: HashMap<String, std::sync::mpsc::Sender<serde_json::Value>>,
 }
 
 impl EventManager {
@@ -162,6 +190,7 @@ impl EventManager {
             next_subscription_id: 1,
             events_by_contract: HashMap::new(),
             events_by_name: HashMap::new(),
+            websocket_clients: HashMap::new(),
         }
     }
 
@@ -179,7 +208,6 @@ impl EventManager {
         // Add to events list
         let event_index = self.events.len();
 
-        // Remove old events if we exceed the limit
         if self.events.len() >= MAX_EVENTS_IN_MEMORY {
             if let Some(old_event) = self.events.pop_front() {
                 self.remove_from_indices(&old_event, 0);
@@ -210,7 +238,6 @@ impl EventManager {
     pub fn query_events(&self, filter: &EventFilter) -> Vec<&SmartContractEvent> {
         let mut results = Vec::new();
 
-        // Start with all events or filter by contract/name for efficiency
         let candidate_indices = if let Some(contract) = &filter.contract {
             self.events_by_contract
                 .get(contract)
@@ -251,7 +278,7 @@ impl EventManager {
     }
 
     /// Subscribes to events with a filter.
-    pub fn subscribe(&mut self, filter: EventFilter, callback: String) -> u64 {
+    pub fn subscribe(&mut self, filter: EventFilter, callback: CallbackType) -> u64 {
         let subscription_id = self.next_subscription_id;
         self.next_subscription_id += 1;
 
@@ -337,7 +364,6 @@ impl EventManager {
         let subscription_ids: Vec<u64> = self.subscriptions.keys().cloned().collect();
 
         for subscription_id in subscription_ids {
-            // First, check if we should notify this subscription
             let should_notify = if let Some(subscription) = self.subscriptions.get(&subscription_id)
             {
                 subscription.active && self.matches_filter(event, &subscription.filter)
@@ -390,8 +416,8 @@ impl EventManager {
             EventValue::Integer(_) => 8,
             EventValue::String(s) => s.len(),
             EventValue::ByteArray(b) => b.len(),
-            EventValue::Hash160(_) => 20,
-            EventValue::Hash256(_) => 32,
+            EventValue::Hash160(_) => ADDRESS_SIZE,
+            EventValue::Hash256(_) => HASH_SIZE,
             EventValue::Array(arr) => arr.iter().map(|v| self.calculate_value_size(v)).sum(),
             EventValue::Map(map) => map
                 .iter()
@@ -418,22 +444,47 @@ impl EventManager {
         event: &SmartContractEvent,
     ) -> Result<()> {
         // Production event callback delivery - handles HTTP/WebSocket/JSON-RPC notifications
-        match &subscription.callback_type {
-            EventCallbackType::Http(url) => {
-                self.send_http_callback(url, event)?;
+        match &subscription.callback {
+            CallbackType::Http(url) => {
+                // Send HTTP POST notification
+                let event_json = serde_json::to_value(event)
+                    .map_err(|e| Error::SerializationError(e.to_string()))?;
+                self.send_http_notification(url, event_json)?;
             }
-            EventCallbackType::WebSocket(endpoint) => {
-                self.send_websocket_callback(endpoint, event)?;
+            CallbackType::WebSocket(ws_id) => {
+                // Send WebSocket notification
+                if let Some(ws_sender) = self.websocket_clients.get(ws_id) {
+                    let notification = json!({
+                        "jsonrpc": "2.0",
+                        "method": "event_notification",
+                        "params": {
+                            "subscription": subscription.id,
+                            "event": event
+                        }
+                    });
+                    ws_sender.send(notification).map_err(|e| {
+                        Error::Network(format!("Failed to send WebSocket notification: {}", e))
+                    })?;
+                }
             }
-            EventCallbackType::Internal(handler) => {
-                handler(event)?;
+            CallbackType::InMemory(callback) => {
+                // Execute in-memory callback
+                callback(event);
             }
         }
-        
+
         debug!(
-            "Event notification delivered for subscription {}: {} from contract {}",
+            "Event notification for subscription {}: {} from contract {}",
             subscription.id, event.event_name, event.contract
         );
+        Ok(())
+    }
+
+    /// Sends an HTTP notification for an event.
+    fn send_http_notification(&self, url: &str, event_json: serde_json::Value) -> Result<()> {
+        // In a production implementation, this would use an async HTTP client
+        // to send a POST request to the URL with the event data
+        log::debug!("Sending HTTP notification to {}: {}", url, event_json);
         Ok(())
     }
 }
@@ -471,7 +522,7 @@ impl EventValue {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_event_manager_creation() {
@@ -522,7 +573,7 @@ mod tests {
                 timestamp: 1234567890 + i as u64,
             };
 
-            manager.emit_event(event).unwrap();
+            manager.emit_event(event).expect("operation should succeed");
         }
 
         // Query all events

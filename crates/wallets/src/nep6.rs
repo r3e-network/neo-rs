@@ -13,6 +13,7 @@ use crate::{
     Error, Result, Version,
 };
 use async_trait::async_trait;
+use log::{debug, error, info, warn};
 use neo_core::{Signer, Transaction, UInt160, UInt256, Witness};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -220,7 +221,6 @@ impl Nep6Wallet {
     pub async fn set_default_account_internal(&self, script_hash: &UInt160) -> WalletResult<()> {
         let mut accounts = self.accounts.write().await;
 
-        // Production-ready account flag update (matches C# NEP6Wallet exactly)
         // This implements the C# logic: setting default account with proper state management
 
         // 1. Create updated accounts with new default flags (production state update)
@@ -234,7 +234,7 @@ impl Nep6Wallet {
         }
 
         // 3. Log the default account change for audit trail (production logging)
-        println!("Default account changed to: {}", script_hash);
+        log::info!("Default account changed to: {}", script_hash);
 
         if updated_accounts.contains_key(script_hash) {
             *accounts = updated_accounts;
@@ -276,9 +276,6 @@ impl Nep6Wallet {
         script_hash: &UInt160,
         asset_id: &UInt256,
     ) -> WalletResult<i64> {
-        // Production-ready blockchain balance query (matches C# Neo RPC client exactly)
-        // This implements the C# logic: RpcClient.GetNep17Balances(address)
-
         // 1. Create blockchain query request (production RPC request)
         let balance_request = self.create_balance_query_request(script_hash, asset_id)?;
 
@@ -287,7 +284,7 @@ impl Nep6Wallet {
             Ok(balance) => Ok(balance),
             Err(e) => {
                 // 3. Handle query error with fallback (production error handling)
-                println!("Balance query failed for {}: {}", script_hash, e);
+                log::info!("Balance query failed for {}: {}", script_hash, e);
                 Ok(0) // Return 0 as safe fallback
             }
         }
@@ -295,9 +292,6 @@ impl Nep6Wallet {
 
     /// Queries unclaimed GAS for account (production-ready implementation)
     async fn query_unclaimed_gas_for_account(&self, script_hash: &UInt160) -> WalletResult<i64> {
-        // Production-ready unclaimed GAS query (matches C# Neo RPC client exactly)
-        // This implements the C# logic: RpcClient.GetUnclaimedGas(address)
-
         // 1. Create unclaimed GAS query request (production RPC request)
         let gas_request = self.create_unclaimed_gas_query_request(script_hash)?;
 
@@ -306,7 +300,7 @@ impl Nep6Wallet {
             Ok(unclaimed_gas) => Ok(unclaimed_gas),
             Err(e) => {
                 // 3. Handle query error with fallback (production error handling)
-                println!("Unclaimed GAS query failed for {}: {}", script_hash, e);
+                log::info!("Unclaimed GAS query failed for {}: {}", script_hash, e);
                 Ok(0) // Return 0 as safe fallback
             }
         }
@@ -318,7 +312,6 @@ impl Nep6Wallet {
         script_hash: &UInt160,
         asset_id: &UInt256,
     ) -> WalletResult<BlockchainQuery> {
-        // Production-ready query request creation (matches C# RPC request format)
         Ok(BlockchainQuery::Balance {
             address: script_hash.clone(),
             asset_id: asset_id.clone(),
@@ -330,7 +323,6 @@ impl Nep6Wallet {
         &self,
         script_hash: &UInt160,
     ) -> WalletResult<BlockchainQuery> {
-        // Production-ready query request creation (matches C# RPC request format)
         Ok(BlockchainQuery::UnclaimedGas {
             address: script_hash.clone(),
         })
@@ -338,14 +330,8 @@ impl Nep6Wallet {
 
     /// Executes blockchain query (production-ready implementation)
     async fn execute_blockchain_query(&self, query: &BlockchainQuery) -> WalletResult<i64> {
-        // Production-ready blockchain query execution (matches C# RPC client exactly)
-        // This implements the C# logic: RpcClient.SendRequest(request)
-
         // 1. Log query execution for monitoring (production logging)
-        println!("Executing blockchain query: {:?}", query);
-
-        // Production-ready RPC node connection with proper HTTP client (matches C# NEP6 wallet exactly)
-        // This implements the C# logic: connecting to Neo RPC node for blockchain queries
+        log::info!("Executing blockchain query: {:?}", query);
 
         // 1. Create HTTP client for RPC connection (production HTTP client)
         let client = reqwest::Client::builder()
@@ -357,9 +343,7 @@ impl Nep6Wallet {
         match query {
             BlockchainQuery::Balance { address, asset_id } => {
                 // 3. Production-ready balance query (matches C# RPC client exactly)
-                // This implements the C# logic: RpcClient.GetNep17Balances(address)
 
-                // Create RPC request for balance query
                 let rpc_request = serde_json::json!({
                     "jsonrpc": "2.0",
                     "method": "getnep17balances",
@@ -375,12 +359,10 @@ impl Nep6Wallet {
                     .await
                     .map_err(|e| WalletError::Other(format!("RPC request failed: {}", e)))?;
 
-                // Parse response and extract balance for specific asset
                 let rpc_result: serde_json::Value = response.json().await.map_err(|e| {
                     WalletError::Other(format!("Failed to parse RPC response: {}", e))
                 })?;
 
-                // Extract balance from RPC response (production parsing)
                 if let Some(result) = rpc_result.get("result") {
                     if let Some(balances) = result.get("balance") {
                         if let Some(balance_array) = balances.as_array() {
@@ -408,9 +390,7 @@ impl Nep6Wallet {
             }
             BlockchainQuery::UnclaimedGas { address } => {
                 // 4. Production-ready unclaimed GAS query (matches C# RPC client exactly)
-                // This implements the C# logic: RpcClient.GetUnclaimedGas(address)
 
-                // Create RPC request for unclaimed GAS query
                 let rpc_request = serde_json::json!({
                     "jsonrpc": "2.0",
                     "method": "getunclaimedgas",
@@ -431,7 +411,6 @@ impl Nep6Wallet {
                     WalletError::Other(format!("Failed to parse RPC response: {}", e))
                 })?;
 
-                // Extract unclaimed GAS from RPC response (production parsing)
                 if let Some(result) = rpc_result.get("result") {
                     if let Some(unclaimed) = result.get("unclaimed") {
                         if let Some(unclaimed_str) = unclaimed.as_str() {
@@ -495,7 +474,7 @@ impl Wallet for Nep6Wallet {
                     .to_nep2(new_password)
                     .map_err(|e| WalletError::Other(e.to_string()))?;
 
-                Arc::get_mut(account).unwrap().nep2_key = Some(new_nep2);
+                Arc::get_mut(account).expect("Operation failed").nep2_key = Some(new_nep2);
             }
         }
 
@@ -504,10 +483,7 @@ impl Wallet for Nep6Wallet {
     }
 
     fn contains(&self, script_hash: &UInt160) -> bool {
-        let accounts = self
-            .accounts
-            .try_read()
-            .unwrap_or_else(|_| panic!("Failed to read accounts"));
+        let accounts = self.accounts.try_read().expect("Failed to read accounts");
         accounts.contains_key(script_hash)
     }
 
@@ -515,16 +491,10 @@ impl Wallet for Nep6Wallet {
         let key_pair = KeyPair::from_private_key(private_key)
             .map_err(|e| WalletError::Other(e.to_string()))?;
 
-        // Production-ready contract creation (matches C# Contract.CreateSignatureContract exactly)
-        // Use the public key to create a proper signature contract
         let contract = match key_pair.get_public_key_point() {
-            Ok(ec_point) => {
-                // Create signature contract using the ECPoint (standard P2PKH contract)
-                Contract::create_signature_contract(&ec_point)
-                    .map_err(|e| WalletError::Other(e.to_string()))?
-            }
+            Ok(ec_point) => Contract::create_signature_contract(&ec_point)
+                .map_err(|e| WalletError::Other(e.to_string()))?,
             Err(_) => {
-                // Fallback: create contract using verification script (for compatibility)
                 let verification_script = key_pair.get_verification_script();
                 let parameter_list = vec![crate::ContractParameterType::Signature];
                 Contract::new(verification_script, parameter_list)
@@ -540,7 +510,6 @@ impl Wallet for Nep6Wallet {
         contract: Contract,
         key_pair: Option<KeyPair>,
     ) -> WalletResult<Arc<dyn WalletAccount>> {
-        // Use the KeyPair's script hash if available, otherwise use contract's script hash
         let script_hash = if let Some(ref kp) = key_pair {
             kp.get_script_hash()
         } else {
@@ -611,10 +580,7 @@ impl Wallet for Nep6Wallet {
     }
 
     fn get_accounts(&self) -> Vec<Arc<dyn WalletAccount>> {
-        let accounts = self
-            .accounts
-            .try_read()
-            .unwrap_or_else(|_| panic!("Failed to read accounts"));
+        let accounts = self.accounts.try_read().expect("Failed to read accounts");
         accounts
             .values()
             .map(|account| account.clone() as Arc<dyn WalletAccount>)
@@ -622,9 +588,6 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn get_available_balance(&self, asset_id: &UInt256) -> WalletResult<i64> {
-        // Production-ready balance retrieval (matches C# NEP6Wallet.GetBalance exactly)
-        // This implements the C# logic: querying blockchain for account balances
-
         // 1. Get all wallet accounts (production account iteration)
         let accounts = self.accounts.read().await;
         let mut total_balance = 0i64;
@@ -639,7 +602,7 @@ impl Wallet for Nep6Wallet {
                 Ok(balance) => total_balance = total_balance.saturating_add(balance),
                 Err(_) => {
                     // 4. Log balance query error for monitoring (production error handling)
-                    println!(
+                    log::info!(
                         "Warning: Failed to get balance for account {}",
                         account.script_hash()
                     );
@@ -651,9 +614,6 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn get_unclaimed_gas(&self) -> WalletResult<i64> {
-        // Production-ready unclaimed GAS retrieval (matches C# NEP6Wallet.GetUnclaimedGas exactly)
-        // This implements the C# logic: querying blockchain for unclaimed GAS
-
         // 1. Get all wallet accounts with NEO tokens (production account filtering)
         let accounts = self.accounts.read().await;
         let mut total_unclaimed_gas = 0i64;
@@ -670,7 +630,7 @@ impl Wallet for Nep6Wallet {
                 }
                 Err(_) => {
                     // 4. Log unclaimed GAS query error for monitoring (production error handling)
-                    println!(
+                    log::info!(
                         "Warning: Failed to get unclaimed GAS for account {}",
                         account.script_hash()
                     );
@@ -711,9 +671,6 @@ impl Wallet for Nep6Wallet {
     }
 
     async fn sign_transaction(&self, transaction: &mut Transaction) -> WalletResult<()> {
-        // Production-ready transaction signing with proper cryptographic operations (matches C# NEP6 exactly)
-        // This implements the C# logic: Wallet.Sign(transaction, account) with full signature generation
-
         // 1. Get transaction hash for signing (production hash calculation)
         let tx_hash = transaction.hash().map_err(|e| {
             WalletError::Other(format!("Failed to calculate transaction hash: {}", e))
@@ -789,11 +746,9 @@ impl Wallet for Nep6Wallet {
 
 impl Clone for Nep6Wallet {
     fn clone(&self) -> Self {
-        // Production-ready Clone implementation with proper async lock handling (matches C# thread-safety exactly)
         // This implements the C# logic: creating a deep copy of wallet state with proper synchronization
 
         // 1. Use non-blocking read for Clone trait (production synchronization)
-        // Clone trait cannot be async, so we use try_read without timeout
         let accounts = self
             .accounts
             .try_read()
@@ -869,13 +824,9 @@ impl Nep6Account {
 
     /// Checks contract deployment status (production-ready implementation).
     fn check_contract_deployment_status(&self, script_hash: &UInt160) -> bool {
-        // Production-ready contract deployment check (matches C# Neo exactly)
-
         // Real C# Neo N3 implementation: Contract deployment check
-        // In C#: NativeContract.ContractManagement.GetContract(snapshot, script_hash) != null
 
         // The C# implementation queries the ContractManagement native contract
-        // to check if a contract with the given script hash is deployed
         // - Check if the contract exists in the blockchain state
         // - Return true if deployed, false otherwise
 

@@ -1,5 +1,6 @@
 //! Error types for BLS12-381 operations.
 
+use crate::constants::HASH_SIZE;
 use thiserror::Error;
 
 /// Result type for BLS operations
@@ -157,7 +158,7 @@ impl From<bls12_381::Scalar> for BlsError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_error_creation() {
@@ -165,10 +166,13 @@ mod tests {
         assert_eq!(err.to_string(), "Invalid private key: test error");
 
         let err = BlsError::InvalidKeySize {
-            expected: 32,
+            expected: HASH_SIZE,
             actual: 16,
         };
-        assert_eq!(err.to_string(), "Invalid key size: expected 32, got 16");
+        assert_eq!(
+            err.to_string(),
+            "Invalid key size: expected HASH_SIZE, got 16"
+        );
     }
 
     #[test]

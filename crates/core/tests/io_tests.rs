@@ -195,11 +195,9 @@ fn test_memory_reader_read_var_string() {
 /// Test converted from C# UT_MemoryReader.TestReadNullableArray
 #[test]
 fn test_memory_reader_read_nullable_array() {
-    // Test data: "0400000000" in hex = [4, 0, 0, 0, 0]
     let data = vec![4, 0, 0, 0, 0];
     let mut reader = MemoryReader::new(&data);
 
-    // Read the length prefix (4 bytes for length = 4)
     let length = reader.read_u32().unwrap();
     assert_eq!(4, length);
     assert_eq!(4, reader.position());
@@ -275,22 +273,18 @@ fn test_memory_reader_read_boolean() {
 /// Test MemoryReader variable integer reading
 #[test]
 fn test_memory_reader_read_var_int() {
-    // Test small values (1 byte)
     let data = vec![42];
     let mut reader = MemoryReader::new(&data);
     assert_eq!(42, reader.read_var_int(u64::MAX).unwrap());
 
-    // Test medium values (3 bytes: 0xFD + 2 bytes)
     let data = vec![0xFD, 0x34, 0x12]; // 0x1234 in little-endian
     let mut reader = MemoryReader::new(&data);
     assert_eq!(0x1234, reader.read_var_int(u64::MAX).unwrap());
 
-    // Test large values (5 bytes: 0xFE + 4 bytes)
     let data = vec![0xFE, 0x78, 0x56, 0x34, 0x12]; // 0x12345678 in little-endian
     let mut reader = MemoryReader::new(&data);
     assert_eq!(0x12345678, reader.read_var_int(u64::MAX).unwrap());
 
-    // Test very large values (9 bytes: 0xFF + 8 bytes)
     let data = vec![0xFF, 0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12];
     let mut reader = MemoryReader::new(&data);
     assert_eq!(0x1234567812345678, reader.read_var_int(u64::MAX).unwrap());
@@ -346,7 +340,6 @@ fn test_binary_writer_variable_length() {
     writer.write_var_int(0x1234).unwrap();
     writer.write_var_int(0x12345678).unwrap();
 
-    // Write variable string
     writer.write_var_string("Hello, Neo!").unwrap();
 
     // Write variable bytes
@@ -405,7 +398,6 @@ fn test_serialization_round_trip_uint256() {
 /// Test serialization round-trip with Transaction (basic test)
 #[test]
 fn test_serialization_round_trip_transaction() {
-    // Create a simple transaction for testing serialization
     let original = Transaction::new();
 
     // Test that we can get the size
@@ -468,7 +460,6 @@ fn test_transaction_serialization_comprehensive() {
     let deserialized =
         Transaction::from_bytes(&serialized).expect("Should deserialize successfully");
 
-    // Verify all properties match
     assert_eq!(deserialized.version(), 0);
     assert_eq!(deserialized.nonce(), 123456789);
     assert_eq!(deserialized.system_fee(), 1000000);

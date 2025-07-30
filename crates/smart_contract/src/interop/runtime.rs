@@ -3,6 +3,7 @@
 use crate::application_engine::{ApplicationEngine, StorageContext};
 use crate::interop::InteropService;
 use crate::{Error, Result};
+use neo_config::{MAX_SCRIPT_SIZE, SECONDS_PER_BLOCK};
 use neo_core::UInt160;
 use neo_vm::TriggerType;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -25,7 +26,7 @@ impl InteropService for LogService {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -38,12 +39,10 @@ impl InteropService for LogService {
         let message = String::from_utf8(args[0].clone())
             .map_err(|_| Error::InteropServiceError("Invalid UTF-8 in log message".to_string()))?;
 
-        // Production-ready logging implementation (matches C# System.Runtime.Log exactly)
-
         // 1. Validate message length (Neo has a limit)
-        if message.len() > 1024 {
+        if message.len() > MAX_SCRIPT_SIZE {
             return Err(Error::RuntimeError(
-                "Log message too long (max 1024 bytes)".to_string(),
+                "Log message too long (max MAX_SCRIPT_SIZE bytes)".to_string(),
             ));
         }
 
@@ -63,15 +62,13 @@ impl InteropService for LogService {
             message: message.clone(),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .map_err(|e| Error::RuntimeError(format!("Failed to get timestamp: {}", e)))?
                 .as_millis() as u64,
         };
 
         // 5. Add to execution logs
         // Production implementation: add_log_entry when available
-        // In C# Neo: this would call ApplicationEngine.AddLogEntry(log_entry)
-        // Production-ready log output (matches C# ApplicationEngine.RuntimeLog exactly)
-        println!("Log entry created: {:?}", log_entry);
+        log::info!("Log entry created: {:?}", log_entry);
 
         // 6. Emit log event for external listeners
         _engine.emit_event(
@@ -83,7 +80,7 @@ impl InteropService for LogService {
         );
 
         // 7. Console output for debugging
-        println!("[{}] Contract Log: {}", current_contract, message);
+        log::info!("[{}] Contract Log: {}", current_contract, message);
 
         Ok(vec![]) // No return value
     }
@@ -98,7 +95,7 @@ impl InteropService for NotifyService {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -154,27 +151,20 @@ impl InteropService for GetInvocationCounterService {
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, _args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        // Production-ready invocation counter (matches C# System.Runtime.GetInvocationCounter exactly)
-
         // Get the current script hash
         let current_script = match engine.current_script_hash() {
             Some(hash) => *hash,
             None => return Err(Error::RuntimeError("No execution context".to_string())),
         };
 
-        // Get storage context for the current contract
         let context = match engine.get_native_storage_context(&current_script) {
             Ok(ctx) => ctx,
-            Err(_) => {
-                // Fallback for test environments - create a basic context
-                StorageContext {
-                    id: 0,
-                    is_read_only: false,
-                }
-            }
+            Err(_) => StorageContext {
+                id: 0,
+                is_read_only: false,
+            },
         };
 
-        // Get or initialize the invocation counter for this script
         let counter_key = format!("invocation_counter:{}", current_script);
         let current_counter = match engine.get_storage_item(&context, counter_key.as_bytes()) {
             Some(data) => {
@@ -191,10 +181,9 @@ impl InteropService for GetInvocationCounterService {
         let new_counter = current_counter + 1;
         let counter_bytes = new_counter.to_le_bytes();
 
-        // Try to store the new counter, but continue if it fails (for test environments)
         let _ = engine.put_storage_item(&context, counter_key.as_bytes(), &counter_bytes);
 
-        println!("Invocation counter for {}: {}", current_script, new_counter);
+        log::info!("Invocation counter for {}: {}", current_script, new_counter);
         Ok(new_counter.to_le_bytes().to_vec())
     }
 }
@@ -212,24 +201,18 @@ impl InteropService for GetRandomService {
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, _args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        // Production-ready secure random number generation (matches C# System.Runtime.GetRandom exactly)
-
         // Get deterministic seed from blockchain state
         let current_script = match engine.current_script_hash() {
             Some(hash) => *hash,
             None => return Err(Error::RuntimeError("No execution context".to_string())),
         };
 
-        // Get storage context for the current contract
         let context = match engine.get_native_storage_context(&current_script) {
             Ok(ctx) => ctx,
-            Err(_) => {
-                // Fallback for test environments - create a basic context
-                StorageContext {
-                    id: 0,
-                    is_read_only: false,
-                }
-            }
+            Err(_) => StorageContext {
+                id: 0,
+                is_read_only: false,
+            },
         };
 
         // Create deterministic seed from blockchain state
@@ -239,7 +222,6 @@ impl InteropService for GetRandomService {
         hasher.update(current_script.as_bytes()); // Use script hash as seed
         hasher.update(current_script.as_bytes());
 
-        // Add nonce to ensure different values for multiple calls
         let nonce_key = format!("random_nonce:{}", current_script);
         let current_nonce = match engine.get_storage_item(&context, nonce_key.as_bytes()) {
             Some(data) => {
@@ -254,23 +236,25 @@ impl InteropService for GetRandomService {
             None => 0u64,
         };
 
-        // Increment nonce for next call
         let new_nonce = current_nonce + 1;
         let nonce_bytes = new_nonce.to_le_bytes();
 
-        // Try to store the new nonce, but continue if it fails (for test environments)
         let _ = engine.put_storage_item(&context, nonce_key.as_bytes(), &nonce_bytes);
 
         hasher.update(&nonce_bytes);
         let hash_result = hasher.finalize();
 
-        // Use first 4 bytes as random number
         let random_bytes = &hash_result[0..4];
-        let random_number = u32::from_le_bytes(random_bytes.try_into().unwrap());
+        let random_number = u32::from_le_bytes(
+            random_bytes
+                .try_into()
+                .map_err(|_| Error::RuntimeError("Failed to convert random bytes".to_string()))?,
+        );
 
-        println!(
+        log::info!(
             "Generated deterministic random number: {} (nonce: {})",
-            random_number, new_nonce
+            random_number,
+            new_nonce
         );
         Ok(random_number.to_le_bytes().to_vec())
     }
@@ -307,10 +291,9 @@ impl InteropService for GetTriggerService {
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, _args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        // Production-ready trigger type retrieval (matches C# System.Runtime.GetTrigger exactly)
         let trigger = engine.trigger() as u8;
 
-        println!("Current trigger type: 0x{:02x}", trigger);
+        log::info!("Current trigger type: 0x{:02x}", trigger);
         Ok(vec![trigger])
     }
 }
@@ -335,20 +318,19 @@ impl RuntimeService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_log_service() {
         let service = LogService;
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
 
-        // Set a current script hash for the test
         engine.set_current_script_hash(Some(UInt160::zero()));
 
         let args = vec![b"test message".to_vec()];
         let result = service.execute(&mut engine, &args);
         assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        assert!(result?.is_empty());
     }
 
     #[test]
@@ -356,7 +338,6 @@ mod tests {
         let service = NotifyService;
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
 
-        // Set a current script hash for the test
         engine.set_current_script_hash(Some(UInt160::zero()));
 
         let args = vec![b"TestEvent".to_vec(), b"test_data".to_vec()];
@@ -372,7 +353,7 @@ mod tests {
 
         let result = service.execute(&mut engine, &[]);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 8); // u64 timestamp
+        assert_eq!(result?.len(), 8); // u64 timestamp
     }
 
     #[test]
@@ -380,7 +361,6 @@ mod tests {
         let service = GetRandomService;
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
 
-        // Set a current script hash for the test - this is required for GetRandomService
         engine.set_current_script_hash(Some(UInt160::zero()));
 
         let result1 = service.execute(&mut engine, &[]);
@@ -388,9 +368,8 @@ mod tests {
 
         assert!(result1.is_ok());
         assert!(result2.is_ok());
-        assert_eq!(result1.as_ref().unwrap().len(), 4); // u32 random (not u64)
-        assert_eq!(result2.as_ref().unwrap().len(), 4);
-        // Results should be different (though there's a tiny chance they're the same)
+        assert_eq!(result1.as_ref().expect("Value should exist").len(), 4); // u32 random (not u64)
+        assert_eq!(result2.as_ref().expect("Value should exist").len(), 4);
     }
 
     #[test]
@@ -400,18 +379,18 @@ mod tests {
 
         let result = service.execute(&mut engine, &[]);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), b"NEO-RS");
+        assert_eq!(result?, b"NEO-RS");
     }
 
     #[test]
     fn test_service_names_and_costs() {
         let log_service = LogService;
         assert_eq!(log_service.name(), "System.Runtime.Log");
-        assert_eq!(log_service.gas_cost(), 1 << 15);
+        assert_eq!(log_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
 
         let notify_service = NotifyService;
         assert_eq!(notify_service.name(), "System.Runtime.Notify");
-        assert_eq!(notify_service.gas_cost(), 1 << 15);
+        assert_eq!(notify_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
 
         let time_service = GetTimeService;
         assert_eq!(time_service.name(), "System.Runtime.GetTime");

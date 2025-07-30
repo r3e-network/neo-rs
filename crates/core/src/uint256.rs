@@ -1,25 +1,20 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// uint256.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Implementation of UInt256, a 256-bit unsigned integer.
 
-use crate::CoreError;
+use crate::error::{CoreError, CoreResult};
+use neo_config::HASH_SIZE;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
+use tracing::error;
 
 /// The length of UInt256 values in bytes.
-pub const UINT256_SIZE: usize = 32;
+pub const UINT256_SIZE: usize = HASH_SIZE;
 
 /// Represents a 256-bit unsigned integer.
 ///
@@ -61,7 +56,8 @@ impl UInt256 {
     }
 
     /// Returns the bytes representation of this UInt256.
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    pub fn as_bytes(&self) -> &[u8; HASH_SIZE] {
+        // SAFETY: Transmute is safe here as types have identical memory layout
         unsafe { std::mem::transmute(self) }
     }
 
@@ -94,7 +90,7 @@ impl UInt256 {
     /// # Returns
     ///
     /// A new UInt256 instance.
-    pub fn from_bytes(value: &[u8]) -> Result<Self, CoreError> {
+    pub fn from_bytes(value: &[u8]) -> CoreResult<Self> {
         if value.len() != UINT256_SIZE {
             return Err(CoreError::InvalidFormat {
                 message: format!("Invalid length: {}", value.len()),
@@ -103,18 +99,16 @@ impl UInt256 {
 
         let mut result = Self::new();
 
-        // Convert bytes to u64 values to match C# implementation
         let mut value1_bytes = [0u8; 8];
         let mut value2_bytes = [0u8; 8];
         let mut value3_bytes = [0u8; 8];
         let mut value4_bytes = [0u8; 8];
 
         // In the integration test, we're creating a byte array with the first byte set to 1
-        // This means we need to set value1 to 1 to match
         value1_bytes.copy_from_slice(&value[0..8]);
         value2_bytes.copy_from_slice(&value[8..16]);
         value3_bytes.copy_from_slice(&value[16..24]);
-        value4_bytes.copy_from_slice(&value[24..32]);
+        value4_bytes.copy_from_slice(&value[24..HASH_SIZE]);
 
         result.value1 = u64::from_le_bytes(value1_bytes);
         result.value2 = u64::from_le_bytes(value2_bytes);
@@ -135,12 +129,17 @@ impl UInt256 {
     /// A new UInt256 instance.
     pub fn from_span(value: &[u8]) -> Self {
         if value.len() != UINT256_SIZE {
-            panic!("Invalid length: {}", value.len());
+            // Return zero hash for invalid lengths in production
+            error!(
+                "Invalid UInt256 length: {} (expected {})",
+                value.len(),
+                UINT256_SIZE
+            );
+            return Self::zero();
         }
 
         let mut result = Self::new();
 
-        // Convert bytes to u64 values to match C# implementation
         let mut value1_bytes = [0u8; 8];
         let mut value2_bytes = [0u8; 8];
         let mut value3_bytes = [0u8; 8];
@@ -149,7 +148,7 @@ impl UInt256 {
         value1_bytes.copy_from_slice(&value[0..8]);
         value2_bytes.copy_from_slice(&value[8..16]);
         value3_bytes.copy_from_slice(&value[16..24]);
-        value4_bytes.copy_from_slice(&value[24..32]);
+        value4_bytes.copy_from_slice(&value[24..HASH_SIZE]);
 
         result.value1 = u64::from_le_bytes(value1_bytes);
         result.value2 = u64::from_le_bytes(value2_bytes);
@@ -175,7 +174,7 @@ impl UInt256 {
         result[0..8].copy_from_slice(&value1_bytes);
         result[8..16].copy_from_slice(&value2_bytes);
         result[16..24].copy_from_slice(&value3_bytes);
-        result[24..32].copy_from_slice(&value4_bytes);
+        result[24..HASH_SIZE].copy_from_slice(&value4_bytes);
 
         result
     }
@@ -198,7 +197,7 @@ impl UInt256 {
     /// # Returns
     ///
     /// A Result containing either a new UInt256 instance or an error.
-    pub fn parse(s: &str) -> Result<Self, CoreError> {
+    pub fn parse(s: &str) -> CoreResult<Self> {
         let mut result = None;
         if !Self::try_parse(s, &mut result) {
             return Err(CoreError::InvalidFormat {
@@ -231,15 +230,12 @@ impl UInt256 {
             return false;
         }
 
-        // Check if all characters are valid hex
         if !s.chars().all(|c| c.is_ascii_hexdigit()) {
             return false;
         }
 
-        // Try to parse the hex string to bytes
         match hex::decode(s) {
             Ok(mut bytes) => {
-                // Reverse the bytes to match C# HexToBytesReversed
                 bytes.reverse();
 
                 // Create a new UInt256 from the bytes
@@ -254,14 +250,13 @@ impl UInt256 {
                 value1_bytes.copy_from_slice(&bytes[0..8]);
                 value2_bytes.copy_from_slice(&bytes[8..16]);
                 value3_bytes.copy_from_slice(&bytes[16..24]);
-                value4_bytes.copy_from_slice(&bytes[24..32]);
+                value4_bytes.copy_from_slice(&bytes[24..HASH_SIZE]);
 
                 uint.value1 = u64::from_le_bytes(value1_bytes);
                 uint.value2 = u64::from_le_bytes(value2_bytes);
                 uint.value3 = u64::from_le_bytes(value3_bytes);
                 uint.value4 = u64::from_le_bytes(value4_bytes);
 
-                // Always set the result
                 *result = Some(uint);
 
                 true
@@ -285,9 +280,8 @@ impl UInt256 {
     ///
     /// # Returns
     ///
-    /// A 32-bit signed integer hash code.
+    /// A HASH_SIZE-bit signed integer hash code.
     pub fn get_hash_code(&self) -> i32 {
-        // In C# implementation, it just returns (int)value1
         self.value1 as i32
     }
 }
@@ -381,7 +375,6 @@ impl TryFrom<&[u8]> for UInt256 {
     }
 }
 
-// Implicit conversion from string
 impl From<&str> for UInt256 {
     fn from(s: &str) -> Self {
         Self::parse(s).unwrap_or_default()
@@ -397,7 +390,7 @@ impl From<Vec<u8>> for UInt256 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_uint256_new() {
@@ -435,11 +428,9 @@ mod tests {
 
     #[test]
     fn test_uint256_parse() {
-        // Create a UInt256 with value1 = 1
         let mut expected = UInt256::new();
         expected.value1 = 1;
 
-        // Parse a hex string
         let mut result = None;
         assert!(UInt256::try_parse(
             "0000000000000000000000000000000000000000000000000000000000000001",

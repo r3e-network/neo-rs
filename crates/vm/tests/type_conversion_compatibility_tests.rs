@@ -12,9 +12,7 @@ use neo_vm::{
 /// Tests conversion from boolean to other types
 #[test]
 fn test_boolean_conversions() {
-    // Test cases for converting boolean to various types
     let test_cases = vec![
-        // PUSHT CONVERT (to Integer)
         (
             vec![
                 OpCode::PUSHT as u8,
@@ -23,7 +21,6 @@ fn test_boolean_conversions() {
             ],
             "1", // C# VM converts true to integer 1
         ),
-        // PUSHF CONVERT (to Integer)
         (
             vec![
                 OpCode::PUSHF as u8,
@@ -32,7 +29,6 @@ fn test_boolean_conversions() {
             ],
             "0", // C# VM converts false to integer 0
         ),
-        // PUSHT CONVERT (to ByteString)
         (
             vec![
                 OpCode::PUSHT as u8,
@@ -41,7 +37,6 @@ fn test_boolean_conversions() {
             ],
             "01", // C# VM converts true to "01" hex string
         ),
-        // PUSHF CONVERT (to ByteString)
         (
             vec![
                 OpCode::PUSHF as u8,
@@ -64,7 +59,6 @@ fn test_boolean_conversions() {
         // Verify execution state
         assert_eq!(engine.state(), VMState::HALT, "VM execution failed");
 
-        // Verify result
         let result_stack = engine.result_stack();
         assert_eq!(result_stack.len(), 1, "Expected one item on stack");
 
@@ -92,9 +86,7 @@ fn test_boolean_conversions() {
 /// Tests conversion from integer to other types
 #[test]
 fn test_integer_conversions() {
-    // Test cases for converting integers to various types
     let test_cases = vec![
-        // PUSH1 CONVERT (to Boolean) - should be true
         (
             vec![
                 OpCode::PUSH1 as u8,
@@ -103,7 +95,6 @@ fn test_integer_conversions() {
             ],
             "true", // C# VM converts non-zero to true
         ),
-        // PUSH0 CONVERT (to Boolean) - should be false
         (
             vec![
                 OpCode::PUSH0 as u8,
@@ -112,7 +103,6 @@ fn test_integer_conversions() {
             ],
             "false", // C# VM converts zero to false
         ),
-        // PUSH255 CONVERT (to ByteString) - multi-byte in little endian
         (
             vec![
                 OpCode::PUSHINT8 as u8,
@@ -122,7 +112,6 @@ fn test_integer_conversions() {
             ],
             "ff", // C# VM converts 255 to "ff" hex string (little endian)
         ),
-        // PUSH256 CONVERT (to ByteString) - multi-byte in little endian
         (
             vec![
                 OpCode::PUSHINT16 as u8,
@@ -147,7 +136,6 @@ fn test_integer_conversions() {
         // Verify execution state
         assert_eq!(engine.state(), VMState::HALT, "VM execution failed");
 
-        // Verify result
         let result_stack = engine.result_stack();
         assert_eq!(result_stack.len(), 1, "Expected one item on stack");
 
@@ -182,7 +170,6 @@ fn test_byte_string_conversions() {
         result
     }
 
-    // Test cases for converting byte strings to various types
     let test_cases = vec![
         // Empty ByteString to Integer should be 0
         (
@@ -202,7 +189,6 @@ fn test_byte_string_conversions() {
             },
             "1", // C# VM converts 0x01 to 1
         ),
-        // Two bytes 0x0001 (little endian) to Integer should be 256
         (
             {
                 let mut script = make_pushdata1(&[0x00, 0x01]);
@@ -243,7 +229,6 @@ fn test_byte_string_conversions() {
         // Verify execution state
         assert_eq!(engine.state(), VMState::HALT, "VM execution failed");
 
-        // Verify result
         let result_stack = engine.result_stack();
         assert_eq!(result_stack.len(), 1, "Expected one item on stack");
 
@@ -265,7 +250,6 @@ fn test_byte_string_conversions() {
 /// Tests array and struct type conversions
 #[test]
 fn test_array_and_struct_conversions() {
-    // Helper for creating an array of ints [1, 2, 3]
     let create_array_script = vec![
         OpCode::PUSH3 as u8,    // Push size
         OpCode::NEWARRAY as u8, // Create array of size 3
@@ -283,9 +267,7 @@ fn test_array_and_struct_conversions() {
         OpCode::SETITEM as u8,  // Set array[2] = 3
     ];
 
-    // Test cases for array and struct conversions
     let test_cases = vec![
-        // Array to Struct conversion
         (
             {
                 let mut script = create_array_script.clone();
@@ -294,7 +276,6 @@ fn test_array_and_struct_conversions() {
             },
             vec!["1", "2", "3"], // C# VM converts array to struct with same elements
         ),
-        // Struct to Array conversion
         (
             {
                 let mut script = create_array_script.clone();
@@ -322,7 +303,6 @@ fn test_array_and_struct_conversions() {
         // Verify execution state
         assert_eq!(engine.state(), VMState::HALT, "VM execution failed");
 
-        // Verify result
         let result_stack = engine.result_stack();
         assert_eq!(result_stack.len(), 1, "Expected one item on stack");
 
@@ -355,7 +335,6 @@ fn test_array_and_struct_conversions() {
 /// Tests invalid conversion handling
 #[test]
 fn test_invalid_conversions() {
-    // Test cases for invalid conversions that should cause FAULT
     let test_cases = vec![
         // Cannot convert Array to Integer
         vec![
@@ -394,11 +373,9 @@ fn test_invalid_conversions() {
 #[test]
 fn test_complex_conversions() {
     // Create a complex nested structure and test conversions between types
-    // Create a map with integers for keys and arrays for values
     let script_bytes = vec![
         // Create a map
         OpCode::NEWMAP as u8,
-        // Add entry: map[1] = [2, 3]
         OpCode::DUP as u8,   // Duplicate map
         OpCode::PUSH1 as u8, // Key: 1
         // Create array [2, 3]
@@ -413,14 +390,11 @@ fn test_complex_conversions() {
         OpCode::PUSH3 as u8,    // Value 3
         OpCode::SETITEM as u8,  // array[1] = 3
         OpCode::SETITEM as u8,  // map[1] = [2, 3]
-        // Get array from map and convert to struct
         OpCode::DUP as u8,      // Duplicate map
         OpCode::PUSH1 as u8,    // Key: 1
         OpCode::PICKITEM as u8, // Get map[1]
         OpCode::CONVERT as u8,
         StackItemType::Struct as u8, // Convert to struct
-
-                                     // End result should be map and struct on stack
     ];
 
     // Create the execution engine
@@ -434,13 +408,11 @@ fn test_complex_conversions() {
     // Verify execution state
     assert_eq!(engine.state(), VMState::HALT, "VM execution failed");
 
-    // Verify result stack has map and struct
     let result_stack = engine.result_stack();
     assert_eq!(result_stack.len(), 2, "Expected two items on stack");
 
     let stack_items: Vec<_> = result_stack.iter().collect();
 
-    // First item should be a struct
     let struct_item = &stack_items[0];
     assert_eq!(
         struct_item.stack_item_type(),
@@ -456,11 +428,9 @@ fn test_complex_conversions() {
         "Expected Map"
     );
 
-    // Verify struct contents
     let struct_items = struct_item.as_array().expect("Failed to get struct items");
     assert_eq!(struct_items.len(), 2, "Struct should have 2 items");
 
-    // Verify struct items are 2 and 3
     let struct_values: Vec<String> = struct_items
         .iter()
         .map(|item| item.as_int().unwrap().to_string())

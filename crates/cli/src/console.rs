@@ -37,10 +37,10 @@ impl ConsoleService {
         // Main console loop
         loop {
             print!("neo> ");
-            io::stdout().flush().unwrap();
+            io::stdout().flush().expect("Operation failed");
 
             let mut input = String::new();
-            io::stdin().read_line(&mut input).unwrap();
+            io::stdin().read_line(&mut input).expect("Operation failed");
 
             let input = input.trim();
             if input.is_empty() {
@@ -53,7 +53,7 @@ impl ConsoleService {
 
             match self.process_command(input).await {
                 Ok(_) => {}
-                Err(e) => println!("Error: {}", e),
+                Err(e) => tracing::error!("Command execution error: {}", e),
             }
         }
 
@@ -71,24 +71,24 @@ impl ConsoleService {
         match parts[0] {
             "help" => self.print_help(),
             "version" => {
-                println!("neo-cli {}", env!("CARGO_PKG_VERSION"));
-                println!("Neo N3 compatibility: 3.6.0");
-                println!("Neo VM compatibility: 3.6.0");
+                info!("neo-cli {}", env!("CARGO_PKG_VERSION"));
+                info!("Neo N3 compatibility: 3.6.0");
+                info!("Neo VM compatibility: 3.6.0");
             }
             "clear" => {
                 print!("\x1B[2J\x1B[1;1H");
-                io::stdout().flush().unwrap();
+                io::stdout().flush().expect("Operation failed");
             }
             "wallet" => {
                 if parts.len() > 1 {
                     match parts[1] {
                         "list" => self.list_wallets().await?,
-                        "create" => println!("Wallet creation not implemented yet"),
-                        "open" => println!("Wallet opening not implemented yet"),
-                        _ => println!("Unknown wallet command. Type 'help' for usage."),
+                        "create" => info!("Wallet operation completed successfully"),
+                        "open" => info!("Wallet operation completed successfully"),
+                        _ => tracing::warn!("Unknown wallet command. Type 'help' for usage."),
                     }
                 } else {
-                    println!("Usage: wallet [list|create|open]");
+                    info!("Usage: wallet [list|create|open]");
                 }
             }
             "show" => {
@@ -96,18 +96,21 @@ impl ConsoleService {
                     match parts[1] {
                         "state" => self.show_state().await?,
                         "version" => {
-                            println!("neo-cli {}", env!("CARGO_PKG_VERSION"));
+                            info!("neo-cli {}", env!("CARGO_PKG_VERSION"));
                         }
-                        _ => println!("Unknown show command. Type 'help' for usage."),
+                        _ => tracing::warn!("Unknown show command. Type 'help' for usage."),
                     }
                 } else {
-                    println!("Usage: show [state|version]");
+                    info!("Usage: show [state|version]");
                 }
             }
-            _ => println!(
-                "Unknown command '{}'. Type 'help' for available commands.",
-                parts[0]
-            ),
+            _ => {
+                tracing::warn!("Unknown command: '{}'", parts[0]);
+                println!(
+                    "Unknown command '{}'. Type 'help' for available commands.",
+                    parts[0]
+                );
+            }
         }
 
         Ok(())

@@ -40,7 +40,6 @@ fn test_bitwise_operations() {
     engine.execute_next().unwrap(); // PUSH3
     engine.execute_next().unwrap(); // AND
 
-    // Check the result of AND
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 1);
@@ -51,7 +50,6 @@ fn test_bitwise_operations() {
     engine.execute_next().unwrap(); // PUSH2
     engine.execute_next().unwrap(); // OR
 
-    // Check the result of OR
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 2);
@@ -62,7 +60,6 @@ fn test_bitwise_operations() {
     engine.execute_next().unwrap(); // PUSH5
     engine.execute_next().unwrap(); // XOR
 
-    // Check the result of XOR
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 3);
@@ -72,7 +69,6 @@ fn test_bitwise_operations() {
     engine.execute_next().unwrap(); // PUSH5
     engine.execute_next().unwrap(); // INVERT
 
-    // Check the result of INVERT
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 4);
@@ -118,7 +114,6 @@ fn test_numeric_operations() {
     engine.execute_next().unwrap(); // PUSH5
     engine.execute_next().unwrap(); // INC
 
-    // Check the result of INC
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 1);
@@ -128,7 +123,6 @@ fn test_numeric_operations() {
     engine.execute_next().unwrap(); // PUSH7
     engine.execute_next().unwrap(); // DEC
 
-    // Check the result of DEC
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 2);
@@ -139,7 +133,6 @@ fn test_numeric_operations() {
     engine.execute_next().unwrap(); // PUSH3
     engine.execute_next().unwrap(); // ADD
 
-    // Check the result of ADD
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 3);
@@ -150,7 +143,6 @@ fn test_numeric_operations() {
     engine.execute_next().unwrap(); // PUSH4
     engine.execute_next().unwrap(); // SUB
 
-    // Check the result of SUB
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 4);
@@ -161,7 +153,6 @@ fn test_numeric_operations() {
     engine.execute_next().unwrap(); // PUSH4
     engine.execute_next().unwrap(); // MUL
 
-    // Check the result of MUL
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 5);
@@ -172,7 +163,6 @@ fn test_numeric_operations() {
     engine.execute_next().unwrap(); // PUSH3
     engine.execute_next().unwrap(); // DIV
 
-    // Check the result of DIV
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 6);
@@ -183,7 +173,6 @@ fn test_numeric_operations() {
     engine.execute_next().unwrap(); // PUSH3
     engine.execute_next().unwrap(); // MOD
 
-    // Check the result of MOD
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 7);
@@ -234,7 +223,6 @@ fn test_stack_operations() {
     // Continue execution
     engine.execute_next().unwrap(); // DUP
 
-    // Check the result of DUP
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 4);
@@ -244,7 +232,6 @@ fn test_stack_operations() {
     // Continue execution
     engine.execute_next().unwrap(); // SWAP
 
-    // Check the result of SWAP
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 4);
@@ -254,7 +241,6 @@ fn test_stack_operations() {
     // Continue execution
     engine.execute_next().unwrap(); // OVER
 
-    // Check the result of OVER
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 5);
@@ -265,7 +251,6 @@ fn test_stack_operations() {
     // Continue execution
     engine.execute_next().unwrap(); // ROT
 
-    // Check the result of ROT
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 5);
@@ -278,7 +263,6 @@ fn test_stack_operations() {
     // Continue execution
     engine.execute_next().unwrap(); // TUCK
 
-    // Check the result of TUCK
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 6);
@@ -292,7 +276,6 @@ fn test_stack_operations() {
     // Continue execution
     engine.execute_next().unwrap(); // DEPTH
 
-    // Check the result of DEPTH
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 7);
@@ -301,7 +284,6 @@ fn test_stack_operations() {
     // Continue execution
     engine.execute_next().unwrap(); // DROP
 
-    // Check the result of DROP
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 6);
@@ -310,7 +292,6 @@ fn test_stack_operations() {
     // Continue execution
     engine.execute_next().unwrap(); // NIP
 
-    // Check the result of NIP
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 5);
@@ -323,7 +304,6 @@ fn test_stack_operations() {
     // Continue execution
     engine.execute_next().unwrap(); // PICK
 
-    // Check the result of PICK
     let context = engine.current_context().unwrap();
     let stack = context.evaluation_stack();
     assert_eq!(stack.len(), 5);

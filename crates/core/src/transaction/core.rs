@@ -1,19 +1,14 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// core.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Core Transaction struct and basic operations matching C# Neo N3 Transaction.cs exactly.
 
+use crate::error::{CoreError, CoreResult};
 use crate::signer::Signer;
 use crate::witness::Witness;
-use crate::{CoreError, UInt160, UInt256};
+use crate::{UInt160, UInt256};
+use neo_config;
 use neo_io::Serializable;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -23,7 +18,7 @@ use std::sync::Mutex;
 use super::attributes::TransactionAttribute;
 
 /// Maximum size of a transaction in bytes.
-pub const MAX_TRANSACTION_SIZE: usize = 102400;
+pub const MAX_TRANSACTION_SIZE: usize = neo_config::MAX_TRANSACTION_SIZE;
 
 /// Maximum number of attributes that can be contained within a transaction.
 pub const MAX_TRANSACTION_ATTRIBUTES: usize = 16;
@@ -183,8 +178,6 @@ impl Transaction {
         &self.witnesses
     }
 
-    // Additional helper methods for transaction building
-
     /// Adds a signer to the transaction (matches C# Signers collection behavior).
     pub fn add_signer(&mut self, signer: Signer) {
         self.signers.push(signer);
@@ -204,12 +197,14 @@ impl Transaction {
     /// # Returns
     ///
     /// The transaction hash as UInt256
-    pub fn get_hash(&self) -> Result<UInt256, CoreError> {
-        let mut hash_guard = self._hash.lock().unwrap();
+    pub fn get_hash(&self) -> CoreResult<UInt256> {
+        let mut hash_guard = self._hash.lock().map_err(|_| CoreError::System {
+            message: "Failed to acquire lock".to_string(),
+        })?;
         if hash_guard.is_none() {
             *hash_guard = Some(self.calculate_hash()?);
         }
-        Ok(hash_guard.unwrap())
+        Ok(hash_guard.clone().expect("Operation failed"))
     }
 
     /// Gets the hash of the transaction (C# Hash property compatibility).
@@ -219,13 +214,13 @@ impl Transaction {
     /// # Returns
     ///
     /// The transaction hash as UInt256
-    pub fn hash(&self) -> Result<UInt256, CoreError> {
+    pub fn hash(&self) -> CoreResult<UInt256> {
         self.get_hash()
     }
 
     /// Calculates the hash of the transaction (matches C# CalculateHash method).
     /// Uses double SHA256 hash like the C# implementation.
-    fn calculate_hash(&self) -> Result<UInt256, CoreError> {
+    fn calculate_hash(&self) -> CoreResult<UInt256> {
         let hash_data = self.get_hash_data();
 
         // Double SHA256 hash like C# implementation
@@ -253,28 +248,42 @@ impl Transaction {
         let mut writer = neo_io::BinaryWriter::new();
 
         // Write header
-        writer.write_bytes(&[self.version]).unwrap();
-        writer.write_bytes(&self.nonce.to_le_bytes()).unwrap();
-        writer.write_bytes(&self.system_fee.to_le_bytes()).unwrap();
-        writer.write_bytes(&self.network_fee.to_le_bytes()).unwrap();
+        writer
+            .write_bytes(&[self.version])
+            .expect("Operation failed");
+        writer
+            .write_bytes(&self.nonce.to_le_bytes())
+            .expect("Operation failed");
+        writer
+            .write_bytes(&self.system_fee.to_le_bytes())
+            .expect("Operation failed");
+        writer
+            .write_bytes(&self.network_fee.to_le_bytes())
+            .expect("Operation failed");
         writer
             .write_bytes(&self.valid_until_block.to_le_bytes())
-            .unwrap();
+            .expect("Operation failed");
 
         // Write signers
-        writer.write_var_int(self.signers.len() as u64).unwrap();
+        writer
+            .write_var_int(self.signers.len() as u64)
+            .expect("Operation failed");
         for signer in &self.signers {
-            Serializable::serialize(signer, &mut writer).unwrap();
+            Serializable::serialize(signer, &mut writer).expect("Operation failed");
         }
 
         // Write attributes
-        writer.write_var_int(self.attributes.len() as u64).unwrap();
+        writer
+            .write_var_int(self.attributes.len() as u64)
+            .expect("Operation failed");
         for attribute in &self.attributes {
-            attribute.serialize(&mut writer).unwrap();
+            attribute.serialize(&mut writer).expect("Operation failed");
         }
 
         // Write script
-        writer.write_var_bytes(&self.script).unwrap();
+        writer
+            .write_var_bytes(&self.script)
+            .expect("Operation failed");
 
         // Note: witnesses are NOT included in hash data
 
@@ -299,7 +308,7 @@ impl Transaction {
     /// # Returns
     ///
     /// Result indicating success or failure
-    pub fn add_attribute(&mut self, attribute: TransactionAttribute) -> Result<(), CoreError> {
+    pub fn add_attribute(&mut self, attribute: TransactionAttribute) -> CoreResult<()> {
         if self.attributes.len() >= MAX_TRANSACTION_ATTRIBUTES {
             return Err(CoreError::InvalidOperation {
                 message: "Too many attributes".to_string(),
@@ -312,8 +321,12 @@ impl Transaction {
 
     /// Invalidates cached values when transaction is modified (matches C# behavior).
     pub(crate) fn invalidate_cache(&mut self) {
-        *self._hash.lock().unwrap() = None;
-        *self._size.lock().unwrap() = 0;
+        if let Ok(mut hash_guard) = self._hash.lock() {
+            *hash_guard = None;
+        }
+        if let Ok(mut size_guard) = self._size.lock() {
+            *size_guard = 0;
+        }
     }
 }
 
@@ -339,7 +352,6 @@ impl fmt::Display for Transaction {
     }
 }
 
-// Manual implementations for traits that can't be derived due to Mutex
 impl Clone for Transaction {
     fn clone(&self) -> Self {
         Self {
@@ -388,7 +400,7 @@ impl crate::IVerifiable for Transaction {
             return false;
         }
 
-        if self.script.is_empty() || self.script.len() > 65535 {
+        if self.script.is_empty() || self.script.len() > u16::MAX as usize {
             return false;
         }
 

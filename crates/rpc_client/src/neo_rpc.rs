@@ -4,10 +4,15 @@
 //! the C# Neo.Network.RPC.RpcClient interface, ensuring 100% compatibility.
 
 use crate::{RpcClient, RpcError, RpcResult};
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use neo_core::{Transaction, UInt160, UInt256};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
+/// Default Neo network ports
 /// Complete Neo N3 RPC interface implementation (matches C# RpcClient exactly)
 impl RpcClient {
     // ===== Blockchain Information Methods =====
@@ -455,19 +460,18 @@ impl RpcClient {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[tokio::test]
     async fn test_rpc_client_creation() {
-        let client = RpcClient::new("http://localhost:10332".to_string()).unwrap();
+        let client = RpcClient::new("http://DEFAULT_RPC_PORT".to_string()).unwrap();
         assert!(client.config.endpoint.contains("localhost"));
     }
 
     #[test]
     fn test_parse_helpers() {
-        let client = RpcClient::new("http://localhost:10332".to_string()).unwrap();
+        let client = RpcClient::new("http://DEFAULT_RPC_PORT".to_string()).unwrap();
 
-        // Test string parsing
         let string_val = json!("test_string");
         assert_eq!(client.parse_string(&string_val).unwrap(), "test_string");
 

@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  neo-testnet:
+    build: .
+    container_name: neo-rs-testnet
+    restart: unless-stopped
+    ports:
+      - "20332:20332"  # RPC port
+      - "20333:20333"  # P2P port
+    volumes:
+      - neo_testnet_data:/data
+    environment:
+      - RUST_LOG=info
+      - NEO_NETWORK=testnet
+    command: ["--testnet", "--rpc-port", "20332", "--p2p-port", "20333"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:20332/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - neo-testnet
+
+volumes:
+  neo_testnet_data:
+    driver: local
+
+networks:
+  neo-testnet:
+    driver: bridge

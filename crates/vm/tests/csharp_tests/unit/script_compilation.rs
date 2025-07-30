@@ -23,7 +23,6 @@ fn test_script_compilation_edge_cases() {
     assert!(result.is_ok(), "Valid opcodes should compile successfully");
     assert_eq!(result.unwrap(), vec![0x11, 0x12, 0x40]); // PUSH1 + PUSH2 + RET
 
-    // Test PUSHA opcode (this was the main issue)
     let result = runner.compile_script(&["PUSHA".to_string()]);
     assert!(result.is_ok(), "PUSHA opcode should compile successfully");
     assert_eq!(result.unwrap(), vec![0x0a, 0x40]); // PUSHA + RET
@@ -51,7 +50,6 @@ fn test_hex_data_compilation() {
     assert!(result.is_ok(), "Valid hex data should compile successfully");
     assert_eq!(result.unwrap(), vec![0x01, 0x02, 0x03, 0x04, 0x40]); // hex data + RET
 
-    // Test invalid hex data (odd length)
     let result = runner.compile_script(&["0x123".to_string()]);
     assert!(
         result.is_err(),
@@ -75,12 +73,6 @@ fn test_pushdata1_debug() {
     let script = vec!["PUSHDATA1".to_string(), "0x0501020304".to_string()];
     let compiled = runner.compile_script(&script).unwrap();
     println!("Malformed PUSHDATA1 compiled script: {:?}", compiled);
-
-    // Expected: [0x0c, 0x05, 0x01, 0x02, 0x03, 0x04, 0x40] (7 bytes including RET)
-    // 0x0c = PUSHDATA1 opcode
-    // 0x05 = length (5 bytes expected)
-    // 0x01, 0x02, 0x03, 0x04 = only 4 bytes of data (should cause FAULT)
-    // 0x40 = RET (added by compiler)
 
     assert_eq!(compiled, vec![0x0c, 0x05, 0x01, 0x02, 0x03, 0x04, 0x40]);
 

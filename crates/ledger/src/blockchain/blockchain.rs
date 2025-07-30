@@ -10,11 +10,11 @@ use super::{
     verification::{BlockchainVerifier, VerifyResult},
 };
 use crate::{Block, BlockHeader, Error, NetworkType, Result};
+use neo_config::{MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use neo_core::{Transaction, UInt160, UInt256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
-use neo_config::{MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 
 /// Main blockchain manager (matches C# Neo Blockchain exactly)
 #[derive(Debug, Clone)]
@@ -48,27 +48,37 @@ impl Blockchain {
     pub async fn new(network: NetworkType) -> Result<Self> {
         Self::new_with_storage_suffix(network, None).await
     }
-    
+
     /// Creates a new blockchain instance with optional storage suffix to avoid conflicts
-    pub async fn new_with_storage_suffix(network: NetworkType, suffix: Option<&str>) -> Result<Self> {
+    pub async fn new_with_storage_suffix(
+        network: NetworkType,
+        suffix: Option<&str>,
+    ) -> Result<Self> {
         use std::sync::atomic::{AtomicU32, Ordering};
         static BLOCKCHAIN_COUNT: AtomicU32 = AtomicU32::new(0);
         let count = BLOCKCHAIN_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
-        
-        tracing::info!("⚠️ BLOCKCHAIN CREATION #{} for network: {:?} (suffix: {:?})", count, network, suffix);
-        
+
+        tracing::info!(
+            "⚠️ BLOCKCHAIN CREATION #{} for network: {:?} (suffix: {:?})",
+            count,
+            network,
+            suffix
+        );
+
         tracing::info!(
             "🔧 Creating new blockchain instance for network: {:?}",
             network
         );
 
         let storage = Arc::new(Storage::new_default().unwrap_or_else(|_| {
-            elog::info!("Warning: Failed to create default storage, using temporary RocksDB storage");
-            let temp_dir = match suffix {
+            log::info!(
+                "Warning: Failed to create default storage, using temporary RocksDB storage"
+            );
+            let final_dir = match suffix {
                 Some(suffix) => format!("/tmp/neo-blockchain-{}-{}", std::process::id(), suffix),
                 None => format!("/tmp/neo-blockchain-{}", std::process::id()),
             };
-            Storage::new_rocksdb(&temp_dir).expect("Failed to create temporary RocksDB storage")
+            Storage::new_rocksdb(&final_dir).expect("Failed to create temporary RocksDB storage")
         }));
         let persistence = Arc::new(BlockchainPersistence::new(storage.clone()));
         let state = Arc::new(RwLock::new(BlockchainState::new(persistence.clone())));
@@ -89,7 +99,7 @@ impl Blockchain {
             orphan_blocks: Arc::new(RwLock::new(HashMap::new())),
         };
 
-        tracing::info!("🔧 Initializing genesis block...");
+        tracing::info!("🔧 Initializing genesis block/* implementation */;");
         match blockchain.initialize_genesis().await {
             Ok(()) => {
                 tracing::info!("✅ Genesis initialization completed successfully");
@@ -101,7 +111,7 @@ impl Blockchain {
         }
 
         tracing::info!("✅ Blockchain created successfully");
-        
+
         Ok(blockchain)
     }
 

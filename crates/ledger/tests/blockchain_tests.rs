@@ -15,7 +15,6 @@ mod blockchain_tests {
     /// Test blockchain initialization (matches C# Blockchain constructor exactly)
     #[test]
     fn test_blockchain_initialization_compatibility() {
-        // Test blockchain creation (matches C# Blockchain.Initialize exactly)
         let config = BlockchainConfig {
             genesis_block: create_test_genesis_block(),
             max_block_size: 1024 * 1024,         // 1MB
@@ -58,7 +57,6 @@ mod blockchain_tests {
         let config = BlockchainConfig::default();
         let mut blockchain = Blockchain::new(config).unwrap();
 
-        // Create test block (matches C# block structure exactly)
         let block = Block {
             version: 0,
             prev_hash: blockchain.current_block_hash(),
@@ -116,7 +114,6 @@ mod blockchain_tests {
         };
         assert!(blockchain.validate_block(&invalid_prev_block).is_err());
 
-        // Test timestamp validation (must be greater than previous)
         let old_timestamp_block = Block {
             index: 1,
             prev_hash: blockchain.current_block_hash(),
@@ -208,7 +205,6 @@ mod blockchain_tests {
         // Test transaction validation
         assert!(blockchain.validate_transaction(&tx).is_ok());
 
-        // Test invalid transaction (expired)
         let expired_tx = Transaction {
             valid_until_block: 0, // Already expired
             ..tx.clone()
@@ -421,7 +417,6 @@ mod blockchain_tests {
             ..create_test_block(2)
         };
 
-        // Fork should be rejected (main chain is longer)
         assert!(blockchain.add_block(fork_block).is_err());
 
         // Current chain should remain unchanged

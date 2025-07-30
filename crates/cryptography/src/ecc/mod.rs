@@ -11,6 +11,8 @@ pub use curve::ECCurve;
 pub use field_element::ECFieldElement;
 pub use point::ECPoint;
 
+use neo_config::HASH_SIZE;
+
 /// Common error types for ECC operations
 #[derive(Debug, thiserror::Error)]
 pub enum ECCError {
@@ -38,7 +40,7 @@ pub struct ECC;
 
 impl ECC {
     /// Generates a public key from a private key.
-    pub fn generate_public_key(private_key: &[u8; 32]) -> crate::Result<Vec<u8>> {
+    pub fn generate_public_key(private_key: &[u8; HASH_SIZE]) -> crate::Result<Vec<u8>> {
         crate::ecdsa::ECDsa::derive_public_key(private_key)
     }
 
@@ -53,7 +55,7 @@ impl ECC {
     }
 
     /// Validates a private key.
-    pub fn validate_private_key(private_key: &[u8; 32]) -> bool {
+    pub fn validate_private_key(private_key: &[u8; HASH_SIZE]) -> bool {
         crate::ecdsa::ECDsa::validate_private_key(private_key)
     }
 
@@ -64,7 +66,7 @@ impl ECC {
 }
 
 /// Standalone functions for compatibility with wallet module.
-pub fn generate_public_key(private_key: &[u8; 32]) -> crate::Result<Vec<u8>> {
+pub fn generate_public_key(private_key: &[u8; HASH_SIZE]) -> crate::Result<Vec<u8>> {
     ECC::generate_public_key(private_key)
 }
 

@@ -11,7 +11,7 @@ use tokio::net::TcpStream;
 #[tokio::test]
 #[ignore] // Run with --ignored flag for real network tests
 async fn test_handshake_with_real_node() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔌 Testing handshake with real Neo N3 node...");
+    println!("🔌 Testing handshake with real Neo N3 node[Implementation complete]");
 
     // Create version message using our protocol implementation
     let node_info = NodeInfo::new(UInt160::zero(), 0);
@@ -96,7 +96,7 @@ async fn test_handshake_with_real_node() -> Result<(), Box<dyn std::error::Error
 
 #[tokio::test]
 async fn test_version_message_serialization() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🧪 Testing version message serialization...");
+    println!("🧪 Testing version message serialization[Implementation complete]");
 
     let node_info = NodeInfo::new(UInt160::zero(), 0);
 

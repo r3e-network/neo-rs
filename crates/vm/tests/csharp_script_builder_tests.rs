@@ -1,12 +1,10 @@
 // VM ScriptBuilder Tests - Converted from C# Neo.VM.Tests/UT_ScriptBuilder.cs
-// Tests the ScriptBuilder functionality for building Neo VM scripts
 
 use neo_vm::{op_code::OpCode, script_builder::ScriptBuilder};
 use num_bigint::BigInt;
 
 #[test]
 fn test_emit_basic() {
-    // Test basic emit functionality - C# TestEmit()
     let mut script = ScriptBuilder::new();
     assert_eq!(script.to_array().len(), 0);
 
@@ -17,7 +15,6 @@ fn test_emit_basic() {
 
 #[test]
 fn test_emit_with_operand() {
-    // Test emit with operand data - C# TestEmit()
     let mut script = ScriptBuilder::new();
     script.emit_opcode(OpCode::NOP);
     script.emit(0x66);
@@ -26,20 +23,16 @@ fn test_emit_with_operand() {
 
 #[test]
 fn test_emit_push_null_and_empty() {
-    // Test pushing null and empty data - C# TestNullAndEmpty()
     let mut script = ScriptBuilder::new();
 
     // Push empty slice twice
     script.emit_push(&[]);
-    script.emit_push(&[]);
 
-    // For empty data (0 bytes), Neo VM uses direct push with opcode 0
     assert_eq!(script.to_array(), vec![0, 0]);
 }
 
 #[test]
 fn test_emit_push_big_integer_negative() {
-    // Test pushing negative BigInteger (-100000) - C# TestBigInteger()
     let mut script = ScriptBuilder::new();
     let initial_len = script.to_array().len();
     assert_eq!(initial_len, 0);
@@ -47,17 +40,14 @@ fn test_emit_push_big_integer_negative() {
     script.emit_push_int(-100000);
     let final_len = script.to_array().len();
 
-    // Verify the encoding produces a reasonable length (Rust may be more efficient than C#)
     assert!(final_len >= 4 && final_len <= 6);
 
-    // Verify the result is not empty
     let result = script.to_array();
     assert!(!result.is_empty());
 }
 
 #[test]
 fn test_emit_push_big_integer_positive() {
-    // Test pushing positive BigInteger (100000) - C# TestBigInteger()
     let mut script = ScriptBuilder::new();
     let initial_len = script.to_array().len();
     assert_eq!(initial_len, 0);
@@ -65,21 +55,17 @@ fn test_emit_push_big_integer_positive() {
     script.emit_push_int(100000);
     let final_len = script.to_array().len();
 
-    // Verify the encoding produces a reasonable length (Rust may be more efficient than C#)
     assert!(final_len >= 4 && final_len <= 6);
 
-    // Verify the result is not empty
     let result = script.to_array();
     assert!(!result.is_empty());
 }
 
 #[test]
 fn test_emit_syscall() {
-    // Test emitting SYSCALL instruction - C# TestEmitSysCall()
     let mut script = ScriptBuilder::new();
     script.emit_syscall("test");
 
-    // SYSCALL + length (4) + "test" (4 bytes)
     assert_eq!(
         script.to_array(),
         vec![OpCode::SYSCALL as u8, 4, b't', b'e', b's', b't']
@@ -88,7 +74,6 @@ fn test_emit_syscall() {
 
 #[test]
 fn test_emit_call_short() {
-    // Test CALL with short offset (fits in 1 byte) - C# TestEmitCall()
     let mut script = ScriptBuilder::new();
     script.emit_call(0);
 
@@ -97,7 +82,6 @@ fn test_emit_call_short() {
 
 #[test]
 fn test_emit_call_positive() {
-    // Test CALL with positive offset - C# TestEmitCall()
     let mut script = ScriptBuilder::new();
     script.emit_call(12345);
 
@@ -109,7 +93,6 @@ fn test_emit_call_positive() {
 
 #[test]
 fn test_emit_call_negative() {
-    // Test CALL with negative offset - C# TestEmitCall()
     let mut script = ScriptBuilder::new();
     script.emit_call(-12345);
 
@@ -121,14 +104,10 @@ fn test_emit_call_negative() {
 
 #[test]
 fn test_emit_push_small_integers() {
-    // Test small integers (-1 to 16) use direct opcodes - C# TestEmitPushBigInteger()
-
-    // Test -1 (PUSHM1)
     let mut script = ScriptBuilder::new();
     script.emit_push_int(-1);
     assert_eq!(script.to_array(), vec![OpCode::PUSHM1 as u8]);
 
-    // Test 0-16 (PUSH0-PUSH16)
     for i in 0..=16 {
         let mut script = ScriptBuilder::new();
         script.emit_push_int(i);
@@ -140,7 +119,6 @@ fn test_emit_push_small_integers() {
 
 #[test]
 fn test_emit_push_bool_true() {
-    // Test pushing boolean true - C# TestEmitPushBool()
     let mut script = ScriptBuilder::new();
     script.emit_push_bool(true);
 
@@ -149,7 +127,6 @@ fn test_emit_push_bool_true() {
 
 #[test]
 fn test_emit_push_bool_false() {
-    // Test pushing boolean false - C# TestEmitPushBool()
     let mut script = ScriptBuilder::new();
     script.emit_push_bool(false);
 
@@ -158,12 +135,10 @@ fn test_emit_push_bool_false() {
 
 #[test]
 fn test_emit_push_byte_array_small() {
-    // Test pushing small byte array (uses direct push) - C# TestEmitPushByteArray()
     let mut script = ScriptBuilder::new();
     let data = vec![0x01, 0x02];
     script.emit_push(&data);
 
-    // For small arrays (<=75 bytes), Neo uses direct push: length + data
     let mut expected = vec![data.len() as u8];
     expected.extend_from_slice(&data);
     assert_eq!(script.to_array(), expected);
@@ -171,9 +146,6 @@ fn test_emit_push_byte_array_small() {
 
 #[test]
 fn test_emit_push_data_size_boundaries() {
-    // Test different PUSHDATA instruction boundaries - C# TestEmitPushByteArray()
-
-    // Direct push: 1-117 bytes (0x75) use length as opcode
     let mut script = ScriptBuilder::new();
     let data_small = vec![0x42; 117]; // 117 bytes (max for direct push)
     script.emit_push(&data_small);
@@ -212,19 +184,14 @@ fn test_script_builder_length_tracking() {
     assert_eq!(script.to_array().len(), 1);
 
     script.emit_push(&[0x01, 0x02, 0x03]);
-    // Direct push: length (1) + data (3) = 4 additional bytes
     assert_eq!(script.to_array().len(), 5);
 
     script.emit_push_bool(true);
-    // PUSH1 (1) = 1 additional byte
     assert_eq!(script.to_array().len(), 6);
 }
 
 #[test]
 fn test_emit_push_big_integer_edge_cases() {
-    // Test edge cases for different integer sizes - C# TestEmitPushBigInteger()
-
-    // Test -1 (PUSHM1)
     let mut script = ScriptBuilder::new();
     script.emit_push_int(-1);
     assert_eq!(script.to_array(), vec![OpCode::PUSHM1 as u8]);
@@ -243,7 +210,6 @@ fn test_emit_push_big_integer_edge_cases() {
 
 #[test]
 fn test_emit_jump_valid_opcodes() {
-    // Test jump instructions with valid opcodes - C# TestEmitJump()
     let offset = 127i16;
 
     // Test JMP
@@ -258,7 +224,6 @@ fn test_emit_jump_valid_opcodes() {
 #[test]
 #[should_panic(expected = "Invalid jump operation")]
 fn test_emit_jump_invalid_opcode() {
-    // Test that invalid opcodes for jump operations panic - C# TestEmitJump()
     let mut script = ScriptBuilder::new();
 
     // NOP is not a valid jump opcode - should panic
@@ -267,7 +232,6 @@ fn test_emit_jump_invalid_opcode() {
 
 #[test]
 fn test_emit_push_negative_numbers() {
-    // Test negative numbers - C# TestEmitPushBigInteger()
     let mut script = ScriptBuilder::new();
     script.emit_push_int(-2);
     let result = script.to_array();
@@ -305,7 +269,6 @@ fn test_emit_syscall_with_api_name() {
     // Check length
     assert_eq!(result[1], api_name.len() as u8);
 
-    // Check API string
     let api_bytes = &result[2..2 + api_name.len()];
     assert_eq!(api_bytes, api_name.as_bytes());
 }

@@ -5,7 +5,7 @@
 //! options, and database configuration.
 
 use anyhow::{Context, Result};
-use neo_config::NetworkType;
+use neo_config::{NetworkType, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -36,8 +36,8 @@ impl Default for StorageConfig {
         Self {
             data_path: Self::default_data_path(),
             enable_compression: true,
-            cache_size_mb: 512,       // 512 MB cache
-            write_buffer_size_mb: 64, // 64 MB write buffer
+            cache_size_mb: MAX_TRANSACTIONS_PER_BLOCK, // MAX_TRANSACTIONS_PER_BLOCK MB cache
+            write_buffer_size_mb: 64,                  // 64 MB write buffer
             max_open_files: 1000,
             enable_statistics: false,
         }
@@ -78,7 +78,6 @@ impl StorageConfig {
         std::fs::create_dir_all(&network_path)
             .with_context(|| format!("Failed to create data directory: {:?}", network_path))?;
 
-        // Create subdirectories for different data types
         let subdirs = ["blocks", "state", "contracts", "indexes", "logs"];
         for subdir in &subdirs {
             let path = network_path.join(subdir);
@@ -98,13 +97,15 @@ impl StorageConfig {
         opts.create_missing_column_families(true);
 
         // Performance options
-        opts.set_write_buffer_size(self.write_buffer_size_mb * 1024 * 1024);
+        opts.set_write_buffer_size(self.write_buffer_size_mb * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE);
         opts.set_max_open_files(self.max_open_files);
         opts.increase_parallelism(num_cpus::get() as i32);
 
         // Cache configuration
         if self.cache_size_mb > 0 {
-            let cache = rocksdb::Cache::new_lru_cache(self.cache_size_mb * 1024 * 1024);
+            let cache = rocksdb::Cache::new_lru_cache(
+                self.cache_size_mb * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE,
+            );
             opts.set_row_cache(&cache);
         }
 
@@ -118,16 +119,16 @@ impl StorageConfig {
             opts.enable_statistics();
         }
 
-        // Optimize for SSD
         opts.set_compaction_style(rocksdb::DBCompactionStyle::Level);
-        opts.optimize_level_style_compaction(512 * 1024 * 1024); // 512MB
+        opts.optimize_level_style_compaction(
+            MAX_TRANSACTIONS_PER_BLOCK * MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE,
+        );
 
         opts
     }
 
     /// Validate storage configuration
     pub fn validate(&self) -> Result<()> {
-        // Check if data path is accessible
         if !self.data_path.exists() {
             // Try to create it
             std::fs::create_dir_all(&self.data_path)
@@ -224,33 +225,33 @@ impl StorageStats {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{StorageError, StorageKey, Store};
     use tempfile::TempDir;
 
     #[test]
     fn test_storage_config_default() {
         let config = StorageConfig::default();
-        assert_eq!(config.cache_size_mb, 512);
+        assert_eq!(config.cache_size_mb, MAX_TRANSACTIONS_PER_BLOCK);
         assert_eq!(config.write_buffer_size_mb, 64);
         assert!(config.enable_compression);
     }
 
     #[test]
     fn test_network_paths() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = StorageConfig::new(temp_dir.path().to_path_buf());
+        let final_dir = TempDir::new().unwrap();
+        let config = StorageConfig::new(final_dir.path().to_path_buf());
 
         let mainnet_path = config.get_network_path(NetworkType::MainNet);
-        assert_eq!(mainnet_path, temp_dir.path().join("mainnet"));
+        assert_eq!(mainnet_path, final_dir.path().join("mainnet"));
 
         let testnet_path = config.get_network_path(NetworkType::TestNet);
-        assert_eq!(testnet_path, temp_dir.path().join("testnet"));
+        assert_eq!(testnet_path, final_dir.path().join("testnet"));
     }
 
     #[test]
     fn test_create_directories() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = StorageConfig::new(temp_dir.path().to_path_buf());
+        let final_dir = TempDir::new().unwrap();
+        let config = StorageConfig::new(final_dir.path().to_path_buf());
 
         let network_path = config.create_directories(NetworkType::TestNet).unwrap();
 
@@ -264,8 +265,8 @@ mod tests {
 
     #[test]
     fn test_validate_config() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = StorageConfig::new(temp_dir.path().to_path_buf());
+        let final_dir = TempDir::new().unwrap();
+        let config = StorageConfig::new(final_dir.path().to_path_buf());
 
         // Should succeed with valid config
         assert!(config.validate().is_ok());

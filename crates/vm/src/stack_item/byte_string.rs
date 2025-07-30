@@ -66,16 +66,13 @@ impl ByteString {
             return Ok(BigInt::from(0));
         }
 
-        // Neo uses little-endian format, so we use the bytes directly
         // The C# BigInteger constructor interprets the bytes as signed little-endian
         // but uses a special format where the sign bit indicates negativity
         let bytes = &self.data;
 
-        // Check if the number is negative (most significant bit is 1)
         let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
 
         if is_negative {
-            // For negative numbers in .NET BigInteger format:
             // The magnitude is stored in the bytes with the sign bit cleared
             let mut magnitude_bytes = bytes.to_vec();
             let len = magnitude_bytes.len();
@@ -87,7 +84,6 @@ impl ByteString {
             // Return the negative value
             Ok(-magnitude)
         } else {
-            // For positive numbers, use unsigned interpretation
             Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, bytes))
         }
     }
@@ -116,7 +112,7 @@ impl ByteString {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_byte_string_creation() {
@@ -142,45 +138,58 @@ mod tests {
         let data = vec![1, 2, 3];
         let byte_string = ByteString::new(data);
 
-        assert_eq!(byte_string.get(0).unwrap(), 1);
-        assert_eq!(byte_string.get(1).unwrap(), 2);
-        assert_eq!(byte_string.get(2).unwrap(), 3);
+        assert_eq!(byte_string.first().ok_or("Empty collection")?, 1);
+        assert_eq!(byte_string.get(0).ok_or("Index out of bounds")?, 2);
+        assert_eq!(byte_string.get(0).ok_or("Index out of bounds")?, 3);
         assert!(byte_string.get(3).is_err());
     }
 
     #[test]
     fn test_byte_string_to_integer() {
-        // Test empty byte string
         let empty_byte_string = ByteString::new(vec![]);
-        assert_eq!(empty_byte_string.to_integer().unwrap(), BigInt::from(0));
+        assert_eq!(
+            empty_byte_string
+                .to_integer()
+                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
+            BigInt::from(0)
+        );
 
         // Test positive number
         let positive_byte_string = ByteString::new(vec![1, 0, 0, 0]);
-        assert_eq!(positive_byte_string.to_integer().unwrap(), BigInt::from(1));
+        assert_eq!(
+            positive_byte_string
+                .to_integer()
+                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
+            BigInt::from(1)
+        );
 
         // Test larger positive number
         let larger_byte_string = ByteString::new(vec![0xCD, 0xAB, 0, 0]);
         assert_eq!(
-            larger_byte_string.to_integer().unwrap(),
+            larger_byte_string
+                .to_integer()
+                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
             BigInt::from(0xABCD)
         );
 
         // Test negative number
         let negative_byte_string = ByteString::new(vec![1, 0, 0, 0x80]);
-        assert_eq!(negative_byte_string.to_integer().unwrap(), BigInt::from(-1));
+        assert_eq!(
+            negative_byte_string
+                .to_integer()
+                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
+            BigInt::from(-1)
+        );
     }
 
     #[test]
     fn test_byte_string_to_boolean() {
-        // Test empty byte string
         let empty_byte_string = ByteString::new(vec![]);
         assert_eq!(empty_byte_string.to_boolean(), false);
 
-        // Test byte string with all zeros
         let zero_byte_string = ByteString::new(vec![0, 0, 0]);
         assert_eq!(zero_byte_string.to_boolean(), false);
 
-        // Test byte string with non-zero byte
         let nonzero_byte_string = ByteString::new(vec![0, 1, 0]);
         assert_eq!(nonzero_byte_string.to_boolean(), true);
     }
@@ -189,7 +198,7 @@ mod tests {
     fn test_byte_string_to_string() {
         // Test valid UTF-8
         let hello_byte_string = ByteString::from_string("Hello, world!");
-        assert_eq!(hello_byte_string.to_string().unwrap(), "Hello, world!");
+        assert_eq!(hello_byte_string.to_string(), "Hello, world!");
 
         // Test invalid UTF-8
         let invalid_utf8 = ByteString::new(vec![0xFF, 0xFF]);

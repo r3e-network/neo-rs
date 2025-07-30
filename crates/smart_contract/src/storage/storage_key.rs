@@ -1,6 +1,7 @@
 //! Storage key implementation for smart contract storage.
 
 use crate::{Error, Result};
+use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE};
 use neo_core::UInt160;
 use neo_io::Serializable;
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,7 @@ impl StorageKey {
 
     /// Gets the size of the storage key in bytes.
     pub fn size(&self) -> usize {
-        20 + // contract hash
+        ADDRESS_SIZE + // contract hash
         4 + // key length
         self.key.len() // key data
     }
@@ -100,7 +101,7 @@ impl Serializable for StorageKey {
     fn size(&self) -> usize {
         // Calculate the size of the serialized StorageKey
         // This matches C# Neo's StorageKey.Size property exactly
-        20 + // contract (UInt160)
+        ADDRESS_SIZE + // contract (UInt160)
         1 + // key length prefix
         self.key.len() // key bytes
     }
@@ -112,10 +113,10 @@ impl Serializable for StorageKey {
     }
 
     fn deserialize(reader: &mut neo_io::MemoryReader) -> neo_io::Result<Self> {
-        let contract_bytes = reader.read_bytes(20)?;
+        let contract_bytes = reader.read_bytes(ADDRESS_SIZE)?;
         let contract = UInt160::from_bytes(&contract_bytes)
             .map_err(|e| neo_io::Error::InvalidData(e.to_string()))?;
-        let key = reader.read_var_bytes(1024)?; // Max 1024 bytes for storage key
+        let key = reader.read_var_bytes(MAX_SCRIPT_SIZE)?; // Max MAX_SCRIPT_SIZE bytes for storage key
 
         Ok(StorageKey { contract, key })
     }
@@ -141,7 +142,7 @@ impl From<(UInt160, i32)> for StorageKey {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{StorageError, StorageKey, Store};
 
     #[test]
     fn test_storage_key_creation() {
@@ -204,7 +205,7 @@ mod tests {
         let contract = UInt160::zero();
         let storage_key = StorageKey::from_string(contract, "test");
 
-        let expected_size = 20 + 4 + 4; // contract + length + key
+        let expected_size = ADDRESS_SIZE + 4 + 4; // contract + length + key
         assert_eq!(storage_key.size(), expected_size);
     }
 

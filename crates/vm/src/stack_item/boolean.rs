@@ -60,7 +60,7 @@ impl Boolean {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_boolean_creation() {

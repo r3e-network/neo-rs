@@ -1,13 +1,28 @@
 # Multi-stage build for Neo-RS
 FROM rust:1.75-bullseye as builder
 
-# Install system dependencies
+# Install system dependencies for building
 RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    g++ \
+    cmake \
+    make \
     pkg-config \
-    libssl-dev \
+    llvm-14 \
+    libclang-14-dev \
+    clang-14 \
     librocksdb-dev \
-    clang \
+    libsnappy-dev \
+    liblz4-dev \
+    libzstd-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables for libclang
+ENV LIBCLANG_PATH=/usr/lib/llvm-14/lib
 
 # Create app directory
 WORKDIR /app
@@ -18,7 +33,7 @@ COPY crates/ crates/
 COPY node/ node/
 
 # Build release binary
-RUN cargo build --release --bin neo-rs
+RUN cargo build --release --package neo-node --bin neo-node
 
 # Runtime stage
 FROM debian:bullseye-slim
@@ -26,21 +41,24 @@ FROM debian:bullseye-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
-    librocksdb6.20 \
+    librocksdb-dev \
+    libsnappy1v5 \
+    liblz4-1 \
+    libzstd1 \
+    zlib1g \
+    libbz2-1.0 \
     libssl1.1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create neo user
 RUN groupadd -r neo && useradd -r -g neo neo
 
-# Create data directory
-RUN mkdir -p /data && chown neo:neo /data
+# Create data directories
+RUN mkdir -p /data /data/blocks /data/logs && chown -R neo:neo /data
 
 # Copy binary from builder stage
-COPY --from=builder /app/target/release/neo-rs /usr/local/bin/neo-rs
-
-# Copy configuration
-COPY neo-config.toml /etc/neo/neo-config.toml
+COPY --from=builder /app/target/release/neo-node /usr/local/bin/neo-node
 
 # Set up volumes
 VOLUME ["/data"]
@@ -49,15 +67,20 @@ VOLUME ["/data"]
 USER neo
 
 # Expose ports
-EXPOSE 10333 10332
+# TestNet ports
+EXPOSE 20332 20333
+# MainNet ports
+EXPOSE 10332 10333
+# Private network ports
+EXPOSE 30332 30333
 
-# Health check
+# Health check - check if RPC is responsive
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD neo-rs --health-check || exit 1
+    CMD curl -f http://localhost:20332/health || exit 1
 
-# Default command
-ENTRYPOINT ["neo-rs"]
-CMD ["--config", "/etc/neo/neo-config.toml", "--data-dir", "/data"]
+# Default command for testnet
+ENTRYPOINT ["neo-node"]
+CMD ["--testnet", "--rpc-port", "20332", "--p2p-port", "20333"]
 
 # Metadata
 LABEL org.opencontainers.image.title="Neo-RS"

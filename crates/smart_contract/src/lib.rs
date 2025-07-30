@@ -3,14 +3,12 @@
 //! This crate provides the smart contract execution engine for the Neo blockchain,
 //! including contract deployment, invocation, and native contract implementations.
 
-// Re-export from other crates for convenience
 pub use neo_core::{
     IVerifiable, Signer, Transaction, TransactionAttributeType, UInt160, UInt256, Witness,
     WitnessCondition, WitnessScope,
 };
 pub use neo_cryptography::ECPoint;
 pub use neo_vm::{ApplicationEngine, TriggerType};
-// Import types from ledger for smart contract operations
 // Note: Types are accessed through proper crate boundaries to maintain clean architecture
 
 pub mod application_engine;
@@ -85,7 +83,6 @@ pub enum Error {
     NeoToken(#[from] NeoTokenError),
 }
 
-// Add From trait implementations for error type conversions
 impl From<neo_io::IoError> for Error {
     fn from(err: neo_io::IoError) -> Self {
         match err {

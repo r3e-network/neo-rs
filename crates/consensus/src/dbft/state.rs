@@ -301,7 +301,7 @@ impl DbftEvent {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ConsensusContext, ConsensusMessage, ConsensusState};
 
     #[test]
     fn test_state_transitions() {

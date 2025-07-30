@@ -7,6 +7,7 @@ use std::fmt;
 use std::ops::{Add, Mul, Neg};
 
 use super::{ECCError, ECCResult, ECCurve, ECFieldElement};
+use neo_config::HASH_SIZE;
 
 /// Represents a point on an elliptic curve.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,7 +49,6 @@ impl ECPoint {
                 })
             }
             (Some(x), Some(y)) => {
-                // Check if the point is on the curve: y² = x³ + ax + b
                 let left = y.square();
                 let right = &(&x.cube()
                     + &(&(&ECFieldElement::new(curve.a.clone(), x.p.clone())? * &x)
@@ -95,7 +95,6 @@ impl ECPoint {
     ///
     /// A new `ECPoint` or an error if the data is invalid
     pub fn from_bytes(data: &[u8]) -> ECCResult<Self> {
-        // Use secp256r1 as the default curve for Neo
         let curve = ECCurve::secp256r1();
         Self::decode(data, curve)
     }
@@ -145,15 +144,12 @@ impl ECPoint {
                 let x_value = BigInt::from_bytes_be(num_bigint::Sign::Plus, x_bytes);
                 let x = ECFieldElement::new(x_value, curve.p.clone())?;
 
-                // Calculate y from x using the curve equation: y² = x³ + ax + b
                 let a = ECFieldElement::new(curve.a.clone(), curve.p.clone())?;
                 let b = ECFieldElement::new(curve.b.clone(), curve.p.clone())?;
 
                 let alpha = &(&x.cube() + &(&(&a * &x) + &b));
 
                 // Calculate square root modulo p
-                // Production-ready modular square root (matches C# ECPoint.DecompressPoint exactly)
-                // For secp256r1 and secp256k1, we can use the simple case where p ≡ 3 (mod 4)
                 let exponent = (&curve.p + BigInt::one()) / BigInt::from(4);
                 let beta = alpha.pow(&exponent);
 
@@ -197,7 +193,7 @@ impl ECPoint {
 
         // Add the x-coordinate
         let x_bytes = x.value.to_bytes_be().1;
-        let padding = vec![0; 32 - x_bytes.len()];
+        let padding = vec![0; HASH_SIZE - x_bytes.len()];
         result.extend_from_slice(&padding);
         result.extend_from_slice(&x_bytes);
 
@@ -222,13 +218,13 @@ impl ECPoint {
 
         // Add the x-coordinate
         let x_bytes = x.value.to_bytes_be().1;
-        let padding_x = vec![0; 32 - x_bytes.len()];
+        let padding_x = vec![0; HASH_SIZE - x_bytes.len()];
         result.extend_from_slice(&padding_x);
         result.extend_from_slice(&x_bytes);
 
         // Add the y-coordinate
         let y_bytes = y.value.to_bytes_be().1;
-        let padding_y = vec![0; 32 - y_bytes.len()];
+        let padding_y = vec![0; HASH_SIZE - y_bytes.len()];
         result.extend_from_slice(&padding_y);
         result.extend_from_slice(&y_bytes);
 
@@ -272,14 +268,14 @@ impl ECPoint {
             None => return false,
         };
 
-        // Check if the point satisfies the curve equation: y² = x³ + ax + b
         let y_squared = y.square();
         let x_cubed = &x.square() * x;
-        let ax = &ECFieldElement::new(self.curve.a.clone(), x.p.clone())
-            .unwrap_or_else(|_| ECFieldElement::new(BigInt::zero(), x.p.clone()).unwrap())
-            * x;
-        let b = ECFieldElement::new(self.curve.b.clone(), x.p.clone())
-            .unwrap_or_else(|_| ECFieldElement::new(BigInt::zero(), x.p.clone()).unwrap());
+        let ax = &ECFieldElement::new(self.curve.a.clone(), x.p.clone()).unwrap_or_else(|_| {
+            ECFieldElement::new(BigInt::zero(), x.p.clone()).expect("clone should succeed")
+        }) * x;
+        let b = ECFieldElement::new(self.curve.b.clone(), x.p.clone()).unwrap_or_else(|_| {
+            ECFieldElement::new(BigInt::zero(), x.p.clone()).expect("clone should succeed")
+        });
 
         let right_side = &(&x_cubed + &ax) + &b;
         y_squared == right_side
@@ -318,13 +314,11 @@ impl ECPoint {
         let x_value = BigInt::from_bytes_be(num_bigint::Sign::Plus, x_bytes);
         let x = ECFieldElement::new(x_value, curve.p.clone())?;
 
-        // Calculate y² = x³ + ax + b
         let x_cubed = &x.square() * &x;
         let ax = &ECFieldElement::new(curve.a.clone(), curve.p.clone())? * &x;
         let b = ECFieldElement::new(curve.b.clone(), curve.p.clone())?;
         let y_squared = &(&x_cubed + &ax) + &b;
 
-        // Calculate y = sqrt(y²)
         let y = y_squared.sqrt()?;
 
         // Choose the correct y based on the prefix
@@ -353,7 +347,6 @@ impl ECPoint {
     ///
     /// The encoded point data as bytes
     pub fn to_bytes(&self) -> Vec<u8> {
-        // Default to compressed encoding to match typical Neo usage
         self.encode_compressed().unwrap_or_else(|_| vec![0x00])
     }
 
@@ -375,7 +368,6 @@ impl ECPoint {
             return Ok(self.clone());
         }
 
-        // Double-and-add algorithm for point multiplication
         let mut k = k.clone();
         let mut result = Self::infinity(self.curve.clone());
         let mut addend = self.clone();
@@ -410,12 +402,11 @@ impl<'b> Add<&'b ECPoint> for &ECPoint {
             return Ok(self.clone());
         }
 
-        let x1 = self.x.as_ref().unwrap();
-        let y1 = self.y.as_ref().unwrap();
-        let x2 = other.x.as_ref().unwrap();
-        let y2 = other.y.as_ref().unwrap();
+        let x1 = self.x.as_ref().expect("Field should be initialized");
+        let y1 = self.y.as_ref().expect("Field should be initialized");
+        let x2 = other.x.as_ref().expect("Value should exist");
+        let y2 = other.y.as_ref().expect("Value should exist");
 
-        // Check if the points are inverses of each other
         if x1 == x2 && y1 != y2 {
             return Ok(ECPoint::infinity(self.curve.clone()));
         }
@@ -426,12 +417,10 @@ impl<'b> Add<&'b ECPoint> for &ECPoint {
         let slope = if x1 == x2 {
             // Point doubling
             if y1 == y2 {
-                // If y1 is zero, the result is the point at infinity
                 if y1.value.is_zero() {
                     return Ok(ECPoint::infinity(curve));
                 }
 
-                // Slope for point doubling: (3x₁² + a) / (2y₁)
                 let three = ECFieldElement::new(BigInt::from(3), x1.p.clone())?;
                 let two = ECFieldElement::new(BigInt::from(2), y1.p.clone())?;
 
@@ -446,17 +435,14 @@ impl<'b> Add<&'b ECPoint> for &ECPoint {
             }
         } else {
             // Point addition
-            // Slope for point addition: (y₂ - y₁) / (x₂ - x₁)
             let numerator = &(y2 - y1);
             let denominator = &(x2 - x1);
 
             numerator / denominator
         };
 
-        // Calculate x₃ = slope² - x₁ - x₂
         let x3 = &(&slope.square() - x1) - x2;
 
-        // Calculate y₃ = slope(x₁ - x₃) - y₁
         let y3 = &(&(&slope * &(x1 - &x3)) - y1);
 
         ECPoint::new(Some(x3), Some(y3.clone()), curve)
@@ -475,7 +461,7 @@ impl Neg for &ECPoint {
         let y = self.y.as_ref().map(|y| -y);
 
         // This should always be valid since we're just negating the y-coordinate
-        ECPoint::new(x, y, self.curve.clone()).unwrap()
+        ECPoint::new(x, y, self.curve.clone()).expect("Operation failed")
     }
 }
 
@@ -511,8 +497,6 @@ impl<'de> Deserialize<'de> for ECPoint {
 
         let bytes = Vec::<u8>::deserialize(deserializer)?;
 
-        // For deserialization, we need to know which curve to use
-        // For Neo, we typically use secp256r1, so we'll default to that
         let curve = ECCurve::secp256r1();
 
         Self::decode_compressed(&bytes, curve)
@@ -528,8 +512,8 @@ impl fmt::Display for ECPoint {
             write!(
                 f,
                 "ECPoint: ({}, {})",
-                self.x.as_ref().unwrap(),
-                self.y.as_ref().unwrap()
+                self.x.as_ref().expect("Field should be initialized"),
+                self.y.as_ref().expect("Field should be initialized")
             )
         }
     }

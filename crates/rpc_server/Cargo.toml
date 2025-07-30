@@ -8,6 +8,7 @@ neo-core = { path = "../core" }
 neo-ledger = { path = "../ledger" }
 neo-persistence = { path = "../persistence" }
 neo-config = { path = "../config" }
+neo-rpc-client = { path = "../rpc_client" }
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

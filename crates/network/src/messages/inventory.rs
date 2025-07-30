@@ -3,6 +3,7 @@
 //! This module provides inventory functionality exactly matching C# Neo InventoryItem.
 
 use crate::{NetworkError, NetworkResult as Result};
+use neo_config::HASH_SIZE;
 use neo_core::UInt256;
 use neo_io::{BinaryWriter, MemoryReader};
 use serde::{Deserialize, Serialize};
@@ -66,14 +67,14 @@ impl neo_io::Serializable for InventoryItem {
                 );
             }
         };
-        let hash_bytes = reader.read_bytes(32)?;
+        let hash_bytes = reader.read_bytes(HASH_SIZE)?;
         let hash = UInt256::from_bytes(&hash_bytes)
             .map_err(|e| neo_io::Error::InvalidData(format!("Invalid hash: {}", e)))?;
         Ok(Self { item_type, hash })
     }
 
     fn size(&self) -> usize {
-        1 + 32 // 1 byte for type + 32 bytes for hash
+        1 + HASH_SIZE // 1 byte for type + HASH_SIZE bytes for hash
     }
 }
 
@@ -103,7 +104,7 @@ impl InventoryItem {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Message, NetworkError, Peer};
 
     #[test]
     fn test_inventory_item() {

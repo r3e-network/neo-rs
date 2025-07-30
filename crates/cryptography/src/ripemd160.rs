@@ -2,6 +2,7 @@
 //!
 //! This module provides a wrapper around the ripemd crate for RIPEMD-160 hashing.
 
+use neo_config::ADDRESS_SIZE;
 use ripemd::{Digest, Ripemd160};
 
 /// Computes the RIPEMD-160 hash of the given data.
@@ -13,7 +14,7 @@ use ripemd::{Digest, Ripemd160};
 /// # Returns
 ///
 /// The RIPEMD-160 hash of the data
-pub fn ripemd160(data: &[u8]) -> [u8; 20] {
+pub fn ripemd160(data: &[u8]) -> [u8; ADDRESS_SIZE] {
     let mut hasher = Ripemd160::new();
     hasher.update(data);
     hasher.finalize().into()
@@ -43,7 +44,7 @@ impl RIPEMD160Managed {
     /// # Returns
     ///
     /// The RIPEMD-160 hash of the data
-    pub fn hash(&self, data: &[u8]) -> [u8; 20] {
+    pub fn hash(&self, data: &[u8]) -> [u8; ADDRESS_SIZE] {
         ripemd160(data)
     }
 

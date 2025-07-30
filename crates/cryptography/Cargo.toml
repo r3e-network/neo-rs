@@ -38,6 +38,7 @@ p256 = { version = "0.13", features = ["ecdsa", "std", "expose-field", "ecdh"] }
 aes-gcm = "0.10"
 
 # Internal dependencies
+neo-config = { workspace = true }
 # Temporarily commented out to break dependency cycle
 # neo-io = { workspace = true, optional = true }
 

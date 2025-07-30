@@ -2,6 +2,7 @@
 //!
 //! This crate provides the command-line interface for Neo blockchain node operations.
 
+use log::{debug, error, info, warn};
 use std::fmt;
 
 /// CLI version
@@ -59,9 +60,9 @@ pub type Result<T> = std::result::Result<T, CliError>;
 
 /// Display version information
 pub fn display_version() {
-    println!("neo-cli {}", VERSION);
-    println!("Neo N3 compatibility: {}", NEO_VERSION);
-    println!("Neo VM compatibility: {}", VM_VERSION);
+    log::info!("neo-cli {}", VERSION);
+    log::info!("Neo N3 compatibility: {}", NEO_VERSION);
+    log::info!("Neo VM compatibility: {}", VM_VERSION);
 }
 
 // Define the modules first
@@ -73,7 +74,6 @@ pub mod rpc;
 pub mod service;
 pub mod wallet;
 
-// Re-export common types for easy access within the crate
 pub use args::CliArgs;
 pub use service::MainService;
 

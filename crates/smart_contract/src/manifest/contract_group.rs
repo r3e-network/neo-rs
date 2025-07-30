@@ -4,6 +4,7 @@
 //! and accompanied by a signature for the contract hash.
 
 use crate::{Error, Result};
+use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_cryptography::ecc::ECPoint;
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +37,6 @@ impl ContractGroup {
             ));
         }
 
-        // Validate signature length (should be 64 bytes for ECDSA)
         if self.signature.len() != 64 {
             return Err(Error::InvalidManifest(
                 "Invalid signature length in group".to_string(),
@@ -48,10 +48,8 @@ impl ContractGroup {
 
     /// Verifies the group signature for a given contract hash.
     pub fn verify_signature(&self, contract_hash: &[u8]) -> Result<bool> {
-        // Production-ready signature verification (matches C# ContractGroup.VerifySignature exactly)
-
         // Validate input parameters
-        if contract_hash.len() != 20 {
+        if contract_hash.len() != ADDRESS_SIZE {
             return Err(Error::InvalidManifest(
                 "Invalid contract hash length".to_string(),
             ));
@@ -76,12 +74,12 @@ impl ContractGroup {
         ) {
             Ok(is_valid) => {
                 if is_valid {
-                    println!(
+                    log::info!(
                         "Contract group signature verification passed for contract hash: {:?}",
                         hex::encode(contract_hash)
                     );
                 } else {
-                    println!(
+                    log::info!(
                         "Contract group signature verification failed for contract hash: {:?}",
                         hex::encode(contract_hash)
                     );
@@ -89,7 +87,7 @@ impl ContractGroup {
                 Ok(is_valid)
             }
             Err(e) => {
-                println!("Error verifying contract group signature: {}", e);
+                log::info!("Error verifying contract group signature: {}", e);
                 Ok(false)
             }
         }
@@ -98,7 +96,6 @@ impl ContractGroup {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use neo_cryptography::ecc::{ECCurve, ECPoint};
 
     #[test]
@@ -115,14 +112,12 @@ mod tests {
     fn test_contract_group_validation() {
         let public_key = ECPoint::infinity(ECCurve::secp256r1());
         let valid_signature = vec![0u8; 64];
-        let invalid_signature = vec![0u8; 32]; // Wrong length
+        let invalid_signature = vec![0u8; HASH_SIZE]; // Wrong length
 
         let valid_group = ContractGroup::new(public_key.clone(), valid_signature);
         let invalid_group = ContractGroup::new(public_key, invalid_signature);
 
         // Production-ready test with proper validation
-        // Since ECPoint::infinity() creates a valid point (point at infinity), we can test validation
-        // The validation will check signature length, which should pass for valid_group
         assert!(valid_group.validate().is_ok());
         assert!(invalid_group.validate().is_err());
     }
@@ -133,7 +128,7 @@ mod tests {
         let signature = vec![0u8; 64];
         let group = ContractGroup::new(public_key, signature);
 
-        let contract_hash = vec![0u8; 20]; // 20-byte hash
+        let contract_hash = vec![0u8; ADDRESS_SIZE]; // ADDRESS_SIZE-byte hash
         let invalid_hash = vec![0u8; 16]; // Wrong length
 
         assert!(group.verify_signature(&contract_hash).is_ok());

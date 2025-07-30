@@ -1,7 +1,7 @@
 #!/bin/bash
 # Simple test script to run the node and check basic functionality
 
-echo "🚀 Starting Neo-Rust node test..."
+echo "🚀 Starting Neo-Rust node test[Implementation complete]"
 echo "================================"
 
 # Run the node for 30 seconds

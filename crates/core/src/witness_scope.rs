@@ -1,12 +1,5 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// witness_scope.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Implementation of WitnessScope, representing the scope of a witness.
@@ -102,7 +95,6 @@ impl WitnessScope {
             0x40 => Some(WitnessScope::WitnessRules),
             0x80 => Some(WitnessScope::Global),
             _ => {
-                // Production-ready flag combination validation (matches C# WitnessScope validation exactly)
                 // This implements the C# logic: handling valid flag combinations
 
                 // 1. Check if it's a valid combination of flags (production validation)
@@ -110,7 +102,6 @@ impl WitnessScope {
                 if (value & !valid_flags) == 0 {
                     // 2. Check if Global is combined with other flags (production rule enforcement)
                     if (value & 0x80) != 0 && value != 0x80 {
-                        // Global cannot be combined with other flags (matches C# validation exactly)
                         None
                     } else {
                         // 3. Valid flag combination (production acceptance)
@@ -141,12 +132,10 @@ impl WitnessScope {
     pub fn is_valid(self) -> bool {
         let value = self.0;
 
-        // Global scope cannot be combined with other flags (matches C# validation)
         if self.has_flag(WitnessScope::Global) && value != WitnessScope::Global.0 {
             return false;
         }
 
-        // Check that only valid flags are set (matches C# validation)
         let valid_flags = WitnessScope::CalledByEntry.0
             | WitnessScope::CustomContracts.0
             | WitnessScope::CustomGroups.0
@@ -214,7 +203,7 @@ impl From<WitnessScope> for u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Block, Transaction, UInt160, UInt256};
 
     #[test]
     fn test_witness_scope_values() {

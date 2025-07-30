@@ -3,6 +3,7 @@
 //! Defines the interface of a smart contract including methods, events, and parameters.
 
 use crate::{Error, Result};
+use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use serde::{Deserialize, Serialize};
 
 /// Represents the ABI of a smart contract.
@@ -69,9 +70,9 @@ pub enum ContractParameterType {
     ByteArray,
     /// String type.
     String,
-    /// Hash160 type (20 bytes).
+    /// Hash160 type (ADDRESS_SIZE bytes).
     Hash160,
-    /// Hash256 type (32 bytes).
+    /// Hash256 type (HASH_SIZE bytes).
     Hash256,
     /// Public key type.
     PublicKey,
@@ -124,7 +125,7 @@ impl ContractAbi {
         for method in &self.methods {
             size += method.name.len();
             size += method.return_type.len();
-            size += 4; // offset
+            size += 4;
             size += 1; // safe flag
 
             // Parameters size
@@ -160,7 +161,6 @@ impl ContractAbi {
             event.validate()?;
         }
 
-        // Check for duplicate method names
         let mut method_names = std::collections::HashSet::new();
         for method in &self.methods {
             if !method_names.insert(&method.name) {
@@ -171,7 +171,6 @@ impl ContractAbi {
             }
         }
 
-        // Check for duplicate event names
         let mut event_names = std::collections::HashSet::new();
         for event in &self.events {
             if !event_names.insert(&event.name) {
@@ -307,8 +306,6 @@ impl std::fmt::Display for ContractParameterType {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_contract_abi_creation() {
         let abi = ContractAbi::new();

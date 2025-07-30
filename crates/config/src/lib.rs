@@ -61,11 +61,11 @@ pub const TESTNET_SEEDS: &[&str] = &[
 
 /// Neo N3 TestNet seed nodes
 pub const N3_TESTNET_SEEDS: &[&str] = &[
-    "seed1t5.neo.org:20333",
-    "seed2t5.neo.org:20333",
-    "seed3t5.neo.org:20333",
-    "seed4t5.neo.org:20333",
-    "seed5t5.neo.org:20333",
+    "34.133.235.69:20333",  // seed1t5.neo.org
+    "35.192.59.217:20333",  // seed2t5.neo.org
+    "35.188.199.101:20333", // seed3t5.neo.org
+    "35.238.26.128:20333",  // seed4t5.neo.org
+    "34.124.145.177:20333", // seed5t5.neo.org
 ];
 
 impl NetworkType {
@@ -189,22 +189,15 @@ impl Default for NetworkConfig {
             max_inbound_connections: 40,
             connection_timeout_secs: 30,
             seed_nodes: vec![
-                "seed1t.neo.org:20333"
-                    .parse()
-                    .unwrap_or_else(|_| "127.0.0.1:20333".parse().unwrap()), // seed1t.neo.org
-                "seed2t.neo.org:20333"
-                    .parse()
-                    .unwrap_or_else(|_| "127.0.0.1:20334".parse().unwrap()), // seed2t.neo.org
-                "seed3t.neo.org:20333"
-                    .parse()
-                    .unwrap_or_else(|_| "127.0.0.1:20335".parse().unwrap()), // seed3t.neo.org
-                "seed4t.neo.org:20333"
-                    .parse()
-                    .unwrap_or_else(|_| "127.0.0.1:20336".parse().unwrap()), // seed4t.neo.org
-                "seed5t.neo.org:20333"
-                    .parse()
-                    .unwrap_or_else(|_| "127.0.0.1:20337".parse().unwrap()), // seed5t.neo.org
-            ],
+                "seed1t.neo.org:20333".parse().ok(),
+                "seed2t.neo.org:20333".parse().ok(),
+                "seed3t.neo.org:20333".parse().ok(),
+                "seed4t.neo.org:20333".parse().ok(),
+                "seed5t.neo.org:20333".parse().ok(),
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
             user_agent: "Neo-Rust/0.1.0".to_string(),
             protocol_version: 3,
             websocket_enabled: false,

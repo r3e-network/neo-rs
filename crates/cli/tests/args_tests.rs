@@ -14,7 +14,6 @@ mod args_tests {
     /// Test basic CLI argument parsing (matches C# CommandLineOptions exactly)
     #[test]
     fn test_basic_args_parsing_compatibility() {
-        // Test default values (matches C# defaults exactly)
         let args = CliArgs::try_parse_from(&["neo-cli"]).unwrap();
         assert_eq!(args.config, None);
         assert_eq!(args.wallet, None);
@@ -130,7 +129,6 @@ mod args_tests {
     /// Test network argument parsing (matches C# network types exactly)
     #[test]
     fn test_network_args_compatibility() {
-        // Test mainnet (default)
         let args = CliArgs::try_parse_from(&["neo-cli"]).unwrap();
         assert_eq!(args.network, Network::MainNet);
 
@@ -212,11 +210,9 @@ mod args_tests {
         assert_eq!(args.rpc_port, Some(8080));
         assert_eq!(args.p2p_port, Some(8333));
 
-        // Test invalid port (too high)
         let result = CliArgs::try_parse_from(&["neo-cli", "--rpc-port", "70000"]);
         assert!(result.is_err());
 
-        // Test invalid port (non-numeric)
         let result = CliArgs::try_parse_from(&["neo-cli", "--rpc-port", "abc"]);
         assert!(result.is_err());
     }
@@ -244,7 +240,6 @@ mod args_tests {
         assert_eq!(args.max_connections, Some(50));
         assert_eq!(args.min_connections, Some(15));
 
-        // Test zero connections (should be allowed)
         let args = CliArgs::try_parse_from(&["neo-cli", "--max-connections", "0"]).unwrap();
         assert_eq!(args.max_connections, Some(0));
 
@@ -260,7 +255,6 @@ mod args_tests {
     /// Test plugin arguments (matches C# plugin system exactly)
     #[test]
     fn test_plugin_args_compatibility() {
-        // Test no plugins (default)
         let args = CliArgs::try_parse_from(&["neo-cli"]).unwrap();
         assert_eq!(args.plugins.len(), 0);
 
@@ -332,7 +326,6 @@ mod args_tests {
 
         // Boolean flags should not accept values
         let result = CliArgs::try_parse_from(&["neo-cli", "--daemon", "true"]);
-        // This should either work (treating "true" as next arg) or fail
         // depending on clap configuration
     }
 

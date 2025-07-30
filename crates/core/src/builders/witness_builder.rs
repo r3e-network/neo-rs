@@ -1,17 +1,11 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// witness_builder.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Builder for transaction witnesses.
 
-use crate::{CoreError, Witness};
+use crate::error::{CoreError, CoreResult};
+use crate::Witness;
 
 /// Builder for transaction witnesses (matches C# WitnessBuilder exactly).
 #[derive(Debug)]
@@ -46,7 +40,7 @@ impl WitnessBuilder {
     /// # Errors
     ///
     /// Returns an error if invocation script already exists
-    pub fn add_invocation(mut self, bytes: Vec<u8>) -> Result<Self, CoreError> {
+    pub fn add_invocation(mut self, bytes: Vec<u8>) -> CoreResult<Self> {
         if !self.invocation_script.is_empty() {
             return Err(CoreError::InvalidOperation {
                 message: "Invocation script already exists".to_string(),
@@ -69,7 +63,7 @@ impl WitnessBuilder {
     /// # Errors
     ///
     /// Returns an error if verification script already exists
-    pub fn add_verification(mut self, bytes: Vec<u8>) -> Result<Self, CoreError> {
+    pub fn add_verification(mut self, bytes: Vec<u8>) -> CoreResult<Self> {
         if !self.verification_script.is_empty() {
             return Err(CoreError::InvalidOperation {
                 message: "Verification script already exists".to_string(),

@@ -250,7 +250,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 0 items
     /// ```
-    TRY_L = 0xF0, // Temporary value - should be updated with correct value
+    TRY_L = 0xF0,
 
     /// Ends a try block.
     ///
@@ -268,7 +268,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 0 items
     /// ```
-    ENDTRY_L = 0xF1, // Temporary value - should be updated with correct value
+    ENDTRY_L = 0xF1,
 
     /// Ends a finally block.
     ///

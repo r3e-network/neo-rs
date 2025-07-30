@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["Neo Global Development <dev@neo.org>"]
 
 [dependencies]
+log = "0.4"
 neo-core = { path = "../crates/core" }
 neo-cryptography = { path = "../crates/cryptography" }
 neo-persistence = { path = "../crates/persistence" }

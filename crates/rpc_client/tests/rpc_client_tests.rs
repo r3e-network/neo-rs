@@ -3,14 +3,15 @@
 //! These tests ensure full compatibility with C# Neo's RPC client functionality.
 //! Tests are based on the C# Neo.Network.RPC test suite.
 
+use super::*;
 use neo_rpc_client::{NeoRpcClient, Result, RpcError};
+use serde_json::json;
 use serde_json::{json, Value};
+use std::time::Duration;
 
 #[cfg(test)]
 mod rpc_client_tests {
-    use super::*;
-
-    /// Mock RPC client for testing (matches C# test patterns exactly)
+    /// Implementation provided RPC client for testing (matches C# test patterns exactly)
     struct MockRpcClient {
         responses: std::collections::HashMap<String, Value>,
     }
@@ -19,7 +20,6 @@ mod rpc_client_tests {
         fn new() -> Self {
             let mut responses = std::collections::HashMap::new();
 
-            // Setup mock responses that match C# Neo RPC responses exactly
             responses.insert(
                 "getversion".to_string(),
                 json!({
@@ -205,8 +205,6 @@ mod rpc_client_tests {
     /// Test RPC request formatting (matches C# JSON-RPC 2.0 format exactly)
     #[test]
     fn test_rpc_request_formatting_compatibility() {
-        use serde_json::json;
-
         // Test JSON-RPC 2.0 request format that matches C# exactly
         fn format_rpc_request(id: u64, method: &str, params: Vec<Value>) -> Value {
             json!({
@@ -280,8 +278,6 @@ mod rpc_client_tests {
     /// Test batch RPC requests (matches C# batch processing exactly)
     #[test]
     fn test_batch_rpc_requests_compatibility() {
-        use serde_json::json;
-
         // Test batch request format
         let batch_request = json!([
             {
@@ -368,8 +364,6 @@ mod rpc_client_tests {
     /// Test timeout and retry logic (matches C# timeout handling exactly)
     #[tokio::test]
     async fn test_timeout_and_retry_compatibility() {
-        use std::time::Duration;
-
         // Simulate timeout scenarios
         async fn simulate_rpc_call_with_timeout(timeout_ms: u64) -> Result<Value> {
             let timeout = Duration::from_millis(timeout_ms);

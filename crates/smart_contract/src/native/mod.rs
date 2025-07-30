@@ -95,7 +95,7 @@ impl Default for NativeRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_native_registry_creation() {

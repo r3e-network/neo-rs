@@ -146,7 +146,6 @@ fn test_debugger_step() {
 
 #[test]
 fn test_debugger_step_over() {
-    // Create a jump table with handlers for the operations we need
     let mut jump_table = JumpTable::new();
 
     // CALL handler
@@ -154,7 +153,6 @@ fn test_debugger_step_over() {
         // Get the current context
         let context = engine.current_context_mut().unwrap();
 
-        // Get the offset from the instruction operand (no generic parameters)
         let operand_bytes = instruction.operand();
         if operand_bytes.len() >= 2 {
             let offset = i16::from_le_bytes([operand_bytes[0], operand_bytes[1]]);
@@ -162,7 +160,6 @@ fn test_debugger_step_over() {
             // Calculate the call target
             let call_target = context.instruction_pointer() as i32 + offset as i32;
 
-            // Create a new context for the call
             let script = context.script().clone();
             let new_context = engine.create_context(script, 0, call_target as usize);
 
@@ -243,7 +240,6 @@ fn test_debugger_step_over() {
 
 #[test]
 fn test_debugger_step_out() {
-    // Create a jump table with handlers for the operations we need
     let mut jump_table = JumpTable::new();
 
     // CALL handler
@@ -251,7 +247,6 @@ fn test_debugger_step_out() {
         // Get the current context
         let context = engine.current_context_mut().unwrap();
 
-        // Get the offset from the instruction operand (no generic parameters)
         let operand_bytes = instruction.operand();
         if operand_bytes.len() >= 2 {
             let offset = i16::from_le_bytes([operand_bytes[0], operand_bytes[1]]);
@@ -259,7 +254,6 @@ fn test_debugger_step_out() {
             // Calculate the call target
             let call_target = context.instruction_pointer() as i32 + offset as i32;
 
-            // Create a new context for the call
             let script = context.script().clone();
             let new_context = engine.create_context(script, 0, call_target as usize);
 

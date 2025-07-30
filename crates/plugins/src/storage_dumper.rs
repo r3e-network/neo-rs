@@ -3,6 +3,9 @@
 //! This plugin provides functionality to dump blockchain storage data
 //! for debugging, analysis, and backup purposes.
 
+// Define Error and Result types locally
+type Error = Box<dyn std::error::Error + Send + Sync>;
+type Result<T> = std::result::Result<T, Error>;
 use crate::{Plugin, PluginCategory, PluginContext, PluginEvent, PluginInfo};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -12,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tempfile::tempdir;
 use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::RwLock;
@@ -178,11 +182,10 @@ impl StorageDumperPlugin {
             block_height
         );
 
-        // Check if dump is already in progress
         {
             let mut in_progress = self.dump_in_progress.write().await;
             if *in_progress {
-                return Err(ExtensionError::InvalidOperation(
+                return Err(ExtensionError::OperationFailed(
                     "Dump already in progress".to_string(),
                 ));
             }
@@ -246,7 +249,7 @@ impl StorageDumperPlugin {
         match self.config.format {
             DumpFormat::Json => {
                 let json_data = serde_json::to_string_pretty(dump)
-                    .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                    .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
                 writer
                     .write_all(json_data.as_bytes())
                     .await
@@ -254,7 +257,7 @@ impl StorageDumperPlugin {
             }
             DumpFormat::Binary => {
                 let binary_data = bincode::serialize(dump)
-                    .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                    .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
                 writer
                     .write_all(&binary_data)
                     .await
@@ -354,7 +357,6 @@ impl StorageDumperPlugin {
             }
         }
 
-        // Sort by modification time (newest first)
         dump_files.sort_by(|a, b| b.1.cmp(&a.1));
 
         // Remove old files
@@ -496,7 +498,6 @@ impl Plugin for StorageDumperPlugin {
     async fn stop(&mut self) -> ExtensionResult<()> {
         info!("Stopping StorageDumper plugin");
 
-        // Wait for any dump in progress to complete
         while *self.dump_in_progress.read().await {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
@@ -512,7 +513,6 @@ impl Plugin for StorageDumperPlugin {
 
         match event {
             PluginEvent::BlockReceived { block_height, .. } => {
-                // Check if we should trigger automatic dump
                 if self.should_auto_dump(*block_height).await {
                     info!(
                         "Triggering automatic storage dump at block {}",
@@ -646,16 +646,12 @@ impl StorageDumperPlugin {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::collections::HashMap;
-    use tempfile::tempdir;
-
     fn create_test_context() -> PluginContext {
-        let temp_dir = tempdir().unwrap();
+        let final_dir = tempdir().unwrap();
         PluginContext {
             neo_version: "3.6.0".to_string(),
-            config_dir: temp_dir.path().to_path_buf(),
-            data_dir: temp_dir.path().to_path_buf(),
+            config_dir: final_dir.path().to_path_buf(),
+            data_dir: final_dir.path().to_path_buf(),
             shared_data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -665,7 +661,6 @@ mod tests {
         let mut plugin = StorageDumperPlugin::new();
         let context = create_test_context();
 
-        // Override output directory to use temp dir
         plugin.config.output_dir = context.data_dir.join("dumps");
 
         // Test initialization
@@ -678,7 +673,7 @@ mod tests {
         let contract_dump = plugin
             .dump_contract_storage("0x1234567890123456789012345678901234567890", 100)
             .await
-            .unwrap();
+            .expect("operation should succeed");
 
         assert_eq!(
             contract_dump.contract,
@@ -700,8 +695,9 @@ mod tests {
             tx_hash: "0xabcdef".to_string(),
         };
 
-        let json = serde_json::to_string(&item).unwrap();
-        let deserialized: StorageItem = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&item).expect("operation should succeed");
+        let deserialized: StorageItem =
+            serde_json::from_str(&json).expect("Failed to parse from string");
 
         assert_eq!(item.contract, deserialized.contract);
         assert_eq!(item.key, deserialized.key);

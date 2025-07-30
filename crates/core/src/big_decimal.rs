@@ -1,17 +1,10 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// big_decimal.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Implementation of BigDecimal, a fixed-point number of arbitrary precision.
 
-use crate::CoreError;
+use crate::error::{CoreError, CoreResult};
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{One, Pow, Signed, Zero};
@@ -87,7 +80,7 @@ impl BigDecimal {
     /// # Returns
     ///
     /// A Result containing either a new BigDecimal with the new number of decimal places or an error.
-    pub fn change_decimals(&self, decimals: u8) -> Result<Self, CoreError> {
+    pub fn change_decimals(&self, decimals: u8) -> CoreResult<Self> {
         if self.decimals == decimals {
             return Ok(self.clone());
         }
@@ -124,7 +117,7 @@ impl BigDecimal {
     /// # Returns
     ///
     /// A Result containing either a new BigDecimal or an error.
-    pub fn parse(s: &str, decimals: u8) -> Result<Self, CoreError> {
+    pub fn parse(s: &str, decimals: u8) -> CoreResult<Self> {
         // Handle scientific notation
         let mut e = 0i32;
         let mut s = s.to_string();
@@ -150,7 +143,6 @@ impl BigDecimal {
             }
         }
 
-        // Adjust for scientific notation
         let adjusted_decimals = decimal_places as i32 - e;
         if adjusted_decimals < 0 {
             return Err(CoreError::InvalidFormat {
@@ -187,7 +179,6 @@ impl PartialOrd for BigDecimal {
 
 impl Ord for BigDecimal {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Normalize to the same number of decimals for comparison
         let (left, right) = if self.decimals < other.decimals {
             let factor = BigInt::from(10).pow(other.decimals - self.decimals);
             (self.value.clone() * factor, other.value.clone())
@@ -217,7 +208,6 @@ impl fmt::Display for BigDecimal {
             remainder = -remainder;
         }
 
-        // Convert remainder to string with leading zeros
         let remainder_str = remainder.to_string();
         let padding = self.decimals as usize - remainder_str.len();
         let remainder_str = format!("{}{}", "0".repeat(padding), remainder_str);
@@ -242,7 +232,6 @@ impl FromStr for BigDecimal {
     type Err = CoreError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Default to 8 decimals if not specified
         Self::parse(s, 8)
     }
 }
@@ -294,7 +283,7 @@ impl One for BigDecimal {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_big_decimal_new() {
@@ -329,7 +318,6 @@ mod tests {
         assert_eq!(decreased.value(), &BigInt::from(123));
         assert_eq!(decreased.decimals(), 2);
 
-        // Decrease precision with remainder (should fail)
         let bd = BigDecimal::new(BigInt::from(1234), 3);
         let result = bd.change_decimals(2);
         assert!(result.is_err());

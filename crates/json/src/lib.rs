@@ -29,8 +29,8 @@
 //! let json = JToken::Object(obj);
 //!
 //! // Query with JSON path
-//! let tokens = JPathToken::parse("$.name").unwrap();
-//! let results = JPathToken::evaluate(&tokens, &json).unwrap();
+//! let tokens = JPathToken::parse("$.name").expect("Operation failed");
+//! let results = JPathToken::evaluate(&tokens, &json).expect("Operation failed");
 //! ```
 //!
 //! ## Performance Characteristics
@@ -39,6 +39,8 @@
 //! - **Path Queries**: O(log n) average case for property access
 //! - **Memory**: Minimal allocations with efficient string interning
 //! - **Throughput**: Optimized for high-frequency blockchain operations
+
+// Remove unused imports
 
 pub mod error;
 pub mod jarray;
@@ -52,7 +54,6 @@ pub mod jtoken;
 pub mod ordered_dictionary;
 pub mod utility;
 
-// Re-export main types for convenience
 pub use error::{JsonError, JsonResult};
 pub use jarray::JArray;
 pub use jboolean::JBoolean;
@@ -66,8 +67,6 @@ pub use ordered_dictionary::OrderedDictionary;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_basic_json_creation() {
         let obj = JObject::new();
@@ -83,8 +82,6 @@ mod tests {
 
 #[cfg(test)]
 mod integration_tests {
-    use super::*;
-
     #[test]
     fn test_complex_json_structure() {
         // Test complex nested JSON structure similar to Neo blockchain data
@@ -125,8 +122,8 @@ mod integration_tests {
         let root_token = JToken::Object(root);
 
         // Query block hash
-        let tokens = JPathToken::parse("$.hash").unwrap();
-        let results = JPathToken::evaluate(&tokens, &root_token).unwrap();
+        let tokens = JPathToken::parse("$.hash").expect("Operation failed");
+        let results = JPathToken::evaluate(&tokens, &root_token).expect("Operation failed");
         assert_eq!(results.len(), 1);
         assert_eq!(
             results[0],
@@ -134,13 +131,13 @@ mod integration_tests {
         );
 
         // Query all transaction IDs
-        let tokens = JPathToken::parse("$.transactions[*].txid").unwrap();
-        let results = JPathToken::evaluate(&tokens, &root_token).unwrap();
+        let tokens = JPathToken::parse("$.transactions[*].txid").expect("Operation failed");
+        let results = JPathToken::evaluate(&tokens, &root_token).expect("Operation failed");
         assert_eq!(results.len(), 3);
 
         // Query specific transaction
-        let tokens = JPathToken::parse("$.transactions[1].size").unwrap();
-        let results = JPathToken::evaluate(&tokens, &root_token).unwrap();
+        let tokens = JPathToken::parse("$.transactions[1].size").expect("Operation failed");
+        let results = JPathToken::evaluate(&tokens, &root_token).expect("Operation failed");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0], &JToken::Number(150.0));
     }
@@ -175,7 +172,7 @@ mod integration_tests {
             assert!(obj.contains_key(&"null".to_string()));
             assert!(obj.contains_key(&"array".to_string()));
         } else {
-            panic!("Expected object");
+            return Err(Error::Other("Expected object".to_string()));
         }
     }
 
@@ -201,13 +198,13 @@ mod integration_tests {
         let root_token = JToken::Object(root);
 
         // Test path evaluation performance
-        let tokens = JPathToken::parse("$.items[*].id").unwrap();
-        let results = JPathToken::evaluate(&tokens, &root_token).unwrap();
+        let tokens = JPathToken::parse("$.items[*].id").expect("operation should succeed");
+        let results = JPathToken::evaluate(&tokens, &root_token).expect("operation should succeed");
         assert_eq!(results.len(), 1000);
 
         // Test slice performance
-        let tokens = JPathToken::parse("$.items[100:200]").unwrap();
-        let results = JPathToken::evaluate(&tokens, &root_token).unwrap();
+        let tokens = JPathToken::parse("$.items[100:200]").expect("Operation failed");
+        let results = JPathToken::evaluate(&tokens, &root_token).expect("Operation failed");
         assert_eq!(results.len(), 100);
     }
 
@@ -277,29 +274,26 @@ mod integration_tests {
         let block_token = JToken::Object(block);
 
         // Test various Neo-specific queries
-        let tokens = JPathToken::parse("$.merkleroot").unwrap();
-        let results = JPathToken::evaluate(&tokens, &block_token).unwrap();
+        let tokens = JPathToken::parse("$.merkleroot").expect("Operation failed");
+        let results = JPathToken::evaluate(&tokens, &block_token).expect("Operation failed");
         assert_eq!(results.len(), 1);
 
-        let tokens = JPathToken::parse("$.tx[0].sender").unwrap();
-        let results = JPathToken::evaluate(&tokens, &block_token).unwrap();
+        let tokens = JPathToken::parse("$.tx[0].sender").expect("Operation failed");
+        let results = JPathToken::evaluate(&tokens, &block_token).expect("Operation failed");
         assert_eq!(results.len(), 1);
         assert_eq!(
             results[0],
             &JToken::String("NiNmXL8FjEUEs1nfX9uHFBNaenxDHJtmuB".to_string())
         );
 
-        let tokens = JPathToken::parse("$.witnesses[*].verification").unwrap();
-        let results = JPathToken::evaluate(&tokens, &block_token).unwrap();
+        let tokens = JPathToken::parse("$.witnesses[*].verification").expect("Operation failed");
+        let results = JPathToken::evaluate(&tokens, &block_token).expect("Operation failed");
         assert_eq!(results.len(), 1);
     }
 }
 
 #[cfg(test)]
 mod performance_tests {
-    use super::*;
-    use std::time::Instant;
-
     #[test]
     fn test_large_object_creation_performance() {
         let start = Instant::now();
@@ -313,9 +307,8 @@ mod performance_tests {
         }
 
         let duration = start.elapsed();
-        println!("Created 10,000 key-value pairs in {:?}", duration);
+        log::info!("Created 10,000 key-value pairs in {:?}", duration);
 
-        // Should complete in reasonable time (less than 100ms on modern hardware)
         assert!(duration.as_millis() < 1000);
         assert_eq!(obj.len(), 10000);
     }
@@ -334,7 +327,7 @@ mod performance_tests {
         }
 
         let duration = start.elapsed();
-        println!("Created 100-level deep nesting in {:?}", duration);
+        log::info!("Created 100-level deep nesting in {:?}", duration);
 
         // Should handle deep nesting efficiently
         assert!(duration.as_millis() < 100);
@@ -342,7 +335,6 @@ mod performance_tests {
 
     #[test]
     fn test_json_path_query_performance() {
-        // Create a large structure for querying
         let mut root = OrderedDictionary::new();
         let mut items = Vec::new();
 
@@ -371,13 +363,13 @@ mod performance_tests {
 
         // Perform multiple path queries
         for _ in 0..100 {
-            let tokens = JPathToken::parse("$.items[*].name").unwrap();
-            let results = JPathToken::evaluate(&tokens, &json).unwrap();
+            let tokens = JPathToken::parse("$.items[*].name").expect("Operation failed");
+            let results = JPathToken::evaluate(&tokens, &json).expect("Operation failed");
             assert_eq!(results.len(), 1000);
         }
 
         let duration = start.elapsed();
-        println!("Performed 100 path queries on 1000 items in {:?}", duration);
+        log::info!("Performed 100 path queries on 1000 items in {:?}", duration);
 
         // Should handle queries efficiently
         assert!(duration.as_millis() < 1000);
@@ -416,7 +408,6 @@ mod performance_tests {
 
     #[test]
     fn test_concurrent_access_simulation() {
-        // Simulate concurrent access patterns (single-threaded test)
         let mut obj = OrderedDictionary::new();
         obj.insert(
             "shared_data".to_string(),
@@ -434,7 +425,7 @@ mod performance_tests {
         }
 
         let duration = start.elapsed();
-        println!("Simulated 1000 concurrent accesses in {:?}", duration);
+        log::info!("Simulated 1000 concurrent accesses in {:?}", duration);
 
         // Should handle concurrent-like access efficiently
         assert!(duration.as_millis() < 100);

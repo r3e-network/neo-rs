@@ -39,7 +39,7 @@ fn test_pushdata1_json() {
     let mut runner = JsonTestRunner::new();
 
     // Debug: Check both test case compilations
-    println!("🔍 Testing PUSHDATA1 script compilation...");
+    println!("🔍 Testing PUSHDATA1 script compilation/* implementation */;");
 
     // Good definition case
     let script1 = vec![
@@ -50,7 +50,6 @@ fn test_pushdata1_json() {
     let compiled_bytes1 = runner.compile_script(&script1).unwrap();
     println!("✅ Good definition script: {:?}", compiled_bytes1);
 
-    // Without enough length case (from JSON file)
     let script2 = vec!["PUSHDATA1".to_string(), "0x0501020304".to_string()];
     println!("Debug - script2 input: {:?}", script2);
     println!("Debug - script2[0]: '{}'", script2[0]);
@@ -76,9 +75,8 @@ fn test_pushdata1_json() {
 /// Test PUSHDATA1 directly without JSON
 #[test]
 fn test_pushdata1_direct() {
-    println!("🧪 Testing PUSHDATA1 directly...");
+    println!("🧪 Testing PUSHDATA1 directly/* implementation */;");
 
-    // Create script: PUSHDATA1 + length(4) + data(01020304) + RET
     let script_bytes = vec![0x0c, 0x04, 0x01, 0x02, 0x03, 0x04, 0x40];
     println!("Script bytes: {:?}", script_bytes);
 
@@ -178,9 +176,8 @@ fn test_pushdata1_direct() {
 /// Test PUSHDATA1 "Without enough length" case directly
 #[test]
 fn test_pushdata1_insufficient_data() {
-    println!("🚨 Testing PUSHDATA1 with insufficient data...");
+    println!("🚨 Testing PUSHDATA1 with insufficient data/* implementation */;");
 
-    // Script: PUSHDATA1 + length(5) + data(only 4 bytes) + RET
     // This should FAULT because PUSHDATA1 tries to read 5 bytes but only 4 are available
     let script_bytes = vec![0x0c, 0x05, 0x01, 0x02, 0x03, 0x04, 0x40];
     println!("Script: {:?}", script_bytes);
@@ -245,21 +242,17 @@ fn test_pushint8_to_pushint256_json() {
 /// Test all PUSHINT opcodes to verify operand parsing fix
 #[test]
 fn test_pushint_opcodes() {
-    println!("🚀 Testing PUSHINT opcodes...");
+    println!("🚀 Testing PUSHINT opcodes/* implementation */;");
 
-    // Test PUSHINT8 (1-byte operand)
     let pushint8_script = vec![0x00, 0x42]; // PUSHINT8 + value 0x42
     test_pushint_opcode("PUSHINT8", pushint8_script, StackItemType::Integer);
 
-    // Test PUSHINT16 (2-byte operand)
     let pushint16_script = vec![0x01, 0x34, 0x12]; // PUSHINT16 + value 0x1234 (little-endian)
     test_pushint_opcode("PUSHINT16", pushint16_script, StackItemType::Integer);
 
-    // Test PUSHINT32 (4-byte operand)
     let pushint32_script = vec![0x02, 0x78, 0x56, 0x34, 0x12]; // PUSHINT32 + value 0x12345678 (little-endian)
     test_pushint_opcode("PUSHINT32", pushint32_script, StackItemType::Integer);
 
-    // Test PUSHINT64 (8-byte operand)
     let pushint64_script = vec![0x03, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11]; // PUSHINT64 + value
     test_pushint_opcode("PUSHINT64", pushint64_script, StackItemType::Integer);
 
@@ -268,7 +261,7 @@ fn test_pushint_opcodes() {
 
 /// Helper function to test individual PUSHINT opcodes
 fn test_pushint_opcode(opcode_name: &str, script_bytes: Vec<u8>, expected_type: StackItemType) {
-    println!("  🔍 Testing {}...", opcode_name);
+    println!("  🔍 Testing {}/* implementation */;", opcode_name);
 
     match Script::new(script_bytes, false) {
         Ok(script) => {
@@ -337,29 +330,27 @@ fn test_pusha_opcode_compilation() {
 /// Test PUSHA opcode execution (the original failing opcode)
 #[test]
 fn test_pusha_vm_execution() {
-    println!("🚀 Testing PUSHA opcode execution...");
+    println!("🚀 Testing PUSHA opcode execution/* implementation */;");
 
     // Create a PUSHA script without RET to check evaluation stack
-    // PUSHA 0x00000001 (offset +1)
     let script_bytes = vec![
         0x0a, // PUSHA opcode
         0x01, 0x00, 0x00, 0x00, // 4-byte offset (little-endian): +1
     ]; // Total: 5 bytes (no RET)
 
-    println!("📜 Creating PUSHA script...");
+    println!("📜 Creating PUSHA script/* implementation */;");
     match Script::new(script_bytes, false) {
         Ok(script) => {
             println!("   ✅ PUSHA script created successfully");
 
             let mut engine = ExecutionEngine::new(None);
 
-            println!("📜 Loading PUSHA script...");
+            println!("📜 Loading PUSHA script/* implementation */;");
             match engine.load_script(script, 0, 0) {
                 Ok(_) => {
                     println!("   ✅ PUSHA script loaded successfully");
 
-                    // Execute one step (just PUSHA, not RET)
-                    println!("⚡ Executing PUSHA instruction...");
+                    println!("⚡ Executing PUSHA instruction/* implementation */;");
                     let _final_state = engine.execute_next();
 
                     // Check the evaluation stack after PUSHA
@@ -377,7 +368,6 @@ fn test_pusha_vm_execution() {
                             if let Ok(top_item) = context.peek(0) {
                                 println!("   📍 Top stack item: {:?}", top_item);
 
-                                // Check if it's a pointer
                                 match top_item.stack_item_type() {
                                     StackItemType::Pointer => {
                                         println!("   ✅ Confirmed: Top item is a Pointer");

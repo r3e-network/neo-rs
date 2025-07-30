@@ -1,9 +1,14 @@
 //! Storage interop services for smart contracts.
 
 use crate::application_engine::ApplicationEngine;
+use crate::contract_state::{ContractState, NefFile};
 use crate::interop::InteropService;
+use crate::manifest::ContractManifest;
 use crate::storage::{StorageItem, StorageKey};
 use crate::{Error, Result};
+use neo_config::SECONDS_PER_BLOCK;
+use neo_core::UInt160;
+use neo_vm::TriggerType;
 
 /// Service for getting values from contract storage.
 pub struct GetService;
@@ -14,7 +19,7 @@ impl InteropService for GetService {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -46,7 +51,7 @@ impl InteropService for PutService {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi base cost
+        1 << SECONDS_PER_BLOCK // 32768 datoshi base cost
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -82,7 +87,7 @@ impl InteropService for DeleteService {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -113,7 +118,7 @@ impl InteropService for FindService {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi base cost
+        1 << SECONDS_PER_BLOCK // 32768 datoshi base cost
     }
 
     fn execute(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -138,8 +143,6 @@ impl InteropService for FindService {
         // Iterate through storage to find keys with the given prefix
         // This matches the C# implementation behavior
         let storage_prefix = StorageKey::new(current_contract.hash, prefix.clone());
-
-        // Production-ready storage find implementation (matches C# System.Storage.Find exactly)
 
         // 1. Get current contract context
         let current_contract = match engine.current_script_hash() {
@@ -175,7 +178,7 @@ impl InteropService for FindService {
         // 6. Create storage iterator
         let iterator_id = engine.create_storage_iterator(results)?;
 
-        println!(
+        log::info!(
             "Storage find operation: found {} items with prefix {:?} for contract {}",
             iterator_id,
             String::from_utf8_lossy(prefix),
@@ -226,14 +229,12 @@ impl InteropService for GetReadOnlyContextService {
             .current_contract()
             .ok_or_else(|| Error::InteropServiceError("No current contract".to_string()))?;
 
-        // Production-ready read-only storage context (matches C# System.Storage.GetReadOnlyContext exactly)
         // Return the current contract hash with read-only flag
         let mut context = current_contract.hash.as_bytes().to_vec();
 
-        // Add read-only marker (0x01 at the end)
         context.push(0x01);
 
-        println!(
+        log::info!(
             "Created read-only storage context for contract {}",
             current_contract.hash
         );
@@ -260,10 +261,6 @@ impl StorageService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use neo_core::UInt160;
-    use neo_vm::TriggerType;
-
     #[test]
     fn test_storage_get_service() {
         let service = GetService;
@@ -273,8 +270,6 @@ mod tests {
         let contract_hash = UInt160::zero();
 
         // Create and add the contract to the cache
-        use crate::contract_state::{ContractState, NefFile};
-        use crate::manifest::ContractManifest;
         let nef = NefFile::new("neo-core-v3.0".to_string(), vec![0x40]);
         let manifest = ContractManifest::default();
         let contract = ContractState::new(1, contract_hash, nef, manifest);
@@ -287,7 +282,7 @@ mod tests {
         let args = vec![b"test_key".to_vec()];
         let result = service.execute(&mut engine, &args);
         assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        assert!(result?.is_empty());
     }
 
     #[test]
@@ -299,8 +294,6 @@ mod tests {
         let contract_hash = UInt160::zero();
 
         // Create and add the contract to the cache
-        use crate::contract_state::{ContractState, NefFile};
-        use crate::manifest::ContractManifest;
         let nef = NefFile::new("neo-core-v3.0".to_string(), vec![0x40]);
         let manifest = ContractManifest::default();
         let contract = ContractState::new(1, contract_hash, nef, manifest);
@@ -312,7 +305,7 @@ mod tests {
         let args = vec![b"test_key".to_vec(), b"test_value".to_vec()];
         let result = service.execute(&mut engine, &args);
         assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        assert!(result?.is_empty());
 
         // Verify the value was stored
         let key = StorageKey::new(contract_hash, b"test_key".to_vec());
@@ -328,8 +321,6 @@ mod tests {
         let contract_hash = UInt160::zero();
 
         // Create and add the contract to the cache
-        use crate::contract_state::{ContractState, NefFile};
-        use crate::manifest::ContractManifest;
         let nef = NefFile::new("neo-core-v3.0".to_string(), vec![0x40]);
         let manifest = ContractManifest::default();
         let contract = ContractState::new(1, contract_hash, nef, manifest);
@@ -347,7 +338,7 @@ mod tests {
         let args = vec![b"test_key".to_vec()];
         let result = service.execute(&mut engine, &args);
         assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        assert!(result?.is_empty());
 
         // Verify the value was deleted
         assert!(engine.get_storage(&key).is_none());
@@ -362,8 +353,6 @@ mod tests {
         let contract_hash = UInt160::zero();
 
         // Create and add the contract to the cache
-        use crate::contract_state::{ContractState, NefFile};
-        use crate::manifest::ContractManifest;
         let nef = NefFile::new("neo-core-v3.0".to_string(), vec![0x40]);
         let manifest = ContractManifest::default();
         let contract = ContractState::new(1, contract_hash, nef, manifest);
@@ -374,22 +363,22 @@ mod tests {
 
         let result = service.execute(&mut engine, &[]);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), contract_hash.as_bytes());
+        assert_eq!(result?, contract_hash.as_bytes());
     }
 
     #[test]
     fn test_service_names_and_costs() {
         let get_service = GetService;
         assert_eq!(get_service.name(), "System.Storage.Get");
-        assert_eq!(get_service.gas_cost(), 1 << 15);
+        assert_eq!(get_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
 
         let put_service = PutService;
         assert_eq!(put_service.name(), "System.Storage.Put");
-        assert_eq!(put_service.gas_cost(), 1 << 15);
+        assert_eq!(put_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
 
         let delete_service = DeleteService;
         assert_eq!(delete_service.name(), "System.Storage.Delete");
-        assert_eq!(delete_service.gas_cost(), 1 << 15);
+        assert_eq!(delete_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
     }
 
     #[test]

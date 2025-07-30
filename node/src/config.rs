@@ -2,6 +2,7 @@
 //!
 //! This module provides configuration structures and management for the Neo node.
 
+use neo_config::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK, MILLISECONDS_PER_BLOCK};
 use neo_persistence::storage::StorageConfig;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -157,7 +158,9 @@ impl NetworkConfig {
     pub fn mainnet() -> Self {
         Self {
             magic: magic::MAINNET,
-            listen_addr: format!("0.0.0.0:{}", ports::MAINNET_P2P).parse().unwrap(),
+            listen_addr: format!("localhost:{}", ports::MAINNET_P2P)
+                .parse()
+                .unwrap_or_else(|_| "0.0.0.0:10333".parse().expect("value should parse")),
             max_peers: defaults::MAX_PEERS,
             seed_nodes: seed_nodes::parse_seed_nodes(seed_nodes::MAINNET),
             enable_upnp: false,
@@ -170,7 +173,9 @@ impl NetworkConfig {
     pub fn testnet() -> Self {
         Self {
             magic: magic::TESTNET,
-            listen_addr: format!("0.0.0.0:{}", ports::TESTNET_P2P).parse().unwrap(),
+            listen_addr: format!("localhost:{}", ports::TESTNET_P2P)
+                .parse()
+                .unwrap_or_else(|_| "0.0.0.0:20333".parse().expect("value should parse")),
             max_peers: defaults::MAX_PEERS,
             seed_nodes: seed_nodes::parse_seed_nodes(seed_nodes::TESTNET),
             enable_upnp: false,
@@ -183,12 +188,14 @@ impl NetworkConfig {
     pub fn regtest() -> Self {
         Self {
             magic: magic::REGTEST,
-            listen_addr: format!("0.0.0.0:{}", ports::REGTEST_P2P).parse().unwrap(),
+            listen_addr: format!("localhost:{}", ports::REGTEST_P2P)
+                .parse()
+                .unwrap_or_else(|_| "0.0.0.0:30333".parse().expect("value should parse")),
             max_peers: 10, // Fewer peers for private network
             seed_nodes: seed_nodes::parse_seed_nodes(seed_nodes::REGTEST),
             enable_upnp: false,
             connection_timeout: 10, // Faster timeouts for local testing
-            ping_interval: 15,
+            ping_interval: 15,      // 15 seconds ping interval
         }
     }
 }
@@ -204,7 +211,9 @@ impl RpcConfig {
     pub fn mainnet() -> Self {
         Self {
             enabled: true,
-            listen_addr: format!("127.0.0.1:{}", ports::MAINNET_RPC).parse().unwrap(),
+            listen_addr: format!("localhost:{}", ports::MAINNET_RPC)
+                .parse()
+                .unwrap_or_else(|_| "0.0.0.0:10332".parse().expect("value should parse")),
             max_connections: defaults::MAX_RPC_CONNECTIONS,
             request_timeout: defaults::RPC_TIMEOUT,
             enable_cors: false,   // More restrictive for mainnet
@@ -216,7 +225,9 @@ impl RpcConfig {
     pub fn testnet() -> Self {
         Self {
             enabled: true,
-            listen_addr: format!("127.0.0.1:{}", ports::TESTNET_RPC).parse().unwrap(),
+            listen_addr: format!("localhost:{}", ports::TESTNET_RPC)
+                .parse()
+                .unwrap_or_else(|_| "0.0.0.0:20332".parse().expect("value should parse")),
             max_connections: defaults::MAX_RPC_CONNECTIONS,
             request_timeout: defaults::RPC_TIMEOUT,
             enable_cors: true,                   // More permissive for testing
@@ -228,7 +239,9 @@ impl RpcConfig {
     pub fn regtest() -> Self {
         Self {
             enabled: true,
-            listen_addr: format!("127.0.0.1:{}", ports::REGTEST_RPC).parse().unwrap(),
+            listen_addr: format!("localhost:{}", ports::REGTEST_RPC)
+                .parse()
+                .unwrap_or_else(|_| "0.0.0.0:30332".parse().expect("value should parse")),
             max_connections: 50, // Fewer connections for development
             request_timeout: 60, // Longer timeout for debugging
             enable_cors: true,   // More permissive for development
@@ -242,9 +255,9 @@ impl Default for ConsensusConfig {
         Self {
             enabled: false, // Disabled by default for non-consensus nodes
             algorithm: "dBFT".to_string(),
-            block_time_ms: 15000, // 15 seconds
-            max_transactions_per_block: 512,
-            max_block_size: 262144, // 256 KB
+            block_time_ms: MILLISECONDS_PER_BLOCK, // SECONDS_PER_BLOCK seconds
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
+            max_block_size: MAX_BLOCK_SIZE,
         }
     }
 }
@@ -295,11 +308,14 @@ impl NodeConfig {
         };
 
         // Override with command line parameters
-        config.rpc.listen_addr = format!("127.0.0.1:{}", rpc_port).parse().unwrap();
-        config.network.listen_addr = format!("0.0.0.0:{}", p2p_port).parse().unwrap();
+        config.rpc.listen_addr = format!("localhost:{}", rpc_port)
+            .parse()
+            .unwrap_or_else(|_| "0.0.0.0:10332".parse().expect("value should parse"));
+        config.network.listen_addr = format!("localhost:{}", p2p_port)
+            .parse()
+            .unwrap_or_else(|_| "0.0.0.0:10333".parse().expect("value should parse"));
         config.node.data_dir = data_dir;
 
-        // Update for network type
         config.is_testnet = is_testnet;
         config.is_mainnet = is_mainnet;
 

@@ -15,7 +15,6 @@ pub mod serializable;
 #[cfg(feature = "async")]
 pub mod actors;
 
-// Re-exports for commonly used types
 pub use binary_reader::BinaryReader;
 pub use binary_writer::BinaryWriter;
 pub use error::{ErrorSeverity, IoError, IoResult, Result};

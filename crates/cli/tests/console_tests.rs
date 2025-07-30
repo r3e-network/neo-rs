@@ -61,7 +61,6 @@ mod console_tests {
         let expected_version = env!("CARGO_PKG_VERSION");
         assert!(!expected_version.is_empty());
 
-        // Test that version constants are available (as would be shown by version command)
         assert_eq!(neo_cli::NEO_VERSION, "3.6.0");
         assert_eq!(neo_cli::VM_VERSION, "3.6.0");
     }
@@ -400,7 +399,6 @@ mod console_tests {
         assert!(true);
 
         // Test that state can be tracked
-        // (is_running would be tested if it were public)
     }
 
     /// Test console threading compatibility (matches C# async patterns exactly)
@@ -410,7 +408,6 @@ mod console_tests {
         let console = ConsoleService::new();
 
         // Test that async operations can be performed
-        // This is mainly a structural test for async compatibility
         assert!(true);
 
         // Test that console can be used in async context

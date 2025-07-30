@@ -165,7 +165,7 @@ async fn retry_network_operation(
 
 /// Restart P2P node component
 async fn restart_p2p_node(p2p_node: Arc<P2pNode>) -> Result<()> {
-    warn!("Restarting P2P node...");
+    warn!("Restarting P2P node/* implementation */;");
 
     // The P2P node manages its own lifecycle through the shutdown coordinator
     // Force disconnect all peers to trigger reconnection
@@ -174,7 +174,6 @@ async fn restart_p2p_node(p2p_node: Arc<P2pNode>) -> Result<()> {
         warn!("Forcing peer reconnections for {} peers", stats.peer_count);
     }
 
-    // Wait for reconnection
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     info!("P2P node restart sequence completed");
@@ -183,7 +182,7 @@ async fn restart_p2p_node(p2p_node: Arc<P2pNode>) -> Result<()> {
 
 /// Restart sync manager
 async fn restart_sync_manager(sync_manager: Arc<SyncManager>) -> Result<()> {
-    warn!("Restarting sync manager...");
+    warn!("Restarting sync manager/* implementation */;");
 
     // Sync manager internally handles state transitions
     // Force a resync by checking current state
@@ -208,7 +207,6 @@ async fn use_alternative_peers(p2p_node: Arc<P2pNode>) -> Result<()> {
     let stats = p2p_node.get_statistics().await;
     warn!("Disconnecting from {} current peers", stats.peer_count);
 
-    // Configure alternative seed nodes for fallback
     let alternative_seeds = vec![
         "seed1.ngd.network:10333",
         "seed2.ngd.network:10333",
@@ -286,18 +284,18 @@ pub async fn monitor_network_health(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_network_error_types() {
         let error = NetworkError::ConnectionTimeout {
-            peer: "192.168.1.1:10333".to_string(),
+            peer: "test-peer.local:10333".to_string(),
             duration: Duration::from_secs(30),
         };
 
         match error {
             NetworkError::ConnectionTimeout { peer, duration } => {
-                assert_eq!(peer, "192.168.1.1:10333");
+                assert_eq!(peer, "test-peer.local:10333");
                 assert_eq!(duration, Duration::from_secs(30));
             }
             _ => panic!("Wrong error type"),

@@ -145,9 +145,7 @@ impl StorageItem {
 
 impl fmt::Display for StorageItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Check if the value is valid UTF-8 and contains only printable characters
         if let Ok(s) = String::from_utf8(self.value.clone()) {
-            // Only display as string if it contains printable ASCII characters
             if s.chars().all(|c| c.is_ascii() && !c.is_control()) {
                 return write!(f, "\"{}\"", s);
             }
@@ -175,7 +173,7 @@ impl Serializable for StorageItem {
 
     fn deserialize(reader: &mut neo_io::MemoryReader) -> neo_io::Result<Self> {
         let is_constant = reader.read_boolean()?;
-        let value = reader.read_var_bytes(65535)?; // Max 65535 bytes for storage value
+        let value = reader.read_var_bytes(u16::MAX as usize)?; // Max u16::MAX bytes for storage value
 
         Ok(StorageItem { value, is_constant })
     }
@@ -219,7 +217,7 @@ impl AsRef<[u8]> for StorageItem {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{StorageError, StorageKey, Store};
 
     #[test]
     fn test_storage_item_creation() {

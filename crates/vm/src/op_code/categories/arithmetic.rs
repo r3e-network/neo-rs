@@ -318,7 +318,7 @@ impl ArithmeticOpCode {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_operation_categories() {

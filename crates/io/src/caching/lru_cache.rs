@@ -41,12 +41,9 @@ where
         TKey: Default,
         TValue: Default,
     {
-        // LRU cache moves accessed items to the front (matches C# OnAccess override)
         let on_access_fn: fn(&mut CacheItem<TKey, TValue>) = |item| {
-            // Move item to front of list (most recently used)
             item.unlink();
             // Note: In the actual implementation, we would need access to the head
-            // to add the item back. This is a simplified version.
             // The real implementation would need to be more sophisticated.
         };
 
@@ -136,56 +133,71 @@ where
     pub fn new(capacity: usize) -> Self {
         Self {
             cache: std::sync::Mutex::new(lru::LruCache::new(
-                std::num::NonZeroUsize::new(capacity).unwrap(),
+                std::num::NonZeroUsize::new(capacity).expect("Operation failed"),
             )),
         }
     }
 
     /// Gets an item from the cache.
     pub fn get(&self, key: &TKey) -> Option<TValue> {
-        self.cache.lock().unwrap().get(key).cloned()
+        self.cache
+            .lock()
+            .ok()
+            .and_then(|mut cache| cache.get(key).cloned())
     }
 
     /// Puts an item into the cache.
     pub fn put(&self, key: TKey, value: TValue) -> Option<TValue> {
-        self.cache.lock().unwrap().put(key, value)
+        self.cache
+            .lock()
+            .ok()
+            .and_then(|mut cache| cache.put(key, value))
     }
 
     /// Removes an item from the cache.
     pub fn remove(&self, key: &TKey) -> Option<TValue> {
-        self.cache.lock().unwrap().pop(key)
+        self.cache.lock().ok().and_then(|mut cache| cache.pop(key))
     }
 
     /// Clears the cache.
     pub fn clear(&self) {
-        self.cache.lock().unwrap().clear()
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.clear();
+        }
     }
 
     /// Gets the current number of items in the cache.
     pub fn len(&self) -> usize {
-        self.cache.lock().unwrap().len()
+        self.cache.lock().map(|cache| cache.len()).unwrap_or(0)
     }
 
     /// Returns whether the cache is empty.
     pub fn is_empty(&self) -> bool {
-        self.cache.lock().unwrap().is_empty()
+        self.cache
+            .lock()
+            .map(|cache| cache.is_empty())
+            .unwrap_or(true)
     }
 
     /// Gets the capacity of the cache.
     pub fn capacity(&self) -> usize {
-        self.cache.lock().unwrap().cap().get()
+        self.cache
+            .lock()
+            .map(|cache| cache.cap().get())
+            .unwrap_or(0)
     }
 
     /// Checks if the cache contains the given key.
     pub fn contains(&self, key: &TKey) -> bool {
-        self.cache.lock().unwrap().contains(key)
+        self.cache
+            .lock()
+            .map(|cache| cache.contains(key))
+            .unwrap_or(false)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[derive(Debug, Clone, PartialEq, Default)]
     struct TestItem {
         id: u32,
@@ -202,9 +214,9 @@ mod tests {
         cache.put(3, "third".to_string());
 
         assert_eq!(cache.len(), 3);
-        assert_eq!(cache.get(&1).unwrap(), "first");
-        assert_eq!(cache.get(&2).unwrap(), "second");
-        assert_eq!(cache.get(&3).unwrap(), "third");
+        assert_eq!(cache.get(&1).cloned().unwrap_or_default(), "first");
+        assert_eq!(cache.get(&2).cloned().unwrap_or_default(), "second");
+        assert_eq!(cache.get(&3).cloned().unwrap_or_default(), "third");
     }
 
     #[test]
@@ -217,7 +229,6 @@ mod tests {
         // Access first item to make it most recently used
         let _first = cache.get(&1);
 
-        // Add third item, should evict second item (least recently used)
         cache.put(3, "third".to_string());
 
         assert_eq!(cache.len(), 2);
@@ -237,7 +248,6 @@ mod tests {
         // Access first item to make it most recently used
         let _first = cache.get(&1);
 
-        // Add fourth item, should evict second item (now least recently used)
         cache.put(4, "fourth".to_string());
 
         assert_eq!(cache.len(), 3);

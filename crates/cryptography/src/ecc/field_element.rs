@@ -70,17 +70,17 @@ impl ECFieldElement {
         while !r.is_zero() {
             let quotient = &old_r / &r;
 
-            let temp_r = r.clone();
+            let final_r = r.clone();
             r = old_r - &quotient * &r;
-            old_r = temp_r;
+            old_r = final_r;
 
-            let temp_s = s.clone();
+            let final_s = s.clone();
             s = old_s - &quotient * &s;
-            old_s = temp_s;
+            old_s = final_s;
 
-            let temp_t = t.clone();
+            let final_t = t.clone();
             t = old_t - &quotient * &t;
-            old_t = temp_t;
+            old_t = final_t;
         }
 
         // Make sure old_s is positive
@@ -120,28 +120,21 @@ impl ECFieldElement {
     ///
     /// The square root if it exists, or an error if no square root exists
     pub fn sqrt(&self) -> ECCResult<Self> {
-        // For prime p ≡ 3 (mod 4), we can use the formula: sqrt(a) = a^((p+1)/4)
-        // This is the case for secp256r1 and secp256k1
         let p_mod_4 = &self.p % BigInt::from(4);
 
         if p_mod_4 == BigInt::from(3) {
             let exp = (&self.p + BigInt::one()) / BigInt::from(4);
             let result = self.pow(&exp);
 
-            // Verify that result² = self
             if &result.square() == self {
                 Ok(result)
             } else {
                 Err(ECCError::InvalidPointFormat)
             }
         } else {
-            // Production-ready Tonelli-Shanks algorithm implementation (matches C# ECFieldElement.Sqrt exactly)
-            // This implements the full Tonelli-Shanks algorithm for general prime moduli
-
             // 1. Check if the element is a quadratic residue (production validation)
             let legendre_symbol = self.pow(&((&self.p - BigInt::one()) / BigInt::from(2)));
             if legendre_symbol.value != BigInt::one() {
-                // Not a quadratic residue (production error handling)
                 return Err(ECCError::InvalidPointFormat);
             }
 
@@ -185,7 +178,6 @@ impl ECFieldElement {
 
             // 6. Main Tonelli-Shanks loop (production iteration)
             while t.value != BigInt::one() {
-                // Find the smallest i such that t^(2^i) = 1
                 let mut i = 1u32;
                 let mut t_power = t.square();
                 while t_power.value != BigInt::one() && i < m {
@@ -194,11 +186,9 @@ impl ECFieldElement {
                 }
 
                 if i == m {
-                    // No square root exists (production error handling)
                     return Err(ECCError::InvalidPointFormat);
                 }
 
-                // Update values for next iteration (production update)
                 let exp = BigInt::from(2).pow(m - i - 1);
                 let b = c.pow(&exp);
                 m = i;

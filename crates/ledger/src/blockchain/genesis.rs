@@ -3,9 +3,10 @@
 //! This module provides genesis block functionality exactly matching C# Neo Genesis handling.
 
 use super::storage::{Storage, StorageItem, StorageKey};
+// Genesis timestamp (Unix timestamp in milliseconds)
+const GENESIS_TIMESTAMP_MS: u64 = 1468595301000;
 use crate::{Block, Error, Header, Result};
 use neo_core::{UInt160, UInt256};
-
 /// Genesis block manager (matches C# Neo genesis block handling)
 #[derive(Debug)]
 pub struct GenesisManager {
@@ -20,9 +21,8 @@ impl GenesisManager {
 
     /// Initializes the genesis block (matches C# Neo genesis block initialization)
     pub async fn initialize_genesis_block(&self) -> Result<Block> {
-        tracing::info!("🔧 Creating genesis block...");
+        tracing::info!("🔧 Creating genesis block/* implementation */;");
 
-        // Create genesis block (matches C# Neo genesis block exactly)
         let genesis_block = match self.create_genesis_block() {
             Ok(block) => {
                 tracing::info!("✅ Genesis block created successfully");
@@ -42,7 +42,7 @@ impl GenesisManager {
         };
 
         // Persist genesis block
-        tracing::info!("💾 Persisting genesis block to storage...");
+        tracing::info!("💾 Persisting genesis block to storage/* implementation */;");
         match self.persist_genesis_block(&genesis_block).await {
             Ok(_) => {
                 tracing::info!("✅ Genesis block persisted successfully");
@@ -59,10 +59,9 @@ impl GenesisManager {
 
     /// Creates the genesis block (matches C# Neo genesis block)
     pub fn create_genesis_block(&self) -> Result<Block> {
-        tracing::info!("🔧 Creating Neo genesis block...");
+        tracing::info!("🔧 Creating Neo genesis block/* implementation */;");
         tracing::debug!("🔧 Using Neo mainnet genesis parameters");
 
-        // Create the exact Neo genesis block (production-ready implementation)
         let genesis_header = Header {
             version: 0,
             previous_hash: UInt256::zero(),
@@ -96,7 +95,7 @@ impl GenesisManager {
 
     /// Creates TestNet genesis block (matches C# Neo TestNet genesis)
     pub fn create_testnet_genesis_block(&self) -> Result<Block> {
-        tracing::info!("🔧 Creating Neo TestNet genesis block...");
+        tracing::info!("🔧 Creating Neo TestNet genesis block/* implementation */;");
 
         // Create TestNet genesis block with different parameters
         let genesis_header = Header {
@@ -122,7 +121,7 @@ impl GenesisManager {
 
     /// Creates private network genesis block (matches C# Neo private network genesis)
     pub fn create_private_genesis_block(&self) -> Result<Block> {
-        tracing::info!("🔧 Creating private network genesis block...");
+        tracing::info!("🔧 Creating private network genesis block/* implementation */;");
 
         // Create private network genesis block
         let genesis_header = Header {
@@ -131,7 +130,7 @@ impl GenesisManager {
             merkle_root: UInt256::zero(),
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .map_err(|e| Error::BlockValidation(format!("Failed to get timestamp: {}", e)))?
                 .as_millis() as u64,
             nonce: rand::random(),
             index: 0,
@@ -203,8 +202,6 @@ impl GenesisManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[tokio::test]
     async fn test_genesis_block_creation() {
         let storage = std::sync::Arc::new(Storage::new_temp());
@@ -223,7 +220,9 @@ mod tests {
         let storage = std::sync::Arc::new(Storage::new_temp());
         let genesis_manager = GenesisManager::new(storage);
 
-        let testnet_genesis = genesis_manager.create_testnet_genesis_block().unwrap();
+        let testnet_genesis = genesis_manager
+            .create_testnet_genesis_block()
+            .expect("operation should succeed");
 
         assert_eq!(testnet_genesis.index(), 0);
         assert_eq!(testnet_genesis.header.previous_hash, UInt256::zero());
@@ -236,13 +235,13 @@ mod tests {
         let genesis_manager = GenesisManager::new(storage.clone());
 
         // Check not initialized initially
-        assert!(!genesis_manager.is_genesis_initialized().await.unwrap());
+        assert!(!genesis_manager.is_genesis_initialized().await?);
 
         // Initialize genesis
-        let genesis_block = genesis_manager.initialize_genesis_block().await.unwrap();
+        let genesis_block = genesis_manager.initialize_genesis_block().await?;
 
         // Check now initialized
-        assert!(genesis_manager.is_genesis_initialized().await.unwrap());
+        assert!(genesis_manager.is_genesis_initialized().await?);
         assert_eq!(genesis_block.index(), 0);
     }
 }

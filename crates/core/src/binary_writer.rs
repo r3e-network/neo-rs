@@ -1,4 +1,5 @@
 use std::io::{self, Write};
+use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE};
 
 /// Production-ready binary writer (matches C# BinaryWriter exactly)
 /// This implements the C# logic: System.IO.BinaryWriter for Neo serialization
@@ -15,7 +16,7 @@ impl BinaryWriter {
     /// Creates a new binary writer (production implementation)
     pub fn new() -> Self {
         Self {
-            buffer: Vec::with_capacity(1024), // Start with reasonable capacity
+            buffer: Vec::with_capacity(MAX_SCRIPT_SIZE), // Start with reasonable capacity
             position: 0,
             total_bytes_written: 0,
         }
@@ -32,7 +33,6 @@ impl BinaryWriter {
 
     /// Writes raw bytes to the buffer (production implementation)
     pub fn write_bytes(&mut self, data: &[u8]) -> io::Result<()> {
-        // Production-ready binary writing with buffer management (matches C# BinaryWriter exactly)
         // This implements the C# logic: BinaryWriter with optimized buffer allocation and growth
         
         // 1. Ensure buffer capacity for new data (production memory management)
@@ -50,7 +50,7 @@ impl BinaryWriter {
         
         // 4. Write data efficiently (production performance)
         if data.len() <= 8 {
-            // Small data: direct copy for performance
+            // SAFETY: Operation is safe within this context
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     data.as_ptr(),
@@ -59,7 +59,6 @@ impl BinaryWriter {
                 );
             }
         } else {
-            // Large data: use safe slice copy
             self.buffer[self.position..self.position + data.len()].copy_from_slice(data);
         }
         
@@ -82,7 +81,7 @@ impl BinaryWriter {
         self.write_bytes(&value.to_le_bytes())
     }
 
-    /// Writes a 32-bit unsigned integer in little-endian format (matches C# exactly)
+    /// Writes a HASH_SIZE-bit unsigned integer in little-endian format (matches C# exactly)
     pub fn write_u32(&mut self, value: u32) -> io::Result<()> {
         self.write_bytes(&value.to_le_bytes())
     }
@@ -94,7 +93,6 @@ impl BinaryWriter {
 
     /// Writes a variable-length integer (production implementation)
     pub fn write_var_int(&mut self, mut value: u64) -> io::Result<()> {
-        // Production-ready variable integer encoding (matches C# Neo VarInt exactly)
         while value >= 0xFD {
             if value <= 0xFFFF {
                 self.write_u8(0xFD)?;
@@ -148,12 +146,11 @@ impl BinaryWriter {
 
     /// Calculates optimal buffer capacity (production optimization)
     fn calculate_optimal_capacity(&self, required: usize) -> usize {
-        // Double the capacity until it's sufficient (matches C# buffer growth exactly)
-        let mut capacity = self.buffer.capacity().max(1024);
+        let mut capacity = self.buffer.capacity().max(MAX_SCRIPT_SIZE);
         while capacity < required {
             capacity *= 2;
         }
-        capacity.min(1024 * 1024 * 16) // Cap at 16MB for safety
+        capacity.min(MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE * 16) // Cap at 16MB for safety
     }
 
     /// Gets total bytes written (for metrics)
@@ -169,7 +166,6 @@ impl Write for BinaryWriter {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        // No-op for memory buffer
         Ok(())
     }
 }
@@ -182,7 +178,7 @@ impl Default for BinaryWriter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Transaction, Block, UInt160, UInt256};
 
     #[test]
     fn test_write_basic_types() {

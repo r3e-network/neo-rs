@@ -86,7 +86,6 @@ mod signature_tests {
         let signature2 = Bls12381::sign(&private_key, message).unwrap();
         let signature3 = private_key.sign(message, NEO_SIGNATURE_SCHEME).unwrap();
 
-        // All signatures should be identical (deterministic)
         assert_eq!(signature1, signature2);
         assert_eq!(signature1, signature3);
         assert_eq!(signature2, signature3);
@@ -118,7 +117,6 @@ mod signature_tests {
         let private_key = Bls12381::generate_private_key(&mut rng);
         let public_key = Bls12381::derive_public_key(&private_key);
 
-        // Create large message (1MB)
         let large_message = vec![0x42u8; 1024 * 1024];
 
         // Should be able to sign large message
@@ -282,7 +280,6 @@ mod signature_tests {
 
         let mut signatures = Vec::new();
 
-        // Create signatures for all messages
         for message in &messages {
             let signature = Bls12381::sign(&private_key, message).unwrap();
             signatures.push(signature);
@@ -297,7 +294,6 @@ mod signature_tests {
             );
         }
 
-        // Cross-verify should fail (message i with signature j where i != j)
         for i in 0..messages.len() {
             for j in 0..signatures.len() {
                 if i != j {

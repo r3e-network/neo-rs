@@ -13,8 +13,6 @@ use std::collections::HashMap;
 
 #[test]
 fn test_runtime_get_notifications() {
-    // Test Runtime.GetNotifications functionality - C# Runtime_GetNotifications_Test()
-
     // Create a mock contract script
     let mut script_builder = ScriptBuilder::new();
     script_builder.emit_opcode(OpCode::SWAP);
@@ -33,9 +31,6 @@ fn test_runtime_get_notifications() {
 
 #[test]
 fn test_execution_engine_get_script_container() {
-    // Test ExecutionEngine.GetScriptContainer - C# TestExecutionEngine_GetScriptContainer()
-
-    // Create basic engine for testing
     let engine = ExecutionEngine::new(None);
 
     // Test that engine is created successfully
@@ -44,8 +39,6 @@ fn test_execution_engine_get_script_container() {
 
 #[test]
 fn test_execution_engine_get_calling_script_hash() {
-    // Test ExecutionEngine.GetCallingScriptHash - C# TestExecutionEngine_GetCallingScriptHash()
-
     // Test without calling script
     let engine = ExecutionEngine::new(None);
     assert_eq!(engine.state(), VMState::BREAK);
@@ -62,31 +55,23 @@ fn test_execution_engine_get_calling_script_hash() {
 
 #[test]
 fn test_runtime_platform() {
-    // Test Runtime.Platform - C# TestRuntime_Platform()
-
-    // Test platform string
     let platform = "NEO";
     assert_eq!(platform, "NEO");
 }
 
 #[test]
 fn test_runtime_check_witness() {
-    // Test Runtime.CheckWitness - C# TestRuntime_CheckWitness()
-
     let private_key = [0x01u8; 32];
 
     // Test key format
     assert_eq!(private_key.len(), 32);
 
-    // Test with empty array (should be invalid)
     let empty_key: [u8; 0] = [];
     assert_eq!(empty_key.len(), 0);
 }
 
 #[test]
 fn test_runtime_check_witness_null_container() {
-    // Test Runtime.CheckWitness with null container - C# TestRuntime_CheckWitness_Null_ScriptContainer()
-
     let private_key = [0x01u8; 32];
 
     // Test basic key validation
@@ -95,8 +80,6 @@ fn test_runtime_check_witness_null_container() {
 
 #[test]
 fn test_runtime_log() {
-    // Test Runtime.Log - C# TestRuntime_Log()
-
     let message = "hello";
 
     // Test message format
@@ -106,9 +89,6 @@ fn test_runtime_log() {
 
 #[test]
 fn test_runtime_get_time() {
-    // Test Runtime.GetTime - C# TestRuntime_GetTime()
-
-    // Test time functionality (placeholder)
     let current_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -119,8 +99,6 @@ fn test_runtime_get_time() {
 
 #[test]
 fn test_runtime_get_invocation_counter() {
-    // Test Runtime.GetInvocationCounter - C# TestRuntime_GetInvocationCounter()
-
     // Test counter functionality
     let counter = 1;
     assert_eq!(counter, 1);
@@ -128,8 +106,6 @@ fn test_runtime_get_invocation_counter() {
 
 #[test]
 fn test_runtime_get_current_signers() {
-    // Test Runtime.GetCurrentSigners - C# TestRuntime_GetCurrentSigners()
-
     // Test signer structure
     let zero_account = UInt160::zero();
     assert_eq!(zero_account.to_array().len(), 20);
@@ -137,8 +113,6 @@ fn test_runtime_get_current_signers() {
 
 #[test]
 fn test_runtime_get_current_signers_syscall() {
-    // Test Runtime.GetCurrentSigners via syscall - C# TestRuntime_GetCurrentSigners_SysCall()
-
     let mut script = ScriptBuilder::new();
     script.emit_syscall("System.Runtime.CurrentSigners");
 
@@ -148,8 +122,6 @@ fn test_runtime_get_current_signers_syscall() {
 
 #[test]
 fn test_crypto_verify() {
-    // Test Crypto.Verify - C# TestCrypto_Verify()
-
     let message = b"test message";
     let private_key = [0x01u8; 32];
 
@@ -160,8 +132,6 @@ fn test_crypto_verify() {
 
 #[test]
 fn test_blockchain_get_height() {
-    // Test Blockchain.GetHeight - C# TestBlockchain_GetHeight()
-
     // Test height value
     let height = 0u32; // Genesis block
     assert_eq!(height, 0);
@@ -169,8 +139,6 @@ fn test_blockchain_get_height() {
 
 #[test]
 fn test_blockchain_get_block() {
-    // Test Blockchain.GetBlock - C# TestBlockchain_GetBlock()
-
     // Test with zero hash
     let zero_hash = UInt256::zero();
     assert_eq!(zero_hash.to_array().len(), 32);
@@ -182,16 +150,12 @@ fn test_blockchain_get_block() {
 
 #[test]
 fn test_blockchain_get_transaction() {
-    // Test Blockchain.GetTransaction - C# TestBlockchain_GetTransaction()
-
     let random_hash = UInt256::from([0x01u8; 32]);
     assert_eq!(random_hash.to_array().len(), 32);
 }
 
 #[test]
 fn test_blockchain_get_transaction_height() {
-    // Test Blockchain.GetTransactionHeight - C# TestBlockchain_GetTransactionHeight()
-
     let tx_hash = UInt256::from([0x01u8; 32]);
 
     // Test getting transaction height via script
@@ -205,8 +169,6 @@ fn test_blockchain_get_transaction_height() {
 
 #[test]
 fn test_storage_get_context() {
-    // Test Storage.GetContext - C# TestStorage_GetContext()
-
     let mut script = ScriptBuilder::new();
     script.emit_syscall("System.Storage.GetContext");
 
@@ -216,8 +178,6 @@ fn test_storage_get_context() {
 
 #[test]
 fn test_storage_get_readonly_context() {
-    // Test Storage.GetReadOnlyContext - C# TestStorage_GetReadOnlyContext()
-
     let mut script = ScriptBuilder::new();
     script.emit_syscall("System.Storage.GetReadOnlyContext");
 
@@ -227,8 +187,6 @@ fn test_storage_get_readonly_context() {
 
 #[test]
 fn test_storage_get_put_delete() {
-    // Test Storage Get/Put/Delete operations - C# TestStorage_Get/Put/Delete()
-
     let mut script = ScriptBuilder::new();
 
     // Get storage context
@@ -256,8 +214,6 @@ fn test_storage_get_put_delete() {
 
 #[test]
 fn test_contract_call() {
-    // Test Contract.Call - C# TestContract_Call()
-
     let contract_hash = UInt160::zero();
 
     let mut script = ScriptBuilder::new();
@@ -273,8 +229,6 @@ fn test_contract_call() {
 
 #[test]
 fn test_contract_create_standard_account() {
-    // Test Contract.CreateStandardAccount - C# TestContract_CreateStandardAccount()
-
     let public_key = vec![0x02u8; 33]; // Compressed public key format
 
     let mut script = ScriptBuilder::new();
@@ -288,8 +242,6 @@ fn test_contract_create_standard_account() {
 
 #[test]
 fn test_sha256() {
-    // Test SHA256 hash function - C# TestSha256()
-
     let data = b"hello world";
 
     let mut script = ScriptBuilder::new();
@@ -303,8 +255,6 @@ fn test_sha256() {
 
 #[test]
 fn test_ripemd160() {
-    // Test RIPEMD160 hash function - C# TestRIPEMD160()
-
     let data = b"hello world";
 
     let mut script = ScriptBuilder::new();
@@ -318,8 +268,6 @@ fn test_ripemd160() {
 
 #[test]
 fn test_murmur32() {
-    // Test Murmur32 hash function - C# TestMurmur32()
-
     let data = b"hello world";
     let seed = 0u32;
 

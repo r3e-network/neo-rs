@@ -14,11 +14,9 @@ mod trie_tests {
     /// Test Trie creation and initialization (matches C# Trie constructor exactly)
     #[test]
     fn test_trie_creation_compatibility() {
-        // Test creating empty trie (matches C# new Trie() exactly)
         let empty_trie = Trie::new(None, false);
         assert!(empty_trie.root().is_empty());
 
-        // Test creating trie with root hash (matches C# new Trie(hash) exactly)
         let test_hash = UInt256::from_slice(&[42u8; 32]).unwrap();
         let hash_trie = Trie::new(Some(test_hash), true);
         assert_eq!(hash_trie.root().hash(), Some(test_hash));
@@ -35,7 +33,6 @@ mod trie_tests {
     fn test_basic_put_get_compatibility() {
         let mut trie = Trie::new(None, true);
 
-        // Test single put/get (matches C# behavior exactly)
         let key = b"test_key".to_vec();
         let value = b"test_value".to_vec();
 
@@ -127,7 +124,6 @@ mod trie_tests {
             Some(&b"keep_value".to_vec())
         );
 
-        // Test deleting non-existent key (should not error)
         assert!(trie.delete(b"non_existent_key").is_ok());
 
         // Test deleting key with shared prefix
@@ -144,10 +140,8 @@ mod trie_tests {
     fn test_node_structure_evolution_compatibility() {
         let mut trie = Trie::new(None, true);
 
-        // Start with single key (should create leaf node)
         assert!(trie.put(b"single", b"value").is_ok());
 
-        // Add key with shared prefix (should create extension + branch)
         assert!(trie.put(b"single_extended", b"extended_value").is_ok());
 
         // Add more keys to create complex branch structure
@@ -311,7 +305,6 @@ mod trie_tests {
             assert_eq!(retrieved.as_ref(), Some(expected_value));
         }
 
-        // Test prefix matching (if supported)
         assert_eq!(trie.get(b"a").unwrap().as_ref(), Some(&b"value_a".to_vec()));
         assert_eq!(
             trie.get(b"aa").unwrap().as_ref(),

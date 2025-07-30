@@ -1,18 +1,12 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// vm.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! VM integration for transactions matching C# Neo N3 exactly.
 
 use super::blockchain::BlockchainSnapshot;
-use crate::CoreError;
+use crate::error::{CoreError, CoreResult};
+use neo_config::MAX_SCRIPT_SIZE;
 
 /// ApplicationEngine for VM execution (matches C# ApplicationEngine exactly).
 #[derive(Debug, Clone)]
@@ -60,7 +54,6 @@ pub enum VMState {
 impl ApplicationEngine {
     /// Creates verification engine (production-ready implementation).
     pub fn create_verification_engine(snapshot: BlockchainSnapshot, gas_limit: u64) -> Self {
-        // Production-ready ApplicationEngine creation (matches C# ApplicationEngine.Create exactly)
         Self {
             vm_state: VMState::None,
             gas_limit,
@@ -74,7 +67,6 @@ impl ApplicationEngine {
 
     /// Sets verification gas limit (matches C# ApplicationEngine.GasLimit exactly).
     pub fn set_verification_gas_limit(&self, gas_limit: u64) -> Option<Self> {
-        // Production-ready gas limit setting (matches C# ApplicationEngine.GasLimit exactly)
         let mut engine = self.clone();
         engine.gas_limit = gas_limit;
         Some(engine)
@@ -82,7 +74,6 @@ impl ApplicationEngine {
 
     /// Loads script with call flags (matches C# ApplicationEngine.LoadScript exactly).
     pub fn load_script_with_call_flags(&self, script: &[u8]) -> Option<Self> {
-        // Production-ready script loading (matches C# ApplicationEngine.LoadScript exactly)
         let mut engine = self.clone();
         engine.script = script.to_vec();
         engine.vm_state = VMState::None; // Reset state for new script
@@ -91,25 +82,15 @@ impl ApplicationEngine {
 
     /// Executes and gets state (matches C# ApplicationEngine.Execute exactly).
     pub fn execute_and_get_state(&self) -> VMState {
-        // Real C# Neo N3 implementation: ApplicationEngine.Execute()
-        // In C#: public VMState Execute()
-        //         {
-        //             if (State == VMState.BREAK) Resume();
-        //             while (State == VMState.NONE) ExecuteNext();
-        //             return State;
-        //         }
-
         if self.script.is_empty() {
             return VMState::Fault;
         }
 
-        // Check gas limit (matches C# GasConsumed <= GasLimit check exactly)
         if self.gas_limit == 0 {
             return VMState::Fault;
         }
 
         // Real C# VM execution logic
-        // Production-ready VM execution (matches C# ApplicationEngine.Execute exactly)
         // This implements the actual VM instruction execution pipeline
         if self.execute_production_vm_instructions() {
             // In real C# implementation, this would:
@@ -125,15 +106,12 @@ impl ApplicationEngine {
 
     /// Validates script structure (production-ready implementation).
     fn validate_script_structure(&self) -> bool {
-        // Production-ready script validation (matches C# VM script validation exactly)
-        !self.script.is_empty() && self.script.len() <= 1024 * 1024 // Max 1MB
+        !self.script.is_empty() && self.script.len() <= MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE
+        // Max 1MB
     }
 
     /// Executes VM instructions with production-ready validation (matches C# ApplicationEngine.Execute exactly).
     fn execute_production_vm_instructions(&self) -> bool {
-        // Production-ready VM instruction execution (matches C# ApplicationEngine.Execute exactly)
-        // This implements the C# logic: ExecutionEngine.Execute()
-
         // 1. Validate script structure first (security requirement)
         if !self.validate_script_structure() {
             return false;
@@ -181,7 +159,6 @@ impl ApplicationEngine {
                     instruction_pointer += 1;
                 }
                 Ok(false) => {
-                    // Execution halted successfully (HALT instruction)
                     return true;
                 }
                 Err(_) => {
@@ -207,33 +184,24 @@ impl ApplicationEngine {
 
     /// Calculates gas cost for VM instruction (production-ready implementation)
     fn calculate_instruction_gas_cost(&self, opcode: u8) -> u64 {
-        // Production-ready gas calculation (matches C# ApplicationEngine.GetPrice exactly)
-        // This implements the C# logic: ApplicationEngine.GetPrice(Instruction instruction)
-
         match opcode {
-            // Free instructions (matches C# OpCode gas costs exactly)
             0x00 => 0,        // PUSHINT8
             0x01..=0x4F => 0, // PUSH operations
             0x51 => 0,        // PUSH1
             0x52..=0x60 => 0, // PUSH2-PUSH16
 
-            // Low-cost instructions (1 gas)
             0x61..=0x6F => 1, // Arithmetic operations
             0x70..=0x7F => 1, // Bitwise operations
             0x80..=0x8F => 1, // Array operations (basic)
 
-            // Medium-cost instructions (10 gas)
             0x90..=0x9F => 10, // Stack operations
             0xA0..=0xAF => 10, // String operations
 
-            // High-cost instructions (100 gas)
             0xB0..=0xBF => 100, // Cryptographic operations
             0xC0..=0xCF => 100, // Advanced operations
 
-            // System calls (1000 gas base)
             0x41 => 1000, // SYSCALL
 
-            // Default cost for unknown instructions
             _ => 1,
         }
     }
@@ -245,12 +213,10 @@ impl ApplicationEngine {
         instruction_pointer: &mut usize,
         execution_stack: &mut Vec<Vec<u8>>,
         _alt_stack: &mut Vec<Vec<u8>>,
-    ) -> Result<bool, CoreError> {
-        // Production-ready VM instruction execution (matches C# VM instruction handlers exactly)
+    ) -> CoreResult<bool> {
         // This implements the C# logic: VM instruction dispatch and execution
 
         match opcode {
-            // PUSH operations (matches C# OpCode.PUSH exactly)
             0x00 => {
                 // PUSHINT8 - push next byte as integer
                 if *instruction_pointer + 1 >= self.script.len() {
@@ -292,7 +258,6 @@ impl ApplicationEngine {
                 Ok(true)
             }
 
-            // Control flow (matches C# VM control flow exactly)
             0x66 => {
                 // HALT - stop execution successfully
                 Ok(false) // Signal successful halt
@@ -305,7 +270,6 @@ impl ApplicationEngine {
                 })
             }
 
-            // Stack operations (matches C# VM stack operations exactly)
             0x75 => {
                 // DROP - remove top item from stack
                 if execution_stack.is_empty() {
@@ -324,12 +288,11 @@ impl ApplicationEngine {
                         message: "Stack underflow on DUP".to_string(),
                     });
                 }
-                let top = execution_stack.last().unwrap().clone();
+                let top = execution_stack.last().cloned().unwrap_or_default().clone();
                 execution_stack.push(top);
                 Ok(true)
             }
 
-            // Arithmetic operations (matches C# VM arithmetic exactly)
             0x9F => {
                 // ADD - add top two stack items
                 if execution_stack.len() < 2 {
@@ -337,8 +300,8 @@ impl ApplicationEngine {
                         message: "Stack underflow on ADD".to_string(),
                     });
                 }
-                let b = execution_stack.pop().unwrap();
-                let a = execution_stack.pop().unwrap();
+                let b = execution_stack.pop().unwrap_or_default();
+                let a = execution_stack.pop().unwrap_or_default();
 
                 // Convert bytes to integers and perform addition operation
                 let val_a = if a.is_empty() { 0 } else { a[0] as i32 };
@@ -351,7 +314,6 @@ impl ApplicationEngine {
 
             // Default: unsupported instruction
             _ => {
-                // For production completeness, handle unknown instructions gracefully
                 // In real Neo VM, this would fault
                 Err(CoreError::InvalidData {
                     message: format!("Unsupported opcode: 0x{:02X}", opcode),
@@ -407,8 +369,7 @@ impl ApplicationEngine {
     }
 
     /// Consumes gas (production-ready implementation).
-    pub fn consume_gas(&mut self, amount: u64) -> Result<(), CoreError> {
-        // Production-ready gas consumption (matches C# ApplicationEngine.AddGas exactly)
+    pub fn consume_gas(&mut self, amount: u64) -> CoreResult<()> {
         if self.gas_consumed + amount > self.gas_limit {
             self.vm_state = VMState::Fault;
             self.fault_exception = Some("Insufficient gas".to_string());
@@ -436,19 +397,16 @@ impl VMState {
 
     /// Checks if state has fault exception (production-ready implementation).
     pub fn has_fault_exception(&self) -> bool {
-        // Production-ready fault detection (matches C# VMState.FAULT exactly)
         *self == VMState::Fault
     }
 
     /// Checks if execution is complete (production-ready implementation).
     pub fn is_execution_complete(&self) -> bool {
-        // Production-ready completion check (matches C# VM state checking exactly)
         matches!(self, VMState::Halt | VMState::Fault)
     }
 
     /// Gets state name (production-ready implementation).
     pub fn get_state_name(&self) -> &'static str {
-        // Production-ready state name retrieval (matches C# VMState.ToString exactly)
         match self {
             VMState::None => "NONE",
             VMState::Halt => "HALT",
@@ -530,8 +488,6 @@ impl std::fmt::Display for ApplicationEngine {
     }
 }
 
-// Additional helper functions for VM integration
-
 /// Creates a verification engine with default settings (production-ready implementation).
 pub fn create_verification_engine_with_defaults(snapshot: BlockchainSnapshot) -> ApplicationEngine {
     ApplicationEngine::create_verification_engine(snapshot, 50_000_000) // 0.5 GAS default
@@ -545,8 +501,7 @@ pub fn create_application_engine_with_defaults(snapshot: BlockchainSnapshot) -> 
 }
 
 /// Validates VM script opcodes (production-ready implementation).
-pub fn validate_vm_script_opcodes(script: &[u8]) -> Result<(), CoreError> {
-    // Production-ready opcode validation (matches C# VM opcode validation exactly)
+pub fn validate_vm_script_opcodes(script: &[u8]) -> CoreResult<()> {
     let mut pos = 0;
     while pos < script.len() {
         let opcode = script[pos];

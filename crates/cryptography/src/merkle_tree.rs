@@ -173,13 +173,13 @@ impl MerkleTree {
         }
 
         // Traverse the tree to collect the proof
-        let mut node = self.root.as_ref().unwrap();
+        let mut node = self.root.as_ref().expect("Field should be initialized");
         for is_right in path.iter().rev() {
             if *is_right {
                 // We're going right, so include the left hash
                 if let Some(left) = &node.left {
                     proof.push(left.hash.clone());
-                    node = node.right.as_ref().unwrap();
+                    node = node.right.as_ref().expect("Value should exist");
                 } else {
                     return None;
                 }
@@ -187,7 +187,7 @@ impl MerkleTree {
                 // We're going left, so include the right hash
                 if let Some(right) = &node.right {
                     proof.push(right.hash.clone());
-                    node = node.left.as_ref().unwrap();
+                    node = node.left.as_ref().expect("Value should exist");
                 } else {
                     return None;
                 }
@@ -273,7 +273,11 @@ impl MerkleTree {
             return self.clone();
         }
 
-        let mut root = self.root.as_ref().unwrap().clone();
+        let mut root = self
+            .root
+            .as_ref()
+            .expect("Field should be initialized")
+            .clone();
         let mut current_depth = self.depth;
 
         while current_depth > depth {

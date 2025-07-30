@@ -38,7 +38,7 @@ impl Null {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_null_creation() {
@@ -66,7 +66,6 @@ mod tests {
         let null = Null::new();
         let copied = null.deep_copy();
 
-        // Null is a unit struct, so they're always equal
         assert_eq!(copied, null);
     }
 }

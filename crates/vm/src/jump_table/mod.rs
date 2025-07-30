@@ -56,11 +56,12 @@ impl JumpTable {
 
     /// Gets the default jump table.
     pub fn default() -> Self {
+        // SAFETY: Operation is safe within this context
         unsafe {
             if DEFAULT.is_none() {
                 DEFAULT = Some(Self::new());
             }
-            DEFAULT.clone().unwrap()
+            DEFAULT.clone().unwrap_or_default()
         }
     }
 
@@ -115,14 +116,11 @@ impl JumpTable {
 
     /// Executes a throw operation.
     pub fn execute_throw(&self, engine: &mut ExecutionEngine, message: &str) -> VmResult<()> {
-        // Create a byte string from the message
         let exception = crate::stack_item::StackItem::from_byte_string(message.as_bytes().to_vec());
 
         // Set the uncaught exception
         engine.set_uncaught_exception(Some(exception));
 
-        // Production-ready exception handling (matches C# VM exception propagation exactly)
-        // Search for exception handlers and propagate the exception
         if !engine.handle_exception() {
             // No exception handler found, set VM state to FAULT
             engine.set_state(crate::execution_engine::VMState::FAULT);
@@ -177,7 +175,6 @@ impl std::ops::Index<OpCode> for JumpTable {
 
 impl std::ops::IndexMut<OpCode> for JumpTable {
     fn index_mut(&mut self, opcode: OpCode) -> &mut Self::Output {
-        // This implementation is more complex with arrays since we can't easily return &mut Option<T>
         // We need to ensure the handler exists first
         if self.handlers[opcode as usize].is_none() {
             self.handlers[opcode as usize] = Some(
@@ -199,7 +196,7 @@ impl std::ops::IndexMut<OpCode> for JumpTable {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_jump_table_creation() {
@@ -232,7 +229,7 @@ mod tests {
 
         // Check that the handler was registered
         assert_eq!(
-            jump_table.get(OpCode::NOP).unwrap() as usize,
+            jump_table.get(0).ok_or("Index out of bounds")? as usize,
             custom_handler as usize
         );
     }
@@ -254,7 +251,7 @@ mod tests {
 
         // Check that the handler was set
         assert_eq!(
-            jump_table.get(OpCode::NOP).unwrap() as usize,
+            jump_table.get(0).ok_or("Index out of bounds")? as usize,
             custom_handler as usize
         );
     }
@@ -286,14 +283,12 @@ mod tests {
             operand: vec![],
         };
 
-        // Create a new jump table with an empty handler for NOP
         let mut jump_table = jump_table.clone();
         jump_table.handlers[OpCode::NOP as usize] = None;
 
         // Execute the instruction
         let result = jump_table.execute(&mut engine, &instruction);
 
-        // Check that the result is an error
         assert!(result.is_err());
     }
 }

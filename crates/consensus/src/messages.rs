@@ -4,6 +4,7 @@
 //! including all dBFT message types and their serialization/deserialization.
 
 use crate::{BlockIndex, ConsensusPayload, ConsensusSignature, Error, Result, ViewNumber};
+use neo_config::{HASH_SIZE, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use neo_core::UInt256;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -130,10 +131,9 @@ impl ConsensusMessage {
             }
         }
 
-        // Validate timestamp (not too old or too far in future)
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         if self.timestamp() > now + 300 {
@@ -196,8 +196,6 @@ impl PrepareRequest {
             ));
         }
 
-        // Production-ready block validation (matches C# dBFT.ValidateBlock exactly)
-
         // 1. Validate block header
         if self.block_data.is_empty() {
             return Err(Error::InvalidBlock(
@@ -212,7 +210,7 @@ impl PrepareRequest {
             ));
         }
 
-        if self.transaction_hashes.len() > 512 {
+        if self.transaction_hashes.len() > MAX_TRANSACTIONS_PER_BLOCK {
             return Err(Error::InvalidBlock(
                 "Too many transactions in block".to_string(),
             ));
@@ -234,15 +232,15 @@ impl PrepareRequest {
         }
 
         // 5. Validate block size (production implementation matching C# Neo exactly)
-        if self.block_data.len() > 262144 {
+        if self.block_data.len() > MAX_BLOCK_SIZE {
             // 256KB limit matches C# Neo MaxBlockSize
             return Err(Error::InvalidMessage(format!(
-                "Block size {} exceeds maximum allowed size of 262144 bytes",
+                "Block size {} exceeds maximum allowed size of MAX_BLOCK_SIZE bytes",
                 self.block_data.len()
             )));
         }
 
-        println!("Block validation passed for block {}", self.block_hash);
+        log::info!("Block validation passed for block {}", self.block_hash);
         Ok(())
     }
 
@@ -361,7 +359,7 @@ impl ChangeView {
             reason,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
         }
     }
@@ -399,7 +397,7 @@ impl RecoveryRequest {
             view_number,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
         }
     }
@@ -473,8 +471,6 @@ impl RecoveryResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_consensus_message_type() {
         assert_eq!(ConsensusMessageType::PrepareRequest.to_byte(), 0x00);
@@ -494,9 +490,9 @@ mod tests {
 
     #[test]
     fn test_prepare_request() {
-        let block_hash = UInt256::from_bytes(&[1; 32]).unwrap();
+        let block_hash = UInt256::from_bytes(&[1; HASH_SIZE]).unwrap();
         let block_data = vec![1, 2, 3, 4];
-        let tx_hashes = vec![UInt256::from_bytes(&[2; 32]).unwrap()];
+        let tx_hashes = vec![UInt256::from_bytes(&[2; HASH_SIZE]).unwrap()];
 
         let prepare_request =
             PrepareRequest::new(block_hash, block_data.clone(), tx_hashes.clone());

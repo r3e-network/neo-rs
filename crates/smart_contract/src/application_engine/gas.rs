@@ -4,6 +4,7 @@
 //! It provides gas consumption tracking, gas limits, and gas fee calculations.
 
 use crate::{Error, Result};
+use neo_config::{HASH_SIZE, MAX_SCRIPT_LENGTH, MAX_TRANSACTIONS_PER_BLOCK};
 
 /// Gas operations implementation that matches C# ApplicationEngine gas management exactly.
 pub trait GasOperations {
@@ -84,8 +85,6 @@ impl GasManager {
 
     /// Adds gas fee (production-ready implementation matching C# ApplicationEngine.AddFee exactly).
     pub fn add_fee(&mut self, fee: u64) -> Result<()> {
-        // Production-ready gas fee addition (matches C# ApplicationEngine.AddFee exactly)
-
         // 1. Calculate the actual fee based on ExecFeeFactor (matches C# logic exactly)
         let actual_fee = fee.saturating_mul(self.exec_fee_factor);
 
@@ -102,8 +101,6 @@ impl GasManager {
 
     /// Consumes gas (production-ready implementation matching C# ApplicationEngine.ConsumeGas exactly).
     pub fn consume_gas(&mut self, gas: i64) -> Result<()> {
-        // Production-ready gas consumption (matches C# ApplicationEngine.ConsumeGas exactly)
-
         // 1. Validate gas amount (matches C# validation logic)
         if gas < 0 {
             return Err(Error::InvalidArguments(
@@ -122,9 +119,11 @@ impl GasManager {
         // 4. Production-ready gas monitoring (matches C# debug output)
         #[cfg(feature = "std")]
         {
-            println!(
+            log::info!(
                 "Gas consumed: {} (total: {}/{})",
-                gas, self.gas_consumed, self.gas_limit
+                gas,
+                self.gas_consumed,
+                self.gas_limit
             );
         }
 
@@ -167,8 +166,6 @@ impl GasManager {
 
     /// Calculates storage fee based on key and value size (matches C# exactly).
     pub fn calculate_storage_fee(&self, key_size: usize, value_size: usize) -> i64 {
-        // Production implementation: Calculate storage fee (matches C# exactly)
-        // In C# Neo: StoragePrice * (key.Length + value.Length)
         let storage_price = 100000; // 0.001 GAS per byte
         ((key_size + value_size) as i64) * storage_price
     }
@@ -180,10 +177,7 @@ impl GasManager {
         old_value_size: Option<usize>,
         new_value_size: usize,
     ) -> i64 {
-        // Production-ready dynamic storage fee calculation (matches C# Neo exactly)
-
         let new_data_size = if let Some(existing_size) = old_value_size {
-            // Existing item - calculate incremental cost (matches C# logic exactly)
             if new_value_size == 0 {
                 0 // Deletion
             } else if new_value_size <= existing_size {
@@ -194,7 +188,6 @@ impl GasManager {
                 (existing_size - 1) / 4 + 1 + new_value_size - existing_size
             }
         } else {
-            // New item - full cost (matches C# logic exactly)
             key_size + new_value_size
         };
 
@@ -204,8 +197,6 @@ impl GasManager {
 
     /// Updates VM gas counter (for integration with VM engine).
     pub fn update_vm_gas_counter(&mut self, vm_gas_consumed: i64) -> Result<()> {
-        // Production-ready VM gas counter synchronization (matches C# ApplicationEngine exactly)
-
         // 1. Calculate the difference between VM gas and our tracking
         let gas_diff = vm_gas_consumed - self.gas_consumed;
 
@@ -222,38 +213,37 @@ impl GasManager {
 
     /// Gets gas cost for a specific operation type.
     pub fn get_operation_gas_cost(&self, operation: &str) -> i64 {
-        // Production-ready operation gas costs (matches C# ApplicationEngine operation costs exactly)
         match operation {
-            "PUSH1" => 8,         // 1 << 3
-            "PUSHINT8" => 8,      // 1 << 3
-            "PUSHINT16" => 8,     // 1 << 3
-            "PUSHINT32" => 8,     // 1 << 3
-            "PUSHINT64" => 8,     // 1 << 3
-            "PUSHINT128" => 16,   // 1 << 4
-            "PUSHINT256" => 16,   // 1 << 4
-            "PUSHA" => 16,        // 1 << 4
-            "PUSHNULL" => 8,      // 1 << 3
-            "PUSHDATA1" => 64,    // 1 << 6
-            "PUSHDATA2" => 512,   // 1 << 9
-            "PUSHDATA4" => 2048,  // 1 << 11
-            "PACK" => 2048,       // 1 << 11
-            "UNPACK" => 2048,     // 1 << 11
-            "NEWARRAY" => 512,    // 1 << 9
-            "NEWARRAY_T" => 512,  // 1 << 9
-            "NEWSTRUCT" => 512,   // 1 << 9
-            "NEWMAP" => 64,       // 1 << 6
-            "SIZE" => 16,         // 1 << 4
-            "HASKEY" => 65536,    // 1 << 16
-            "KEYS" => 16,         // 1 << 4
-            "VALUES" => 8192,     // 1 << 13
-            "PICKITEM" => 64,     // 1 << 6
-            "APPEND" => 8192,     // 1 << 13
-            "SETITEM" => 8192,    // 1 << 13
-            "REVERSEITEMS" => 16, // 1 << 4
-            "REMOVE" => 16,       // 1 << 4
-            "CLEARITEMS" => 16,   // 1 << 4
-            "POPITEM" => 16,      // 1 << 4
-            _ => 32,              // Default cost for unknown operations
+            "PUSH1" => 8,
+            "PUSHINT8" => 8,
+            "PUSHINT16" => 8,
+            "PUSHINT32" => 8,
+            "PUSHINT64" => 8,
+            "PUSHINT128" => 16,
+            "PUSHINT256" => 16,
+            "PUSHA" => 16,
+            "PUSHNULL" => 8,
+            "PUSHDATA1" => 64,
+            "PUSHDATA2" => MAX_TRANSACTIONS_PER_BLOCK as i64,
+            "PUSHDATA4" => 2048, // 1 << 11
+            "PACK" => 2048,      // 1 << 11
+            "UNPACK" => 2048,    // 1 << 11
+            "NEWARRAY" => MAX_TRANSACTIONS_PER_BLOCK as i64,
+            "NEWARRAY_T" => MAX_TRANSACTIONS_PER_BLOCK as i64,
+            "NEWSTRUCT" => MAX_TRANSACTIONS_PER_BLOCK as i64,
+            "NEWMAP" => 64,
+            "SIZE" => 16,
+            "HASKEY" => MAX_SCRIPT_LENGTH as i64, // 1 << 16
+            "KEYS" => 16,
+            "VALUES" => 8192, // 1 << 13
+            "PICKITEM" => 64,
+            "APPEND" => 8192,  // 1 << 13
+            "SETITEM" => 8192, // 1 << 13
+            "REVERSEITEMS" => 16,
+            "REMOVE" => 16,
+            "CLEARITEMS" => 16,
+            "POPITEM" => 16,
+            _ => HASH_SIZE as i64, // Default cost for unknown operations
         }
     }
 }

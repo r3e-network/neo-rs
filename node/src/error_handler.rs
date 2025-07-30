@@ -117,7 +117,9 @@ impl ErrorHandler {
 
     /// Initialize default recovery strategies
     fn init_default_strategies(&mut self) {
-        use ErrorCategory::*;
+        use ErrorCategory::{
+            Configuration, Consensus, Network, ResourceExhaustion, Storage, VirtualMachine,
+        };
 
         // Network errors: retry with backoff
         self.recovery_strategies.insert(
@@ -256,7 +258,6 @@ impl ErrorHandler {
     ) {
         let mut errors = self.error_stats.entry(category).or_insert_with(Vec::new);
 
-        // Check if this error already exists
         let error_msg = error.to_string();
         if let Some(existing) = errors.iter_mut().find(|e| e.message == error_msg) {
             existing.occurrence_count += 1;
@@ -272,7 +273,6 @@ impl ErrorHandler {
             });
         }
 
-        // Keep only recent errors (last 1000)
         if errors.len() > 1000 {
             let drain_count = errors.len() - 1000;
             errors.drain(0..drain_count);
@@ -285,7 +285,6 @@ impl ErrorHandler {
         category: ErrorCategory,
         severity: ErrorSeverity,
     ) -> RecoveryStrategy {
-        // Check for custom strategy
         if let Some(strategy) = self.recovery_strategies.get(&format!("{:?}", category)) {
             return strategy.clone();
         }
@@ -401,7 +400,6 @@ impl CircuitBreaker {
         match self.state {
             CircuitState::Closed => false,
             CircuitState::Open => {
-                // Check if timeout has passed
                 if let Some(last) = self.last_failure {
                     if last.elapsed() > self.timeout {
                         self.state = CircuitState::HalfOpen;
@@ -482,7 +480,6 @@ where
     if max_attempts == 0 {
         error!("Invalid max_attempts: cannot be 0");
         // Since we can't return an error without knowing the error type,
-        // we'll run the operation once and return its result
         return operation();
     }
 
@@ -491,7 +488,7 @@ where
             Ok(result) => return Ok(result),
             Err(e) if attempt < max_attempts => {
                 warn!(
-                    "Attempt {} failed: {}. Retrying in {:?}...",
+                    "Attempt {} failed: {}. Retrying in {:?}/* implementation */;",
                     attempt, e, delay
                 );
                 tokio::time::sleep(delay).await;
@@ -505,7 +502,6 @@ where
     }
 
     // This should never be reached since the loop handles all cases,
-    // but if it somehow is reached, run the operation one more time
     error!("Unexpected state in retry_with_backoff - this should not happen");
     operation()
 }
@@ -526,7 +522,6 @@ where
     if max_attempts == 0 {
         error!("Invalid max_attempts: cannot be 0");
         // Since we can't return an error without knowing the error type,
-        // we'll run the operation once and return its result
         return operation().await;
     }
 
@@ -535,7 +530,7 @@ where
             Ok(result) => return Ok(result),
             Err(e) if attempt < max_attempts => {
                 warn!(
-                    "Attempt {} failed: {}. Retrying in {:?}...",
+                    "Attempt {} failed: {}. Retrying in {:?}/* implementation */;",
                     attempt, e, delay
                 );
                 tokio::time::sleep(delay).await;
@@ -549,7 +544,6 @@ where
     }
 
     // This should never be reached since the loop handles all cases,
-    // but if it somehow is reached, run the operation one more time
     error!("Unexpected state in retry_with_backoff_async - this should not happen");
     operation().await
 }
@@ -598,7 +592,7 @@ mod tests {
                 "test_context",
             )
             .await
-            .unwrap();
+            .expect("operation should succeed");
 
         let stats = handler.get_error_stats().await;
         assert_eq!(stats.total_errors, 1);
@@ -610,7 +604,6 @@ mod tests {
 
         assert!(!breaker.is_open());
 
-        breaker.record_failure();
         breaker.record_failure();
         assert!(!breaker.is_open());
 
@@ -635,7 +628,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(result.unwrap(), "Success");
+        assert_eq!(result.expect("operation should succeed"), "Success");
         assert_eq!(counter, 3);
     }
 }

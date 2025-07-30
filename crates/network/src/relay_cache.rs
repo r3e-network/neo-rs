@@ -36,17 +36,14 @@ where
     pub fn insert(&mut self, item: T) {
         let now = SystemTime::now();
 
-        // Remove if already exists to update position
         if self.cache.contains_key(&item) {
             self.lru_order.retain(|x| x != &item);
         } else if self.lru_order.len() >= self.capacity {
-            // Remove oldest item if at capacity
             if let Some(oldest) = self.lru_order.pop_front() {
                 self.cache.remove(&oldest);
             }
         }
 
-        // Insert at end (most recently used)
         self.cache.insert(item.clone(), now);
         self.lru_order.push_back(item);
     }
@@ -54,7 +51,6 @@ where
     /// Checks if an item exists in the cache
     pub fn contains(&self, item: &T) -> bool {
         if let Some(&timestamp) = self.cache.get(item) {
-            // Check if expired
             if let Ok(elapsed) = timestamp.elapsed() {
                 if elapsed <= self.ttl {
                     return true;

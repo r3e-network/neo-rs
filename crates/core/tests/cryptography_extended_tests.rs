@@ -28,7 +28,6 @@ fn test_base58_check_decode() {
     let result = base58::decode_check(invalid_input);
     assert!(result.is_err(), "Should fail with invalid checksum");
 
-    // Test with empty string
     let result = base58::decode_check("");
     assert!(result.is_err(), "Should fail with empty string");
 }
@@ -99,11 +98,9 @@ fn test_sha256_hash() {
 fn test_sha512_hash() {
     let value = b"hello world";
 
-    // Production-ready SHA512 test (matches C# Neo functionality exactly)
     let sha512_result = hash::sha512(value);
     assert_eq!(64, sha512_result.len());
 
-    // Test with known expected result from C# Neo implementation
     let expected = "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f";
     assert_eq!(expected, hex::encode(sha512_result));
 
@@ -165,7 +162,6 @@ fn test_hash160() {
     let result = hash::hash160(value);
     assert_eq!(20, result.len());
 
-    // Verify it's actually RIPEMD160(SHA256(data))
     let sha256_result = hash::sha256(value);
     let manual_hash160 = hash::ripemd160(&sha256_result);
     assert_eq!(
@@ -185,7 +181,6 @@ fn test_hash256() {
     let result = hash::hash256(value);
     assert_eq!(32, result.len());
 
-    // Verify it's actually SHA256(SHA256(data))
     let sha256_result = hash::sha256(value);
     let manual_hash256 = hash::sha256(&sha256_result);
     assert_eq!(
@@ -253,7 +248,6 @@ fn test_murmur_edge_cases() {
     let murmur32_single = murmur::murmur32(single_byte, 0);
     let murmur128_single = murmur::murmur128(single_byte, 0);
 
-    // Different inputs should produce different results (unless they happen to collide)
     // We test that the function works, not specific values
     assert_eq!(murmur32_single, murmur::murmur32(single_byte, 0));
     assert_eq!(murmur128_single, murmur::murmur128(single_byte, 0));
@@ -286,7 +280,6 @@ fn test_hash_performance_and_consistency() {
 
     let elapsed = start.elapsed();
 
-    // Performance should be reasonable (less than 10ms for 1KB data)
     assert!(
         elapsed.as_millis() < 10,
         "Hash functions took too long: {:?}",
@@ -350,15 +343,10 @@ fn test_merkle_hash() {
 }
 
 // ============================================================================
-// ✅ Core Cryptography Complete - Additional functions for future enhancement
-// ============================================================================
-
-// The following tests are placeholders for functionality that needs to be implemented:
 
 #[test]
 #[ignore] // Ignore until AES encryption is implemented
 fn test_aes_encrypt_decrypt() {
-    // AES256 encryption/decryption - Future enhancement for advanced cryptography
     // This corresponds to C# UT_Cryptography_Helper.TestAESEncryptAndDecrypt
     // Need to add AES256 encrypt/decrypt functions to the cryptography module
 }
@@ -366,7 +354,6 @@ fn test_aes_encrypt_decrypt() {
 #[test]
 #[ignore] // Ignore until ECDH is implemented
 fn test_ecdh_key_derivation() {
-    // ECDH key derivation - Future enhancement for advanced key exchange
     // This corresponds to C# UT_Cryptography_Helper.TestEcdhEncryptAndDecrypt
     // Need to add ECDH key derivation functions to the cryptography module
 }
@@ -374,7 +361,6 @@ fn test_ecdh_key_derivation() {
 #[test]
 #[ignore] // Ignore until Bloom filter is implemented in core
 fn test_bloom_filter() {
-    // Bloom filter functionality - Future enhancement for transaction filtering
     // This corresponds to C# UT_Cryptography_Helper.TestTest
     // Need to add Bloom filter to core module and test with transactions
 }

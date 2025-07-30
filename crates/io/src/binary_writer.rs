@@ -140,11 +140,11 @@ impl BinaryWriter {
         Ok(2)
     }
 
-    /// Writes an unsigned 32-bit integer to the buffer in little-endian format.
+    /// Writes an unsigned HASH_SIZE-bit integer to the buffer in little-endian format.
     ///
     /// # Arguments
     ///
-    /// * `value` - The unsigned 32-bit integer to write
+    /// * `value` - The unsigned HASH_SIZE-bit integer to write
     ///
     /// # Returns
     ///
@@ -154,11 +154,11 @@ impl BinaryWriter {
         Ok(4)
     }
 
-    /// Writes a signed 32-bit integer to the buffer in little-endian format.
+    /// Writes a signed HASH_SIZE-bit integer to the buffer in little-endian format.
     ///
     /// # Arguments
     ///
-    /// * `value` - The signed 32-bit integer to write
+    /// * `value` - The signed HASH_SIZE-bit integer to write
     ///
     /// # Returns
     ///

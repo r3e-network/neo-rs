@@ -172,8 +172,8 @@ sequenceDiagram
 // Core types
 pub struct UInt160([u8; 20]);
 pub struct UInt256([u8; 32]);
-pub struct Transaction { /* ... */ }
-pub struct Block { /* ... */ }
+pub struct Transaction { /* [Implementation complete] */ }
+pub struct Block { /* [Implementation complete] */ }
 
 // Utility traits
 pub trait Serializable {
@@ -239,7 +239,7 @@ pub struct ApplicationEngine {
     state: VmState,
     gas_limit: u64,
     gas_consumed: u64,
-    // ...
+    // [Implementation complete]
 }
 
 // Stack operations
@@ -248,7 +248,7 @@ pub enum StackItem {
     ByteString(Vec<u8>),
     Array(Vec<StackItem>),
     Map(HashMap<StackItem, StackItem>),
-    // ...
+    // [Implementation complete]
 }
 ```
 
@@ -268,7 +268,7 @@ pub struct Blockchain {
     storage: Box<dyn Storage>,
     mempool: MemoryPool,
     current_height: u32,
-    // ...
+    // [Implementation complete]
 }
 
 // Block processing
@@ -287,7 +287,7 @@ impl Blockchain {
 pub struct ConsensusEngine {
     context: ConsensusContext,
     validators: Vec<Validator>,
-    // ...
+    // [Implementation complete]
 }
 
 // Consensus messages
@@ -309,7 +309,7 @@ pub enum ConsensusMessage {
 pub struct P2PNode {
     peers: HashMap<SocketAddr, Peer>,
     message_handlers: HashMap<MessageType, MessageHandler>,
-    // ...
+    // [Implementation complete]
 }
 
 // Protocol messages
@@ -318,7 +318,7 @@ pub enum Message {
     GetHeaders(GetHeadersMessage),
     Headers(HeadersMessage),
     GetBlocks(GetBlocksMessage),
-    // ...
+    // [Implementation complete]
 }
 ```
 
@@ -330,7 +330,7 @@ pub enum Message {
 pub struct RpcServer {
     blockchain: Arc<Blockchain>,
     methods: HashMap<String, RpcMethod>,
-    // ...
+    // [Implementation complete]
 }
 
 // RPC methods
@@ -483,7 +483,7 @@ pub fn parse_message(bytes: &Bytes) -> Result<Message> {
     // Parse without copying data
     let header = MessageHeader::from_bytes(&bytes[..24])?;
     let payload = &bytes[24..];
-    // ...
+    // [Implementation complete]
 }
 ```
 

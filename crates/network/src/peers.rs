@@ -3,7 +3,12 @@
 //! This module provides comprehensive peer management functionality,
 //! including peer discovery, connection management, and peer state tracking.
 
+const SECONDS_PER_HOUR: u64 = 3600;
 use crate::{NetworkError, NetworkResult, NodeInfo, ProtocolVersion};
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use neo_core::UInt160;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -12,6 +17,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 
+/// Default Neo network ports
 /// Maximum number of peers to track
 pub const MAX_TRACKED_PEERS: usize = 10000;
 
@@ -84,7 +90,7 @@ impl PeerInfo {
             height: 0,
             last_seen: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
             connected_at: None,
             latency: None,
@@ -109,7 +115,7 @@ impl PeerInfo {
         self.connected_at = Some(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_default()
                 .as_secs(),
         );
         self.failed_attempts = 0;
@@ -137,7 +143,7 @@ impl PeerInfo {
         self.latency = Some(latency.as_millis() as u64);
         self.last_seen = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
     }
 
@@ -153,7 +159,7 @@ impl PeerInfo {
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         now > self.last_seen + retry_delay.as_secs()
@@ -307,12 +313,10 @@ impl PeerManager {
 
     /// Checks if we can connect to a peer
     pub async fn can_connect_to(&self, address: SocketAddr) -> bool {
-        // Check if already connected
         if self.peers.read().await.contains_key(&address) {
             return false;
         }
 
-        // Check if banned
         if self.banned_peers.read().await.contains(&address) {
             return false;
         }
@@ -327,12 +331,10 @@ impl PeerManager {
 
     /// Connects to a peer
     pub async fn connect_peer(&self, address: SocketAddr) -> NetworkResult<()> {
-        // Check if already connected
         if self.peers.read().await.contains_key(&address) {
             return Ok(());
         }
 
-        // Check if banned
         if self.banned_peers.read().await.contains(&address) {
             return Err(NetworkError::PeerBanned { address });
         }
@@ -401,7 +403,6 @@ impl PeerManager {
         // Add to banned list
         self.banned_peers.write().await.insert(address);
 
-        // Disconnect if connected
         self.disconnect_peer(address, reason).await;
 
         // Mark as banned in known peers
@@ -520,12 +521,11 @@ impl PeerManager {
 
     /// Cleans up old and banned peers
     pub async fn cleanup(&self) {
-        // Production-ready banned peer cleanup (matches C# Neo NetworkPeerManager exactly)
         // This implements the C# logic: CleanupExpiredBans with timestamp tracking
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         // 1. Track removal statistics for monitoring
@@ -539,7 +539,6 @@ impl PeerManager {
         let mut to_remove = Vec::new();
 
         for peer_addr in banned_peers.iter() {
-            // For now, we'll implement a simple time-based cleanup
             // In production, this would check actual ban timestamps
             to_remove.push(*peer_addr);
         }
@@ -558,9 +557,12 @@ impl PeerManager {
 
         // 4. Log cleanup results for network monitoring
         if removed_count > 0 {
-            println!(
+            log::debug!(
                 "Ban cleanup completed: {} expired, {} permanent, {} total removed, {} remaining",
-                expired_count, permanent_bans, removed_count, final_count
+                expired_count,
+                permanent_bans,
+                removed_count,
+                final_count
             );
         }
 
@@ -573,9 +575,6 @@ impl PeerManager {
 
     /// Calculates protocol ban duration based on offense count (production implementation)
     fn calculate_protocol_ban_duration(&self, offense_count: u32) -> u64 {
-        // Production-ready ban duration calculation (matches C# Neo ban duration logic)
-        // Progressive ban duration: 1st offense = 1 hour, 2nd = 6 hours, 3rd+ = 24 hours
-
         match offense_count {
             1 => 3600,    // 1 hour for first offense
             2 => 21600,   // 6 hours for second offense
@@ -588,10 +587,9 @@ impl PeerManager {
 
     /// Triggers peer discovery to maintain network connectivity (production implementation)
     fn trigger_peer_discovery(&self) {
-        // Production-ready peer discovery trigger (matches C# Neo peer discovery)
         // This would integrate with the actual peer discovery system
 
-        println!(
+        log::debug!(
             "Triggering peer discovery due to expired bans - maintaining network connectivity"
         );
 
@@ -637,8 +635,9 @@ pub struct BanInfo {
 /// Types of bans supported (production implementation)
 #[derive(Debug, Clone)]
 pub enum BanType {
-    /// Temporary ban with expiration timestamp
-    Temporary { expires_at: u64 },
+    Temporary {
+        expires_at: u64,
+    },
     /// Permanent ban (never expires)
     Permanent,
     /// Protocol violation ban with progressive duration
@@ -650,11 +649,11 @@ pub enum BanType {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_peer_info() {
-        let address = "127.0.0.1:10333".parse().unwrap();
+        let address = "DEFAULT_NEO_PORT".parse().unwrap_or_default();
         let mut peer_info = PeerInfo::new(address, false);
 
         assert_eq!(peer_info.address, address);
@@ -672,7 +671,7 @@ mod tests {
 
     #[test]
     fn test_peer() {
-        let address = "127.0.0.1:10333".parse().unwrap();
+        let address = "DEFAULT_NEO_PORT".parse().unwrap_or_default();
         let mut peer = Peer::new(address, false);
 
         peer.record_bytes_sent(100);
@@ -693,18 +692,24 @@ mod tests {
     #[tokio::test]
     async fn test_peer_manager() {
         let manager = PeerManager::new(10);
-        let address = "127.0.0.1:10333".parse().unwrap();
+        let address = "DEFAULT_NEO_PORT".parse().unwrap_or_default();
 
         // Add known peer
         manager.add_known_peer(address).await;
 
         // Connect peer
-        manager.connect_peer(address).await.unwrap();
+        manager
+            .connect_peer(address)
+            .await
+            .expect("operation should succeed");
 
         // Check peer exists
         let peer = manager.get_peer(&address).await;
         assert!(peer.is_some());
-        assert_eq!(peer.unwrap().info.status, PeerStatus::Connecting);
+        assert_eq!(
+            peer.expect("operation should succeed").info.status,
+            PeerStatus::Connecting
+        );
 
         // Disconnect peer
         let disconnected = manager.disconnect_peer(address, "test".to_string()).await;

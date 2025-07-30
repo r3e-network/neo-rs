@@ -3,12 +3,17 @@
 //! This module handles all configuration including command-line arguments,
 //! configuration files, and network settings.
 
+use crate::constants::MILLISECONDS_PER_BLOCK;
+use crate::constants::MILLISECONDS_PER_BLOCK;
+use crate::constants::MILLISECONDS_PER_BLOCK;
+use crate::constants::MILLISECONDS_PER_BLOCK;
+use crate::constants::MILLISECONDS_PER_BLOCK;
 use anyhow::{Context, Result};
 use clap::ArgMatches;
+use neo_config::MILLISECONDS_PER_BLOCK;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::Level;
-
 /// Storage configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
@@ -177,7 +182,6 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
 
     #[test]
@@ -189,16 +193,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_save() {
-        let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("config.json");
+        let final_dir = TempDir::new().expect("operation should succeed");
+        let config_path = final_dir.path().join("config.json");
 
         let config = Config::default();
-        config.save(&config_path).await.unwrap();
+        config
+            .save(&config_path)
+            .await
+            .expect("operation should succeed");
 
         assert!(config_path.exists());
 
-        let content = tokio::fs::read_to_string(&config_path).await.unwrap();
-        let loaded_config: Config = serde_json::from_str(&content).unwrap();
+        let content = tokio::fs::read_to_string(&config_path)
+            .await
+            .expect("operation should succeed");
+        let loaded_config: Config =
+            serde_json::from_str(&content).expect("Failed to parse from string");
         assert_eq!(loaded_config.storage.path, config.storage.path);
     }
 
@@ -281,7 +291,7 @@ pub enum RpcCommand {
 impl CliArgs {
     /// Parse CLI arguments from clap matches
     pub fn from_matches(matches: &ArgMatches) -> Result<Self> {
-        let config = PathBuf::from(matches.get_one::<String>("config").unwrap());
+        let config = PathBuf::from(matches.get_one::<String>("config")?);
 
         let network = if matches.get_flag("testnet") {
             NetworkType::Testnet
@@ -291,14 +301,12 @@ impl CliArgs {
 
         let rpc_enabled = matches.get_flag("rpc");
         let rpc_port = matches
-            .get_one::<String>("rpc-port")
-            .unwrap()
+            .get_one::<String>("rpc-port")?
             .parse::<u16>()
             .context("Invalid RPC port")?;
 
         let p2p_port = matches
-            .get_one::<String>("p2p-port")
-            .unwrap()
+            .get_one::<String>("p2p-port")?
             .parse::<u16>()
             .context("Invalid P2P port")?;
 
@@ -320,7 +328,7 @@ impl CliArgs {
         let daemon = matches.get_flag("daemon");
         let console = matches.get_flag("console");
 
-        let log_level = match matches.get_one::<String>("log-level").unwrap().as_str() {
+        let log_level = match matches.get_one::<String>("log-level")?.as_str() {
             "error" => Level::ERROR,
             "warn" => Level::WARN,
             "info" => Level::INFO,
@@ -329,7 +337,7 @@ impl CliArgs {
             _ => Level::INFO,
         };
 
-        let data_dir = PathBuf::from(matches.get_one::<String>("data-dir").unwrap());
+        let data_dir = PathBuf::from(matches.get_one::<String>("data-dir")?);
 
         let subcommand = match matches.subcommand() {
             Some(("wallet", wallet_matches)) => {
@@ -365,14 +373,14 @@ impl CliArgs {
 fn parse_wallet_command(matches: &ArgMatches) -> Result<WalletCommand> {
     match matches.subcommand() {
         Some(("create", create_matches)) => {
-            let path = PathBuf::from(create_matches.get_one::<String>("path").unwrap());
+            let path = PathBuf::from(create_matches.get_one::<String>("path")?);
             let password = create_matches
                 .get_one::<String>("password")
                 .map(String::from);
             Ok(WalletCommand::Create { path, password })
         }
         Some(("open", open_matches)) => {
-            let path = PathBuf::from(open_matches.get_one::<String>("path").unwrap());
+            let path = PathBuf::from(open_matches.get_one::<String>("path")?);
             let password = open_matches.get_one::<String>("password").map(String::from);
             Ok(WalletCommand::Open { path, password })
         }
@@ -485,10 +493,10 @@ impl Default for ProtocolConfiguration {
         Self {
             network: 0x334F454E, // "NEO4" in hex (mainnet)
             address_version: 53,
-            milliseconds_per_block: 15000,
-            max_transactions_per_block: 512,
+            milliseconds_per_block: MILLISECONDS_PER_BLOCK,
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
             memory_pool_max_transactions: 50000,
-            max_trace_blocks: 2102400,
+            max_trace_blocks: MAX_TRACEABLE_BLOCKS,
             initial_gas_distribution: 52000000_00000000, // 52M GAS
             hardforks: std::collections::HashMap::new(),
             committee_members: vec![
@@ -501,15 +509,14 @@ impl Default for ProtocolConfiguration {
             standby_committee: vec![
                 "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c".to_string(),
                 "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093".to_string(),
-                // ... additional standby committee members
+                // /* implementation */; additional standby committee members
             ],
             standby_validators: vec![
                 "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c".to_string(),
                 "02df48f60e8f3e01c48ff40b9b7f1310d7a8b2a193188befe1c2e3df740e895093".to_string(),
-                // ... additional standby validators
+                // /* implementation */; additional standby validators
             ],
             seed_list: vec![
-                // Official Neo N3 Mainnet Seed Nodes (matches C# Neo config.json exactly)
                 "seed1.neo.org:10333".to_string(),
                 "seed2.neo.org:10333".to_string(),
                 "seed3.neo.org:10333".to_string(),
@@ -550,7 +557,7 @@ impl Default for P2PConfiguration {
             port: 10333,
             min_desired_connections: 10,
             max_connections: 40,
-            max_known_hashes: 1024,
+            max_known_hashes: MAX_SCRIPT_SIZE,
             max_connections_per_address: 3,
         }
     }
@@ -561,7 +568,7 @@ impl Default for RpcConfiguration {
         Self {
             enabled: false,
             port: 10332,
-            bind_address: "127.0.0.1".to_string(),
+            bind_address: "localhost".to_string(),
             ssl_cert: None,
             ssl_cert_password: None,
             trusted_authorities: vec![],
@@ -617,10 +624,10 @@ impl NeoConfig {
         // Override network settings
         match args.network {
             NetworkType::Mainnet => {
-                self.protocol_configuration.network = 0x334F454E; // "NEO4"
+                self.protocol_configuration.network = 0x334F454E;
             }
             NetworkType::Testnet => {
-                self.protocol_configuration.network = 0x3254334E; // "N3T2"
+                self.protocol_configuration.network = 0x3254334E;
             }
         }
 

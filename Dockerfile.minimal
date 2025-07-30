@@ -1,0 +1,12 @@
+FROM debian:bullseye-slim
+ENV HTTP_PROXY=http://127.0.0.1:7890
+ENV HTTPS_PROXY=http://127.0.0.1:7890
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    librocksdb-dev \
+    libssl1.1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+COPY target/release/neo-node /usr/local/bin/
+EXPOSE 20332 20333
+CMD ["neo-node", "--testnet", "--rpc-port", "20332", "--p2p-port", "20333"]

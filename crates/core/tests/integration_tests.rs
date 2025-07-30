@@ -1,12 +1,7 @@
-// Copyright (C) 2015-2025 The Neo Project.
 //
-// integration_tests.rs file belongs to the neo project and is free
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
 //
-// Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
 //! Integration tests for the Neo Core module.
@@ -42,10 +37,8 @@ fn test_uint160_creation_and_comparison() {
     // Compare UInt160 instances - they should be equal
     assert_eq!(uint1, uint2);
 
-    // Create UInt160 from hex string - this should put the 1 in value3, not value1
     let uint3 = UInt160::parse("0x0000000000000000000000000000000000000001").unwrap();
     let array = uint3.to_array();
-    // The hex parsing puts the last byte (0x01) in the most significant position
     // So when converted back to array, it should be in the last position
     assert_eq!(array[19], 1);
     for i in 0..19 {
@@ -76,7 +69,6 @@ fn test_uint256_creation_and_comparison() {
     // Compare UInt256 instances
     assert_eq!(uint1, uint2);
 
-    // Create UInt256 from hex string
     let uint3 =
         UInt256::parse("0x0000000000000000000000000000000000000000000000000000000000000001")
             .unwrap();
@@ -210,7 +202,6 @@ fn test_event_manager() {
     // Trigger event
     manager.trigger("test_event", &"sender", &"args");
 
-    // Check if handler was called
     assert!(called.load(Ordering::SeqCst));
 }
 

@@ -31,6 +31,7 @@ once_cell = "1.19"
 tracing = "0.1"
 
 # Internal dependencies
+neo-config = { path = "../config" }
 neo-io = { path = "../io" }
 neo-cryptography = { path = "../cryptography" }
 # Temporarily commented out to break dependency cycle

@@ -28,7 +28,6 @@ async fn test_error_handler_integration() {
     let protocol_error = Error::Protocol("Test protocol error".to_string());
     let timeout_error = Error::Timeout("Test timeout".to_string());
 
-    // Create operation contexts for testing
     let test_peer: SocketAddr = "127.0.0.1:20333".parse().unwrap();
     let mut context1 = OperationContext::new("test_operation_1".to_string(), test_peer);
     let mut context2 = OperationContext::new("test_operation_2".to_string(), test_peer);
@@ -144,7 +143,6 @@ async fn test_network_partition_detection() {
         error_handler.handle_error(&error, &mut context).await;
     }
 
-    // Check for partition detection
     if let Some(partition_event) = error_handler.detect_network_partition().await {
         match partition_event {
             NetworkErrorEvent::NetworkPartitionDetected { affected_peers, .. } => {
@@ -197,7 +195,6 @@ async fn test_peer_manager_error_integration() {
     // Test that peer manager properly integrates with error handler
     let error_handler = peer_manager.error_handler();
 
-    // Test connection to non-existent peer (will use error handling)
     let invalid_peer: SocketAddr = "192.0.2.1:99999".parse().unwrap(); // RFC5737 TEST-NET-1
 
     let connection_result = peer_manager.connect_to_peer(invalid_peer).await;

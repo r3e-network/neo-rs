@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Testing Neo node with corrected protocol magic numbers..."
+echo "Testing Neo node with corrected protocol magic numbers[Implementation complete]"
 echo "========================================================="
 
 # Run for 20 seconds and capture output

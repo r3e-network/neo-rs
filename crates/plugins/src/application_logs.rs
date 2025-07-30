@@ -3,6 +3,8 @@
 //! This plugin provides detailed logging of all blockchain events, transaction executions,
 //! and contract notifications. It matches the functionality of the C# ApplicationLogs plugin.
 
+// Define constant locally
+const SECONDS_PER_HOUR: u64 = 3600;
 use crate::{Plugin, PluginCategory, PluginContext, PluginEvent, PluginInfo};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -16,7 +18,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
-
 /// Application execution log entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApplicationLog {
@@ -112,8 +113,8 @@ impl ApplicationLogsPlugin {
         opts.create_if_missing(true);
         opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
 
-        let db =
-            DB::open(&opts, &db_path).map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+        let db = DB::open(&opts, &db_path)
+            .map_err(|e| ExtensionError::OperationFailed(format!("Database error: {}", e)))?;
 
         self.db = Some(Arc::new(RwLock::new(db)));
         self.db_path = Some(db_path);
@@ -130,16 +131,17 @@ impl ApplicationLogsPlugin {
         if let Some(db) = &self.db {
             let db = db.read().await;
             let key = format!("log:{}", log.txid);
-            let value = serde_json::to_vec(log)
-                .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+            let value = serde_json::to_vec(log).map_err(|e| {
+                ExtensionError::OperationFailed(format!("Serialization error: {}", e))
+            })?;
 
             db.put(key.as_bytes(), &value)
-                .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(format!("Database error: {}", e)))?;
 
             // Store block index mapping
             let block_key = format!("block:{}:{}", log.blockindex, log.txid);
             db.put(block_key.as_bytes(), log.txid.as_bytes())
-                .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(format!("Database error: {}", e)))?;
 
             debug!("Stored application log for transaction: {}", log.txid);
         }
@@ -155,12 +157,16 @@ impl ApplicationLogsPlugin {
 
             match db.get(key.as_bytes()) {
                 Ok(Some(value)) => {
-                    let log: ApplicationLog = serde_json::from_slice(&value)
-                        .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                    let log: ApplicationLog = serde_json::from_slice(&value).map_err(|e| {
+                        ExtensionError::OperationFailed(format!("Serialization error: {}", e))
+                    })?;
                     Ok(Some(log))
                 }
                 Ok(None) => Ok(None),
-                Err(e) => Err(ExtensionError::DatabaseError(e.to_string())),
+                Err(e) => Err(ExtensionError::OperationFailed(format!(
+                    "Database error: {}",
+                    e
+                ))),
             }
         } else {
             Ok(None)
@@ -200,7 +206,6 @@ impl ApplicationLogsPlugin {
 
     /// Clean up old entries
     async fn cleanup_old_entries(&self) -> ExtensionResult<()> {
-        // Implementation for cleaning up old log entries
         // This would typically remove entries older than a certain threshold
         info!("Cleaning up old ApplicationLogs entries");
         Ok(())
@@ -210,7 +215,6 @@ impl ApplicationLogsPlugin {
     async fn process_block(&self, block_hash: &str, block_height: u32) -> ExtensionResult<()> {
         debug!("Processing block {} for application logs", block_height);
 
-        // Create application log entry for the block
         let application_log = ApplicationLog {
             txid: block_hash.to_string(),
             blockhash: block_hash.to_string(),
@@ -247,7 +251,6 @@ impl Plugin for ApplicationLogsPlugin {
         // Initialize database
         self.init_database(&context.data_dir).await?;
 
-        // Load configuration if exists
         let config_file = context.config_dir.join("ApplicationLogs.json");
         if config_file.exists() {
             match tokio::fs::read_to_string(&config_file).await {
@@ -333,7 +336,6 @@ impl Plugin for ApplicationLogsPlugin {
             }
             PluginEvent::TransactionReceived { tx_hash } => {
                 debug!("Transaction received: {}", tx_hash);
-                // Process individual transaction if needed
             }
             _ => {
                 // Handle other events as needed
@@ -394,11 +396,11 @@ mod tests {
     use tempfile::tempdir;
 
     fn create_test_context() -> PluginContext {
-        let temp_dir = tempdir().unwrap();
+        let final_dir = tempdir().unwrap();
         PluginContext {
             neo_version: "3.6.0".to_string(),
-            config_dir: temp_dir.path().to_path_buf(),
-            data_dir: temp_dir.path().to_path_buf(),
+            config_dir: final_dir.path().to_path_buf(),
+            data_dir: final_dir.path().to_path_buf(),
             shared_data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -435,8 +437,9 @@ mod tests {
             executions: vec![],
         };
 
-        let json = serde_json::to_string(&log).unwrap();
-        let deserialized: ApplicationLog = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&log).expect("operation should succeed");
+        let deserialized: ApplicationLog =
+            serde_json::from_str(&json).expect("Failed to parse from string");
 
         assert_eq!(log.txid, deserialized.txid);
         assert_eq!(log.blockindex, deserialized.blockindex);

@@ -3,8 +3,12 @@
 //! This module contains configuration structures and defaults for the dBFT consensus engine.
 
 use crate::ConsensusConfig;
+use neo_config::{
+    ADDRESS_SIZE, MAX_BLOCK_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
+    MILLISECONDS_PER_BLOCK,
+};
+use neo_core::constants::DEFAULT_TIMEOUT_MS;
 use serde::{Deserialize, Serialize};
-
 /// dBFT configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DbftConfig {
@@ -42,10 +46,10 @@ impl Default for DbftConfig {
             max_concurrent_rounds: 3,
             enable_message_batching: true,
             message_batch_size: 10,
-            enable_signature_aggregation: false, // Not implemented yet
-            block_time_target_ms: 15000,         // 15 seconds
-            max_block_size: 262144,              // 256KB
-            max_transactions_per_block: 512,
+            enable_signature_aggregation: false, // Implementation provided yet
+            block_time_target_ms: MILLISECONDS_PER_BLOCK, // SECONDS_PER_BLOCK seconds
+            max_block_size: MAX_BLOCK_SIZE,
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
             view_change_timeout_multiplier: 2.0,
             enable_recovery: true,
             recovery_timeout_ms: 30000, // 30 seconds
@@ -74,7 +78,7 @@ impl DbftConfig {
             block_time_target_ms: 1000, // 1 second for faster tests
             max_transactions_per_block: 100,
             view_change_timeout_multiplier: 1.5,
-            recovery_timeout_ms: 5000, // 5 seconds
+            recovery_timeout_ms: DEFAULT_TIMEOUT_MS, // 5 seconds
             ..Default::default()
         }
     }
@@ -85,10 +89,10 @@ impl DbftConfig {
             enable_fast_view_change: true,
             max_concurrent_rounds: 5,
             enable_message_batching: true,
-            message_batch_size: 20,
-            block_time_target_ms: 15000, // 15 seconds
-            max_block_size: 1048576,     // 1MB
-            max_transactions_per_block: 1024,
+            message_batch_size: ADDRESS_SIZE,
+            block_time_target_ms: MILLISECONDS_PER_BLOCK, // SECONDS_PER_BLOCK seconds
+            max_block_size: MAX_BLOCK_SIZE,
+            max_transactions_per_block: MAX_SCRIPT_SIZE,
             view_change_timeout_multiplier: 2.5,
             enable_recovery: true,
             recovery_timeout_ms: 60000, // 60 seconds
@@ -174,14 +178,17 @@ impl DbftConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ConsensusContext, ConsensusMessage, ConsensusState};
 
     #[test]
     fn test_default_config() {
         let config = DbftConfig::default();
         assert!(config.validate().is_ok());
-        assert_eq!(config.block_time_target_ms, 15000);
-        assert_eq!(config.max_transactions_per_block, 512);
+        assert_eq!(config.block_time_target_ms, MILLISECONDS_PER_BLOCK);
+        assert_eq!(
+            config.max_transactions_per_block,
+            MAX_TRANSACTIONS_PER_BLOCK
+        );
     }
 
     #[test]
@@ -196,8 +203,8 @@ mod tests {
     fn test_production_config() {
         let config = DbftConfig::for_production();
         assert!(config.validate().is_ok());
-        assert_eq!(config.max_block_size, 1048576);
-        assert_eq!(config.max_transactions_per_block, 1024);
+        assert_eq!(config.max_block_size, MAX_BLOCK_SIZE);
+        assert_eq!(config.max_transactions_per_block, MAX_SCRIPT_SIZE);
     }
 
     #[test]
@@ -205,7 +212,7 @@ mod tests {
         let config = DbftConfig::default();
         assert_eq!(
             config.get_timeout_ms(crate::context::TimerType::PrepareRequest),
-            15000
+            MILLISECONDS_PER_BLOCK
         );
         assert_eq!(
             config.get_timeout_ms(crate::context::TimerType::PrepareResponse),

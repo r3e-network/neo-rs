@@ -8,6 +8,7 @@ use neo_vm::script::Script;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm::stack_item::StackItem;
 use num_bigint::BigInt;
+use num_traits::Zero;
 
 #[test]
 fn test_application_engine_creation() {
@@ -75,7 +76,6 @@ fn test_application_engine_with_interop_call() {
     // Check that gas was consumed
     assert!(engine.gas_consumed() > 0);
 
-    // Check the result - after execution completes, the result should be on the result stack
     let result_stack = engine.result_stack();
     assert_eq!(result_stack.len(), 1);
     assert_eq!(result_stack.peek(0).unwrap().as_bytes().unwrap(), b"NEO");
@@ -169,7 +169,6 @@ fn test_application_engine_with_storage_interop() {
     println!("Gas consumed: {}", engine.gas_consumed());
     println!("Result stack length: {}", engine.result_stack().len());
 
-    // Production-ready VM state validation (matches C# ApplicationEngine behavior exactly)
     // In production, storage operations should complete successfully
     assert_eq!(
         state,
@@ -218,7 +217,6 @@ fn test_vm_json_compatibility() {
     assert_eq!(engine.trigger(), TriggerType::Application);
     assert_eq!(engine.gas_limit(), 10_000_000);
 
-    // Test that engine can be created for different triggers
     let verification_engine = ApplicationEngine::new(TriggerType::Verification, 5_000_000);
     assert_eq!(verification_engine.trigger(), TriggerType::Verification);
     assert_eq!(verification_engine.gas_limit(), 5_000_000);
@@ -264,7 +262,6 @@ fn test_script_builder_emit_push() {
 fn test_debugger_step_into() {
     let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
 
-    // Create a simple script for debugging
     let mut builder = ScriptBuilder::new();
     builder
         .emit_push_int(1)
@@ -397,7 +394,6 @@ fn test_comparison_operations() {
     let mut builder = ScriptBuilder::new();
     builder
         .emit_push_int(5)
-        .emit_push_int(5)
         .emit_opcode(OpCode::EQUAL)
         .emit_opcode(OpCode::RET);
     let script = builder.to_script();
@@ -409,7 +405,6 @@ fn test_comparison_operations() {
     let mut engine2 = ApplicationEngine::new(TriggerType::Application, 10_000_000);
     let mut builder2 = ScriptBuilder::new();
     builder2
-        .emit_push_int(10)
         .emit_push_int(10)
         .emit_opcode(OpCode::EQUAL)
         .emit_opcode(OpCode::RET);
@@ -465,7 +460,6 @@ fn test_exception_handling() {
     println!("Gas consumed: {}", engine.gas_consumed());
     println!("Result stack length: {}", engine.result_stack().len());
 
-    // Production-ready exception handling validation (matches C# ApplicationEngine exactly)
     // Division by zero should properly fault in production
     assert_eq!(
         state,
@@ -477,9 +471,6 @@ fn test_exception_handling() {
 /// Test to verify BigInt zero detection works
 #[test]
 fn test_bigint_zero_detection() {
-    use num_bigint::BigInt;
-    use num_traits::Zero;
-
     let zero = BigInt::from(0);
     let one = BigInt::from(1);
 
@@ -515,8 +506,6 @@ fn test_division_operation_directly() {
     }
 
     assert_eq!(state, VMState::HALT);
-    // Production-ready division operation verification (matches C# VM behavior exactly)
-    // Result stack validation confirms proper VM operation completion
     assert_eq!(
         engine.result_stack().len(),
         1,
@@ -552,7 +541,6 @@ fn test_opcode_parsing() {
         println!(
             "Script[{}] = {} (0x{:02X}): {:?}",
             i,
-            byte,
             byte,
             OpCode::from_byte(byte)
         );
@@ -595,7 +583,6 @@ fn test_simple_arithmetic() {
             "Script[{}] = {} (0x{:02X}): {:?}",
             i,
             byte,
-            byte,
             OpCode::from_byte(byte)
         );
     }
@@ -624,7 +611,6 @@ fn test_simple_arithmetic() {
     }
 
     assert_eq!(state, VMState::HALT);
-    // The result should be moved from evaluation stack to result stack by RET
     assert_eq!(engine.result_stack().len(), 1);
 
     if engine.result_stack().len() > 0 {
@@ -653,7 +639,6 @@ fn test_simple_storage_get_context() {
     assert_eq!(state, VMState::HALT);
     assert_eq!(engine.result_stack().len(), 1);
 
-    // Check that we got a storage context (should be a 20-byte script hash)
     let result = engine.result_stack().peek(0).unwrap();
     let result_bytes = result.as_bytes().unwrap();
     assert_eq!(result_bytes.len(), 20); // UInt160 is 20 bytes
@@ -683,7 +668,6 @@ fn test_storage_put_operation() {
     println!("Gas consumed: {}", engine.gas_consumed());
     println!("Result stack length: {}", engine.result_stack().len());
 
-    // Production-ready storage operation testing (matches C# ApplicationEngine behavior exactly)
     // Storage operations should complete successfully with proper error handling
     assert!(
         state == VMState::HALT || state == VMState::FAULT,

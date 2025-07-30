@@ -18,14 +18,18 @@ pub mod methods;
 pub mod models;
 pub mod neo_rpc;
 
-// Re-export main types for convenience
 pub use client::{RpcClient, RpcClientBuilder};
 pub use error::{RpcError, RpcResult};
-pub use models::*;
+pub use models::{RpcRequest, RpcResponse};
 
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Default Neo network ports
 /// RPC client configuration (matches C# RpcClient settings exactly)
 #[derive(Debug, Clone)]
 pub struct RpcConfig {
@@ -46,7 +50,7 @@ pub struct RpcConfig {
 impl Default for RpcConfig {
     fn default() -> Self {
         Self {
-            endpoint: "http://localhost:10332".to_string(),
+            endpoint: "http://DEFAULT_RPC_PORT".to_string(),
             timeout: 30,
             max_retries: 3,
             retry_delay: 1000,
@@ -164,12 +168,12 @@ pub mod rpc_methods {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_rpc_config_default() {
         let config = RpcConfig::default();
-        assert_eq!(config.endpoint, "http://localhost:10332");
+        assert_eq!(config.endpoint, "http://DEFAULT_RPC_PORT");
         assert_eq!(config.timeout, 30);
         assert_eq!(config.max_retries, 3);
     }
@@ -195,7 +199,8 @@ mod tests {
         );
 
         let json = serde_json::to_string(&request).unwrap();
-        let deserialized: JsonRpcRequest = serde_json::from_str(&json).unwrap();
+        let deserialized: JsonRpcRequest =
+            serde_json::from_str(&json).expect("Failed to parse from string");
 
         assert_eq!(request.method, deserialized.method);
         assert_eq!(request.id, deserialized.id);

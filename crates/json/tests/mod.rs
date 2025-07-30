@@ -10,7 +10,6 @@ mod jpath_tests;
 mod jtoken_tests;
 mod serialization_tests;
 
-// Integration tests for complete JSON workflows
 mod integration_tests {
     use neo_json::*;
 
@@ -179,7 +178,6 @@ mod integration_tests {
             signers.push(Some(JToken::Object(signer)));
             tx.insert("signers".to_string(), Some(JToken::Array(signers)));
 
-            // Attributes array (empty for simplicity)
             tx.insert("attributes".to_string(), Some(JToken::Array(vec![])));
 
             // Script
@@ -226,7 +224,6 @@ mod integration_tests {
         );
         response.insert("id".to_string(), Some(JToken::Number(1.0)));
 
-        // Success response with result
         let mut result = OrderedDictionary::new();
         result.insert(
             "blockhash".to_string(),

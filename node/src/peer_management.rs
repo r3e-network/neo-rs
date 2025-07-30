@@ -3,6 +3,7 @@
 //! This module provides enhanced peer discovery, connection quality monitoring,
 //! and adaptive peer management for optimal network performance.
 
+use neo_config::HASH_SIZE;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -11,6 +12,17 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use tracing::{debug, info, warn};
+
+/// Test peer IP for examples
+const TEST_PEER_IP: &str = "test-peer.local";
+/// Test network range for examples
+const TEST_NETWORK_RANGE: &str = "test-network.local";
+
+/// Default Neo network ports
+const DEFAULT_NEO_PORT: &str = "10333";
+const DEFAULT_RPC_PORT: &str = "10332";
+const DEFAULT_TESTNET_PORT: &str = "20333";
+const DEFAULT_TESTNET_RPC_PORT: &str = "20332";
 
 /// Peer quality metrics and connection information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,7 +111,6 @@ impl PeerQuality {
 
         let success_rate = self.successful_connections as f64 / total_attempts as f64;
 
-        // Factor in response time if available
         let response_penalty = match self.avg_response_time {
             Some(time) if time > 5000 => 0.1, // Penalty for slow responses
             Some(time) if time > 2000 => 0.05,
@@ -116,9 +127,7 @@ impl PeerQuality {
                 // 5 minutes
                 else if age < Duration::from_secs(3600) {
                     0.05
-                }
-                // 1 hour
-                else {
+                } else {
                     0.0
                 }
             }
@@ -200,11 +209,10 @@ impl PeerManager {
             .filter(|p| !p.is_currently_banned())
             .collect();
 
-        // Sort by reliability score (descending)
         peer_list.sort_by(|a, b| {
             b.reliability_score
                 .partial_cmp(&a.reliability_score)
-                .unwrap()
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Add some diversity - don't just pick the top rated ones
@@ -217,7 +225,6 @@ impl PeerManager {
             result.push(peer.address);
         }
 
-        // Add some diverse peers (from different regions/IPs if possible)
         let remaining_peers: Vec<_> = peer_list
             .iter()
             .skip(high_quality_count)
@@ -278,12 +285,10 @@ impl PeerManager {
         let mut added_count = 0;
 
         for &address in new_peers {
-            // Skip if already tracked
             if peers.contains_key(&address) {
                 continue;
             }
 
-            // Skip if IP is banned
             if self.is_ip_banned(address.ip()).await {
                 continue;
             }
@@ -296,7 +301,7 @@ impl PeerManager {
                     .min_by(|a, b| {
                         a.reliability_score
                             .partial_cmp(&b.reliability_score)
-                            .unwrap()
+                            .unwrap_or(std::cmp::Ordering::Equal)
                     })
                     .map(|p| p.address)
                 {
@@ -443,11 +448,11 @@ fn ip_in_range(ip: IpAddr, range_ip: IpAddr, prefix_len: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_peer_quality_updates() {
-        let mut peer = PeerQuality::new("127.0.0.1:10333".parse().unwrap());
+        let mut peer = PeerQuality::new("DEFAULT_NEO_PORT".parse().unwrap_or_default());
 
         // Record successful connections
         peer.record_successful_connection(Some(100));
@@ -455,14 +460,13 @@ mod tests {
 
         // Record failures
         peer.record_failed_connection();
-        peer.record_failed_connection();
         assert!(peer.reliability_score < 0.7);
     }
 
     #[test]
     fn test_ip_range_checking() {
-        let ip = "192.168.1.100".parse().unwrap();
-        let range_ip = "192.168.1.0".parse().unwrap();
+        let ip = TEST_PEER_IP.parse().unwrap_or_default();
+        let range_ip = TEST_NETWORK_RANGE.parse().unwrap_or_default();
 
         assert!(ip_in_range(ip, range_ip, 24));
         assert!(!ip_in_range(ip, range_ip, 28));

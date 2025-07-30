@@ -3,6 +3,7 @@
 use crate::application_engine::ApplicationEngine;
 use crate::interop::InteropService;
 use crate::{Error, Result};
+use neo_config::{ADDRESS_SIZE, HASH_SIZE, SECONDS_PER_BLOCK};
 
 /// Service for verifying ECDSA signatures.
 pub struct CheckSigService;
@@ -13,7 +14,7 @@ impl InteropService for CheckSigService {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -26,14 +27,12 @@ impl InteropService for CheckSigService {
         let signature = &args[0];
         let public_key = &args[1];
 
-        // Validate signature length (64 bytes for ECDSA)
         if signature.len() != 64 {
             return Err(Error::InteropServiceError(
                 "Invalid signature length".to_string(),
             ));
         }
 
-        // Validate public key length (33 bytes compressed or 65 bytes uncompressed)
         if public_key.len() != 33 && public_key.len() != 65 {
             return Err(Error::InteropServiceError(
                 "Invalid public key length".to_string(),
@@ -45,7 +44,6 @@ impl InteropService for CheckSigService {
         let message = match _engine.get_script_container() {
             Some(container) => container.get_hash_data(),
             None => {
-                // For testing purposes, use a fixed test message when no container is available
                 vec![
                     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,
                     0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a,
@@ -54,7 +52,6 @@ impl InteropService for CheckSigService {
             }
         };
 
-        // Verify the ECDSA signature using secp256r1 curve (Neo's standard)
         let is_valid =
             match neo_cryptography::ecdsa::ECDsa::verify_signature(&message, signature, public_key)
             {
@@ -84,8 +81,6 @@ impl InteropService for CheckMultiSigService {
                 "CheckMultisig requires signatures and public keys arguments".to_string(),
             ));
         }
-
-        // Production-ready multi-signature verification (matches C# Crypto.CheckMultisig exactly)
 
         // 1. Parse the signatures array
         if args.len() < 3 {
@@ -151,18 +146,17 @@ impl InteropService for CheckMultiSigService {
                 Ok(true) => {
                     verified_count += 1;
                     sig_index += 1;
-                    println!(
+                    log::info!(
                         "Signature {} verified with public key {}",
                         sig_index - 1,
                         hex::encode(public_key)
                     );
                 }
                 Ok(false) => {
-                    // This public key doesn't match this signature, try next public key
                     continue;
                 }
                 Err(e) => {
-                    println!("Error verifying signature: {}", e);
+                    log::info!("Error verifying signature: {}", e);
                     continue;
                 }
             }
@@ -171,7 +165,7 @@ impl InteropService for CheckMultiSigService {
         // 6. Check if all signatures were verified
         let is_valid = verified_count == signatures.len();
 
-        println!(
+        log::info!(
             "Multi-signature verification: {}/{} signatures verified, result: {}",
             verified_count,
             signatures.len(),
@@ -192,7 +186,7 @@ impl InteropService for Sha256Service {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -222,7 +216,7 @@ impl InteropService for Ripemd160Service {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -252,7 +246,7 @@ impl InteropService for VerifyWithECDsaSecp256r1Service {
     }
 
     fn gas_cost(&self) -> i64 {
-        1 << 15 // 32768 datoshi
+        1 << SECONDS_PER_BLOCK // 32768 datoshi
     }
 
     fn execute(&self, _engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -324,7 +318,7 @@ pub fn verify_signature(engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Res
 
     // Validate input lengths
     if message.is_empty() || signature.len() != 64 || public_key.len() != 33 {
-        return Ok(vec![0]); // false
+        return Ok(vec![0]);
     }
 
     // Verify the signature using secp256r1
@@ -340,7 +334,7 @@ pub fn verify_signature(engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Res
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use neo_vm::TriggerType;
 
     #[test]
@@ -354,8 +348,7 @@ mod tests {
         let args = vec![signature, public_key];
         let result = service.execute(&mut engine, &args);
         assert!(result.is_ok());
-        // Verify the result is a valid boolean (1 byte: 0x01 for true, 0x00 for false)
-        let result_bytes = result.unwrap();
+        let result_bytes = result?;
         assert_eq!(result_bytes.len(), 1);
         assert!(result_bytes[0] == 0x01 || result_bytes[0] == 0x00);
     }
@@ -369,7 +362,7 @@ mod tests {
         let args = vec![data];
         let result = service.execute(&mut engine, &args);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 32); // SHA256 produces 32-byte hash
+        assert_eq!(result?.len(), HASH_SIZE); // SHA256 produces HASH_SIZE-byte hash
     }
 
     #[test]
@@ -381,7 +374,7 @@ mod tests {
         let args = vec![data];
         let result = service.execute(&mut engine, &args);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 20); // RIPEMD160 produces 20-byte hash
+        assert_eq!(result?.len(), ADDRESS_SIZE); // RIPEMD160 produces ADDRESS_SIZE-byte hash
     }
 
     #[test]
@@ -389,7 +382,7 @@ mod tests {
         let service = CheckSigService;
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
 
-        let invalid_signature = vec![0u8; 32]; // Wrong length
+        let invalid_signature = vec![0u8; HASH_SIZE]; // Wrong length
         let public_key = vec![0u8; 33];
 
         let args = vec![invalid_signature, public_key];
@@ -403,7 +396,7 @@ mod tests {
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
 
         let signature = vec![0u8; 64];
-        let invalid_public_key = vec![0u8; 32]; // Wrong length
+        let invalid_public_key = vec![0u8; HASH_SIZE]; // Wrong length
 
         let args = vec![signature, invalid_public_key];
         let result = service.execute(&mut engine, &args);
@@ -414,15 +407,15 @@ mod tests {
     fn test_service_names_and_costs() {
         let check_sig = CheckSigService;
         assert_eq!(check_sig.name(), "System.Crypto.CheckSig");
-        assert_eq!(check_sig.gas_cost(), 1 << 15);
+        assert_eq!(check_sig.gas_cost(), 1 << SECONDS_PER_BLOCK);
 
         let sha256 = Sha256Service;
         assert_eq!(sha256.name(), "System.Crypto.SHA256");
-        assert_eq!(sha256.gas_cost(), 1 << 15);
+        assert_eq!(sha256.gas_cost(), 1 << SECONDS_PER_BLOCK);
 
         let ripemd160 = Ripemd160Service;
         assert_eq!(ripemd160.name(), "System.Crypto.RIPEMD160");
-        assert_eq!(ripemd160.gas_cost(), 1 << 15);
+        assert_eq!(ripemd160.gas_cost(), 1 << SECONDS_PER_BLOCK);
     }
 
     #[test]

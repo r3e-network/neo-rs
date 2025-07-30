@@ -61,11 +61,9 @@ async fn test_inventory_handling() {
         hash: UInt256::zero(),
     }];
 
-    // Test inventory handling (should not crash)
     let peer_addr = "127.0.0.1:8080".parse().unwrap();
     let result = relay.handle_inventory(inventory, peer_addr).await;
 
-    // Should succeed even if no transactions are found
     assert!(result.is_ok());
 }
 
@@ -125,6 +123,5 @@ async fn test_cleanup_relay_cache() {
 
     let relay = TransactionRelay::new(config, mempool);
 
-    // Test cache cleanup (should not crash)
     relay.cleanup_relay_cache().await;
 }

@@ -201,7 +201,6 @@ impl PeerConnection {
             });
         }
 
-        // Read message header (24 bytes as per Neo protocol)
         let mut header_bytes = [0u8; 24];
         self.stream
             .read_exact(&mut header_bytes)
@@ -213,7 +212,6 @@ impl PeerConnection {
 
         tracing::debug!("Read header bytes: {:02x?}", &header_bytes);
 
-        // Parse payload length from header (bytes 16-19)
         let payload_length = u32::from_le_bytes([
             header_bytes[16],
             header_bytes[17],
@@ -337,7 +335,7 @@ impl ConnectionInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Message, NetworkError, Peer};
     use tokio::net::{TcpListener, TcpStream};
 
     #[test]
@@ -354,11 +352,15 @@ mod tests {
     #[tokio::test]
     async fn test_peer_connection_creation() {
         // Create a test TCP connection
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let listener = TcpListener::bind("localhost:0")
+            .await
+            .expect("operation should succeed");
+        let addr = listener.local_addr().expect("operation should succeed");
 
-        let stream = TcpStream::connect(addr).await.unwrap();
-        let peer_addr = stream.peer_addr().unwrap();
+        let stream = TcpStream::connect(addr)
+            .await
+            .expect("operation should succeed");
+        let peer_addr = stream.peer_addr().expect("operation should succeed");
 
         let mut connection = PeerConnection::new(stream, peer_addr, false);
 

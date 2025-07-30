@@ -14,12 +14,15 @@ pub mod gas;
 pub mod runtime;
 pub mod storage;
 
-use crate::contract_state::ContractState;
+use crate::contract_state::{ContractState, NefFile};
 use crate::events::EventManager;
+use crate::manifest::ContractManifest;
 use crate::native::{NativeContract, NativeRegistry};
 use crate::performance::PerformanceProfiler;
 use crate::storage::{StorageItem, StorageKey};
 use crate::{Error, Result};
+use neo_config::HASH_SIZE;
+use neo_core::constants::{MAX_STORAGE_KEY_SIZE, MAX_STORAGE_VALUE_SIZE};
 use neo_core::{Block, IVerifiable, Transaction, UInt160, UInt256};
 use neo_vm::call_flags::CallFlags;
 use neo_vm::{
@@ -29,10 +32,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Maximum size of storage keys (matches C# ApplicationEngine.MaxStorageKeySize exactly).
-pub const MAX_STORAGE_KEY_SIZE: usize = 64;
-
 /// Maximum size of storage values (matches C# ApplicationEngine.MaxStorageValueSize exactly).
-pub const MAX_STORAGE_VALUE_SIZE: usize = 65535; // ushort.MaxValue
 
 /// Storage context for contract storage operations (matches C# StorageContext exactly).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,7 +136,6 @@ impl StorageIterator {
         let mut result_key = key.clone();
         let result_value = item.value.clone();
 
-        // Apply RemovePrefix option
         if self.options.contains(FindOptions::REMOVE_PREFIX)
             && result_key.len() >= self.prefix_length
         {
@@ -149,16 +148,13 @@ impl StorageIterator {
         } else if self.options.contains(FindOptions::VALUES_ONLY) {
             Some(result_value)
         } else {
-            // Production-ready key-value pair structure (matches C# Neo StorageIterator.Value exactly)
             // Return a proper structure containing both key and value
             // This matches the C# implementation where Value returns a StackItem containing both
             let mut result = Vec::new();
 
-            // Add key length prefix (4 bytes, little-endian)
             result.extend_from_slice(&(result_key.len() as u32).to_le_bytes());
             // Add key data
             result.extend_from_slice(&result_key);
-            // Add value length prefix (4 bytes, little-endian)
             result.extend_from_slice(&(result_value.len() as u32).to_le_bytes());
             // Add value data
             result.extend_from_slice(&result_value);
@@ -298,7 +294,6 @@ impl ApplicationEngine {
             next_iterator_id: 0,
         };
 
-        // Register native contracts in the contracts HashMap so they can be found
         engine.register_native_contracts();
 
         engine
@@ -336,7 +331,6 @@ impl ApplicationEngine {
             next_iterator_id: 0,
         };
 
-        // Register native contracts in the contracts HashMap so they can be found
         engine.register_native_contracts();
 
         engine
@@ -451,8 +445,6 @@ impl ApplicationEngine {
     /// Gets a storage item by key (production-ready implementation matching C# Neo exactly).
     /// This matches C# ApplicationEngine.Get method exactly.
     pub fn get_storage_item(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>> {
-        // Production-ready storage access (matches C# ApplicationEngine.Get exactly)
-
         // 1. Validate key length (matches C# MaxStorageKeySize check)
         if key.len() > MAX_STORAGE_KEY_SIZE {
             return None;
@@ -482,8 +474,6 @@ impl ApplicationEngine {
         key: &[u8],
         value: &[u8],
     ) -> Result<()> {
-        // Production-ready storage write (matches C# ApplicationEngine.Put exactly)
-
         // 1. Validate key length (matches C# MaxStorageKeySize check)
         if key.len() > MAX_STORAGE_KEY_SIZE {
             return Err(Error::InvalidArguments("Key length too big".to_string()));
@@ -509,7 +499,6 @@ impl ApplicationEngine {
         // 5. Calculate gas cost (matches C# gas calculation exactly)
         let storage_key = StorageKey::new(contract_hash, key.to_vec());
         let new_data_size = if let Some(existing_item) = self.storage.get(&storage_key) {
-            // Existing item - calculate incremental cost (matches C# logic exactly)
             if value.is_empty() {
                 0
             } else if value.len() <= existing_item.value.len() {
@@ -520,7 +509,6 @@ impl ApplicationEngine {
                 (existing_item.value.len() - 1) / 4 + 1 + value.len() - existing_item.value.len()
             }
         } else {
-            // New item - full cost (matches C# logic exactly)
             key.len() + value.len()
         };
 
@@ -538,8 +526,6 @@ impl ApplicationEngine {
     /// Deletes a storage item (production-ready implementation matching C# Neo exactly).
     /// This matches C# ApplicationEngine.Delete method exactly.
     pub fn delete_storage_item(&mut self, context: &StorageContext, key: &[u8]) -> Result<()> {
-        // Production-ready storage delete (matches C# ApplicationEngine.Delete exactly)
-
         // 1. Check if context is read-only (matches C# IsReadOnly check)
         if context.is_read_only {
             return Err(Error::InvalidArguments(
@@ -561,8 +547,6 @@ impl ApplicationEngine {
 
     /// Gets the storage context for the current contract (matches C# GetStorageContext exactly).
     pub fn get_storage_context(&self) -> Result<StorageContext> {
-        // Production-ready storage context creation (matches C# GetStorageContext exactly)
-
         // 1. Get current contract hash
         let contract_hash = self
             .current_script_hash
@@ -582,7 +566,6 @@ impl ApplicationEngine {
 
     /// Gets a read-only storage context (matches C# GetReadOnlyContext exactly).
     pub fn get_read_only_storage_context(&self) -> Result<StorageContext> {
-        // Production-ready read-only storage context (matches C# GetReadOnlyContext exactly)
         let mut context = self.get_storage_context()?;
         context.is_read_only = true;
         Ok(context)
@@ -603,8 +586,6 @@ impl ApplicationEngine {
         prefix: &[u8],
         options: FindOptions,
     ) -> StorageIterator {
-        // Production-ready storage find (matches C# ApplicationEngine.Find exactly)
-
         // 1. Get contract hash from context ID
         let contract_hash = match self.get_contract_hash_by_id(context.id) {
             Some(hash) => hash,
@@ -632,14 +613,11 @@ impl ApplicationEngine {
 
     /// Gets the storage price from policy contract (matches C# StoragePrice property).
     fn get_storage_price(&self) -> usize {
-        // Production-ready storage price retrieval (matches C# PolicyContract.GetStoragePrice exactly)
         self.query_policy_contract_storage_price().unwrap_or(1000) // Default: 1000 datoshi per byte
     }
 
     /// Adds gas fee (production-ready implementation matching C# Neo exactly).
     fn add_fee(&mut self, fee: u64) -> Result<()> {
-        // Production-ready gas fee addition (matches C# ApplicationEngine.AddFee exactly)
-
         // 1. Calculate the actual fee based on ExecFeeFactor (matches C# logic exactly)
         let exec_fee_factor = 30; // Default ExecFeeFactor from PolicyContract
         let actual_fee = (fee as i64).saturating_mul(exec_fee_factor);
@@ -660,7 +638,6 @@ impl ApplicationEngine {
 
     /// Queries the blockchain storage backend (production-ready implementation).
     fn query_blockchain_storage(&self, storage_key: &StorageKey) -> Option<Vec<u8>> {
-        // Production-ready blockchain storage query (matches C# DataCache.TryGet exactly)
         self.execute_storage_query(storage_key).unwrap_or(None)
     }
 
@@ -691,10 +668,8 @@ impl ApplicationEngine {
 
     /// Emits an event (production-ready implementation matching C# Neo exactly).
     pub fn emit_event(&mut self, event_name: &str, args: Vec<Vec<u8>>) -> Result<()> {
-        // Production-ready event emission (matches C# ApplicationEngine.Notify exactly)
-
-        // 1. Validate event name length (must not exceed 32 bytes)
-        if event_name.len() > 32 {
+        // 1. Validate event name length (must not exceed HASH_SIZE bytes)
+        if event_name.len() > HASH_SIZE {
             return Err(Error::InvalidArguments("Event name too long".to_string()));
         }
 
@@ -733,15 +708,14 @@ impl ApplicationEngine {
         event_name: &str,
         args_len: usize,
     ) -> Result<()> {
-        // Production-ready blockchain event emission (matches C# ApplicationEngine.SendNotification exactly)
-
         // 1. Log the event for debugging and monitoring
-        println!(
+        log::info!(
             "Event emitted: {} from contract {} with {} args",
-            event_name, contract_hash, args_len
+            event_name,
+            contract_hash,
+            args_len
         );
 
-        // Production-ready blockchain event logging (matches C# ApplicationEngine.SendNotification exactly)
         self.add_to_blockchain_event_log(&contract_hash, event_name.to_string(), args_len)?;
         self.trigger_event_listeners(&contract_hash, event_name.to_string(), args_len)?;
 
@@ -804,8 +778,6 @@ impl ApplicationEngine {
         args: Vec<Vec<u8>>,
     ) -> Result<Vec<u8>> {
         self.profiler.start_operation("contract_call");
-
-        // Production-ready contract calling (matches C# ApplicationEngine.CallContract exactly)
 
         // 1. Check if the contract exists
         let contract = match self.get_contract(&contract_hash) {
@@ -873,8 +845,6 @@ impl ApplicationEngine {
         method: &str,
         args: Vec<Vec<u8>>,
     ) -> Result<Vec<u8>> {
-        // Production-ready regular contract calling (matches C# behavior exactly)
-
         // 1. Load the contract script
         let script = contract.nef.script.clone();
 
@@ -882,9 +852,7 @@ impl ApplicationEngine {
         let method_offset = self.resolve_nef_method_entry_point(&contract.nef, method)?;
 
         // 3. Production-ready VM execution context preparation (matches C# exactly)
-        // Push arguments onto the stack in reverse order (Neo VM convention)
         for arg in args.iter().rev() {
-            // Production-ready VM stack operations (matches C# engine.Push exactly)
             self.push_to_vm_stack(arg)?;
         }
 
@@ -903,8 +871,6 @@ impl ApplicationEngine {
         method_offset: usize,
         args: &[Vec<u8>],
     ) -> Result<()> {
-        // Production-ready contract method execution (matches C# ApplicationEngine exactly)
-
         // 1. Validate script and offset
         if method_offset >= script.len() {
             return Err(Error::InvalidOperation(
@@ -912,7 +878,6 @@ impl ApplicationEngine {
             ));
         }
 
-        // Production-ready VM execution context creation (matches C# Neo exactly)
         self.create_vm_execution_context(script, method_offset)?;
         self.execute_with_gas_limits_and_exception_handling(args)?;
 
@@ -935,10 +900,7 @@ impl ApplicationEngine {
         nef: &crate::contract_state::NefFile,
         method: &str,
     ) -> Result<usize> {
-        // Production-ready method offset finding (matches C# NEF parsing exactly)
-
         // 1. Parse the NEF file format (matches C# NefFile.LoadScript exactly)
-        // NEF format: Magic(4) + Compiler(64) + Source(256) + Reserved(2) + Tokens + Script + Checksum(4)
 
         // 2. Check if this is a main method or initialization method
         if method == "main" || method == "_initialize" {
@@ -973,8 +935,6 @@ impl ApplicationEngine {
         nef: &crate::contract_state::NefFile,
         method: &str,
     ) -> Result<usize> {
-        // Production-ready NEF method table parsing (matches C# NEF.LoadScript exactly)
-
         // 1. Production-ready NEF token parsing (matches C# NEF.LoadScript exactly)
         self.parse_nef_token_structure(nef, method).or_else(|_| {
             Err(Error::InvalidOperation(format!(
@@ -993,12 +953,9 @@ impl ApplicationEngine {
     ) -> Result<Vec<u8>> {
         self.profiler.start_operation("native_contract_call");
 
-        // Check if the contract exists first
         if !self.native_registry.is_native(&contract_hash) {
             return Err(Error::ContractNotFound(contract_hash.to_string()));
         }
-
-        // Production-ready contract dispatch (matches C# ApplicationEngine.CallContract exactly)
 
         // 1. Get the contract from storage
         let contract = match self.get_contract(&contract_hash) {
@@ -1035,13 +992,10 @@ impl ApplicationEngine {
 
         // 4. Dispatch to appropriate contract implementation
         let result = match contract_hash {
-            _ => {
-                // Production-ready handling for unknown contracts (matches C# behavior exactly)
-                Err(Error::ContractNotFound(format!(
-                    "Contract not found: {}",
-                    contract_hash
-                )))
-            }
+            _ => Err(Error::ContractNotFound(format!(
+                "Contract not found: {}",
+                contract_hash
+            ))),
         };
 
         self.profiler.record_native_call();
@@ -1052,8 +1006,6 @@ impl ApplicationEngine {
 
     /// Consumes gas for an operation (production-ready implementation matching C# Neo exactly).
     pub fn consume_gas(&mut self, gas: i64) -> Result<()> {
-        // Production-ready gas consumption (matches C# ApplicationEngine.ConsumeGas exactly)
-
         // 1. Validate gas amount (must be non-negative)
         if gas < 0 {
             return Err(Error::VmError("Negative gas consumption".to_string()));
@@ -1075,13 +1027,9 @@ impl ApplicationEngine {
 
     /// Updates the VM gas counter (production-ready implementation).
     fn update_vm_gas_counter(&mut self, gas: i64) -> Result<()> {
-        // Production-ready VM gas counter update (matches C# ApplicationEngine exactly)
-
-        // Production-ready VM gas counter update (matches C# ExecutionEngine.GasConsumed exactly)
         self.update_underlying_vm_gas_counter(gas)?;
 
         // 2. Trigger gas-related events if necessary
-        // This would emit gas consumption events for monitoring and debugging
 
         // 3. Check for gas limit warnings
         let gas_percentage = (self.gas_consumed as f64 / self.gas_limit as f64) * 100.0;
@@ -1119,8 +1067,6 @@ impl ApplicationEngine {
     /// Gets the transaction sender if the container is a transaction.
     /// This matches C# ApplicationEngine.GetTransactionSender exactly.
     pub fn get_transaction_sender(&self) -> Option<UInt160> {
-        // Production-ready transaction sender retrieval (matches C# Neo exactly)
-
         // 1. Check if we have a container
         let container = self.container.as_ref()?;
 
@@ -1139,7 +1085,6 @@ impl ApplicationEngine {
     /// Gets the current execution context.
     /// This matches C# ApplicationEngine.CurrentContext exactly.
     pub fn current_context(&self) -> Option<&ExecutionContext> {
-        // Production-ready current context retrieval (matches C# Neo exactly)
         // This implements the C# logic: engine.CurrentContext property
         self.vm_engine.current_context()
     }
@@ -1162,7 +1107,6 @@ impl ApplicationEngine {
             None => return false, // Calling contract not found
         };
 
-        // Check if the calling contract has permission to call the target contract's method
         // This matches C# Neo's manifest permission checking exactly
         calling_contract
             .manifest
@@ -1211,7 +1155,6 @@ impl ApplicationEngine {
         let iterator_id = self.next_iterator_id;
         self.next_iterator_id += 1;
 
-        // Create iterator with default options (can be extended to accept options parameter)
         let iterator = StorageIterator::new(results, 0, FindOptions::NONE);
         self.storage_iterators.insert(iterator_id, iterator);
 
@@ -1309,8 +1252,6 @@ impl ApplicationEngine {
 
     /// Gets the storage context for a native contract (production-ready implementation).
     pub fn get_native_storage_context(&self, contract_hash: &UInt160) -> Result<StorageContext> {
-        // Production-ready native contract storage context (matches C# behavior exactly)
-
         // 1. Get contract state to get the ID
         let contract = self.get_contract(contract_hash).ok_or_else(|| {
             Error::ContractNotFound(format!("Native contract not found: {}", contract_hash))
@@ -1325,7 +1266,6 @@ impl ApplicationEngine {
 
     /// Gets a storage item by key (legacy API for native contracts).
     pub fn get_storage_item_legacy(&self, key: &[u8]) -> Option<Vec<u8>> {
-        // Legacy API for backward compatibility with native contracts
         if let Some(current_hash) = &self.current_script_hash {
             if let Ok(context) = self.get_native_storage_context(current_hash) {
                 return self.get_storage_item(&context, key);
@@ -1336,7 +1276,6 @@ impl ApplicationEngine {
 
     /// Puts a storage item (legacy API for native contracts).
     pub fn put_storage_item_legacy(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
-        // Legacy API for backward compatibility with native contracts
         if let Some(current_hash) = &self.current_script_hash {
             let context = self.get_native_storage_context(&current_hash)?;
             return self.put_storage_item(&context, key, value);
@@ -1348,7 +1287,6 @@ impl ApplicationEngine {
 
     /// Deletes a storage item (legacy API for native contracts).
     pub fn delete_storage_item_legacy(&mut self, key: &[u8]) -> Result<()> {
-        // Legacy API for backward compatibility with native contracts
         if let Some(current_hash) = &self.current_script_hash {
             let context = self.get_native_storage_context(&current_hash)?;
             return self.delete_storage_item(&context, key);
@@ -1362,7 +1300,6 @@ impl ApplicationEngine {
 
     /// Queries policy contract storage price (production-ready implementation)
     fn query_policy_contract_storage_price(&self) -> Result<usize> {
-        // Production-ready policy contract query (matches C# NativeContract.Policy.GetStoragePrice exactly)
         match self.execute_native_contract_query("Policy", "GetStoragePrice", &[]) {
             Ok(Some(price)) => Ok(price),
             _ => Ok(1000), // Default storage price in datoshi per byte
@@ -1371,7 +1308,6 @@ impl ApplicationEngine {
 
     /// Executes storage query (production-ready implementation)
     fn execute_storage_query(&self, storage_key: &StorageKey) -> Result<Option<Vec<u8>>> {
-        // Production-ready storage query (matches C# DataCache.TryGet exactly)
         let _ = storage_key; // Avoid unused parameter warning
         Ok(None) // Would return actual storage data
     }
@@ -1383,7 +1319,6 @@ impl ApplicationEngine {
         event_name: String,
         args_len: usize,
     ) -> Result<()> {
-        // Production-ready blockchain event logging (matches C# ApplicationEngine.SendNotification exactly)
         self.logs.push(LogEvent {
             contract: contract_hash.clone(),
             message: format!("Blockchain event: {} with {} args", event_name, args_len),
@@ -1398,7 +1333,6 @@ impl ApplicationEngine {
         event_name: String,
         args_len: usize,
     ) -> Result<()> {
-        // Production-ready event listener triggering (matches C# Neo event system exactly)
         self.logs.push(LogEvent {
             contract: contract_hash.clone(),
             message: format!(
@@ -1415,13 +1349,11 @@ impl ApplicationEngine {
         nef: &crate::contract_state::NefFile,
         method: &str,
     ) -> Result<usize> {
-        // Production-ready NEF method resolution (matches C# Neo exactly)
         self.find_method_offset(nef, method)
     }
 
     /// Pushes data to VM stack (production-ready implementation)
     fn push_to_vm_stack(&mut self, data: &[u8]) -> Result<()> {
-        // Production-ready VM stack operations (matches C# engine.Push exactly)
         self.logs.push(LogEvent {
             contract: self.current_script_hash.unwrap_or_else(UInt160::zero),
             message: format!("Pushed {} bytes to VM stack", data.len()),
@@ -1431,13 +1363,11 @@ impl ApplicationEngine {
 
     /// Pops result from VM stack (production-ready implementation)
     fn pop_vm_stack_result(&self) -> Result<Vec<u8>> {
-        // Production-ready VM stack result extraction (matches C# engine.Pop exactly)
         Ok(vec![1]) // Would return actual VM stack result
     }
 
     /// Creates VM execution context (production-ready implementation)
     fn create_vm_execution_context(&mut self, script: &[u8], method_offset: usize) -> Result<()> {
-        // Production-ready VM execution context creation (matches C# Neo exactly)
         self.logs.push(LogEvent {
             contract: self.current_script_hash.unwrap_or_else(UInt160::zero),
             message: format!(
@@ -1451,7 +1381,6 @@ impl ApplicationEngine {
 
     /// Executes with gas limits and exception handling (production-ready implementation)
     fn execute_with_gas_limits_and_exception_handling(&mut self, args: &[Vec<u8>]) -> Result<()> {
-        // Production-ready VM execution with gas limits (matches C# Neo exactly)
         self.logs.push(LogEvent {
             contract: self.current_script_hash.unwrap_or_else(UInt160::zero),
             message: format!(
@@ -1469,9 +1398,6 @@ impl ApplicationEngine {
         nef: &crate::contract_state::NefFile,
         method: &str,
     ) -> Result<usize> {
-        // Production-ready NEF token parsing (matches C# NEF.LoadScript exactly)
-        // This implements the C# logic: NEF.LoadScript().Tokens analysis for method resolution
-
         // 1. Validate NEF file format and tokens
         if nef.script.is_empty() {
             return Err(Error::InvalidOperation("NEF script is empty".to_string()));
@@ -1486,7 +1412,6 @@ impl ApplicationEngine {
         }
 
         // 3. Calculate method offset based on NEF structure (production offset calculation)
-        // This matches the C# logic for method resolution in NEF files
         let script_len = nef.script.len();
         let base_offset = (method_hash as usize) % script_len;
 
@@ -1502,7 +1427,6 @@ impl ApplicationEngine {
 
     /// Updates underlying VM gas counter (production-ready implementation)
     fn update_underlying_vm_gas_counter(&mut self, gas: i64) -> Result<()> {
-        // Production-ready VM gas counter update (matches C# ExecutionEngine.GasConsumed exactly)
         // This implements the C# logic: ExecutionEngine.GasConsumed property and gas tracking
 
         // 1. The VM engine tracks its own gas internally through consume_gas()
@@ -1537,7 +1461,6 @@ impl ApplicationEngine {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Option<usize>> {
-        // Production-ready native contract query execution (matches C# NativeContract exactly)
         self.resolve_and_execute_native_contract_method(contract, method, args)
     }
 
@@ -1548,41 +1471,32 @@ impl ApplicationEngine {
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Option<usize>> {
-        // Production-ready native contract resolution and execution (matches C# NativeContract exactly)
-        // This implements C# logic: NativeContract.GetContract(contract_name).Invoke(method, args)
-
         // 1. Resolve native contract by name (matches C# NativeContract registry)
         let contract_hash = match contract {
             "Policy" => UInt160::from_bytes(&[
                 0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xe6, 0xd2, 0x6a, 0x7b, 0x32, 0xa4, 0x5c, 0x3d, 0x35,
                 0x0c, 0x34, 0x31, 0x56, 0xb6, 0x2d,
-            ])
-            .unwrap(), // PolicyContract hash
+            ])?, // PolicyContract hash
             "NEO" => UInt160::from_bytes(&[
                 0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x84, 0x6b, 0x0a, 0x40, 0xb2, 0xa9, 0x7d, 0x4a, 0x38,
                 0x14, 0x39, 0x4b, 0x95, 0x2a, 0x85,
-            ])
-            .unwrap(), // NEO contract hash
+            ])?, // NEO contract hash
             "GAS" => UInt160::from_bytes(&[
                 0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0x14, 0x28, 0x34, 0x7d, 0x9e, 0x32, 0x13,
                 0xc6, 0x8c, 0xc0, 0x8c, 0x60, 0x25,
-            ])
-            .unwrap(), // GAS contract hash
+            ])?, // GAS contract hash
             "RoleManagement" => UInt160::from_bytes(&[
                 0x49, 0xcf, 0x4e, 0x5f, 0x4e, 0x94, 0x5d, 0x33, 0x4f, 0x58, 0x8d, 0xab, 0x88, 0x0c,
                 0x18, 0x5d, 0x2b, 0x7d, 0x32, 0x8b,
-            ])
-            .unwrap(), // RoleManagement contract hash
+            ])?, // RoleManagement contract hash
             "Oracle" => UInt160::from_bytes(&[
                 0xfe, 0x92, 0x4b, 0x7c, 0xfd, 0xdf, 0x0c, 0x7b, 0x7e, 0x3b, 0x9c, 0xa9, 0x3a, 0xa8,
                 0xdd, 0x86, 0x2f, 0x54, 0x05, 0x1d,
-            ])
-            .unwrap(), // Oracle contract hash
+            ])?, // Oracle contract hash
             "ContractManagement" => UInt160::from_bytes(&[
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
-            ])
-            .unwrap(), // ContractManagement hash
+            ])?, // ContractManagement hash
             _ => {
                 return Err(Error::InvalidOperation(format!(
                     "Unknown native contract: {}",
@@ -1687,8 +1601,6 @@ impl ApplicationEngine {
         method_offset: usize,
         args: &[Vec<u8>],
     ) -> Result<()> {
-        // Production-ready VM script execution (matches C# ApplicationEngine.Execute exactly)
-
         // 1. Push arguments onto VM stack in reverse order (matches C# calling convention)
         for arg in args.iter().rev() {
             self.push_to_vm_stack(arg)?;
@@ -1726,13 +1638,11 @@ impl ApplicationEngine {
 
     /// Gets VM execution result (production-ready implementation)
     fn get_vm_execution_result(&self) -> Result<VMState> {
-        // Production-ready VM state retrieval (matches C# ExecutionEngine.State exactly)
         Ok(self.vm_engine.engine().state())
     }
 
     /// Processes execution result (production-ready implementation)
     fn process_execution_result(&mut self, result: VMState) -> Result<()> {
-        // Production-ready execution result processing (matches C# ApplicationEngine exactly)
         match result {
             VMState::HALT => {
                 // Successful execution
@@ -1767,7 +1677,6 @@ impl ApplicationEngine {
         method_offset: usize,
         args_count: usize,
     ) -> Result<()> {
-        // Production-ready execution event emission (matches C# ApplicationEngine events exactly)
         self.logs.push(LogEvent {
             contract: self.current_script_hash.unwrap_or_else(UInt160::zero),
             message: format!(
@@ -1780,7 +1689,6 @@ impl ApplicationEngine {
 
     /// Consumes gas for instruction execution (production-ready implementation)
     fn consume_instruction_gas(&mut self) -> Result<()> {
-        // Production-ready instruction gas consumption (matches C# ExecutionEngine exactly)
         let instruction_gas = 1; // Basic instruction cost
         self.consume_gas(instruction_gas)?;
         Ok(())
@@ -1788,7 +1696,6 @@ impl ApplicationEngine {
 
     /// Logs successful execution (production-ready implementation)
     fn log_successful_execution(&mut self) -> Result<()> {
-        // Production-ready success logging (matches C# ApplicationEngine logging exactly)
         self.logs.push(LogEvent {
             contract: self.current_script_hash.unwrap_or_else(UInt160::zero),
             message: format!(
@@ -1801,7 +1708,6 @@ impl ApplicationEngine {
 
     /// Gets VM fault description (production-ready implementation)
     fn get_vm_fault_description(&self) -> String {
-        // Production-ready fault description retrieval (matches C# ExecutionEngine.FaultException exactly)
         // Would extract actual fault description from VM
         "VM execution fault".to_string()
     }
@@ -1809,10 +1715,6 @@ impl ApplicationEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::storage::StorageItem;
-    use neo_vm::TriggerType;
-
     #[test]
     fn test_production_ready_storage_iterator() {
         let mut engine = ApplicationEngine::new(TriggerType::Application, 1000000);
@@ -1858,19 +1760,22 @@ mod tests {
 
         let iterator_id2 = engine
             .create_storage_iterator_with_options(entries2, 7, options)
-            .unwrap();
+            .expect("Operation failed");
         assert_eq!(iterator_id2, 1);
 
         // Test cleanup
-        engine.dispose_iterator(iterator_id).unwrap();
-        engine.dispose_iterator(iterator_id2).unwrap();
+        engine
+            .dispose_iterator(iterator_id)
+            .expect("Operation failed");
+        engine
+            .dispose_iterator(iterator_id2)
+            .expect("Operation failed");
     }
 
     #[test]
     fn test_production_ready_permission_checking() {
         let engine = ApplicationEngine::new(TriggerType::Application, 1000000);
 
-        // Create a mock contract for testing
         let contract_hash = UInt160::zero();
         let contract = ContractState {
             id: 1,
@@ -1886,7 +1791,6 @@ mod tests {
             manifest: crate::manifest::ContractManifest::default(),
         };
 
-        // Test permission checking (should return true for valid permissions)
         let result = engine.check_contract_permissions(&contract, "test_method");
         assert!(result); // Should be true since no current context restricts it
     }
@@ -1936,10 +1840,6 @@ impl NotificationEvent {
 
 #[cfg(test)]
 mod additional_tests {
-    use super::*;
-    use crate::contract_state::{ContractState, NefFile};
-    use crate::manifest::ContractManifest;
-
     #[test]
     fn test_application_engine_creation() {
         let engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);

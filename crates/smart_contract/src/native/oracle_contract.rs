@@ -7,6 +7,7 @@ use crate::application_engine::ApplicationEngine;
 use crate::native::{NativeContract, NativeMethod};
 use crate::{Error, Result};
 use log::debug;
+use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, SECONDS_PER_BLOCK};
 use neo_core::{UInt160, UInt256};
 use neo_cryptography::ECPoint;
 use serde::{Deserialize, Serialize};
@@ -154,9 +155,9 @@ impl Default for OracleConfig {
         Self {
             max_url_length: 256,
             max_filter_length: 128,
-            max_callback_length: 32,
-            max_user_data_length: 512,
-            max_response_length: 1024,
+            max_callback_length: HASH_SIZE,
+            max_user_data_length: MAX_TRANSACTIONS_PER_BLOCK,
+            max_response_length: MAX_SCRIPT_SIZE,
             request_timeout: 144, // ~24 hours at 10 second blocks
             min_response_gas: 10_000_000,
             max_response_gas: 50_000_000,
@@ -167,18 +168,17 @@ impl Default for OracleConfig {
 impl OracleContract {
     /// Creates a new Oracle contract.
     pub fn new() -> Self {
-        // Oracle contract hash (well-known constant)
         let hash = UInt160::from_bytes(&[
             0xfe, 0x92, 0x4b, 0x7c, 0xff, 0x6f, 0x61, 0x42, 0xb6, 0x8a, 0x2b, 0x9f, 0x2f, 0x6f,
             0xc9, 0x5f, 0x8b, 0x7c, 0x6a, 0x0a,
         ])
-        .unwrap();
+        .expect("Operation failed");
 
         let methods = vec![
-            NativeMethod::unsafe_method("request".to_string(), 1 << 15, 0x0f),
+            NativeMethod::unsafe_method("request".to_string(), 1 << SECONDS_PER_BLOCK, 0x0f),
             NativeMethod::safe("getPrice".to_string(), 1 << 4),
-            NativeMethod::unsafe_method("finish".to_string(), 1 << 15, 0x0f),
-            NativeMethod::safe("verify".to_string(), 1 << 15),
+            NativeMethod::unsafe_method("finish".to_string(), 1 << SECONDS_PER_BLOCK, 0x0f),
+            NativeMethod::safe("verify".to_string(), 1 << SECONDS_PER_BLOCK),
         ];
 
         Self {
@@ -271,7 +271,10 @@ impl OracleContract {
 
         // Generate new request ID
         let id = {
-            let mut next_id = self.next_request_id.write().unwrap();
+            let mut next_id = self
+                .next_request_id
+                .write()
+                .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
             let id = *next_id;
             *next_id += 1;
             id
@@ -296,7 +299,10 @@ impl OracleContract {
 
         // Store the request
         {
-            let mut requests = self.requests.write().unwrap();
+            let mut requests = self
+                .requests
+                .write()
+                .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
             requests.insert(id, request);
         }
 
@@ -344,9 +350,11 @@ impl OracleContract {
 
         // Get and update the request
         {
-            let mut requests = self.requests.write().unwrap();
+            let mut requests = self
+                .requests
+                .write()
+                .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
             if let Some(request) = requests.get_mut(&request_id) {
-                // Check if request is still pending
                 if request.status != OracleRequestStatus::Pending {
                     return Err(Error::InvalidOperation(
                         "Request already processed".to_string(),
@@ -390,12 +398,16 @@ impl OracleContract {
 
     /// Gets all pending requests.
     pub fn get_pending_requests(&self) -> Vec<OracleRequest> {
-        self.requests.read().unwrap().values().cloned().collect()
+        self.requests
+            .read()
+            .ok()
+            .map(|r| r.values().cloned().collect())
+            .unwrap_or_else(Vec::new)
     }
 
     /// Gets a request by ID.
     pub fn get_request(&self, id: u64) -> Option<OracleRequest> {
-        self.requests.read().unwrap().get(&id).cloned()
+        self.requests.read().ok()?.get(&id).cloned()
     }
 
     /// Gets the oracle configuration.
@@ -410,7 +422,12 @@ impl OracleContract {
 
     /// Gets an oracle request by ID.
     pub fn get_oracle_request(&self, id: u64) -> Result<OracleRequest> {
-        if let Some(request) = self.requests.read().unwrap().get(&id) {
+        if let Some(request) = self
+            .requests
+            .read()
+            .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?
+            .get(&id)
+        {
             Ok(request.clone())
         } else {
             Err(Error::NativeContractError(
@@ -429,7 +446,10 @@ impl OracleContract {
 
     /// Checks if response was already processed.
     pub fn is_response_already_processed(&self, id: u64, _hash: &[u8]) -> Result<bool> {
-        let requests = self.requests.read().unwrap();
+        let requests = self
+            .requests
+            .read()
+            .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
         if let Some(request) = requests.get(&id) {
             Ok(request.status != OracleRequestStatus::Pending)
         } else {
@@ -452,7 +472,10 @@ impl OracleContract {
 
     /// Marks response as processed.
     pub fn mark_response_as_processed(&self, id: u64, _hash: &[u8]) -> Result<()> {
-        let mut requests = self.requests.write().unwrap();
+        let mut requests = self
+            .requests
+            .write()
+            .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
         if let Some(request) = requests.get_mut(&id) {
             request.status = OracleRequestStatus::Fulfilled;
         }
@@ -497,7 +520,10 @@ impl OracleContract {
 
     /// Updates oracle request state.
     pub fn update_oracle_request_state(&self, id: u64, _result: &[u8]) -> Result<()> {
-        let mut requests = self.requests.write().unwrap();
+        let mut requests = self
+            .requests
+            .write()
+            .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
         if let Some(request) = requests.get_mut(&id) {
             request.status = OracleRequestStatus::Fulfilled;
         }
@@ -527,7 +553,10 @@ impl OracleContract {
 
     /// Cleans up callback state.
     pub fn cleanup_callback_state(&self, id: u64) -> Result<()> {
-        let mut requests = self.requests.write().unwrap();
+        let mut requests = self
+            .requests
+            .write()
+            .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
         requests.remove(&id);
         Ok(())
     }
@@ -564,14 +593,14 @@ impl Default for OracleContract {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_oracle_contract_creation() {
         let oracle = OracleContract::new();
         assert_eq!(oracle.name(), "OracleContract");
         assert!(!oracle.methods().is_empty());
-        assert_eq!(*oracle.next_request_id.read().unwrap(), 1);
+        assert_eq!(*oracle.next_request_id.read().ok()?, 1);
     }
 
     #[test]

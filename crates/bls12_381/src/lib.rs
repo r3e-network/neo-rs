@@ -20,6 +20,7 @@ pub use error::{BlsError, BlsResult};
 pub use keys::{KeyPair, PrivateKey, PublicKey};
 pub use signature::{Signature, SignatureScheme};
 
+use crate::constants::HASH_SIZE;
 use rand::RngCore;
 
 /// BLS12-381 domain separation tag for Neo blockchain (matches C# exactly)
@@ -137,7 +138,6 @@ impl Bls12381 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rand::thread_rng;
 
     #[test]
@@ -186,13 +186,14 @@ mod tests {
 
         // Test signature serialization
         let signature_bytes = Bls12381::signature_to_bytes(&signature);
-        let deserialized_signature = Bls12381::signature_from_bytes(&signature_bytes).unwrap();
+        let deserialized_signature =
+            Bls12381::signature_from_bytes(&signature_bytes).expect("Operation failed");
         assert_eq!(signature, deserialized_signature);
     }
 
     #[test]
     fn test_constants() {
-        assert_eq!(constants::PRIVATE_KEY_SIZE, 32);
+        assert_eq!(constants::PRIVATE_KEY_SIZE, HASH_SIZE);
         assert_eq!(constants::PUBLIC_KEY_SIZE, 48);
         assert_eq!(constants::SIGNATURE_SIZE, 96);
     }

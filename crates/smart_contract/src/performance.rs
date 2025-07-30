@@ -3,6 +3,7 @@
 //! This module provides tools for monitoring, profiling, and optimizing
 //! smart contract execution performance.
 
+use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE, SECONDS_PER_BLOCK};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -209,7 +210,7 @@ impl PerformanceReport {
                 .push("Execution time is high (>1s)".to_string());
             self.recommendations
                 .push("Consider optimizing algorithm complexity".to_string());
-            self.score = self.score.saturating_sub(20);
+            self.score = self.score.saturating_sub(ADDRESS_SIZE as u8);
         } else if self.metrics.total_execution_time > Duration::from_millis(100) {
             self.analysis
                 .push("Execution time is moderate (>100ms)".to_string());
@@ -224,7 +225,7 @@ impl PerformanceReport {
                 .push("High gas consumption (>10M)".to_string());
             self.recommendations
                 .push("Optimize gas usage by reducing operations".to_string());
-            self.score = self.score.saturating_sub(15);
+            self.score = self.score.saturating_sub(SECONDS_PER_BLOCK as u8);
         } else if self.metrics.gas_consumed > 1_000_000 {
             self.analysis
                 .push("Moderate gas consumption (>1M)".to_string());
@@ -247,7 +248,7 @@ impl PerformanceReport {
             self.analysis.push("High memory usage (>10MB)".to_string());
             self.recommendations
                 .push("Optimize data structures and memory allocation".to_string());
-            self.score = self.score.saturating_sub(15);
+            self.score = self.score.saturating_sub(SECONDS_PER_BLOCK as u8);
         }
 
         // Analyze operation distribution
@@ -260,7 +261,6 @@ impl PerformanceReport {
                 .push(format!("Focus optimization on {} operation", slowest_op.0));
         }
 
-        // Add positive analysis if performance is good
         if self.score >= 90 {
             self.analysis
                 .push("Excellent performance metrics".to_string());
@@ -354,7 +354,7 @@ macro_rules! profile_operation {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use std::thread;
 
     #[test]
@@ -372,7 +372,7 @@ mod tests {
         profiler.record_storage_operation();
         profiler.record_interop_call();
         profiler.record_native_call();
-        profiler.record_memory_usage(1024);
+        profiler.record_memory_usage(MAX_SCRIPT_SIZE);
         profiler.record_event();
 
         profiler.end_execution();
@@ -383,7 +383,7 @@ mod tests {
         assert_eq!(metrics.storage_operations, 1);
         assert_eq!(metrics.interop_calls, 1);
         assert_eq!(metrics.native_calls, 1);
-        assert_eq!(metrics.memory_usage, 1024);
+        assert_eq!(metrics.memory_usage, MAX_SCRIPT_SIZE);
         assert_eq!(metrics.events_emitted, 1);
         assert!(metrics.operation_timings.contains_key("test_operation"));
     }

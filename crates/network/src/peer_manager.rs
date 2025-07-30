@@ -3,27 +3,27 @@
 //! This module provides comprehensive peer connection management that exactly matches
 //! the C# Neo peer management functionality for real P2P connections.
 
+use super::{Error, Result};
+use crate::messages::commands::varlen;
+use crate::messages::header::Neo3Message;
+use crate::messages::network::NetworkMessage as NetMsg;
+use crate::messages::protocol::ProtocolMessage;
 use crate::p2p_node::PeerInfo;
 use crate::{
+    MessageValidator, NetworkConfig, NetworkError, NetworkErrorHandler, NetworkMessage,
+    NetworkResult, NodeCapability,
+};
+use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use neo_core::{UInt160, UInt256};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{interval, timeout, Duration};
 use tracing::{debug, error, info, warn};
-use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
-        use crate::messages::network::NetworkMessage as NetMsg;
-        use crate::messages::protocol::ProtocolMessage;
-        use crate::messages::commands::varlen;
-        use crate::messages::header::Neo3Message;
-    use super::{Error, Result};
-    use std::net::{IpAddr, Ipv4Addr};
-    MessageValidator, NetworkConfig, NetworkError, NetworkErrorHandler, NetworkMessage,
-    NetworkResult, NetworkResult as Result, NodeCapability,
-};
 
 /// Peer connection state (matches C# Neo.Network.P2P.RemoteNode state exactly)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -645,7 +645,6 @@ impl PeerManager {
         address: SocketAddr,
         config: &NetworkConfig,
     ) -> Result<PeerInfo> {
-
         // 1. Receive peer's version message first
         let buffer = match timeout(
             Duration::from_secs(10),
@@ -892,7 +891,6 @@ impl PeerManager {
 
     /// Creates version message for handshake (Neo 3 format)
     async fn create_version_message(&self) -> Result<NetworkMessage> {
-
         let payload = ProtocolMessage::Version {
             version: self.config.protocol_version.as_u32(),
             services: 1, // NODE_NETWORK capability
@@ -910,241 +908,371 @@ impl PeerManager {
         Ok(NetMsg::new(payload))
     }
 
-    /// Reads a complete Neo 3 protocol message from a TCP stream
-    /// Handles multiple message formats: initial framed messages and subsequent raw messages
-    async fn read_complete_message(stream: &mut TcpStream) -> Result<Vec<u8>> {
+    /// Decodes a variable-length integer from a byte slice (Neo N3 format)
+    fn decode_varlen_from_bytes(bytes: &[u8]) -> Result<(u32, usize)> {
+        if bytes.is_empty() {
+            return Err(NetworkError::ProtocolViolation {
+                peer: "0.0.0.0:0".parse().expect("failed to parse dummy address"),
+                violation: "Empty bytes for varlen decode".to_string(),
+            });
+        }
 
+        let first = bytes[0];
+        match first {
+            0x00..=0xFC => Ok((first as u32, 1)),
+            0xFD => {
+                if bytes.len() < 3 {
+                    return Err(NetworkError::ProtocolViolation {
+                        peer: "0.0.0.0:0".parse().expect("failed to parse dummy address"),
+                        violation: "Insufficient bytes for 2-byte varlen".to_string(),
+                    });
+                }
+                let value = u16::from_le_bytes([bytes[1], bytes[2]]) as u32;
+                Ok((value, 3))
+            }
+            0xFE => {
+                if bytes.len() < 5 {
+                    return Err(NetworkError::ProtocolViolation {
+                        peer: "0.0.0.0:0".parse().expect("failed to parse dummy address"),
+                        violation: "Insufficient bytes for 4-byte varlen".to_string(),
+                    });
+                }
+                let value = u32::from_le_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]);
+                Ok((value, 5))
+            }
+            0xFF => {
+                if bytes.len() < 9 {
+                    return Err(NetworkError::ProtocolViolation {
+                        peer: "0.0.0.0:0".parse().expect("failed to parse dummy address"),
+                        violation: "Insufficient bytes for 8-byte varlen".to_string(),
+                    });
+                }
+                let value = u64::from_le_bytes([
+                    bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8],
+                ]);
+                if value > u32::MAX as u64 {
+                    return Err(NetworkError::ProtocolViolation {
+                        peer: "0.0.0.0:0".parse().expect("failed to parse dummy address"),
+                        violation: format!("Varlen value too large: {}", value),
+                    });
+                }
+                Ok((value as u32, 9))
+            }
+        }
+    }
+
+    /// Encodes a u32 as a variable-length integer (Neo N3 format)
+    fn encode_varlen_uint(value: u32) -> Vec<u8> {
+        if value <= 0xFC {
+            vec![value as u8]
+        } else if value <= 0xFFFF {
+            let mut bytes = vec![0xFD];
+            bytes.extend_from_slice(&(value as u16).to_le_bytes());
+            bytes
+        } else {
+            let mut bytes = vec![0xFE];
+            bytes.extend_from_slice(&value.to_le_bytes());
+            bytes
+        }
+    }
+
+    /// Reads a variable-length unsigned integer from the stream (Neo N3 format)
+    async fn read_varlen_uint(stream: &mut TcpStream) -> Result<u32> {
         let mut first_byte = [0u8; 1];
         stream
             .read_exact(&mut first_byte)
             .await
             .map_err(|e| NetworkError::ConnectionFailed {
-                address: stream
-                    .peer_addr()
-                    .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
-                reason: format!("Failed to read first byte: {}", e),
+                address: stream.peer_addr().unwrap_or_else(|_| {
+                    "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                }),
+                reason: format!("Failed to read varlen first byte: {}", e),
             })?;
 
-        tracing::debug!("First byte: 0x{:02x}", first_byte[0]);
+        let first = first_byte[0];
 
-        if first_byte[0] == 0x00 {
-            // This looks like a framed message - read the remaining framing bytes
-            let mut remaining_framing = [0u8; 6];
-            stream
-                .read_exact(&mut remaining_framing)
-                .await
-                .map_err(|e| NetworkError::ConnectionFailed {
-                    address: stream
-                        .peer_addr()
-                        .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
-                    reason: format!("Failed to read framing: {}", e),
+        match first {
+            0x00..=0xFC => Ok(first as u32),
+            0xFD => {
+                let mut bytes = [0u8; 2];
+                stream.read_exact(&mut bytes).await.map_err(|e| {
+                    NetworkError::ConnectionFailed {
+                        address: stream.peer_addr().unwrap_or_else(|_| {
+                            "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                        }),
+                        reason: format!("Failed to read varlen 2-byte value: {}", e),
+                    }
                 })?;
-
-            let mut framing_bytes = [0u8; 7];
-            framing_bytes[0] = first_byte[0];
-            framing_bytes[1..7].copy_from_slice(&remaining_framing);
-
-            tracing::debug!("Read framing bytes: {:02x?}", framing_bytes);
-
-            let magic = u32::from_le_bytes([
-                framing_bytes[3],
-                framing_bytes[4],
-                framing_bytes[5],
-                framing_bytes[6],
-            ]);
-            if magic == 0x3554334e {
-                // N3T5
-                // This is a properly framed message - continue with Neo3 message parsing
-                return Self::read_neo3_message_after_framing(stream).await;
-            } else {
-                // This might be a different type of message - treat as raw Neo3 message
-                tracing::debug!("No magic number found in framing, treating as raw message");
-                // Put the framing bytes back into the message and parse as Neo3
-                let mut message_bytes = framing_bytes.to_vec();
-
-                // Read additional data to determine message structure
-                let additional = Self::read_remaining_neo3_message(stream, &framing_bytes).await?;
-                message_bytes.extend_from_slice(&additional);
-
-                return Ok(message_bytes);
+                Ok(u16::from_le_bytes(bytes) as u32)
             }
-        } else {
-            // The first byte we read is the flags byte
-            return Self::read_neo3_message_with_first_byte(stream, first_byte[0]).await;
+            0xFE => {
+                let mut bytes = [0u8; 4];
+                stream.read_exact(&mut bytes).await.map_err(|e| {
+                    NetworkError::ConnectionFailed {
+                        address: stream.peer_addr().unwrap_or_else(|_| {
+                            "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                        }),
+                        reason: format!("Failed to read varlen 4-byte value: {}", e),
+                    }
+                })?;
+                Ok(u32::from_le_bytes(bytes))
+            }
+            0xFF => {
+                // 8-byte varlen, but we only support up to u32 for message lengths
+                let mut bytes = [0u8; 8];
+                stream.read_exact(&mut bytes).await.map_err(|e| {
+                    NetworkError::ConnectionFailed {
+                        address: stream.peer_addr().unwrap_or_else(|_| {
+                            "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                        }),
+                        reason: format!("Failed to read varlen 8-byte value: {}", e),
+                    }
+                })?;
+                let value = u64::from_le_bytes(bytes);
+                if value > u32::MAX as u64 {
+                    return Err(NetworkError::ProtocolViolation {
+                        peer: stream.peer_addr().unwrap_or_else(|_| {
+                            "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                        }),
+                        violation: format!("Variable-length integer too large: {}", value),
+                    });
+                }
+                Ok(value as u32)
+            }
         }
     }
 
-    /// Reads a Neo3 message after framing has been confirmed
-    async fn read_neo3_message_after_framing(stream: &mut TcpStream) -> Result<Vec<u8>> {
-        let mut neo3_header = [0u8; 2];
-        stream
-            .read_exact(&mut neo3_header)
-            .await
-            .map_err(|e| NetworkError::ConnectionFailed {
-                address: stream
-                    .peer_addr()
-                    .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
-                reason: format!("Failed to read Neo3 header: {}", e),
-            })?;
-
-        tracing::debug!(
-            "Read Neo3 header: flags=0x{:02x}, command=0x{:02x}",
-            neo3_header[0],
-            neo3_header[1]
-        );
-
-        Self::read_variable_length_payload(stream, neo3_header).await
-    }
-
-    /// Reads a Neo3 message when we already have the first byte (flags)
-    async fn read_neo3_message_with_first_byte(
-        stream: &mut TcpStream,
-        flags: u8,
-    ) -> Result<Vec<u8>> {
-        // Read the command byte
-        let mut command_byte = [0u8; 1];
-        stream
-            .read_exact(&mut command_byte)
-            .await
-            .map_err(|e| NetworkError::ConnectionFailed {
-                address: stream
-                    .peer_addr()
-                    .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
-                reason: format!("Failed to read command byte: {}", e),
-            })?;
-
-        let neo3_header = [flags, command_byte[0]];
-        tracing::debug!(
-            "Raw Neo3 header: flags=0x{:02x}, command=0x{:02x}",
-            flags,
-            command_byte[0]
-        );
-
-        Self::read_variable_length_payload(stream, neo3_header).await
-    }
-
-    /// Reads the variable-length payload part of a Neo3 message
-    async fn read_variable_length_payload(
-        stream: &mut TcpStream,
-        neo3_header: [u8; 2],
-    ) -> Result<Vec<u8>> {
-        let mut size_marker = [0u8; 1];
-        stream
-            .read_exact(&mut size_marker)
-            .await
-            .map_err(|e| NetworkError::ConnectionFailed {
-                address: stream
-                    .peer_addr()
-                    .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
-                reason: format!("Failed to read size marker: {}", e),
-            })?;
-
-        let (payload_length, total_length_bytes) = match size_marker[0] {
-            len @ 0..=252 => (len as usize, 1),
-            0xfd => {
-                let mut len_bytes = [0u8; 2];
-                stream.read_exact(&mut len_bytes).await.map_err(|e| {
-                    NetworkError::ConnectionFailed {
-                        address: stream
-                            .peer_addr()
-                            .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
-                        reason: format!("Failed to read 2-byte length: {}", e),
-                    }
-                })?;
-                (u16::from_le_bytes(len_bytes) as usize, 3)
+    /// Reads a complete message from a TCP stream
+    async fn read_complete_message(stream: &mut TcpStream) -> Result<Vec<u8>> {
+        // TestNet appears to send messages with a framing structure
+        // First, try to read up to 7 bytes to check the pattern
+        let mut initial_bytes = [0u8; 7];
+        let n = stream.read_exact(&mut initial_bytes).await.map_err(|e| {
+            NetworkError::ConnectionFailed {
+                address: stream.peer_addr().unwrap_or_else(|_| {
+                    "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                }),
+                reason: format!("Failed to read initial bytes: {}", e),
             }
-            0xfe => {
-                let mut len_bytes = [0u8; 4];
-                stream.read_exact(&mut len_bytes).await.map_err(|e| {
-                    NetworkError::ConnectionFailed {
-                        address: stream
-                            .peer_addr()
-                            .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
-                        reason: format!("Failed to read 4-byte length: {}", e),
-                    }
-                })?;
-                (u32::from_le_bytes(len_bytes) as usize, 5)
-            }
-            0xff => {
-                let mut len_bytes = [0u8; 8];
-                stream.read_exact(&mut len_bytes).await.map_err(|e| {
-                    NetworkError::ConnectionFailed {
-                        address: stream
-                            .peer_addr()
-                            .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
-                        reason: format!("Failed to read 8-byte length: {}", e),
-                    }
-                })?;
-                (u64::from_le_bytes(len_bytes) as usize, 9)
-            }
-        };
+        })?;
 
-        tracing::debug!("Parsed payload length: {} bytes", payload_length);
+        tracing::debug!("Read initial bytes: {:02x?}", &initial_bytes);
 
-        // Validate payload length
-        if payload_length > 0x02000000 {
-            // 32MB limit
-            return Err(NetworkError::ProtocolViolation {
-                peer: stream
-                    .peer_addr()
-                    .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
-                violation: format!("Payload too large: {} bytes", payload_length),
-            });
-        }
+        // Check if bytes 3-6 contain the magic number "N3T5"
+        let potential_magic = u32::from_le_bytes([
+            initial_bytes[3],
+            initial_bytes[4],
+            initial_bytes[5],
+            initial_bytes[6],
+        ]);
 
-        // Read the actual payload
-        let mut payload_bytes = vec![0u8; payload_length];
-        if payload_length > 0 {
-            stream.read_exact(&mut payload_bytes).await.map_err(|e| {
+        if potential_magic == 0x3554334e {
+            // "N3T5" in little-endian
+            // This looks like a TestNet message with framing
+            // The format appears to be:
+            // - 3 bytes of framing/padding [00, 00, 25]
+            // - 4 bytes magic "N3T5"
+            // - Then Neo N3 format: flags (1 byte) + command (1 byte) + varlen payload
+
+            tracing::debug!("Detected TestNet Neo N3 message format");
+
+            // Read the Neo N3 header (2 bytes: flags + command)
+            let mut neo3_header = [0u8; 2];
+            stream.read_exact(&mut neo3_header).await.map_err(|e| {
                 NetworkError::ConnectionFailed {
-                    address: stream
-                        .peer_addr()
-                        .unwrap_or_else(|_| "localhost:0".parse().unwrap_or_default()),
-                    reason: format!("Failed to read payload: {}", e),
+                    address: stream.peer_addr().unwrap_or_else(|_| {
+                        "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                    }),
+                    reason: format!("Failed to read Neo N3 header: {}", e),
                 }
             })?;
-        }
 
-        let mut neo3_message_bytes = Vec::new();
-        neo3_message_bytes.extend_from_slice(&neo3_header); // flags + command
-        neo3_message_bytes.push(size_marker[0]); // length marker
+            let flags = neo3_header[0];
+            let command = neo3_header[1];
 
-        // Add any additional length bytes
-        match total_length_bytes {
-            3 => neo3_message_bytes.extend_from_slice(&(payload_length as u16).to_le_bytes()),
-            5 => neo3_message_bytes.extend_from_slice(&(payload_length as u32).to_le_bytes()),
-            9 => neo3_message_bytes.extend_from_slice(&(payload_length as u64).to_le_bytes()),
-            _ => {} // 1-byte length already added
-        }
+            tracing::debug!(
+                "Neo N3 header: flags=0x{:02x}, command=0x{:02x}",
+                flags,
+                command
+            );
 
-        neo3_message_bytes.extend_from_slice(&payload_bytes); // actual payload
+            // For Neo N3, we need to read the variable-length payload size
+            // This is typically encoded as a variable-length integer
+            let payload_length = Self::read_varlen_uint(stream).await?;
 
-        tracing::debug!(
-            "Read complete Neo 3 message: {} bytes (flags+command: 2, length: {}, payload: {})",
-            neo3_message_bytes.len(),
-            total_length_bytes,
-            payload_length
-        );
+            tracing::debug!("Neo N3 payload length: {} bytes", payload_length);
 
-        Ok(neo3_message_bytes)
-    }
-
-    /// Reads remaining bytes for messages that don't follow standard framing
-    async fn read_remaining_neo3_message(
-        stream: &mut TcpStream,
-        header_bytes: &[u8; 7],
-    ) -> Result<Vec<u8>> {
-        let mut additional_bytes = vec![0u8; 64]; // Read up to 64 more bytes
-
-        match stream.read(&mut additional_bytes).await {
-            Ok(n) => {
-                additional_bytes.truncate(n);
-                tracing::debug!("Read {} additional bytes for non-standard message", n);
-                Ok(additional_bytes)
+            // Validate payload length
+            if payload_length > 0x02000000 {
+                // 32MB limit
+                return Err(NetworkError::ProtocolViolation {
+                    peer: stream.peer_addr().unwrap_or_else(|_| {
+                        "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                    }),
+                    violation: format!("Payload too large: {} bytes", payload_length),
+                });
             }
-            Err(e) => {
-                tracing::warn!("Failed to read additional message data: {}", e);
-                Ok(Vec::new()) // Return empty if we can't read more
+
+            // Create Neo N3 message format: flags + command + varlen payload length + payload
+            let mut message_bytes = Vec::new();
+            message_bytes.push(flags);
+            message_bytes.push(command);
+
+            // Add variable-length payload size encoding
+            let payload_len_bytes = Self::encode_varlen_uint(payload_length);
+            message_bytes.extend_from_slice(&payload_len_bytes);
+
+            // Read the payload if present
+            if payload_length > 0 {
+                let mut payload = vec![0u8; payload_length as usize];
+                stream.read_exact(&mut payload).await.map_err(|e| {
+                    NetworkError::ConnectionFailed {
+                        address: stream.peer_addr().unwrap_or_else(|_| {
+                            "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                        }),
+                        reason: format!("Failed to read payload: {}", e),
+                    }
+                })?;
+                message_bytes.extend_from_slice(&payload);
+            }
+
+            tracing::debug!(
+                "Successfully read Neo N3 message: {} bytes total",
+                message_bytes.len()
+            );
+            Ok(message_bytes)
+        } else {
+            // Check if this is a standard Neo N3 message (flags + command + varlen payload)
+            // The first byte might be flags, and we should try parsing as Neo N3 format
+            let flags = initial_bytes[0];
+            let command = initial_bytes[1];
+
+            tracing::debug!(
+                "Trying standard Neo N3 format: flags=0x{:02x}, command=0x{:02x}",
+                flags,
+                command
+            );
+
+            // Try to parse the remaining bytes as variable-length payload size
+            // We have 5 remaining bytes: [initial_bytes[2..7]]
+            let remaining_bytes = &initial_bytes[2..7];
+
+            // Try to decode variable-length integer from remaining bytes
+            if let Ok((payload_length, len_consumed)) =
+                Self::decode_varlen_from_bytes(remaining_bytes)
+            {
+                tracing::debug!(
+                    "Decoded payload length: {} bytes, consumed: {} bytes",
+                    payload_length,
+                    len_consumed
+                );
+
+                // Calculate how many more bytes we need to read for the payload
+                let bytes_left_in_initial = 7 - 2 - len_consumed; // 7 initial - 2 header - varlen bytes consumed
+                let mut message_bytes = Vec::new();
+                message_bytes.push(flags);
+                message_bytes.push(command);
+
+                // Add variable-length payload size
+                let payload_len_bytes = Self::encode_varlen_uint(payload_length);
+                message_bytes.extend_from_slice(&payload_len_bytes);
+
+                // Read the payload
+                if payload_length > 0 {
+                    let mut payload = vec![0u8; payload_length as usize];
+                    let mut bytes_read = 0;
+
+                    // Use any remaining bytes from initial read
+                    if bytes_left_in_initial > 0 && bytes_left_in_initial <= payload_length as usize
+                    {
+                        let start_idx = 2 + len_consumed;
+                        let end_idx = 7.min(start_idx + payload_length as usize);
+                        let copy_len = end_idx - start_idx;
+                        payload[0..copy_len].copy_from_slice(&initial_bytes[start_idx..end_idx]);
+                        bytes_read = copy_len;
+                    }
+
+                    // Read remaining payload bytes if needed
+                    if bytes_read < payload_length as usize {
+                        stream
+                            .read_exact(&mut payload[bytes_read..])
+                            .await
+                            .map_err(|e| NetworkError::ConnectionFailed {
+                                address: stream.peer_addr().unwrap_or_else(|_| {
+                                    "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                                }),
+                                reason: format!("Failed to read payload: {}", e),
+                            })?;
+                    }
+
+                    message_bytes.extend_from_slice(&payload);
+                }
+
+                tracing::debug!(
+                    "Successfully parsed standard Neo N3 message: {} bytes total",
+                    message_bytes.len()
+                );
+                return Ok(message_bytes);
+            }
+
+            // Try standard Neo message format as fallback
+            // Put the 7 bytes back and read as standard 24-byte header
+            let magic = u32::from_le_bytes([
+                initial_bytes[0],
+                initial_bytes[1],
+                initial_bytes[2],
+                initial_bytes[3],
+            ]);
+
+            if magic == 0x74746E41 || // Neo N3 TestNet "AnT" (wrong endianness check)
+               magic == 0x41746E74 || // Neo N3 TestNet "AtN" (correct)
+               magic == 0x334e4f45 || // Neo N3 MainNet "NEO3"
+               magic == 0x454f4e33
+            // Neo N3 MainNet "3NOE" (other endianness)
+            {
+                // Read remaining header bytes (we have 7, need 17 more for 24 total)
+                let mut remaining = [0u8; 17];
+                stream.read_exact(&mut remaining).await.map_err(|e| {
+                    NetworkError::ConnectionFailed {
+                        address: stream.peer_addr().unwrap_or_else(|_| {
+                            "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                        }),
+                        reason: format!("Failed to read remaining header: {}", e),
+                    }
+                })?;
+
+                let mut header = [0u8; 24];
+                header[0..7].copy_from_slice(&initial_bytes);
+                header[7..24].copy_from_slice(&remaining);
+
+                let payload_length =
+                    u32::from_le_bytes([header[16], header[17], header[18], header[19]]);
+
+                let mut message_bytes = header.to_vec();
+                if payload_length > 0 {
+                    let mut payload = vec![0u8; payload_length as usize];
+                    stream.read_exact(&mut payload).await.map_err(|e| {
+                        NetworkError::ConnectionFailed {
+                            address: stream.peer_addr().unwrap_or_else(|_| {
+                                "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                            }),
+                            reason: format!("Failed to read payload: {}", e),
+                        }
+                    })?;
+                    message_bytes.extend_from_slice(&payload);
+                }
+
+                Ok(message_bytes)
+            } else {
+                Err(NetworkError::ProtocolViolation {
+                    peer: stream.peer_addr().unwrap_or_else(|_| {
+                        "0.0.0.0:0".parse().expect("failed to parse dummy address")
+                    }),
+                    violation: format!(
+                        "Unknown message format. Initial bytes: {:02x?}",
+                        initial_bytes
+                    ),
+                })
             }
         }
     }
@@ -1155,7 +1283,6 @@ impl PeerManager {
         address: SocketAddr,
         is_outbound: bool,
     ) -> Result<PeerInfo> {
-
         match version_message.payload {
             ProtocolMessage::Version {
                 version,
@@ -1210,7 +1337,6 @@ impl PeerManager {
         address: SocketAddr,
         is_outbound: bool,
     ) -> Result<PeerInfo> {
-
         match version_message.payload {
             ProtocolMessage::Version {
                 version,
@@ -1428,7 +1554,7 @@ impl PeerManager {
 
                 let mut connection_stats = stats.write().await;
                 connection_stats.messages_sent += 1;
-                connection_stats.bytes_sent += MAX_SCRIPT_SIZE; // Placeholder size
+                connection_stats.bytes_sent += MAX_SCRIPT_SIZE as u64;
             }
 
             debug!("Message handler stopped for peer: {}", peer_address);
@@ -1444,11 +1570,11 @@ impl Drop for PeerManager {
 
 #[cfg(test)]
 mod tests {
-
     #[tokio::test]
     async fn test_peer_manager_creation() {
         let config = NetworkConfig::default();
-        let peer_manager = PeerManager::new(config).unwrap();
+        let peer_manager =
+            PeerManager::new(config).map_err(|_| NetworkError::PeerManagementError)?;
 
         let stats = peer_manager.get_connection_stats().await;
         assert_eq!(stats.connection_attempts, 0);
@@ -1458,7 +1584,8 @@ mod tests {
     #[tokio::test]
     async fn test_peer_manager_start_stop() {
         let config = NetworkConfig::default();
-        let mut peer_manager = PeerManager::new(config).unwrap();
+        let mut peer_manager =
+            PeerManager::new(config).map_err(|_| NetworkError::PeerManagementError)?;
 
         // Note: This test may fail if port is already in use
     }
@@ -1466,7 +1593,8 @@ mod tests {
     #[tokio::test]
     async fn test_connection_stats() {
         let config = NetworkConfig::default();
-        let peer_manager = PeerManager::new(config).unwrap();
+        let peer_manager =
+            PeerManager::new(config).map_err(|_| NetworkError::PeerManagementError)?;
 
         let stats = peer_manager.get_connection_stats().await;
         assert_eq!(stats.messages_sent, 0);

@@ -4,8 +4,10 @@
 
 use super::{header::BlockHeader, Block, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::{Error, Result};
+use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_core::{Transaction, UInt160, UInt256, Witness};
 use neo_cryptography::MerkleTree;
+use neo_io::BinaryWriter;
 
 /// Block builder for constructing new blocks (matches C# Neo block construction)
 #[derive(Debug, Clone)]
@@ -209,7 +211,7 @@ impl BlockBuilder {
     /// Gets the estimated block size
     pub fn estimated_size(&self) -> usize {
         // Calculate estimated header size
-        let header_size = 4 + 32 + 32 + 8 + 8 + 4 + 1 + 20; // Basic header fields
+        let header_size = 4 + HASH_SIZE + HASH_SIZE + 8 + 8 + 4 + 1 + ADDRESS_SIZE; // Basic header fields
 
         // Add witness data size
         let witness_size: usize = self
@@ -218,12 +220,10 @@ impl BlockBuilder {
             .map(|w| w.invocation_script.len() + w.verification_script.len() + 8) // +8 for length prefixes
             .sum();
 
-        // Add transactions size (estimated)
         let tx_size: usize = self
             .transactions
             .iter()
             .map(|tx| {
-                use neo_io::BinaryWriter;
                 let mut writer = BinaryWriter::new();
                 let _ = <Transaction as neo_io::Serializable>::serialize(tx, &mut writer);
                 writer.to_bytes().len()
@@ -242,7 +242,6 @@ impl BlockBuilder {
 
         // Check size limit
         let tx_size = {
-            use neo_io::BinaryWriter;
             let mut writer = BinaryWriter::new();
             let _ = <Transaction as neo_io::Serializable>::serialize(transaction, &mut writer);
             writer.to_bytes().len()
@@ -260,8 +259,6 @@ impl Default for BlockBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_block_builder_creation() {
         let builder = BlockBuilder::new();
@@ -272,7 +269,8 @@ mod tests {
 
     #[test]
     fn test_block_builder_chain() {
-        let next_consensus = UInt160::from_bytes(&[1; 20]).unwrap();
+        let next_consensus = UInt160::from_bytes(&[1; ADDRESS_SIZE])
+            .expect("Fixed-size array should be valid UInt160");
         let block = BlockBuilder::new()
             .version(0)
             .index(0)
@@ -289,8 +287,11 @@ mod tests {
 
     #[test]
     fn test_genesis_block_builder() {
-        let next_consensus = UInt160::from_bytes(&[1; 20]).unwrap();
-        let block = BlockBuilder::genesis(next_consensus).build().unwrap();
+        let next_consensus = UInt160::from_bytes(&[1; ADDRESS_SIZE])
+            .expect("Fixed-size array should be valid UInt160");
+        let block = BlockBuilder::genesis(next_consensus)
+            .build()
+            .expect("Block builder should succeed with valid inputs");
 
         assert!(block.is_genesis());
         assert_eq!(block.index(), 0);
@@ -300,8 +301,11 @@ mod tests {
 
     #[test]
     fn test_from_previous_block() {
-        let next_consensus = UInt160::from_bytes(&[1; 20]).unwrap();
-        let genesis = BlockBuilder::genesis(next_consensus).build().unwrap();
+        let next_consensus = UInt160::from_bytes(&[1; ADDRESS_SIZE])
+            .expect("Fixed-size array should be valid UInt160");
+        let genesis = BlockBuilder::genesis(next_consensus)
+            .build()
+            .expect("Block builder should succeed with valid inputs");
 
         let block = BlockBuilder::new()
             .from_previous(&genesis)

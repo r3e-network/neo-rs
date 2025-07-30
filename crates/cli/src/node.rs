@@ -4,17 +4,23 @@
 //! that handles core node operations exactly like the C# Neo node.
 
 use anyhow::Result;
+use neo_config::DEFAULT_NEO_PORT;
+use neo_config::DEFAULT_RPC_PORT;
+use neo_config::DEFAULT_TESTNET_PORT;
+use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
+use neo_config::ADDRESS_SIZE;
 use neo_core::transaction::BlockchainSnapshot;
 use neo_core::{Transaction, UInt160, UInt256};
 use neo_ledger::{Blockchain, Storage};
 use neo_network::{NodeEvent, P2PNode, SyncManager};
 
+/// Default Neo network ports
 /// Complete Neo blockchain node implementation - Production Ready
 pub struct NeoNode {
     /// Blockchain instance
@@ -69,7 +75,6 @@ impl Mempool {
     pub fn add_transaction(&mut self, transaction: Transaction) -> Result<()> {
         let tx_hash = transaction.hash()?;
 
-        // Check if already exists
         if self.transactions.contains_key(&tx_hash) {
             return Ok(()); // Already in mempool
         }
@@ -189,7 +194,7 @@ impl NeoNode {
 
     /// Starts the node
     pub async fn start(&self) -> Result<()> {
-        info!("Starting Neo node...");
+        info!("Starting Neo node/* implementation */;");
         *self.running.write().await = true;
 
         // Start event processing
@@ -201,7 +206,7 @@ impl NeoNode {
 
     /// Stops the node
     pub async fn stop(&self) {
-        info!("Stopping Neo node...");
+        info!("Stopping Neo node/* implementation */;");
         *self.running.write().await = false;
 
         // Clear connected peers
@@ -292,20 +297,16 @@ impl NeoNode {
 
     /// Validates a transaction
     async fn validate_transaction(&self, transaction: &Transaction) -> Result<()> {
-        // Check if transaction is already in blockchain or mempool
         let tx_hash = transaction.hash()?;
 
         if self.mempool.read().await.contains_transaction(&tx_hash) {
             return Err(anyhow::anyhow!("Transaction already in mempool"));
         }
 
-        // Check if transaction is already in blockchain
         if self.blockchain.get_transaction(&tx_hash).await.is_ok() {
             return Err(anyhow::anyhow!("Transaction already in blockchain"));
         }
 
-        // Basic validation (fee, signature, etc.)
-        // Create blockchain snapshot for verification (matches C# Neo exactly)
         let snapshot = BlockchainSnapshot::new_with_current_state();
         transaction.verify(&snapshot, Some(50_000_000))?;
 
@@ -332,7 +333,6 @@ impl NeoNode {
         let mut p2p_receiver = self.p2p_node.event_receiver();
         let running = self.running.clone();
 
-        // Spawn P2P event forwarder (avoids thread safety issues)
         let p2p_running = running.clone();
         tokio::spawn(async move {
             while *p2p_running.read().await {
@@ -393,11 +393,10 @@ impl NeoNode {
 
                                 // Handle messages with proper blockchain processing
                                 // Extract peer_id from connected peers
-                                // Generate a peer_id from the peer address (temporary solution)
                                 let peer_id = UInt160::from_bytes(
-                                    &peer.to_string().as_bytes()[..20]
+                                    &peer.to_string().as_bytes()[..ADDRESS_SIZE]
                                         .try_into()
-                                        .unwrap_or([0u8; 20]),
+                                        .unwrap_or([0u8; ADDRESS_SIZE]),
                                 )
                                 .unwrap_or_default();
                                 if let Err(e) = Self::handle_p2p_message_production(
@@ -475,7 +474,6 @@ impl NeoNode {
                 }
 
                 // Basic validation
-                // Create blockchain snapshot for verification (matches C# Neo exactly)
                 let snapshot = BlockchainSnapshot::new_with_current_state();
                 if let Err(e) = transaction.verify(&snapshot, Some(50_000_000)) {
                     warn!(
@@ -526,7 +524,6 @@ impl NeoNode {
             ProtocolMessage::Headers { headers } => {
                 info!("Received {} headers from peer {}", headers.len(), peer_id);
 
-                // Production implementation: Process headers through sync manager (matches C# Neo exactly)
                 let peer_addr = Self::find_peer_address(peer_id, connected_peers).await;
                 if let Err(e) = sync_manager
                     .handle_headers(headers.clone(), peer_addr)
@@ -536,7 +533,6 @@ impl NeoNode {
                     return Ok(());
                 }
 
-                // Process headers through sync manager (replaces C# Blockchain.OnNewHeaders)
                 // In the Rust implementation, header processing is handled by sync manager
 
                 // Update stats
@@ -560,15 +556,11 @@ impl NeoNode {
                 for item in inventory {
                     match item.item_type {
                         neo_network::InventoryType::Transaction => {
-                            // Request transaction if not in mempool
                             if !mempool.read().await.contains_transaction(&item.hash) {
                                 debug!("Requesting transaction {}", item.hash);
-                                // Request transaction data (production implementation)
                             }
                         }
                         neo_network::InventoryType::Block => {
-                            // Request block if not in blockchain
-                            // Check if we have this block by hash
                             if blockchain
                                 .get_block_by_hash(&item.hash)
                                 .await
@@ -576,7 +568,6 @@ impl NeoNode {
                                 .is_none()
                             {
                                 debug!("Requesting block {}", item.hash);
-                                // Request block data (production implementation)
                             }
                         }
                         _ => {}
@@ -597,12 +588,11 @@ impl NeoNode {
         peer_id: UInt160,
         connected_peers: &Arc<RwLock<HashMap<SocketAddr, PeerInfo>>>,
     ) -> SocketAddr {
-        // Locate peer address from peer ID (requires proper peer ID to address mapping)
         let peers = connected_peers.read().await;
         peers
             .keys()
             .next()
             .copied()
-            .unwrap_or_else(|| "127.0.0.1:10333".parse().unwrap())
+            .unwrap_or_else(|| "DEFAULT_NEO_PORT".parse().unwrap_or_default())
     }
 }

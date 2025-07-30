@@ -167,7 +167,7 @@ impl StackOpCode {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{ExecutionEngine, StackItem, VMState, VmError};
 
     #[test]
     fn test_stack_effects() {

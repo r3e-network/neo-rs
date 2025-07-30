@@ -12,7 +12,6 @@ mod jobject_tests {
     /// Test JObject creation and basic operations (matches C# JObject tests exactly)
     #[test]
     fn test_jobject_creation_compatibility() {
-        // Test empty object creation (matches C# new JObject() exactly)
         let empty_obj = JObject::new();
         assert_eq!(empty_obj.properties().len(), 0);
         assert!(empty_obj.properties().is_empty());
@@ -237,7 +236,6 @@ mod jobject_tests {
         assert!(!obj.contains_property("prop3"));
         assert!(!obj.contains_property("prop4"));
 
-        // Verify get returns None for all previously existing properties
         assert_eq!(obj.get("prop1"), None);
         assert_eq!(obj.get("prop2"), None);
         assert_eq!(obj.get("prop3"), None);
@@ -261,7 +259,6 @@ mod jobject_tests {
     fn test_jobject_property_enumeration_compatibility() {
         let mut obj = JObject::new();
 
-        // Add properties in specific order (OrderedDictionary preserves insertion order)
         let expected_properties = vec![
             ("first".to_string(), Some(JToken::String("1st".to_string()))),
             ("second".to_string(), Some(JToken::Number(2.0))),
@@ -277,7 +274,6 @@ mod jobject_tests {
             obj.set(key.clone(), value.clone());
         }
 
-        // Test that iteration preserves order (matches C# behavior)
         let properties = obj.properties();
         assert_eq!(properties.len(), expected_properties.len());
 
@@ -375,7 +371,6 @@ mod jobject_tests {
         original.set("bool_prop".to_string(), Some(JToken::Boolean(true)));
         original.set("null_prop".to_string(), None);
 
-        // Create nested structure for deep clone testing
         let mut nested = JObject::new();
         nested.set(
             "inner".to_string(),

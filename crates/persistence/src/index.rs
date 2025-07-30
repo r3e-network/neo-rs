@@ -104,15 +104,11 @@ where
 
     /// Inserts a key-value pair into the index (production implementation)
     pub fn insert(&mut self, key: K, value: V) -> Result<(), String> {
-        // Production-ready B-Tree index insertion (matches C# Neo indexing exactly)
-
         if self.unique {
-            // Check for existing key in unique index
             if self.data.contains_key(&key) {
                 return Err(format!("Duplicate key in unique index: {:?}", self.name));
             }
 
-            // Insert single value for unique index
             self.data.insert(key, vec![value]);
         } else {
             // Insert into multi-value index
@@ -129,8 +125,6 @@ where
 
     /// Gets values by key (production implementation)
     pub fn get(&mut self, key: &K) -> Option<Vec<V>> {
-        // Production-ready B-Tree index lookup (matches C# Neo indexing exactly)
-
         // Update statistics
         self.stats.lookups += 1;
 
@@ -139,8 +133,6 @@ where
 
     /// Gets values in a range (production implementation)
     pub fn range(&mut self, start: &K, end: &K) -> Vec<(K, Vec<V>)> {
-        // Production-ready B-Tree range query (matches C# Neo indexing exactly)
-
         // Update statistics
         self.stats.lookups += 1;
 
@@ -152,15 +144,12 @@ where
 
     /// Removes a key-value pair from the index (production implementation)
     pub fn remove(&mut self, key: &K, value: Option<&V>) -> bool {
-        // Production-ready B-Tree index removal (matches C# Neo indexing exactly)
-
         let removed = if let Some(values) = self.data.get_mut(key) {
             if let Some(target_value) = value {
                 // Remove specific value
                 if let Some(pos) = values.iter().position(|v| v == target_value) {
                     values.remove(pos);
 
-                    // Remove key if no values left
                     if values.is_empty() {
                         self.data.remove(key);
                     }
@@ -170,7 +159,6 @@ where
                     false
                 }
             } else {
-                // Remove all values for key
                 self.data.remove(key);
                 true
             }
@@ -211,7 +199,6 @@ where
 
     /// Updates memory usage statistics
     fn update_memory_usage(&mut self) {
-        // Production-ready memory usage calculation (matches C# Neo indexing exactly)
         let key_size = std::mem::size_of::<K>();
         let value_size = std::mem::size_of::<V>();
         let vec_overhead = std::mem::size_of::<Vec<V>>();
@@ -277,15 +264,11 @@ where
 
     /// Inserts a key-value pair into the index (production implementation)
     pub fn insert(&mut self, key: K, value: V) -> Result<(), String> {
-        // Production-ready hash index insertion (matches C# Neo indexing exactly)
-
         if self.unique {
-            // Check for existing key in unique index
             if self.data.contains_key(&key) {
                 return Err(format!("Duplicate key in unique index: {:?}", self.name));
             }
 
-            // Insert single value for unique index
             self.data.insert(key, vec![value]);
         } else {
             // Insert into multi-value index
@@ -302,8 +285,6 @@ where
 
     /// Gets values by key (production implementation)
     pub fn get(&mut self, key: &K) -> Option<Vec<V>> {
-        // Production-ready hash index lookup (matches C# Neo indexing exactly)
-
         // Update statistics
         self.stats.lookups += 1;
 
@@ -312,15 +293,12 @@ where
 
     /// Removes a key-value pair from the index (production implementation)
     pub fn remove(&mut self, key: &K, value: Option<&V>) -> bool {
-        // Production-ready hash index removal (matches C# Neo indexing exactly)
-
         let removed = if let Some(values) = self.data.get_mut(key) {
             if let Some(target_value) = value {
                 // Remove specific value
                 if let Some(pos) = values.iter().position(|v| v == target_value) {
                     values.remove(pos);
 
-                    // Remove key if no values left
                     if values.is_empty() {
                         self.data.remove(key);
                     }
@@ -330,7 +308,6 @@ where
                     false
                 }
             } else {
-                // Remove all values for key
                 self.data.remove(key);
                 true
             }
@@ -371,7 +348,6 @@ where
 
     /// Updates memory usage statistics
     fn update_memory_usage(&mut self) {
-        // Production-ready memory usage calculation (matches C# Neo indexing exactly)
         let key_size = std::mem::size_of::<K>();
         let value_size = std::mem::size_of::<V>();
         let vec_overhead = std::mem::size_of::<Vec<V>>();

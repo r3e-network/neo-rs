@@ -60,7 +60,6 @@ fn test_execution_engine_limits() {
 
 #[test]
 fn test_execution_engine_state_transitions() {
-    // Create a jump table with handlers for the operations we need
     let mut jump_table = JumpTable::new();
 
     // NOP handler does nothing
@@ -99,7 +98,6 @@ fn test_execution_engine_state_transitions() {
 
 #[test]
 fn test_execution_engine_fault_handling() {
-    // Create a jump table with handlers for the operations we need
     let mut jump_table = JumpTable::new();
 
     // THROW handler throws an exception
@@ -129,7 +127,6 @@ fn test_execution_engine_fault_handling() {
 
 #[test]
 fn test_execution_engine_result_stack() {
-    // Create a jump table with handlers for the operations we need
     let mut jump_table = JumpTable::new();
 
     // PUSH1 handler pushes 1 onto the stack
@@ -142,10 +139,8 @@ fn test_execution_engine_result_stack() {
         Ok(())
     });
 
-    // RET handler returns from the current context and moves the top item to the result stack
     jump_table.set(OpCode::RET, |engine, _instruction| {
         if engine.invocation_stack().len() <= 1 {
-            // Move the top item from the evaluation stack to the result stack
             if let Some(context) = engine.current_context_mut() {
                 if !context.evaluation_stack().is_empty() {
                     let item = context.evaluation_stack_mut().pop()?;
@@ -177,7 +172,6 @@ fn test_execution_engine_result_stack() {
     // Check that the engine halted
     assert_eq!(state, VMState::HALT);
 
-    // Check that the result stack has the expected item
     assert_eq!(engine.result_stack().len(), 1);
     assert_eq!(
         engine.result_stack().peek(0).unwrap().as_int().unwrap(),
@@ -187,7 +181,6 @@ fn test_execution_engine_result_stack() {
 
 #[test]
 fn test_execution_engine_multiple_contexts() {
-    // Create a jump table with handlers for the operations we need
     let mut jump_table = JumpTable::new();
 
     // PUSH1 handler pushes 1 onto the stack
@@ -270,7 +263,6 @@ fn test_execution_engine_multiple_contexts() {
     // Check that the engine halted
     assert_eq!(state, VMState::HALT);
 
-    // The result should be on the result stack
     // In this case, the main function should have 1 and 2 on its stack before returning
     assert_eq!(engine.result_stack().len(), 0);
 }

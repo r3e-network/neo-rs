@@ -1,0 +1,14 @@
+# Build Neo-RS from scratch without external dependencies
+# This Dockerfile doesn't require network access to Docker Hub
+
+# Since we can't pull images, we'll copy the binary that's already built
+FROM scratch AS neo-runtime
+
+# We need to manually add required files since we can't use a base image
+# This approach requires the binary to be statically linked
+
+# For now, let's document the manual steps needed
+# 1. Build the binary locally: cargo build --release --package neo-node --bin neo-node
+# 2. Create a Docker image using docker import from a local tar file
+
+# This file serves as documentation for the offline build process

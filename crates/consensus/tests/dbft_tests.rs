@@ -15,7 +15,6 @@ mod dbft_tests {
     /// Test DbftEngine creation and configuration (matches C# DbftPlugin exactly)
     #[test]
     fn test_dbft_engine_creation_compatibility() {
-        // Test engine creation (matches C# DbftPlugin constructor exactly)
         let config = DbftConfig {
             validator_count: 7,
             f_count: 2,
@@ -59,7 +58,6 @@ mod dbft_tests {
         assert_eq!(engine.state(), DbftState::Started);
         assert!(engine.is_running());
 
-        // Test Started -> Primary (if we're primary for view 0)
         engine.set_validator_index(0); // Make us primary for view 0
         engine.process_timer_tick().unwrap();
         assert_eq!(engine.state(), DbftState::Primary);
@@ -68,7 +66,6 @@ mod dbft_tests {
         engine.send_prepare_request().unwrap();
         assert_eq!(engine.state(), DbftState::RequestSent);
 
-        // Test RequestSent -> Backup (on view change)
         engine
             .request_view_change(ViewChangeReason::Timeout)
             .unwrap();
@@ -86,7 +83,6 @@ mod dbft_tests {
         let config = DbftConfig::default();
         let mut engine = DbftEngine::new(config);
 
-        // Set as primary (validator 0, view 0)
         engine.set_validator_index(0);
         engine
             .start(BlockIndex::new(100), ViewNumber::new(0))
@@ -114,7 +110,6 @@ mod dbft_tests {
             engine.process_prepare_response(i, response).unwrap();
         }
 
-        // Should have enough responses (4 + self = 5)
         assert!(engine.has_enough_prepare_responses());
 
         // Should transition to commit phase
@@ -133,7 +128,6 @@ mod dbft_tests {
         let config = DbftConfig::default();
         let mut engine = DbftEngine::new(config);
 
-        // Set as backup (validator 1, view 0 where validator 0 is primary)
         engine.set_validator_index(1);
         engine
             .start(BlockIndex::new(100), ViewNumber::new(0))
@@ -208,7 +202,6 @@ mod dbft_tests {
             }
         }
 
-        // Should have enough change views (5 total)
         assert!(engine.has_enough_change_views());
 
         // View should have changed
@@ -230,7 +223,6 @@ mod dbft_tests {
         config.recovery_enabled = true;
         let mut engine = DbftEngine::new(config);
 
-        // Start in view 1 (after view change)
         engine.set_validator_index(2);
         engine
             .start(BlockIndex::new(100), ViewNumber::new(1))
@@ -274,7 +266,7 @@ mod dbft_tests {
         let config = DbftConfig::default();
         let mut engine = DbftEngine::new(config);
 
-        // Mock block finalization callback
+        // Implementation provided block finalization callback
         let finalized_blocks = Arc::new(Mutex::new(Vec::new()));
         let finalized_clone = finalized_blocks.clone();
 
@@ -314,7 +306,6 @@ mod dbft_tests {
         assert_eq!(finalized.len(), 1);
         assert_eq!(finalized[0], 100);
 
-        // Engine should reset for next block
         assert_eq!(engine.current_block_index(), BlockIndex::new(101));
         assert_eq!(engine.current_view(), ViewNumber::new(0));
     }

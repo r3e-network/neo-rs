@@ -64,11 +64,10 @@ impl Signature {
         let mut array = [0u8; SIGNATURE_SIZE];
         array.copy_from_slice(bytes);
 
-        // Use G2Affine::from_compressed then convert to projective
         let affine_point = G2Affine::from_compressed(&array);
         if affine_point.is_some().into() {
             Ok(Self {
-                point: G2Projective::from(affine_point.unwrap()),
+                point: G2Projective::from(affine_point.expect("Operation failed")),
             })
         } else {
             Err(BlsError::invalid_signature("Invalid G2 point"))
@@ -105,16 +104,12 @@ impl Signature {
                 augmented.extend_from_slice(message);
                 augmented
             }
-            SignatureScheme::ProofOfPossession => {
-                // Use message as-is for PoP scheme
-                message.to_vec()
-            }
+            SignatureScheme::ProofOfPossession => message.to_vec(),
         };
 
         // Hash message to G2 point
         let hash_point = utils::hash_to_g2(&message_to_sign, NEO_BLS_DST);
 
-        // Sign: signature = private_key * hash_point
         let signature_point = hash_point * private_key.scalar();
 
         Ok(Signature {
@@ -137,17 +132,12 @@ impl Signature {
                 augmented.extend_from_slice(message);
                 augmented
             }
-            SignatureScheme::ProofOfPossession => {
-                // Use message as-is for PoP scheme
-                message.to_vec()
-            }
+            SignatureScheme::ProofOfPossession => message.to_vec(),
         };
 
         // Hash message to G2 point
         let hash_point = utils::hash_to_g2(&message_to_verify, NEO_BLS_DST);
 
-        // Verify: e(public_key, hash_point) == e(G1, signature)
-        // Convert to affine coordinates for pairing
         let lhs = pairing(&public_key.point(), &hash_point.to_affine());
         let rhs = pairing(&G1Affine::generator(), &self.point.to_affine());
 
@@ -156,7 +146,6 @@ impl Signature {
 
     /// Validates the signature
     pub fn is_valid(&self) -> bool {
-        // Check if the point is on the curve and not at infinity
         !bool::from(self.point.is_identity())
     }
 
@@ -188,7 +177,7 @@ impl Signature {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use crate::keys::KeyPair;
     use rand::thread_rng;
 

@@ -47,12 +47,15 @@ where
 
     /// Gets the current count of items in the cache.
     pub fn count(&self) -> usize {
-        self.items.lock().unwrap().len()
+        self.items.lock().map(|items| items.len()).unwrap_or(0)
     }
 
     /// Returns whether the cache is empty.
     pub fn is_empty(&self) -> bool {
-        self.items.lock().unwrap().is_empty()
+        self.items
+            .lock()
+            .map(|items| items.is_empty())
+            .unwrap_or(true)
     }
 
     /// Adds an item to the cache.
@@ -66,16 +69,16 @@ where
     ///
     /// True if the item was added (wasn't already present), false otherwise
     pub fn add(&self, item: T) -> bool {
-        let mut items = self.items.lock().unwrap();
+        let mut items = match self.items.lock() {
+            Ok(items) => items,
+            Err(_) => return false,
+        };
 
-        // If item already exists, return false
         if items.contains(&item) {
             return false;
         }
 
-        // Check capacity and remove an item if necessary
         if items.len() >= self.max_capacity {
-            // Remove an arbitrary item (HashSet doesn't guarantee order)
             if let Some(to_remove) = items.iter().next().cloned() {
                 items.remove(&to_remove);
             }
@@ -94,7 +97,10 @@ where
     ///
     /// True if the item is in the cache, false otherwise
     pub fn contains(&self, item: &T) -> bool {
-        self.items.lock().unwrap().contains(item)
+        self.items
+            .lock()
+            .map(|items| items.contains(item))
+            .unwrap_or(false)
     }
 
     /// Removes an item from the cache.
@@ -107,12 +113,17 @@ where
     ///
     /// True if the item was removed, false if it wasn't present
     pub fn remove(&self, item: &T) -> bool {
-        self.items.lock().unwrap().remove(item)
+        self.items
+            .lock()
+            .map(|mut items| items.remove(item))
+            .unwrap_or(false)
     }
 
     /// Clears all items from the cache.
     pub fn clear(&self) {
-        self.items.lock().unwrap().clear();
+        if let Ok(mut items) = self.items.lock() {
+            items.clear();
+        }
     }
 
     /// Gets all items in the cache as a vector.
@@ -121,7 +132,10 @@ where
     ///
     /// A vector containing all items in the cache
     pub fn to_vec(&self) -> Vec<T> {
-        self.items.lock().unwrap().iter().cloned().collect()
+        self.items
+            .lock()
+            .map(|items| items.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// Adds multiple items to the cache.
@@ -146,7 +160,7 @@ where
     ///
     /// Result indicating success or error message
     pub fn copy_to(&self, array: &mut [T], start_index: usize) -> Result<(), String> {
-        let items = self.items.lock().unwrap();
+        let items = self.items.lock().map_err(|_| "Lock error".to_string())?;
         let count = items.len();
 
         if start_index + count > array.len() {
@@ -179,7 +193,11 @@ where
     T: Hash + Eq + Clone + Send + Sync,
 {
     fn clone(&self) -> Self {
-        let items = self.items.lock().unwrap().clone();
+        let items = self
+            .items
+            .lock()
+            .map(|items| items.clone())
+            .unwrap_or_default();
         Self {
             items: Arc::new(Mutex::new(items)),
             max_capacity: self.max_capacity,
@@ -187,7 +205,6 @@ where
     }
 }
 
-// Implement standard collection traits for compatibility
 impl<T> std::iter::FromIterator<T> for HashSetCache<T>
 where
     T: Hash + Eq + Clone + Send + Sync,
@@ -203,7 +220,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
 
     #[test]
     fn test_hashset_cache_basic_operations() {
@@ -310,7 +327,6 @@ mod tests {
         let items = cache.to_vec();
         assert_eq!(items.len(), 3);
 
-        // Check that all items are present (order doesn't matter for HashSet)
         assert!(items.contains(&1));
         assert!(items.contains(&2));
         assert!(items.contains(&3));
@@ -328,7 +344,6 @@ mod tests {
 
         // Check that items were copied starting at index 1
         assert_eq!(array[0], 0); // Should be unchanged
-                                 // array[1] and array[2] should contain the items (order may vary)
         let copied_items = &array[1..3];
         assert!(copied_items.contains(&1));
         assert!(copied_items.contains(&2));
@@ -345,7 +360,6 @@ mod tests {
         cache.add(3);
 
         let mut array = [0; 3];
-        // Try to copy 3 items starting at index 1 (would need 4 slots)
         let result = cache.copy_to(&mut array, 1);
         assert!(result.is_err());
     }

@@ -66,18 +66,15 @@ impl<M: Message> PriorityMailbox<M> {
     ///
     /// The next message, or None if the mailbox is closed
     pub async fn receive(&mut self) -> Option<M> {
-        // First, check if there are any messages in the queue
         if let Some(message) = self.queue.pop() {
             return Some(message);
         }
 
-        // If the queue is empty, wait for a new message
         match self.receiver.recv().await {
             Some(message) => {
                 let sequence = self.next_sequence;
                 self.next_sequence += 1;
 
-                // If the queue is empty, return the message directly
                 if self.queue.is_empty() {
                     Some(message)
                 } else {

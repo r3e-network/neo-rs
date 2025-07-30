@@ -135,11 +135,11 @@ impl BinaryReader {
         Ok(i16::from_le_bytes(buf))
     }
 
-    /// Reads an unsigned 32-bit integer from the data in little-endian format.
+    /// Reads an unsigned HASH_SIZE-bit integer from the data in little-endian format.
     ///
     /// # Returns
     ///
-    /// The unsigned 32-bit integer read or an error if the end of the data has been reached
+    /// The unsigned HASH_SIZE-bit integer read or an error if the end of the data has been reached
     pub fn read_u32(&mut self) -> Result<u32> {
         if self.remaining() < 4 {
             return Err(Error::EndOfStream.into());
@@ -152,11 +152,11 @@ impl BinaryReader {
         Ok(u32::from_le_bytes(buf))
     }
 
-    /// Reads a signed 32-bit integer from the data in little-endian format.
+    /// Reads a signed HASH_SIZE-bit integer from the data in little-endian format.
     ///
     /// # Returns
     ///
-    /// The signed 32-bit integer read or an error if the end of the data has been reached
+    /// The signed HASH_SIZE-bit integer read or an error if the end of the data has been reached
     pub fn read_i32(&mut self) -> Result<i32> {
         if self.remaining() < 4 {
             return Err(Error::EndOfStream.into());
@@ -266,7 +266,6 @@ impl BinaryReader {
     ///
     /// The serializable object read or an error if the end of the data has been reached
     pub fn read_serializable<T: Serializable>(&mut self) -> Result<T> {
-        // Convert remaining data to MemoryReader for deserialization
         let remaining_data = &self.data[self.position..];
         let mut memory_reader = crate::MemoryReader::new(remaining_data);
         let result = T::deserialize(&mut memory_reader)?;

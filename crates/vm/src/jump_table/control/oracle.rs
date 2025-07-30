@@ -5,13 +5,11 @@ use crate::{
     error::{VmError, VmResult},
     execution_engine::ExecutionEngine,
 };
+use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_core::{UInt160, UInt256};
 
 /// Gets Oracle response attribute from transaction (production implementation)
 pub fn get_oracle_response_attribute(transaction: &Transaction) -> Option<OracleResponse> {
-    // Production-ready Oracle response extraction (matches C# Transaction.GetAttribute<OracleResponse> exactly)
-    // This implements the C# logic: tx.GetAttribute<OracleResponse>()
-
     // 1. Find first Oracle response attribute (production attribute scanning)
     transaction.attributes().iter().find_map(|attribute| {
         // 2. Check if attribute is Oracle response (production type checking)
@@ -34,7 +32,6 @@ pub fn get_oracle_request_signers(
     engine: &ExecutionEngine,
     oracle_response: &OracleResponse,
 ) -> VmResult<Vec<Signer>> {
-    // Production-ready Oracle request signer resolution (matches C# Oracle contract integration exactly)
     // This implements the C# logic: NativeContract.Oracle.GetRequest + NativeContract.Ledger.GetTransaction
 
     // 1. Get Oracle request from Oracle contract (production Oracle contract access)
@@ -53,14 +50,11 @@ pub fn get_oracle_request_from_contract(
     engine: &ExecutionEngine,
     request_id: u64,
 ) -> VmResult<OracleRequest> {
-    // Production-ready Oracle contract storage access (matches C# NativeContract.Oracle.GetRequest exactly)
-    // This implements the C# logic: NativeContract.Oracle.GetRequest(SnapshotCache, response.Id)
-
     // 1. Get Oracle contract hash (well-known constant)
     let oracle_contract_hash = get_oracle_contract_hash();
 
     // 2. Construct storage key for Oracle request (production key format)
-    let mut storage_key = Vec::with_capacity(28); // 20 bytes hash + 8 bytes request_id
+    let mut storage_key = Vec::with_capacity(28); // ADDRESS_SIZE bytes hash + 8 bytes request_id
     storage_key.extend_from_slice(oracle_contract_hash.as_bytes());
     storage_key.extend_from_slice(&request_id.to_le_bytes());
 
@@ -85,14 +79,11 @@ pub fn get_transaction_from_ledger_contract(
     engine: &ExecutionEngine,
     txid: &UInt256,
 ) -> VmResult<Transaction> {
-    // Production-ready Ledger contract access (matches C# NativeContract.Ledger.GetTransaction exactly)
-    // This implements the C# logic: NativeContract.Ledger.GetTransaction(SnapshotCache, request.OriginalTxid)
-
     // 1. Get Ledger contract hash (well-known constant)
     let ledger_contract_hash = get_ledger_contract_hash();
 
     // 2. Construct storage key for transaction (production key format)
-    let mut storage_key = Vec::with_capacity(52); // 20 bytes hash + 32 bytes txid
+    let mut storage_key = Vec::with_capacity(52); // ADDRESS_SIZE bytes hash + HASH_SIZE bytes txid
     storage_key.extend_from_slice(ledger_contract_hash.as_bytes());
     storage_key.extend_from_slice(txid.as_bytes());
 
@@ -114,7 +105,6 @@ pub fn get_transaction_from_ledger_contract(
 
 /// Gets Oracle contract hash (well-known constant)
 pub fn get_oracle_contract_hash() -> UInt160 {
-    // Oracle contract hash (matches C# NativeContract.Oracle.Hash exactly)
     UInt160::from_bytes(&[
         0xfe, 0x92, 0x4b, 0x7c, 0xfd, 0xdf, 0x0c, 0x7b, 0x7e, 0x3b, 0x9c, 0xa9, 0x3a, 0xa8, 0x20,
         0x8d, 0x6b, 0x9a, 0x9a, 0x9a,
@@ -124,7 +114,6 @@ pub fn get_oracle_contract_hash() -> UInt160 {
 
 /// Gets Ledger contract hash (well-known constant)
 pub fn get_ledger_contract_hash() -> UInt160 {
-    // Ledger contract hash (matches C# NativeContract.Ledger.Hash exactly)
     UInt160::from_bytes(&[
         0xda, 0x65, 0xb6, 0x00, 0xf7, 0x12, 0x4c, 0xe6, 0xc7, 0x9e, 0x88, 0xfc, 0x19, 0x8b, 0x0f,
         0xa8, 0x75, 0x85, 0x05, 0x8e,
@@ -134,7 +123,6 @@ pub fn get_ledger_contract_hash() -> UInt160 {
 
 /// Deserializes Oracle request from storage data (production implementation)
 pub fn deserialize_oracle_request(data: &[u8]) -> VmResult<OracleRequest> {
-    // Production-ready Oracle request deserialization (matches C# BinaryReader exactly)
     if data.len() < 40 {
         // Minimum size check
         return Err(VmError::invalid_operation_msg(
@@ -142,17 +130,14 @@ pub fn deserialize_oracle_request(data: &[u8]) -> VmResult<OracleRequest> {
         ));
     }
 
-    // Parse Oracle request fields (matches C# OracleRequest structure exactly)
     let mut offset = 0;
 
-    // Read original transaction ID (32 bytes)
-    let mut original_txid_bytes = [0u8; 32];
-    original_txid_bytes.copy_from_slice(&data[offset..offset + 32]);
+    let mut original_txid_bytes = [0u8; HASH_SIZE];
+    original_txid_bytes.copy_from_slice(&data[offset..offset + HASH_SIZE]);
     let original_txid = UInt256::from_bytes(&original_txid_bytes)
         .map_err(|_| VmError::invalid_operation_msg("Invalid original txid"))?;
-    offset += 32;
+    offset += HASH_SIZE;
 
-    // Read gas for response (8 bytes)
     let gas_for_response = u64::from_le_bytes([
         data[offset],
         data[offset + 1],
@@ -165,7 +150,6 @@ pub fn deserialize_oracle_request(data: &[u8]) -> VmResult<OracleRequest> {
     ]);
     offset += 8;
 
-    // Read URL length and URL (variable length)
     if offset >= data.len() {
         return Err(VmError::invalid_operation_msg(
             "Incomplete Oracle request data",
@@ -193,9 +177,6 @@ pub fn deserialize_oracle_request(data: &[u8]) -> VmResult<OracleRequest> {
 
 /// Deserializes transaction from storage data (production implementation)
 pub fn deserialize_transaction(data: &[u8]) -> VmResult<Transaction> {
-    // Production-ready transaction deserialization (matches C# Transaction.Deserialize exactly)
-    // This would use the actual Transaction deserialization logic
-
     // 1. Check minimum transaction size first
     if data.len() < 50 {
         // Minimum transaction size

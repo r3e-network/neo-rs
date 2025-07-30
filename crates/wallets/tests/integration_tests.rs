@@ -116,7 +116,6 @@ async fn test_multi_signature_workflow() {
 
     let public_keys = vec![pub_key1, pub_key2, pub_key3];
 
-    // Create multi-signature contract (2 of 3)
     let multi_sig_contract = Contract::create_multi_sig_contract(2, &public_keys).unwrap();
 
     // Verify contract properties
@@ -128,7 +127,6 @@ async fn test_multi_signature_workflow() {
     let account2 = StandardWalletAccount::new_with_key(key_pair2, Some(multi_sig_contract.clone()));
     let account3 = StandardWalletAccount::new_with_key(key_pair3, Some(multi_sig_contract));
 
-    // All accounts should have the same script hash (the multi-sig contract hash)
     let script_hash = account1.script_hash();
     assert_eq!(script_hash, account2.script_hash());
     assert_eq!(script_hash, account3.script_hash());
@@ -171,7 +169,6 @@ async fn test_transaction_signing_workflow() {
 
 #[tokio::test]
 async fn test_wallet_persistence_workflow() {
-    // Test wallet file save/load workflow (simulated)
     let mut wallet = Nep6Wallet::new("persistence_test".to_string(), None);
     let password = "persistence_password";
 
@@ -257,7 +254,6 @@ async fn test_concurrent_wallet_operations() {
         handles.push(handle);
     }
 
-    // Wait for all operations to complete
     let mut accounts = vec![];
     for handle in handles {
         let account = handle.await.unwrap().unwrap();
@@ -288,7 +284,6 @@ async fn test_wallet_compatibility_with_csharp() {
     let script_hash = key_pair.get_script_hash();
     let address = script_hash.to_address();
 
-    // Address should be deterministic and match C# implementation
     assert!(!address.is_empty());
     assert!(address.starts_with('N')); // Neo addresses start with 'N'
 
@@ -297,7 +292,6 @@ async fn test_wallet_compatibility_with_csharp() {
     let signature1 = key_pair.sign(test_data).unwrap();
     let signature2 = key_pair.sign(test_data).unwrap();
 
-    // Signatures should be valid (but may not be identical due to randomness in ECDSA)
     assert!(key_pair.verify(test_data, &signature1).unwrap());
     assert!(key_pair.verify(test_data, &signature2).unwrap());
 

@@ -6,7 +6,6 @@
 
 mod rpc_server_tests;
 
-// Integration tests for complete RPC server workflows
 mod integration_tests {
     use serde_json::{json, Value};
 
@@ -65,13 +64,11 @@ mod integration_tests {
             handles.push(handle);
         }
 
-        // Wait for all requests to complete
         for handle in handles {
             handle.join().unwrap();
         }
     }
 
-    // Mock server for integration testing
     struct MockRpcServerIntegration {
         // Server state
     }
@@ -82,7 +79,6 @@ mod integration_tests {
         }
 
         fn handle_request(&self, request: Value) -> Value {
-            // Simplified request handling for integration testing
             let request_obj = request.as_object().unwrap();
             let id = request_obj.get("id").cloned();
             let method = request_obj.get("method").unwrap().as_str().unwrap();

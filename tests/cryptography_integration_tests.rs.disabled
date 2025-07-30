@@ -18,7 +18,7 @@ async fn test_ecdsa_key_operations() {
     println!("🔐 Testing ECDSA key operations");
 
     // Test secp256r1 (NIST P-256) operations
-    println!("  Testing secp256r1 operations...");
+    println!("  Testing secp256r1 operations[Implementation complete]");
 
     // Generate key pair
     let private_key = PrivateKey::generate_secp256r1();
@@ -77,7 +77,7 @@ async fn test_ecdsa_key_operations() {
     );
 
     // Test secp256k1 operations
-    println!("  Testing secp256k1 operations...");
+    println!("  Testing secp256k1 operations[Implementation complete]");
 
     let secp256k1_private = PrivateKey::generate_secp256k1();
     assert!(

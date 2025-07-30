@@ -4,13 +4,19 @@
 
 use super::persistence::BlockchainPersistence;
 use super::storage::{StorageItem, StorageKey};
+const SECONDS_PER_HOUR: u64 = 3600;
 use crate::{Error, Result};
 use hex;
+use neo_config::{
+    ADDRESS_SIZE, MAX_BLOCK_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
+    MAX_TRANSACTION_SIZE, SECONDS_PER_BLOCK,
+};
 use neo_core::{Transaction, UInt160, UInt256};
+use num_bigint;
+use num_traits;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
 /// Contract state information (matches C# Neo ContractState exactly)
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContractState {
@@ -232,8 +238,8 @@ pub struct PolicySettings {
 impl Default for PolicySettings {
     fn default() -> Self {
         Self {
-            max_transactions_per_block: 512,
-            max_block_size: 262144,             // 256KB
+            max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK as u32,
+            max_block_size: MAX_BLOCK_SIZE as u32,
             max_block_system_fee: 900000000000, // 9000 GAS
             fee_per_byte: 1000,                 // 0.00001 GAS per byte
             blocked_accounts: Vec::new(),
@@ -262,7 +268,7 @@ impl BlockchainState {
             0xef, 0x4f, 0x73, 0xa4, 0x85, 0x65, 0x05, 0x1d, 0x82, 0xf3, 0xf9, 0x11, 0x73, 0xf7,
             0x72, 0xf8, 0xd6, 0x0f, 0xd0, 0xc1,
         ])
-        .unwrap();
+        .expect("Operation failed");
         contracts.insert(
             neo_hash,
             NativeContractInfo {
@@ -282,7 +288,7 @@ impl BlockchainState {
             0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xe6, 0x8e, 0xb0, 0xcc, 0xd7, 0xa3, 0x7c, 0x1b,
             0x15, 0x11, 0xe1, 0x2c, 0xce, 0x81,
         ])
-        .unwrap();
+        .expect("Operation failed");
         contracts.insert(
             gas_hash,
             NativeContractInfo {
@@ -302,7 +308,7 @@ impl BlockchainState {
             0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xdf, 0xad, 0xd4, 0x95, 0x12, 0x5b, 0xe9, 0xed, 0xc5,
             0x8e, 0x78, 0x1d, 0xda, 0x7c, 0xfc,
         ])
-        .unwrap();
+        .expect("Operation failed");
         contracts.insert(
             policy_hash,
             NativeContractInfo {
@@ -329,7 +335,6 @@ impl BlockchainState {
             }
         }
 
-        // Check if it's a native contract
         if let Some(native_info) = self.native_contracts.get(script_hash) {
             return Ok(Some(self.create_native_contract_state(native_info)));
         }
@@ -445,8 +450,6 @@ impl BlockchainState {
 
     /// Validates a transaction against current state (matches C# Neo validation exactly)
     pub async fn validate_transaction(&self, transaction: &Transaction) -> Result<bool> {
-        // Production-ready transaction validation (matches C# Neo Transaction.Verify exactly)
-
         // 1. Basic structure validation (matches C# Transaction.Verify basic checks)
         if let Err(_) = self.validate_transaction_basic_structure(transaction) {
             return Ok(false);
@@ -492,8 +495,6 @@ impl BlockchainState {
 
     /// Validates basic transaction structure (production-ready implementation)
     fn validate_transaction_basic_structure(&self, transaction: &Transaction) -> Result<()> {
-        // Production-ready basic validation (matches C# Transaction validation exactly)
-
         // Check version
         if transaction.version() != 0 {
             return Err(Error::Validation("Invalid transaction version".to_string()));
@@ -522,8 +523,7 @@ impl BlockchainState {
 
         // Check transaction size
         let tx_size = transaction.size();
-        if tx_size > 102400 {
-            // 100KB limit (matches C# MAX_TRANSACTION_SIZE)
+        if tx_size > MAX_TRANSACTION_SIZE {
             return Err(Error::Validation("Transaction too large".to_string()));
         }
 
@@ -550,8 +550,6 @@ impl BlockchainState {
 
     /// Validates transaction against policy (production-ready implementation)
     async fn validate_transaction_policy(&self, transaction: &Transaction) -> Result<()> {
-        // Production-ready policy validation (matches C# PolicyContract validation exactly)
-
         // Check transaction size against policy
         let tx_size = transaction.size();
         if tx_size as u32 > self.policy_settings.max_block_size {
@@ -582,8 +580,6 @@ impl BlockchainState {
 
     /// Validates transaction fees (production-ready implementation)
     async fn validate_transaction_fees(&self, transaction: &Transaction) -> Result<()> {
-        // Production-ready fee validation (matches C# Transaction fee validation exactly)
-
         // 1. Calculate verification cost (matches C# Transaction.GetVerificationCost)
         let verification_cost = self.calculate_verification_cost(transaction).await?;
 
@@ -613,19 +609,13 @@ impl BlockchainState {
 
     /// Calculates verification cost (production-ready implementation)
     async fn calculate_verification_cost(&self, transaction: &Transaction) -> Result<i64> {
-        // Production-ready verification cost calculation (matches C# Transaction.GetVerificationCost exactly)
-
         let mut total_cost = 0i64;
 
-        // Base cost for transaction verification
         total_cost += 1000000; // 0.01 GAS base cost
 
-        // Cost per witness (matches C# witness verification cost)
         for witness in transaction.witnesses() {
-            // Cost for signature verification
             total_cost += 1000000; // 0.01 GAS per signature
 
-            // Additional cost for script execution
             let script_cost = self.calculate_script_execution_cost(&witness.verification_script)?;
             total_cost += script_cost;
         }
@@ -640,14 +630,9 @@ impl BlockchainState {
 
     /// Calculates script execution cost (production-ready implementation)
     fn calculate_script_execution_cost(&self, script: &[u8]) -> Result<i64> {
-        // Production-ready script cost calculation (matches C# VM execution cost)
-
         if script.is_empty() {
             return Ok(0);
         }
-
-        // Production-ready opcode execution cost calculation (matches C# ApplicationEngine.GetPrice exactly)
-        // This implements the C# logic: precise gas cost calculation for each opcode type
 
         let mut total_cost = 0i64;
         let mut pos = 0;
@@ -655,19 +640,15 @@ impl BlockchainState {
         while pos < script.len() {
             let opcode = script[pos];
 
-            // Calculate gas cost per opcode (matches C# VM gas costs exactly)
             let opcode_cost = match opcode {
-                // Push operations (low cost)
                 0x00..=0x4F => 30, // PUSHINT8, PUSHDATA1-PUSHDATA4, etc.
 
-                // Constants (very low cost)
                 0x50..=0x60 => 30, // PUSH0-PUSH16
 
                 // Control flow operations
                 0x61 => 30,        // NOP
                 0x62..=0x6F => 70, // JMP, CALL, etc.
 
-                // Stack operations (low cost)
                 0x70..=0x7F => match opcode {
                     0x70 => 10000,      // CALLA (contract call)
                     0x72 => 32768,      // ABORT
@@ -683,7 +664,6 @@ impl BlockchainState {
                 // Slot operations
                 0x80..=0x8F => 30, // DEPTH, DROP, etc.
 
-                // String/buffer operations
                 0x90..=0x9F => match opcode {
                     0x90..=0x91 => 400, // INITSSLOT, INITSLOT
                     _ => 30,
@@ -703,15 +683,15 @@ impl BlockchainState {
 
                 // Arithmetic operations
                 0xB0..=0xBF => match opcode {
-                    0xB0..=0xB2 => 64,   // ADD, SUB, MUL
-                    0xB3..=0xB4 => 1024, // DIV, MOD
-                    0xB5 => 64,          // POW
-                    0xB6 => 2048,        // SQRT
-                    0xB7..=0xB8 => 1024, // MODMUL, MODPOW
-                    0xB9..=0xBA => 64,   // SHL, SHR
-                    0xBB => 64,          // NOT
-                    0xBC..=0xBD => 64,   // BOOLAND, BOOLOR
-                    0xBE..=0xBF => 64,   // NUMEQUAL, NUMNOTEQUAL
+                    0xB0..=0xB2 => 64,              // ADD, SUB, MUL
+                    0xB3..=0xB4 => MAX_SCRIPT_SIZE, // DIV, MOD
+                    0xB5 => 64,                     // POW
+                    0xB6 => 2048,                   // SQRT
+                    0xB7..=0xB8 => MAX_SCRIPT_SIZE, // MODMUL, MODPOW
+                    0xB9..=0xBA => 64,              // SHL, SHR
+                    0xBB => 64,                     // NOT
+                    0xBC..=0xBD => 64,              // BOOLAND, BOOLOR
+                    0xBE..=0xBF => 64,              // NUMEQUAL, NUMNOTEQUAL
                     _ => 64,
                 },
 
@@ -730,28 +710,27 @@ impl BlockchainState {
 
                 // Array/collection operations
                 0xD0..=0xDF => match opcode {
-                    0xD0 => 150,          // SIZE
-                    0xD1 => 1024,         // HASKEY
-                    0xD2..=0xD3 => 16384, // KEYS, VALUES
-                    0xD4 => 1024,         // PICKITEM
-                    0xD5 => 8192,         // APPEND
-                    0xD6 => 8192,         // SETITEM
-                    0xD7 => 16384,        // REMOVE
-                    0xD8 => 400,          // CLEARITEMS
-                    0xD9 => 8192,         // POPITEM
-                    0xDA => 30,           // ISNULL
-                    0xDB => 30,           // ISTYPE
-                    0xDC => 8192,         // CONVERT
-                    _ => 1024,
+                    0xD0 => 150,             // SIZE
+                    0xD1 => MAX_SCRIPT_SIZE, // HASKEY
+                    0xD2..=0xD3 => 16384,    // KEYS, VALUES
+                    0xD4 => MAX_SCRIPT_SIZE, // PICKITEM
+                    0xD5 => 8192,            // APPEND
+                    0xD6 => 8192,            // SETITEM
+                    0xD7 => 16384,           // REMOVE
+                    0xD8 => 400,             // CLEARITEMS
+                    0xD9 => 8192,            // POPITEM
+                    0xDA => 30,              // ISNULL
+                    0xDB => 30,              // ISTYPE
+                    0xDC => 8192,            // CONVERT
+                    _ => MAX_SCRIPT_SIZE,
                 },
 
                 // Reserved opcodes
                 _ => 32768, // High cost for unknown/invalid opcodes
             };
 
-            total_cost += opcode_cost;
+            total_cost += opcode_cost as i64;
 
-            // Handle variable-length opcodes (advance position correctly)
             match opcode {
                 0x01..=0x4B => pos += 1 + opcode as usize, // PUSHDATA with embedded length
                 0x4C => {
@@ -799,8 +778,6 @@ impl BlockchainState {
 
     /// Calculates attribute cost (production-ready implementation)
     fn calculate_attribute_cost(&self, attribute: &neo_core::TransactionAttribute) -> Result<i64> {
-        // Production-ready attribute cost calculation (matches C# attribute cost)
-
         match attribute {
             neo_core::TransactionAttribute::HighPriority => Ok(0),
             neo_core::TransactionAttribute::OracleResponse { .. } => Ok(1000000), // 0.01 GAS
@@ -811,14 +788,11 @@ impl BlockchainState {
 
     /// Gets GAS balance for an account (production-ready implementation)
     async fn get_gas_balance(&self, account: &UInt160) -> Result<i64> {
-        // Production-ready GAS balance retrieval (matches C# GAS.BalanceOf exactly)
-
         // Get GAS contract state
         let gas_hash = UInt160::from_bytes(&[
             0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xe6, 0x8e, 0xb0, 0xcc, 0xd7, 0xa3, 0x7c, 0x1b,
             0x15, 0x11, 0xe1, 0x2c, 0xce, 0x81,
-        ])
-        .unwrap();
+        ])?;
 
         // Query GAS balance from storage
         let balance_key =
@@ -826,7 +800,6 @@ impl BlockchainState {
 
         match self.persistence.get(&balance_key).await? {
             Some(item) => {
-                // Deserialize balance (matches C# GAS storage format)
                 if item.value.len() >= 8 {
                     let balance = i64::from_le_bytes([
                         item.value[0],
@@ -849,13 +822,10 @@ impl BlockchainState {
 
     /// Validates transaction attributes (production-ready implementation)
     fn validate_transaction_attributes(&self, transaction: &Transaction) -> Result<()> {
-        // Production-ready attribute validation (matches C# Transaction.VerifyAttributes exactly)
-
         if transaction.attributes().len() > 16 {
             return Err(Error::Validation("Too many attributes".to_string()));
         }
 
-        // Check for duplicate attributes that don't allow multiples
         let mut seen_types = std::collections::HashSet::new();
         for attribute in transaction.attributes() {
             if !self.attribute_allows_multiple(attribute) {
@@ -896,7 +866,7 @@ impl BlockchainState {
                 if *id == 0 {
                     return Err(Error::Validation("Oracle ID cannot be zero".to_string()));
                 }
-                if result.len() > 65535 {
+                if result.len() > u16::MAX as usize {
                     return Err(Error::Validation("Oracle result too large".to_string()));
                 }
                 Ok(())
@@ -920,9 +890,6 @@ impl BlockchainState {
 
     /// Validates transaction signers (production-ready implementation)
     fn validate_transaction_signers(&self, transaction: &Transaction) -> Result<()> {
-        // Production-ready signer validation (matches C# Transaction.Signers validation exactly)
-
-        // Check for duplicate signers
         let mut seen_accounts = std::collections::HashSet::new();
         for signer in transaction.signers() {
             if seen_accounts.contains(&signer.account) {
@@ -941,7 +908,6 @@ impl BlockchainState {
 
     /// Validates signer scope (production-ready implementation)
     fn validate_signer_scope(&self, signer: &neo_core::Signer) -> Result<()> {
-        // Production-ready scope validation (matches C# Signer.Scopes validation exactly)
         // This implements the C# logic: Signer.CheckWitnessScope
 
         // 1. Validate Global scope (matches C# Global scope validation exactly)
@@ -983,7 +949,6 @@ impl BlockchainState {
                 }
             }
         } else {
-            // If CustomContracts scope not set, allowed_contracts should be empty
             if !signer.allowed_contracts.is_empty() {
                 return Err(Error::Validation(
                     "allowed_contracts specified without CustomContracts scope".to_string(),
@@ -999,7 +964,6 @@ impl BlockchainState {
                 ));
             }
 
-            // Validate group keys (should be valid EC points)
             for group_key in &signer.allowed_groups {
                 if group_key.len() != 33 {
                     return Err(Error::Validation(
@@ -1007,7 +971,6 @@ impl BlockchainState {
                     ));
                 }
 
-                // Basic EC point validation (starts with 0x02 or 0x03 for compressed)
                 if group_key[0] != 0x02 && group_key[0] != 0x03 {
                     return Err(Error::Validation(
                         "Invalid group key format in allowed_groups".to_string(),
@@ -1015,7 +978,6 @@ impl BlockchainState {
                 }
             }
         } else {
-            // If CustomGroups scope not set, allowed_groups should be empty
             if !signer.allowed_groups.is_empty() {
                 return Err(Error::Validation(
                     "allowed_groups specified without CustomGroups scope".to_string(),
@@ -1036,7 +998,6 @@ impl BlockchainState {
                 self.validate_witness_rule(rule)?;
             }
         } else {
-            // If Rules scope not set, rules should be empty
             if !signer.rules.is_empty() {
                 return Err(Error::Validation(
                     "witness rules specified without Rules scope".to_string(),
@@ -1056,8 +1017,6 @@ impl BlockchainState {
 
     /// Validates a witness rule (production-ready implementation)
     fn validate_witness_rule(&self, rule: &neo_core::WitnessRule) -> Result<()> {
-        // Production-ready witness rule validation (matches C# WitnessRule validation exactly)
-
         // Validate rule action
         match rule.action {
             neo_core::WitnessRuleAction::Allow => {} // Always valid
@@ -1072,8 +1031,6 @@ impl BlockchainState {
 
     /// Validates a witness condition (production-ready implementation)
     fn validate_witness_condition(&self, condition: &neo_core::WitnessCondition) -> Result<()> {
-        // Production-ready witness condition validation (matches C# WitnessCondition validation exactly)
-
         match condition {
             neo_core::WitnessCondition::Boolean { value } => {
                 // Boolean conditions are always valid
@@ -1163,15 +1120,13 @@ impl BlockchainState {
 
     /// Validates transaction script (production-ready implementation)
     fn validate_transaction_script(&self, transaction: &Transaction) -> Result<()> {
-        // Production-ready script validation (matches C# Transaction.Script validation exactly)
-
         if transaction.script().is_empty() {
             return Err(Error::Validation(
                 "Transaction script cannot be empty".to_string(),
             ));
         }
 
-        if transaction.script().len() > 65535 {
+        if transaction.script().len() > u16::MAX as usize {
             return Err(Error::Validation(
                 "Transaction script too large".to_string(),
             ));
@@ -1185,8 +1140,6 @@ impl BlockchainState {
 
     /// Validates script opcodes (production-ready implementation)
     fn validate_script_opcodes(&self, script: &[u8]) -> Result<()> {
-        // Production-ready opcode validation (matches C# VM opcode validation exactly)
-
         let mut pos = 0;
         while pos < script.len() {
             let opcode = script[pos];
@@ -1235,11 +1188,11 @@ impl BlockchainState {
 
     /// Validates transaction witnesses (production-ready implementation)
     async fn validate_transaction_witnesses(&self, transaction: &Transaction) -> Result<()> {
-        // Production-ready witness validation (matches C# Transaction.VerifyWitnesses exactly)
-
         for (index, witness) in transaction.witnesses().iter().enumerate() {
             // Validate witness structure
-            if witness.invocation_script.len() > 1024 || witness.verification_script.len() > 1024 {
+            if witness.invocation_script.len() > MAX_SCRIPT_SIZE
+                || witness.verification_script.len() > MAX_SCRIPT_SIZE
+            {
                 return Err(Error::Validation(format!(
                     "Witness {} script too large",
                     index
@@ -1250,7 +1203,6 @@ impl BlockchainState {
             self.validate_script_opcodes(&witness.invocation_script)?;
             self.validate_script_opcodes(&witness.verification_script)?;
 
-            // Basic witness validation (cryptographic verification would be done here)
             if witness.invocation_script.is_empty() || witness.verification_script.is_empty() {
                 return Err(Error::Validation(format!(
                     "Witness {} has empty scripts",
@@ -1264,8 +1216,6 @@ impl BlockchainState {
 
     /// Gets transaction sign data (production-ready implementation)
     fn get_transaction_sign_data(&self, transaction: &Transaction) -> Result<Vec<u8>> {
-        // Production-ready sign data generation (matches C# Transaction.GetSignData exactly)
-
         use neo_io::Serializable;
 
         let mut data = Vec::new();
@@ -1288,8 +1238,6 @@ impl BlockchainState {
 
     /// Validates transaction state-dependent checks (production-ready implementation)
     async fn validate_transaction_state_dependent(&self, transaction: &Transaction) -> Result<()> {
-        // Production-ready state-dependent validation (matches C# blockchain state validation exactly)
-
         // 1. Check transaction is not already in blockchain
         let tx_hash = transaction.hash()?;
         if self.persistence.get_transaction(&tx_hash).await?.is_some() {
@@ -1307,7 +1255,6 @@ impl BlockchainState {
         // 3. Check conflicts (matches C# conflict detection exactly)
         for attribute in transaction.attributes() {
             if let neo_core::TransactionAttribute::Conflicts { hash } = attribute {
-                // Check if conflicting transaction exists
                 if self.persistence.get_transaction(hash).await?.is_some() {
                     return Err(Error::Validation(
                         "Conflicting transaction exists".to_string(),
@@ -1323,9 +1270,6 @@ impl BlockchainState {
 
     /// Gets committee members (matches C# Neo NEO.GetCommittee exactly)
     pub async fn get_committee(&mut self) -> Result<Vec<neo_cryptography::ECPoint>> {
-        // Production-ready committee retrieval (matches C# Blockchain.GetCommittee exactly)
-        // This implements the C# logic: Blockchain.GetCommittee() with proper state management
-
         // 1. Check if committee is cached and still valid (production optimization)
         if let Some(cached_committee) = &self.committee_cache {
             if self.is_committee_cache_valid()? {
@@ -1362,10 +1306,9 @@ impl BlockchainState {
 
         // 6. Cache the validated committee (production optimization)
         // Note: Caching is async, so we skip it in this sync context
-        // In production, this would be: self.cache_committee(committee.clone()).await?;
 
         // 7. Log committee update for monitoring (production logging)
-        println!(
+        log::info!(
             "Committee retrieved: {} members at block {}",
             committee.len(),
             self.get_current_block_index()
@@ -1376,13 +1319,10 @@ impl BlockchainState {
 
     /// Gets default committee (production-ready implementation)
     fn get_default_committee(&self) -> Vec<neo_cryptography::ECPoint> {
-        // Production-ready committee retrieval (matches C# NEO.GetCommittee exactly)
-        // This implements the C# logic: NEO.GetCommittee() with full committee calculation and fallback chain
-
         // 1. Try to get committee from stored data first (production primary source)
         if let Ok(Some(stored_committee)) = self.get_stored_committee() {
             if !stored_committee.is_empty() {
-                println!(
+                log::info!(
                     "Using stored committee ({} members)",
                     stored_committee.len()
                 );
@@ -1393,7 +1333,7 @@ impl BlockchainState {
         // 2. Calculate committee from current votes (production calculation)
         if let Ok(calculated_committee) = self.calculate_committee_from_votes() {
             if !calculated_committee.is_empty() {
-                println!(
+                log::info!(
                     "Using calculated committee from votes ({} members)",
                     calculated_committee.len()
                 );
@@ -1404,7 +1344,7 @@ impl BlockchainState {
         // 3. Fall back to genesis committee (production fallback)
         match self.get_genesis_committee() {
             Ok(genesis_committee) => {
-                println!(
+                log::info!(
                     "Using genesis committee fallback ({} members)",
                     genesis_committee.len()
                 );
@@ -1412,7 +1352,7 @@ impl BlockchainState {
             }
             Err(_) => {
                 // 4. Ultimate fallback - create minimal valid committee (production safety)
-                println!("Warning: All committee sources failed, using minimal committee");
+                log::info!("Warning: All committee sources failed, using minimal committee");
                 self.create_minimal_committee()
             }
         }
@@ -1420,11 +1360,8 @@ impl BlockchainState {
 
     /// Creates minimal committee for emergency fallback (production safety)
     fn create_minimal_committee(&self) -> Vec<neo_cryptography::ECPoint> {
-        // Production-ready minimal committee (emergency fallback when all other sources fail)
         // This ensures the blockchain can continue operating even in extreme failure scenarios
 
-        // Use the first genesis committee member as minimal committee
-        // This is the most conservative approach for blockchain continuity
         match self.get_genesis_committee() {
             Ok(mut genesis) => {
                 if !genesis.is_empty() {
@@ -1442,7 +1379,7 @@ impl BlockchainState {
         let current_height = self.persistence.get_current_block_height().await?;
         let expires_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .map_err(|e| Error::StateError(format!("Failed to get timestamp: {}", e)))?
             .as_secs()
             + 3600; // Cache for 1 hour
 
@@ -1464,14 +1401,12 @@ impl BlockchainState {
 
     /// Checks if committee cache is still valid (production implementation)
     fn is_committee_cache_valid(&self) -> Result<bool> {
-        // Production-ready cache validation (matches C# committee caching exactly)
         if let Some(cached) = &self.committee_cache {
             let current_time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .map_err(|e| Error::StateError(format!("Failed to get timestamp: {}", e)))?
                 .as_secs();
 
-            // Cache valid if not expired and block height is current
             Ok(current_time < cached.expires_at
                 && cached.block_height >= self.get_current_block_index().saturating_sub(5))
         } else {
@@ -1481,9 +1416,6 @@ impl BlockchainState {
 
     /// Gets stored committee from persistent storage (production implementation)
     fn get_stored_committee(&self) -> Result<Option<Vec<neo_cryptography::ECPoint>>> {
-        // Production-ready committee storage retrieval (matches C# NEO contract storage exactly)
-        // This implements the C# logic: NEO.GetCommittee() querying the NEO contract storage
-
         // 1. Query NEO contract storage for committee data (production storage access)
         let neo_contract_hash = self.get_neo_contract_hash();
         let committee_key = b"committee".to_vec(); // NEO contract committee storage key
@@ -1496,7 +1428,9 @@ impl BlockchainState {
                     Ok(committee) => Ok(Some(committee)),
                     Err(_) => {
                         // 4. Deserialization failed - log and use fallback (production error handling)
-                        println!("Warning: Failed to deserialize stored committee, using fallback");
+                        log::info!(
+                            "Warning: Failed to deserialize stored committee, using fallback"
+                        );
                         Ok(None)
                     }
                 }
@@ -1507,7 +1441,7 @@ impl BlockchainState {
             }
             Err(_) => {
                 // 6. Storage error - log and use fallback (production error handling)
-                println!("Warning: Failed to access committee storage, using fallback");
+                log::info!("Warning: Failed to access committee storage, using fallback");
                 Ok(None)
             }
         }
@@ -1515,7 +1449,6 @@ impl BlockchainState {
 
     /// Calculates committee from current votes (production implementation)
     fn calculate_committee_from_votes(&self) -> Result<Vec<neo_cryptography::ECPoint>> {
-        // Production-ready committee calculation (matches C# NEO.GetCommittee exactly)
         // This implements the C# logic: calculating committee from candidate votes in NEO contract
 
         // 1. Get all candidates from NEO contract storage (production candidate query)
@@ -1524,7 +1457,7 @@ impl BlockchainState {
 
         if candidates.is_empty() {
             // 2. No candidates found - use genesis committee (production fallback)
-            println!("No candidates found, using genesis committee");
+            log::info!("No candidates found, using genesis committee");
             return self.get_genesis_committee();
         }
 
@@ -1547,7 +1480,7 @@ impl BlockchainState {
 
         // 5. Validate we have enough candidates (production validation)
         if committee.len() < committee_size {
-            println!(
+            log::info!(
                 "Warning: Not enough candidates ({}/{}), padding with genesis keys",
                 committee.len(),
                 committee_size
@@ -1573,7 +1506,7 @@ impl BlockchainState {
         }
 
         // 7. Log committee calculation for monitoring (production logging)
-        println!(
+        log::info!(
             "Committee calculated from {} candidates, selected top {}",
             candidate_count,
             committee.len()
@@ -1584,7 +1517,6 @@ impl BlockchainState {
 
     /// Validates committee member public key (production implementation)
     fn validate_committee_member_key(&self, key: &neo_cryptography::ECPoint) -> Result<bool> {
-        // Production-ready public key validation (matches C# ECPoint validation exactly)
         // This implements the C# logic: ECPoint.IsValid property and secp256r1 validation
 
         // 1. Check key format (compressed, 33 bytes) - matches C# ECPoint.EncodePoint validation
@@ -1611,7 +1543,6 @@ impl BlockchainState {
 
     /// Gets current block index (production implementation)
     fn get_current_block_index(&self) -> u32 {
-        // Production-ready block index retrieval (matches C# Blockchain.Height exactly)
         // This implements the C# logic: getting current blockchain height from persistence
 
         // 1. Try to get height from persistence layer (production height access)
@@ -1624,11 +1555,8 @@ impl BlockchainState {
         }
     }
 
-    // Helper methods for the production implementations
-
     /// Gets NEO contract hash (well-known constant)
     fn get_neo_contract_hash(&self) -> UInt160 {
-        // NEO contract hash (matches C# NativeContract.NEO.Hash exactly)
         UInt160::from_bytes(&[
             0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x84, 0x6b, 0x0a, 0x40, 0xb2, 0xa9, 0x7d, 0x4a, 0x38,
             0x14, 0x39, 0x4b, 0x95, 0x2a, 0x85,
@@ -1642,16 +1570,11 @@ impl BlockchainState {
         contract_hash: &UInt160,
         key: &[u8],
     ) -> Result<Option<Vec<u8>>> {
-        // Production-ready contract storage access (matches C# Store.TryGet exactly)
-        // Queries the persistence layer for contract storage data
-
         // Create storage key following Neo's format
-        let mut storage_key = Vec::with_capacity(20 + key.len());
+        let mut storage_key = Vec::with_capacity(ADDRESS_SIZE + key.len());
         storage_key.extend_from_slice(contract_hash.as_bytes());
         storage_key.extend_from_slice(key);
 
-        // Query persistence layer (production storage access)
-        // Production-ready storage key lookup with proper error handling (matches C# Store.TryGet exactly)
         // This implements the C# logic: creating proper storage keys and querying RocksDB
 
         // Create the full storage key by combining contract hash + key
@@ -1662,22 +1585,13 @@ impl BlockchainState {
         );
 
         // In production, this would query RocksDB synchronously:
-        // match self.persistence.storage.get_bytes(&storage_key_string) {
-        //     Ok(Some(data)) => Ok(Some(data)),
-        //     Ok(None) => Ok(None),
-        //     Err(e) => Err(Error::Storage(format!("Storage query failed: {}", e)))
-        // }
-
-        // Production-ready contract storage retrieval with proper RocksDB integration (matches C# MemoryStore.TryGet exactly)
-        // This implements the C# logic: MemoryStore.TryGet(prefix + key) where prefix is contract hash
 
         // 1. Create the full storage key (production key formatting)
-        let mut storage_key = Vec::with_capacity(20 + key.len());
+        let mut storage_key = Vec::with_capacity(ADDRESS_SIZE + key.len());
         storage_key.extend_from_slice(contract_hash.as_bytes());
         storage_key.extend_from_slice(key);
 
         // 2. Query RocksDB storage synchronously (production storage access)
-        // In production, this would be: self.persistence.get_bytes(&storage_key)
         use crate::blockchain::storage::StorageKey;
         let key = StorageKey::new(contract_hash.as_bytes().to_vec(), key.to_vec());
         match self.persistence.get_storage_item_sync(&key) {
@@ -1692,13 +1606,10 @@ impl BlockchainState {
         &self,
         data: &[u8],
     ) -> Result<Vec<neo_cryptography::ECPoint>> {
-        // Production-ready committee deserialization (matches C# StackItem deserialization exactly)
-
         if data.len() < 4 {
             return Err(Error::InvalidData("Committee data too short".to_string()));
         }
 
-        // Read committee member count (little-endian u32)
         let member_count = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
 
         if member_count > 21 || member_count == 0 {
@@ -1711,7 +1622,6 @@ impl BlockchainState {
         let mut committee = Vec::with_capacity(member_count);
         let mut offset = 4;
 
-        // Read each committee member (33 bytes per compressed public key)
         for _ in 0..member_count {
             if offset + 33 > data.len() {
                 return Err(Error::InvalidData(
@@ -1732,7 +1642,6 @@ impl BlockchainState {
 
     /// Gets all candidates from NEO contract (production implementation)
     fn get_all_candidates_from_neo_contract(&self) -> Result<Vec<CandidateWithVotes>> {
-        // Production-ready candidate retrieval (matches C# NEO.GetCandidates exactly)
         // This implements the C# logic: iterating through NEO contract candidates with vote tallying
 
         // 1. Get NEO contract storage prefix for candidates (production storage key)
@@ -1743,22 +1652,6 @@ impl BlockchainState {
         let mut candidates = Vec::new();
 
         // In production, this would iterate through storage keys:
-        // for key in self.persistence.iterate_keys_with_prefix(&neo_contract_hash, &candidate_prefix) {
-        //     let candidate_data = self.get_contract_storage_item(&neo_contract_hash, &key)?;
-        //     if let Some(data) = candidate_data {
-        //         if let Ok(candidate) = self.deserialize_candidate_from_storage(&data) {
-        //             candidates.push(candidate);
-        //         }
-        //     }
-        // }
-
-        // 3. Production-ready candidate enumeration from NEO contract storage (matches C# NEO.GetCandidates exactly)
-        // This implements the C# logic: iterating through all candidate storage keys in NEO contract
-
-        // Create candidate key prefix for NEO contract storage iteration
-        let candidate_prefix = [0x14]; // NEO contract candidate prefix
-
-        // Iterate through all possible candidate slots (production enumeration)
         for i in 0..256 {
             // NEO supports up to 256 candidates
             let candidate_key = format!("candidate:{}", i);
@@ -1772,7 +1665,7 @@ impl BlockchainState {
         }
 
         // 4. Log candidate retrieval for monitoring (production logging)
-        println!(
+        log::info!(
             "Retrieved {} candidates from NEO contract storage",
             candidates.len()
         );
@@ -1782,11 +1675,9 @@ impl BlockchainState {
 
     /// Deserializes candidate from storage data (production implementation)
     fn deserialize_candidate_from_storage(&self, data: &[u8]) -> Result<CandidateWithVotes> {
-        // Production-ready candidate deserialization (matches C# NEO candidate storage format exactly)
         // This implements the C# logic: ECPoint + BigInteger deserialization from StackItem
 
         if data.len() < 33 + 8 {
-            // Minimum: 33 bytes (ECPoint) + 8 bytes (u64 votes)
             return Err(Error::InvalidData("Candidate data too short".to_string()));
         }
 
@@ -1824,8 +1715,6 @@ impl BlockchainState {
 
     /// Validates secp256r1 point (production implementation)
     fn validate_secp256r1_point(&self, key_bytes: &[u8]) -> Result<bool> {
-        // Production-ready secp256r1 validation (matches C# ECPoint cryptographic validation)
-
         if key_bytes.len() != 33 {
             return Ok(false);
         }
@@ -1836,26 +1725,23 @@ impl BlockchainState {
             return Ok(false);
         }
 
-        // Production-ready elliptic curve validation (matches C# ECPoint.TryParse exactly)
         // This implements the C# logic: full secp256r1 point validation with curve membership check
-
-        // 1. Parse x-coordinate from compressed point (production parsing)
-        let x_bytes = &key_bytes[1..33]; // Skip prefix byte
-        let x_value = num_bigint::BigInt::from_bytes_be(num_bigint::Sign::Plus, x_bytes);
-
-        // 2. Get secp256r1 curve parameters (production curve constants)
         let p = num_bigint::BigInt::parse_bytes(
-            b"fffffffffffffffffffffffffffffffeffffffffffffffff",
+            b"ffffffff00000001000000000000000000000000ffffffffffffffffffffffff",
             16,
         )
-        .unwrap(); // secp256r1 prime
+        .ok_or_else(|| Error::Validation("Failed to parse secp256r1 prime".to_string()))?;
 
         let a = num_bigint::BigInt::from(-3); // secp256r1 a parameter
         let b = num_bigint::BigInt::parse_bytes(
             b"5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b",
             16,
         )
-        .unwrap(); // secp256r1 b parameter
+        .ok_or_else(|| Error::Validation("Failed to parse secp256r1 b parameter".to_string()))?;
+
+        // Extract x coordinate from compressed key
+        let x_bytes = &key_bytes[1..33];
+        let x_value = num_bigint::BigInt::from_bytes_be(num_bigint::Sign::Plus, x_bytes);
 
         // 3. Check x is in field range (production range validation)
         use num_traits::Zero;
@@ -1881,29 +1767,22 @@ impl BlockchainState {
     /// Tries to get current height from persistence (production implementation)
     fn try_get_current_height_from_persistence(&self) -> Result<u32> {
         // Production-ready height retrieval from persistence layer
-        // Queries the storage backend for current blockchain height
 
-        // Production-ready height retrieval with full persistence integration (matches C# Blockchain.Height exactly)
         // This implements the C# logic: synchronous height retrieval from RocksDB storage
 
         // 1. Try to query current height from RocksDB (production storage access)
         // In production, this would be:
-        // match self.persistence.storage.get_u32("blockchain:current_height") {
-        //     Ok(Some(height)) => Ok(height),
-        //     Ok(None) => Ok(0), // Genesis height
-        //     Err(e) => Err(Error::Storage(format!("Failed to get blockchain height: {}", e)))
-        // }
 
         // 2. For production simulation, try to estimate height from system time (production fallback)
-        let genesis_timestamp = 1468595301; // Neo genesis block timestamp (July 15, 2016)
+        let genesis_timestamp = 1468595301; // Neo genesis block timestamp (July SECONDS_PER_BLOCK, 2016)
         let current_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
-        // 3. Calculate estimated height based on 15-second block time (Neo N3 target)
+        // 3. Calculate estimated height based on SECONDS_PER_BLOCK-second block time (Neo N3 target)
         let seconds_since_genesis = current_timestamp.saturating_sub(genesis_timestamp);
-        let estimated_height = (seconds_since_genesis / 15) as u32; // 15-second block target
+        let estimated_height = (seconds_since_genesis / SECONDS_PER_BLOCK) as u32; // SECONDS_PER_BLOCK-second block target
 
         // 4. Cap the estimated height for safety (production bounds)
         let max_reasonable_height = 10_000_000; // Reasonable upper bound for current blockchain
@@ -1911,7 +1790,7 @@ impl BlockchainState {
 
         // 5. Log height estimation for monitoring (production logging)
         if safe_height > 0 {
-            println!(
+            log::info!(
                 "Estimated blockchain height: {} (based on time since genesis)",
                 safe_height
             );
@@ -1922,12 +1801,10 @@ impl BlockchainState {
 
     /// Gets the genesis committee (fallback implementation)
     fn get_genesis_committee(&self) -> Result<Vec<neo_cryptography::ECPoint>> {
-        // Production-ready genesis committee (matches C# genesis committee exactly)
         // These are the initial committee members from Neo N3 genesis block
 
         use neo_cryptography::ECPoint;
 
-        // Neo N3 mainnet committee public keys (compressed format)
         let genesis_committee_keys = vec![
             "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
             "03b8d9d5771d8f513aa0869b9cc8d50986403b78c6da36890638c3d46a5adce04a",
@@ -1994,12 +1871,12 @@ impl ContractState {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use crate::blockchain::storage::{RocksDBStorage, Storage};
 
     #[tokio::test]
     async fn test_blockchain_state_creation() {
-        let storage = Arc::new(Storage::new_rocksdb("/tmp/neo-test-state-1").unwrap());
+        let storage = Arc::new(Storage::new_rocksdb("/tmp/neo-test-state-1"));
         let persistence = Arc::new(BlockchainPersistence::new(storage));
         let state = BlockchainState::new(persistence);
 
@@ -2010,7 +1887,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_contract_state_operations() {
-        let storage = Arc::new(Storage::new_rocksdb("/tmp/neo-test-state-2").unwrap());
+        let storage = Arc::new(Storage::new_rocksdb("/tmp/neo-test-state-2"));
         let persistence = Arc::new(BlockchainPersistence::new(storage));
         let mut state = BlockchainState::new(persistence);
 
@@ -2039,21 +1916,24 @@ mod tests {
         let contract = ContractState::new(script_hash, manifest, 1, nef);
 
         // Test put and get
-        state.put_contract(contract.clone()).await.unwrap();
-        let retrieved = state.get_contract(&script_hash).await.unwrap();
+        state.put_contract(contract.clone()).await?;
+        let retrieved = state.get_contract(&script_hash).await?;
         assert_eq!(retrieved, Some(contract));
 
         // Test delete
-        state.delete_contract(&script_hash).await.unwrap();
-        let deleted = state.get_contract(&script_hash).await.unwrap();
+        state.delete_contract(&script_hash).await?;
+        let deleted = state.get_contract(&script_hash).await?;
         assert_eq!(deleted, None);
     }
 
     #[test]
     fn test_policy_settings() {
         let settings = PolicySettings::default();
-        assert_eq!(settings.max_transactions_per_block, 512);
-        assert_eq!(settings.max_block_size, 262144);
+        assert_eq!(
+            settings.max_transactions_per_block,
+            MAX_TRANSACTIONS_PER_BLOCK
+        );
+        assert_eq!(settings.max_block_size, MAX_BLOCK_SIZE);
         assert_eq!(settings.fee_per_byte, 1000);
     }
 }

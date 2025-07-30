@@ -2,13 +2,23 @@
 //!
 //! Implementation of Neo N3 RPC methods.
 
-use crate::types::*;
 use hex;
+use neo_config::HASH_SIZE;
 use neo_ledger::Ledger;
 use neo_persistence::RocksDbStore;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::{debug, warn};
+
+// Define Error and Result types locally
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+pub type Result<T> = std::result::Result<T, Error>;
+
+// Import RPC types from rpc_client
+use neo_rpc_client::models::{
+    RpcAddressValidation, RpcBlock, RpcPeer, RpcPeers, RpcSigner, RpcTransaction, RpcVersion,
+    RpcWitness,
+};
 
 /// RPC methods implementation
 #[derive(Clone)]
@@ -142,14 +152,13 @@ impl RpcMethods {
             return Err("Missing block identifier".into());
         }
 
-        // Parse block identifier (can be hash or index)
         let block_param = &params_array[0];
 
         let block = if let Some(hash_str) = block_param.as_str() {
             // Try to parse as hex hash
             if let Ok(hash_bytes) = hex::decode(hash_str.trim_start_matches("0x")) {
-                if hash_bytes.len() == 32 {
-                    let mut bytes = [0u8; 32];
+                if hash_bytes.len() == HASH_SIZE {
+                    let mut bytes = [0u8; HASH_SIZE];
                     bytes.copy_from_slice(&hash_bytes);
                     let hash = neo_core::UInt256::from(bytes);
                     self.ledger.get_block_by_hash(&hash).await?
@@ -176,7 +185,6 @@ impl RpcMethods {
                     0
                 };
 
-                // Get next block hash if not the tip
                 let next_block_hash = if block.header.index < current_height {
                     match self.ledger.get_block(block.header.index + 1).await? {
                         Some(next_block) => {
@@ -235,11 +243,15 @@ impl RpcMethods {
     pub async fn get_version(&self) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         debug!("RPC: getversion");
 
+        // Get version from environment at compile time
+        const VERSION: &str = env!("CARGO_PKG_VERSION");
+        const NEO_VERSION: &str = "3.6.0";
+
         let version = RpcVersion {
             tcp_port: 20333,
             ws_port: 20334,
             nonce: rand::random_u32(),
-            user_agent: "neo-rs/0.3.0".to_string(),
+            user_agent: format!("neo-rs/{}", VERSION),
         };
 
         Ok(serde_json::to_value(version)?)
@@ -252,11 +264,11 @@ impl RpcMethods {
         let peers = RpcPeers {
             unconnected: vec![
                 RpcPeer {
-                    address: "34.133.235.69".to_string(),
+                    address: "seed1.neo.org".to_string(),
                     port: 20333,
                 },
                 RpcPeer {
-                    address: "35.192.59.217".to_string(),
+                    address: "seed2.neo.org".to_string(),
                     port: 20333,
                 },
             ],
@@ -273,8 +285,8 @@ impl RpcMethods {
     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         debug!("RPC: getconnectioncount");
         // Get actual connection count from network manager
-        let connection_count = if let Some(network) = self.network_manager.as_ref() {
-            network.get_peer_count().await
+        let connection_count = if let Some(network) = &self.network {
+            network.get_connected_peer_count()
         } else {
             0
         };
@@ -297,7 +309,6 @@ impl RpcMethods {
 
         let address = params_array[0].as_str().ok_or("Invalid address format")?;
 
-        // Basic validation - check if it looks like a Neo address
         let is_valid =
             address.len() == 34 && (address.starts_with('N') || address.starts_with('A'));
 
@@ -344,7 +355,7 @@ mod rand {
         let mut hasher = DefaultHasher::new();
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_nanos()
             .hash(&mut hasher);
         hasher.finish() as u32

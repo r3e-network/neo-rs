@@ -13,7 +13,6 @@ use neo_wallets::ContractParameterType::*;
 
 #[test]
 fn test_uint160_address_conversion() {
-    // Test UInt160 to address conversion (matches C# UT_Wallets_Helper.TestToScriptHash)
     let test_data = [0x01u8];
     let script_hash = UInt160::from_script(&test_data);
 
@@ -82,7 +81,6 @@ fn test_key_pair_script_hash_consistency() {
     // Calculate script hash using UInt160::from_script
     let calculated_hash = UInt160::from_script(&verification_script);
 
-    // Should match KeyPair's script hash
     let key_pair_hash = key_pair.get_script_hash();
     assert_eq!(calculated_hash, key_pair_hash);
 }
@@ -93,12 +91,10 @@ fn test_wallet_account_address_consistency() {
     let key_pair = KeyPair::generate().unwrap();
     let account = StandardWalletAccount::new_with_key(key_pair.clone(), None);
 
-    // Account address should match script hash address
     let account_address = account.address();
     let script_hash_address = account.script_hash().to_address();
     assert_eq!(account_address, script_hash_address);
 
-    // Should also match key pair script hash address
     let key_pair_address = key_pair.get_script_hash().to_address();
     assert_eq!(account_address, key_pair_address);
 }
@@ -110,7 +106,6 @@ fn test_contract_script_hash() {
     let contract =
         Contract::create_signature_contract(&key_pair.get_public_key_point().unwrap()).unwrap();
 
-    // Contract script hash should match key pair script hash
     assert_eq!(contract.script_hash(), key_pair.get_script_hash());
 }
 
@@ -162,7 +157,6 @@ fn test_version_compatibility() {
     assert_eq!(2, version.minor);
     assert_eq!(3, version.patch);
 
-    // Should format back to same string
     assert_eq!(version_str, version.to_string());
 }
 
@@ -233,18 +227,15 @@ fn test_invalid_contract_parameter_type() {
 
 #[test]
 fn test_uint160_parsing() {
-    // Test UInt160 parsing from hex string (matches C# UT_UInt160.TestGernerator3)
     let hex_str = "0xff00000000000000000000000000000000000001";
     let uint160 =
         UInt160::from_bytes(&hex::decode(hex_str.trim_start_matches("0x")).unwrap()).unwrap();
 
-    // Should format back to same string
     assert_eq!(hex_str, uint160.to_string());
 }
 
 #[test]
 fn test_uint160_zero_initialization() {
-    // Test UInt160 zero initialization (matches C# UT_UInt160.TestGernerator1)
     let uint160 = UInt160::new();
     assert_eq!(
         "0x0000000000000000000000000000000000000000",
@@ -254,7 +245,6 @@ fn test_uint160_zero_initialization() {
 
 #[test]
 fn test_uint160_from_bytes() {
-    // Test UInt160 from byte array (matches C# UT_UInt160.TestGernerator2)
     let bytes = [0u8; 20];
     let uint160 = UInt160::from_bytes(&bytes).unwrap();
     assert_eq!(UInt160::new(), uint160);
@@ -262,7 +252,6 @@ fn test_uint160_from_bytes() {
 
 #[test]
 fn test_uint160_invalid_length() {
-    // Test UInt160 with invalid length (matches C# UT_UInt160.TestFail)
     let invalid_bytes = [0u8; 21]; // Too long
     let result = UInt160::from_bytes(&invalid_bytes);
     assert!(result.is_err());

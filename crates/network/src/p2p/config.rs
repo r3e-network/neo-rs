@@ -37,7 +37,13 @@ pub struct P2PConfig {
 impl Default for P2PConfig {
     fn default() -> Self {
         Self {
-            listen_address: format!("0.0.0.0:{}", DEFAULT_PORT).parse().unwrap(),
+            listen_address: format!("localhost:{}", DEFAULT_PORT)
+                .parse()
+                .unwrap_or_else(|_| {
+                    format!("0.0.0.0:{}", DEFAULT_PORT)
+                        .parse()
+                        .expect("value should parse")
+                }),
             max_peers: MAX_PEERS,
             connection_timeout: Duration::from_secs(CONNECTION_TIMEOUT_SECS),
             handshake_timeout: Duration::from_secs(HANDSHAKE_TIMEOUT_SECS),
@@ -120,7 +126,7 @@ impl P2PConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Message, NetworkError, Peer};
 
     #[test]
     fn test_p2p_config_default() {

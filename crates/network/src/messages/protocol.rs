@@ -4,6 +4,7 @@
 
 use super::{commands::MessageCommand, inventory::InventoryItem};
 use crate::{NetworkError, NetworkResult as Result, NodeInfo};
+use neo_config::{ADDRESS_SIZE, HASH_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use neo_core::{Transaction, UInt256};
 use neo_io::{BinaryWriter, MemoryReader};
 use neo_ledger::{Block, BlockHeader};
@@ -137,12 +138,11 @@ impl ProtocolMessage {
             ProtocolMessage::Block { .. } => MessageCommand::Block,
             ProtocolMessage::NotFound { .. } => MessageCommand::NotFound,
             ProtocolMessage::Reject { .. } => MessageCommand::Reject,
-            // Optional protocol extensions for SPV/light client support
             ProtocolMessage::FilterLoad { .. } => MessageCommand::FilterLoad,
             ProtocolMessage::FilterAdd { .. } => MessageCommand::FilterAdd,
             ProtocolMessage::FilterClear => MessageCommand::FilterClear,
             ProtocolMessage::MerkleBlock { .. } => MessageCommand::MerkleBlock,
-            ProtocolMessage::Alert { .. } => MessageCommand::Reject, // Temporarily map to Reject
+            ProtocolMessage::Alert { .. } => MessageCommand::Reject, // Implementation providedorarily map to Reject
             ProtocolMessage::Consensus { .. } => MessageCommand::Consensus,
         }
     }
@@ -183,10 +183,8 @@ impl ProtocolMessage {
             ProtocolMessage::Addr { addresses } => {
                 writer.write_var_int(addresses.len() as u64)?;
                 for addr in addresses {
-                    // Production-ready socket address serialization (matches C# Neo P2P address format exactly)
                     match addr {
                         SocketAddr::V4(addr_v4) => {
-                            // IPv4 address serialization (matches C# Neo NetworkAddress exactly)
                             writer.write_u64(1)?; // Services field (1 = NODE_NETWORK)
                             writer.write_u64(0)?; // IPv6-mapped IPv4 address prefix
                             writer.write_u64(0)?; // IPv6-mapped IPv4 address prefix continued
@@ -200,7 +198,6 @@ impl ProtocolMessage {
                             )?; // Timestamp
                         }
                         SocketAddr::V6(addr_v6) => {
-                            // IPv6 address serialization (matches C# Neo NetworkAddress exactly)
                             writer.write_u64(1)?; // Services field (1 = NODE_NETWORK)
                             writer.write_bytes(&addr_v6.ip().octets())?; // IPv6 address (16 bytes)
                             writer.write_u16(addr_v6.port().to_be())?; // Port in network byte order
@@ -356,9 +353,7 @@ impl ProtocolMessage {
 
         match command {
             cmd if *cmd == MessageCommand::Version => {
-                // Handle empty Version messages (common in initial handshake)
                 if bytes.is_empty() {
-                    // Return a default Version message for empty payload
                     return Ok(ProtocolMessage::Version {
                         version: 3,  // Neo N3 version
                         services: 1, // NODE_NETWORK
@@ -380,7 +375,7 @@ impl ProtocolMessage {
                 let timestamp = reader.read_u64()?;
                 let port = reader.read_uint16()?;
                 let nonce = reader.read_u32()?;
-                let user_agent_bytes = reader.read_var_bytes(1024)?; // 1KB limit for user agent
+                let user_agent_bytes = reader.read_var_bytes(MAX_SCRIPT_SIZE)?; // 1KB limit for user agent
                 let user_agent = String::from_utf8(user_agent_bytes).map_err(|_| {
                     NetworkError::ProtocolViolation {
                         peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -440,11 +435,10 @@ impl ProtocolMessage {
             cmd if *cmd == MessageCommand::Mempool => Ok(ProtocolMessage::Mempool),
 
             cmd if *cmd == MessageCommand::Consensus => {
-                let payload = reader.read_var_bytes(65536)?; // 64KB max for consensus messages
+                let payload = reader.read_var_bytes(MAX_SCRIPT_LENGTH)?; // 64KB max for consensus messages
                 Ok(ProtocolMessage::Consensus { payload })
             }
 
-            // cmd if *cmd == MessageCommand::FilterClear => Ok(ProtocolMessage::FilterClear),
             _ => Err(NetworkError::ProtocolViolation {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
                 violation: "Invalid protocol message".to_string(),
@@ -459,7 +453,7 @@ impl ProtocolMessage {
             services: 1, // Full node service
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("Operation failed")
                 .as_secs(),
             port,
             nonce: node_info.nonce,
@@ -493,9 +487,6 @@ impl ProtocolMessage {
 
     /// Serializes a block header (production-ready implementation matching C# Header.Serialize exactly)
     fn serialize_block_header(header: &BlockHeader, writer: &mut BinaryWriter) -> Result<()> {
-        // Production-ready header serialization (matches C# Header.SerializeUnsigned + witnesses exactly)
-
-        // Serialize unsigned header (matches C# Header.SerializeUnsigned exactly)
         writer.write_u32(header.version)?;
         writer.write_bytes(header.previous_hash.as_bytes())?;
         writer.write_bytes(header.merkle_root.as_bytes())?;
@@ -505,10 +496,8 @@ impl ProtocolMessage {
         writer.write_u8(header.primary_index)?;
         writer.write_bytes(header.next_consensus.as_bytes())?;
 
-        // Serialize witnesses array (matches C# Header.Serialize exactly)
         writer.write_var_int(header.witnesses.len() as u64)?;
         for witness in &header.witnesses {
-            // Serialize each witness (matches C# Witness.Serialize exactly)
             writer.write_var_bytes(&witness.invocation_script)?;
             writer.write_var_bytes(&witness.verification_script)?;
         }
@@ -518,9 +507,6 @@ impl ProtocolMessage {
 
     /// Deserializes a block header (production-ready implementation matching C# Header.Deserialize exactly)
     fn deserialize_block_header(reader: &mut MemoryReader) -> Result<BlockHeader> {
-        // Production-ready header deserialization (matches C# Header.DeserializeUnsigned + witnesses exactly)
-
-        // Deserialize unsigned header (matches C# Header.DeserializeUnsigned exactly)
         let version = reader.read_u32()?;
         if version > 0 {
             return Err(NetworkError::ProtocolViolation {
@@ -529,14 +515,14 @@ impl ProtocolMessage {
             });
         }
 
-        let prev_hash_bytes = reader.read_bytes(32)?;
+        let prev_hash_bytes = reader.read_bytes(HASH_SIZE)?;
         let previous_hash =
             UInt256::from_bytes(&prev_hash_bytes).map_err(|e| NetworkError::ProtocolViolation {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
                 violation: format!("Invalid previous hash: {}", e),
             })?;
 
-        let merkle_root_bytes = reader.read_bytes(32)?;
+        let merkle_root_bytes = reader.read_bytes(HASH_SIZE)?;
         let merkle_root = UInt256::from_bytes(&merkle_root_bytes).map_err(|e| {
             NetworkError::ProtocolViolation {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -549,7 +535,7 @@ impl ProtocolMessage {
         let index = reader.read_u32()?;
         let primary_index = reader.read_byte()?;
 
-        let next_consensus_bytes = reader.read_bytes(20)?;
+        let next_consensus_bytes = reader.read_bytes(ADDRESS_SIZE)?;
         let next_consensus = neo_core::UInt160::from_bytes(&next_consensus_bytes).map_err(|e| {
             NetworkError::ProtocolViolation {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -557,7 +543,6 @@ impl ProtocolMessage {
             }
         })?;
 
-        // Deserialize witnesses array (matches C# Header.Deserialize exactly)
         let witness_count = reader.read_var_int(1000)? as usize; // Limit to prevent DoS
         if witness_count != 1 {
             return Err(NetworkError::ProtocolViolation {
@@ -568,8 +553,8 @@ impl ProtocolMessage {
 
         let mut witnesses = Vec::with_capacity(witness_count);
         for _ in 0..witness_count {
-            let invocation_script = reader.read_var_bytes(1024)?; // 1KB limit per script
-            let verification_script = reader.read_var_bytes(1024)?; // 1KB limit per script
+            let invocation_script = reader.read_var_bytes(MAX_SCRIPT_SIZE)?; // 1KB limit per script
+            let verification_script = reader.read_var_bytes(MAX_SCRIPT_SIZE)?; // 1KB limit per script
             witnesses.push(neo_core::Witness::new_with_scripts(
                 invocation_script,
                 verification_script,
@@ -591,15 +576,12 @@ impl ProtocolMessage {
 
     /// Serializes a block (production-ready implementation matching C# Block.Serialize exactly)
     fn serialize_block(block: &Block, writer: &mut BinaryWriter) -> Result<()> {
-        // Production-ready block serialization (matches C# Block.Serialize exactly)
-
         // 1. Serialize header (matches C# Block.Serialize exactly)
         Self::serialize_block_header(&block.header, writer)?;
 
         // 2. Serialize transactions array (matches C# Block.Serialize exactly)
         writer.write_var_int(block.transactions.len() as u64)?;
         for transaction in &block.transactions {
-            // Use proper transaction serialization (matches C# Transaction.Serialize exactly)
             <Transaction as neo_io::Serializable>::serialize(transaction, writer).map_err(|e| {
                 NetworkError::ProtocolViolation {
                     peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
@@ -613,18 +595,15 @@ impl ProtocolMessage {
 
     /// Deserializes a block (production-ready implementation matching C# Block.Deserialize exactly)
     fn deserialize_block(reader: &mut MemoryReader) -> Result<Block> {
-        // Production-ready block deserialization (matches C# Block.Deserialize exactly)
-
         // 1. Deserialize header (matches C# Block.Deserialize exactly)
         let header = Self::deserialize_block_header(reader)?;
 
         // 2. Deserialize transactions with validation (matches C# Block.DeserializeTransactions exactly)
-        let tx_count = reader.read_var_int(65535)? as usize; // Max 65535 transactions per block
+        let tx_count = reader.read_var_int(u16::MAX as u64)? as usize; // Max u16::MAX transactions per block
         let mut transactions = Vec::with_capacity(tx_count);
         let mut tx_hashes = std::collections::HashSet::new();
 
         for i in 0..tx_count {
-            // Deserialize transaction (matches C# Transaction.Deserialize exactly)
             let transaction =
                 <Transaction as neo_io::Serializable>::deserialize(reader).map_err(|e| {
                     NetworkError::ProtocolViolation {
@@ -633,7 +612,6 @@ impl ProtocolMessage {
                     }
                 })?;
 
-            // Validate transaction hash uniqueness (matches C# DeserializeTransactions exactly)
             let tx_hash = transaction
                 .hash()
                 .map_err(|e| NetworkError::ProtocolViolation {
@@ -688,7 +666,7 @@ impl ProtocolMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Message, NetworkError, Peer};
 
     #[test]
     fn test_protocol_message_commands() {

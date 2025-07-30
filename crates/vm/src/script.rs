@@ -63,7 +63,6 @@ impl Script {
             hash_code: Arc::new(Mutex::new(None)),
         };
 
-        // Parse and cache all instructions if strict mode is enabled
         if strict_mode {
             s.populate_instruction_cache()?;
             s.strict_mode = true;
@@ -116,7 +115,10 @@ impl Script {
             position += instruction.size();
         }
 
-        *self.instructions.lock().unwrap() = instructions;
+        *self
+            .instructions
+            .lock()
+            .map_err(|_| VmError::invalid_operation_msg("Lock poisoned"))? = instructions;
         Ok(())
     }
 
@@ -127,18 +129,14 @@ impl Script {
         while reader.position() < reader.len() {
             let instruction = Instruction::parse_from_neo_io_reader(&mut reader)?;
 
-            // Check if the instruction is valid
             let _opcode = instruction.opcode();
 
-            // Check if the instruction goes beyond the script bounds
             if instruction.pointer() + instruction.size() > self.script.len() {
                 return Err(VmError::invalid_instruction_msg(format!(
                     "Instruction at position {} exceeds script bounds",
                     instruction.pointer()
                 )));
             }
-
-            // We would check for additional validity here, such as invalid jump targets
         }
 
         Ok(())
@@ -146,7 +144,10 @@ impl Script {
 
     /// Validates the script in strict mode.
     pub fn validate_strict(&self) -> VmResult<()> {
-        let instructions = self.instructions.lock().unwrap();
+        let instructions = self
+            .instructions
+            .lock()
+            .map_err(|_| VmError::invalid_operation_msg("Lock poisoned"))?;
 
         // Validate jump targets
         for (&ip, instruction) in instructions.iter() {
@@ -286,15 +287,16 @@ impl Script {
             )));
         }
 
-        // Check if the instruction is already cached
         {
-            let instructions = self.instructions.lock().unwrap();
+            let instructions = self
+                .instructions
+                .lock()
+                .map_err(|_| VmError::invalid_operation_msg("Lock poisoned"))?;
             if let Some(instruction) = instructions.get(&position) {
                 return Ok(instruction.clone());
             }
         }
 
-        // If in strict mode, we should have all instructions cached
         if self.strict_mode {
             return Err(VmError::invalid_operation_msg(format!(
                 "Position {} not found with strict mode",
@@ -309,7 +311,10 @@ impl Script {
 
         // Cache the instruction
         {
-            let mut instructions = self.instructions.lock().unwrap();
+            let mut instructions = self
+                .instructions
+                .lock()
+                .map_err(|_| VmError::invalid_operation_msg("Lock poisoned"))?;
             instructions.insert(position, instruction.clone());
         }
 
@@ -405,9 +410,8 @@ impl Script {
     ///
     /// The hash of the script as a byte array
     pub fn hash(&self) -> Vec<u8> {
-        // Check if we have a cached hash
         {
-            let hash_code = self.hash_code.lock().unwrap();
+            let hash_code = self.hash_code.lock().expect("Lock poisoned");
             if let Some(hash) = *hash_code {
                 return hash.to_le_bytes().to_vec();
             }
@@ -420,7 +424,7 @@ impl Script {
 
         // Cache the hash
         {
-            let mut hash_code = self.hash_code.lock().unwrap();
+            let mut hash_code = self.hash_code.lock().expect("Lock poisoned");
             *hash_code = Some(hash);
         }
 
@@ -430,9 +434,8 @@ impl Script {
 
     /// Gets the hash code of the script.
     pub fn hash_code(&self) -> u64 {
-        // Check if we have a cached hash
         {
-            let hash_code = self.hash_code.lock().unwrap();
+            let hash_code = self.hash_code.lock().expect("Lock poisoned");
             if let Some(hash) = *hash_code {
                 return hash;
             }
@@ -445,7 +448,7 @@ impl Script {
 
         // Cache the hash
         {
-            let mut hash_code = self.hash_code.lock().unwrap();
+            let mut hash_code = self.hash_code.lock().expect("Lock poisoned");
             *hash_code = Some(hash);
         }
 
@@ -466,7 +469,6 @@ impl Script {
         let position = instruction.pointer();
         let next_position = position + instruction.size();
 
-        // Check if the instruction is a jump instruction
         match opcode {
             OpCode::JMP | OpCode::JMPIF | OpCode::JMPIFNOT | OpCode::CALL => {
                 // 1-byte offset
@@ -519,7 +521,6 @@ impl Script {
         let position = instruction.pointer();
         let next_position = position + instruction.size();
 
-        // Check if the instruction is a TRY instruction
         if opcode != OpCode::TRY {
             return Err(VmError::invalid_instruction_msg(format!(
                 "Not a TRY instruction: {:?}",
@@ -562,9 +563,6 @@ impl AsRef<[u8]> for Script {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::op_code::OpCode;
-
     #[test]
     fn test_script_creation_and_validation() {
         // Create a valid script: PUSH1, PUSH2, ADD, RET
@@ -596,7 +594,7 @@ mod tests {
 
         // Get a range
         assert_eq!(
-            script.range(0, 2).unwrap(),
+            script.range(0, 2).expect("Operation failed"),
             vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8]
         );
 
@@ -643,7 +641,6 @@ mod tests {
         let instr1 = script.get_instruction(0).unwrap();
         assert_eq!(instr1.opcode(), OpCode::PUSH1);
 
-        // Get the same instruction again (should be cached)
         let instr2 = script.get_instruction(0).unwrap();
         assert_eq!(instr2.opcode(), OpCode::PUSH1);
 
@@ -656,12 +653,12 @@ mod tests {
     fn test_script_with_valid_jumps() {
         // Create a valid script with jumps
         let script_bytes = vec![
-            OpCode::PUSH1 as u8, // 0
+            OpCode::PUSH1 as u8,
             OpCode::JMP as u8,
-            0x00,                // 1: Jump to position 3 (offset 0 from next instruction at 3)
-            OpCode::PUSH2 as u8, // 3
-            OpCode::ADD as u8,   // 4
-            OpCode::RET as u8,   // 5
+            0x00, // 1: Jump to position 3 (offset 0 from next instruction at 3)
+            OpCode::PUSH2 as u8,
+            OpCode::ADD as u8,
+            OpCode::RET as u8,
         ];
 
         // Create with validation

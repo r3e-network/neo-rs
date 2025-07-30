@@ -104,7 +104,6 @@ impl Nep17TokenExample {
 
     /// Creates the NEF file for this token.
     pub fn create_nef(&self) -> NefFile {
-        // Simple valid NEF script for testing - just returns true
         let script = vec![
             0x51, // PUSH1 (pushes true onto the stack)
             0x40, // RET (returns)
@@ -212,7 +211,6 @@ impl Nep11NftExample {
 
     /// Creates the NEF file for this NFT.
     pub fn create_nef(&self) -> NefFile {
-        // Simple valid NEF script for testing - just returns true
         let script = vec![
             0x51, // PUSH1 (pushes true onto the stack)
             0x40, // RET (returns)
@@ -259,7 +257,7 @@ impl ContractDeploymentHelper {
             manifest,
             sender,
             tx_hash,
-            data: Some(serde_json::to_vec(&token).unwrap()),
+            data: serde_json::to_vec(&token),
         };
 
         // Deploy the contract
@@ -283,7 +281,7 @@ impl ContractDeploymentHelper {
             event_index: 0,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                ?
                 .as_secs(),
         };
 
@@ -312,7 +310,7 @@ impl ContractDeploymentHelper {
             manifest,
             sender,
             tx_hash,
-            data: Some(serde_json::to_vec(&nft).unwrap()),
+            data: serde_json::to_vec(&nft),
         };
 
         // Deploy the contract
@@ -334,7 +332,7 @@ impl ContractDeploymentHelper {
             event_index: 0,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                ?
                 .as_secs(),
         };
 
@@ -362,7 +360,7 @@ impl Default for ContractDeploymentHelper {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{Error, Result};
     use neo_vm::TriggerType;
 
     #[test]
@@ -419,7 +417,7 @@ mod tests {
         );
 
         assert!(result.is_ok());
-        let contract = result.unwrap();
+        let contract = result?;
         assert_eq!(contract.manifest.name, "Helper Test");
     }
 }

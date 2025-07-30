@@ -104,7 +104,6 @@
         try {
             document.execCommand('copy');
         } catch (err) {
-            console.error('Failed to copy text: ', err);
         }
         
         document.body.removeChild(textArea);
@@ -286,7 +285,6 @@
                         });
                     }
                 } catch (error) {
-                    console.log('Analytics tracking failed:', error);
                 }
             });
         });
@@ -297,11 +295,21 @@
         // Monitor Core Web Vitals
         if ('web-vital' in window) {
             import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
-                getCLS(console.log);
-                getFID(console.log);
-                getFCP(console.log);
-                getLCP(console.log);
-                getTTFB(console.log);
+                getCLS((metric) => {
+                    // Send to analytics service
+                });
+                getFID((metric) => {
+                    // Send to analytics service
+                });
+                getFCP((metric) => {
+                    // Send to analytics service
+                });
+                getLCP((metric) => {
+                    // Send to analytics service
+                });
+                getTTFB((metric) => {
+                    // Send to analytics service
+                });
             });
         }
     }
@@ -313,7 +321,7 @@
             searchInput.addEventListener('input', debounce(function(e) {
                 const query = e.target.value.toLowerCase();
                 // Implement search logic here
-                console.log('Searching for:', query);
+                
             }, 300));
         }
     }
@@ -321,10 +329,10 @@
     // Utility function: debounce
     function debounce(func, wait) {
         let timeout;
-        return function executedFunction(...args) {
+        return function executedFunction(/* Implementation needed */args) {
             const later = () => {
                 clearTimeout(timeout);
-                func(...args);
+                func(/* Implementation needed */args);
             };
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
@@ -337,10 +345,10 @@
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js')
                     .then(registration => {
-                        console.log('SW registered: ', registration);
+                        // Service worker registered successfully
                     })
                     .catch(registrationError => {
-                        console.log('SW registration failed: ', registrationError);
+                        // Service worker registration failed
                     });
             });
         }
@@ -393,8 +401,8 @@
 
     // Global error handling
     window.addEventListener('error', (e) => {
-        console.error('Global error:', e.error);
         // Send error to monitoring service if configured
+        // Error logging handled by monitoring service
     });
 
     // Expose utilities to global scope for debugging

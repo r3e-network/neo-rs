@@ -3,12 +3,12 @@
 //! These tests ensure full compatibility with C# Neo's BinaryWriter functionality.
 //! Tests are based on the C# Neo.IO.BinaryWriter test suite.
 
+use super::*;
+use neo_io::MemoryReader;
 use neo_io::{BinaryWriter, Result};
 
 #[cfg(test)]
 mod binary_writer_tests {
-    use super::*;
-
     /// Test writing basic integer types (matches C# BinaryWriter.Write(int) exactly)
     #[test]
     fn test_write_int32_compatibility() {
@@ -87,17 +87,13 @@ mod binary_writer_tests {
     fn test_write_var_int_compatibility() {
         // Test cases from C# Neo implementation
         let test_cases = vec![
-            // Single byte values (0-252)
             (0u64, vec![0x00]),
             (1u64, vec![0x01]),
             (252u64, vec![0xFC]),
-            // 2-byte values (253-65535)
             (253u64, vec![0xFD, 0xFD, 0x00]),
             (65535u64, vec![0xFD, 0xFF, 0xFF]),
-            // 4-byte values (65536-4294967295)
             (65536u64, vec![0xFE, 0x00, 0x00, 0x01, 0x00]),
             (4294967295u64, vec![0xFE, 0xFF, 0xFF, 0xFF, 0xFF]),
-            // 8-byte values (4294967296+)
             (
                 4294967296u64,
                 vec![0xFF, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
@@ -117,12 +113,10 @@ mod binary_writer_tests {
     fn test_write_var_string_compatibility() {
         // Test cases from C# Neo implementation
         let test_cases = vec![
-            // Empty string
             ("", vec![0x00]),
             // Short strings
             ("Hello", vec![0x05, 0x48, 0x65, 0x6C, 0x6C, 0x6F]),
             ("Neo", vec![0x03, 0x4E, 0x65, 0x6F]),
-            // String with UTF-8 characters
             ("✓Neo", vec![0x06, 0xE2, 0x9C, 0x93, 0x4E, 0x65, 0x6F]),
         ];
 
@@ -190,8 +184,6 @@ mod binary_writer_tests {
     /// Test round-trip compatibility with BinaryReader (matches C# round-trip behavior exactly)
     #[test]
     fn test_round_trip_compatibility() {
-        use neo_io::MemoryReader;
-
         // Write various data types
         let mut writer = BinaryWriter::new();
         writer.write_i32(12345).unwrap();
@@ -228,7 +220,6 @@ mod binary_writer_tests {
         assert_eq!(result.len(), 4000); // 1000 * 4 bytes per int32
 
         // Verify the data is correct
-        use neo_io::MemoryReader;
         let mut reader = MemoryReader::new(&result);
         for i in 0..1000 {
             let value = reader.read_i32().unwrap();
@@ -245,7 +236,6 @@ mod binary_writer_tests {
             // Small arrays
             (vec![0x01], vec![0x01, 0x01]),
             (vec![0x01, 0x02, 0x03], vec![0x03, 0x01, 0x02, 0x03]),
-            // Array with 253 bytes (boundary case)
             (vec![0xFF; 253], {
                 let mut expected = vec![0xFD, 0xFD, 0x00]; // var_int(253)
                 expected.extend(vec![0xFF; 253]);

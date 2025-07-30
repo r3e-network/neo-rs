@@ -4,6 +4,7 @@
 //! converted from the C# Neo Contract class (@neo-sharp/src/Neo/SmartContract/Contract.cs).
 
 use crate::{ContractParameterType, Error, Result};
+use neo_config::MAX_SCRIPT_SIZE;
 use neo_core::{UInt160, UInt256, Witness};
 use neo_cryptography::ECPoint;
 use serde::{Deserialize, Serialize};
@@ -70,7 +71,7 @@ impl Contract {
             return Err(Error::Other("Invalid signature requirements".to_string()));
         }
 
-        if public_keys.len() > 1024 {
+        if public_keys.len() > MAX_SCRIPT_SIZE {
             return Err(Error::Other("Too many public keys".to_string()));
         }
 
@@ -104,9 +105,6 @@ impl Contract {
         if self.is_multi_sig {
             // Multi-signature witness
             let mut invocation_script = Vec::new();
-
-            // Production-ready signature addition with proper multi-signature support (matches C# Contract.CreateMultiSigRedeemScript exactly)
-            // This implements the C# logic: creating invocation scripts for multi-signature contracts
 
             // 1. Add signature data with proper PUSHDATA operation (production script generation)
             self.add_signature_to_script(&mut invocation_script, &signature)?;
@@ -178,7 +176,6 @@ impl Contract {
 
     /// Checks if a script is a standard contract.
     fn is_standard_contract(script: &[u8]) -> bool {
-        // Check if it's a standard signature script
         if script.len() == 40 {
             // Standard format: PUSHDATA1 33 <pubkey> SYSCALL System.Crypto.CheckWitness
             script[0] == 0x0c && script[1] == 33 && script[34] == 0x41
@@ -189,12 +186,10 @@ impl Contract {
 
     /// Checks if a script is a multi-signature contract.
     fn is_multi_sig_contract(script: &[u8]) -> bool {
-        // Basic check for multi-sig pattern
         if script.len() < 42 {
             return false;
         }
 
-        // Should start with PUSH1-PUSH16 (signature count)
         if script[0] < 0x51 || script[0] > 0x60 {
             return false;
         }
@@ -214,7 +209,6 @@ impl Contract {
             return Err(Error::Other("Signature too long".to_string()));
         }
 
-        // Add PUSHDATA operation for the signature
         script.push(0x0c); // PUSHDATA1
         script.push(signature.len() as u8);
         script.extend_from_slice(signature);
@@ -262,24 +256,15 @@ impl std::fmt::Display for Contract {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use neo_cryptography::ECPoint;
-
     #[test]
     fn test_create_signature_contract() {
         // This would need a valid ECPoint implementation
-        // let public_key = ECPoint::from_bytes(&[...]).unwrap();
-        // let contract = Contract::create_signature_contract(&public_key).unwrap();
-        // assert!(contract.is_standard());
-        // assert!(!contract.is_multi_sig());
     }
 
     #[test]
     fn test_contract_validation() {
         let script = vec![0x0c, 33]; // Incomplete script
         let parameter_list = vec![ContractParameterType::Signature];
-        let contract = Contract::new(script, parameter_list);
-
         // This should fail validation
         assert!(contract.validate().is_err());
     }

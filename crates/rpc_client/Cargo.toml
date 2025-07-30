@@ -8,6 +8,7 @@ repository = "https://github.com/neo-project/neo-rs"
 
 [dependencies]
 # Core Neo dependencies
+neo-config = { path = "../config" }
 neo-core = { path = "../core" }
 neo-json = { path = "../json" }
 neo-io = { path = "../io" }

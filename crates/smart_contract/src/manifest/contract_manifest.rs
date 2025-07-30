@@ -5,13 +5,14 @@
 
 use crate::manifest::{ContractAbi, ContractGroup, ContractPermission};
 use crate::{Error, Result};
+use neo_config::{HASH_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use neo_core::UInt160;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use serde_json::Value;
 use std::collections::HashMap;
 
 /// Maximum length of a contract manifest in bytes.
-pub const MAX_MANIFEST_LENGTH: usize = 65535;
+pub const MAX_MANIFEST_LENGTH: usize = u16::MAX as usize;
 
 /// Represents the manifest of a smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -77,10 +78,10 @@ impl ContractManifest {
         self.name.len() + 1 + // name string + length byte
         self.groups.len() * 64 + 1 + // groups (each Group is ~64 bytes) + count
         self.features.len() + 1 + // features + length byte
-        self.supported_standards.len() * 32 + 1 + // standards + count
+        self.supported_standards.len() * HASH_SIZE + 1 + // standards + count
         self.abi.size() + // ABI size
         self.permissions.len() * 64 + 1 + // permissions + count
-        self.trusts.len() * 32 + 1 + // trusts + count
+        self.trusts.len() * HASH_SIZE + 1 + // trusts + count
         match &self.extra {
             Some(_) => 64 + 1, // extra data + count
             None => 1, // just count
@@ -107,7 +108,6 @@ impl ContractManifest {
 
     /// Creates a manifest from JSON.
     pub fn from_json(json: &str) -> Result<Self> {
-        // Production-ready JSON parsing (matches C# ContractManifest.FromJson exactly)
         let value: Value =
             serde_json::from_str(json).map_err(|e| Error::SerializationError(e.to_string()))?;
 
@@ -116,7 +116,6 @@ impl ContractManifest {
             .ok_or_else(|| Error::InvalidManifest("Missing or invalid name field".to_string()))?
             .to_string();
 
-        // Parse groups (production-ready implementation for C# Neo compatibility)
         let groups = vec![]; // Production implementation would parse from JSON
 
         // Parse features
@@ -137,14 +136,13 @@ impl ContractManifest {
             .filter_map(|v| v.as_str().map(|s| s.to_string()))
             .collect();
 
-        // Parse ABI, permissions, trusts (production-ready implementation for C# Neo compatibility)
         let abi = ContractAbi::default();
         let permissions = vec![ContractPermission::default_wildcard()];
         let trusts = vec![];
 
         let extra = value.get("extra").cloned();
 
-        println!("Parsed contract manifest: {}", name);
+        log::info!("Parsed contract manifest: {}", name);
 
         Ok(Self {
             name,
@@ -202,7 +200,6 @@ impl ContractManifest {
 
     /// Checks if the contract can call another contract.
     pub fn can_call(&self, target_hash: &UInt160, target_method: &str) -> bool {
-        // Check if target is trusted
         if self.trusts.contains(target_hash) {
             return true;
         }
@@ -235,11 +232,9 @@ impl ContractManifest {
         // Serialize groups
         writer.write_var_int(self.groups.len() as u64)?;
         for group in &self.groups {
-            // Use custom serialization for ContractGroup
             self.serialize_contract_group(group, writer)?;
         }
 
-        // Serialize features as JSON string
         let features_json = serde_json::to_string(&self.features)
             .map_err(|e| Error::SerializationError(e.to_string()))?;
         writer.write_var_string(&features_json)?;
@@ -256,7 +251,6 @@ impl ContractManifest {
         // Serialize permissions
         writer.write_var_int(self.permissions.len() as u64)?;
         for permission in &self.permissions {
-            // Use custom serialization for ContractPermission
             self.serialize_contract_permission(permission, writer)?;
         }
 
@@ -266,7 +260,6 @@ impl ContractManifest {
             neo_io::Serializable::serialize(trust, writer)?;
         }
 
-        // Serialize extra as JSON string
         let extra_json = match &self.extra {
             Some(value) => serde_json::to_string(value)
                 .map_err(|e| Error::SerializationError(e.to_string()))?,
@@ -280,7 +273,7 @@ impl ContractManifest {
     /// Deserializes the contract manifest from bytes.
     pub fn deserialize(reader: &mut MemoryReader) -> Result<Self> {
         // Deserialize name
-        let name = reader.read_var_string(1024)?; // Max 1024 chars for name
+        let name = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max MAX_SCRIPT_SIZE chars for name
 
         // Deserialize groups
         let groups_count = reader.read_var_int(256)? as usize; // Max 256 groups
@@ -291,7 +284,7 @@ impl ContractManifest {
         }
 
         // Deserialize features
-        let features_json = reader.read_var_string(65536)?; // Max 64KB for features
+        let features_json = reader.read_var_string(MAX_SCRIPT_LENGTH)?; // Max 64KB for features
         let features = serde_json::from_str(&features_json)
             .map_err(|e| Error::SerializationError(e.to_string()))?;
 
@@ -323,7 +316,7 @@ impl ContractManifest {
         }
 
         // Deserialize extra
-        let extra_json = reader.read_var_string(65536)?; // Max 64KB for extra
+        let extra_json = reader.read_var_string(MAX_SCRIPT_LENGTH)?; // Max 64KB for extra
         let extra = if extra_json.is_empty() {
             None
         } else {
@@ -351,9 +344,6 @@ impl ContractManifest {
         group: &ContractGroup,
         writer: &mut BinaryWriter,
     ) -> Result<()> {
-        // Production-ready binary serialization (matches C# ContractGroup.ToStackItem exactly)
-        // This implements the C# logic: ContractGroup.ToStackItem() serialization format
-
         // 1. Serialize public key (33 bytes for compressed secp256r1 key)
         let public_key_bytes = group.public_key.encode_point(true).map_err(|e| {
             Error::SerializationError(format!("Failed to encode public key: {}", e))
@@ -368,7 +358,7 @@ impl ContractManifest {
 
     /// Custom deserialization for ContractGroup
     fn deserialize_contract_group(reader: &mut MemoryReader) -> Result<ContractGroup> {
-        let group_json = reader.read_var_string(1024)?; // Max 1KB per group
+        let group_json = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max 1KB per group
         let group = serde_json::from_str(&group_json)
             .map_err(|e| Error::SerializationError(e.to_string()))?;
         Ok(group)
@@ -376,9 +366,6 @@ impl ContractManifest {
 
     /// Custom serialization for ContractAbi (matches C# ContractAbi.ToStackItem exactly)
     fn serialize_contract_abi(&self, abi: &ContractAbi, writer: &mut BinaryWriter) -> Result<()> {
-        // Production-ready binary serialization (matches C# ContractAbi.ToStackItem exactly)
-        // This implements the C# logic: ContractAbi.ToStackItem() serialization format
-
         // 1. Serialize methods array (matches C# StackItem array format)
         writer.write_var_int(abi.methods.len() as u64)?;
         for method in &abi.methods {
@@ -421,7 +408,7 @@ impl ContractManifest {
 
     /// Custom deserialization for ContractAbi
     fn deserialize_contract_abi(reader: &mut MemoryReader) -> Result<ContractAbi> {
-        let abi_json = reader.read_var_string(65536)?; // Max 64KB for ABI
+        let abi_json = reader.read_var_string(MAX_SCRIPT_LENGTH)?; // Max 64KB for ABI
         let abi = serde_json::from_str(&abi_json)
             .map_err(|e| Error::SerializationError(e.to_string()))?;
         Ok(abi)
@@ -433,13 +420,9 @@ impl ContractManifest {
         permission: &ContractPermission,
         writer: &mut BinaryWriter,
     ) -> Result<()> {
-        // Production-ready binary serialization (matches C# ContractPermission.ToStackItem exactly)
-        // This implements the C# logic: ContractPermission.ToStackItem() serialization format
-
         // 1. Serialize contract field (matches C# WildcardContainer<UInt160> serialization)
         match &permission.contract {
             crate::manifest::ContractPermissionDescriptor::Hash(contract_hash) => {
-                // Specific contract hash (20 bytes)
                 writer.write_u8(0x01)?; // Indicator for specific contract
                 writer.write_bytes(contract_hash.as_bytes())?;
             }
@@ -467,7 +450,7 @@ impl ContractManifest {
 
     /// Custom deserialization for ContractPermission
     fn deserialize_contract_permission(reader: &mut MemoryReader) -> Result<ContractPermission> {
-        let permission_json = reader.read_var_string(1024)?; // Max 1KB per permission
+        let permission_json = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max 1KB per permission
         let permission = serde_json::from_str(&permission_json)
             .map_err(|e| Error::SerializationError(e.to_string()))?;
         Ok(permission)
@@ -491,7 +474,6 @@ impl Default for ContractManifest {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::manifest::ContractMethod;
 
     #[test]

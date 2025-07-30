@@ -3,6 +3,9 @@
 //! This plugin tracks NEP-17 and NEP-11 token transfers and balances,
 //! providing indexing and querying capabilities for token-related operations.
 
+// Define Error and Result types locally
+type Error = Box<dyn std::error::Error + Send + Sync>;
+type Result<T> = std::result::Result<T, Error>;
 use crate::{Plugin, PluginCategory, PluginContext, PluginEvent, PluginInfo};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -13,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tempfile::tempdir;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
@@ -135,8 +139,8 @@ impl TokensTrackerPlugin {
         opts.create_if_missing(true);
         opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
 
-        let db =
-            DB::open(&opts, &db_path).map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+        let db = DB::open(&opts, &db_path)
+            .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
         self.db = Some(Arc::new(RwLock::new(db)));
         self.db_path = Some(db_path);
@@ -153,36 +157,33 @@ impl TokensTrackerPlugin {
             // Store transfer by transaction ID
             let tx_key = format!("tx:{}", transfer.txid);
             let tx_value = serde_json::to_vec(transfer)
-                .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
             db.put(tx_key.as_bytes(), &tx_value)
-                .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
-            // Store transfer by contract and block (for range queries)
             let contract_key = format!(
                 "contract:{}:{:010}:{}",
                 transfer.contract, transfer.blockindex, transfer.txid
             );
             db.put(contract_key.as_bytes(), &tx_value)
-                .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
-            // Store transfer by address (from)
             if let Some(from_addr) = &transfer.from_address {
                 let from_key = format!(
                     "from:{}:{:010}:{}",
                     from_addr, transfer.blockindex, transfer.txid
                 );
                 db.put(from_key.as_bytes(), &tx_value)
-                    .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                    .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
             }
 
-            // Store transfer by address (to)
             if let Some(to_addr) = &transfer.to_address {
                 let to_key = format!(
                     "to:{}:{:010}:{}",
                     to_addr, transfer.blockindex, transfer.txid
                 );
                 db.put(to_key.as_bytes(), &tx_value)
-                    .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                    .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
             }
 
             debug!("Stored token transfer: {}", transfer.txid);
@@ -197,10 +198,10 @@ impl TokensTrackerPlugin {
             let db = db.write().await;
             let key = format!("token:{}", token_info.contract);
             let value = serde_json::to_vec(token_info)
-                .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
             db.put(key.as_bytes(), &value)
-                .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
             debug!("Stored token info: {}", token_info.contract);
         }
@@ -214,10 +215,10 @@ impl TokensTrackerPlugin {
             let db = db.write().await;
             let key = format!("balance:{}:{}", balance.address, balance.contract);
             let value = serde_json::to_vec(balance)
-                .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
             db.put(key.as_bytes(), &value)
-                .map_err(|e| ExtensionError::DatabaseError(e.to_string()))?;
+                .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
 
             debug!(
                 "Updated balance for {} on contract {}",
@@ -331,7 +332,6 @@ impl TokensTrackerPlugin {
                         }
 
                         if let Ok(transfer) = serde_json::from_slice::<TokenTransfer>(&value) {
-                            // Check if we already have this transfer (from duplicate entries)
                             if !transfers.iter().any(|t| t.txid == transfer.txid) {
                                 transfers.push(transfer);
                                 if transfers.len() >= self.max_results_per_query {
@@ -367,11 +367,11 @@ impl TokensTrackerPlugin {
             match db.get(key.as_bytes()) {
                 Ok(Some(value)) => {
                     let balance: TokenBalance = serde_json::from_slice(&value)
-                        .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                        .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
                     Ok(Some(balance))
                 }
                 Ok(None) => Ok(None),
-                Err(e) => Err(ExtensionError::DatabaseError(e.to_string())),
+                Err(e) => Err(ExtensionError::OperationFailed(e.to_string())),
             }
         } else {
             Ok(None)
@@ -414,11 +414,11 @@ impl TokensTrackerPlugin {
             match db.get(key.as_bytes()) {
                 Ok(Some(value)) => {
                     let token_info: TokenInfo = serde_json::from_slice(&value)
-                        .map_err(|e| ExtensionError::SerializationError(e.to_string()))?;
+                        .map_err(|e| ExtensionError::OperationFailed(e.to_string()))?;
                     Ok(Some(token_info))
                 }
                 Ok(None) => Ok(None),
-                Err(e) => Err(ExtensionError::DatabaseError(e.to_string())),
+                Err(e) => Err(ExtensionError::OperationFailed(e.to_string())),
             }
         } else {
             Ok(None)
@@ -603,16 +603,12 @@ impl Plugin for TokensTrackerPlugin {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::collections::HashMap;
-    use tempfile::tempdir;
-
     fn create_test_context() -> PluginContext {
-        let temp_dir = tempdir().unwrap();
+        let final_dir = tempdir().unwrap();
         PluginContext {
             neo_version: "3.6.0".to_string(),
-            config_dir: temp_dir.path().to_path_buf(),
-            data_dir: temp_dir.path().to_path_buf(),
+            config_dir: final_dir.path().to_path_buf(),
+            data_dir: final_dir.path().to_path_buf(),
             shared_data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -642,9 +638,12 @@ mod tests {
         assert!(plugin.store_token_info(&token_info).await.is_ok());
 
         // Test token info retrieval
-        let retrieved = plugin.get_token_info(&token_info.contract).await.unwrap();
+        let retrieved = plugin
+            .get_token_info(&token_info.contract)
+            .await
+            .expect("operation should succeed");
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().symbol, "TEST");
+        assert_eq!(retrieved.expect("operation should succeed").symbol, "TEST");
 
         // Test stop
         assert!(plugin.stop().await.is_ok());
@@ -663,8 +662,9 @@ mod tests {
             token_type: TokenType::NEP17,
         };
 
-        let json = serde_json::to_string(&transfer).unwrap();
-        let deserialized: TokenTransfer = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string(&transfer).expect("operation should succeed");
+        let deserialized: TokenTransfer =
+            serde_json::from_str(&json).expect("Failed to parse from string");
 
         assert_eq!(transfer.txid, deserialized.txid);
         assert_eq!(transfer.token_type, deserialized.token_type);
