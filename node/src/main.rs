@@ -202,20 +202,26 @@ async fn check_transaction_execution_health(
 ) {
     // Check if we're synchronized enough to validate transactions
     if sync_stats.progress_percentage < 95.0 {
-        debug!("Skipping transaction health check - not fully synchronized ({}%)", sync_stats.progress_percentage);
+        debug!(
+            "Skipping transaction health check - not fully synchronized ({}%)",
+            sync_stats.progress_percentage
+        );
         return;
     }
 
     // Check recent block processing for transaction execution
     if blocks_gained > 0 {
-        info!("✅ Transaction Processing: {} blocks processed in last 30s", blocks_gained);
-        
+        info!(
+            "✅ Transaction Processing: {} blocks processed in last 30s",
+            blocks_gained
+        );
+
         // In a production system, we would also check:
         // - Transaction throughput per block
         // - VM execution success rates
         // - Gas consumption patterns
         // - Smart contract execution metrics
-        
+
         if blocks_gained >= 2 {
             info!("  🟢 High transaction throughput - processing blocks regularly");
         } else if blocks_gained == 1 {
@@ -232,15 +238,21 @@ async fn check_transaction_execution_health(
     // Check blockchain state for transaction validation capabilities
     let current_height = blockchain.get_height().await;
     if current_height > 0 {
-        debug!("Blockchain ready for transaction validation at height {}", current_height);
-        
+        debug!(
+            "Blockchain ready for transaction validation at height {}",
+            current_height
+        );
+
         // In a complete implementation, we would:
         // 1. Test transaction validation with sample transactions
         // 2. Monitor VM execution performance
         // 3. Check smart contract deployment success rates
         // 4. Validate state updates and persistence
-        
-        info!("  📋 Transaction Validation: Ready (height: {})", current_height);
+
+        info!(
+            "  📋 Transaction Validation: Ready (height: {})",
+            current_height
+        );
     } else {
         warn!("  ⚠️  Blockchain not ready for transaction processing");
     }
@@ -253,23 +265,26 @@ async fn check_storage_persistence_health(
     blocks_gained: u32,
 ) {
     use neo_persistence::storage::IReadOnlyStore;
-    
+
     // Basic storage connectivity check
     match storage.try_get(&b"latest_block_height".to_vec()) {
         Some(_) => {
             debug!("Storage connectivity verified - RocksDB responding normally");
-            
+
             if blocks_gained > 0 {
-                info!("💾 Storage Health: {} blocks persisted successfully", blocks_gained);
+                info!(
+                    "💾 Storage Health: {} blocks persisted successfully",
+                    blocks_gained
+                );
                 info!("  🟢 RocksDB persistence: Active and healthy");
-                
+
                 // In a production system, we would also check:
                 // - Database compaction status
                 // - Disk space utilization
                 // - Write throughput metrics
                 // - Read latency statistics
                 // - Backup status and integrity
-                
+
                 if current_height > 1000 {
                     info!("  📊 Database size: {} blocks stored", current_height);
                 }
@@ -281,7 +296,7 @@ async fn check_storage_persistence_health(
         None => {
             error!("❌ Storage Health Check Failed: Unable to read from RocksDB");
             error!("  🔴 RocksDB connection issue - data persistence at risk");
-            
+
             // In production, this would trigger:
             // - Automatic storage repair attempts
             // - Backup restore procedures
@@ -289,27 +304,30 @@ async fn check_storage_persistence_health(
             // - Graceful degradation to read-only mode
         }
     }
-    
+
     // Check state persistence capabilities
     if current_height > 0 {
         // Verify we can read blockchain state
         match storage.try_get(&format!("block_{}", current_height).as_bytes().to_vec()) {
             Some(_) => {
                 debug!("Latest block data successfully retrievable from storage");
-                info!("  📋 State Persistence: Latest block (#{}) accessible", current_height);
+                info!(
+                    "  📋 State Persistence: Latest block (#{}) accessible",
+                    current_height
+                );
             }
             None => {
                 warn!("  ⚠️  Latest block data not found in storage - potential sync issue");
             }
         }
-        
+
         // In a complete implementation, we would also verify:
         // - Account state consistency
         // - Smart contract storage integrity
         // - Transaction index accessibility
         // - Block header chain continuity
         // - UTXO set completeness (if applicable)
-        
+
         info!("  ✅ Persistence: Blockchain state ready for queries");
     } else {
         info!("  ⏳ Persistence: Waiting for initial block data");
@@ -648,7 +666,9 @@ async fn run_node(
             let mut event_receiver = p2p_node.peer_manager().subscribe_to_events();
             while let Ok(event) = event_receiver.recv().await {
                 match event {
-                    neo_network::PeerEvent::VersionReceived { peer, start_height, .. } => {
+                    neo_network::PeerEvent::VersionReceived {
+                        peer, start_height, ..
+                    } => {
                         info!("📊 Peer {} reported height: {}", peer, start_height);
                         sync_manager.update_best_height(start_height, peer).await;
                     }
@@ -804,22 +824,23 @@ fn start_monitoring(
             // Calculate blocks per minute and sync progress
             let blocks_gained = block_height.saturating_sub(last_height);
             let blocks_per_minute = blocks_gained * 2; // 30 second intervals
-            
+
             // Calculate sync progress percentage
             let sync_progress = if sync_stats.best_known_height > 0 {
                 (block_height as f64 / sync_stats.best_known_height as f64 * 100.0).min(100.0)
             } else {
                 0.0
             };
-            
+
             // Estimate time to sync completion
-            let estimated_sync_time = if blocks_per_minute > 0 && sync_stats.best_known_height > block_height {
-                let remaining_blocks = sync_stats.best_known_height - block_height;
-                let minutes_remaining = remaining_blocks / blocks_per_minute;
-                Some(minutes_remaining)
-            } else {
-                None
-            };
+            let estimated_sync_time =
+                if blocks_per_minute > 0 && sync_stats.best_known_height > block_height {
+                    let remaining_blocks = sync_stats.best_known_height - block_height;
+                    let minutes_remaining = remaining_blocks / blocks_per_minute;
+                    Some(minutes_remaining)
+                } else {
+                    None
+                };
 
             // Display comprehensive status with enhanced sync information
             info!("📊 Node Status Report");
@@ -828,7 +849,8 @@ fn start_monitoring(
                 "│  ├─ Height: {} (+{} in last 30s)",
                 block_height, blocks_gained
             );
-            info!("│  ├─ Sync Progress: {:.1}% ({}/{})", 
+            info!(
+                "│  ├─ Sync Progress: {:.1}% ({}/{})",
                 sync_progress, block_height, sync_stats.best_known_height
             );
             info!("│  ├─ Sync Rate: {} blocks/min", blocks_per_minute);
@@ -918,9 +940,10 @@ fn start_monitoring(
 
             // Transaction execution and mempool monitoring
             check_transaction_execution_health(&blockchain, &sync_stats, blocks_gained).await;
-            
+
             // Storage and persistence health monitoring
-            check_storage_persistence_health(&blockchain_storage, block_height, blocks_gained).await;
+            check_storage_persistence_health(&blockchain_storage, block_height, blocks_gained)
+                .await;
 
             last_height = block_height;
         }
