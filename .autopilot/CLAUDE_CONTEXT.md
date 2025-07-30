@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-30T09:40:31.240Z
+Generated at: 2025-07-30T12:15:31.172Z
 
 ---
 
@@ -9,24 +9,24 @@ Generated at: 2025-07-30T09:40:31.240Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-30T09:40:01.827Z
+- **Last Updated**: 2025-07-30T12:15:03.341Z
 
 ## Statistics
 - **Total Files**: 2120
-- **Estimated Lines**: 395646
-- **Average File Size**: 9163 bytes
+- **Estimated Lines**: 395742
+- **Average File Size**: 9164 bytes
 
 ## Languages
-- **csharp**: 293454 files
-- **rust**: 135558 files
-- **json**: 60278 files
-- **markdown**: 36107 files
-- **python**: 28764 files
-- **shellscript**: 14688 files
-- **javascript**: 2754 files
-- **yaml**: 612 files
-- **css**: 612 files
-- **html**: 612 files
+- **csharp**: 927353 files
+- **rust**: 428381 files
+- **json**: 190495 files
+- **markdown**: 114105 files
+- **python**: 90898 files
+- **shellscript**: 46416 files
+- **javascript**: 8703 files
+- **yaml**: 1934 files
+- **css**: 1934 files
+- **html**: 1934 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -82,28 +82,15 @@ No unfinished tasks
 
 ### Git Status
 ```
- M .autoclaude/config.json
- M crates/network/src/peer_manager.rs
- M crates/network/src/rpc.rs
- M crates/network/src/shutdown_impl.rs
- M crates/network/src/sync.rs
- M data/blocks/CURRENT
- M data/blocks/LOG
+ M .autopilot/CLAUDE_CONTEXT.md
+ M .autopilot/cache/project-index.json
  m neo_csharp
-?? .autoclaude/scripts/code-understanding-check.sh
-?? .autoclaude/scripts/context-check.sh
-?? .autoclaude/scripts/dependency-check.sh
-?? .autoclaude/scripts/integration-testing-check.sh
-?? .autoclaude/scripts/performance-check.sh
-?? .autoclaude/scripts/security-audit-check.sh
-?? .autopilot/
-?? analyze_height.py
-?? test_new_height.py
 
 ```
 
 ### Recent Commits
 ```
+9d19566 fix(network): resolve compilation errors and pattern matching issues
 2befb8a fix(network): complete TestNet protocol compatibility with direct payload format
 825864f feat(network): add dedicated TestNet message parser
 8be00c1 fix(network): enhance TestNet message parsing with better error handling
@@ -113,7 +100,6 @@ af67828 fix(network): optimize TestNet handshake timeout handling and message re
 1503a65 fix(ci): resolve GitHub Actions workflow issues and enable CI for jimmy-rocksdb branch
 85ed5cf fix(network): complete TestNet protocol implementation and code quality improvements
 c40c672 fix(network): resolve RPC server binding and TestNet connectivity issues
-502291a fix(ci): add missing build dependencies for RocksDB compilation
 
 ```
 
