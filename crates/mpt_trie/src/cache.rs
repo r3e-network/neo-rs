@@ -1,6 +1,5 @@
 // Define SECONDS_PER_HOUR locally
 const SECONDS_PER_HOUR: u64 = 3600;
-use crate::error::TrieError;
 use crate::{MptError, MptResult, Node};
 use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE};
 use neo_core::UInt256;
@@ -388,7 +387,7 @@ impl Default for Cache {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
     use crate::NodeType;
 
     fn create_test_node(value: u8) -> Node {
@@ -425,12 +424,12 @@ mod tests {
         // Put node
         cache
             .put(key, node.clone())
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
         assert_eq!(cache.len(), 1);
         assert!(cache.memory_usage() > 0);
 
         // Get node
-        let result = cache.get(&key).ok_or_else(|| anyhow!("Key not found"))?;
+        let result = cache.get(&key).expect("operation should succeed");
         assert!(result.is_some());
         assert_eq!(
             result.expect("intermediate value should exist").value(),
@@ -447,7 +446,7 @@ mod tests {
         let mut cache = Cache::new();
         let key = UInt256::zero();
 
-        let result = cache.get(&key).ok_or_else(|| anyhow!("Key not found"))?;
+        let result = cache.get(&key).expect("operation should succeed");
         assert!(result.is_none());
         assert_eq!(cache.stats().hits, 0);
         assert_eq!(cache.stats().misses, 1);
@@ -463,17 +462,17 @@ mod tests {
         // Put first node
         cache
             .put(key, node1)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
         assert_eq!(cache.len(), 1);
 
         // Update with second node
         cache
             .put(key, node2)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
         assert_eq!(cache.len(), 1); // Still one entry
 
         // Get updated node
-        let result = cache.get(&key).ok_or_else(|| anyhow!("Key not found"))?;
+        let result = cache.get(&key).expect("operation should succeed");
         assert_eq!(
             result.expect("intermediate value should exist").value(),
             Some(&vec![2])
@@ -489,15 +488,15 @@ mod tests {
         // Put and remove
         cache
             .put(key, node)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
         assert_eq!(cache.len(), 1);
 
-        cache.remove(&key);
+        cache.remove(&key).expect("remove should succeed");
         assert_eq!(cache.len(), 0);
         assert_eq!(cache.memory_usage(), 0);
 
         // Verify removal
-        let result = cache.get(&key).ok_or_else(|| anyhow!("Key not found"))?;
+        let result = cache.get(&key).expect("operation should succeed");
         assert!(result.is_none());
     }
 
@@ -509,18 +508,18 @@ mod tests {
         for i in 0..10 {
             let mut key_bytes = [0u8; HASH_SIZE];
             key_bytes[0] = i;
-            let key = UInt256::from_bytes(&key_bytes).ok_or_else(|| TrieError::InvalidOperation)?;
+            let key = UInt256::from_bytes(&key_bytes).expect("operation should succeed");
             let node = create_test_node(i);
             cache
                 .put(key, node)
-                .ok_or_else(|| TrieError::InvalidOperation)?;
+                .expect("operation should succeed");
         }
 
         assert_eq!(cache.len(), 10);
         assert!(cache.memory_usage() > 0);
 
         // Clear cache
-        cache.clear().ok_or_else(|| TrieError::InvalidOperation)?;
+        cache.clear().expect("operation should succeed");
         assert_eq!(cache.len(), 0);
         assert_eq!(cache.memory_usage(), 0);
     }
@@ -533,9 +532,9 @@ mod tests {
 
         let key1 = UInt256::zero();
         let key2 =
-            UInt256::from_bytes(&[1u8; HASH_SIZE]).ok_or_else(|| TrieError::InvalidOperation)?;
+            UInt256::from_bytes(&[1u8; HASH_SIZE]).expect("operation should succeed");
         let key3 =
-            UInt256::from_bytes(&[2u8; HASH_SIZE]).ok_or_else(|| TrieError::InvalidOperation)?;
+            UInt256::from_bytes(&[2u8; HASH_SIZE]).expect("operation should succeed");
 
         let node1 = create_test_node(1);
         let node2 = create_test_node(2);
@@ -544,30 +543,30 @@ mod tests {
         // Fill cache to capacity
         cache
             .put(key1, node1)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
         cache
             .put(key2, node2)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
         assert_eq!(cache.len(), 2);
 
         // Access first key to make it recently used
-        let _ = cache.get(&key1).ok_or_else(|| anyhow!("Key not found"))?;
+        let _ = cache.get(&key1).expect("operation should succeed");
 
         // Add third key, should trigger eviction due to entry limit
         cache
             .put(key3, node3)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
 
         // Should still have at most 2 entries
         assert!(cache.len() <= 2);
 
         assert!(cache
             .get(&key1)
-            .ok_or_else(|| anyhow!("Key not found"))?
+            .expect("get should succeed")
             .is_some());
         assert!(cache
             .get(&key3)
-            .ok_or_else(|| anyhow!("Key not found"))?
+            .expect("get should succeed")
             .is_some());
 
         // At least one eviction should have occurred
@@ -585,18 +584,18 @@ mod tests {
 
         cache
             .put(key, node)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
-        cache.get(&key).ok_or_else(|| anyhow!("Key not found"))?;
+            .expect("operation should succeed");
+        let _ = cache.get(&key).expect("operation should succeed");
         assert_eq!(cache.stats().hits, 1);
         assert_eq!(cache.stats().misses, 0);
         assert_eq!(cache.stats().hit_ratio(), 1.0);
 
         // Miss
         let other_key =
-            UInt256::from_bytes(&[1u8; HASH_SIZE]).ok_or_else(|| TrieError::InvalidOperation)?;
-        cache
+            UInt256::from_bytes(&[1u8; HASH_SIZE]).expect("operation should succeed");
+        let _ = cache
             .get(&other_key)
-            .ok_or_else(|| anyhow!("Key not found"))?;
+            .expect("operation should succeed");
         assert_eq!(cache.stats().hits, 1);
         assert_eq!(cache.stats().misses, 1);
         assert_eq!(cache.stats().hit_ratio(), 0.5);
@@ -618,7 +617,7 @@ mod tests {
         let node = create_test_node(42);
         cache
             .put(key, node)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
 
         let utilization = cache.utilization();
         assert!(utilization > 0.0);
@@ -635,17 +634,17 @@ mod tests {
 
         cache
             .put(key, node.clone())
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
         assert_eq!(cache.len(), 1);
 
         // Commit to storage
-        cache.commit().ok_or_else(|| TrieError::InvalidOperation)?;
+        cache.commit().expect("operation should succeed");
 
         // Clear cache
-        cache.clear().ok_or_else(|| TrieError::InvalidOperation)?;
+        cache.clear().expect("operation should succeed");
         assert_eq!(cache.len(), 0);
 
-        let result = cache.get(&key).ok_or_else(|| anyhow!("Key not found"))?;
+        let result = cache.get(&key).expect("operation should succeed");
         assert!(result.is_some());
         assert_eq!(
             result.expect("intermediate value should exist").value(),
@@ -663,8 +662,8 @@ mod tests {
         // Test put and get
         storage
             .put(&key, &node)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
-        let result = storage.get(&key).ok_or_else(|| anyhow!("Key not found"))?;
+            .expect("operation should succeed");
+        let result = storage.get(&key).expect("operation should succeed");
         assert!(result.is_some());
         assert_eq!(
             result.expect("intermediate value should exist").value(),
@@ -674,11 +673,11 @@ mod tests {
         // Test delete
         storage
             .delete(&key)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
-        let result = storage.get(&key).ok_or_else(|| anyhow!("Key not found"))?;
+            .expect("operation should succeed");
+        let result = storage.get(&key).expect("operation should succeed");
         assert!(result.is_none());
 
-        storage.flush().ok_or_else(|| TrieError::InvalidOperation)?;
+        storage.flush().expect("operation should succeed");
     }
 
     #[test]
@@ -689,13 +688,13 @@ mod tests {
 
         cache
             .put(key, node)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
         assert_eq!(cache.len(), 1);
 
         // Maintenance should not remove recently accessed entries
         cache
             .maintenance()
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
         assert_eq!(cache.len(), 1);
     }
 
@@ -707,10 +706,10 @@ mod tests {
 
         cache
             .put(key, node)
-            .ok_or_else(|| TrieError::InvalidOperation)?;
+            .expect("operation should succeed");
 
         // Commit without storage should not error
-        cache.commit().ok_or_else(|| TrieError::InvalidOperation)?;
+        cache.commit().expect("operation should succeed");
         assert_eq!(cache.len(), 1);
     }
 
@@ -724,7 +723,7 @@ mod tests {
             let mut key_bytes = [0u8; HASH_SIZE];
             key_bytes[0] = (i % 256) as u8;
             key_bytes[1] = (i / 256) as u8;
-            let key = UInt256::from_bytes(&key_bytes).ok_or_else(|| TrieError::InvalidOperation)?;
+            let key = UInt256::from_bytes(&key_bytes).expect("operation should succeed");
             let node = create_test_node(i as u8);
             cache.put(key, node).unwrap();
         }
@@ -740,7 +739,7 @@ mod tests {
             key_bytes[0] = (i % 256) as u8;
             key_bytes[1] = (i / 256) as u8;
             let key = UInt256::from_bytes(&key_bytes).expect("operation should succeed");
-            cache.get(&key).ok_or_else(|| anyhow!("Key not found"))?;
+            let _ = cache.get(&key).expect("operation should succeed");
         }
 
         let get_duration = start.elapsed();
