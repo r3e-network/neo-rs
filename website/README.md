@@ -186,7 +186,7 @@ For technical issues with the website:
 
 1. Check the [troubleshooting section](#troubleshooting)
 2. Review Netlify deployment logs
-3. Open an issue in the [GitHub repository](https://github.com/neo-project/neo-rs/issues)
+3. Open an issue in the [GitHub repository](https://github.com/r3e-network/neo-rs/issues)
 4. Join the [Discord community](https://discord.gg/neo) for help
 
 ## 📄 License

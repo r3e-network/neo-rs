@@ -24,7 +24,7 @@ We welcome contributions to Neo-RS! This document outlines the development proce
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/neo-project/neo-rs.git
+   git clone https://github.com/r3e-network/neo-rs.git
    cd neo-rs
    ```
 

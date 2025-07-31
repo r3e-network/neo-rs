@@ -85,8 +85,8 @@ CMD ["--testnet", "--rpc-port", "20332", "--p2p-port", "20333"]
 # Metadata
 LABEL org.opencontainers.image.title="Neo-RS"
 LABEL org.opencontainers.image.description="High-performance Rust implementation of the Neo N3 blockchain protocol"
-LABEL org.opencontainers.image.url="https://github.com/neo-project/neo-rs"
+LABEL org.opencontainers.image.url="https://github.com/r3e-network/neo-rs"
 LABEL org.opencontainers.image.documentation="https://docs.rs/neo-rs"
-LABEL org.opencontainers.image.source="https://github.com/neo-project/neo-rs"
+LABEL org.opencontainers.image.source="https://github.com/r3e-network/neo-rs"
 LABEL org.opencontainers.image.vendor="Neo Global Development"
 LABEL org.opencontainers.image.licenses="MIT"
