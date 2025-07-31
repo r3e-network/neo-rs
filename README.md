@@ -4,7 +4,7 @@
   # Neo-RS
   
   [![CI](https://github.com/r3e-network/neo-rs/workflows/CI/badge.svg)](https://github.com/r3e-network/neo-rs/actions)
-  [![Coverage](https://codecov.io/gh/neo-project/neo-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/neo-project/neo-rs)
+  [![Coverage](https://codecov.io/gh/r3e-network/neo-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/r3e-network/neo-rs)
   [![Crates.io](https://img.shields.io/crates/v/neo-rs.svg)](https://crates.io/crates/neo-rs)
   [![Documentation](https://docs.rs/neo-rs/badge.svg)](https://docs.rs/neo-rs)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)

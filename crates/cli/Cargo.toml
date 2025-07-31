@@ -4,7 +4,7 @@ version = "0.3.0"
 edition = "2021"
 description = "Neo CLI - Command-line interface for Neo blockchain node"
 license = "MIT"
-repository = "https://github.com/neo-project/neo-rs"
+repository = "https://github.com/r3e-network/neo-rs"
 
 [[bin]]
 name = "neo-cli"

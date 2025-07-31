@@ -3,7 +3,7 @@ name = "neo-wallets"
 version = "0.3.0"
 edition = "2021"
 authors = ["Neo Global Development <dev@neo.org>"]
-repository = "https://github.com/neo-project/neo-rs"
+repository = "https://github.com/r3e-network/neo-rs"
 license = "MIT"
 description = "Neo wallet implementation in Rust"
 

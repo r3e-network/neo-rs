@@ -544,7 +544,7 @@ docker run -d \
   neo/neo-rs:latest
 
 # Docker Compose (full stack with monitoring)
-curl -O https://raw.githubusercontent.com/neo-project/neo-rs/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/r3e-network/neo-rs/main/docker-compose.yml
 docker-compose up -d</code></pre>
                     </div>
                 </div>
@@ -561,9 +561,9 @@ docker-compose up -d</code></pre>
                             </button>
                         </div>
                         <pre><code id="k8s-code"># Download Kubernetes manifests
-curl -O https://raw.githubusercontent.com/neo-project/neo-rs/main/k8s/neo-rs-deployment.yaml
-curl -O https://raw.githubusercontent.com/neo-project/neo-rs/main/k8s/neo-rs-service.yaml
-curl -O https://raw.githubusercontent.com/neo-project/neo-rs/main/k8s/neo-rs-configmap.yaml
+curl -O https://raw.githubusercontent.com/r3e-network/neo-rs/main/k8s/neo-rs-deployment.yaml
+curl -O https://raw.githubusercontent.com/r3e-network/neo-rs/main/k8s/neo-rs-service.yaml
+curl -O https://raw.githubusercontent.com/r3e-network/neo-rs/main/k8s/neo-rs-configmap.yaml
 
 # Deploy to Kubernetes
 kubectl apply -f neo-rs-configmap.yaml

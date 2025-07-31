@@ -4,7 +4,7 @@ version = "0.3.0"
 edition = "2021"
 description = "BLS12-381 cryptographic operations for Neo blockchain"
 license = "MIT"
-repository = "https://github.com/neo-project/neo-rs"
+repository = "https://github.com/r3e-network/neo-rs"
 
 [dependencies]
 # BLS12-381 cryptographic library with experimental features
