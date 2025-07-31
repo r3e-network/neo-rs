@@ -2,7 +2,7 @@
 name = "neo-demo"
 version = "0.1.0"
 edition = "2021"
-authors = ["Neo Global Development <dev@neo.org>"]
+authors = ["R3E Network <jimmy@r3e.network>"]
 
 [dependencies]
 log = "0.4"

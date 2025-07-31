@@ -49,8 +49,7 @@ version = "0.3.0"
 edition = "2021"
 rust-version = "1.70"
 authors = [
-    "Neo Global Development <dev@neo.org>",
-    "Neo Contributors"
+    "R3E Network <jimmy@r3e.network>"
 ]
 homepage = "https://neo.org"
 repository = "https://github.com/r3e-network/neo-rs"

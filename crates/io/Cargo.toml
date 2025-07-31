@@ -2,7 +2,7 @@
 name = "neo-io"
 version = "0.3.0"
 edition = "2021"
-authors = ["Neo Global Development <dev@neo.org>"]
+authors = ["R3E Network <jimmy@r3e.network>"]
 description = "IO operations and data structures for the Neo blockchain"
 repository = "https://github.com/r3e-network/neo-rs"
 license = "MIT"
