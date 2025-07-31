@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-30T23:40:38.031Z
+Generated at: 2025-07-30T23:55:38.024Z
 
 ---
 
@@ -9,23 +9,23 @@ Generated at: 2025-07-30T23:40:38.031Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-30T23:40:31.959Z
+- **Last Updated**: 2025-07-30T23:55:31.960Z
 
 ## Statistics
-- **Total Files**: 1922
-- **Estimated Lines**: 376235
-- **Average File Size**: 8478 bytes
+- **Total Files**: 1915
+- **Estimated Lines**: 373193
+- **Average File Size**: 8460 bytes
 
 ## Languages
-- **csharp**: 4592651 files
-- **rust**: 2119329 files
-- **json**: 947107 files
-- **markdown**: 397687 files
-- **shellscript**: 18651 files
-- **yaml**: 9578 files
-- **css**: 9578 files
-- **html**: 9578 files
-- **javascript**: 9578 files
+- **csharp**: 4720198 files
+- **rust**: 2177657 files
+- **json**: 973329 files
+- **markdown**: 408859 files
+- **shellscript**: 19449 files
+- **yaml**: 9844 files
+- **css**: 9844 files
+- **html**: 9844 files
+- **javascript**: 9844 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -83,20 +83,12 @@ No unfinished tasks
 ```
  M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
- M crates/core/src/block.rs
- M crates/core/src/blockchain_complete.rs
- M crates/core/src/error.rs
- M crates/core/src/neo_system_complete.rs
- M crates/core/src/transaction/core.rs
-?? .autoclaude/README.md
-?? .autoclaude/hooks/
-?? .autoclaude/scripts/unit-test-coverage-check.sh
-?? config.testnet.json
 
 ```
 
 ### Recent Commits
 ```
+6d45545 feat(testing): add unit test coverage analysis system
 908560a feat: implement complete Neo node matching C# functionality exactly
 2711293 fix: complete network pattern matching and enhance production readiness
 b41b213 fix: complete remaining CLI compilation errors
@@ -106,7 +98,6 @@ d9a8bad fix(cli): cast usize constants to u32 for type compatibility
 22afaa8 fix(rpc,cli): resolve compilation errors in rpc_server and cli crates
 5abbc44 fix(mpt_trie): update test imports and fix compilation errors
 3f6b554 chore: update project context and task tracking
-9d19566 fix(network): resolve compilation errors and pattern matching issues
 
 ```
 
