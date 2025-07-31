@@ -169,7 +169,7 @@ impl WalletManager {
             .map_err(|e| Box::new(WalletError(format!("Failed to generate key pair: {}", e))))?;
 
         let account = wallet
-            .create_account(key_pair.private_key())
+            .create_account(&key_pair.private_key())
             .await
             .map_err(|e| Box::new(WalletError(format!("Failed to create account: {}", e))))?;
 
@@ -380,7 +380,8 @@ impl WalletManager {
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_client = RpcClient::new("http://localhost:20332".to_string());
+        let rpc_client = RpcClient::new("http://localhost:20332".to_string())
+            .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 
         // 2. NEO native contract hash (matches C# NativeContract.NEO.Hash exactly)
         // This uses the exact same hash as defined in the native contract implementation
@@ -417,7 +418,8 @@ impl WalletManager {
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_client = RpcClient::new("http://localhost:20332".to_string());
+        let rpc_client = RpcClient::new("http://localhost:20332".to_string())
+            .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 
         // 2. GAS native contract hash (matches C# NativeContract.GAS.Hash exactly)
         // This uses the exact same hash as defined in the native contract implementation
@@ -500,7 +502,7 @@ impl WalletManager {
         let contract_address = UInt160::from_str(contract_hash)
             .map_err(|e| Box::new(WalletError(format!("Invalid contract hash: {}", e))))?;
         let result = rpc_client
-            .invoke_function(&contract_address, "balanceOf", params)
+            .invoke_function(contract_address, "balanceOf", params, None)
             .await
             .map_err(|e| Box::new(WalletError(format!("RPC call failed: {}", e))))?;
 
@@ -671,7 +673,8 @@ impl WalletManager {
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_client = RpcClient::new("http://localhost:20332".to_string());
+        let rpc_client = RpcClient::new("http://localhost:20332".to_string())
+            .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 
         // 2. NEO native contract hash for unclaimed GAS queries (matches C# exactly)
         let neo_contract_hash = "0xef4c73d42d95f62b9b599a2a5c1e0e5b1e6c6f6c";
