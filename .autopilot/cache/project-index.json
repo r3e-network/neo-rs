@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "createdAt": "2025-07-30T14:35:34.020Z",
-  "lastUpdated": "2025-07-31T01:30:44.990Z",
+  "lastUpdated": "2025-07-31T01:41:45.028Z",
   "workspaceRoot": "/Users/jinghuiliao/git/r3e/neo-rs",
   "files": [
     [
@@ -84,9 +84,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/Cargo.toml",
         "relativePath": "Cargo.toml",
-        "size": 8177,
-        "lastModified": "2025-07-30T23:57:33.380Z",
-        "hash": "531c94cf5df82fce81e10e621423bb14"
+        "size": 8148,
+        "lastModified": "2025-07-31T01:39:23.760Z",
+        "hash": "f074c1f361014b7095bfa1444a614bb8"
       }
     ],
     [
@@ -865,9 +865,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/core/Cargo.toml",
         "relativePath": "crates/core/Cargo.toml",
-        "size": 1026,
-        "lastModified": "2025-07-31T00:07:11.897Z",
-        "hash": "1d95be7e75194b074ff299f90c4fef33"
+        "size": 1046,
+        "lastModified": "2025-07-31T01:41:08.662Z",
+        "hash": "59f37c6a5d88bd172e43273e73997b5a"
       }
     ],
     [
@@ -1271,9 +1271,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/cryptography/Cargo.toml",
         "relativePath": "crates/cryptography/Cargo.toml",
-        "size": 1326,
-        "lastModified": "2025-07-31T00:04:57.122Z",
-        "hash": "c038518852827d30da779a5c106facd2"
+        "size": 1321,
+        "lastModified": "2025-07-31T01:41:16.259Z",
+        "hash": "18aa835903fbf6f50dcfcc646cdac05b"
       }
     ],
     [
@@ -1632,9 +1632,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/io/Cargo.toml",
         "relativePath": "crates/io/Cargo.toml",
-        "size": 1150,
-        "lastModified": "2025-07-31T00:04:57.134Z",
-        "hash": "ca4320a5b8de6c90672d2bc13c164d31"
+        "size": 1145,
+        "lastModified": "2025-07-31T01:41:16.259Z",
+        "hash": "960f4f936583a84a8843fb09e73e353e"
       }
     ],
     [
@@ -3064,9 +3064,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/plugins/Cargo.toml",
         "relativePath": "crates/plugins/Cargo.toml",
-        "size": 1224,
-        "lastModified": "2025-07-31T00:04:57.128Z",
-        "hash": "246f863b1487c75813cf826be58b1a4c"
+        "size": 1242,
+        "lastModified": "2025-07-31T01:41:25.781Z",
+        "hash": "684e95cdc506fc800600a70e2e08c4c8"
       }
     ],
     [
@@ -3720,9 +3720,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/vm/Cargo.toml",
         "relativePath": "crates/vm/Cargo.toml",
-        "size": 1013,
-        "lastModified": "2025-07-31T00:04:57.143Z",
-        "hash": "7bc5b9fceee757cdc0a3397ba7f5e98c"
+        "size": 1008,
+        "lastModified": "2025-07-31T01:41:16.260Z",
+        "hash": "f2711eb4c0005bd5f8d80262c1fea7d1"
       }
     ],
     [
@@ -4962,9 +4962,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/wallets/Cargo.toml",
         "relativePath": "crates/wallets/Cargo.toml",
-        "size": 982,
-        "lastModified": "2025-07-31T00:04:57.156Z",
-        "hash": "621aef245097acc1c444987f729f1f50"
+        "size": 977,
+        "lastModified": "2025-07-31T01:41:16.260Z",
+        "hash": "4c4ed2362e76ae0af32656decd16a2ad"
       }
     ],
     [
@@ -5565,9 +5565,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/demo/Cargo.toml",
         "relativePath": "demo/Cargo.toml",
-        "size": 440,
-        "lastModified": "2025-07-30T12:23:50.005Z",
-        "hash": "c3daf257663548f227c4542328d76b8c"
+        "size": 435,
+        "lastModified": "2025-07-31T01:40:41.657Z",
+        "hash": "f1d86136091029d29db0ef8af1064c5f"
       }
     ],
     [
@@ -20342,9 +20342,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/node/Cargo.toml",
         "relativePath": "node/Cargo.toml",
-        "size": 1677,
-        "lastModified": "2025-07-30T12:23:50.062Z",
-        "hash": "040a85c28e778f9e5c738f2c6fa93165"
+        "size": 1672,
+        "lastModified": "2025-07-31T01:39:53.497Z",
+        "hash": "dd39c664d881b2982bf7406b562e497f"
       }
     ],
     [
@@ -24090,9 +24090,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/CLAUDE_CONTEXT.md",
         "relativePath": ".autopilot/CLAUDE_CONTEXT.md",
-        "size": 2558,
-        "lastModified": "2025-07-31T01:30:38.001Z",
-        "hash": "8afc1c31eb5136dc623c4f0cd0dbc9ab",
+        "size": 2537,
+        "lastModified": "2025-07-31T01:40:37.990Z",
+        "hash": "7a139525e4290bc6c5a09d2b8bf52751",
         "language": "markdown"
       }
     ],
@@ -24102,7 +24102,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/sessions.json",
         "relativePath": ".autopilot/tasks/sessions.json",
         "size": 107,
-        "lastModified": "2025-07-31T01:30:44.890Z",
+        "lastModified": "2025-07-31T01:41:44.937Z",
         "hash": "e06559635053222f1eb969da77360e98",
         "language": "json"
       }
@@ -24113,7 +24113,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/tasks.json",
         "relativePath": ".autopilot/tasks/tasks.json",
         "size": 2,
-        "lastModified": "2025-07-31T01:30:44.890Z",
+        "lastModified": "2025-07-31T01:41:44.937Z",
         "hash": "d751713988987e9331980363e24189ce",
         "language": "json"
       }
@@ -24251,42 +24251,42 @@
     "filesByLanguage": [
       [
         "json",
-        1161136
+        1182718
       ],
       [
         "markdown",
-        488911
+        498067
       ],
       [
         "rust",
-        2595071
+        2642813
       ],
       [
         "yaml",
-        11750
+        11968
       ],
       [
         "csharp",
-        5634125
+        5738656
       ],
       [
         "shellscript",
-        25167
+        25821
       ],
       [
         "css",
-        11750
+        11968
       ],
       [
         "html",
-        11750
+        11968
       ],
       [
         "javascript",
-        11750
+        11968
       ]
     ],
-    "avgFileSize": 8477.19020323085,
+    "avgFileSize": 8477.168316831683,
     "largestFiles": [
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/neo_csharp/src/Neo.GUI/neo.ico",

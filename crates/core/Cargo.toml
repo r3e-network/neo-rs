@@ -3,7 +3,7 @@ name = "neo-core"
 version = "0.3.0"
 edition = "2021"
 description = "Core functionality for Neo blockchain"
-authors = ["Neo Project"]
+authors = ["R3E Network <jimmy@r3e.network>"]
 repository = "https://github.com/r3e-network/neo-rs"
 license = "MIT"
 

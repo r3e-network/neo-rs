@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Neo blockchain plugins collection"
 license = "MIT"
-authors = ["Neo Rust Team"]
+authors = ["R3E Network <jimmy@r3e.network>"]
 
 [dependencies]
 # Neo crates
