@@ -1,0 +1,41 @@
+{
+  "ApplicationConfiguration": {
+    "Storage": {
+      "Engine": "rocksdb",
+      "Path": "./data"
+    },
+    "P2P": {
+      "Port": 20333,
+      "MaxPeers": 100
+    },
+    "Network": {
+      "Magic": 1953787457,
+      "Type": "testnet"
+    },
+    "DataDirectoryPath": "./data",
+    "UnlockWallet": {
+      "IsActive": false,
+      "Path": "",
+      "Password": ""
+    }
+  },
+  "ProtocolConfiguration": {
+    "Magic": 1953787457,
+    "Network": "testnet",
+    "AddressVersion": 53,
+    "MillisecondsPerBlock": 15000,
+    "MaxTraceableBlocks": 2102400,
+    "MaxTransactionsPerBlock": 512,
+    "MemoryPoolMaxTransactions": 50000,
+    "MaxFreeTransactionSize": 1024,
+    "MinimumNetworkFee": 0,
+    "MaximumBlockSize": 2097152,
+    "SeedList": [
+      "seed1.testneo.org:20333",
+      "seed2.testneo.org:20333",
+      "seed3.testneo.org:20333",
+      "seed4.testneo.org:20333",
+      "seed5.testneo.org:20333"
+    ]
+  }
+}
