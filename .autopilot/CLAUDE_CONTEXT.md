@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-31T00:15:38.029Z
+Generated at: 2025-07-31T00:20:38.029Z
 
 ---
 
@@ -9,23 +9,23 @@ Generated at: 2025-07-31T00:15:38.029Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-31T00:15:31.955Z
+- **Last Updated**: 2025-07-31T00:20:31.965Z
 
 ## Statistics
 - **Total Files**: 1915
-- **Estimated Lines**: 373187
+- **Estimated Lines**: 373176
 - **Average File Size**: 8460 bytes
 
 ## Languages
-- **csharp**: 4958030 files
-- **rust**: 2286281 files
-- **json**: 1022185 files
-- **markdown**: 429691 files
-- **shellscript**: 20937 files
-- **yaml**: 10340 files
-- **css**: 10340 files
-- **html**: 10340 files
-- **javascript**: 10340 files
+- **csharp**: 5000226 files
+- **rust**: 2305553 files
+- **json**: 1030853 files
+- **markdown**: 433387 files
+- **shellscript**: 21201 files
+- **yaml**: 10428 files
+- **css**: 10428 files
+- **html**: 10428 files
+- **javascript**: 10428 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -84,17 +84,12 @@ No unfinished tasks
  M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
  M .autopilot/tasks/sessions.json
- M crates/cli/src/main.rs
- M crates/core/src/lib.rs
- M crates/core/src/neo_system.rs
- M crates/core/src/shutdown.rs
- M crates/core/src/transaction/vm.rs
- M crates/core/src/uint160.rs
 
 ```
 
 ### Recent Commits
 ```
+9d48914 fix: resolve compilation errors after cleanup
 c7130fc chore: complete repository URL migration to r3e-network
 984fb9c chore: update repository URLs to r3e-network organization
 6d45545 feat(testing): add unit test coverage analysis system
@@ -104,7 +99,6 @@ b41b213 fix: complete remaining CLI compilation errors
 563e552 chore: clean up intermediate files and documentation
 8621234 chore: apply cargo fmt formatting changes
 d9a8bad fix(cli): cast usize constants to u32 for type compatibility
-22afaa8 fix(rpc,cli): resolve compilation errors in rpc_server and cli crates
 
 ```
 
