@@ -629,7 +629,7 @@ impl MainService {
 
         // Create P2P configuration
         let p2p_config = P2PConfig {
-            listen_address: format!("localhost:{}", self.config.network.bind_port).parse()?,
+            listen_address: format!("127.0.0.1:{}", self.config.network.bind_port).parse()?,
             max_peers: self.config.network.max_peers,
             connection_timeout: std::time::Duration::from_secs(10),
             handshake_timeout: std::time::Duration::from_secs(30),

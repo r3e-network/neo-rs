@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "createdAt": "2025-07-30T14:35:34.020Z",
-  "lastUpdated": "2025-07-31T01:23:45.037Z",
+  "lastUpdated": "2025-07-31T01:30:44.990Z",
   "workspaceRoot": "/Users/jinghuiliao/git/r3e/neo-rs",
   "files": [
     [
@@ -494,8 +494,8 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/cli/src/service.rs",
         "relativePath": "crates/cli/src/service.rs",
         "size": 47041,
-        "lastModified": "2025-07-31T01:23:14.073Z",
-        "hash": "15361ed6aa243f478bfec727402fda90",
+        "lastModified": "2025-07-31T01:29:37.425Z",
+        "hash": "83e0a30f149de0c91e11407a563e2f81",
         "language": "rust"
       }
     ],
@@ -5126,8 +5126,8 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/CURRENT",
         "relativePath": "data/blocks/CURRENT",
         "size": 16,
-        "lastModified": "2025-07-30T12:23:50.004Z",
-        "hash": "637f208be2987e2e0058e170270e8b23"
+        "lastModified": "2025-07-31T01:30:08.972Z",
+        "hash": "a28491347b25c92cb479fb0d97c9a547"
       }
     ],
     [
@@ -5155,9 +5155,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/LOG",
         "relativePath": "data/blocks/LOG",
-        "size": 29398,
-        "lastModified": "2025-07-30T12:23:50.004Z",
-        "hash": "f91247317b5b526af1807cecac300339"
+        "size": 23841,
+        "lastModified": "2025-07-31T01:30:09.397Z",
+        "hash": "60a94d80bbacfc3085a692c1b7f26f5c"
       }
     ],
     [
@@ -5558,36 +5558,6 @@
         "size": 29238,
         "lastModified": "2025-07-30T08:00:54.088Z",
         "hash": "482122b70e58670ae9f4e212c9356182"
-      }
-    ],
-    [
-      "data/blocks/MANIFEST-000162",
-      {
-        "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/MANIFEST-000162",
-        "relativePath": "data/blocks/MANIFEST-000162",
-        "size": 222,
-        "lastModified": "2025-07-30T08:05:14.672Z",
-        "hash": "1558ef79b77649d0fcced978f31861c0"
-      }
-    ],
-    [
-      "data/blocks/OPTIONS-000160",
-      {
-        "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/OPTIONS-000160",
-        "relativePath": "data/blocks/OPTIONS-000160",
-        "size": 6922,
-        "lastModified": "2025-07-30T08:00:49.084Z",
-        "hash": "686224e8c117c15431aeac02c1fc8568"
-      }
-    ],
-    [
-      "data/blocks/OPTIONS-000164",
-      {
-        "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/OPTIONS-000164",
-        "relativePath": "data/blocks/OPTIONS-000164",
-        "size": 6922,
-        "lastModified": "2025-07-30T08:05:14.672Z",
-        "hash": "686224e8c117c15431aeac02c1fc8568"
       }
     ],
     [
@@ -24120,9 +24090,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/CLAUDE_CONTEXT.md",
         "relativePath": ".autopilot/CLAUDE_CONTEXT.md",
-        "size": 2560,
-        "lastModified": "2025-07-31T01:20:38.005Z",
-        "hash": "851e6125952553faff7146c3fcbfa850",
+        "size": 2558,
+        "lastModified": "2025-07-31T01:30:38.001Z",
+        "hash": "8afc1c31eb5136dc623c4f0cd0dbc9ab",
         "language": "markdown"
       }
     ],
@@ -24132,7 +24102,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/sessions.json",
         "relativePath": ".autopilot/tasks/sessions.json",
         "size": 107,
-        "lastModified": "2025-07-31T01:23:44.893Z",
+        "lastModified": "2025-07-31T01:30:44.890Z",
         "hash": "e06559635053222f1eb969da77360e98",
         "language": "json"
       }
@@ -24143,7 +24113,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/tasks.json",
         "relativePath": ".autopilot/tasks/tasks.json",
         "size": 2,
-        "lastModified": "2025-07-31T01:23:44.893Z",
+        "lastModified": "2025-07-31T01:30:44.890Z",
         "hash": "d751713988987e9331980363e24189ce",
         "language": "json"
       }
@@ -24191,6 +24161,77 @@
         "hash": "e1807a9ba8a8733ee32cff7070a23365",
         "language": "markdown"
       }
+    ],
+    [
+      "config.testnet.json",
+      {
+        "path": "/Users/jinghuiliao/git/r3e/neo-rs/config.testnet.json",
+        "relativePath": "config.testnet.json",
+        "size": 920,
+        "lastModified": "2025-07-31T01:27:09.015Z",
+        "hash": "58a7a383c2b8a67dd58dc4a91793f6e7",
+        "language": "json"
+      }
+    ],
+    [
+      "data/blocks/LOG.old.1753925242081715",
+      {
+        "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/LOG.old.1753925242081715",
+        "relativePath": "data/blocks/LOG.old.1753925242081715",
+        "size": 29398,
+        "lastModified": "2025-07-30T12:23:50.004Z",
+        "hash": "f91247317b5b526af1807cecac300339"
+      }
+    ],
+    [
+      "data/blocks/LOG.old.1753925350112054",
+      {
+        "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/LOG.old.1753925350112054",
+        "relativePath": "data/blocks/LOG.old.1753925350112054",
+        "size": 19761,
+        "lastModified": "2025-07-31T01:27:22.092Z",
+        "hash": "8c6f083bbb652dd59de634a32c76b368"
+      }
+    ],
+    [
+      "data/blocks/OPTIONS-000172",
+      {
+        "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/OPTIONS-000172",
+        "relativePath": "data/blocks/OPTIONS-000172",
+        "size": 6922,
+        "lastModified": "2025-07-31T01:29:10.114Z",
+        "hash": "686224e8c117c15431aeac02c1fc8568"
+      }
+    ],
+    [
+      "data/blocks/LOG.old.1753925408969042",
+      {
+        "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/LOG.old.1753925408969042",
+        "relativePath": "data/blocks/LOG.old.1753925408969042",
+        "size": 20150,
+        "lastModified": "2025-07-31T01:29:10.116Z",
+        "hash": "79c539e07e727f4fd706dae557734077"
+      }
+    ],
+    [
+      "data/blocks/MANIFEST-000174",
+      {
+        "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/MANIFEST-000174",
+        "relativePath": "data/blocks/MANIFEST-000174",
+        "size": 222,
+        "lastModified": "2025-07-31T01:30:09.397Z",
+        "hash": "6f8a60a3e88a878b54f88d71bc3676d7"
+      }
+    ],
+    [
+      "data/blocks/OPTIONS-000176",
+      {
+        "path": "/Users/jinghuiliao/git/r3e/neo-rs/data/blocks/OPTIONS-000176",
+        "relativePath": "data/blocks/OPTIONS-000176",
+        "size": 6922,
+        "lastModified": "2025-07-31T01:30:08.973Z",
+        "hash": "686224e8c117c15431aeac02c1fc8568"
+      }
     ]
   ],
   "dependencies": {},
@@ -24205,47 +24246,47 @@
     ]
   },
   "codebaseStats": {
-    "totalFiles": 1915,
+    "totalFiles": 1919,
     "totalLines": 373253,
     "filesByLanguage": [
       [
         "json",
-        1142946
+        1161136
       ],
       [
         "markdown",
-        481183
+        488911
       ],
       [
         "rust",
-        2554775
+        2595071
       ],
       [
         "yaml",
-        11566
+        11750
       ],
       [
         "csharp",
-        5545897
+        5634125
       ],
       [
         "shellscript",
-        24615
+        25167
       ],
       [
         "css",
-        11566
+        11750
       ],
       [
         "html",
-        11566
+        11750
       ],
       [
         "javascript",
-        11566
+        11750
       ]
     ],
-    "avgFileSize": 8461.126892950391,
+    "avgFileSize": 8477.19020323085,
     "largestFiles": [
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/neo_csharp/src/Neo.GUI/neo.ico",
