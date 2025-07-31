@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "createdAt": "2025-07-30T14:35:34.020Z",
-  "lastUpdated": "2025-07-31T00:07:44.715Z",
+  "lastUpdated": "2025-07-31T00:17:44.669Z",
   "workspaceRoot": "/Users/jinghuiliao/git/r3e/neo-rs",
   "files": [
     [
@@ -460,9 +460,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/cli/src/main.rs",
         "relativePath": "crates/cli/src/main.rs",
-        "size": 3822,
-        "lastModified": "2025-07-30T16:36:13.396Z",
-        "hash": "8aed3e1ebb2b3edd30ec9880e9abddc7",
+        "size": 3749,
+        "lastModified": "2025-07-31T00:13:09.009Z",
+        "hash": "fe19765bdbf9de9573af0a0170d5c778",
         "language": "rust"
       }
     ],
@@ -1007,9 +1007,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/core/src/lib.rs",
         "relativePath": "crates/core/src/lib.rs",
-        "size": 2649,
-        "lastModified": "2025-07-30T16:35:05.288Z",
-        "hash": "2c4136a31ef1da90bdf328ad4f75f580",
+        "size": 2245,
+        "lastModified": "2025-07-31T00:16:12.672Z",
+        "hash": "2036ab136775eae2180fb89d6b5bd163",
         "language": "rust"
       }
     ],
@@ -1018,9 +1018,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/core/src/neo_system.rs",
         "relativePath": "crates/core/src/neo_system.rs",
-        "size": 35894,
-        "lastModified": "2025-07-30T12:23:49.941Z",
-        "hash": "587961887abbd5e496bc7de16e14f122",
+        "size": 35880,
+        "lastModified": "2025-07-31T00:13:59.970Z",
+        "hash": "8fd1672289461314c48c76af0f320387",
         "language": "rust"
       }
     ],
@@ -1029,9 +1029,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/core/src/shutdown.rs",
         "relativePath": "crates/core/src/shutdown.rs",
-        "size": 18136,
-        "lastModified": "2025-07-30T12:23:49.942Z",
-        "hash": "0dd72d638149f7d2e6d869795256ddf2",
+        "size": 18106,
+        "lastModified": "2025-07-31T00:14:21.690Z",
+        "hash": "eb5658edea1aceb7e41c3f1f2d90ccbf",
         "language": "rust"
       }
     ],
@@ -1117,9 +1117,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/core/src/transaction/vm.rs",
         "relativePath": "crates/core/src/transaction/vm.rs",
-        "size": 18940,
-        "lastModified": "2025-07-30T12:23:49.943Z",
-        "hash": "39d500a46ced5f4211d21f81f7f79a77",
+        "size": 19025,
+        "lastModified": "2025-07-31T00:10:44.429Z",
+        "hash": "b0fb485b29aa204a39565f5ce6415cbe",
         "language": "rust"
       }
     ],
@@ -1139,9 +1139,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/crates/core/src/uint160.rs",
         "relativePath": "crates/core/src/uint160.rs",
-        "size": 19321,
-        "lastModified": "2025-07-30T12:23:49.943Z",
-        "hash": "ee3adcbfba78e6037966dff20dd05fd5",
+        "size": 19289,
+        "lastModified": "2025-07-31T00:14:43.991Z",
+        "hash": "f5ca0ccbba8bee1f53f81bc908eadaad",
         "language": "rust"
       }
     ],
@@ -24120,9 +24120,9 @@
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/CLAUDE_CONTEXT.md",
         "relativePath": ".autopilot/CLAUDE_CONTEXT.md",
-        "size": 2770,
-        "lastModified": "2025-07-31T00:05:38.090Z",
-        "hash": "90d60e7d3e8db5b0d63737020cb38d92",
+        "size": 2704,
+        "lastModified": "2025-07-31T00:15:38.029Z",
+        "hash": "4d8cc692c0b4881da84f86aa3b0adcd5",
         "language": "markdown"
       }
     ],
@@ -24132,7 +24132,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/sessions.json",
         "relativePath": ".autopilot/tasks/sessions.json",
         "size": 107,
-        "lastModified": "2025-07-31T00:07:44.620Z",
+        "lastModified": "2025-07-31T00:17:44.575Z",
         "hash": "e06559635053222f1eb969da77360e98",
         "language": "json"
       }
@@ -24143,7 +24143,7 @@
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autopilot/tasks/tasks.json",
         "relativePath": ".autopilot/tasks/tasks.json",
         "size": 2,
-        "lastModified": "2025-07-31T00:07:44.620Z",
+        "lastModified": "2025-07-31T00:17:44.574Z",
         "hash": "d751713988987e9331980363e24189ce",
         "language": "json"
       }
@@ -24206,46 +24206,46 @@
   },
   "codebaseStats": {
     "totalFiles": 1915,
-    "totalLines": 373193,
+    "totalLines": 373176,
     "filesByLanguage": [
       [
         "json",
-        1006228
+        1026716
       ],
       [
         "markdown",
-        422887
+        431623
       ],
       [
         "rust",
-        2250803
+        2296355
       ],
       [
         "yaml",
-        10178
+        10386
       ],
       [
         "csharp",
-        4880351
+        4980087
       ],
       [
         "shellscript",
-        20451
+        21075
       ],
       [
         "css",
-        10178
+        10386
       ],
       [
         "html",
-        10178
+        10386
       ],
       [
         "javascript",
-        10178
+        10386
       ]
     ],
-    "avgFileSize": 8460.252219321148,
+    "avgFileSize": 8459.973368146215,
     "largestFiles": [
       {
         "path": "/Users/jinghuiliao/git/r3e/neo-rs/neo_csharp/src/Neo.GUI/neo.ico",
