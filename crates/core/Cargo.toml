@@ -4,7 +4,7 @@ version = "0.3.0"
 edition = "2021"
 description = "Core functionality for Neo blockchain"
 authors = ["Neo Project"]
-repository = "https://github.com/R3E-Network/neo-rs"
+repository = "https://github.com/r3e-network/neo-rs"
 license = "MIT"
 
 [dependencies]

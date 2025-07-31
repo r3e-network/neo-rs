@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-30T23:55:38.024Z
+Generated at: 2025-07-31T00:05:38.089Z
 
 ---
 
@@ -9,7 +9,7 @@ Generated at: 2025-07-30T23:55:38.024Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-30T23:55:31.960Z
+- **Last Updated**: 2025-07-31T00:05:35.479Z
 
 ## Statistics
 - **Total Files**: 1915
@@ -17,15 +17,15 @@ Generated at: 2025-07-30T23:55:38.024Z
 - **Average File Size**: 8460 bytes
 
 ## Languages
-- **csharp**: 4720198 files
-- **rust**: 2177657 files
-- **json**: 973329 files
-- **markdown**: 408859 files
-- **shellscript**: 19449 files
-- **yaml**: 9844 files
-- **css**: 9844 files
-- **html**: 9844 files
-- **javascript**: 9844 files
+- **csharp**: 4854458 files
+- **rust**: 2238977 files
+- **json**: 1000909 files
+- **markdown**: 420619 files
+- **shellscript**: 20289 files
+- **yaml**: 10124 files
+- **css**: 10124 files
+- **html**: 10124 files
+- **javascript**: 10124 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -83,11 +83,22 @@ No unfinished tasks
 ```
  M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
+ M crates/bls12_381/Cargo.toml
+ M crates/cli/Cargo.toml
+ M crates/cryptography/Cargo.toml
+ M crates/extensions/Cargo.toml
+ M crates/io/Cargo.toml
+ M crates/rpc_client/Cargo.toml
+ M crates/vm/Cargo.toml
+ M crates/wallets/Cargo.toml
+ M website/_redirects
+ M website/netlify.toml
 
 ```
 
 ### Recent Commits
 ```
+984fb9c chore: update repository URLs to r3e-network organization
 6d45545 feat(testing): add unit test coverage analysis system
 908560a feat: implement complete Neo node matching C# functionality exactly
 2711293 fix: complete network pattern matching and enhance production readiness
@@ -97,7 +108,6 @@ b41b213 fix: complete remaining CLI compilation errors
 d9a8bad fix(cli): cast usize constants to u32 for type compatibility
 22afaa8 fix(rpc,cli): resolve compilation errors in rpc_server and cli crates
 5abbc44 fix(mpt_trie): update test imports and fix compilation errors
-3f6b554 chore: update project context and task tracking
 
 ```
 

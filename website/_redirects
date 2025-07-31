@@ -11,9 +11,9 @@
 /setup          /docs/getting-started.html      301
 
 # Quick access redirects
-/github         https://github.com/neo-project/neo-rs    301
-/source         https://github.com/neo-project/neo-rs    301
-/repo           https://github.com/neo-project/neo-rs    301
+/github         https://github.com/r3e-network/neo-rs    301
+/source         https://github.com/r3e-network/neo-rs    301
+/repo           https://github.com/r3e-network/neo-rs    301
 
 # Community redirects
 /discord        https://discord.gg/neo                   301
@@ -25,9 +25,9 @@
 /reddit         https://reddit.com/r/NEO                 301
 
 # Release and download redirects
-/download       https://github.com/neo-project/neo-rs/releases/latest    301
-/releases       https://github.com/neo-project/neo-rs/releases           301
-/latest         https://github.com/neo-project/neo-rs/releases/latest    301
+/download       https://github.com/r3e-network/neo-rs/releases/latest    301
+/releases       https://github.com/r3e-network/neo-rs/releases           301
+/latest         https://github.com/r3e-network/neo-rs/releases/latest    301
 
 # Documentation specific redirects
 /api            /docs/api-reference.html                 301
