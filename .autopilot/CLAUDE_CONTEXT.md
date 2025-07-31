@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-31T00:20:38.029Z
+Generated at: 2025-07-31T00:25:38.032Z
 
 ---
 
@@ -9,23 +9,23 @@ Generated at: 2025-07-31T00:20:38.029Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-31T00:20:31.965Z
+- **Last Updated**: 2025-07-31T00:25:31.885Z
 
 ## Statistics
 - **Total Files**: 1915
-- **Estimated Lines**: 373176
+- **Estimated Lines**: 373179
 - **Average File Size**: 8460 bytes
 
 ## Languages
-- **csharp**: 5000226 files
-- **rust**: 2305553 files
-- **json**: 1030853 files
-- **markdown**: 433387 files
-- **shellscript**: 21201 files
-- **yaml**: 10428 files
-- **css**: 10428 files
-- **html**: 10428 files
-- **javascript**: 10428 files
+- **csharp**: 5044340 files
+- **rust**: 2325701 files
+- **json**: 1039915 files
+- **markdown**: 437251 files
+- **shellscript**: 21477 files
+- **yaml**: 10520 files
+- **css**: 10520 files
+- **html**: 10520 files
+- **javascript**: 10520 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -83,12 +83,14 @@ No unfinished tasks
 ```
  M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
- M .autopilot/tasks/sessions.json
+ M crates/core/src/block.rs
+ M crates/core/src/neo_system.rs
 
 ```
 
 ### Recent Commits
 ```
+ce05f91 fix: add missing Validation variant to neo-smart-contract error conversion
 9d48914 fix: resolve compilation errors after cleanup
 c7130fc chore: complete repository URL migration to r3e-network
 984fb9c chore: update repository URLs to r3e-network organization
@@ -98,7 +100,6 @@ c7130fc chore: complete repository URL migration to r3e-network
 b41b213 fix: complete remaining CLI compilation errors
 563e552 chore: clean up intermediate files and documentation
 8621234 chore: apply cargo fmt formatting changes
-d9a8bad fix(cli): cast usize constants to u32 for type compatibility
 
 ```
 

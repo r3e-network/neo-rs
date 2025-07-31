@@ -91,7 +91,7 @@ impl Block {
     pub fn size(&self) -> usize {
         // Rough estimate of block size
         // In a real implementation, this would be the exact serialized size
-        std::mem::size_of::<BlockHeader>() + 
-        self.transactions.len() * std::mem::size_of::<Transaction>()
+        std::mem::size_of::<BlockHeader>()
+            + self.transactions.len() * std::mem::size_of::<Transaction>()
     }
 }
