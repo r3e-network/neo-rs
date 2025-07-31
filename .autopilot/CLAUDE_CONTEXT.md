@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-31T01:30:38.000Z
+Generated at: 2025-07-31T01:40:37.990Z
 
 ---
 
@@ -9,7 +9,7 @@ Generated at: 2025-07-31T01:30:38.000Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-31T01:30:31.944Z
+- **Last Updated**: 2025-07-31T01:40:31.915Z
 
 ## Statistics
 - **Total Files**: 1919
@@ -17,15 +17,15 @@ Generated at: 2025-07-31T01:30:38.000Z
 - **Average File Size**: 8477 bytes
 
 ## Languages
-- **csharp**: 5629330 files
-- **rust**: 2592881 files
-- **json**: 1160146 files
-- **markdown**: 488491 files
-- **shellscript**: 25137 files
-- **yaml**: 11740 files
-- **css**: 11740 files
-- **html**: 11740 files
-- **javascript**: 11740 files
+- **csharp**: 5712763 files
+- **rust**: 2630987 files
+- **json**: 1177372 files
+- **markdown**: 495799 files
+- **shellscript**: 25659 files
+- **yaml**: 11914 files
+- **css**: 11914 files
+- **html**: 11914 files
+- **javascript**: 11914 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -83,15 +83,15 @@ No unfinished tasks
 ```
  M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
- M crates/cli/src/service.rs
- M data/blocks/CURRENT
- M data/blocks/LOG
-?? config.testnet.json
+ M .autopilot/tasks/sessions.json
+ M Cargo.toml
+ M node/Cargo.toml
 
 ```
 
 ### Recent Commits
 ```
+e5b88bb feat(cli): complete neo-cli functionality validation
 aa2c312 fix(cli): resolve compilation errors in neo-cli
 7209b58 chore: apply cargo fmt formatting
 ce05f91 fix: add missing Validation variant to neo-smart-contract error conversion
@@ -101,7 +101,6 @@ c7130fc chore: complete repository URL migration to r3e-network
 6d45545 feat(testing): add unit test coverage analysis system
 908560a feat: implement complete Neo node matching C# functionality exactly
 2711293 fix: complete network pattern matching and enhance production readiness
-b41b213 fix: complete remaining CLI compilation errors
 
 ```
 
