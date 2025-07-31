@@ -9,7 +9,7 @@ use crate::transaction_type::ContainsTransactionType;
 use crate::uint160::UInt160;
 use crate::uint256::UInt256;
 use neo_config::{
-    ADDRESS_SIZE, MAX_BLOCK_SIZE, MAX_TRACEABLE_BLOCKS, MAX_TRANSACTIONS_PER_BLOCK,
+    ADDRESS_SIZE, MAX_TRACEABLE_BLOCKS, MAX_TRANSACTIONS_PER_BLOCK,
     MILLISECONDS_PER_BLOCK,
 };
 use neo_cryptography;
@@ -268,7 +268,7 @@ impl NeoSystem {
         }
 
         // 2. Check blockchain storage (matches C# Blockchain.ContainsTransaction exactly)
-        if let Some(ref blockchain) = self.blockchain {
+        if let Some(ref _blockchain) = self.blockchain {
             if self.check_blockchain_contains_transaction(hash) {
                 return ContainsTransactionType::ExistsInLedger;
             }
@@ -334,7 +334,7 @@ impl NeoSystem {
     /// Checks if a transaction exists in the blockchain (production implementation)  
     fn check_blockchain_contains_transaction(&self, tx_hash: &UInt256) -> bool {
         // 1. Direct blockchain access through system reference
-        if let Some(ref blockchain) = self.blockchain {
+        if let Some(ref _blockchain) = self.blockchain {
             // 2. Use actual blockchain storage to check transaction existence (production implementation)
             return self.query_blockchain_for_transaction(tx_hash);
         }
