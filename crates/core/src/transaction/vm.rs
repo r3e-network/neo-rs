@@ -186,7 +186,9 @@ impl ApplicationEngine {
     fn calculate_instruction_gas_cost(&self, opcode: u8) -> u64 {
         match opcode {
             0x00 => 0,        // PUSHINT8
-            0x01..=0x4F => 0, // PUSH operations
+            0x41 => 1000,     // SYSCALL
+            0x01..=0x40 => 0, // PUSH operations (before SYSCALL)
+            0x42..=0x4F => 0, // PUSH operations (after SYSCALL)
             0x51 => 0,        // PUSH1
             0x52..=0x60 => 0, // PUSH2-PUSH16
 
@@ -199,8 +201,6 @@ impl ApplicationEngine {
 
             0xB0..=0xBF => 100, // Cryptographic operations
             0xC0..=0xCF => 100, // Advanced operations
-
-            0x41 => 1000, // SYSCALL
 
             _ => 1,
         }

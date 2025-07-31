@@ -5,7 +5,7 @@
 //! Implementation of UInt160, a 160-bit unsigned integer.
 
 use crate::error::{CoreError, CoreResult};
-use neo_config::{ADDRESS_SIZE, HASH_SIZE, SECONDS_PER_BLOCK};
+use neo_config::ADDRESS_SIZE;
 use ripemd::Ripemd160;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

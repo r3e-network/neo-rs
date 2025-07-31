@@ -16,12 +16,10 @@ mod console;
 mod node;
 mod rpc;
 mod service;
-mod service_complete;
 mod wallet;
 
 use args::CliArgs;
 use service::MainService;
-use service_complete::CompleteMainService;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -53,7 +51,7 @@ async fn main() -> Result<()> {
     debug!("Command line arguments: {:?}", args);
 
     // Create and run complete main service (matches C# Neo exactly)
-    let mut main_service = CompleteMainService::new(args).await?;
+    let mut main_service = MainService::new(args).await?;
 
     // Run the complete main service
     match main_service.start().await {

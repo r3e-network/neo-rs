@@ -4,7 +4,6 @@
 //! ensuring all components shut down cleanly and in the correct order, matching
 //! the C# Neo implementation exactly.
 
-use neo_config::ADDRESS_SIZE;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;

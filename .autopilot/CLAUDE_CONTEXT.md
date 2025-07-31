@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-31T00:05:38.089Z
+Generated at: 2025-07-31T00:15:38.029Z
 
 ---
 
@@ -9,23 +9,23 @@ Generated at: 2025-07-31T00:05:38.089Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-31T00:05:35.479Z
+- **Last Updated**: 2025-07-31T00:15:31.955Z
 
 ## Statistics
 - **Total Files**: 1915
-- **Estimated Lines**: 373193
+- **Estimated Lines**: 373187
 - **Average File Size**: 8460 bytes
 
 ## Languages
-- **csharp**: 4854458 files
-- **rust**: 2238977 files
-- **json**: 1000909 files
-- **markdown**: 420619 files
-- **shellscript**: 20289 files
-- **yaml**: 10124 files
-- **css**: 10124 files
-- **html**: 10124 files
-- **javascript**: 10124 files
+- **csharp**: 4958030 files
+- **rust**: 2286281 files
+- **json**: 1022185 files
+- **markdown**: 429691 files
+- **shellscript**: 20937 files
+- **yaml**: 10340 files
+- **css**: 10340 files
+- **html**: 10340 files
+- **javascript**: 10340 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -83,21 +83,19 @@ No unfinished tasks
 ```
  M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
- M crates/bls12_381/Cargo.toml
- M crates/cli/Cargo.toml
- M crates/cryptography/Cargo.toml
- M crates/extensions/Cargo.toml
- M crates/io/Cargo.toml
- M crates/rpc_client/Cargo.toml
- M crates/vm/Cargo.toml
- M crates/wallets/Cargo.toml
- M website/_redirects
- M website/netlify.toml
+ M .autopilot/tasks/sessions.json
+ M crates/cli/src/main.rs
+ M crates/core/src/lib.rs
+ M crates/core/src/neo_system.rs
+ M crates/core/src/shutdown.rs
+ M crates/core/src/transaction/vm.rs
+ M crates/core/src/uint160.rs
 
 ```
 
 ### Recent Commits
 ```
+c7130fc chore: complete repository URL migration to r3e-network
 984fb9c chore: update repository URLs to r3e-network organization
 6d45545 feat(testing): add unit test coverage analysis system
 908560a feat: implement complete Neo node matching C# functionality exactly
@@ -107,7 +105,6 @@ b41b213 fix: complete remaining CLI compilation errors
 8621234 chore: apply cargo fmt formatting changes
 d9a8bad fix(cli): cast usize constants to u32 for type compatibility
 22afaa8 fix(rpc,cli): resolve compilation errors in rpc_server and cli crates
-5abbc44 fix(mpt_trie): update test imports and fix compilation errors
 
 ```
 
