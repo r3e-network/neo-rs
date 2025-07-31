@@ -198,6 +198,7 @@ impl From<neo_core::CoreError> for Error {
             neo_core::CoreError::NotFound { resource } => {
                 Error::InvalidOperation(format!("Not found: {}", resource))
             }
+            neo_core::CoreError::Validation { message } => Error::InvalidOperation(message),
             neo_core::CoreError::AlreadyExists { resource } => {
                 Error::InvalidOperation(format!("Already exists: {}", resource))
             }
