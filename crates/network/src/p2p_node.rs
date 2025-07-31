@@ -505,6 +505,79 @@ impl P2pNode {
         self.event_sender.subscribe()
     }
 
+    /// Sends a GetData message to request specific inventory items
+    pub async fn send_get_data(
+        &self,
+        peer: SocketAddr,
+        inventory: Vec<crate::messages::InventoryItem>,
+    ) -> Result<()> {
+        let protocol_msg = crate::messages::ProtocolMessage::GetData { inventory };
+        let message = NetworkMessage::new(protocol_msg);
+        self.send_message_to_peer(peer, message).await
+    }
+
+    /// Broadcasts inventory to peers
+    pub async fn broadcast_inventory(
+        &self,
+        inventory: Vec<crate::messages::InventoryItem>,
+        exclude: Option<SocketAddr>,
+    ) -> Result<()> {
+        let protocol_msg = crate::messages::ProtocolMessage::Inv { inventory };
+        let message = NetworkMessage::new(protocol_msg);
+
+        if let Some(excluded_peer) = exclude {
+            // Send to all peers except the excluded one
+            let peers: Vec<SocketAddr> = self
+                .peers
+                .read()
+                .await
+                .keys()
+                .filter(|&addr| addr != &excluded_peer)
+                .cloned()
+                .collect();
+
+            for peer in peers {
+                if let Err(e) = self.send_message_to_peer(peer, message.clone()).await {
+                    warn!("Failed to send inventory to peer {}: {}", peer, e);
+                }
+            }
+        } else {
+            // Broadcast to all peers
+            self.broadcast_message(message).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Sends headers to a specific peer
+    pub async fn send_headers(
+        &self,
+        peer: SocketAddr,
+        headers: Vec<neo_ledger::BlockHeader>,
+    ) -> Result<()> {
+        let protocol_msg = crate::messages::ProtocolMessage::Headers { headers };
+        let message = NetworkMessage::new(protocol_msg);
+        self.send_message_to_peer(peer, message).await
+    }
+
+    /// Sends a block to a specific peer
+    pub async fn send_block(&self, peer: SocketAddr, block: neo_ledger::Block) -> Result<()> {
+        let protocol_msg = crate::messages::ProtocolMessage::Block { block };
+        let message = NetworkMessage::new(protocol_msg);
+        self.send_message_to_peer(peer, message).await
+    }
+
+    /// Sends a transaction to a specific peer
+    pub async fn send_transaction(
+        &self,
+        peer: SocketAddr,
+        transaction: neo_core::Transaction,
+    ) -> Result<()> {
+        let protocol_msg = crate::messages::ProtocolMessage::Tx { transaction };
+        let message = NetworkMessage::new(protocol_msg);
+        self.send_message_to_peer(peer, message).await
+    }
+
     // ===== Private helper methods =====
 
     /// Handles external commands
