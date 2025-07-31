@@ -63,7 +63,7 @@
 [[redirects]]
   # Handle GitHub redirects
   from = "/github"
-  to = "https://github.com/neo-project/neo-rs"
+  to = "https://github.com/r3e-network/neo-rs"
   status = 301
 
 [[redirects]]
