@@ -1,6 +1,6 @@
 # AutoClaude Project Context
 
-Generated at: 2025-07-31T01:20:38.005Z
+Generated at: 2025-07-31T01:30:38.000Z
 
 ---
 
@@ -9,23 +9,23 @@ Generated at: 2025-07-31T01:20:38.005Z
 ## Workspace
 - **Root**: /Users/jinghuiliao/git/r3e/neo-rs
 - **Type**: single
-- **Last Updated**: 2025-07-31T01:20:31.935Z
+- **Last Updated**: 2025-07-31T01:30:31.944Z
 
 ## Statistics
-- **Total Files**: 1915
-- **Estimated Lines**: 373248
-- **Average File Size**: 8461 bytes
+- **Total Files**: 1919
+- **Estimated Lines**: 373253
+- **Average File Size**: 8477 bytes
 
 ## Languages
-- **csharp**: 5512332 files
-- **rust**: 2539445 files
-- **json**: 1136051 files
-- **markdown**: 478243 files
-- **shellscript**: 24405 files
-- **yaml**: 11496 files
-- **css**: 11496 files
-- **html**: 11496 files
-- **javascript**: 11496 files
+- **csharp**: 5629330 files
+- **rust**: 2592881 files
+- **json**: 1160146 files
+- **markdown**: 488491 files
+- **shellscript**: 25137 files
+- **yaml**: 11740 files
+- **css**: 11740 files
+- **html**: 11740 files
+- **javascript**: 11740 files
 
 ## Project Structure
 - **Main Languages**: Not detected
@@ -84,13 +84,15 @@ No unfinished tasks
  M .autopilot/CLAUDE_CONTEXT.md
  M .autopilot/cache/project-index.json
  M crates/cli/src/service.rs
- M crates/cli/src/wallet.rs
- M crates/network/src/p2p_node.rs
+ M data/blocks/CURRENT
+ M data/blocks/LOG
+?? config.testnet.json
 
 ```
 
 ### Recent Commits
 ```
+aa2c312 fix(cli): resolve compilation errors in neo-cli
 7209b58 chore: apply cargo fmt formatting
 ce05f91 fix: add missing Validation variant to neo-smart-contract error conversion
 9d48914 fix: resolve compilation errors after cleanup
@@ -100,7 +102,6 @@ c7130fc chore: complete repository URL migration to r3e-network
 908560a feat: implement complete Neo node matching C# functionality exactly
 2711293 fix: complete network pattern matching and enhance production readiness
 b41b213 fix: complete remaining CLI compilation errors
-563e552 chore: clean up intermediate files and documentation
 
 ```
 
