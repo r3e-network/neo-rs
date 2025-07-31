@@ -53,7 +53,7 @@ authors = [
     "Neo Contributors"
 ]
 homepage = "https://neo.org"
-repository = "https://github.com/neo-project/neo-rs"
+repository = "https://github.com/r3e-network/neo-rs"
 documentation = "https://docs.rs/neo-rs"
 license = "MIT"
 keywords = ["blockchain", "neo", "smart-contracts", "cryptocurrency", "consensus"]

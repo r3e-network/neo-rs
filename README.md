@@ -3,7 +3,7 @@
   
   # Neo-RS
   
-  [![CI](https://github.com/neo-project/neo-rs/workflows/CI/badge.svg)](https://github.com/neo-project/neo-rs/actions)
+  [![CI](https://github.com/r3e-network/neo-rs/workflows/CI/badge.svg)](https://github.com/r3e-network/neo-rs/actions)
   [![Coverage](https://codecov.io/gh/neo-project/neo-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/neo-project/neo-rs)
   [![Crates.io](https://img.shields.io/crates/v/neo-rs.svg)](https://crates.io/crates/neo-rs)
   [![Documentation](https://docs.rs/neo-rs/badge.svg)](https://docs.rs/neo-rs)
@@ -36,14 +36,14 @@ Neo-RS is a production-ready Rust implementation of the Neo N3 blockchain protoc
 #### Option 1: Download Binary
 ```bash
 # Download latest release for your platform
-curl -L https://github.com/neo-project/neo-rs/releases/latest/download/neo-rs-linux-x86_64.tar.gz | tar xz
+curl -L https://github.com/r3e-network/neo-rs/releases/latest/download/neo-rs-linux-x86_64.tar.gz | tar xz
 sudo mv neo-rs /usr/local/bin/
 ```
 
 #### Option 2: Build from Source
 ```bash
 # Prerequisites: Rust 1.70+ and system dependencies
-git clone https://github.com/neo-project/neo-rs.git
+git clone https://github.com/r3e-network/neo-rs.git
 cd neo-rs
 cargo build --release
 ```
