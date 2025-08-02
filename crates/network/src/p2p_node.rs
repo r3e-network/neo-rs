@@ -113,6 +113,9 @@ pub struct P2pNode {
     event_sender: broadcast::Sender<NodeEvent>,
     /// Command receiver for external commands
     command_receiver: Arc<tokio::sync::Mutex<mpsc::Receiver<NetworkCommand>>>,
+    /// Message receiver for messages from PeerManager
+    message_receiver:
+        Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<(SocketAddr, NetworkMessage)>>>,
     /// Start time for uptime calculation
     start_time: std::time::SystemTime,
 }
@@ -151,10 +154,24 @@ impl P2pNode {
         config: NetworkConfig,
         command_receiver: mpsc::Receiver<NetworkCommand>,
     ) -> Result<Self> {
+        let default_handler = Arc::new(DefaultMessageHandler);
+        Self::new_with_handler(config, command_receiver, default_handler)
+    }
+
+    /// Creates a new P2P node with a custom message handler
+    pub fn new_with_handler(
+        config: NetworkConfig,
+        command_receiver: mpsc::Receiver<NetworkCommand>,
+        message_handler: Arc<dyn MessageHandler>,
+    ) -> Result<Self> {
         let (event_sender, _) = broadcast::channel(1000);
 
-        let peer_manager = Arc::new(PeerManager::new(config.clone())?);
-        let message_handler: Arc<dyn MessageHandler> = Arc::new(DefaultMessageHandler);
+        // Create message forwarding channel for PeerManager -> P2pNode communication
+        let (message_tx, message_rx) = mpsc::unbounded_channel();
+
+        let mut peer_manager = PeerManager::new(config.clone())?;
+        peer_manager.set_message_forwarder(message_tx);
+        let peer_manager = Arc::new(peer_manager);
 
         let statistics = NodeStatistics {
             peer_count: 0,
@@ -178,6 +195,7 @@ impl P2pNode {
             statistics: Arc::new(RwLock::new(statistics)),
             event_sender,
             command_receiver: Arc::new(tokio::sync::Mutex::new(command_receiver)),
+            message_receiver: Arc::new(tokio::sync::Mutex::new(message_rx)),
             start_time: std::time::SystemTime::now(),
         })
     }
@@ -281,6 +299,18 @@ impl P2pNode {
                     if let Some(command) = command_opt {
                         if let Err(e) = self.handle_command(command).await {
                             error!("Failed to handle command: {}", e);
+                        }
+                    }
+                }
+
+                // Handle messages from PeerManager
+                message_opt = async {
+                    let mut receiver = self.message_receiver.lock().await;
+                    receiver.recv().await
+                } => {
+                    if let Some((peer_addr, message)) = message_opt {
+                        if let Err(e) = self.handle_message(peer_addr, &message).await {
+                            error!("Failed to handle message from {}: {}", peer_addr, e);
                         }
                     }
                 }
@@ -455,12 +485,26 @@ impl P2pNode {
         Ok(())
     }
 
+    /// Handles an incoming message from a peer
+    async fn handle_message(&self, peer: SocketAddr, message: &NetworkMessage) -> Result<()> {
+        // Log the incoming message with details
+        info!("📥 Received {} message from {}", message.command(), peer);
+
+        // Update last message time for the peer
+        if let Some(mut peer_info) = self.peers.write().await.get_mut(&peer) {
+            peer_info.last_message_at = std::time::SystemTime::now();
+        }
+
+        // Delegate to the message handler
+        self.message_handler.handle_message(peer, message).await
+    }
+
     /// Gets current node statistics (matches C# LocalNode.GetStatistics exactly)
     pub async fn get_statistics(&self) -> NodeStatistics {
         let mut stats = self.statistics.read().await.clone();
 
         // Update uptime
-        stats.uptime_seconds = self.start_time.elapsed().unwrap_or_default().as_secs();
+        stats.uptime_seconds = self.start_time.elapsed().expect("valid address").as_secs();
 
         stats
     }
@@ -960,6 +1004,7 @@ impl P2pNode {
         let peers = self.peers.clone();
         let peer_manager = self.peer_manager.clone();
         let event_sender = self.event_sender.clone();
+        let seed_nodes = self.config.seed_nodes.clone();
 
         let stats_clone = stats.clone();
         let peers_clone = peers.clone();
@@ -998,12 +1043,14 @@ impl P2pNode {
             loop {
                 interval.tick().await;
 
-                debug!("🔍 Running peer discovery/* implementation */;");
-                // Peer discovery logic would go here
+                debug!("🔍 Running peer discovery");
+                // TODO: Implement peer discovery via GetAddr messages to connected peers
             }
         });
 
         let peers_clone2 = peers.clone();
+        let peer_manager_clone2 = peer_manager.clone();
+        let seed_nodes_clone = seed_nodes.clone();
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(30)); // 30 seconds for maintenance interval
             loop {
@@ -1012,10 +1059,20 @@ impl P2pNode {
                 let peer_count = peers_clone2.read().await.len();
                 if peer_count < 3 {
                     warn!(
-                        "⚠️  Low peer count: {} peers connected. Attempting to find more peers/* implementation */;",
+                        "⚠️  Low peer count: {} peers connected. Attempting to find more peers",
                         peer_count
                     );
-                    // Trigger additional peer discovery
+                    // Try to connect to any seed nodes we're not already connected to
+                    let connected_addrs: Vec<SocketAddr> =
+                        peers_clone2.read().await.keys().cloned().collect();
+                    for seed in &seed_nodes_clone {
+                        if !connected_addrs.contains(seed) {
+                            info!("📡 Attempting to connect to seed node: {}", seed);
+                            if let Err(e) = peer_manager_clone2.connect_to_peer(*seed).await {
+                                warn!("Failed to connect to seed node {}: {}", seed, e);
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -1043,7 +1100,7 @@ impl P2pNode {
 
         // Update real-time statistics
         stats.peer_count = self.peers.read().await.len();
-        stats.uptime_seconds = self.start_time.elapsed().unwrap_or_default().as_secs();
+        stats.uptime_seconds = self.start_time.elapsed().expect("valid address").as_secs();
 
         // Update connection counts
         let peers = self.peers.read().await;
@@ -1073,9 +1130,12 @@ impl Drop for P2pNode {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{MessageCommand, NetworkMessage, ProtocolMessage};
     use crate::{NetworkError, NetworkResult};
+    use std::net::SocketAddr;
     use std::net::{IpAddr, Ipv4Addr};
+    use tokio::sync::mpsc;
     use tokio::time::{timeout, Duration};
 
     /// Helper function to create test P2P node
@@ -1103,12 +1163,7 @@ mod tests {
 
     /// Helper function to create test network message
     fn create_test_message() -> NetworkMessage {
-        NetworkMessage {
-            magic: 0x3554334e,
-            command: MessageCommand::Ping,
-            payload: ProtocolMessage::Ping { nonce: 12345 },
-            checksum: 0,
-        }
+        NetworkMessage::new_with_magic(ProtocolMessage::Ping { nonce: 12345 }, 0x3554334e)
     }
 
     #[test]
@@ -1143,7 +1198,7 @@ mod tests {
 
     #[test]
     fn test_peer_info_creation() {
-        let address: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
+        let address: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
         let peer_info = create_test_peer_info(address, true);
 
         assert_eq!(peer_info.address, address);
@@ -1155,7 +1210,7 @@ mod tests {
 
     #[test]
     fn test_peer_info_serialization() {
-        let address: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
+        let address: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
         let peer_info = create_test_peer_info(address, true);
 
         let serialized = serde_json::to_string(&peer_info).unwrap();
@@ -1283,7 +1338,7 @@ mod tests {
     async fn test_peer_connection_attempt() {
         let (node, _cmd_tx) = create_test_node().await;
 
-        let peer_address: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
+        let peer_address: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
 
         let connect_result = node.connect_to_peer(peer_address).await;
 
@@ -1304,10 +1359,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_duplicate_peer_connection_prevention() {
+    async fn test_duplicate_peer_connection_prevention() -> NetworkResult<()> {
         let (node, _cmd_tx) = create_test_node().await;
 
-        let peer_address: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
+        let peer_address: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
 
         // Manually add a peer to simulate existing connection
         let peer_info = create_test_peer_info(peer_address, true);
@@ -1319,22 +1374,24 @@ mod tests {
         // Should fail with already connected error
         assert!(connect_result.is_err());
         match connect_result.unwrap_err() {
-            NetworkError::PeerAlreadyConnected(_) => {
+            NetworkError::PeerAlreadyConnected { .. } => {
                 // Expected error type
             }
             _ => {
-                return Err(Error::Other(
-                    "Expected PeerAlreadyConnected error".to_string(),
-                ));
+                return Err(NetworkError::Configuration {
+                    parameter: "test".to_string(),
+                    reason: "Expected PeerAlreadyConnected error".to_string(),
+                });
             }
         }
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_peer_disconnection() {
         let (node, _cmd_tx) = create_test_node().await;
 
-        let peer_address: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
+        let peer_address: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
 
         // Manually add a peer to simulate existing connection
         let peer_info = create_test_peer_info(peer_address, true);
@@ -1365,10 +1422,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_disconnect_nonexistent_peer() {
+    async fn test_disconnect_nonexistent_peer() -> NetworkResult<()> {
         let (node, _cmd_tx) = create_test_node().await;
 
-        let peer_address: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
+        let peer_address: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
 
         // Attempt to disconnect a peer that's not connected
         let disconnect_result = node.disconnect_peer(peer_address).await;
@@ -1376,20 +1433,24 @@ mod tests {
         // Should fail with peer not connected error
         assert!(disconnect_result.is_err());
         match disconnect_result.unwrap_err() {
-            NetworkError::PeerNotConnected(_) => {
+            NetworkError::PeerNotConnected { .. } => {
                 // Expected error type
             }
             _ => {
-                return Err(Error::Other("Expected PeerNotConnected error".to_string()));
+                return Err(NetworkError::Configuration {
+                    parameter: "test".to_string(),
+                    reason: "Expected PeerNotConnected error".to_string(),
+                });
             }
         }
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_send_message_to_peer() {
         let (node, _cmd_tx) = create_test_node().await;
 
-        let peer_address: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
+        let peer_address: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
         let message = create_test_message();
 
         // Try to send to non-connected peer
@@ -1418,8 +1479,8 @@ mod tests {
         assert!(broadcast_result.is_ok());
 
         // Add some peers and broadcast again
-        let peer1: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
-        let peer2: SocketAddr = "localhost:20334".parse().unwrap_or_default();
+        let peer1: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
+        let peer2: SocketAddr = "localhost:20334".parse().expect("valid address");
 
         let peer_info1 = create_test_peer_info(peer1, true);
         let peer_info2 = create_test_peer_info(peer2, false);
@@ -1432,7 +1493,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_event_subscription() {
+    async fn test_event_subscription() -> NetworkResult<()> {
         let (node, _cmd_tx) = create_test_node().await;
 
         let mut event_receiver = node.subscribe_to_events();
@@ -1445,15 +1506,21 @@ mod tests {
         let event_result = timeout(Duration::from_secs(5), event_receiver.recv()).await;
         assert!(event_result.is_ok());
 
-        let event = event_result?.expect("operation should succeed");
+        let event = event_result
+            .expect("timeout")
+            .expect("operation should succeed");
         match event {
             NodeEvent::NodeStarted => {
                 // Expected event
             }
             _ => {
-                return Err(Error::Other("Expected NodeStarted event".to_string()));
+                return Err(NetworkError::Configuration {
+                    parameter: "test".to_string(),
+                    reason: "Expected NodeStarted event".to_string(),
+                });
             }
         }
+        Ok(())
     }
 
     #[tokio::test]
@@ -1480,7 +1547,7 @@ mod tests {
     async fn test_command_handling() {
         let (node, cmd_tx) = create_test_node().await;
 
-        let peer_address: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
+        let peer_address: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
 
         // Send a connect command
         let connect_cmd = NetworkCommand::ConnectToPeer(peer_address);
@@ -1508,7 +1575,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_peer_connection_limits() {
+    async fn test_peer_connection_limits() -> NetworkResult<()> {
         let mut config = NetworkConfig::testnet();
         config.max_outbound_connections = 1; // Limit to 1 outbound connection
 
@@ -1516,7 +1583,7 @@ mod tests {
         let node = P2pNode::new(config, cmd_rx).expect("operation should succeed");
 
         // Manually add a peer to reach the limit
-        let peer1: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
+        let peer1: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
         let peer_info1 = create_test_peer_info(peer1, true);
         node.peers.write().await.insert(peer1, peer_info1);
 
@@ -1527,7 +1594,7 @@ mod tests {
         }
 
         // Try to connect another peer
-        let peer2: SocketAddr = "localhost:20334".parse().unwrap_or_default();
+        let peer2: SocketAddr = "localhost:20334".parse().expect("valid address");
         let connect_result = node.connect_to_peer(peer2).await;
 
         // Should fail due to connection limit
@@ -1537,11 +1604,13 @@ mod tests {
                 // Expected error
             }
             _ => {
-                return Err(Error::Other(
-                    "Expected ConnectionLimitReached error".to_string(),
-                ));
+                return Err(NetworkError::Configuration {
+                    parameter: "test".to_string(),
+                    reason: "Expected ConnectionLimitReached error".to_string(),
+                });
             }
         }
+        Ok(())
     }
 
     #[tokio::test]
@@ -1549,8 +1618,8 @@ mod tests {
         let (node, _cmd_tx) = create_test_node().await;
 
         // Add outbound and inbound peers
-        let outbound_peer: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
-        let inbound_peer: SocketAddr = "localhost:20334".parse().unwrap_or_default();
+        let outbound_peer: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
+        let inbound_peer: SocketAddr = "localhost:20334".parse().expect("valid address");
 
         let outbound_info = create_test_peer_info(outbound_peer, true);
         let inbound_info = create_test_peer_info(inbound_peer, false);
@@ -1576,9 +1645,9 @@ mod tests {
 
         // Add multiple peers
         let peers = vec![
-            ("DEFAULT_TESTNET_PORT".parse().unwrap_or_default(), true),
-            ("localhost:20334".parse().unwrap_or_default(), false),
-            ("localhost:20335".parse().unwrap_or_default(), true),
+            ("127.0.0.1:20333".parse().expect("valid address"), true),
+            ("localhost:20334".parse().expect("valid address"), false),
+            ("localhost:20335".parse().expect("valid address"), true),
         ];
 
         for (addr, is_outbound) in &peers {
@@ -1601,8 +1670,8 @@ mod tests {
     async fn test_node_event_types() {
         // Test that all event types can be created and matched
         let peer_info =
-            create_test_peer_info("DEFAULT_TESTNET_PORT".parse().unwrap_or_default(), true);
-        let peer_addr: SocketAddr = "DEFAULT_TESTNET_PORT".parse().unwrap_or_default();
+            create_test_peer_info("127.0.0.1:20333".parse().expect("valid address"), true);
+        let peer_addr: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
         let message = create_test_message();
 
         let events = vec![
@@ -1643,7 +1712,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_concurrent_peer_operations() {
+    async fn test_concurrent_peer_operations() -> NetworkResult<()> {
         let (node, _cmd_tx) = create_test_node().await;
 
         // Test concurrent access to peer collections
@@ -1651,7 +1720,7 @@ mod tests {
             .map(|i| {
                 format!("127.0.0.{}:20333", i + 1)
                     .parse()
-                    .unwrap_or_default()
+                    .expect("valid address")
             })
             .collect();
 
@@ -1669,7 +1738,10 @@ mod tests {
         }
 
         for handle in handles {
-            handle.await?;
+            handle.await.map_err(|e| NetworkError::Configuration {
+                parameter: "join".to_string(),
+                reason: format!("Failed to join task: {}", e),
+            })?;
         }
 
         // Verify all peers were added
@@ -1686,11 +1758,15 @@ mod tests {
             .collect();
 
         for handle in update_handles {
-            handle.await?;
+            handle.await.map_err(|e| NetworkError::Configuration {
+                parameter: "join".to_string(),
+                reason: format!("Failed to join task: {}", e),
+            })?;
         }
 
         let final_stats = node.get_statistics().await;
         assert_eq!(final_stats.peer_count, 10);
+        Ok(())
     }
 
     #[test]

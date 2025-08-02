@@ -57,7 +57,7 @@ pub const PROTOCOL_VERSION: u32 = 0;
 pub const NODE_CAPABILITIES: u32 = 1;
 
 // TestNet configuration
-pub const TESTNET_MAGIC: u32 = 0x74746e41;
+pub const TESTNET_MAGIC: u32 = 0x3554334E;
 pub const TESTNET_RPC_PORT: u16 = 20332;
 pub const TESTNET_P2P_PORT: u16 = 20333;
 

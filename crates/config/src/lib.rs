@@ -43,11 +43,9 @@ pub enum NetworkType {
 }
 /// Neo MainNet seed nodes
 pub const MAINNET_SEEDS: &[&str] = &[
-    "seed1.neo.org:10333",
-    "seed2.neo.org:10333",
-    "seed3.neo.org:10333",
-    "seed4.neo.org:10333",
-    "seed5.neo.org:10333",
+    // NGD Network nodes - these use standard Neo protocol
+    "seed1.ngd.network:10333", // 35.226.217.8
+    "seed2.ngd.network:10333", // 34.69.36.148
 ];
 
 /// Neo TestNet seed nodes  

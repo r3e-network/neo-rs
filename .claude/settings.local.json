@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
       "Bash(find:*)",
@@ -82,7 +83,9 @@
       "Bash(nslookup:*)",
       "Bash(./demo-testnet-start.sh:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(cargo run:*)",
+      "Bash(./test_sync_fix.sh:*)"
     ],
     "deny": []
   }

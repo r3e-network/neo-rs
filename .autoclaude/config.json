@@ -87,6 +87,14 @@
       "enabled": false,
       "predefined": false,
       "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/security-audit-check.sh"
+    },
+    {
+      "id": "unit-test-coverage-check",
+      "name": "Unit Test Coverage Check",
+      "description": "User-defined script: unit-test-coverage-check.sh",
+      "enabled": false,
+      "predefined": false,
+      "path": "/Users/jinghuiliao/git/r3e/neo-rs/.autoclaude/scripts/unit-test-coverage-check.sh"
     }
   ],
   "maxIterations": 5,

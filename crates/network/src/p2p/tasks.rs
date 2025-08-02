@@ -426,6 +426,7 @@ impl Default for TaskManager {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{NetworkError, PeerInfo};
 
     #[tokio::test]

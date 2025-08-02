@@ -26,3 +26,19 @@ neo-config.toml
 # OS files
 .DS_Store
 Thumbs.db
+
+# Debug and test files
+debug_*.txt
+test_*.txt
+*_test.txt
+*_output.txt
+*_output?.txt
+neo_*.txt
+sync_test.txt
+testnet_test.txt
+version_*.txt
+test_*.sh
+final_*.sh
+debug_*.sh
+*.py
+!examples/**/*.py

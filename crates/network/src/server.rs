@@ -184,10 +184,43 @@ impl NetworkServer {
         };
 
         let (command_sender, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = Arc::new(P2pNode::new(network_config, command_receiver)?);
 
-        // Pass blockchain directly to SyncManager
-        let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), p2p_node.clone()));
+        // Create a temporary P2P node first to get sync manager
+        let temp_p2p = Arc::new(P2pNode::new(
+            network_config.clone(),
+            tokio::sync::mpsc::channel(1).1,
+        )?);
+
+        // Create sync manager
+        let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), temp_p2p));
+
+        // Create composite message handler
+        let default_handler = Arc::new(crate::p2p::protocol::DefaultMessageHandler);
+        let mut composite_handler =
+            crate::composite_handler::CompositeMessageHandler::new(default_handler);
+
+        // Register sync manager for sync-related messages
+        composite_handler.register_handlers(vec![
+            (
+                crate::messages::MessageCommand::Headers,
+                sync_manager.clone() as Arc<dyn crate::p2p::protocol::MessageHandler>,
+            ),
+            (
+                crate::messages::MessageCommand::Block,
+                sync_manager.clone() as Arc<dyn crate::p2p::protocol::MessageHandler>,
+            ),
+            (
+                crate::messages::MessageCommand::Inv,
+                sync_manager.clone() as Arc<dyn crate::p2p::protocol::MessageHandler>,
+            ),
+        ]);
+
+        // Create the real P2P node with the composite handler
+        let p2p_node = Arc::new(P2pNode::new_with_handler(
+            network_config,
+            command_receiver,
+            Arc::new(composite_handler),
+        )?);
 
         let rpc_server = config.rpc_config.as_ref().map(|rpc_config| {
             Arc::new(RpcServer::with_p2p_node(
@@ -574,7 +607,9 @@ impl Default for NetworkServerBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::{NetworkError, PeerInfo};
+    use super::*;
+    use crate::{NetworkError, NetworkResult, PeerInfo};
+    use neo_core::UInt160;
 
     #[test]
     fn test_network_config() {
@@ -592,17 +627,20 @@ mod tests {
     }
 
     #[test]
-    fn test_network_server_builder() {
-        let builder = NetworkServerBuilder::new()
-            .node_id(UInt160::zero())
-            .magic(0x12345678)
-            .p2p_address(
-                "127.0.0.1:10333"
-                    .parse()
-                    .map_err(|_| NetworkError::ServerError("operation failed".into()))?,
-            )
-            .enable_rpc(true);
+    fn test_network_server_builder() -> NetworkResult<()> {
+        let builder =
+            NetworkServerBuilder::new()
+                .node_id(UInt160::zero())
+                .magic(0x12345678)
+                .p2p_address("127.0.0.1:10333".parse().map_err(|_| {
+                    NetworkError::Configuration {
+                        parameter: "address".to_string(),
+                        reason: "Failed to parse address".to_string(),
+                    }
+                })?)
+                .enable_rpc(true);
 
         // Would need a blockchain instance to complete the test
+        Ok(())
     }
 }

@@ -370,7 +370,7 @@ impl CreateService {
         let next_id = NEXT_CONTRACT_ID.fetch_add(1, Ordering::SeqCst);
 
         // 4. Validate ID range (matches C# contract ID constraints)
-        if next_id <= 0 || next_id > 2_147_483_647 {
+        if next_id <= 0 {
             return Err(Error::InteropServiceError(
                 "Contract ID overflow".to_string(),
             ));
@@ -507,11 +507,8 @@ impl CreateService {
 
     /// Validates script opcodes (basic validation)
     fn validate_script_opcodes(&self, script: &[u8]) -> Result<bool> {
-        for &opcode in script {
-            if opcode > 0xFF {
-                return Ok(false);
-            }
-        }
+        // All opcodes in a u8 array are valid (0-255)
+        // In a more complete implementation, we would check for specific invalid opcodes
         Ok(true)
     }
 

@@ -215,6 +215,9 @@ impl MessageHandler for DefaultMessageHandler {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::net::SocketAddr;
+
     #[tokio::test]
     async fn test_peer_id_generation() {
         let address: SocketAddr = "127.0.0.1:10333".parse().unwrap();

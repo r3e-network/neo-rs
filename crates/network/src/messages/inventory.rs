@@ -104,7 +104,9 @@ impl InventoryItem {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{NetworkError, PeerInfo};
+    use neo_core::UInt256;
 
     #[test]
     fn test_inventory_item() {

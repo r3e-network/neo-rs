@@ -108,6 +108,12 @@ pub struct RpcError {
     pub data: Option<Value>,
 }
 
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RPC error {}: {}", self.code, self.message)
+    }
+}
+
 impl RpcError {
     /// Creates a new RPC error
     pub fn new(code: i32, message: String) -> Self {
@@ -1013,9 +1019,10 @@ async fn handle_calculate_network_fee(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{NetworkError, NetworkResult};
     use neo_ledger::Blockchain;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use std::sync::Arc;
 
     fn create_test_blockchain() -> Arc<Blockchain> {
@@ -1101,7 +1108,7 @@ mod tests {
         assert!(request.params.is_some());
         assert_eq!(request.id, Some(json!(2)));
 
-        let params = request.params?;
+        let params = request.params.expect("params should be present");
         assert!(params.is_array());
         let params_array = params.as_array().expect("network operation should succeed");
         assert_eq!(params_array.len(), 2);
@@ -1112,7 +1119,7 @@ mod tests {
     #[test]
     fn test_rpc_request_invalid_json() {
         let invalid_json = r#"{"jsonrpc":"2.0","method":"getblockcount","id":1"#; // Missing closing brace
-        let result: Result<RpcRequest, _> = serde_json::from_str(invalid_json);
+        let result: serde_json::Result<RpcRequest> = serde_json::from_str(invalid_json);
         assert!(result.is_err());
     }
 
@@ -1165,14 +1172,16 @@ mod tests {
         let blockchain = create_test_blockchain();
         let network_config = crate::NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = Arc::new(crate::P2pNode::new(network_config, command_receiver));
+        let p2p_node = Arc::new(
+            crate::P2pNode::new(network_config, command_receiver).expect("should create P2pNode"),
+        );
 
         let state = RpcState::with_p2p_node(blockchain.clone(), p2p_node.clone());
 
         assert!(Arc::ptr_eq(&state.blockchain, &blockchain));
         assert!(state.p2p_node.is_some());
         assert!(Arc::ptr_eq(
-            state.p2p_node.as_ref().expect("Value should exist"),
+            &state.p2p_node.as_ref().expect("Value should exist"),
             &p2p_node
         ));
     }
@@ -1183,7 +1192,7 @@ mod tests {
 
         #[async_trait::async_trait]
         impl RpcMethod for TestMethod {
-            async fn handle(&self, _params: Option<Value>) -> Result<Value> {
+            async fn handle(&self, _params: Option<Value>) -> NetworkResult<Value> {
                 Ok(json!("test result"))
             }
         }
@@ -1198,21 +1207,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_get_block_count() {
+    async fn test_handle_get_block_count() -> NetworkResult<()> {
         let state = create_test_state();
         let result = handle_get_block_count(&state).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_number());
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_get_version() {
+    async fn test_handle_get_version() -> NetworkResult<()> {
         let result = handle_get_version().await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_object());
 
         let obj = value.as_object().expect("network operation should succeed");
@@ -1224,71 +1240,92 @@ mod tests {
         assert_eq!(obj["useragent"], "neo-rs/0.1.0");
         assert_eq!(obj["tcpport"], 10333);
         assert_eq!(obj["wsport"], 10334);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_ping() {
+    async fn test_handle_ping() -> NetworkResult<()> {
         let result = handle_ping().await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert_eq!(value, json!(true));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_validate_address_valid() {
+    async fn test_handle_validate_address_valid() -> NetworkResult<()> {
         let params = Some(json!(["NNLi44dJNXtDNSBkofB48aTVYtb1zZrNEs"]));
         let result = handle_validate_address(&params).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_object());
 
         let obj = value.as_object().expect("network operation should succeed");
         assert!(obj.contains_key("address"));
         assert!(obj.contains_key("isvalid"));
         assert_eq!(obj["isvalid"], true);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_validate_address_invalid() {
+    async fn test_handle_validate_address_invalid() -> NetworkResult<()> {
         let params = Some(json!(["invalid_address"]));
         let result = handle_validate_address(&params).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_object());
 
         let obj = value.as_object().expect("network operation should succeed");
         assert_eq!(obj["isvalid"], false);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_validate_address_no_params() {
+    async fn test_handle_validate_address_no_params() -> NetworkResult<()> {
         let result = handle_validate_address(&None).await;
 
         assert!(result.is_err());
         let error = result.unwrap_err();
         assert_eq!(error.code, -32602); // Invalid params
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_get_connection_count_no_p2p() {
+    async fn test_handle_get_connection_count_no_p2p() -> NetworkResult<()> {
         let state = create_test_state();
         let result = handle_get_connection_count(&state).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert_eq!(value, json!(0));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_get_peers_no_p2p() {
+    async fn test_handle_get_peers_no_p2p() -> NetworkResult<()> {
         let state = create_test_state();
         let result = handle_get_peers(&state).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_object());
 
         let obj = value.as_object().expect("network operation should succeed");
@@ -1300,15 +1337,19 @@ mod tests {
             .as_array()
             .expect("network operation should succeed");
         assert_eq!(connected.len(), 0);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_get_committee() {
+    async fn test_handle_get_committee() -> NetworkResult<()> {
         let state = create_test_state();
         let result = handle_get_committee(&state).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_array());
 
         let committee = value.as_array().expect("network operation should succeed");
@@ -1320,15 +1361,19 @@ mod tests {
             assert_eq!(pubkey.len(), 66); // Compressed public key length
             assert!(pubkey.starts_with("02") || pubkey.starts_with("03"));
         }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_get_validators() {
+    async fn test_handle_get_validators() -> NetworkResult<()> {
         let state = create_test_state();
         let result = handle_get_validators(&state).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_array());
 
         let validators = value.as_array().expect("network operation should succeed");
@@ -1343,24 +1388,29 @@ mod tests {
             assert!(obj.contains_key("votes"));
             assert!(obj.contains_key("active"));
         }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_get_raw_mempool() {
+    async fn test_handle_get_raw_mempool() -> NetworkResult<()> {
         let state = create_test_state();
         let params = Some(json!([false]));
         let result = handle_get_raw_mempool(&state, &params).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_array());
 
         let mempool = value.as_array().expect("network operation should succeed");
         assert_eq!(mempool.len(), 0); // Empty for test
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_invoke_function() {
+    async fn test_handle_invoke_function() -> NetworkResult<()> {
         let state = create_test_state();
         let params = Some(json!([
             "0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5",
@@ -1370,7 +1420,10 @@ mod tests {
         let result = handle_invoke_function(&state, &params).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_object());
 
         let obj = value.as_object().expect("network operation should succeed");
@@ -1380,6 +1433,7 @@ mod tests {
         assert!(obj.contains_key("stack"));
 
         assert_eq!(obj["state"], "HALT");
+        Ok(())
     }
 
     #[tokio::test]
@@ -1393,13 +1447,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_send_raw_transaction() {
+    async fn test_handle_send_raw_transaction() -> NetworkResult<()> {
         let state = create_test_state();
         let params = Some(json!(["deadbeef"]));
         let result = handle_send_raw_transaction(&state, &params).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_object());
 
         let obj = value.as_object().expect("network operation should succeed");
@@ -1410,10 +1467,11 @@ mod tests {
             .expect("network operation should succeed");
         assert_eq!(hash.len(), 66); // 0x + 64 hex chars
         assert!(hash.starts_with("0x"));
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_get_application_log() {
+    async fn test_handle_get_application_log() -> NetworkResult<()> {
         let state = create_test_state();
         let params = Some(json!([
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
@@ -1421,7 +1479,10 @@ mod tests {
         let result = handle_get_application_log(&state, &params).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_object());
 
         let obj = value.as_object().expect("network operation should succeed");
@@ -1434,16 +1495,20 @@ mod tests {
 
         assert_eq!(obj["trigger"], "Application");
         assert_eq!(obj["vmstate"], "HALT");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_handle_calculate_network_fee() {
+    async fn test_handle_calculate_network_fee() -> NetworkResult<()> {
         let state = create_test_state();
         let params = Some(json!(["deadbeef"]));
         let result = handle_calculate_network_fee(&state, &params).await;
 
         assert!(result.is_ok());
-        let value = result?;
+        let value = result.map_err(|e| NetworkError::Configuration {
+            parameter: "rpc".to_string(),
+            reason: format!("RPC error: {}", e),
+        })?;
         assert!(value.is_object());
 
         let obj = value.as_object().expect("network operation should succeed");
@@ -1454,6 +1519,7 @@ mod tests {
             .expect("network operation should succeed");
         assert!(!fee.is_empty());
         assert!(fee.parse::<u64>().is_ok());
+        Ok(())
     }
 
     #[tokio::test]

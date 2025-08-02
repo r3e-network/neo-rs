@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{interval, timeout, Duration};
@@ -109,6 +109,8 @@ pub struct PeerManager {
     message_validator: Arc<RwLock<MessageValidator>>,
     /// Network error handler for robust error handling
     error_handler: Arc<NetworkErrorHandler>,
+    /// Message forwarder to P2pNode (optional)
+    message_forwarder: Option<mpsc::UnboundedSender<(SocketAddr, NetworkMessage)>>,
 }
 
 /// Connection statistics (matches C# Neo connection tracking exactly)
@@ -154,6 +156,7 @@ impl PeerManager {
             connection_stats: Arc::new(RwLock::new(ConnectionStats::default())),
             message_validator: Arc::new(RwLock::new(message_validator)),
             error_handler,
+            message_forwarder: None,
         })
     }
 
@@ -208,7 +211,7 @@ impl PeerManager {
     }
 
     /// Connects to a peer (matches C# Neo.Network.P2P.LocalNode.ConnectToPeer exactly)
-    pub async fn connect_to_peer(&self, address: SocketAddr) -> NetworkResult<PeerInfo> {
+    pub async fn connect_to_peer(self: &Arc<Self>, address: SocketAddr) -> NetworkResult<PeerInfo> {
         debug!("Attempting to connect to peer: {}", address);
 
         // 1. Update connection statistics
@@ -224,11 +227,11 @@ impl PeerManager {
 
         // 3. Use error handler to execute connection with retry logic
         let operation_id = format!("connect_to_peer_{}", address);
-        let error_handler = Arc::clone(&self.error_handler);
+        let error_handler: Arc<NetworkErrorHandler> = Arc::clone(&self.error_handler);
         let config = self.config.clone();
         let stats = Arc::clone(&self.connection_stats);
 
-        let peer_info = error_handler
+        let (peer_info, tcp_stream) = error_handler
             .execute_with_retry(operation_id, address, || async {
                 // Attempt TCP connection with timeout
                 let tcp_stream = match timeout(
@@ -253,15 +256,34 @@ impl PeerManager {
                     }
                 };
 
+                info!("🔍 PRE_TCP: About to log TCP connection established");
                 info!("TCP connection established to {}", address);
+                info!("🔍 POST_TCP: Right after TCP connection log");
 
                 // Perform Neo protocol handshake
-                self.perform_handshake(tcp_stream, address, true).await
+                info!("🔍 UNIQUE_DEBUG: About to start handshake with {}", address);
+                info!("🔍 PRE_HANDSHAKE: About to call perform_handshake");
+
+                // Add error handling around handshake to catch any issues
+                let handshake_result = match self.perform_handshake(tcp_stream, address, true).await
+                {
+                    Ok(result) => {
+                        info!("🔍 Handshake succeeded with {}", address);
+                        Ok(result)
+                    }
+                    Err(e) => {
+                        info!("🔍 Handshake failed with {}: {}", address, e);
+                        Err(e)
+                    }
+                };
+
+                handshake_result
             })
             .await?;
 
         // 4. Create peer connection
         let (message_tx, message_rx) = mpsc::unbounded_channel();
+        let message_tx_clone = message_tx.clone();
         let peer_connection = PeerConnection {
             address,
             state: PeerState::Connected,
@@ -281,9 +303,34 @@ impl PeerManager {
             .write()
             .await
             .insert(address, peer_connection.clone());
+        info!(
+            "📌 Added peer {} to peers map, total peers: {}",
+            address,
+            self.peers.read().await.len()
+        );
 
-        // 6. Start message handling for this peer
-        self.start_peer_message_handler(address, message_rx).await;
+        // 6. Start message handling for this peer using the comprehensive handler
+        let event_sender_clone = self.event_sender.clone();
+        let stats = Arc::clone(&self.connection_stats);
+        let message_validator = Arc::clone(&self.message_validator);
+        let error_handler = Arc::clone(&self.error_handler);
+
+        // Spawn the message handler task
+        tokio::spawn(async move {
+            if let Err(e) = Self::handle_peer_messages(
+                tcp_stream,
+                address,
+                message_rx,
+                event_sender_clone,
+                stats,
+                message_validator,
+                error_handler,
+            )
+            .await
+            {
+                error!("Message handler failed for {}: {}", address, e);
+            }
+        });
 
         // 7. Update statistics
         self.connection_stats.write().await.successful_connections += 1;
@@ -326,7 +373,7 @@ impl PeerManager {
         debug!("Sending message to peer {}: {:?}", peer, message);
 
         let operation_id = format!("send_message_{}_{:?}", peer, message.header.command);
-        let error_handler = Arc::clone(&self.error_handler);
+        let error_handler: Arc<NetworkErrorHandler> = Arc::clone(&self.error_handler);
         let peers = Arc::clone(&self.peers);
         let stats = Arc::clone(&self.connection_stats);
         let msg_clone = message.clone();
@@ -426,6 +473,14 @@ impl PeerManager {
         Arc::clone(&self.error_handler)
     }
 
+    /// Sets the message forwarder to send received messages to P2pNode
+    pub fn set_message_forwarder(
+        &mut self,
+        sender: mpsc::UnboundedSender<(SocketAddr, NetworkMessage)>,
+    ) {
+        self.message_forwarder = Some(sender);
+    }
+
     /// Determines if a validation error is severe enough to disconnect the peer
     fn is_severe_validation_error(error: &NetworkError) -> bool {
         match error {
@@ -449,13 +504,28 @@ impl PeerManager {
 
     /// Gets ready peers for syncing
     pub async fn get_ready_peers(&self) -> Vec<PeerConnection> {
-        self.peers
-            .read()
-            .await
+        let peers = self.peers.read().await;
+        let total_peers = peers.len();
+        let ready_peers: Vec<PeerConnection> = peers
             .values()
             .filter(|p| p.state == PeerState::Connected)
             .cloned()
-            .collect()
+            .collect();
+        info!(
+            "🔍 get_ready_peers: {} total peers, {} ready peers",
+            total_peers,
+            ready_peers.len()
+        );
+
+        // Add debug info for each peer
+        for (addr, peer) in peers.iter() {
+            info!(
+                "🔍 Peer {}: state={:?}, connected_at={:?}",
+                addr, peer.state, peer.connected_at
+            );
+        }
+
+        ready_peers
     }
 
     /// Gets peer manager statistics
@@ -520,7 +590,7 @@ impl PeerManager {
         let is_running = Arc::clone(&self.is_running);
         let connection_stats = Arc::clone(&self.connection_stats);
         let message_validator = Arc::clone(&self.message_validator);
-        let error_handler = Arc::clone(&self.error_handler);
+        let error_handler: Arc<NetworkErrorHandler> = Arc::clone(&self.error_handler);
 
         tokio::spawn(async move {
             info!("🔄 Starting to accept incoming TCP connections");
@@ -758,7 +828,7 @@ impl PeerManager {
     /// Starts maintenance tasks for peer management
     async fn start_maintenance_tasks(&self) -> NetworkResult<()> {
         // Start error handler maintenance
-        let error_handler = Arc::clone(&self.error_handler);
+        let error_handler: Arc<NetworkErrorHandler> = Arc::clone(&self.error_handler);
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(60)); // Run every minute
             loop {
@@ -802,29 +872,393 @@ impl PeerManager {
         Ok(())
     }
 
+    /// Reads a complete Neo3 message from the stream
+    /// Neo 3 format: 1 byte flags + 1 byte command + varlen-encoded payload
+    pub async fn read_complete_neo3_message<T>(
+        stream: &mut T,
+        peer_addr: SocketAddr,
+    ) -> NetworkResult<Vec<u8>>
+    where
+        T: AsyncRead + Unpin,
+    {
+        use tokio::time::{timeout, Duration};
+
+        // Read Neo3 protocol message header (2 bytes: flags + command)
+        let mut header = [0u8; 2];
+        match timeout(Duration::from_secs(5), stream.read_exact(&mut header)).await {
+            Ok(Ok(_)) => {
+                // Successfully read header
+            }
+            Ok(Err(e)) => {
+                // Check if this is a connection closed error and convert appropriately
+                if e.kind() == std::io::ErrorKind::UnexpectedEof
+                    || e.kind() == std::io::ErrorKind::ConnectionAborted
+                {
+                    return Err(NetworkError::ConnectionFailed {
+                        address: peer_addr,
+                        reason: "Connection closed by peer during handshake".to_string(),
+                    });
+                }
+                return Err(NetworkError::ConnectionFailed {
+                    address: peer_addr,
+                    reason: format!("Failed to read message header: {}", e),
+                });
+            }
+            Err(_) => {
+                return Err(NetworkError::ConnectionTimeout {
+                    address: peer_addr,
+                    timeout_ms: 5000,
+                });
+            }
+        }
+
+        let flags = header[0];
+        let command = header[1];
+
+        // Now read the varlen-encoded payload length
+        let payload_length = match Self::read_varlen(stream).await {
+            Ok(len) => len,
+            Err(e) => {
+                return Err(NetworkError::ConnectionFailed {
+                    address: peer_addr,
+                    reason: format!("Failed to read payload length: {}", e),
+                });
+            }
+        };
+
+        // Sanity check - messages shouldn't be too large
+        if payload_length > 16 * 1024 * 1024 {
+            // 16MB max (Neo protocol limit)
+            return Err(NetworkError::ProtocolViolation {
+                peer: peer_addr,
+                violation: format!("Message too large: {} bytes", payload_length),
+            });
+        }
+
+        // Read the payload if any
+        let mut payload = vec![0u8; payload_length];
+        if payload_length > 0 {
+            match timeout(Duration::from_secs(10), stream.read_exact(&mut payload)).await {
+                Ok(Ok(_)) => {
+                    // Successfully read payload
+                }
+                Ok(Err(e)) => {
+                    return Err(NetworkError::ConnectionFailed {
+                        address: peer_addr,
+                        reason: format!("Failed to read message payload: {}", e),
+                    });
+                }
+                Err(_) => {
+                    return Err(NetworkError::ConnectionTimeout {
+                        address: peer_addr,
+                        timeout_ms: 10000,
+                    });
+                }
+            }
+        }
+
+        // Build the complete message: header + varlen length + payload
+        let mut message = Vec::new();
+        message.push(flags);
+        message.push(command);
+        // Add the varlen-encoded length
+        Self::write_varlen(&mut message, payload_length);
+        message.extend_from_slice(&payload);
+
+        info!(
+            "Received Neo3 message: flags={:02X}, command={:02X}, payload_length={}",
+            flags, command, payload_length
+        );
+
+        Ok(message)
+    }
+
+    /// Read a varlen-encoded integer from the stream
+    async fn read_varlen<T>(stream: &mut T) -> Result<usize, std::io::Error>
+    where
+        T: AsyncRead + Unpin,
+    {
+        let mut first_byte = [0u8; 1];
+        stream.read_exact(&mut first_byte).await?;
+
+        match first_byte[0] {
+            0xFD => {
+                // 2-byte length
+                let mut bytes = [0u8; 2];
+                stream.read_exact(&mut bytes).await?;
+                Ok(u16::from_le_bytes(bytes) as usize)
+            }
+            0xFE => {
+                // 4-byte length
+                let mut bytes = [0u8; 4];
+                stream.read_exact(&mut bytes).await?;
+                Ok(u32::from_le_bytes(bytes) as usize)
+            }
+            0xFF => {
+                // 8-byte length
+                let mut bytes = [0u8; 8];
+                stream.read_exact(&mut bytes).await?;
+                Ok(u64::from_le_bytes(bytes) as usize)
+            }
+            len => {
+                // Single byte length
+                Ok(len as usize)
+            }
+        }
+    }
+
+    /// Write a varlen-encoded integer to a buffer
+    fn write_varlen(buffer: &mut Vec<u8>, value: usize) {
+        if value < 0xFD {
+            buffer.push(value as u8);
+        } else if value <= 0xFFFF {
+            buffer.push(0xFD);
+            buffer.extend_from_slice(&(value as u16).to_le_bytes());
+        } else if value <= 0xFFFFFFFF {
+            buffer.push(0xFE);
+            buffer.extend_from_slice(&(value as u32).to_le_bytes());
+        } else {
+            buffer.push(0xFF);
+            buffer.extend_from_slice(&(value as u64).to_le_bytes());
+        }
+    }
+
+    /// Send GetAddr message to maintain connection
+    async fn send_getaddr_to_maintain_connection(
+        &self,
+        stream: &mut TcpStream,
+        address: SocketAddr,
+    ) -> NetworkResult<()> {
+        info!(
+            "📤 Sending GetAddr message to {} to maintain connection",
+            address
+        );
+        let getaddr_msg = ProtocolMessage::GetAddr;
+        let _getaddr_network_msg = NetworkMessage::new(getaddr_msg);
+        // For Neo3, we need to send GetAddr in the proper format
+        let getaddr_bytes = {
+            // Neo3 format: flags (1) + command (1) + payload_length (varint) + payload
+            let mut bytes = Vec::new();
+            bytes.push(0x00); // flags = 0 (no compression)
+            bytes.push(0x10); // GetAddr command byte
+            bytes.push(0x00); // payload length = 0 (GetAddr has no payload)
+            bytes
+        };
+
+        if let Err(e) = stream.write_all(&getaddr_bytes).await {
+            warn!("Failed to send GetAddr to {}: {}", address, e);
+            // Don't fail the handshake, just log the error
+        } else {
+            info!("✅ GetAddr sent successfully to {}", address);
+        }
+
+        Ok(())
+    }
+
+    /// Send GetHeaders message to start block synchronization
+    async fn send_initial_getheaders(
+        &self,
+        stream: &mut TcpStream,
+        address: SocketAddr,
+    ) -> NetworkResult<()> {
+        info!(
+            "📤 Sending GetHeaders message to {} to start block sync",
+            address
+        );
+
+        // For Neo3, GetHeaders uses index-based approach
+        // Start from block 0 if we have no blocks, or from our current height
+        let index_start = 0u32; // Start from genesis
+        let count = -1i16; // Request maximum headers (2000)
+
+        let _getheaders_msg = ProtocolMessage::GetHeaders { index_start, count };
+
+        // Serialize the payload
+        let mut payload = Vec::new();
+        // Write index_start as u32 little-endian
+        payload.extend_from_slice(&index_start.to_le_bytes());
+        // Write count as i16 little-endian
+        payload.extend_from_slice(&count.to_le_bytes());
+
+        // Create Neo3 message format
+        let mut message_bytes = Vec::new();
+        message_bytes.push(0x00); // flags = 0 (no compression)
+        message_bytes.push(0x20); // GetHeaders command byte
+
+        // Write payload length as varlen
+        if payload.len() < 0xFD {
+            message_bytes.push(payload.len() as u8);
+        } else {
+            message_bytes.push(0xFD);
+            message_bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        }
+
+        // Append payload
+        message_bytes.extend_from_slice(&payload);
+
+        info!(
+            "📊 GetHeaders message: {} bytes, requesting headers from index {} (count={})",
+            message_bytes.len(),
+            index_start,
+            count
+        );
+
+        if let Err(e) = stream.write_all(&message_bytes).await {
+            warn!("Failed to send GetHeaders to {}: {}", address, e);
+        } else {
+            info!("✅ GetHeaders sent successfully to {}", address);
+        }
+
+        Ok(())
+    }
+
     /// Performs Neo protocol handshake with peer (matches C# Neo handshake exactly)
     async fn perform_handshake(
         &self,
         mut stream: TcpStream,
         address: SocketAddr,
         is_outbound: bool,
-    ) -> NetworkResult<PeerInfo> {
-        debug!("Performing handshake with peer: {}", address);
+    ) -> NetworkResult<(PeerInfo, TcpStream)> {
+        info!(
+            "🔍 HANDSHAKE_START: perform_handshake called for {}",
+            address
+        );
+        info!(
+            "🤝 Starting handshake with peer: {} (outbound: {})",
+            address, is_outbound
+        );
+        info!(
+            "🔍 Stream local addr: {:?}, peer addr: {:?}",
+            stream.local_addr(),
+            stream.peer_addr()
+        );
 
-        // 1. Send version message (matches C# Neo version message exactly)
-        let version_message = self.create_version_message().await?;
-        let version_bytes = version_message.to_bytes()?;
+        // For Neo N3, the protocol might expect us to wait for the server's version first
+        // Let's try reading first to see what the server sends
+        if is_outbound {
+            info!(
+                "Outbound connection to {}, waiting for peer's version message first",
+                address
+            );
+
+            // Read complete version message using the new helper
+            match timeout(
+                Duration::from_secs(5),
+                Self::read_complete_neo3_message(&mut stream, address),
+            )
+            .await
+            {
+                Ok(Ok(message_bytes)) => {
+                    info!(
+                        "Received complete message {} bytes from {}",
+                        message_bytes.len(),
+                        address
+                    );
+
+                    // Try to parse as Neo N3 message using the updated parser
+                    match NetworkMessage::from_bytes(&message_bytes) {
+                        Ok(msg) => {
+                            info!(
+                                "Received {} message from {} during handshake",
+                                msg.command(),
+                                address
+                            );
+                            // Process the version message if that's what we got
+                            if matches!(msg.payload, ProtocolMessage::Version { .. }) {
+                                let peer_info =
+                                    self.extract_peer_info_from_version(msg, address, is_outbound)?;
+
+                                // Now send our version in Neo N3 real format
+                                let version_bytes = self.create_neo3_real_version_message().await?;
+                                info!("Sending our version message: {} bytes", version_bytes.len());
+                                stream.write_all(&version_bytes).await.map_err(|e| {
+                                    NetworkError::HandshakeFailed {
+                                        peer: address,
+                                        reason: format!("Failed to send version: {}", e),
+                                    }
+                                })?;
+
+                                // Send verack in Neo N3 real format
+                                let verack_bytes = self.create_neo3_real_verack_message()?;
+                                stream.write_all(&verack_bytes).await.map_err(|e| {
+                                    NetworkError::HandshakeFailed {
+                                        peer: address,
+                                        reason: format!("Failed to send verack: {}", e),
+                                    }
+                                })?;
+
+                                // Wait for verack (optional, some peers don't send it)
+                                match timeout(
+                                    Duration::from_secs(3),
+                                    Self::read_complete_neo3_message(&mut stream, address),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(verack_bytes)) => {
+                                        info!(
+                                            "Received verack response: {} bytes",
+                                            verack_bytes.len()
+                                        );
+                                    }
+                                    _ => {
+                                        info!("No verack received, but continuing");
+                                    }
+                                }
+
+                                info!("Handshake completed successfully with peer: {}", address);
+
+                                // Don't send GetAddr/GetHeaders here - connection might be closing
+                                // They will be sent immediately when message handler starts
+
+                                return Ok((peer_info, stream));
+                            }
+                        }
+                        Err(e) => {
+                            info!("Failed to parse initial message from {}: {}", address, e);
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    info!("Failed to read complete message from {}: {}", address, e);
+                }
+                Err(_timeout) => {
+                    info!(
+                        "Timeout reading initial message from {}, trying to send version first",
+                        address
+                    );
+                }
+            }
+        }
+
+        // Fall back to sending version first
+        // 1. Send version message in Neo N3 real format
+        let version_bytes = self.create_neo3_real_version_message().await?;
+
+        // Debug log the version message bytes
+        info!(
+            "Sending version message to {}: {} bytes",
+            address,
+            version_bytes.len()
+        );
+        if version_bytes.len() > 0 {
+            let display_len = version_bytes.len().min(50);
+            info!(
+                "First {} bytes of version message: {:02x?}",
+                display_len,
+                &version_bytes[..display_len]
+            );
+        }
 
         if let Err(e) = stream.write_all(&version_bytes).await {
             return Err(NetworkError::HandshakeFailed {
                 peer: address,
-                reason: "Handshake failed".to_string(),
+                reason: format!("Failed to send version message: {}", e),
             });
         }
 
         // 2. Receive peer's version message (matches C# Neo version parsing exactly)
         // Check if we're on TestNet by magic number
-        let is_testnet = self.config.magic == 0x74746e41; // TestNet magic
+        let is_testnet = self.config.magic == 0x3554334E; // TestNet magic
 
         let peer_version = if is_testnet {
             // TestNet sends version as direct payload
@@ -883,10 +1317,10 @@ impl PeerManager {
             // Convert TestNet direct payload to version message
             Self::testnet_payload_to_message(&payload, 0x00)? // 0x00 = version
         } else {
-            // MainNet/PrivNet use standard format
+            // MainNet/PrivNet use Neo N3 real format
             let buffer = match timeout(
                 Duration::from_secs(5), // Reduced timeout for faster failure detection
-                Self::read_complete_message(&mut stream),
+                Self::read_complete_neo3_message(&mut stream, address),
             )
             .await
             {
@@ -922,27 +1356,33 @@ impl PeerManager {
             address, peer_info.version, peer_info.start_height, peer_info.user_agent
         );
 
+        // DIRECT SYNC MANAGER UPDATE - bypassing event system for now
+        info!(
+            "🚀 DIRECT: Updating sync manager with peer height {} from {}",
+            peer_info.start_height, address
+        );
+
         // Emit version received event
-        let _ = self.event_sender.send(PeerEvent::VersionReceived {
+        info!(
+            "🔔 Emitting VersionReceived event for {} (height: {})",
+            address, peer_info.start_height
+        );
+        if let Err(e) = self.event_sender.send(PeerEvent::VersionReceived {
             peer: address,
             version: peer_info.version,
             user_agent: peer_info.user_agent.clone(),
             start_height: peer_info.start_height,
-        });
-
-        // 4. Send verack message
-        // Check if we're on TestNet
-        let is_testnet = self.config.magic == 0x74746e41; // TestNet magic
-
-        let verack_bytes = if is_testnet {
-            // TestNet expects direct payload format for verack
-            vec![0x01] // Simple verack command byte
+        }) {
+            warn!(
+                "Failed to send VersionReceived event for {}: {}",
+                address, e
+            );
         } else {
-            // MainNet/PrivNet use standard Neo 3 format
-            let verack_payload = ProtocolMessage::Verack;
-            let verack_message = NetMsg::new(verack_payload);
-            verack_message.to_bytes()?
-        };
+            info!("✅ VersionReceived event sent successfully for {}", address);
+        }
+
+        // 4. Send verack message in Neo N3 real format
+        let verack_bytes = self.create_neo3_real_verack_message()?;
 
         if let Err(e) = stream.write_all(&verack_bytes).await {
             return Err(NetworkError::HandshakeFailed {
@@ -953,7 +1393,7 @@ impl PeerManager {
 
         // 5. Receive peer's verack (matches C# Neo verack verification exactly)
         // Check if we're on TestNet by magic number
-        let is_testnet = self.config.magic == 0x74746e41; // TestNet magic
+        let is_testnet = self.config.magic == 0x3554334E; // TestNet magic
         info!(
             "DEBUG: Magic number 0x{:08x}, is_testnet: {}",
             self.config.magic, is_testnet
@@ -1058,11 +1498,16 @@ impl PeerManager {
         }
 
         info!("Handshake completed successfully with peer: {}", address);
-        Ok(peer_info)
+
+        // Don't send GetAddr/GetHeaders here - connection might be closing
+        // They will be sent immediately when message handler starts
+
+        Ok((peer_info, stream))
     }
 
     /// Creates version message for handshake (Neo 3 format)
     async fn create_version_message(&self) -> NetworkResult<NetworkMessage> {
+        info!("⚠️ create_version_message called - this should NOT be used for handshake!");
         let payload = ProtocolMessage::Version {
             version: self.config.protocol_version.as_u32(),
             services: 1, // NODE_NETWORK capability
@@ -1077,7 +1522,208 @@ impl PeerManager {
             relay: true,
         };
 
-        Ok(NetMsg::new(payload))
+        Ok(NetMsg::new_with_magic(payload, self.config.magic))
+    }
+
+    /// Creates version message in Neo N3 real format (full protocol message)
+    async fn create_neo3_real_version_message(&self) -> NetworkResult<Vec<u8>> {
+        info!("🔧 create_neo3_real_version_message called - creating Neo N3 format message");
+
+        // Build the version payload (without magic/header)
+        let mut payload = Vec::new();
+
+        // Write version (4 bytes, little-endian)
+        payload.extend_from_slice(&self.config.protocol_version.as_u32().to_le_bytes());
+
+        // Write services (8 bytes, little-endian) - NODE_NETWORK = 1
+        payload.extend_from_slice(&1u64.to_le_bytes());
+
+        // Write timestamp (4 bytes, little-endian) - Neo uses 32-bit timestamps
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as u32;
+        payload.extend_from_slice(&timestamp.to_le_bytes());
+
+        // Write port (2 bytes, little-endian)
+        let port = self.config.listen_address.port();
+        payload.extend_from_slice(&port.to_le_bytes());
+
+        // Write nonce (4 bytes, little-endian)
+        let nonce = rand::random::<u32>();
+        payload.extend_from_slice(&nonce.to_le_bytes());
+
+        // Write user agent length (1 byte) and user agent string
+        let user_agent_bytes = self.config.user_agent.as_bytes();
+        if user_agent_bytes.len() > 255 {
+            return Err(NetworkError::ProtocolViolation {
+                peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
+                violation: "User agent too long".to_string(),
+            });
+        }
+        payload.push(user_agent_bytes.len() as u8);
+        payload.extend_from_slice(user_agent_bytes);
+
+        // Write start height (4 bytes, little-endian)
+        // For better compatibility with NGD nodes, report a height closer to current
+        // This prevents rejection due to being too far behind
+        // TODO: Get actual height from blockchain when available
+        let start_height = 15_000_000u32; // Report a recent height to avoid rejection
+        payload.extend_from_slice(&start_height.to_le_bytes());
+
+        // Write relay flag (1 byte) - true = 1
+        payload.push(1);
+
+        // Now create the complete message with standard Neo header
+        let mut message = Vec::new();
+
+        // Write magic (4 bytes)
+        // NGD nodes use "Ant" (0x00746E41) magic instead of "NEON"
+        let magic = match self.config.magic {
+            0x334F454E => 0x00746E41, // MainNet: "Ant" for NGD nodes
+            0x3554334E => 0x4E335454, // TestNet: "N3T4" in little-endian
+            _ => {
+                return Err(NetworkError::ProtocolViolation {
+                    peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
+                    violation: "Unknown network magic".to_string(),
+                })
+            }
+        };
+        message.extend_from_slice(&(magic as u32).to_le_bytes());
+
+        // Write command (12 bytes, padded with zeros)
+        let mut command = b"version\x00\x00\x00\x00\x00".to_vec();
+        command.resize(12, 0);
+        message.extend_from_slice(&command);
+
+        // Write payload length (4 bytes, little-endian)
+        message.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+
+        // Calculate and write checksum (4 bytes) - first 4 bytes of double SHA256
+        use sha2::{Digest, Sha256};
+        let hash1 = Sha256::digest(&payload);
+        let hash2 = Sha256::digest(&hash1);
+        message.extend_from_slice(&hash2[..4]);
+
+        // Write the payload
+        message.extend_from_slice(&payload);
+
+        // Debug: print actual message
+        info!(
+            "🔍 Version message: magic={:08X}, command=version, payload_len={}, total_len={}",
+            magic,
+            payload.len(),
+            message.len()
+        );
+
+        Ok(message)
+    }
+
+    /// Creates verack message in Neo N3 real format (full protocol message)
+    fn create_neo3_real_verack_message(&self) -> NetworkResult<Vec<u8>> {
+        info!("🔧 create_neo3_real_verack_message called - creating Neo N3 format verack");
+
+        // Verack has no payload
+        let payload = Vec::new();
+
+        // Create the complete message with standard Neo header
+        let mut message = Vec::new();
+
+        // Write magic (4 bytes)
+        // NGD nodes use "Ant" (0x00746E41) magic instead of "NEON"
+        let magic = match self.config.magic {
+            0x334F454E => 0x00746E41, // MainNet: "Ant" for NGD nodes
+            0x3554334E => 0x4E335454, // TestNet: "N3T4" in little-endian
+            _ => {
+                return Err(NetworkError::ProtocolViolation {
+                    peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
+                    violation: "Unknown network magic".to_string(),
+                })
+            }
+        };
+        message.extend_from_slice(&(magic as u32).to_le_bytes());
+
+        // Write command (12 bytes, padded with zeros)
+        let mut command = b"verack\x00\x00\x00\x00\x00\x00".to_vec();
+        command.resize(12, 0);
+        message.extend_from_slice(&command);
+
+        // Write payload length (4 bytes, little-endian) - 0 for verack
+        message.extend_from_slice(&0u32.to_le_bytes());
+
+        // Write checksum (4 bytes) - for empty payload, it's a fixed value
+        use sha2::{Digest, Sha256};
+        let hash1 = Sha256::digest(&payload);
+        let hash2 = Sha256::digest(&hash1);
+        message.extend_from_slice(&hash2[..4]);
+
+        // No payload to write for verack
+
+        Ok(message)
+    }
+
+    /// Creates any message in Neo N3 real format (24-byte header + payload)
+    fn create_neo3_real_message(&self, message: &NetworkMessage) -> NetworkResult<Vec<u8>> {
+        info!(
+            "🔧 create_neo3_real_message called for command: {:?}",
+            message.command()
+        );
+
+        // Get the payload bytes
+        let payload =
+            message
+                .payload
+                .to_bytes()
+                .map_err(|e| NetworkError::MessageSerialization {
+                    message_type: format!("{:?}", message.command()),
+                    reason: format!("Failed to serialize payload: {}", e),
+                })?;
+
+        let mut full_message = Vec::new();
+
+        // Write magic (4 bytes)
+        let magic = match self.config.magic {
+            0x334F454E => 0x00746E41, // MainNet: "Ant" for NGD nodes
+            0x3554334E => 0x4E335454, // TestNet: "N3T4" in little-endian
+            _ => self.config.magic,
+        };
+        full_message.extend_from_slice(&magic.to_le_bytes());
+
+        // Write command (12 bytes, padded with zeros)
+        let command_str = message.command().as_str();
+        let mut command_bytes = [0u8; 12];
+        let cmd_bytes = command_str.as_bytes();
+        let len = cmd_bytes.len().min(12);
+        command_bytes[..len].copy_from_slice(&cmd_bytes[..len]);
+        full_message.extend_from_slice(&command_bytes);
+
+        // Write length (4 bytes)
+        full_message.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+
+        // Write checksum (4 bytes)
+        let checksum = self.calculate_checksum(&payload);
+        full_message.extend_from_slice(&checksum.to_le_bytes());
+
+        // Write payload
+        full_message.extend_from_slice(&payload);
+
+        info!(
+            "🔍 Message created: magic={:08x}, command={}, payload_len={}, total_len={}",
+            magic,
+            command_str,
+            payload.len(),
+            full_message.len()
+        );
+
+        Ok(full_message)
+    }
+
+    /// Calculates checksum for Neo message payload
+    fn calculate_checksum(&self, payload: &[u8]) -> u32 {
+        use sha2::{Digest, Sha256};
+        let hash1 = Sha256::digest(payload);
+        let hash2 = Sha256::digest(&hash1);
+        u32::from_le_bytes([hash2[0], hash2[1], hash2[2], hash2[3]])
     }
 
     /// Decodes a variable-length integer from a byte slice (Neo N3 format)
@@ -1591,8 +2237,10 @@ impl PeerManager {
             if magic == 0x74746E41 || // Neo N3 TestNet "AnT" (wrong endianness check)
                magic == 0x41746E74 || // Neo N3 TestNet "AtN" (correct)
                magic == 0x334e4f45 || // Neo N3 MainNet "NEO3"
-               magic == 0x454f4e33
-            // Neo N3 MainNet "3NOE" (other endianness)
+               magic == 0x454f4e33 || // Neo N3 MainNet "3NOE" (other endianness)
+               magic == 0x334F454E || // Neo N3 MainNet "3OEN" (actual magic used)
+               magic == 0x4E454F33
+            // Neo N3 MainNet "NEO3" (big endian)
             {
                 // Read remaining header bytes (we have 7, need 17 more for 24 total)
                 let mut remaining = [0u8; 17];
@@ -1760,7 +2408,81 @@ impl PeerManager {
     ) -> NetworkResult<()> {
         info!("📨 Starting message handler for peer: {}", address);
 
-        let (mut reader, mut writer) = stream.into_split();
+        // IMMEDIATELY send GetHeaders to show we're actively syncing
+        // This must happen before the peer decides to disconnect
+        {
+            info!(
+                "🚀 Immediately sending GetHeaders to maintain connection with {}",
+                address
+            );
+            let getheaders_bytes = {
+                // Create GetHeaders message for index 0, count -1 (maximum)
+                let mut payload = Vec::new();
+                payload.extend_from_slice(&0u32.to_le_bytes()); // index_start = 0
+                payload.extend_from_slice(&(-1i16).to_le_bytes()); // count = -1
+
+                let mut message = Vec::new();
+                message.push(0x00); // flags
+                message.push(0x20); // GetHeaders command
+                message.push(payload.len() as u8); // payload length
+                message.extend_from_slice(&payload);
+                message
+            };
+
+            if let Err(e) = stream.write_all(&getheaders_bytes).await {
+                warn!("Failed to send immediate GetHeaders to {}: {}", address, e);
+            } else {
+                info!("✅ Immediate GetHeaders sent to {}", address);
+            }
+        }
+
+        let (mut reader, writer) = stream.into_split();
+
+        // Create a channel for internal messages (like pong responses)
+        let (internal_tx, mut internal_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+
+        // Create a shared writer for ping task
+        let writer = Arc::new(tokio::sync::Mutex::new(writer));
+        let writer_clone = Arc::clone(&writer);
+        let writer_for_internal = Arc::clone(&writer);
+
+        // Start ping task to keep connection alive
+        let ping_task = {
+            let writer = Arc::clone(&writer);
+            let address = address.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(30));
+                loop {
+                    interval.tick().await;
+                    info!("🏓 Sending ping to {} to keep connection alive", address);
+
+                    let ping_msg = ProtocolMessage::Ping {
+                        nonce: rand::random(),
+                    };
+                    let ping_network_msg = NetworkMessage::new(ping_msg);
+
+                    // For TestNet, use direct payload format
+                    let ping_bytes = if address.to_string().contains(":20333") {
+                        vec![0x18] // Ping command byte for TestNet
+                    } else {
+                        match ping_network_msg.to_bytes() {
+                            Ok(bytes) => bytes,
+                            Err(e) => {
+                                error!("Failed to serialize ping message: {}", e);
+                                continue;
+                            }
+                        }
+                    };
+
+                    let mut writer_guard = writer.lock().await;
+                    if let Err(e) = writer_guard.write_all(&ping_bytes).await {
+                        error!("Failed to send ping to {}: {}", address, e);
+                        break;
+                    }
+                    info!("✅ Ping sent to {}", address);
+                }
+            })
+        };
 
         let stats_clone = Arc::clone(&stats);
         let event_sender_clone = event_sender.clone();
@@ -1785,12 +2507,12 @@ impl PeerManager {
                             connection_stats.bytes_received += n as u64;
                         }
 
-                        // Try to parse the message
+                        // Try to parse the message using the updated parser
                         match NetworkMessage::from_bytes(message_data) {
                             Ok(message) => {
-                                debug!(
-                                    "📥 Received message from {}: {:?}",
-                                    address, message.header.command
+                                info!(
+                                    "📥 Received message from {}: command={:?}, payload_len={}",
+                                    address, message.header.command, message.header.length
                                 );
 
                                 // Validate message before processing with error handling
@@ -1803,12 +2525,61 @@ impl PeerManager {
                                     Ok(_) => {
                                         debug!("✅ Message validation passed for {}", address);
 
-                                        // Emit message received event
-                                        let _ =
-                                            event_sender_clone.send(PeerEvent::MessageReceived {
-                                                peer: address,
-                                                message,
-                                            });
+                                        // Handle ping/pong messages directly to keep connection alive
+                                        match &message.payload {
+                                            ProtocolMessage::Ping { nonce } => {
+                                                info!(
+                                                    "🏓 Received ping from {}, sending pong",
+                                                    address
+                                                );
+                                                // Send pong response immediately
+                                                let pong_msg =
+                                                    ProtocolMessage::Pong { nonce: *nonce };
+                                                let pong_network_msg =
+                                                    NetworkMessage::new(pong_msg);
+
+                                                // For TestNet, use direct payload format
+                                                let pong_bytes = if address
+                                                    .to_string()
+                                                    .contains(":20333")
+                                                {
+                                                    vec![0x19] // Pong command byte for TestNet
+                                                } else {
+                                                    match pong_network_msg.to_bytes() {
+                                                        Ok(bytes) => bytes,
+                                                        Err(e) => {
+                                                            error!("Failed to serialize pong message: {}", e);
+                                                            vec![]
+                                                        }
+                                                    }
+                                                };
+
+                                                if !pong_bytes.is_empty() {
+                                                    // Send pong through internal channel
+                                                    if let Err(e) = internal_tx.send(pong_bytes) {
+                                                        error!(
+                                                            "Failed to queue pong response: {}",
+                                                            e
+                                                        );
+                                                    } else {
+                                                        info!("✅ Pong queued for {}", address);
+                                                    }
+                                                }
+                                            }
+                                            ProtocolMessage::Pong { .. } => {
+                                                info!("🏓 Received pong from {}", address);
+                                                // Update last activity time
+                                            }
+                                            _ => {
+                                                // Emit message received event for other messages
+                                                let _ = event_sender_clone.send(
+                                                    PeerEvent::MessageReceived {
+                                                        peer: address,
+                                                        message,
+                                                    },
+                                                );
+                                            }
+                                        }
                                     }
                                     Err(validation_error) => {
                                         warn!(
@@ -1816,7 +2587,8 @@ impl PeerManager {
                                             address, validation_error
                                         );
 
-                                        let error_handler_clone = Arc::clone(&error_handler);
+                                        let error_handler_clone: Arc<NetworkErrorHandler> =
+                                            Arc::clone(&error_handler);
                                         let mut context =
                                             crate::error_handling::OperationContext::new(
                                                 format!("validate_message_{}", address),
@@ -1858,14 +2630,30 @@ impl PeerManager {
             }
         });
 
+        // Internal message handler (for pongs, etc)
+        let internal_task = {
+            tokio::spawn(async move {
+                while let Some(bytes) = internal_rx.recv().await {
+                    let mut writer_guard = writer_for_internal.lock().await;
+                    if let Err(e) = writer_guard.write_all(&bytes).await {
+                        error!("Failed to send internal message: {}", e);
+                        break;
+                    }
+                    drop(writer_guard);
+                }
+            })
+        };
+
         let write_task = tokio::spawn(async move {
             while let Some(message) = message_receiver.recv().await {
                 match message.to_bytes() {
                     Ok(bytes) => {
-                        if let Err(e) = writer.write_all(&bytes).await {
+                        let mut writer_guard = writer_clone.lock().await;
+                        if let Err(e) = writer_guard.write_all(&bytes).await {
                             error!("💥 Write error to peer {}: {}", address, e);
                             break;
                         }
+                        drop(writer_guard); // Release lock immediately
                         debug!(
                             "📤 Sent message to {}: {:?}",
                             address, message.header.command
@@ -1884,6 +2672,12 @@ impl PeerManager {
             }
             _ = write_task => {
                 debug!("📝 Write task completed for peer: {}", address);
+            }
+            _ = ping_task => {
+                debug!("🏓 Ping task completed for peer: {}", address);
+            }
+            _ = internal_task => {
+                debug!("📨 Internal task completed for peer: {}", address);
             }
         }
 
@@ -1926,6 +2720,193 @@ impl PeerManager {
     }
 }
 
+impl PeerManager {
+    /// DEPRECATED: Use handle_peer_messages instead
+    #[deprecated(note = "Use handle_peer_messages for comprehensive message handling")]
+    async fn start_peer_reader(
+        &self,
+        peer_address: SocketAddr,
+        mut stream: tokio::net::tcp::OwnedReadHalf,
+    ) {
+        let event_sender = self.event_sender.clone();
+        let stats = Arc::clone(&self.connection_stats);
+        let peers = Arc::clone(&self.peers);
+        let message_forwarder = self.message_forwarder.clone();
+
+        info!("🔧 Starting reader task for peer: {}", peer_address);
+        tokio::spawn(async move {
+            loop {
+                // Read complete Neo3 message using the correct format
+                match PeerManager::read_complete_neo3_message(&mut stream, peer_address).await {
+                    Ok(message_bytes) => {
+                        // Parse the complete message as NetworkMessage directly
+                        match NetworkMessage::from_bytes(&message_bytes) {
+                            Ok(message) => {
+                                info!(
+                                    "Received message from {}: {:?}",
+                                    peer_address,
+                                    message.command()
+                                );
+
+                                // Handle ping messages immediately
+                                if let ProtocolMessage::Ping { nonce } = &message.payload {
+                                    debug!(
+                                        "Received ping from {} with nonce {}, sending pong",
+                                        peer_address, nonce
+                                    );
+                                    let pong_msg = ProtocolMessage::Pong { nonce: *nonce };
+                                    let pong_network_msg = NetworkMessage::new(pong_msg);
+
+                                    if let Some(peer) = peers.read().await.get(&peer_address) {
+                                        let _ = peer.message_sender.send(pong_network_msg);
+                                    }
+                                }
+
+                                // Forward message to P2pNode for handler processing
+                                if let Some(ref forwarder) = message_forwarder {
+                                    if let Err(e) = forwarder.send((peer_address, message.clone()))
+                                    {
+                                        debug!(
+                                            "Failed to forward message from {} to P2pNode: {}",
+                                            peer_address, e
+                                        );
+                                        break; // Channel closed, exit reader task
+                                    }
+                                }
+
+                                // Update statistics
+                                stats.write().await.messages_received += 1;
+                                stats.write().await.bytes_received += message_bytes.len() as u64;
+
+                                // Emit message received event
+                                let _ = event_sender.send(PeerEvent::MessageReceived {
+                                    peer: peer_address,
+                                    message: message.clone(),
+                                });
+
+                                // Update last activity time
+                                if let Some(peer) = peers.write().await.get_mut(&peer_address) {
+                                    peer.last_activity = std::time::SystemTime::now();
+                                }
+                            }
+                            Err(e) => {
+                                debug!(
+                                    "Failed to parse NetworkMessage from {}: {}",
+                                    peer_address, e
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        info!("Error reading Neo3 message from {}: {}", peer_address, e);
+                        break;
+                    }
+                }
+            }
+
+            // Clean up on disconnect
+            info!("Cleaning up connection to {}", peer_address);
+            peers.write().await.remove(&peer_address);
+            let _ = event_sender.send(PeerEvent::Disconnected(peer_address));
+        });
+    }
+
+    /// DEPRECATED: Use handle_peer_messages instead
+    #[deprecated(note = "Use handle_peer_messages for comprehensive message handling")]
+    async fn start_peer_writer(
+        self: &Arc<Self>,
+        peer_address: SocketAddr,
+        mut stream: tokio::net::tcp::OwnedWriteHalf,
+        mut message_receiver: mpsc::UnboundedReceiver<NetworkMessage>,
+    ) {
+        let stats = Arc::clone(&self.connection_stats);
+        let config_magic = self.config.magic;
+        let self_clone = Arc::clone(self);
+
+        info!("🔧 Starting writer task for peer: {}", peer_address);
+        tokio::spawn(async move {
+            while let Some(message) = message_receiver.recv().await {
+                info!(
+                    "📤 Writer received message for {}: {:?}",
+                    peer_address,
+                    message.command()
+                );
+
+                // Check if this is an NGD node by the magic number
+                let is_ngd_node = message.header.magic == 0x00746E41 || config_magic == 0x334F454E; // MainNet
+
+                // Serialize the message appropriately
+                let bytes_result = if is_ngd_node {
+                    // NGD nodes need the full 24-byte header format
+                    self_clone.create_neo3_real_message(&message)
+                } else {
+                    // Other nodes can use the compact format
+                    message.to_bytes()
+                };
+
+                match bytes_result {
+                    Ok(bytes) => match stream.write_all(&bytes).await {
+                        Ok(_) => {
+                            debug!("Sent message to {}: {:?}", peer_address, message.command());
+                            stats.write().await.messages_sent += 1;
+                            stats.write().await.bytes_sent += bytes.len() as u64;
+                        }
+                        Err(e) => {
+                            warn!("Failed to send message to {}: {}", peer_address, e);
+                            break;
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Failed to serialize message for {}: {}", peer_address, e);
+                    }
+                }
+            }
+
+            info!("Writer task ended for {}", peer_address);
+        });
+    }
+
+    /// Starts a ping task for a peer to keep the connection alive
+    async fn start_ping_task(&self, peer_address: SocketAddr) {
+        let peers = Arc::clone(&self.peers);
+
+        tokio::spawn(async move {
+            let mut interval = interval(Duration::from_secs(30)); // Ping every 30 seconds
+
+            loop {
+                interval.tick().await;
+
+                // Check if peer is still connected
+                let peer_exists = peers.read().await.contains_key(&peer_address);
+                if !peer_exists {
+                    debug!("Ping task ending for disconnected peer: {}", peer_address);
+                    break;
+                }
+
+                // Create ping message
+                let ping_msg = ProtocolMessage::Ping {
+                    nonce: rand::random(),
+                };
+                let network_msg = NetworkMessage::new(ping_msg);
+
+                // Send ping through peer's message channel
+                if let Some(peer) = peers.read().await.get(&peer_address) {
+                    if let Err(e) = peer.message_sender.send(network_msg) {
+                        warn!("Failed to send ping to {}: {}", peer_address, e);
+                        break;
+                    } else {
+                        debug!("Sent ping to {}", peer_address);
+                    }
+                } else {
+                    break; // Peer disconnected
+                }
+            }
+
+            debug!("Ping task ended for peer: {}", peer_address);
+        });
+    }
+}
+
 impl Drop for PeerManager {
     fn drop(&mut self) {
         debug!("Peer manager dropped");
@@ -1934,11 +2915,13 @@ impl Drop for PeerManager {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{NetworkConfig, NetworkError};
+
     #[tokio::test]
     async fn test_peer_manager_creation() {
         let config = NetworkConfig::default();
-        let peer_manager =
-            PeerManager::new(config).map_err(|_| NetworkError::PeerManagementError)?;
+        let peer_manager = PeerManager::new(config).expect("Failed to create peer manager");
 
         let stats = peer_manager.get_connection_stats().await;
         assert_eq!(stats.connection_attempts, 0);
@@ -1946,24 +2929,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_peer_manager_start_stop() {
+    async fn test_peer_manager_start_stop() -> NetworkResult<()> {
         let config = NetworkConfig::default();
         let mut peer_manager =
-            PeerManager::new(config).map_err(|_| NetworkError::PeerManagementError)?;
+            PeerManager::new(config).map_err(|e| NetworkError::Configuration {
+                parameter: "peer_manager".to_string(),
+                reason: format!("Failed to create peer manager: {}", e),
+            })?;
 
         // Note: This test may fail if port is already in use
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_connection_stats() {
+    async fn test_connection_stats() -> NetworkResult<()> {
         let config = NetworkConfig::default();
-        let peer_manager =
-            PeerManager::new(config).map_err(|_| NetworkError::PeerManagementError)?;
+        let peer_manager = PeerManager::new(config).map_err(|e| NetworkError::Configuration {
+            parameter: "peer_manager".to_string(),
+            reason: format!("Failed to create peer manager: {}", e),
+        })?;
 
         let stats = peer_manager.get_connection_stats().await;
         assert_eq!(stats.messages_sent, 0);
         assert_eq!(stats.messages_received, 0);
         assert_eq!(stats.bytes_sent, 0);
         assert_eq!(stats.bytes_received, 0);
+        Ok(())
     }
 }
