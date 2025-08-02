@@ -737,5 +737,5 @@ fn create_test_witness() -> Witness {
 }
 
 fn neo_token_hash() -> UInt160 {
-    UInt160::from_str("0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5").unwrap()
+    crate::test_mocks::parse_uint160("0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5").unwrap()
 }

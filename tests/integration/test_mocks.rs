@@ -49,14 +49,14 @@ pub struct Signer {
     pub rules: Vec<WitnessRule>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum WitnessScope {
-    None = 0x00,
-    CalledByEntry = 0x01,
-    CustomContracts = 0x10,
-    CustomGroups = 0x20,
-    WitnessRules = 0x40,
-    Global = 0xFF,
+    None,
+    CalledByEntry,
+    CustomContracts,
+    CustomGroups,
+    WitnessRules,
+    Global,
 }
 
 #[derive(Clone)]
@@ -320,7 +320,7 @@ pub mod consensus {
     #[derive(Clone)]
     pub struct ConsensusContext;
     
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, PartialEq, Debug)]
     pub enum ConsensusPhase {
         RequestSent,
         CommitSent,
@@ -685,21 +685,13 @@ pub struct MockPeer {
     pub response_delay: Duration,
 }
 
-// Helper trait implementations
-impl std::str::FromStr for UInt160 {
-    type Err = Box<dyn std::error::Error>;
-    
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Simple mock implementation
-        Ok(UInt160::default())
-    }
+// Helper functions for parsing addresses
+pub fn parse_uint160(s: &str) -> Result<UInt160, Box<dyn std::error::Error>> {
+    // Simple mock implementation - in real code would parse hex string
+    Ok(UInt160::default())
 }
 
-impl std::str::FromStr for UInt256 {
-    type Err = Box<dyn std::error::Error>;
-    
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Simple mock implementation
-        Ok(UInt256::default())
-    }
+pub fn parse_uint256(s: &str) -> Result<UInt256, Box<dyn std::error::Error>> {
+    // Simple mock implementation - in real code would parse hex string
+    Ok(UInt256::default())
 }

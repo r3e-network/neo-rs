@@ -7,13 +7,16 @@
 //! - State persistence and rollback
 //! - Gas calculation and limits
 
-use neo_ledger::{Blockchain, Block, BlockHeader, MemoryPool};
-use neo_core::{Transaction, Witness, Signer, WitnessScope, UInt160, UInt256};
-use neo_vm::{Script, OpCode, StackItem, ExecutionEngine};
-use neo_smart_contract::{
-    ApplicationEngine, Contract, ContractState, 
-    NefFile, ContractManifest, TriggerType
+use crate::test_mocks::{
+    ledger::{Blockchain, Block, BlockHeader, MemoryPool},
+    Transaction, Witness, Signer, WitnessScope,
+    vm::{Script, OpCode, StackItem, ExecutionEngine},
+    smart_contract::{
+        ApplicationEngine, Contract, ContractState, 
+        NefFile, ContractManifest, TriggerType
+    },
 };
+use neo_core::{UInt160, UInt256};
 use neo_config::NetworkType;
 use std::sync::Arc;
 use tokio::sync::RwLock;

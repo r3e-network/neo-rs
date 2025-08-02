@@ -7,14 +7,15 @@
 //! - Byzantine fault tolerance
 //! - Recovery mechanisms
 
-use neo_consensus::{
-    ConsensusContext, ConsensusPhase, DbftEngine, DbftConfig,
-    messages::{ConsensusMessage, PrepareRequest, PrepareResponse, Commit, ChangeView},
-    validators::ValidatorSet,
-    service::ConsensusService,
+use crate::test_mocks::{
+    consensus::{
+        ConsensusContext, ConsensusPhase, DbftEngine, DbftConfig,
+        messages::{ConsensusMessage, PrepareRequest, PrepareResponse, Commit, ChangeView},
+    },
+    ledger::{Blockchain, Block, MemoryPool},
+    Transaction,
 };
-use neo_core::{Block, Transaction, UInt256, UInt160};
-use neo_ledger::{Blockchain, MemoryPool};
+use neo_core::{UInt256, UInt160};
 use neo_config::NetworkType;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
