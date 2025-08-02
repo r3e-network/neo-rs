@@ -239,6 +239,7 @@ rpc = ["neo-rpc-server", "neo-rpc-client"]
 metrics = ["prometheus", "sysinfo"]
 compression = ["flate2", "zstd"]
 testing = ["tempfile", "mockall"]
+integration-tests = []
 
 # Development features
 dev = ["testing", "tracing-subscriber/json"]
@@ -358,7 +359,3 @@ rustdoc-args = ["--cfg", "docsrs"]
 name = "integration_tests"
 path = "tests/integration/mod.rs"
 required-features = ["integration-tests"]
-
-[features]
-default = []
-integration-tests = []
