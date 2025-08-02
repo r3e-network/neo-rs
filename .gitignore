@@ -42,3 +42,13 @@ final_*.sh
 debug_*.sh
 *.py
 !examples/**/*.py
+extended_debug.txt
+final_debug.txt
+quick_sync_test.sh
+run_and_save_logs.sh
+run_test.sh
+simple_test.sh
+test_fixes.rs
+test_getheaders.rs
+test_getheaders_format.rs
+test_message_format.rs
