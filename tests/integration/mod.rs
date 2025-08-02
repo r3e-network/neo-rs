@@ -67,6 +67,9 @@
 //! non-standard ports to avoid conflicts with running Neo nodes.
 
 #[cfg(test)]
+mod test_mocks;
+
+#[cfg(test)]
 mod p2p_integration_test;
 
 #[cfg(test)]
