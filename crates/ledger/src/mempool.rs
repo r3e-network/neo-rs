@@ -853,7 +853,7 @@ impl MemoryPool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{Error, Result};
     use neo_core::{Signer, Transaction, UInt160, UInt256, Witness, WitnessScope};
 
     #[test]

@@ -1030,7 +1030,7 @@ impl ConsensusService {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{Error, Result};
 
     #[test]
     fn test_consensus_service_config() {

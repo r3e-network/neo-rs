@@ -493,7 +493,7 @@ impl SignalHandler {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{CoreError as Error, Result};
 
     struct TestComponent {
         name: String,

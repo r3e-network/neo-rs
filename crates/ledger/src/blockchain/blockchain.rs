@@ -801,7 +801,7 @@ impl IntegrityReport {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{Error, Result};
 
     #[tokio::test]
     async fn test_blockchain_creation() {

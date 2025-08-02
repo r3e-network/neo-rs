@@ -421,7 +421,7 @@ impl BlockchainVerifier {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{Error, Result};
     use neo_core::{UInt160, UInt256};
 
     #[test]

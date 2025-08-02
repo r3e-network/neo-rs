@@ -318,7 +318,7 @@ impl BlockchainVerifier {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{Error, Result};
 
     #[test]
     fn test_verifier_creation() {

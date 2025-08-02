@@ -408,7 +408,7 @@ pub enum MessageHandleResult {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{Error, Result};
 
     #[test]
     fn test_message_handle_result() {
