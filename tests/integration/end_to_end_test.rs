@@ -9,13 +9,16 @@
 //! 
 //! These tests simulate real-world scenarios with multiple nodes.
 
-use neo_node::{Node, NodeConfig};
-use neo_network::{NetworkConfig, p2p::PeerConfig};
-use neo_consensus::{ConsensusConfig, ValidatorConfig};
-use neo_ledger::{Blockchain, Block, Transaction};
-use neo_core::{UInt160, UInt256, Signer, WitnessScope};
+use crate::test_mocks::{
+    node::{Node, NodeConfig},
+    network::NetworkConfig,
+    consensus::{ConsensusConfig, ValidatorConfig},
+    ledger::{Blockchain, Block},
+    rpc_client::RpcClient,
+};
+use crate::test_mocks::{Signer, WitnessScope, Witness, Transaction};
+use neo_core::{UInt160, UInt256};
 use neo_config::{NetworkType, LedgerConfig};
-use neo_rpc_client::RpcClient;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::time::Duration;
@@ -650,7 +653,7 @@ fn create_regular_node_config(p2p_port: u16, rpc_port: u16) -> NodeConfig {
 }
 
 fn create_test_transfer_transaction(nonce: u32) -> Transaction {
-    use neo_core::OpCode;
+    use crate::test_mocks::vm::OpCode;
     
     let from = create_test_account();
     let to = create_test_account();
@@ -685,6 +688,9 @@ fn create_test_transfer_transaction(nonce: u32) -> Transaction {
         signers: vec![Signer {
             account: from,
             scopes: WitnessScope::CalledByEntry,
+            allowed_contracts: vec![],
+            allowed_groups: vec![],
+            rules: vec![],
         }],
         attributes: vec![],
         script,
@@ -723,8 +729,8 @@ fn create_test_account() -> UInt160 {
     UInt160::from_bytes(&rand::random::<[u8; 20]>()).unwrap()
 }
 
-fn create_test_witness() -> neo_core::Witness {
-    neo_core::Witness {
+fn create_test_witness() -> Witness {
+    Witness {
         invocation_script: vec![0x00; 64],
         verification_script: vec![0x51], // PUSH1
     }
