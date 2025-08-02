@@ -7,13 +7,15 @@
 //! - Chain reorganization handling
 //! - Checkpoint synchronization
 
-use neo_network::{
-    sync::{SyncManager, SyncState, SyncStrategy},
-    p2p::Node,
-    messages::{GetHeaders, GetBlocks, Headers, Block as BlockMessage},
+use crate::test_mocks::{
+    network::{
+        sync::{SyncManager, SyncState, SyncStrategy},
+        p2p::Node,
+    },
+    ledger::{Blockchain, Block, BlockHeader},
+    Transaction, MockPeer,
 };
-use neo_ledger::{Blockchain, Block, BlockHeader};
-use neo_core::{UInt256, Transaction};
+use neo_core::{UInt256, UInt160};
 use neo_config::NetworkType;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -421,50 +423,4 @@ async fn create_slow_mock_peer(
     }
 }
 
-#[derive(Clone)]
-struct MockPeer {
-    id: u64,
-    blockchain: Arc<Blockchain>,
-    response_delay: Duration,
-}
-
-impl MockPeer {
-    async fn get_headers(&self, start: u32, count: i32) -> Vec<BlockHeader> {
-        tokio::time::sleep(self.response_delay).await;
-        
-        let mut headers = Vec::new();
-        let max_height = self.blockchain.get_height().await.unwrap();
-        
-        let count = if count < 0 { 
-            (max_height - start + 1) as usize 
-        } else { 
-            count as usize 
-        };
-        
-        for i in 0..count {
-            let height = start + i as u32;
-            if height > max_height {
-                break;
-            }
-            
-            if let Ok(Some(block)) = self.blockchain.get_block_by_index(height).await {
-                headers.push(block.header);
-            }
-        }
-        
-        headers
-    }
-    
-    async fn get_blocks(&self, hashes: Vec<UInt256>) -> Vec<Block> {
-        tokio::time::sleep(self.response_delay).await;
-        
-        let mut blocks = Vec::new();
-        for hash in hashes {
-            if let Ok(Some(block)) = self.blockchain.get_block_by_hash(&hash).await {
-                blocks.push(block);
-            }
-        }
-        
-        blocks
-    }
-}
+// MockPeer implementation is now in test_mocks.rs
