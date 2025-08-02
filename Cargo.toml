@@ -352,3 +352,13 @@ lto = "fat"
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+# Integration tests
+[[test]]
+name = "integration_tests"
+path = "tests/integration/mod.rs"
+required-features = ["integration-tests"]
+
+[features]
+default = []
+integration-tests = []
