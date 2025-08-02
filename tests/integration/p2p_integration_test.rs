@@ -7,14 +7,18 @@
 //! - Connection persistence
 //! - Network topology management
 
-use neo_network::{
-    p2p::{Node, NodeConfig, PeerConfig},
-    messages::{NetworkMessage, ProtocolMessage, VersionMessage},
-    peer_manager::PeerManager,
-    server::NetworkServer,
+use crate::test_mocks::{
+    network::{
+        p2p::{Node, NodeConfig, PeerConfig},
+        messages::{NetworkMessage, ProtocolMessage, VersionMessage},
+        peer_manager::PeerManager,
+        server::NetworkServer,
+        NetworkConfig,
+    },
+    Transaction,
 };
-use neo_config::{NetworkType, NetworkConfig};
-use neo_core::{UInt256, Transaction};
+use neo_core::{UInt256, UInt160};
+use neo_config::NetworkType;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::timeout;
