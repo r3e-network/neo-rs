@@ -141,17 +141,13 @@ impl TestNode {
     pub async fn handle_message(&self, message: NetworkMessage) -> Result<Option<NetworkMessage>> {
         match message.payload {
             ProtocolMessage::GetHeaders {
-                hash_start,
-                hash_stop: _,
+                index_start,
+                count: _,
             } => {
                 debug!("Test node {} received GetHeaders request", self.address);
 
-                // Find starting height from hash_start
-                let start_height = if hash_start.is_empty() {
-                    0
-                } else {
-                    1 // Start from block 1
-                };
+                // Use index_start directly
+                let start_height = index_start;
 
                 let headers = self.headers.read().await;
                 let mut response_headers = Vec::new();
@@ -511,17 +507,18 @@ mod tests {
         let addr: SocketAddr = TEST_NODE_1.parse().expect("value should parse");
         let node = TestNode::new(addr, 50);
 
-        let version_msg = NetworkMessage::new(
-            0x3554334e,
+        let version_msg = NetworkMessage::new_with_magic(
             ProtocolMessage::Version {
                 version: 0,
                 services: 1,
                 timestamp: 1640995200,
+                port: 20333,
                 nonce: 12345,
                 user_agent: "Test".to_string(),
                 start_height: 0,
                 relay: true,
             },
+            0x3554334e,
         );
 
         let response = node

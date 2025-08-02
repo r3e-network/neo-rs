@@ -3,7 +3,7 @@
 //! These tests ensure full compatibility with C# Neo.Network peer management.
 //! Tests are based on the C# Neo.Network.P2P.RemoteNode test suite.
 
-use neo_network::peer::*;
+use neo_network::peers::*;
 use neo_network::*;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};

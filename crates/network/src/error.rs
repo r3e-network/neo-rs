@@ -687,11 +687,13 @@ impl From<crate::Error> for NetworkError {
 
 #[cfg(test)]
 mod tests {
+    use super::{ErrorSeverity, DEFAULT_TIMEOUT_MS};
     use crate::{NetworkError, NetworkResult};
+    use std::net::SocketAddr;
 
     #[test]
     fn test_error_creation() {
-        let addr: SocketAddr = "localhost:8080".parse().unwrap_or_default();
+        let addr: SocketAddr = "localhost:8080".parse().expect("valid address");
         let error = NetworkError::connection_failed(addr, "Network unreachable");
         assert!(matches!(error, NetworkError::ConnectionFailed { .. }));
         assert!(error.to_string().contains("localhost:8080"));
@@ -699,10 +701,10 @@ mod tests {
 
     #[test]
     fn test_error_classification() {
-        let addr: SocketAddr = "localhost:8080".parse().unwrap_or_default();
+        let addr: SocketAddr = "localhost:8080".parse().expect("valid address");
 
         // Test retryable errors
-        assert!(NetworkError::connection_timeout(DEFAULT_TIMEOUT_MS).is_retryable());
+        assert!(NetworkError::connection_timeout(addr, DEFAULT_TIMEOUT_MS).is_retryable());
         assert!(!NetworkError::authentication_failed(addr, "Invalid").is_retryable());
 
         // Test connection errors
@@ -715,12 +717,12 @@ mod tests {
 
         // Test ban-worthy errors
         assert!(NetworkError::protocol_violation(addr, "Spam").should_ban_peer());
-        assert!(!NetworkError::connection_timeout(DEFAULT_TIMEOUT_MS).should_ban_peer());
+        assert!(!NetworkError::connection_timeout(addr, DEFAULT_TIMEOUT_MS).should_ban_peer());
     }
 
     #[test]
     fn test_error_severity() {
-        let addr: SocketAddr = "localhost:8080".parse().unwrap_or_default();
+        let addr: SocketAddr = "localhost:8080".parse().expect("valid address");
 
         assert_eq!(
             NetworkError::connection_failed(addr, "Failed").severity(),
@@ -738,7 +740,7 @@ mod tests {
 
     #[test]
     fn test_error_categories() {
-        let addr: SocketAddr = "localhost:8080".parse().unwrap_or_default();
+        let addr: SocketAddr = "localhost:8080".parse().expect("valid address");
 
         assert_eq!(
             NetworkError::connection_failed(addr, "Failed").category(),
@@ -753,7 +755,7 @@ mod tests {
 
     #[test]
     fn test_rate_limit_error() {
-        let addr: SocketAddr = "localhost:8080".parse().unwrap_or_default();
+        let addr: SocketAddr = "localhost:8080".parse().expect("valid address");
         let error = NetworkError::rate_limit_exceeded(addr, 100.0, 50.0);
         assert_eq!(
             error.to_string(),
@@ -763,8 +765,10 @@ mod tests {
 
     #[test]
     fn test_backward_compatibility() {
-        let network_error =
-            NetworkError::connection_failed("localhost:8080".parse().unwrap_or_default(), "test");
+        let network_error = NetworkError::connection_failed(
+            "localhost:8080".parse().expect("valid address"),
+            "test",
+        );
         let old_error: crate::Error = network_error.into();
         assert!(matches!(old_error, crate::Error::Connection(_)));
 

@@ -232,6 +232,11 @@ impl P2PEvent {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use neo_core::UInt160;
+    use std::net::SocketAddr;
+    const ADDRESS_SIZE: usize = 20;
+
     #[test]
     fn test_p2p_event_creation() {
         let peer_id = UInt160::from_bytes(&[1; ADDRESS_SIZE]).unwrap();

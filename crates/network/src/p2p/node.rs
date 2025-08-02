@@ -519,6 +519,11 @@ impl P2PNode {
 mod tests {
     use super::{Message, Peer, NetworkError};
     use crate::NodeInfo;
+    use super::*;
+    use tokio::sync::mpsc;
+    use crate::{NetworkConfig, P2pNode};
+    use std::net::SocketAddr;
+    use neo_core::UInt160;
 
     #[tokio::test]
     async fn test_p2p_node_creation() {

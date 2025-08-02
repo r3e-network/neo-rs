@@ -335,7 +335,9 @@ impl ConnectionInfo {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{NetworkError, PeerInfo};
+    use std::net::SocketAddr;
     use tokio::net::{TcpListener, TcpStream};
 
     #[test]

@@ -658,6 +658,9 @@ async fn run_node(
     // Start the node components
     info!("🚀 Starting node components/* implementation */;");
 
+    // Set global sync manager for direct height updates
+    neo_network::set_global_sync_manager(sync_manager.clone());
+
     // Start event listener to forward peer heights to sync manager
     let event_handle = {
         let p2p_node = p2p_node.clone();

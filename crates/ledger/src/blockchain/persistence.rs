@@ -278,15 +278,8 @@ impl BlockchainPersistence {
         let mut tx_index = 0u32;
 
         // Keep loading transactions until we don't find any more
-        loop {
-            // Try to find a transaction at this index
-            let mut found = false;
-            let current_height = self.get_current_block_height().await?;
-
-            // Search through all transactions to find ones in this block
-            // In production, we would maintain better indexing
-            break;
-        }
+        // In production, we would maintain better indexing to efficiently
+        // load all transactions belonging to a specific block
 
         let block = Block {
             header,
