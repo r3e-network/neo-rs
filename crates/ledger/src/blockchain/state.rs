@@ -1871,7 +1871,7 @@ impl ContractState {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{Error, Result};
     use crate::blockchain::storage::{RocksDBStorage, Storage};
 
     #[tokio::test]

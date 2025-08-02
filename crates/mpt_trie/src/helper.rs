@@ -58,7 +58,7 @@ pub fn concat_bytes(a: &[u8], b: &[u8]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{MptError as Error, MptResult as Result};
 
     #[test]
     fn test_to_nibbles() {

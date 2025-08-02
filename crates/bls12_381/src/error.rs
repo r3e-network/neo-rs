@@ -158,7 +158,8 @@ impl From<bls12_381::Scalar> for BlsError {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::BlsError as Error;
+    type Result<T> = std::result::Result<T, Error>;
 
     #[test]
     fn test_error_creation() {

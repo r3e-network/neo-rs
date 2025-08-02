@@ -376,7 +376,7 @@ impl Storage {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{Error, Result};
     use tempfile::tempdir;
 
     #[tokio::test]
