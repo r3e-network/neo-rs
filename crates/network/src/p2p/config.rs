@@ -126,7 +126,9 @@ impl P2PConfig {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{NetworkError, PeerInfo};
+    use std::time::Duration;
 
     #[test]
     fn test_p2p_config_default() {

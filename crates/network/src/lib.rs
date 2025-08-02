@@ -12,6 +12,7 @@
 //! - **RPC**: JSON-RPC server for external API access
 //! - **Server**: Network server coordination and management
 
+pub mod composite_handler;
 pub mod error;
 pub mod error_handling;
 pub mod handlers;
@@ -24,6 +25,7 @@ pub mod relay_cache;
 pub mod rpc;
 pub mod server;
 pub mod shutdown_impl;
+pub mod snapshot_config;
 pub mod sync;
 pub mod transaction_relay;
 
@@ -55,6 +57,20 @@ pub use error::{ErrorSeverity, NetworkError, NetworkResult, Result};
 
 pub type P2PEvent = NodeEvent;
 pub type P2PNode = P2pNode;
+
+// Global sync manager reference for direct peer height updates
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+
+pub static GLOBAL_SYNC_MANAGER: Lazy<Mutex<Option<std::sync::Arc<sync::SyncManager>>>> =
+    Lazy::new(|| Mutex::new(None));
+
+/// Set the global sync manager reference
+pub fn set_global_sync_manager(sync_manager: std::sync::Arc<sync::SyncManager>) {
+    if let Ok(mut guard) = GLOBAL_SYNC_MANAGER.lock() {
+        *guard = Some(sync_manager);
+    }
+}
 pub type RpcServer = crate::rpc::RpcServer;
 pub type SyncManager = crate::sync::SyncManager;
 pub type SyncEvent = crate::sync::SyncEvent;
@@ -219,9 +235,11 @@ impl ProtocolVersion {
         }
     }
 
-    /// Current Neo protocol version
+    /// Current Neo protocol version  
     pub fn current() -> Self {
-        Self::new(3, 6, 0) // Neo N3 version 3.6.0
+        // Neo N3 uses protocol version 0 (zero) consistently across all implementations
+        // This is different from semantic versioning - it's just a single protocol version number
+        Self::from_u32(0) // Official Neo N3 protocol version
     }
 
     /// Checks if this version is compatible with another
@@ -281,7 +299,7 @@ impl NodeInfo {
         Self {
             id,
             version: ProtocolVersion::current(),
-            user_agent: "neo-rs/0.1.0".to_string(),
+            user_agent: "/Neo:3.0.0/".to_string(),
             capabilities: vec![
                 "FullNode".to_string(),
                 "TcpServer".to_string(),
@@ -508,9 +526,9 @@ impl Default for RpcConfig {
 impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
-            magic: 0x00746E41, // Neo N3 mainnet magic ("Ant" in little-endian)
+            magic: 0x334F454E, // Neo N3 mainnet magic (860833102 in decimal)
             protocol_version: ProtocolVersion::current(),
-            user_agent: "neo-rs/0.1.0".to_string(),
+            user_agent: "/Neo:3.0.0/".to_string(),
             listen_address: format!("{}:{}", LOCALHOST, DEFAULT_MAINNET_PORT)
                 .parse()
                 .expect("value should parse"),
@@ -545,7 +563,7 @@ impl NetworkConfig {
     /// Creates a testnet configuration
     pub fn testnet() -> Self {
         Self {
-            magic: 0x74746E41, // Neo N3 testnet magic (1953787457 in decimal)
+            magic: 0x3554334E, // Neo N3 testnet magic (894448462 in decimal)
             listen_address: format!("{}:{}", LOCALHOST, DEFAULT_TESTNET_PORT)
                 .parse()
                 .expect("value should parse"),
@@ -601,7 +619,9 @@ impl NetworkConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{NetworkError, PeerInfo};
+    use super::{NetworkError, NetworkStats, PeerInfo};
+    use crate::{NetworkConfig, NodeInfo, ProtocolVersion};
+    use neo_core::UInt160;
 
     #[test]
     fn test_protocol_version() {

@@ -1,5 +1,7 @@
-# Multi-stage build for Neo-RS
-FROM rust:1.75-bullseye as builder
+# Multi-stage Dockerfile for Neo Rust Node
+# R3E Network <jimmy@r3e.network>
+
+FROM rust:1.76-bullseye as builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
@@ -31,9 +33,10 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 COPY node/ node/
+COPY demo/ demo/
 
-# Build release binary
-RUN cargo build --release --package neo-node --bin neo-node
+# Build release binaries (both neo-cli and neo-node)
+RUN cargo build --release --workspace
 
 # Runtime stage
 FROM debian:bullseye-slim
@@ -57,8 +60,9 @@ RUN groupadd -r neo && useradd -r -g neo neo
 # Create data directories
 RUN mkdir -p /data /data/blocks /data/logs && chown -R neo:neo /data
 
-# Copy binary from builder stage
+# Copy binaries from builder stage
 COPY --from=builder /app/target/release/neo-node /usr/local/bin/neo-node
+COPY --from=builder /app/target/release/neo-cli /usr/local/bin/neo-cli
 
 # Set up volumes
 VOLUME ["/data"]
@@ -78,15 +82,19 @@ EXPOSE 30332 30333
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:20332/health || exit 1
 
-# Default command for testnet
-ENTRYPOINT ["neo-node"]
-CMD ["--testnet", "--rpc-port", "20332", "--p2p-port", "20333"]
+# Environment variables
+ENV NEO_NETWORK=testnet
+ENV NEO_DATA_DIR=/data
+
+# Default command for neo-cli
+ENTRYPOINT ["neo-cli"]
+CMD ["--network", "testnet", "--data-dir", "/data", "--daemon"]
 
 # Metadata
-LABEL org.opencontainers.image.title="Neo-RS"
-LABEL org.opencontainers.image.description="High-performance Rust implementation of the Neo N3 blockchain protocol"
+LABEL org.opencontainers.image.title="Neo-Rust-Node"
+LABEL org.opencontainers.image.description="Production-ready Rust implementation of the Neo N3 blockchain protocol"
 LABEL org.opencontainers.image.url="https://github.com/r3e-network/neo-rs"
-LABEL org.opencontainers.image.documentation="https://docs.rs/neo-rs"
+LABEL org.opencontainers.image.documentation="https://github.com/r3e-network/neo-rs/blob/master/README.md"
 LABEL org.opencontainers.image.source="https://github.com/r3e-network/neo-rs"
-LABEL org.opencontainers.image.vendor="Neo Global Development"
+LABEL org.opencontainers.image.vendor="R3E Network"
 LABEL org.opencontainers.image.licenses="MIT"

@@ -14,7 +14,7 @@ use tracing::{debug, info, warn};
 use crate::args::CliArgs;
 use crate::config::Config;
 use crate::wallet::WalletManager;
-use neo_config::NetworkType;
+use neo_config::{NetworkType, MAINNET_SEEDS, N3_TESTNET_SEEDS};
 use neo_ledger::{Blockchain, Storage};
 use neo_network::p2p::MessageHandler;
 use neo_network::{
@@ -58,6 +58,53 @@ impl SyncMessageHandler {
         &self,
     ) -> Option<(Arc<neo_ledger::Blockchain>, Arc<neo_network::P2PNode>)> {
         Some((self.blockchain.clone(), self.p2p_node.clone()))
+    }
+
+    /// Handle GetHeaders request (production implementation matching C# Neo exactly)
+    async fn handle_get_headers_request(
+        &self,
+        index_start: u32,
+        count: i16,
+        peer_address: SocketAddr,
+    ) {
+        // Neo N3 index-based GetHeaders implementation
+        let mut headers = Vec::new();
+        let max_headers = if count == -1 {
+            2000usize
+        } else {
+            count as usize
+        }; // Match C# Neo maximum headers per response
+
+        let start_height = index_start;
+        let current_height = self.blockchain.get_height().await;
+
+        for height in start_height..=(start_height + max_headers as u32).min(current_height) {
+            // Get block by height and extract header
+            if let Ok(Some(block)) = self.blockchain.get_block(height).await {
+                let header = &block.header;
+                headers.push(header.clone());
+            }
+
+            if headers.len() >= max_headers {
+                break;
+            }
+        }
+
+        if !headers.is_empty() {
+            let headers_len = headers.len();
+            let headers_message = neo_network::ProtocolMessage::Headers { headers };
+            let network_message = neo_network::NetworkMessage::new(headers_message);
+
+            if let Err(e) = self
+                .p2p_node
+                .send_message_to_peer(peer_address, network_message)
+                .await
+            {
+                warn!("Failed to send headers to {}: {}", peer_address, e);
+            } else {
+                debug!("Sent {} headers to {}", headers_len, peer_address);
+            }
+        }
     }
 
     /// Request missing blocks for headers (matches C# Neo sync logic exactly)
@@ -257,62 +304,6 @@ impl SyncMessageHandler {
         }
     }
 
-    /// Handle GetHeaders request (matches C# Neo exactly)
-    async fn handle_get_headers_request(
-        &self,
-        hash_start: Vec<neo_core::UInt256>,
-        hash_stop: neo_core::UInt256,
-        peer_address: SocketAddr,
-        blockchain: &Arc<neo_ledger::Blockchain>,
-        p2p_node: &Arc<neo_network::P2PNode>,
-    ) {
-        // PRODUCTION READY: Handle header requests
-        // This matches C# Neo's GetHeaders protocol message handling exactly
-        const MAX_HEADERS_COUNT: usize = 2000; // Same as C# Neo
-
-        let mut headers = Vec::new();
-        let mut current_height = 0u32;
-
-        // Find starting point
-        for start_hash in &hash_start {
-            // Get block by hash and extract header
-            if let Ok(Some(block)) = blockchain.get_block_by_hash(start_hash).await {
-                let header = &block.header;
-                current_height = header.index + 1;
-                break;
-            }
-        }
-
-        let blockchain_height = blockchain.get_height().await;
-
-        // Collect headers up to MAX_HEADERS_COUNT or until hash_stop
-        for height in
-            current_height..=(current_height + MAX_HEADERS_COUNT as u32).min(blockchain_height)
-        {
-            // Get block by height and extract header
-            if let Ok(Some(block)) = blockchain.get_block(height).await {
-                let header = &block.header;
-                let header_hash = header.hash();
-                headers.push(header.clone());
-
-                // Stop at hash_stop
-                if header_hash == hash_stop {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        if !headers.is_empty() {
-            info!("📤 Sending {} headers to {}", headers.len(), peer_address);
-
-            if let Err(e) = p2p_node.send_headers(peer_address, headers).await {
-                warn!("Failed to send headers to {}: {}", peer_address, e);
-            }
-        }
-    }
-
     /// Handle GetData request (matches C# Neo exactly)
     async fn handle_get_data_request(
         &self,
@@ -477,26 +468,15 @@ impl MessageHandler for SyncMessageHandler {
                 }
             },
 
-            ProtocolMessage::GetHeaders {
-                hash_start,
-                hash_stop,
-            } => {
+            ProtocolMessage::GetHeaders { index_start, count } => {
                 info!(
-                    "📋 Received GetHeaders request from {}: {} start hashes, stop={}",
-                    peer_address,
-                    hash_start.len(),
-                    hash_stop
+                    "📋 Received GetHeaders request from {}: start_index={}, count={}",
+                    peer_address, index_start, count
                 );
 
                 // In C# Neo: This implements the GetHeaders protocol message handling
-                self.handle_get_headers_request(
-                    hash_start.clone(),
-                    *hash_stop,
-                    peer_address,
-                    &self.blockchain,
-                    &self.p2p_node,
-                )
-                .await;
+                self.handle_get_headers_request(*index_start, *count, peer_address)
+                    .await;
 
                 debug!(
                     "✅ Successfully handled GetHeaders request from {}",
@@ -638,11 +618,11 @@ impl MainService {
             enable_compression: false,
         };
 
-        // Create node info
+        // Create node info with NGD-compatible parameters
         let node_info = NodeInfo {
-            id: neo_core::UInt160::zero(), // Will be set later
-            version: ProtocolVersion::new(3, 0, 0),
-            user_agent: "neo-rs/0.1.0".to_string(),
+            id: neo_core::UInt160::zero(),         // Will be set later
+            version: ProtocolVersion::current(),   // Use current Neo protocol version 3.6.0
+            user_agent: "/Neo:3.0.0/".to_string(), // Match NGD format
             capabilities: vec!["FullNode".to_string()],
             start_height: blockchain.get_height().await,
             timestamp: std::time::SystemTime::now()
@@ -673,7 +653,7 @@ impl MainService {
         // Create NetworkConfig that wraps P2PConfig
         let network_config = NetworkConfig {
             magic,
-            protocol_version: ProtocolVersion::new(3, 0, 0),
+            protocol_version: ProtocolVersion::current(), // Use current Neo protocol version 3.6.0
             user_agent: "neo-rs/0.1.0".to_string(),
             listen_address: format!("0.0.0.0:{}", self.config.network.bind_port).parse()?,
             p2p_config,
@@ -685,33 +665,123 @@ impl MainService {
             handshake_timeout: 10,
             ping_interval: 30,
             enable_relay: true,
-            seed_nodes: vec![],
+            seed_nodes: match self.args.network {
+                // Only use NGD nodes for mainnet - they use standard protocol
+                crate::args::Network::Mainnet => vec![], // Will resolve dynamically
+                crate::args::Network::Testnet => N3_TESTNET_SEEDS
+                    .iter()
+                    .filter_map(|s| s.parse().ok())
+                    .collect(),
+                crate::args::Network::Private => vec![],
+            },
             port: self.config.network.bind_port,
             websocket_enabled: false,
             websocket_port: 10334,
         };
 
-        // Create P2P node with correct parameters
-        let p2p_node = Arc::new(P2PNode::new(network_config, command_receiver)?);
+        // Create a temporary P2P node first to create sync manager
+        let temp_p2p = Arc::new(P2PNode::new(
+            network_config.clone(),
+            tokio::sync::mpsc::channel(1).1,
+        )?);
+
+        // 3. Initialize SyncManager first (needed for composite handler)
+        info!("🔄 Starting sync manager/* implementation */;");
+        let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), temp_p2p));
+
+        // Create composite message handler
+        let default_handler = Arc::new(neo_network::p2p::protocol::DefaultMessageHandler);
+        let mut composite_handler =
+            neo_network::composite_handler::CompositeMessageHandler::new(default_handler);
+
+        // Register sync manager for sync-related messages
+        composite_handler.register_handlers(vec![
+            (
+                neo_network::messages::MessageCommand::Headers,
+                sync_manager.clone() as Arc<dyn neo_network::p2p::protocol::MessageHandler>,
+            ),
+            (
+                neo_network::messages::MessageCommand::Block,
+                sync_manager.clone() as Arc<dyn neo_network::p2p::protocol::MessageHandler>,
+            ),
+            (
+                neo_network::messages::MessageCommand::Inv,
+                sync_manager.clone() as Arc<dyn neo_network::p2p::protocol::MessageHandler>,
+            ),
+        ]);
+
+        // Create P2P node with composite handler
+        let p2p_node = Arc::new(P2PNode::new_with_handler(
+            network_config,
+            command_receiver,
+            Arc::new(composite_handler),
+        )?);
         self.p2p_node = Some(p2p_node.clone());
 
         // Start P2P node
         p2p_node.start().await?;
         info!("✅ P2P node started successfully");
 
-        // 3. Initialize SyncManager
-        info!("🔄 Starting sync manager/* implementation */;");
-        let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), p2p_node.clone()));
+        // Start sync manager
         sync_manager.start().await?;
         self.sync_manager = Some(sync_manager.clone());
         info!("✅ Sync manager started");
 
         // 4. Register SyncManager as message handler for synchronization messages
         info!("🔗 Connecting sync manager to P2P message handling/* implementation */;");
-        // TODO: Message handlers need to be implemented differently
-        // as P2pNode doesn't have register_handler method
-        // The SyncMessageHandler is implemented above and can be used
-        // when the P2P node is refactored to support message handlers
+
+        // Start P2P event handler to forward messages to sync manager
+        let event_sync_manager = sync_manager.clone();
+        let event_p2p_node = p2p_node.clone();
+        let mut event_receiver = p2p_node.subscribe_to_events();
+        tokio::spawn(async move {
+            while let Ok(event) = event_receiver.recv().await {
+                match event {
+                    neo_network::NodeEvent::PeerConnected(peer_info) => {
+                        info!(
+                            "📊 Peer {} reported height: {}",
+                            peer_info.address, peer_info.start_height
+                        );
+                        event_sync_manager
+                            .update_best_height(peer_info.start_height, peer_info.address)
+                            .await;
+                    }
+                    neo_network::NodeEvent::MessageReceived { peer, message } => {
+                        // Forward sync-related messages to the sync manager
+                        match &message.payload {
+                            neo_network::ProtocolMessage::Headers { .. }
+                            | neo_network::ProtocolMessage::Block { .. }
+                            | neo_network::ProtocolMessage::Inv { .. } => {
+                                if let Err(e) =
+                                    event_sync_manager.handle_message(peer, &message).await
+                                {
+                                    warn!(
+                                        "Sync manager failed to handle message from {}: {}",
+                                        peer, e
+                                    );
+                                }
+                            }
+                            neo_network::ProtocolMessage::Ping { nonce } => {
+                                // Respond to ping with pong
+                                info!(
+                                    "Received ping from {}, sending pong with nonce {}",
+                                    peer, nonce
+                                );
+                                let pong = neo_network::ProtocolMessage::pong(*nonce);
+                                let pong_msg = neo_network::NetworkMessage::new(pong);
+                                if let Err(e) =
+                                    event_p2p_node.send_message_to_peer(peer, pong_msg).await
+                                {
+                                    warn!("Failed to send pong to {}: {}", peer, e);
+                                }
+                            }
+                            _ => {} // Other messages are not sync-related
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        });
 
         info!("✅ Sync manager connected to P2P message handling");
 
@@ -829,16 +899,10 @@ impl MainService {
     /// Connect to seed nodes for initial peer discovery
     async fn connect_to_seed_nodes(&self) -> Result<()> {
         let seed_nodes = match self.args.network {
-            crate::args::Network::Mainnet => vec![
-                "seed1.neo.org:10333",
-                "seed2.neo.org:10333",
-                "seed3.neo.org:10333",
-                "seed4.neo.org:10333",
-                "seed5.neo.org:10333",
-                "mainnet1-seed.neocompiler.io:10333",
-                "mainnet2-seed.neocompiler.io:10333",
-                "neo-seed.nodes.network:10333",
-            ],
+            // Only use NGD nodes for mainnet - they use standard protocol
+            crate::args::Network::Mainnet => {
+                vec!["seed1.ngd.network:10333", "seed2.ngd.network:10333"]
+            }
             crate::args::Network::Testnet => vec![
                 "seed1t5.neo.org:20333",
                 "seed2t5.neo.org:20333",
@@ -950,6 +1014,10 @@ impl MainService {
                         "🔄 Starting blockchain synchronization with {} network/* implementation */;",
                         network_name
                     );
+
+                    // Add a small delay to ensure peers are fully established
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
                     if let Err(e) = sync_manager.start_sync().await {
                         warn!("Failed to start sync: {}", e);
                     }
@@ -1125,82 +1193,6 @@ impl MainService {
                 }
                 Err(e) => {
                     warn!("Failed to get transaction hash for relay: {}", e);
-                }
-            }
-        }
-    }
-
-    /// Handle GetHeaders request (production implementation matching C# Neo exactly)
-    async fn handle_get_headers_request(
-        &self,
-        hash_start: Vec<neo_core::UInt256>,
-        hash_stop: neo_core::UInt256,
-        peer_address: SocketAddr,
-    ) {
-        // In C# Neo: This implements LocalNode.OnGetHeadersMessage logic
-        if let (Some(blockchain), Some(p2p_node)) = (&self.blockchain, &self.p2p_node) {
-            let mut headers = Vec::new();
-            let max_headers = 2000usize; // Match C# Neo maximum headers per response
-
-            let mut start_height = 0u32;
-            for start_hash in &hash_start {
-                // This implements the C# logic: find the height of this hash in the blockchain
-
-                // 1. Query blockchain for the hash to get its height (production accuracy)
-                match blockchain.get_block_height_by_hash(start_hash).await {
-                    Ok(Some(height)) => {
-                        // 2. Use actual height of the hash (production sync accuracy)
-                        start_height = height;
-                        break;
-                    }
-                    Ok(None) => {
-                        // 3. Hash not found - continue checking other hashes (production fallback)
-                        continue;
-                    }
-                    Err(_) => {
-                        // 4. Error querying blockchain - use current height as fallback (production safety)
-                        start_height = blockchain.get_height().await;
-                        break;
-                    }
-                }
-            }
-
-            // 5. If no valid start hash found, use current height (production default)
-            if start_height == 0 && !hash_start.is_empty() {
-                start_height = blockchain.get_height().await;
-            }
-
-            for height in start_height
-                ..=(start_height + max_headers as u32).min(blockchain.get_height().await)
-            {
-                // Get block by height and extract header
-                if let Ok(Some(block)) = blockchain.get_block(height).await {
-                    let header = &block.header;
-                    let header_hash = header.hash();
-                    headers.push(header.clone());
-
-                    if header_hash == hash_stop {
-                        break;
-                    }
-                }
-
-                if headers.len() >= max_headers {
-                    break;
-                }
-            }
-
-            if !headers.is_empty() {
-                let headers_len = headers.len();
-                let headers_message = neo_network::ProtocolMessage::Headers { headers };
-                let network_message = neo_network::NetworkMessage::new(headers_message);
-
-                if let Err(e) = p2p_node
-                    .send_message_to_peer(peer_address, network_message)
-                    .await
-                {
-                    warn!("Failed to send headers to {}: {}", peer_address, e);
-                } else {
-                    debug!("Sent {} headers to {}", headers_len, peer_address);
                 }
             }
         }

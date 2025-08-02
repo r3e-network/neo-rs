@@ -3,123 +3,198 @@
 //! These tests ensure full compatibility with C# Neo.Network protocol implementation.
 //! Tests are based on the C# Neo.Network.P2P protocol test suite.
 
-use super::*;
 use neo_core::{Block, Transaction, UInt160, UInt256};
-use neo_network::protocol::*;
+use neo_ledger::BlockHeader;
+use neo_network::messages::inventory::{InventoryItem, InventoryType};
 use neo_network::*;
 use sha2::{Digest, Sha256};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 #[cfg(test)]
 mod protocol_tests {
+    use super::*;
+
     /// Test protocol message serialization (matches C# Message serialization exactly)
     #[test]
     fn test_protocol_message_serialization_compatibility() {
-        let version_msg = VersionMessage {
+        let version_msg = ProtocolMessage::Version {
             version: 0x00,
-            services: NodeServices::NodeNetwork as u64,
+            services: 1, // NodeNetwork service
             timestamp: 1234567890,
             port: 10333,
-            nonce: 0x1234567890ABCDEF,
+            nonce: 0x12345678,
             user_agent: "/NEO:3.6.0/".to_string(),
             start_height: 100000,
+            relay: true,
         };
 
-        let serialized = version_msg.serialize().unwrap();
-        let deserialized = VersionMessage::deserialize(&serialized).unwrap();
+        // Wrap in NetworkMessage
+        let network_msg = NetworkMessage::new(version_msg.clone());
+        let serialized = network_msg.to_bytes().unwrap();
+        let deserialized = NetworkMessage::from_bytes(&serialized).unwrap();
 
-        assert_eq!(deserialized.version, version_msg.version);
-        assert_eq!(deserialized.services, version_msg.services);
-        assert_eq!(deserialized.timestamp, version_msg.timestamp);
-        assert_eq!(deserialized.port, version_msg.port);
-        assert_eq!(deserialized.nonce, version_msg.nonce);
-        assert_eq!(deserialized.user_agent, version_msg.user_agent);
-        assert_eq!(deserialized.start_height, version_msg.start_height);
+        // Verify deserialization
+        match deserialized.payload {
+            ProtocolMessage::Version {
+                version,
+                services,
+                timestamp,
+                port,
+                nonce,
+                user_agent,
+                start_height,
+                relay,
+            } => {
+                assert_eq!(version, 0x00);
+                assert_eq!(services, 1);
+                assert_eq!(timestamp, 1234567890);
+                assert_eq!(port, 10333);
+                assert_eq!(nonce, 0x12345678);
+                assert_eq!(user_agent, "/NEO:3.6.0/");
+                assert_eq!(start_height, 100000);
+                assert_eq!(relay, true);
+            }
+            _ => panic!("Expected Version message"),
+        }
     }
 
     /// Test network addresses (matches C# NetworkAddress exactly)
     #[test]
     fn test_network_address_compatibility() {
-        let ipv4_addr = NetworkAddress {
-            timestamp: 1234567890,
-            services: NodeServices::NodeNetwork as u64,
-            address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)),
-            port: 10333,
-        };
+        // Test Addr message with network addresses
+        let addresses = vec![
+            NodeInfo {
+                address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 10333),
+                version: ProtocolVersion::new(3, 6, 0),
+                services: 1, // NodeNetwork service
+                relay: true,
+                last_seen: 1234567890,
+                user_agent: "/NEO:3.6.0/".to_string(),
+                nonce: 0,
+                start_height: 0,
+            },
+            NodeInfo {
+                address: SocketAddr::new("2001:db8::1".parse().unwrap(), 10333),
+                version: ProtocolVersion::new(3, 6, 0),
+                services: 1,
+                relay: true,
+                last_seen: 1234567890,
+                user_agent: "/NEO:3.6.0/".to_string(),
+                nonce: 0,
+                start_height: 0,
+            },
+        ];
 
-        let serialized = ipv4_addr.serialize().unwrap();
-        let deserialized = NetworkAddress::deserialize(&serialized).unwrap();
+        let addr_msg = ProtocolMessage::Addr { addresses };
+        let network_msg = NetworkMessage::new(addr_msg);
+        let serialized = network_msg.to_bytes().unwrap();
+        let deserialized = NetworkMessage::from_bytes(&serialized).unwrap();
 
-        assert_eq!(deserialized.timestamp, ipv4_addr.timestamp);
-        assert_eq!(deserialized.services, ipv4_addr.services);
-        assert_eq!(deserialized.address, ipv4_addr.address);
-        assert_eq!(deserialized.port, ipv4_addr.port);
-
-        let ipv6_addr = NetworkAddress {
-            timestamp: 1234567890,
-            services: NodeServices::NodeNetwork as u64,
-            address: "2001:db8::1".parse().unwrap(),
-            port: 10333,
-        };
-
-        let serialized = ipv6_addr.serialize().unwrap();
-        let deserialized = NetworkAddress::deserialize(&serialized).unwrap();
-
-        assert_eq!(deserialized.address, ipv6_addr.address);
+        // Verify addresses were preserved
+        match deserialized.payload {
+            ProtocolMessage::Addr { addresses: addrs } => {
+                assert_eq!(addrs.len(), 2);
+                assert_eq!(
+                    addrs[0].address.ip(),
+                    IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))
+                );
+                assert_eq!(addrs[0].address.port(), 10333);
+                assert_eq!(addrs[1].address.ip().to_string(), "2001:db8::1");
+            }
+            _ => panic!("Expected Addr message"),
+        }
     }
 
     /// Test inventory messages (matches C# InvPayload exactly)
     #[test]
     fn test_inventory_message_compatibility() {
-        let mut hashes = vec![];
+        // Create inventory items
+        let mut inventory = vec![];
         for i in 0..10 {
-            hashes.push(UInt256::from_bytes(&[i; 32]).unwrap());
+            let hash = UInt256::from_bytes(&[i; 32]).unwrap();
+            inventory.push(InventoryItem {
+                item_type: InventoryType::Block,
+                hash,
+            });
         }
 
-        let inv_msg = InventoryMessage {
-            type_: InventoryType::Block,
-            hashes: hashes.clone(),
+        // Create Inv protocol message
+        let inv_msg = ProtocolMessage::Inv {
+            inventory: inventory.clone(),
         };
 
-        let serialized = inv_msg.serialize().unwrap();
-        let deserialized = InventoryMessage::deserialize(&serialized).unwrap();
+        // Wrap in NetworkMessage and serialize
+        let network_msg = NetworkMessage::new(inv_msg);
+        let serialized = network_msg.to_bytes().unwrap();
 
-        assert_eq!(deserialized.type_, InventoryType::Block);
-        assert_eq!(deserialized.hashes.len(), 10);
-        for (i, hash) in deserialized.hashes.iter().enumerate() {
-            assert_eq!(*hash, hashes[i]);
+        // Deserialize and verify
+        let deserialized = NetworkMessage::from_bytes(&serialized).unwrap();
+        match deserialized.payload {
+            ProtocolMessage::Inv { inventory: inv } => {
+                assert_eq!(inv.len(), 10);
+                for (i, item) in inv.iter().enumerate() {
+                    assert_eq!(item.item_type, InventoryType::Block);
+                    assert_eq!(item.hash, inventory[i].hash);
+                }
+            }
+            _ => panic!("Expected Inv message"),
         }
 
-        // Test with transactions
-        let tx_inv_msg = InventoryMessage {
-            type_: InventoryType::TX,
-            hashes: hashes.clone(),
+        // Test with transaction inventory
+        let tx_inventory: Vec<_> = (0..5)
+            .map(|i| InventoryItem {
+                item_type: InventoryType::TX,
+                hash: UInt256::from_bytes(&[i * 2; 32]).unwrap(),
+            })
+            .collect();
+
+        let tx_inv_msg = ProtocolMessage::Inv {
+            inventory: tx_inventory.clone(),
         };
 
-        let serialized = tx_inv_msg.serialize().unwrap();
-        let deserialized = InventoryMessage::deserialize(&serialized).unwrap();
-        assert_eq!(deserialized.type_, InventoryType::TX);
+        let network_msg = NetworkMessage::new(tx_inv_msg);
+        let serialized = network_msg.to_bytes().unwrap();
+        let deserialized = NetworkMessage::from_bytes(&serialized).unwrap();
+
+        match deserialized.payload {
+            ProtocolMessage::Inv { inventory: inv } => {
+                assert_eq!(inv.len(), 5);
+                for item in inv.iter() {
+                    assert_eq!(item.item_type, InventoryType::TX);
+                }
+            }
+            _ => panic!("Expected Inv message"),
+        }
     }
 
     /// Test GetData message (matches C# GetDataPayload exactly)
     #[test]
     fn test_getdata_message_compatibility() {
-        let hashes = vec![
-            UInt256::from_bytes(&[1u8; 32]).unwrap(),
-            UInt256::from_bytes(&[2u8; 32]).unwrap(),
-            UInt256::from_bytes(&[3u8; 32]).unwrap(),
-        ];
+        let inventory: Vec<_> = (0..3)
+            .map(|i| InventoryItem {
+                item_type: InventoryType::Block,
+                hash: UInt256::from_bytes(&[(i + 1) as u8; 32]).unwrap(),
+            })
+            .collect();
 
-        let getdata_msg = GetDataMessage {
-            type_: InventoryType::Block,
-            hashes: hashes.clone(),
+        let getdata_msg = ProtocolMessage::GetData {
+            inventory: inventory.clone(),
         };
 
-        let serialized = getdata_msg.serialize().unwrap();
-        let deserialized = GetDataMessage::deserialize(&serialized).unwrap();
+        let network_msg = NetworkMessage::new(getdata_msg);
+        let serialized = network_msg.to_bytes().unwrap();
+        let deserialized = NetworkMessage::from_bytes(&serialized).unwrap();
 
-        assert_eq!(deserialized.type_, InventoryType::Block);
-        assert_eq!(deserialized.hashes, hashes);
+        match deserialized.payload {
+            ProtocolMessage::GetData { inventory: inv } => {
+                assert_eq!(inv.len(), 3);
+                for (i, item) in inv.iter().enumerate() {
+                    assert_eq!(item.item_type, InventoryType::Block);
+                    assert_eq!(item.hash, inventory[i].hash);
+                }
+            }
+            _ => panic!("Expected GetData message"),
+        }
     }
 
     /// Test GetBlocks message (matches C# GetBlocksPayload exactly)
@@ -131,16 +206,25 @@ mod protocol_tests {
         ];
         let hash_stop = UInt256::from_bytes(&[30u8; 32]).unwrap();
 
-        let getblocks_msg = GetBlocksMessage {
+        let getblocks_msg = ProtocolMessage::GetBlocks {
             hash_start: hash_start.clone(),
-            hash_stop,
+            hash_stop: hash_stop.clone(),
         };
 
-        let serialized = getblocks_msg.serialize().unwrap();
-        let deserialized = GetBlocksMessage::deserialize(&serialized).unwrap();
+        let network_msg = NetworkMessage::new(getblocks_msg);
+        let serialized = network_msg.to_bytes().unwrap();
+        let deserialized = NetworkMessage::from_bytes(&serialized).unwrap();
 
-        assert_eq!(deserialized.hash_start, hash_start);
-        assert_eq!(deserialized.hash_stop, hash_stop);
+        match deserialized.payload {
+            ProtocolMessage::GetBlocks {
+                hash_start: start,
+                hash_stop: stop,
+            } => {
+                assert_eq!(start, hash_start);
+                assert_eq!(stop, hash_stop);
+            }
+            _ => panic!("Expected GetBlocks message"),
+        }
     }
 
     /// Test Headers message (matches C# HeadersPayload exactly)
@@ -150,28 +234,36 @@ mod protocol_tests {
         for i in 0..5 {
             let header = BlockHeader {
                 version: 0,
-                prev_hash: UInt256::from_bytes(&[i; 32]).unwrap(),
+                previous_hash: UInt256::from_bytes(&[i; 32]).unwrap(),
                 merkle_root: UInt256::from_bytes(&[(i + 1); 32]).unwrap(),
                 timestamp: 1234567890 + i as u64,
                 index: i,
+                primary_index: 0,
+                nonce: 0,
                 next_consensus: UInt160::from_bytes(&[i as u8; 20]).unwrap(),
-                witness: vec![],
+                witnesses: vec![],
             };
             headers.push(header);
         }
 
-        let headers_msg = HeadersMessage {
+        let headers_msg = ProtocolMessage::Headers {
             headers: headers.clone(),
         };
 
-        let serialized = headers_msg.serialize().unwrap();
-        let deserialized = HeadersMessage::deserialize(&serialized).unwrap();
+        let network_msg = NetworkMessage::new(headers_msg);
+        let serialized = network_msg.to_bytes().unwrap();
+        let deserialized = NetworkMessage::from_bytes(&serialized).unwrap();
 
-        assert_eq!(deserialized.headers.len(), 5);
-        for (i, header) in deserialized.headers.iter().enumerate() {
-            assert_eq!(header.index, headers[i].index);
-            assert_eq!(header.prev_hash, headers[i].prev_hash);
-            assert_eq!(header.timestamp, headers[i].timestamp);
+        match deserialized.payload {
+            ProtocolMessage::Headers { headers: hdrs } => {
+                assert_eq!(hdrs.len(), 5);
+                for (i, header) in hdrs.iter().enumerate() {
+                    assert_eq!(header.index, headers[i].index);
+                    assert_eq!(header.previous_hash, headers[i].previous_hash);
+                    assert_eq!(header.timestamp, headers[i].timestamp);
+                }
+            }
+            _ => panic!("Expected Headers message"),
         }
     }
 
@@ -179,27 +271,32 @@ mod protocol_tests {
     #[test]
     fn test_ping_pong_compatibility() {
         // Test Ping message
-        let ping_msg = PingMessage {
-            timestamp: 1234567890,
-            nonce: 0xDEADBEEF,
-        };
+        let ping_msg = ProtocolMessage::Ping { nonce: 0xDEADBEEF };
 
-        let serialized = ping_msg.serialize().unwrap();
-        let deserialized = PingMessage::deserialize(&serialized).unwrap();
+        let network_msg = NetworkMessage::new(ping_msg);
+        let serialized = network_msg.to_bytes().unwrap();
+        let deserialized = NetworkMessage::from_bytes(&serialized).unwrap();
 
-        assert_eq!(deserialized.timestamp, ping_msg.timestamp);
-        assert_eq!(deserialized.nonce, ping_msg.nonce);
+        match deserialized.payload {
+            ProtocolMessage::Ping { nonce } => {
+                assert_eq!(nonce, 0xDEADBEEF);
+            }
+            _ => panic!("Expected Ping message"),
+        }
 
-        let pong_msg = PongMessage {
-            timestamp: ping_msg.timestamp,
-            nonce: ping_msg.nonce,
-        };
+        // Test Pong message
+        let pong_msg = ProtocolMessage::Pong { nonce: 0xDEADBEEF };
 
-        let serialized = pong_msg.serialize().unwrap();
-        let deserialized = PongMessage::deserialize(&serialized).unwrap();
+        let network_msg = NetworkMessage::new(pong_msg);
+        let serialized = network_msg.to_bytes().unwrap();
+        let deserialized = NetworkMessage::from_bytes(&serialized).unwrap();
 
-        assert_eq!(deserialized.timestamp, pong_msg.timestamp);
-        assert_eq!(deserialized.nonce, pong_msg.nonce);
+        match deserialized.payload {
+            ProtocolMessage::Pong { nonce } => {
+                assert_eq!(nonce, 0xDEADBEEF);
+            }
+            _ => panic!("Expected Pong message"),
+        }
     }
 
     /// Test Address message (matches C# AddrPayload exactly)

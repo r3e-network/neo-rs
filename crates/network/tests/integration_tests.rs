@@ -1,14 +1,15 @@
 //! Integration tests for the network module.
 
-use crate::{NetworkConfig, RpcConfig};
 use neo_core::{Signer, Transaction, UInt160, UInt256, WitnessScope};
-use neo_ledger::{Blockchain, Storage, StorageItem, StorageKey};
+use neo_ledger::{Blockchain, NetworkType, Storage, StorageItem, StorageKey};
+use neo_network::messages::commands::MessageCommand;
+use neo_network::rpc::RpcConfig;
 use neo_network::*;
 use std::sync::Arc;
 
 async fn create_test_blockchain() -> Arc<Blockchain> {
     Arc::new(
-        Blockchain::new(neo_ledger::blockchain::NetworkType::TestNet)
+        Blockchain::new(neo_ledger::NetworkType::TestNet)
             .await
             .unwrap(),
     )
@@ -53,9 +54,9 @@ async fn test_p2p_node_creation() {
 
 #[tokio::test]
 async fn test_blockchain_integration() {
-    let blockchain = create_test_blockchain();
+    let blockchain = create_test_blockchain().await;
 
-    assert_eq!(blockchain.height().await, 0);
+    assert_eq!(blockchain.get_height().await, 0);
 
     println!("✅ Blockchain integration test passed");
 }
@@ -74,17 +75,17 @@ async fn test_transaction_creation() {
 #[tokio::test]
 async fn test_network_message_types() {
     // Test basic message type validation
-    let message_types = [
-        MessageType::Version,
-        MessageType::Verack,
-        MessageType::Ping,
-        MessageType::Pong,
-        MessageType::GetAddr,
-        MessageType::Addr,
+    let message_commands = [
+        MessageCommand::Version,
+        MessageCommand::Verack,
+        MessageCommand::Ping,
+        MessageCommand::Pong,
+        MessageCommand::GetAddr,
+        MessageCommand::Addr,
     ];
 
-    for msg_type in &message_types {
-        assert!(format!("{:?}", msg_type).len() > 0);
+    for cmd in &message_commands {
+        assert!(format!("{:?}", cmd).len() > 0);
     }
 
     println!("✅ Network message types test passed");
@@ -146,7 +147,7 @@ async fn test_network_types() {
 
 #[tokio::test]
 async fn test_storage_integration() {
-    let storage = Storage::new_memory();
+    let storage = Storage::new();
 
     // Test basic storage operations
     let key = b"test_key";
@@ -164,12 +165,12 @@ async fn test_storage_integration() {
 
 #[tokio::test]
 async fn test_basic_blockchain_operations() {
-    let blockchain = create_test_blockchain();
+    let blockchain = create_test_blockchain().await;
 
-    assert_eq!(blockchain.height().await, 0);
+    assert_eq!(blockchain.get_height().await, 0);
 
     // Test that blockchain can handle queries
-    let best_hash = blockchain.best_block_hash().await;
+    let best_hash = blockchain.get_best_block_hash().await.unwrap();
     assert_eq!(best_hash.as_bytes().len(), 32);
 
     println!("✅ Basic blockchain operations test passed");
@@ -215,14 +216,14 @@ async fn test_complete_network_integration() {
 
     // Test blockchain creation
     let blockchain = create_test_blockchain();
-    assert_eq!(blockchain.height().await, 0);
+    assert_eq!(blockchain.get_height().await, 0);
 
     // Test transaction creation
     let transaction = create_test_transaction(1, 1000);
     assert_eq!(transaction.nonce(), 1);
 
     // Test storage operations
-    let storage = Storage::new_memory();
+    let storage = Storage::new();
     let storage_key = StorageKey::new(b"test".to_vec(), vec![]);
     let storage_item = StorageItem::new(b"value".to_vec());
     storage.put(&storage_key, &storage_item).await.unwrap();

@@ -90,7 +90,7 @@ impl PeerInfo {
             height: 0,
             last_seen: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
+                .expect("valid address")
                 .as_secs(),
             connected_at: None,
             latency: None,
@@ -115,7 +115,7 @@ impl PeerInfo {
         self.connected_at = Some(
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
+                .expect("valid address")
                 .as_secs(),
         );
         self.failed_attempts = 0;
@@ -143,7 +143,7 @@ impl PeerInfo {
         self.latency = Some(latency.as_millis() as u64);
         self.last_seen = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
+            .expect("valid address")
             .as_secs();
     }
 
@@ -159,7 +159,7 @@ impl PeerInfo {
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
+            .expect("valid address")
             .as_secs();
 
         now > self.last_seen + retry_delay.as_secs()
@@ -525,7 +525,7 @@ impl PeerManager {
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
+            .expect("valid address")
             .as_secs();
 
         // 1. Track removal statistics for monitoring
@@ -649,11 +649,13 @@ pub enum BanType {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{NetworkError, NetworkResult};
+    use std::net::SocketAddr;
 
     #[test]
     fn test_peer_info() {
-        let address = "DEFAULT_NEO_PORT".parse().unwrap_or_default();
+        let address = "127.0.0.1:10333".parse().expect("valid address");
         let mut peer_info = PeerInfo::new(address, false);
 
         assert_eq!(peer_info.address, address);
@@ -671,7 +673,7 @@ mod tests {
 
     #[test]
     fn test_peer() {
-        let address = "DEFAULT_NEO_PORT".parse().unwrap_or_default();
+        let address = "127.0.0.1:10333".parse().expect("valid address");
         let mut peer = Peer::new(address, false);
 
         peer.record_bytes_sent(100);
@@ -692,7 +694,7 @@ mod tests {
     #[tokio::test]
     async fn test_peer_manager() {
         let manager = PeerManager::new(10);
-        let address = "DEFAULT_NEO_PORT".parse().unwrap_or_default();
+        let address = "127.0.0.1:10333".parse().expect("valid address");
 
         // Add known peer
         manager.add_known_peer(address).await;
