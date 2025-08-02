@@ -86,7 +86,7 @@ pub fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, hex::FromHexError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{BlsError as Error, BlsResult as Result};
 
     #[test]
     fn test_hash_to_g2() {

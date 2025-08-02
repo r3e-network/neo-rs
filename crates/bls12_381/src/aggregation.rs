@@ -262,7 +262,7 @@ impl AggregatePublicKey {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use crate::{BlsError as Error, BlsResult as Result};
     use crate::keys::KeyPair;
     use crate::Bls12381;
     use rand::thread_rng;
