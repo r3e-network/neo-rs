@@ -213,7 +213,7 @@ impl AggregatePublicKey {
             let msg_affine = message_point.to_affine();
 
             let pairing_result = bls12_381::pairing(&pk_affine, &msg_affine);
-            right_pairing = right_pairing + pairing_result;
+            right_pairing += pairing_result;
         }
 
         // 6. Verify the pairing equation

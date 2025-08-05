@@ -4,7 +4,6 @@
 //! Tests are based on the C# Neo.Json serialization and deserialization patterns.
 
 use neo_json::*;
-use serde_json;
 
 #[cfg(test)]
 mod serialization_tests {
