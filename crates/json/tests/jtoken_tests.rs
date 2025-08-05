@@ -22,7 +22,7 @@ mod jtoken_tests {
         assert_ne!(true_token, false_token);
 
         let int_token = JToken::Number(42.0);
-        let float_token = JToken::Number(3.14159);
+        let float_token = JToken::Number(std::f64::consts::PI);
         let zero_token = JToken::Number(0.0);
         let negative_token = JToken::Number(-123.456);
 
