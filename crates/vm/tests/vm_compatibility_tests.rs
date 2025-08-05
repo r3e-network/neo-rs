@@ -105,7 +105,7 @@ pub fn execute_and_verify(script_bytes: Vec<u8>, expected: &ExpectedExecutionRes
     let mut engine = ExecutionEngine::new(None);
 
     // Load script and execute
-    if let Ok(_context) = engine.load_script(script, 0, 0) {
+    if let Ok(_context) = engine.load_script(script, -1, 0) {
         let _ = engine.execute();
 
         // Verify VM state
@@ -240,7 +240,7 @@ mod tests {
             let script = Script::new(script_bytes, false).expect("Failed to create script");
             let mut engine = ExecutionEngine::new(None);
 
-            if let Ok(_context) = engine.load_script(script, 0, 0) {
+            if let Ok(_context) = engine.load_script(script, -1, 0) {
                 let _ = engine.execute();
 
                 // Verify the VM state and results
@@ -270,11 +270,14 @@ mod tests {
         let test_cases = vec![
             // DUP operation
             (vec![OpCode::PUSH5 as u8, OpCode::DUP as u8], vec!["5", "5"]),
-            // SWAP operation
+            // SWAP operation - after PUSH1 PUSH2 SWAP, stack is [2, 1] with 1 on top
+            // Result stack gets items in order from top, so result is [1, 2]
             (
                 vec![OpCode::PUSH1 as u8, OpCode::PUSH2 as u8, OpCode::SWAP as u8],
                 vec!["1", "2"],
             ),
+            // ROT operation - rotates top 3 items: [1,2,3] -> [2,3,1]
+            // Result stack order is [1, 3, 2]
             (
                 vec![
                     OpCode::PUSH1 as u8,
@@ -282,15 +285,16 @@ mod tests {
                     OpCode::PUSH3 as u8,
                     OpCode::ROT as u8,
                 ],
-                vec!["2", "3", "1"],
+                vec!["1", "3", "2"],
             ),
         ];
 
         for (script_bytes, expected) in test_cases {
+            println!("\nTesting stack operation with script: {:?}", script_bytes);
             let script = Script::new(script_bytes, false).expect("Failed to create script");
             let mut engine = ExecutionEngine::new(None);
 
-            if let Ok(_context) = engine.load_script(script, 0, 0) {
+            if let Ok(_context) = engine.load_script(script, -1, 0) {
                 let _ = engine.execute();
 
                 assert_eq!(engine.state(), VMState::HALT);
@@ -315,8 +319,15 @@ mod tests {
     #[test]
     fn test_comparison_operations_compatibility() {
         let test_cases = vec![
-            // EQUAL operation
-            (vec![OpCode::PUSH5 as u8, OpCode::EQUAL as u8], vec!["1"]), // true
+            // EQUAL operation - needs two operands
+            (
+                vec![
+                    OpCode::PUSH5 as u8,
+                    OpCode::PUSH5 as u8,
+                    OpCode::EQUAL as u8,
+                ],
+                vec!["1"],
+            ), // true
             (
                 vec![
                     OpCode::PUSH5 as u8,
@@ -325,8 +336,15 @@ mod tests {
                 ],
                 vec!["0"],
             ), // false
-            // NUMEQUAL operation
-            (vec![OpCode::PUSH5 as u8, OpCode::NUMEQUAL as u8], vec!["1"]), // true
+            // NUMEQUAL operation - needs two operands
+            (
+                vec![
+                    OpCode::PUSH5 as u8,
+                    OpCode::PUSH5 as u8,
+                    OpCode::NUMEQUAL as u8,
+                ],
+                vec!["1"],
+            ), // true
             (
                 vec![
                     OpCode::PUSH5 as u8,
@@ -359,7 +377,7 @@ mod tests {
             let script = Script::new(script_bytes, false).expect("Failed to create script");
             let mut engine = ExecutionEngine::new(None);
 
-            if let Ok(_context) = engine.load_script(script, 0, 0) {
+            if let Ok(_context) = engine.load_script(script, -1, 0) {
                 let _ = engine.execute();
 
                 assert_eq!(engine.state(), VMState::HALT);

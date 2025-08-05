@@ -6,7 +6,7 @@
 // Always import standard library types
 extern crate std;
 
-use thiserror::Error;
+// Removed unused import: thiserror::Error
 
 pub mod application_engine;
 pub mod call_flags;

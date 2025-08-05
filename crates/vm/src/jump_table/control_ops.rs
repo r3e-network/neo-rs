@@ -76,7 +76,7 @@ fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> 
     // Calculate the new instruction pointer
     let new_ip = context.instruction_pointer() as i32 + offset as i32;
     if new_ip < 0 || new_ip > context.script().len() as i32 {
-        return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+        return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
     }
 
     // Set the new instruction pointer
@@ -99,7 +99,7 @@ fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     // Calculate the new instruction pointer
     let new_ip = context.instruction_pointer() as i32 + offset;
     if new_ip < 0 || new_ip > context.script().len() as i32 {
-        return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+        return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
     }
 
     // Set the new instruction pointer
@@ -126,7 +126,7 @@ fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -154,7 +154,7 @@ fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -182,7 +182,7 @@ fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -210,7 +210,7 @@ fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -239,7 +239,7 @@ fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -268,7 +268,7 @@ fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -297,7 +297,7 @@ fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -326,7 +326,7 @@ fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -355,7 +355,7 @@ fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -384,7 +384,7 @@ fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -413,7 +413,7 @@ fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -442,7 +442,7 @@ fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -471,7 +471,7 @@ fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -500,7 +500,7 @@ fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -529,7 +529,7 @@ fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -558,7 +558,7 @@ fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {}", new_ip)));
+            return Err(VmError::invalid_operation_msg(format!("Jump out of bounds: {new_ip}")));
         }
 
         // Set the new instruction pointer
@@ -582,7 +582,7 @@ fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()>
     // Calculate the call target
     let call_target = context.instruction_pointer() as i32 + offset as i32;
     if call_target < 0 || call_target > context.script().len() as i32 {
-        return Err(VmError::invalid_operation_msg(format!("Call target out of bounds: {}", call_target)));
+        return Err(VmError::invalid_operation_msg(format!("Call target out of bounds: {call_target}")));
     }
 
     let script = context.script().clone();
@@ -608,7 +608,7 @@ fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
     // Calculate the call target
     let call_target = context.instruction_pointer() as i32 + offset;
     if call_target < 0 || call_target > context.script().len() as i32 {
-        return Err(VmError::invalid_operation_msg(format!("Call target out of bounds: {}", call_target)));
+        return Err(VmError::invalid_operation_msg(format!("Call target out of bounds: {call_target}")));
     }
 
     let script = context.script().clone();

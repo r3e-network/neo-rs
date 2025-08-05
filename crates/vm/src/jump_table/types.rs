@@ -34,7 +34,7 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
 
     // Convert the type byte to a StackItemType
     let item_type = StackItemType::from_byte(type_byte)
-        .ok_or_else(|| VmError::invalid_instruction_msg(format!("Invalid type: {}", type_byte)))?;
+        .ok_or_else(|| VmError::invalid_instruction_msg(format!("Invalid type: {type_byte}")))?;
 
     // Pop the item from the stack
     let item = context.pop()?;
@@ -102,7 +102,7 @@ fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
 
     // Convert the type byte to a StackItemType
     let item_type = StackItemType::from_byte(type_byte)
-        .ok_or_else(|| VmError::invalid_instruction_msg(format!("Invalid type: {}", type_byte)))?;
+        .ok_or_else(|| VmError::invalid_instruction_msg(format!("Invalid type: {type_byte}")))?;
 
     // Peek the item on the stack
     let item = context.peek(0)?;

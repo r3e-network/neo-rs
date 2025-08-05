@@ -40,16 +40,15 @@ mod tests {
         array.add(Some(JToken::String("test".to_string())));
         array.add(Some(JToken::Number(42.0)));
 
-        assert_eq!(array.count(), 2);
-        assert!(!array.is_empty_container());
+        assert_eq!(array.len(), 2);
+        assert!(!array.is_empty());
 
-        let children = array.children();
-        assert_eq!(children.len(), 2);
-        assert_eq!(children[0], Some(&JToken::String("test".to_string())));
-        assert_eq!(children[1], Some(&JToken::Number(42.0)));
+        // Test accessing elements
+        assert_eq!(array.get(0), Some(&JToken::String("test".to_string())));
+        assert_eq!(array.get(1), Some(&JToken::Number(42.0)));
 
-        array.clear_container();
-        assert!(array.is_empty_container());
-        assert_eq!(array.count(), 0);
+        array.clear();
+        assert!(array.is_empty());
+        assert_eq!(array.len(), 0);
     }
 }

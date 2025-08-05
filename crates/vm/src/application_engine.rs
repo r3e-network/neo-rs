@@ -7,7 +7,7 @@ use crate::error::{VmError, VmResult};
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::{ExecutionEngine, ExecutionEngineLimits, VMState};
 use crate::instruction::Instruction;
-use crate::interop_service::{InteropDescriptor, InteropService};
+use crate::interop_service::InteropService;
 use crate::op_code::OpCode;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
@@ -363,7 +363,7 @@ impl ApplicationEngine {
                             instruction
                         }
                         Err(err) => {
-                            let error_msg = format!("{:?}", err);
+                            let error_msg = format!("{err:?}");
                             if error_msg.contains("Instruction pointer is out of range") {
                                 // Normal end of script - halt
                                 log::debug!("ApplicationEngine: End of script, halting");
@@ -936,6 +936,8 @@ impl From<ApplicationEngine> for ExecutionEngine {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_application_engine_creation() {
         let engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
@@ -959,7 +961,7 @@ mod tests {
         assert_eq!(engine.gas_consumed(), 90);
 
         // Exceed the gas limit
-        let result = engine.consume_gas(ADDRESS_SIZE);
+        let result = engine.consume_gas(20);
         assert!(result.is_err());
     }
 
@@ -974,7 +976,7 @@ mod tests {
         // Get the snapshots
         assert_eq!(engine.get_snapshot(&[1, 2, 3]), Some(&[4, 5, 6][..]));
         assert_eq!(engine.get_snapshot(&[7, 8, 9]), Some(&[10, 11, 12][..]));
-        assert_eq!(engine.get_snapshot(&[13, 14, SECONDS_PER_BLOCK]), None);
+        assert_eq!(engine.get_snapshot(&[13, 14, 15]), None);
     }
 
     #[test]
@@ -1030,7 +1032,7 @@ mod tests {
                 3
             );
         } else {
-            return Err(Error::Other(format!("Execution failed: {:?}", state)));
+            panic!("Execution failed: {state:?}");
         }
     }
 }

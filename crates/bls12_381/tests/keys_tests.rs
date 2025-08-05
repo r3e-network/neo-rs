@@ -3,7 +3,7 @@
 //! These tests ensure full compatibility with C# Neo.Cryptography.BLS12_381 key operations.
 //! Tests are based on the C# BLS12_381.Keys test suite.
 
-use bls12_381::*;
+use neo_bls12_381::*;
 use rand::{thread_rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 

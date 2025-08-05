@@ -44,7 +44,12 @@ impl RpcClient {
 
     /// Gets the best block hash
     pub async fn get_best_block_hash(&self) -> Result<UInt256, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new("getbestblockhash".to_string(), json!([]), Some(json!(1)));
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getbestblockhash".to_string(),
+            params: json!([]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -70,7 +75,12 @@ impl RpcClient {
             json!([hash.to_string(), 0])
         };
 
-        let request = RpcRequest::new("getblock".to_string(), params, Some(json!(1)));
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getblock".to_string(),
+            params,
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -95,7 +105,12 @@ impl RpcClient {
             json!([index, 0])
         };
 
-        let request = RpcRequest::new("getblock".to_string(), params, Some(json!(1)));
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getblock".to_string(),
+            params,
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -110,7 +125,12 @@ impl RpcClient {
 
     /// Gets block count
     pub async fn get_block_count(&self) -> Result<u32, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new("getblockcount".to_string(), json!([]), Some(json!(1)));
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getblockcount".to_string(),
+            params: json!([]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -135,7 +155,12 @@ impl RpcClient {
             json!([hash.to_string(), 0])
         };
 
-        let request = RpcRequest::new("getrawtransaction".to_string(), params, Some(json!(1)));
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getrawtransaction".to_string(),
+            params,
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -153,11 +178,12 @@ impl RpcClient {
         &self,
         raw_transaction: &str,
     ) -> Result<UInt256, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new(
-            "sendrawtransaction".to_string(),
-            json!([raw_transaction]),
-            Some(json!(1)),
-        );
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "sendrawtransaction".to_string(),
+            params: json!([raw_transaction]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -176,11 +202,12 @@ impl RpcClient {
         &self,
         hash: &UInt256,
     ) -> Result<RpcApplicationLog, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new(
-            "getapplicationlog".to_string(),
-            json!([hash.to_string()]),
-            Some(json!(1)),
-        );
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getapplicationlog".to_string(),
+            params: json!([hash.to_string()]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -198,11 +225,12 @@ impl RpcClient {
         &self,
         address: &UInt160,
     ) -> Result<Vec<RpcNep17Balance>, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new(
-            "getnep17balances".to_string(),
-            json!([address.to_string()]),
-            Some(json!(1)),
-        );
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getnep17balances".to_string(),
+            params: json!([address.to_string()]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -219,7 +247,12 @@ impl RpcClient {
 
     /// Gets validators
     pub async fn get_validators(&self) -> Result<Vec<RpcValidator>, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new("getvalidators".to_string(), json!([]), Some(json!(1)));
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getvalidators".to_string(),
+            params: json!([]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -234,7 +267,12 @@ impl RpcClient {
 
     /// Gets connected peers
     pub async fn get_peers(&self) -> Result<RpcPeers, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new("getpeers".to_string(), json!([]), Some(json!(1)));
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getpeers".to_string(),
+            params: json!([]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -249,7 +287,12 @@ impl RpcClient {
 
     /// Gets version information
     pub async fn get_version(&self) -> Result<RpcVersion, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new("getversion".to_string(), json!([]), Some(json!(1)));
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getversion".to_string(),
+            params: json!([]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -269,11 +312,12 @@ impl RpcClient {
         operation: &str,
         params: Vec<Value>,
     ) -> Result<RpcExecution, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new(
-            "invokefunction".to_string(),
-            json!([script_hash.to_string(), operation, params]),
-            Some(json!(1)),
-        );
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "invokefunction".to_string(),
+            params: json!([script_hash.to_string(), operation, params]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -291,7 +335,12 @@ impl RpcClient {
         &self,
         script: &str,
     ) -> Result<RpcExecution, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new("invokescript".to_string(), json!([script]), Some(json!(1)));
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "invokescript".to_string(),
+            params: json!([script]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -310,11 +359,12 @@ impl RpcClient {
         script_hash: &UInt160,
         key: &str,
     ) -> Result<Option<String>, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new(
-            "getstorage".to_string(),
-            json!([script_hash.to_string(), key]),
-            Some(json!(1)),
-        );
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getstorage".to_string(),
+            params: json!([script_hash.to_string(), key]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -336,11 +386,12 @@ impl RpcClient {
         &self,
         should_get_unverified: bool,
     ) -> Result<Vec<UInt256>, Box<dyn std::error::Error>> {
-        let request = RpcRequest::new(
-            "getrawmempool".to_string(),
-            json!([should_get_unverified]),
-            Some(json!(1)),
-        );
+        let request = RpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "getrawmempool".to_string(),
+            params: json!([should_get_unverified]),
+            id: Some(json!(1)),
+        };
         let response = self.send_request(request).await?;
 
         if let Some(result) = response.result {
@@ -383,7 +434,7 @@ impl RpcMethods {
 
     /// Creates standard RPC error responses
     pub fn create_error_response(code: i32, message: String, id: Option<Value>) -> RpcResponse {
-        RpcResponse::error(crate::models::RpcError::new(code, message), id)
+        RpcResponse::error(crate::models::JsonRpcError::new(code, message), id)
     }
 
     /// Parses standard RPC parameters

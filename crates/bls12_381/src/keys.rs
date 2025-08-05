@@ -1,6 +1,5 @@
 //! BLS12-381 key types and operations.
 
-use crate::constants::HASH_SIZE;
 use crate::constants::{PRIVATE_KEY_SIZE, PUBLIC_KEY_SIZE};
 use crate::error::{BlsError, BlsResult};
 use crate::signature::{Signature, SignatureScheme};
@@ -301,6 +300,8 @@ impl Drop for KeyPair {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::constants::HASH_SIZE;
     use rand::thread_rng;
 
     #[test]

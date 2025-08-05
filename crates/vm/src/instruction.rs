@@ -3,8 +3,8 @@
 //! This module provides instruction representation and parsing functionality.
 
 use crate::error::{VmError, VmResult};
-use crate::io;
 use crate::op_code::OpCode;
+use neo_io;
 const HASH_SIZE: usize = 32;
 
 /// Represents the size of an operand for an instruction.
@@ -49,7 +49,7 @@ impl Instruction {
 
         let opcode = script[position];
         let opcode = OpCode::try_from(opcode)
-            .map_err(|_| VmError::parse(format!("Invalid opcode: {}", opcode)))?;
+            .map_err(|_| VmError::parse(format!("Invalid opcode: {opcode}")))?;
 
         let operand = if opcode == OpCode::SYSCALL {
             let operand_start = position + 1;
@@ -196,7 +196,7 @@ impl Instruction {
 
         let opcode = reader.read_byte()?;
         let opcode = OpCode::try_from(opcode)
-            .map_err(|_| VmError::parse(format!("Invalid opcode: {}", opcode)))?;
+            .map_err(|_| VmError::parse(format!("Invalid opcode: {opcode}")))?;
 
         let operand = if opcode == OpCode::SYSCALL {
             if reader.position() >= reader.len() {
@@ -317,7 +317,7 @@ impl Instruction {
     }
 
     /// Parses an instruction from a reader.
-    pub fn parse_from_reader(reader: &mut io::MemoryReader) -> VmResult<Self> {
+    pub fn parse_from_reader(reader: &mut neo_io::MemoryReader) -> VmResult<Self> {
         let pointer = reader.position();
 
         if pointer >= reader.len() {
@@ -326,7 +326,7 @@ impl Instruction {
 
         let opcode = reader.read_byte()?;
         let opcode = OpCode::try_from(opcode)
-            .map_err(|_| VmError::parse(format!("Invalid opcode: {}", opcode)))?;
+            .map_err(|_| VmError::parse(format!("Invalid opcode: {opcode}")))?;
 
         let operand = if opcode == OpCode::SYSCALL {
             if reader.position() >= reader.len() {
@@ -718,7 +718,10 @@ impl FromOperand for u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutionEngine, StackItem, VMState, VmError};
+    use super::*;
+    use crate::error::VmError;
+    use crate::execution_engine::{ExecutionEngine, VMState};
+    use crate::stack_item::StackItem;
 
     #[test]
     fn test_instruction_parsing() {
@@ -772,7 +775,7 @@ mod tests {
             0x03,
         ];
 
-        let mut reader = io::MemoryReader::new(script);
+        let mut reader = neo_io::MemoryReader::new(script);
 
         // Parse PUSH1
         let instruction =

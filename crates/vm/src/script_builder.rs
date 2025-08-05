@@ -260,7 +260,7 @@ impl Default for ScriptBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutionEngine, StackItem, VMState, VmError};
+    use super::*;
 
     #[test]
     fn test_emit_opcode() {

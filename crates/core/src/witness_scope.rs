@@ -16,25 +16,25 @@ pub struct WitnessScope(u8);
 
 impl WitnessScope {
     /// Indicates that no contract was witnessed. Only sign the transaction.
-    pub const None: WitnessScope = WitnessScope(0x00);
+    pub const NONE: WitnessScope = WitnessScope(0x00);
 
     /// Indicates that the calling contract must be the entry contract.
     /// The witness/permission/signature given on first invocation will automatically expire if entering deeper internal invokes.
     /// This can be the default safe choice for native NEO/GAS (previously used on Neo 2 as "attach" mode).
-    pub const CalledByEntry: WitnessScope = WitnessScope(0x01);
+    pub const CALLED_BY_ENTRY: WitnessScope = WitnessScope(0x01);
 
     /// Custom hash for contract-specific.
-    pub const CustomContracts: WitnessScope = WitnessScope(0x10);
+    pub const CUSTOM_CONTRACTS: WitnessScope = WitnessScope(0x10);
 
     /// Custom pubkey for group members.
-    pub const CustomGroups: WitnessScope = WitnessScope(0x20);
+    pub const CUSTOM_GROUPS: WitnessScope = WitnessScope(0x20);
 
     /// Indicates that the current context must satisfy the specified rules.
-    pub const WitnessRules: WitnessScope = WitnessScope(0x40);
+    pub const WITNESS_RULES: WitnessScope = WitnessScope(0x40);
 
     /// Global scope allows this witness in all contexts (default Neo 2 behavior).
     /// This cannot be combined with other flags.
-    pub const Global: WitnessScope = WitnessScope(0x80);
+    pub const GLOBAL: WitnessScope = WitnessScope(0x80);
 }
 
 impl WitnessScope {
@@ -88,12 +88,12 @@ impl WitnessScope {
     /// Some(WitnessScope) if the value is valid, None otherwise
     pub fn from_byte(value: u8) -> Option<Self> {
         match value {
-            0x00 => Some(WitnessScope::None),
-            0x01 => Some(WitnessScope::CalledByEntry),
-            0x10 => Some(WitnessScope::CustomContracts),
-            0x20 => Some(WitnessScope::CustomGroups),
-            0x40 => Some(WitnessScope::WitnessRules),
-            0x80 => Some(WitnessScope::Global),
+            0x00 => Some(WitnessScope::NONE),
+            0x01 => Some(WitnessScope::CALLED_BY_ENTRY),
+            0x10 => Some(WitnessScope::CUSTOM_CONTRACTS),
+            0x20 => Some(WitnessScope::CUSTOM_GROUPS),
+            0x40 => Some(WitnessScope::WITNESS_RULES),
+            0x80 => Some(WitnessScope::GLOBAL),
             _ => {
                 // This implements the C# logic: handling valid flag combinations
 
@@ -132,15 +132,15 @@ impl WitnessScope {
     pub fn is_valid(self) -> bool {
         let value = self.0;
 
-        if self.has_flag(WitnessScope::Global) && value != WitnessScope::Global.0 {
+        if self.has_flag(WitnessScope::GLOBAL) && value != WitnessScope::GLOBAL.0 {
             return false;
         }
 
-        let valid_flags = WitnessScope::CalledByEntry.0
-            | WitnessScope::CustomContracts.0
-            | WitnessScope::CustomGroups.0
-            | WitnessScope::WitnessRules.0
-            | WitnessScope::Global.0;
+        let valid_flags = WitnessScope::CALLED_BY_ENTRY.0
+            | WitnessScope::CUSTOM_CONTRACTS.0
+            | WitnessScope::CUSTOM_GROUPS.0
+            | WitnessScope::WITNESS_RULES.0
+            | WitnessScope::GLOBAL.0;
 
         (value & !valid_flags) == 0
     }
@@ -148,35 +148,35 @@ impl WitnessScope {
 
 impl Default for WitnessScope {
     fn default() -> Self {
-        WitnessScope::None
+        WitnessScope::NONE
     }
 }
 
 impl fmt::Display for WitnessScope {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            WitnessScope::None => write!(f, "None"),
-            WitnessScope::CalledByEntry => write!(f, "CalledByEntry"),
-            WitnessScope::CustomContracts => write!(f, "CustomContracts"),
-            WitnessScope::CustomGroups => write!(f, "CustomGroups"),
-            WitnessScope::WitnessRules => write!(f, "WitnessRules"),
-            WitnessScope::Global => write!(f, "Global"),
+            WitnessScope::NONE => write!(f, "None"),
+            WitnessScope::CALLED_BY_ENTRY => write!(f, "CalledByEntry"),
+            WitnessScope::CUSTOM_CONTRACTS => write!(f, "CustomContracts"),
+            WitnessScope::CUSTOM_GROUPS => write!(f, "CustomGroups"),
+            WitnessScope::WITNESS_RULES => write!(f, "WitnessRules"),
+            WitnessScope::GLOBAL => write!(f, "Global"),
             _ => {
                 // Handle combined flags by showing individual components
                 let mut parts = Vec::new();
-                if self.has_flag(WitnessScope::CalledByEntry) {
+                if self.has_flag(WitnessScope::CALLED_BY_ENTRY) {
                     parts.push("CalledByEntry");
                 }
-                if self.has_flag(WitnessScope::CustomContracts) {
+                if self.has_flag(WitnessScope::CUSTOM_CONTRACTS) {
                     parts.push("CustomContracts");
                 }
-                if self.has_flag(WitnessScope::CustomGroups) {
+                if self.has_flag(WitnessScope::CUSTOM_GROUPS) {
                     parts.push("CustomGroups");
                 }
-                if self.has_flag(WitnessScope::WitnessRules) {
+                if self.has_flag(WitnessScope::WITNESS_RULES) {
                     parts.push("WitnessRules");
                 }
-                if self.has_flag(WitnessScope::Global) {
+                if self.has_flag(WitnessScope::GLOBAL) {
                     parts.push("Global");
                 }
                 if parts.is_empty() {
@@ -191,7 +191,7 @@ impl fmt::Display for WitnessScope {
 
 impl From<u8> for WitnessScope {
     fn from(value: u8) -> Self {
-        Self::from_byte(value).unwrap_or(WitnessScope::None)
+        Self::from_byte(value).unwrap_or(WitnessScope::NONE)
     }
 }
 
@@ -203,66 +203,62 @@ impl From<WitnessScope> for u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, Transaction, UInt160, UInt256};
+    use super::*;
+    use crate::{Block, Transaction, UInt160, UInt256};
 
     #[test]
     fn test_witness_scope_values() {
-        assert_eq!(WitnessScope::None.to_byte(), 0x00);
-        assert_eq!(WitnessScope::CalledByEntry.to_byte(), 0x01);
-        assert_eq!(WitnessScope::CustomContracts.to_byte(), 0x10);
-        assert_eq!(WitnessScope::CustomGroups.to_byte(), 0x20);
-        assert_eq!(WitnessScope::WitnessRules.to_byte(), 0x40);
-        assert_eq!(WitnessScope::Global.to_byte(), 0x80);
+        assert_eq!(WitnessScope::NONE.to_byte(), 0x00);
+        assert_eq!(WitnessScope::CALLED_BY_ENTRY.to_byte(), 0x01);
+        assert_eq!(WitnessScope::CUSTOM_CONTRACTS.to_byte(), 0x10);
+        assert_eq!(WitnessScope::CUSTOM_GROUPS.to_byte(), 0x20);
+        assert_eq!(WitnessScope::WITNESS_RULES.to_byte(), 0x40);
+        assert_eq!(WitnessScope::GLOBAL.to_byte(), 0x80);
     }
-
     #[test]
     fn test_witness_scope_has_flag() {
-        let scope = WitnessScope::CalledByEntry;
-        assert!(scope.has_flag(WitnessScope::CalledByEntry));
-        assert!(!scope.has_flag(WitnessScope::CustomContracts));
-
-        let combined = WitnessScope::CalledByEntry.combine(WitnessScope::CustomContracts);
-        assert!(combined.has_flag(WitnessScope::CalledByEntry));
-        assert!(combined.has_flag(WitnessScope::CustomContracts));
+        let scope = WitnessScope::CALLED_BY_ENTRY;
+        assert!(scope.has_flag(WitnessScope::CALLED_BY_ENTRY));
+        assert!(!scope.has_flag(WitnessScope::CUSTOM_CONTRACTS));
+        let combined = WitnessScope::CALLED_BY_ENTRY.combine(WitnessScope::CUSTOM_CONTRACTS);
+        assert!(combined.has_flag(WitnessScope::CALLED_BY_ENTRY));
+        assert!(combined.has_flag(WitnessScope::CUSTOM_CONTRACTS));
     }
-
     #[test]
     fn test_witness_scope_from_byte() {
-        assert_eq!(WitnessScope::from_byte(0x00), Some(WitnessScope::None));
+        assert_eq!(WitnessScope::from_byte(0x00), Some(WitnessScope::NONE));
         assert_eq!(
             WitnessScope::from_byte(0x01),
-            Some(WitnessScope::CalledByEntry)
+            Some(WitnessScope::CALLED_BY_ENTRY)
         );
-        assert_eq!(WitnessScope::from_byte(0x80), Some(WitnessScope::Global));
+        assert_eq!(WitnessScope::from_byte(0x80), Some(WitnessScope::GLOBAL));
         assert_eq!(WitnessScope::from_byte(0xFF), None);
     }
-
     #[test]
     fn test_witness_scope_is_valid() {
-        assert!(WitnessScope::None.is_valid());
-        assert!(WitnessScope::CalledByEntry.is_valid());
-        assert!(WitnessScope::Global.is_valid());
-
+        assert!(WitnessScope::NONE.is_valid());
+        assert!(WitnessScope::CALLED_BY_ENTRY.is_valid());
+        assert!(WitnessScope::GLOBAL.is_valid());
         // Global cannot be combined with other flags
         let invalid_global = WitnessScope::from_byte(0x81); // Global + CalledByEntry
         if let Some(scope) = invalid_global {
             assert!(!scope.is_valid());
         }
     }
-
     #[test]
     fn test_witness_scope_display() {
-        assert_eq!(format!("{}", WitnessScope::None), "None");
-        assert_eq!(format!("{}", WitnessScope::CalledByEntry), "CalledByEntry");
-        assert_eq!(format!("{}", WitnessScope::Global), "Global");
+        assert_eq!(format!("{}", WitnessScope::NONE), "None");
+        assert_eq!(
+            format!("{}", WitnessScope::CALLED_BY_ENTRY),
+            "CalledByEntry"
+        );
+        assert_eq!(format!("{}", WitnessScope::GLOBAL), "Global");
     }
-
     #[test]
     fn test_witness_scope_conversions() {
-        let scope = WitnessScope::CalledByEntry;
+        let scope = WitnessScope::CALLED_BY_ENTRY;
         let byte_value: u8 = scope.into();
         assert_eq!(byte_value, 0x01);
-
         let converted_scope: WitnessScope = byte_value.into();
         assert_eq!(converted_scope, scope);
     }

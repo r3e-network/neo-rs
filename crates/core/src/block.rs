@@ -52,7 +52,7 @@ impl BlockHeader {
 
         // Convert to UInt256
         UInt256::from_bytes(&hash).map_err(|e| crate::CoreError::Serialization {
-            message: format!("Hash conversion failed: {}", e),
+            message: format!("Hash conversion failed: {e}"),
         })
     }
 }

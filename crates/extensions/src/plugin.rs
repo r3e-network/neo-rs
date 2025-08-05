@@ -358,6 +358,7 @@ macro_rules! register_plugin {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
     use tempfile::tempdir;
 

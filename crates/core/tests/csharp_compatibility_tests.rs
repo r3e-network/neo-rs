@@ -252,11 +252,11 @@ fn test_transaction_to_array() {
 #[test]
 fn test_signer_creation_and_validation() {
     let account = UInt160::zero();
-    let signer = Signer::new(account, WitnessScope::CalledByEntry);
+    let signer = Signer::new(account, WitnessScope::CALLED_BY_ENTRY);
 
     // Test signer properties exactly like C# Neo
     assert_eq!(signer.account, account);
-    assert_eq!(signer.scopes, WitnessScope::CalledByEntry);
+    assert_eq!(signer.scopes, WitnessScope::CALLED_BY_ENTRY);
     assert!(signer.allowed_contracts.is_empty());
     assert!(signer.allowed_groups.is_empty());
 
@@ -269,11 +269,11 @@ fn test_signer_creation_and_validation() {
 #[test]
 fn test_signer_json_serialization() {
     let account = UInt160::from_str("0x0102030405060708090a0b0c0d0e0f1011121314").unwrap();
-    let signer = Signer::new(account, WitnessScope::Global);
+    let signer = Signer::new(account, WitnessScope::GLOBAL);
 
     // Test that signer has proper structure
     assert_eq!(signer.account, account);
-    assert_eq!(signer.scopes, WitnessScope::Global);
+    assert_eq!(signer.scopes, WitnessScope::GLOBAL);
 
     // Test size calculation
     let size = signer.size();

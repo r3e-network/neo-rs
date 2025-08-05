@@ -253,7 +253,7 @@ impl Witness {
 
         ECDsa::verify_signature_secp256r1(hash_data, signature, public_key).map_err(|e| {
             CoreError::Cryptographic {
-                message: format!("ECDSA verification failed: {}", e),
+                message: format!("ECDSA verification failed: {e}"),
             }
         })
     }
@@ -269,7 +269,7 @@ impl Witness {
         let script_hash = hash160(&verification_script);
 
         UInt160::from_bytes(&script_hash).map_err(|e| CoreError::InvalidData {
-            message: format!("Invalid script hash: {}", e),
+            message: format!("Invalid script hash: {e}"),
         })
     }
 
@@ -373,7 +373,9 @@ impl fmt::Display for Witness {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
+    use crate::{CoreError as Error, CoreResult as Result};
+    use neo_io::{BinaryWriter, MemoryReader, Serializable};
 
     #[test]
     fn test_witness_new() {
@@ -382,50 +384,40 @@ mod tests {
         assert!(witness.verification_script.is_empty());
         assert!(witness.script_hash.is_none());
     }
-
     #[test]
     fn test_witness_empty() {
         let witness = Witness::empty();
         assert!(witness.invocation_script.is_empty());
         assert!(witness.verification_script.is_empty());
     }
-
     #[test]
     fn test_witness_new_with_scripts() {
         let invocation = vec![1, 2, 3];
         let verification = vec![4, 5, 6];
         let witness = Witness::new_with_scripts(invocation.clone(), verification.clone());
-
         assert_eq!(witness.invocation_script, invocation);
         assert_eq!(witness.verification_script, verification);
     }
-
     #[test]
     fn test_witness_size() {
         let witness = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
         let size = witness.get_size();
         assert_eq!(size, 8);
     }
-
     #[test]
     fn test_witness_clone() {
         let original = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
         let cloned = original.clone_witness();
-
         assert_eq!(original.invocation_script, cloned.invocation_script);
         assert_eq!(original.verification_script, cloned.verification_script);
     }
-
     #[test]
     fn test_witness_serialization() {
         let witness = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
-
         let mut writer = neo_io::BinaryWriter::new();
         <Witness as Serializable>::serialize(&witness, &mut writer).unwrap();
-
         let mut reader = neo_io::MemoryReader::new(&writer.to_bytes());
         let deserialized = <Witness as Serializable>::deserialize(&mut reader).unwrap();
-
         assert_eq!(witness.invocation_script, deserialized.invocation_script);
         assert_eq!(
             witness.verification_script,

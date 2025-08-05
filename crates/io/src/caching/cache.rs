@@ -7,6 +7,13 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
+/// Type alias for the inner dictionary structure
+type CacheDictionary<TKey, TValue> =
+    Arc<Mutex<IndexMap<TKey, Arc<Mutex<CacheItem<TKey, TValue>>>>>>;
+/// Type alias for the on_access function type
+#[allow(dead_code)]
+type OnAccessFn<TKey, TValue> = fn(&mut CacheItem<TKey, TValue>);
+
 /// A cache item with doubly-linked list functionality.
 /// This matches the C# CacheItem class exactly.
 pub struct CacheItem<TKey, TValue>
@@ -208,7 +215,7 @@ where
     /// The head of the doubly-linked list
     head: Arc<Mutex<CacheItem<TKey, TValue>>>,
     /// The internal dictionary for fast lookups
-    inner_dictionary: Arc<Mutex<IndexMap<TKey, Arc<Mutex<CacheItem<TKey, TValue>>>>>>,
+    inner_dictionary: CacheDictionary<TKey, TValue>,
     /// Maximum capacity of the cache
     max_capacity: usize,
     /// Function to get key from item
@@ -424,6 +431,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[derive(Debug, Clone, PartialEq, Default)]
     struct TestItem {
         id: u32,
@@ -454,7 +462,7 @@ mod tests {
         cache.add(item.clone());
         assert_eq!(cache.count(), 1);
 
-        let retrieved = cache.get(&1).cloned().unwrap_or_default();
+        let retrieved = cache.get(&1).unwrap_or_default();
         assert_eq!(retrieved, item);
     }
 
@@ -466,7 +474,7 @@ mod tests {
         for i in 1..=3 {
             cache.add(TestItem {
                 id: i,
-                data: format!("test{}", i),
+                data: format!("test{i}"),
             });
         }
         assert_eq!(cache.count(), 3);
@@ -520,7 +528,7 @@ mod tests {
         for i in 1..=3 {
             cache.add(TestItem {
                 id: i,
-                data: format!("test{}", i),
+                data: format!("test{i}"),
             });
         }
         assert_eq!(cache.count(), 3);

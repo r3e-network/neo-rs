@@ -13,15 +13,15 @@ use std::sync::RwLock;
 #[repr(u8)]
 pub enum Hardfork {
     /// Aspidochelone hardfork
-    HF_Aspidochelone = 0,
+    HfAspidochelone = 0,
     /// Basilisk hardfork
-    HF_Basilisk = 1,
+    HfBasilisk = 1,
     /// Cockatrice hardfork
-    HF_Cockatrice = 2,
+    HfCockatrice = 2,
     /// Domovoi hardfork
-    HF_Domovoi = 3,
+    HfDomovoi = 3,
     /// Echidna hardfork
-    HF_Echidna = 4,
+    HfEchidna = 4,
 }
 
 /// Hardfork manager for Neo blockchain (matches C# ProtocolSettings.Hardforks exactly).
@@ -48,22 +48,22 @@ impl HardforkManager {
     /// Creates a new HardforkManager with MainNet hardfork heights (matches C# config.mainnet.json exactly).
     pub fn mainnet() -> Self {
         let mut hardforks = HashMap::new();
-        hardforks.insert(Hardfork::HF_Aspidochelone, 1730000);
-        hardforks.insert(Hardfork::HF_Basilisk, 4120000);
-        hardforks.insert(Hardfork::HF_Cockatrice, 5450000);
-        hardforks.insert(Hardfork::HF_Domovoi, 5570000);
-        hardforks.insert(Hardfork::HF_Echidna, 7300000);
+        hardforks.insert(Hardfork::HfAspidochelone, 1730000);
+        hardforks.insert(Hardfork::HfBasilisk, 4120000);
+        hardforks.insert(Hardfork::HfCockatrice, 5450000);
+        hardforks.insert(Hardfork::HfDomovoi, 5570000);
+        hardforks.insert(Hardfork::HfEchidna, 7300000);
         Self { hardforks }
     }
 
     /// Creates a new HardforkManager with TestNet hardfork heights (matches C# config.testnet.json exactly).
     pub fn testnet() -> Self {
         let mut hardforks = HashMap::new();
-        hardforks.insert(Hardfork::HF_Aspidochelone, 210000);
-        hardforks.insert(Hardfork::HF_Basilisk, 2680000);
-        hardforks.insert(Hardfork::HF_Cockatrice, 3967000);
-        hardforks.insert(Hardfork::HF_Domovoi, 4144000);
-        hardforks.insert(Hardfork::HF_Echidna, 5870000);
+        hardforks.insert(Hardfork::HfAspidochelone, 210000);
+        hardforks.insert(Hardfork::HfBasilisk, 2680000);
+        hardforks.insert(Hardfork::HfCockatrice, 3967000);
+        hardforks.insert(Hardfork::HfDomovoi, 4144000);
+        hardforks.insert(Hardfork::HfEchidna, 5870000);
         Self { hardforks }
     }
 
@@ -135,65 +135,52 @@ pub fn is_hardfork_enabled(hardfork: Hardfork, block_height: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, Transaction, UInt160, UInt256};
+    use super::*;
+    use crate::{Block, Transaction, UInt160, UInt256};
 
     #[test]
     fn test_hardfork_manager() {
         let mut manager = HardforkManager::new();
-
-        assert!(!manager.is_enabled(Hardfork::HF_Aspidochelone, 0));
-        assert!(!manager.is_enabled(Hardfork::HF_Basilisk, 0));
-
+        assert!(!manager.is_enabled(Hardfork::HfAspidochelone, 0));
+        assert!(!manager.is_enabled(Hardfork::HfBasilisk, 0));
         // Register a hardfork
-        manager.register(Hardfork::HF_Aspidochelone, 100);
-
+        manager.register(Hardfork::HfAspidochelone, 100);
         // Test hardfork activation
-        assert!(!manager.is_enabled(Hardfork::HF_Aspidochelone, 99));
-        assert!(manager.is_enabled(Hardfork::HF_Aspidochelone, 100));
-        assert!(manager.is_enabled(Hardfork::HF_Aspidochelone, 101));
-
+        assert!(!manager.is_enabled(Hardfork::HfAspidochelone, 99));
+        assert!(manager.is_enabled(Hardfork::HfAspidochelone, 100));
+        assert!(manager.is_enabled(Hardfork::HfAspidochelone, 101));
         // Test unregistered hardfork
-        assert!(!manager.is_enabled(Hardfork::HF_Basilisk, 1000));
+        assert!(!manager.is_enabled(Hardfork::HfBasilisk, 1000));
     }
-
     #[test]
     fn test_mainnet_hardforks() {
         let manager = HardforkManager::mainnet();
-
-        assert!(manager.is_enabled(Hardfork::HF_Aspidochelone, 1730000));
-        assert!(!manager.is_enabled(Hardfork::HF_Aspidochelone, 1729999));
-
-        assert!(manager.is_enabled(Hardfork::HF_Basilisk, 4120000));
-        assert!(!manager.is_enabled(Hardfork::HF_Basilisk, 4119999));
-
-        assert!(manager.is_enabled(Hardfork::HF_Echidna, 7300000));
-        assert!(!manager.is_enabled(Hardfork::HF_Echidna, 7299999));
+        assert!(manager.is_enabled(Hardfork::HfAspidochelone, 1730000));
+        assert!(!manager.is_enabled(Hardfork::HfAspidochelone, 1729999));
+        assert!(manager.is_enabled(Hardfork::HfBasilisk, 4120000));
+        assert!(!manager.is_enabled(Hardfork::HfBasilisk, 4119999));
+        assert!(manager.is_enabled(Hardfork::HfEchidna, 7300000));
+        assert!(!manager.is_enabled(Hardfork::HfEchidna, 7299999));
     }
-
     #[test]
     fn test_testnet_hardforks() {
         let manager = HardforkManager::testnet();
-
-        assert!(manager.is_enabled(Hardfork::HF_Aspidochelone, 210000));
-        assert!(!manager.is_enabled(Hardfork::HF_Aspidochelone, 209999));
-
-        assert!(manager.is_enabled(Hardfork::HF_Basilisk, 2680000));
-        assert!(!manager.is_enabled(Hardfork::HF_Basilisk, 2679999));
-
-        assert!(manager.is_enabled(Hardfork::HF_Echidna, 5870000));
-        assert!(!manager.is_enabled(Hardfork::HF_Echidna, 5869999));
+        assert!(manager.is_enabled(Hardfork::HfAspidochelone, 210000));
+        assert!(!manager.is_enabled(Hardfork::HfAspidochelone, 209999));
+        assert!(manager.is_enabled(Hardfork::HfBasilisk, 2680000));
+        assert!(!manager.is_enabled(Hardfork::HfBasilisk, 2679999));
+        assert!(manager.is_enabled(Hardfork::HfEchidna, 5870000));
+        assert!(!manager.is_enabled(Hardfork::HfEchidna, 5869999));
     }
-
     #[test]
     fn test_global_hardfork_manager() {
         // This test modifies the global instance, so it should be run in isolation
         if let Ok(mut manager) = HardforkManager::instance().write() {
             // Register a hardfork
-            manager.register(Hardfork::HF_Aspidochelone, 300);
+            manager.register(Hardfork::HfAspidochelone, 300);
         }
-
-        assert!(!is_hardfork_enabled(Hardfork::HF_Aspidochelone, 299));
-        assert!(is_hardfork_enabled(Hardfork::HF_Aspidochelone, 300));
-        assert!(is_hardfork_enabled(Hardfork::HF_Aspidochelone, 301));
+        assert!(!is_hardfork_enabled(Hardfork::HfAspidochelone, 299));
+        assert!(is_hardfork_enabled(Hardfork::HfAspidochelone, 300));
+        assert!(is_hardfork_enabled(Hardfork::HfAspidochelone, 301));
     }
 }

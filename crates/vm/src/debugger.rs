@@ -4,9 +4,7 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
-use crate::execution_context::ExecutionContext;
 use crate::execution_engine::{ExecutionEngine, VMState};
-use crate::instruction::Instruction;
 use std::collections::HashMap;
 
 /// Represents a breakpoint in the VM.
@@ -218,7 +216,7 @@ impl Debugger {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
     use crate::op_code::OpCode;
     use crate::script::Script;
     use neo_config::ADDRESS_SIZE;

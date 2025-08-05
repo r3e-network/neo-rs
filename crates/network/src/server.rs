@@ -258,6 +258,12 @@ impl NetworkServer {
         let signal_handler = SignalHandler::new(Arc::clone(&self.shutdown_coordinator));
         signal_handler.start().await;
 
+        // Set sync manager reference in P2P node before starting
+        self.p2p_node
+            .set_sync_manager(self.sync_manager.clone())
+            .await;
+        info!("Connected P2P node to sync manager for height updates");
+
         // Start P2P node
         self.p2p_node.start().await?;
 

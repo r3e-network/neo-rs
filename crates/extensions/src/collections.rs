@@ -324,6 +324,8 @@ impl Collections {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_vec_extensions() {
         let mut vec = vec![1, 2, 2, 3, 1, 4];

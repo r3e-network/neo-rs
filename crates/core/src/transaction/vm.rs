@@ -316,7 +316,7 @@ impl ApplicationEngine {
             _ => {
                 // In real Neo VM, this would fault
                 Err(CoreError::InvalidData {
-                    message: format!("Unsupported opcode: 0x{:02X}", opcode),
+                    message: format!("Unsupported opcode: 0x{opcode:02X}"),
                 })
             }
         }

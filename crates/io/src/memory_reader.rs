@@ -44,7 +44,7 @@ impl MemoryReader {
         if position > self.span.len() {
             return Err(IoError::invalid_operation(
                 "set_position",
-                &format!("Position {} is out of bounds", position),
+                &format!("Position {position} is out of bounds"),
             ));
         }
         self.pos = position;
@@ -307,39 +307,21 @@ impl MemoryReader {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_read_byte() {
         let data = vec![0x42];
         let mut reader = MemoryReader::new(&data);
-        assert_eq!(
-            reader.read_byte().map_err(|_| std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "operation failed"
-            ))?,
-            0x42
-        );
+        assert_eq!(reader.read_byte().unwrap(), 0x42);
     }
 
     #[test]
     fn test_read_boolean() {
         let data = vec![0x00, 0x01, 0x02];
         let mut reader = MemoryReader::new(&data);
-        assert_eq!(
-            reader.read_boolean().map_err(|_| std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "operation failed"
-            ))?,
-            false
-        );
-        assert_eq!(
-            reader.read_boolean().map_err(|_| std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "operation failed"
-            ))?,
-            true
-        );
+        assert_eq!(reader.read_boolean().unwrap(), false);
+        assert_eq!(reader.read_boolean().unwrap(), true);
         assert!(reader.read_boolean().is_err()); // Invalid boolean value
     }
 
@@ -347,26 +329,14 @@ mod tests {
     fn test_read_u32() {
         let data = vec![0x78, 0x56, 0x34, 0x12]; // Little-endian 0x12345678
         let mut reader = MemoryReader::new(&data);
-        assert_eq!(
-            reader.read_uint32().map_err(|_| std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "operation failed"
-            ))?,
-            0x12345678
-        );
+        assert_eq!(reader.read_uint32().unwrap(), 0x12345678);
     }
 
     #[test]
     fn test_read_u64() {
         let data = vec![0x78, 0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00]; // Little-endian
         let mut reader = MemoryReader::new(&data);
-        assert_eq!(
-            reader.read_uint64().map_err(|_| std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "operation failed"
-            ))?,
-            0x12345678
-        );
+        assert_eq!(reader.read_uint64().unwrap(), 0x12345678);
     }
 
     #[test]
@@ -374,69 +344,29 @@ mod tests {
         // Test single byte
         let data = vec![0x42];
         let mut reader = MemoryReader::new(&data);
-        assert_eq!(
-            reader
-                .read_var_int(u64::MAX)
-                .map_err(|_| std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "operation failed"
-                ))?,
-            0x42
-        );
+        assert_eq!(reader.read_var_int(u64::MAX).unwrap(), 0x42);
 
         // Test 2-byte value
         let data = vec![0xfd, 0x34, 0x12];
         let mut reader = MemoryReader::new(&data);
-        assert_eq!(
-            reader
-                .read_var_int(u64::MAX)
-                .map_err(|_| std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "operation failed"
-                ))?,
-            0x1234
-        );
+        assert_eq!(reader.read_var_int(u64::MAX).unwrap(), 0x1234);
 
         // Test 4-byte value
         let data = vec![0xfe, 0x78, 0x56, 0x34, 0x12]; // 0x12345678
         let mut reader = MemoryReader::new(&data);
-        assert_eq!(
-            reader
-                .read_var_int(u64::MAX)
-                .map_err(|_| std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "operation failed"
-                ))?,
-            0x12345678
-        );
+        assert_eq!(reader.read_var_int(u64::MAX).unwrap(), 0x12345678);
 
         // Test 8-byte value
         let data = vec![0xff, 0x78, 0x56, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00];
         let mut reader = MemoryReader::new(&data);
-        assert_eq!(
-            reader
-                .read_var_int(u64::MAX)
-                .map_err(|_| std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "operation failed"
-                ))?,
-            0x12345678
-        );
+        assert_eq!(reader.read_var_int(u64::MAX).unwrap(), 0x12345678);
     }
 
     #[test]
     fn test_read_var_string() {
         let data = vec![0x05, b'h', b'e', b'l', b'l', b'o']; // Length 5, "hello"
         let mut reader = MemoryReader::new(&data);
-        assert_eq!(
-            reader
-                .read_var_string(1000)
-                .map_err(|_| std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "operation failed"
-                ))?,
-            "hello"
-        );
+        assert_eq!(reader.read_var_string(1000).unwrap(), "hello");
     }
 
     #[test]
@@ -444,13 +374,9 @@ mod tests {
         let data = vec![0x01, 0x02, 0x03, 0x04];
         let mut reader = MemoryReader::new(&data);
         assert_eq!(reader.position(), 0);
-        reader.read_byte().map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "operation failed")
-        })?;
+        reader.read_byte().unwrap();
         assert_eq!(reader.position(), 1);
-        reader.read_byte().map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "operation failed")
-        })?;
+        reader.read_byte().unwrap();
         assert_eq!(reader.position(), 2);
     }
 
@@ -458,13 +384,7 @@ mod tests {
     fn test_peek() {
         let data = vec![0x42, 0x43];
         let reader = MemoryReader::new(&data);
-        assert_eq!(
-            reader.peek().map_err(|_| std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "operation failed"
-            ))?,
-            0x42
-        );
+        assert_eq!(reader.peek().unwrap(), 0x42);
         assert_eq!(reader.position(), 0); // Position should not change
     }
 
@@ -472,9 +392,7 @@ mod tests {
     fn test_ensure_position_error() {
         let data = vec![0x01];
         let mut reader = MemoryReader::new(&data);
-        reader.read_byte().map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "operation failed")
-        })?; // Consume the only byte
+        reader.read_byte().unwrap(); // Consume the only byte
         assert!(reader.read_byte().is_err()); // Should fail
     }
 }

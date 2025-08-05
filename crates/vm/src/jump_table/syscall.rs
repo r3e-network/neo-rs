@@ -95,7 +95,7 @@ fn syscall(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     let syscall_hash = instruction.operand_as::<u32>()?;
     
     let descriptor = get_interop_descriptor(syscall_hash)
-        .ok_or_else(|| VmError::invalid_operation_msg(format!("Unknown syscall: 0x{:08x}", syscall_hash)))?;
+        .ok_or_else(|| VmError::invalid_operation_msg(format!("Unknown syscall: 0x{syscall_hash:08x}")))?;
     
     validate_call_flags(engine, descriptor.required_call_flags)?;
     
@@ -596,7 +596,7 @@ fn invoke_interop_service(
             Ok(None)
         }
         _ => {
-            Err(VmError::invalid_operation_msg(format!("Unknown interop service: {}", service_name)))
+            Err(VmError::invalid_operation_msg(format!("Unknown interop service: {service_name}")))
         }
     }
 } 

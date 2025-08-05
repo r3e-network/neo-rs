@@ -67,6 +67,8 @@ pub use ordered_dictionary::OrderedDictionary;
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_basic_json_creation() {
         let obj = JObject::new();
@@ -82,6 +84,8 @@ mod tests {
 
 #[cfg(test)]
 mod integration_tests {
+    use super::*;
+
     #[test]
     fn test_complex_json_structure() {
         // Test complex nested JSON structure similar to Neo blockchain data
@@ -102,10 +106,7 @@ mod integration_tests {
         let mut transactions = Vec::new();
         for i in 0..3 {
             let mut tx = OrderedDictionary::new();
-            tx.insert(
-                "txid".to_string(),
-                Some(JToken::String(format!("tx_{}", i))),
-            );
+            tx.insert("txid".to_string(), Some(JToken::String(format!("tx_{i}"))));
             tx.insert(
                 "size".to_string(),
                 Some(JToken::Number((100 + i * 50) as f64)),
@@ -172,7 +173,7 @@ mod integration_tests {
             assert!(obj.contains_key(&"null".to_string()));
             assert!(obj.contains_key(&"array".to_string()));
         } else {
-            return Err(Error::Other("Expected object".to_string()));
+            panic!("Expected object");
         }
     }
 
@@ -188,7 +189,7 @@ mod integration_tests {
             item.insert("id".to_string(), Some(JToken::Number(i as f64)));
             item.insert(
                 "name".to_string(),
-                Some(JToken::String(format!("item_{}", i))),
+                Some(JToken::String(format!("item_{i}"))),
             );
             item.insert("active".to_string(), Some(JToken::Boolean(i % 2 == 0)));
             large_array.push(Some(JToken::Object(item)));
@@ -294,6 +295,9 @@ mod integration_tests {
 
 #[cfg(test)]
 mod performance_tests {
+    use super::*;
+    use std::time::Instant;
+
     #[test]
     fn test_large_object_creation_performance() {
         let start = Instant::now();
@@ -301,8 +305,8 @@ mod performance_tests {
         let mut obj = OrderedDictionary::new();
         for i in 0..10000 {
             obj.insert(
-                format!("key_{}", i),
-                Some(JToken::String(format!("value_{}", i))),
+                format!("key_{i}"),
+                Some(JToken::String(format!("value_{i}"))),
             );
         }
 
@@ -343,7 +347,7 @@ mod performance_tests {
             item.insert("id".to_string(), Some(JToken::Number(i as f64)));
             item.insert(
                 "name".to_string(),
-                Some(JToken::String(format!("item_{}", i))),
+                Some(JToken::String(format!("item_{i}"))),
             );
             item.insert(
                 "category".to_string(),

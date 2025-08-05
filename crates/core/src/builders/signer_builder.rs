@@ -22,7 +22,7 @@ impl SignerBuilder {
         Self {
             signer: Signer {
                 account: UInt160::zero(),
-                scopes: WitnessScope::None,
+                scopes: WitnessScope::NONE,
                 allowed_contracts: Vec::new(),
                 allowed_groups: Vec::new(),
                 rules: Vec::new(),

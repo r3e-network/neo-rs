@@ -259,7 +259,49 @@ impl ExecutionEngine {
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
         if context.instruction_pointer() >= context.script().len() {
-            self.set_state(VMState::HALT);
+            // Perform implicit RET when reaching end of script
+            // Get return value count from the current context
+            let rvcount = context.rvcount();
+
+            if rvcount != 0 {
+                let eval_stack_len = context.evaluation_stack().len();
+
+                // Collect items to transfer
+                let mut items = Vec::new();
+
+                if rvcount == -1 {
+                    // Return all items
+                    for i in 0..eval_stack_len {
+                        if let Ok(item) = context.evaluation_stack().peek(i as isize) {
+                            items.push(item.clone());
+                        }
+                    }
+                } else if rvcount > 0 {
+                    // Return specific number of items
+                    let count = (rvcount as usize).min(eval_stack_len);
+                    for i in 0..count {
+                        if let Ok(item) = context.evaluation_stack().peek(i as isize) {
+                            items.push(item.clone());
+                        }
+                    }
+                }
+
+                // Push to result stack in reverse order
+                items.reverse();
+                for item in items {
+                    self.result_stack.push(item);
+                }
+            }
+
+            // Remove the current context
+            let context_index = self.invocation_stack.len() - 1;
+            self.remove_context(context_index)?;
+
+            // If no more contexts, halt
+            if self.invocation_stack.is_empty() {
+                self.set_state(VMState::HALT);
+            }
+
             return Ok(());
         }
 
@@ -331,7 +373,7 @@ impl ExecutionEngine {
         let instruction = match context.current_instruction() {
             Ok(instruction) => instruction,
             Err(err) => {
-                let error_msg = format!("{:?}", err);
+                let error_msg = format!("{err:?}");
                 if error_msg.contains("Instruction pointer is out of range") {
                     Instruction::ret()
                 } else {
@@ -475,8 +517,10 @@ impl ExecutionEngine {
         initial_position: usize,
     ) -> VmResult<ExecutionContext> {
         let context = self.create_context(script, rvcount, initial_position);
-        self.load_context(context.clone())?;
-        Ok(context)
+        self.load_context(context)?;
+
+        // Return a reference to the loaded context
+        Ok(self.current_context().unwrap().clone())
     }
 
     /// Returns the item at the specified index from the top of the current stack without removing it.
@@ -631,7 +675,7 @@ impl Drop for ExecutionEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
     use crate::op_code::OpCode;
 
     #[test]
@@ -750,9 +794,7 @@ mod tests {
         );
 
         // Pop an item
-        let item = engine
-            .pop()
-            .ok_or_else(|| anyhow::anyhow!("Collection is empty"))?;
+        let item = engine.pop().unwrap();
         assert_eq!(item.as_int().expect("Operation failed"), 3);
 
         // Peek again

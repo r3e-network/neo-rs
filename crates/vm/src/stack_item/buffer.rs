@@ -51,7 +51,7 @@ impl Buffer {
         self.data
             .get(index)
             .copied()
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {}", index)))
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {index}")))
     }
 
     /// Sets the byte at the specified index.
@@ -117,7 +117,7 @@ impl Buffer {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutionEngine, StackItem, VMState, VmError};
+    use super::*;
 
     #[test]
     fn test_buffer_creation() {
