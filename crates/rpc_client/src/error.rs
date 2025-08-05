@@ -3,7 +3,7 @@
 //! This module provides comprehensive error handling for RPC operations,
 //! matching the C# Neo.Network.RPC error handling exactly.
 
-use crate::JsonRpcError;
+use crate::models::JsonRpcError;
 use thiserror::Error;
 
 /// Result type for RPC operations
@@ -236,7 +236,8 @@ pub mod neo_error_codes {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::{RpcError, RpcResult};
+    use crate::models::JsonRpcError;
 
     #[test]
     fn test_error_creation() {

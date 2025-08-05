@@ -911,9 +911,9 @@ impl BlockchainState {
         // This implements the C# logic: Signer.CheckWitnessScope
 
         // 1. Validate Global scope (matches C# Global scope validation exactly)
-        if signer.scopes.has_flag(neo_core::WitnessScope::Global) {
+        if signer.scopes.has_flag(neo_core::WitnessScope::GLOBAL) {
             // Global scope is always valid but dangerous - validate it's intentional
-            if signer.scopes.to_byte() != neo_core::WitnessScope::Global.to_byte() {
+            if signer.scopes.to_byte() != neo_core::WitnessScope::GLOBAL.to_byte() {
                 return Err(Error::Validation(
                     "Global scope cannot be combined with other scopes".to_string(),
                 ));
@@ -924,7 +924,7 @@ impl BlockchainState {
         // 2. Validate CalledByEntry scope (matches C# CalledByEntry validation exactly)
         if signer
             .scopes
-            .has_flag(neo_core::WitnessScope::CalledByEntry)
+            .has_flag(neo_core::WitnessScope::CALLED_BY_ENTRY)
         {
             // CalledByEntry is valid by itself or combined with custom scopes
         }
@@ -932,7 +932,7 @@ impl BlockchainState {
         // 3. Validate CustomContracts scope (matches C# CustomContracts validation exactly)
         if signer
             .scopes
-            .has_flag(neo_core::WitnessScope::CustomContracts)
+            .has_flag(neo_core::WitnessScope::CUSTOM_CONTRACTS)
         {
             if signer.allowed_contracts.is_empty() {
                 return Err(Error::Validation(
@@ -957,7 +957,10 @@ impl BlockchainState {
         }
 
         // 4. Validate CustomGroups scope (matches C# CustomGroups validation exactly)
-        if signer.scopes.has_flag(neo_core::WitnessScope::CustomGroups) {
+        if signer
+            .scopes
+            .has_flag(neo_core::WitnessScope::CUSTOM_GROUPS)
+        {
             if signer.allowed_groups.is_empty() {
                 return Err(Error::Validation(
                     "CustomGroups scope requires allowed_groups to be specified".to_string(),
@@ -986,7 +989,10 @@ impl BlockchainState {
         }
 
         // 5. Validate Rules scope (matches C# Rules validation exactly)
-        if signer.scopes.has_flag(neo_core::WitnessScope::WitnessRules) {
+        if signer
+            .scopes
+            .has_flag(neo_core::WitnessScope::WITNESS_RULES)
+        {
             if signer.rules.is_empty() {
                 return Err(Error::Validation(
                     "Rules scope requires witness rules to be specified".to_string(),
@@ -1006,7 +1012,7 @@ impl BlockchainState {
         }
 
         // 6. Validate scope combination consistency
-        if signer.scopes == neo_core::WitnessScope::None {
+        if signer.scopes == neo_core::WitnessScope::NONE {
             return Err(Error::Validation(
                 "Signer must specify at least one witness scope".to_string(),
             ));
@@ -1871,8 +1877,8 @@ impl ContractState {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Error, Result};
     use crate::blockchain::storage::{RocksDBStorage, Storage};
+    use crate::{Error, Result};
 
     #[tokio::test]
     async fn test_blockchain_state_creation() {

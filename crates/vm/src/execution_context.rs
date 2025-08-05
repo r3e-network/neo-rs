@@ -54,7 +54,7 @@ impl Slot {
     pub fn get(&self, index: usize) -> VmResult<&StackItem> {
         self.items
             .get(index)
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {}", index)))
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {index}")))
     }
 
     /// Sets the item at the specified index.
@@ -725,7 +725,7 @@ impl ExecutionContext {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
     use crate::op_code::OpCode;
     use num_bigint::BigInt;
 

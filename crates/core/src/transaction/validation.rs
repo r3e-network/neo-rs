@@ -300,7 +300,7 @@ impl Transaction {
                 engine = loaded_engine;
             } else {
                 return Err(CoreError::InvalidData {
-                    message: format!("Failed to load witness {} verification script", i),
+                    message: format!("Failed to load witness {i} verification script"),
                 });
             }
 
@@ -308,14 +308,14 @@ impl Transaction {
             let vm_state = engine.execute_and_get_state();
             if !vm_state.is_halt_state() || vm_state.has_fault_exception() {
                 return Err(CoreError::InvalidData {
-                    message: format!("Witness {} verification failed", i),
+                    message: format!("Witness {i} verification failed"),
                 });
             }
 
             // Verify witness signature
             if !witness.verify_signature(&hash_data, &signer.account)? {
                 return Err(CoreError::InvalidData {
-                    message: format!("Witness {} signature verification failed", i),
+                    message: format!("Witness {i} signature verification failed"),
                 });
             }
         }

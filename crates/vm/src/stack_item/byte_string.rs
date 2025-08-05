@@ -53,7 +53,7 @@ impl ByteString {
         self.data
             .get(index)
             .copied()
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {}", index)))
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {index}")))
     }
 
     /// Converts the byte string to an integer.
@@ -101,7 +101,7 @@ impl ByteString {
     /// Converts the byte string to a UTF-8 string if possible.
     pub fn to_string(&self) -> VmResult<String> {
         String::from_utf8(self.data.clone())
-            .map_err(|e| VmError::invalid_operation_msg(format!("Invalid UTF-8 sequence: {}", e)))
+            .map_err(|e| VmError::invalid_operation_msg(format!("Invalid UTF-8 sequence: {e}")))
     }
 
     /// Creates a deep copy of the byte string.
@@ -112,7 +112,7 @@ impl ByteString {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutionEngine, StackItem, VMState, VmError};
+    use super::*;
 
     #[test]
     fn test_byte_string_creation() {

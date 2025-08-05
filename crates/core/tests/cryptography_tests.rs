@@ -23,19 +23,23 @@ fn test_verify_signature() {
     let signature = helper::sign_message(message, &private_key).unwrap();
 
     // Verify the signature
-    assert!(Crypto::verify_signature(message, &signature, &public_key));
+    assert!(Crypto::verify_signature_bytes(
+        message,
+        &signature,
+        &public_key
+    ));
 
     // Test with wrong public key
     let wrong_private_key = helper::generate_private_key();
     let wrong_public_key = helper::private_key_to_public_key(&wrong_private_key).unwrap();
-    assert!(!Crypto::verify_signature(
+    assert!(!Crypto::verify_signature_bytes(
         message,
         &signature,
         &wrong_public_key
     ));
 
     let malformed_key = vec![0u8; 32]; // Wrong length
-    assert!(!Crypto::verify_signature(
+    assert!(!Crypto::verify_signature_bytes(
         message,
         &signature,
         &malformed_key
@@ -43,7 +47,7 @@ fn test_verify_signature() {
 
     // Test with invalid signature
     let invalid_signature = vec![0u8; 64];
-    assert!(!Crypto::verify_signature(
+    assert!(!Crypto::verify_signature_bytes(
         message,
         &invalid_signature,
         &public_key
@@ -67,17 +71,29 @@ fn test_secp256k1_compatibility() {
     let public_key = helper::private_key_to_public_key(&private_key).unwrap();
 
     // Verify the signature
-    assert!(Crypto::verify_signature(&message, &signature, &public_key));
+    assert!(Crypto::verify_signature_bytes(
+        &message,
+        &signature,
+        &public_key
+    ));
 
     // Test with different message
     let message2 = b"world";
     let signature2 = helper::sign_message(message2, &private_key).unwrap();
-    assert!(Crypto::verify_signature(message2, &signature2, &public_key));
+    assert!(Crypto::verify_signature_bytes(
+        message2,
+        &signature2,
+        &public_key
+    ));
 
     // Test with UTF-8 message
     let message3 = "中文".as_bytes();
     let signature3 = helper::sign_message(message3, &private_key).unwrap();
-    assert!(Crypto::verify_signature(message3, &signature3, &public_key));
+    assert!(Crypto::verify_signature_bytes(
+        message3,
+        &signature3,
+        &public_key
+    ));
 }
 
 /// Test converted from C# UT_Crypto.TestECRecover
@@ -217,13 +233,17 @@ fn test_signature_round_trip() {
         assert_eq!(64, signature.len());
 
         // Verify the signature
-        assert!(Crypto::verify_signature(&message, &signature, &public_key));
+        assert!(Crypto::verify_signature_bytes(
+            &message,
+            &signature,
+            &public_key
+        ));
 
         // Test with wrong message
         let mut wrong_message = message.clone();
         if !wrong_message.is_empty() {
             wrong_message[0] = wrong_message[0].wrapping_add(1);
-            assert!(!Crypto::verify_signature(
+            assert!(!Crypto::verify_signature_bytes(
                 &wrong_message,
                 &signature,
                 &public_key
@@ -263,7 +283,7 @@ fn test_recoverable_signature_round_trip() {
     }
 
     let signature_without_recovery = &recoverable_signature[..64];
-    assert!(Crypto::verify_signature(
+    assert!(Crypto::verify_signature_bytes(
         message,
         signature_without_recovery,
         &public_key
@@ -323,7 +343,7 @@ fn test_error_cases() {
     let public_key = helper::private_key_to_public_key(&private_key).unwrap();
 
     for invalid_sig in invalid_signatures {
-        assert!(!Crypto::verify_signature(
+        assert!(!Crypto::verify_signature_bytes(
             message,
             &invalid_sig,
             &public_key
@@ -341,7 +361,7 @@ fn test_error_cases() {
     ];
 
     for invalid_pubkey in invalid_public_keys {
-        assert!(!Crypto::verify_signature(
+        assert!(!Crypto::verify_signature_bytes(
             message,
             &signature,
             &invalid_pubkey

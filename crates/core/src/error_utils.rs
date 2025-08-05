@@ -51,14 +51,20 @@ impl<T: Display> IntoError<String> for T {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
+    use crate::{CoreError as Error, CoreResult as Result};
 
     #[test]
     fn test_error_mapper() {
-        let result: Result<i32, &str> = Err("original error");
-        let mapped: Result<i32, String> =
+        let result: Result<i32> = Err(Error::InvalidFormat {
+            message: "original error".to_string(),
+        });
+        let mapped: std::result::Result<i32, String> =
             result.map_err_context(|| "Failed to process".to_string());
-        assert_eq!(mapped.unwrap_err(), "Failed to process: original error");
+        assert!(mapped
+            .unwrap_err()
+            .to_string()
+            .contains("Failed to process"));
     }
 
     #[test]

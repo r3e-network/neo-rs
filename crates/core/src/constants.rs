@@ -79,7 +79,6 @@ mod tests {
         assert_eq!(MILLISECONDS_PER_BLOCK, 15000);
         assert_eq!(MILLISECONDS_PER_HOUR, 3600000);
     }
-
     #[test]
     fn test_size_constants() {
         assert_eq!(MAX_BLOCK_SIZE, 1_048_576);

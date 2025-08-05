@@ -75,7 +75,7 @@ impl fmt::Display for JBoolean {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_jboolean_new() {
@@ -138,9 +138,9 @@ mod tests {
     #[test]
     fn test_jboolean_display() {
         let jtrue = JBoolean::from(true);
-        assert_eq!(format!("{}", jtrue), "true");
+        assert_eq!(format!("{jtrue}"), "true");
 
         let jfalse = JBoolean::from(false);
-        assert_eq!(format!("{}", jfalse), "false");
+        assert_eq!(format!("{jfalse}"), "false");
     }
 }

@@ -733,7 +733,17 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
         let rvcount = context.rvcount();
 
-        let items_to_copy = if rvcount != -1 {
+        let items_to_copy = if rvcount == -1 {
+            // Return all items on the evaluation stack
+            let stack_size = context.evaluation_stack().len();
+            let mut items = Vec::new();
+            for i in 0..stack_size {
+                let item = context.evaluation_stack().peek(i as isize)?;
+                items.push(item.clone());
+            }
+            items.reverse();
+            items
+        } else if rvcount > 0 {
             let rvcount = rvcount as usize;
             let stack_size = context.evaluation_stack().len();
 
@@ -759,7 +769,7 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         (rvcount, items_to_copy)
     };
 
-    if rvcount != -1 && !items_to_copy.is_empty() {
+    if rvcount != 0 && !items_to_copy.is_empty() {
         let result_stack = engine.result_stack_mut();
         for item in items_to_copy {
             result_stack.push(item);

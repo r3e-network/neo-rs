@@ -460,17 +460,18 @@ impl RpcClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
+    use crate::{RpcError, RpcResult};
 
     #[tokio::test]
     async fn test_rpc_client_creation() {
-        let client = RpcClient::new("http://DEFAULT_RPC_PORT".to_string()).unwrap();
-        assert!(client.config.endpoint.contains("localhost"));
+        let client = RpcClient::new("http://localhost:10332".to_string()).unwrap();
+        assert!(client.endpoint().contains("localhost"));
     }
 
     #[test]
     fn test_parse_helpers() {
-        let client = RpcClient::new("http://DEFAULT_RPC_PORT".to_string()).unwrap();
+        let client = RpcClient::new("http://localhost:10332".to_string()).unwrap();
 
         let string_val = json!("test_string");
         assert_eq!(client.parse_string(&string_val).unwrap(), "test_string");

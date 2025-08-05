@@ -6,6 +6,10 @@ use super::cache::{Cache, CacheItem, ConcreteCache};
 use std::hash::Hash;
 use std::marker::PhantomData;
 
+/// Type alias for the inner cache type used by FIFOCache
+type FIFOInnerCache<TKey, TValue, F> =
+    ConcreteCache<TKey, TValue, F, fn(&mut CacheItem<TKey, TValue>)>;
+
 /// FIFO (First-In-First-Out) cache implementation.
 /// This matches the C# FIFOCache<TKey, TValue> class exactly.
 pub struct FIFOCache<TKey, TValue, F>
@@ -15,7 +19,7 @@ where
     F: Fn(&TValue) -> TKey + Send + Sync,
 {
     /// The underlying concrete cache implementation
-    inner: ConcreteCache<TKey, TValue, F, fn(&mut CacheItem<TKey, TValue>)>,
+    inner: FIFOInnerCache<TKey, TValue, F>,
     /// Phantom data for type parameters
     _phantom: PhantomData<(TKey, TValue)>,
 }
@@ -113,6 +117,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[derive(Debug, Clone, PartialEq, Default)]
     struct TestItem {
         id: u32,
@@ -191,7 +196,7 @@ mod tests {
             data: "test".to_string(),
         };
         cache.add(item.clone());
-        assert_eq!(cache.get(&1).cloned().unwrap_or_default(), item);
+        assert_eq!(cache.get(&1).unwrap_or_default(), item);
 
         // Test contains
         assert!(cache.contains_key(&1));

@@ -170,7 +170,7 @@ mod tests {
         assert_eq!(helper::get_var_size(0), 1);
         assert_eq!(helper::get_var_size(252), 1);
         assert_eq!(helper::get_var_size(253), 3);
-        assert_eq!(helper::get_var_size(u16::MAX), 3);
+        assert_eq!(helper::get_var_size(u16::MAX as u64), 3);
         assert_eq!(helper::get_var_size(65536), 5);
         assert_eq!(helper::get_var_size(0xFFFFFFFF), 5);
         assert_eq!(helper::get_var_size(0x100000000), 9);

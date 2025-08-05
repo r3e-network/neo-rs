@@ -6,6 +6,10 @@ use super::cache::{Cache, CacheItem, ConcreteCache};
 use std::hash::Hash;
 use std::marker::PhantomData;
 
+/// Type alias for the inner cache type used by LRUCache
+type LRUInnerCache<TKey, TValue, F> =
+    ConcreteCache<TKey, TValue, F, fn(&mut CacheItem<TKey, TValue>)>;
+
 /// LRU (Least Recently Used) cache implementation.
 /// This matches the C# LRUCache<TKey, TValue> class exactly.
 pub struct LRUCache<TKey, TValue, F>
@@ -15,7 +19,7 @@ where
     F: Fn(&TValue) -> TKey + Send + Sync,
 {
     /// The underlying concrete cache implementation
-    inner: ConcreteCache<TKey, TValue, F, fn(&mut CacheItem<TKey, TValue>)>,
+    inner: LRUInnerCache<TKey, TValue, F>,
     /// Phantom data for type parameters
     _phantom: PhantomData<(TKey, TValue)>,
 }
@@ -198,6 +202,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[derive(Debug, Clone, PartialEq, Default)]
     struct TestItem {
         id: u32,
@@ -214,9 +219,9 @@ mod tests {
         cache.put(3, "third".to_string());
 
         assert_eq!(cache.len(), 3);
-        assert_eq!(cache.get(&1).cloned().unwrap_or_default(), "first");
-        assert_eq!(cache.get(&2).cloned().unwrap_or_default(), "second");
-        assert_eq!(cache.get(&3).cloned().unwrap_or_default(), "third");
+        assert_eq!(cache.get(&1).unwrap_or_default(), "first");
+        assert_eq!(cache.get(&2).unwrap_or_default(), "second");
+        assert_eq!(cache.get(&3).unwrap_or_default(), "third");
     }
 
     #[test]

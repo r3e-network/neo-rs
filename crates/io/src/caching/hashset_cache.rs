@@ -220,7 +220,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_hashset_cache_basic_operations() {

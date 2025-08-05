@@ -440,7 +440,7 @@ fn test_transaction_serialization_comprehensive() {
 
     // Add a signer
     let signer_account = UInt160::from_str("0x0000000000000000000000000000000000000001").unwrap();
-    let signer = Signer::new(signer_account, WitnessScope::CalledByEntry);
+    let signer = Signer::new(signer_account, WitnessScope::CALLED_BY_ENTRY);
     tx.add_signer(signer);
 
     // Add a witness

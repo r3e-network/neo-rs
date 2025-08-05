@@ -16,7 +16,7 @@ impl JString {
     }
 
     /// Creates a new JSON string from a string slice
-    pub fn from_str(value: &str) -> Self {
+    pub fn from_string_slice(value: &str) -> Self {
         Self {
             value: value.to_string(),
         }
@@ -75,7 +75,7 @@ impl From<String> for JString {
 
 impl From<&str> for JString {
     fn from(value: &str) -> Self {
-        Self::from_str(value)
+        Self::from_string_slice(value)
     }
 }
 
@@ -99,7 +99,7 @@ impl fmt::Display for JString {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_jstring_new() {
@@ -110,8 +110,8 @@ mod tests {
     }
 
     #[test]
-    fn test_jstring_from_str() {
-        let jstr = JString::from_str("hello");
+    fn test_jstring_from_string_slice() {
+        let jstr = JString::from_string_slice("hello");
         assert_eq!(jstr.value(), "hello");
         assert_eq!(jstr.to_string(), "hello".to_string());
     }
@@ -161,6 +161,6 @@ mod tests {
     #[test]
     fn test_jstring_display() {
         let jstr = JString::from("test");
-        assert_eq!(format!("{}", jstr), "test");
+        assert_eq!(format!("{jstr}"), "test");
     }
 }

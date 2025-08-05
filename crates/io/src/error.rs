@@ -4,6 +4,7 @@
 //! including binary serialization, deserialization, and stream operations.
 
 use thiserror::Error;
+#[allow(dead_code)]
 const DEFAULT_TIMEOUT_MS: u64 = 30000;
 /// I/O operation errors
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -448,7 +449,7 @@ impl From<crate::Error> for IoError {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_error_creation() {
@@ -462,7 +463,7 @@ mod tests {
 
     #[test]
     fn test_error_classification() {
-        assert!(IoError::timeout(DEFAULT_TIMEOUT_MS).is_retryable());
+        assert!(IoError::timeout("test", 5000).is_retryable());
         assert!(!IoError::invalid_data("field", "value").is_retryable());
 
         assert!(IoError::invalid_format("json", "syntax error").is_user_error());
@@ -511,10 +512,11 @@ mod tests {
 
     #[test]
     fn test_specific_errors() {
-        let error = IoError::buffer_overflow("write", 1000, MAX_TRANSACTIONS_PER_BLOCK);
+        let error = IoError::buffer_overflow("write", 1000, 512);
+        assert!(matches!(error, IoError::BufferOverflow { .. }));
         assert_eq!(
             error.to_string(),
-            "Buffer overflow: attempted to write 1000 bytes, capacity MAX_TRANSACTIONS_PER_BLOCK"
+            "Buffer overflow: attempted to write 1000 bytes, capacity 512"
         );
 
         let error = IoError::end_of_stream(10, "reading header");

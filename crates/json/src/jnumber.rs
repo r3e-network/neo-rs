@@ -197,7 +197,7 @@ impl fmt::Display for JNumber {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_jnumber_new() {
@@ -219,17 +219,9 @@ mod tests {
     fn test_jnumber_conversions() {
         let jnum = JNumber::from(123);
         assert_eq!(jnum.to_i32().unwrap(), 123);
-        assert_eq!(
-            jnum.to_u32()
-                .ok_or_else(|| anyhow::anyhow!("Cannot convert to u32"))?,
-            123
-        );
+        assert_eq!(jnum.to_u32().unwrap(), 123);
         assert_eq!(jnum.to_i64().unwrap(), 123);
-        assert_eq!(
-            jnum.to_u64()
-                .ok_or_else(|| anyhow::anyhow!("Cannot convert to u64"))?,
-            123
-        );
+        assert_eq!(jnum.to_u64().unwrap(), 123);
 
         let float_num = JNumber::from(123.5);
         assert!(float_num.to_i32().is_err());
@@ -267,7 +259,7 @@ mod tests {
     #[test]
     fn test_jnumber_display() {
         let jnum = JNumber::from(42.5);
-        assert_eq!(format!("{}", jnum), "42.5");
+        assert_eq!(format!("{jnum}"), "42.5");
     }
 
     #[test]

@@ -131,6 +131,8 @@ impl Drop for Array {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_array_creation() {
         let items = vec![
@@ -147,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn test_array_get() {
+    fn test_array_get() -> Result<(), Box<dyn std::error::Error>> {
         let items = vec![
             StackItem::from_int(1),
             StackItem::from_int(2),
@@ -156,41 +158,15 @@ mod tests {
 
         let array = Array::new(items, None);
 
-        assert_eq!(
-            array
-                .first()
-                .ok_or("Empty collection")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
-                .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            1
-        );
-        assert_eq!(
-            array
-                .get(1)
-                .ok_or("Index out of bounds")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
-                .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            2
-        );
-        assert_eq!(
-            array
-                .get(2)
-                .ok_or("Index out of bounds")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
-                .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            3
-        );
+        assert_eq!(array.get(0).unwrap().as_int().unwrap().to_i32().unwrap(), 1);
+        assert_eq!(array.get(1).unwrap().as_int().unwrap().to_i32().unwrap(), 2);
+        assert_eq!(array.get(2).unwrap().as_int().unwrap().to_i32().unwrap(), 3);
         assert!(array.get(3).is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_array_set() {
+    fn test_array_set() -> Result<(), Box<dyn std::error::Error>> {
         let items = vec![
             StackItem::from_int(1),
             StackItem::from_int(2),
@@ -201,44 +177,21 @@ mod tests {
 
         array.set(1, StackItem::from_int(42));
 
+        assert_eq!(array.get(0).unwrap().as_int().unwrap().to_i32().unwrap(), 1);
         assert_eq!(
-            array
-                .first()
-                .ok_or("Empty collection")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
-                .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            1
-        );
-        assert_eq!(
-            array
-                .get(1)
-                .ok_or("Index out of bounds")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
-                .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
+            array.get(1).unwrap().as_int().unwrap().to_i32().unwrap(),
             42
         );
-        assert_eq!(
-            array
-                .get(2)
-                .ok_or("Index out of bounds")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
-                .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            3
-        );
+        assert_eq!(array.get(2).unwrap().as_int().unwrap().to_i32().unwrap(), 3);
 
         // Test setting out of bounds - should not panic, just do nothing
         array.set(3, StackItem::from_int(4));
         assert_eq!(array.len(), 3); // Length should remain the same
+        Ok(())
     }
 
     #[test]
-    fn test_array_push_pop() {
+    fn test_array_push_pop() -> Result<(), Box<dyn std::error::Error>> {
         let items = vec![StackItem::from_int(1), StackItem::from_int(2)];
 
         let mut array = Array::new(items, None);
@@ -246,20 +199,9 @@ mod tests {
         array.push(StackItem::from_int(3));
 
         assert_eq!(array.len(), 3);
-        assert_eq!(
-            array
-                .get(2)
-                .ok_or("Index out of bounds")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
-                .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            3
-        );
+        assert_eq!(array.get(2).unwrap().as_int().unwrap().to_i32().unwrap(), 3);
 
-        let popped = array
-            .pop()
-            .ok_or_else(|| anyhow::anyhow!("Collection is empty"))?;
+        let popped = array.pop().unwrap();
 
         assert_eq!(array.len(), 2);
         assert_eq!(
@@ -267,9 +209,10 @@ mod tests {
                 .as_int()
                 .expect("intermediate value should exist")
                 .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
+                .unwrap(),
             3
         );
+        Ok(())
     }
 
     #[test]
@@ -289,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn test_array_deep_copy() {
+    fn test_array_deep_copy() -> Result<(), Box<dyn std::error::Error>> {
         let items = vec![
             StackItem::from_int(1),
             StackItem::from_int(2),
@@ -301,50 +244,27 @@ mod tests {
 
         assert_eq!(copied.len(), array.len());
         assert_eq!(
-            copied
-                .first()
-                .ok_or("Empty collection")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            array
-                .first()
-                .ok_or("Empty collection")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
+            copied.get(0).unwrap().as_int().unwrap(),
+            array.get(0).unwrap().as_int().unwrap()
         );
         assert_eq!(
-            copied
-                .get(0)
-                .ok_or("Index out of bounds")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            array
-                .get(0)
-                .ok_or("Index out of bounds")?
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
+            copied.get(0).unwrap().as_int().unwrap(),
+            array.get(0).unwrap().as_int().unwrap()
         );
 
         // Check that the nested array was deep copied
-        let nested_original = array
-            .get(1)
-            .ok_or("Index out of bounds")?
-            .as_array()
-            .ok_or_else(|| VmError::InvalidStackItem)?;
-        let nested_copied = copied
-            .get(1)
-            .ok_or("Index out of bounds")?
-            .as_array()
-            .expect("Operation failed");
+        let nested_original = array.get(2).unwrap().as_array().unwrap();
+        let nested_copied = copied.get(2).unwrap().as_array().unwrap();
 
         assert_eq!(nested_copied.len(), nested_original.len());
         assert_eq!(
-            nested_copied[0].as_int().expect("Operation failed"),
-            nested_original[0].as_int().expect("Operation failed")
+            nested_copied[0].as_int().unwrap(),
+            nested_original[0].as_int().unwrap()
         );
         assert_eq!(
-            nested_copied[1].as_int().expect("Operation failed"),
-            nested_original[1].as_int().expect("Operation failed")
+            nested_copied[1].as_int().unwrap(),
+            nested_original[1].as_int().unwrap()
         );
+        Ok(())
     }
 }

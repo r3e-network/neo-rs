@@ -177,8 +177,9 @@ impl Signature {
 
 #[cfg(test)]
 mod tests {
-    use crate::{BlsError as Error, BlsResult as Result};
+    use super::*;
     use crate::keys::KeyPair;
+    // Removed unused imports
     use rand::thread_rng;
 
     #[test]

@@ -89,8 +89,8 @@ fn test_try_catch_finally() {
         let context = engine.current_context_mut().unwrap();
 
         // Get the catch and finally offsets from the instruction
-        let catch_offset = instruction.operand::<i16>()?;
-        let finally_offset = instruction.operand::<i16>()?;
+        let catch_offset = instruction.operand_as::<i16>().unwrap();
+        let finally_offset = instruction.operand_as::<i16>().unwrap();
 
         // Calculate the absolute positions
         let try_start = context.instruction_pointer();
@@ -100,6 +100,7 @@ fn test_try_catch_finally() {
         // Create an exception handling context
         let exception_context = ExceptionHandlingContext::new(
             try_start,
+            catch_start as usize,
             catch_start as usize,
             finally_start as usize,
             0, // End offset will be set by ENDTRY
@@ -117,7 +118,7 @@ fn test_try_catch_finally() {
         let context = engine.current_context_mut().unwrap();
 
         // Get the end offset from the instruction
-        let end_offset = instruction.operand::<i16>()?;
+        let end_offset = instruction.operand_as::<i16>().unwrap();
 
         // Calculate the absolute position
         let end_position = context.instruction_pointer() as i32 + end_offset as i32;

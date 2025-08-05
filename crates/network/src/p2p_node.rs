@@ -118,6 +118,8 @@ pub struct P2pNode {
         Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<(SocketAddr, NetworkMessage)>>>,
     /// Start time for uptime calculation
     start_time: std::time::SystemTime,
+    /// Optional sync manager reference for height updates
+    sync_manager: Arc<RwLock<Option<Arc<crate::sync::SyncManager>>>>,
 }
 
 /// Node events (matches C# Neo network events exactly)
@@ -197,6 +199,7 @@ impl P2pNode {
             command_receiver: Arc::new(tokio::sync::Mutex::new(command_receiver)),
             message_receiver: Arc::new(tokio::sync::Mutex::new(message_rx)),
             start_time: std::time::SystemTime::now(),
+            sync_manager: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -236,16 +239,19 @@ impl P2pNode {
             self.start_websocket_listener().await?;
         }
 
-        // 5. Connect to seed nodes
+        // 5. Start peer manager event handler
+        self.start_peer_manager_event_handler().await;
+
+        // 6. Connect to seed nodes
         self.connect_to_seed_nodes().await?;
 
-        // 6. Start periodic tasks
+        // 7. Start periodic tasks
         self.start_periodic_tasks().await?;
 
-        // 7. Update status to running
+        // 8. Update status to running
         *self.status.write().await = NodeStatus::Running;
 
-        // 8. Emit node started event
+        // 9. Emit node started event
         let _ = self.event_sender.send(NodeEvent::NodeStarted);
 
         info!("P2P node started successfully");
@@ -620,6 +626,12 @@ impl P2pNode {
         let protocol_msg = crate::messages::ProtocolMessage::Tx { transaction };
         let message = NetworkMessage::new(protocol_msg);
         self.send_message_to_peer(peer, message).await
+    }
+
+    /// Sets the sync manager reference for height updates
+    pub async fn set_sync_manager(&self, sync_manager: Arc<crate::sync::SyncManager>) {
+        *self.sync_manager.write().await = Some(sync_manager);
+        info!("Sync manager reference set in P2pNode");
     }
 
     // ===== Private helper methods =====
@@ -1118,6 +1130,54 @@ impl P2pNode {
         // Peer discovery implementation would go here
 
         Ok(())
+    }
+
+    /// Starts the peer manager event handler to forward version events to sync manager
+    async fn start_peer_manager_event_handler(&self) {
+        info!("Starting peer manager event handler for sync updates");
+
+        let mut peer_events = self.peer_manager.subscribe_to_events();
+        let sync_manager = self.sync_manager.clone();
+
+        tokio::spawn(async move {
+            info!("Peer manager event handler task started");
+
+            while let Ok(event) = peer_events.recv().await {
+                match event {
+                    crate::peer_manager::PeerEvent::VersionReceived {
+                        peer,
+                        start_height,
+                        version,
+                        user_agent,
+                    } => {
+                        info!(
+                            "📊 Received version from {} - height: {}, version: {}, agent: {}",
+                            peer, start_height, version, user_agent
+                        );
+
+                        // Forward height to sync manager
+                        if let Some(sync) = sync_manager.read().await.as_ref() {
+                            info!(
+                                "🔄 Updating sync manager with peer height {} from {}",
+                                start_height, peer
+                            );
+                            sync.update_best_height(start_height, peer).await;
+                        } else {
+                            warn!("⚠️ Sync manager not set, cannot update peer height!");
+                        }
+                    }
+                    crate::peer_manager::PeerEvent::Connected(conn) => {
+                        info!("✅ Peer connected event: {}", conn.address);
+                    }
+                    crate::peer_manager::PeerEvent::Disconnected(addr) => {
+                        info!("❌ Peer disconnected event: {}", addr);
+                    }
+                    _ => {}
+                }
+            }
+
+            warn!("Peer manager event handler task ended");
+        });
     }
 }
 

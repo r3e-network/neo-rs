@@ -196,7 +196,7 @@ impl std::ops::IndexMut<OpCode> for JumpTable {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_jump_table_creation() {

@@ -82,7 +82,7 @@ impl ProtocolSettings {
             max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK as u32,
             memory_pool_max_transactions: 50_000,
             max_traceable_blocks: MAX_TRACEABLE_BLOCKS, // About 1 year of blocks (matches C# ProtocolSettings.Default.MaxTraceableBlocks)
-            initial_gas_distribution: 52_000_000_00000000, // 52 million GAS (matches C# ProtocolSettings.Default.InitialGasDistribution)
+            initial_gas_distribution: 5_200_000_000_000_000, // 52 million GAS (matches C# ProtocolSettings.Default.InitialGasDistribution)
             hardforks: std::collections::HashMap::new(), // Empty by default (matches C# ProtocolSettings.Default.Hardforks)
         }
     }
@@ -95,23 +95,23 @@ impl ProtocolSettings {
         settings.max_transactions_per_block = MAX_TRANSACTIONS_PER_BLOCK as u32;
         settings.memory_pool_max_transactions = 50000;
         settings.max_traceable_blocks = MAX_TRACEABLE_BLOCKS;
-        settings.initial_gas_distribution = 52_000_000_00000000;
+        settings.initial_gas_distribution = 5_200_000_000_000_000;
 
         settings
             .hardforks
-            .insert(crate::hardfork::Hardfork::HF_Aspidochelone, 1730000);
+            .insert(crate::hardfork::Hardfork::HfAspidochelone, 1730000);
         settings
             .hardforks
-            .insert(crate::hardfork::Hardfork::HF_Basilisk, 4120000);
+            .insert(crate::hardfork::Hardfork::HfBasilisk, 4120000);
         settings
             .hardforks
-            .insert(crate::hardfork::Hardfork::HF_Cockatrice, 5450000);
+            .insert(crate::hardfork::Hardfork::HfCockatrice, 5450000);
         settings
             .hardforks
-            .insert(crate::hardfork::Hardfork::HF_Domovoi, 5570000);
+            .insert(crate::hardfork::Hardfork::HfDomovoi, 5570000);
         settings
             .hardforks
-            .insert(crate::hardfork::Hardfork::HF_Echidna, 7300000);
+            .insert(crate::hardfork::Hardfork::HfEchidna, 7300000);
 
         settings
     }
@@ -124,23 +124,23 @@ impl ProtocolSettings {
         settings.max_transactions_per_block = 5000; // TestNet allows more transactions
         settings.memory_pool_max_transactions = 50000;
         settings.max_traceable_blocks = MAX_TRACEABLE_BLOCKS;
-        settings.initial_gas_distribution = 52_000_000_00000000;
+        settings.initial_gas_distribution = 5_200_000_000_000_000;
 
         settings
             .hardforks
-            .insert(crate::hardfork::Hardfork::HF_Aspidochelone, 210000);
+            .insert(crate::hardfork::Hardfork::HfAspidochelone, 210000);
         settings
             .hardforks
-            .insert(crate::hardfork::Hardfork::HF_Basilisk, 2680000);
+            .insert(crate::hardfork::Hardfork::HfBasilisk, 2680000);
         settings
             .hardforks
-            .insert(crate::hardfork::Hardfork::HF_Cockatrice, 3967000);
+            .insert(crate::hardfork::Hardfork::HfCockatrice, 3967000);
         settings
             .hardforks
-            .insert(crate::hardfork::Hardfork::HF_Domovoi, 4144000);
+            .insert(crate::hardfork::Hardfork::HfDomovoi, 4144000);
         settings
             .hardforks
-            .insert(crate::hardfork::Hardfork::HF_Echidna, 5870000);
+            .insert(crate::hardfork::Hardfork::HfEchidna, 5870000);
 
         settings
     }
@@ -238,11 +238,11 @@ impl NeoSystem {
             Some(service) => match service.clone().downcast::<T>() {
                 Ok(typed_service) => Ok(typed_service),
                 Err(_) => Err(CoreError::System {
-                    message: format!("Service {} is not of the requested type", name),
+                    message: format!("Service {name} is not of the requested type"),
                 }),
             },
             None => Err(CoreError::System {
-                message: format!("Service {} not found", name),
+                message: format!("Service {name} not found"),
             }),
         }
     }
@@ -804,34 +804,32 @@ impl NeoSystem {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
+    use crate::{CoreError as Error, CoreResult as Result};
+    use std::sync::Arc;
 
     #[test]
+
     fn test_neo_system_new() {
         let settings = ProtocolSettings::new();
         let system = NeoSystem::new(settings);
-        assert!(system.services.read().ok()?.is_empty());
+        assert!(system.services.read().unwrap().is_empty());
     }
-
     #[test]
     fn test_neo_system_add_get_service() {
         let settings = ProtocolSettings::new();
         let system = NeoSystem::new(settings);
-
         // Add a service
         let service = "test_service".to_string();
         system.add_service("test", service.clone()).unwrap();
-
         // Get the service
         let retrieved: Arc<String> = system.get_service("test").unwrap();
         assert_eq!(*retrieved, service);
-
         // Try to get a non-existent service
-        let result: Result<Arc<String>, _> = system.get_service("nonexistent");
+        let result = system.get_service::<String>("nonexistent");
         assert!(result.is_err());
-
         // Try to get a service with the wrong type
-        let result: Result<Arc<i32>, _> = system.get_service("test");
+        let result = system.get_service::<i32>("test");
         assert!(result.is_err());
     }
 }

@@ -126,7 +126,15 @@ impl JPathToken {
                             })?);
                         }
                         if !prop_name.is_empty() {
-                            tokens.push(JPathToken::property(prop_name));
+                            if prop_name == "*" {
+                                tokens.push(JPathToken::wildcard());
+                            } else {
+                                tokens.push(JPathToken::property(prop_name));
+                            }
+                        } else {
+                            return Err(JsonError::ParseError(
+                                "Empty property name after '.'".to_string(),
+                            ));
                         }
                     }
                 }
@@ -135,7 +143,7 @@ impl JPathToken {
                     let mut bracket_content = String::new();
                     let mut bracket_depth = 1;
 
-                    while let Some(next_ch) = chars.next() {
+                    for next_ch in chars.by_ref() {
                         if next_ch == '[' {
                             bracket_depth += 1;
                         } else if next_ch == ']' {
@@ -145,6 +153,12 @@ impl JPathToken {
                             }
                         }
                         bracket_content.push(next_ch);
+                    }
+                    
+                    if bracket_depth != 0 {
+                        return Err(JsonError::ParseError(
+                            "Unclosed bracket in JSON path".to_string(),
+                        ));
                     }
 
                     if bracket_content == "*" {
@@ -176,8 +190,7 @@ impl JPathToken {
                 _ => {
                     // Unexpected character
                     return Err(JsonError::ParseError(format!(
-                        "Unexpected character '{}' in JSON path",
-                        ch
+                        "Unexpected character '{ch}' in JSON path"
                     )));
                 }
             }
@@ -199,10 +212,8 @@ impl JPathToken {
                     JPathTokenType::Property => {
                         if let Some(prop_name) = &token.value {
                             if let JToken::Object(obj) = current {
-                                if let Some(value) = obj.get(prop_name) {
-                                    if let Some(token) = value {
-                                        new_results.push(token);
-                                    }
+                                if let Some(Some(token)) = obj.get(prop_name) {
+                                    new_results.push(token);
                                 }
                             }
                         }
@@ -210,27 +221,21 @@ impl JPathToken {
                     JPathTokenType::ArrayIndex => {
                         if let Some(index) = token.index {
                             if let JToken::Array(arr) = current {
-                                if let Some(value) = arr.get(index) {
-                                    if let Some(token) = value {
-                                        new_results.push(token);
-                                    }
+                                if let Some(Some(token)) = arr.get(index) {
+                                    new_results.push(token);
                                 }
                             }
                         }
                     }
                     JPathTokenType::Wildcard => match current {
                         JToken::Array(arr) => {
-                            for item in arr {
-                                if let Some(token) = item {
-                                    new_results.push(token);
-                                }
+                            for token in arr.iter().flatten() {
+                                new_results.push(token);
                             }
                         }
                         JToken::Object(obj) => {
-                            for value in obj.values() {
-                                if let Some(token) = value {
-                                    new_results.push(token);
-                                }
+                            for token in obj.values().flatten() {
+                                new_results.push(token);
                             }
                         }
                         _ => {}
@@ -240,10 +245,8 @@ impl JPathToken {
                             let start = token.start.unwrap_or(0);
                             let end = token.end.unwrap_or(arr.len());
                             for i in start..end.min(arr.len()) {
-                                if let Some(value) = arr.get(i) {
-                                    if let Some(token) = value {
-                                        new_results.push(token);
-                                    }
+                                if let Some(Some(token)) = arr.get(i) {
+                                    new_results.push(token);
                                 }
                             }
                         }
@@ -268,17 +271,13 @@ impl JPathToken {
 
         match node {
             JToken::Array(arr) => {
-                for item in arr {
-                    if let Some(token) = item {
-                        Self::recursive_search(token, results);
-                    }
+                for token in arr.iter().flatten() {
+                    Self::recursive_search(token, results);
                 }
             }
             JToken::Object(obj) => {
-                for value in obj.values() {
-                    if let Some(token) = value {
-                        Self::recursive_search(token, results);
-                    }
+                for token in obj.values().flatten() {
+                    Self::recursive_search(token, results);
                 }
             }
             _ => {}
@@ -288,7 +287,7 @@ impl JPathToken {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
     use crate::OrderedDictionary;
 
     #[test]

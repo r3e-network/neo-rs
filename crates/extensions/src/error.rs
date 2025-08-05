@@ -85,7 +85,7 @@ impl ExtensionError {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_error_creation() {

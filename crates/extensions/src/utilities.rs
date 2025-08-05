@@ -186,7 +186,7 @@ pub fn camel_to_snake_case(camel_str: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_timestamp_conversion() {

@@ -255,7 +255,7 @@ impl TransactionAttribute {
                     0xff => OracleResponseCode::Error,
                     _ => {
                         return Err(CoreError::InvalidData {
-                            message: format!("Invalid oracle response code: {}", code_byte),
+                            message: format!("Invalid oracle response code: {code_byte}"),
                         });
                     }
                 };
@@ -282,12 +282,12 @@ impl TransactionAttribute {
                         })?;
                 let hash =
                     UInt256::from_bytes(&hash_bytes).map_err(|e| CoreError::InvalidData {
-                        message: format!("Invalid hash: {}", e),
+                        message: format!("Invalid hash: {e}"),
                     })?;
                 Ok(TransactionAttribute::Conflicts { hash })
             }
             _ => Err(CoreError::InvalidData {
-                message: format!("Unknown attribute type: {}", attribute_type),
+                message: format!("Unknown attribute type: {attribute_type}"),
             }),
         }
     }
@@ -307,10 +307,10 @@ impl fmt::Display for TransactionAttribute {
                 )
             }
             TransactionAttribute::NotValidBefore { height } => {
-                write!(f, "NotValidBefore(height: {})", height)
+                write!(f, "NotValidBefore(height: {height})")
             }
             TransactionAttribute::Conflicts { hash } => {
-                write!(f, "Conflicts(hash: {})", hash)
+                write!(f, "Conflicts(hash: {hash})")
             }
         }
     }

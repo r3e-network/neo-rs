@@ -4,6 +4,7 @@
 
 use neo_core::{Block, Transaction, UInt160, UInt256};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// RPC request structure (matches Neo C# RPC protocol)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,22 +15,36 @@ pub struct RpcRequest {
     pub id: Option<serde_json::Value>,
 }
 
+/// JSON-RPC request structure (alias for RpcRequest)
+pub type JsonRpcRequest = RpcRequest;
+
+/// JSON-RPC response structure (alias for RpcResponse)
+pub type JsonRpcResponse = RpcResponse;
+
 /// RPC response structure (matches Neo C# RPC protocol)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcResponse {
     pub jsonrpc: String,
     pub result: Option<serde_json::Value>,
-    pub error: Option<RpcError>,
+    pub error: Option<JsonRpcError>,
     pub id: Option<serde_json::Value>,
 }
 
-/// RPC error structure (matches Neo C# RPC protocol)
+/// JSON-RPC error structure (matches Neo C# RPC protocol)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcError {
+pub struct JsonRpcError {
     pub code: i32,
     pub message: String,
     pub data: Option<serde_json::Value>,
 }
+
+impl fmt::Display for JsonRpcError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "RPC Error {}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for JsonRpcError {}
 
 /// Block information for RPC responses (matches Neo C# RPC protocol)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,7 +231,7 @@ impl RpcResponse {
     }
 
     /// Creates an error RPC response
-    pub fn error(error: RpcError, id: Option<serde_json::Value>) -> Self {
+    pub fn error(error: JsonRpcError, id: Option<serde_json::Value>) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
             result: None,
@@ -226,7 +241,7 @@ impl RpcResponse {
     }
 }
 
-impl RpcError {
+impl JsonRpcError {
     /// Creates a new RPC error
     pub fn new(code: i32, message: String) -> Self {
         Self {

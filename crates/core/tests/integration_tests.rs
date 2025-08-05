@@ -163,17 +163,17 @@ fn test_hardfork_manager() {
     let mut manager = HardforkManager::new();
 
     // Register hardforks
-    manager.register(Hardfork::HF_Aspidochelone, 100);
-    manager.register(Hardfork::HF_Basilisk, 200);
+    manager.register(Hardfork::HfAspidochelone, 100);
+    manager.register(Hardfork::HfBasilisk, 200);
 
     // Test is_enabled
-    assert!(!manager.is_enabled(Hardfork::HF_Aspidochelone, 99));
-    assert!(manager.is_enabled(Hardfork::HF_Aspidochelone, 100));
-    assert!(manager.is_enabled(Hardfork::HF_Aspidochelone, 101));
+    assert!(!manager.is_enabled(Hardfork::HfAspidochelone, 99));
+    assert!(manager.is_enabled(Hardfork::HfAspidochelone, 100));
+    assert!(manager.is_enabled(Hardfork::HfAspidochelone, 101));
 
-    assert!(!manager.is_enabled(Hardfork::HF_Basilisk, 199));
-    assert!(manager.is_enabled(Hardfork::HF_Basilisk, 200));
-    assert!(manager.is_enabled(Hardfork::HF_Basilisk, 201));
+    assert!(!manager.is_enabled(Hardfork::HfBasilisk, 199));
+    assert!(manager.is_enabled(Hardfork::HfBasilisk, 200));
+    assert!(manager.is_enabled(Hardfork::HfBasilisk, 201));
 }
 
 struct TestHandler {

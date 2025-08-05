@@ -53,7 +53,7 @@ impl Map {
     pub fn get(&self, key: &StackItem) -> VmResult<&StackItem> {
         self.items
             .get(key)
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {:?}", key)))
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))
     }
 
     /// Sets the value for the specified key.
@@ -67,7 +67,7 @@ impl Map {
         let value = self
             .items
             .remove(key)
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {:?}", key)))?;
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?;
         Ok(value)
     }
 
@@ -114,11 +114,14 @@ impl Drop for Map {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
     #[test]
     fn test_map_creation() {
         let mut items = BTreeMap::new();
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
-        items.insert(StackItem::from_int(2), StackItem::from_int(ADDRESS_SIZE));
+        items.insert(StackItem::from_int(2), StackItem::from_int(20));
 
         let map = Map::new(items.clone(), None);
 
@@ -128,100 +131,95 @@ mod tests {
     }
 
     #[test]
-    fn test_map_get() {
+    fn test_map_get() -> Result<(), Box<dyn std::error::Error>> {
         let mut items = BTreeMap::new();
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
-        items.insert(StackItem::from_int(2), StackItem::from_int(ADDRESS_SIZE));
+        items.insert(StackItem::from_int(2), StackItem::from_int(20));
 
         let map = Map::new(items, None);
 
         assert_eq!(
-            map.get(&StackItem::from_int(1))
-                .ok_or_else(|| VmError::InvalidStackItem)?
+            map.get(&StackItem::from_int(1))?
                 .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
+                .unwrap()
                 .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
+                .unwrap(),
             10
         );
         assert_eq!(
-            map.get(&StackItem::from_int(2))
-                .ok_or_else(|| VmError::InvalidStackItem)?
+            map.get(&StackItem::from_int(2))?
                 .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
+                .unwrap()
                 .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            ADDRESS_SIZE
+                .unwrap(),
+            20
         );
         assert!(map.get(&StackItem::from_int(3)).is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_map_set() {
+    fn test_map_set() -> Result<(), Box<dyn std::error::Error>> {
         let mut items = BTreeMap::new();
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
 
         let mut map = Map::new(items, None);
 
         // Update existing key
-        map.set(StackItem::from_int(1), StackItem::from_int(100))
-            .ok_or_else(|| VmError::InvalidStackItem)?;
+        map.set(StackItem::from_int(1), StackItem::from_int(100))?;
         assert_eq!(
-            map.get(&StackItem::from_int(1))
-                .ok_or_else(|| VmError::InvalidStackItem)?
+            map.get(&StackItem::from_int(1))?
                 .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
+                .unwrap()
                 .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
+                .unwrap(),
             100
         );
 
         // Add new key
-        map.set(StackItem::from_int(2), StackItem::from_int(ADDRESS_SIZE))
-            .ok_or_else(|| VmError::InvalidStackItem)?;
+        map.set(StackItem::from_int(2), StackItem::from_int(20))?;
         assert_eq!(
-            map.get(&StackItem::from_int(2))
-                .ok_or_else(|| VmError::InvalidStackItem)?
+            map.get(&StackItem::from_int(2))?
                 .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?
+                .unwrap()
                 .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            ADDRESS_SIZE
+                .unwrap(),
+            20
         );
 
         assert_eq!(map.len(), 2);
+        Ok(())
     }
 
     #[test]
-    fn test_map_remove() {
+    fn test_map_remove() -> Result<(), Box<dyn std::error::Error>> {
         let mut items = BTreeMap::new();
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
-        items.insert(StackItem::from_int(2), StackItem::from_int(ADDRESS_SIZE));
+        items.insert(StackItem::from_int(2), StackItem::from_int(20));
 
         let mut map = Map::new(items, None);
 
-        let removed = map
-            .remove(&StackItem::from_int(1))
-            .ok_or_else(|| VmError::InvalidStackItem)?;
+        let removed = map.remove(&StackItem::from_int(1))?;
         assert_eq!(
             removed
                 .as_int()
                 .expect("intermediate value should exist")
                 .to_i32()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
+                .unwrap(),
             10
         );
         assert_eq!(map.len(), 1);
         assert!(map.get(&StackItem::from_int(1)).is_err());
 
         assert!(map.remove(&StackItem::from_int(3)).is_err());
+        Ok(())
     }
 
     #[test]
     fn test_map_clear() {
         let mut items = BTreeMap::new();
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
-        items.insert(StackItem::from_int(2), StackItem::from_int(ADDRESS_SIZE));
+        items.insert(StackItem::from_int(2), StackItem::from_int(20));
 
         let mut map = Map::new(items, None);
 
@@ -232,15 +230,12 @@ mod tests {
     }
 
     #[test]
-    fn test_map_deep_copy() {
+    fn test_map_deep_copy() -> Result<(), Box<dyn std::error::Error>> {
         let mut items = BTreeMap::new();
         items.insert(StackItem::from_int(1), StackItem::from_int(10));
         items.insert(
             StackItem::from_int(2),
-            StackItem::from_array(vec![
-                StackItem::from_int(ADDRESS_SIZE),
-                StackItem::from_int(30),
-            ]),
+            StackItem::from_array(vec![StackItem::from_int(20), StackItem::from_int(30)]),
         );
 
         let map = Map::new(items, None);
@@ -249,28 +244,19 @@ mod tests {
         assert_eq!(copied.len(), map.len());
 
         // Check that the nested array was deep copied
-        let nested_original = map
-            .get(&StackItem::from_int(2))
-            .ok_or_else(|| VmError::InvalidStackItem)?
-            .as_array()
-            .ok_or_else(|| VmError::InvalidStackItem)?;
-        let nested_copied = copied
-            .get(&StackItem::from_int(2))
-            .ok_or_else(|| VmError::InvalidStackItem)?
-            .as_array()
-            .ok_or_else(|| VmError::InvalidStackItem)?;
+        let nested_original = map.get(&StackItem::from_int(2))?.as_array().unwrap();
+        let nested_copied = copied.get(&StackItem::from_int(2))?.as_array().unwrap();
 
         assert_eq!(nested_copied.len(), nested_original.len());
         assert_eq!(
-            nested_copied[0]
-                .as_int()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            nested_original[0].as_int().expect("Operation failed")
+            nested_copied[0].as_int().unwrap(),
+            nested_original[0].as_int().unwrap()
         );
         assert_eq!(
-            nested_copied[1].as_int().expect("Operation failed"),
-            nested_original[1].as_int().expect("Operation failed")
+            nested_copied[1].as_int().unwrap(),
+            nested_original[1].as_int().unwrap()
         );
+        Ok(())
     }
 
     #[test]

@@ -3,7 +3,7 @@
 //! These tests ensure full compatibility with C# Neo.Cryptography.BLS12_381 serialization.
 //! Tests are based on the C# BLS12_381.Serialization test suite.
 
-use bls12_381::*;
+use neo_bls12_381::*;
 use rand::thread_rng;
 
 #[cfg(test)]
@@ -82,9 +82,9 @@ mod serialization_tests {
             b"".to_vec(), // Empty message
             b"short".to_vec(),
             b"medium length test message".to_vec(),
-            vec![0u8; 1000],               // Long message
-            vec![0xFF; 500],               // High byte values
-            (0..256).collect::<Vec<u8>>(), // All byte values
+            vec![0u8; 1000],                                 // Long message
+            vec![0xFF; 500],                                 // High byte values
+            (0..=255).map(|x| x as u8).collect::<Vec<u8>>(), // All byte values
         ];
 
         for (i, message) in test_messages.iter().enumerate() {

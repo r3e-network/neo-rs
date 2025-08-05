@@ -3,14 +3,13 @@
 //! These tests ensure full compatibility with C# Neo's RPC client functionality.
 //! Tests are based on the C# Neo.Network.RPC test suite.
 
-use super::*;
-use neo_rpc_client::{NeoRpcClient, Result, RpcError};
-use serde_json::json;
+use neo_rpc_client::{RpcClient, RpcError, RpcResult};
 use serde_json::{json, Value};
 use std::time::Duration;
 
 #[cfg(test)]
 mod rpc_client_tests {
+    use super::*;
     /// Implementation provided RPC client for testing (matches C# test patterns exactly)
     struct MockRpcClient {
         responses: std::collections::HashMap<String, Value>,
@@ -34,7 +33,7 @@ mod rpc_client_tests {
                         "msperblock": 15000,
                         "maxvaliduntilblockincrement": 5760,
                         "maxtraceableblocks": 2102400,
-                        "initialgasdistribution": 5200000000000000,
+                        "initialgasdistribution": "5200000000000000",
                         "hardforks": {
                             "Aspidochelone": 0,
                             "Basilisk": 0,
@@ -73,10 +72,12 @@ mod rpc_client_tests {
             Self { responses }
         }
 
-        async fn call_method(&self, method: &str, _params: Vec<Value>) -> Result<Value> {
+        async fn call_method(&self, method: &str, _params: Vec<Value>) -> Result<Value, RpcError> {
             match self.responses.get(method) {
                 Some(response) => Ok(response.clone()),
-                None => Err(RpcError::MethodNotFound(method.to_string())),
+                None => Err(RpcError::MethodNotFound {
+                    method: method.to_string(),
+                }),
             }
         }
     }
@@ -195,7 +196,7 @@ mod rpc_client_tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            RpcError::MethodNotFound(method) => {
+            RpcError::MethodNotFound { method } => {
                 assert_eq!(method, "nonexistentmethod");
             }
             _ => panic!("Expected MethodNotFound error"),
@@ -311,9 +312,9 @@ mod rpc_client_tests {
     /// Test RPC URL and endpoint handling (matches C# endpoint configuration exactly)
     #[test]
     fn test_rpc_endpoint_handling_compatibility() {
-        fn parse_rpc_endpoint(url: &str) -> Result<(String, u16, String)> {
+        fn parse_rpc_endpoint(url: &str) -> Result<(String, u16, String), RpcError> {
             if !url.starts_with("http://") && !url.starts_with("https://") {
-                return Err(RpcError::InvalidUrl(
+                return Err(RpcError::Custom(
                     "URL must start with http:// or https://".to_string(),
                 ));
             }
@@ -326,14 +327,14 @@ mod rpc_client_tests {
 
             let parts: Vec<&str> = without_protocol.split(':').collect();
             if parts.len() != 2 {
-                return Err(RpcError::InvalidUrl("URL must contain port".to_string()));
+                return Err(RpcError::Custom("URL must contain port".to_string()));
             }
 
             let host = parts[0].to_string();
             let port_and_path: Vec<&str> = parts[1].split('/').collect();
             let port: u16 = port_and_path[0]
                 .parse()
-                .map_err(|_| RpcError::InvalidUrl("Invalid port number".to_string()))?;
+                .map_err(|_| RpcError::Parse("Invalid port number".to_string()))?;
 
             let path = if port_and_path.len() > 1 {
                 format!("/{}", port_and_path[1..].join("/"))
@@ -365,7 +366,7 @@ mod rpc_client_tests {
     #[tokio::test]
     async fn test_timeout_and_retry_compatibility() {
         // Simulate timeout scenarios
-        async fn simulate_rpc_call_with_timeout(timeout_ms: u64) -> Result<Value> {
+        async fn simulate_rpc_call_with_timeout(timeout_ms: u64) -> Result<Value, RpcError> {
             let timeout = Duration::from_millis(timeout_ms);
 
             // Simulate a call that takes longer than timeout
@@ -376,7 +377,9 @@ mod rpc_client_tests {
 
             match tokio::time::timeout(timeout, slow_call).await {
                 Ok(result) => result,
-                Err(_) => Err(RpcError::Timeout("Request timed out".to_string())),
+                Err(_) => Err(RpcError::Timeout {
+                    timeout: timeout_ms / 1000,
+                }),
             }
         }
 
@@ -385,7 +388,7 @@ mod rpc_client_tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            RpcError::Timeout(_) => {
+            RpcError::Timeout { timeout: _ } => {
                 // Expected timeout error
                 assert!(true);
             }

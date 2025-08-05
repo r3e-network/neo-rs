@@ -178,42 +178,36 @@ impl Default for BinaryWriter {
 
 #[cfg(test)]
 mod tests {
-    use super::{Transaction, Block, UInt160, UInt256};
+    use crate::{Transaction, Block, UInt160, UInt256};
+    use neo_io::{BinaryWriter, MemoryReader, Serializable};
 
     #[test]
     fn test_write_basic_types() {
         let mut writer = BinaryWriter::new();
-        
         writer.write_u8(0x42).unwrap();
         writer.write_u16(0x1234).unwrap();
         writer.write_u32(0x12345678).unwrap();
         writer.write_u64(0x123456789ABCDEF0).unwrap();
-        
         let bytes = writer.to_bytes();
         assert_eq!(bytes[0], 0x42);
         assert_eq!(&bytes[1..3], &[0x34, 0x12]); // Little-endian
         assert_eq!(&bytes[3..7], &[0x78, 0x56, 0x34, 0x12]); // Little-endian
     }
-
     #[test]
     fn test_write_var_int() {
         let mut writer = BinaryWriter::new();
-        
         writer.write_var_int(0x42).unwrap();
         writer.write_var_int(0x1234).unwrap();
         writer.write_var_int(0x12345678).unwrap();
-        
         let bytes = writer.to_bytes();
         assert_eq!(bytes[0], 0x42);
         assert_eq!(bytes[1], 0xFD);
         assert_eq!(&bytes[2..4], &[0x34, 0x12]);
     }
-
     #[test]
     fn test_write_var_string() {
         let mut writer = BinaryWriter::new();
         writer.write_var_string("Hello").unwrap();
-        
         let bytes = writer.to_bytes();
         assert_eq!(bytes[0], 5); // Length
         assert_eq!(&bytes[1..6], b"Hello");

@@ -20,7 +20,7 @@ pub mod neo_rpc;
 
 pub use client::{RpcClient, RpcClientBuilder};
 pub use error::{RpcError, RpcResult};
-pub use models::{RpcRequest, RpcResponse};
+pub use models::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, RpcRequest, RpcResponse};
 
 use neo_config::DEFAULT_NEO_PORT;
 use neo_config::DEFAULT_RPC_PORT;
@@ -50,7 +50,7 @@ pub struct RpcConfig {
 impl Default for RpcConfig {
     fn default() -> Self {
         Self {
-            endpoint: "http://DEFAULT_RPC_PORT".to_string(),
+            endpoint: format!("http://localhost:{}", DEFAULT_RPC_PORT),
             timeout: 30,
             max_retries: 3,
             retry_delay: 1000,
@@ -59,63 +59,6 @@ impl Default for RpcConfig {
         }
     }
 }
-
-/// JSON-RPC request structure (matches C# JsonRpc exactly)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JsonRpcRequest {
-    /// JSON-RPC version (always "2.0")
-    pub jsonrpc: String,
-    /// Request method name
-    pub method: String,
-    /// Request parameters
-    pub params: serde_json::Value,
-    /// Request ID
-    pub id: u64,
-}
-
-impl JsonRpcRequest {
-    /// Creates a new JSON-RPC request
-    pub fn new(method: String, params: serde_json::Value, id: u64) -> Self {
-        Self {
-            jsonrpc: "2.0".to_string(),
-            method,
-            params,
-            id,
-        }
-    }
-}
-
-/// JSON-RPC response structure (matches C# JsonRpc exactly)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JsonRpcResponse {
-    /// JSON-RPC version
-    pub jsonrpc: String,
-    /// Response result (if successful)
-    pub result: Option<serde_json::Value>,
-    /// Response error (if failed)
-    pub error: Option<JsonRpcError>,
-    /// Request ID
-    pub id: u64,
-}
-
-/// JSON-RPC error structure (matches C# JsonRpcError exactly)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JsonRpcError {
-    /// Error code
-    pub code: i32,
-    /// Error message
-    pub message: String,
-    /// Additional error data
-    pub data: Option<serde_json::Value>,
-}
-
-impl fmt::Display for JsonRpcError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RPC Error {}: {}", self.code, self.message)
-    }
-}
-
-impl std::error::Error for JsonRpcError {}
 
 /// RPC method names (matches C# RpcMethods exactly)
 pub mod rpc_methods {
@@ -168,38 +111,38 @@ pub mod rpc_methods {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_rpc_config_default() {
         let config = RpcConfig::default();
-        assert_eq!(config.endpoint, "http://DEFAULT_RPC_PORT");
+        assert!(config.endpoint.starts_with("http://localhost:"));
         assert_eq!(config.timeout, 30);
         assert_eq!(config.max_retries, 3);
     }
 
     #[test]
     fn test_json_rpc_request() {
-        let request = JsonRpcRequest::new(
+        let request = RpcRequest::new(
             "getblockcount".to_string(),
             serde_json::Value::Array(vec![]),
-            1,
+            Some(serde_json::json!(1)),
         );
         assert_eq!(request.jsonrpc, "2.0");
         assert_eq!(request.method, "getblockcount");
-        assert_eq!(request.id, 1);
+        assert_eq!(request.id, Some(serde_json::json!(1)));
     }
 
     #[test]
     fn test_json_rpc_serialization() {
-        let request = JsonRpcRequest::new(
+        let request = RpcRequest::new(
             "getblock".to_string(),
             serde_json::json!(["0x1234", true]),
-            42,
+            Some(serde_json::json!(42)),
         );
 
         let json = serde_json::to_string(&request).unwrap();
-        let deserialized: JsonRpcRequest =
+        let deserialized: RpcRequest =
             serde_json::from_str(&json).expect("Failed to parse from string");
 
         assert_eq!(request.method, deserialized.method);
