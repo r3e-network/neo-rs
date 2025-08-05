@@ -27,7 +27,7 @@ mod jtoken_tests {
         let negative_token = JToken::Number(-123.456);
 
         assert_eq!(int_token, JToken::Number(42.0));
-        assert_eq!(float_token, JToken::Number(3.14159));
+        assert_eq!(float_token, JToken::Number(std::f64::consts::PI));
         assert_eq!(zero_token, JToken::Number(0.0));
         assert_eq!(negative_token, JToken::Number(-123.456));
 
