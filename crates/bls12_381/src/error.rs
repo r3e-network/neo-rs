@@ -144,7 +144,7 @@ impl BlsError {
 /// Converts from hex decoding errors
 impl From<hex::FromHexError> for BlsError {
     fn from(err: hex::FromHexError) -> Self {
-        Self::DeserializationError(format!("Hex decoding error: {}", err))
+        Self::DeserializationError(format!("Hex decoding error: {err}"))
     }
 }
 
@@ -168,10 +168,7 @@ mod tests {
             expected: 32,
             actual: 16,
         };
-        assert_eq!(
-            err.to_string(),
-            "Invalid key size: expected 32, got 16"
-        );
+        assert_eq!(err.to_string(), "Invalid key size: expected 32, got 16");
     }
 
     #[test]

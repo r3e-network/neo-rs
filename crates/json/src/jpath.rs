@@ -154,7 +154,7 @@ impl JPathToken {
                         }
                         bracket_content.push(next_ch);
                     }
-                    
+
                     if bracket_depth != 0 {
                         return Err(JsonError::ParseError(
                             "Unclosed bracket in JSON path".to_string(),
