@@ -20,7 +20,6 @@ pub use error::{BlsError, BlsResult};
 pub use keys::{KeyPair, PrivateKey, PublicKey};
 pub use signature::{Signature, SignatureScheme};
 
-use crate::constants::HASH_SIZE;
 use rand::RngCore;
 
 /// BLS12-381 domain separation tag for Neo blockchain (matches C# exactly)
@@ -138,6 +137,8 @@ impl Bls12381 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::constants::HASH_SIZE;
     use rand::thread_rng;
 
     #[test]

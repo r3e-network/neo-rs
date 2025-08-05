@@ -3,7 +3,7 @@
 //! These tests ensure performance characteristics match C# Neo.Cryptography.BLS12_381.
 //! Tests are based on the C# BLS12_381.Performance test suite.
 
-use bls12_381::*;
+use neo_bls12_381::*;
 use rand::thread_rng;
 use std::time::Instant;
 
@@ -617,12 +617,12 @@ mod performance_tests {
 
         // Test performance with edge case messages
         let edge_cases = vec![
-            vec![],                                            // Empty message
-            vec![0x00],                                        // Single zero byte
-            vec![0xFF],                                        // Single max byte
-            vec![0x00; 10000],                                 // Large zeros
-            vec![0xFF; 10000],                                 // Large max values
-            (0..256).cycle().take(10000).collect::<Vec<u8>>(), // Pattern
+            vec![],                                             // Empty message
+            vec![0x00],                                         // Single zero byte
+            vec![0xFF],                                         // Single max byte
+            vec![0x00; 10000],                                  // Large zeros
+            vec![0xFF; 10000],                                  // Large max values
+            (0..=255).cycle().take(10000).collect::<Vec<u8>>(), // Pattern
         ];
 
         for (i, message) in edge_cases.iter().enumerate() {

@@ -102,7 +102,7 @@ impl InteropInterface for TestInteropInterface {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutionEngine, StackItem, VmError};
+    use super::*;
 
     #[test]
     fn test_interop_interface_creation() {

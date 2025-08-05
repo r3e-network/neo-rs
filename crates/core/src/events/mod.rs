@@ -101,34 +101,31 @@ impl EventManager {
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, Transaction, UInt160, UInt256};
+    use super::*;
+    use crate::{Block, Transaction, UInt160, UInt256};
+    use std::any::Any;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
 
     struct TestHandler {
         called: Arc<AtomicBool>,
     }
-
     impl EventHandler for TestHandler {
         fn handle(&self, _sender: &dyn Any, _args: &dyn Any) {
             self.called.store(true, Ordering::SeqCst);
         }
     }
-
     #[test]
     fn test_event_manager() {
         let manager = EventManager::new();
         let called = Arc::new(AtomicBool::new(false));
-
         let handler = TestHandler {
             called: called.clone(),
         };
-
         // Register handler
         assert!(manager.register("test_event", handler));
-
         // Trigger event
         manager.trigger("test_event", &"sender", &"args");
-
         assert!(called.load(Ordering::SeqCst));
     }
 }

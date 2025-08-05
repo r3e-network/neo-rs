@@ -78,10 +78,10 @@ impl<M: Message> ActorHandle<M> {
         self.sender
             .send(wrapped_message)
             .await
-            .map_err(|e| crate::Error::Io(format!("Failed to send message: {}", e)))?;
+            .map_err(|e| crate::Error::Io(format!("Failed to send message: {e}")))?;
 
         rx.await
-            .map_err(|e| crate::Error::Io(format!("Failed to receive response: {}", e)))
+            .map_err(|e| crate::Error::Io(format!("Failed to receive response: {e}")))
     }
 }
 

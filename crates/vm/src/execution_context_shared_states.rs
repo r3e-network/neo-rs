@@ -120,7 +120,9 @@ impl SharedStates {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutionEngine, StackItem, VMState, VmError};
+    use super::*;
+    use crate::script::Script;
+    use crate::stack_item::reference_counter::ReferenceCounter;
 
     #[test]
     fn test_shared_states_creation() {

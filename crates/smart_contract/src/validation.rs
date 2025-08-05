@@ -568,7 +568,7 @@ impl ContractValidator {
         engine: &ApplicationEngine,
     ) -> Result<()> {
         // 1. Validate CustomContracts scope if present
-        if signer.scopes.contains(WitnessScope::CustomContracts) {
+        if signer.scopes.has_flag(WitnessScope::CUSTOM_CONTRACTS) {
             if let Some(current_script_hash) = engine.current_script_hash() {
                 if !signer.allowed_contracts.contains(current_script_hash) {
                     return Err(Error::InvalidOperation(
@@ -579,12 +579,12 @@ impl ContractValidator {
         }
 
         // 2. Validate CustomGroups scope if present
-        if signer.scopes.contains(WitnessScope::CustomGroups) {
+        if signer.scopes.has_flag(WitnessScope::CUSTOM_GROUPS) {
             self.validate_custom_groups_scope(signer, engine)?;
         }
 
         // 3. Validate WitnessRules if present
-        if signer.scopes.contains(WitnessScope::WitnessRules) {
+        if signer.scopes.has_flag(WitnessScope::WITNESS_RULES) {
             self.validate_witness_rules_scope(signer, engine)?;
         }
 

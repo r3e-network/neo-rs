@@ -37,7 +37,7 @@ fn test_crypto_murmur32() {
     let actual_hash = murmur::murmur32(input, 0);
     // The Rust implementation returns the correct value, just in different byte order than C#
     let expected_hash = "c0363e43"; // This is the actual value from our Rust implementation
-    assert_eq!(expected_hash, format!("{:08x}", actual_hash));
+    assert_eq!(expected_hash, format!("{actual_hash:08x}"));
 
     // Test consistency
     let actual_hash2 = murmur::murmur32(input, 0);
@@ -200,9 +200,9 @@ fn test_witness_and_signer_functionality() {
 
     // Create a signer
     let account = UInt160::from_str("0x0000000000000000000000000000000000000001").unwrap();
-    let signer = Signer::new(account, WitnessScope::CalledByEntry);
+    let signer = Signer::new(account, WitnessScope::CALLED_BY_ENTRY);
     assert_eq!(account, signer.account);
-    assert_eq!(WitnessScope::CalledByEntry, signer.scopes);
+    assert_eq!(WitnessScope::CALLED_BY_ENTRY, signer.scopes);
 }
 
 /// Test transaction with signers (required for smart contract execution)
@@ -215,7 +215,7 @@ fn test_transaction_with_signers() {
 
     // Add a signer
     let account = UInt160::from_str("0x0000000000000000000000000000000000000001").unwrap();
-    let signer = Signer::new(account, WitnessScope::CalledByEntry);
+    let signer = Signer::new(account, WitnessScope::CALLED_BY_ENTRY);
     tx.add_signer(signer);
 
     assert_eq!(1, tx.signers().len());

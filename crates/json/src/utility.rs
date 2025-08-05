@@ -24,6 +24,8 @@ impl StrictUtf8 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_strict_utf8_roundtrip() {
         let original = "Hello, 世界! 🌍";

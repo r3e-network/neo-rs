@@ -873,7 +873,7 @@ mod tests {
         tx.set_network_fee(1000);
         tx.add_signer(Signer {
             account: UInt160::zero(),
-            scopes: WitnessScope::CalledByEntry,
+            scopes: WitnessScope::CALLED_BY_ENTRY,
             allowed_contracts: Vec::new(),
             allowed_groups: Vec::new(),
             rules: Vec::new(),
@@ -896,7 +896,7 @@ mod tests {
         tx.set_network_fee(100000); // High fee
         tx.add_signer(Signer {
             account: UInt160::zero(),
-            scopes: WitnessScope::CalledByEntry,
+            scopes: WitnessScope::CALLED_BY_ENTRY,
             allowed_contracts: Vec::new(),
             allowed_groups: Vec::new(),
             rules: Vec::new(),
@@ -926,7 +926,7 @@ mod tests {
             tx.set_network_fee((i + 1) * 10000); // Different fees
             tx.add_signer(Signer {
                 account: UInt160::zero(),
-                scopes: WitnessScope::CalledByEntry,
+                scopes: WitnessScope::CALLED_BY_ENTRY,
                 allowed_contracts: Vec::new(),
                 allowed_groups: Vec::new(),
                 rules: Vec::new(),
@@ -956,7 +956,7 @@ mod tests {
             tx.set_network_fee(10000);
             tx.add_signer(Signer {
                 account: UInt160::zero(),
-                scopes: WitnessScope::CalledByEntry,
+                scopes: WitnessScope::CALLED_BY_ENTRY,
                 allowed_contracts: Vec::new(),
                 allowed_groups: Vec::new(),
                 rules: Vec::new(),

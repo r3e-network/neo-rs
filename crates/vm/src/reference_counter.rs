@@ -455,7 +455,7 @@ impl Default for ReferenceCounter {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutionEngine, StackItem, VMState, VmError};
+    use super::*;
 
     #[test]
     fn test_register_and_reference_count() {

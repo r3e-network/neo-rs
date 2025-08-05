@@ -187,9 +187,9 @@ pub enum PersistenceError {
 impl std::fmt::Display for PersistenceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PersistenceError::StorageError(msg) => write!(f, "Storage error: {}", msg),
-            PersistenceError::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
-            PersistenceError::IoError(msg) => write!(f, "IO error: {}", msg),
+            PersistenceError::StorageError(msg) => write!(f, "Storage error: {msg}"),
+            PersistenceError::SerializationError(msg) => write!(f, "Serialization error: {msg}"),
+            PersistenceError::IoError(msg) => write!(f, "IO error: {msg}"),
         }
     }
 }

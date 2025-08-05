@@ -482,6 +482,11 @@ impl InteropServiceTrait for InteropService {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::call_flags::CallFlags;
+    use crate::stack_item::StackItem;
+    use crate::error::VmError;
+    
     #[test]
     fn test_interop_service_registration() {
         let mut service = InteropService::new();

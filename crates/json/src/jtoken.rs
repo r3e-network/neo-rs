@@ -87,7 +87,7 @@ impl JToken {
     }
 
     /// Converts the current JSON token to an enum value
-    pub fn as_enum<T>(&self, DEFAULT_VALUE: T, _ignore_case: bool) -> T
+    pub fn as_enum<T>(&self, default_value: T, _ignore_case: bool) -> T
     where
         T: Clone + std::str::FromStr + std::convert::TryFrom<u32>,
     {
@@ -109,7 +109,7 @@ impl JToken {
         }
 
         // 3. Return default value if parsing fails (production error handling)
-        DEFAULT_VALUE
+        default_value
     }
 
     /// Converts the current JSON token to a floating point number
@@ -209,7 +209,7 @@ impl JToken {
     /// Parses a JSON token from a byte array
     pub fn parse(value: &[u8], max_nest: usize) -> JsonResult<Option<JToken>> {
         let json_str = StrictUtf8::get_string(value)
-            .map_err(|e| JsonError::ParseError(format!("Invalid UTF-8: {}", e)))?;
+            .map_err(|e| JsonError::ParseError(format!("Invalid UTF-8: {e}")))?;
         Self::parse_string(&json_str, max_nest)
     }
 
@@ -220,7 +220,7 @@ impl JToken {
         }
 
         let json_value: JsonValue = serde_json::from_str(value)
-            .map_err(|e| JsonError::ParseError(format!("JSON parse error: {}", e)))?;
+            .map_err(|e| JsonError::ParseError(format!("JSON parse error: {e}")))?;
 
         Ok(Some(Self::from_serde_value(json_value)))
     }
@@ -352,6 +352,8 @@ impl From<Vec<Option<JToken>>> for JToken {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_jtoken_boolean() {
         let token = JToken::Boolean(true);
@@ -387,7 +389,7 @@ mod tests {
             assert_eq!(token.get_property("name").unwrap().as_string(), "test");
             assert_eq!(token.get_property("value").unwrap().as_number(), 42.0);
         } else {
-            return Err(Error::Other("Expected object token".to_string()));
+            panic!("Expected object token");
         }
     }
 

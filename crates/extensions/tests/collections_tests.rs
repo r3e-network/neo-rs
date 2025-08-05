@@ -24,7 +24,7 @@ mod collections_tests {
         // Test empty vector
         let mut empty_vec: Vec<i32> = vec![];
         empty_vec.dedup_preserve_order();
-        assert_eq!(empty_vec, vec![]);
+        assert_eq!(empty_vec, vec![] as Vec<i32>);
 
         // Test single element
         let mut single_vec = vec![42];
@@ -136,15 +136,15 @@ mod collections_tests {
 
         // Test with empty vector
         let empty_vec: Vec<i32> = vec![];
-        assert_eq!(empty_vec.first_n(3), &[]);
-        assert_eq!(empty_vec.last_n(3), &[]);
+        assert_eq!(empty_vec.first_n(3), &[] as &[i32]);
+        assert_eq!(empty_vec.last_n(3), &[] as &[i32]);
 
         // Test with single element
         let single_vec = vec![42];
         assert_eq!(single_vec.first_n(1), &[42]);
         assert_eq!(single_vec.last_n(1), &[42]);
-        assert_eq!(single_vec.first_n(0), &[]);
-        assert_eq!(single_vec.last_n(0), &[]);
+        assert_eq!(single_vec.first_n(0), &[] as &[i32]);
+        assert_eq!(single_vec.last_n(0), &[] as &[i32]);
     }
 
     /// Test HashMap extensions compatibility (matches C# Dictionary extensions exactly)
@@ -561,7 +561,10 @@ mod collections_tests {
         let large_size = 10000;
 
         // Test deduplication performance
-        let mut large_vec: Vec<i32> = (0..large_size).cycle().take(large_size * 2).collect();
+        let mut large_vec: Vec<i32> = (0..large_size as i32)
+            .cycle()
+            .take(large_size * 2)
+            .collect();
         let start = std::time::Instant::now();
         large_vec.dedup_preserve_order();
         let dedup_duration = start.elapsed();
@@ -570,7 +573,7 @@ mod collections_tests {
         assert!(dedup_duration.as_millis() < 1000); // Should be fast
 
         // Test group_by performance
-        let large_items: Vec<i32> = (0..large_size).collect();
+        let large_items: Vec<i32> = (0..large_size as i32).collect();
         let start = std::time::Instant::now();
         let groups = Collections::group_by(large_items, |&x| x % 100);
         let group_duration = start.elapsed();

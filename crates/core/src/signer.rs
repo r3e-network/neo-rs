@@ -89,15 +89,15 @@ impl Signer {
     pub fn get_size(&self) -> usize {
         let mut size = ADDRESS_SIZE + 1; // UInt160 (ADDRESS_SIZE bytes) + WitnessScope (1 byte)
 
-        if self.scopes.has_flag(WitnessScope::CustomContracts) {
+        if self.scopes.has_flag(WitnessScope::CUSTOM_CONTRACTS) {
             size += self.get_var_size_for_array(&self.allowed_contracts);
         }
 
-        if self.scopes.has_flag(WitnessScope::CustomGroups) {
+        if self.scopes.has_flag(WitnessScope::CUSTOM_GROUPS) {
             size += self.get_var_size_for_groups(&self.allowed_groups);
         }
 
-        if self.scopes.has_flag(WitnessScope::WitnessRules) {
+        if self.scopes.has_flag(WitnessScope::WITNESS_RULES) {
             size += self.get_var_size_for_rules(&self.rules);
         }
 
@@ -152,7 +152,7 @@ impl Signer {
             self.allowed_contracts.push(contract);
         }
         // Ensure CustomContracts scope is set
-        self.scopes = self.scopes.combine(WitnessScope::CustomContracts);
+        self.scopes = self.scopes.combine(WitnessScope::CUSTOM_CONTRACTS);
     }
 
     /// Adds an allowed group to the signer.
@@ -165,7 +165,7 @@ impl Signer {
             self.allowed_groups.push(group);
         }
         // Ensure CustomGroups scope is set
-        self.scopes = self.scopes.combine(WitnessScope::CustomGroups);
+        self.scopes = self.scopes.combine(WitnessScope::CUSTOM_GROUPS);
     }
 
     /// Adds a witness rule to the signer.
@@ -176,7 +176,7 @@ impl Signer {
     pub fn add_rule(&mut self, rule: WitnessRule) {
         self.rules.push(rule);
         // Ensure WitnessRules scope is set
-        self.scopes = self.scopes.combine(WitnessScope::WitnessRules);
+        self.scopes = self.scopes.combine(WitnessScope::WITNESS_RULES);
     }
 
     /// Gets all witness rules for this signer.
@@ -229,7 +229,7 @@ impl Signer {
     pub fn new_default(account: UInt160) -> Self {
         Self {
             account,
-            scopes: WitnessScope::None,
+            scopes: WitnessScope::NONE,
             allowed_contracts: Vec::new(),
             allowed_groups: Vec::new(),
             rules: Vec::new(),
@@ -241,15 +241,15 @@ impl Serializable for Signer {
     fn size(&self) -> usize {
         let mut size = ADDRESS_SIZE + 1; // UInt160 (ADDRESS_SIZE bytes) + WitnessScope (1 byte)
 
-        if self.scopes.has_flag(WitnessScope::CustomContracts) {
+        if self.scopes.has_flag(WitnessScope::CUSTOM_CONTRACTS) {
             size += self.get_var_size_for_array(&self.allowed_contracts);
         }
 
-        if self.scopes.has_flag(WitnessScope::CustomGroups) {
+        if self.scopes.has_flag(WitnessScope::CUSTOM_GROUPS) {
             size += self.get_var_size_for_groups(&self.allowed_groups);
         }
 
-        if self.scopes.has_flag(WitnessScope::WitnessRules) {
+        if self.scopes.has_flag(WitnessScope::WITNESS_RULES) {
             size += self.get_var_size_for_rules(&self.rules);
         }
 
@@ -262,21 +262,21 @@ impl Serializable for Signer {
         // Write scopes
         writer.write_bytes(&[self.scopes.to_byte()])?;
 
-        if self.scopes.has_flag(WitnessScope::CustomContracts) {
+        if self.scopes.has_flag(WitnessScope::CUSTOM_CONTRACTS) {
             writer.write_var_int(self.allowed_contracts.len() as u64)?;
             for contract in &self.allowed_contracts {
                 <UInt160 as neo_io::Serializable>::serialize(contract, writer)?;
             }
         }
 
-        if self.scopes.has_flag(WitnessScope::CustomGroups) {
+        if self.scopes.has_flag(WitnessScope::CUSTOM_GROUPS) {
             writer.write_var_int(self.allowed_groups.len() as u64)?;
             for group in &self.allowed_groups {
                 writer.write_bytes(group)?;
             }
         }
 
-        if self.scopes.has_flag(WitnessScope::WitnessRules) {
+        if self.scopes.has_flag(WitnessScope::WITNESS_RULES) {
             writer.write_var_int(self.rules.len() as u64)?;
             for rule in &self.rules {
                 writer.write_bytes(&[rule.action as u8])?;
@@ -293,7 +293,7 @@ impl Serializable for Signer {
         // Read scopes
         let scope_bytes = reader.read_bytes(1)?;
         let scope_byte = scope_bytes[0];
-        let scopes = WitnessScope::from_byte(scope_byte).unwrap_or(WitnessScope::None);
+        let scopes = WitnessScope::from_byte(scope_byte).unwrap_or(WitnessScope::NONE);
 
         // Validate scopes
         if !scopes.is_valid() {
@@ -307,12 +307,12 @@ impl Serializable for Signer {
         let mut allowed_groups = Vec::new();
         let mut rules = Vec::new();
 
-        if scopes.has_flag(WitnessScope::CustomContracts) {
+        if scopes.has_flag(WitnessScope::CUSTOM_CONTRACTS) {
             let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
             if count > MAX_SUBITEMS {
                 return Err(neo_io::IoError::InvalidData {
                     context: "allowed_contracts".to_string(),
-                    value: format!("count {}", count),
+                    value: format!("count {count}"),
                 });
             }
             allowed_contracts = Vec::with_capacity(count);
@@ -322,12 +322,12 @@ impl Serializable for Signer {
             }
         }
 
-        if scopes.has_flag(WitnessScope::CustomGroups) {
+        if scopes.has_flag(WitnessScope::CUSTOM_GROUPS) {
             let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
             if count > MAX_SUBITEMS {
                 return Err(neo_io::IoError::InvalidData {
                     context: "allowed_groups".to_string(),
-                    value: format!("count {}", count),
+                    value: format!("count {count}"),
                 });
             }
             allowed_groups = Vec::with_capacity(count);
@@ -352,7 +352,7 @@ impl Serializable for Signer {
                     _ => {
                         return Err(neo_io::IoError::InvalidData {
                             context: "ecpoint_format".to_string(),
-                            value: format!("0x{:02x}", format_byte),
+                            value: format!("0x{format_byte:02x}"),
                         });
                     }
                 };
@@ -369,12 +369,12 @@ impl Serializable for Signer {
             }
         }
 
-        if scopes.has_flag(WitnessScope::WitnessRules) {
+        if scopes.has_flag(WitnessScope::WITNESS_RULES) {
             let count = reader.read_var_int(MAX_SUBITEMS as u64)? as usize;
             if count > MAX_SUBITEMS {
                 return Err(neo_io::IoError::InvalidData {
                     context: "rules".to_string(),
-                    value: format!("count {}", count),
+                    value: format!("count {count}"),
                 });
             }
             rules = Vec::with_capacity(count);
@@ -527,7 +527,7 @@ impl Signer {
             }
             _ => Err(neo_io::IoError::InvalidData {
                 context: "witness_condition_type".to_string(),
-                value: format!("0x{:02x}", condition_type_byte),
+                value: format!("0x{condition_type_byte:02x}"),
             }),
         }
     }
@@ -545,88 +545,72 @@ impl fmt::Display for Signer {
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, Transaction, UInt160, UInt256};
+    use super::*;
+    use crate::{Block, Transaction, UInt160, UInt256};
+    use neo_io::{BinaryWriter, MemoryReader, Serializable};
 
     #[test]
     fn test_signer_new() {
         let account = UInt160::new();
-        let signer = Signer::new(account.clone(), WitnessScope::None);
-
+        let signer = Signer::new(account.clone(), WitnessScope::NONE);
         assert_eq!(signer.account, account);
-        assert_eq!(signer.scopes, WitnessScope::None);
+        assert_eq!(signer.scopes, WitnessScope::NONE);
         assert!(signer.allowed_contracts.is_empty());
         assert!(signer.allowed_groups.is_empty());
         assert!(signer.rules.is_empty());
     }
-
     #[test]
     fn test_signer_new_with_scope() {
         let account = UInt160::new();
-        let scope = WitnessScope::CalledByEntry;
+        let scope = WitnessScope::CALLED_BY_ENTRY;
         let signer = Signer::new_with_scope(account.clone(), scope);
-
         assert_eq!(signer.account, account);
         assert_eq!(signer.scopes, scope);
     }
-
     #[test]
     fn test_signer_add_allowed_contract() {
-        let mut signer = Signer::new(UInt160::new(), WitnessScope::None);
+        let mut signer = Signer::new(UInt160::new(), WitnessScope::NONE);
         let contract = UInt160::new();
-
         signer.add_allowed_contract(contract.clone());
-
         assert_eq!(signer.allowed_contracts.len(), 1);
         assert_eq!(signer.allowed_contracts[0], contract);
-        assert!(signer.scopes.has_flag(WitnessScope::CustomContracts));
+        assert!(signer.scopes.has_flag(WitnessScope::CUSTOM_CONTRACTS));
     }
-
     #[test]
     fn test_signer_add_allowed_group() {
-        let mut signer = Signer::new(UInt160::new(), WitnessScope::None);
+        let mut signer = Signer::new(UInt160::new(), WitnessScope::NONE);
         let group = vec![1, 2, 3];
-
         signer.add_allowed_group(group.clone());
-
         assert_eq!(signer.allowed_groups.len(), 1);
         assert_eq!(signer.allowed_groups[0], group);
-        assert!(signer.scopes.has_flag(WitnessScope::CustomGroups));
+        assert!(signer.scopes.has_flag(WitnessScope::CUSTOM_GROUPS));
     }
-
     #[test]
     fn test_signer_add_rule() {
-        let mut signer = Signer::new(UInt160::new(), WitnessScope::None);
+        let mut signer = Signer::new(UInt160::new(), WitnessScope::NONE);
         let rule = WitnessRule {
             action: WitnessRuleAction::Allow,
             condition: WitnessCondition::Boolean { value: true },
         };
-
         signer.add_rule(rule.clone());
-
         assert_eq!(signer.rules.len(), 1);
         assert_eq!(signer.rules[0], rule);
-        assert!(signer.scopes.has_flag(WitnessScope::WitnessRules));
+        assert!(signer.scopes.has_flag(WitnessScope::WITNESS_RULES));
     }
-
     #[test]
     fn test_signer_size() {
-        let signer = Signer::new(UInt160::new(), WitnessScope::None);
+        let signer = Signer::new(UInt160::new(), WitnessScope::NONE);
         let size = signer.get_size();
-
         assert_eq!(size, 21);
     }
-
     #[test]
     fn test_signer_serialization() {
-        let mut signer = Signer::new(UInt160::new(), WitnessScope::None);
-        signer.scopes = WitnessScope::CalledByEntry;
-
+        let mut signer = Signer::new(UInt160::new(), WitnessScope::NONE);
+        signer.scopes = WitnessScope::CALLED_BY_ENTRY;
         let mut writer = neo_io::BinaryWriter::new();
         <Signer as Serializable>::serialize(&signer, &mut writer).unwrap();
-
         let mut reader = neo_io::MemoryReader::new(&writer.to_bytes());
         let deserialized = <Signer as Serializable>::deserialize(&mut reader).unwrap();
-
         assert_eq!(signer.account, deserialized.account);
         assert_eq!(signer.scopes, deserialized.scopes);
     }

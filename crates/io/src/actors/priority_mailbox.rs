@@ -92,7 +92,7 @@ impl<M: Message> PriorityMailbox<M> {
         self.queue.clear();
 
         // Drain the receiver
-        while let Ok(_) = self.receiver.try_recv() {}
+        while self.receiver.try_recv().is_ok() {}
     }
 }
 

@@ -120,7 +120,12 @@ impl RpcClient {
     /// Makes a single JSON-RPC request without retry
     async fn call_once(&self, method: String, params: Value) -> RpcResult<Value> {
         let request_id = self.next_request_id();
-        let request = JsonRpcRequest::new(method.clone(), params, request_id);
+        let request = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: method.clone(),
+            params,
+            id: Some(serde_json::json!(request_id)),
+        };
 
         debug!("Making RPC request: {} (id: {})", method, request_id);
 
@@ -150,10 +155,11 @@ impl RpcClient {
         let rpc_response: JsonRpcResponse = response.json().await?;
 
         // Validate response ID
-        if rpc_response.id != request_id {
+        let expected_id = serde_json::json!(request_id);
+        if rpc_response.id != Some(expected_id.clone()) {
             return Err(RpcError::InvalidResponse {
                 message: format!(
-                    "Response ID mismatch: expected {}, got {}",
+                    "Response ID mismatch: expected {}, got {:?}",
                     request_id, rpc_response.id
                 ),
             });
@@ -237,7 +243,8 @@ impl RpcClientBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
+    use crate::{RpcError, RpcResult};
 
     #[tokio::test]
     async fn test_client_creation() {

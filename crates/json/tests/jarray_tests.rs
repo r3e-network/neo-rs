@@ -151,7 +151,7 @@ mod jarray_tests {
         assert_eq!(array.get(3), None); // previously at index 2, now at 3
 
         // Test removing elements
-        let removed = array.remove_at(2);
+        let removed = array.remove(2).unwrap();
         assert_eq!(removed, Some(JToken::String("inserted".to_string())));
         assert_eq!(array.len(), 5);
         assert_eq!(array.get(2), None); // what was at index 3 is now at 2
@@ -389,13 +389,13 @@ mod jarray_tests {
         assert!(!array.is_empty());
 
         // Test removing specific elements
-        let removed = array.remove_at(1);
+        let removed = array.remove(1).unwrap();
         assert_eq!(removed, Some(JToken::String("item2".to_string())));
         assert_eq!(array.len(), 4);
         assert_eq!(array.get(1), Some(&JToken::String("item3".to_string()))); // Shifted down
 
         // Test removing from end
-        let last_removed = array.remove_at(array.len() - 1);
+        let last_removed = array.remove(array.len() - 1).unwrap();
         assert_eq!(last_removed, None); // Was the null element
         assert_eq!(array.len(), 3);
 
@@ -505,7 +505,7 @@ mod jarray_tests {
         ); // Shifted
 
         // Test removal performance
-        let removed = array.remove_at(0);
+        let removed = array.remove(0).unwrap();
         assert_eq!(
             removed,
             Some(JToken::String("inserted_at_start".to_string()))

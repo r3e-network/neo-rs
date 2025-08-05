@@ -57,7 +57,7 @@ impl HexStringExtensions for str {
     }
 
     fn hex_to_bytes_reversed(&self) -> Result<Vec<u8>, CoreError> {
-        let mut bytes = self.hex_to_bytes()?;
+        let mut bytes = HexStringExtensions::hex_to_bytes(self)?;
         bytes.reverse();
         Ok(bytes)
     }
@@ -65,33 +65,28 @@ impl HexStringExtensions for str {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
+    use crate::{CoreError as Error, CoreResult as Result};
 
     #[test]
     fn test_to_hex_string() {
         let bytes = [0x01, 0x02, 0x03, 0x04];
-
         // Without reverse
         assert_eq!(bytes.to_hex_string(false), "01020304");
-
         // With reverse
         assert_eq!(bytes.to_hex_string(true), "04030201");
     }
-
     #[test]
     fn test_hex_to_bytes() {
         let hex = "01020304";
-
         // Without reverse
         let bytes = hex.hex_to_bytes().unwrap();
         assert_eq!(bytes, vec![0x01, 0x02, 0x03, 0x04]);
-
         // With reverse
         let bytes_reversed = hex.hex_to_bytes_reversed().unwrap();
         assert_eq!(bytes_reversed, vec![0x04, 0x03, 0x02, 0x01]);
-
         // Invalid hex
-        let result = "invalid".hex_to_bytes();
+        let result = HexStringExtensions::hex_to_bytes("invalid");
         assert!(result.is_err());
     }
 }

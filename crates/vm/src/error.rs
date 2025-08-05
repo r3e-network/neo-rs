@@ -449,13 +449,13 @@ impl From<neo_io::IoError> for VmError {
     fn from(error: neo_io::IoError) -> Self {
         match error {
             neo_io::IoError::EndOfStream { context, .. } => {
-                VmError::io(format!("Unexpected end of stream: {}", context))
+                VmError::io(format!("Unexpected end of stream: {context}"))
             }
             neo_io::IoError::InvalidData { context, value } => {
                 VmError::parse(format!("Invalid data in {}: {}", context, value))
             }
             neo_io::IoError::FormatException { context, .. } => {
-                VmError::parse(format!("Format exception: {}", context))
+                VmError::parse(format!("Format exception: {context}"))
             }
             neo_io::IoError::Deserialization { reason, .. } => VmError::parse(reason),
             neo_io::IoError::InvalidOperation { operation, context } => {
@@ -471,7 +471,7 @@ impl From<neo_io::IoError> for VmError {
             neo_io::IoError::BufferOverflow { .. } => VmError::stack_overflow(usize::MAX),
             neo_io::IoError::Timeout { timeout_ms, .. } => VmError::ExecutionTimeout { timeout_ms },
             neo_io::IoError::ResourceUnavailable { resource } => {
-                VmError::io(format!("Resource unavailable: {}", resource))
+                VmError::io(format!("Resource unavailable: {resource}"))
             }
             neo_io::IoError::PermissionDenied {
                 operation,
@@ -481,13 +481,13 @@ impl From<neo_io::IoError> for VmError {
                 operation, resource
             )),
             neo_io::IoError::ResourceExists { resource } => {
-                VmError::io(format!("Resource already exists: {}", resource))
+                VmError::io(format!("Resource already exists: {resource}"))
             }
             neo_io::IoError::ResourceNotFound { resource } => {
-                VmError::io(format!("Resource not found: {}", resource))
+                VmError::io(format!("Resource not found: {resource}"))
             }
             // Handle all other IoError variants
-            _ => VmError::io(format!("IO error: {:?}", error)),
+            _ => VmError::io(format!("IO error: {error:?}")),
         }
     }
 }
@@ -499,12 +499,7 @@ impl From<neo_core::CoreError> for VmError {
 }
 
 // Test-specific error conversions
-#[cfg(test)]
-impl From<crate::tests::real_io::Error> for VmError {
-    fn from(error: crate::tests::real_io::Error) -> Self {
-        VmError::real_io(error.to_string())
-    }
-}
+// TODO: Add test-specific error conversions when needed
 
 impl VmError {
     /// Create InvalidOperation from a single message
@@ -580,7 +575,7 @@ impl VmError {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
 
     #[test]
     fn test_error_creation() {

@@ -136,6 +136,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_ordered_dictionary_basic() {
         let mut dict = OrderedDictionary::new();

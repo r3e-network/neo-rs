@@ -390,7 +390,10 @@ impl From<Vec<u8>> for UInt256 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::UINT256_SIZE;
+    use super::*;
+    use crate::{CoreError as Error, CoreResult as Result};
+    use neo_io::{BinaryWriter, MemoryReader, Serializable};
 
     #[test]
     fn test_uint256_new() {
@@ -400,7 +403,6 @@ mod tests {
         assert_eq!(uint.value3, 0);
         assert_eq!(uint.value4, 0);
     }
-
     #[test]
     fn test_uint256_from_bytes() {
         let mut data = [0u8; UINT256_SIZE];
@@ -410,11 +412,9 @@ mod tests {
         assert_eq!(uint.value2, 0);
         assert_eq!(uint.value3, 0);
         assert_eq!(uint.value4, 0);
-
         let result = UInt256::from_bytes(&[1u8; UINT256_SIZE - 1]);
         assert!(result.is_err());
     }
-
     #[test]
     fn test_uint256_to_array() {
         let mut uint = UInt256::new();
@@ -425,52 +425,43 @@ mod tests {
             assert_eq!(array[i], 0);
         }
     }
-
     #[test]
     fn test_uint256_parse() {
         let mut expected = UInt256::new();
         expected.value1 = 1;
-
         let mut result = None;
         assert!(UInt256::try_parse(
             "0000000000000000000000000000000000000000000000000000000000000001",
             &mut result
         ));
         assert!(result.is_some());
-
         // Compare the parsed value with the expected value
         let uint = result.unwrap();
         assert_eq!(uint.value1, 1);
         assert_eq!(uint.value2, 0);
         assert_eq!(uint.value3, 0);
         assert_eq!(uint.value4, 0);
-
         // Test invalid input
         let result = UInt256::parse("invalid");
         assert!(result.is_err());
     }
-
     #[test]
     fn test_uint256_try_parse() {
         let mut uint1 = UInt256::new();
         uint1.value1 = 1;
-
         let mut result = None;
         assert!(UInt256::try_parse(
             "0000000000000000000000000000000000000000000000000000000000000001",
             &mut result
         ));
         assert!(result.is_some());
-
         let uint = result.unwrap();
         assert_eq!(uint.value1, 1);
         assert_eq!(uint.value2, 0);
         assert_eq!(uint.value3, 0);
         assert_eq!(uint.value4, 0);
-
         assert!(!UInt256::try_parse("invalid", &mut None));
     }
-
     #[test]
     fn test_uint256_to_hex_string() {
         let mut uint = UInt256::new();
@@ -480,7 +471,6 @@ mod tests {
             "0x0000000000000000000000000000000000000000000000000000000000000001"
         );
     }
-
     #[test]
     fn test_uint256_serialization() {
         let mut uint = UInt256::new();
@@ -488,54 +478,38 @@ mod tests {
         uint.value2 = 2;
         uint.value3 = 3;
         uint.value4 = 4;
-
         // Test serialization
         let mut writer = BinaryWriter::new();
         <UInt256 as Serializable>::serialize(&uint, &mut writer).unwrap();
         let bytes = writer.to_bytes();
-
         // Test deserialization
         let mut reader = MemoryReader::new(&bytes);
         let deserialized = <UInt256 as Serializable>::deserialize(&mut reader).unwrap();
-
         assert_eq!(uint, deserialized);
     }
-
     #[test]
     fn test_uint256_ordering() {
         let mut uint1 = UInt256::new();
         uint1.value4 = 1;
-
         let mut uint2 = UInt256::new();
         uint2.value4 = 2;
-
         assert!(uint1 < uint2);
-
         let mut uint3 = UInt256::new();
         uint3.value3 = 1;
-
         let mut uint4 = UInt256::new();
         uint4.value3 = 2;
-
         assert!(uint3 < uint4);
-
         let mut uint5 = UInt256::new();
         uint5.value2 = 1;
-
         let mut uint6 = UInt256::new();
         uint6.value2 = 2;
-
         assert!(uint5 < uint6);
-
         let mut uint7 = UInt256::new();
         uint7.value1 = 1;
-
         let mut uint8 = UInt256::new();
         uint8.value1 = 2;
-
         assert!(uint7 < uint8);
     }
-
     #[test]
     fn test_uint256_from_string() {
         let mut result = None;
@@ -544,14 +518,12 @@ mod tests {
             &mut result
         ));
         assert!(result.is_some());
-
         let uint = result.unwrap();
         assert_eq!(uint.value1, 1);
         assert_eq!(uint.value2, 0);
         assert_eq!(uint.value3, 0);
         assert_eq!(uint.value4, 0);
     }
-
     #[test]
     fn test_uint256_equals() {
         let mut uint1 = UInt256::new();
@@ -559,24 +531,20 @@ mod tests {
         uint1.value2 = 2;
         uint1.value3 = 3;
         uint1.value4 = 4;
-
         let mut uint2 = UInt256::new();
         uint2.value1 = 1;
         uint2.value2 = 2;
         uint2.value3 = 3;
         uint2.value4 = 4;
-
         let mut uint3 = UInt256::new();
         uint3.value1 = 5;
         uint3.value2 = 6;
         uint3.value3 = 7;
         uint3.value4 = 8;
-
         assert!(uint1.equals(Some(&uint2)));
         assert!(!uint1.equals(Some(&uint3)));
         assert!(!uint1.equals(None));
     }
-
     #[test]
     fn test_uint256_get_hash_code() {
         let mut uint1 = UInt256::new();
@@ -584,32 +552,26 @@ mod tests {
         uint1.value2 = 2;
         uint1.value3 = 3;
         uint1.value4 = 4;
-
         let mut uint2 = UInt256::new();
         uint2.value1 = 1;
         uint2.value2 = 2;
         uint2.value3 = 3;
         uint2.value4 = 4;
-
         let mut uint3 = UInt256::new();
         uint3.value1 = 5;
         uint3.value2 = 6;
         uint3.value3 = 7;
         uint3.value4 = 8;
-
         // Equal objects should have equal hash codes
         assert_eq!(uint1.get_hash_code(), uint2.get_hash_code());
-
         // Different objects with different value1 should have different hash codes
         assert_ne!(uint1.get_hash_code(), uint3.get_hash_code());
-
         // Objects with same value1 but different other values should have same hash code
         let mut uint4 = UInt256::new();
         uint4.value1 = 1;
         uint4.value2 = 10;
         uint4.value3 = 11;
         uint4.value4 = 12;
-
         assert_eq!(uint1.get_hash_code(), uint4.get_hash_code());
     }
 }

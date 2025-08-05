@@ -26,13 +26,14 @@ impl UInt160Extensions for UInt160 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, Transaction, UInt160, UInt256};
+    use super::*;
+    use crate::{Block, Transaction, UInt160, UInt256};
+    use neo_config::ADDRESS_SIZE;
 
     #[test]
     fn test_to_array() {
         let mut uint = UInt160::new();
         uint.value1 = 1;
-
         let array = uint.to_array();
         assert_eq!(array[0], 1);
         for i in 1..ADDRESS_SIZE {

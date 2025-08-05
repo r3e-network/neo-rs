@@ -9,7 +9,7 @@ mod binary_writer_tests;
 mod serialization_tests;
 
 mod integration_tests {
-    use neo_io::{BinaryWriter, MemoryReader, Result, Serializable};
+    use neo_io::{BinaryWriter, MemoryReader, Serializable};
 
     /// Test complete workflow matching C# Neo transaction serialization patterns
     #[test]
@@ -33,13 +33,22 @@ mod integration_tests {
         }
 
         impl Serializable for MockWitness {
-            fn serialize<W: std::io::Write>(&self, writer: &mut BinaryWriter<W>) -> Result<()> {
+            fn size(&self) -> usize {
+                neo_io::serializable::helper::get_var_size(self.invocation_script.len() as u64)
+                    + self.invocation_script.len()
+                    + neo_io::serializable::helper::get_var_size(
+                        self.verification_script.len() as u64
+                    )
+                    + self.verification_script.len()
+            }
+
+            fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
                 writer.write_var_bytes(&self.invocation_script)?;
                 writer.write_var_bytes(&self.verification_script)?;
                 Ok(())
             }
 
-            fn deserialize(reader: &mut MemoryReader) -> Result<Self> {
+            fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
                 let invocation_script = reader.read_var_bytes(1024)?;
                 let verification_script = reader.read_var_bytes(1024)?;
                 Ok(MockWitness {
@@ -50,8 +59,19 @@ mod integration_tests {
         }
 
         impl Serializable for MockTransaction {
-            fn serialize<W: std::io::Write>(&self, writer: &mut BinaryWriter<W>) -> Result<()> {
-                writer.write_u8(self.version)?;
+            fn size(&self) -> usize {
+                1 + 4
+                    + 8
+                    + 8
+                    + 4
+                    + neo_io::serializable::helper::get_var_size(self.script.len() as u64)
+                    + self.script.len()
+                    + neo_io::serializable::helper::get_var_size(self.witnesses.len() as u64)
+                    + self.witnesses.iter().map(|w| w.size()).sum::<usize>()
+            }
+
+            fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
+                writer.write_byte(self.version)?;
                 writer.write_u32(self.nonce)?;
                 writer.write_u64(self.system_fee)?;
                 writer.write_u64(self.network_fee)?;
@@ -64,12 +84,12 @@ mod integration_tests {
                 Ok(())
             }
 
-            fn deserialize(reader: &mut MemoryReader) -> Result<Self> {
-                let version = reader.read_u8()?;
-                let nonce = reader.read_u32()?;
-                let system_fee = reader.read_u64()?;
-                let network_fee = reader.read_u64()?;
-                let valid_until_block = reader.read_u32()?;
+            fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
+                let version = reader.read_byte()?;
+                let nonce = reader.read_uint32()?;
+                let system_fee = reader.read_uint64()?;
+                let network_fee = reader.read_uint64()?;
+                let valid_until_block = reader.read_uint32()?;
                 let script = reader.read_var_bytes(65536)?;
                 let witness_count = reader.read_var_int(16)? as usize;
                 let mut witnesses = Vec::with_capacity(witness_count);
@@ -136,20 +156,24 @@ mod integration_tests {
         }
 
         impl Serializable for MockBlockHeader {
-            fn serialize<W: std::io::Write>(&self, writer: &mut BinaryWriter<W>) -> Result<()> {
+            fn size(&self) -> usize {
+                4 + 32 + 32 + 8 + 8 + 4 + 1 + 20
+            }
+
+            fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
                 writer.write_u32(self.version)?;
                 writer.write_bytes(&self.prev_hash)?;
                 writer.write_bytes(&self.merkle_root)?;
                 writer.write_u64(self.timestamp)?;
                 writer.write_u64(self.nonce)?;
                 writer.write_u32(self.index)?;
-                writer.write_u8(self.primary_index)?;
+                writer.write_byte(self.primary_index)?;
                 writer.write_bytes(&self.next_consensus)?;
                 Ok(())
             }
 
-            fn deserialize(reader: &mut MemoryReader) -> Result<Self> {
-                let version = reader.read_u32()?;
+            fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
+                let version = reader.read_uint32()?;
                 let prev_hash = {
                     let bytes = reader.read_bytes(32)?;
                     let mut hash = [0u8; 32];
@@ -162,10 +186,10 @@ mod integration_tests {
                     root.copy_from_slice(&bytes);
                     root
                 };
-                let timestamp = reader.read_u64()?;
-                let nonce = reader.read_u64()?;
-                let index = reader.read_u32()?;
-                let primary_index = reader.read_u8()?;
+                let timestamp = reader.read_uint64()?;
+                let nonce = reader.read_uint64()?;
+                let index = reader.read_uint32()?;
+                let primary_index = reader.read_byte()?;
                 let next_consensus = {
                     let bytes = reader.read_bytes(20)?;
                     let mut consensus = [0u8; 20];

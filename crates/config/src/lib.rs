@@ -36,8 +36,8 @@ pub const MAX_SCRIPT_LENGTH: usize = 65536;
 /// Network type for Neo blockchain
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum NetworkType {
-    MainNet,
     #[default]
+    MainNet,
     TestNet,
     Private,
 }
@@ -89,9 +89,9 @@ impl NetworkType {
 impl fmt::Display for NetworkType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NetworkType::MainNet => write!(f, "mainnet"),
-            NetworkType::TestNet => write!(f, "testnet"),
-            NetworkType::Private => write!(f, "private"),
+            NetworkType::MainNet => write!(f, "MainNet"),
+            NetworkType::TestNet => write!(f, "TestNet"),
+            NetworkType::Private => write!(f, "Private"),
         }
     }
 }
@@ -104,7 +104,7 @@ impl FromStr for NetworkType {
             "mainnet" | "main" => Ok(NetworkType::MainNet),
             "testnet" | "test" => Ok(NetworkType::TestNet),
             "private" | "privnet" => Ok(NetworkType::Private),
-            _ => Err(format!("Unknown network type: {}", s)),
+            _ => Err(format!("Unknown network type: {s}")),
         }
     }
 }

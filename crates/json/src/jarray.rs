@@ -21,7 +21,8 @@ impl JArray {
     }
 
     /// Creates a new JSON array from an iterator of tokens
-    pub fn from_iter<I>(iter: I) -> Self
+    /// Note: Consider using the FromIterator trait implementation instead
+    pub fn from_iter_explicit<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = Option<JToken>>,
     {
@@ -57,8 +58,7 @@ impl JArray {
             Ok(())
         } else {
             Err(JsonError::InvalidOperation(format!(
-                "Index {} out of bounds",
-                index
+                "Index {index} out of bounds"
             )))
         }
     }
@@ -75,8 +75,7 @@ impl JArray {
             Ok(())
         } else {
             Err(JsonError::InvalidOperation(format!(
-                "Index {} out of bounds",
-                index
+                "Index {index} out of bounds"
             )))
         }
     }
@@ -87,8 +86,7 @@ impl JArray {
             Ok(self.items.remove(index))
         } else {
             Err(JsonError::InvalidOperation(format!(
-                "Index {} out of bounds",
-                index
+                "Index {index} out of bounds"
             )))
         }
     }
@@ -216,8 +214,18 @@ impl<'a> IntoIterator for &'a mut JArray {
     }
 }
 
+impl std::iter::FromIterator<Option<JToken>> for JArray {
+    fn from_iter<I: IntoIterator<Item = Option<JToken>>>(iter: I) -> Self {
+        Self {
+            items: iter.into_iter().collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_jarray_new() {
         let array = JArray::new();
@@ -261,7 +269,7 @@ mod tests {
         array.add(Some(JToken::String("second".to_string())));
         array.add(Some(JToken::String("third".to_string())));
 
-        let removed = array.remove(1);
+        let removed = array.remove(1).unwrap();
         assert_eq!(removed, Some(JToken::String("second".to_string())));
         assert_eq!(array.len(), 2);
         assert_eq!(array.get(1), Some(&JToken::String("third".to_string())));

@@ -763,7 +763,7 @@ impl SyncManager {
         Ok(())
     }
 
-    /// Requests blocks directly using GetData messages
+    /// Requests blocks directly using GetBlockByIndex messages
     async fn request_blocks_direct(&self, start_height: u32, end_height: u32) -> NetworkResult<()> {
         let peers = self.p2p_node.peer_manager().get_ready_peers().await;
         if peers.is_empty() {
@@ -772,29 +772,48 @@ impl SyncManager {
             });
         }
 
-        let best_peer = &peers[0];
+        info!(
+            "📨 Requesting blocks directly from {} to {}",
+            start_height, end_height
+        );
 
-        // Request a batch of blocks
-        let batch_size = 50; // Conservative batch size
+        // Request blocks in batches using GetBlockByIndex
         let mut current = start_height;
+        let batch_size = std::cmp::min(MAX_BLOCKS_PER_REQUEST, 50) as u32;
 
-        while current <= end_height && current < start_height + batch_size {
-            // For now, request using GetBlocks to see if NGD nodes respond differently
-            let get_blocks = ProtocolMessage::GetBlocks {
-                hash_start: vec![UInt256::zero()], // Start from any block
-                hash_stop: UInt256::zero(),        // Continue to tip
+        while current <= end_height {
+            let count = std::cmp::min(batch_size, end_height - current + 1) as u16;
+
+            // Use round-robin to distribute requests across peers
+            let peer_index = ((current - start_height) / batch_size) as usize % peers.len();
+            let peer = &peers[peer_index];
+
+            let get_blocks = ProtocolMessage::GetBlockByIndex {
+                index_start: current,
+                count,
             };
 
             let message = NetworkMessage::new(get_blocks);
-            self.p2p_node
-                .send_message_to_peer(best_peer.address, message)
-                .await?;
 
-            info!(
-                "Requested blocks using GetBlocks message to peer {}",
-                best_peer.address
-            );
-            current += batch_size;
+            match self
+                .p2p_node
+                .send_message_to_peer(peer.address, message)
+                .await
+            {
+                Ok(_) => {
+                    info!(
+                        "📤 Requested blocks {}-{} from {}",
+                        current,
+                        current + count as u32 - 1,
+                        peer.address
+                    );
+                }
+                Err(e) => {
+                    warn!("Failed to request blocks from {}: {}", peer.address, e);
+                }
+            }
+
+            current += count as u32;
         }
 
         Ok(())

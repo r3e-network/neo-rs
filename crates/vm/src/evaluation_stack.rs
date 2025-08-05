@@ -191,6 +191,8 @@ impl Drop for EvaluationStack {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_push_pop() {
         let reference_counter = ReferenceCounter::new();

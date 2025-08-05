@@ -576,10 +576,7 @@ mod tests {
     fn test_integer_stack_item() {
         let int_item = StackItem::from_int(42);
 
-        assert_eq!(
-            int_item.as_int().ok_or_else(|| VmError::InvalidStackItem)?,
-            BigInt::from(42)
-        );
+        assert_eq!(int_item.as_int().unwrap(), BigInt::from(42));
         assert_eq!(int_item.as_bool().expect("Failed to convert"), true);
         assert_eq!(int_item.stack_item_type(), StackItemType::Integer);
 
@@ -592,12 +589,7 @@ mod tests {
         let bytes = vec![1, 2, 3];
         let byte_string = StackItem::from_byte_string(bytes.clone());
 
-        assert_eq!(
-            byte_string
-                .as_bytes()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            bytes
-        );
+        assert_eq!(byte_string.as_bytes().unwrap(), bytes);
         assert_eq!(byte_string.as_bool().expect("Failed to convert"), true);
         assert_eq!(byte_string.stack_item_type(), StackItemType::ByteString);
 
@@ -636,9 +628,7 @@ mod tests {
         ]);
 
         let cloned = array.deep_clone();
-        assert!(array
-            .equals(&cloned)
-            .ok_or_else(|| VmError::InvalidStackItem)?);
+        assert!(array.equals(&cloned).unwrap());
     }
 
     #[test]
@@ -647,8 +637,8 @@ mod tests {
         let b = StackItem::from_int(42);
         let c = StackItem::from_int(43);
 
-        assert!(a.equals(&b).ok_or_else(|| VmError::InvalidStackItem)?);
-        assert!(!a.equals(&c).ok_or_else(|| VmError::InvalidStackItem)?);
+        assert!(a.equals(&b).unwrap());
+        assert!(!a.equals(&c).unwrap());
 
         let array1 = StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(2)]);
 
@@ -656,12 +646,8 @@ mod tests {
 
         let array3 = StackItem::from_array(vec![StackItem::from_int(1), StackItem::from_int(3)]);
 
-        assert!(array1
-            .equals(&array2)
-            .ok_or_else(|| VmError::InvalidStackItem)?);
-        assert!(!array1
-            .equals(&array3)
-            .ok_or_else(|| VmError::InvalidStackItem)?);
+        assert!(array1.equals(&array2).unwrap_or(false));
+        assert!(!array1.equals(&array3).unwrap());
     }
 
     #[test]
@@ -669,36 +655,20 @@ mod tests {
         let int_item = StackItem::from_int(42);
 
         // Convert to boolean
-        let bool_item = int_item
-            .convert_to(StackItemType::Boolean)
-            .ok_or_else(|| VmError::InvalidStackItem)?;
+        let bool_item = int_item.convert_to(StackItemType::Boolean).unwrap();
         assert_eq!(bool_item.stack_item_type(), StackItemType::Boolean);
         assert_eq!(bool_item.as_bool().expect("Failed to convert"), true);
 
-        let byte_string = int_item
-            .convert_to(StackItemType::ByteString)
-            .ok_or_else(|| VmError::InvalidStackItem)?;
+        let byte_string = int_item.convert_to(StackItemType::ByteString).unwrap();
         assert_eq!(byte_string.stack_item_type(), StackItemType::ByteString);
-        assert_eq!(
-            byte_string
-                .as_bytes()
-                .ok_or_else(|| VmError::InvalidStackItem)?,
-            vec![42]
-        );
+        assert_eq!(byte_string.as_bytes().unwrap(), vec![42]);
 
         // Convert to buffer
-        let buffer = int_item
-            .convert_to(StackItemType::Buffer)
-            .ok_or_else(|| VmError::InvalidStackItem)?;
+        let buffer = int_item.convert_to(StackItemType::Buffer).unwrap();
         assert_eq!(buffer.stack_item_type(), StackItemType::Buffer);
-        assert_eq!(
-            buffer.as_bytes().ok_or_else(|| VmError::InvalidStackItem)?,
-            vec![42]
-        );
+        assert_eq!(buffer.as_bytes().unwrap(), vec![42]);
 
-        let int_clone = int_item
-            .convert_to(StackItemType::Integer)
-            .ok_or_else(|| VmError::InvalidStackItem)?;
+        let int_clone = int_item.convert_to(StackItemType::Integer).unwrap();
         assert_eq!(int_clone.stack_item_type(), StackItemType::Integer);
         assert_eq!(
             int_clone.as_int().expect("Operation failed"),
@@ -730,8 +700,6 @@ mod tests {
         }
 
         // The arrays should be equal despite the cycles
-        assert!(array1
-            .equals(&array2)
-            .ok_or_else(|| VmError::InvalidStackItem)?);
+        assert!(array1.equals(&array2).unwrap_or(false));
     }
 }

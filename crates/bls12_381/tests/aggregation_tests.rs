@@ -3,7 +3,7 @@
 //! These tests ensure full compatibility with C# Neo.Cryptography.BLS12_381 aggregation operations.
 //! Tests are based on the C# BLS12_381.Aggregation test suite.
 
-use bls12_381::*;
+use neo_bls12_381::*;
 use rand::thread_rng;
 
 #[cfg(test)]

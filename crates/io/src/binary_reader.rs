@@ -257,7 +257,7 @@ impl BinaryReader {
     pub fn read_var_string(&mut self) -> Result<String> {
         let bytes = self.read_var_bytes()?;
         String::from_utf8(bytes)
-            .map_err(|e| Error::Deserialization(format!("Invalid UTF-8 string: {}", e)).into())
+            .map_err(|e| Error::Deserialization(format!("Invalid UTF-8 string: {e}")).into())
     }
 
     /// Reads a serializable object from the data.
@@ -323,7 +323,7 @@ impl BinaryReader {
     pub fn seek(&mut self, position: usize) -> Result<()> {
         if position > self.data.len() {
             return Err(
-                Error::InvalidOperation(format!("Position {} is out of bounds", position)).into(),
+                Error::InvalidOperation(format!("Position {position} is out of bounds")).into(),
             );
         }
 

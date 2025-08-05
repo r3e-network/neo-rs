@@ -14,7 +14,7 @@ fn test_script_creation() {
     ];
     let script = Script::new_relaxed(script_bytes.clone());
 
-    assert_eq!(script.script(), &script_bytes);
+    assert_eq!(script.as_bytes(), &script_bytes);
     assert_eq!(script.length(), script_bytes.len());
 }
 

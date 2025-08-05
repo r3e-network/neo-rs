@@ -119,7 +119,7 @@ pub trait Shutdown: Send + Sync {
     fn name(&self) -> &str;
 
     /// Shutdown the component gracefully
-    async fn shutdown(&self) -> Result<(), ShutdownError>;
+    async fn shutdown(&self) -> std::result::Result<(), ShutdownError>;
 
     /// Check if component is ready to shutdown
     async fn can_shutdown(&self) -> bool {
@@ -493,62 +493,54 @@ impl SignalHandler {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{CoreError as Error, Result};
+    use std::sync::Arc;
+    use std::time::Duration;
 
     struct TestComponent {
         name: String,
         priority: u32,
         shutdown_delay: Duration,
     }
-
     #[async_trait::async_trait]
     impl Shutdown for TestComponent {
         fn name(&self) -> &str {
             &self.name
         }
-
-        async fn shutdown(&self) -> Result<(), ShutdownError> {
+        async fn shutdown(&self) -> std::result::Result<(), ShutdownError> {
             sleep(self.shutdown_delay).await;
             Ok(())
         }
-
         fn shutdown_priority(&self) -> u32 {
             self.priority
         }
     }
-
     #[tokio::test]
     async fn test_shutdown_coordinator() {
         let coordinator = ShutdownCoordinator::new();
-
         // Register test components
         let component1 = Arc::new(TestComponent {
             name: "Network".to_string(),
             priority: 50,
             shutdown_delay: Duration::from_millis(10),
         });
-
         let component2 = Arc::new(TestComponent {
             name: "Database".to_string(),
             priority: 120,
             shutdown_delay: Duration::from_millis(10),
         });
-
         coordinator.register_component(component1).await;
         coordinator.register_component(component2).await;
-
         // Subscribe to events
         let mut events = coordinator.subscribe_to_events();
-
         // Initiate shutdown
         let result = coordinator
             .initiate_shutdown("Test shutdown".to_string())
             .await;
         assert!(result.is_ok());
-
         // Verify shutdown completed
         assert!(coordinator.is_shutting_down().await);
-
         // Check that we received events
         let mut event_count = 0;
         while let Ok(event) = events.try_recv() {
@@ -557,21 +549,17 @@ mod tests {
         }
         assert!(event_count > 0);
     }
-
     #[tokio::test]
     async fn test_shutdown_signal() {
         let coordinator = ShutdownCoordinator::new();
         let shutdown_signal = coordinator.get_shutdown_signal();
-
         let signal_clone = Arc::clone(&shutdown_signal);
         let wait_task = tokio::spawn(async move {
             signal_clone.notified().await;
             true
         });
-
         // Initiate shutdown
         let _ = coordinator.initiate_shutdown("Test".to_string()).await;
-
         // Verify signal was received
         let result = wait_task.await.expect("operation should succeed");
         assert!(result);

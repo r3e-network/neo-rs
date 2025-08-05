@@ -115,11 +115,11 @@ fn test_reference_counter_with_circular_references() {
     let id2 = counter.register();
 
     // Add references
-    counter.add_reference(id1);
-    counter.add_reference(id2);
+    counter.add_reference_to(id1);
+    counter.add_reference_to(id2);
 
-    counter.add_reference(id1);
-    counter.add_reference(id2);
+    counter.add_reference_to(id1);
+    counter.add_reference_to(id2);
 
     assert_eq!(counter.count(), 4);
 

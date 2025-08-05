@@ -538,6 +538,6 @@ mod jpath_tests {
         let tokens = JPathToken::parse("$.items[500].category").unwrap();
         let results = JPathToken::evaluate(&tokens, &json).unwrap();
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0], &JToken::String("B".to_string())); // 500 % 3 == 2, but our logic maps to "B"
+        assert_eq!(results[0], &JToken::String("C".to_string())); // 500 % 3 == 2, maps to "C"
     }
 }

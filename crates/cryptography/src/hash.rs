@@ -160,7 +160,9 @@ pub fn verify_checksum(data: &[u8], checksum: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use hex;
+    use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 
     #[test]
     fn test_sha256() {

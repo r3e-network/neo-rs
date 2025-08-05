@@ -8,39 +8,41 @@ use neo_extensions::utilities::*;
 mod utilities_tests {
     use super::*;
 
-    /// Test utility functions (matches C# utility helpers exactly)
+    /// Test utility functions
     #[test]
     fn test_utility_functions_compatibility() {
-        // Test endianness conversion
-        let value = 0x12345678u32;
-        let little_endian = EndianUtils::to_little_endian(value);
-        let big_endian = EndianUtils::to_big_endian(value);
+        // Test timestamp conversion
+        let now = current_timestamp();
+        let datetime = timestamp_to_datetime(now);
+        let back_to_timestamp = datetime_to_timestamp(&datetime);
 
-        assert_eq!(EndianUtils::from_little_endian(&little_endian), value);
-        assert_eq!(EndianUtils::from_big_endian(&big_endian), value);
+        // Should be equal or very close (within 1 second)
+        assert!((back_to_timestamp as i64 - now as i64).abs() <= 1);
 
-        // Test bit manipulation
-        assert!(BitUtils::is_bit_set(0b10101010, 1));
-        assert!(!BitUtils::is_bit_set(0b10101010, 0));
-
-        let set_bit = BitUtils::set_bit(0b10101010, 0);
-        assert_eq!(set_bit, 0b10101011);
-
-        let clear_bit = BitUtils::clear_bit(0b10101010, 1);
-        assert_eq!(clear_bit, 0b10101000);
+        // Test bytes to human readable
+        assert_eq!(bytes_to_human_readable(0), "0 B");
+        assert_eq!(bytes_to_human_readable(1023), "1023 B");
+        assert_eq!(bytes_to_human_readable(1024), "1.00 KB");
+        assert_eq!(bytes_to_human_readable(1536), "1.50 KB");
+        assert_eq!(bytes_to_human_readable(1048576), "1.00 MB");
+        assert_eq!(bytes_to_human_readable(1073741824), "1.00 GB");
     }
 
-    /// Test time utilities (matches C# DateTime extensions exactly)
+    /// Test time utilities
     #[test]
     fn test_time_utilities_compatibility() {
         let timestamp = 1234567890u64;
-        let datetime = TimeUtils::timestamp_to_datetime(timestamp);
-        let back_to_timestamp = TimeUtils::datetime_to_timestamp(&datetime);
+        let datetime = timestamp_to_datetime(timestamp);
+        let back_to_timestamp = datetime_to_timestamp(&datetime);
         assert_eq!(back_to_timestamp, timestamp);
 
-        // Test Neo epoch conversion
-        let neo_timestamp = TimeUtils::to_neo_timestamp(&datetime);
-        let from_neo = TimeUtils::from_neo_timestamp(neo_timestamp);
-        assert_eq!(from_neo, datetime);
+        // Test clamp function
+        assert_eq!(clamp(5, 0, 10), 5);
+        assert_eq!(clamp(-5, 0, 10), 0);
+        assert_eq!(clamp(15, 0, 10), 10);
+
+        // Test safe divide
+        assert_eq!(safe_divide(10.0, 2.0), 5.0);
+        assert_eq!(safe_divide(10.0, 0.0), 0.0);
     }
 }

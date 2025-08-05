@@ -501,6 +501,7 @@ impl From<Vec<u8>> for UInt160 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neo_io::{BinaryWriter, MemoryReader, Serializable};
 
     #[test]
     fn test_uint160_new() {
@@ -509,86 +510,69 @@ mod tests {
         assert_eq!(uint.value2, 0);
         assert_eq!(uint.value3, 0);
     }
-
     #[test]
     fn test_uint160_from_bytes() {
         let mut bytes = [0u8; ADDRESS_SIZE];
         bytes[0] = 1; // Set first byte to 1
-
         let uint = UInt160::from_bytes(&bytes).unwrap();
         assert_eq!(uint.value1, 1); // Should be 1 in little-endian
         assert_eq!(uint.value2, 0);
         assert_eq!(uint.value3, 0);
     }
-
     #[test]
     fn test_uint160_to_array() {
         let mut uint = UInt160::new();
         uint.value1 = 1;
-
         let bytes = uint.to_array();
         assert_eq!(bytes[0], 1); // First byte should be 1
         assert_eq!(bytes[1], 0);
     }
-
     #[test]
     fn test_uint160_parse() {
         let hex_str = "0x0000000000000000000000000000000000000001";
         let uint = UInt160::parse(hex_str).unwrap();
-
         assert_eq!(uint.value1, 0);
         assert_eq!(uint.value2, 0);
         assert_eq!(uint.value3, 0x01000000);
     }
-
     #[test]
     fn test_uint160_try_parse() {
         let mut result = None;
-
         assert!(UInt160::try_parse(
             "0x0000000000000000000000000000000000000001",
             &mut result
         ));
         assert!(result.is_some());
-
         result = None;
         assert!(!UInt160::try_parse("0x01", &mut result));
-
         result = None;
         assert!(!UInt160::try_parse(
             "0x000000000000000000000000000000000000000g",
             &mut result
         ));
     }
-
     #[test]
     fn test_uint160_to_hex_string() {
         let mut uint = UInt160::new();
         uint.value3 = 0x01000000; // 1 in little-endian
-
         let hex_str = uint.to_hex_string();
         assert_eq!(hex_str, "0x0000000000000000000000000000000000000001");
     }
-
     #[test]
     fn test_uint160_serialization() {
         let mut uint = UInt160::new();
         uint.value1 = 0x1234567890abcdef;
         uint.value2 = 0xfedcba0987654321;
         uint.value3 = 0x12345678;
-
         // Test serialization
         let mut writer = neo_io::BinaryWriter::new();
         <UInt160 as neo_io::Serializable>::serialize(&uint, &mut writer).unwrap();
         let bytes = writer.to_bytes();
-
         // Test deserialization
         let mut reader = neo_io::MemoryReader::new(&bytes);
         let deserialized = <UInt160 as neo_io::Serializable>::deserialize(&mut reader).unwrap();
-
         assert_eq!(uint, deserialized);
     }
-
     #[test]
     fn test_uint160_ordering() {
         let uint1 = UInt160 {
@@ -596,24 +580,20 @@ mod tests {
             value2: 0,
             value3: 0,
         };
-
         let uint2 = UInt160 {
             value1: 0,
             value2: 1,
             value3: 0,
         };
-
         let uint3 = UInt160 {
             value1: 0,
             value2: 0,
             value3: 1,
         };
-
         assert!(uint3 > uint2);
         assert!(uint2 > uint1);
         assert!(uint3 > uint1);
     }
-
     #[test]
     fn test_uint160_from_string() {
         let hex_str = "0x0000000000000000000000000000000000000001";
@@ -621,7 +601,6 @@ mod tests {
         let uint2 = UInt160::parse(hex_str).unwrap();
         assert_eq!(uint1, uint2);
     }
-
     #[test]
     fn test_uint160_equals() {
         let uint1 = UInt160 {
@@ -629,24 +608,20 @@ mod tests {
             value2: 2,
             value3: 3,
         };
-
         let uint2 = UInt160 {
             value1: 1,
             value2: 2,
             value3: 3,
         };
-
         let uint3 = UInt160 {
             value1: 1,
             value2: 2,
             value3: 4,
         };
-
         assert!(uint1.equals(Some(&uint2)));
         assert!(!uint1.equals(Some(&uint3)));
         assert!(!uint1.equals(None));
     }
-
     #[test]
     fn test_uint160_get_hash_code() {
         let uint1 = UInt160 {
@@ -654,17 +629,14 @@ mod tests {
             value2: 2,
             value3: 3,
         };
-
         let uint2 = UInt160 {
             value1: 1,
             value2: 2,
             value3: 3,
         };
-
         // Same values should produce same hash code
         assert_eq!(uint1.get_hash_code(), uint2.get_hash_code());
     }
-
     #[test]
     fn test_uint160_from_script() {
         let script = b"Hello, Neo!";
@@ -673,7 +645,6 @@ mod tests {
         assert_eq!(uint.value2, 788152587155704251);
         assert_eq!(uint.value3, 4052539232);
     }
-
     #[test]
     fn test_uint160_to_address() {
         let uint = UInt160 {

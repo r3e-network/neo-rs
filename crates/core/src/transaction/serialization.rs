@@ -118,7 +118,7 @@ impl Serializable for Transaction {
         if signer_count > MAX_TRANSACTION_ATTRIBUTES {
             return Err(neo_io::IoError::InvalidData {
                 context: "signers".to_string(),
-                value: format!("count {}", signer_count),
+                value: format!("count {signer_count}"),
             });
         }
 
@@ -133,7 +133,7 @@ impl Serializable for Transaction {
         if attr_count > (MAX_TRANSACTION_ATTRIBUTES - signers.len()) {
             return Err(neo_io::IoError::InvalidData {
                 context: "attributes".to_string(),
-                value: format!("count {}", attr_count),
+                value: format!("count {attr_count}"),
             });
         }
 

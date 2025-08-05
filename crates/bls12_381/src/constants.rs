@@ -68,6 +68,8 @@ pub const EXPAND_MESSAGE_LENGTH: usize = 256;
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_constants_sizes() {
         assert_eq!(PRIVATE_KEY_SIZE, HASH_SIZE);

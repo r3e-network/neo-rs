@@ -608,7 +608,7 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
         StackItem::Map(items) => items
             .get(&key)
             .cloned()
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {:?}", key)))?,
+            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?,
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, or Map",

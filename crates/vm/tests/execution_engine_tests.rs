@@ -102,7 +102,7 @@ fn test_execution_engine_fault_handling() {
 
     // THROW handler throws an exception
     jump_table.set(OpCode::THROW, |_engine, _instruction| {
-        Err(neo_vm::Error::ExecutionHalted("Test exception".to_string()))
+        Err(neo_vm::VmError::execution_halted("Test exception"))
     });
 
     // Create a script with a THROW instruction
