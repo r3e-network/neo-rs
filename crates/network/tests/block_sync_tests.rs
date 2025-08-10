@@ -1,3 +1,4 @@
+#![cfg(feature = "compat_tests")]
 use neo_core::{UInt160, UInt256};
 use neo_ledger::{Block, BlockHeader};
 use neo_network::messages::inventory::{InventoryItem, InventoryType};

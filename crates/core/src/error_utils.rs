@@ -45,7 +45,7 @@ pub trait IntoError<E> {
 
 impl<T: Display> IntoError<String> for T {
     fn into_error(self, context: &str) -> String {
-        format!("{}: {}", context, self)
+        format!("{context}: {self}")
     }
 }
 

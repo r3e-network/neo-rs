@@ -95,7 +95,8 @@ fn bench_transaction_operations(c: &mut Criterion) {
     group.bench_function("transaction_set_script", |b| {
         b.iter(|| {
             let mut tx = transaction.clone();
-            black_box(tx.set_script(script.clone()))
+            tx.set_script(script.clone());
+            black_box(())
         })
     });
 
@@ -132,7 +133,7 @@ fn bench_witness_operations(c: &mut Criterion) {
 
     let witness = Witness::new_with_scripts(invocation_script, verification_script);
 
-    group.bench_function("witness_size", |b| b.iter(|| black_box(witness.size())));
+    group.bench_function("witness_size", |b| b.iter(|| black_box(witness.get_size())));
 
     group.bench_function("witness_clone", |b| b.iter(|| black_box(witness.clone())));
 

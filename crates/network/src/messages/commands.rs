@@ -55,8 +55,8 @@ pub enum MessageCommand {
     MerkleBlock = 0x38,
     /// Alert (0x40)
     Alert = 0x40,
-    /// Consensus (0x41)
-    Consensus = 0x41,
+    // Note: 0x41 is not used for Consensus in Neo N3
+    // Consensus messages use ExtensiblePayload (0x2e) with category "dBFT"
     /// Unknown/Undocumented command (0xbe) - seen in some peer implementations
     Unknown = 0xbe,
     /// Version with payload (0x55) - peer version with user agent
@@ -109,7 +109,7 @@ impl MessageCommand {
             0x32 => Ok(Self::FilterClear),
             0x38 => Ok(Self::MerkleBlock),
             0x40 => Ok(Self::Alert),
-            0x41 => Ok(Self::Consensus),
+            // 0x41 is not used for Consensus in Neo N3
             0x55 => Ok(Self::VersionWithPayload),
             0xbe => Ok(Self::Unknown),
             0x83 => Ok(Self::Extended83),
@@ -153,7 +153,7 @@ impl MessageCommand {
             "filterclear" => Ok(Self::FilterClear),
             "merkleblock" => Ok(Self::MerkleBlock),
             "alert" => Ok(Self::Alert),
-            "consensus" => Ok(Self::Consensus),
+            // "consensus" removed - uses ExtensiblePayload instead
             "versionwithpayload" => Ok(Self::VersionWithPayload),
             "unknown" => Ok(Self::Unknown),
             _ => Err(crate::NetworkError::ProtocolViolation {
@@ -189,7 +189,7 @@ impl MessageCommand {
             Self::FilterClear => "filterclear",
             Self::MerkleBlock => "merkleblock",
             Self::Alert => "alert",
-            Self::Consensus => "consensus",
+            // Consensus removed - uses ExtensiblePayload instead
             Self::VersionWithPayload => "versionwithpayload",
             Self::Unknown => "unknown",
             Self::Extended83 => "extended83",
@@ -249,7 +249,7 @@ pub mod varlen {
 
     /// Encodes a length value using Neo 3 variable-length encoding
     pub fn encode_length(len: usize) -> Vec<u8> {
-        if len < 0xfd {
+        if len <= 0xfc {
             vec![len as u8]
         } else if len <= 0xffff {
             let mut bytes = vec![0xfd];
@@ -276,7 +276,7 @@ pub mod varlen {
         }
 
         match bytes[0] {
-            len @ 0..=252 => Ok((len as usize, 1)),
+            len @ 0..=252 => Ok((len as usize, 1)), // 0..=0xFC are single-byte
             0xfd => {
                 if bytes.len() < 3 {
                     return Err(NetworkError::ProtocolViolation {
@@ -343,8 +343,8 @@ mod tests {
             MessageCommand::Ping
         );
 
-        // Test invalid command
-        assert!(MessageCommand::from_byte(0xff).is_err());
+        // Unknown command maps to MessageCommand::Unknown for compatibility
+        assert_eq!(MessageCommand::from_byte(0xff).unwrap(), MessageCommand::Unknown);
     }
 
     #[test]

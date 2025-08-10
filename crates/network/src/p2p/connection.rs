@@ -354,7 +354,7 @@ mod tests {
     #[tokio::test]
     async fn test_peer_connection_creation() {
         // Create a test TCP connection
-        let listener = TcpListener::bind("localhost:0")
+        let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("operation should succeed");
         let addr = listener.local_addr().expect("operation should succeed");

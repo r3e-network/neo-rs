@@ -3,7 +3,7 @@
 
 use neo_cryptography::crypto::Crypto;
 use neo_cryptography::helper;
-use std::str::FromStr;
+// use std::str::FromStr;
 
 // ============================================================================
 // C# Neo Unit Test Conversions - Cryptography Tests
@@ -323,9 +323,8 @@ fn test_error_cases() {
     ];
 
     for invalid_key in invalid_private_keys {
-        if invalid_key.len() == 32 && invalid_key.iter().all(|&b| b == 0) {
-            assert!(helper::private_key_to_public_key(&invalid_key).is_err());
-        } else if invalid_key.len() != 32 {
+        let should_err = invalid_key.len() != 32 || invalid_key.iter().all(|&b| b == 0);
+        if should_err {
             assert!(helper::private_key_to_public_key(&invalid_key).is_err());
         }
     }

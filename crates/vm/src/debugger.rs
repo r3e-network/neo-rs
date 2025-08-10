@@ -72,7 +72,7 @@ impl Debugger {
 
         self.breakpoints
             .entry(script_hash)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(instruction_pointer);
     }
 
@@ -129,9 +129,7 @@ impl Debugger {
             }
 
             // Execute the next instruction
-            if let Err(err) = self.engine.execute_next() {
-                return Err(err);
-            }
+            self.engine.execute_next()?;
         }
 
         Ok(self.engine.state())
@@ -143,9 +141,7 @@ impl Debugger {
             self.engine.set_state(VMState::NONE);
         }
 
-        if let Err(err) = self.engine.execute_next() {
-            return Err(err);
-        }
+        self.engine.execute_next()?;
 
         self.engine.set_state(VMState::BREAK);
         Ok(VMState::BREAK)
@@ -161,9 +157,7 @@ impl Debugger {
 
         while self.engine.state() != VMState::HALT && self.engine.state() != VMState::FAULT {
             // Execute the next instruction
-            if let Err(err) = self.engine.execute_next() {
-                return Err(err);
-            }
+            self.engine.execute_next()?;
 
             if let Some(context) = &current_context {
                 if self.engine.current_context().is_none()
@@ -196,9 +190,7 @@ impl Debugger {
         let current_instruction_pointer = current_context.as_ref().map(|c| c.instruction_pointer());
 
         // Execute the next instruction
-        if let Err(err) = self.engine.execute_next() {
-            return Err(err);
-        }
+        self.engine.execute_next()?;
 
         if let Some(context) = &current_context {
             if let Some(current_context) = self.engine.current_context() {
@@ -217,8 +209,7 @@ impl Debugger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::op_code::OpCode;
-    use crate::script::Script;
+    use crate::Script;
     use neo_config::ADDRESS_SIZE;
 
     #[test]

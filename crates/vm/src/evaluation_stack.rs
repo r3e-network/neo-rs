@@ -207,8 +207,8 @@ mod tests {
         assert_eq!(stack.len(), 3);
 
         // Pop an item
-        let item = stack.pop().ok_or_else(|| VmError::StackUnderflow)?;
-        assert_eq!(item.as_int().map_err(|_| VmError::StackOperationFailed)?, 3);
+        let item = stack.pop().expect("pop should succeed");
+        assert_eq!(item.as_int().expect("as_int should succeed"), num_bigint::BigInt::from(3));
 
         // Check updated stack size
         assert_eq!(stack.len(), 2);
@@ -225,21 +225,21 @@ mod tests {
         stack.push(StackItem::from_int(3));
 
         // Peek at items
-        let item0 = stack.peek(0).map_err(|_| VmError::StackOperationFailed)?;
-        let item1 = stack.peek(1).map_err(|_| VmError::StackOperationFailed)?;
-        let item2 = stack.peek(2).map_err(|_| VmError::StackOperationFailed)?;
+        let item0 = stack.peek(0).expect("peek should succeed");
+        let item1 = stack.peek(1).expect("peek should succeed");
+        let item2 = stack.peek(2).expect("peek should succeed");
 
         assert_eq!(
-            item0.as_int().map_err(|_| VmError::StackOperationFailed)?,
-            3
+            item0.as_int().expect("as_int should succeed"),
+            num_bigint::BigInt::from(3)
         );
         assert_eq!(
-            item1.as_int().map_err(|_| VmError::StackOperationFailed)?,
-            2
+            item1.as_int().expect("as_int should succeed"),
+            num_bigint::BigInt::from(2)
         );
         assert_eq!(
-            item2.as_int().map_err(|_| VmError::StackOperationFailed)?,
-            1
+            item2.as_int().expect("as_int should succeed"),
+            num_bigint::BigInt::from(1)
         );
 
         assert_eq!(stack.len(), 3);
@@ -255,9 +255,7 @@ mod tests {
         stack.push(StackItem::from_int(3));
 
         // Insert an item
-        stack
-            .insert(1, StackItem::from_int(2))
-            .map_err(|_| VmError::StackOperationFailed)?;
+        stack.insert(1, StackItem::from_int(2)).expect("insert should succeed");
 
         // Check stack
         assert_eq!(
@@ -265,24 +263,24 @@ mod tests {
                 .peek(2)
                 .expect("intermediate value should exist")
                 .as_int()
-                .map_err(|_| VmError::StackOperationFailed)?,
-            1
+                .expect("as_int should succeed"),
+            num_bigint::BigInt::from(1)
         );
         assert_eq!(
             stack
                 .peek(1)
                 .expect("intermediate value should exist")
                 .as_int()
-                .map_err(|_| VmError::StackOperationFailed)?,
-            2
+                .expect("as_int should succeed"),
+            num_bigint::BigInt::from(2)
         );
         assert_eq!(
             stack
                 .peek(0)
                 .expect("intermediate value should exist")
                 .as_int()
-                .map_err(|_| VmError::StackOperationFailed)?,
-            3
+                .expect("as_int should succeed"),
+            num_bigint::BigInt::from(3)
         );
 
         // Remove an item
@@ -319,9 +317,7 @@ mod tests {
         stack.push(StackItem::from_int(3));
 
         // Swap items
-        stack
-            .swap(0, 2)
-            .map_err(|_| VmError::StackOperationFailed)?;
+        stack.swap(0, 2).expect("swap should succeed");
 
         // Check stack
         assert_eq!(
@@ -329,24 +325,24 @@ mod tests {
                 .peek(0)
                 .expect("intermediate value should exist")
                 .as_int()
-                .map_err(|_| VmError::StackOperationFailed)?,
-            1
+                .expect("as_int should succeed"),
+            num_bigint::BigInt::from(1)
         );
         assert_eq!(
             stack
                 .peek(1)
                 .expect("intermediate value should exist")
                 .as_int()
-                .map_err(|_| VmError::StackOperationFailed)?,
-            2
+                .expect("as_int should succeed"),
+            num_bigint::BigInt::from(2)
         );
         assert_eq!(
             stack
                 .peek(2)
                 .expect("intermediate value should exist")
                 .as_int()
-                .map_err(|_| VmError::StackOperationFailed)?,
-            3
+                .expect("as_int should succeed"),
+            num_bigint::BigInt::from(3)
         );
     }
 
@@ -363,9 +359,7 @@ mod tests {
         stack.push(StackItem::from_int(5));
 
         // Reverse the top 3 items
-        stack
-            .reverse(3)
-            .map_err(|_| VmError::StackOperationFailed)?;
+        stack.reverse(3).expect("reverse should succeed");
 
         // Check stack
         assert_eq!(
@@ -373,52 +367,52 @@ mod tests {
                 .peek(0)
                 .expect("intermediate value should exist")
                 .as_int()
-                .map_err(|_| VmError::StackOperationFailed)?,
-            3
+                .expect("as_int should succeed"),
+            num_bigint::BigInt::from(3)
         );
         assert_eq!(
             stack
                 .peek(1)
                 .unwrap()
                 .as_int()
-                .map_err(|_| VmError::StackOperationFailed)?,
-            4
+                .expect("as_int should succeed"),
+            num_bigint::BigInt::from(4)
         );
-        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), 5);
-        assert_eq!(stack.peek(3).unwrap().as_int().unwrap(), 2);
-        assert_eq!(stack.peek(4).unwrap().as_int().unwrap(), 1);
+        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), num_bigint::BigInt::from(5));
+        assert_eq!(stack.peek(3).unwrap().as_int().unwrap(), num_bigint::BigInt::from(2));
+        assert_eq!(stack.peek(4).unwrap().as_int().unwrap(), num_bigint::BigInt::from(1));
 
         // Reverse all items
         stack.reverse(5).unwrap();
 
         // Check stack
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), 1);
+        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), num_bigint::BigInt::from(1));
         assert_eq!(
             stack.peek(1).unwrap().as_int().expect("Operation failed"),
-            2
+            num_bigint::BigInt::from(2)
         );
         assert_eq!(
             stack.peek(2).unwrap().as_int().expect("Operation failed"),
-            5
+            num_bigint::BigInt::from(5)
         );
         assert_eq!(
             stack.peek(3).unwrap().as_int().expect("Operation failed"),
-            4
+            num_bigint::BigInt::from(4)
         );
         assert_eq!(
             stack.peek(4).unwrap().as_int().expect("Operation failed"),
-            3
+            num_bigint::BigInt::from(3)
         );
 
         stack.reverse(0).expect("Operation failed");
 
         assert_eq!(
             stack.peek(0).unwrap().as_int().expect("Operation failed"),
-            1
+            num_bigint::BigInt::from(1)
         );
         assert_eq!(
             stack.peek(1).unwrap().as_int().expect("Operation failed"),
-            2
+            num_bigint::BigInt::from(2)
         );
 
         stack.reverse(1).expect("Operation failed");

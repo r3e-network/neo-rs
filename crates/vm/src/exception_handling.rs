@@ -172,12 +172,10 @@ impl ExceptionHandlingContext {
                     } else {
                         Err("No exception handler available")
                     }
+                } else if self.finally_pointer >= 0 {
+                    Ok(self.finally_start)
                 } else {
-                    if self.finally_pointer >= 0 {
-                        Ok(self.finally_start)
-                    } else {
-                        Ok(self.end_offset)
-                    }
+                    Ok(self.end_offset)
                 }
             }
             ExceptionHandlingState::Try => {
@@ -189,12 +187,10 @@ impl ExceptionHandlingContext {
                     } else {
                         Err("No exception handler available")
                     }
+                } else if self.finally_pointer >= 0 {
+                    Ok(self.finally_start)
                 } else {
-                    if self.finally_pointer >= 0 {
-                        Ok(self.finally_start)
-                    } else {
-                        Ok(self.end_offset)
-                    }
+                    Ok(self.end_offset)
                 }
             }
             ExceptionHandlingState::Catch => {

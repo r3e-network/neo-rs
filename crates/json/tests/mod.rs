@@ -117,7 +117,7 @@ mod integration_tests {
             let mut witness = OrderedDictionary::new();
             witness.insert(
                 "invocation".to_string(),
-                Some(JToken::String(format!("DEA1{:02x}", i))),
+                Some(JToken::String(format!("DEA1{i:02x}"))),
             );
             witness.insert(
                 "verification".to_string(),
@@ -135,7 +135,7 @@ mod integration_tests {
             let mut tx = OrderedDictionary::new();
             tx.insert(
                 "hash".to_string(),
-                Some(JToken::String(format!("0x{:064x}", i))),
+                Some(JToken::String(format!("0x{i:064x}"))),
             );
             tx.insert(
                 "size".to_string(),

@@ -6,10 +6,10 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use neo_cryptography::{
-    ecdsa::{KeyPair, PrivateKey, PublicKey},
+    ecdsa::p256::PublicKey,
+    ecdsa::{KeyPair, PrivateKey},
     hash::{hash160, hash256, sha256},
 };
-use rand::Rng;
 
 /// Benchmark ECDSA key operations
 fn bench_ecdsa_key_operations(c: &mut Criterion) {

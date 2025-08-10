@@ -1025,15 +1025,18 @@ mod tests {
     use serde_json::{json, Value};
     use std::sync::Arc;
 
-    fn create_test_blockchain() -> Arc<Blockchain> {
+    async fn create_test_blockchain_async() -> Arc<Blockchain> {
         use neo_config::NetworkType;
-        Arc::new(tokio_test::block_on(async {
-            Blockchain::new(NetworkType::TestNet).await.unwrap()
-        }))
+        let suffix = format!("rpc-{}", uuid::Uuid::new_v4());
+        Arc::new(
+            Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some(&suffix))
+                .await
+                .unwrap(),
+        )
     }
 
-    fn create_test_state() -> RpcState {
-        RpcState::new(create_test_blockchain())
+    async fn create_test_state_async() -> RpcState {
+        RpcState::new(create_test_blockchain_async().await)
     }
 
     #[test]
@@ -1158,18 +1161,18 @@ mod tests {
         assert!(!serialized.contains("\"result\""));
     }
 
-    #[test]
-    fn test_rpc_state_creation() {
-        let blockchain = create_test_blockchain();
+    #[tokio::test]
+    async fn test_rpc_state_creation() {
+        let blockchain = create_test_blockchain_async().await;
         let state = RpcState::new(blockchain.clone());
 
         assert!(Arc::ptr_eq(&state.blockchain, &blockchain));
         assert!(state.p2p_node.is_none());
     }
 
-    #[test]
-    fn test_rpc_state_with_p2p_node() {
-        let blockchain = create_test_blockchain();
+    #[tokio::test]
+    async fn test_rpc_state_with_p2p_node() {
+        let blockchain = create_test_blockchain_async().await;
         let network_config = crate::NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = Arc::new(
@@ -1197,7 +1200,7 @@ mod tests {
             }
         }
 
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         state
             .register_method("test_method".to_string(), TestMethod)
             .await;
@@ -1208,7 +1211,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_block_count() -> NetworkResult<()> {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let result = handle_get_block_count(&state).await;
 
         assert!(result.is_ok());
@@ -1304,7 +1307,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_connection_count_no_p2p() -> NetworkResult<()> {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let result = handle_get_connection_count(&state).await;
 
         assert!(result.is_ok());
@@ -1318,7 +1321,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_peers_no_p2p() -> NetworkResult<()> {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let result = handle_get_peers(&state).await;
 
         assert!(result.is_ok());
@@ -1342,7 +1345,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_committee() -> NetworkResult<()> {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let result = handle_get_committee(&state).await;
 
         assert!(result.is_ok());
@@ -1366,7 +1369,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_validators() -> NetworkResult<()> {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let result = handle_get_validators(&state).await;
 
         assert!(result.is_ok());
@@ -1393,7 +1396,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_raw_mempool() -> NetworkResult<()> {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let params = Some(json!([false]));
         let result = handle_get_raw_mempool(&state, &params).await;
 
@@ -1411,7 +1414,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_invoke_function() -> NetworkResult<()> {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let params = Some(json!([
             "0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5",
             "symbol",
@@ -1438,7 +1441,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_invoke_function_invalid_params() {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let result = handle_invoke_function(&state, &None).await;
 
         assert!(result.is_err());
@@ -1448,7 +1451,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_send_raw_transaction() -> NetworkResult<()> {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let params = Some(json!(["deadbeef"]));
         let result = handle_send_raw_transaction(&state, &params).await;
 
@@ -1472,7 +1475,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_get_application_log() -> NetworkResult<()> {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let params = Some(json!([
             "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
         ]));
@@ -1500,7 +1503,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_calculate_network_fee() -> NetworkResult<()> {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
         let params = Some(json!(["deadbeef"]));
         let result = handle_calculate_network_fee(&state, &params).await;
 
@@ -1524,7 +1527,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rpc_method_dispatch() {
-        let state = create_test_state();
+        let state = create_test_state_async().await;
 
         // Test valid method
         let request = RpcRequest {
@@ -1551,10 +1554,10 @@ mod tests {
         assert_eq!(error.code, -32601); // Method not found
     }
 
-    #[test]
-    fn test_rpc_server_creation() {
+    #[tokio::test]
+    async fn test_rpc_server_creation() {
         let config = RpcConfig::default();
-        let blockchain = create_test_blockchain();
+        let blockchain = create_test_blockchain_async().await;
         let server = RpcServer::new(config, blockchain);
 
         // Just verify it creates without panicking

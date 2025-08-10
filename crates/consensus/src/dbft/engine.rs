@@ -372,46 +372,9 @@ impl DbftEngine {
 
             selected
         } else {
-            // In production, this would be replaced with actual mempool integration
-            info!(
-                "No mempool available, creating mock transactions for block proposal (max: {}, max_size: {})",
-                max_transactions, max_size
-            );
-
-            // Create a few mock transactions to simulate a working mempool
-            let mut real_transactions = Vec::new();
-            let mut total_size = 0;
-
-            // Create mock transfers with different fee levels
-            for i in 0..std::cmp::min(max_transactions, 5) {
-                if total_size >= max_size {
-                    break;
-                }
-
-                // Create basic transaction structure
-                let mut real_tx = Transaction::new();
-                real_tx.set_nonce(i as u32);
-                real_tx.set_system_fee(1000000); // 0.001 GAS
-                real_tx.set_network_fee(100000 * (i + 1) as i64); // Variable fees for priority
-                real_tx.set_valid_until_block(u32::MAX);
-                real_tx.set_script(vec![0x40, 0x42]); // Simple PUSH2 script
-
-                let tx_size = real_tx.size();
-                if total_size + tx_size <= max_size {
-                    total_size += tx_size;
-                    real_transactions.push(real_tx);
-                } else {
-                    break;
-                }
-            }
-
-            info!(
-                "Created {} mock transactions (total size: {} bytes)",
-                real_transactions.len(),
-                total_size
-            );
-
-            real_transactions
+            // No mempool integrated yet: return empty set (do not fabricate txs)
+            info!("No mempool available; proposing empty transaction set");
+            Vec::new()
         }
     }
 

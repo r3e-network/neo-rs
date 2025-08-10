@@ -494,7 +494,6 @@ impl SignalHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CoreError as Error, Result};
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -545,7 +544,7 @@ mod tests {
         let mut event_count = 0;
         while let Ok(event) = events.try_recv() {
             event_count += 1;
-            log::info!("Received event: {:?}", event);
+            log::info!("Received event: {event:?}");
         }
         assert!(event_count > 0);
     }

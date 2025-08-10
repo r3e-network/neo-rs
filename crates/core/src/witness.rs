@@ -92,7 +92,7 @@ impl Witness {
 
             // Then RIPEMD160
             let mut ripemd_hasher = Ripemd160::new();
-            ripemd_hasher.update(&sha256_result);
+            ripemd_hasher.update(sha256_result);
             let ripemd_result = ripemd_hasher.finalize();
 
             // Convert to UInt160
@@ -100,7 +100,7 @@ impl Witness {
             hash_bytes.copy_from_slice(&ripemd_result);
             self.script_hash = Some(UInt160::from_bytes(&hash_bytes).unwrap_or_default());
         }
-        self.script_hash.clone().unwrap_or_default()
+        self.script_hash.unwrap_or_default()
     }
 
     /// Gets the invocation script.
@@ -157,7 +157,7 @@ impl Witness {
         Self {
             invocation_script: self.invocation_script.clone(),
             verification_script: self.verification_script.clone(),
-            script_hash: self.script_hash.clone(),
+            script_hash: self.script_hash,
         }
     }
 
@@ -374,8 +374,7 @@ impl fmt::Display for Witness {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CoreError as Error, CoreResult as Result};
-    use neo_io::{BinaryWriter, MemoryReader, Serializable};
+    use neo_io::Serializable;
 
     #[test]
     fn test_witness_new() {

@@ -693,15 +693,15 @@ mod tests {
 
     #[test]
     fn test_error_creation() {
-        let addr: SocketAddr = "localhost:8080".parse().expect("valid address");
+        let addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid address");
         let error = NetworkError::connection_failed(addr, "Network unreachable");
         assert!(matches!(error, NetworkError::ConnectionFailed { .. }));
-        assert!(error.to_string().contains("localhost:8080"));
+        assert!(error.to_string().contains("127.0.0.1:8080"));
     }
 
     #[test]
     fn test_error_classification() {
-        let addr: SocketAddr = "localhost:8080".parse().expect("valid address");
+        let addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid address");
 
         // Test retryable errors
         assert!(NetworkError::connection_timeout(addr, DEFAULT_TIMEOUT_MS).is_retryable());
@@ -722,7 +722,7 @@ mod tests {
 
     #[test]
     fn test_error_severity() {
-        let addr: SocketAddr = "localhost:8080".parse().expect("valid address");
+        let addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid address");
 
         assert_eq!(
             NetworkError::connection_failed(addr, "Failed").severity(),
@@ -740,7 +740,7 @@ mod tests {
 
     #[test]
     fn test_error_categories() {
-        let addr: SocketAddr = "localhost:8080".parse().expect("valid address");
+        let addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid address");
 
         assert_eq!(
             NetworkError::connection_failed(addr, "Failed").category(),
@@ -755,18 +755,18 @@ mod tests {
 
     #[test]
     fn test_rate_limit_error() {
-        let addr: SocketAddr = "localhost:8080".parse().expect("valid address");
+        let addr: SocketAddr = "127.0.0.1:8080".parse().expect("valid address");
         let error = NetworkError::rate_limit_exceeded(addr, 100.0, 50.0);
         assert_eq!(
             error.to_string(),
-            "Rate limit exceeded for localhost:8080: 100 messages/sec > 50"
+            "Rate limit exceeded for 127.0.0.1:8080: 100 messages/sec > 50"
         );
     }
 
     #[test]
     fn test_backward_compatibility() {
         let network_error = NetworkError::connection_failed(
-            "localhost:8080".parse().expect("valid address"),
+            "127.0.0.1:8080".parse().expect("valid address"),
             "test",
         );
         let old_error: crate::Error = network_error.into();

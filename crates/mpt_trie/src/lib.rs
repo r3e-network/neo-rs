@@ -22,6 +22,7 @@ pub use trie::Trie;
 
 #[cfg(test)]
 mod tests {
+    use super::NodeType;
     #[test]
     fn test_basic_trie_creation() {
         // Basic test to ensure the module compiles

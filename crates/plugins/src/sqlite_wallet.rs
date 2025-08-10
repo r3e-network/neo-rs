@@ -138,10 +138,10 @@ mod tests {
     fn create_test_context() -> PluginContext {
         let temp_dir = tempdir().unwrap();
         PluginContext {
-            data_dir: temp_dir.path().to_path_buf(),
+            neo_version: "3.6.0".to_string(),
             config_dir: temp_dir.path().to_path_buf(),
-            log_level: "info".to_string(),
-            network_magic: 0x4F454E,
+            data_dir: temp_dir.path().to_path_buf(),
+            shared_data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -150,12 +150,13 @@ mod tests {
         let mut plugin = SqliteWalletPlugin::new();
         let context = create_test_context();
 
-        assert!(!plugin.is_enabled());
+        // Initial state is disabled
+        assert_eq!(plugin.enabled, false);
         plugin
             .initialize(&context)
             .await
             .expect("operation should succeed");
-        assert!(plugin.is_enabled());
+        assert_eq!(plugin.enabled, true);
     }
 
     #[tokio::test]

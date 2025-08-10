@@ -97,7 +97,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     // Get the type from the instruction
     let type_byte = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing type operand"))?;
 
@@ -105,7 +105,7 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     let mut items = Vec::with_capacity(count);
     for _ in 0..count {
         // Create a default value based on the type
-        let DEFAULT_VALUE = match type_byte {
+        let default_value = match type_byte {
             0x00 => StackItem::Boolean(false),
             0x01 => StackItem::Integer(BigInt::from(0)),
             0x02 => StackItem::ByteString(Vec::new()),
@@ -115,13 +115,12 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
             0x06 => StackItem::Map(BTreeMap::new()),
             _ => {
                 return Err(VmError::invalid_instruction_msg(format!(
-                    "Invalid type: {}",
-                    type_byte
+                    "Invalid type: {type_byte}"
                 )));
             }
         };
 
-        items.push(DEFAULT_VALUE);
+        items.push(default_value);
     }
 
     // Push the array onto the stack
@@ -256,10 +255,9 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
             if index >= items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {}",
-                    index
-                )));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {index}"
+            )));
             }
             items.remove(index);
             context.push(StackItem::from_array(items))?;
@@ -270,10 +268,9 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
             if index >= items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {}",
-                    index
-                )));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {index}"
+            )));
             }
             items.remove(index);
             context.push(StackItem::from_struct(items))?;
@@ -585,10 +582,9 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
             if index >= items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {}",
-                    index
-                )));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {index}"
+            )));
             }
             items[index].clone()
         }
@@ -598,10 +594,9 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
             if index >= items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {}",
-                    index
-                )));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {index}"
+            )));
             }
             items[index].clone()
         }
@@ -641,10 +636,9 @@ fn set_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
             if index >= items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {}",
-                    index
-                )));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {index}"
+            )));
             }
             items[index] = value;
             context.push(StackItem::from_array(items))?;
@@ -655,10 +649,9 @@ fn set_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
             if index >= items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {}",
-                    index
-                )));
+            return Err(VmError::invalid_operation_msg(format!(
+                "Index out of range: {index}"
+            )));
             }
             items[index] = value;
             context.push(StackItem::from_struct(items))?;

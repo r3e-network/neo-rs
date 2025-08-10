@@ -284,7 +284,8 @@ pub async fn monitor_network_health(
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
+    use std::time::Duration;
 
     #[test]
     fn test_network_error_types() {

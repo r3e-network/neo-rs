@@ -85,7 +85,7 @@ fn test_uint160_parse() {
 
     for case in valid_cases {
         let result = UInt160::from_str(case);
-        assert!(result.is_ok(), "Failed to parse: {}", case);
+        assert!(result.is_ok(), "Failed to parse: {case}");
 
         let hash = result.unwrap();
         assert_eq!(
@@ -105,7 +105,7 @@ fn test_uint160_parse() {
 
     for case in invalid_cases {
         let result = UInt160::from_str(case);
-        assert!(result.is_err(), "Should have failed to parse: {}", case);
+        assert!(result.is_err(), "Should have failed to parse: {case}");
     }
 }
 
@@ -197,7 +197,7 @@ fn test_uint256_parse() {
 
     for case in invalid_cases {
         let result = UInt256::from_str(case);
-        assert!(result.is_err(), "Should have failed to parse: {}", case);
+        assert!(result.is_err(), "Should have failed to parse: {case}");
     }
 }
 
@@ -220,7 +220,7 @@ fn test_transaction_get_hash_code() {
 /// Test converted from C# UT_Transaction.TestGetSize
 #[test]
 fn test_transaction_get_size() {
-    let mut tx = Transaction::new();
+    let tx = Transaction::new();
 
     // Test size calculation exactly like C# Neo
     let size = tx.size();
@@ -277,7 +277,7 @@ fn test_signer_json_serialization() {
 
     // Test size calculation
     let size = signer.size();
-    assert!(size >= 20 + 1); // account (20 bytes) + scope (1 byte minimum)
+    assert!(size > 20); // account (20 bytes) + scope (1 byte minimum)
 }
 
 // ============================================================================

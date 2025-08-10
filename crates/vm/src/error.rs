@@ -452,7 +452,7 @@ impl From<neo_io::IoError> for VmError {
                 VmError::io(format!("Unexpected end of stream: {context}"))
             }
             neo_io::IoError::InvalidData { context, value } => {
-                VmError::parse(format!("Invalid data in {}: {}", context, value))
+                VmError::parse(format!("Invalid data in {context}: {value}"))
             }
             neo_io::IoError::FormatException { context, .. } => {
                 VmError::parse(format!("Format exception: {context}"))
@@ -462,10 +462,10 @@ impl From<neo_io::IoError> for VmError {
                 VmError::invalid_operation(operation, context)
             }
             neo_io::IoError::Operation { operation, reason } => {
-                VmError::io(format!("{}: {}", operation, reason))
+                VmError::io(format!("{operation}: {reason}"))
             }
             neo_io::IoError::Serialization { type_name, reason } => {
-                VmError::parse(format!("Failed to serialize {}: {}", type_name, reason))
+                VmError::parse(format!("Failed to serialize {type_name}: {reason}"))
             }
             neo_io::IoError::InvalidFormat { reason, .. } => VmError::parse(reason),
             neo_io::IoError::BufferOverflow { .. } => VmError::stack_overflow(usize::MAX),
@@ -476,10 +476,7 @@ impl From<neo_io::IoError> for VmError {
             neo_io::IoError::PermissionDenied {
                 operation,
                 resource,
-            } => VmError::io(format!(
-                "Permission denied for {} on {}",
-                operation, resource
-            )),
+            } => VmError::io(format!("Permission denied for {operation} on {resource}")),
             neo_io::IoError::ResourceExists { resource } => {
                 VmError::io(format!("Resource already exists: {resource}"))
             }

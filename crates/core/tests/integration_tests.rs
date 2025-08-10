@@ -41,8 +41,8 @@ fn test_uint160_creation_and_comparison() {
     let array = uint3.to_array();
     // So when converted back to array, it should be in the last position
     assert_eq!(array[19], 1);
-    for i in 0..19 {
-        assert_eq!(array[i], 0);
+    for &item in array.iter().take(19) {
+        assert_eq!(item, 0);
     }
 
     // Test ordering
@@ -74,8 +74,8 @@ fn test_uint256_creation_and_comparison() {
             .unwrap();
     let array = uint3.to_array();
     assert_eq!(array[0], 1);
-    for i in 1..UINT256_SIZE {
-        assert_eq!(array[i], 0);
+    for &item in array.iter().take(UINT256_SIZE).skip(1) {
+        assert_eq!(item, 0);
     }
 
     // Test ordering
@@ -152,8 +152,8 @@ fn test_uint160_extensions() {
     // Test to_array
     let array = uint.to_array();
     assert_eq!(array[0], 1);
-    for i in 1..UINT160_SIZE {
-        assert_eq!(array[i], 0);
+    for &item in array.iter().take(UINT160_SIZE).skip(1) {
+        assert_eq!(item, 0);
     }
 }
 

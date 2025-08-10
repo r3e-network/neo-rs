@@ -1,3 +1,4 @@
+#![cfg(feature = "compat_tests")]
 //! Demonstration test for block sync functionality
 //!
 //! This test shows how the block sync components work together

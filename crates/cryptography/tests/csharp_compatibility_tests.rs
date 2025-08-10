@@ -1,7 +1,6 @@
 //! Comprehensive cryptography tests converted from C# Neo unit tests.
 //! These tests ensure 100% compatibility with the C# Neo cryptography implementation.
 
-use hex;
 use neo_cryptography::base58;
 use neo_cryptography::crypto::Crypto;
 use neo_cryptography::ecdsa::ECDsa;
@@ -34,8 +33,8 @@ fn test_ecdsa_verify_signature() {
 #[test]
 fn test_secp256r1_operations() {
     // Test secp256r1 curve operations exactly like C# Neo
-    let message = b"test message for secp256r1";
-    let test_private_key = [1u8; 32]; // Simple test key
+    let _message = b"test message for secp256r1";
+    let _test_private_key = [1u8; 32]; // Simple test key
 
     // Test key pair generation
     let private_key = ECDsa::generate_private_key();
@@ -184,17 +183,14 @@ fn test_base58_decode() {
         let re_encoded = base58::encode(&decoded);
         if re_encoded == input {
             // Perfect round-trip, this is the correct behavior
-            println!("Perfect round-trip for '{}': {:?}", input, decoded);
+            println!("Perfect round-trip for '{input}': {decoded:?}");
         } else {
             // Different implementations might have different results
             // Just verify basic properties
             if input.is_empty() {
                 assert!(decoded.is_empty());
             } else {
-                println!(
-                    "Decode result for '{}': {:?} (re-encodes to '{}')",
-                    input, decoded, re_encoded
-                );
+                println!("Decode result for '{input}': {decoded:?} (re-encodes to '{re_encoded}')");
             }
         }
     }
@@ -235,10 +231,7 @@ fn test_base58_check_decode() {
         }
         Err(_) => {
             assert!(!encoded.is_empty());
-            println!(
-                "Base58Check decode failed, but encoding worked: {}",
-                encoded
-            );
+            println!("Base58Check decode failed, but encoding worked: {encoded}");
         }
     }
 }
@@ -279,7 +272,7 @@ fn test_ecc_point_operations() {
 #[test]
 fn test_merkle_tree_operations() {
     // Test Merkle tree operations exactly like C# Neo
-    let leaves = vec![
+    let leaves = [
         vec![1, 2, 3, 4],
         vec![5, 6, 7, 8],
         vec![9, 10, 11, 12],

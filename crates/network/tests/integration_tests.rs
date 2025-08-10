@@ -8,11 +8,12 @@ use neo_network::*;
 use std::sync::Arc;
 
 async fn create_test_blockchain() -> Arc<Blockchain> {
-    Arc::new(
-        Blockchain::new(neo_ledger::NetworkType::TestNet)
-            .await
-            .unwrap(),
-    )
+    use neo_ledger::NetworkType;
+    let suffix = format!("tests-{}", uuid::Uuid::new_v4());
+    Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some(&suffix))
+        .await
+        .map(Arc::new)
+        .unwrap()
 }
 
 fn create_test_transaction(nonce: u32, network_fee: i64) -> Transaction {
@@ -21,7 +22,7 @@ fn create_test_transaction(nonce: u32, network_fee: i64) -> Transaction {
     transaction.set_network_fee(network_fee);
     transaction.set_system_fee(0);
     transaction.set_valid_until_block(1000);
-    transaction.add_signer(Signer::new(UInt160::zero(), WitnessScope::CalledByEntry));
+    transaction.add_signer(Signer::new(UInt160::zero(), WitnessScope::CALLED_BY_ENTRY));
     transaction.set_script(vec![0x40]); // RET opcode
     transaction
 }
@@ -147,7 +148,7 @@ async fn test_network_types() {
 
 #[tokio::test]
 async fn test_storage_integration() {
-    let storage = Storage::new();
+    let storage = Storage::new_temp();
 
     // Test basic storage operations
     let key = b"test_key";
@@ -215,7 +216,7 @@ async fn test_complete_network_integration() {
     println!("🚀 Starting complete network integration test");
 
     // Test blockchain creation
-    let blockchain = create_test_blockchain();
+    let blockchain = create_test_blockchain().await;
     assert_eq!(blockchain.get_height().await, 0);
 
     // Test transaction creation
@@ -223,7 +224,7 @@ async fn test_complete_network_integration() {
     assert_eq!(transaction.nonce(), 1);
 
     // Test storage operations
-    let storage = Storage::new();
+    let storage = Storage::new_temp();
     let storage_key = StorageKey::new(b"test".to_vec(), vec![]);
     let storage_item = StorageItem::new(b"value".to_vec());
     storage.put(&storage_key, &storage_item).await.unwrap();
@@ -237,7 +238,7 @@ async fn test_complete_network_integration() {
     println!("✅ Complete network integration test passed");
     println!(
         "   🔸 Blockchain initialized with {} blocks",
-        blockchain.height().await
+        blockchain.get_height().await
     );
     println!("   🔸 Transaction nonce: {}", transaction.nonce());
     println!("   🔸 Storage test successful");

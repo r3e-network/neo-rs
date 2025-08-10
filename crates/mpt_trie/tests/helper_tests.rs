@@ -19,7 +19,7 @@ mod helper_tests {
         assert_eq!(nibbles, expected_nibbles);
 
         let reconstructed_bytes = from_nibbles(&nibbles);
-        assert_eq!(reconstructed_bytes, input_bytes);
+        assert_eq!(reconstructed_bytes, Ok(input_bytes));
 
         // Test round-trip conversion
         let test_cases = vec![
@@ -33,7 +33,7 @@ mod helper_tests {
         for test_case in test_cases {
             let nibbles = to_nibbles(&test_case);
             let reconstructed = from_nibbles(&nibbles);
-            assert_eq!(reconstructed, test_case);
+            assert_eq!(reconstructed, Ok(test_case));
         }
     }
 
@@ -42,11 +42,11 @@ mod helper_tests {
     fn test_nibble_conversion_edge_cases_compatibility() {
         // Test empty input
         let empty_bytes = vec![];
-        let empty_nibbles = to_nibbles(&empty_bytes);
-        assert_eq!(empty_nibbles, vec![]);
+        let empty_nibbles: Vec<u8> = to_nibbles(&empty_bytes);
+        assert_eq!(empty_nibbles, Vec::<u8>::new());
 
         let reconstructed_empty = from_nibbles(&empty_nibbles);
-        assert_eq!(reconstructed_empty, empty_bytes);
+        assert_eq!(reconstructed_empty, Ok(empty_bytes));
 
         // Test single byte cases
         for byte_val in 0..=255u8 {
@@ -57,13 +57,12 @@ mod helper_tests {
             assert_eq!(nibbles[1], byte_val & 0x0F);
 
             let reconstructed = from_nibbles(&nibbles);
-            assert_eq!(reconstructed, single_byte);
+            assert_eq!(reconstructed, Ok(single_byte));
         }
 
         let odd_nibbles = vec![0x1, 0x2, 0x3];
         let odd_result = from_nibbles(&odd_nibbles);
-        // Implementation should handle odd nibbles appropriately
-        assert!(!odd_result.is_empty() || odd_nibbles.len() % 2 == 1);
+        assert!(odd_result.is_err());
     }
 
     /// Test common prefix length calculation (matches C# CommonPrefixLength exactly)
@@ -176,8 +175,9 @@ mod helper_tests {
 
         // Test empty path handling
         let empty_path = vec![];
-        let empty_prefix = &empty_path[..0];
-        assert_eq!(empty_prefix, &[]);
+        let empty_prefix: &[u8] = &empty_path[..0];
+        let empty_slice: &[u8] = &[];
+        assert_eq!(empty_prefix, empty_slice);
 
         // Test single element path
         let single_path = vec![0xA];
@@ -185,7 +185,8 @@ mod helper_tests {
         let single_suffix = &single_path[1..];
 
         assert_eq!(single_prefix, &[0xA]);
-        assert_eq!(single_suffix, &[]);
+        let empty_slice: &[u8] = &[];
+        assert_eq!(single_suffix, empty_slice);
     }
 
     /// Test byte key conversion utilities (matches C# key conversion exactly)
@@ -203,7 +204,7 @@ mod helper_tests {
             let byte_key = test_string.as_bytes();
             let nibbles = to_nibbles(byte_key);
             let reconstructed_bytes = from_nibbles(&nibbles);
-            let reconstructed_string = String::from_utf8(reconstructed_bytes).unwrap();
+            let reconstructed_string = String::from_utf8(reconstructed_bytes.expect("valid nibbles")).unwrap();
 
             assert_eq!(reconstructed_string, test_string);
         }
@@ -215,7 +216,7 @@ mod helper_tests {
             let nibbles = to_nibbles(byte_key);
             let reconstructed = from_nibbles(&nibbles);
 
-            assert_eq!(reconstructed, byte_key);
+            assert_eq!(reconstructed, Ok(byte_key.to_vec()));
         }
     }
 
@@ -227,7 +228,7 @@ mod helper_tests {
         assert_eq!(nibbles.len(), 64); // 32 bytes * 2 nibbles per byte
 
         let reconstructed = from_nibbles(&nibbles);
-        assert_eq!(reconstructed, hash_like_key);
+        assert_eq!(reconstructed, Ok(hash_like_key));
 
         // Test various hash patterns
         let test_hashes = vec![
@@ -240,7 +241,7 @@ mod helper_tests {
         for hash in test_hashes {
             let nibbles = to_nibbles(&hash);
             let reconstructed = from_nibbles(&nibbles);
-            assert_eq!(reconstructed, hash);
+            assert_eq!(reconstructed, Ok(hash));
             assert_eq!(nibbles.len(), 64);
         }
     }
@@ -256,7 +257,7 @@ mod helper_tests {
         assert_eq!(nibbles.len(), large_input.len() * 2);
 
         let reconstructed = from_nibbles(&nibbles);
-        assert_eq!(reconstructed, large_input);
+        assert_eq!(reconstructed, Ok(large_input.clone()));
 
         // Test common prefix with large arrays
         let large1 = large_input.clone();
@@ -271,7 +272,7 @@ mod helper_tests {
             let small_input = vec![(i % 256) as u8, ((i + 1) % 256) as u8];
             let nibbles = to_nibbles(&small_input);
             let reconstructed = from_nibbles(&nibbles);
-            assert_eq!(reconstructed, small_input);
+            assert_eq!(reconstructed, Ok(small_input));
         }
     }
 
@@ -282,7 +283,7 @@ mod helper_tests {
         let valid_nibbles = vec![
             0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF,
         ];
-        let result = from_nibbles(&valid_nibbles);
+        let result = from_nibbles(&valid_nibbles).expect("valid nibbles");
         assert_eq!(result.len(), 8); // 16 nibbles = 8 bytes
 
         // Test boundary conditions
@@ -291,16 +292,16 @@ mod helper_tests {
         for case in boundary_cases {
             let nibbles = to_nibbles(&case);
             let reconstructed = from_nibbles(&nibbles);
-            assert_eq!(reconstructed, case);
+            assert_eq!(reconstructed, Ok(case));
         }
 
         // Test empty input handling
         let empty_nibbles = vec![];
         let empty_result = from_nibbles(&empty_nibbles);
-        assert_eq!(empty_result, vec![]);
+        assert_eq!(empty_result, Ok(vec![]));
 
         let empty_bytes = vec![];
-        let empty_nibbles_from_bytes = to_nibbles(&empty_bytes);
-        assert_eq!(empty_nibbles_from_bytes, vec![]);
+        let empty_nibbles_from_bytes: Vec<u8> = to_nibbles(&empty_bytes);
+        assert_eq!(empty_nibbles_from_bytes, Vec::<u8>::new());
     }
 }

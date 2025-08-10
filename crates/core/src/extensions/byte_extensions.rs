@@ -66,7 +66,7 @@ impl HexStringExtensions for str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CoreError as Error, CoreResult as Result};
+    // No extra imports needed for these unit tests
 
     #[test]
     fn test_to_hex_string() {

@@ -55,12 +55,15 @@ impl JumpTable {
     }
 
     /// Gets the default jump table.
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         // SAFETY: Operation is safe within this context
         unsafe {
+            #[allow(static_mut_refs)]
             if DEFAULT.is_none() {
                 DEFAULT = Some(Self::new());
             }
+            #[allow(static_mut_refs)]
             DEFAULT.clone().unwrap_or_default()
         }
     }
@@ -229,7 +232,7 @@ mod tests {
 
         // Check that the handler was registered
         assert_eq!(
-            jump_table.get(0).ok_or("Index out of bounds")? as usize,
+            jump_table.get(OpCode::NOP).ok_or("Index out of bounds")? as usize,
             custom_handler as usize
         );
     }
@@ -251,7 +254,7 @@ mod tests {
 
         // Check that the handler was set
         assert_eq!(
-            jump_table.get(0).ok_or("Index out of bounds")? as usize,
+            jump_table.get(OpCode::NOP).ok_or("Index out of bounds")? as usize,
             custom_handler as usize
         );
     }

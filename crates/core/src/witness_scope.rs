@@ -204,7 +204,6 @@ impl From<WitnessScope> for u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Block, Transaction, UInt160, UInt256};
 
     #[test]
     fn test_witness_scope_values() {

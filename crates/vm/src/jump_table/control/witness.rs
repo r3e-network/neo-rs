@@ -175,8 +175,7 @@ pub fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) 
 
     if !current_flags.has_flag(required_flags) {
         return Err(VmError::invalid_operation_msg(format!(
-            "Cannot call this SYSCALL with the flag {:?}. Required: {:?}",
-            current_flags, required_flags
+            "Cannot call this SYSCALL with the flag {current_flags:?}. Required: {required_flags:?}"
         )));
     }
 
@@ -186,14 +185,14 @@ pub fn validate_call_flags(engine: &ExecutionEngine, required_flags: CallFlags) 
 /// Gets current call flags from execution context (matches C# ExecutionContextState.CallFlags)
 pub fn get_current_call_flags(engine: &ExecutionEngine) -> VmResult<CallFlags> {
     if let Some(context) = engine.current_context() {
-        if context.script().len() == 0 {
+        if context.script().is_empty() {
             // Empty script indicates system context - allow all operations
             Ok(CallFlags::ALL)
         } else {
             // Regular contract context - check permissions based on script hash
             let script_hash = engine.current_script_hash().unwrap_or_default();
 
-            if is_native_contract(&script_hash) {
+            if is_native_contract(script_hash) {
                 // Native contracts have all permissions
                 Ok(CallFlags::ALL)
             } else {

@@ -59,6 +59,15 @@ impl UInt160 {
         unsafe { std::mem::transmute(self) }
     }
 
+    /// Returns the bytes as a Vec<u8>
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(ADDRESS_SIZE);
+        bytes.extend_from_slice(&self.value1.to_le_bytes());
+        bytes.extend_from_slice(&self.value2.to_le_bytes());
+        bytes.extend_from_slice(&self.value3.to_le_bytes());
+        bytes
+    }
+
     /// Determines whether this instance and another specified UInt160 object have the same value.
     ///
     /// # Arguments
@@ -320,7 +329,7 @@ impl UInt160 {
         let sha256_hash = sha256_hasher.finalize();
 
         let mut ripemd_hasher = Ripemd160::new();
-        ripemd_hasher.update(&sha256_hash);
+        ripemd_hasher.update(sha256_hash);
         let hash160 = ripemd_hasher.finalize();
 
         Self::from_bytes(&hash160).unwrap_or_default()
@@ -342,7 +351,7 @@ impl UInt160 {
         let first_hash = hasher.finalize();
 
         let mut hasher = Sha256::new();
-        hasher.update(&first_hash);
+        hasher.update(first_hash);
         let second_hash = hasher.finalize();
 
         let checksum = &second_hash[0..4];
@@ -391,7 +400,7 @@ impl UInt160 {
         let first_hash = hasher.finalize();
 
         let mut hasher = Sha256::new();
-        hasher.update(&first_hash);
+        hasher.update(first_hash);
         let second_hash = hasher.finalize();
 
         let computed_checksum = &second_hash[0..4];
@@ -501,7 +510,6 @@ impl From<Vec<u8>> for UInt160 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use neo_io::{BinaryWriter, MemoryReader, Serializable};
 
     #[test]
     fn test_uint160_new() {

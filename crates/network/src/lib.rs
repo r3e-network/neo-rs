@@ -55,6 +55,27 @@ pub use crate::transaction_relay::{
 };
 pub use error::{ErrorSeverity, NetworkError, NetworkResult, Result};
 
+/// Node service flags (compatibility with C# tests)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u64)]
+pub enum NodeServices {
+    /// Full node service (able to serve the network)
+    NodeNetwork = 0x01,
+    /// Able to serve GetBlocks requests
+    NodeGetBlocks = 0x02,
+    /// Able to serve GetTransactions requests
+    NodeGetTransactions = 0x04,
+}
+
+/// Bloom filter flags (compatibility with C# tests)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum BloomFilterFlags {
+    UpdateNone = 0x00,
+    UpdateAll = 0x01,
+    UpdateP2PUB = 0x02,
+}
+
 pub type P2PEvent = NodeEvent;
 pub type P2PNode = P2pNode;
 

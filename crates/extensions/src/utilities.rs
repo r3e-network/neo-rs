@@ -1,6 +1,10 @@
 //! Utility functions for Neo Extensions
 
 use crate::error::{ExtensionError, ExtensionResult};
+#[cfg(test)]
+use neo_core::constants::{
+    MAX_BLOCK_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, SECONDS_PER_BLOCK,
+};
 use chrono::{DateTime, Utc};
 
 // Define constant locally
@@ -201,12 +205,12 @@ mod tests {
     fn test_bytes_to_human_readable() {
         assert_eq!(bytes_to_human_readable(0), "0 B");
         assert_eq!(
-            bytes_to_human_readable(MAX_TRANSACTIONS_PER_BLOCK),
-            "MAX_TRANSACTIONS_PER_BLOCK B"
+            bytes_to_human_readable(MAX_TRANSACTIONS_PER_BLOCK.try_into().unwrap()),
+            "512 B"
         );
-        assert_eq!(bytes_to_human_readable(MAX_SCRIPT_SIZE), "1.00 KB");
+        assert_eq!(bytes_to_human_readable(MAX_SCRIPT_SIZE.try_into().unwrap()), "64.00 KB");
         assert_eq!(bytes_to_human_readable(1536), "1.50 KB");
-        assert_eq!(bytes_to_human_readable(MAX_BLOCK_SIZE), "1.00 MB");
+        assert_eq!(bytes_to_human_readable(MAX_BLOCK_SIZE.try_into().unwrap()), "1.00 MB");
     }
 
     #[test]

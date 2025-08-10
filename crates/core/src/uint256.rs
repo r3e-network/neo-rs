@@ -61,6 +61,16 @@ impl UInt256 {
         unsafe { std::mem::transmute(self) }
     }
 
+    /// Returns the bytes as a Vec<u8>
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(HASH_SIZE);
+        bytes.extend_from_slice(&self.value1.to_le_bytes());
+        bytes.extend_from_slice(&self.value2.to_le_bytes());
+        bytes.extend_from_slice(&self.value3.to_le_bytes());
+        bytes.extend_from_slice(&self.value4.to_le_bytes());
+        bytes
+    }
+
     /// Determines whether this instance and another specified UInt256 object have the same value.
     ///
     /// # Arguments
@@ -392,8 +402,7 @@ impl From<Vec<u8>> for UInt256 {
 mod tests {
     use super::UINT256_SIZE;
     use super::*;
-    use crate::{CoreError as Error, CoreResult as Result};
-    use neo_io::{BinaryWriter, MemoryReader, Serializable};
+    
 
     #[test]
     fn test_uint256_new() {
@@ -421,8 +430,8 @@ mod tests {
         uint.value1 = 1;
         let array = uint.to_array();
         assert_eq!(array[0], 1);
-        for i in 1..UINT256_SIZE {
-            assert_eq!(array[i], 0);
+        for &item in array.iter().take(UINT256_SIZE).skip(1) {
+            assert_eq!(item, 0);
         }
     }
     #[test]

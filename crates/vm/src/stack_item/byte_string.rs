@@ -134,14 +134,15 @@ mod tests {
     }
 
     #[test]
-    fn test_byte_string_get() {
+    fn test_byte_string_get() -> Result<(), Box<dyn std::error::Error>> {
         let data = vec![1, 2, 3];
         let byte_string = ByteString::new(data);
 
-        assert_eq!(byte_string.first().ok_or("Empty collection")?, 1);
-        assert_eq!(byte_string.get(0).ok_or("Index out of bounds")?, 2);
-        assert_eq!(byte_string.get(0).ok_or("Index out of bounds")?, 3);
+        assert_eq!(byte_string.data().first().ok_or("Empty collection")?, &1);
+        assert_eq!(byte_string.get(1)?, 2);
+        assert_eq!(byte_string.get(2)?, 3);
         assert!(byte_string.get(3).is_err());
+        Ok(())
     }
 
     #[test]
@@ -198,7 +199,7 @@ mod tests {
     fn test_byte_string_to_string() {
         // Test valid UTF-8
         let hello_byte_string = ByteString::from_string("Hello, world!");
-        assert_eq!(hello_byte_string.to_string(), "Hello, world!");
+        assert_eq!(hello_byte_string.to_string().expect("valid utf8"), "Hello, world!");
 
         // Test invalid UTF-8
         let invalid_utf8 = ByteString::new(vec![0xFF, 0xFF]);

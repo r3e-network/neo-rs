@@ -55,8 +55,7 @@ impl Struct {
     pub fn set(&mut self, index: usize, item: StackItem) -> VmResult<()> {
         if index >= self.items.len() {
             return Err(VmError::invalid_operation_msg(format!(
-                "Index out of range: {}",
-                index
+                "Index out of range: {index}"
             )));
         }
 
