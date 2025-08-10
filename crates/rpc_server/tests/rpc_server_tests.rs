@@ -47,7 +47,7 @@ mod rpc_server_tests {
                             "msperblock": 15000,
                             "maxvaliduntilblockincrement": 5760,
                             "maxtraceableblocks": 2102400,
-                            "initialgasdistribution": 5200000000000000,
+                             "initialgasdistribution": 5200000000000000i64,
                             "hardforks": {
                                 "Aspidochelone": 0,
                                 "Basilisk": 0,

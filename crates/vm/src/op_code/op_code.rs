@@ -83,10 +83,10 @@ pub enum OpCode {
     CLEAR = 0x49,
     DUP = 0x4A,
     OVER = 0x4B,
-    TOALTSTACK = 0x4C,
+    // 0x4C TOALTSTACK not in C# Neo
     PICK = 0x4D,
     TUCK = 0x4E,
-    FROMALTSTACK = 0x4F,
+    // 0x4F FROMALTSTACK not in C# Neo
     SWAP = 0x50,
     ROT = 0x51,
     ROLL = 0x52,
@@ -149,10 +149,11 @@ pub enum OpCode {
     // Splice
     NEWBUFFER = 0x88,
     MEMCPY = 0x89,
-    CAT = 0x8A,
-    SUBSTR = 0x8B,
-    LEFT = 0x8C,
-    RIGHT = 0x8D,
+    // 0x8A is not used in C# Neo
+    CAT = 0x8B,
+    SUBSTR = 0x8C,
+    LEFT = 0x8D,
+    RIGHT = 0x8E,
 
     // Bitwise
     INVERT = 0x90,
@@ -303,10 +304,10 @@ impl OpCode {
             Self::CLEAR,
             Self::DUP,
             Self::OVER,
-            Self::TOALTSTACK,
+            // TOALTSTACK removed - not in C# Neo
             Self::PICK,
             Self::TUCK,
-            Self::FROMALTSTACK,
+            // FROMALTSTACK removed - not in C# Neo
             Self::SWAP,
             Self::ROT,
             Self::ROLL,
@@ -508,10 +509,10 @@ impl OpCode {
             0x49 => Some(Self::CLEAR),
             0x4A => Some(Self::DUP),
             0x4B => Some(Self::OVER),
-            0x4C => Some(Self::TOALTSTACK),
+            // 0x4C TOALTSTACK not in C# Neo
             0x4D => Some(Self::PICK),
             0x4E => Some(Self::TUCK),
-            0x4F => Some(Self::FROMALTSTACK),
+            // 0x4F FROMALTSTACK not in C# Neo
             0x50 => Some(Self::SWAP),
             0x51 => Some(Self::ROT),
             0x52 => Some(Self::ROLL),

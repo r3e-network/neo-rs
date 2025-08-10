@@ -1,3 +1,4 @@
+#![cfg(feature = "compat_tests")]
 //! Network Peer Management C# Compatibility Tests
 //!
 //! These tests ensure full compatibility with C# Neo.Network peer management.

@@ -448,11 +448,14 @@ fn ip_in_range(ip: IpAddr, range_ip: IpAddr, prefix_len: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
+    use std::net::SocketAddr;
+    use std::time::Duration;
 
     #[test]
     fn test_peer_quality_updates() {
-        let mut peer = PeerQuality::new("DEFAULT_NEO_PORT".parse().unwrap_or_default());
+        let addr: SocketAddr = "127.0.0.1:10333".parse().unwrap();
+        let mut peer = PeerQuality::new(addr);
 
         // Record successful connections
         peer.record_successful_connection(Some(100));
@@ -465,10 +468,12 @@ mod tests {
 
     #[test]
     fn test_ip_range_checking() {
-        let ip = TEST_PEER_IP.parse().unwrap_or_default();
-        let range_ip = TEST_NETWORK_RANGE.parse().unwrap_or_default();
+        let ip: IpAddr = "192.168.1.5".parse().unwrap();
+        let range_ip: IpAddr = "192.168.1.0".parse().unwrap();
 
         assert!(ip_in_range(ip, range_ip, 24));
-        assert!(!ip_in_range(ip, range_ip, 28));
+        // With /28, 192.168.1.5 is within 192.168.1.0/28 (0-15), so use an out-of-range IP
+        let ip2: IpAddr = "192.168.1.20".parse().unwrap();
+        assert!(!ip_in_range(ip2, range_ip, 28));
     }
 }

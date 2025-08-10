@@ -728,10 +728,10 @@ mod tests {
         let mut engine = ExecutionEngine::new(None);
 
         // Test jump_table getter
-        let jump_table = engine.jump_table();
+        let _jump_table = engine.jump_table();
 
         // Test jump_table_mut getter
-        let jump_table_mut = engine.jump_table_mut();
+        let _jump_table_mut = engine.jump_table_mut();
 
         // Test set_jump_table
         let new_jump_table = JumpTable::new();
@@ -774,7 +774,7 @@ mod tests {
                 .expect("intermediate value should exist")
                 .as_int()
                 .expect("VM operation should succeed"),
-            3
+            num_bigint::BigInt::from(3)
         );
         assert_eq!(
             engine
@@ -795,7 +795,7 @@ mod tests {
 
         // Pop an item
         let item = engine.pop().unwrap();
-        assert_eq!(item.as_int().expect("Operation failed"), 3);
+        assert_eq!(item.as_int().expect("Operation failed"), num_bigint::BigInt::from(3));
 
         // Peek again
         assert_eq!(
@@ -804,7 +804,7 @@ mod tests {
                 .expect("intermediate value should exist")
                 .as_int()
                 .expect("Operation failed"),
-            2
+            num_bigint::BigInt::from(2)
         );
         assert_eq!(
             engine
@@ -812,7 +812,7 @@ mod tests {
                 .expect("intermediate value should exist")
                 .as_int()
                 .expect("Operation failed"),
-            1
+            num_bigint::BigInt::from(1)
         );
     }
 

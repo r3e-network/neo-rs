@@ -17,9 +17,9 @@ use tokio::time::{interval, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 /// Test framework constants
-const TEST_NODE_1: &str = "localhost:20001";
-const TEST_NODE_2: &str = "localhost:20002";
-const TEST_NODE_3: &str = "localhost:20003";
+const TEST_NODE_1: &str = "127.0.0.1:20001";
+const TEST_NODE_2: &str = "127.0.0.1:20002";
+const TEST_NODE_3: &str = "127.0.0.1:20003";
 
 /// Test node that simulates a Neo N3 peer
 #[derive(Debug)]

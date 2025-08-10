@@ -253,8 +253,10 @@ fn test_complex_collections() {
         b'e',
         b'y',                       // "key" as bytes
         OpCode::SWAP as u8,         // Swap key and inner map
-        OpCode::TOALTSTACK as u8,   // Save outer map
-        OpCode::FROMALTSTACK as u8, // Restore outer map
+        // TOALTSTACK/FROMALTSTACK removed - not in C# Neo
+        // OpCode::TOALTSTACK as u8,   // Save outer map
+        // OpCode::FROMALTSTACK as u8, // Restore outer map
+        OpCode::DUP as u8,          // Duplicate outer map instead
         OpCode::SWAP as u8,         // Swap outer map and inner map
         OpCode::SWAP as u8,         // Swap inner map and key
         OpCode::SETITEM as u8,      // outer_map["key"] = inner_map
@@ -272,8 +274,10 @@ fn test_complex_collections() {
         // Add array to outer map with key 1
         OpCode::PUSH1 as u8,        // Key: 1
         OpCode::SWAP as u8,         // Swap key and array
-        OpCode::TOALTSTACK as u8,   // Save outer map
-        OpCode::FROMALTSTACK as u8, // Restore outer map
+        // TOALTSTACK/FROMALTSTACK removed - not in C# Neo
+        // OpCode::TOALTSTACK as u8,   // Save outer map
+        // OpCode::FROMALTSTACK as u8, // Restore outer map
+        OpCode::DUP as u8,          // Duplicate outer map instead
         OpCode::SWAP as u8,         // Swap outer map and array
         OpCode::SWAP as u8,         // Swap array and key
         OpCode::SETITEM as u8,      // outer_map[1] = array

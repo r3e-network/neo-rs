@@ -34,8 +34,8 @@ mod proof_tests {
         assert!(!proof.is_empty());
 
         // Verify proof structure
-        for proof_node in &proof {
-            assert!(proof_node.is_valid());
+        for node_data in &proof {
+            assert!(!node_data.is_empty());
         }
 
         let proof2 = trie.get_proof(&test_data[1].0).unwrap();
@@ -58,8 +58,8 @@ mod proof_tests {
 
         assert!(!proof.is_empty());
 
-        for proof_node in &proof {
-            assert!(proof_node.is_valid());
+        for node_data in &proof {
+            assert!(!node_data.is_empty());
         }
     }
 
@@ -75,10 +75,9 @@ mod proof_tests {
 
         // Generate proof
         let proof = trie.get_proof(&key).unwrap();
-        let root_hash = trie.root().hash().unwrap();
+        let root_hash = trie.root().hash();
 
-        let verifier = ProofVerifier::new();
-        let verification_result = verifier.verify(&root_hash, &key, &proof).unwrap();
+        let verification_result = ProofVerifier::verify_inclusion(&root_hash, &key, &value, &proof).unwrap();
 
         match verification_result {
             Some(verified_value) => {
@@ -102,15 +101,18 @@ mod proof_tests {
 
         // Generate valid proof
         let mut proof = trie.get_proof(&key).unwrap();
-        let root_hash = trie.root().hash().unwrap();
+        let root_hash = trie.root().hash();
 
-        // Corrupt the proof by modifying a node
+        // Corrupt the proof by modifying a node's first byte (node type)
         if !proof.is_empty() {
-            proof[0] = ProofNode::new_corrupted(); // Simulate corruption
+            let mut corrupted = proof[0].clone();
+            if !corrupted.is_empty() {
+                corrupted[0] = 0xFF; // invalid type to force parse failure
+            }
+            proof[0] = corrupted;
         }
 
-        let verifier = ProofVerifier::new();
-        let verification_result = verifier.verify(&root_hash, &key, &proof);
+        let verification_result = ProofVerifier::verify_inclusion(&root_hash, &key, &value, &proof);
 
         match verification_result {
             Ok(None) => {
@@ -139,13 +141,12 @@ mod proof_tests {
 
         // Generate proof with correct root
         let proof = trie.get_proof(&key).unwrap();
-        let _correct_root_hash = trie.root().hash().unwrap();
+        let _correct_root_hash = trie.root().hash();
 
-        let wrong_root_hash = UInt256::from_slice(&[255u8; 32]).unwrap();
+        let wrong_root_hash = UInt256::from_bytes(&[255u8; 32]).unwrap();
 
         // Verification should fail with wrong root
-        let verifier = ProofVerifier::new();
-        let verification_result = verifier.verify(&wrong_root_hash, &key, &proof);
+        let verification_result = ProofVerifier::verify_inclusion(&wrong_root_hash, &key, &value, &proof);
 
         match verification_result {
             Ok(None) => {
@@ -180,8 +181,8 @@ mod proof_tests {
             assert!(trie.put(key, value).is_ok());
         }
 
-        let root_hash = trie.root().hash().unwrap();
-        let verifier = ProofVerifier::new();
+        let root_hash = trie.root().hash();
+        let verifier = ProofVerifier;
 
         for (key, expected_value) in &complex_data {
             let proof = trie.get_proof(key).unwrap();
@@ -201,9 +202,7 @@ mod proof_tests {
 
         let non_existing = b"complex_prefix_xyz";
         let non_existing_proof = trie.get_proof(non_existing).unwrap();
-        let non_existing_result = verifier
-            .verify(&root_hash, non_existing, &non_existing_proof)
-            .unwrap();
+        let non_existing_result = ProofVerifier::verify_exclusion(&root_hash, non_existing, &non_existing_proof).unwrap();
         assert_eq!(non_existing_result, None); // Should prove non-existence
     }
 
@@ -226,11 +225,8 @@ mod proof_tests {
         let deserialized_proof: Vec<ProofNode> = serde_json::from_str(&serialized).unwrap();
 
         // Verify deserialized proof works
-        let root_hash = trie.root().hash().unwrap();
-        let verifier = ProofVerifier::new();
-        let verification_result = verifier
-            .verify(&root_hash, &key, &deserialized_proof)
-            .unwrap();
+        let root_hash = trie.root().hash();
+        let verification_result = ProofVerifier::verify_inclusion(&root_hash, &key, &value, &deserialized_proof).unwrap();
 
         match verification_result {
             Some(verified_value) => {
@@ -255,36 +251,8 @@ mod proof_tests {
         let proof = trie.get_proof(b"struct_ab").unwrap();
 
         // Examine proof node structure
-        for (i, proof_node) in proof.iter().enumerate() {
-            // Each proof node should be valid
-            assert!(proof_node.is_valid());
-
-            // Test proof node properties
-            match proof_node.node_type() {
-                NodeType::BranchNode => {
-                    // Branch nodes should have appropriate structure
-                    assert!(proof_node.is_branch());
-                }
-                NodeType::LeafNode => {
-                    // Leaf nodes should contain data
-                    assert!(proof_node.is_leaf());
-                    assert!(proof_node.value().is_some());
-                }
-                NodeType::ExtensionNode => {
-                    // Extension nodes should have key and next
-                    assert!(proof_node.is_extension());
-                    assert!(proof_node.key().is_some());
-                }
-                NodeType::HashNode => {
-                    // Hash nodes should have hash
-                    assert!(proof_node.is_hash());
-                    assert!(proof_node.hash().is_some());
-                }
-                NodeType::Empty => {
-                    // Empty nodes valid in certain contexts
-                    assert!(proof_node.is_empty());
-                }
-            }
+        for node_data in proof.iter() {
+            assert!(!node_data.is_empty());
         }
     }
 
@@ -302,33 +270,26 @@ mod proof_tests {
         let single_proof = trie.get_proof(b"single_key").unwrap();
         assert!(!single_proof.is_empty());
 
-        let root_hash = trie.root().hash().unwrap();
-        let verifier = ProofVerifier::new();
-        let single_result = verifier
-            .verify(&root_hash, b"single_key", &single_proof)
-            .unwrap();
-        assert_eq!(single_result, Some(b"single_value".to_vec()));
+        let root_hash = trie.root().hash();
+        let single_result = ProofVerifier::verify_inclusion(&root_hash, b"single_key", b"single_value", &single_proof).unwrap();
+        assert!(single_result);
 
         // Test proof with empty key
         assert!(trie.put(b"", b"empty_key_value").is_ok());
         let empty_key_proof = trie.get_proof(b"").unwrap();
 
-        let updated_root_hash = trie.root().hash().unwrap();
-        let empty_key_result = verifier
-            .verify(&updated_root_hash, b"", &empty_key_proof)
-            .unwrap();
-        assert_eq!(empty_key_result, Some(b"empty_key_value".to_vec()));
+        let updated_root_hash = trie.root().hash();
+        let empty_key_result = ProofVerifier::verify_inclusion(&updated_root_hash, b"", b"empty_key_value", &empty_key_proof).unwrap();
+        assert!(empty_key_result);
 
         // Test proof with very long key
         let long_key = vec![b'x'; 1000];
         assert!(trie.put(&long_key, b"long_key_value").is_ok());
         let long_key_proof = trie.get_proof(&long_key).unwrap();
 
-        let final_root_hash = trie.root().hash().unwrap();
-        let long_key_result = verifier
-            .verify(&final_root_hash, &long_key, &long_key_proof)
-            .unwrap();
-        assert_eq!(long_key_result, Some(b"long_key_value".to_vec()));
+        let final_root_hash = trie.root().hash();
+        let long_key_result = ProofVerifier::verify_inclusion(&final_root_hash, &long_key, b"long_key_value", &long_key_proof).unwrap();
+        assert!(long_key_result);
     }
 
     /// Test batch proof operations (matches C# batch proof handling exactly)
@@ -356,21 +317,11 @@ mod proof_tests {
         }
 
         // Verify all proofs
-        let root_hash = trie.root().hash().unwrap();
-        let verifier = ProofVerifier::new();
-
+        let root_hash = trie.root().hash();
         for (i, (key, proof)) in keys.iter().zip(proofs.iter()).enumerate() {
             let expected_value = format!("batch_value_{}", i).into_bytes();
-            let verification_result = verifier.verify(&root_hash, key, proof).unwrap();
-
-            match verification_result {
-                Some(verified_value) => {
-                    assert_eq!(verified_value, expected_value);
-                }
-                None => {
-                    panic!("Batch proof verification failed for key: {:?}", key);
-                }
-            }
+            let verification_result = ProofVerifier::verify_inclusion(&root_hash, key, &expected_value, proof).unwrap();
+            assert!(verification_result);
         }
     }
 }

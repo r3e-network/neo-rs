@@ -1,7 +1,6 @@
 //! Ed25519 tests converted from C# Neo unit tests (UT_Ed25519.cs).
 //! These tests ensure 100% compatibility with the C# Neo Ed25519 implementation.
 
-use hex;
 use neo_cryptography::ed25519::Ed25519;
 
 // ============================================================================
@@ -14,9 +13,8 @@ fn hex_to_bytes(hex_str: &str) -> Vec<u8> {
 }
 
 /// Convert bytes to hex string
-fn to_hex_string(bytes: &[u8]) -> String {
-    hex::encode(bytes)
-}
+#[allow(dead_code)]
+fn to_hex_string(bytes: &[u8]) -> String { hex::encode(bytes) }
 
 // ============================================================================
 // C# UT_Ed25519 test conversions

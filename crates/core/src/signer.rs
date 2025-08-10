@@ -409,6 +409,7 @@ impl Serializable for Signer {
 
 impl Signer {
     /// Helper method to serialize witness conditions (matches C# WitnessCondition.Serialize exactly)
+    #[allow(clippy::only_used_in_recursion)]
     fn serialize_condition(
         &self,
         writer: &mut neo_io::BinaryWriter,
@@ -546,13 +547,12 @@ impl fmt::Display for Signer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Block, Transaction, UInt160, UInt256};
-    use neo_io::{BinaryWriter, MemoryReader, Serializable};
+    use crate::UInt160;
 
     #[test]
     fn test_signer_new() {
         let account = UInt160::new();
-        let signer = Signer::new(account.clone(), WitnessScope::NONE);
+        let signer = Signer::new(account, WitnessScope::NONE);
         assert_eq!(signer.account, account);
         assert_eq!(signer.scopes, WitnessScope::NONE);
         assert!(signer.allowed_contracts.is_empty());
@@ -563,7 +563,7 @@ mod tests {
     fn test_signer_new_with_scope() {
         let account = UInt160::new();
         let scope = WitnessScope::CALLED_BY_ENTRY;
-        let signer = Signer::new_with_scope(account.clone(), scope);
+        let signer = Signer::new_with_scope(account, scope);
         assert_eq!(signer.account, account);
         assert_eq!(signer.scopes, scope);
     }
@@ -571,7 +571,7 @@ mod tests {
     fn test_signer_add_allowed_contract() {
         let mut signer = Signer::new(UInt160::new(), WitnessScope::NONE);
         let contract = UInt160::new();
-        signer.add_allowed_contract(contract.clone());
+        signer.add_allowed_contract(contract);
         assert_eq!(signer.allowed_contracts.len(), 1);
         assert_eq!(signer.allowed_contracts[0], contract);
         assert!(signer.scopes.has_flag(WitnessScope::CUSTOM_CONTRACTS));

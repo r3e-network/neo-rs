@@ -36,6 +36,12 @@ impl Null {
     }
 }
 
+impl Default for Null {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

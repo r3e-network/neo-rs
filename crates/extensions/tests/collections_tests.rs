@@ -127,11 +127,11 @@ mod collections_tests {
         let vec = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
         assert_eq!(vec.first_n(3), &[1, 2, 3]);
-        assert_eq!(vec.first_n(0), &[]);
+        assert_eq!(vec.first_n(0), &[] as &[i32]);
         assert_eq!(vec.first_n(15), &vec[..]); // Request more than available
 
         assert_eq!(vec.last_n(3), &[8, 9, 10]);
-        assert_eq!(vec.last_n(0), &[]);
+        assert_eq!(vec.last_n(0), &[] as &[i32]);
         assert_eq!(vec.last_n(15), &vec[..]); // Request more than available
 
         // Test with empty vector

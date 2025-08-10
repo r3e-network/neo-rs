@@ -301,7 +301,7 @@ mod peer_connection_tests {
 
         let result = timeout(
             Duration::from_secs(15),
-            peer_manager.connect_to_peer(mock_addr),
+            std::sync::Arc::new(peer_manager).connect_to_peer(mock_addr),
         )
         .await;
 
@@ -354,7 +354,7 @@ mod peer_connection_tests {
 
         let result = timeout(
             Duration::from_secs(10),
-            peer_manager.connect_to_peer(mock_addr),
+            std::sync::Arc::new(peer_manager).connect_to_peer(mock_addr),
         )
         .await;
 
@@ -403,8 +403,14 @@ mod peer_connection_tests {
 
         // Connect to all mock nodes
         let mut connection_results = vec![];
+        use std::sync::Arc;
+        let peer_manager = Arc::new(peer_manager);
         for addr in addrs {
-            let result = timeout(Duration::from_secs(10), peer_manager.connect_to_peer(addr)).await;
+            let result = timeout(
+                Duration::from_secs(10),
+                peer_manager.connect_to_peer(addr),
+            )
+            .await;
             connection_results.push(result);
         }
 

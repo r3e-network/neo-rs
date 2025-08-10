@@ -112,7 +112,7 @@ async fn demo_transactions() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create signer
     let script_hash = UInt160::from_bytes(&[1u8; 20])?;
-    let signer = Signer::new(script_hash, WitnessScope::CalledByEntry);
+    let signer = Signer::new(script_hash, WitnessScope::CALLED_BY_ENTRY);
     transaction.add_signer(signer);
 
     // Create witness

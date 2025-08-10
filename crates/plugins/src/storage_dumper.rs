@@ -646,6 +646,13 @@ impl StorageDumperPlugin {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use neo_extensions::PluginContext;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+    use tokio::sync::RwLock;
+
     fn create_test_context() -> PluginContext {
         let final_dir = tempdir().unwrap();
         PluginContext {

@@ -2,7 +2,7 @@
 //! These tests ensure 100% compatibility with the C# Neo extended cryptography implementation.
 
 use neo_cryptography::{base58, hash, murmur};
-use std::str::FromStr;
+// use std::str::FromStr;
 
 // ============================================================================
 // C# Neo Unit Test Conversions - Extended Cryptography Tests
@@ -280,11 +280,7 @@ fn test_hash_performance_and_consistency() {
 
     let elapsed = start.elapsed();
 
-    assert!(
-        elapsed.as_millis() < 10,
-        "Hash functions took too long: {:?}",
-        elapsed
-    );
+    assert!(elapsed.as_millis() < 10, "Hash functions took too long: {elapsed:?}");
 
     // Test consistency - same input should always produce same output
     for _ in 0..10 {

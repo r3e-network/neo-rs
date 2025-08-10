@@ -199,7 +199,7 @@ mod jpath_tests {
             obj.insert("id".to_string(), Some(JToken::Number(i as f64)));
             obj.insert(
                 "name".to_string(),
-                Some(JToken::String(format!("object_{}", i))),
+            Some(JToken::String(format!("object_{i}"))),
             );
             obj.insert("active".to_string(), Some(JToken::Boolean(i % 2 == 0)));
             objects.push(Some(JToken::Object(obj)));
@@ -394,7 +394,7 @@ mod jpath_tests {
             let mut tx = OrderedDictionary::new();
             tx.insert(
                 "txid".to_string(),
-                Some(JToken::String(format!("0x{:064x}", i))),
+            Some(JToken::String(format!("0x{i:064x}"))),
             );
             tx.insert(
                 "size".to_string(),
@@ -424,7 +424,7 @@ mod jpath_tests {
                 );
                 vout.insert(
                     "address".to_string(),
-                    Some(JToken::String(format!("Address{}{}", i, j))),
+                    Some(JToken::String(format!("Address{i}{j}"))),
                 );
                 vouts.push(Some(JToken::Object(vout)));
             }
@@ -500,7 +500,7 @@ mod jpath_tests {
             item.insert("id".to_string(), Some(JToken::Number(i as f64)));
             item.insert(
                 "name".to_string(),
-                Some(JToken::String(format!("item_{:04}", i))),
+                Some(JToken::String(format!("item_{i:04}"))),
             );
             item.insert(
                 "category".to_string(),

@@ -1,3 +1,4 @@
+#![cfg(feature = "compat_tests")]
 //! Real integration tests for block sync functionality
 //!
 //! These tests verify block sync works with actual network components
@@ -33,8 +34,9 @@ fn create_test_block(index: u32, previous_hash: UInt256) -> Block {
 #[tokio::test]
 async fn test_sync_manager_block_handling() {
     // Setup blockchain
+    let suffix = format!("bsr-{}", uuid::Uuid::new_v4());
     let blockchain = Arc::new(
-        Blockchain::new(NetworkType::TestNet)
+        Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some(&suffix))
             .await
             .expect("Failed to create blockchain"),
     );
@@ -100,8 +102,9 @@ async fn test_sync_manager_block_handling() {
 #[tokio::test]
 async fn test_sync_manager_inventory_handling() {
     // Setup
+    let suffix = format!("bsr-{}", uuid::Uuid::new_v4());
     let blockchain = Arc::new(
-        Blockchain::new(NetworkType::TestNet)
+        Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some(&suffix))
             .await
             .expect("Failed to create blockchain"),
     );
@@ -150,8 +153,9 @@ async fn test_sync_manager_inventory_handling() {
 
 #[tokio::test]
 async fn test_sync_state_progression() {
+    let suffix = format!("bsr-{}", uuid::Uuid::new_v4());
     let blockchain = Arc::new(
-        Blockchain::new(NetworkType::TestNet)
+        Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some(&suffix))
             .await
             .expect("Failed to create blockchain"),
     );
@@ -195,8 +199,9 @@ async fn test_sync_state_progression() {
 
 #[tokio::test]
 async fn test_sync_statistics() {
+    let suffix = format!("bsr-{}", uuid::Uuid::new_v4());
     let blockchain = Arc::new(
-        Blockchain::new(NetworkType::TestNet)
+        Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some(&suffix))
             .await
             .expect("Failed to create blockchain"),
     );

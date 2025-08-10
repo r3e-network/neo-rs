@@ -21,7 +21,7 @@ neo-network = { path = "../crates/network" }
 neo-persistence = { path = "../crates/persistence" }
 neo-wallets = { path = "../crates/wallets" }
 neo-config = { path = "../crates/config" }
-# neo-rpc-server = { path = "../crates/rpc_server" } # Temporarily disabled - has dependency on consensus/network integration
+neo-rpc-server = { path = "../crates/rpc_server" }
 # neo-consensus = { path = "../crates/consensus" } # Temporarily disabled due to compilation issues
 
 # External dependencies

@@ -43,7 +43,7 @@ mod jarray_tests {
             Some(JToken::String("iter2".to_string())),
             Some(JToken::String("iter3".to_string())),
         ];
-        let array_from_iter = JArray::from_iter(iter_items.into_iter());
+        let array_from_iter = JArray::from_iter(iter_items);
         assert_eq!(array_from_iter.len(), 3);
         assert_eq!(
             array_from_iter.get(0),
@@ -105,10 +105,8 @@ mod jarray_tests {
         assert_eq!(array.get(10), None); // out of bounds
 
         // Test mutable element access
-        if let Some(element) = array.get_mut(1) {
-            if let Some(ref mut token) = element {
-                *token = JToken::String("modified".to_string());
-            }
+        if let Some(Some(token)) = array.get_mut(1) {
+            *token = JToken::String("modified".to_string());
         }
         assert_eq!(array.get(1), Some(&JToken::String("modified".to_string())));
     }
@@ -125,13 +123,13 @@ mod jarray_tests {
         assert_eq!(array.len(), 3);
 
         // Test element replacement via set
-        array.set(1, Some(JToken::Number(999.0)));
+        let _ = array.set(1, Some(JToken::Number(999.0)));
         assert_eq!(array.get(1), Some(&JToken::Number(999.0)));
         assert_eq!(array.get(0), Some(&JToken::String("original1".to_string()))); // unchanged
         assert_eq!(array.get(2), Some(&JToken::String("original3".to_string()))); // unchanged
 
         // Test setting to null
-        array.set(2, None);
+        let _ = array.set(2, None);
         assert_eq!(array.get(2), None);
         assert_eq!(array.len(), 3); // size unchanged
 
@@ -145,7 +143,7 @@ mod jarray_tests {
         assert_eq!(array.get(4), None);
 
         // Test inserting elements
-        array.insert(2, Some(JToken::String("inserted".to_string())));
+        let _ = array.insert(2, Some(JToken::String("inserted".to_string())));
         assert_eq!(array.len(), 6);
         assert_eq!(array.get(2), Some(&JToken::String("inserted".to_string())));
         assert_eq!(array.get(3), None); // previously at index 2, now at 3
@@ -470,25 +468,25 @@ mod jarray_tests {
 
         // Test performance of adding many elements
         for i in 0..element_count {
-            array.add(Some(JToken::String(format!("element_{:04}", i))));
+            array.add(Some(JToken::String(format!("element_{i:04}"))));
         }
         assert_eq!(array.len(), element_count);
 
         // Test access performance
         for i in 0..element_count {
-            let expected_value = format!("element_{:04}", i);
+            let expected_value = format!("element_{i:04}");
             assert_eq!(array.get(i), Some(&JToken::String(expected_value)));
         }
 
         // Test modification performance
         for i in 0..element_count {
-            let new_value = format!("modified_{:04}", i);
+            let new_value = format!("modified_{i:04}");
             array.set(i, Some(JToken::String(new_value)));
         }
 
         // Verify modifications
         for i in 0..element_count {
-            let expected_value = format!("modified_{:04}", i);
+            let expected_value = format!("modified_{i:04}");
             assert_eq!(array.get(i), Some(&JToken::String(expected_value)));
         }
 

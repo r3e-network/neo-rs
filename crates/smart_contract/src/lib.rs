@@ -81,6 +81,14 @@ pub enum Error {
     InvalidPublicKey(String),
     #[error("Neo token error: {0}")]
     NeoToken(#[from] NeoTokenError),
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
+    #[error("Serialization: {0}")]
+    Serialization(String),
+    #[error("Deserialization: {0}")]
+    Deserialization(String),
 }
 
 impl From<neo_io::IoError> for Error {

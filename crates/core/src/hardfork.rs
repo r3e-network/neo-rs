@@ -136,7 +136,6 @@ pub fn is_hardfork_enabled(hardfork: Hardfork, block_height: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Block, Transaction, UInt160, UInt256};
 
     #[test]
     fn test_hardfork_manager() {

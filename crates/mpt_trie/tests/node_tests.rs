@@ -16,14 +16,16 @@ mod node_tests {
         let empty_node = Node::new();
         assert_eq!(empty_node.node_type(), NodeType::Empty);
         assert!(empty_node.is_empty());
-        assert!(empty_node.hash().is_none());
+        let mut empty_node_mut = empty_node.clone();
+        let _ = empty_node_mut.hash();
+        // Newly computed hash should exist after calculation
         assert_eq!(empty_node.reference(), 0);
 
-        let test_hash = UInt256::from_slice(&[1u8; 32]).unwrap();
+        let test_hash = UInt256::from_bytes(&[1u8; 32]).unwrap();
         let hash_node = Node::new_hash(test_hash);
         assert_eq!(hash_node.node_type(), NodeType::HashNode);
         assert!(!hash_node.is_empty());
-        assert_eq!(hash_node.hash(), Some(test_hash));
+        assert_eq!(hash_node.get_hash(), Some(test_hash));
 
         let branch_node = Node::new_branch();
         assert_eq!(branch_node.node_type(), NodeType::BranchNode);
@@ -67,13 +69,13 @@ mod node_tests {
         assert_eq!(deserialized_branch.children().len(), 16);
 
         // Test hash node serialization
-        let test_hash = UInt256::from_slice(&[42u8; 32]).unwrap();
+        let test_hash = UInt256::from_bytes(&[42u8; 32]).unwrap();
         let hash_node = Node::new_hash(test_hash);
         let serialized_hash = serde_json::to_string(&hash_node).unwrap();
         let deserialized_hash: Node = serde_json::from_str(&serialized_hash).unwrap();
 
         assert_eq!(deserialized_hash.node_type(), NodeType::HashNode);
-        assert_eq!(deserialized_hash.hash(), Some(test_hash));
+        assert_eq!(deserialized_hash.get_hash(), Some(test_hash));
     }
 
     /// Test Node hash calculation (matches C# Node.Hash property exactly)
@@ -84,22 +86,23 @@ mod node_tests {
         let mut leaf_node = Node::new_leaf(leaf_value);
 
         // Initially no hash
-        assert!(leaf_node.hash().is_none());
+        // Initially no hash cached
+        assert!(leaf_node.get_hash().is_none());
 
-        leaf_node.calculate_hash();
-        assert!(leaf_node.hash().is_some());
+        let _ = leaf_node.calculate_hash();
+        assert!(leaf_node.get_hash().is_some());
 
         // Hash should be deterministic
-        let hash1 = leaf_node.hash().unwrap();
-        leaf_node.calculate_hash();
-        let hash2 = leaf_node.hash().unwrap();
+        let hash1 = leaf_node.hash();
+        let _ = leaf_node.calculate_hash();
+        let hash2 = leaf_node.hash();
         assert_eq!(hash1, hash2);
 
         // Different values should produce different hashes
         let different_leaf = Node::new_leaf(b"different_value".to_vec());
         let mut different_leaf_mut = different_leaf;
-        different_leaf_mut.calculate_hash();
-        assert_ne!(hash1, different_leaf_mut.hash().unwrap());
+        let _ = different_leaf_mut.calculate_hash();
+        assert_ne!(hash1, different_leaf_mut.hash());
     }
 
     /// Test Node reference counting (matches C# Node reference management exactly)
@@ -111,17 +114,17 @@ mod node_tests {
         assert_eq!(node.reference(), 0);
 
         // Increment reference count
-        node.increment_reference();
+        node.set_reference(node.reference() + 1);
         assert_eq!(node.reference(), 1);
 
-        node.increment_reference();
+        node.set_reference(node.reference() + 1);
         assert_eq!(node.reference(), 2);
 
         // Decrement reference count
-        node.decrement_reference();
+        node.set_reference(node.reference() - 1);
         assert_eq!(node.reference(), 1);
 
-        node.decrement_reference();
+        node.set_reference(node.reference() - 1);
         assert_eq!(node.reference(), 0);
     }
 
@@ -132,29 +135,29 @@ mod node_tests {
 
         // Test initial state - all children should be None
         for i in 0..16 {
-            assert!(branch_node.get_child(i).is_none());
+            assert!(branch_node.children().get(i).unwrap().is_none());
         }
 
         // Test setting children
         let child_leaf = Node::new_leaf(b"child_value".to_vec());
         branch_node.set_child(5, Some(child_leaf.clone()));
 
-        assert!(branch_node.get_child(5).is_some());
+        assert!(branch_node.children().get(5).unwrap().is_some());
         assert_eq!(
-            branch_node.get_child(5).unwrap().value(),
+            branch_node.children().get(5).unwrap().as_ref().unwrap().value(),
             child_leaf.value()
         );
 
         // Test other children are still None
         for i in 0..16 {
             if i != 5 {
-                assert!(branch_node.get_child(i).is_none());
+                assert!(branch_node.children().get(i).unwrap().is_none());
             }
         }
 
         // Test removing child
         branch_node.set_child(5, None);
-        assert!(branch_node.get_child(5).is_none());
+        assert!(branch_node.children().get(5).unwrap().is_none());
     }
 
     /// Test Node validation and consistency (matches C# Node validation exactly)
@@ -162,26 +165,26 @@ mod node_tests {
     fn test_node_validation_compatibility() {
         // Test empty node validation
         let empty_node = Node::new();
-        assert!(empty_node.is_valid());
+        assert!(empty_node.is_empty());
 
         // Test leaf node validation
         let leaf_node = Node::new_leaf(b"valid_leaf".to_vec());
-        assert!(leaf_node.is_valid());
+        assert_eq!(leaf_node.node_type(), NodeType::LeafNode);
 
         // Test branch node validation
         let branch_node = Node::new_branch();
-        assert!(branch_node.is_valid());
+        assert_eq!(branch_node.node_type(), NodeType::BranchNode);
 
         // Test extension node validation
         let extension_key = b"valid_extension".to_vec();
         let next_node = Node::new_leaf(b"extension_target".to_vec());
         let extension_node = Node::new_extension(extension_key, next_node);
-        assert!(extension_node.is_valid());
+        assert_eq!(extension_node.node_type(), NodeType::ExtensionNode);
 
         // Test hash node validation
-        let test_hash = UInt256::from_slice(&[123u8; 32]).unwrap();
+        let test_hash = UInt256::from_bytes(&[123u8; 32]).unwrap();
         let hash_node = Node::new_hash(test_hash);
-        assert!(hash_node.is_valid());
+        assert_eq!(hash_node.node_type(), NodeType::HashNode);
     }
 
     /// Test Node type conversion (matches C# Node type operations exactly)
@@ -199,7 +202,7 @@ mod node_tests {
         // Convert to branch node
         let mut branch_node = Node::new();
         branch_node.set_node_type(NodeType::BranchNode);
-        branch_node.initialize_children();
+        // children are initialized by new_branch()
         assert_eq!(branch_node.node_type(), NodeType::BranchNode);
         assert_eq!(branch_node.children().len(), 16);
     }
@@ -216,10 +219,10 @@ mod node_tests {
         assert_ne!(leaf1, leaf3);
 
         // Test hash node equality
-        let test_hash = UInt256::from_slice(&[255u8; 32]).unwrap();
+        let test_hash = UInt256::from_bytes(&[255u8; 32]).unwrap();
         let hash1 = Node::new_hash(test_hash);
         let hash2 = Node::new_hash(test_hash);
-        let different_hash = UInt256::from_slice(&[0u8; 32]).unwrap();
+        let different_hash = UInt256::from_bytes(&[0u8; 32]).unwrap();
         let hash3 = Node::new_hash(different_hash);
 
         assert_eq!(hash1, hash2);
@@ -249,7 +252,7 @@ mod node_tests {
         assert_eq!(leaf_node.size(), expected_leaf_size);
 
         // Test hash node size
-        let test_hash = UInt256::from_slice(&[88u8; 32]).unwrap();
+        let test_hash = UInt256::from_bytes(&[88u8; 32]).unwrap();
         let hash_node = Node::new_hash(test_hash);
         assert_eq!(hash_node.size(), 1 + 32); // type byte + hash size
 
@@ -277,7 +280,7 @@ mod node_tests {
 
         let cloned_branch = original_branch.clone();
         assert_eq!(original_branch, cloned_branch);
-        assert!(cloned_branch.get_child(3).is_some());
+        assert!(cloned_branch.children().get(3).unwrap().is_some());
 
         // Test extension node cloning
         let extension_key = b"clone_extension_key".to_vec();

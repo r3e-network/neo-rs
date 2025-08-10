@@ -170,7 +170,7 @@ pub struct PeerFailureInfo {
 }
 
 /// Error statistics tracking
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ErrorStatistics {
     /// Total errors by type
     pub error_counts: std::collections::HashMap<String, u64>,
@@ -182,6 +182,18 @@ pub struct ErrorStatistics {
     pub average_recovery_time: Duration,
     /// Network health score (0-100)
     pub network_health_score: f64,
+}
+
+impl Default for ErrorStatistics {
+    fn default() -> Self {
+        Self {
+            error_counts: std::collections::HashMap::new(),
+            peer_errors: std::collections::HashMap::new(),
+            recovery_success_rate: 0.0,
+            average_recovery_time: Duration::from_secs(0),
+            network_health_score: 100.0,
+        }
+    }
 }
 
 impl NetworkErrorHandler {
@@ -336,6 +348,7 @@ impl NetworkErrorHandler {
                         }
                         _ => {
                             // Give up
+                            self.mark_peer_as_failed(peer_address, &error).await;
                             self.active_operations.write().await.remove(&operation_id);
                             return Err(error);
                         }
@@ -369,15 +382,17 @@ impl NetworkErrorHandler {
     fn classify_error_severity(&self, error: &NetworkError) -> ErrorSeverity {
         match error {
             NetworkError::Io { .. } => ErrorSeverity::Medium,
-            NetworkError::ConnectionFailed { .. } => ErrorSeverity::High,
+            NetworkError::ConnectionFailed { .. } => ErrorSeverity::Medium,
             NetworkError::ConnectionTimeout { .. } => ErrorSeverity::Medium,
-            NetworkError::HandshakeFailed { .. } => ErrorSeverity::High,
+            NetworkError::HandshakeFailed { .. } => ErrorSeverity::Medium,
             NetworkError::HandshakeTimeout { .. } => ErrorSeverity::Medium,
             NetworkError::InvalidMessage { .. } => ErrorSeverity::Critical,
             NetworkError::ProtocolViolation { .. } => ErrorSeverity::Critical,
-            NetworkError::MessageSerialization { .. } => ErrorSeverity::High,
+            NetworkError::InvalidHeader { .. } => ErrorSeverity::Critical,
+            NetworkError::AuthenticationFailed { .. } => ErrorSeverity::Critical,
+            NetworkError::MessageSerialization { .. } => ErrorSeverity::Medium,
             NetworkError::Generic { .. } => ErrorSeverity::Low,
-            NetworkError::PeerNotConnected { .. } => ErrorSeverity::Medium,
+            NetworkError::PeerNotConnected { .. } => ErrorSeverity::Low,
             NetworkError::MessageSendFailed { .. } => ErrorSeverity::Medium,
             _ => ErrorSeverity::Medium,
         }
@@ -541,11 +556,11 @@ mod tests {
     fn test_operation_context_creation() {
         let context = OperationContext::new(
             "test_operation".to_string(),
-            "localhost:8080".parse().expect("valid address"),
+            "127.0.0.1:8080".parse().expect("valid address"),
         );
 
         assert_eq!(context.operation_id, "test_operation");
-        assert_eq!(context.peer_address.to_string(), "localhost:8080");
+        assert_eq!(context.peer_address.to_string(), "127.0.0.1:8080");
         assert_eq!(context.retry_count, 0);
         assert!(!context.has_exceeded_max_retries());
         assert!(context.last_error.is_none());
@@ -556,7 +571,7 @@ mod tests {
     fn test_operation_context_failure_recording() {
         let mut context = OperationContext::new(
             "test_op".to_string(),
-            "localhost:8080".parse().expect("valid address"),
+            "127.0.0.1:8080".parse().expect("valid address"),
         );
 
         let error =
@@ -577,7 +592,7 @@ mod tests {
     fn test_operation_context_max_retries() {
         let mut context = OperationContext::new(
             "test_op".to_string(),
-            "localhost:8080".parse().expect("valid address"),
+            "127.0.0.1:8080".parse().expect("valid address"),
         );
 
         // Should not exceed max retries initially
@@ -643,7 +658,7 @@ mod tests {
         // Test medium errors
         assert_eq!(
             handler.classify_error_severity(&NetworkError::ConnectionTimeout {
-                address: "localhost:8080".parse().expect("valid address"),
+                address: "127.0.0.1:8080".parse().expect("valid address"),
                 timeout_ms: DEFAULT_TIMEOUT_MS
             }),
             ErrorSeverity::Medium
@@ -733,7 +748,7 @@ mod tests {
     #[tokio::test]
     async fn test_error_statistics_update() {
         let handler = NetworkErrorHandler::new();
-        let peer = "localhost:8080".parse().expect("valid address");
+        let peer = "127.0.0.1:8080".parse().expect("valid address");
         let error =
             NetworkError::connection_failed(SocketAddr::from(([127, 0, 0, 1], 8080)), "test");
 
@@ -748,8 +763,8 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_error_statistics_updates() {
         let handler = NetworkErrorHandler::new();
-        let peer1 = "localhost:8080".parse().expect("valid address");
-        let peer2 = "localhost:8081".parse().expect("valid address");
+        let peer1 = "127.0.0.1:8080".parse().expect("valid address");
+        let peer2 = "127.0.0.1:8081".parse().expect("valid address");
 
         handler
             .update_error_statistics(
@@ -810,21 +825,21 @@ mod tests {
     async fn test_execute_with_retry_success() {
         let handler = NetworkErrorHandler::new();
         let operation_id = "test_success".to_string();
-        let peer = "localhost:8080".parse().expect("valid address");
+        let peer = "127.0.0.1:8080".parse().expect("valid address");
 
         let result = handler
             .execute_with_retry(operation_id, peer, || async { Ok("success".to_string()) })
             .await;
 
         assert!(result.is_ok());
-        assert_eq!(result?, "success");
+        assert_eq!(result.unwrap(), "success");
     }
 
     #[tokio::test]
     async fn test_execute_with_retry_eventual_success() {
         let handler = NetworkErrorHandler::new();
         let operation_id = "test_eventual_success".to_string();
-        let peer = "localhost:8080".parse().expect("valid address");
+        let peer = "127.0.0.1:8080".parse().expect("valid address");
         let attempt_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
         let attempt_count_clone = attempt_count.clone();
@@ -846,7 +861,7 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert_eq!(result?, "success after retries");
+        assert_eq!(result.unwrap(), "success after retries");
         assert_eq!(attempt_count.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
@@ -854,9 +869,9 @@ mod tests {
     async fn test_execute_with_retry_max_attempts_exceeded() {
         let handler = NetworkErrorHandler::new();
         let operation_id = "test_max_attempts".to_string();
-        let peer = "localhost:8080".parse().expect("valid address");
+        let peer = "127.0.0.1:8080".parse().expect("valid address");
 
-        let result = handler
+        let result: NetworkResult<String> = handler
             .execute_with_retry(operation_id, peer, || async {
                 Err(NetworkError::connection_timeout(
                     SocketAddr::from(([127, 0, 0, 1], 8080)),
@@ -874,7 +889,7 @@ mod tests {
     #[tokio::test]
     async fn test_mark_peer_as_failed() {
         let handler = NetworkErrorHandler::new();
-        let peer = "localhost:8080".parse().expect("valid address");
+        let peer = "127.0.0.1:8080".parse().expect("valid address");
 
         handler
             .mark_peer_as_failed(
@@ -893,7 +908,7 @@ mod tests {
     #[tokio::test]
     async fn test_mark_peer_as_recovered() {
         let handler = NetworkErrorHandler::new();
-        let peer = "localhost:8080".parse().expect("valid address");
+        let peer = "127.0.0.1:8080".parse().expect("valid address");
 
         // First mark as failed
         handler
@@ -916,7 +931,7 @@ mod tests {
     #[tokio::test]
     async fn test_perform_maintenance() {
         let handler = NetworkErrorHandler::new();
-        let peer = "localhost:8080".parse().expect("valid address");
+        let peer = "127.0.0.1:8080".parse().expect("valid address");
 
         // Add some errors and failed peers
         handler
@@ -961,7 +976,7 @@ mod tests {
     #[tokio::test]
     async fn test_network_health_score_calculation() {
         let handler = NetworkErrorHandler::new();
-        let peer = "localhost:8080".parse().expect("valid address");
+        let peer = "127.0.0.1:8080".parse().expect("valid address");
 
         // Initial health should be 100%
         let initial_stats = handler.get_error_statistics().await;
@@ -987,7 +1002,7 @@ mod tests {
 
     #[test]
     fn test_network_error_event_types() {
-        let peer = "localhost:8080".parse().expect("valid address");
+        let peer = "127.0.0.1:8080".parse().expect("valid address");
         let error =
             NetworkError::connection_failed(SocketAddr::from(([127, 0, 0, 1], 8080)), "test");
         let downtime = Duration::from_secs(30);
@@ -1001,9 +1016,8 @@ mod tests {
 
         let peer_failed_event = NetworkErrorEvent::PeerFailed {
             peer,
-            error,
+            reason: error.to_string(),
             failure_count: 3,
-            timestamp: std::time::SystemTime::now(),
         };
 
         let peer_recovered_event = NetworkErrorEvent::PeerRecovered { peer, downtime };

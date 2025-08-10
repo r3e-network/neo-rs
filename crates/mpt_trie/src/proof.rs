@@ -3,9 +3,10 @@ use crate::{MptError, MptResult, Node, NodeType, Trie};
 use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_core::UInt256;
 use sha2::{Digest, Sha256};
+use serde::{Serialize, Deserialize};
 
 /// Represents a node in a proof
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProofNode {
     pub node_type: NodeType,
     pub key: Option<Vec<u8>>,
@@ -160,6 +161,7 @@ impl ProofNode {
 pub struct ProofVerifier;
 
 impl ProofVerifier {
+    pub fn new() -> Self { Self }
     /// Verifies an inclusion proof
     pub fn verify_inclusion(
         root_hash: &UInt256,
@@ -552,6 +554,7 @@ impl ProofVerifier {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     fn create_test_node(node_type: NodeType, key: Option<Vec<u8>>, value: Option<Vec<u8>>) -> Node {
         let mut node = Node::new();
         node.set_node_type(node_type);

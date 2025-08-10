@@ -56,6 +56,7 @@ pub static GLOBAL_BLOCKCHAIN: Lazy<
 > = Lazy::new(|| Arc::new(RwLock::new(None)));
 
 /// Global store singleton (matches C# Store.Singleton exactly)
+#[allow(clippy::type_complexity)]
 pub static GLOBAL_STORE: Lazy<
     Arc<RwLock<Option<Box<dyn transaction::blockchain::PersistenceStore + Send + Sync>>>>,
 > = Lazy::new(|| Arc::new(RwLock::new(None)));

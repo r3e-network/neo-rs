@@ -19,8 +19,8 @@ pub const DEFAULT_TESTNET_RPC_PORT: &str = "20332";
 pub const MILLISECONDS_PER_BLOCK: u64 = SECONDS_PER_BLOCK * 1000;
 
 /// Network limits constants
-pub const MAX_BLOCK_SIZE: usize = 1_048_576; // 1MB
-pub const MAX_TRANSACTION_SIZE: usize = 102_400; // 100KB
+pub const MAX_BLOCK_SIZE: usize = 2_097_152; // 2MB (matches C# Neo)
+pub const MAX_TRANSACTION_SIZE: usize = 102_400; // 100KB (matches C# Neo)
 pub const MAX_TRANSACTIONS_PER_BLOCK: usize = 512;
 
 /// Maximum number of blocks that can be traced (about 1 year)

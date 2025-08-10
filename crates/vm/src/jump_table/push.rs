@@ -179,8 +179,7 @@ fn push_a(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
     let script_len = context.script().len();
     if address < 0 || address > script_len as i32 {
         return Err(VmError::invalid_operation_msg(format!(
-            "Address out of bounds: {}",
-            address
+            "Address out of bounds: {address}"
         )));
     }
 

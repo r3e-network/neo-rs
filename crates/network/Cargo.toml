@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = ["compression"]
 compression = ["lz4"]
+compat_tests = []
 
 [dependencies]
 log = "0.4"# Core dependencies

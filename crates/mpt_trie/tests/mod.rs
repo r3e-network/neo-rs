@@ -10,7 +10,7 @@ mod proof_tests;
 mod trie_tests;
 
 mod integration_tests {
-    use neo_core::UInt256;
+use neo_core::UInt256;
     use neo_mpt_trie::*;
 
     /// Test complete MPT Trie workflow (matches C# test patterns exactly)
@@ -111,16 +111,15 @@ mod integration_tests {
         }
 
         // Get root hash
-        let root_hash = original_trie.root().hash();
-        assert!(root_hash.is_some());
+        let root_hash = original_trie.root_mut().hash();
 
         // Create new trie from same root
-        let mut reconstructed_trie = Trie::new(root_hash, true);
+        let mut reconstructed_trie = Trie::new(Some(root_hash), true);
 
         // Note: In a real implementation, this would require storage backend
         assert_eq!(
-            reconstructed_trie.root().hash(),
-            original_trie.root().hash()
+            reconstructed_trie.root_mut().hash(),
+            original_trie.root_mut().hash()
         );
     }
 

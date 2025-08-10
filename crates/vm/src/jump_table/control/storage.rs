@@ -82,16 +82,21 @@ pub fn is_storage_context_readonly(context_item: &StackItem) -> bool {
 pub fn extract_storage_context_data(
     interop_interface: &dyn InteropInterface,
 ) -> VmResult<StorageContext> {
-    if interop_interface.interface_type() == "StorageContext" {
-        // In production, this would properly extract the context data
-        Ok(StorageContext {
-            script_hash: vec![0u8; ADDRESS_SIZE],
-            is_read_only: false,
-            id: 0,
-        })
-    } else {
-        Err(VmError::invalid_operation_msg("Not a storage context"))
+    if interop_interface.interface_type() != "StorageContext" {
+        return Err(VmError::invalid_operation_msg("Not a storage context"));
     }
+
+    // Downcast to concrete StorageContext and clone
+    if let Some(ctx) = interop_interface
+        .as_any()
+        .downcast_ref::<StorageContext>()
+    {
+        return Ok(ctx.clone());
+    }
+
+    Err(VmError::invalid_operation_msg(
+        "Invalid StorageContext interop instance",
+    ))
 }
 
 /// Deserializes storage context from byte data

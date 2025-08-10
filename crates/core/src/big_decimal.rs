@@ -122,7 +122,7 @@ impl BigDecimal {
         let mut e = 0i32;
         let mut s = s.to_string();
 
-        if let Some(index) = s.find(|c| c == 'e' || c == 'E') {
+        if let Some(index) = s.find(['e', 'E']) {
             let e_str = &s[(index + 1)..];
             e = e_str.parse::<i32>().map_err(|_| CoreError::InvalidFormat {
                 message: "Invalid exponent".to_string(),
@@ -218,12 +218,8 @@ impl fmt::Display for BigDecimal {
         if remainder_str.is_empty() {
             write!(f, "{quotient}")
         } else {
-            let sign = if is_negative && quotient.is_zero() {
-                "-"
-            } else {
-                ""
-            };
-            write!(f, "{}{}.{}", sign, quotient, remainder_str)
+            let sign = if is_negative && quotient.is_zero() { "-" } else { "" };
+            write!(f, "{sign}{quotient}.{remainder_str}")
         }
     }
 }
@@ -284,7 +280,7 @@ impl One for BigDecimal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CoreError as Error, CoreResult as Result};
+    // No extra imports needed for these unit tests
 
     #[test]
     fn test_big_decimal_new() {

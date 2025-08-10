@@ -43,7 +43,7 @@ mod jobject_tests {
         obj.set("null_prop".to_string(), Some(JToken::Null));
         obj.set("bool_prop".to_string(), Some(JToken::Boolean(false)));
         obj.set("int_prop".to_string(), Some(JToken::Number(42.0)));
-        obj.set("float_prop".to_string(), Some(JToken::Number(3.14159)));
+        obj.set("float_prop".to_string(), Some(JToken::Number(std::f64::consts::PI)));
         obj.set(
             "string_prop".to_string(),
             Some(JToken::String("test value".to_string())),
@@ -68,7 +68,7 @@ mod jobject_tests {
         assert_eq!(obj.get("null_prop"), Some(&JToken::Null));
         assert_eq!(obj.get("bool_prop"), Some(&JToken::Boolean(false)));
         assert_eq!(obj.get("int_prop"), Some(&JToken::Number(42.0)));
-        assert_eq!(obj.get("float_prop"), Some(&JToken::Number(3.14159)));
+        assert_eq!(obj.get("float_prop"), Some(&JToken::Number(std::f64::consts::PI)));
         assert_eq!(
             obj.get("string_prop"),
             Some(&JToken::String("test value".to_string()))
@@ -497,8 +497,8 @@ mod jobject_tests {
         // Test performance with many properties
         let property_count = 1000;
         for i in 0..property_count {
-            let key = format!("property_{:04}", i);
-            let value = format!("value_{:04}", i);
+            let key = format!("property_{i:04}");
+            let value = format!("value_{i:04}");
             obj.set(key, Some(JToken::String(value)));
         }
 
@@ -506,8 +506,8 @@ mod jobject_tests {
 
         // Test access performance
         for i in 0..property_count {
-            let key = format!("property_{:04}", i);
-            let expected_value = format!("value_{:04}", i);
+            let key = format!("property_{i:04}");
+            let expected_value = format!("value_{i:04}");
 
             assert!(obj.contains_property(&key));
             assert_eq!(obj.get(&key), Some(&JToken::String(expected_value)));
@@ -515,15 +515,15 @@ mod jobject_tests {
 
         // Test modification performance
         for i in 0..property_count {
-            let key = format!("property_{:04}", i);
-            let new_value = format!("modified_value_{:04}", i);
+            let key = format!("property_{i:04}");
+            let new_value = format!("modified_value_{i:04}");
             obj.set(key, Some(JToken::String(new_value)));
         }
 
         // Verify modifications
         for i in 0..property_count {
-            let key = format!("property_{:04}", i);
-            let expected_value = format!("modified_value_{:04}", i);
+            let key = format!("property_{i:04}");
+            let expected_value = format!("modified_value_{i:04}");
             assert_eq!(obj.get(&key), Some(&JToken::String(expected_value)));
         }
     }

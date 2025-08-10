@@ -28,7 +28,7 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     // Get the type from the instruction
     let type_byte = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing type operand"))?;
 
@@ -96,7 +96,7 @@ fn is_type(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     // Get the type from the instruction
     let type_byte = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing type operand"))?;
 

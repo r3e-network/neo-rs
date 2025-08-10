@@ -11,7 +11,7 @@ pub mod interop_interface;
 pub mod map;
 pub mod null;
 pub mod pointer;
-pub mod stack_item;
+pub mod stack_item; // allow module inception for clarity of type name
 pub mod stack_item_type;
 pub mod struct_item;
 

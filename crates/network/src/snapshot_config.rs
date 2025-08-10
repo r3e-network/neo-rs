@@ -116,7 +116,11 @@ pub fn example_mainnet_config() -> SnapshotConfig {
                 height: 15_000_000,
                 block_hash: "0xbf8e4d9c8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e"
                     .to_string(),
-                created_at: 1754000000,
+                created_at: (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+                    .saturating_sub(1)),
                 size: 50_000_000_000, // 50GB
                 url: "https://sync.neo.org/mainnet/snapshot-15000000.tar.zstd".to_string(),
                 sha256: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"

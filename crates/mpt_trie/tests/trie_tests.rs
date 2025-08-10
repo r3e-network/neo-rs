@@ -3,7 +3,7 @@
 //! These tests ensure full compatibility with C# Neo's MPT Trie functionality.
 //! Tests are based on the C# Neo.Cryptography.MPTTrie.Trie test suite.
 
-use crate::MockTrieStorage;
+use super::MockTrieStorage;
 use neo_core::UInt256;
 use neo_mpt_trie::*;
 
@@ -17,9 +17,9 @@ mod trie_tests {
         let empty_trie = Trie::new(None, false);
         assert!(empty_trie.root().is_empty());
 
-        let test_hash = UInt256::from_slice(&[42u8; 32]).unwrap();
+        let test_hash = UInt256::from_bytes(&[42u8; 32]).unwrap();
         let hash_trie = Trie::new(Some(test_hash), true);
-        assert_eq!(hash_trie.root().hash(), Some(test_hash));
+        assert_eq!(hash_trie.root().get_hash(), Some(test_hash));
         assert_eq!(hash_trie.root().node_type(), NodeType::HashNode);
 
         // Test creating trie with storage backend

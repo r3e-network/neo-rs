@@ -59,10 +59,7 @@ mod aggregation_tests {
             .collect();
 
         // Aggregate public keys
-        let aggregate_public_key = Bls12381::aggregate_public_keys(&public_keys).unwrap();
-
-        // Aggregate should be valid
-        assert!(true); // Structure test - aggregation should succeed
+        let _aggregate_public_key = Bls12381::aggregate_public_keys(&public_keys).unwrap();
     }
 
     /// Test empty aggregation handling (matches C# empty collection handling exactly)
@@ -187,7 +184,7 @@ mod aggregation_tests {
             mixed_signatures.push(zero_signature);
 
             // Aggregation with invalid signature should handle gracefully
-            let result = Bls12381::aggregate_signatures(&mixed_signatures);
+            let _result = Bls12381::aggregate_signatures(&mixed_signatures);
         }
     }
 
@@ -231,12 +228,12 @@ mod aggregation_tests {
             .collect();
 
         // Aggregate all at once
-        let full_aggregate = Bls12381::aggregate_signatures(&signatures).unwrap();
+        let _full_aggregate = Bls12381::aggregate_signatures(&signatures).unwrap();
 
         // Aggregate incrementally
-        let partial1 = Bls12381::aggregate_signatures(&signatures[0..2]).unwrap();
-        let partial2 = Bls12381::aggregate_signatures(&signatures[2..5]).unwrap();
-        let combined_aggregate = Bls12381::aggregate_signatures(&[
+        let _partial1 = Bls12381::aggregate_signatures(&signatures[0..2]).unwrap();
+        let _partial2 = Bls12381::aggregate_signatures(&signatures[2..5]).unwrap();
+        let _combined_aggregate = Bls12381::aggregate_signatures(&[
             // This depends on the specific API design
         ]);
 
@@ -370,7 +367,7 @@ mod aggregation_tests {
             .collect();
 
         // Aggregate signatures
-        let original_aggregate = Bls12381::aggregate_signatures(&signatures).unwrap();
+        let _original_aggregate = Bls12381::aggregate_signatures(&signatures).unwrap();
 
         // This depends on the specific implementation of AggregateSignature
 

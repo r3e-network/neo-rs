@@ -176,7 +176,6 @@ impl warp::reject::Reject for RpcError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
     use tokio::runtime::Runtime;
 
     #[test]

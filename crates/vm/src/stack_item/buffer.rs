@@ -58,8 +58,7 @@ impl Buffer {
     pub fn set(&mut self, index: usize, value: u8) -> VmResult<()> {
         if index >= self.data.len() {
             return Err(VmError::invalid_operation_msg(format!(
-                "Index out of range: {}",
-                index
+                "Index out of range: {index}"
             )));
         }
 
@@ -130,25 +129,26 @@ mod tests {
     }
 
     #[test]
-    fn test_buffer_get_set() {
+    fn test_buffer_get_set() -> Result<(), Box<dyn std::error::Error>> {
         let data = vec![1, 2, 3];
         let mut buffer = Buffer::new(data);
 
-        assert_eq!(buffer.first().ok_or("Empty collection")?, 1);
-        assert_eq!(buffer.get(1).ok_or("Index out of bounds")?, 2);
-        assert_eq!(buffer.get(2).ok_or("Index out of bounds")?, 3);
+        assert_eq!(*buffer.data.first().ok_or("Empty collection")?, 1);
+        assert_eq!(buffer.get(1)?, 2);
+        assert_eq!(buffer.get(2)?, 3);
         assert!(buffer.get(3).is_err());
 
         buffer.set(1, 42).unwrap();
 
-        assert_eq!(buffer.first().ok_or("Empty collection")?, 1);
-        assert_eq!(buffer.get(1).ok_or("Index out of bounds")?, 42);
-        assert_eq!(buffer.get(2).ok_or("Index out of bounds")?, 3);
+        assert_eq!(*buffer.data.first().ok_or("Empty collection")?, 1);
+        assert_eq!(buffer.get(1)?, 42);
+        assert_eq!(buffer.get(2)?, 3);
         assert!(buffer.set(3, 4).is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_buffer_to_integer() {
+    fn test_buffer_to_integer() -> Result<(), Box<dyn std::error::Error>> {
         // Test empty buffer
         let empty_buffer = Buffer::new(vec![]);
         assert_eq!(
@@ -184,6 +184,7 @@ mod tests {
                 .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
             BigInt::from(-1)
         );
+        Ok(())
     }
 
     #[test]

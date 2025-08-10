@@ -118,7 +118,7 @@ impl ApplicationEngine {
         }
 
         // 2. Validate script opcodes (matches C# VM opcode validation exactly)
-        if let Err(_) = validate_vm_script_opcodes(&self.script) {
+        if validate_vm_script_opcodes(&self.script).is_err() {
             return false;
         }
 
@@ -212,7 +212,7 @@ impl ApplicationEngine {
         opcode: u8,
         instruction_pointer: &mut usize,
         execution_stack: &mut Vec<Vec<u8>>,
-        _alt_stack: &mut Vec<Vec<u8>>,
+        _alt_stack: &mut [Vec<u8>],
     ) -> CoreResult<bool> {
         // This implements the C# logic: VM instruction dispatch and execution
 

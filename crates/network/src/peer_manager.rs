@@ -577,7 +577,7 @@ impl PeerManager {
     async fn start_accepting_connections(&self) -> NetworkResult<()> {
         // NOTE: Create listener and pass to implementation
         Err(NetworkError::ConnectionFailed {
-            address: "localhost:0".parse()?,
+            address: "127.0.0.1:0".parse()?,
             reason: "Listener not provided".to_string(),
         })
     }

@@ -18,9 +18,8 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::SWAP, swap);
     jump_table.register(OpCode::TUCK, tuck);
     jump_table.register(OpCode::OVER, over);
-    jump_table.register(OpCode::TOALTSTACK, toaltstack);
+    // TOALTSTACK and FROMALTSTACK removed - not in C# Neo
     jump_table.register(OpCode::PICK, pick);
-    jump_table.register(OpCode::FROMALTSTACK, fromaltstack);
     jump_table.register(OpCode::ROT, rot);
     jump_table.register(OpCode::DEPTH, depth);
     jump_table.register(OpCode::DROP, drop);
@@ -257,10 +256,9 @@ fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     let n = context.pop()?.as_int()?;
 
     if n.sign() == Sign::Minus {
-        return Err(VmError::invalid_operation_msg(format!(
-            "The negative value {} is invalid for OpCode.ROLL",
-            n
-        )));
+    return Err(VmError::invalid_operation_msg(format!(
+        "The negative value {n} is invalid for OpCode.ROLL"
+    )));
     }
 
     let n = n
@@ -330,10 +328,9 @@ fn reversen(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
     let n = context.pop()?.as_int()?;
 
     if n.sign() == Sign::Minus {
-        return Err(VmError::invalid_operation_msg(format!(
-            "Reverse count out of range: {}",
-            n
-        )));
+    return Err(VmError::invalid_operation_msg(format!(
+        "Reverse count out of range: {n}"
+    )));
     }
 
     let n = n
@@ -345,29 +342,5 @@ fn reversen(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
     Ok(())
 }
 
-/// Implements the TOALTSTACK operation.
-/// Moves the top item from the evaluation stack to the alternate stack.
-fn toaltstack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Pop the item from the evaluation stack
-    let item = engine.pop()?;
-
-    // Push it onto the alternate stack
-    engine.result_stack_mut().push(item);
-
-    Ok(())
-}
-
-/// Implements the FROMALTSTACK operation.
-/// Moves the top item from the alternate stack to the evaluation stack.
-fn fromaltstack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Pop the item from the alternate stack
-    let item = engine
-        .result_stack_mut()
-        .pop()
-        .map_err(|_| VmError::stack_underflow_msg(0, 0))?;
-
-    // Push it onto the evaluation stack
-    engine.push(item)?;
-
-    Ok(())
-}
+// TOALTSTACK and FROMALTSTACK removed - not in C# Neo
+// These opcodes (0x4C and 0x4F) are not present in the C# implementation

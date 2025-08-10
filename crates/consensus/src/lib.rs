@@ -16,6 +16,7 @@
 
 pub mod context;
 pub mod dbft;
+pub mod extensible_wrapper;
 pub mod mempool_adapter;
 pub mod messages;
 pub mod proposal;

@@ -29,7 +29,7 @@ mod serialization_tests {
         let serialized = serde_json::to_string(&number_int).unwrap();
         assert_eq!(serialized, "42.0");
 
-        let number_float = JToken::Number(3.14159);
+        let number_float = JToken::Number(std::f64::consts::PI);
         let serialized = serde_json::to_string(&number_float).unwrap();
         assert!(serialized.contains("3.14159"));
 
@@ -66,7 +66,7 @@ mod serialization_tests {
         let array = parsed.as_array().unwrap();
         assert_eq!(array.len(), 5);
         assert!(array[0].is_null());
-        assert_eq!(array[1].as_bool().unwrap(), true);
+        assert!(array[1].as_bool().unwrap());
         assert_eq!(array[2].as_f64().unwrap(), 42.0);
         assert_eq!(array[3].as_str().unwrap(), "test");
         assert!(array[4].is_null());
@@ -122,7 +122,7 @@ mod serialization_tests {
         assert!(object.contains_key("missing_prop"));
 
         assert!(object["null_prop"].is_null());
-        assert_eq!(object["bool_prop"].as_bool().unwrap(), true);
+        assert!(object["bool_prop"].as_bool().unwrap());
         assert_eq!(object["num_prop"].as_f64().unwrap(), 123.456);
         assert_eq!(object["str_prop"].as_str().unwrap(), "value");
         assert!(object["missing_prop"].is_null());
@@ -246,9 +246,9 @@ mod serialization_tests {
 
             // Verify round-trip preserves original text
             if let JToken::String(ref result_text) = deserialized {
-                assert_eq!(result_text, text, "Failed for case: {}", name);
+                assert_eq!(result_text, text, "Failed for case: {name}");
             } else {
-                panic!("Expected string token for case: {}", name);
+                panic!("Expected string token for case: {name}");
             }
         }
     }
@@ -264,8 +264,8 @@ mod serialization_tests {
             -1.0,
             42.0,
             -42.0,
-            3.14159,
-            -3.14159,
+            std::f64::consts::PI,
+            -std::f64::consts::PI,
             1.23e10,
             1.23e-10,
             f64::MAX,
@@ -286,12 +286,12 @@ mod serialization_tests {
                     assert!(result_number.is_nan());
                 } else if number == 0.0 && result_number == 0.0 {
                     // Both zeros are equal regardless of sign
-                    assert!(true);
+                    // both are zero; nothing to assert
                 } else {
-                    assert_eq!(result_number, number, "Failed for number: {}", number);
+                    assert_eq!(result_number, number, "Failed for number: {number}");
                 }
             } else {
-                panic!("Expected number token for: {}", number);
+                panic!("Expected number token for: {number}");
             }
         }
 
@@ -319,7 +319,7 @@ mod serialization_tests {
             item.insert("id".to_string(), Some(JToken::Number(i as f64)));
             item.insert(
                 "name".to_string(),
-                Some(JToken::String(format!("item_{:04}", i))),
+                Some(JToken::String(format!("item_{i:04}"))),
             );
             item.insert("active".to_string(), Some(JToken::Boolean(i % 2 == 0)));
             large_array.push(Some(JToken::Object(item)));
@@ -330,8 +330,8 @@ mod serialization_tests {
         let mut large_object = OrderedDictionary::new();
         for i in 0..500 {
             large_object.insert(
-                format!("prop_{:03}", i),
-                Some(JToken::String(format!("value_{:03}", i))),
+                format!("prop_{i:03}"),
+                Some(JToken::String(format!("value_{i:03}"))),
             );
         }
         root.insert("properties".to_string(), Some(JToken::Object(large_object)));

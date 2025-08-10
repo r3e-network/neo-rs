@@ -241,30 +241,15 @@ impl RpcMethods {
     /// Gets peer information
     pub async fn get_peers(&self) -> Result<Value> {
         debug!("RPC: getpeers");
-
-        let peers = RpcPeers {
-            unconnected: vec![
-                RpcPeer {
-                    address: "seed1.neo.org".to_string(),
-                    port: 20333,
-                },
-                RpcPeer {
-                    address: "seed2.neo.org".to_string(),
-                    port: 20333,
-                },
-            ],
-            bad: vec![],
-            connected: vec![],
-        };
-
+        // TODO: Hook to real network peer manager; return empty lists for now
+        let peers = RpcPeers { unconnected: vec![], bad: vec![], connected: vec![] };
         Ok(serde_json::to_value(peers)?)
     }
 
     /// Gets connection count
     pub async fn get_connection_count(&self) -> Result<Value> {
         debug!("RPC: getconnectioncount");
-        // For now, return 0 connections
-        // TODO: Get actual connection count from network manager
+        // TODO: Query peer manager; return 0 for now
         Ok(json!(0))
     }
 
