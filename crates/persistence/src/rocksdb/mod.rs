@@ -217,14 +217,33 @@ impl IStoreSnapshot for RocksDbSnapshot {
             }
             Err(e) => {
                 error!("Failed to commit snapshot batch: {}", e);
-                // In production, this should be handled gracefully rather than crashing
-                warn!("Snapshot batch commit failed - storage operation incomplete");
+                warn!("Snapshot batch commit failed - attempting retries");
 
-                // 1. Retry the batch commit
-                // 2. Mark the snapshot operation as failed
-                // 3. Trigger recovery procedures
-                // 4. Alert monitoring systems
-                // 5. Continue execution in degraded mode
+                // Simple bounded retry with backoff
+                let mut attempts = 0u32;
+                let mut last_err = e;
+                while attempts < 3 {
+                    attempts += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(50 * attempts as u64));
+                    match self.db.write(std::mem::take(&mut self.batch)) {
+                        Ok(()) => {
+                            debug!(
+                                "Snapshot batch committed successfully after {} retry(ies)",
+                                attempts
+                            );
+                            return;
+                        }
+                        Err(e2) => {
+                            last_err = e2;
+                        }
+                    }
+                }
+
+                // Surface degraded mode warning and keep going
+                warn!(
+                    "Snapshot commit failed after retries: {}. Continuing in degraded mode.",
+                    last_err
+                );
             }
         }
     }

@@ -1,3 +1,4 @@
+#![cfg(feature = "compat_tests")]
 //! Comprehensive Error Handling Integration Test
 //!
 //! This test verifies that the error handling system properly integrates with

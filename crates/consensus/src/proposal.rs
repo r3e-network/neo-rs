@@ -689,13 +689,12 @@ impl BlockProposal {
             pos += 1;
         }
 
-        // 2. If no contract hash found in script, use the executing contract's hash
-        // In production, this would be the contract that contains the script
-
-        Ok(UInt160::from_bytes(&[
-            0xd2, 0xa4, 0xce, 0xae, 0xb1, 0xf6, 0x58, 0xba, 0xfb, 0xbb, 0xc3, 0xf8, 0x1e, 0x88,
-            0x5c, 0x6f, 0x6f, 0x20, 0xef, 0x79,
-        ])?)
+        // 2. If no contract hash found in script, fallback to sender’s contract (first signer)
+        // This matches C# behavior of using executing contract context when push20 not found.
+        if let Some(first) = self.transaction.signers().first() {
+            return Ok(first.account.clone());
+        }
+        Err(Error::InvalidProposal("Unable to resolve contract hash".to_string()))
     }
 
     /// Extracts storage key from script context (production implementation)

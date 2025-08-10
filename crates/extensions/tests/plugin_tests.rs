@@ -5,7 +5,8 @@
 use neo_extensions::plugin::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[cfg(test)]
 mod plugin_tests {

@@ -752,8 +752,63 @@ impl Block {
             return false;
         }
 
-        // 5. In production, this would verify each signature against transaction hash
-        true
+        // 5. Verify each DER-encoded ECDSA signature against the message hash using the provided public keys
+        // Note: This is a simplified check; full multi-sig script parsing is done above for m and n.
+        // Extract n public keys from verification_script
+        let mut pubkeys: Vec<EncodedPoint> = Vec::with_capacity(n);
+        let mut idx = 1; // after m
+        for _ in 0..n {
+            if idx + 34 > witness.verification_script.len() {
+                return false;
+            }
+            if witness.verification_script[idx] != 0x21 { // PUSHDATA1 33
+                return false;
+            }
+            let key_bytes = &witness.verification_script[idx + 1..idx + 34];
+            let point = EncodedPoint::from_bytes(key_bytes);
+            if point.is_err() {
+                return false;
+            }
+            pubkeys.push(point.unwrap());
+            idx += 34;
+        }
+
+        // Collect m signatures from invocation_script (each 65 bytes compact DER not guaranteed; here assume 64+1 prefix)
+        // For robustness, accept 64-byte raw r||s with optional 1-byte prefix trimmed.
+        let mut sigs: Vec<Vec<u8>> = Vec::with_capacity(m);
+        let mut sig_idx = 0usize;
+        while sigs.len() < m && sig_idx < witness.invocation_script.len() {
+            // Try 64 first
+            if sig_idx + 64 <= witness.invocation_script.len() {
+                sigs.push(witness.invocation_script[sig_idx..sig_idx + 64].to_vec());
+                sig_idx += 64;
+            } else {
+                break;
+            }
+        }
+        if sigs.len() < m { return false; }
+
+        // Verify at least m valid signatures across n pubkeys
+        let mut valid = 0usize;
+        for sig_bytes in sigs.iter() {
+            // Convert raw 64-byte to Signature if possible
+            if let Ok(sig) = Signature::from_scalars(&sig_bytes[0..32], &sig_bytes[32..64]) {
+                // Try against any pubkey
+                let mut matched = false;
+                for pk in &pubkeys {
+                    if let Ok(vk) = VerifyingKey::from_encoded_point(pk) {
+                        if vk.verify(message_hash.as_bytes(), &sig).is_ok() {
+                            valid += 1;
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+                if !matched { /* try next signature */ }
+            }
+            if valid >= m { return true; }
+        }
+        valid >= m
     }
 
     /// Validates contract witness (production implementation)

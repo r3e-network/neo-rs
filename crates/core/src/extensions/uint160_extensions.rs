@@ -27,7 +27,6 @@ impl UInt160Extensions for UInt160 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Block, Transaction, UInt160, UInt256};
     use neo_config::ADDRESS_SIZE;
 
     #[test]
@@ -36,8 +35,8 @@ mod tests {
         uint.value1 = 1;
         let array = uint.to_array();
         assert_eq!(array[0], 1);
-        for i in 1..ADDRESS_SIZE {
-            assert_eq!(array[i], 0);
+        for &item in array.iter().take(ADDRESS_SIZE).skip(1) {
+            assert_eq!(item, 0);
         }
     }
 }

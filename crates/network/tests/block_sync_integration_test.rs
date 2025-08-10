@@ -1,3 +1,4 @@
+#![cfg(feature = "compat_tests")]
 //! Integration tests for block synchronization
 //!
 //! This test ensures the block sync functionality works correctly
@@ -17,8 +18,9 @@ use tokio::time::timeout;
 
 /// Creates a test blockchain instance
 async fn create_test_blockchain() -> Arc<Blockchain> {
+    let suffix = format!("bsi-{}", uuid::Uuid::new_v4());
     Arc::new(
-        Blockchain::new(NetworkType::TestNet)
+        Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some(&suffix))
             .await
             .expect("Failed to create blockchain"),
     )

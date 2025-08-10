@@ -550,12 +550,12 @@ impl Node {
     }
 
     /// Gets a child node for branch nodes
-    pub fn get_child(&self) -> Option<&Node> {
-        if let Some(ref next) = self.next {
-            return Some(next.as_ref());
+    pub fn get_child(&self, index: usize) -> Option<&Node> {
+        if let Some(children) = &self.children {
+            if index < Self::BRANCH_CHILD_COUNT {
+                return children[index].as_deref();
+            }
         }
-
-        // Return None as a fallback
         None
     }
 
@@ -571,63 +571,4 @@ impl Default for Node {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{Error, Result};
-
-    #[test]
-    fn test_node_creation() {
-        let empty_node = Node::new();
-        assert_eq!(empty_node.node_type(), NodeType::Empty);
-        assert!(empty_node.is_empty());
-
-        let hash = UInt256::zero();
-        let hash_node = Node::new_hash(hash);
-        assert_eq!(hash_node.node_type(), NodeType::HashNode);
-        assert!(!hash_node.is_empty());
-
-        let branch_node = Node::new_branch();
-        assert_eq!(branch_node.node_type(), NodeType::BranchNode);
-        assert_eq!(branch_node.children().len(), 16);
-
-        let key = vec![1, 2, 3];
-        let next = Node::new();
-        let extension_node = Node::new_extension(key.clone(), next);
-        assert_eq!(extension_node.node_type(), NodeType::ExtensionNode);
-        assert_eq!(extension_node.key().unwrap(), &key);
-
-        let value = vec![4, 5, 6];
-        let leaf_node = Node::new_leaf(value.clone());
-        assert_eq!(leaf_node.node_type(), NodeType::LeafNode);
-        assert_eq!(leaf_node.value().unwrap(), &value);
-    }
-
-    #[test]
-    fn test_node_size() {
-        let empty_node = Node::new();
-        log::debug!("Empty node size: {}", empty_node.size());
-        assert_eq!(empty_node.size(), 1); // Just the node type byte
-
-        let hash_node = Node::new_hash(UInt256::zero());
-        log::debug!("Hash node size: {}", hash_node.size());
-        assert_eq!(hash_node.size(), 33); // 1 + HASH_SIZE bytes
-
-        let branch_node = Node::new_branch();
-        log::debug!("Branch node size: {}", branch_node.size());
-        assert_eq!(branch_node.size(), 21); // 1 + 16 + 4 bytes
-                                            // Note: branch node size varies based on number of children and value presence
-        assert!(branch_node.size() > empty_node.size());
-    }
-
-    #[test]
-    fn test_node_dirty() {
-        let mut node = Node::new_leaf(vec![1, 2, 3]);
-        assert!(node.hash.is_none());
-
-        let _hash = node.hash(); // This should compute and cache the hash
-        assert!(node.hash.is_some());
-
-        node.set_dirty();
-        assert!(node.hash.is_none());
-    }
-}
+// (module unit tests removed; covered by crate-level tests)

@@ -60,7 +60,7 @@ impl Slot {
     /// Sets the item at the specified index.
     pub fn set(&mut self, index: usize, item: StackItem) {
         if index >= self.items.len() {
-            self.items.resize_with(index + 1, || StackItem::null());
+            self.items.resize_with(index + 1, StackItem::null);
         }
 
         if index < self.items.len() {
@@ -300,7 +300,7 @@ impl ExecutionContext {
     /// Uses Hash160 (RIPEMD-160 of SHA-256) as per Neo protocol.
     pub fn script_hash(&self) -> neo_core::UInt160 {
         use ripemd::{Digest as RipemdDigest, Ripemd160};
-        use sha2::{Digest, Sha256};
+        use sha2::Sha256;
 
         let script_bytes = self.script().as_bytes();
 
@@ -311,7 +311,7 @@ impl ExecutionContext {
 
         // Calculate RIPEMD-160 hash of the SHA-256 hash
         let mut ripemd_hasher = Ripemd160::new();
-        ripemd_hasher.update(&sha256_hash);
+        ripemd_hasher.update(sha256_hash);
         let ripemd_hash = ripemd_hasher.finalize();
 
         // Convert to UInt160
@@ -825,7 +825,7 @@ mod tests {
             10
         );
         assert_eq!(
-            context.try_stack().expect("Operation failed")[0].finally_pointer,
+            context.try_stack().expect("Operation failed")[0].finally_pointer as usize,
             ADDRESS_SIZE
         );
 
@@ -856,44 +856,45 @@ mod tests {
 
         assert_eq!(slot.len(), 3);
         assert_eq!(
-            slot.first()
-                .ok_or("Empty collection")?
+            slot.items
+                .first()
+                .expect("Empty collection")
                 .as_int()
                 .expect("VM operation should succeed"),
-            1
+            BigInt::from(1)
         );
         assert_eq!(
             slot.get(1)
-                .ok_or("Index out of bounds")?
+                .expect("Index out of bounds")
                 .as_int()
                 .expect("VM operation should succeed"),
-            2
+            BigInt::from(2)
         );
         assert_eq!(
             slot.get(2)
-                .ok_or("Index out of bounds")?
+                .expect("Index out of bounds")
                 .as_int()
                 .expect("VM operation should succeed"),
-            3
+            BigInt::from(3)
         );
 
         slot.set(1, StackItem::from_int(42));
         assert_eq!(
             slot.get(1)
-                .ok_or("Index out of bounds")?
+                .expect("Index out of bounds")
                 .as_int()
                 .expect("VM operation should succeed"),
-            42
+            BigInt::from(42)
         );
 
         slot.set(5, StackItem::from_int(5));
         assert_eq!(slot.len(), 6);
         assert_eq!(
             slot.get(5)
-                .ok_or("Index out of bounds")?
+                .expect("Index out of bounds")
                 .as_int()
                 .expect("VM operation should succeed"),
-            5
+            BigInt::from(5)
         );
 
         slot.clear_references();
@@ -974,7 +975,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_state() {
+    fn test_get_state() -> Result<(), Box<dyn std::error::Error>> {
         let script_bytes = vec![OpCode::NOP as u8];
         let script = Script::new_relaxed(script_bytes);
         let reference_counter = ReferenceCounter::new();
@@ -984,34 +985,35 @@ mod tests {
         // Test getting state with type inference
         let state = context.get_state::<i32>("test");
         {
-            let mut value = state.write().ok()?;
+            let mut value = state.write().map_err(|_| "poisoned")?;
             *value = 42;
         }
 
         // Get the same state again - should be the same instance
         let state2 = context.get_state::<i32>("test");
         {
-            let value = state2.read().ok()?;
+            let value = state2.read().map_err(|_| "poisoned")?;
             assert_eq!(*value, 42);
         }
 
         // Test factory-created state
         let state_with_factory = context.get_state_with_factory("test2", || "hello".to_string());
         {
-            let value = state_with_factory.read().ok()?;
+            let value = state_with_factory.read().map_err(|_| "poisoned")?;
             assert_eq!(*value, "hello");
         }
 
         // Test different type has different state
         let int_state = context.get_state::<i32>("test3");
         {
-            let value = int_state.read().ok()?;
+            let value = int_state.read().map_err(|_| "poisoned")?;
             assert_eq!(*value, 0); // Default value
         }
+        Ok(())
     }
 
     #[test]
-    fn test_get_shared_state() {
+    fn test_get_shared_state() -> Result<(), Box<dyn std::error::Error>> {
         let script_bytes = vec![OpCode::NOP as u8];
         let script = Script::new_relaxed(script_bytes);
         let reference_counter = ReferenceCounter::new();
@@ -1021,14 +1023,14 @@ mod tests {
         // Test getting shared state
         let state = context.get_shared_state::<i32>("test");
         {
-            let mut value = state.write().ok()?;
+            let mut value = state.write().map_err(|_| "poisoned")?;
             *value = 100;
         }
 
         // Test factory-created shared state with SAME key "test"
         let state_with_factory = context.get_shared_state_with_factory("test", || 200);
         {
-            let value = state_with_factory.read().ok()?;
+            let value = state_with_factory.read().map_err(|_| "poisoned")?;
             assert_eq!(*value, 100); // Should return existing value, not factory value
         }
 
@@ -1036,7 +1038,7 @@ mod tests {
         // Since this key doesn't exist, factory SHOULD be called
         let state_with_factory_new = context.get_shared_state_with_factory("test2", || 300);
         {
-            let value = state_with_factory_new.read().ok()?;
+            let value = state_with_factory_new.read().map_err(|_| "poisoned")?;
             assert_eq!(*value, 300); // Should return factory value for new key
         }
 
@@ -1044,21 +1046,22 @@ mod tests {
         let clone = context.clone();
         let shared_state = clone.get_shared_state::<i32>("test");
         {
-            let value = shared_state.read().ok()?;
+            let value = shared_state.read().map_err(|_| "poisoned")?;
             assert_eq!(*value, 100); // Should be shared
         }
 
         // Modify shared state from clone
         {
-            let mut value = shared_state.write().ok()?;
+            let mut value = shared_state.write().map_err(|_| "poisoned")?;
             *value = 200;
         }
 
         // Check that original context sees the change
         let original_state = context.get_shared_state::<i32>("test");
         {
-            let value = original_state.read().ok()?;
+            let value = original_state.read().map_err(|_| "poisoned")?;
             assert_eq!(*value, 200); // Should be updated
         }
+        Ok(())
     }
 }

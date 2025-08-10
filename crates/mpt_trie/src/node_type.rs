@@ -49,6 +49,7 @@ impl TryFrom<u8> for NodeType {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[test]
     fn test_node_type_values() {
         assert_eq!(NodeType::BranchNode as u8, 0x00);

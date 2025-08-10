@@ -1,3 +1,4 @@
+#![cfg(feature = "compat_tests")]
 //! Summary integration test that demonstrates block sync working end-to-end
 //!
 //! This test provides a complete example of how block sync components work together

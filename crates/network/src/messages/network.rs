@@ -20,6 +20,8 @@ pub struct NetworkMessage {
     pub payload: ProtocolMessage,
     /// Compatibility header (for legacy code)
     pub header: HeaderCompat,
+    /// Compatibility checksum field (legacy tests expect direct access)
+    pub checksum: u32,
 }
 
 impl NetworkMessage {
@@ -34,17 +36,28 @@ impl NetworkMessage {
         let command = payload.command();
         let payload_length = serialized_payload.len() as u32;
         let neo3_message = Neo3Message::new(command, serialized_payload);
+        // Calculate checksum for compatibility with legacy tests
+        let checksum = if payload_length > 0 {
+            let mut hasher = Sha256::new();
+            hasher.update(neo3_message.get_payload().unwrap_or_default());
+            let hash = hasher.finalize();
+            u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
+        } else {
+            0
+        };
+
         let header = HeaderCompat {
             command,
             magic,
             length: payload_length,
-            checksum: 0,
+            checksum,
         };
 
         Self {
             neo3_message,
             payload,
             header,
+            checksum,
         }
     }
 
@@ -62,6 +75,11 @@ impl NetworkMessage {
             // Use legacy format for compatibility
             self.to_legacy_bytes()
         }
+    }
+
+    /// Compatibility alias for serialization used by some tests
+    pub fn serialize(&self) -> Result<Vec<u8>> {
+        self.to_bytes()
     }
 
     /// Deserializes a message from bytes (supports Neo N3 real protocol format)
@@ -86,6 +104,7 @@ impl NetworkMessage {
                 neo3_message,
                 payload,
                 header,
+                checksum: 0,
             });
         }
 
@@ -221,7 +240,13 @@ impl NetworkMessage {
             neo3_message,
             payload,
             header,
+            checksum,
         })
+    }
+
+    /// Compatibility alias for deserialization used by some tests
+    pub fn deserialize(bytes: &[u8]) -> Result<Self> {
+        Self::from_bytes(bytes)
     }
 
     /// Serializes the message to legacy 24-byte header format
@@ -320,6 +345,7 @@ impl NetworkMessage {
             neo3_message,
             payload,
             header,
+            checksum: 0,
         })
     }
 }
@@ -365,8 +391,8 @@ mod tests {
         assert_eq!(message.header.command, MessageCommand::Verack);
         assert_eq!(message.header.length, 0); // Verack has empty payload
 
-        // Test serialization
+        // Test serialization (Neo3 format: flags + command + varlen length)
         let bytes = message.to_bytes().unwrap();
-        assert_eq!(bytes.len(), 24); // 24-byte header + 0-byte payload
+        assert_eq!(bytes.len(), 3);
     }
 }

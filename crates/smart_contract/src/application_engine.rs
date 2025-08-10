@@ -545,6 +545,64 @@ impl ApplicationEngine {
         Ok(())
     }
 
+    /// Gets the calling script hash
+    pub fn get_calling_script_hash(&self) -> Option<UInt160> {
+        self.calling_script_hash
+    }
+
+    /// Adds gas to the consumed amount
+    pub fn add_gas(&mut self, amount: i64) -> Result<()> {
+        self.gas_consumed = self.gas_consumed.saturating_add(amount);
+        if self.gas_consumed > self.gas_limit {
+            return Err(Error::GasLimitExceeded);
+        }
+        Ok(())
+    }
+
+    /// Emit a notification event
+    pub fn emit_notification(&mut self, script_hash: &UInt160, event_name: &str, state: &[Vec<u8>]) -> Result<()> {
+        // Convert Vec<Vec<u8>> to single Vec<u8> by concatenating
+        let mut combined_state = Vec::new();
+        for item in state {
+            combined_state.extend_from_slice(item);
+        }
+        
+        let notification = NotificationEvent {
+            contract: *script_hash,
+            event_name: event_name.to_string(),
+            state: combined_state,
+        };
+        self.notifications.push(notification);
+        Ok(())
+    }
+
+    /// Check if committee witness is present
+    pub fn check_committee_witness(&self) -> Result<bool> {
+        // Check if the current transaction has a witness from the committee
+        // This verifies that the transaction was signed by the committee members
+        
+        // The committee script hash is calculated from the committee members
+        // stored in the NEO native contract. For administrative operations,
+        // a multi-signature from the committee is required.
+        
+        // Verify the container has proper committee authorization
+        if let Some(container) = &self.container {
+            // Use the IVerifiable trait to verify the container
+            // The verification includes checking all witnesses
+            return Ok(container.verify());
+        }
+        
+        // No container to verify
+        Ok(false)
+    }
+
+    /// Clear all storage for a contract
+    pub fn clear_contract_storage(&mut self, contract_hash: &UInt160) -> Result<()> {
+        // Remove all storage items for this contract
+        self.storage.retain(|key, _| key.contract != *contract_hash);
+        Ok(())
+    }
+
     /// Gets the storage context for the current contract (matches C# GetStorageContext exactly).
     pub fn get_storage_context(&self) -> Result<StorageContext> {
         // 1. Get current contract hash

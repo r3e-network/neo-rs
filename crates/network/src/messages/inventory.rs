@@ -17,6 +17,11 @@ pub enum InventoryType {
     Consensus = 0xe0,
 }
 
+impl InventoryType {
+    /// Compatibility alias used by some tests and legacy code
+    pub const TX: Self = Self::Transaction;
+}
+
 /// Inventory item
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct InventoryItem {

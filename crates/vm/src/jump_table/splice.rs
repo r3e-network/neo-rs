@@ -104,9 +104,8 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
             }
 
             // Copy the data
-            for i in 0..count {
-                data[dst_offset + i] = src_data[src_offset + i];
-            }
+            data[dst_offset..(dst_offset + count)]
+                .copy_from_slice(&src_data[src_offset..(src_offset + count)]);
 
             // Push the updated buffer onto the stack
             context.push(StackItem::from_buffer(data))?;

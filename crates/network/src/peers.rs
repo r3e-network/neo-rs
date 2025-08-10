@@ -266,7 +266,8 @@ pub struct PeerManager {
     /// Known peer addresses
     known_peers: Arc<RwLock<HashMap<SocketAddr, PeerInfo>>>,
     /// Banned peers
-    banned_peers: Arc<RwLock<HashSet<SocketAddr>>>,
+    // Track ban info with expiration
+    banned_peers: Arc<RwLock<HashMap<SocketAddr, BanInfo>>>,
     /// Maximum number of peers
     max_peers: usize,
     /// Maximum connection attempts
@@ -283,7 +284,7 @@ impl PeerManager {
         Self {
             peers: Arc::new(RwLock::new(HashMap::new())),
             known_peers: Arc::new(RwLock::new(HashMap::new())),
-            banned_peers: Arc::new(RwLock::new(HashSet::new())),
+            banned_peers: Arc::new(RwLock::new(HashMap::new())),
             max_peers,
             max_attempts: 3,
             retry_delay: Duration::from_secs(300), // 5 minutes
@@ -317,7 +318,7 @@ impl PeerManager {
             return false;
         }
 
-        if self.banned_peers.read().await.contains(&address) {
+        if self.banned_peers.read().await.contains_key(&address) {
             return false;
         }
 
@@ -335,7 +336,7 @@ impl PeerManager {
             return Ok(());
         }
 
-        if self.banned_peers.read().await.contains(&address) {
+        if self.banned_peers.read().await.contains_key(&address) {
             return Err(NetworkError::PeerBanned { address });
         }
 
@@ -400,9 +401,21 @@ impl PeerManager {
 
     /// Bans a peer
     pub async fn ban_peer(&self, address: SocketAddr, reason: String) {
-        // Add to banned list
-        self.banned_peers.write().await.insert(address);
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("valid address")
+            .as_secs();
 
+        // Default to temporary 24h ban if no context
+        let info = BanInfo {
+            ban_type: BanType::Temporary {
+                expires_at: now + SECONDS_PER_HOUR * 24,
+            },
+            reason: reason.clone(),
+            banned_at: now,
+        };
+
+        self.banned_peers.write().await.insert(address, info);
         self.disconnect_peer(address, reason).await;
 
         // Mark as banned in known peers
@@ -538,15 +551,30 @@ impl PeerManager {
         let mut banned_peers = self.banned_peers.write().await;
         let mut to_remove = Vec::new();
 
-        for peer_addr in banned_peers.iter() {
-            // In production, this would check actual ban timestamps
-            to_remove.push(*peer_addr);
+        for (peer_addr, info) in banned_peers.iter() {
+            match &info.ban_type {
+                BanType::Permanent => {
+                    permanent_bans += 1;
+                }
+                BanType::Temporary { expires_at } => {
+                    if now >= *expires_at {
+                        to_remove.push(*peer_addr);
+                        expired_count += 1;
+                    }
+                }
+                BanType::Protocol { offense_count, first_offense_at: _ } => {
+                    // progressive bans: e.g., 1h per offense
+                    let duration = 3600u64.saturating_mul(*offense_count as u64);
+                    if now >= info.banned_at + duration {
+                        to_remove.push(*peer_addr);
+                        expired_count += 1;
+                    }
+                }
+            }
         }
 
-        // Remove expired bans
         for addr in to_remove {
             banned_peers.remove(&addr);
-            expired_count += 1;
         }
 
         drop(banned_peers); // Release the lock
@@ -587,17 +615,14 @@ impl PeerManager {
 
     /// Triggers peer discovery to maintain network connectivity (production implementation)
     fn trigger_peer_discovery(&self) {
-        // This would integrate with the actual peer discovery system
-
-        log::debug!(
-            "Triggering peer discovery due to expired bans - maintaining network connectivity"
-        );
-
-        // In production, this would:
-        // 1. Query seed nodes for new peers
-        // 2. Broadcast GetAddr messages to existing peers
-        // 3. Initiate connection attempts to previously known good peers
-        // 4. Update peer reputation scores
+        // Perform a simple discovery kick: attempt connecting to a few known, disconnected peers
+        let this = self.clone();
+        tokio::spawn(async move {
+            let candidates = this.get_peers_for_connection(8).await;
+            for addr in candidates {
+                let _ = this.connect_peer(addr).await; // best-effort
+            }
+        });
     }
 }
 

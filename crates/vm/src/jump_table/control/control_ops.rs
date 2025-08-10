@@ -28,8 +28,7 @@ pub fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     let new_ip = context.instruction_pointer() as i32 + offset as i32;
     if new_ip < 0 || new_ip > context.script().len() as i32 {
         return Err(VmError::invalid_operation_msg(format!(
-            "Jump out of bounds: {}",
-            new_ip
+            "Jump out of bounds: {new_ip}"
         )));
     }
 
@@ -56,8 +55,7 @@ pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     let new_ip = context.instruction_pointer() as i32 + offset;
     if new_ip < 0 || new_ip > context.script().len() as i32 {
         return Err(VmError::invalid_operation_msg(format!(
-            "Jump out of bounds: {}",
-            new_ip
+            "Jump out of bounds: {new_ip}"
         )));
     }
 
@@ -88,8 +86,7 @@ pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
             return Err(VmError::invalid_operation_msg(format!(
-                "Jump out of bounds: {}",
-                new_ip
+                "Jump out of bounds: {new_ip}"
             )));
         }
 
@@ -121,8 +118,7 @@ pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
             return Err(VmError::invalid_operation_msg(format!(
-                "Jump out of bounds: {}",
-                new_ip
+                "Jump out of bounds: {new_ip}"
             )));
         }
 
@@ -154,8 +150,7 @@ pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRe
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
             return Err(VmError::invalid_operation_msg(format!(
-                "Jump out of bounds: {}",
-                new_ip
+                "Jump out of bounds: {new_ip}"
             )));
         }
 
@@ -187,8 +182,7 @@ pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> Vm
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
             return Err(VmError::invalid_operation_msg(format!(
-                "Jump out of bounds: {}",
-                new_ip
+                "Jump out of bounds: {new_ip}"
             )));
         }
 
@@ -221,8 +215,7 @@ pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
             return Err(VmError::invalid_operation_msg(format!(
-                "Jump out of bounds: {}",
-                new_ip
+                "Jump out of bounds: {new_ip}"
             )));
         }
 
@@ -255,8 +248,7 @@ pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
             return Err(VmError::invalid_operation_msg(format!(
-                "Jump out of bounds: {}",
-                new_ip
+                "Jump out of bounds: {new_ip}"
             )));
         }
 
@@ -289,8 +281,7 @@ pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
             return Err(VmError::invalid_operation_msg(format!(
-                "Jump out of bounds: {}",
-                new_ip
+                "Jump out of bounds: {new_ip}"
             )));
         }
 
@@ -323,8 +314,7 @@ pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
             return Err(VmError::invalid_operation_msg(format!(
-                "Jump out of bounds: {}",
-                new_ip
+                "Jump out of bounds: {new_ip}"
             )));
         }
 
@@ -355,12 +345,11 @@ pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
-        if new_ip < 0 || new_ip > context.script().len() as i32 {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Jump out of bounds: {}",
-                new_ip
-            )));
-        }
+    if new_ip < 0 || new_ip > context.script().len() as i32 {
+        return Err(VmError::invalid_operation_msg(format!(
+            "Jump out of bounds: {new_ip}"
+        )));
+    }
 
         // Set the new instruction pointer
         context.set_instruction_pointer(new_ip as usize);
@@ -391,8 +380,7 @@ pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         let new_ip = context.instruction_pointer() as i32 + offset;
         if new_ip < 0 || new_ip > context.script().len() as i32 {
             return Err(VmError::invalid_operation_msg(format!(
-                "Jump out of bounds: {}",
-                new_ip
+                "Jump out of bounds: {new_ip}"
             )));
         }
 
@@ -624,8 +612,7 @@ pub fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
     let call_target = context.instruction_pointer() as i32 + offset as i32;
     if call_target < 0 || call_target > context.script().len() as i32 {
         return Err(VmError::invalid_operation_msg(format!(
-            "Call target out of bounds: {}",
-            call_target
+            "Call target out of bounds: {call_target}"
         )));
     }
 
@@ -655,8 +642,7 @@ pub fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
     let call_target = context.instruction_pointer() as i32 + offset;
     if call_target < 0 || call_target > context.script().len() as i32 {
         return Err(VmError::invalid_operation_msg(format!(
-            "Call target out of bounds: {}",
-            call_target
+            "Call target out of bounds: {call_target}"
         )));
     }
 
@@ -749,8 +735,7 @@ pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
 
             if rvcount > stack_size {
                 return Err(VmError::invalid_operation_msg(format!(
-                    "Not enough items on stack for return: {} > {}",
-                    rvcount, stack_size
+                    "Not enough items on stack for return: {rvcount} > {stack_size}"
                 )));
             }
 

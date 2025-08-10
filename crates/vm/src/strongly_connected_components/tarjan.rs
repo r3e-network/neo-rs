@@ -42,6 +42,11 @@ where
         }
     }
 
+    /// Default implementation delegates to new()
+    pub fn default_instance() -> Self {
+        Self::new()
+    }
+
     /// Adds a vertex to the graph.
     pub fn add_vertex(&mut self, vertex: T) {
         if !self.graph.contains_key(&vertex) {
@@ -121,6 +126,15 @@ where
             }
             self.components.push(component);
         }
+    }
+}
+
+impl<T> Default for Tarjan<T>
+where
+    T: Eq + Hash + Clone,
+{
+    fn default() -> Self {
+        Self::new()
     }
 }
 

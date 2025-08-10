@@ -150,7 +150,7 @@ async fn test_transaction_signing_workflow() {
     transaction.set_valid_until_block(100);
 
     // Add signer
-    let signer = neo_core::Signer::new(script_hash, neo_core::WitnessScope::CalledByEntry);
+    let signer = neo_core::Signer::new(script_hash, neo_core::WitnessScope::CALLED_BY_ENTRY);
     transaction.add_signer(signer);
 
     // Sign transaction

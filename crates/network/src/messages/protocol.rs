@@ -113,8 +113,8 @@ pub enum ProtocolMessage {
         signature: Vec<u8>,
     },
 
-    /// Consensus message
-    Consensus { payload: Vec<u8> },
+    /// Extensible payload message (used for consensus with category "dBFT")
+    Extensible { payload: super::ExtensiblePayload },
 
     /// Unknown/Extended message - for TestNet compatibility
     Unknown { command: u8, payload: Vec<u8> },
@@ -145,8 +145,8 @@ impl ProtocolMessage {
             ProtocolMessage::FilterAdd { .. } => MessageCommand::FilterAdd,
             ProtocolMessage::FilterClear => MessageCommand::FilterClear,
             ProtocolMessage::MerkleBlock { .. } => MessageCommand::MerkleBlock,
-            ProtocolMessage::Alert { .. } => MessageCommand::Reject, // Implementation providedorarily map to Reject
-            ProtocolMessage::Consensus { .. } => MessageCommand::Consensus,
+            ProtocolMessage::Alert { .. } => MessageCommand::Reject, // Temporarily map to Reject
+            ProtocolMessage::Extensible { .. } => MessageCommand::Extensible,
             ProtocolMessage::Unknown { .. } => MessageCommand::Unknown,
         }
     }
@@ -342,8 +342,8 @@ impl ProtocolMessage {
                 writer.write_var_bytes(signature)?;
             }
 
-            ProtocolMessage::Consensus { payload } => {
-                writer.write_var_bytes(payload)?;
+            ProtocolMessage::Extensible { payload } => {
+                payload.serialize(&mut writer)?;
             }
 
             ProtocolMessage::Unknown {
@@ -702,9 +702,9 @@ impl ProtocolMessage {
 
             cmd if *cmd == MessageCommand::Mempool => Ok(ProtocolMessage::Mempool),
 
-            cmd if *cmd == MessageCommand::Consensus => {
-                let payload = reader.read_var_bytes(MAX_SCRIPT_LENGTH)?; // 64KB max for consensus messages
-                Ok(ProtocolMessage::Consensus { payload })
+            cmd if *cmd == MessageCommand::Extensible => {
+                let payload = super::ExtensiblePayload::deserialize(&mut reader)?;
+                Ok(ProtocolMessage::Extensible { payload })
             }
 
             _ => {

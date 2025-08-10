@@ -74,7 +74,7 @@ impl ScriptBuilder {
         if value == -1 {
             return self.emit_opcode(OpCode::PUSHM1);
         }
-        if value >= 0 && value <= 16 {
+        if (0..=16).contains(&value) {
             let opcode_value = OpCode::PUSH0 as u8 + (value as u8);
             self.emit(opcode_value);
             return self;

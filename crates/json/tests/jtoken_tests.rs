@@ -132,7 +132,7 @@ mod jtoken_tests {
             JToken::Boolean(true),
             JToken::Boolean(false),
             JToken::Number(42.0),
-            JToken::Number(-3.14),
+            JToken::Number(-std::f64::consts::PI),
             JToken::Number(0.0),
             JToken::String("test".to_string()),
             JToken::String("".to_string()),
@@ -325,8 +325,8 @@ mod jtoken_tests {
         assert!(matches!(nan_value, JToken::Number(_)));
 
         // Test very large and small numbers
-        let large_number = JToken::Number(1.7976931348623157e+308);
-        let small_number = JToken::Number(2.2250738585072014e-308);
+        let large_number = JToken::Number(1.797_693_134_862_315_7e308);
+        let small_number = JToken::Number(2.225_073_858_507_201_4e-308);
         assert!(matches!(large_number, JToken::Number(_)));
         assert!(matches!(small_number, JToken::Number(_)));
 
@@ -417,8 +417,8 @@ mod jtoken_tests {
         let mut large_object = OrderedDictionary::new();
         for i in 0..1000 {
             large_object.insert(
-                format!("key_{}", i),
-                Some(JToken::String(format!("value_{}", i))),
+                format!("key_{i}"),
+                Some(JToken::String(format!("value_{i}"))),
             );
         }
         let object_token = JToken::Object(large_object);
@@ -426,11 +426,11 @@ mod jtoken_tests {
         // Test object access
         if let JToken::Object(ref obj) = object_token {
             for i in 0..1000 {
-                let key = format!("key_{}", i);
+                let key = format!("key_{i}");
                 assert!(obj.contains_key(&key));
                 assert_eq!(
                     obj.get(&key),
-                    Some(&Some(JToken::String(format!("value_{}", i))))
+                    Some(&Some(JToken::String(format!("value_{i}"))))
                 );
             }
         }

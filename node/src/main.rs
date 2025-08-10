@@ -643,9 +643,33 @@ async fn run_node(
 
     let storage = blockchain_storage.clone();
 
-    info!("⏭️ Skipping RPC server initialization for debugging/* implementation */;");
+    // Initialize RPC server if enabled
+    let rpc_config = neo_config::RpcServerConfig {
+        enabled: true,
+        port: rpc_port,
+        bind_address: "0.0.0.0".to_string(),
+        max_connections: 100,
+        cors_enabled: true,
+        ssl_enabled: false,
+    };
 
-    let rpc_server = Arc::new(());
+    let rpc_server_opt = if rpc_config.enabled {
+        info!("🖧 Initializing RPC server on {}:{}", rpc_config.bind_address, rpc_config.port);
+        let ledger = neo_ledger::Ledger::new_with_blockchain(
+            neo_config::LedgerConfig::default(),
+            blockchain.clone(),
+        );
+        let rpc_instance = neo_rpc_server::RpcServer::new(
+            rpc_config.clone(),
+            Arc::new(ledger),
+            blockchain_storage.clone(),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create RPC server: {}", e))?;
+        Some(Arc::new(rpc_instance))
+    } else {
+        None
+    };
 
     // Register shutdown components
     shutdown_coordinator
@@ -701,9 +725,17 @@ async fn run_node(
         })
     };
 
-    let rpc_handle = tokio::spawn(async {
-        info!("⏭️ RPC server startup skipped");
-    });
+    let rpc_handle = {
+        if let Some(rpc) = rpc_server_opt.clone() {
+            tokio::spawn(async move {
+                if let Err(e) = rpc.start().await {
+                    error!("RPC server failed: {}", e);
+                }
+            })
+        } else {
+            tokio::spawn(async { info!("RPC disabled"); })
+        }
+    };
 
     let consensus_handle: Option<tokio::task::JoinHandle<()>> =
         if let Some(_consensus) = consensus_service.clone() {

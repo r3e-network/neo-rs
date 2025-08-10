@@ -70,6 +70,13 @@ pub const MAINNET_P2P_PORT: u16 = 10333;
 pub const PRIVATE_NET_RPC_PORT: u16 = 30332;
 pub const PRIVATE_NET_P2P_PORT: u16 = 30333;
 
+/// Storage limits
+pub const MAX_STORAGE_KEY_SIZE: usize = 64;
+pub const MAX_STORAGE_VALUE_SIZE: usize = u16::MAX as usize;
+
+/// Network retry configuration
+pub const MAX_RETRY_ATTEMPTS: u32 = 3;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,10 +92,3 @@ mod tests {
         assert_eq!(MAX_TRANSACTION_SIZE, 102_400);
     }
 }
-
-/// Storage limits
-pub const MAX_STORAGE_KEY_SIZE: usize = 64;
-pub const MAX_STORAGE_VALUE_SIZE: usize = u16::MAX as usize;
-
-/// Network retry configuration
-pub const MAX_RETRY_ATTEMPTS: u32 = 3;

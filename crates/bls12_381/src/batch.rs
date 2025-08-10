@@ -231,7 +231,7 @@ mod tests {
         // Create multiple valid signatures
         for i in 0..5 {
             let keypair = KeyPair::generate(&mut rng);
-            let message = format!("test message {}", i);
+            let message = format!("test message {i}");
             let signature = keypair
                 .sign(message.as_bytes(), SignatureScheme::Basic)
                 .unwrap();

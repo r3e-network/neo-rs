@@ -468,10 +468,8 @@ fn lt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    if context.evaluation_stack().len() < 2 {
-        if context.evaluation_stack().len() == 1 {
-            return Err(VmError::insufficient_stack_items_msg(0, 0));
-        }
+    if context.evaluation_stack().len() < 2 && context.evaluation_stack().len() == 1 {
+        return Err(VmError::insufficient_stack_items_msg(0, 0));
     }
 
     // Pop the values from the stack
@@ -502,10 +500,8 @@ fn le(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    if context.evaluation_stack().len() < 2 {
-        if context.evaluation_stack().len() == 1 {
-            return Err(VmError::insufficient_stack_items_msg(0, 0));
-        }
+    if context.evaluation_stack().len() < 2 && context.evaluation_stack().len() == 1 {
+        return Err(VmError::insufficient_stack_items_msg(0, 0));
     }
 
     // Pop the values from the stack
@@ -536,10 +532,8 @@ fn gt(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    if context.evaluation_stack().len() < 2 {
-        if context.evaluation_stack().len() == 1 {
-            return Err(VmError::insufficient_stack_items_msg(0, 0));
-        }
+    if context.evaluation_stack().len() < 2 && context.evaluation_stack().len() == 1 {
+        return Err(VmError::insufficient_stack_items_msg(0, 0));
     }
 
     // Pop the values from the stack
@@ -570,10 +564,8 @@ fn ge(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    if context.evaluation_stack().len() < 2 {
-        if context.evaluation_stack().len() == 1 {
-            return Err(VmError::insufficient_stack_items_msg(0, 0));
-        }
+    if context.evaluation_stack().len() < 2 && context.evaluation_stack().len() == 1 {
+        return Err(VmError::insufficient_stack_items_msg(0, 0));
     }
 
     // Pop the values from the stack
@@ -604,10 +596,8 @@ fn numequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    if context.evaluation_stack().len() < 2 {
-        if context.evaluation_stack().len() == 1 {
-            return Err(VmError::insufficient_stack_items_msg(0, 0));
-        }
+    if context.evaluation_stack().len() < 2 && context.evaluation_stack().len() == 1 {
+        return Err(VmError::insufficient_stack_items_msg(0, 0));
     }
 
     // Pop the values from the stack
@@ -651,10 +641,8 @@ fn numnotequal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    if context.evaluation_stack().len() < 2 {
-        if context.evaluation_stack().len() == 1 {
-            return Err(VmError::insufficient_stack_items_msg(0, 0));
-        }
+    if context.evaluation_stack().len() < 2 && context.evaluation_stack().len() == 1 {
+        return Err(VmError::insufficient_stack_items_msg(0, 0));
     }
 
     // Pop the values from the stack

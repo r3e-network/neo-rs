@@ -209,10 +209,9 @@ impl Transaction {
         let size = self.size();
         if size > MAX_TRANSACTION_SIZE {
             return Err(CoreError::InvalidData {
-                message: format!(
-                    "Transaction size {} exceeds maximum allowed size {}",
-                    size, MAX_TRANSACTION_SIZE
-                ),
+                    message: format!(
+                        "Transaction size {size} exceeds maximum allowed size {MAX_TRANSACTION_SIZE}"
+                    ),
             });
         }
 

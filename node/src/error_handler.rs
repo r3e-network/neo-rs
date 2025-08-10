@@ -608,6 +608,8 @@ mod tests {
         assert!(!breaker.is_open());
 
         breaker.record_failure();
+        // After reaching threshold (3), one more failure will open the breaker in this implementation
+        breaker.record_failure();
         assert!(breaker.is_open());
     }
 

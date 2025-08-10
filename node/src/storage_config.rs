@@ -225,7 +225,8 @@ impl StorageStats {
 
 #[cfg(test)]
 mod tests {
-    use super::{StorageError, StorageKey, Store};
+    use super::StorageConfig;
+    use neo_config::{NetworkType, MAX_TRANSACTIONS_PER_BLOCK};
     use tempfile::TempDir;
 
     #[test]

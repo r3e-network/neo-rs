@@ -673,10 +673,13 @@ impl NativeContractsManager {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use neo_core::UInt160;
+
     #[test]
     fn test_native_contract_hashes() {
-        let mainnet_hashes = NativeContractHashes::mainnet();
-        let testnet_hashes = NativeContractHashes::testnet();
+        let mainnet_hashes = NativeContractHashes::mainnet().unwrap();
+        let testnet_hashes = NativeContractHashes::testnet().unwrap();
 
         // Mainnet and testnet should have the same native contract hashes
         assert_eq!(mainnet_hashes.neo, testnet_hashes.neo);
@@ -687,7 +690,8 @@ mod tests {
     #[test]
     fn test_uint160_from_hex() {
         // Test that we can parse the NEO contract hash
-        let neo_hash = UInt160::from_hex("ef4073a0f2b305a38ec4050e4d3d28bc40ea63f5");
+        let bytes = hex::decode("ef4073a0f2b305a38ec4050e4d3d28bc40ea63f5").unwrap();
+        let neo_hash = UInt160::from_bytes(&bytes);
         assert!(neo_hash.is_ok());
     }
 }

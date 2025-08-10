@@ -370,11 +370,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_manager_shutdown() {
-        let blockchain = std::sync::Arc::new(tokio_test::block_on(async {
-            neo_ledger::Blockchain::new(neo_config::NetworkType::TestNet)
-                .await
-                .unwrap()
-        }));
+        let suffix = format!("shutdown-{}", uuid::Uuid::new_v4());
+        let blockchain = std::sync::Arc::new(
+            neo_ledger::Blockchain::new_with_storage_suffix(
+                neo_config::NetworkType::TestNet,
+                Some(&suffix),
+            )
+            .await
+            .unwrap(),
+        );
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = std::sync::Arc::new(P2pNode::new(config, command_receiver).unwrap());
@@ -390,11 +394,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_manager_can_shutdown() {
-        let blockchain = std::sync::Arc::new(tokio_test::block_on(async {
-            neo_ledger::Blockchain::new(neo_config::NetworkType::TestNet)
-                .await
-                .unwrap()
-        }));
+        let suffix = format!("shutdown-{}", uuid::Uuid::new_v4());
+        let blockchain = std::sync::Arc::new(
+            neo_ledger::Blockchain::new_with_storage_suffix(
+                neo_config::NetworkType::TestNet,
+                Some(&suffix),
+            )
+            .await
+            .unwrap(),
+        );
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = std::sync::Arc::new(P2pNode::new(config, command_receiver).unwrap());
@@ -408,11 +416,15 @@ mod tests {
     #[tokio::test]
     async fn test_shutdown_priority_order() {
         // Verify components have correct priorities
-        let blockchain = std::sync::Arc::new(tokio_test::block_on(async {
-            neo_ledger::Blockchain::new(neo_config::NetworkType::TestNet)
-                .await
-                .unwrap()
-        }));
+        let suffix = format!("shutdown-{}", uuid::Uuid::new_v4());
+        let blockchain = std::sync::Arc::new(
+            neo_ledger::Blockchain::new_with_storage_suffix(
+                neo_config::NetworkType::TestNet,
+                Some(&suffix),
+            )
+            .await
+            .unwrap(),
+        );
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = std::sync::Arc::new(
@@ -427,11 +439,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_network_server_shutdown_wrapper() {
-        let blockchain = std::sync::Arc::new(tokio_test::block_on(async {
-            neo_ledger::Blockchain::new(neo_config::NetworkType::TestNet)
-                .await
-                .unwrap()
-        }));
+        let suffix = format!("shutdown-{}", uuid::Uuid::new_v4());
+        let blockchain = std::sync::Arc::new(
+            neo_ledger::Blockchain::new_with_storage_suffix(
+                neo_config::NetworkType::TestNet,
+                Some(&suffix),
+            )
+            .await
+            .unwrap(),
+        );
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = std::sync::Arc::new(

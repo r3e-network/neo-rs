@@ -145,7 +145,7 @@ impl InteropService {
                 let message_str = String::from_utf8_lossy(&message_bytes);
 
                 // 1. Log to console for immediate debugging (matches C# Console.WriteLine)
-                log::info!("Contract Log: {}", message_str);
+                log::info!("Contract Log: {message_str}");
 
                 // 2. Emit blockchain event for persistent logging (production event system)
                 engine.emit_runtime_log_event(&message_str)?;
@@ -512,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn test_interop_service_invoke() {
+    fn test_interop_service_invoke() -> Result<(), Box<dyn std::error::Error>> {
         let mut service = InteropService::new();
 
         // Register a test method
@@ -556,8 +556,9 @@ mod tests {
                 .expect("operation should succeed")
                 .as_int()
                 .expect("Operation failed"),
-            42
+            BigInt::from(42)
         );
+        Ok(())
     }
 
     #[test]

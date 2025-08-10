@@ -4,6 +4,7 @@
 //! The OpCodes are organized into logical categories for better maintainability.
 
 pub mod categories;
+#[allow(clippy::module_inception)]
 mod op_code;
 mod operand_size;
 

@@ -17,10 +17,13 @@ pub struct BlockchainSnapshot {
     /// Snapshot timestamp (matches C# Blockchain.CurrentBlock.Timestamp exactly)
     timestamp: u64,
     /// Native contract registry (matches C# NativeContract.Contracts exactly)
+    #[allow(dead_code)]
     native_contracts: HashMap<UInt160, NativeContractInfo>,
     /// Committee cache (matches C# NEO.GetCommittee cache exactly)
+    #[allow(dead_code)]
     committee_cache: Option<CachedCommittee>,
     /// Policy contract settings (matches C# PolicyContract exactly)
+    #[allow(dead_code)]
     policy_settings: PolicySettings,
 }
 
@@ -300,6 +303,7 @@ impl BlockchainSnapshot {
     }
 
     /// Gets current blockchain height (matches C# Blockchain.Height exactly).
+    #[allow(dead_code)]
     fn get_current_blockchain_height() -> u32 {
         // 1. Try to get height from current blockchain context (production implementation)
         if let Some(height) = Self::try_get_height_from_blockchain_context() {
@@ -311,6 +315,7 @@ impl BlockchainSnapshot {
     }
 
     /// Tries to get height from blockchain context (production implementation)
+    #[allow(dead_code)]
     fn try_get_height_from_blockchain_context() -> Option<u32> {
         // This implements the C# logic: Blockchain.Singleton.CurrentSnapshot?.Height
 
@@ -330,6 +335,7 @@ impl BlockchainSnapshot {
     }
 
     /// Checks if blockchain context is available (production implementation)
+    #[allow(dead_code)]
     fn has_blockchain_context() -> bool {
         // 1. Check if blockchain singleton is initialized (production singleton access)
         if let Some(blockchain) = Self::get_blockchain_singleton() {
@@ -342,6 +348,7 @@ impl BlockchainSnapshot {
     }
 
     /// Gets height from current snapshot (production implementation)
+    #[allow(dead_code)]
     fn get_height_from_current_snapshot() -> u32 {
         // This implements the C# logic: Blockchain.Singleton.CurrentSnapshot.Height
 
@@ -353,18 +360,14 @@ impl BlockchainSnapshot {
     }
 
     /// Gets persisted height from store (matches C# Store.GetHeaderHeight exactly).
+    #[allow(dead_code)]
     fn get_persisted_height_from_store() -> u32 {
         // 1. Try to access the persistence store (production storage access)
-        if let Some(height) = Self::get_persistence_store() {
-            // 2. Return the height from store (production query)
-            height
-        } else {
-            // 3. No store available - return genesis height (production fallback)
-            0
-        }
+        Self::get_persistence_store().unwrap_or_default()
     }
 
     /// Gets persistence store reference (production implementation)
+    #[allow(dead_code)]
     fn get_persistence_store() -> Option<u32> {
         // This implements the C# logic: accessing the global persistence store with proper thread safety
 
@@ -372,13 +375,7 @@ impl BlockchainSnapshot {
         if let Ok(store_guard) = crate::GLOBAL_STORE.try_read() {
             if let Some(ref store) = *store_guard {
                 // 2. Query the actual store for header height (matches C# Store.GetHeaderHeight exactly)
-                match store.get_header_height() {
-                    Ok(height) => return Some(height),
-                    Err(_) => {
-                        // Store error - fall back to safe default
-                        return Some(0); // Genesis height as safe default
-                    }
-                }
+                return Some(store.get_header_height().unwrap_or(0));
             }
         }
 
@@ -459,6 +456,7 @@ impl BlockchainSnapshot {
     }
 
     /// Gets blockchain singleton reference (production implementation)
+    #[allow(dead_code)]
     fn get_blockchain_singleton() -> Option<BlockchainSingleton> {
         // This implements the C# logic: accessing the global blockchain singleton with proper thread safety
 
@@ -487,6 +485,7 @@ impl BlockchainSnapshot {
 /// Blockchain singleton structure (matches C# Blockchain class exactly)
 pub struct BlockchainSingleton {
     /// Current snapshot
+    #[allow(dead_code)]
     current_snapshot: Option<BlockchainSnapshot>,
     /// Blockchain height
     height: u32,
@@ -499,11 +498,13 @@ impl BlockchainSingleton {
     }
 
     /// Checks if current snapshot is available (production implementation)
+    #[allow(dead_code)]
     fn has_current_snapshot(&self) -> bool {
         self.current_snapshot.is_some()
     }
 
     /// Gets current height (production implementation)
+    #[allow(dead_code)]
     fn get_height(&self) -> u32 {
         self.height
     }
@@ -556,7 +557,7 @@ impl StorageItem {
 
     /// Checks if storage key is for committee data (production-ready implementation).
     fn is_committee_storage_key(key_data: &[u8]) -> bool {
-        key_data.len() >= 1 && key_data[0] == 14 // Committee prefix
+        !key_data.is_empty() && key_data[0] == 14 // Committee prefix
     }
 
     /// Generates default contract data (production-ready implementation).

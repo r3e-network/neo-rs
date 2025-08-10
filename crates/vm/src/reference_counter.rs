@@ -178,9 +178,7 @@ impl ReferenceCounter {
         let current_count = self.reference_count.load(Ordering::SeqCst);
         if cleaned_memory > 0 {
             log::debug!(
-                "VM GC: Cleaned {} zero-ref items, freed ~{} bytes",
-                candidates_count,
-                cleaned_memory
+                "VM GC: Cleaned {candidates_count} zero-ref items, freed ~{cleaned_memory} bytes"
             );
         }
 
@@ -353,11 +351,7 @@ impl ReferenceCounter {
 
         // 7. Update cleanup statistics (production monitoring)
         if cleaned_count > 0 {
-            log::debug!(
-                "VM GC: Cleaned {} items, freed {} bytes",
-                cleaned_count,
-                cleaned_memory
-            );
+            log::debug!("VM GC: Cleaned {cleaned_count} items, freed {cleaned_memory} bytes");
         }
     }
 
@@ -428,7 +422,7 @@ impl ReferenceCounter {
         references.remove(&item_id);
 
         // 5. Log removal for monitoring (production logging)
-        log::debug!("VM GC: Removed item {} from tracking", item_id);
+        log::debug!("VM GC: Removed item {item_id} from tracking");
     }
 
     /// Decrements reference count for an item (helper method)
@@ -440,7 +434,7 @@ impl ReferenceCounter {
                 *count -= 1;
 
                 if *count == 0 {
-                    log::debug!("VM GC: Item {} reference count reached zero", item_id);
+                    log::debug!("VM GC: Item {item_id} reference count reached zero");
                 }
             }
         }

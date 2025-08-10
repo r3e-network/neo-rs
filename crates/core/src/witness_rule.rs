@@ -136,6 +136,11 @@ impl WitnessCondition {
             WitnessCondition::CalledByGroup { group } => 1 + group.len(),
         }
     }
+
+    /// Returns true if the condition has zero size when serialized
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl WitnessRule {
@@ -224,7 +229,6 @@ impl fmt::Display for WitnessRule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Block, Transaction, UInt160, UInt256};
 
     #[test]
     fn test_witness_rule_action_values() {

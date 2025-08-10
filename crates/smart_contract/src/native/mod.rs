@@ -3,8 +3,10 @@
 //! This module provides the built-in native contracts for the Neo blockchain,
 //! including NEO, GAS, Policy, and other system contracts.
 
+pub mod contract_management;
 pub mod crypto_lib;
 pub mod gas_token;
+pub mod ledger_contract;
 pub mod native_contract;
 pub mod neo_token;
 pub mod oracle_contract;
@@ -12,8 +14,10 @@ pub mod policy_contract;
 pub mod role_management;
 pub mod std_lib;
 
+pub use contract_management::ContractManagement;
 pub use crypto_lib::CryptoLib;
 pub use gas_token::GasToken;
+pub use ledger_contract::LedgerContract;
 pub use native_contract::{NativeContract, NativeMethod};
 pub use neo_token::NeoToken;
 pub use oracle_contract::{OracleContract, OracleRequest, OracleResponse};
@@ -64,6 +68,12 @@ impl NativeRegistry {
 
     /// Registers standard Neo native contracts.
     fn register_standard_contracts(&mut self) {
+        // Register ContractManagement contract
+        self.register(Box::new(ContractManagement::new()));
+
+        // Register LedgerContract
+        self.register(Box::new(LedgerContract::new()));
+
         // Register NEO token contract
         self.register(Box::new(NeoToken::new()));
 

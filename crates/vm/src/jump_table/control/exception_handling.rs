@@ -88,7 +88,7 @@ pub fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
     let finally_offset = instruction.read_i16_operand()?;
 
     // Get the current context and pop the exception handler
-    let (handler, should_jump, jump_target) = {
+    let (_handler, should_jump, _jump_target) = {
         let context = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -125,7 +125,7 @@ pub fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRe
     let finally_offset = instruction.read_i32_operand()?;
 
     // Get the current context and pop the exception handler
-    let (handler, should_jump, jump_target) = {
+    let (_handler, should_jump, _jump_target) = {
         let context = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -233,8 +233,7 @@ pub fn throw(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
     // No exception handler found, halt execution
     engine.set_state(crate::execution_engine::VMState::FAULT);
     Err(VmError::execution_halted_msg(format!(
-        "Unhandled exception: {}",
-        message
+        "Unhandled exception: {message}"
     )))
 }
 

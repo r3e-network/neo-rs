@@ -67,8 +67,7 @@ pub fn get_oracle_request_from_contract(
         None => {
             // 5. Oracle request not found (production error handling)
             Err(VmError::invalid_operation_msg(format!(
-                "Oracle request {} not found",
-                request_id
+                "Oracle request {request_id} not found"
             )))
         }
     }
@@ -96,8 +95,7 @@ pub fn get_transaction_from_ledger_contract(
         None => {
             // 5. Transaction not found (production error handling)
             Err(VmError::invalid_operation_msg(format!(
-                "Transaction {} not found",
-                txid
+                "Transaction {txid} not found"
             )))
         }
     }

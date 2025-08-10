@@ -145,8 +145,7 @@ impl Instruction {
                 }
                 _ => {
                     return Err(VmError::parse(format!(
-                        "Unexpected opcode in PUSHDATA handling: {:?}",
-                        opcode
+                        "Unexpected opcode in PUSHDATA handling: {opcode:?}"
                     )));
                 }
             }
@@ -157,8 +156,7 @@ impl Instruction {
 
             if operand_end > script.len() {
                 return Err(VmError::parse(format!(
-                    "Operand size exceeds script bounds for opcode: {:?}",
-                    opcode
+                    "Operand size exceeds script bounds for opcode: {opcode:?}"
                 )));
             }
 
@@ -295,8 +293,7 @@ impl Instruction {
                 }
                 _ => {
                     return Err(VmError::parse(format!(
-                        "Unexpected opcode in PUSHDATA handling: {:?}",
-                        opcode
+                        "Unexpected opcode in PUSHDATA handling: {opcode:?}"
                     )));
                 }
             }
@@ -425,8 +422,7 @@ impl Instruction {
                 }
                 _ => {
                     return Err(VmError::parse(format!(
-                        "Unexpected opcode in PUSHDATA handling: {:?}",
-                        opcode
+                        "Unexpected opcode in PUSHDATA handling: {opcode:?}"
                     )));
                 }
             }
@@ -719,9 +715,7 @@ impl FromOperand for u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::VmError;
-    use crate::execution_engine::{ExecutionEngine, VMState};
-    use crate::stack_item::StackItem;
+    use crate::execution_engine::ExecutionEngine;
 
     #[test]
     fn test_instruction_parsing() {
@@ -775,7 +769,7 @@ mod tests {
             0x03,
         ];
 
-        let mut reader = neo_io::MemoryReader::new(script);
+        let mut reader = neo_io::MemoryReader::new(&script);
 
         // Parse PUSH1
         let instruction =

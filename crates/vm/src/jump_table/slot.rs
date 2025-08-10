@@ -87,7 +87,7 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     // Get the local and argument counts from the instruction
     let local_count = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing local count"))?
         as usize;
@@ -137,7 +137,7 @@ fn load_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) ->
     // Get the index from the instruction
     let index = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
@@ -160,7 +160,7 @@ fn store_static_field(engine: &mut ExecutionEngine, instruction: &Instruction) -
     // Get the index from the instruction
     let index = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
@@ -183,7 +183,7 @@ fn load_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
     // Get the index from the instruction
     let index = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
@@ -206,7 +206,7 @@ fn store_local(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
     // Get the index from the instruction
     let index = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
@@ -229,7 +229,7 @@ fn load_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmR
     // Get the index from the instruction
     let index = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
@@ -252,7 +252,7 @@ fn store_argument(engine: &mut ExecutionEngine, instruction: &Instruction) -> Vm
     // Get the index from the instruction
     let index = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing index"))? as usize;
 
@@ -275,7 +275,7 @@ fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> 
     // Get the static field count from the instruction
     let static_count = instruction
         .operand()
-        .get(0)
+        .first()
         .copied()
         .ok_or_else(|| VmError::invalid_instruction_msg("Missing static count"))?
         as usize;

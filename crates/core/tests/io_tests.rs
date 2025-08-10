@@ -263,8 +263,8 @@ fn test_memory_reader_read_boolean() {
     let data = vec![0, 1, 255, 42];
     let mut reader = MemoryReader::new(&data);
 
-    assert_eq!(false, reader.read_boolean().unwrap());
-    assert_eq!(true, reader.read_boolean().unwrap());
+    assert!(!reader.read_boolean().unwrap());
+    assert!(reader.read_boolean().unwrap());
     // Note: C# allows any non-zero as true, but our implementation is stricter
     assert!(reader.read_boolean().is_err()); // 255 should fail
     assert!(reader.read_boolean().is_err()); // 42 should fail

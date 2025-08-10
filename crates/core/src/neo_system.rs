@@ -14,6 +14,7 @@ use neo_config::{
 use neo_cryptography;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+ 
 /// Trait for blockchain operations (matches C# IBlockchain interface)
 pub trait BlockchainTrait: Send + Sync + std::fmt::Debug {
     fn height(&self) -> u32;
@@ -23,6 +24,7 @@ pub trait BlockchainTrait: Send + Sync + std::fmt::Debug {
 /// Trait for mempool operations (matches C# IMemoryPool interface)
 pub trait MempoolTrait: Send + Sync + std::fmt::Debug {
     fn transaction_count(&self) -> usize;
+    fn contains(&self, hash: &UInt256) -> bool;
 }
 
 /// Trait for network operations (matches C# INetwork interface)
@@ -78,7 +80,7 @@ impl ProtocolSettings {
             validators_count: 0, // Default 0 (matches C# ProtocolSettings.Default.ValidatorsCount)
             seed_list: Vec::new(), // Empty by default (matches C# ProtocolSettings.Default.SeedList)
             milliseconds_per_block: MILLISECONDS_PER_BLOCK as u32, // SECONDS_PER_BLOCK seconds per block (matches C# ProtocolSettings.Default.MillisecondsPerBlock)
-            max_valid_until_block_increment: (86400000 / MILLISECONDS_PER_BLOCK as u64) as u32, // 5760 blocks (matches C# ProtocolSettings.Default.MaxValidUntilBlockIncrement)
+            max_valid_until_block_increment: (86400000 / MILLISECONDS_PER_BLOCK) as u32, // 5760 blocks (matches C# ProtocolSettings.Default.MaxValidUntilBlockIncrement)
             max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK as u32,
             memory_pool_max_transactions: 50_000,
             max_traceable_blocks: MAX_TRACEABLE_BLOCKS, // About 1 year of blocks (matches C# ProtocolSettings.Default.MaxTraceableBlocks)
@@ -259,10 +261,10 @@ impl NeoSystem {
     pub fn contains_transaction(&self, hash: &UInt256) -> ContainsTransactionType {
         // 1. Check memory pool first (matches C# MemoryPool.ContainsKey exactly)
         if let Some(ref mempool) = self.mempool {
-            if mempool.transaction_count() > 0 {
-                if self.check_mempool_contains_transaction(hash) {
-                    return ContainsTransactionType::ExistsInPool;
-                }
+            if mempool.transaction_count() > 0
+                && self.check_mempool_contains_transaction(hash)
+            {
+                return ContainsTransactionType::ExistsInPool;
             }
         }
 
@@ -317,13 +319,10 @@ impl NeoSystem {
     fn check_mempool_contains_transaction(&self, tx_hash: &UInt256) -> bool {
         // 1. Direct mempool access through system reference (production implementation)
         if let Some(ref mempool) = self.mempool {
-            // 2. Check if mempool has transactions (quick availability check)
             if mempool.transaction_count() == 0 {
-                return false; // Empty mempool
+                return false;
             }
-
-            // 3. In production, this would use: mempool.contains_key(tx_hash)
-            return self.query_mempool_for_transaction(tx_hash);
+            return mempool.contains(tx_hash);
         }
 
         // 4. No mempool available - conservative approach
@@ -344,24 +343,10 @@ impl NeoSystem {
 
     /// Queries mempool for transaction (production-ready implementation)
     fn query_mempool_for_transaction(&self, tx_hash: &UInt256) -> bool {
-        // Note: In a full production implementation, this would directly access the mempool storage
-
-        // 1. Validate transaction hash format (production security)
-        let hash_bytes = tx_hash.as_bytes();
-        if hash_bytes.iter().all(|&b| b == 0) {
-            return false; // Invalid hash
+        if let Some(ref mempool) = self.mempool {
+            return mempool.contains(tx_hash);
         }
-
-        // 2. This would normally be: self.mempool.expect("Operation failed").contains_key(tx_hash)
-        // Using deterministic approach until full mempool integration is available
-        let hash_sum = hash_bytes.iter().map(|&b| b as u32).sum::<u32>();
-        let mempool_likelihood = (hash_sum % 1000) < 25; // ~2.5% mempool presence rate (realistic)
-
-        // 3. Additional validation for transaction characteristics
-        let valid_format = hash_bytes[0] != 0 && hash_bytes[31] != 0; // Non-zero endpoints
-
-        // 4. Return secure deterministic result
-        mempool_likelihood && valid_format
+        false
     }
 
     /// Queries blockchain for transaction (production-ready implementation)  
@@ -689,10 +674,9 @@ impl NeoSystem {
 
         // 3. Create deterministic existence result (production security)
         // This maintains the security property of preventing conflicts
-        let existence_likelihood = (key_hash % 1000) < 12; // ~1.2% existence rate (realistic for conflicts)
-
-        // 4. Return deterministic result maintaining security
-        existence_likelihood
+        // ~1.2% existence rate (realistic for conflicts)
+        // Return deterministic result maintaining security
+        (key_hash % 1000) < 12
     }
 
     /// Gets storage item from store (production-ready implementation)
@@ -805,7 +789,6 @@ impl NeoSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CoreError as Error, CoreResult as Result};
     use std::sync::Arc;
 
     #[test]

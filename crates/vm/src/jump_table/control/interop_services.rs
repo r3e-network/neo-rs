@@ -73,14 +73,14 @@ pub fn invoke_interop_service(
                     app_engine.add_notification(log_event);
                 }
 
-                log::info!("Log: {}", message);
+                log::info!("Log: {message}");
             }
             Ok(None)
         }
         "System.Runtime.Notify" => {
             if parameters.len() >= 2 {
                 if let (Some(InteropParameter::String(event_name)), Some(state_param)) =
-                    (parameters.get(0), parameters.get(1))
+                    (parameters.first(), parameters.get(1))
                 {
                     // Production-ready notification emission
                     let script_hash = engine.current_script_hash().unwrap_or_default().to_vec();
@@ -100,7 +100,7 @@ pub fn invoke_interop_service(
                         app_engine.add_notification(notification_event);
                     }
 
-                    log::info!("Notify: {}", event_name);
+                    log::info!("Notify: {event_name}");
                 }
             }
             Ok(None)
@@ -127,7 +127,7 @@ pub fn invoke_interop_service(
                 if let (
                     Some(InteropParameter::InteropInterface(_context_item)),
                     Some(InteropParameter::ByteArray(_key)),
-                ) = (parameters.get(0), parameters.get(1))
+                ) = (parameters.first(), parameters.get(1))
                 {
                     // In production this would query the blockchain storage
                     Ok(Some(StackItem::Null))
@@ -149,7 +149,7 @@ pub fn invoke_interop_service(
                     Some(InteropParameter::InteropInterface(context_item)),
                     Some(InteropParameter::ByteArray(key)),
                     Some(InteropParameter::ByteArray(value)),
-                ) = (parameters.get(0), parameters.get(1), parameters.get(2))
+                ) = (parameters.first(), parameters.get(1), parameters.get(2))
                 {
                     // Extract storage context from InteropInterface
                     if let StackItem::InteropInterface(_context_box) = context_item {
@@ -219,7 +219,7 @@ pub fn invoke_interop_service(
                 if let (
                     Some(InteropParameter::InteropInterface(context_item)),
                     Some(InteropParameter::ByteArray(key)),
-                ) = (parameters.get(0), parameters.get(1))
+                ) = (parameters.first(), parameters.get(1))
                 {
                     // Extract storage context from InteropInterface
                     if let StackItem::InteropInterface(_context_box) = context_item {
@@ -285,7 +285,7 @@ pub fn invoke_interop_service(
                     Some(InteropParameter::Hash160(script_hash)),
                     Some(InteropParameter::String(method)),
                     Some(InteropParameter::Integer(call_flags)),
-                ) = (parameters.get(0), parameters.get(1), parameters.get(2))
+                ) = (parameters.first(), parameters.get(1), parameters.get(2))
                 {
                     // Production-ready contract calling
                     if let Some(app_engine) = engine.as_application_engine_mut() {
@@ -299,7 +299,7 @@ pub fn invoke_interop_service(
                         let arguments: Vec<StackItem> = parameters
                             .iter()
                             .skip(3)
-                            .map(|param| convert_parameter_to_stack_item(param))
+                            .map(convert_parameter_to_stack_item)
                             .collect();
 
                         // 3. Call contract
@@ -345,8 +345,7 @@ pub fn invoke_interop_service(
             }
         }
         _ => Err(VmError::invalid_operation_msg(format!(
-            "Unknown interop service: {}",
-            service_name
+            "Unknown interop service: {service_name}"
         ))),
     }
 }
@@ -363,7 +362,7 @@ fn convert_parameter_to_stack_item(param: &InteropParameter) -> StackItem {
         InteropParameter::Array(items) => {
             let stack_items: Vec<StackItem> = items
                 .iter()
-                .map(|param| convert_parameter_to_stack_item(param))
+                .map(convert_parameter_to_stack_item)
                 .collect();
             StackItem::Array(stack_items)
         }

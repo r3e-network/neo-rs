@@ -215,7 +215,7 @@ impl Transaction {
         if hash_guard.is_none() {
             *hash_guard = Some(self.calculate_hash()?);
         }
-        Ok(hash_guard.clone().expect("Operation failed"))
+        Ok((*hash_guard).expect("Operation failed"))
     }
 
     /// Gets the hash of the transaction (C# Hash property compatibility).
@@ -240,14 +240,12 @@ impl Transaction {
         let first_hash = hasher.finalize();
 
         let mut hasher = Sha256::new();
-        hasher.update(&first_hash);
+        hasher.update(first_hash);
         let final_hash = hasher.finalize();
 
-        Ok(
-            UInt256::from_bytes(&final_hash).map_err(|_| CoreError::InvalidData {
-                message: "Invalid hash bytes".to_string(),
-            })?,
-        )
+        UInt256::from_bytes(&final_hash).map_err(|_| CoreError::InvalidData {
+            message: "Invalid hash bytes".to_string(),
+        })
     }
 
     /// Gets the hash data for signing (transaction data without witnesses).
@@ -307,7 +305,7 @@ impl Transaction {
     ///
     /// The sender's account hash, or None if no signers
     pub fn sender(&self) -> Option<UInt160> {
-        self.signers.first().map(|s| s.account.clone())
+        self.signers.first().map(|s| s.account)
     }
 
     /// Adds an attribute to the transaction.
@@ -439,7 +437,7 @@ impl Transaction {
 
         // Add signer account hashes
         for signer in &self.signers {
-            hashes.push(signer.account.clone());
+            hashes.push(signer.account);
         }
 
         // Remove duplicates

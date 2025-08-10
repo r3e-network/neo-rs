@@ -102,7 +102,7 @@ impl EventManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Block, Transaction, UInt160, UInt256};
+    // No additional imports needed in this unit test
     use std::any::Any;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;

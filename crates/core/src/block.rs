@@ -69,7 +69,7 @@ pub struct Block {
 impl Block {
     /// Calculate the hash of the block (same as header hash)
     pub fn hash(&self) -> crate::Result<UInt256> {
-        Ok(self.header.hash()?)
+        self.header.hash()
     }
 
     /// Get the block index

@@ -282,8 +282,7 @@ impl Script {
     pub fn get_instruction(&self, position: usize) -> VmResult<Instruction> {
         if position >= self.script.len() {
             return Err(VmError::invalid_operation_msg(format!(
-                "Position {} is beyond script bounds",
-                position
+                "Position {position} is beyond script bounds"
             )));
         }
 
@@ -299,8 +298,7 @@ impl Script {
 
         if self.strict_mode {
             return Err(VmError::invalid_operation_msg(format!(
-                "Position {} not found with strict mode",
-                position
+                "Position {position} not found with strict mode"
             )));
         }
 
@@ -325,8 +323,7 @@ impl Script {
     pub fn get_byte(&self, position: usize) -> VmResult<u8> {
         if position >= self.script.len() {
             return Err(VmError::invalid_operation_msg(format!(
-                "Position {} is beyond script bounds",
-                position
+                "Position {position} is beyond script bounds"
             )));
         }
 
@@ -337,8 +334,7 @@ impl Script {
     pub fn range(&self, start: usize, end: usize) -> VmResult<Vec<u8>> {
         if start >= self.script.len() || end > self.script.len() || start > end {
             return Err(VmError::invalid_operation_msg(format!(
-                "Range {}..{} is invalid",
-                start, end
+                "Range {start}..{end} is invalid"
             )));
         }
 
@@ -501,8 +497,7 @@ impl Script {
                 self.get_jump_offset(next_position, offset)
             }
             _ => Err(VmError::invalid_instruction_msg(format!(
-                "Not a jump instruction: {:?}",
-                opcode
+                "Not a jump instruction: {opcode:?}"
             ))),
         }
     }
@@ -523,8 +518,7 @@ impl Script {
 
         if opcode != OpCode::TRY {
             return Err(VmError::invalid_instruction_msg(format!(
-                "Not a TRY instruction: {:?}",
-                opcode
+                "Not a TRY instruction: {opcode:?}"
             )));
         }
 
