@@ -46,7 +46,7 @@ impl RpcMethods {
             merkleroot: block.header.merkle_root,
             time: block.header.timestamp,
             index: block.header.index,
-            primary: 0, // TODO: Get primary from consensus data
+            primary: block.header.primary_index
             nextconsensus: block.header.next_consensus,
             witnesses: block
                 .header
@@ -241,16 +241,34 @@ impl RpcMethods {
     /// Gets peer information
     pub async fn get_peers(&self) -> Result<Value> {
         debug!("RPC: getpeers");
-        // TODO: Hook to real network peer manager; return empty lists for now
-        let peers = RpcPeers { unconnected: vec![], bad: vec![], connected: vec![] };
+        // Query the network peer manager for current peer information
+        let connected_peers = self.blockchain.get_connected_peers().await;
+        let unconnected_peers = self.blockchain.get_unconnected_peers().await;
+        let bad_peers = self.blockchain.get_bad_peers().await;
+        
+        let peers = RpcPeers {
+            connected: connected_peers.into_iter().map(|p| RpcPeer {
+                address: p.address,
+                port: p.port,
+            }).collect(),
+            unconnected: unconnected_peers.into_iter().map(|p| RpcPeer {
+                address: p.address,
+                port: p.port,
+            }).collect(),
+            bad: bad_peers.into_iter().map(|p| RpcPeer {
+                address: p.address,
+                port: p.port,
+            }).collect(),
+        };
         Ok(serde_json::to_value(peers)?)
     }
 
     /// Gets connection count
     pub async fn get_connection_count(&self) -> Result<Value> {
         debug!("RPC: getconnectioncount");
-        // TODO: Query peer manager; return 0 for now
-        Ok(json!(0))
+        // Query the network peer manager for active connection count
+        let connection_count = self.blockchain.get_connected_peer_count().await;
+        Ok(json!(connection_count))
     }
 
     /// Validates an address

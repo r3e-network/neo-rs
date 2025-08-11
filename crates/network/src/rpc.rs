@@ -837,8 +837,32 @@ async fn handle_get_raw_mempool(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // Return empty array for now - TODO: implement proper mempool access
-    Ok(json!([]))
+    // Query the mempool for pending transactions
+    let mempool_transactions = if let Some(blockchain) = &state.blockchain {
+        blockchain.get_mempool_transactions().await
+    } else {
+        Vec::new()
+    };
+    
+    if verbose {
+        // Return detailed transaction information
+        let detailed: Vec<Value> = mempool_transactions
+            .iter()
+            .map(|tx| json!({
+                "hash": tx.hash,
+                "size": tx.size,
+                "fee": tx.fee
+            }))
+            .collect();
+        Ok(json!(detailed))
+    } else {
+        // Return just transaction hashes
+        let hashes: Vec<String> = mempool_transactions
+            .iter()
+            .map(|tx| tx.hash.clone())
+            .collect();
+        Ok(json!(hashes))
+    }
 }
 
 /// Handles getstorage method
