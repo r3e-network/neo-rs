@@ -1567,8 +1567,12 @@ impl PeerManager {
         // Write start height (4 bytes, little-endian)
         // For better compatibility with NGD nodes, report a height closer to current
         // This prevents rejection due to being too far behind
-        // TODO: Get actual height from blockchain when available
-        let start_height = 15_000_000u32; // Report a recent height to avoid rejection
+        // Get actual height from blockchain or use a reasonable default
+        let start_height = if let Some(blockchain) = &config.blockchain {
+            blockchain.get_height() as u32
+        } else {
+            15_000_000u32 // Default height if blockchain not available
+        }
         payload.extend_from_slice(&start_height.to_le_bytes());
 
         // Write relay flag (1 byte) - true = 1
