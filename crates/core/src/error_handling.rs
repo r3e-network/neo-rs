@@ -355,6 +355,18 @@ impl From<tokio::time::error::Elapsed> for NeoError {
     }
 }
 
+impl From<std::fmt::Error> for NeoError {
+    fn from(error: std::fmt::Error) -> Self {
+        NeoError::Internal(format!("Format error: {}", error))
+    }
+}
+
+impl From<Box<dyn std::error::Error>> for NeoError {
+    fn from(error: Box<dyn std::error::Error>) -> Self {
+        NeoError::Internal(error.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
