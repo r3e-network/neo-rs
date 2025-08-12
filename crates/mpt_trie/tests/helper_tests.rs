@@ -204,7 +204,8 @@ mod helper_tests {
             let byte_key = test_string.as_bytes();
             let nibbles = to_nibbles(byte_key);
             let reconstructed_bytes = from_nibbles(&nibbles);
-            let reconstructed_string = String::from_utf8(reconstructed_bytes.expect("valid nibbles")).unwrap();
+            let reconstructed_string =
+                String::from_utf8(reconstructed_bytes.expect("valid nibbles")).unwrap();
 
             assert_eq!(reconstructed_string, test_string);
         }

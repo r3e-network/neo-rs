@@ -43,7 +43,10 @@ mod jobject_tests {
         obj.set("null_prop".to_string(), Some(JToken::Null));
         obj.set("bool_prop".to_string(), Some(JToken::Boolean(false)));
         obj.set("int_prop".to_string(), Some(JToken::Number(42.0)));
-        obj.set("float_prop".to_string(), Some(JToken::Number(std::f64::consts::PI)));
+        obj.set(
+            "float_prop".to_string(),
+            Some(JToken::Number(std::f64::consts::PI)),
+        );
         obj.set(
             "string_prop".to_string(),
             Some(JToken::String("test value".to_string())),
@@ -68,7 +71,10 @@ mod jobject_tests {
         assert_eq!(obj.get("null_prop"), Some(&JToken::Null));
         assert_eq!(obj.get("bool_prop"), Some(&JToken::Boolean(false)));
         assert_eq!(obj.get("int_prop"), Some(&JToken::Number(42.0)));
-        assert_eq!(obj.get("float_prop"), Some(&JToken::Number(std::f64::consts::PI)));
+        assert_eq!(
+            obj.get("float_prop"),
+            Some(&JToken::Number(std::f64::consts::PI))
+        );
         assert_eq!(
             obj.get("string_prop"),
             Some(&JToken::String("test value".to_string()))

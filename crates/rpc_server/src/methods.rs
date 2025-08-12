@@ -46,7 +46,7 @@ impl RpcMethods {
             merkleroot: block.header.merkle_root,
             time: block.header.timestamp,
             index: block.header.index,
-            primary: block.header.primary_index
+            primary: block.header.primary_index,
             nextconsensus: block.header.next_consensus,
             witnesses: block
                 .header
@@ -245,20 +245,29 @@ impl RpcMethods {
         let connected_peers = self.blockchain.get_connected_peers().await;
         let unconnected_peers = self.blockchain.get_unconnected_peers().await;
         let bad_peers = self.blockchain.get_bad_peers().await;
-        
+
         let peers = RpcPeers {
-            connected: connected_peers.into_iter().map(|p| RpcPeer {
-                address: p.address,
-                port: p.port,
-            }).collect(),
-            unconnected: unconnected_peers.into_iter().map(|p| RpcPeer {
-                address: p.address,
-                port: p.port,
-            }).collect(),
-            bad: bad_peers.into_iter().map(|p| RpcPeer {
-                address: p.address,
-                port: p.port,
-            }).collect(),
+            connected: connected_peers
+                .into_iter()
+                .map(|p| RpcPeer {
+                    address: p.address,
+                    port: p.port,
+                })
+                .collect(),
+            unconnected: unconnected_peers
+                .into_iter()
+                .map(|p| RpcPeer {
+                    address: p.address,
+                    port: p.port,
+                })
+                .collect(),
+            bad: bad_peers
+                .into_iter()
+                .map(|p| RpcPeer {
+                    address: p.address,
+                    port: p.port,
+                })
+                .collect(),
         };
         Ok(serde_json::to_value(peers)?)
     }
