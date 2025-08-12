@@ -10,7 +10,7 @@ use super::{ECCError, ECCResult, ECCurve, ECFieldElement};
 use neo_config::HASH_SIZE;
 
 /// Represents a point on an elliptic curve.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ECPoint {
     /// The x-coordinate of the point, or None for the point at infinity
     pub x: Option<ECFieldElement>,

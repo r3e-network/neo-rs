@@ -4,7 +4,7 @@ use num_bigint::BigInt;
 use std::fmt;
 
 /// Represents the parameters of an elliptic curve.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ECCurve {
     /// The a parameter in the curve equation y² = x³ + ax + b
     pub a: BigInt,

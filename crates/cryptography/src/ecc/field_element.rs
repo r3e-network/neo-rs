@@ -7,7 +7,7 @@ use std::fmt;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
 /// Represents an element in a finite field.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ECFieldElement {
     /// The value of the field element
     pub value: BigInt,
