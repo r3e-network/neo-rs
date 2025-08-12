@@ -262,9 +262,9 @@ impl Transaction {
         let mut reader = neo_io::MemoryReader::new(&data);
         match neo_core::Transaction::deserialize(&mut reader) {
             Ok(tx) => Ok(Transaction::from_core(tx)),
-                Err(e) => Err(VmError::invalid_operation_msg(format!(
-                    "Failed to deserialize transaction: {e}"
-                ))),
+            Err(e) => Err(VmError::invalid_operation_msg(format!(
+                "Failed to deserialize transaction: {e}"
+            ))),
         }
     }
 

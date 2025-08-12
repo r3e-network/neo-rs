@@ -486,6 +486,7 @@ mod tests {
     use crate::call_flags::CallFlags;
     use crate::error::VmError;
     use crate::stack_item::StackItem;
+    use num_bigint::BigInt;
 
     #[test]
     fn test_interop_service_registration() {

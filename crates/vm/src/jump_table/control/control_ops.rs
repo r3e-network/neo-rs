@@ -345,11 +345,11 @@ pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
         // Calculate the new instruction pointer
         let new_ip = context.instruction_pointer() as i32 + offset as i32;
-    if new_ip < 0 || new_ip > context.script().len() as i32 {
-        return Err(VmError::invalid_operation_msg(format!(
-            "Jump out of bounds: {new_ip}"
-        )));
-    }
+        if new_ip < 0 || new_ip > context.script().len() as i32 {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Jump out of bounds: {new_ip}"
+            )));
+        }
 
         // Set the new instruction pointer
         context.set_instruction_pointer(new_ip as usize);

@@ -146,41 +146,22 @@ mod tests {
     }
 
     #[test]
-    fn test_byte_string_to_integer() {
+    fn test_byte_string_to_integer() -> Result<(), Box<dyn std::error::Error>> {
         let empty_byte_string = ByteString::new(vec![]);
-        assert_eq!(
-            empty_byte_string
-                .to_integer()
-                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
-            BigInt::from(0)
-        );
+        assert_eq!(empty_byte_string.to_integer()?, BigInt::from(0));
 
         // Test positive number
         let positive_byte_string = ByteString::new(vec![1, 0, 0, 0]);
-        assert_eq!(
-            positive_byte_string
-                .to_integer()
-                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
-            BigInt::from(1)
-        );
+        assert_eq!(positive_byte_string.to_integer()?, BigInt::from(1));
 
         // Test larger positive number
         let larger_byte_string = ByteString::new(vec![0xCD, 0xAB, 0, 0]);
-        assert_eq!(
-            larger_byte_string
-                .to_integer()
-                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
-            BigInt::from(0xABCD)
-        );
+        assert_eq!(larger_byte_string.to_integer()?, BigInt::from(0xABCD));
 
         // Test negative number
         let negative_byte_string = ByteString::new(vec![1, 0, 0, 0x80]);
-        assert_eq!(
-            negative_byte_string
-                .to_integer()
-                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
-            BigInt::from(-1)
-        );
+        assert_eq!(negative_byte_string.to_integer()?, BigInt::from(-1));
+        Ok(())
     }
 
     #[test]
@@ -199,7 +180,10 @@ mod tests {
     fn test_byte_string_to_string() {
         // Test valid UTF-8
         let hello_byte_string = ByteString::from_string("Hello, world!");
-        assert_eq!(hello_byte_string.to_string().expect("valid utf8"), "Hello, world!");
+        assert_eq!(
+            hello_byte_string.to_string().expect("valid utf8"),
+            "Hello, world!"
+        );
 
         // Test invalid UTF-8
         let invalid_utf8 = ByteString::new(vec![0xFF, 0xFF]);

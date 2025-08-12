@@ -208,7 +208,10 @@ mod tests {
 
         // Pop an item
         let item = stack.pop().expect("pop should succeed");
-        assert_eq!(item.as_int().expect("as_int should succeed"), num_bigint::BigInt::from(3));
+        assert_eq!(
+            item.as_int().expect("as_int should succeed"),
+            num_bigint::BigInt::from(3)
+        );
 
         // Check updated stack size
         assert_eq!(stack.len(), 2);
@@ -246,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_remove() {
+    fn test_insert_remove() -> Result<(), Box<dyn std::error::Error>> {
         let reference_counter = ReferenceCounter::new();
         let mut stack = EvaluationStack::new(reference_counter);
 
@@ -255,7 +258,9 @@ mod tests {
         stack.push(StackItem::from_int(3));
 
         // Insert an item
-        stack.insert(1, StackItem::from_int(2)).expect("insert should succeed");
+        stack
+            .insert(1, StackItem::from_int(2))
+            .expect("insert should succeed");
 
         // Check stack
         assert_eq!(
@@ -284,26 +289,25 @@ mod tests {
         );
 
         // Remove an item
-        let item = stack.remove(1).ok_or("Key not found")?;
-        assert_eq!(item.as_int().map_err(|_| VmError::StackOperationFailed)?, 2);
+        let item = stack.remove(1)?;
+        assert_eq!(item.as_int()?, num_bigint::BigInt::from(2));
 
         // Check stack
         assert_eq!(
             stack
                 .peek(1)
                 .expect("intermediate value should exist")
-                .as_int()
-                .map_err(|_| VmError::StackOperationFailed)?,
-            1
+                .as_int()?,
+            num_bigint::BigInt::from(1)
         );
         assert_eq!(
             stack
                 .peek(0)
                 .expect("intermediate value should exist")
-                .as_int()
-                .map_err(|_| VmError::StackOperationFailed)?,
-            3
+                .as_int()?,
+            num_bigint::BigInt::from(3)
         );
+        Ok(())
     }
 
     #[test]
@@ -378,15 +382,27 @@ mod tests {
                 .expect("as_int should succeed"),
             num_bigint::BigInt::from(4)
         );
-        assert_eq!(stack.peek(2).unwrap().as_int().unwrap(), num_bigint::BigInt::from(5));
-        assert_eq!(stack.peek(3).unwrap().as_int().unwrap(), num_bigint::BigInt::from(2));
-        assert_eq!(stack.peek(4).unwrap().as_int().unwrap(), num_bigint::BigInt::from(1));
+        assert_eq!(
+            stack.peek(2).unwrap().as_int().unwrap(),
+            num_bigint::BigInt::from(5)
+        );
+        assert_eq!(
+            stack.peek(3).unwrap().as_int().unwrap(),
+            num_bigint::BigInt::from(2)
+        );
+        assert_eq!(
+            stack.peek(4).unwrap().as_int().unwrap(),
+            num_bigint::BigInt::from(1)
+        );
 
         // Reverse all items
         stack.reverse(5).unwrap();
 
         // Check stack
-        assert_eq!(stack.peek(0).unwrap().as_int().unwrap(), num_bigint::BigInt::from(1));
+        assert_eq!(
+            stack.peek(0).unwrap().as_int().unwrap(),
+            num_bigint::BigInt::from(1)
+        );
         assert_eq!(
             stack.peek(1).unwrap().as_int().expect("Operation failed"),
             num_bigint::BigInt::from(2)
@@ -419,7 +435,7 @@ mod tests {
 
         assert_eq!(
             stack.peek(0).unwrap().as_int().expect("Operation failed"),
-            1
+            num_bigint::BigInt::from(1)
         );
 
         // Try to reverse more items than on the stack
@@ -463,7 +479,13 @@ mod tests {
         assert_eq!(stack1.len(), 3);
         assert_eq!(stack2.len(), 3);
 
-        assert_eq!(stack1.peek(0).unwrap().as_int().unwrap(), 3);
-        assert_eq!(stack2.peek(0).unwrap().as_int().unwrap(), 3);
+        assert_eq!(
+            stack1.peek(0).unwrap().as_int().unwrap(),
+            num_bigint::BigInt::from(3)
+        );
+        assert_eq!(
+            stack2.peek(0).unwrap().as_int().unwrap(),
+            num_bigint::BigInt::from(3)
+        );
     }
 }

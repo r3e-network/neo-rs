@@ -6,6 +6,7 @@
 pub mod contract_management;
 pub mod crypto_lib;
 pub mod gas_token;
+pub mod governance_types;
 pub mod ledger_contract;
 pub mod native_contract;
 pub mod neo_token;
