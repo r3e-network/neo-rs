@@ -4,6 +4,7 @@
 //! that match the C# Neo database migration functionality exactly.
 
 use crate::Result;
+use log::debug;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::SystemTime;
@@ -101,7 +102,7 @@ impl SchemaMigration {
         for operation in operations {
             self.execute_operation(operation)?;
         }
-        
+
         // Update migration tracking
         self.update_migration_tracking()?;
 
@@ -128,7 +129,7 @@ impl SchemaMigration {
         for operation in rollback_operations {
             self.execute_rollback_operation(operation)?;
         }
-        
+
         // Update migration tracking for rollback
         self.update_rollback_tracking()?;
 
@@ -137,45 +138,45 @@ impl SchemaMigration {
 
         Ok(())
     }
-    
+
     /// Parse migration script into operations
     fn parse_migration_script(&self) -> Result<Vec<MigrationOperation>> {
         let mut operations = Vec::new();
-        
+
         // Parse SQL-like migration script
-        for line in self.up_script.lines() {
+        for line in self.script.lines() {
             if line.trim().is_empty() || line.trim().starts_with("--") {
                 continue;
             }
-            
+
             operations.push(MigrationOperation {
                 sql: line.to_string(),
                 operation_type: OperationType::Schema,
             });
         }
-        
+
         Ok(operations)
     }
-    
+
     /// Parse rollback script into operations
     fn parse_rollback_script(&self) -> Result<Vec<MigrationOperation>> {
         let mut operations = Vec::new();
-        
+
         // Parse SQL-like rollback script
-        for line in self.down_script.lines() {
+        for line in self.script.lines() {
             if line.trim().is_empty() || line.trim().starts_with("--") {
                 continue;
             }
-            
+
             operations.push(MigrationOperation {
                 sql: line.to_string(),
                 operation_type: OperationType::Rollback,
             });
         }
-        
+
         Ok(operations)
     }
-    
+
     /// Execute a single migration operation
     fn execute_operation(&self, operation: MigrationOperation) -> Result<()> {
         // Execute the migration operation against the database
@@ -189,7 +190,7 @@ impl SchemaMigration {
         }
         Ok(())
     }
-    
+
     /// Execute a single rollback operation
     fn execute_rollback_operation(&self, operation: MigrationOperation) -> Result<()> {
         // Execute the rollback operation against the database
@@ -202,14 +203,14 @@ impl SchemaMigration {
         }
         Ok(())
     }
-    
+
     /// Update migration tracking table
     fn update_migration_tracking(&self) -> Result<()> {
         // Record that this migration has been applied
         debug!("Migration {} applied successfully", self.version);
         Ok(())
     }
-    
+
     /// Update rollback tracking table
     fn update_rollback_tracking(&self) -> Result<()> {
         // Record that this migration has been rolled back

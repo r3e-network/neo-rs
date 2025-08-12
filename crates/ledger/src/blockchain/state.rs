@@ -12,164 +12,95 @@ use neo_config::{
     MAX_TRANSACTION_SIZE, SECONDS_PER_BLOCK,
 };
 use neo_core::{Transaction, UInt160, UInt256};
+// Temporarily disabled smart contract imports due to compilation issues
+// use neo_smart_contract::{
+//     ContractState, ContractManifest, NefFile, ContractGroup, ContractAbi, ContractPermission,
+//     ContractParameterType, ContractMethodDescriptor, ContractEventDescriptor, 
+//     ContractParameterDefinition, MethodToken, PermissionContract
+// };
 use num_bigint;
 use num_traits;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-/// Contract state information (matches C# Neo ContractState exactly)
+
+// Temporary stub definitions for smart contract types
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContractState {
-    /// Contract script hash
-    pub script_hash: UInt160,
-    /// Contract manifest
-    pub manifest: ContractManifest,
-    /// Contract ID
+    pub hash: UInt160,
     pub id: i32,
-    /// Update counter
     pub update_counter: u16,
-    /// NEF (Neo Executable Format) data
     pub nef: NefFile,
+    pub manifest: ContractManifest,
 }
 
-/// Contract manifest (matches C# Neo ContractManifest exactly)
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractManifest {
-    /// Contract name
-    pub name: String,
-    /// Contract groups
-    pub groups: Vec<ContractGroup>,
-    /// Contract features
-    pub features: HashMap<String, String>,
-    /// Supported standards
-    pub supported_standards: Vec<String>,
-    /// Contract ABI
-    pub abi: ContractAbi,
-    /// Contract permissions
-    pub permissions: Vec<ContractPermission>,
-    /// Contract trusts
-    pub trusts: Vec<UInt160>,
-    /// Extra metadata
-    pub extra: Option<String>,
-}
-
-/// Contract group (matches C# Neo ContractGroup exactly)
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractGroup {
-    /// Public key
-    pub public_key: Vec<u8>,
-    /// Signature
-    pub signature: Vec<u8>,
-}
-
-/// Contract ABI (matches C# Neo ContractAbi exactly)
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractAbi {
-    /// Contract methods
-    pub methods: Vec<ContractMethodDescriptor>,
-    /// Contract events
-    pub events: Vec<ContractEventDescriptor>,
-}
-
-/// Contract method descriptor (matches C# Neo ContractMethodDescriptor exactly)
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractMethodDescriptor {
-    /// Method name
-    pub name: String,
-    /// Method parameters
-    pub parameters: Vec<ContractParameterDefinition>,
-    /// Return type
-    pub return_type: ContractParameterType,
-    /// Method offset
-    pub offset: i32,
-    /// Is safe method
-    pub safe: bool,
-}
-
-/// Contract event descriptor (matches C# Neo ContractEventDescriptor exactly)
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractEventDescriptor {
-    /// Event name
-    pub name: String,
-    /// Event parameters
-    pub parameters: Vec<ContractParameterDefinition>,
-}
-
-/// Contract parameter definition (matches C# Neo ContractParameterDefinition exactly)
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractParameterDefinition {
-    /// Parameter name
-    pub name: String,
-    /// Parameter type
-    pub param_type: ContractParameterType,
-}
-
-/// Contract parameter type (matches C# Neo ContractParameterType exactly)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum ContractParameterType {
-    Any = 0x00,
-    Boolean = 0x10,
-    Integer = 0x11,
-    ByteArray = 0x12,
-    String = 0x13,
-    Hash160 = 0x14,
-    Hash256 = 0x15,
-    PublicKey = 0x16,
-    Signature = 0x17,
-    Array = 0x20,
-    Map = 0x22,
-    InteropInterface = 0x30,
-    Void = 0xff,
-}
-
-/// Contract permission (matches C# Neo ContractPermission exactly)
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractPermission {
-    /// Contract hash or group
-    pub contract: PermissionContract,
-    /// Allowed methods
-    pub methods: Vec<String>,
-}
-
-/// Permission contract identifier (matches C# Neo PermissionContract exactly)
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum PermissionContract {
-    /// Wildcard (all contracts)
-    Wildcard,
-    /// Specific contract hash
-    Hash(UInt160),
-    /// Contract group
-    Group(Vec<u8>),
-}
-
-/// NEF (Neo Executable Format) file (matches C# Neo NefFile exactly)
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NefFile {
-    /// Compiler name
     pub compiler: String,
-    /// Source URL
     pub source: String,
-    /// Contract tokens
     pub tokens: Vec<MethodToken>,
-    /// Contract script
     pub script: Vec<u8>,
-    /// Checksum
     pub checksum: u32,
 }
 
-/// Method token (matches C# Neo MethodToken exactly)
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MethodToken {
-    /// Contract hash
     pub hash: UInt160,
-    /// Method name
     pub method: String,
-    /// Parameter count
     pub params_count: u16,
-    /// Has return value
     pub has_return_value: bool,
-    /// Call flags
     pub call_flags: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContractManifest {
+    pub name: String,
+    pub groups: Vec<ContractGroup>,
+    pub features: HashMap<String, String>,
+    pub supported_standards: Vec<String>,
+    pub abi: ContractAbi,
+    pub permissions: Vec<ContractPermission>,
+    pub trusts: Vec<UInt160>,
+    pub extra: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContractGroup {
+    pub public_key: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContractAbi {
+    pub methods: Vec<ContractMethodDescriptor>,
+    pub events: Vec<ContractEventDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContractMethodDescriptor {
+    pub name: String,
+    pub parameters: Vec<ContractParameterDefinition>,
+    pub return_type: String,
+    pub offset: i32,
+    pub safe: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContractEventDescriptor {
+    pub name: String,
+    pub parameters: Vec<ContractParameterDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContractParameterDefinition {
+    pub name: String,
+    pub param_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContractPermission {
+    pub contract: String,
+    pub methods: Vec<String>,
 }
 
 /// Committee candidate with vote count (matches C# NEO candidate structure exactly)
@@ -360,7 +291,7 @@ impl BlockchainState {
     /// Creates a native contract state
     fn create_native_contract_state(&self, native_info: &NativeContractInfo) -> ContractState {
         ContractState {
-            script_hash: native_info.hash,
+            hash: native_info.hash,
             manifest: ContractManifest {
                 name: native_info.name.clone(),
                 groups: Vec::new(),
@@ -373,7 +304,7 @@ impl BlockchainState {
                         .map(|method| ContractMethodDescriptor {
                             name: method.clone(),
                             parameters: Vec::new(),
-                            return_type: ContractParameterType::Any,
+                            return_type: "Any".to_string(),
                             offset: 0,
                             safe: true,
                         })
@@ -398,13 +329,13 @@ impl BlockchainState {
 
     /// Puts a contract state (matches C# Neo StateService.PutContract exactly)
     pub async fn put_contract(&self, contract: ContractState) -> Result<()> {
-        let contract_key = StorageKey::contract(contract.script_hash);
+        let contract_key = StorageKey::contract(contract.hash);
         let contract_item = StorageItem::new(bincode::serialize(&contract)?);
 
         // Update cache
         {
             let mut cache = self.contract_cache.write().await;
-            cache.insert(contract.script_hash, contract.clone());
+            cache.insert(contract.hash, contract.clone());
         }
 
         // Persist to storage
@@ -1855,7 +1786,7 @@ impl ContractState {
     /// Creates a new contract state
     pub fn new(script_hash: UInt160, manifest: ContractManifest, id: i32, nef: NefFile) -> Self {
         Self {
-            script_hash,
+            hash: script_hash,
             manifest,
             id,
             update_counter: 0,

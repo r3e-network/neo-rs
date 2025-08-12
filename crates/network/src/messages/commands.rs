@@ -344,7 +344,10 @@ mod tests {
         );
 
         // Unknown command maps to MessageCommand::Unknown for compatibility
-        assert_eq!(MessageCommand::from_byte(0xff).unwrap(), MessageCommand::Unknown);
+        assert_eq!(
+            MessageCommand::from_byte(0xff).unwrap(),
+            MessageCommand::Unknown
+        );
     }
 
     #[test]

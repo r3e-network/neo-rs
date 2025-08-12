@@ -737,7 +737,10 @@ impl WitnessVerifier {
     pub fn get_application_engine(&self) -> Option<ApplicationEngine> {
         // Minimal functional engine suitable for verification-only scenarios.
         // For full contract verification, callers should wire a container and snapshot.
-        Some(ApplicationEngine::new(TriggerType::Verification, i64::MAX / 4))
+        Some(ApplicationEngine::new(
+            TriggerType::Verification,
+            i64::MAX / 4,
+        ))
     }
 
     /// Gets the validator count from protocol settings

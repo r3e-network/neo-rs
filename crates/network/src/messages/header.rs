@@ -62,7 +62,11 @@ impl Neo3Message {
             MessageFlags::None
         };
 
-        Self { flags, command, payload }
+        Self {
+            flags,
+            command,
+            payload,
+        }
     }
 
     /// Creates a new message without compression
