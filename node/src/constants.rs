@@ -83,7 +83,10 @@ pub mod seed_nodes {
                 let parts: Vec<&str> = addr_str.rsplitn(2, ':').collect();
                 if parts.len() == 2 {
                     if let Ok(port) = parts[0].parse::<u16>() {
-                        return Some(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port));
+                        return Some(SocketAddr::new(
+                            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                            port,
+                        ));
                     }
                 }
                 None
@@ -139,8 +142,8 @@ pub mod optimizations {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::ports;
+    use super::*;
     #[test]
     fn test_seed_node_parsing() {
         let mainnet_seeds = seed_nodes::parse_seed_nodes(seed_nodes::MAINNET);

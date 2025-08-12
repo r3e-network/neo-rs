@@ -15,13 +15,13 @@ neo-core = { path = "../crates/core" }
 neo-cryptography = { path = "../crates/cryptography" }
 neo-io = { path = "../crates/io" }
 neo-vm = { path = "../crates/vm" }
-neo-smart-contract = { path = "../crates/smart_contract" }
+# neo-smart-contract = { path = "../crates/smart_contract" } # Temporarily disabled due to compilation issues
 neo-ledger = { path = "../crates/ledger" }
-neo-network = { path = "../crates/network" }
+# neo-network = { path = "../crates/network" } # Temporarily disabled due to compilation issues
 neo-persistence = { path = "../crates/persistence" }
 neo-wallets = { path = "../crates/wallets" }
 neo-config = { path = "../crates/config" }
-neo-rpc-server = { path = "../crates/rpc_server" }
+# neo-rpc-server = { path = "../crates/rpc_server" } # Temporarily disabled
 # neo-consensus = { path = "../crates/consensus" } # Temporarily disabled due to compilation issues
 
 # External dependencies
@@ -45,7 +45,7 @@ warp = "0.3"
 rand = "0.8"
 num-bigint = "0.4"
 num-traits = "0.2"
-rocksdb = "0.21"
+# rocksdb = "0.21" # Temporarily disabled due to build issues with zstd
 num_cpus = "1.16"
 
 [target.'cfg(unix)'.dependencies]
