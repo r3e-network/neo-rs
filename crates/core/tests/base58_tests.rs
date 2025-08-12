@@ -13,7 +13,10 @@ fn test_base58_invalid_characters() {
 
     for invalid_char in invalid_chars {
         let result = base58::decode(invalid_char);
-        assert!(result.is_err(), "Should fail to decode invalid character: {invalid_char}");
+        assert!(
+            result.is_err(),
+            "Should fail to decode invalid character: {invalid_char}"
+        );
     }
 }
 
@@ -101,7 +104,10 @@ fn test_base58_encode_decode_basic() {
     for (hex_input, expected_base58) in basic_test_vectors {
         let input_bytes = hex::decode(hex_input).unwrap();
         let encoded = base58::encode(&input_bytes);
-        assert_eq!(expected_base58, encoded, "Encoding failed for input: {hex_input}");
+        assert_eq!(
+            expected_base58, encoded,
+            "Encoding failed for input: {hex_input}"
+        );
     }
 }
 
@@ -114,7 +120,10 @@ fn test_base58_round_trip_simple() {
     for test_data in test_cases {
         let encoded = base58::encode(&test_data);
         let decoded = base58::decode(&encoded).unwrap();
-        assert_eq!(test_data, decoded, "Round-trip failed for data: {test_data:?}");
+        assert_eq!(
+            test_data, decoded,
+            "Round-trip failed for data: {test_data:?}"
+        );
     }
 }
 
@@ -127,7 +136,10 @@ fn test_base58_check_encode_decode_simple() {
     for test_data in test_cases {
         let encoded = base58::encode_check(&test_data);
         let decoded = base58::decode_check(&encoded).unwrap();
-        assert_eq!(test_data, decoded, "Base58Check round-trip failed for data: {test_data:?}");
+        assert_eq!(
+            test_data, decoded,
+            "Base58Check round-trip failed for data: {test_data:?}"
+        );
     }
 }
 
@@ -140,6 +152,9 @@ fn test_base58_encode_decode_full_compatibility() {
     for (hex_input, expected_base58) in bitcoin_test_vectors {
         let input_bytes = hex::decode(hex_input).unwrap();
         let encoded = base58::encode(&input_bytes);
-        assert_eq!(expected_base58, encoded, "Encoding failed for input: {hex_input}");
+        assert_eq!(
+            expected_base58, encoded,
+            "Encoding failed for input: {hex_input}"
+        );
     }
 }

@@ -14,7 +14,7 @@ use neo_config::{
 use neo_cryptography;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
- 
+
 /// Trait for blockchain operations (matches C# IBlockchain interface)
 pub trait BlockchainTrait: Send + Sync + std::fmt::Debug {
     fn height(&self) -> u32;
@@ -261,9 +261,7 @@ impl NeoSystem {
     pub fn contains_transaction(&self, hash: &UInt256) -> ContainsTransactionType {
         // 1. Check memory pool first (matches C# MemoryPool.ContainsKey exactly)
         if let Some(ref mempool) = self.mempool {
-            if mempool.transaction_count() > 0
-                && self.check_mempool_contains_transaction(hash)
-            {
+            if mempool.transaction_count() > 0 && self.check_mempool_contains_transaction(hash) {
                 return ContainsTransactionType::ExistsInPool;
             }
         }
@@ -342,6 +340,7 @@ impl NeoSystem {
     }
 
     /// Queries mempool for transaction (production-ready implementation)
+    #[allow(dead_code)]
     fn query_mempool_for_transaction(&self, tx_hash: &UInt256) -> bool {
         if let Some(ref mempool) = self.mempool {
             return mempool.contains(tx_hash);

@@ -218,7 +218,11 @@ impl fmt::Display for BigDecimal {
         if remainder_str.is_empty() {
             write!(f, "{quotient}")
         } else {
-            let sign = if is_negative && quotient.is_zero() { "-" } else { "" };
+            let sign = if is_negative && quotient.is_zero() {
+                "-"
+            } else {
+                ""
+            };
             write!(f, "{sign}{quotient}.{remainder_str}")
         }
     }
