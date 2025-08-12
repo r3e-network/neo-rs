@@ -14,7 +14,9 @@ fn hex_to_bytes(hex_str: &str) -> Vec<u8> {
 
 /// Convert bytes to hex string
 #[allow(dead_code)]
-fn to_hex_string(bytes: &[u8]) -> String { hex::encode(bytes) }
+fn to_hex_string(bytes: &[u8]) -> String {
+    hex::encode(bytes)
+}
 
 // ============================================================================
 // C# UT_Ed25519 test conversions
