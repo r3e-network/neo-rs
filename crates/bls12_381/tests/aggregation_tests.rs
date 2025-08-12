@@ -330,7 +330,7 @@ mod aggregation_tests {
             if message.is_empty() {
                 continue; // Skip empty message test as BLS rejects empty inputs
             }
-            
+
             let signatures: Vec<_> = key_pairs
                 .iter()
                 .map(|(private_key, _)| Bls12381::sign(private_key, message).unwrap())

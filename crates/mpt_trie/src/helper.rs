@@ -58,7 +58,7 @@ pub fn concat_bytes(a: &[u8], b: &[u8]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{common_prefix_length, from_nibbles, to_nibbles, helper::concat_bytes};
+    use crate::{common_prefix_length, from_nibbles, helper::concat_bytes, to_nibbles};
 
     #[test]
     fn test_to_nibbles() {
