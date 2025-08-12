@@ -1,7 +1,9 @@
 # Neo N3 Rust Implementation Compatibility Report
 
 ## Executive Summary
-This report documents the compatibility analysis between the Neo N3 Rust implementation and the reference C# implementation. Several critical issues have been identified that must be fixed for the Rust node to be fully compatible with the Neo N3 network.
+This report documents the initial compatibility analysis between the Neo N3 Rust implementation and the reference C# implementation. Critical issues were identified and have been addressed as documented in `COMPATIBILITY_FIXES_APPLIED.md`.
+
+**UPDATE (2025-08-11)**: The critical VM opcode mapping bug has been fixed. See `COMPATIBILITY_FIXES_APPLIED.md` for details.
 
 ## Critical Issues Found
 
