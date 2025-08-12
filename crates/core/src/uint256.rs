@@ -402,7 +402,6 @@ impl From<Vec<u8>> for UInt256 {
 mod tests {
     use super::UINT256_SIZE;
     use super::*;
-    
 
     #[test]
     fn test_uint256_new() {
