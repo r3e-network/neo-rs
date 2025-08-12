@@ -79,14 +79,22 @@ pub mod compat {
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct VerackMessage;
     impl VerackMessage {
-        pub fn serialize(&self) -> Result<Vec<u8>> { Ok(Vec::new()) }
+        pub fn serialize(&self) -> Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
         pub fn deserialize(bytes: &[u8]) -> Result<Self> {
-            if bytes.is_empty() { Ok(Self) } else { Err(neo_io::Error::InvalidData("Non-empty verack".into())) }
+            if bytes.is_empty() {
+                Ok(Self)
+            } else {
+                Err(neo_io::Error::InvalidData("Non-empty verack".into()))
+            }
         }
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct FilterAddMessage { pub data: Vec<u8> }
+    pub struct FilterAddMessage {
+        pub data: Vec<u8>,
+    }
     impl FilterAddMessage {
         pub fn serialize(&self) -> Result<Vec<u8>> {
             let mut w = BinaryWriter::new();
@@ -103,14 +111,25 @@ pub mod compat {
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct FilterClearMessage;
     impl FilterClearMessage {
-        pub fn serialize(&self) -> Result<Vec<u8>> { Ok(Vec::new()) }
+        pub fn serialize(&self) -> Result<Vec<u8>> {
+            Ok(Vec::new())
+        }
         pub fn deserialize(bytes: &[u8]) -> Result<Self> {
-            if bytes.is_empty() { Ok(Self) } else { Err(neo_io::Error::InvalidData("Non-empty filterclear".into())) }
+            if bytes.is_empty() {
+                Ok(Self)
+            } else {
+                Err(neo_io::Error::InvalidData("Non-empty filterclear".into()))
+            }
         }
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct FilterLoadMessage { pub filter: Vec<u8>, pub hash_functions: u32, pub tweak: u32, pub flags: u8 }
+    pub struct FilterLoadMessage {
+        pub filter: Vec<u8>,
+        pub hash_functions: u32,
+        pub tweak: u32,
+        pub flags: u8,
+    }
     impl FilterLoadMessage {
         pub fn serialize(&self) -> Result<Vec<u8>> {
             let mut w = BinaryWriter::new();
@@ -126,12 +145,22 @@ pub mod compat {
             let hash_functions = r.read_u32()?;
             let tweak = r.read_u32()?;
             let flags = r.read_byte()?;
-            Ok(Self { filter, hash_functions, tweak, flags })
+            Ok(Self {
+                filter,
+                hash_functions,
+                tweak,
+                flags,
+            })
         }
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct MerkleBlockMessage { pub header: BlockHeader, pub tx_count: u32, pub hashes: Vec<UInt256>, pub flags: Vec<u8> }
+    pub struct MerkleBlockMessage {
+        pub header: BlockHeader,
+        pub tx_count: u32,
+        pub hashes: Vec<UInt256>,
+        pub flags: Vec<u8>,
+    }
     impl MerkleBlockMessage {
         pub fn serialize(&self) -> Result<Vec<u8>> {
             // Delegate to ProtocolMessage for correctness
@@ -140,19 +169,35 @@ pub mod compat {
                 tx_count: self.tx_count,
                 hashes: self.hashes.clone(),
                 flags: self.flags.clone(),
-            }.to_bytes().map_err(|e| neo_io::Error::InvalidData(e.to_string()))
+            }
+            .to_bytes()
+            .map_err(|e| neo_io::Error::InvalidData(e.to_string()))
         }
         pub fn deserialize(bytes: &[u8]) -> Result<Self> {
             match ProtocolMessage::from_bytes(&super::commands::MessageCommand::MerkleBlock, bytes)
-                .map_err(|e| neo_io::Error::InvalidData(e.to_string()))? {
-                ProtocolMessage::MerkleBlock { header, tx_count, hashes, flags } => Ok(Self { header, tx_count, hashes, flags }),
+                .map_err(|e| neo_io::Error::InvalidData(e.to_string()))?
+            {
+                ProtocolMessage::MerkleBlock {
+                    header,
+                    tx_count,
+                    hashes,
+                    flags,
+                } => Ok(Self {
+                    header,
+                    tx_count,
+                    hashes,
+                    flags,
+                }),
                 _ => Err(neo_io::Error::InvalidData("Wrong message".into())),
             }
         }
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct NotFoundMessage { pub type_: InventoryType, pub hashes: Vec<UInt256> }
+    pub struct NotFoundMessage {
+        pub type_: InventoryType,
+        pub hashes: Vec<UInt256>,
+    }
     impl NotFoundMessage {
         pub fn serialize(&self) -> Result<Vec<u8>> {
             // Reuse ProtocolMessage::NotFound with inventory list
@@ -171,7 +216,8 @@ pub mod compat {
         }
         pub fn deserialize(bytes: &[u8]) -> Result<Self> {
             match ProtocolMessage::from_bytes(&super::commands::MessageCommand::NotFound, bytes)
-                .map_err(|e| neo_io::Error::InvalidData(e.to_string()))? {
+                .map_err(|e| neo_io::Error::InvalidData(e.to_string()))?
+            {
                 ProtocolMessage::NotFound { inventory } => {
                     let mut type_opt: Option<InventoryType> = None;
                     let mut hashes = Vec::with_capacity(inventory.len());
@@ -179,7 +225,10 @@ pub mod compat {
                         type_opt.get_or_insert(item.item_type);
                         hashes.push(item.hash);
                     }
-                    Ok(Self { type_: type_opt.unwrap_or(InventoryType::Block), hashes })
+                    Ok(Self {
+                        type_: type_opt.unwrap_or(InventoryType::Block),
+                        hashes,
+                    })
                 }
                 _ => Err(neo_io::Error::InvalidData("Wrong message".into())),
             }
@@ -187,16 +236,21 @@ pub mod compat {
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct TransactionMessage { pub transaction: Transaction }
+    pub struct TransactionMessage {
+        pub transaction: Transaction,
+    }
     impl TransactionMessage {
         pub fn serialize(&self) -> Result<Vec<u8>> {
-            ProtocolMessage::Tx { transaction: self.transaction.clone() }
-                .to_bytes()
-                .map_err(|e| neo_io::Error::InvalidData(e.to_string()))
+            ProtocolMessage::Tx {
+                transaction: self.transaction.clone(),
+            }
+            .to_bytes()
+            .map_err(|e| neo_io::Error::InvalidData(e.to_string()))
         }
         pub fn deserialize(bytes: &[u8]) -> Result<Self> {
             match ProtocolMessage::from_bytes(&super::commands::MessageCommand::Transaction, bytes)
-                .map_err(|e| neo_io::Error::InvalidData(e.to_string()))? {
+                .map_err(|e| neo_io::Error::InvalidData(e.to_string()))?
+            {
                 ProtocolMessage::Tx { transaction } => Ok(Self { transaction }),
                 _ => Err(neo_io::Error::InvalidData("Wrong message".into())),
             }
@@ -204,16 +258,21 @@ pub mod compat {
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct BlockMessage { pub block: Block }
+    pub struct BlockMessage {
+        pub block: Block,
+    }
     impl BlockMessage {
         pub fn serialize(&self) -> Result<Vec<u8>> {
-            ProtocolMessage::Block { block: self.block.clone() }
-                .to_bytes()
-                .map_err(|e| neo_io::Error::InvalidData(e.to_string()))
+            ProtocolMessage::Block {
+                block: self.block.clone(),
+            }
+            .to_bytes()
+            .map_err(|e| neo_io::Error::InvalidData(e.to_string()))
         }
         pub fn deserialize(bytes: &[u8]) -> Result<Self> {
             match ProtocolMessage::from_bytes(&super::commands::MessageCommand::Block, bytes)
-                .map_err(|e| neo_io::Error::InvalidData(e.to_string()))? {
+                .map_err(|e| neo_io::Error::InvalidData(e.to_string()))?
+            {
                 ProtocolMessage::Block { block } => Ok(Self { block }),
                 _ => Err(neo_io::Error::InvalidData("Wrong message".into())),
             }

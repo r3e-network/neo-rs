@@ -14,7 +14,7 @@ async-trait = "0.1"
 futures = "0.3"
 
 # Storage engines
-rocksdb = { version = "0.21", optional = true, features = ["snappy", "lz4", "zstd", "zlib"] }
+rocksdb = { version = "0.21", optional = true, features = ["snappy", "lz4"] }
 sled = { version = "0.34", optional = true }
 
 # Serialization and encoding
@@ -24,7 +24,7 @@ base64 = "0.21"
 
 # Compression
 lz4_flex = { version = "0.11", optional = true }
-zstd = { version = "0.13", optional = true }
+# zstd = { version = "0.13", optional = true } # Temporarily disabled due to C header issues
 
 # Hashing and indexing
 blake3 = "1.5"
@@ -67,4 +67,4 @@ criterion = "0.5"
 default = ["rocksdb", "compression"]
 rocksdb = ["dep:rocksdb"]
 sled = ["dep:sled"]
-compression = ["dep:lz4_flex", "dep:zstd"]
+compression = ["dep:lz4_flex"] # removed zstd due to build issues

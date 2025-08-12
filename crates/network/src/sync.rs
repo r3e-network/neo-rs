@@ -847,11 +847,17 @@ impl SyncManager {
 
         for height in heights {
             if pending_requests.contains_key(&height) {
-                return Err(NetworkError::SyncFailed { reason: "Duplicate block request".to_string() });
+                return Err(NetworkError::SyncFailed {
+                    reason: "Duplicate block request".to_string(),
+                });
             }
 
             // Select a random peer
-            let peer_addr = if no_peers { std::net::SocketAddr::from(([0,0,0,0], 0)) } else { peers[height as usize % peers.len()].address };
+            let peer_addr = if no_peers {
+                std::net::SocketAddr::from(([0, 0, 0, 0], 0))
+            } else {
+                peers[height as usize % peers.len()].address
+            };
 
             let get_block = ProtocolMessage::GetBlockByIndex {
                 index_start: height,
@@ -860,11 +866,7 @@ impl SyncManager {
 
             if !no_peers {
                 let message = NetworkMessage::new(get_block);
-                if let Err(e) = self
-                    .p2p_node
-                    .send_message_to_peer(peer_addr, message)
-                    .await
-                {
+                if let Err(e) = self.p2p_node.send_message_to_peer(peer_addr, message).await {
                     warn!(
                         "Failed to request block {} from {}: {}",
                         height, peer_addr, e
@@ -1480,9 +1482,11 @@ mod tests {
 
         // Use unique storage suffix per test to avoid RocksDB lock conflicts
         let suffix = format!("sync-{}", uuid::Uuid::new_v4());
-        let blockchain = Arc::new(Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some(&suffix))
-            .await
-            .unwrap());
+        let blockchain = Arc::new(
+            Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some(&suffix))
+                .await
+                .unwrap(),
+        );
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = Arc::new(P2pNode::new(config, command_receiver).unwrap());

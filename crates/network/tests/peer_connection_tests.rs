@@ -406,11 +406,7 @@ mod peer_connection_tests {
         use std::sync::Arc;
         let peer_manager = Arc::new(peer_manager);
         for addr in addrs {
-            let result = timeout(
-                Duration::from_secs(10),
-                peer_manager.connect_to_peer(addr),
-            )
-            .await;
+            let result = timeout(Duration::from_secs(10), peer_manager.connect_to_peer(addr)).await;
             connection_results.push(result);
         }
 

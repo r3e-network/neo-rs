@@ -523,7 +523,11 @@ impl P2pNode {
             .unwrap_or_else(|_| std::time::Duration::from_millis(0));
         let elapsed_ms = elapsed.as_millis() as u64;
         // Ceil to next second so sub-second waits increase uptime in tests
-        let elapsed_secs = if elapsed_ms == 0 { 0 } else { ((elapsed_ms - 1) / 1000) + 1 };
+        let elapsed_secs = if elapsed_ms == 0 {
+            0
+        } else {
+            ((elapsed_ms - 1) / 1000) + 1
+        };
         if elapsed_secs > stats.uptime_seconds {
             stats.uptime_seconds = elapsed_secs;
         }

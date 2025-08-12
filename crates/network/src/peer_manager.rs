@@ -1572,7 +1572,7 @@ impl PeerManager {
             blockchain.get_height() as u32
         } else {
             15_000_000u32 // Default height if blockchain not available
-        }
+        };
         payload.extend_from_slice(&start_height.to_le_bytes());
 
         // Write relay flag (1 byte) - true = 1

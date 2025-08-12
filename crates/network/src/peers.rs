@@ -562,7 +562,10 @@ impl PeerManager {
                         expired_count += 1;
                     }
                 }
-                BanType::Protocol { offense_count, first_offense_at: _ } => {
+                BanType::Protocol {
+                    offense_count,
+                    first_offense_at: _,
+                } => {
                     // progressive bans: e.g., 1h per offense
                     let duration = 3600u64.saturating_mul(*offense_count as u64);
                     if now >= info.banned_at + duration {

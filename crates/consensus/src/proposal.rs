@@ -694,7 +694,9 @@ impl BlockProposal {
         if let Some(first) = self.transaction.signers().first() {
             return Ok(first.account.clone());
         }
-        Err(Error::InvalidProposal("Unable to resolve contract hash".to_string()))
+        Err(Error::InvalidProposal(
+            "Unable to resolve contract hash".to_string(),
+        ))
     }
 
     /// Extracts storage key from script context (production implementation)

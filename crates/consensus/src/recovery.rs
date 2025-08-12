@@ -1218,7 +1218,7 @@ impl RecoveryManager {
 
         Ok(())
     }
-    
+
     /// Verify message signature
     fn verify_message_signature(&self, _message: &ChangeView, _validator_idx: u8) -> Result<bool> {
         // Signature verification is handled at the ConsensusMessage wrapper level

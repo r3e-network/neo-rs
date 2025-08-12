@@ -24,8 +24,8 @@ pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<V
         CompressionAlgorithm::Zstd => {
             #[cfg(feature = "compression")]
             {
-                zstd::bulk::compress(data, 3)
-                    .map_err(|e| crate::Error::CompressionError(e.to_string()))
+                // ZSTD temporarily disabled due to build issues  
+                Err(crate::Error::CompressionError("ZSTD compression not available".to_string()))
             }
             #[cfg(not(feature = "compression"))]
             {
@@ -59,8 +59,8 @@ pub fn decompress(
         CompressionAlgorithm::Zstd => {
             #[cfg(feature = "compression")]
             {
-                zstd::bulk::decompress(compressed_data, MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE)
-                    .map_err(|e| crate::Error::CompressionError(e.to_string()))
+                // ZSTD temporarily disabled due to build issues
+                Err(crate::Error::CompressionError("ZSTD decompression not available".to_string()))
             }
             #[cfg(not(feature = "compression"))]
             {
