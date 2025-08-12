@@ -522,7 +522,9 @@ impl EventValue {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, Result};
+    use super::*;
+    use neo_core::{UInt160, UInt256};
+    use std::collections::HashMap;
 
     #[test]
     fn test_event_manager_creation() {

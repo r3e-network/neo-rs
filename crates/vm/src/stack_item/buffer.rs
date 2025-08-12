@@ -151,39 +151,19 @@ mod tests {
     fn test_buffer_to_integer() -> Result<(), Box<dyn std::error::Error>> {
         // Test empty buffer
         let empty_buffer = Buffer::new(vec![]);
-        assert_eq!(
-            empty_buffer
-                .to_integer()
-                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
-            BigInt::from(0)
-        );
+        assert_eq!(empty_buffer.to_integer()?, BigInt::from(0));
 
         // Test positive number
         let positive_buffer = Buffer::new(vec![1, 0, 0, 0]);
-        assert_eq!(
-            positive_buffer
-                .to_integer()
-                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
-            BigInt::from(1)
-        );
+        assert_eq!(positive_buffer.to_integer()?, BigInt::from(1));
 
         // Test larger positive number
         let larger_buffer = Buffer::new(vec![0xCD, 0xAB, 0, 0]);
-        assert_eq!(
-            larger_buffer
-                .to_integer()
-                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
-            BigInt::from(0xABCD)
-        );
+        assert_eq!(larger_buffer.to_integer()?, BigInt::from(0xABCD));
 
         // Test negative number
         let negative_buffer = Buffer::new(vec![1, 0, 0, 0x80]);
-        assert_eq!(
-            negative_buffer
-                .to_integer()
-                .ok_or_else(|| VmError::invalid_type_simple("Invalid type"))?,
-            BigInt::from(-1)
-        );
+        assert_eq!(negative_buffer.to_integer()?, BigInt::from(-1));
         Ok(())
     }
 

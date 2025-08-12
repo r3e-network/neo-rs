@@ -937,6 +937,7 @@ impl From<ApplicationEngine> for ExecutionEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num_bigint::BigInt;
 
     #[test]
     fn test_application_engine_creation() {
@@ -1029,7 +1030,7 @@ mod tests {
                     .expect("operation should succeed")
                     .as_int()
                     .expect("Operation failed"),
-                3
+                BigInt::from(3)
             );
         } else {
             panic!("Execution failed: {state:?}");

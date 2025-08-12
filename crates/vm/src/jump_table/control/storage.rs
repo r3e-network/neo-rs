@@ -87,10 +87,7 @@ pub fn extract_storage_context_data(
     }
 
     // Downcast to concrete StorageContext and clone
-    if let Some(ctx) = interop_interface
-        .as_any()
-        .downcast_ref::<StorageContext>()
-    {
+    if let Some(ctx) = interop_interface.as_any().downcast_ref::<StorageContext>() {
         return Ok(ctx.clone());
     }
 

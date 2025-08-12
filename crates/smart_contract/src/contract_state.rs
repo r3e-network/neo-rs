@@ -11,7 +11,7 @@ use neo_vm::CallFlags;
 use sha2::{Digest, Sha256};
 
 /// Represents the state of a deployed smart contract.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct ContractState {
     /// The unique identifier of the contract.
     pub id: i32,
@@ -30,7 +30,7 @@ pub struct ContractState {
 }
 
 /// Represents a NEF (Neo Executable Format) file.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct NefFile {
     /// The compiler used to compile the contract.
     pub compiler: String,
@@ -49,7 +49,7 @@ pub struct NefFile {
 }
 
 /// Represents a method token in a NEF file.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MethodToken {
     /// The hash of the contract.
     pub hash: UInt160,

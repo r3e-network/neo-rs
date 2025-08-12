@@ -782,7 +782,7 @@ mod tests {
                 .expect("intermediate value should exist")
                 .as_int()
                 .expect("VM operation should succeed"),
-            2
+            num_bigint::BigInt::from(2)
         );
         assert_eq!(
             engine
@@ -790,12 +790,15 @@ mod tests {
                 .expect("intermediate value should exist")
                 .as_int()
                 .expect("VM operation should succeed"),
-            1
+            num_bigint::BigInt::from(1)
         );
 
         // Pop an item
         let item = engine.pop().unwrap();
-        assert_eq!(item.as_int().expect("Operation failed"), num_bigint::BigInt::from(3));
+        assert_eq!(
+            item.as_int().expect("Operation failed"),
+            num_bigint::BigInt::from(3)
+        );
 
         // Peek again
         assert_eq!(

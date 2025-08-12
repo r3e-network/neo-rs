@@ -251,15 +251,15 @@ fn test_complex_collections() {
         3, // String length 3
         b'k',
         b'e',
-        b'y',                       // "key" as bytes
-        OpCode::SWAP as u8,         // Swap key and inner map
+        b'y',               // "key" as bytes
+        OpCode::SWAP as u8, // Swap key and inner map
         // TOALTSTACK/FROMALTSTACK removed - not in C# Neo
         // OpCode::TOALTSTACK as u8,   // Save outer map
         // OpCode::FROMALTSTACK as u8, // Restore outer map
-        OpCode::DUP as u8,          // Duplicate outer map instead
-        OpCode::SWAP as u8,         // Swap outer map and inner map
-        OpCode::SWAP as u8,         // Swap inner map and key
-        OpCode::SETITEM as u8,      // outer_map["key"] = inner_map
+        OpCode::DUP as u8,     // Duplicate outer map instead
+        OpCode::SWAP as u8,    // Swap outer map and inner map
+        OpCode::SWAP as u8,    // Swap inner map and key
+        OpCode::SETITEM as u8, // outer_map["key"] = inner_map
         // Create array [2, 3]
         OpCode::PUSH2 as u8,    // Array size
         OpCode::NEWARRAY as u8, // Create array
@@ -272,15 +272,15 @@ fn test_complex_collections() {
         OpCode::PUSH3 as u8,    // Value 3
         OpCode::SETITEM as u8,  // array[1] = 3
         // Add array to outer map with key 1
-        OpCode::PUSH1 as u8,        // Key: 1
-        OpCode::SWAP as u8,         // Swap key and array
+        OpCode::PUSH1 as u8, // Key: 1
+        OpCode::SWAP as u8,  // Swap key and array
         // TOALTSTACK/FROMALTSTACK removed - not in C# Neo
         // OpCode::TOALTSTACK as u8,   // Save outer map
         // OpCode::FROMALTSTACK as u8, // Restore outer map
-        OpCode::DUP as u8,          // Duplicate outer map instead
-        OpCode::SWAP as u8,         // Swap outer map and array
-        OpCode::SWAP as u8,         // Swap array and key
-        OpCode::SETITEM as u8,      // outer_map[1] = array
+        OpCode::DUP as u8,     // Duplicate outer map instead
+        OpCode::SWAP as u8,    // Swap outer map and array
+        OpCode::SWAP as u8,    // Swap array and key
+        OpCode::SETITEM as u8, // outer_map[1] = array
         // Verify the structure by accessing outer_map[1][1] should be 3
         OpCode::DUP as u8,      // Duplicate outer map
         OpCode::PUSH1 as u8,    // Key: 1

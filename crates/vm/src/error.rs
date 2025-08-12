@@ -173,6 +173,15 @@ impl VmError {
         }
     }
 
+    /// Create a new invalid operation error with message
+    pub fn invalid_operation_msg<S: Into<String>>(msg: S) -> Self {
+        let msg = msg.into();
+        Self::InvalidOperation {
+            operation: msg.clone(),
+            reason: msg,
+        }
+    }
+
     /// Create a new invalid operation error with a simple message
     pub fn invalid_operation_simple<S: Into<String>>(message: S) -> Self {
         let msg = message.into();
@@ -499,15 +508,6 @@ impl From<neo_core::CoreError> for VmError {
 // TODO: Add test-specific error conversions when needed
 
 impl VmError {
-    /// Create InvalidOperation from a single message
-    pub fn invalid_operation_msg<S: Into<String>>(message: S) -> Self {
-        let msg = message.into();
-        Self::InvalidOperation {
-            operation: msg.clone(),
-            reason: "".to_string(),
-        }
-    }
-
     /// Create InvalidInstruction from a single message
     pub fn invalid_instruction_msg<S: Into<String>>(message: S) -> Self {
         Self::InvalidInstruction {
