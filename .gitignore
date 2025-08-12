@@ -27,6 +27,15 @@ neo-config.toml
 .DS_Store
 Thumbs.db
 
+# AI/ML tool files
+.hive-mind/
+.claude-flow/
+.swarm/
+
+# Build scripts and error logs
+build_errors.sh
+*_errors.sh
+
 # Debug and test files
 debug_*.txt
 test_*.txt
