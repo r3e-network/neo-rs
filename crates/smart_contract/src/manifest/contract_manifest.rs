@@ -15,7 +15,7 @@ use std::collections::HashMap;
 pub const MAX_MANIFEST_LENGTH: usize = u16::MAX as usize;
 
 /// Represents the manifest of a smart contract.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ContractManifest {
     /// The name of the contract.
     pub name: String,

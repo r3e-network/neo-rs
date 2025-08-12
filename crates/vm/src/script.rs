@@ -557,6 +557,9 @@ impl AsRef<[u8]> for Script {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::OpCode;
+
     #[test]
     fn test_script_creation_and_validation() {
         // Create a valid script: PUSH1, PUSH2, ADD, RET

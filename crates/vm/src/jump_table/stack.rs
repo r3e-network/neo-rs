@@ -256,9 +256,9 @@ fn roll(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     let n = context.pop()?.as_int()?;
 
     if n.sign() == Sign::Minus {
-    return Err(VmError::invalid_operation_msg(format!(
-        "The negative value {n} is invalid for OpCode.ROLL"
-    )));
+        return Err(VmError::invalid_operation_msg(format!(
+            "The negative value {n} is invalid for OpCode.ROLL"
+        )));
     }
 
     let n = n
@@ -328,9 +328,9 @@ fn reversen(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
     let n = context.pop()?.as_int()?;
 
     if n.sign() == Sign::Minus {
-    return Err(VmError::invalid_operation_msg(format!(
-        "Reverse count out of range: {n}"
-    )));
+        return Err(VmError::invalid_operation_msg(format!(
+            "Reverse count out of range: {n}"
+        )));
     }
 
     let n = n

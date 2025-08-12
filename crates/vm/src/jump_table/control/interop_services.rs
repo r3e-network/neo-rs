@@ -360,10 +360,8 @@ fn convert_parameter_to_stack_item(param: &InteropParameter) -> StackItem {
         InteropParameter::ByteArray(bytes) => StackItem::from_byte_string(bytes.clone()),
         InteropParameter::Hash160(hash) => StackItem::from_byte_string(hash.clone()),
         InteropParameter::Array(items) => {
-            let stack_items: Vec<StackItem> = items
-                .iter()
-                .map(convert_parameter_to_stack_item)
-                .collect();
+            let stack_items: Vec<StackItem> =
+                items.iter().map(convert_parameter_to_stack_item).collect();
             StackItem::Array(stack_items)
         }
         InteropParameter::InteropInterface(interface_item) => interface_item.clone(),

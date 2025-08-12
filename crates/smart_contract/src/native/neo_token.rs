@@ -2,6 +2,9 @@
 
 use crate::application_engine::ApplicationEngine;
 use crate::application_engine::StorageContext;
+use crate::native::governance_types::{
+    CandidateState, CommitteeState, NeoAccountState, VoteTracker,
+};
 use crate::native::{NativeContract, NativeMethod};
 use crate::{Error, NeoTokenError, Result};
 use hex;
@@ -15,7 +18,9 @@ use neo_vm::TriggerType;
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
 use rocksdb::{Options, DB};
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// NEO token configuration constants (matches C# Neo exactly)
@@ -26,14 +31,23 @@ pub const NEO_DECIMALS: u8 = 0;
 pub struct NeoToken {
     hash: UInt160,
     methods: Vec<NativeMethod>,
+    /// Committee state for governance
+    committee_state: Arc<RwLock<CommitteeState>>,
+    /// Vote tracker for governance
+    vote_tracker: Arc<RwLock<VoteTracker>>,
+    /// Account states cache
+    account_states: Arc<RwLock<HashMap<UInt160, NeoAccountState>>>,
+    /// Candidate states cache  
+    candidate_states: Arc<RwLock<HashMap<ECPoint, CandidateState>>>,
 }
 
 impl NeoToken {
     /// Creates a new NEO token contract.
     pub fn new() -> Self {
+        // NEO Token contract hash: 0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5
         let hash = UInt160::from_bytes(&[
-            0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x95, 0xf6, 0x2b, 0x9b, 0x59, 0x9a, 0x2a, 0x5c, 0x1e,
-            0x0e, 0x5b, 0x1e, 0x6c, 0x6f, 0x6c,
+            0xef, 0x40, 0x73, 0xa0, 0xf2, 0xb3, 0x05, 0xa3, 0x8e, 0xc4, 0x05, 0x0e, 0x4d, 0x3d,
+            0x28, 0xbc, 0x40, 0xea, 0x63, 0xf5,
         ])
         .expect("Operation failed");
 
@@ -48,9 +62,19 @@ impl NeoToken {
             NativeMethod::unsafe_method("registerCandidate".to_string(), 1 << 16, 0x01),
             NativeMethod::unsafe_method("unregisterCandidate".to_string(), 1 << 16, 0x01),
             NativeMethod::unsafe_method("vote".to_string(), 1 << 16, 0x01),
+            NativeMethod::safe("getAccountState".to_string(), 1 << 16),
+            NativeMethod::safe("getCandidateVotes".to_string(), 1 << 16),
+            NativeMethod::unsafe_method("setCommittee".to_string(), 1 << 16, 0x01),
         ];
 
-        Self { hash, methods }
+        Self {
+            hash,
+            methods,
+            committee_state: Arc::new(RwLock::new(CommitteeState::new())),
+            vote_tracker: Arc::new(RwLock::new(VoteTracker::new())),
+            account_states: Arc::new(RwLock::new(HashMap::new())),
+            candidate_states: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
     /// Invokes a method on the NEO token contract.

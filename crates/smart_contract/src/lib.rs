@@ -9,6 +9,16 @@ pub use neo_core::{
 };
 pub use neo_cryptography::ECPoint;
 pub use neo_vm::{ApplicationEngine, TriggerType};
+
+// Re-export smart contract types
+pub use contract_state::{ContractState, NefFile, MethodToken};
+pub use manifest::{
+    ContractAbi, ContractGroup, ContractManifest, ContractPermission,
+    ContractMethod as ContractMethodDescriptor, ContractEvent as ContractEventDescriptor, 
+    ContractParameter as ContractParameterDefinition,
+    ContractParameterType, ContractPermissionDescriptor as PermissionContract
+};
+pub use storage::{StorageItem, StorageKey};
 // Note: Types are accessed through proper crate boundaries to maintain clean architecture
 
 pub mod application_engine;

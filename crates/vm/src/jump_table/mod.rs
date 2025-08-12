@@ -216,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn test_jump_table_register() {
+    fn test_jump_table_register() -> Result<(), Box<dyn std::error::Error>> {
         let mut jump_table = JumpTable::new();
 
         // Define a custom handler
@@ -235,10 +235,11 @@ mod tests {
             jump_table.get(OpCode::NOP).ok_or("Index out of bounds")? as usize,
             custom_handler as usize
         );
+        Ok(())
     }
 
     #[test]
-    fn test_jump_table_index() {
+    fn test_jump_table_index() -> Result<(), Box<dyn std::error::Error>> {
         let mut jump_table = JumpTable::new();
 
         // Define a custom handler
@@ -257,6 +258,7 @@ mod tests {
             jump_table.get(OpCode::NOP).ok_or("Index out of bounds")? as usize,
             custom_handler as usize
         );
+        Ok(())
     }
 
     #[test]
