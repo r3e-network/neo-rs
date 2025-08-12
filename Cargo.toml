@@ -149,7 +149,7 @@ lru = "0.12"
 dashmap = "5.5"
 
 # === Storage ===
-rocksdb = { version = "0.21", features = ["snappy", "lz4", "zstd", "zlib"] }
+rocksdb = { version = "0.21", features = ["snappy", "lz4"] }
 sled = "0.34"
 
 # === Network ===
@@ -178,7 +178,7 @@ mockall = "0.12"
 # === Optional dependencies for features ===
 # Compression
 flate2 = "1.0"
-zstd = "0.13"
+# zstd = "0.13" # Temporarily disabled due to C header issues
 
 # Metrics and monitoring
 prometheus = "0.13"
@@ -237,7 +237,7 @@ minimal = []
 consensus = ["neo-consensus"]
 rpc = ["neo-rpc-server", "neo-rpc-client"] 
 metrics = ["prometheus", "sysinfo"]
-compression = ["flate2", "zstd"]
+compression = ["flate2"] # removed zstd due to build issues
 testing = ["tempfile", "mockall"]
 integration-tests = []
 
@@ -273,9 +273,10 @@ optional = true
 workspace = true
 optional = true
 
-[dependencies.zstd]
-workspace = true
-optional = true
+# [dependencies.zstd]
+# workspace = true
+# optional = true
+# Temporarily disabled due to C header issues
 
 # Optional testing dependencies
 [dependencies.tempfile]
