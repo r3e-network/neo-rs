@@ -4,12 +4,13 @@
 //! It provides full block validation, transaction management, and size calculations.
 
 use super::{
-    header::BlockHeader, verification::WitnessVerifier, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
+    header::BlockHeader, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
 };
-use crate::{Error, Result, VerifyResult};
+use crate::{Result, VerifyResult};
 use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTION_SIZE};
 use neo_core::{Transaction, UInt160, UInt256};
 use neo_cryptography::MerkleTree;
+use p256::{EncodedPoint, ecdsa::{Signature, VerifyingKey, signature::Verifier}};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -761,7 +762,8 @@ impl Block {
             if idx + 34 > witness.verification_script.len() {
                 return false;
             }
-            if witness.verification_script[idx] != 0x21 { // PUSHDATA1 33
+            if witness.verification_script[idx] != 0x21 {
+                // PUSHDATA1 33
                 return false;
             }
             let key_bytes = &witness.verification_script[idx + 1..idx + 34];
@@ -786,27 +788,40 @@ impl Block {
                 break;
             }
         }
-        if sigs.len() < m { return false; }
+        if sigs.len() < m {
+            return false;
+        }
+
+        // Get message hash for signature verification
+        let message_hash = match transaction.hash() {
+            Ok(hash) => hash.to_string(),
+            Err(_) => return false,
+        };
 
         // Verify at least m valid signatures across n pubkeys
         let mut valid = 0usize;
         for sig_bytes in sigs.iter() {
-            // Convert raw 64-byte to Signature if possible
-            if let Ok(sig) = Signature::from_scalars(&sig_bytes[0..32], &sig_bytes[32..64]) {
+            // Convert raw signature to proper format if possible
+            if sig_bytes.len() >= 64 {
                 // Try against any pubkey
                 let mut matched = false;
                 for pk in &pubkeys {
                     if let Ok(vk) = VerifyingKey::from_encoded_point(pk) {
-                        if vk.verify(message_hash.as_bytes(), &sig).is_ok() {
-                            valid += 1;
-                            matched = true;
-                            break;
+                        // Create signature from bytes
+                        if let Ok(sig) = Signature::from_bytes((&sig_bytes[..64]).into()) {
+                            if vk.verify(message_hash.as_bytes(), &sig).is_ok() {
+                                valid += 1;
+                                matched = true;
+                                break;
+                            }
                         }
                     }
                 }
                 if !matched { /* try next signature */ }
             }
-            if valid >= m { return true; }
+            if valid >= m {
+                return true;
+            }
         }
         valid >= m
     }

@@ -19,6 +19,6 @@ pub mod verification;
 pub use blockchain::{Blockchain, BlockchainStats};
 pub use genesis::GenesisManager;
 pub use persistence::{BlockchainPersistence, BlockchainSnapshot};
-pub use state::{BlockchainState, ContractState, PolicySettings};
+pub use state::{BlockchainState, PolicySettings};
 pub use storage::{RocksDBStorage, Storage, StorageItem, StorageKey, StorageProvider};
 pub use verification::{BlockchainVerifier, VerifyResult};

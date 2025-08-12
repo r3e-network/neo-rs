@@ -81,14 +81,14 @@ impl ExtensiblePayload {
         if self._hash.is_none() {
             let mut hasher = Sha256::new();
             let mut writer = BinaryWriter::new();
-            
+
             // Write all fields except witness for hashing
             writer.write_var_string(&self.category).unwrap();
             writer.write_u32(self.valid_block_start).unwrap();
             writer.write_u32(self.valid_block_end).unwrap();
             writer.write_serializable(&self.sender).unwrap();
             writer.write_var_bytes(&self.data).unwrap();
-            
+
             hasher.update(&writer.to_bytes());
             let hash_bytes = hasher.finalize();
             self._hash = Some(UInt256::from_bytes(&hash_bytes).unwrap());

@@ -843,16 +843,18 @@ async fn handle_get_raw_mempool(
     } else {
         Vec::new()
     };
-    
+
     if verbose {
         // Return detailed transaction information
         let detailed: Vec<Value> = mempool_transactions
             .iter()
-            .map(|tx| json!({
-                "hash": tx.hash,
-                "size": tx.size,
-                "fee": tx.fee
-            }))
+            .map(|tx| {
+                json!({
+                    "hash": tx.hash,
+                    "size": tx.size,
+                    "fee": tx.fee
+                })
+            })
             .collect();
         Ok(json!(detailed))
     } else {

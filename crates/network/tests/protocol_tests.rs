@@ -5,8 +5,8 @@
 
 use neo_core::{Block, Transaction, UInt160, UInt256};
 use neo_ledger::BlockHeader;
-use neo_network::messages::inventory::{InventoryItem, InventoryType};
 use neo_network::messages::compat::*;
+use neo_network::messages::inventory::{InventoryItem, InventoryType};
 use neo_network::*;
 use sha2::{Digest, Sha256};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -66,18 +66,36 @@ mod protocol_tests {
     fn test_network_address_compatibility() {
         // Test Addr message with network addresses
         let addresses = vec![
-            NetworkAddress { timestamp: 1234567890, services: 1, address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 10333), port: 10333 },
-            NetworkAddress { timestamp: 1234567890, services: 1, address: SocketAddr::new("2001:db8::1".parse().unwrap(), 10333), port: 10333 },
+            NetworkAddress {
+                timestamp: 1234567890,
+                services: 1,
+                address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 10333),
+                port: 10333,
+            },
+            NetworkAddress {
+                timestamp: 1234567890,
+                services: 1,
+                address: SocketAddr::new("2001:db8::1".parse().unwrap(), 10333),
+                port: 10333,
+            },
         ];
 
-        let addr_msg = AddressMessage { addresses: addresses.clone() };
+        let addr_msg = AddressMessage {
+            addresses: addresses.clone(),
+        };
         let serialized = addr_msg.serialize().unwrap();
         let deserialized = AddressMessage::deserialize(&serialized).unwrap();
 
         assert_eq!(deserialized.addresses.len(), 2);
-        assert_eq!(deserialized.addresses[0].address.ip(), IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)));
+        assert_eq!(
+            deserialized.addresses[0].address.ip(),
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))
+        );
         assert_eq!(deserialized.addresses[0].address.port(), 10333);
-        assert_eq!(deserialized.addresses[1].address.ip().to_string(), "2001:db8::1");
+        assert_eq!(
+            deserialized.addresses[1].address.ip().to_string(),
+            "2001:db8::1"
+        );
     }
 
     /// Test inventory messages (matches C# InvPayload exactly)
@@ -282,7 +300,10 @@ mod protocol_tests {
             addresses.push(NetworkAddress {
                 timestamp: 1234567890 + i,
                 services: NodeServices::NodeNetwork as u64,
-                address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, i as u8)), 10333 + i as u16),
+                address: SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(192, 168, 1, i as u8)),
+                    10333 + i as u16,
+                ),
                 port: 10333 + i as u16,
             });
         }
@@ -350,7 +371,10 @@ mod protocol_tests {
             next_consensus: UInt160::from_bytes(&[2u8; 20]).unwrap(),
             witnesses: vec![create_test_witness()],
         };
-        let block = LedgerBlock { header: header.clone(), transactions: transactions.clone() };
+        let block = LedgerBlock {
+            header: header.clone(),
+            transactions: transactions.clone(),
+        };
 
         let block_msg = BlockMessage {
             block: block.clone(),
@@ -361,9 +385,15 @@ mod protocol_tests {
 
         assert_eq!(deserialized.block.header.version, block.header.version);
         assert_eq!(deserialized.block.header.index, block.header.index);
-        assert_eq!(deserialized.block.header.previous_hash, block.header.previous_hash);
+        assert_eq!(
+            deserialized.block.header.previous_hash,
+            block.header.previous_hash
+        );
         assert_eq!(deserialized.block.header.timestamp, block.header.timestamp);
-        assert_eq!(deserialized.block.transactions.len(), block.transactions.len());
+        assert_eq!(
+            deserialized.block.transactions.len(),
+            block.transactions.len()
+        );
     }
 
     /// Test Verack message (matches C# VerAckPayload exactly)
@@ -408,7 +438,12 @@ mod protocol_tests {
     /// Test FilterLoad message (matches C# FilterLoadPayload exactly)
     #[test]
     fn test_filterload_message_compatibility() {
-        let filterload_msg = FilterLoadMessage { filter: vec![0xFF; 1024], hash_functions: 5, tweak: 12345, flags: BloomFilterFlags::UpdateAll as u8 };
+        let filterload_msg = FilterLoadMessage {
+            filter: vec![0xFF; 1024],
+            hash_functions: 5,
+            tweak: 12345,
+            flags: BloomFilterFlags::UpdateAll as u8,
+        };
 
         let serialized = filterload_msg.serialize().unwrap();
         let deserialized = FilterLoadMessage::deserialize(&serialized).unwrap();
@@ -485,13 +520,18 @@ mod protocol_tests {
         let command = "version";
         let payload = vec![0x01, 0x02, 0x03, 0x04];
 
-        let pm = ProtocolMessage::FilterAdd { data: payload.clone() };
+        let pm = ProtocolMessage::FilterAdd {
+            data: payload.clone(),
+        };
         let message = NetworkMessage::new_with_magic(pm.clone(), network_magic);
         let serialized = message.serialize().unwrap();
         let deserialized = NetworkMessage::deserialize(&serialized).unwrap();
 
         assert_eq!(deserialized.header.magic, network_magic);
-        assert_eq!(deserialized.command(), neo_network::MessageCommand::FilterAdd);
+        assert_eq!(
+            deserialized.command(),
+            neo_network::MessageCommand::FilterAdd
+        );
         match deserialized.payload {
             ProtocolMessage::FilterAdd { data } => assert_eq!(data, payload),
             _ => panic!("Wrong payload"),
@@ -506,14 +546,18 @@ mod protocol_tests {
 
         // Create large but valid message (FilterAdd with large payload)
         let large_payload = vec![0x00; max_payload_size];
-        let pm = ProtocolMessage::FilterAdd { data: large_payload };
+        let pm = ProtocolMessage::FilterAdd {
+            data: large_payload,
+        };
         let message = NetworkMessage::new_with_magic(pm, 0x334f454e);
         let serialized = message.serialize().unwrap();
         assert!(serialized.len() <= 0x02000000);
 
         // Test oversized message should fail
         let oversized_payload = vec![0x00; 0x02000000];
-        let pm_over = ProtocolMessage::FilterAdd { data: oversized_payload };
+        let pm_over = ProtocolMessage::FilterAdd {
+            data: oversized_payload,
+        };
         let oversized_message = NetworkMessage::new_with_magic(pm_over, 0x334f454e);
         assert!(oversized_message.serialize().is_err());
     }
@@ -587,7 +631,10 @@ mod protocol_tests {
     }
 
     fn create_test_signer() -> Signer {
-        Signer::new(UInt160::from_bytes(&[1u8; 20]).unwrap(), WitnessScope::CALLED_BY_ENTRY)
+        Signer::new(
+            UInt160::from_bytes(&[1u8; 20]).unwrap(),
+            WitnessScope::CALLED_BY_ENTRY,
+        )
     }
 
     fn create_test_witness() -> Witness {

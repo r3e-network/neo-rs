@@ -467,7 +467,8 @@ impl MessageValidator {
                     message_type: "unknown".to_string(),
                     reason: format!(
                         "Headers out of order: {} then {}",
-                        headers[i - 1].index, headers[i].index
+                        headers[i - 1].index,
+                        headers[i].index
                     ),
                 });
             }
@@ -675,7 +676,10 @@ impl MessageValidator {
             return Err(NetworkError::InvalidMessage {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
                 message_type: "unknown".to_string(),
-                reason: format!("Block header index {} exceeds current height {}", header.index, self.current_height),
+                reason: format!(
+                    "Block header index {} exceeds current height {}",
+                    header.index, self.current_height
+                ),
             });
         }
         // 1. Validate timestamp
