@@ -2,8 +2,8 @@ use crate::helper::{common_prefix_length, from_nibbles, to_nibbles};
 use crate::{MptError, MptResult, Node, NodeType, Trie};
 use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_core::UInt256;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use serde::{Serialize, Deserialize};
 
 /// Represents a node in a proof
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -161,7 +161,9 @@ impl ProofNode {
 pub struct ProofVerifier;
 
 impl ProofVerifier {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
     /// Verifies an inclusion proof
     pub fn verify_inclusion(
         root_hash: &UInt256,

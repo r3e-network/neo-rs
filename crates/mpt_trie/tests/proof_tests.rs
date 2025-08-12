@@ -77,7 +77,8 @@ mod proof_tests {
         let proof = trie.get_proof(&key).unwrap();
         let root_hash = trie.root().hash();
 
-        let verification_result = ProofVerifier::verify_inclusion(&root_hash, &key, &value, &proof).unwrap();
+        let verification_result =
+            ProofVerifier::verify_inclusion(&root_hash, &key, &value, &proof).unwrap();
 
         match verification_result {
             Some(verified_value) => {
@@ -146,7 +147,8 @@ mod proof_tests {
         let wrong_root_hash = UInt256::from_bytes(&[255u8; 32]).unwrap();
 
         // Verification should fail with wrong root
-        let verification_result = ProofVerifier::verify_inclusion(&wrong_root_hash, &key, &value, &proof);
+        let verification_result =
+            ProofVerifier::verify_inclusion(&wrong_root_hash, &key, &value, &proof);
 
         match verification_result {
             Ok(None) => {
@@ -202,7 +204,8 @@ mod proof_tests {
 
         let non_existing = b"complex_prefix_xyz";
         let non_existing_proof = trie.get_proof(non_existing).unwrap();
-        let non_existing_result = ProofVerifier::verify_exclusion(&root_hash, non_existing, &non_existing_proof).unwrap();
+        let non_existing_result =
+            ProofVerifier::verify_exclusion(&root_hash, non_existing, &non_existing_proof).unwrap();
         assert_eq!(non_existing_result, None); // Should prove non-existence
     }
 
@@ -226,7 +229,8 @@ mod proof_tests {
 
         // Verify deserialized proof works
         let root_hash = trie.root().hash();
-        let verification_result = ProofVerifier::verify_inclusion(&root_hash, &key, &value, &deserialized_proof).unwrap();
+        let verification_result =
+            ProofVerifier::verify_inclusion(&root_hash, &key, &value, &deserialized_proof).unwrap();
 
         match verification_result {
             Some(verified_value) => {
@@ -271,7 +275,13 @@ mod proof_tests {
         assert!(!single_proof.is_empty());
 
         let root_hash = trie.root().hash();
-        let single_result = ProofVerifier::verify_inclusion(&root_hash, b"single_key", b"single_value", &single_proof).unwrap();
+        let single_result = ProofVerifier::verify_inclusion(
+            &root_hash,
+            b"single_key",
+            b"single_value",
+            &single_proof,
+        )
+        .unwrap();
         assert!(single_result);
 
         // Test proof with empty key
@@ -279,7 +289,13 @@ mod proof_tests {
         let empty_key_proof = trie.get_proof(b"").unwrap();
 
         let updated_root_hash = trie.root().hash();
-        let empty_key_result = ProofVerifier::verify_inclusion(&updated_root_hash, b"", b"empty_key_value", &empty_key_proof).unwrap();
+        let empty_key_result = ProofVerifier::verify_inclusion(
+            &updated_root_hash,
+            b"",
+            b"empty_key_value",
+            &empty_key_proof,
+        )
+        .unwrap();
         assert!(empty_key_result);
 
         // Test proof with very long key
@@ -288,7 +304,13 @@ mod proof_tests {
         let long_key_proof = trie.get_proof(&long_key).unwrap();
 
         let final_root_hash = trie.root().hash();
-        let long_key_result = ProofVerifier::verify_inclusion(&final_root_hash, &long_key, b"long_key_value", &long_key_proof).unwrap();
+        let long_key_result = ProofVerifier::verify_inclusion(
+            &final_root_hash,
+            &long_key,
+            b"long_key_value",
+            &long_key_proof,
+        )
+        .unwrap();
         assert!(long_key_result);
     }
 
@@ -320,7 +342,8 @@ mod proof_tests {
         let root_hash = trie.root().hash();
         for (i, (key, proof)) in keys.iter().zip(proofs.iter()).enumerate() {
             let expected_value = format!("batch_value_{}", i).into_bytes();
-            let verification_result = ProofVerifier::verify_inclusion(&root_hash, key, &expected_value, proof).unwrap();
+            let verification_result =
+                ProofVerifier::verify_inclusion(&root_hash, key, &expected_value, proof).unwrap();
             assert!(verification_result);
         }
     }

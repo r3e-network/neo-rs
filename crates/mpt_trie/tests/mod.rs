@@ -10,7 +10,7 @@ mod proof_tests;
 mod trie_tests;
 
 mod integration_tests {
-use neo_core::UInt256;
+    use neo_core::UInt256;
     use neo_mpt_trie::*;
 
     /// Test complete MPT Trie workflow (matches C# test patterns exactly)

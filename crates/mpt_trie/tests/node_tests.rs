@@ -144,7 +144,13 @@ mod node_tests {
 
         assert!(branch_node.children().get(5).unwrap().is_some());
         assert_eq!(
-            branch_node.children().get(5).unwrap().as_ref().unwrap().value(),
+            branch_node
+                .children()
+                .get(5)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .value(),
             child_leaf.value()
         );
 
