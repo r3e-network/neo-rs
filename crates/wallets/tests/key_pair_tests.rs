@@ -193,7 +193,7 @@ fn test_nep2_round_trip() {
     let restored_key_pair = restore_result.unwrap();
 
     // Verify the private key matches
-    assert_eq!(private_key, restored_key_pair.private_key());
+    assert_eq!(&private_key[..], &restored_key_pair.private_key()[..]);
     assert_eq!(key_pair.public_key(), restored_key_pair.public_key());
     assert_eq!(
         key_pair.compressed_public_key(),
