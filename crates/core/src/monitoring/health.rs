@@ -2,11 +2,12 @@
 //!
 //! Provides comprehensive health checks for node components and dependencies.
 
-use crate::error_handling::{NeoError, Result};
+use crate::error_handling::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 
 /// Health status of a component
@@ -34,7 +35,8 @@ pub struct HealthCheckResult {
     /// Additional details
     pub details: HashMap<String, serde_json::Value>,
     /// Timestamp of the check
-    pub timestamp: Instant,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub timestamp: DateTime<Utc>,
     /// Duration of the health check
     pub duration: Duration,
 }
@@ -49,7 +51,8 @@ pub struct HealthReport {
     /// System uptime
     pub uptime: Duration,
     /// Last check timestamp
-    pub timestamp: Instant,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub timestamp: DateTime<Utc>,
     /// Version information
     pub version: String,
 }
@@ -119,7 +122,7 @@ impl HealthMonitor {
             status: overall_status,
             components: results,
             uptime: self.start_time.elapsed(),
-            timestamp: Instant::now(),
+            timestamp: Utc::now(),
             version: self.version.clone(),
         };
         
@@ -133,7 +136,7 @@ impl HealthMonitor {
     async fn get_cached_report(&self) -> Option<HealthReport> {
         let cache = self.cache.read().await;
         if let Some(ref report) = *cache {
-            if report.timestamp.elapsed() < self.cache_duration {
+            if Utc::now().signed_duration_since(report.timestamp) < chrono::Duration::from_std(self.cache_duration).unwrap() {
                 return Some(report.clone());
             }
         }
@@ -199,7 +202,7 @@ impl HealthCheck for BlockchainHealthCheck {
             status,
             message: Some(format!("Block height: {}", current_height)),
             details,
-            timestamp: Instant::now(),
+            timestamp: Utc::now(),
             duration: start.elapsed(),
         }
     }
@@ -248,7 +251,7 @@ impl HealthCheck for NetworkHealthCheck {
             status,
             message: Some(format!("Connected peers: {}/{}", connected_peers, self.min_peers)),
             details,
-            timestamp: Instant::now(),
+            timestamp: Utc::now(),
             duration: start.elapsed(),
         }
     }
@@ -294,7 +297,7 @@ impl HealthCheck for StorageHealthCheck {
             status,
             message: Some(format!("Available space: {} bytes", available_space)),
             details,
-            timestamp: Instant::now(),
+            timestamp: Utc::now(),
             duration: start.elapsed(),
         }
     }
@@ -310,7 +313,7 @@ impl StorageHealthCheck {
         use std::path::Path;
         
         let path = Path::new(".");
-        if let Ok(metadata) = fs::metadata(path) {
+        if let Ok(_metadata) = fs::metadata(path) {
             // This is a simplified implementation
             // In production, use platform-specific APIs for accurate disk space
             1_000_000_000 // 1GB placeholder
@@ -359,7 +362,7 @@ impl HealthCheck for MemoryHealthCheck {
             status,
             message: Some(format!("Memory usage: {:.1}%", usage_percent)),
             details,
-            timestamp: Instant::now(),
+            timestamp: Utc::now(),
             duration: start.elapsed(),
         }
     }
@@ -401,7 +404,7 @@ mod tests {
                 status: HealthStatus::Healthy,
                 message: None,
                 details: HashMap::new(),
-                timestamp: Instant::now(),
+                timestamp: Utc::now(),
                 duration: Duration::from_millis(10),
             },
             HealthCheckResult {
@@ -409,7 +412,7 @@ mod tests {
                 status: HealthStatus::Degraded,
                 message: None,
                 details: HashMap::new(),
-                timestamp: Instant::now(),
+                timestamp: Utc::now(),
                 duration: Duration::from_millis(10),
             },
         ];

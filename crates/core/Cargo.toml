@@ -41,6 +41,8 @@ sysinfo = "0.29"
 neo-config = { path = "../config" }
 neo-io = { path = "../io" }
 neo-cryptography = { path = "../cryptography" }
+chrono.workspace = true
+futures.workspace = true
 # Temporarily commented out to break dependency cycle
 # neo-vm = { path = "../vm" }
 
