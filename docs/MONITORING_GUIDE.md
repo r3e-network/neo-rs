@@ -1,23 +1,173 @@
-# Neo-RS Monitoring and Alerting Guide
+# Neo Rust Node Monitoring Guide
 
-**Version:** 1.0  
-**Last Updated:** July 27, 2025  
-**Target Audience:** DevOps, SRE, Monitoring Teams
+**Version:** 2.0  
+**Last Updated:** January 2025  
+**Target Audience:** DevOps, SRE, Monitoring Teams, Node Operators
 
 ---
 
 ## Table of Contents
 
-1. [Monitoring Overview](#monitoring-overview)
-2. [Metrics Collection](#metrics-collection)
-3. [Alerting Configuration](#alerting-configuration)
-4. [Dashboard Setup](#dashboard-setup)
-5. [Log Management](#log-management)
-6. [Performance Monitoring](#performance-monitoring)
-7. [Health Checks](#health-checks)
+1. [Overview](#overview)
+2. [Features](#features)
+3. [Quick Start](#quick-start)
+4. [HTTP Endpoints](#http-endpoints)
+5. [Configuration](#configuration)
+6. [Grafana Dashboard](#grafana-dashboard)
+7. [Performance Best Practices](#performance-best-practices)
 8. [Troubleshooting](#troubleshooting)
+9. [Integration Examples](#integration-examples)
+10. [API Reference](#api-reference)
+11. [Security Considerations](#security-considerations)
+12. [Performance Impact](#performance-impact)
 
 ---
+
+## Overview
+
+The Neo Rust node includes comprehensive monitoring capabilities for observability, performance tracking, and operational insights. This guide covers setup, configuration, and usage of the monitoring system.
+
+## Features
+
+### 🏥 Health Monitoring
+- **Component Health Checks**: Blockchain, network, storage, memory
+- **Status Levels**: Healthy, Degraded, Unhealthy, Unknown
+- **Auto-refresh**: Cached health checks with configurable TTL
+- **Custom Health Checks**: Extensible framework for adding checks
+
+### 📊 Performance Monitoring
+- **Metric Collection**: Block processing, TX validation, consensus, VM execution
+- **Statistical Analysis**: Min/max/avg, standard deviation, percentiles (p50, p90, p99)
+- **Alerting**: Configurable thresholds with warning/critical levels
+- **Profiling**: Built-in profiler for operation timing
+
+### 📈 Metrics Export
+- **Prometheus**: Native Prometheus exposition format
+- **JSON**: Structured JSON for APIs
+- **CSV**: Historical data export
+- **OpenTelemetry**: OTLP format support
+- **Grafana**: Pre-configured dashboard
+
+## Quick Start
+
+### 1. Enable Monitoring
+
+```rust
+use neo_core::monitoring::init_monitoring;
+
+// Initialize monitoring system
+let monitoring = init_monitoring("1.0.0".to_string()).await?;
+
+// Start background tasks
+monitoring.start_background_tasks();
+```
+
+### 2. Access HTTP Endpoints
+
+```bash
+# Health check
+curl http://localhost:20332/health
+
+# Prometheus metrics
+curl http://localhost:20332/metrics
+
+# JSON status
+curl http://localhost:20332/status
+
+# CSV export
+curl http://localhost:20332/metrics/csv
+```
+
+### 3. View Grafana Dashboard
+
+1. Import `grafana-dashboard.json` into Grafana
+2. Configure Prometheus data source
+3. View real-time metrics at http://localhost:3000
+
+## HTTP Endpoints
+
+### `/health` - Health Check Endpoint
+
+Returns node health status in JSON format.
+
+**Response Example:**
+```json
+{
+  "status": "Healthy",
+  "version": "1.0.0",
+  "uptime": 3600,
+  "components": [
+    {
+      "component": "blockchain",
+      "status": "Healthy",
+      "message": "Height: 1234567",
+      "details": {
+        "height": 1234567,
+        "synced": true
+      }
+    },
+    {
+      "component": "network", 
+      "status": "Healthy",
+      "message": "Peers: 8",
+      "details": {
+        "connected_peers": 8,
+        "min_peers": 3
+      }
+    }
+  ]
+}
+```
+
+**Status Codes:**
+- `200 OK`: Node is healthy or degraded
+- `503 Service Unavailable`: Node is unhealthy
+
+### `/metrics` - Prometheus Metrics
+
+Exposes metrics in Prometheus exposition format.
+
+**Key Metrics:**
+- `neo_health_status`: Overall health (0-3)
+- `neo_component_health{component="..."}`: Component health
+- `neo_block_height`: Current blockchain height
+- `neo_peer_count`: Connected peer count
+- `neo_block_processing_time_seconds`: Block processing duration
+- `neo_tx_validation_time_seconds`: Transaction validation duration
+- `neo_memory_usage_bytes`: Memory usage
+- `neo_cpu_usage_percent`: CPU utilization
+
+### `/status` - Comprehensive Status
+
+Returns detailed status including health, performance, and metrics.
+
+**Response Example:**
+```json
+{
+  "health": { ... },
+  "performance": {
+    "block_processing": {
+      "current": 0.234,
+      "min": 0.100,
+      "max": 0.890,
+      "avg": 0.345,
+      "p50": 0.300,
+      "p90": 0.600,
+      "p99": 0.850,
+      "count": 1000
+    }
+  },
+  "metrics": "# Prometheus metrics..."
+}
+```
+
+### `/metrics/{format}` - Custom Export Formats
+
+Export metrics in different formats:
+- `/metrics/json` - JSON format
+- `/metrics/json-pretty` - Pretty-printed JSON
+- `/metrics/csv` - CSV format
+- `/metrics/otlp` - OpenTelemetry format
 
 ## Monitoring Overview
 
