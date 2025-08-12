@@ -1,0 +1,107 @@
+# Neo Rust TestNet Docker Image
+FROM rust:1.75 as builder
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    librocksdb-dev \
+    clang \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy source code
+COPY . .
+
+# Build the node
+RUN cargo build --release --bin neo-node
+
+# Runtime image
+FROM ubuntu:22.04
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libssl3 \
+    librocksdb7.8 \
+    ca-certificates \
+    curl \
+    jq \
+    netcat \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy binary from builder
+COPY --from=builder /app/target/release/neo-node /usr/local/bin/neo-node
+
+# Copy scripts
+COPY scripts/ /opt/neo-rs/scripts/
+RUN chmod +x /opt/neo-rs/scripts/*.sh
+
+# Create data directory
+RUN mkdir -p /data
+
+# Expose ports
+EXPOSE 20332 20333 9090
+
+# Volume for data persistence
+VOLUME ["/data"]
+
+# Default TestNet configuration
+ENV NETWORK_TYPE=testnet
+ENV DATA_DIR=/data
+ENV RPC_PORT=20332
+ENV P2P_PORT=20333
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
+    CMD curl -f http://localhost:20332/health || exit 1
+
+# Entry point script
+COPY <<'EOF' /entrypoint.sh
+#!/bin/bash
+set -e
+
+# Create configuration if not exists
+if [ ! -f /data/config.toml ]; then
+    cat > /data/config.toml << CONFIG
+[network]
+network_type = "testnet"
+magic = 0x74746E41
+listen_address = "0.0.0.0:20333"
+max_peers = 50
+
+[network.seeds]
+addresses = [
+    "seed1t5.neo.org:20333",
+    "seed2t5.neo.org:20333",
+    "seed3t5.neo.org:20333",
+    "seed4t5.neo.org:20333",
+    "seed5t5.neo.org:20333"
+]
+
+[storage]
+path = "/data"
+enable_cache = true
+cache_size = "2GB"
+
+[rpc]
+enabled = true
+bind_address = "0.0.0.0:20332"
+enable_cors = true
+cors_origins = ["*"]
+
+[logging]
+level = "info"
+CONFIG
+fi
+
+# Start node
+exec neo-node --config /data/config.toml "$@"
+EOF
+
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  neo-testnet:
+    build:
+      context: .
+      dockerfile: Dockerfile.testnet
+    container_name: neo-rust-testnet
+    restart: unless-stopped
+    ports:
+      - "20332:20332"  # RPC
+      - "20333:20333"  # P2P
+      - "9090:9090"    # Metrics
+    volumes:
+      - neo-testnet-data:/data
+      - ./logs:/logs
+    environment:
+      - RUST_LOG=info
+      - NETWORK_TYPE=testnet
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:20332/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - neo-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  # Monitoring container
+  neo-monitor:
+    image: alpine:latest
+    container_name: neo-rust-monitor
+    depends_on:
+      - neo-testnet
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./logs:/logs
+    command: |
+      sh -c "
+        apk add --no-cache curl jq bash
+        while true; do
+          echo '=== Neo TestNet Status ==='
+          curl -s http://neo-testnet:20332 -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{\"jsonrpc\":\"2.0\",\"method\":\"getblockcount\",\"params\":[],\"id\":1}' \
+            | jq -r '\"Block Height: \" + (.result | tostring)'
+          
+          curl -s http://neo-testnet:20332 -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{\"jsonrpc\":\"2.0\",\"method\":\"getpeers\",\"params\":[],\"id\":1}' \
+            | jq -r '\"Connected Peers: \" + (.result.connected | length | tostring)'
+          
+          echo ''
+          sleep 30
+        done
+      "
+    networks:
+      - neo-network
+
+volumes:
+  neo-testnet-data:
+
+networks:
+  neo-network:
+    driver: bridge
