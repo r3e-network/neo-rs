@@ -7,13 +7,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 
 /// Performance sample for a specific metric
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerformanceSample {
     /// Timestamp of the sample
-    pub timestamp: Instant,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub timestamp: DateTime<Utc>,
     /// Value of the metric
     pub value: f64,
     /// Optional metadata
@@ -86,7 +88,7 @@ impl PerformanceMetric {
     /// Add a sample to the metric
     pub fn add_sample(&mut self, value: f64, metadata: Option<HashMap<String, String>>) {
         let sample = PerformanceSample {
-            timestamp: Instant::now(),
+            timestamp: Utc::now(),
             value,
             metadata,
         };
@@ -204,11 +206,12 @@ pub struct PerformanceAlert {
     /// Alert message
     pub message: String,
     /// Timestamp
-    pub timestamp: Instant,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub timestamp: DateTime<Utc>,
 }
 
 /// Alert level
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum AlertLevel {
     /// Warning level alert
     Warning,
@@ -313,7 +316,7 @@ impl PerformanceMonitor {
                 "Metric '{}' value {} exceeds {:?} threshold {}",
                 metric, value, level, threshold_value
             ),
-            timestamp: Instant::now(),
+            timestamp: Utc::now(),
         })
     }
     

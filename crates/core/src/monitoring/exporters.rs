@@ -360,7 +360,8 @@ impl ExporterFactory {
 mod tests {
     use super::*;
     use crate::monitoring::{HealthCheckResult, HealthStatus};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+    use chrono::Utc;
     
     fn create_test_report() -> StatusReport {
         let health = HealthReport {
@@ -370,11 +371,11 @@ mod tests {
                 status: HealthStatus::Healthy,
                 message: Some("Test component".to_string()),
                 details: HashMap::new(),
-                timestamp: Instant::now(),
+                timestamp: Utc::now(),
                 duration: Duration::from_millis(10),
             }],
             uptime: Duration::from_secs(3600),
-            timestamp: Instant::now(),
+            timestamp: Utc::now(),
             version: "1.0.0".to_string(),
         };
         
