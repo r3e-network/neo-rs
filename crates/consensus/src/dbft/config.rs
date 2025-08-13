@@ -177,6 +177,7 @@ impl DbftConfig {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{ConsensusContext, ConsensusMessage, ConsensusState};
 

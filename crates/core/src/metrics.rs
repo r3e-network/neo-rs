@@ -257,6 +257,7 @@ pub fn update_system_metrics() {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

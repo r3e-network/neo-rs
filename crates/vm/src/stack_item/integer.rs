@@ -2,12 +2,9 @@
 //!
 //! This module provides the Integer stack item implementation used in the Neo VM.
 
-use crate::error::VmError;
-use crate::error::VmResult;
 use crate::stack_item::stack_item_type::StackItemType;
 use num_bigint::BigInt;
 use num_traits::Zero;
-use std::sync::Arc;
 
 /// Represents an integer value in the VM.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +58,7 @@ impl Integer {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

@@ -545,6 +545,7 @@ impl Default for NetworkErrorHandler {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::{NetworkError, NetworkResult};

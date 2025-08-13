@@ -105,6 +105,7 @@ impl Default for NativeRegistry {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{Error, Result};
 

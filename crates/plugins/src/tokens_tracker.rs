@@ -602,6 +602,7 @@ impl Plugin for TokensTrackerPlugin {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use neo_extensions::PluginContext;

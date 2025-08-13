@@ -142,6 +142,7 @@ macro_rules! impl_native_contract {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_native_method_creation() {

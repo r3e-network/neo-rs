@@ -8,8 +8,6 @@ use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
-use crate::stack_item::StackItem;
-use num_traits::ToPrimitive;
 
 /// Registers the slot operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {

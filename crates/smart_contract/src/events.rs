@@ -521,6 +521,7 @@ impl EventValue {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use neo_core::{UInt160, UInt256};

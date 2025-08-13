@@ -141,6 +141,7 @@ impl From<(UInt160, i32)> for StorageKey {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{StorageError, StorageKey, Store};
 

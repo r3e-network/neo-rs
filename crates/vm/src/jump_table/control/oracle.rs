@@ -5,7 +5,7 @@ use crate::{
     error::{VmError, VmResult},
     execution_engine::ExecutionEngine,
 };
-use neo_config::{ADDRESS_SIZE, HASH_SIZE};
+use neo_config::HASH_SIZE;
 use neo_core::{UInt160, UInt256};
 
 /// Gets Oracle response attribute from transaction (production implementation)

@@ -201,6 +201,7 @@ impl GenesisManager {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[tokio::test]
     async fn test_genesis_block_creation() {

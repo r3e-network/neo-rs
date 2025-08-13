@@ -3,6 +3,7 @@
 //! Tests that verify our message parsing matches the verified Neo3 protocol format
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{decode_varlen, encode_varlen, parse_neo3_message, SimpleNeo3Message};
     use std::io::Cursor;

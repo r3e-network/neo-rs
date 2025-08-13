@@ -182,6 +182,7 @@ impl Serializable for ExtensiblePayload {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

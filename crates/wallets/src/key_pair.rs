@@ -65,7 +65,7 @@ impl KeyPair {
     /// The encrypted_key should be base64-encoded NEP-2 data.
     pub fn from_nep2(encrypted_key: &[u8], password: &str) -> Result<Self> {
         // First try to decode as base64
-        let decoded = base64::decode(encrypted_key).map_err(|_| Error::InvalidNep2Key)?;
+        let decoded = base64::engine::general_purpose::STANDARD.decode(encrypted_key).map_err(|_| Error::InvalidNep2Key)?;
 
         let private_key = Self::decrypt_nep2(&decoded, password)?;
         Self::from_private_key(&private_key)
@@ -137,7 +137,7 @@ impl KeyPair {
     /// Exports the key pair to NEP-2 format.
     pub fn to_nep2(&self, password: &str) -> Result<String> {
         let encrypted = Self::encrypt_nep2(&self.private_key, password)?;
-        Ok(base64::encode(encrypted))
+        Ok(base64::engine::general_purpose::STANDARD.encode(encrypted))
     }
 
     /// Decodes a WIF string to a private key.
@@ -324,6 +324,7 @@ impl PartialEq for KeyPair {
 impl Eq for KeyPair {}
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_key_pair_generation() {

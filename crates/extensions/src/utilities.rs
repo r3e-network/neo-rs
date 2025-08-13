@@ -3,6 +3,7 @@
 use crate::error::{ExtensionError, ExtensionResult};
 use chrono::{DateTime, Utc};
 #[cfg(test)]
+#[allow(dead_code)]
 use neo_core::constants::{
     MAX_BLOCK_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, SECONDS_PER_BLOCK,
 };
@@ -189,6 +190,7 @@ pub fn camel_to_snake_case(camel_str: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

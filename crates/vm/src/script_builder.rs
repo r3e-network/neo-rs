@@ -5,8 +5,6 @@
 use crate::error::VmResult;
 use crate::op_code::OpCode;
 use crate::script::Script;
-use neo_config::ADDRESS_SIZE;
-use std::convert::TryFrom;
 
 /// Helps construct VM scripts programmatically.
 pub struct ScriptBuilder {
@@ -259,6 +257,7 @@ impl Default for ScriptBuilder {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

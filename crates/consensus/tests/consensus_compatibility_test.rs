@@ -284,6 +284,7 @@ fn test_consensus_compatibility_with_csharp_format() {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod integration_tests {
     use super::*;
     use tokio;

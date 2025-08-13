@@ -160,6 +160,7 @@ pub fn execute_and_verify(script_bytes: Vec<u8>, expected: &ExpectedExecutionRes
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

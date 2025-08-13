@@ -7,7 +7,6 @@ use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::StackItem;
-use num_traits::ToPrimitive;
 use std::sync::Arc;
 
 /// Represents a struct of stack items in the VM.
@@ -114,6 +113,7 @@ impl Drop for Struct {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

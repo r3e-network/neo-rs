@@ -508,6 +508,7 @@ impl From<Vec<u8>> for UInt160 {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

@@ -45,9 +45,9 @@ pub enum OpCode {
     // Flow control
     NOP = 0x21,
     JMP = 0x22,
-    JMP_L = 0x23,
+    JmpL = 0x23,
     JMPIF = 0x24,
-    JMPIF_L = 0x25,
+    JmpifL = 0x25,
 
     /// Transfers control to a target instruction if the value is false, a null reference, or zero. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -65,7 +65,7 @@ pub enum OpCode {
     /// Push: 0 items
     /// Pop: 1 item
     /// ```
-    JMPIFNOT_L = 0x27,
+    JmpifnotL = 0x27,
 
     /// Transfers control to a target instruction if two values are equal. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -83,7 +83,7 @@ pub enum OpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPEQ_L = 0x29,
+    JmpeqL = 0x29,
 
     /// Transfers control to a target instruction when two values are not equal. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -101,7 +101,7 @@ pub enum OpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPNE_L = 0x2B,
+    JmpneL = 0x2B,
 
     /// Transfers control to a target instruction if the first value is greater than the second value. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -119,7 +119,7 @@ pub enum OpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPGT_L = 0x2D,
+    JmpgtL = 0x2D,
 
     /// Transfers control to a target instruction if the first value is greater than or equal to the second value. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -137,7 +137,7 @@ pub enum OpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPGE_L = 0x2F,
+    JmpgeL = 0x2F,
 
     /// Transfers control to a target instruction if the first value is less than the second value. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -155,7 +155,7 @@ pub enum OpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPLT_L = 0x31,
+    JmpltL = 0x31,
 
     /// Transfers control to a target instruction if the first value is less than or equal to the second value. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -173,7 +173,7 @@ pub enum OpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPLE_L = 0x33,
+    JmpleL = 0x33,
 
     /// Calls the function at the target address. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -191,7 +191,7 @@ pub enum OpCode {
     /// Push: 0 items
     /// Pop: 0 items
     /// ```
-    CALL_L = 0x35,
+    CallL = 0x35,
 
     /// Calls the function at the target address. The target instruction is represented as a value on the stack.
     ///
@@ -254,7 +254,7 @@ pub enum OpCode {
     /// Push: 0 items
     /// Pop: 0 items
     /// ```
-    TRY_L = 0x3C,
+    TryL = 0x3C,
 
     /// Ends a try block.
     ///
@@ -272,7 +272,7 @@ pub enum OpCode {
     /// Push: 0 items
     /// Pop: 0 items
     /// ```
-    ENDTRY_L = 0x3E,
+    EndtryL = 0x3E,
 
     /// Ends a finally block.
     ///
@@ -815,7 +815,7 @@ pub enum OpCode {
     /// Push: 1 item
     /// Pop: 1 item
     /// ```
-    NEWARRAY_T = 0xC1,
+    NewarrayT = 0xC1,
 
     /// Creates a new struct with the specified length.
     ///
@@ -1044,34 +1044,34 @@ impl OpCode {
             0x20 => Some(Self::PUSH16),
             0x21 => Some(Self::NOP),
             0x22 => Some(Self::JMP),
-            0x23 => Some(Self::JMP_L),
+            0x23 => Some(Self::JmpL),
             0x24 => Some(Self::JMPIF),
-            0x25 => Some(Self::JMPIF_L),
+            0x25 => Some(Self::JmpifL),
             0x26 => Some(Self::JMPIFNOT),
-            0x27 => Some(Self::JMPIFNOT_L),
+            0x27 => Some(Self::JmpifnotL),
             0x28 => Some(Self::JMPEQ),
-            0x29 => Some(Self::JMPEQ_L),
+            0x29 => Some(Self::JmpeqL),
             0x2A => Some(Self::JMPNE),
-            0x2B => Some(Self::JMPNE_L),
+            0x2B => Some(Self::JmpneL),
             0x2C => Some(Self::JMPGT),
-            0x2D => Some(Self::JMPGT_L),
+            0x2D => Some(Self::JmpgtL),
             0x2E => Some(Self::JMPGE),
-            0x2F => Some(Self::JMPGE_L),
+            0x2F => Some(Self::JmpgeL),
             0x30 => Some(Self::JMPLT),
-            0x31 => Some(Self::JMPLT_L),
+            0x31 => Some(Self::JmpltL),
             0x32 => Some(Self::JMPLE),
-            0x33 => Some(Self::JMPLE_L),
+            0x33 => Some(Self::JmpleL),
             0x34 => Some(Self::CALL),
-            0x35 => Some(Self::CALL_L),
+            0x35 => Some(Self::CallL),
             0x36 => Some(Self::CALLA),
             0x37 => Some(Self::CALLT),
             0x38 => Some(Self::ABORT),
             0x39 => Some(Self::ASSERT),
             0x3A => Some(Self::THROW),
             0x3B => Some(Self::TRY),
-            0x3C => Some(Self::TRY_L),
+            0x3C => Some(Self::TryL),
             0x3D => Some(Self::ENDTRY),
-            0x3E => Some(Self::ENDTRY_L),
+            0x3E => Some(Self::EndtryL),
             0x3F => Some(Self::ENDFINALLY),
             0x40 => Some(Self::RET),
             0x41 => Some(Self::SYSCALL),
@@ -1127,7 +1127,7 @@ impl OpCode {
             0x6D => Some(Self::MAX),
             0x6E => Some(Self::WITHIN),
             0xC0 => Some(Self::NEWARRAY),
-            0xC1 => Some(Self::NEWARRAY_T),
+            0xC1 => Some(Self::NewarrayT),
             0xC2 => Some(Self::NEWSTRUCT),
             0xC3 => Some(Self::NEWMAP),
             0xC4 => Some(Self::APPEND),
@@ -1147,8 +1147,8 @@ impl OpCode {
             0xD2 => Some(Self::ISTYPE),
             0xD3 => Some(Self::ISNULL),
             0xD4 => Some(Self::VERIFY),
-            0xF0 => Some(Self::TRY_L),
-            0xF1 => Some(Self::ENDTRY_L),
+            0xF0 => Some(Self::TryL),
+            0xF1 => Some(Self::EndtryL),
             _ => None,
         }
     }
@@ -1180,25 +1180,25 @@ impl OpCode {
             Self::PUSHDATA2 => OperandSize::prefix(2),
             Self::PUSHDATA4 => OperandSize::prefix(4),
             Self::JMP => OperandSize::fixed(1),
-            Self::JMP_L => OperandSize::fixed(4),
+            Self::JmpL => OperandSize::fixed(4),
             Self::JMPIF => OperandSize::fixed(1),
-            Self::JMPIF_L => OperandSize::fixed(4),
+            Self::JmpifL => OperandSize::fixed(4),
             Self::JMPIFNOT => OperandSize::fixed(1),
-            Self::JMPIFNOT_L => OperandSize::fixed(4),
+            Self::JmpifnotL => OperandSize::fixed(4),
             Self::JMPEQ => OperandSize::fixed(1),
-            Self::JMPEQ_L => OperandSize::fixed(4),
+            Self::JmpeqL => OperandSize::fixed(4),
             Self::JMPNE => OperandSize::fixed(1),
-            Self::JMPNE_L => OperandSize::fixed(4),
+            Self::JmpneL => OperandSize::fixed(4),
             Self::JMPGT => OperandSize::fixed(1),
-            Self::JMPGT_L => OperandSize::fixed(4),
+            Self::JmpgtL => OperandSize::fixed(4),
             Self::JMPGE => OperandSize::fixed(1),
-            Self::JMPGE_L => OperandSize::fixed(4),
+            Self::JmpgeL => OperandSize::fixed(4),
             Self::JMPLT => OperandSize::fixed(1),
-            Self::JMPLT_L => OperandSize::fixed(4),
+            Self::JmpltL => OperandSize::fixed(4),
             Self::JMPLE => OperandSize::fixed(1),
-            Self::JMPLE_L => OperandSize::fixed(4),
+            Self::JmpleL => OperandSize::fixed(4),
             Self::CALL => OperandSize::fixed(1),
-            Self::CALL_L => OperandSize::fixed(4),
+            Self::CallL => OperandSize::fixed(4),
             Self::CALLA => OperandSize::fixed(0),
             Self::ABORT => OperandSize::fixed(0),
             Self::ASSERT => OperandSize::fixed(0),
@@ -1256,7 +1256,7 @@ impl OpCode {
             Self::MAX => OperandSize::fixed(0),
             Self::WITHIN => OperandSize::fixed(0),
             Self::NEWARRAY => OperandSize::fixed(0),
-            Self::NEWARRAY_T => OperandSize::fixed(1),
+            Self::NewarrayT => OperandSize::fixed(1),
             Self::NEWSTRUCT => OperandSize::fixed(0),
             Self::NEWMAP => OperandSize::fixed(0),
             Self::APPEND => OperandSize::fixed(0),
@@ -1319,27 +1319,27 @@ impl OpCode {
             Self::PUSH16 => "PUSH16",
             Self::NOP => "NOP",
             Self::JMP => "JMP",
-            Self::JMP_L => "JMP_L",
+            Self::JmpL => "JmpL",
             Self::JMPIF => "JMPIF",
-            Self::JMPIF_L => "JMPIF_L",
+            Self::JmpifL => "JmpifL",
             Self::JMPIFNOT => "JMPIFNOT",
-            Self::JMPIFNOT_L => "JMPIFNOT_L",
+            Self::JmpifnotL => "JmpifnotL",
             Self::JMPEQ => "JMPEQ",
-            Self::JMPEQ_L => "JMPEQ_L",
+            Self::JmpeqL => "JmpeqL",
             Self::JMPNE => "JMPNE",
-            Self::JMPNE_L => "JMPNE_L",
+            Self::JmpneL => "JmpneL",
             Self::JMPGT => "JMPGT",
-            Self::JMPGT_L => "JMPGT_L",
+            Self::JmpgtL => "JmpgtL",
             Self::JMPGE => "JMPGE",
-            Self::JMPGE_L => "JMPGE_L",
+            Self::JmpgeL => "JmpgeL",
             Self::JMPLT => "JMPLT",
-            Self::JMPLT_L => "JMPLT_L",
+            Self::JmpltL => "JmpltL",
             Self::JMPLE => "JMPLE",
-            Self::JMPLE_L => "JMPLE_L",
-            Self::CALL_L => "CALL_L",
-            Self::TRY_L => "TRY_L",
-            Self::ENDTRY_L => "ENDTRY_L",
-            Self::NEWARRAY_T => "NEWARRAY_T",
+            Self::JmpleL => "JmpleL",
+            Self::CallL => "CallL",
+            Self::TryL => "TryL",
+            Self::EndtryL => "EndtryL",
+            Self::NewarrayT => "NewarrayT",
             _ => "UNKNOWN",
         }
     }
@@ -1353,13 +1353,13 @@ impl OpCode {
         matches!(
             self,
             Self::JMP
-                | Self::JMP_L
+                | Self::JmpL
                 | Self::JMPIF
-                | Self::JMPIF_L
+                | Self::JmpifL
                 | Self::JMPIFNOT
-                | Self::JMPIFNOT_L
+                | Self::JmpifnotL
                 | Self::JMPEQ
-                | Self::JMPEQ_L
+                | Self::JmpeqL
                 | Self::JMPNE
         )
     }
@@ -1413,14 +1413,15 @@ impl OpCode {
     /// The number of stack items popped
     pub fn stack_items_popped(&self) -> i32 {
         match self {
-            Self::JMPIF | Self::JMPIF_L | Self::JMPIFNOT | Self::JMPIFNOT_L => 1,
-            Self::JMPEQ | Self::JMPEQ_L | Self::JMPNE => 2,
+            Self::JMPIF | Self::JmpifL | Self::JMPIFNOT | Self::JmpifnotL => 1,
+            Self::JMPEQ | Self::JmpeqL | Self::JMPNE => 2,
             _ => 0,
         }
     }
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

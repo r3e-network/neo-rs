@@ -1209,6 +1209,7 @@ impl Drop for P2pNode {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::{MessageCommand, NetworkMessage, ProtocolMessage};

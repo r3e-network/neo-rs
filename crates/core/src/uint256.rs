@@ -399,6 +399,7 @@ impl From<Vec<u8>> for UInt256 {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::UINT256_SIZE;
     use super::*;

@@ -167,6 +167,7 @@ mod wildcard_serde {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_wildcard_container_create() {

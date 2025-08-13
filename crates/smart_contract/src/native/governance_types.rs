@@ -582,6 +582,7 @@ impl Default for VoteTracker {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

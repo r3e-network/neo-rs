@@ -223,6 +223,7 @@ impl std::iter::FromIterator<Option<JToken>> for JArray {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

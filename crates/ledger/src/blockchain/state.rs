@@ -4,9 +4,7 @@
 
 use super::persistence::BlockchainPersistence;
 use super::storage::{StorageItem, StorageKey};
-const SECONDS_PER_HOUR: u64 = 3600;
 use crate::{Error, Result};
-use hex;
 use neo_config::{
     ADDRESS_SIZE, MAX_BLOCK_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
     MAX_TRANSACTION_SIZE, SECONDS_PER_BLOCK,
@@ -18,8 +16,6 @@ use neo_core::{Transaction, UInt160, UInt256};
 //     ContractParameterType, ContractMethodDescriptor, ContractEventDescriptor, 
 //     ContractParameterDefinition, MethodToken, PermissionContract
 // };
-use num_bigint;
-use num_traits;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -1807,6 +1803,7 @@ impl ContractState {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use crate::blockchain::storage::{RocksDBStorage, Storage};
     use crate::{Error, Result};

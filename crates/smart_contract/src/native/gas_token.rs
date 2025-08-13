@@ -645,6 +645,7 @@ impl Default for GasToken {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{Error, Result};
     use neo_vm::TriggerType;

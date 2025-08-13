@@ -521,6 +521,7 @@ impl BlockchainSnapshot {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::super::storage::RocksDBStorage;
     use super::{StorageError, StorageKey, Store};

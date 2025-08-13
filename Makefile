@@ -27,11 +27,11 @@ help:
 	@echo "  make clean          - Clean build artifacts"
 	@echo ""
 	@echo "$(YELLOW)Running:$(NC)"
-	@echo "  make run            - Run neo-cli on mainnet"
-	@echo "  make run testnet    - Run neo-cli on testnet"
-	@echo "  make run docker     - Run neo-cli in Docker container"
-	@echo "  make run-release    - Run neo-cli in release mode"
-	@echo "  make run-daemon     - Run neo-cli in daemon mode"
+	@echo "  make run            - Run neo-node on mainnet"
+	@echo "  make run testnet    - Run neo-node on testnet"
+	@echo "  make run docker     - Run neo-node in Docker container"
+	@echo "  make run-release    - Run neo-node in release mode"
+	@echo "  make run-daemon     - Run neo-node in daemon mode"
 	@echo ""
 	@echo "$(YELLOW)Docker:$(NC)"
 	@echo "  make docker         - Build Docker image"
@@ -80,28 +80,28 @@ clean:
 # Running targets
 .PHONY: run
 run: build-release
-	@echo "$(GREEN)Starting Neo CLI on MainNet...$(NC)"
-	./$(RELEASE_DIR)/neo-cli --network mainnet
+	@echo "$(GREEN)Starting Neo Node on MainNet...$(NC)"
+	./$(RELEASE_DIR)/neo-node --network mainnet
 
 .PHONY: run-release
 run-release: build-release
-	@echo "$(GREEN)Starting Neo CLI (release)...$(NC)"
-	./$(RELEASE_DIR)/neo-cli
+	@echo "$(GREEN)Starting Neo Node (release)...$(NC)"
+	./$(RELEASE_DIR)/neo-node
 
 .PHONY: run-testnet
 run-testnet: build
-	@echo "$(GREEN)Starting Neo CLI on TestNet...$(NC)"
-	./$(DEBUG_DIR)/neo-cli --network testnet
+	@echo "$(GREEN)Starting Neo Node on TestNet...$(NC)"
+	./$(DEBUG_DIR)/neo-node --network testnet
 
 .PHONY: run-mainnet
 run-mainnet: build-release
-	@echo "$(GREEN)Starting Neo CLI on MainNet...$(NC)"
-	./$(RELEASE_DIR)/neo-cli --network mainnet
+	@echo "$(GREEN)Starting Neo Node on MainNet...$(NC)"
+	./$(RELEASE_DIR)/neo-node --network mainnet
 
 .PHONY: run-daemon
 run-daemon: build
-	@echo "$(GREEN)Starting Neo CLI in daemon mode...$(NC)"
-	./$(DEBUG_DIR)/neo-cli --network testnet --daemon
+	@echo "$(GREEN)Starting Neo Node in daemon mode...$(NC)"
+	./$(DEBUG_DIR)/neo-node --network testnet --daemon
 
 # Docker targets
 .PHONY: docker
@@ -213,7 +213,6 @@ db-restore:
 release: build-release
 	@echo "$(GREEN)Creating release binaries...$(NC)"
 	@mkdir -p dist/bin
-	cp $(RELEASE_DIR)/neo-cli dist/bin/
 	cp $(RELEASE_DIR)/neo-node dist/bin/
 	@echo "$(GREEN)Release binaries created in dist/bin/$(NC)"
 
@@ -237,5 +236,3 @@ ci: check fmt clippy test
 .PHONY: testnet
 testnet: run-testnet
 
-.PHONY: docker
-docker: docker-run

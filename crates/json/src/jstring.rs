@@ -98,6 +98,7 @@ impl fmt::Display for JString {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

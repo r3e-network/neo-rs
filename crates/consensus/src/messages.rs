@@ -700,6 +700,7 @@ impl RecoveryResponse {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_consensus_message_type() {

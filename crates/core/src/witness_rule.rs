@@ -227,6 +227,7 @@ impl fmt::Display for WitnessRule {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

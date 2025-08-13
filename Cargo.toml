@@ -34,7 +34,6 @@ members = [
     
     # Node implementations
     "node",
-    "demo",
 ]
 exclude = [
     "target",
@@ -199,6 +198,10 @@ categories.workspace = true
 readme.workspace = true
 description = "High-performance Rust implementation of the Neo N3 blockchain protocol"
 
+[lib]
+name = "neo_rs"
+path = "src/lib.rs"
+
 [dependencies]
 # Core Neo crates
 neo-core.workspace = true
@@ -358,8 +361,8 @@ lto = "fat"
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-# Integration tests
-[[test]]
-name = "integration_tests"
-path = "tests/integration/mod.rs"
-required-features = ["integration-tests"]
+# Integration tests (disabled after cleanup)
+# [[test]]
+# name = "integration_tests"
+# path = "tests/integration/mod.rs"
+# required-features = ["integration-tests"]

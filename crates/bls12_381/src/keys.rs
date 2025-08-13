@@ -299,6 +299,7 @@ impl Drop for KeyPair {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::constants::HASH_SIZE;

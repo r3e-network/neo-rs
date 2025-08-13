@@ -255,7 +255,11 @@ impl std::fmt::Display for Contract {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
+    use super::*;
+    use crate::ContractParameterType;
+
     #[test]
     fn test_create_signature_contract() {
         // This would need a valid ECPoint implementation
@@ -265,6 +269,7 @@ mod tests {
     fn test_contract_validation() {
         let script = vec![0x0c, 33]; // Incomplete script
         let parameter_list = vec![ContractParameterType::Signature];
+        let contract = Contract::new(script.clone(), parameter_list.clone()).unwrap();
         // This should fail validation
         assert!(contract.validate().is_err());
     }

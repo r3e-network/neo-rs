@@ -134,6 +134,7 @@ pub fn is_hardfork_enabled(hardfork: Hardfork, block_height: u32) -> bool {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

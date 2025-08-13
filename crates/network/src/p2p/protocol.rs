@@ -214,6 +214,7 @@ impl MessageHandler for DefaultMessageHandler {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use std::net::SocketAddr;

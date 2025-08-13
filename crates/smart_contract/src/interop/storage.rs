@@ -260,6 +260,7 @@ impl StorageService {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_storage_get_service() {

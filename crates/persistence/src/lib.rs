@@ -1,22 +1,157 @@
-//! Neo Persistence Module
+//! # Neo Persistence Layer
 //!
-//! This module provides data persistence functionality for the Neo blockchain,
-//! matching the C# Neo persistence structure exactly.
+//! High-performance data persistence and storage management for the Neo blockchain.
 //!
-//! ## Components
+//! This crate provides a comprehensive persistence layer that handles all blockchain
+//! data storage including blocks, transactions, state, and smart contract storage.
+//! It features multiple storage backends, advanced caching, compression, and backup
+//! capabilities designed for production blockchain deployments.
 //!
-//! - **IStore**: Storage interface (matches C# IStore)
-//! - **IStoreSnapshot**: Snapshot interface (matches C# IStoreSnapshot)  
-//! - **RocksDbStore**: RocksDB storage implementation (production-ready storage)
+//! ## Features
+//!
+//! - **Multi-Backend Storage**: RocksDB (default), in-memory, and custom backends
+//! - **Atomic Transactions**: ACID-compliant batch operations and transactions
+//! - **Advanced Caching**: Multi-level caching with LRU and TTL strategies
+//! - **Data Compression**: Multiple compression algorithms for space efficiency
+//! - **Backup & Recovery**: Full and incremental backup with point-in-time recovery
+//! - **Schema Migration**: Automated database schema versioning and migration
+//! - **Performance Monitoring**: Comprehensive storage metrics and diagnostics
+//!
+//! ## Architecture
+//!
+//! The persistence layer is built around several core abstractions:
+//!
+//! - **IStore**: Main storage interface for read/write operations
+//! - **IStoreSnapshot**: Read-only snapshots for consistent data access
+//! - **StorageProvider**: Factory for creating storage instances
+//! - **BackupManager**: Automated backup and recovery management
+//! - **CacheManager**: Multi-level caching for performance optimization
+//! - **IndexManager**: Secondary indexes for efficient data access
+//!
+//! ## Example Usage
+//!
+//! ### Basic Storage Operations
+//!
+//! ```rust,no_run
+//! use neo_persistence::{Storage, StorageConfig, RocksDbStorageProvider};
+//! use std::sync::Arc;
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create storage configuration
+//! let config = StorageConfig::default();
+//! 
+//! // Create RocksDB storage provider
+//! let provider = Arc::new(RocksDbStorageProvider::new("./data".into())?);
+//!
+//! // Initialize storage
+//! let mut storage = Storage::new(config, provider).await?;
+//!
+//! // Store data
+//! storage.put(b"key1", b"value1".to_vec()).await?;
+//!
+//! // Retrieve data
+//! let value = storage.get(b"key1").await?;
+//! assert_eq!(value, Some(b"value1".to_vec()));
+//!
+//! // Create snapshot for consistent reads
+//! let snapshot = storage.get_snapshot();
+//! let snap_value = snapshot.try_get(&b"key1".to_vec());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Batch Operations
+//!
+//! ```rust,no_run
+//! use neo_persistence::{Storage, BatchOperation};
+//!
+//! # async fn example(mut storage: Storage) -> Result<(), Box<dyn std::error::Error>> {
+//! // Prepare batch operations
+//! let operations = vec![
+//!     BatchOperation::Put {
+//!         key: b"key1".to_vec(),
+//!         value: b"value1".to_vec(),
+//!     },
+//!     BatchOperation::Put {
+//!         key: b"key2".to_vec(), 
+//!         value: b"value2".to_vec(),
+//!     },
+//!     BatchOperation::Delete {
+//!         key: b"old_key".to_vec(),
+//!     },
+//! ];
+//!
+//! // Execute atomically
+//! storage.execute_batch(operations)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Backup and Recovery
+//!
+//! ```rust,no_run
+//! use neo_persistence::{BackupManager, BackupConfig, BackupType};
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let config = BackupConfig::default();
+//! let backup_manager = BackupManager::new(config)?;
+//!
+//! // Create full backup
+//! let backup_id = backup_manager.create_backup(BackupType::Full).await?;
+//!
+//! // Create incremental backup
+//! let incremental_id = backup_manager.create_backup(BackupType::Incremental).await?;
+//!
+//! // Restore from backup
+//! backup_manager.restore_backup(&backup_id).await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Storage Backends
+//!
+//! ### RocksDB (Production)
+//!
+//! The default storage backend optimized for blockchain workloads:
+//! - High write throughput with LSM-tree architecture
+//! - Configurable compression (LZ4, Snappy, ZSTD)
+//! - Built-in backup and checkpoint capabilities
+//! - Multi-column family support for data organization
+//!
+//! ### In-Memory (Testing)
+//!
+//! Fast in-memory storage for testing and development:
+//! - No disk I/O for maximum speed
+//! - Full feature compatibility with persistent storage
+//! - Automatic cleanup on process termination
+//!
+//! ## Performance Optimizations
+//!
+//! - **Read Caching**: LRU cache for frequently accessed data
+//! - **Write Batching**: Automatic batching of small writes
+//! - **Compression**: Transparent data compression
+//! - **Bloom Filters**: Fast negative lookups
+//! - **Parallel Access**: Lock-free concurrent reads
 
+#![warn(missing_docs)]
+#![warn(rustdoc::missing_crate_level_docs)]
+
+/// RocksDB storage implementation
 pub mod rocksdb;
+/// Core storage interfaces and traits
 pub mod storage;
 
+/// Backup and recovery management
 pub mod backup;
+/// Multi-level caching strategies
 pub mod cache;
+/// Data compression algorithms
 pub mod compression;
+/// Secondary indexing system
 pub mod index;
+/// Schema migration and versioning
 pub mod migration;
+/// Data serialization utilities
 pub mod serialization;
 
 pub use rocksdb::{RocksDbSnapshot, RocksDbStorageProvider, RocksDbStore};
@@ -43,35 +178,137 @@ use std::sync::Arc;
 use thiserror::Error;
 use tracing::error;
 
-/// Main storage manager (matches C# Neo Storage class)
+/// Main storage manager providing high-level database operations.
+///
+/// The `Storage` struct provides the primary interface for all persistence
+/// operations in the Neo blockchain. It wraps a storage provider and offers
+/// both synchronous and asynchronous APIs for data access.
+///
+/// # Thread Safety
+///
+/// The storage manager is designed to be thread-safe when wrapped in appropriate
+/// synchronization primitives like `Arc<Mutex<Storage>>`.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use neo_persistence::{Storage, StorageConfig, RocksDbStorageProvider};
+/// use std::sync::Arc;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let config = StorageConfig::default();
+/// let provider = Arc::new(RocksDbStorageProvider::new("./data".into())?);
+/// let storage = Storage::new(config, provider).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct Storage {
     provider: Arc<dyn StorageProvider>,
     store: Box<dyn IStore>,
 }
 
 impl Storage {
-    /// Creates a new storage instance with the given configuration and provider
+    /// Creates a new storage instance with the given configuration and provider.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Storage configuration including cache size, compression settings
+    /// * `provider` - Storage provider implementation (RocksDB, in-memory, etc.)
+    ///
+    /// # Returns
+    ///
+    /// A new `Storage` instance ready for use.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Storage provider initialization fails
+    /// - Configuration validation fails
+    /// - Database cannot be opened or created
     pub async fn new(config: StorageConfig, provider: Arc<dyn StorageProvider>) -> Result<Self> {
         let store = provider.create_store(&config)?;
         Ok(Self { provider, store })
     }
 
-    /// Gets a reference to the underlying store
+    /// Gets a reference to the underlying store.
+    ///
+    /// This provides direct access to the storage implementation for
+    /// advanced operations that may not be available through the
+    /// high-level storage interface.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the underlying `IStore` implementation.
     pub fn store(&self) -> &dyn IStore {
         self.store.as_ref()
     }
 
-    /// Gets a mutable reference to the underlying store
+    /// Gets a mutable reference to the underlying store.
+    ///
+    /// This provides mutable access to the storage implementation for
+    /// operations that require write access to the store state.
+    ///
+    /// # Returns
+    ///
+    /// A mutable reference to the underlying `IStore` implementation.
     pub fn store_mut(&mut self) -> &mut dyn IStore {
         self.store.as_mut()
     }
 
-    /// Creates a snapshot of the storage
+    /// Creates a read-only snapshot of the storage.
+    ///
+    /// Snapshots provide a consistent view of the data at a specific point
+    /// in time. They are useful for long-running read operations that need
+    /// to see a stable view of the data.
+    ///
+    /// # Returns
+    ///
+    /// A boxed `IStoreSnapshot` providing read-only access to the data.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use neo_persistence::Storage;
+    /// # fn example(storage: &Storage) {
+    /// let snapshot = storage.get_snapshot();
+    /// let value = snapshot.try_get(&b"key".to_vec());
+    /// # }
+    /// ```
     pub fn get_snapshot(&self) -> Box<dyn IStoreSnapshot> {
         self.store.get_snapshot()
     }
 
-    /// Executes a batch of operations
+    /// Executes a batch of operations atomically.
+    ///
+    /// All operations in the batch are applied atomically - either all
+    /// succeed or all fail. This is useful for maintaining data consistency
+    /// when multiple related changes need to be made.
+    ///
+    /// # Arguments
+    ///
+    /// * `operations` - Vector of batch operations to execute
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all operations succeeded.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any operation in the batch fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use neo_persistence::{Storage, BatchOperation};
+    /// # fn example(mut storage: Storage) -> Result<(), Box<dyn std::error::Error>> {
+    /// let operations = vec![
+    ///     BatchOperation::Put { key: b"key1".to_vec(), value: b"value1".to_vec() },
+    ///     BatchOperation::Delete { key: b"key2".to_vec() },
+    /// ];
+    /// storage.execute_batch(operations)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn execute_batch(&mut self, operations: Vec<BatchOperation>) -> Result<()> {
         for operation in operations {
             match operation {
@@ -86,18 +323,59 @@ impl Storage {
         Ok(())
     }
 
-    /// Puts a key-value pair (async version for test compatibility)
+    /// Stores a key-value pair in the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key to store the value under
+    /// * `value` - The value to store
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the operation succeeded.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage operation fails.
     pub async fn put(&mut self, key: &[u8], value: Vec<u8>) -> Result<()> {
         self.store.put(key.to_vec(), value);
         Ok(())
     }
 
-    /// Gets a value by key (async version for test compatibility)
+    /// Retrieves a value by its key.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key to look up
+    ///
+    /// # Returns
+    ///
+    /// `Some(value)` if the key exists, `None` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage operation fails.
     pub async fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         Ok(self.store.try_get(&key.to_vec()))
     }
 
-    /// Gets storage statistics (production implementation for comprehensive monitoring)
+    /// Gets comprehensive storage statistics.
+    ///
+    /// This method collects detailed statistics about the storage system
+    /// including key counts, data size, cache performance, and blockchain height.
+    ///
+    /// # Returns
+    ///
+    /// A `StorageStats` struct containing storage metrics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if statistics collection fails.
+    ///
+    /// # Performance Note
+    ///
+    /// This operation may be expensive as it scans the entire database
+    /// to collect accurate statistics.
     pub async fn stats(&self) -> Result<StorageStats> {
         // In C# Neo: this would collect comprehensive storage metrics
 
@@ -260,32 +538,80 @@ impl Storage {
     }
 }
 
-/// Storage statistics (for test compatibility)
+/// Storage statistics and performance metrics.
+///
+/// This struct contains comprehensive statistics about the storage system
+/// including data size, key counts, cache performance, and blockchain height.
+/// It's used for monitoring, debugging, and performance optimization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageStats {
+    /// Total number of keys in the database
     pub total_keys: u64,
+    /// Total size of all data in bytes
     pub total_size: u64,
+    /// Number of cache hits
     pub cache_hits: u64,
+    /// Number of cache misses
     pub cache_misses: u64,
+    /// Current blockchain height
     pub current_height: u32,
 }
 
-/// Storage key for identifying data in the storage system (matches C# StorageKey exactly)
+/// Storage key for identifying data in the storage system.
+///
+/// A storage key consists of a contract ID and a key byte array.
+/// This matches the Neo C# implementation's StorageKey structure exactly.
+///
+/// # Example
+///
+/// ```rust
+/// use neo_persistence::StorageKey;
+///
+/// // Create a storage key for contract 5 with key "balance"
+/// let key = StorageKey::new(5, b"balance".to_vec());
+/// 
+/// // Convert to bytes for storage
+/// let bytes = key.as_bytes();
+/// 
+/// // Reconstruct from bytes
+/// let reconstructed = StorageKey::from_bytes(bytes);
+/// assert_eq!(key, reconstructed);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StorageKey {
-    /// The id of the contract (matches C# Id property)
+    /// The contract ID that owns this storage key
     pub id: i32,
-    /// The key bytes (matches C# Key property)
+    /// The key bytes within the contract's storage space
     pub key: Vec<u8>,
 }
 
 impl StorageKey {
-    /// Creates a new storage key with the given id and key (matches C# constructor)
+    /// Creates a new storage key with the given contract ID and key.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The contract ID that owns this storage key
+    /// * `key` - The key bytes within the contract's storage space
+    ///
+    /// # Returns
+    ///
+    /// A new `StorageKey` instance.
     pub fn new(id: i32, key: Vec<u8>) -> Self {
         Self { id, key }
     }
 
-    /// Creates a storage key from bytes (matches C# constructor)
+    /// Creates a storage key from a byte array.
+    ///
+    /// The first 4 bytes are interpreted as the contract ID (little-endian),
+    /// and the remaining bytes are used as the key.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - The byte array to parse
+    ///
+    /// # Returns
+    ///
+    /// A new `StorageKey` instance.
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         if bytes.len() < 4 {
             return Self::new(0, bytes);
@@ -297,7 +623,14 @@ impl StorageKey {
         Self { id, key }
     }
 
-    /// Converts to bytes (matches C# ToArray method)
+    /// Converts the storage key to a byte array.
+    ///
+    /// The contract ID is encoded as 4 bytes (little-endian) followed
+    /// by the key bytes.
+    ///
+    /// # Returns
+    ///
+    /// A byte vector containing the serialized storage key.
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(4 + self.key.len());
         bytes.extend_from_slice(&self.id.to_le_bytes());
@@ -305,17 +638,36 @@ impl StorageKey {
         bytes
     }
 
-    /// Gets the full key as bytes slice for efficiency
+    /// Gets the full key as bytes (alias for `as_bytes`).
+    ///
+    /// This method provides compatibility with the C# implementation.
+    ///
+    /// # Returns
+    ///
+    /// A byte vector containing the serialized storage key.
     pub fn to_array(&self) -> Vec<u8> {
         self.as_bytes()
     }
 
-    /// Gets the length of the full key
+    /// Gets the total length of the serialized key in bytes.
+    ///
+    /// This includes 4 bytes for the contract ID plus the length of the key bytes.
+    ///
+    /// # Returns
+    ///
+    /// The total length in bytes.
     pub fn len(&self) -> usize {
         4 + self.key.len()
     }
 
-    /// Checks if the key is empty
+    /// Checks if the key bytes are empty.
+    ///
+    /// Note: This only checks if the key bytes are empty, not the entire
+    /// storage key (which always has a 4-byte contract ID).
+    ///
+    /// # Returns
+    ///
+    /// `true` if the key bytes are empty, `false` otherwise.
     pub fn is_empty(&self) -> bool {
         self.key.is_empty()
     }
@@ -327,35 +679,75 @@ impl fmt::Display for StorageKey {
     }
 }
 
-/// Storage value wrapper (matches C# byte[] usage)
+/// Storage value wrapper for raw byte data.
+///
+/// This struct wraps raw byte data stored in the database and provides
+/// convenient methods for accessing and manipulating the data.
+///
+/// # Example
+///
+/// ```rust
+/// use neo_persistence::StorageValue;
+///
+/// // Create from bytes
+/// let value = StorageValue::from_bytes(b"hello world".to_vec());
+/// 
+/// // Access the data
+/// assert_eq!(value.as_bytes(), b"hello world");
+/// assert_eq!(value.len(), 11);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StorageValue {
-    /// The raw bytes
+    /// The raw byte data
     data: Vec<u8>,
 }
 
 impl StorageValue {
-    /// Creates a new storage value from bytes
+    /// Creates a new storage value from bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The raw byte data to wrap
+    ///
+    /// # Returns
+    ///
+    /// A new `StorageValue` instance.
     pub fn from_bytes(data: Vec<u8>) -> Self {
         Self { data }
     }
 
-    /// Gets the raw bytes
+    /// Gets a reference to the raw bytes.
+    ///
+    /// # Returns
+    ///
+    /// A byte slice containing the stored data.
     pub fn as_bytes(&self) -> &[u8] {
         &self.data
     }
 
-    /// Converts to owned bytes
+    /// Converts the storage value into owned bytes.
+    ///
+    /// # Returns
+    ///
+    /// The owned byte vector.
     pub fn into_bytes(self) -> Vec<u8> {
         self.data
     }
 
-    /// Gets the length of the value
+    /// Gets the length of the stored data in bytes.
+    ///
+    /// # Returns
+    ///
+    /// The length of the data.
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
-    /// Checks if the value is empty
+    /// Checks if the stored data is empty.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the data is empty, `false` otherwise.
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -382,7 +774,10 @@ impl AsRef<[u8]> for StorageValue {
 /// Result type for persistence operations
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Persistence-specific error types (production implementation matching C# Neo exactly)
+/// Persistence-specific error types.
+///
+/// This enum covers all possible errors that can occur during persistence
+/// operations including storage errors, serialization failures, and I/O issues.
 #[derive(Error, Debug)]
 pub enum Error {
     /// Storage error

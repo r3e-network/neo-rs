@@ -5,6 +5,7 @@
 use neo_extensions::error::*;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod error_handling_tests {
     use super::*;
 

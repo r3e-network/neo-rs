@@ -3,7 +3,7 @@
 //! This module extends the Neo VM with Neo blockchain-specific functionality.
 
 use crate::call_flags::CallFlags;
-use crate::error::{VmError, VmResult};
+use crate::error::VmResult;
 use crate::execution_context::ExecutionContext;
 use crate::execution_engine::{ExecutionEngine, ExecutionEngineLimits, VMState};
 use crate::instruction::Instruction;
@@ -318,7 +318,7 @@ impl ApplicationEngine {
     pub fn execute(&mut self, script: Script) -> VMState {
         self.setup_custom_ret_handler();
 
-        if let Err(err) = self.load_script(script, -1, 0) {
+        if let Err(_err) = self.load_script(script, -1, 0) {
             self.engine.set_state(VMState::FAULT);
             return VMState::FAULT;
         }
@@ -390,21 +390,21 @@ impl ApplicationEngine {
 
             // Handle SYSCALL instructions specially
             if instruction.opcode() == OpCode::SYSCALL {
-                if let Err(_) = self.handle_syscall(&instruction) {
+                if self.handle_syscall(&instruction).is_err() {
                     self.engine.set_state(VMState::FAULT);
                     return VMState::FAULT;
                 }
 
                 // Move to the next instruction
                 if let Some(context) = self.engine.current_context_mut() {
-                    if let Err(_) = context.move_next() {
+                    if context.move_next().is_err() {
                         self.engine.set_state(VMState::FAULT);
                         return VMState::FAULT;
                     }
                 }
             } else {
                 // Execute the instruction normally
-                if let Err(_) = self.engine.execute_next() {
+                if self.engine.execute_next().is_err() {
                     self.engine.set_state(VMState::FAULT);
                     return VMState::FAULT;
                 }
@@ -534,7 +534,7 @@ impl ApplicationEngine {
 
     /// Called before executing an instruction.
     pub fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
-        let gas_cost = self.calculate_gas_cost(instruction);
+        let gas_cost = self.calculate_gas_cost(&instruction);
 
         // Consume gas
         self.consume_gas(gas_cost)?;
@@ -543,7 +543,7 @@ impl ApplicationEngine {
     }
 
     /// Called after executing an instruction.
-    pub fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
+    pub fn post_execute_instruction(&mut self, _instruction: &Instruction) -> VmResult<()> {
         // Additional post-execution logic can be added here
         Ok(())
     }
@@ -566,7 +566,7 @@ impl ApplicationEngine {
             }
 
             // Storage operations are expensive
-            OpCode::NEWARRAY | OpCode::NEWARRAY_T | OpCode::NEWSTRUCT | OpCode::NEWMAP => {
+            OpCode::NEWARRAY | OpCode::NewarrayT | OpCode::NEWSTRUCT | OpCode::NEWMAP => {
                 cost += self.price_per_instruction * 2;
             }
 
@@ -593,25 +593,25 @@ impl ApplicationEngine {
 
             // Control flow operations
             OpCode::JMP
-            | OpCode::JMP_L
+            | OpCode::JmpL
             | OpCode::JMPIF
-            | OpCode::JMPIF_L
+            | OpCode::JmpifL
             | OpCode::JMPIFNOT
-            | OpCode::JMPIFNOT_L
+            | OpCode::JmpifnotL
             | OpCode::JMPEQ
-            | OpCode::JMPEQ_L
+            | OpCode::JmpeqL
             | OpCode::JMPNE
-            | OpCode::JMPNE_L
+            | OpCode::JmpneL
             | OpCode::JMPGT
-            | OpCode::JMPGT_L
+            | OpCode::JmpgtL
             | OpCode::JMPGE
-            | OpCode::JMPGE_L
+            | OpCode::JmpgeL
             | OpCode::JMPLT
-            | OpCode::JMPLT_L
+            | OpCode::JmpltL
             | OpCode::JMPLE
-            | OpCode::JMPLE_L
+            | OpCode::JmpleL
             | OpCode::CALL
-            | OpCode::CALL_L
+            | OpCode::CallL
             | OpCode::CALLA
             | OpCode::TRY
             | OpCode::ENDTRY
@@ -901,13 +901,13 @@ impl ApplicationEngine {
         let original_call_flags = self.call_flags;
 
         // 2. Load and execute the contract call script
-        let context = self.load_script(script, 1, 0)?; // Return 1 value
+        let _context = self.load_script(script, 1, 0)?; // Return 1 value
         let execution_result = self.execute_with_interop();
 
         // 3. Check execution result
         match execution_result {
             VMState::HALT => {
-                if self.engine.result_stack().len() > 0 {
+                if !self.engine.result_stack().is_empty() {
                     Ok(self.engine.result_stack().peek(0)?.clone())
                 } else {
                     Ok(StackItem::Null)
@@ -935,6 +935,7 @@ impl From<ApplicationEngine> for ExecutionEngine {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use num_bigint::BigInt;

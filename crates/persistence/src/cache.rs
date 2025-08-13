@@ -3,8 +3,6 @@
 //! This module provides production-ready caching capabilities that match
 //! the C# Neo caching functionality exactly.
 
-use neo_config::SECONDS_PER_BLOCK;
-const SECONDS_PER_HOUR: u64 = 3600;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;

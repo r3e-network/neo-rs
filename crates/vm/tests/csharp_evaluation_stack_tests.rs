@@ -7,6 +7,7 @@ use neo_vm::{EvaluationStack, ReferenceCounter, StackItem};
 use num_bigint::BigInt;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

@@ -3,7 +3,6 @@
 //! This module provides comprehensive error handling for VM operations,
 //! including instruction parsing, execution errors, and stack management.
 
-use neo_config::MAX_SCRIPT_SIZE;
 use thiserror::Error;
 
 /// VM execution errors
@@ -133,6 +132,7 @@ pub enum VmError {
 
     /// Implementation provided I/O error (for testing)
     #[cfg(test)]
+#[allow(dead_code)]
     #[error("Mock I/O error: {message}")]
     MockIo { message: String },
 }
@@ -309,6 +309,7 @@ impl VmError {
 
     /// Implementation provided I/O error (for testing)
     #[cfg(test)]
+#[allow(dead_code)]
     pub fn real_io<S: Into<String>>(message: S) -> Self {
         Self::MockIo {
             message: message.into(),
@@ -399,6 +400,7 @@ impl VmError {
             VmError::InvalidScriptHash { .. } => "hash",
             VmError::InvalidWitness { .. } | VmError::VerificationFailed { .. } => "verification",
             #[cfg(test)]
+#[allow(dead_code)]
             VmError::MockIo { .. } => "real_io",
         }
     }
@@ -412,8 +414,8 @@ pub type Result<T, E = VmError> = std::result::Result<T, E>;
 
 // Standard library error conversions
 impl From<std::io::Error> for VmError {
-    fn from(error: std::io::Error) -> Self {
-        VmError::io(error.to_string())
+    fn from(_error: std::io::Error) -> Self {
+        VmError::io(_error.to_string())
     }
 }
 
@@ -424,13 +426,13 @@ impl From<std::fmt::Error> for VmError {
 }
 
 impl From<std::num::ParseIntError> for VmError {
-    fn from(error: std::num::ParseIntError) -> Self {
+    fn from(_error: std::num::ParseIntError) -> Self {
         VmError::invalid_type("string", "integer")
     }
 }
 
 impl From<std::num::ParseFloatError> for VmError {
-    fn from(error: std::num::ParseFloatError) -> Self {
+    fn from(_error: std::num::ParseFloatError) -> Self {
         VmError::invalid_type("string", "float")
     }
 }
@@ -571,6 +573,7 @@ impl VmError {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

@@ -588,17 +588,17 @@ impl Instruction {
             | OpCode::JMPLE
             | OpCode::ENDTRY => OperandSizePrefix(1),
             // Jump instructions with 4-byte offset
-            OpCode::JMP_L
-            | OpCode::JMPIF_L
-            | OpCode::JMPIFNOT_L
-            | OpCode::CALL_L
-            | OpCode::JMPEQ_L
-            | OpCode::JMPNE_L
-            | OpCode::JMPGT_L
-            | OpCode::JMPGE_L
-            | OpCode::JMPLT_L
-            | OpCode::JMPLE_L
-            | OpCode::ENDTRY_L => OperandSizePrefix(4),
+            OpCode::JmpL
+            | OpCode::JmpifL
+            | OpCode::JmpifnotL
+            | OpCode::CallL
+            | OpCode::JmpeqL
+            | OpCode::JmpneL
+            | OpCode::JmpgtL
+            | OpCode::JmpgeL
+            | OpCode::JmpltL
+            | OpCode::JmpleL
+            | OpCode::EndtryL => OperandSizePrefix(4),
             OpCode::SYSCALL => OperandSizePrefix(1), // The actual size varies, this is just the prefix
             // Slot operations with operands
             OpCode::INITSLOT => OperandSizePrefix(2), // local_count (1 byte) + argument_count (1 byte)
@@ -609,7 +609,7 @@ impl Instruction {
             // Type operations with operands
             OpCode::CONVERT | OpCode::ISTYPE => OperandSizePrefix(1), // type (1 byte)
             // Compound operations with operands
-            OpCode::NEWARRAY_T => OperandSizePrefix(1), // type (1 byte)
+            OpCode::NewarrayT => OperandSizePrefix(1), // type (1 byte)
             _ => OperandSizePrefix(0),
         }
     }
@@ -713,6 +713,7 @@ impl FromOperand for u64 {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::execution_engine::ExecutionEngine;
@@ -826,10 +827,10 @@ mod tests {
         assert_eq!(Instruction::get_operand_size(OpCode::CALL).size(), 1);
 
         // Jump instructions with 4-byte offset
-        assert_eq!(Instruction::get_operand_size(OpCode::JMP_L).size(), 4);
-        assert_eq!(Instruction::get_operand_size(OpCode::JMPIF_L).size(), 4);
-        assert_eq!(Instruction::get_operand_size(OpCode::JMPIFNOT_L).size(), 4);
-        assert_eq!(Instruction::get_operand_size(OpCode::CALL_L).size(), 4);
+        assert_eq!(Instruction::get_operand_size(OpCode::JmpL).size(), 4);
+        assert_eq!(Instruction::get_operand_size(OpCode::JmpifL).size(), 4);
+        assert_eq!(Instruction::get_operand_size(OpCode::JmpifnotL).size(), 4);
+        assert_eq!(Instruction::get_operand_size(OpCode::CallL).size(), 4);
         assert_eq!(Instruction::get_operand_size(OpCode::SYSCALL).size(), 1);
     }
 

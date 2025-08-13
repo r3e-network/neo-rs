@@ -8,6 +8,7 @@ use rand::{thread_rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod keys_tests {
     use super::*;
 

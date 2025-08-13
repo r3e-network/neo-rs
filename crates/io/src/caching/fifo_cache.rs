@@ -116,6 +116,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     #[derive(Debug, Clone, PartialEq, Default)]

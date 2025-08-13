@@ -492,6 +492,7 @@ impl SignalHandler {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use std::sync::Arc;

@@ -25,25 +25,25 @@ pub struct ExceptionHandler {
 pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::NOP, nop);
     jump_table.register(OpCode::JMP, jmp);
-    jump_table.register(OpCode::JMP_L, jmp_l);
+    jump_table.register(OpCode::JmpL, jmp_l);
     jump_table.register(OpCode::JMPIF, jmpif);
-    jump_table.register(OpCode::JMPIF_L, jmpif_l);
+    jump_table.register(OpCode::JmpifL, jmpif_l);
     jump_table.register(OpCode::JMPIFNOT, jmpifnot);
-    jump_table.register(OpCode::JMPIFNOT_L, jmpifnot_l);
+    jump_table.register(OpCode::JmpifnotL, jmpifnot_l);
     jump_table.register(OpCode::JMPEQ, jmpeq);
-    jump_table.register(OpCode::JMPEQ_L, jmpeq_l);
+    jump_table.register(OpCode::JmpeqL, jmpeq_l);
     jump_table.register(OpCode::JMPNE, jmpne);
-    jump_table.register(OpCode::JMPNE_L, jmpne_l);
+    jump_table.register(OpCode::JmpneL, jmpne_l);
     jump_table.register(OpCode::JMPGT, jmpgt);
-    jump_table.register(OpCode::JMPGT_L, jmpgt_l);
+    jump_table.register(OpCode::JmpgtL, jmpgt_l);
     jump_table.register(OpCode::JMPGE, jmpge);
-    jump_table.register(OpCode::JMPGE_L, jmpge_l);
+    jump_table.register(OpCode::JmpgeL, jmpge_l);
     jump_table.register(OpCode::JMPLT, jmplt);
-    jump_table.register(OpCode::JMPLT_L, jmplt_l);
+    jump_table.register(OpCode::JmpltL, jmplt_l);
     jump_table.register(OpCode::JMPLE, jmple);
-    jump_table.register(OpCode::JMPLE_L, jmple_l);
+    jump_table.register(OpCode::JmpleL, jmple_l);
     jump_table.register(OpCode::CALL, call);
-    jump_table.register(OpCode::CALL_L, call_l);
+    jump_table.register(OpCode::CallL, call_l);
     jump_table.register(OpCode::CALLA, calla);
     jump_table.register(OpCode::CALLT, callt);
     jump_table.register(OpCode::ABORT, abort);
@@ -52,9 +52,9 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::ASSERTMSG, assert_msg);
     jump_table.register(OpCode::THROW, throw);
     jump_table.register(OpCode::TRY, try_op);
-    jump_table.register(OpCode::TRY_L, try_l);
+    jump_table.register(OpCode::TryL, try_l);
     jump_table.register(OpCode::ENDTRY, endtry);
-    jump_table.register(OpCode::ENDTRY_L, endtry_l);
+    jump_table.register(OpCode::EndtryL, endtry_l);
     jump_table.register(OpCode::ENDFINALLY, endfinally);
     jump_table.register(OpCode::RET, ret);
 }
@@ -88,7 +88,7 @@ fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> 
     Ok(())
 }
 
-/// Implements the JMP_L operation.
+/// Implements the JmpL operation.
 fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -139,7 +139,7 @@ fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     Ok(())
 }
 
-/// Implements the JMPIF_L operation.
+/// Implements the JmpifL operation.
 fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -195,7 +195,7 @@ fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
     Ok(())
 }
 
-/// Implements the JMPIFNOT_L operation.
+/// Implements the JmpifnotL operation.
 fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -252,7 +252,7 @@ fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     Ok(())
 }
 
-/// Implements the JMPEQ_L operation.
+/// Implements the JmpeqL operation.
 fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -310,7 +310,7 @@ fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     Ok(())
 }
 
-/// Implements the JMPNE_L operation.
+/// Implements the JmpneL operation.
 fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -368,7 +368,7 @@ fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     Ok(())
 }
 
-/// Implements the JMPGT_L operation.
+/// Implements the JmpgtL operation.
 fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -426,7 +426,7 @@ fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     Ok(())
 }
 
-/// Implements the JMPGE_L operation.
+/// Implements the JmpgeL operation.
 fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -484,7 +484,7 @@ fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     Ok(())
 }
 
-/// Implements the JMPLT_L operation.
+/// Implements the JmpltL operation.
 fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -542,7 +542,7 @@ fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()
     Ok(())
 }
 
-/// Implements the JMPLE_L operation.
+/// Implements the JmpleL operation.
 fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -597,7 +597,7 @@ fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()>
     Ok(())
 }
 
-/// Implements the CALL_L operation.
+/// Implements the CallL operation.
 fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -768,7 +768,7 @@ fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
     Ok(())
 }
 
-/// Implements the TRY_L operation.
+/// Implements the TryL operation.
 fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -810,7 +810,7 @@ fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
     Ok(())
 }
 
-/// Implements the ENDTRY_L operation.
+/// Implements the EndtryL operation.
 fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine.current_context_mut().ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;

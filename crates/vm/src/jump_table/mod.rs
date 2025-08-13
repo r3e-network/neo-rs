@@ -18,7 +18,6 @@ use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::op_code::OpCode;
-use std::collections::HashMap;
 
 /// A handler for a VM instruction.
 pub type InstructionHandler = fn(&mut ExecutionEngine, &Instruction) -> VmResult<()>;
@@ -198,6 +197,7 @@ impl std::ops::IndexMut<OpCode> for JumpTable {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

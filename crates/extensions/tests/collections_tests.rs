@@ -7,6 +7,7 @@ use neo_extensions::collections::*;
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod collections_tests {
     use super::*;
 

@@ -5,6 +5,7 @@
 use neo_extensions::utilities::*;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod utilities_tests {
     use super::*;
 

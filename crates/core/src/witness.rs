@@ -372,6 +372,7 @@ impl fmt::Display for Witness {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use neo_io::Serializable;

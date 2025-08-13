@@ -1777,6 +1777,7 @@ impl ApplicationEngine {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_production_ready_storage_iterator() {
@@ -1902,6 +1903,7 @@ impl NotificationEvent {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod additional_tests {
     #[test]
     fn test_application_engine_creation() {

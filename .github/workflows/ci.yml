@@ -1,15 +1,31 @@
-name: CI
+name: Continuous Integration
 
 on:
   push:
-    branches: [ main, develop, jimmy, jimmy-rocksdb, master ]
+    branches: [ main, master, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
   pull_request:
-    branches: [ main, develop, jimmy, jimmy-rocksdb, master ]
+    branches: [ main, master, develop ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
   schedule:
-    # Run nightly at 2 AM UTC
+    # Run nightly at 2 AM UTC for continuous validation
     - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: 'Enable debug logging'
+        required: false
+        default: 'false'
 
-# Cancel running workflows when new commits are pushed
+# Cancel in-progress runs when new commits are pushed
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -17,297 +33,361 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # Make sure CI fails fast on any error
+  RUSTFLAGS: -D warnings
+  CARGO_INCREMENTAL: 0
   CI: true
 
 jobs:
-  # Fast feedback for basic checks
+  # Quick validation checks
   quick-checks:
-    name: Quick Checks
+    name: Quick Validation
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: true
+    timeout-minutes: 15
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install Rust toolchain
+      - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
+          key: ${{ runner.os }}-quick-checks
+          cache-directories: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
 
-      - name: Install system dependencies
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
-          # Install build essentials
-          sudo apt-get install -y build-essential gcc g++ cmake make pkg-config
-          # Install libclang for bindgen (required by librocksdb-sys)
-          sudo apt-get install -y llvm-14 libclang-14-dev clang-14
-          # Install RocksDB and compression libraries
-          sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev
-          # Set environment variables
+          sudo apt-get install -y \
+            build-essential gcc g++ cmake make pkg-config \
+            llvm-14 libclang-14-dev clang-14 \
+            librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev \
+            zlib1g-dev libbz2-dev libssl-dev
           echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
-      - name: Check formatting
+      - name: Verify Formatting
         run: |
-          echo "🔍 Checking code formatting[Implementation complete]"
-          cargo fmt --all -- --check || {
-            echo "❌ Code formatting check failed! Run 'cargo fmt' to fix."
-            exit 1
-          }
-          echo "✅ Code formatting check passed"
+          echo "🔍 Checking code formatting..."
+          cargo fmt --all -- --check
+          echo "✅ Code formatting verified"
 
-      - name: Run clippy
+      - name: Run Clippy Linter
         run: |
-          echo "🔍 Running clippy lints[Implementation complete]"
-          cargo clippy --workspace --exclude neo-vm --exclude neo-smart-contract --all-targets --all-features || {
-            echo "❌ Clippy check failed! Fix the warnings above."
-            exit 1
-          }
-          echo "✅ Clippy check passed"
+          echo "🔍 Running clippy static analysis..."
+          cargo clippy --workspace --all-targets --all-features -- \
+            -W clippy::all \
+            -W clippy::pedantic \
+            -W clippy::nursery \
+            -A clippy::module_name_repetitions \
+            -A clippy::must_use_candidate \
+            -A clippy::missing_errors_doc
+          echo "✅ Static analysis completed"
 
-      - name: Check documentation
-        run: cargo doc --all-features
+      - name: Check Documentation
+        run: |
+          echo "📚 Verifying documentation builds..."
+          cargo doc --workspace --all-features --no-deps
+          echo "✅ Documentation verified"
 
-  # Test suite on Ubuntu with stable Rust
-  test:
-    name: Test Suite
-    runs-on: ubuntu-latest
+  # Comprehensive test suite
+  test-suite:
+    name: Test Suite - ${{ matrix.rust }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
-      fail-fast: true
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable, beta]
+        exclude:
+          - os: macos-latest
+            rust: beta
+          - os: windows-latest
+            rust: beta
+    
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
-          path: |
+          toolchain: ${{ matrix.rust }}
+
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-${{ matrix.rust }}-test
+          cache-directories: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ubuntu-stable-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ubuntu-stable-cargo-
 
-      - name: Install system dependencies
+      - name: Install Dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          # Install build essentials
-          sudo apt-get install -y build-essential gcc g++ cmake make pkg-config
-          # Install libclang for bindgen (required by librocksdb-sys)
-          sudo apt-get install -y llvm-14 libclang-14-dev clang-14
-          # Install RocksDB and compression libraries
-          sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev
-          # Set environment variables
+          sudo apt-get install -y \
+            build-essential gcc g++ cmake make pkg-config \
+            llvm-14 libclang-14-dev clang-14 \
+            librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev \
+            zlib1g-dev libbz2-dev libssl-dev
           echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
-      - name: Build
+      - name: Install Dependencies (macOS)
+        if: matrix.os == 'macos-latest'
         run: |
-          echo "🔨 Building project[Implementation complete]"
-          cargo build --workspace --exclude neo-vm --exclude neo-smart-contract --all-targets --all-features || {
-            echo "❌ Build failed!"
-            exit 1
-          }
+          brew install rocksdb snappy lz4 zstd openssl@3
+          echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+
+      - name: Install Dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install llvm rocksdb -y
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
+      - name: Build Project
+        run: |
+          echo "🔨 Building project with all features..."
+          cargo build --workspace --all-targets --all-features
           echo "✅ Build successful"
 
-      - name: Run unit tests
+      - name: Run Unit Tests
         run: |
-          echo "🧪 Running unit tests[Implementation complete]"
-          cargo test --workspace --exclude neo-vm --exclude neo-smart-contract --all-features --lib || {
-            echo "❌ Unit tests failed!"
-            exit 1
-          }
+          echo "🧪 Running unit tests..."
+          cargo test --workspace --lib --all-features -- --test-threads=4
           echo "✅ Unit tests passed"
 
-      - name: Run integration tests
+      - name: Run Integration Tests
         run: |
-          echo "🧪 Running integration tests[Implementation complete]"
-          cargo test --workspace --exclude neo-vm --exclude neo-smart-contract --all-features --test '*' || {
-            echo "❌ Integration tests failed!"
-            exit 1
-          }
+          echo "🧪 Running integration tests..."
+          cargo test --workspace --test '*' --all-features -- --test-threads=2
           echo "✅ Integration tests passed"
 
-      - name: Run doc tests
+      - name: Run Documentation Tests
         run: |
-          echo "📚 Running doc tests[Implementation complete]"
-          cargo test --workspace --exclude neo-vm --exclude neo-smart-contract --all-features --doc || {
-            echo "❌ Doc tests failed!"
-            exit 1
-          }
-          echo "✅ Doc tests passed"
+          echo "📚 Running documentation tests..."
+          cargo test --workspace --doc --all-features
+          echo "✅ Documentation tests passed"
 
-  # Basic feature testing
-  feature-tests:
-    name: Feature Flag Tests
+  # Feature compatibility testing
+  feature-matrix:
+    name: Feature Matrix Testing
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
-      fail-fast: true
+      fail-fast: false
+      matrix:
+        features:
+          - ""  # default features
+          - "--all-features"
+          - "--no-default-features"
+    
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ubuntu-features-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-features-${{ matrix.features }}
 
-      - name: Install system dependencies
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
-          # Install build essentials
-          sudo apt-get install -y build-essential gcc g++ cmake make pkg-config
-          # Install libclang for bindgen (required by librocksdb-sys)
-          sudo apt-get install -y llvm-14 libclang-14-dev clang-14
-          # Install RocksDB and compression libraries
-          sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev
-          # Set environment variables
+          sudo apt-get install -y \
+            build-essential gcc g++ cmake make pkg-config \
+            llvm-14 libclang-14-dev clang-14 \
+            librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev \
+            zlib1g-dev libbz2-dev libssl-dev
           echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
-      - name: Test default features
+      - name: Test with Features ${{ matrix.features }}
         run: |
-          echo "🧪 Testing with all features[Implementation complete]"
-          cargo test --workspace --exclude neo-vm --exclude neo-smart-contract --all-features || {
-            echo "❌ Feature tests failed!"
-            exit 1
-          }
+          echo "🧪 Testing with features: ${{ matrix.features }}"
+          cargo test --workspace ${{ matrix.features }}
           echo "✅ Feature tests passed"
 
-  # Build examples
-  examples:
-    name: Examples
+  # Code coverage analysis
+  coverage:
+    name: Code Coverage
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: true
+    timeout-minutes: 30
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ubuntu-examples-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-coverage
 
-      - name: Install system dependencies
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
-          # Install build essentials
-          sudo apt-get install -y build-essential gcc g++ cmake make pkg-config
-          # Install libclang for bindgen (required by librocksdb-sys)
-          sudo apt-get install -y llvm-14 libclang-14-dev clang-14
-          # Install RocksDB and compression libraries
-          sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev
-          # Set environment variables
+          sudo apt-get install -y \
+            build-essential gcc g++ cmake make pkg-config \
+            llvm-14 libclang-14-dev clang-14 \
+            librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev \
+            zlib1g-dev libbz2-dev libssl-dev
           echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
-      - name: Build examples
-        run: |
-          echo "📦 Building examples[Implementation complete]"
-          cargo build --workspace --exclude neo-vm --exclude neo-smart-contract --examples --all-features || {
-            echo "❌ Examples build failed!"
-            exit 1
-          }
-          echo "✅ Examples build successful"
+      - name: Install Tarpaulin
+        run: cargo install cargo-tarpaulin
 
-  # Documentation deployment
-  docs:
-    name: Documentation
+      - name: Generate Coverage Report
+        run: |
+          echo "📊 Generating code coverage report..."
+          cargo tarpaulin --workspace --all-features \
+            --timeout 300 \
+            --exclude-files "*/tests/*" \
+            --exclude-files "*/benches/*" \
+            --exclude-files "*/examples/*" \
+            --out xml \
+            --output-dir coverage
+          echo "✅ Coverage report generated"
+
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/cobertura.xml
+          flags: unittests
+          name: neo-rs-coverage
+          fail_ci_if_error: false
+
+  # Benchmark regression detection
+  benchmarks:
+    name: Performance Benchmarks
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/jimmy' || github.ref == 'refs/heads/master'
-    strategy:
-      fail-fast: true
+    timeout-minutes: 30
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v3
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-docs-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-benchmarks
 
-      - name: Install system dependencies
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
-          # Install build essentials
-          sudo apt-get install -y build-essential gcc g++ cmake make pkg-config
-          # Install libclang for bindgen (required by librocksdb-sys)
-          sudo apt-get install -y llvm-14 libclang-14-dev clang-14
-          # Install RocksDB and compression libraries
-          sudo apt-get install -y librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev zlib1g-dev libbz2-dev
-          # Set environment variables
+          sudo apt-get install -y \
+            build-essential gcc g++ cmake make pkg-config \
+            llvm-14 libclang-14-dev clang-14 \
+            librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev \
+            zlib1g-dev libbz2-dev libssl-dev
           echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
 
-      - name: Build documentation
+      - name: Run Benchmarks
         run: |
-          cargo doc --all-features
-          mkdir -p target/doc
-          echo '<meta http-equiv=refresh content=0;url=neo_core/index.html>' > target/doc/index.html
+          echo "⚡ Running performance benchmarks..."
+          cargo bench --workspace --all-features -- --output-format bencher | tee bench-results.txt
+          echo "✅ Benchmarks completed"
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Store Benchmark Results
+        uses: benchmark-action/github-action-benchmark@v1
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/doc
+          tool: 'cargo'
+          output-file-path: bench-results.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
 
-  # Final status check
+  # Minimum supported Rust version check
+  msrv:
+    name: Minimum Supported Rust Version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: |
+          MSRV=$(grep "rust-version" Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "msrv=$MSRV" >> $GITHUB_OUTPUT
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.msrv }}
+
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-msrv
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential gcc g++ cmake make pkg-config \
+            llvm-14 libclang-14-dev clang-14 \
+            librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev \
+            zlib1g-dev libbz2-dev libssl-dev
+          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
+
+      - name: Check MSRV Compatibility
+        run: |
+          echo "🔍 Checking MSRV ${{ steps.msrv.outputs.msrv }} compatibility..."
+          cargo check --workspace --all-features
+          echo "✅ MSRV check passed"
+
+  # Final CI status aggregation
   ci-success:
-    name: CI Success
+    name: CI Success Gate
     runs-on: ubuntu-latest
-    needs: [quick-checks, test, feature-tests, examples]
+    needs: [quick-checks, test-suite, feature-matrix, coverage, msrv]
     if: always()
     steps:
-      - name: Check all jobs
+      - name: Verify All Jobs Passed
         run: |
           if [[ "${{ needs.quick-checks.result }}" != "success" ]]; then
-            echo "Quick checks failed"
+            echo "❌ Quick checks failed"
             exit 1
           fi
-          if [[ "${{ needs.test.result }}" != "success" ]]; then
-            echo "Tests failed"
+          if [[ "${{ needs.test-suite.result }}" != "success" ]]; then
+            echo "❌ Test suite failed"
             exit 1
           fi
-          if [[ "${{ needs.feature-tests.result }}" != "success" ]]; then
-            echo "Feature tests failed"
+          if [[ "${{ needs.feature-matrix.result }}" != "success" ]]; then
+            echo "❌ Feature matrix tests failed"
             exit 1
           fi
-          if [[ "${{ needs.examples.result }}" != "success" ]]; then
-            echo "Examples failed"
+          if [[ "${{ needs.coverage.result }}" != "success" ]] && [[ "${{ needs.coverage.result }}" != "skipped" ]]; then
+            echo "❌ Coverage analysis failed"
             exit 1
           fi
-          echo "All CI checks passed!"
+          if [[ "${{ needs.msrv.result }}" != "success" ]]; then
+            echo "❌ MSRV check failed"
+            exit 1
+          fi
+          echo "✅ All CI checks passed successfully!"
+
+      - name: Create Status Badge
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "[![CI Status](https://github.com/${{ github.repository }}/workflows/Continuous%20Integration/badge.svg)](https://github.com/${{ github.repository }}/actions/workflows/ci.yml)" > ci-status.md

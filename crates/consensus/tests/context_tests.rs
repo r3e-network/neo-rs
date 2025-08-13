@@ -9,6 +9,7 @@ use neo_core::{Block, Transaction, UInt160, UInt256};
 use std::collections::HashMap;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod context_tests {
     use super::*;
 

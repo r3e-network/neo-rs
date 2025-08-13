@@ -21,6 +21,7 @@ pub use proof::{ProofNode, ProofVerifier};
 pub use trie::Trie;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::NodeType;
     #[test]

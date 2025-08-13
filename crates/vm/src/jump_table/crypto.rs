@@ -7,8 +7,6 @@ use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
-use crate::op_code::OpCode;
-use crate::script::Script;
 use crate::stack_item::StackItem;
 const HASH_SIZE: usize = 32;
 
@@ -76,6 +74,7 @@ fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> VmRe
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::{ExecutionEngine, OpCode, Script, StackItem, VmError};
