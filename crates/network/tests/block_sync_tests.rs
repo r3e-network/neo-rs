@@ -9,6 +9,7 @@ use tokio::time::{timeout, Duration};
 
 /// Test block synchronization functionality
 #[cfg(test)]
+#[allow(dead_code)]
 mod block_sync_tests {
     use super::*;
 

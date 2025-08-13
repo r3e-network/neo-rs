@@ -4,13 +4,8 @@
 //! the C# Neo.Network.RPC.RpcClient interface, ensuring 100% compatibility.
 
 use crate::{RpcClient, RpcError, RpcResult};
-use neo_config::DEFAULT_NEO_PORT;
-use neo_config::DEFAULT_RPC_PORT;
-use neo_config::DEFAULT_TESTNET_PORT;
-use neo_config::DEFAULT_TESTNET_RPC_PORT;
-use neo_core::{Transaction, UInt160, UInt256};
+use neo_core::{UInt160, UInt256};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 
 /// Default Neo network ports
 /// Complete Neo N3 RPC interface implementation (matches C# RpcClient exactly)
@@ -459,6 +454,7 @@ impl RpcClient {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::{RpcError, RpcResult};

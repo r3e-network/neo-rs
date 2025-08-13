@@ -8,6 +8,7 @@ use neo_consensus::*;
 use neo_core::{UInt160, UInt256};
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod messages_tests {
     use super::*;
 

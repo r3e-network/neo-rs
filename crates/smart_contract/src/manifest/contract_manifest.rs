@@ -473,6 +473,7 @@ impl Default for ContractManifest {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use crate::manifest::ContractMethod;
 

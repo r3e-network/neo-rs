@@ -10,6 +10,7 @@ use tempfile::TempDir;
 use tokio::fs;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod config_tests {
     use super::*;
 

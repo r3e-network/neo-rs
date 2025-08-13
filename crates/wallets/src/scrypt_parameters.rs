@@ -258,7 +258,11 @@ impl ScryptPresets {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
+    use super::*;
+    use crate::ScryptParameters;
+
     #[test]
     fn test_scrypt_parameters_validation() {
         assert!(ScryptParameters::new(16384, 8, 8).is_ok());

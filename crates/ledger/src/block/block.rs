@@ -854,6 +854,7 @@ impl Block {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use crate::{Error, Result};
     use neo_core::{UInt160, UInt256};

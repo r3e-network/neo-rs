@@ -3,7 +3,6 @@
 //! This module provides the Null stack item implementation used in the Neo VM.
 
 use crate::stack_item::stack_item_type::StackItemType;
-use std::sync::Arc;
 
 /// Represents a null value in the VM.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +42,7 @@ impl Default for Null {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

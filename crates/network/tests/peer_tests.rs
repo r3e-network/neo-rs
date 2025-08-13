@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod peer_tests {
     use super::*;
 

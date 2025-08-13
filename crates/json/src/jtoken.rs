@@ -351,6 +351,7 @@ impl From<Vec<Option<JToken>>> for JToken {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

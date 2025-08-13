@@ -2,6 +2,7 @@
 //!
 //! Provides comprehensive monitoring, health checks, and performance tracking.
 
+pub mod alerting;
 pub mod exporters;
 pub mod health;
 pub mod performance;
@@ -12,7 +13,7 @@ pub use health::{
 };
 
 pub use performance::{
-    AlertLevel, PerformanceAlert, PerformanceMetric, PerformanceMonitor,
+    PerformanceAlert, PerformanceMetric, PerformanceMonitor,
     PerformanceSample, PerformanceThreshold, Profiler, ThresholdType,
     MetricStatistics,
 };
@@ -20,6 +21,11 @@ pub use performance::{
 pub use exporters::{
     StatusReport, MetricsExporter, PrometheusExporter, JsonExporter,
     OpenTelemetryExporter, CsvExporter, ExporterFactory,
+};
+
+pub use alerting::{
+    Alert, AlertLevel, AlertManager, AlertRule, AlertStats, AlertThreshold,
+    LogChannel, NotificationChannel, ThresholdOperator, WebhookChannel,
 };
 
 use crate::error_handling::Result;

@@ -171,12 +171,12 @@ impl HealthMonitor {
 /// Blockchain health check
 pub struct BlockchainHealthCheck {
     /// Maximum allowed block lag
-    max_block_lag: u64,
+    _max_block_lag: u64,
 }
 
 impl BlockchainHealthCheck {
     pub fn new(max_block_lag: u64) -> Self {
-        Self { max_block_lag }
+        Self { _max_block_lag: max_block_lag }
     }
 }
 
@@ -373,6 +373,7 @@ impl HealthCheck for MemoryHealthCheck {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     

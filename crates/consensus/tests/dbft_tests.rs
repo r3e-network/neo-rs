@@ -9,6 +9,7 @@ use neo_core::{UInt160, UInt256};
 use std::sync::{Arc, Mutex};
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod dbft_tests {
     use super::*;
 

@@ -56,6 +56,7 @@ impl BitOr for CallFlags {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

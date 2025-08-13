@@ -132,6 +132,7 @@ impl Plugin for SqliteWalletPlugin {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

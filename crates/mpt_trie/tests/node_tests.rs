@@ -7,6 +7,7 @@ use neo_core::UInt256;
 use neo_mpt_trie::*;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod node_tests {
     use super::*;
 

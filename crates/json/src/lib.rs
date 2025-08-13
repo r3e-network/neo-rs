@@ -66,6 +66,7 @@ pub use jtoken::JToken;
 pub use ordered_dictionary::OrderedDictionary;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 
@@ -83,6 +84,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod integration_tests {
     use super::*;
 
@@ -294,6 +296,7 @@ mod integration_tests {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod performance_tests {
     use super::*;
     use std::time::Instant;

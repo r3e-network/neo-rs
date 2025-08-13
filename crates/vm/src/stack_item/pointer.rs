@@ -2,11 +2,8 @@
 //!
 //! This module provides the Pointer stack item implementation used in the Neo VM.
 
-use crate::error::VmError;
-use crate::error::VmResult;
 use crate::stack_item::stack_item_type::StackItemType;
 use num_bigint::BigInt;
-use std::sync::Arc;
 
 /// Represents a pointer to a position in a script in the VM.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +45,7 @@ impl Pointer {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

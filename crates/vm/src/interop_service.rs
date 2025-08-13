@@ -6,8 +6,6 @@ use crate::call_flags::CallFlags;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::execution_engine::ExecutionEngine;
-use crate::op_code::OpCode;
-use crate::script::Script;
 use crate::stack_item::StackItem;
 use lazy_static::lazy_static;
 use neo_config::ADDRESS_SIZE;
@@ -481,6 +479,7 @@ impl InteropServiceTrait for InteropService {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::call_flags::CallFlags;

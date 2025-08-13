@@ -516,6 +516,7 @@ impl P2PNode {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{Message, Peer, NetworkError};
     use crate::NodeInfo;

@@ -149,7 +149,7 @@ impl<T> SafeMutex<T> {
     }
     
     /// Lock the mutex, recovering from poisoned state if necessary
-    pub fn safe_lock(&self) -> Result<std::sync::MutexGuard<T>> {
+    pub fn safe_lock(&self) -> Result<std::sync::MutexGuard<'_, T>> {
         match self.inner.lock() {
             Ok(guard) => Ok(guard),
             Err(poisoned) => {
@@ -160,7 +160,7 @@ impl<T> SafeMutex<T> {
     }
     
     /// Try to lock without blocking
-    pub fn safe_try_lock(&self) -> Result<Option<std::sync::MutexGuard<T>>> {
+    pub fn safe_try_lock(&self) -> Result<Option<std::sync::MutexGuard<'_, T>>> {
         match self.inner.try_lock() {
             Ok(guard) => Ok(Some(guard)),
             Err(std::sync::TryLockError::WouldBlock) => Ok(None),
@@ -193,7 +193,7 @@ impl<T> SafeRwLock<T> {
     }
     
     /// Read lock with poison recovery
-    pub fn safe_read(&self) -> Result<std::sync::RwLockReadGuard<T>> {
+    pub fn safe_read(&self) -> Result<std::sync::RwLockReadGuard<'_, T>> {
         match self.inner.read() {
             Ok(guard) => Ok(guard),
             Err(poisoned) => {
@@ -204,7 +204,7 @@ impl<T> SafeRwLock<T> {
     }
     
     /// Write lock with poison recovery
-    pub fn safe_write(&self) -> Result<std::sync::RwLockWriteGuard<T>> {
+    pub fn safe_write(&self) -> Result<std::sync::RwLockWriteGuard<'_, T>> {
         match self.inner.write() {
             Ok(guard) => Ok(guard),
             Err(poisoned) => {
@@ -307,6 +307,7 @@ pub mod file {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     

@@ -30,6 +30,7 @@ impl fmt::Display for ContainsTransactionType {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

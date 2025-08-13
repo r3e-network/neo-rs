@@ -2,11 +2,9 @@
 //!
 //! This module provides the Array stack item implementation used in the Neo VM.
 
-use crate::error::{VmError, VmResult};
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::StackItem;
-use num_traits::ToPrimitive;
 use std::sync::Arc;
 
 /// Represents an array of stack items in the VM.
@@ -130,6 +128,7 @@ impl Drop for Array {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod console_tests {
     use super::*;
 

@@ -302,6 +302,7 @@ impl Shutdown for TransactionPoolShutdown {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::NetworkConfig;

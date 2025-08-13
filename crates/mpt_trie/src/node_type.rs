@@ -48,6 +48,7 @@ impl TryFrom<u8> for NodeType {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     #[test]

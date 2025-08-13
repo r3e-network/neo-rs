@@ -182,9 +182,9 @@ impl JsonTestRunner {
                 "ASSERT" => bytes.push(0x2f),
                 "THROW" => bytes.push(0x3a),
                 "TRY" => bytes.push(0x3b),
-                "TRY_L" => bytes.push(0x3c),
+                "TryL" => bytes.push(0x3c),
                 "ENDTRY" => bytes.push(0x3d),
-                "ENDTRY_L" => bytes.push(0x3e),
+                "EndtryL" => bytes.push(0x3e),
                 "ENDFINALLY" => bytes.push(0x3f),
                 "RET" => bytes.push(0x40),
                 "SYSCALL" => bytes.push(0x41),
@@ -318,6 +318,7 @@ impl JsonTestRunner {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

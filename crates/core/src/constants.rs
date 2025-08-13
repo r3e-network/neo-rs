@@ -78,6 +78,7 @@ pub const MAX_STORAGE_VALUE_SIZE: usize = u16::MAX as usize;
 pub const MAX_RETRY_ATTEMPTS: u32 = 3;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

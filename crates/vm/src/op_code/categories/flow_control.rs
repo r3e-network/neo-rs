@@ -34,7 +34,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 0 items
     /// ```
-    JMP_L = 0x23,
+    JmpL = 0x23,
 
     /// Transfers control to a target instruction if the value is true, not null, or non-zero. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -52,7 +52,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 1 item
     /// ```
-    JMPIF_L = 0x25,
+    JmpifL = 0x25,
 
     /// Transfers control to a target instruction if the value is false, a null reference, or zero. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -70,7 +70,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 1 item
     /// ```
-    JMPIFNOT_L = 0x27,
+    JmpifnotL = 0x27,
 
     /// Transfers control to a target instruction if two values are equal. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -88,7 +88,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPEQ_L = 0x29,
+    JmpeqL = 0x29,
 
     /// Transfers control to a target instruction when two values are not equal. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -106,7 +106,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPNE_L = 0x2B,
+    JmpneL = 0x2B,
 
     /// Transfers control to a target instruction if the first value is greater than the second value. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -124,7 +124,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPGT_L = 0x2D,
+    JmpgtL = 0x2D,
 
     /// Transfers control to a target instruction if the first value is greater than or equal to the second value. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -142,7 +142,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPGE_L = 0x2F,
+    JmpgeL = 0x2F,
 
     /// Transfers control to a target instruction if the first value is less than the second value. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -160,7 +160,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPLT_L = 0x31,
+    JmpltL = 0x31,
 
     /// Transfers control to a target instruction if the first value is less than or equal to the second value. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -178,7 +178,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 2 items
     /// ```
-    JMPLE_L = 0x33,
+    JmpleL = 0x33,
 
     /// Calls the function at the target address. The target instruction is represented as a 1-byte signed offset from the beginning of the current instruction.
     ///
@@ -196,7 +196,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 0 items
     /// ```
-    CALL_L = 0x35,
+    CallL = 0x35,
 
     /// Calls the function at the target address. The target instruction is represented as a value on the stack.
     ///
@@ -250,7 +250,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 0 items
     /// ```
-    TRY_L = 0xF0,
+    TryL = 0xF0,
 
     /// Ends a try block.
     ///
@@ -268,7 +268,7 @@ pub enum FlowControlOpCode {
     /// Push: 0 items
     /// Pop: 0 items
     /// ```
-    ENDTRY_L = 0xF1,
+    EndtryL = 0xF1,
 
     /// Ends a finally block.
     ///
@@ -304,29 +304,29 @@ impl FlowControlOpCode {
         matches!(
             self,
             Self::JMP
-                | Self::JMP_L
+                | Self::JmpL
                 | Self::JMPIF
-                | Self::JMPIF_L
+                | Self::JmpifL
                 | Self::JMPIFNOT
-                | Self::JMPIFNOT_L
+                | Self::JmpifnotL
                 | Self::JMPEQ
-                | Self::JMPEQ_L
+                | Self::JmpeqL
                 | Self::JMPNE
-                | Self::JMPNE_L
+                | Self::JmpneL
                 | Self::JMPGT
-                | Self::JMPGT_L
+                | Self::JmpgtL
                 | Self::JMPGE
-                | Self::JMPGE_L
+                | Self::JmpgeL
                 | Self::JMPLT
-                | Self::JMPLT_L
+                | Self::JmpltL
                 | Self::JMPLE
-                | Self::JMPLE_L
+                | Self::JmpleL
         )
     }
 
     /// Checks if this is a call instruction.
     pub fn is_call(&self) -> bool {
-        matches!(self, Self::CALL | Self::CALL_L | Self::CALLA)
+        matches!(self, Self::CALL | Self::CallL | Self::CALLA)
     }
 
     /// Checks if this is an exception-related instruction.
@@ -337,9 +337,9 @@ impl FlowControlOpCode {
                 | Self::ASSERT
                 | Self::THROW
                 | Self::TRY
-                | Self::TRY_L
+                | Self::TryL
                 | Self::ENDTRY
-                | Self::ENDTRY_L
+                | Self::EndtryL
                 | Self::ENDFINALLY
         )
     }
@@ -348,18 +348,18 @@ impl FlowControlOpCode {
     pub fn uses_long_offset(&self) -> bool {
         matches!(
             self,
-            Self::JMP_L
-                | Self::JMPIF_L
-                | Self::JMPIFNOT_L
-                | Self::JMPEQ_L
-                | Self::JMPNE_L
-                | Self::JMPGT_L
-                | Self::JMPGE_L
-                | Self::JMPLT_L
-                | Self::JMPLE_L
-                | Self::CALL_L
-                | Self::TRY_L
-                | Self::ENDTRY_L
+            Self::JmpL
+                | Self::JmpifL
+                | Self::JmpifnotL
+                | Self::JmpeqL
+                | Self::JmpneL
+                | Self::JmpgtL
+                | Self::JmpgeL
+                | Self::JmpltL
+                | Self::JmpleL
+                | Self::CallL
+                | Self::TryL
+                | Self::EndtryL
         )
     }
 }

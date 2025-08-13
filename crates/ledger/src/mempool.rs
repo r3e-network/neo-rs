@@ -852,6 +852,7 @@ impl MemoryPool {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use crate::{Error, Result};
     use neo_core::{Signer, Transaction, UInt160, UInt256, Witness, WitnessScope};

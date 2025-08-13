@@ -113,6 +113,7 @@ pub mod helper {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::{BinaryWriter, IoResult, MemoryReader};

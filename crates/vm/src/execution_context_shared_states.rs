@@ -119,6 +119,7 @@ impl SharedStates {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::script::Script;

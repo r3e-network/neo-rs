@@ -4,7 +4,6 @@
 
 use crate::stack_item::stack_item_type::StackItemType;
 use num_bigint::BigInt;
-use std::sync::Arc;
 
 /// Represents a boolean value in the VM.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +58,7 @@ impl Boolean {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

@@ -1466,6 +1466,7 @@ pub struct SyncHealthStatus {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::{NetworkConfig, P2pNode};

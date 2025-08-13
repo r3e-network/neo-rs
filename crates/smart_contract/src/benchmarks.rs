@@ -498,6 +498,7 @@ impl Default for BenchmarkSuite {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

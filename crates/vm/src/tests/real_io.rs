@@ -77,6 +77,7 @@ impl Write for RealIO {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use std::io::{Read, Write};

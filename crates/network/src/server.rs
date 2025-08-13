@@ -612,6 +612,7 @@ impl Default for NetworkServerBuilder {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::{NetworkError, NetworkResult, PeerInfo};

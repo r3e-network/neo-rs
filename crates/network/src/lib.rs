@@ -1,32 +1,167 @@
-//! Neo Network Module
+//! # Neo Network Protocol
 //!
-//! This module provides comprehensive networking functionality for the Neo blockchain,
-//! including P2P communication, message handling, peer management, and RPC services.
+//! Comprehensive networking functionality for the Neo blockchain protocol.
 //!
-//! ## Components
+//! This crate implements the complete Neo network protocol including peer-to-peer
+//! communication, message handling, blockchain synchronization, and JSON-RPC services.
+//! It provides a robust and scalable networking layer that enables Neo nodes to
+//! participate in the blockchain network.
 //!
-//! - **P2P**: Peer-to-peer communication and protocol handling
-//! - **Messages**: Network message types and serialization
-//! - **Peers**: Peer discovery, connection management, and routing
-//! - **Sync**: Blockchain synchronization and consensus
-//! - **RPC**: JSON-RPC server for external API access
-//! - **Server**: Network server coordination and management
+//! ## Features
+//!
+//! - **P2P Protocol**: Complete Neo P2P protocol implementation with handshaking
+//! - **Message Handling**: Type-safe network message serialization and validation
+//! - **Peer Management**: Connection management, discovery, and health monitoring
+//! - **Blockchain Sync**: Fast block synchronization with fork detection
+//! - **Transaction Relay**: Efficient transaction propagation and relay
+//! - **JSON-RPC API**: Complete RPC server for external integrations
+//! - **Error Recovery**: Comprehensive error handling and connection recovery
+//!
+//! ## Architecture
+//!
+//! The network layer is organized into several core components:
+//!
+//! - **P2P Node**: Main networking interface and connection management
+//! - **Peer Manager**: Peer discovery, connection lifecycle, and health monitoring
+//! - **Message Protocol**: Network message types and serialization
+//! - **Sync Manager**: Blockchain synchronization and fork resolution
+//! - **RPC Server**: JSON-RPC API server for external clients
+//! - **Transaction Relay**: Transaction propagation and relay cache
+//! - **Network Server**: High-level network service coordination
+//!
+//! ## Example Usage
+//!
+//! ### Basic Network Node
+//!
+//! ```rust,no_run
+//! use neo_network::{NetworkConfig, P2pNode, NetworkEvent};
+//! use tokio::sync::mpsc;
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create network configuration
+//! let config = NetworkConfig::default();
+//!
+//! // Create event channel
+//! let (event_tx, mut event_rx) = mpsc::channel(100);
+//!
+//! // Start P2P node
+//! let mut node = P2pNode::new(config, event_tx).await?;
+//! node.start().await?;
+//!
+//! // Handle network events
+//! while let Some(event) = event_rx.recv().await {
+//!     match event {
+//!         NetworkEvent::PeerConnected { peer_id, address } => {
+//!             println!("Peer connected: {} at {}", peer_id, address);
+//!         }
+//!         NetworkEvent::BlockReceived { block_hash, height } => {
+//!             println!("Received block {} at height {}", block_hash, height);
+//!         }
+//!         _ => {}
+//!     }
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Custom Message Handling
+//!
+//! ```rust,no_run
+//! use neo_network::{NetworkMessage, MessageCommand};
+//!
+//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create a version message
+//! let message = NetworkMessage::new(
+//!     MessageCommand::Version,
+//!     vec![], // payload
+//! )?;
+//!
+//! // Validate message
+//! if message.validate()? {
+//!     println!("Message is valid");
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ### Network Configuration
+//!
+//! ```rust
+//! use neo_network::NetworkConfig;
+//!
+//! // MainNet configuration
+//! let mainnet = NetworkConfig::default();
+//!
+//! // TestNet configuration
+//! let testnet = NetworkConfig::testnet();
+//!
+//! // Private network configuration
+//! let private = NetworkConfig::private();
+//! ```
+//!
+//! ## Network Protocols
+//!
+//! ### P2P Protocol
+//!
+//! The P2P protocol implements the Neo network specification:
+//! - Version negotiation and capability exchange
+//! - Peer discovery through seed nodes and peer exchange
+//! - Keep-alive mechanism with ping/pong messages
+//! - Inventory-based message propagation
+//!
+//! ### Message Types
+//!
+//! Supported network message types:
+//! - **version**: Version and capability negotiation
+//! - **verack**: Version acknowledgment
+//! - **inv**: Inventory announcement
+//! - **getdata**: Data request
+//! - **block**: Block data
+//! - **tx**: Transaction data
+//! - **ping/pong**: Keep-alive messages
+//!
+//! ## Performance Features
+//!
+//! - **Connection Pooling**: Efficient connection reuse and management
+//! - **Message Batching**: Batch message processing for better throughput
+//! - **Compression**: Optional message compression for bandwidth optimization
+//! - **Rate Limiting**: Protection against spam and DoS attacks
+//! - **Caching**: Smart caching for frequently accessed data
 
+#![warn(missing_docs)]
+#![warn(rustdoc::missing_crate_level_docs)]
+
+/// Composite message handler for protocol processing
 pub mod composite_handler;
+/// Network error types and result handling
 pub mod error;
+/// Advanced error handling and recovery strategies
 pub mod error_handling;
+/// Protocol message handlers
 pub mod handlers;
+/// Network message types and serialization
 pub mod messages;
+/// Core P2P protocol implementation
 pub mod p2p;
+/// High-level P2P node interface
 pub mod p2p_node;
+/// Peer connection management
 pub mod peer_manager;
+/// Peer discovery and routing
 pub mod peers;
+/// Transaction and inventory relay cache
 pub mod relay_cache;
+/// JSON-RPC server implementation
 pub mod rpc;
+/// Network server coordination
 pub mod server;
+/// Graceful shutdown implementation
 pub mod shutdown_impl;
+/// Snapshot configuration management
 pub mod snapshot_config;
+/// Blockchain synchronization
 pub mod sync;
+/// Transaction relay and propagation
 pub mod transaction_relay;
 
 // Constants
@@ -55,7 +190,10 @@ pub use crate::transaction_relay::{
 };
 pub use error::{ErrorSeverity, NetworkError, NetworkResult, Result};
 
-/// Node service flags (compatibility with C# tests)
+/// Node service flags indicating node capabilities.
+///
+/// These flags indicate what services a node provides to the network.
+/// They are used during the version handshake to advertise node capabilities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u64)]
 pub enum NodeServices {
@@ -67,7 +205,10 @@ pub enum NodeServices {
     NodeGetTransactions = 0x04,
 }
 
-/// Bloom filter flags (compatibility with C# tests)
+/// Bloom filter update flags for transaction filtering.
+///
+/// These flags control how bloom filters are updated when transactions
+/// are processed, enabling light clients to filter relevant transactions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum BloomFilterFlags {
@@ -86,7 +227,18 @@ use std::sync::Mutex;
 pub static GLOBAL_SYNC_MANAGER: Lazy<Mutex<Option<std::sync::Arc<sync::SyncManager>>>> =
     Lazy::new(|| Mutex::new(None));
 
-/// Set the global sync manager reference
+/// Sets the global sync manager reference.
+///
+/// This function allows setting a global reference to the sync manager
+/// for use by other components that need direct access to sync state.
+///
+/// # Arguments
+///
+/// * `sync_manager` - Arc reference to the sync manager instance
+///
+/// # Thread Safety
+///
+/// This function is thread-safe and can be called from any thread.
 pub fn set_global_sync_manager(sync_manager: std::sync::Arc<sync::SyncManager>) {
     if let Ok(mut guard) = GLOBAL_SYNC_MANAGER.lock() {
         *guard = Some(sync_manager);
@@ -110,13 +262,20 @@ use std::net::SocketAddr;
 use thiserror::Error;
 
 /// Default Neo network ports
-/// Legacy error type for backward compatibility
+/// Legacy error type for backward compatibility.
+///
+/// This type provides compatibility with older code that used the previous
+/// error system. New code should use [`NetworkError`] instead.
 ///
 /// **Deprecated**: Use [`NetworkError`] instead for new code.
 #[deprecated(since = "0.3.0", note = "Use NetworkError instead")]
 pub use LegacyError as Error;
 
-/// Legacy network errors for backward compatibility
+/// Legacy network error types for backward compatibility.
+///
+/// This enum provides the error types used in previous versions of the
+/// network crate. It includes comprehensive error variants for all
+/// network-related operations.
 #[derive(Error, Debug)]
 pub enum LegacyError {
     /// Connection error
@@ -235,7 +394,16 @@ impl From<neo_core::CoreError> for LegacyError {
     }
 }
 
-/// Network protocol version
+/// Network protocol version.
+///
+/// Represents the version of the Neo network protocol. Protocol versions
+/// are used during handshaking to ensure compatibility between nodes.
+///
+/// # Protocol Compatibility
+///
+/// Nodes with different protocol versions can connect if they share
+/// the same major version and the connecting node has a minor version
+/// greater than or equal to the target node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ProtocolVersion {
     /// Major version
@@ -247,7 +415,17 @@ pub struct ProtocolVersion {
 }
 
 impl ProtocolVersion {
-    /// Creates a new protocol version
+    /// Creates a new protocol version.
+    ///
+    /// # Arguments
+    ///
+    /// * `major` - Major version number
+    /// * `minor` - Minor version number  
+    /// * `patch` - Patch version number
+    ///
+    /// # Returns
+    ///
+    /// A new `ProtocolVersion` instance.
     pub fn new(major: u32, minor: u32, patch: u32) -> Self {
         Self {
             major,
@@ -256,24 +434,60 @@ impl ProtocolVersion {
         }
     }
 
-    /// Current Neo protocol version  
+    /// Returns the current Neo protocol version.
+    ///
+    /// Neo N3 uses protocol version 0 consistently across all implementations.
+    /// This is the official Neo N3 protocol version number.
+    ///
+    /// # Returns
+    ///
+    /// The current protocol version used by this implementation.
     pub fn current() -> Self {
         // Neo N3 uses protocol version 0 (zero) consistently across all implementations
         // This is different from semantic versioning - it's just a single protocol version number
         Self::from_u32(0) // Official Neo N3 protocol version
     }
 
-    /// Checks if this version is compatible with another
+    /// Checks if this version is compatible with another protocol version.
+    ///
+    /// Two protocol versions are compatible if they have the same major
+    /// version and this version's minor version is greater than or equal
+    /// to the other version's minor version.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The protocol version to check compatibility with
+    ///
+    /// # Returns
+    ///
+    /// `true` if the versions are compatible, `false` otherwise.
     pub fn is_compatible(&self, other: &ProtocolVersion) -> bool {
         self.major == other.major && self.minor >= other.minor
     }
 
-    /// Converts to a single u32 value (for network protocol compatibility)
+    /// Converts the protocol version to a single u32 value.
+    ///
+    /// This method packs the version components into a single u32 for
+    /// network protocol compatibility.
+    ///
+    /// # Returns
+    ///
+    /// A u32 value representing the packed version.
     pub fn as_u32(&self) -> u32 {
         ((self.major & 0xFF) << 24) | ((self.minor & 0xFF) << 16) | (self.patch & 0xFFFF)
     }
 
-    /// Creates from a u32 value
+    /// Creates a protocol version from a u32 value.
+    ///
+    /// This method unpacks a u32 value into version components.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The packed version value
+    ///
+    /// # Returns
+    ///
+    /// A new `ProtocolVersion` instance.
     pub fn from_u32(value: u32) -> Self {
         Self {
             major: (value >> 24) & 0xFF,
@@ -639,6 +853,7 @@ impl NetworkConfig {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{NetworkError, NetworkStats, PeerInfo};
     use crate::{NetworkConfig, NodeInfo, ProtocolVersion};

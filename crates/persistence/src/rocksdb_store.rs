@@ -585,6 +585,7 @@ pub struct StorageStatistics {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{Error, Result};
     use tempfile::TempDir;

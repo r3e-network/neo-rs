@@ -1,19 +1,79 @@
-//! Neo Ledger Module
+//! # Neo Ledger
 //!
-//! This module provides the core blockchain ledger functionality for the Neo blockchain,
-//! exactly matching the C# Neo ledger structure.
+//! Core blockchain ledger functionality for the Neo blockchain protocol.
 //!
-//! ## Components
+//! This crate provides the fundamental ledger implementation including block management,
+//! transaction processing, state management, and consensus integration. It implements
+//! the blockchain data structures and validation logic that form the backbone of the
+//! Neo network.
 //!
-//! - **Blockchain**: Main blockchain actor (matches C# Blockchain)
-//! - **Block**: Block data structures (matches C# Block/Header)
-//! - **HeaderCache**: Header caching (matches C# HeaderCache)
-//! - **VerifyResult**: Verification results (matches C# VerifyResult)
+//! ## Features
+//!
+//! - **Blockchain Management**: Block storage, validation, and chain synchronization
+//! - **Transaction Processing**: Transaction validation, execution, and mempool management
+//! - **State Management**: Account balances, smart contract storage, and global state
+//! - **Consensus Integration**: Block production and consensus message handling
+//! - **Header Caching**: Efficient header storage and retrieval for light clients
+//! - **Fork Detection**: Chain fork detection and resolution mechanisms
+//!
+//! ## Architecture
+//!
+//! The ledger is organized into several key components:
+//!
+//! - **Blockchain**: Main blockchain actor managing the chain state
+//! - **Block**: Block and header data structures with validation logic
+//! - **MemoryPool**: Transaction pool for pending transactions
+//! - **HeaderCache**: Optimized header storage for fast synchronization
+//! - **Storage**: Persistent storage layer for blockchain data
+//! - **VerifyResult**: Transaction and block verification results
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! use neo_ledger::{Ledger, LedgerConfig, NetworkType};
+//! use neo_core::Transaction;
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create a new ledger instance
+//! let config = LedgerConfig::default();
+//! let ledger = Ledger::new_with_network(config, NetworkType::TestNet).await?;
+//!
+//! // Get current blockchain height
+//! let height = ledger.get_height().await;
+//! println!("Current height: {}", height);
+//!
+//! // Get a block by index
+//! if let Some(block) = ledger.get_block(height).await? {
+//!     println!("Latest block hash: {:?}", block.hash());
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Consensus Integration
+//!
+//! The ledger integrates with the consensus mechanism to:
+//! - Validate proposed blocks
+//! - Apply consensus-approved blocks to the chain
+//! - Provide chain state for consensus decisions
+//! - Handle view changes and recovery
+//!
+//! ## Storage Backend
+//!
+//! The ledger supports multiple storage backends:
+//! - RocksDB (default): High-performance persistent storage
+//! - In-Memory: For testing and development
+//! - Custom: Implement the Storage trait for custom backends
 
+/// Block and block header structures
 pub mod block;
+/// Main blockchain implementation
 pub mod blockchain;
+/// Header caching for light clients
 pub mod header_cache;
+/// Memory pool for pending transactions
 pub mod mempool;
+/// Verification result types
 pub mod verify_result;
 
 pub use block::{Block, BlockHeader, Header};
@@ -286,6 +346,7 @@ impl Default for BlockchainStats {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{BlockchainStats, Error, Result, ValidationResult, VerificationResult};
 
@@ -338,10 +399,37 @@ mod tests {
     }
 }
 
-/// Main Ledger struct (matches C# Ledger exactly)
+/// Main ledger implementation.
 ///
-/// Provides blockchain state management, block validation, and transaction processing
-/// with full consensus integration and storage management.
+/// The `Ledger` struct provides the high-level interface for blockchain operations
+/// including block management, transaction processing, and state queries. It coordinates
+/// between the blockchain, mempool, and storage layers to maintain a consistent
+/// view of the blockchain state.
+///
+/// # Thread Safety
+///
+/// The ledger is designed to be thread-safe and can be shared across multiple
+/// threads using `Arc`. All methods that modify state use appropriate synchronization.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use neo_ledger::{Ledger, LedgerConfig};
+/// use std::sync::Arc;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let config = LedgerConfig::default();
+/// let ledger = Arc::new(Ledger::new(config).await?);
+/// 
+/// // Share ledger across threads
+/// let ledger_clone = Arc::clone(&ledger);
+/// tokio::spawn(async move {
+///     let height = ledger_clone.get_height().await;
+///     println!("Height from thread: {}", height);
+/// });
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 pub struct Ledger {
     config: LedgerConfig,
@@ -350,7 +438,22 @@ pub struct Ledger {
 }
 
 impl Ledger {
-    /// Creates a new Ledger instance
+    /// Creates a new Ledger instance with default MainNet configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Ledger configuration parameters
+    ///
+    /// # Returns
+    ///
+    /// A new `Ledger` instance or an error if initialization fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Storage initialization fails
+    /// - Genesis block cannot be loaded or created
+    /// - Configuration validation fails
     pub async fn new(config: LedgerConfig) -> Result<Self> {
         let blockchain = Arc::new(
             Blockchain::new_with_storage_suffix(NetworkType::MainNet, Some("ledger-main")).await?,
@@ -363,7 +466,20 @@ impl Ledger {
         })
     }
 
-    /// Creates a new Ledger instance with specific network
+    /// Creates a new Ledger instance with specific network configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Ledger configuration parameters
+    /// * `network` - Network type (MainNet, TestNet, or PrivNet)
+    ///
+    /// # Returns
+    ///
+    /// A new `Ledger` instance configured for the specified network.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if initialization fails.
     pub async fn new_with_network(config: LedgerConfig, network: NetworkType) -> Result<Self> {
         let blockchain =
             Arc::new(Blockchain::new_with_storage_suffix(network, Some("ledger")).await?);
@@ -375,7 +491,19 @@ impl Ledger {
         })
     }
 
-    /// Creates a new Ledger instance with existing blockchain
+    /// Creates a new Ledger instance with an existing blockchain.
+    ///
+    /// This method is useful for testing or when you need to provide
+    /// a pre-configured blockchain instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Ledger configuration parameters
+    /// * `blockchain` - Pre-configured blockchain instance
+    ///
+    /// # Returns
+    ///
+    /// A new `Ledger` instance using the provided blockchain.
     pub fn new_with_blockchain(config: LedgerConfig, blockchain: Arc<Blockchain>) -> Self {
         Self {
             config,
@@ -384,42 +512,127 @@ impl Ledger {
         }
     }
 
-    /// Gets the current blockchain statistics
+    /// Gets the current blockchain statistics.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the current `BlockchainStats` containing metrics
+    /// such as height, transaction count, and mempool size.
     pub fn get_stats(&self) -> &BlockchainStats {
         &self.stats
     }
 
-    /// Gets the ledger configuration
+    /// Gets the ledger configuration.
+    ///
+    /// # Returns
+    ///
+    /// A reference to the `LedgerConfig` used by this ledger instance.
     pub fn get_config(&self) -> &LedgerConfig {
         &self.config
     }
 
-    /// Gets the best block hash
+    /// Gets the hash of the best (latest) block in the chain.
+    ///
+    /// # Returns
+    ///
+    /// The `UInt256` hash of the latest block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the blockchain state cannot be accessed.
     pub async fn get_best_block_hash(&self) -> Result<neo_core::UInt256> {
         self.blockchain.get_best_block_hash().await
     }
 
-    /// Gets a block by hash
+    /// Gets a block by its hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `hash` - The hash of the block to retrieve
+    ///
+    /// # Returns
+    ///
+    /// `Some(Block)` if the block exists, `None` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if storage access fails.
     pub async fn get_block_by_hash(&self, hash: &neo_core::UInt256) -> Result<Option<Block>> {
         self.blockchain.get_block_by_hash(hash).await
     }
 
-    /// Gets a block by index
+    /// Gets a block by its height/index.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The height/index of the block to retrieve
+    ///
+    /// # Returns
+    ///
+    /// `Some(Block)` if the block exists at the given height, `None` otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if storage access fails.
     pub async fn get_block(&self, index: u32) -> Result<Option<Block>> {
         self.blockchain.get_block(index).await
     }
 
-    /// Gets the current blockchain height
+    /// Gets the current blockchain height.
+    ///
+    /// The height is the index of the latest block in the chain.
+    /// The genesis block has height 0.
+    ///
+    /// # Returns
+    ///
+    /// The current blockchain height as a `u32`.
     pub async fn get_height(&self) -> u32 {
         self.blockchain.get_height().await
     }
 
-    /// Adds a new block to the blockchain
+    /// Adds a new block to the blockchain.
+    ///
+    /// This method validates the block and adds it to the chain if valid.
+    /// It also handles fork detection and chain reorganization if necessary.
+    ///
+    /// # Arguments
+    ///
+    /// * `block` - The block to add to the chain
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the block was successfully added.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Block validation fails
+    /// - Block is already in the chain
+    /// - Storage operation fails
     pub async fn add_block(&self, block: Block) -> Result<()> {
         self.blockchain.add_block_with_fork_detection(&block).await
     }
 
-    /// Persists a block to storage
+    /// Persists a block to storage.
+    ///
+    /// This method performs comprehensive validation before persisting the block.
+    /// It's typically called after consensus has approved a block.
+    ///
+    /// # Arguments
+    ///
+    /// * `block` - The block to persist
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the block was successfully persisted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Block validation fails
+    /// - Transaction validation fails
+    /// - Storage operation fails
+    /// - Block exceeds size or transaction limits
     pub async fn persist_block(&self, block: Block) -> Result<()> {
         // Validate block structure and consensus rules
         if block.header.index == 0 && !block.transactions.is_empty() {

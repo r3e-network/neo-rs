@@ -190,6 +190,7 @@ impl Drop for EvaluationStack {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

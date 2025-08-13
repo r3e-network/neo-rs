@@ -185,6 +185,7 @@ impl EncodingExt for Vec<u8> {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

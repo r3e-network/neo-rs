@@ -6,6 +6,7 @@
 use neo_json::*;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod jarray_tests {
     use super::*;
 

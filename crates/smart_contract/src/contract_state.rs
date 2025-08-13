@@ -396,6 +396,7 @@ impl Serializable for MethodToken {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_contract_state_creation() {

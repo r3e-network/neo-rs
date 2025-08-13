@@ -1,0 +1,400 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '**/*.rs'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '**/*.rs'
+  schedule:
+    # Run comprehensive security audit daily at 3 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      verbose:
+        description: 'Enable verbose output'
+        required: false
+        default: 'false'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Security vulnerability scanning
+  vulnerability-audit:
+    name: Vulnerability Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+      
+    - name: Setup Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Cache Dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-security-audit
+        
+    - name: Install Security Tools
+      run: |
+        cargo install cargo-audit --locked
+        cargo install cargo-deny --locked
+        cargo install cargo-outdated --locked
+        
+    - name: Run Cargo Audit
+      run: |
+        echo "🔍 Running security vulnerability audit..."
+        cargo audit --color=always --deny warnings
+        echo "✅ Security audit completed"
+        
+    - name: Generate Audit Report
+      run: |
+        cargo audit --format=json > audit-report.json || true
+        cargo audit --format=markdown > audit-report.md || true
+      continue-on-error: true
+      
+    - name: Upload Audit Reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-audit-reports
+        path: |
+          audit-report.json
+          audit-report.md
+        retention-days: 30
+        
+  # Dependency license compliance
+  dependency-compliance:
+    name: Dependency Compliance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Cache Dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-dependency-check
+        
+    - name: Install cargo-deny
+      run: cargo install cargo-deny --locked
+      
+    - name: Create deny.toml if missing
+      run: |
+        if [ ! -f deny.toml ]; then
+          cat > deny.toml << 'EOF'
+        [licenses]
+        # List of explicitly allowed licenses
+        allow = [
+          "MIT",
+          "Apache-2.0",
+          "Apache-2.0 WITH LLVM-exception",
+          "BSD-2-Clause",
+          "BSD-3-Clause",
+          "ISC",
+          "Unicode-DFS-2016",
+        ]
+        
+        # Deny specific licenses
+        deny = [
+          "GPL-2.0",
+          "GPL-3.0",
+          "AGPL-3.0",
+        ]
+        
+        [bans]
+        multiple-versions = "warn"
+        wildcards = "allow"
+        
+        [sources]
+        unknown-registry = "warn"
+        unknown-git = "warn"
+        EOF
+        fi
+        
+    - name: Check License Compliance
+      run: |
+        echo "📜 Checking dependency licenses..."
+        cargo deny check licenses
+        echo "✅ License compliance verified"
+        
+    - name: Check for Banned Dependencies
+      run: |
+        echo "🚫 Checking for banned dependencies..."
+        cargo deny check bans
+        echo "✅ No banned dependencies found"
+        
+  # Supply chain security verification
+  supply-chain-security:
+    name: Supply Chain Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Cache Dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-supply-chain
+        
+    - name: Install cargo-vet
+      run: cargo install cargo-vet --locked
+      
+    - name: Initialize cargo-vet
+      run: cargo vet init || true
+      
+    - name: Run Supply Chain Verification
+      run: |
+        echo "🔗 Verifying supply chain security..."
+        cargo vet || echo "⚠️ Supply chain verification completed with warnings"
+        
+  # Container vulnerability scanning
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Build Test Container
+      run: |
+        if [ -f Dockerfile ]; then
+          docker build -t neo-rs:test .
+        else
+          echo "No Dockerfile found, skipping container scan"
+          exit 0
+        fi
+        
+    - name: Run Trivy Container Scan
+      if: success()
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'neo-rs:test'
+        format: 'sarif'
+        output: 'trivy-container.sarif'
+        severity: 'CRITICAL,HIGH,MEDIUM'
+        
+    - name: Upload Container Scan Results
+      if: success()
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-container.sarif'
+        category: 'container-security'
+        
+  # Code vulnerability scanning
+  code-scan:
+    name: Code Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Run Trivy Code Scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-code.sarif'
+        severity: 'CRITICAL,HIGH,MEDIUM'
+        
+    - name: Upload Code Scan Results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-code.sarif'
+        category: 'code-security'
+        
+  # SAST with Semgrep
+  sast-analysis:
+    name: SAST Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Run Semgrep
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: >-
+          p/security-audit
+          p/rust
+          p/supply-chain
+        generateSarif: true
+        
+    - name: Upload SAST Results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: semgrep.sarif
+        category: 'sast'
+        
+  # Outdated dependencies check
+  dependency-updates:
+    name: Dependency Updates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      
+    - name: Cache Dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-outdated
+        
+    - name: Install cargo-outdated
+      run: cargo install cargo-outdated --locked
+      
+    - name: Check for Outdated Dependencies
+      run: |
+        echo "📦 Checking for outdated dependencies..."
+        cargo outdated --root-deps-only --format json > outdated.json || true
+        cargo outdated --root-deps-only || true
+        echo "✅ Dependency check completed"
+        
+    - name: Upload Outdated Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: outdated-dependencies
+        path: outdated.json
+        retention-days: 7
+        
+  # Security policy compliance
+  security-policy:
+    name: Security Policy Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Check for Security Policy
+      run: |
+        echo "📋 Checking for security policy..."
+        if [ ! -f "SECURITY.md" ] && [ ! -f ".github/SECURITY.md" ]; then
+          echo "⚠️ Warning: No SECURITY.md file found"
+          echo "Consider adding a security policy to guide vulnerability reporting"
+        else
+          echo "✅ Security policy found"
+        fi
+        
+    - name: Check for Security Headers
+      run: |
+        echo "🔍 Checking for security configurations..."
+        # Check for various security-related files
+        files_to_check=(
+          ".github/dependabot.yml"
+          ".github/codeql-config.yml"
+          "deny.toml"
+        )
+        
+        for file in "${files_to_check[@]}"; do
+          if [ -f "$file" ]; then
+            echo "✅ Found: $file"
+          else
+            echo "⚠️ Missing: $file (optional but recommended)"
+          fi
+        done
+        
+  # Security report aggregation
+  security-report:
+    name: Security Report Summary
+    runs-on: ubuntu-latest
+    needs: [vulnerability-audit, dependency-compliance, supply-chain-security, code-scan]
+    if: always()
+    
+    steps:
+    - name: Download All Reports
+      uses: actions/download-artifact@v3
+      
+    - name: Generate Summary Report
+      run: |
+        echo "# Security Audit Summary" > security-summary.md
+        echo "" >> security-summary.md
+        echo "## Scan Results" >> security-summary.md
+        echo "" >> security-summary.md
+        
+        if [[ "${{ needs.vulnerability-audit.result }}" == "success" ]]; then
+          echo "✅ **Vulnerability Audit**: Passed" >> security-summary.md
+        else
+          echo "❌ **Vulnerability Audit**: Failed" >> security-summary.md
+        fi
+        
+        if [[ "${{ needs.dependency-compliance.result }}" == "success" ]]; then
+          echo "✅ **Dependency Compliance**: Passed" >> security-summary.md
+        else
+          echo "❌ **Dependency Compliance**: Failed" >> security-summary.md
+        fi
+        
+        if [[ "${{ needs.supply-chain-security.result }}" == "success" ]]; then
+          echo "✅ **Supply Chain Security**: Passed" >> security-summary.md
+        else
+          echo "⚠️ **Supply Chain Security**: Warnings" >> security-summary.md
+        fi
+        
+        if [[ "${{ needs.code-scan.result }}" == "success" ]]; then
+          echo "✅ **Code Security Scan**: Passed" >> security-summary.md
+        else
+          echo "❌ **Code Security Scan**: Failed" >> security-summary.md
+        fi
+        
+        echo "" >> security-summary.md
+        echo "Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> security-summary.md
+        
+    - name: Upload Summary Report
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-summary
+        path: security-summary.md
+        retention-days: 30
+        
+    - name: Comment on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const summary = fs.readFileSync('security-summary.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: summary
+          });

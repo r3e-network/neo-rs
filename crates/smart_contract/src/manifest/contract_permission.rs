@@ -166,6 +166,7 @@ impl ContractPermissionDescriptor {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use neo_cryptography::ecc::{ECCurve, ECPoint};
 

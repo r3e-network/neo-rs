@@ -8,7 +8,6 @@ use crate::models::{
 };
 use neo_core::{UInt160, UInt256};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::str::FromStr;
 
 /// RPC client for Neo blockchain (matches C# Neo RPC protocol)

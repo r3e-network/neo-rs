@@ -148,6 +148,8 @@ mod integration_tests {
     }
 }
 
+use neo_core::UInt256;
+
 pub struct MockTrieStorage {
     data: std::collections::HashMap<UInt256, Vec<u8>>,
 }

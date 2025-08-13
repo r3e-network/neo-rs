@@ -159,6 +159,7 @@ pub fn verify_checksum(data: &[u8], checksum: &[u8]) -> bool {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use hex;

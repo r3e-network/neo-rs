@@ -7,6 +7,7 @@ use neo_bls12_381::*;
 use rand::thread_rng;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod validation_tests {
     use super::*;
 

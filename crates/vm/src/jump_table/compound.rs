@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::NEWARRAY0, new_array0);
     jump_table.register(OpCode::NEWARRAY, new_array);
-    jump_table.register(OpCode::NEWARRAY_T, new_array_t);
+    jump_table.register(OpCode::NewarrayT, new_array_t);
     jump_table.register(OpCode::NEWSTRUCT0, new_struct0);
     jump_table.register(OpCode::NEWSTRUCT, new_struct);
     jump_table.register(OpCode::NEWMAP, new_map);
@@ -80,7 +80,7 @@ fn new_array(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
     Ok(())
 }
 
-/// Implements the NEWARRAY_T operation.
+/// Implements the NewarrayT operation.
 fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine

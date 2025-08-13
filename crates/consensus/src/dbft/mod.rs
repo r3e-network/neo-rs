@@ -147,6 +147,7 @@ impl From<DbftError> for crate::Error {
 pub type DbftResult<T> = Result<T, DbftError>;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_constants() {

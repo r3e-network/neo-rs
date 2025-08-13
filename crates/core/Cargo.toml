@@ -36,6 +36,8 @@ once_cell = "1.19"
 tracing = "0.1"
 prometheus = "0.13"
 sysinfo = "0.29"
+reqwest = { version = "0.11", features = ["json"] }
+uuid = { version = "1.0", features = ["v4"] }
 
 # Internal dependencies
 neo-config = { path = "../config" }
@@ -50,6 +52,7 @@ futures.workspace = true
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.5"
 
-[[bench]]
-name = "core_benchmarks"
-harness = false
+# Benchmarks removed during cleanup
+# [[bench]]
+# name = "core_benchmarks"  
+# harness = false

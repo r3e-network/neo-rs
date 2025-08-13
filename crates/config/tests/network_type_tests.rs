@@ -6,6 +6,7 @@
 use neo_config::NetworkType;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod network_type_tests {
     use super::*;
 

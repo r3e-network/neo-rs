@@ -3,7 +3,6 @@
 //! This module provides an implementation of Tarjan's algorithm for finding
 //! strongly connected components in a directed graph.
 
-use crate::error::VmError;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
@@ -49,9 +48,7 @@ where
 
     /// Adds a vertex to the graph.
     pub fn add_vertex(&mut self, vertex: T) {
-        if !self.graph.contains_key(&vertex) {
-            self.graph.insert(vertex, Vec::new());
-        }
+        self.graph.entry(vertex).or_insert_with(|| Vec::new());
     }
 
     /// Adds an edge from `from` to `to`.
@@ -139,6 +136,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

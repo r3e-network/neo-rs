@@ -258,6 +258,7 @@ impl Default for BlockBuilder {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_block_builder_creation() {

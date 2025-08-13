@@ -1,0 +1,82 @@
+# Pre-commit hooks for NEO-RS code quality
+# Install with: pip install pre-commit && pre-commit install
+
+repos:
+  # Rust formatting and linting
+  - repo: local
+    hooks:
+      - id: rust-fmt
+        name: Rust Format
+        entry: cargo fmt --
+        language: system
+        types: [rust]
+        pass_filenames: false
+        
+      - id: rust-clippy
+        name: Rust Clippy
+        entry: cargo clippy --all-targets --all-features -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+        
+      - id: rust-test
+        name: Rust Tests
+        entry: cargo test --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [push]
+
+  # Security checks
+  - repo: local
+    hooks:
+      - id: check-unwrap
+        name: Check Unwrap Usage
+        entry: bash -c 'COUNT=$(grep -r "\.unwrap()" --include="*.rs" crates/ | wc -l); echo "Unwrap count: $COUNT"; if [ "$COUNT" -gt "3000" ]; then echo "Too many unwraps!"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        
+      - id: check-unsafe
+        name: Check Unsafe Code
+        entry: bash -c 'if grep -r "unsafe {" --include="*.rs" crates/; then echo "Warning: Unsafe code detected"; fi'
+        language: system
+        pass_filenames: false
+
+  # Generic file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Documentation
+  - repo: local
+    hooks:
+      - id: check-docs
+        name: Check Documentation
+        entry: cargo doc --no-deps --all-features
+        language: system
+        pass_filenames: false
+        stages: [push]
+
+  # TODO/FIXME tracking
+  - repo: local
+    hooks:
+      - id: todo-check
+        name: Check TODOs
+        entry: bash -c 'COUNT=$(grep -r "TODO\|FIXME\|HACK" --include="*.rs" crates/ | wc -l); echo "TODO/FIXME count: $COUNT"; if [ "$COUNT" -gt "50" ]; then echo "Warning: High number of TODOs"; fi'
+        language: system
+        pass_filenames: false
+
+# Configuration
+default_stages: [commit]
+fail_fast: false
+verbose: true

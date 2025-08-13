@@ -67,6 +67,7 @@ pub const HASH_TO_CURVE_SECURITY_BITS: usize = 128;
 pub const EXPAND_MESSAGE_LENGTH: usize = 256;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

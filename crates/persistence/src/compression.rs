@@ -3,7 +3,6 @@
 //! This module provides data compression and decompression capabilities.
 
 use crate::CompressionAlgorithm;
-use neo_config::MAX_SCRIPT_SIZE;
 
 /// Compresses data using the specified algorithm (production-ready implementation)
 pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<Vec<u8>> {

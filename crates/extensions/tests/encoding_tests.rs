@@ -6,6 +6,7 @@
 use neo_extensions::encoding::*;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod encoding_tests {
     use super::*;
 

@@ -8,6 +8,7 @@ use neo_cli::args::*;
 use std::path::PathBuf;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod args_tests {
     use super::*;
 

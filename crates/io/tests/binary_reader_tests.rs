@@ -6,6 +6,7 @@
 use neo_io::MemoryReader;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod binary_reader_tests {
     use super::*;
 

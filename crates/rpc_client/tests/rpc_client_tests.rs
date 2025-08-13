@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod rpc_client_tests {
     use super::*;
     /// Implementation provided RPC client for testing (matches C# test patterns exactly)

@@ -187,7 +187,7 @@ impl Debugger {
         }
 
         let current_context = self.engine.current_context().cloned();
-        let current_instruction_pointer = current_context.as_ref().map(|c| c.instruction_pointer());
+        let _current_instruction_pointer = current_context.as_ref().map(|c| c.instruction_pointer());
 
         // Execute the next instruction
         self.engine.execute_next()?;
@@ -207,6 +207,7 @@ impl Debugger {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::Script;

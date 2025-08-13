@@ -301,6 +301,7 @@ impl Default for StdLib {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_std_lib_creation() {

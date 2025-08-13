@@ -177,6 +177,7 @@ impl Default for BinaryWriter {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use crate::{Transaction, Block, UInt160, UInt256};
     use neo_io::{BinaryWriter, MemoryReader, Serializable};

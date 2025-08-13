@@ -175,6 +175,7 @@ struct RpcError(String);
 impl warp::reject::Reject for RpcError {}
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use tokio::runtime::Runtime;
 

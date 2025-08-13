@@ -7,6 +7,7 @@ use neo_io::serializable::helper::get_var_size;
 use neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod serialization_tests {
     use super::*;
 

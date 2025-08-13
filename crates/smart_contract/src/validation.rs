@@ -956,6 +956,7 @@ impl Default for ContractValidator {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_validator_creation() {

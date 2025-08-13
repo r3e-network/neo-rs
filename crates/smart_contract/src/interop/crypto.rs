@@ -333,6 +333,7 @@ pub fn verify_signature(engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Res
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{Error, Result};
     use neo_vm::TriggerType;

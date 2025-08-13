@@ -6,6 +6,7 @@
 use neo_io::{BinaryWriter, MemoryReader};
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod binary_writer_tests {
     use super::*;
     /// Test writing basic integer types (matches C# BinaryWriter.Write(int) exactly)

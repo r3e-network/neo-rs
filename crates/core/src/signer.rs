@@ -545,6 +545,7 @@ impl fmt::Display for Signer {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::UInt160;
