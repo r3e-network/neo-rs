@@ -1,9 +1,13 @@
 [package]
 name = "neo-node"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["R3E Network <jimmy@r3e.network>"]
 description = "Neo blockchain node implementation in Rust"
+homepage = "https://neo.org"
+repository = "https://github.com/r3e-network/neo-rs"
+license = "MIT"
+readme = "../README.md"
 
 [[bin]]
 name = "neo-node"
