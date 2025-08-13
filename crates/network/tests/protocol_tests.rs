@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod protocol_tests {
     use super::*;
     use neo_core::{Signer, Witness, WitnessScope};

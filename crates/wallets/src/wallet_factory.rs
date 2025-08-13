@@ -252,6 +252,7 @@ impl std::fmt::Display for WalletInfo {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_validate_name() {

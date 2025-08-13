@@ -26,7 +26,7 @@ pub struct PerformanceSample {
 #[derive(Debug, Clone)]
 pub struct PerformanceMetric {
     /// Metric name
-    name: String,
+    _name: String,
     /// Historical samples (limited to max_samples)
     samples: VecDeque<PerformanceSample>,
     /// Maximum number of samples to keep
@@ -78,7 +78,7 @@ impl PerformanceMetric {
     /// Create new performance metric
     pub fn new(name: String, max_samples: usize) -> Self {
         Self {
-            name,
+            _name: name,
             samples: VecDeque::with_capacity(max_samples),
             max_samples,
             stats: MetricStatistics::default(),
@@ -403,6 +403,7 @@ impl Profiler {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     

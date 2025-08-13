@@ -8,6 +8,7 @@ use rand::thread_rng;
 use std::time::Instant;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod performance_tests {
     use super::*;
 

@@ -45,7 +45,7 @@ pub fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
     Ok(())
 }
 
-/// Implements the TRY_L operation (long try with HASH_SIZE-bit offsets).
+/// Implements the TryL operation (long try with HASH_SIZE-bit offsets).
 pub fn try_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -119,7 +119,7 @@ pub fn endtry(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResu
     Ok(())
 }
 
-/// Implements the ENDTRY_L operation (long endtry with HASH_SIZE-bit offset).
+/// Implements the EndtryL operation (long endtry with HASH_SIZE-bit offset).
 pub fn endtry_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the finally offset from the instruction
     let finally_offset = instruction.read_i32_operand()?;

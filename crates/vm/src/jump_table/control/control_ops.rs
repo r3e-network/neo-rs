@@ -41,7 +41,7 @@ pub fn jmp(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
     Ok(())
 }
 
-/// Implements the JMP_L operation (long jump with HASH_SIZE-bit offset).
+/// Implements the JmpL operation (long jump with HASH_SIZE-bit offset).
 pub fn jmp_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -100,7 +100,7 @@ pub fn jmpif(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     Ok(())
 }
 
-/// Implements the JMPIF_L operation (long conditional jump with HASH_SIZE-bit offset).
+/// Implements the JmpifL operation (long conditional jump with HASH_SIZE-bit offset).
 pub fn jmpif_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -164,7 +164,7 @@ pub fn jmpifnot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRe
     Ok(())
 }
 
-/// Implements the JMPIFNOT_L operation (long conditional jump with HASH_SIZE-bit offset).
+/// Implements the JmpifnotL operation (long conditional jump with HASH_SIZE-bit offset).
 pub fn jmpifnot_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -229,7 +229,7 @@ pub fn jmpeq(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     Ok(())
 }
 
-/// Implements the JMPEQ_L operation (long jump if equal).
+/// Implements the JmpeqL operation (long jump if equal).
 pub fn jmpeq_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -295,7 +295,7 @@ pub fn jmpne(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     Ok(())
 }
 
-/// Implements the JMPNE_L operation (long jump if not equal).
+/// Implements the JmpneL operation (long jump if not equal).
 pub fn jmpne_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -361,7 +361,7 @@ pub fn jmpgt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     Ok(())
 }
 
-/// Implements the JMPGT_L operation (long jump if greater than).
+/// Implements the JmpgtL operation (long jump if greater than).
 pub fn jmpgt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -428,7 +428,7 @@ pub fn jmpge(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     Ok(())
 }
 
-/// Implements the JMPGE_L operation (long jump if greater than or equal).
+/// Implements the JmpgeL operation (long jump if greater than or equal).
 pub fn jmpge_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -496,7 +496,7 @@ pub fn jmplt(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     Ok(())
 }
 
-/// Implements the JMPLT_L operation (long jump if less than).
+/// Implements the JmpltL operation (long jump if less than).
 pub fn jmplt_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -564,7 +564,7 @@ pub fn jmple(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
     Ok(())
 }
 
-/// Implements the JMPLE_L operation (long jump if less than or equal).
+/// Implements the JmpleL operation (long jump if less than or equal).
 pub fn jmple_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -628,7 +628,7 @@ pub fn call(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult
     Ok(())
 }
 
-/// Implements the CALL_L operation.
+/// Implements the CallL operation.
 pub fn call_l(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine

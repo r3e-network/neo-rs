@@ -9,7 +9,6 @@ use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::StackItem;
-use num_bigint::BigInt;
 
 /// Registers the bitwise operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
@@ -213,6 +212,7 @@ fn not_equal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     // NOTE: Tests temporarily disabled due to compilation errors
     // TODO: Fix tests to properly handle Result types

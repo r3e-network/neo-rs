@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod mempool_tests {
     use super::*;
 

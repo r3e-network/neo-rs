@@ -1303,6 +1303,7 @@ impl Default for NeoToken {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_neo_token_creation() {

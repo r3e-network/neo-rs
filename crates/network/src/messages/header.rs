@@ -217,6 +217,7 @@ impl Neo3Message {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{MessageCommand, MessageFlags, Neo3Message, MAX_MESSAGE_SIZE};
 

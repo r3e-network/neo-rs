@@ -705,6 +705,7 @@ impl Default for ContractManagement {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

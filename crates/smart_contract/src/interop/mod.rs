@@ -103,6 +103,7 @@ impl Default for InteropRegistry {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{Error, Result};
 

@@ -1,300 +1,184 @@
 # Contributing to Neo-RS
 
-We welcome contributions to Neo-RS! This document outlines the development process and guidelines for contributing.
+We welcome contributions to Neo-RS! This document provides guidelines for contributing to the project.
 
-## Table of Contents
+## Code of Conduct
 
-- [Getting Started](#getting-started)
-- [Development Environment](#development-environment)
-- [Code Organization](#code-organization)
-- [Coding Standards](#coding-standards)
-- [Testing Guidelines](#testing-guidelines)
-- [Pull Request Process](#pull-request-process)
-- [Release Process](#release-process)
+By participating in this project, you agree to abide by our Code of Conduct. Please treat all contributors with respect and create a welcoming environment for everyone.
 
 ## Getting Started
 
-### Prerequisites
-
-- **Rust**: 1.70.0 or later (see [rustup.rs](https://rustup.rs/))
-- **Git**: For version control
-- **IDE**: We recommend VS Code with rust-analyzer extension
-
-### Setting up the Development Environment
-
-1. Clone the repository:
+1. Fork the repository on GitHub
+2. Clone your fork locally:
    ```bash
-   git clone https://github.com/r3e-network/neo-rs.git
+   git clone https://github.com/your-username/neo-rs.git
    cd neo-rs
    ```
-
-2. Install dependencies:
+3. Set up the development environment:
    ```bash
-   # Install Rust toolchain components
-   rustup component add clippy rustfmt
+   # Install Rust if you haven't already
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    
-   # Install development tools
-   cargo install cargo-audit cargo-outdated cargo-tarpaulin
+   # Install system dependencies
+   # Ubuntu/Debian:
+   sudo apt-get install build-essential clang librocksdb-dev
+   
+   # macOS:
+   brew install rocksdb
    ```
-
-3. Build the project:
+4. Build the project:
    ```bash
-   cargo build
+   cargo build --workspace
    ```
-
-4. Run tests to verify setup:
+5. Run the tests:
    ```bash
-   cargo test
+   cargo test --workspace
    ```
 
-## Development Environment
+## Development Guidelines
 
-### Recommended Tools
+### Code Style
 
-- **IDE**: Visual Studio Code with rust-analyzer
-- **Formatter**: rustfmt (configured in `rustfmt.toml`)
-- **Linter**: clippy (configured in `clippy.toml`)
-- **Documentation**: cargo doc
+- Follow Rust standard formatting: `cargo fmt`
+- Address all clippy warnings: `cargo clippy --workspace`
+- Use meaningful variable and function names
+- Write comprehensive documentation for public APIs
+- Keep functions focused and small when possible
 
-### Project Structure
+### Testing
 
-```
-neo-rs/
-├── .github/                 # GitHub workflows and templates
-├── crates/                  # Rust crates organized by functionality
-│   ├── core/               # Fundamental types and utilities
-│   ├── cryptography/       # Cryptographic implementations
-│   ├── vm/                 # Neo Virtual Machine
-│   ├── network/            # P2P networking
-│   ├── ledger/             # Blockchain state management
-│   └── [Implementation complete]                 # Other specialized crates
-├── node/                   # Node implementation
-├── examples/               # Example applications
-├── docs/                   # Documentation
-├── benches/               # Performance benchmarks
-└── tests/                 # Integration tests
-```
+- Write tests for all new functionality
+- Ensure existing tests continue to pass
+- Aim for high test coverage
+- Include both unit tests and integration tests where appropriate
+- Test error conditions and edge cases
 
-## Code Organization
+### Documentation
 
-### Crate Design Principles
+- Document all public APIs with rustdoc comments
+- Include examples in documentation where helpful
+- Update the README.md if adding significant features
+- Keep CHANGELOG.md updated
 
-1. **Single Responsibility**: Each crate should have a clear, focused purpose
-2. **Minimal Dependencies**: Avoid unnecessary dependencies between crates
-3. **Public API**: Design clean, ergonomic public APIs
-4. **Error Handling**: Use `thiserror` for error types, `anyhow` for application errors
+### Performance
 
-### Module Organization
+- Profile performance-critical code changes
+- Avoid unnecessary allocations in hot paths
+- Use benchmarks to validate performance improvements
+- Consider memory usage implications
 
-Each crate should follow this structure:
+## Submitting Changes
 
-```
-crate/
-├── src/
-│   ├── lib.rs              # Main module with public API
-│   ├── error.rs            # Error types
-│   ├── types.rs            # Type definitions
-│   └── submodules/         # Implementation modules
-├── tests/                  # Integration tests
-├── benches/               # Benchmarks (if applicable)
-└── examples/              # Usage examples
-```
+### Pull Request Process
 
-## Coding Standards
+1. Create a feature branch from main:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
 
-### Style Guidelines
+2. Make your changes following the guidelines above
 
-We follow the Rust community style guidelines with some project-specific conventions:
+3. Commit your changes with clear, descriptive messages:
+   ```bash
+   git commit -m "feat: add new transaction validation logic
+   
+   - Implement additional validation checks for transaction signatures
+   - Add comprehensive test coverage for edge cases
+   - Update documentation with new validation rules"
+   ```
 
-1. **Formatting**: Use `rustfmt` with our configuration
-2. **Linting**: Pass all `clippy` checks
-3. **Documentation**: Document all public APIs with examples
-4. **Naming**: Use clear, descriptive names
+4. Push your branch:
+   ```bash
+   git push origin feature/your-feature-name
+   ```
 
-### Code Quality
+5. Open a Pull Request on GitHub with:
+   - Clear title describing the change
+   - Detailed description of what was changed and why
+   - Reference to any related issues
+   - Screenshots or examples if applicable
 
-- **Safety**: Prefer safe Rust, justify any `unsafe` code
-- **Performance**: Write efficient code, but prioritize clarity
-- **Error Handling**: Handle errors appropriately, don't use `unwrap()` in production code
-- **Testing**: Write comprehensive tests for all functionality
+### Commit Message Guidelines
 
-### Rust Specific Guidelines
+Use conventional commit format:
+- `feat:` for new features
+- `fix:` for bug fixes
+- `docs:` for documentation changes
+- `style:` for formatting changes
+- `refactor:` for code restructuring
+- `test:` for adding tests
+- `chore:` for maintenance tasks
 
-```rust
-// Good: Clear error handling
-pub fn parse_address(input: &str) -> Result<Address, AddressError> {
-    if input.is_empty() {
-        return Err(AddressError::Empty);
-    }
-    // [Implementation complete] implementation
-}
+### Pull Request Requirements
 
-// Good: Comprehensive documentation
-/// Represents a Neo blockchain address.
-/// 
-/// Addresses in Neo are derived from script hashes and encoded using Base58Check.
-/// 
-/// # Examples
-/// 
-/// ```rust
-/// use neo_core::Address;
-/// 
-/// let address = Address::from_script_hash(&script_hash)?;
-/// println!("Address: {}", address);
-/// ```
-pub struct Address {
-    script_hash: UInt160,
-}
+Before submitting a PR, ensure:
+- [ ] All tests pass: `cargo test --workspace`
+- [ ] Code is formatted: `cargo fmt`
+- [ ] No clippy warnings: `cargo clippy --workspace`
+- [ ] Documentation is updated if needed
+- [ ] CHANGELOG.md is updated for significant changes
 
-// Good: Clear naming and structure
-pub struct TransactionBuilder {
-    version: u8,
-    nonce: u32,
-    system_fee: u64,
-    network_fee: u64,
-    // [Implementation complete]
-}
+## Types of Contributions
 
-impl TransactionBuilder {
-    pub fn new() -> Self { /* [Implementation complete] */ }
-    pub fn with_system_fee(mut self, fee: u64) -> Self { /* [Implementation complete] */ }
-    pub fn build(self) -> Result<Transaction, BuildError> { /* [Implementation complete] */ }
-}
-```
+### Bug Reports
 
-## Testing Guidelines
+When reporting bugs, please include:
+- Steps to reproduce the issue
+- Expected vs actual behavior
+- Environment details (OS, Rust version, etc.)
+- Relevant error messages or logs
 
-### Test Categories
+### Feature Requests
 
-1. **Unit Tests**: Test individual functions and modules
-2. **Integration Tests**: Test interactions between components
-3. **Compatibility Tests**: Ensure C# Neo compatibility
-4. **Performance Tests**: Benchmark critical paths
+For new features:
+- Describe the use case and motivation
+- Propose an API design if applicable
+- Consider backwards compatibility
+- Discuss performance implications
 
-### Test Organization
+### Code Contributions
 
-```rust
-// Unit tests in the same file
-#[cfg(test)]
-mod tests {
-    use super::*;
+We welcome:
+- Bug fixes
+- Performance improvements
+- New features
+- Documentation improvements
+- Test coverage improvements
+- Code quality improvements
 
-    #[test]
-    fn test_address_creation() {
-        let script_hash = UInt160::zero();
-        let address = Address::from_script_hash(&script_hash).unwrap();
-        assert_eq!(address.script_hash(), script_hash);
-    }
-}
+## Development Areas
 
-// Integration tests in tests/ directory
-// tests/integration_test.rs
-use neo_core::{Address, UInt160};
+### High Priority
+- Performance optimizations
+- Bug fixes and stability improvements
+- Test coverage expansion
+- Documentation improvements
 
-#[test]
-fn test_address_round_trip() {
-    let original = Address::from_script_hash(&UInt160::zero()).unwrap();
-    let serialized = original.to_string();
-    let deserialized = Address::from_str(&serialized).unwrap();
-    assert_eq!(original, deserialized);
-}
-```
+### Medium Priority
+- New features aligned with Neo protocol
+- Developer tooling improvements
+- Additional storage backends
+- Enhanced monitoring
 
-### Running Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run tests for specific crate
-cargo test -p neo-core
-
-# Run with output
-cargo test -- --nocapture
-
-# Run integration tests only
-cargo test --test integration_tests
-
-# Run with code coverage
-cargo tarpaulin --out Html
-```
-
-## Pull Request Process
-
-### Before Submitting
-
-1. **Format code**: `cargo fmt`
-2. **Run lints**: `cargo clippy`
-3. **Run tests**: `cargo test`
-4. **Update documentation**: If changing public APIs
-5. **Add tests**: For new functionality
-
-### PR Guidelines
-
-1. **Description**: Clearly describe what the PR does and why
-2. **Size**: Keep PRs focused and reasonably sized
-3. **Tests**: Include tests for new functionality
-4. **Documentation**: Update docs for API changes
-5. **Compatibility**: Ensure C# Neo compatibility is maintained
-
-### PR Template
-
-```markdown
-## Description
-Brief description of changes
-
-## Type of Change
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] Documentation update
-
-## Testing
-- [ ] Unit tests pass
-- [ ] Integration tests pass
-- [ ] Added tests for new functionality
-- [ ] Tested manually (if applicable)
-
-## Checklist
-- [ ] Code follows style guidelines
-- [ ] Self-review completed
-- [ ] Code is properly documented
-- [ ] No breaking changes without justification
-```
-
-## Release Process
-
-### Versioning
-
-We follow [Semantic Versioning](https://semver.org/):
-
-- **MAJOR**: Incompatible API changes
-- **MINOR**: New functionality (backward compatible)
-- **PATCH**: Bug fixes (backward compatible)
-
-### Release Checklist
-
-1. **Update version**: Update version in `Cargo.toml`
-2. **Update changelog**: Document changes in `CHANGELOG.md`
-3. **Run tests**: Ensure all tests pass
-4. **Create tag**: `git tag -a v0.3.0 -m "Release v0.3.0"`
-5. **Push tag**: `git push origin v0.3.0`
-6. **GitHub release**: Create release on GitHub
-7. **Publish crates**: `cargo publish` (if applicable)
-
-## Additional Resources
-
-- [Rust Book](https://doc.rust-lang.org/book/)
-- [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
-- [Neo Documentation](https://docs.neo.org/)
-- [Neo N3 Protocol](https://github.com/neo-project/neo)
+### Low Priority
+- Code refactoring for maintainability
+- Additional examples and tutorials
+- Performance benchmarking
+- Development workflow improvements
 
 ## Getting Help
 
-- **Issues**: Create GitHub issues for bugs or feature requests
-- **Discussions**: Use GitHub Discussions for questions
-- **Discord**: Join the Neo developer Discord
+- Open an issue for bugs or feature requests
+- Start a discussion for questions or ideas
+- Join our Discord for real-time discussion
+- Check existing documentation and issues first
 
-## License
+## Recognition
 
-By contributing to Neo-RS, you agree that your contributions will be licensed under the MIT License.
+Contributors will be recognized in:
+- Git commit history
+- Release notes for significant contributions
+- Project documentation
+- Annual contributor acknowledgments
+
+Thank you for contributing to Neo-RS! 🦀

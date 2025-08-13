@@ -593,6 +593,7 @@ impl Default for OracleContract {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{Error, Result};
 

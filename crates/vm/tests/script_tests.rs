@@ -115,7 +115,7 @@ fn test_script_get_jump_offset() {
         0x02,                // JMP +2
         OpCode::PUSH1 as u8, // PUSH1 (skipped)
         OpCode::PUSH2 as u8, // PUSH2
-        OpCode::JMP_L as u8,
+        OpCode::JmpL as u8,
         0xFF,
         0xFC,              // JMP -4
         OpCode::RET as u8, // RET (skipped)
@@ -145,7 +145,7 @@ fn test_script_get_jump_target() {
         0x02,                // JMP +2
         OpCode::PUSH1 as u8, // PUSH1 (skipped)
         OpCode::PUSH2 as u8, // PUSH2
-        OpCode::JMP_L as u8,
+        OpCode::JmpL as u8,
         0xFC,
         0xFF,
         0xFF,              // JMP -4
@@ -160,7 +160,7 @@ fn test_script_get_jump_target() {
     let target = script.get_jump_target(&instruction).unwrap();
     assert_eq!(target, 2);
 
-    // Get the JMP_L instruction
+    // Get the JmpL instruction
     let instruction = script.get_instruction(3).unwrap();
 
     // Test backward jump

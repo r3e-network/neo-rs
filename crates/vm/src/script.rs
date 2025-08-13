@@ -4,7 +4,7 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
-use crate::instruction::{Instruction, OperandSizePrefix};
+use crate::instruction::{Instruction};
 use crate::op_code::OpCode;
 use neo_io::MemoryReader;
 use std::collections::hash_map::DefaultHasher;
@@ -176,17 +176,17 @@ impl Script {
                     }
                 }
                 OpCode::PUSHA
-                | OpCode::JMP_L
-                | OpCode::JMPIF_L
-                | OpCode::JMPIFNOT_L
-                | OpCode::JMPEQ_L
-                | OpCode::JMPNE_L
-                | OpCode::JMPGT_L
-                | OpCode::JMPGE_L
-                | OpCode::JMPLT_L
-                | OpCode::JMPLE_L
-                | OpCode::CALL_L
-                | OpCode::ENDTRY_L => {
+                | OpCode::JmpL
+                | OpCode::JmpifL
+                | OpCode::JmpifnotL
+                | OpCode::JmpeqL
+                | OpCode::JmpneL
+                | OpCode::JmpgtL
+                | OpCode::JmpgeL
+                | OpCode::JmpltL
+                | OpCode::JmpleL
+                | OpCode::CallL
+                | OpCode::EndtryL => {
                     let offset = instruction.operand_as::<i32>()?;
                     // Jump offsets are relative to the next instruction
                     let next_ip = ip + instruction.size();
@@ -224,7 +224,7 @@ impl Script {
                         )));
                     }
                 }
-                OpCode::TRY_L => {
+                OpCode::TryL => {
                     let catch_offset = instruction.operand_as::<i32>()?;
                     let finally_offset = instruction.operand_as::<i32>()?;
 
@@ -249,12 +249,12 @@ impl Script {
                         )));
                     }
                 }
-                OpCode::NEWARRAY_T | OpCode::ISTYPE | OpCode::CONVERT => {
+                OpCode::NewarrayT | OpCode::ISTYPE | OpCode::CONVERT => {
                     let type_byte = instruction.operand_as::<u8>()?;
                     if let Some(item_type) =
                         crate::stack_item::stack_item_type::StackItemType::from_byte(type_byte)
                     {
-                        if instruction.opcode() != OpCode::NEWARRAY_T
+                        if instruction.opcode() != OpCode::NewarrayT
                             && item_type == crate::stack_item::stack_item_type::StackItemType::Any
                         {
                             return Err(VmError::invalid_script_msg(format!(
@@ -471,7 +471,7 @@ impl Script {
                 let offset = instruction.operand_as::<i8>()?;
                 self.get_jump_offset(next_position, offset as i32)
             }
-            OpCode::JMP_L | OpCode::JMPIF_L | OpCode::JMPIFNOT_L | OpCode::CALL_L => {
+            OpCode::JmpL | OpCode::JmpifL | OpCode::JmpifnotL | OpCode::CallL => {
                 // 4-byte offset
                 let offset = instruction.operand_as::<i32>()?;
                 self.get_jump_offset(next_position, offset)
@@ -486,12 +486,12 @@ impl Script {
                 let offset = instruction.operand_as::<i8>()?;
                 self.get_jump_offset(next_position, offset as i32)
             }
-            OpCode::JMPEQ_L
-            | OpCode::JMPNE_L
-            | OpCode::JMPGT_L
-            | OpCode::JMPGE_L
-            | OpCode::JMPLT_L
-            | OpCode::JMPLE_L => {
+            OpCode::JmpeqL
+            | OpCode::JmpneL
+            | OpCode::JmpgtL
+            | OpCode::JmpgeL
+            | OpCode::JmpltL
+            | OpCode::JmpleL => {
                 // 4-byte offset
                 let offset = instruction.operand_as::<i32>()?;
                 self.get_jump_offset(next_position, offset)
@@ -556,6 +556,7 @@ impl AsRef<[u8]> for Script {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::OpCode;

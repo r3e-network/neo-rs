@@ -6,6 +6,7 @@
 use serde_json::{json, Value};
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod rpc_server_tests {
     use super::*;
 

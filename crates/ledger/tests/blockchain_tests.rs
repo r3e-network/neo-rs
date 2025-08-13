@@ -9,6 +9,7 @@ use neo_ledger::*;
 use std::sync::Arc;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod blockchain_tests {
     use super::*;
 

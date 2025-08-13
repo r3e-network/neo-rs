@@ -134,6 +134,7 @@ pub fn example_mainnet_config() -> SnapshotConfig {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

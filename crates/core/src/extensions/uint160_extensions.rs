@@ -25,6 +25,7 @@ impl UInt160Extensions for UInt160 {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use neo_config::ADDRESS_SIZE;

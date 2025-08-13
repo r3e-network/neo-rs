@@ -231,6 +231,7 @@ impl P2PEvent {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use neo_core::UInt160;

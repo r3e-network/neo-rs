@@ -31,6 +31,7 @@ impl JContainer for crate::JArray {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use crate::{JArray, JToken};
 

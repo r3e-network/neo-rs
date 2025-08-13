@@ -232,6 +232,7 @@ impl BlockHeader {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_block_header_creation() {

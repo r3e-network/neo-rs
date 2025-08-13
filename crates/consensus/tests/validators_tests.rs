@@ -8,6 +8,7 @@ use neo_core::{UInt160, UInt256};
 use neo_cryptography::hash::sha256;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod validators_tests {
     use super::*;
 

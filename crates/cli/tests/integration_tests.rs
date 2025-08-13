@@ -12,6 +12,7 @@ use tempfile::TempDir;
 use tokio::fs;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod integration_tests {
     use super::*;
 

@@ -22,12 +22,7 @@ pub use client::{RpcClient, RpcClientBuilder};
 pub use error::{RpcError, RpcResult};
 pub use models::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, RpcRequest, RpcResponse};
 
-use neo_config::DEFAULT_NEO_PORT;
 use neo_config::DEFAULT_RPC_PORT;
-use neo_config::DEFAULT_TESTNET_PORT;
-use neo_config::DEFAULT_TESTNET_RPC_PORT;
-use serde::{Deserialize, Serialize};
-use std::fmt;
 
 /// Default Neo network ports
 /// RPC client configuration (matches C# RpcClient settings exactly)
@@ -110,6 +105,7 @@ pub mod rpc_methods {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

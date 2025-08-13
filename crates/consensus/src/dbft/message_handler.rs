@@ -407,6 +407,7 @@ pub enum MessageHandleResult {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use crate::{Error, Result};
 

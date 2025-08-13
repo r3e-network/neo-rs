@@ -2,7 +2,7 @@
 //!
 //! This module contains data models for RPC requests and responses.
 
-use neo_core::{Block, Transaction, UInt160, UInt256};
+use neo_core::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

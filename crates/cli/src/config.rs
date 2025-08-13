@@ -180,6 +180,7 @@ impl Config {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use tempfile::TempDir;

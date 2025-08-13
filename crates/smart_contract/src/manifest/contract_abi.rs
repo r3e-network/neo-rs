@@ -305,6 +305,7 @@ impl std::fmt::Display for ContractParameterType {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_contract_abi_creation() {

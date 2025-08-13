@@ -2,9 +2,7 @@
 //!
 //! This module provides exception handling functionality for the Neo VM.
 
-use crate::error::VmResult;
 use crate::stack_item::StackItem;
-use neo_config::ADDRESS_SIZE;
 
 /// Indicates the state of the ExceptionHandlingContext.
 /// This matches the C# implementation's ExceptionHandlingState enum exactly.
@@ -281,6 +279,7 @@ impl ExceptionHandlingContext {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

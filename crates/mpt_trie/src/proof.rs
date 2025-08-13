@@ -555,6 +555,7 @@ impl ProofVerifier {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     fn create_test_node(node_type: NodeType, key: Option<Vec<u8>>, value: Option<Vec<u8>>) -> Node {

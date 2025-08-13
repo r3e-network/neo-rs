@@ -357,6 +357,7 @@ macro_rules! register_plugin {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};

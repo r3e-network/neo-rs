@@ -125,6 +125,7 @@ impl P2PConfig {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::{NetworkError, PeerInfo};

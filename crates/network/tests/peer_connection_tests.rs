@@ -5,6 +5,7 @@ use tokio::time::{timeout, Duration};
 
 /// Test peer connection and handshake functionality
 #[cfg(test)]
+#[allow(dead_code)]
 mod peer_connection_tests {
     use super::*;
 

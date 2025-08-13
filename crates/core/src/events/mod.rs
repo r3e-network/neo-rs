@@ -100,6 +100,7 @@ impl EventManager {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     // No additional imports needed in this unit test

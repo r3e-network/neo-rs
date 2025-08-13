@@ -653,6 +653,7 @@ impl Plugin for OracleServicePlugin {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use std::collections::HashMap;

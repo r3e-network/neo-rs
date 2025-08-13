@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod plugin_tests {
     use super::*;
 

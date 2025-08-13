@@ -9,8 +9,10 @@ use neo_core::{ShutdownCoordinator, UInt160};
 use neo_ledger::{Blockchain, MempoolConfig};
 use neo_network::{NetworkCommand, NetworkConfig, P2pNode};
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
-use tokio::time::{timeout, Duration};
+use tokio::{
+    sync::{mpsc, RwLock},
+    time::{timeout, Duration},
+};
 
 #[tokio::test]
 async fn test_node_components_integration() {

@@ -150,7 +150,7 @@ impl MetricsExporter for JsonExporter {
 /// OpenTelemetry exporter
 pub struct OpenTelemetryExporter {
     /// Endpoint URL
-    endpoint: String,
+    _endpoint: String,
     /// Service name
     service_name: String,
 }
@@ -159,7 +159,7 @@ impl OpenTelemetryExporter {
     /// Create new OpenTelemetry exporter
     pub fn new(endpoint: String, service_name: String) -> Self {
         Self {
-            endpoint,
+            _endpoint: endpoint,
             service_name,
         }
     }
@@ -357,6 +357,7 @@ impl ExporterFactory {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::monitoring::{HealthCheckResult, HealthStatus};

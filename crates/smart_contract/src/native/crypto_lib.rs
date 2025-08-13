@@ -571,6 +571,7 @@ impl Default for CryptoLib {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use hex;

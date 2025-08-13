@@ -6,6 +6,7 @@
 use neo_mpt_trie::*;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod helper_tests {
     use super::*;
 

@@ -235,6 +235,7 @@ pub mod neo_error_codes {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{RpcError, RpcResult};
     use crate::models::JsonRpcError;

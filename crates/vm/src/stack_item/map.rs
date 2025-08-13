@@ -7,8 +7,6 @@ use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::StackItem;
-use neo_config::ADDRESS_SIZE;
-use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -113,6 +111,7 @@ impl Drop for Map {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;

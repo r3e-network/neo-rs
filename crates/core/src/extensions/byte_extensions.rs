@@ -64,6 +64,7 @@ impl HexStringExtensions for str {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     // No extra imports needed for these unit tests

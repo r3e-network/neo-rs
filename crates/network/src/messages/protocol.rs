@@ -940,6 +940,7 @@ impl ProtocolMessage {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::{NetworkError, PeerInfo};

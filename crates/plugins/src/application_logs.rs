@@ -390,6 +390,7 @@ impl Plugin for ApplicationLogsPlugin {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use std::collections::HashMap;

@@ -156,6 +156,7 @@ impl From<bls12_381::Scalar> for BlsError {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

@@ -25,7 +25,7 @@ pub enum CompoundOpCode {
     /// Push: 1 item
     /// Pop: 1 item + n elements
     /// ```
-    NEWARRAY_T = 0xC1,
+    NewarrayT = 0xC1,
 
     /// Creates a new struct with the specified number of fields.
     ///
@@ -169,7 +169,7 @@ impl CompoundOpCode {
         matches!(
             self,
             Self::NEWARRAY
-                | Self::NEWARRAY_T
+                | Self::NewarrayT
                 | Self::NEWSTRUCT
                 | Self::NEWMAP
                 | Self::PACKMAP
@@ -199,7 +199,7 @@ impl CompoundOpCode {
         matches!(
             self,
             Self::NEWARRAY
-                | Self::NEWARRAY_T
+                | Self::NewarrayT
                 | Self::APPEND
                 | Self::REVERSE
                 | Self::REMOVE

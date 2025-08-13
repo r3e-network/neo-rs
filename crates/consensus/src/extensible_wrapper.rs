@@ -58,6 +58,7 @@ pub fn create_broadcast_payload(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::messages::ChangeView;

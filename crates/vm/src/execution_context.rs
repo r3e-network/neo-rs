@@ -10,7 +10,6 @@ use crate::jump_table::control::ExceptionHandler;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::StackItem;
-use neo_config::ADDRESS_SIZE;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -561,7 +560,12 @@ impl ExecutionContext {
             .copy_to(shared_states.evaluation_stack_mut());
 
         // Create the new context
-        let result = Self {
+        
+
+        // Note: Not cloning static_fields, local_variables, or arguments
+        // as they would need separate reference counter handling
+
+        Self {
             shared_states,
             instruction_pointer: self.instruction_pointer,
             rvcount: self.rvcount,
@@ -570,12 +574,7 @@ impl ExecutionContext {
             try_stack: self.try_stack.clone(),
             exception_handlers: self.exception_handlers.clone(),
             _state: (),
-        };
-
-        // Note: Not cloning static_fields, local_variables, or arguments
-        // as they would need separate reference counter handling
-
-        result
+        }
     }
 
     /// Clones the context so that they share the same script, stack, and static fields.
@@ -724,6 +723,7 @@ impl ExecutionContext {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::op_code::OpCode;

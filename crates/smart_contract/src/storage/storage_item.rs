@@ -216,6 +216,7 @@ impl AsRef<[u8]> for StorageItem {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{StorageError, StorageKey, Store};
 

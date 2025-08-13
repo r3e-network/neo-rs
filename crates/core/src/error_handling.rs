@@ -271,8 +271,8 @@ impl RetryPolicy {
 
 /// Circuit breaker for preventing cascading failures
 pub struct CircuitBreaker {
-    failure_threshold: u32,
-    success_threshold: u32,
+    _failure_threshold: u32,
+    _success_threshold: u32,
     timeout_ms: u64,
     state: std::sync::Arc<std::sync::Mutex<CircuitState>>,
 }
@@ -287,8 +287,8 @@ enum CircuitState {
 impl CircuitBreaker {
     pub fn new(failure_threshold: u32, success_threshold: u32, timeout_ms: u64) -> Self {
         Self {
-            failure_threshold,
-            success_threshold,
+            _failure_threshold: failure_threshold,
+            _success_threshold: success_threshold,
             timeout_ms,
             state: std::sync::Arc::new(std::sync::Mutex::new(CircuitState::Closed)),
         }
@@ -368,6 +368,7 @@ impl From<Box<dyn std::error::Error>> for NeoError {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     

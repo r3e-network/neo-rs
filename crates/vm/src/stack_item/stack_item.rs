@@ -4,7 +4,6 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
-use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
 use num_bigint::BigInt;
 use num_traits::Zero;
@@ -553,6 +552,7 @@ impl Ord for StackItem {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

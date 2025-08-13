@@ -388,7 +388,7 @@ impl ExecutionEngine {
         // Execute the instruction
         // We need to avoid borrowing conflicts by extracting the jump table temporarily
         // But we must preserve the custom handlers that were set up
-        let mut jump_table = std::mem::take(&mut self.jump_table);
+        let jump_table = std::mem::take(&mut self.jump_table);
         let result = jump_table.execute(self, &instruction);
 
         if let Err(err) = result {
@@ -458,7 +458,7 @@ impl ExecutionEngine {
                 .map(|sf| sf as *const _);
 
             if current_static_fields.is_none()
-                || current_static_fields.expect("Operation failed") != static_fields as *const _
+                || !std::ptr::eq(current_static_fields.expect("Operation failed"), static_fields)
             {
                 static_fields.clear_references();
             }
@@ -674,6 +674,7 @@ impl Drop for ExecutionEngine {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use crate::op_code::OpCode;

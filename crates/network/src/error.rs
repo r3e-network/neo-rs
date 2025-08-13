@@ -686,6 +686,7 @@ impl From<crate::Error> for NetworkError {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{ErrorSeverity, DEFAULT_TIMEOUT_MS};
     use crate::{NetworkError, NetworkResult};

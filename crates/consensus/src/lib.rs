@@ -494,6 +494,7 @@ pub mod utils {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     #[test]
     fn test_view_number() {

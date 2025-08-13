@@ -8,6 +8,7 @@ use num_bigint::BigInt;
 use std::collections::BTreeMap;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

@@ -202,6 +202,7 @@ impl From<WitnessScope> for u8 {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
 

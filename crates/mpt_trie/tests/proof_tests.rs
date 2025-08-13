@@ -7,6 +7,7 @@ use neo_core::UInt256;
 use neo_mpt_trie::*;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod proof_tests {
     use super::*;
 
@@ -80,14 +81,8 @@ mod proof_tests {
         let verification_result =
             ProofVerifier::verify_inclusion(&root_hash, &key, &value, &proof).unwrap();
 
-        match verification_result {
-            Some(verified_value) => {
-                assert_eq!(verified_value, value);
-            }
-            None => {
-                panic!("Proof verification should succeed for existing key");
-            }
-        }
+        // verify_inclusion returns bool, not Option
+        assert!(verification_result, "Proof verification should succeed for existing key");
     }
 
     /// Test proof verification for invalid proofs (matches C# invalid proof handling exactly)
@@ -116,7 +111,7 @@ mod proof_tests {
         let verification_result = ProofVerifier::verify_inclusion(&root_hash, &key, &value, &proof);
 
         match verification_result {
-            Ok(None) => {
+            Ok(false) => {
                 // Proof verification correctly detected invalid proof
                 assert!(true);
             }
@@ -124,7 +119,7 @@ mod proof_tests {
                 // Error during verification is also acceptable
                 assert!(true);
             }
-            Ok(Some(_)) => {
+            Ok(true) => {
                 panic!("Corrupted proof should not verify successfully");
             }
         }
@@ -151,7 +146,7 @@ mod proof_tests {
             ProofVerifier::verify_inclusion(&wrong_root_hash, &key, &value, &proof);
 
         match verification_result {
-            Ok(None) => {
+            Ok(false) => {
                 // Correctly detected mismatch
                 assert!(true);
             }
@@ -159,7 +154,7 @@ mod proof_tests {
                 // Error is also acceptable
                 assert!(true);
             }
-            Ok(Some(_)) => {
+            Ok(true) => {
                 panic!("Proof should not verify with wrong root hash");
             }
         }
@@ -206,7 +201,7 @@ mod proof_tests {
         let non_existing_proof = trie.get_proof(non_existing).unwrap();
         let non_existing_result =
             ProofVerifier::verify_exclusion(&root_hash, non_existing, &non_existing_proof).unwrap();
-        assert_eq!(non_existing_result, None); // Should prove non-existence
+        assert!(!non_existing_result); // Should prove non-existence
     }
 
     /// Test proof serialization and deserialization (matches C# proof serialization exactly)
@@ -232,14 +227,8 @@ mod proof_tests {
         let verification_result =
             ProofVerifier::verify_inclusion(&root_hash, &key, &value, &deserialized_proof).unwrap();
 
-        match verification_result {
-            Some(verified_value) => {
-                assert_eq!(verified_value, value);
-            }
-            None => {
-                panic!("Deserialized proof should verify successfully");
-            }
-        }
+        // verify_inclusion returns bool
+        assert!(verification_result, "Deserialized proof should verify successfully");
     }
 
     /// Test proof node types and structure (matches C# ProofNode structure exactly)

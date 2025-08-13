@@ -353,6 +353,7 @@ macro_rules! profile_operation {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::{Error, Result};
     use std::thread;

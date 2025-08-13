@@ -9,6 +9,7 @@ use neo_ledger::*;
 use std::collections::HashMap;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod storage_tests {
     use super::*;
 
