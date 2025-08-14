@@ -21,6 +21,7 @@ use tokio::time::{interval, Duration};
 use tracing::{debug, error, info, warn};
 /// P2P Node capabilities (matches C# Neo.Network.P2P.NodeCapabilityType exactly)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Represents an enumeration of values.
 pub enum NodeCapability {
     /// TCP server capability
     TcpServer = 0x01,
@@ -34,6 +35,7 @@ pub enum NodeCapability {
 
 /// P2P Node status (matches C# Neo node lifecycle exactly)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents an enumeration of values.
 pub enum NodeStatus {
     /// Node is stopped
     Stopped,
@@ -49,6 +51,7 @@ pub enum NodeStatus {
 
 /// Peer connection information (matches C# Neo.Network.P2P.RemoteNode exactly)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct PeerInfo {
     /// Peer address
     pub address: SocketAddr,
@@ -72,6 +75,7 @@ pub struct PeerInfo {
 
 /// P2P Node statistics (matches C# Neo.Network.P2P.LocalNode statistics exactly)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct NodeStatistics {
     /// Number of connected peers
     pub peer_count: usize,
@@ -96,6 +100,7 @@ pub struct NodeStatistics {
 }
 
 /// Main P2P Node implementation (matches C# Neo.Network.P2P.LocalNode exactly)
+/// Represents a data structure.
 pub struct P2pNode {
     /// Node configuration
     config: NetworkConfig,
@@ -124,6 +129,7 @@ pub struct P2pNode {
 
 /// Node events (matches C# Neo network events exactly)
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum NodeEvent {
     /// Node started successfully
     NodeStarted,
@@ -152,6 +158,7 @@ pub enum NodeEvent {
 
 impl P2pNode {
     /// Creates a new P2P node (matches C# LocalNode constructor exactly)
+    /// Creates a new instance.
     pub fn new(
         config: NetworkConfig,
         command_receiver: mpsc::Receiver<NetworkCommand>,
@@ -1225,7 +1232,8 @@ mod tests {
         // Use ephemeral port 0 to avoid binding failures in tests
         config.port = 0;
         let (cmd_tx, cmd_rx) = mpsc::channel(100);
-        let node = P2pNode::new(config, cmd_rx).unwrap();
+        let node = P2pNode::new(config, cmd_rx)
+            .expect("Failed to create P2P node for test");
         (node, cmd_tx)
     }
 
@@ -1259,7 +1267,8 @@ mod tests {
         ];
 
         for capability in capabilities {
-            let serialized = serde_json::to_string(&capability).unwrap();
+            let serialized = serde_json::to_string(&capability)
+                .expect("Failed to serialize capability");
             let deserialized: NodeCapability =
                 serde_json::from_str(&serialized).expect("Failed to parse from string");
             assert_eq!(capability, deserialized);
@@ -1296,7 +1305,8 @@ mod tests {
         let address: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
         let peer_info = create_test_peer_info(address, true);
 
-        let serialized = serde_json::to_string(&peer_info).unwrap();
+        let serialized = serde_json::to_string(&peer_info)
+            .expect("Failed to serialize peer info");
         let deserialized: PeerInfo =
             serde_json::from_str(&serialized).expect("Failed to parse from string");
 
@@ -1859,7 +1869,8 @@ mod tests {
         // Test that dropping a node doesn't panic
         let config = NetworkConfig::testnet();
         let (_cmd_tx, cmd_rx) = mpsc::channel(100);
-        let node = P2pNode::new(config, cmd_rx).unwrap();
+        let node = P2pNode::new(config, cmd_rx)
+            .expect("Failed to create P2P node for test");
 
         // Drop the node explicitly
         drop(node);

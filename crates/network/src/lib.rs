@@ -163,6 +163,12 @@ pub mod snapshot_config;
 pub mod sync;
 /// Transaction relay and propagation
 pub mod transaction_relay;
+/// Safe P2P networking utilities
+pub mod safe_p2p;
+/// DOS protection and rate limiting
+pub mod dos_protection;
+/// Network resilience patterns
+pub mod resilience;
 
 // Constants
 const UNKNOWN_PEER_ADDR: &str = "0.0.0.0:0";
@@ -196,6 +202,7 @@ pub use error::{ErrorSeverity, NetworkError, NetworkResult, Result};
 /// They are used during the version handshake to advertise node capabilities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u64)]
+/// Represents an enumeration of values.
 pub enum NodeServices {
     /// Full node service (able to serve the network)
     NodeNetwork = 0x01,
@@ -211,6 +218,7 @@ pub enum NodeServices {
 /// are processed, enabling light clients to filter relevant transactions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
+/// Represents an enumeration of values.
 pub enum BloomFilterFlags {
     UpdateNone = 0x00,
     UpdateAll = 0x01,
@@ -239,6 +247,7 @@ pub static GLOBAL_SYNC_MANAGER: Lazy<Mutex<Option<std::sync::Arc<sync::SyncManag
 /// # Thread Safety
 ///
 /// This function is thread-safe and can be called from any thread.
+    /// Sets a value in the internal state.
 pub fn set_global_sync_manager(sync_manager: std::sync::Arc<sync::SyncManager>) {
     if let Ok(mut guard) = GLOBAL_SYNC_MANAGER.lock() {
         *guard = Some(sync_manager);
@@ -277,6 +286,7 @@ pub use LegacyError as Error;
 /// network crate. It includes comprehensive error variants for all
 /// network-related operations.
 #[derive(Error, Debug)]
+/// Represents an enumeration of values.
 pub enum LegacyError {
     /// Connection error
     #[error("Connection error: {0}")]
@@ -405,6 +415,7 @@ impl From<neo_core::CoreError> for LegacyError {
 /// the same major version and the connecting node has a minor version
 /// greater than or equal to the target node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct ProtocolVersion {
     /// Major version
     pub major: u32,
@@ -426,6 +437,7 @@ impl ProtocolVersion {
     /// # Returns
     ///
     /// A new `ProtocolVersion` instance.
+    /// Creates a new instance.
     pub fn new(major: u32, minor: u32, patch: u32) -> Self {
         Self {
             major,
@@ -461,6 +473,7 @@ impl ProtocolVersion {
     /// # Returns
     ///
     /// `true` if the versions are compatible, `false` otherwise.
+    /// Checks a boolean condition.
     pub fn is_compatible(&self, other: &ProtocolVersion) -> bool {
         self.major == other.major && self.minor >= other.minor
     }
@@ -511,6 +524,7 @@ impl Default for ProtocolVersion {
 
 /// Network node information
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct NodeInfo {
     /// Node ID
     pub id: UInt160,
@@ -530,6 +544,7 @@ pub struct NodeInfo {
 
 impl NodeInfo {
     /// Creates a new node info
+    /// Creates a new instance.
     pub fn new(id: UInt160, start_height: u32) -> Self {
         Self {
             id,
@@ -552,6 +567,7 @@ impl NodeInfo {
 
 /// Network statistics
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct NetworkStats {
     /// Number of connected peers
     pub peer_count: usize,
@@ -597,6 +613,7 @@ impl Default for NetworkStats {
 
 /// Network command types for external control
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum NetworkCommand {
     /// Connect to a specific peer
     ConnectToPeer(SocketAddr),
@@ -614,11 +631,13 @@ pub enum NetworkCommand {
 }
 
 /// Message handler for protocol processing
+/// Represents a data structure.
 pub struct MessageHandler {
     config: NetworkConfig,
 }
 
 impl MessageHandler {
+    /// Creates a new instance.
     pub fn new(config: NetworkConfig) -> Result<Self> {
         Ok(Self { config })
     }
@@ -634,6 +653,7 @@ impl MessageHandler {
 
 /// Network event types
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Represents an enumeration of values.
 pub enum NetworkEvent {
     /// Peer connected
     PeerConnected {
@@ -661,6 +681,7 @@ pub enum NetworkEvent {
 
 /// Network configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct NetworkConfig {
     /// Network magic number
     pub magic: u32,
@@ -700,6 +721,7 @@ pub struct NetworkConfig {
 
 /// P2P configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct P2PConfig {
     pub listen_address: SocketAddr,
     pub max_peers: usize,
@@ -728,6 +750,7 @@ impl Default for P2PConfig {
 
 /// RPC configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct RpcConfig {
     pub enabled: bool,
     pub bind_address: String,

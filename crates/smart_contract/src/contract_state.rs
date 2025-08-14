@@ -261,7 +261,7 @@ impl Serializable for ContractState {
     fn serialize(&self, writer: &mut neo_io::BinaryWriter) -> neo_io::Result<()> {
         writer.write_u32(self.id as u32)?;
         writer.write_u32(self.update_counter as u32)?;
-        writer.write_bytes(self.hash.as_bytes())?;
+        writer.write_bytes(&self.hash.as_bytes())?;
         self.nef.serialize(writer)?;
         // Handle manifest serialization error conversion
         self.manifest
@@ -367,7 +367,7 @@ impl Serializable for MethodToken {
     }
 
     fn serialize(&self, writer: &mut neo_io::BinaryWriter) -> neo_io::Result<()> {
-        writer.write_bytes(self.hash.as_bytes())?;
+        writer.write_bytes(&self.hash.as_bytes())?;
         writer.write_var_string(&self.method)?;
         writer.write_u16(self.parameters_count)?;
         writer.write_bool(self.has_return_value)?;

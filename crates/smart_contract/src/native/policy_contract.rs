@@ -590,7 +590,7 @@ impl PolicyContract {
     ) -> Result<()> {
         let mut data = Vec::new();
         for account in accounts {
-            data.extend_from_slice(account.as_bytes());
+            data.extend_from_slice(&account.as_bytes());
         }
         let context = engine.get_native_storage_context(&self.hash)?;
         engine.put_storage_item(&context, Self::BLOCKED_ACCOUNTS_KEY, &data)?;

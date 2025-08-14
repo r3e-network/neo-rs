@@ -141,6 +141,7 @@ impl Shutdown for SyncManager {
 }
 
 /// Network server shutdown wrapper
+/// Represents a data structure.
 pub struct NetworkServerShutdown {
     p2p_node: Arc<P2pNode>,
     sync_manager: Arc<SyncManager>,
@@ -148,6 +149,7 @@ pub struct NetworkServerShutdown {
 
 impl NetworkServerShutdown {
     /// Creates a new network server shutdown wrapper
+    /// Creates a new instance.
     pub fn new(p2p_node: Arc<P2pNode>, sync_manager: Arc<SyncManager>) -> Self {
         Self {
             p2p_node,
@@ -177,12 +179,14 @@ impl Shutdown for NetworkServerShutdown {
 }
 
 /// RPC server shutdown implementation
+/// Represents a data structure.
 pub struct RpcServerShutdown {
     is_running: Arc<RwLock<bool>>,
     bind_address: String,
 }
 
 impl RpcServerShutdown {
+    /// Creates a new instance.
     pub fn new(is_running: Arc<RwLock<bool>>, bind_address: String) -> Self {
         Self {
             is_running,
@@ -218,12 +222,14 @@ impl Shutdown for RpcServerShutdown {
 }
 
 /// Database shutdown implementation
+/// Represents a data structure.
 pub struct DatabaseShutdown {
     name: String,
     // In a real implementation, this would hold the database connection
 }
 
 impl DatabaseShutdown {
+    /// Creates a new instance.
     pub fn new(name: String) -> Self {
         Self { name }
     }
@@ -253,11 +259,13 @@ impl Shutdown for DatabaseShutdown {
 }
 
 /// Transaction pool shutdown implementation
+/// Represents a data structure.
 pub struct TransactionPoolShutdown {
     pending_count: Arc<RwLock<usize>>,
 }
 
 impl TransactionPoolShutdown {
+    /// Creates a new instance.
     pub fn new(pending_count: Arc<RwLock<usize>>) -> Self {
         Self { pending_count }
     }
@@ -318,7 +326,8 @@ mod tests {
     #[tokio::test]
     async fn test_peer_manager_shutdown() {
         let config = NetworkConfig::testnet();
-        let peer_manager = PeerManager::new(config).unwrap();
+        let peer_manager = PeerManager::new(config)
+            .expect("Failed to create peer manager for test");
 
         // Test shutdown
         let result = peer_manager.shutdown().await;
@@ -378,11 +387,14 @@ mod tests {
                 Some(&suffix),
             )
             .await
-            .unwrap(),
+            .expect("Failed to create test blockchain"),
         );
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = std::sync::Arc::new(P2pNode::new(config, command_receiver).unwrap());
+        let p2p_node = std::sync::Arc::new(
+            P2pNode::new(config, command_receiver)
+                .expect("Failed to create P2P node for test")
+        );
         let sync_manager = SyncManager::new(blockchain, p2p_node);
 
         assert_eq!(sync_manager.name(), "SyncManager");
@@ -402,11 +414,14 @@ mod tests {
                 Some(&suffix),
             )
             .await
-            .unwrap(),
+            .expect("Failed to create test blockchain"),
         );
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = std::sync::Arc::new(P2pNode::new(config, command_receiver).unwrap());
+        let p2p_node = std::sync::Arc::new(
+            P2pNode::new(config, command_receiver)
+                .expect("Failed to create P2P node for test")
+        );
         let sync_manager = SyncManager::new(blockchain, p2p_node);
 
         // Should be able to shutdown when idle
@@ -424,7 +439,7 @@ mod tests {
                 Some(&suffix),
             )
             .await
-            .unwrap(),
+            .expect("Failed to create test blockchain"),
         );
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
@@ -447,7 +462,7 @@ mod tests {
                 Some(&suffix),
             )
             .await
-            .unwrap(),
+            .expect("Failed to create test blockchain"),
         );
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);

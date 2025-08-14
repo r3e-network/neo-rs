@@ -81,13 +81,13 @@ impl BlockHeader {
 
         // Write header fields in the same order as C#
         let _ = writer.write_u32(self.version);
-        let _ = writer.write_bytes(self.previous_hash.as_bytes());
-        let _ = writer.write_bytes(self.merkle_root.as_bytes());
+        let _ = writer.write_bytes(&self.previous_hash.as_bytes());
+        let _ = writer.write_bytes(&self.merkle_root.as_bytes());
         let _ = writer.write_u64(self.timestamp);
         let _ = writer.write_u64(self.nonce);
         let _ = writer.write_u32(self.index);
         let _ = writer.write_u8(self.primary_index);
-        let _ = writer.write_bytes(self.next_consensus.as_bytes());
+        let _ = writer.write_bytes(&self.next_consensus.as_bytes());
 
         let _ = writer.write_var_int(self.witnesses.len() as u64);
         for witness in &self.witnesses {
@@ -213,13 +213,13 @@ impl BlockHeader {
     pub fn size(&self) -> usize {
         let mut writer = BinaryWriter::new();
         let _ = writer.write_u32(self.version);
-        let _ = writer.write_bytes(self.previous_hash.as_bytes());
-        let _ = writer.write_bytes(self.merkle_root.as_bytes());
+        let _ = writer.write_bytes(&self.previous_hash.as_bytes());
+        let _ = writer.write_bytes(&self.merkle_root.as_bytes());
         let _ = writer.write_u64(self.timestamp);
         let _ = writer.write_u64(self.nonce);
         let _ = writer.write_u32(self.index);
         let _ = writer.write_u8(self.primary_index);
-        let _ = writer.write_bytes(self.next_consensus.as_bytes());
+        let _ = writer.write_bytes(&self.next_consensus.as_bytes());
 
         // Add witness data size
         let _ = writer.write_var_int(self.witnesses.len() as u64);

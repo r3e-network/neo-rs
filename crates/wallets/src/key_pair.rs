@@ -5,16 +5,16 @@
 
 use crate::{Error, Result};
 use aes::Aes256;
+use base64::Engine;
 use cbc::{
     cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
     Decryptor, Encryptor,
 };
 use neo_config::HASH_SIZE;
-use neo_core::{UInt160, UInt256};
-use neo_cryptography::{ECCurve, ECDsa, ECPoint, ECC};
+use neo_core::UInt160;
+use neo_cryptography::{ECCurve, ECDsa, ECC};
 use rand::RngCore;
-use scrypt::{Params, Scrypt};
-use serde::{Deserialize, Serialize};
+use scrypt::Params;
 use std::fmt;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 

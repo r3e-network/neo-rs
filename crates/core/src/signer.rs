@@ -440,7 +440,7 @@ impl Signer {
             }
             WitnessCondition::ScriptHash { hash } => {
                 writer.write_bytes(&[WitnessConditionType::ScriptHash as u8])?;
-                writer.write_bytes(hash.as_bytes())?;
+                writer.write_bytes(&hash.as_bytes())?;
             }
             WitnessCondition::Group { group } => {
                 writer.write_bytes(&[WitnessConditionType::Group as u8])?;
@@ -451,7 +451,7 @@ impl Signer {
             }
             WitnessCondition::CalledByContract { hash } => {
                 writer.write_bytes(&[WitnessConditionType::CalledByContract as u8])?;
-                writer.write_bytes(hash.as_bytes())?;
+                writer.write_bytes(&hash.as_bytes())?;
             }
             WitnessCondition::CalledByGroup { group } => {
                 writer.write_bytes(&[WitnessConditionType::CalledByGroup as u8])?;

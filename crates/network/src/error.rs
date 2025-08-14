@@ -12,6 +12,7 @@ use thiserror::Error;
 const UNKNOWN_PEER_ADDR: &str = "0.0.0.0:0";
 /// Network operation errors
 #[derive(Error, Debug, Clone, PartialEq)]
+/// Represents an enumeration of values.
 pub enum NetworkError {
     /// Connection establishment failed
     #[error("Connection failed to {address}: {reason}")]
@@ -214,6 +215,18 @@ pub enum NetworkError {
     #[error("Server error: {0}")]
     ServerError(String),
 
+    /// Circuit breaker is open
+    #[error("Circuit breaker open: {reason}")]
+    CircuitBreakerOpen { reason: String },
+
+    /// Temporary failure that may succeed if retried
+    #[error("Temporary failure: {reason}")]
+    TemporaryFailure { reason: String },
+
+    /// Operation is queued for execution
+    #[error("Operation queued: {reason}")]
+    Queued { reason: String },
+
     /// Generic network error
     #[error("Network error: {reason}")]
     Generic { reason: String },
@@ -342,6 +355,7 @@ impl NetworkError {
     }
 
     /// Check if this error is retryable
+    /// Checks a boolean condition.
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
@@ -355,10 +369,12 @@ impl NetworkError {
                 | NetworkError::NetworkUnreachable { .. }
                 | NetworkError::HostUnreachable { .. }
                 | NetworkError::ServiceUnavailable { .. }
+                | NetworkError::TemporaryFailure { .. }
         )
     }
 
     /// Check if this error is a connection-related error
+    /// Checks a boolean condition.
     pub fn is_connection_error(&self) -> bool {
         matches!(
             self,
@@ -372,6 +388,7 @@ impl NetworkError {
     }
 
     /// Check if this error is a protocol-related error
+    /// Checks a boolean condition.
     pub fn is_protocol_error(&self) -> bool {
         matches!(
             self,
@@ -385,6 +402,7 @@ impl NetworkError {
     }
 
     /// Check if this error is a user error (vs system error)
+    /// Checks a boolean condition.
     pub fn is_user_error(&self) -> bool {
         matches!(
             self,
@@ -428,6 +446,10 @@ impl NetworkError {
             NetworkError::Configuration { .. }
             | NetworkError::AddressBinding { .. }
             | NetworkError::ServiceUnavailable { .. } => ErrorSeverity::Critical,
+
+            NetworkError::CircuitBreakerOpen { .. } => ErrorSeverity::High,
+            NetworkError::TemporaryFailure { .. } => ErrorSeverity::Low,
+            NetworkError::Queued { .. } => ErrorSeverity::Low,
 
             _ => ErrorSeverity::Medium,
         }
@@ -488,12 +510,16 @@ impl NetworkError {
             NetworkError::PeerBanned { .. } => "peer",
             NetworkError::TransactionValidation { .. } => "transaction",
             NetworkError::MessageSend { .. } => "messaging",
+            NetworkError::CircuitBreakerOpen { .. } => "resilience",
+            NetworkError::TemporaryFailure { .. } => "resilience",
+            NetworkError::Queued { .. } => "resilience",
         }
     }
 }
 
 /// Error severity levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// Represents an enumeration of values.
 pub enum ErrorSeverity {
     /// Low severity - minor issues that don't affect functionality
     Low,

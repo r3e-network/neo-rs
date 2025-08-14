@@ -54,9 +54,8 @@ impl UInt160 {
     }
 
     /// Returns the bytes representation of this UInt160.
-    pub fn as_bytes(&self) -> &[u8; ADDRESS_SIZE] {
-        // SAFETY: Transmute is safe here as types have identical memory layout
-        unsafe { std::mem::transmute(self) }
+    pub fn as_bytes(&self) -> [u8; ADDRESS_SIZE] {
+        self.to_array()
     }
 
     /// Returns the bytes as a Vec<u8>

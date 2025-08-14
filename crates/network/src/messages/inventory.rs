@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 /// Inventory item types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
+/// Represents an enumeration of values.
 pub enum InventoryType {
     Transaction = 0x2b,
     Block = 0x2c,
@@ -24,6 +25,7 @@ impl InventoryType {
 
 /// Inventory item
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct InventoryItem {
     /// Item type
     pub item_type: InventoryType,
@@ -33,6 +35,7 @@ pub struct InventoryItem {
 
 impl InventoryItem {
     /// Creates a new inventory item
+    /// Creates a new instance.
     pub fn new(item_type: InventoryType, hash: UInt256) -> Self {
         Self { item_type, hash }
     }
@@ -57,7 +60,7 @@ impl InventoryItem {
 impl neo_io::Serializable for InventoryItem {
     fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::Result<()> {
         writer.write_u8(self.item_type as u8)?;
-        writer.write_bytes(self.hash.as_bytes())?;
+        writer.write_bytes(&self.hash.as_bytes())?;
         Ok(())
     }
 

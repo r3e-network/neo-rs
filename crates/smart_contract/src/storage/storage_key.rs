@@ -107,7 +107,7 @@ impl Serializable for StorageKey {
     }
 
     fn serialize(&self, writer: &mut neo_io::BinaryWriter) -> neo_io::Result<()> {
-        writer.write_bytes(self.contract.as_bytes())?;
+        writer.write_bytes(&self.contract.as_bytes())?;
         writer.write_var_bytes(&self.key)?;
         Ok(())
     }

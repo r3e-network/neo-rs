@@ -55,7 +55,7 @@ pub fn get_oracle_request_from_contract(
 
     // 2. Construct storage key for Oracle request (production key format)
     let mut storage_key = Vec::with_capacity(28); // ADDRESS_SIZE bytes hash + 8 bytes request_id
-    storage_key.extend_from_slice(oracle_contract_hash.as_bytes());
+    storage_key.extend_from_slice(&oracle_contract_hash.as_bytes());
     storage_key.extend_from_slice(&request_id.to_le_bytes());
 
     // 3. Get Oracle request from storage (production storage access)
@@ -83,8 +83,8 @@ pub fn get_transaction_from_ledger_contract(
 
     // 2. Construct storage key for transaction (production key format)
     let mut storage_key = Vec::with_capacity(52); // ADDRESS_SIZE bytes hash + HASH_SIZE bytes txid
-    storage_key.extend_from_slice(ledger_contract_hash.as_bytes());
-    storage_key.extend_from_slice(txid.as_bytes());
+    storage_key.extend_from_slice(&ledger_contract_hash.as_bytes());
+    storage_key.extend_from_slice(&txid.as_bytes());
 
     // 3. Get transaction from storage (production storage access)
     match engine.get_storage_item(&storage_key) {

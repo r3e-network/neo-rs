@@ -18,6 +18,7 @@ use methods::RpcMethods;
 use types::{RpcRequest, RpcResponse};
 
 /// Neo N3 RPC Server implementation
+#[derive(Debug)]
 pub struct RpcServer {
     config: RpcServerConfig,
     ledger: Arc<Ledger>,

@@ -37,13 +37,13 @@ impl BlockHeader {
 
         // Serialize header fields in the same order as C# Neo implementation
         buffer.extend_from_slice(&self.version.to_le_bytes());
-        buffer.extend_from_slice(self.previous_hash.as_bytes());
-        buffer.extend_from_slice(self.merkle_root.as_bytes());
+        buffer.extend_from_slice(&self.previous_hash.as_bytes());
+        buffer.extend_from_slice(&self.merkle_root.as_bytes());
         buffer.extend_from_slice(&self.timestamp.to_le_bytes());
         buffer.extend_from_slice(&self.nonce.to_le_bytes());
         buffer.extend_from_slice(&self.index.to_le_bytes());
         buffer.push(self.primary_index);
-        buffer.extend_from_slice(self.next_consensus.as_bytes());
+        buffer.extend_from_slice(&self.next_consensus.as_bytes());
 
         // Calculate SHA256 hash
         let mut hasher = Sha256::new();

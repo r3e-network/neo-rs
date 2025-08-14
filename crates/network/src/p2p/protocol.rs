@@ -9,12 +9,13 @@ use neo_config::DEFAULT_RPC_PORT;
 use neo_config::DEFAULT_TESTNET_PORT;
 use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use ripemd::{Digest as RipemdDigest, Ripemd160};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::net::SocketAddr;
 
 /// Default Neo network ports
 /// Message handler trait (matches C# Neo IMessageHandler pattern)
 #[async_trait::async_trait]
+/// Defines a trait interface.
 pub trait MessageHandler: Send + Sync {
     /// Handles a message from a peer
     async fn handle_message(
@@ -25,6 +26,7 @@ pub trait MessageHandler: Send + Sync {
 }
 
 /// Protocol message utilities
+/// Represents a data structure.
 pub struct ProtocolUtils;
 
 impl ProtocolUtils {
@@ -66,6 +68,7 @@ impl ProtocolUtils {
     }
 
     /// Validates protocol message format (matches C# Neo message validation exactly)
+    /// Validates the input or state.
     pub fn validate_message(message: &NetworkMessage) -> NetworkResult<()> {
         // Validate magic number
         if message.header.magic == 0 {
@@ -121,6 +124,7 @@ impl ProtocolUtils {
     }
 
     /// Checks if a message type is critical for sync (matches C# Neo sync protocol exactly)
+    /// Checks a boolean condition.
     pub fn is_sync_message(command: &str) -> bool {
         matches!(
             command,
@@ -141,6 +145,7 @@ impl ProtocolUtils {
     }
 
     /// Gets message priority for processing (matches C# Neo message prioritization exactly)
+    /// Gets a value from the internal state.
     pub fn get_message_priority(command: &str) -> u8 {
         match command {
             // Highest priority - connection management
@@ -169,6 +174,7 @@ impl ProtocolUtils {
     }
 
     /// Gets expected response message type (matches C# Neo protocol flows exactly)
+    /// Gets a value from the internal state.
     pub fn get_expected_response(command: &str) -> Option<&'static str> {
         match command {
             "version" => Some("verack"),
@@ -183,6 +189,7 @@ impl ProtocolUtils {
 }
 
 /// Default message handler implementation
+/// Represents a data structure.
 pub struct DefaultMessageHandler;
 
 #[async_trait::async_trait]

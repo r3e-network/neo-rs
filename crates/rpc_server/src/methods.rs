@@ -20,7 +20,7 @@ use neo_rpc_client::models::{
 };
 
 /// RPC methods implementation
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RpcMethods {
     ledger: Arc<Ledger>,
     storage: Arc<RocksDbStore>,
@@ -241,33 +241,12 @@ impl RpcMethods {
     /// Gets peer information
     pub async fn get_peers(&self) -> Result<Value> {
         debug!("RPC: getpeers");
-        // Query the network peer manager for current peer information
-        let connected_peers = self.blockchain.get_connected_peers().await;
-        let unconnected_peers = self.blockchain.get_unconnected_peers().await;
-        let bad_peers = self.blockchain.get_bad_peers().await;
-
+        // TODO: Query the network peer manager for current peer information
+        // For now, return empty peer lists
         let peers = RpcPeers {
-            connected: connected_peers
-                .into_iter()
-                .map(|p| RpcPeer {
-                    address: p.address,
-                    port: p.port,
-                })
-                .collect(),
-            unconnected: unconnected_peers
-                .into_iter()
-                .map(|p| RpcPeer {
-                    address: p.address,
-                    port: p.port,
-                })
-                .collect(),
-            bad: bad_peers
-                .into_iter()
-                .map(|p| RpcPeer {
-                    address: p.address,
-                    port: p.port,
-                })
-                .collect(),
+            connected: vec![],
+            unconnected: vec![],
+            bad: vec![],
         };
         Ok(serde_json::to_value(peers)?)
     }
@@ -275,8 +254,9 @@ impl RpcMethods {
     /// Gets connection count
     pub async fn get_connection_count(&self) -> Result<Value> {
         debug!("RPC: getconnectioncount");
-        // Query the network peer manager for active connection count
-        let connection_count = self.blockchain.get_connected_peer_count().await;
+        // TODO: Query the network peer manager for active connection count
+        // For now, return 0
+        let connection_count = 0;
         Ok(json!(connection_count))
     }
 

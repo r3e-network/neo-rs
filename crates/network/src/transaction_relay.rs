@@ -17,33 +17,45 @@ use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, error, info, warn};
 /// Transaction relay events
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum TransactionRelayEvent {
     /// New transaction received and validated
     TransactionReceived {
+        /// Transaction hash
         transaction_hash: UInt256,
+        /// Source peer address
         from_peer: SocketAddr,
+        /// Whether transaction was relayed
         relayed: bool,
     },
     /// Transaction added to mempool
     TransactionAddedToMempool {
+        /// Transaction hash
         transaction_hash: UInt256,
+        /// Fee per byte
         fee_per_byte: u64,
     },
     /// Transaction rejected
     TransactionRejected {
+        /// Transaction hash
         transaction_hash: UInt256,
+        /// Reason for action
         reason: String,
+        /// Source peer address
         from_peer: SocketAddr,
     },
     /// Inventory broadcast
     InventoryBroadcast {
+        /// Number of inventory items
         inventory_count: usize,
+        /// List of excluded peers
         excluded_peers: Vec<SocketAddr>,
     },
 }
 
 /// Transaction relay configuration
 #[derive(Debug, Clone)]
+/// Represents a data structure.
 pub struct TransactionRelayConfig {
     /// Maximum transactions to relay per batch
     pub max_relay_batch_size: usize,
@@ -70,6 +82,7 @@ impl Default for TransactionRelayConfig {
 }
 
 /// Transaction relay handler for P2P network
+/// Represents a data structure.
 pub struct TransactionRelay {
     /// Configuration
     config: TransactionRelayConfig,
@@ -87,6 +100,7 @@ pub struct TransactionRelay {
 
 /// Peer connection info for transaction relay
 #[derive(Debug, Clone)]
+/// Represents a data structure.
 pub struct PeerConnection {
     /// Peer address
     pub address: SocketAddr,
@@ -100,6 +114,7 @@ pub struct PeerConnection {
 
 /// Transaction relay statistics
 #[derive(Debug, Clone, Default)]
+/// Represents a data structure.
 pub struct RelayStatistics {
     /// Total transactions received
     pub transactions_received: u64,
@@ -119,6 +134,7 @@ pub struct RelayStatistics {
 
 impl TransactionRelay {
     /// Creates a new transaction relay handler
+    /// Creates a new instance.
     pub fn new(config: TransactionRelayConfig, mempool: Arc<RwLock<MemoryPool>>) -> Self {
         let relay_cache = Arc::new(RwLock::new(RelayCache::new(
             config.relay_cache_capacity,
@@ -140,6 +156,7 @@ impl TransactionRelay {
     pub async fn handle_transaction(
         &self,
         transaction: Transaction,
+        /// Source peer address
         from_peer: SocketAddr,
     ) -> NetworkResult<()> {
         let tx_hash = transaction
@@ -270,6 +287,7 @@ impl TransactionRelay {
     pub async fn handle_inventory(
         &self,
         inventory: Vec<InventoryItem>,
+        /// Source peer address
         from_peer: SocketAddr,
     ) -> NetworkResult<()> {
         debug!(
@@ -318,6 +336,7 @@ impl TransactionRelay {
     pub async fn handle_get_data(
         &self,
         requested_items: Vec<InventoryItem>,
+        /// Source peer address
         from_peer: SocketAddr,
     ) -> NetworkResult<()> {
         debug!(

@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 /// Represents an extensible message that can be relayed.
 /// Matches C# Neo ExtensiblePayload exactly.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct ExtensiblePayload {
     /// The category of the extension (e.g., "dBFT" for consensus)
     pub category: String,
@@ -39,6 +40,7 @@ pub struct ExtensiblePayload {
 
 impl ExtensiblePayload {
     /// Creates a new ExtensiblePayload
+    /// Creates a new instance.
     pub fn new(
         category: String,
         valid_block_start: u32,
@@ -100,29 +102,36 @@ impl ExtensiblePayload {
     pub fn validate(&self) -> Result<()> {
         // Check category length (max 32 bytes in C#)
         if self.category.len() > 32 {
-            return Err(NetworkError::InvalidMessage(
-                "ExtensiblePayload category too long".to_string(),
-            ));
+            return Err(NetworkError::InvalidMessage {
+                peer: "0.0.0.0:0".parse().unwrap(),
+                message_type: "ExtensiblePayload".to_string(),
+                reason: "ExtensiblePayload category too long".to_string(),
+            });
         }
 
         // Check valid block range
         if self.valid_block_start >= self.valid_block_end {
-            return Err(NetworkError::InvalidMessage(
-                "Invalid block validity range".to_string(),
-            ));
+            return Err(NetworkError::InvalidMessage {
+                peer: "0.0.0.0:0".parse().unwrap(),
+                message_type: "ExtensiblePayload".to_string(),
+                reason: "Invalid block validity range".to_string(),
+            });
         }
 
         // Check data size (max 64KB for consensus messages)
         if self.data.len() > MAX_SCRIPT_SIZE {
-            return Err(NetworkError::InvalidMessage(
-                "ExtensiblePayload data too large".to_string(),
-            ));
+            return Err(NetworkError::InvalidMessage {
+                peer: "0.0.0.0:0".parse().unwrap(),
+                message_type: "ExtensiblePayload".to_string(),
+                reason: "data too large".to_string(),
+            });
         }
 
         Ok(())
     }
 
     /// Checks if the payload is a consensus message
+    /// Checks a boolean condition.
     pub fn is_consensus(&self) -> bool {
         self.category == "dBFT"
     }
@@ -144,13 +153,13 @@ impl ExtensiblePayload {
 }
 
 impl Serializable for ExtensiblePayload {
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> neo_io::Result<Self> {
         let category = reader.read_var_string(32)?;
         let valid_block_start = reader.read_u32()?;
         let valid_block_end = reader.read_u32()?;
-        let sender = UInt160::deserialize(reader)?;
+        let sender = <UInt160 as Serializable>::deserialize(reader)?;
         let data = reader.read_var_bytes(MAX_SCRIPT_SIZE)?;
-        let witness = Witness::deserialize(reader)?;
+        let witness = <Witness as Serializable>::deserialize(reader)?;
 
         let payload = Self {
             category,
@@ -162,11 +171,11 @@ impl Serializable for ExtensiblePayload {
             _hash: None,
         };
 
-        payload.validate()?;
+        payload.validate().map_err(|e| neo_io::IoError::invalid_format("ExtensiblePayload", &format!("{}", e)))?;
         Ok(payload)
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::Result<()> {
         writer.write_var_string(&self.category)?;
         writer.write_u32(self.valid_block_start)?;
         writer.write_u32(self.valid_block_end)?;

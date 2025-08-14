@@ -37,8 +37,10 @@ impl Default for JumpTable {
     }
 }
 
+use std::sync::OnceLock;
+
 /// The default jump table.
-pub static mut DEFAULT: Option<JumpTable> = None;
+static DEFAULT: OnceLock<JumpTable> = OnceLock::new();
 
 impl JumpTable {
     /// Creates a new jump table.
@@ -56,15 +58,8 @@ impl JumpTable {
     /// Gets the default jump table.
     #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
-        // SAFETY: Operation is safe within this context
-        unsafe {
-            #[allow(static_mut_refs)]
-            if DEFAULT.is_none() {
-                DEFAULT = Some(Self::new());
-            }
-            #[allow(static_mut_refs)]
-            DEFAULT.clone().unwrap_or_default()
-        }
+        // Use OnceLock for safe one-time initialization
+        DEFAULT.get_or_init(|| Self::new()).clone()
     }
 
     /// Registers a handler for an opcode.

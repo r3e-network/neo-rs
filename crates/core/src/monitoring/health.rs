@@ -12,6 +12,7 @@ use tokio::sync::RwLock;
 
 /// Health status of a component
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Represents an enumeration of values.
 pub enum HealthStatus {
     /// Component is healthy and functioning normally
     Healthy,
@@ -25,6 +26,7 @@ pub enum HealthStatus {
 
 /// Health check result for a component
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct HealthCheckResult {
     /// Component name
     pub component: String,
@@ -43,6 +45,7 @@ pub struct HealthCheckResult {
 
 /// Overall system health report
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct HealthReport {
     /// Overall system status
     pub status: HealthStatus,
@@ -59,6 +62,7 @@ pub struct HealthReport {
 
 /// Trait for components that can report health
 #[async_trait::async_trait]
+/// Defines a trait interface.
 pub trait HealthCheck: Send + Sync {
     /// Perform health check
     async fn check_health(&self) -> HealthCheckResult;
@@ -68,6 +72,7 @@ pub trait HealthCheck: Send + Sync {
 }
 
 /// Health monitor that coordinates health checks
+/// Represents a data structure.
 pub struct HealthMonitor {
     /// Registered health checks
     checks: Arc<RwLock<Vec<Arc<dyn HealthCheck>>>>,
@@ -83,6 +88,8 @@ pub struct HealthMonitor {
 
 impl HealthMonitor {
     /// Create new health monitor
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(version: String) -> Self {
         Self {
             checks: Arc::new(RwLock::new(Vec::new())),
@@ -169,12 +176,15 @@ impl HealthMonitor {
 }
 
 /// Blockchain health check
+/// Represents a data structure.
 pub struct BlockchainHealthCheck {
     /// Maximum allowed block lag
     _max_block_lag: u64,
 }
 
 impl BlockchainHealthCheck {
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(max_block_lag: u64) -> Self {
         Self { _max_block_lag: max_block_lag }
     }
@@ -213,12 +223,15 @@ impl HealthCheck for BlockchainHealthCheck {
 }
 
 /// Network health check
+/// Represents a data structure.
 pub struct NetworkHealthCheck {
     /// Minimum required peers
     min_peers: usize,
 }
 
 impl NetworkHealthCheck {
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(min_peers: usize) -> Self {
         Self { min_peers }
     }
@@ -262,12 +275,15 @@ impl HealthCheck for NetworkHealthCheck {
 }
 
 /// Storage health check
+/// Represents a data structure.
 pub struct StorageHealthCheck {
     /// Minimum required free space in bytes
     min_free_space: u64,
 }
 
 impl StorageHealthCheck {
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(min_free_space: u64) -> Self {
         Self { min_free_space }
     }
@@ -324,12 +340,15 @@ impl StorageHealthCheck {
 }
 
 /// Memory health check
+/// Represents a data structure.
 pub struct MemoryHealthCheck {
     /// Maximum memory usage in bytes
     max_memory: u64,
 }
 
 impl MemoryHealthCheck {
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(max_memory: u64) -> Self {
         Self { max_memory }
     }

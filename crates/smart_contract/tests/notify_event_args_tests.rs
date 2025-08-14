@@ -7,6 +7,8 @@ use neo_persistence::DataCache;
 use neo_smart_contract::{ApplicationEngine, NotifyEventArgs, OpCode, ScriptBuilder, TriggerType};
 use neo_vm::types::{Array, StackItem};
 use neo_vm::ReferenceCounter;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 // ============================================================================
 // Test NotifyEventArgs basic functionality
@@ -53,7 +55,7 @@ fn test_issue_3300() {
     engine.load_script(&script.to_bytes());
 
     // Create array with 500 items
-    let reference_counter = engine.reference_counter();
+    let reference_counter = Rc::new(RefCell::new(ReferenceCounter::new()));
     let mut ns = Array::new(reference_counter);
     for _ in 0..500 {
         ns.add(StackItem::ByteString("".to_string().into()));
@@ -129,7 +131,7 @@ fn test_notify_event_args_various_states() {
     }
 
     // Test with array state
-    let mut array = Array::new(&mut ReferenceCounter::new());
+    let mut array = Array::new(Rc::new(RefCell::new(ReferenceCounter::new())));
     array.add(StackItem::Integer(1));
     array.add(StackItem::Integer(2));
     array.add(StackItem::Integer(3));
@@ -448,22 +450,21 @@ mod neo_vm {
 
         pub struct Array {
             items: Vec<StackItem>,
-            _reference_counter: *mut ReferenceCounter,
+            _reference_counter: Rc<RefCell<ReferenceCounter>>,
         }
 
         impl Array {
-            pub fn new(reference_counter: &mut ReferenceCounter) -> Self {
-                reference_counter.add_reference(1);
+            pub fn new(reference_counter: Rc<RefCell<ReferenceCounter>>) -> Self {
+                reference_counter.borrow_mut().add_reference(1);
                 Array {
                     items: Vec::new(),
-                    _reference_counter: reference_counter as *mut _,
+                    _reference_counter: reference_counter,
                 }
             }
 
             pub fn add(&mut self, item: StackItem) {
-                unsafe {
-                    (*self._reference_counter).add_reference(1);
-                }
+                // Safe reference counting through RefCell
+                self._reference_counter.borrow_mut().add_reference(1);
                 self.items.push(item);
             }
 

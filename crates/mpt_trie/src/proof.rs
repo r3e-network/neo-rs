@@ -82,7 +82,7 @@ impl ProofNode {
                     for child_hash in children {
                         if let Some(hash) = child_hash {
                             result.push(1); // Has child
-                            result.extend_from_slice(hash.as_bytes());
+                            result.extend_from_slice(&hash.as_bytes());
                         } else {
                             result.push(0); // No child
                         }
@@ -112,7 +112,7 @@ impl ProofNode {
 
                 // Serialize next hash
                 if let Some(next_hash) = &self.next {
-                    result.extend_from_slice(next_hash.as_bytes());
+                    result.extend_from_slice(&next_hash.as_bytes());
                 } else {
                     result.extend_from_slice(&[0u8; HASH_SIZE]);
                 }
@@ -135,7 +135,7 @@ impl ProofNode {
                 }
             }
             NodeType::HashNode => {
-                result.extend_from_slice(self.hash.as_bytes());
+                result.extend_from_slice(&self.hash.as_bytes());
             }
             NodeType::Empty => {
                 // No additional data
@@ -635,7 +635,7 @@ mod tests {
     fn test_proof_verifier_range() {
         let root_hash = UInt256::zero();
         let keys = vec![vec![1], vec![2], vec![3]];
-        let values = vec![vec![10], vec![ADDRESS_SIZE], vec![30]];
+        let values = vec![vec![10u8], vec![20u8], vec![30u8]];
         let proof = vec![]; // Production-ready empty proof for testing edge cases
 
         let result = ProofVerifier::verify_range(

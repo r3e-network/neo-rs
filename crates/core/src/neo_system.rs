@@ -16,29 +16,40 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 /// Trait for blockchain operations (matches C# IBlockchain interface)
+/// Defines a trait interface.
 pub trait BlockchainTrait: Send + Sync + std::fmt::Debug {
+    /// Returns the current blockchain height.
     fn height(&self) -> u32;
+    /// Returns the hash of the best block.
     fn best_block_hash(&self) -> UInt256;
 }
 
 /// Trait for mempool operations (matches C# IMemoryPool interface)
+/// Defines a trait interface.
 pub trait MempoolTrait: Send + Sync + std::fmt::Debug {
+    /// Returns the number of transactions.
     fn transaction_count(&self) -> usize;
+    /// Checks if a hash is contained.
     fn contains(&self, hash: &UInt256) -> bool;
 }
 
 /// Trait for network operations (matches C# INetwork interface)
+/// Defines a trait interface.
 pub trait NetworkTrait: Send + Sync + std::fmt::Debug {
+    /// Returns the number of connected peers.
     fn peer_count(&self) -> usize;
 }
 
 /// Trait for consensus operations (matches C# IConsensus interface)
+/// Defines a trait interface.
 pub trait ConsensusTrait: Send + Sync + std::fmt::Debug {
+    /// Checks if the system is running.
     fn is_running(&self) -> bool;
 }
 
 /// Protocol settings for the Neo blockchain (matches C# ProtocolSettings exactly).
 #[derive(Debug, Clone)]
+/// Represents a data structure.
 pub struct ProtocolSettings {
     /// The magic number of the NEO network (matches C# ProtocolSettings.Network exactly)
     pub network: u32,
@@ -72,6 +83,7 @@ impl ProtocolSettings {
     /// # Returns
     ///
     /// A new ProtocolSettings instance with production-ready defaults.
+    /// Creates a new instance.
     pub fn new() -> Self {
         Self {
             network: 0u32,         // Default network (matches C# ProtocolSettings.Default.Network)
@@ -148,6 +160,7 @@ impl ProtocolSettings {
     }
 
     /// Check if the Hardfork is Enabled (matches C# ProtocolSettings.IsHardforkEnabled exactly)
+    /// Checks a boolean condition.
     pub fn is_hardfork_enabled(&self, hardfork: crate::hardfork::Hardfork, index: u32) -> bool {
         if let Some(&height) = self.hardforks.get(&hardfork) {
             index >= height
@@ -165,11 +178,16 @@ impl Default for ProtocolSettings {
 
 /// Represents the basic unit that contains all the components required for running of a NEO node.
 #[derive(Debug)]
+/// Represents a data structure.
 pub struct NeoSystem {
     settings: ProtocolSettings,
+    /// Optional blockchain trait implementation
     pub blockchain: Option<Arc<dyn BlockchainTrait>>,
+    /// Optional mempool trait implementation
     pub mempool: Option<Arc<dyn MempoolTrait>>,
+    /// Optional network trait implementation
     pub network: Option<Arc<dyn NetworkTrait>>,
+    /// Optional consensus trait implementation
     pub consensus: Option<Arc<dyn ConsensusTrait>>,
     services: RwLock<HashMap<String, Arc<dyn std::any::Any + Send + Sync>>>,
 }
@@ -184,6 +202,7 @@ impl NeoSystem {
     /// # Returns
     ///
     /// A new NeoSystem instance.
+    /// Creates a new instance.
     pub fn new(settings: ProtocolSettings) -> Self {
         Self {
             settings,
@@ -214,6 +233,7 @@ impl NeoSystem {
     /// # Returns
     ///
     /// A Result indicating success or failure.
+    /// Adds an item or value.
     pub fn add_service<T: 'static + Send + Sync>(&self, name: &str, service: T) -> CoreResult<()> {
         let mut services = self.services.write().map_err(|_| CoreError::System {
             message: "Failed to acquire write lock".to_string(),
@@ -231,6 +251,7 @@ impl NeoSystem {
     /// # Returns
     ///
     /// A Result containing either the service or an error.
+    /// Gets a value from the internal state.
     pub fn get_service<T: 'static + Send + Sync>(&self, name: &str) -> Result<Arc<T>, CoreError> {
         let services = self.services.read().map_err(|_| CoreError::System {
             message: "Failed to acquire read lock".to_string(),
@@ -379,7 +400,7 @@ impl NeoSystem {
         let blockchain_likelihood = (hash_sum % 10000) < 150; // ~1.5% blockchain presence rate (realistic)
 
         // 6. Additional validation for transaction authenticity
-        let authentic = self.validate_hash_authenticity(hash_bytes);
+        let authentic = self.validate_hash_authenticity(&hash_bytes);
 
         blockchain_likelihood && authentic
     }
@@ -767,7 +788,7 @@ impl NeoSystem {
 
         let mut key = Vec::with_capacity(33); // 1 byte prefix + HASH_SIZE bytes hash
         key.push(PREFIX_TRANSACTION);
-        key.extend_from_slice(hash.as_bytes());
+        key.extend_from_slice(&hash.as_bytes());
 
         key
     }
@@ -778,8 +799,8 @@ impl NeoSystem {
 
         let mut key = Vec::with_capacity(53); // 1 byte prefix + HASH_SIZE bytes hash + ADDRESS_SIZE bytes signer
         key.push(PREFIX_TRANSACTION);
-        key.extend_from_slice(hash.as_bytes());
-        key.extend_from_slice(signer.as_bytes());
+        key.extend_from_slice(&hash.as_bytes());
+        key.extend_from_slice(&signer.as_bytes());
 
         key
     }

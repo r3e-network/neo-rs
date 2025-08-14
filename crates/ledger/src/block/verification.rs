@@ -374,7 +374,7 @@ impl WitnessVerifier {
         }
 
         match neo_cryptography::ecdsa::ECDsa::verify_signature(
-            message_hash.as_bytes(),
+            &message_hash.as_bytes(),
             signature,
             public_key,
         ) {
@@ -411,7 +411,7 @@ impl WitnessVerifier {
         self.verify_secp256r1_ecdsa_signature_production(
             &signature,
             &public_key,
-            message_hash.as_bytes(),
+            &message_hash.as_bytes(),
         )
     }
 

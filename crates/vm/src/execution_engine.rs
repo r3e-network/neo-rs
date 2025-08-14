@@ -418,12 +418,29 @@ impl ExecutionEngine {
     }
 
     /// Called before executing an instruction.
-    fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
+    fn pre_execute_instruction(&mut self, _instruction: &Instruction) -> VmResult<()> {
+        // Record instruction execution in metrics
+        if let Ok(metrics) = std::env::var("NEO_VM_METRICS") {
+            if metrics == "1" {
+                crate::metrics::global_metrics().record_instruction();
+            }
+        }
         Ok(())
     }
 
     /// Called after executing an instruction.
-    fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
+    fn post_execute_instruction(&mut self, _instruction: &Instruction) -> VmResult<()> {
+        // Update stack depth metrics
+        if let Ok(metrics) = std::env::var("NEO_VM_METRICS") {
+            if metrics == "1" {
+                let depth = if let Some(context) = self.current_context() {
+                    context.evaluation_stack().len()
+                } else {
+                    0
+                };
+                crate::metrics::global_metrics().update_stack_depth(depth);
+            }
+        }
         Ok(())
     }
 
