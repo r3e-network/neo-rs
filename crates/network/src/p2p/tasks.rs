@@ -80,7 +80,7 @@ impl TaskManager {
         &self,
         connections: Arc<RwLock<HashMap<SocketAddr, PeerConnection>>>,
         ping_interval: Duration,
-        magic: u32,
+        _magic: u32,
         running: Arc<RwLock<bool>>,
     ) {
         let handle = tokio::spawn(async move {
