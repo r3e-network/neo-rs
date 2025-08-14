@@ -174,7 +174,7 @@ impl NetworkMessage {
             .trim_end_matches('\0');
 
         let length = u32::from_le_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
-        let _checksum = u32::from_le_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+        let checksum = u32::from_le_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
 
         // Validate payload length
         if length > 0x02000000 {
@@ -302,7 +302,7 @@ impl NetworkMessage {
         let magic = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         let command_bytes = &bytes[4..16];
         let length = u32::from_le_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]) as usize;
-        let _checksum = u32::from_le_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+        let checksum = u32::from_le_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
 
         // Extract payload
         if bytes.len() < 24 + length {

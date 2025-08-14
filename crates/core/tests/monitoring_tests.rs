@@ -85,7 +85,7 @@ async fn test_performance_thresholds_and_alerts() {
     system
         .performance_monitor
         .register_alert_callback(move |alert| {
-            if alert.level == neo_core::monitoring::AlertLevel::Critical {
+            if matches!(alert.level, neo_core::monitoring::performance::AlertLevel::Critical) {
                 let flag = alert_flag.clone();
                 tokio::spawn(async move {
                     let mut triggered = flag.write().await;

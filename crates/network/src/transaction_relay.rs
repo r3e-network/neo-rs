@@ -153,10 +153,13 @@ impl TransactionRelay {
     }
 
     /// Handles incoming transaction message
+    /// 
+    /// # Arguments
+    /// * `transaction` - The transaction to handle
+    /// * `from_peer` - Source peer address
     pub async fn handle_transaction(
         &self,
         transaction: Transaction,
-        /// Source peer address
         from_peer: SocketAddr,
     ) -> NetworkResult<()> {
         let tx_hash = transaction
@@ -284,10 +287,13 @@ impl TransactionRelay {
     }
 
     /// Handles inventory message (transaction announcements)
+    /// 
+    /// # Arguments
+    /// * `inventory` - Vector of inventory items to process
+    /// * `from_peer` - Source peer address
     pub async fn handle_inventory(
         &self,
         inventory: Vec<InventoryItem>,
-        /// Source peer address
         from_peer: SocketAddr,
     ) -> NetworkResult<()> {
         debug!(
@@ -333,10 +339,13 @@ impl TransactionRelay {
     }
 
     /// Handles get data requests
+    /// 
+    /// # Arguments
+    /// * `requested_items` - Vector of inventory items requested by peer
+    /// * `from_peer` - Source peer address
     pub async fn handle_get_data(
         &self,
         requested_items: Vec<InventoryItem>,
-        /// Source peer address
         from_peer: SocketAddr,
     ) -> NetworkResult<()> {
         debug!(
