@@ -534,8 +534,8 @@ mod tests {
         let mut engine = ExecutionEngine::new(None);
 
         // Create a script
-        let script_bytes = vec![OpCode::NOP as u8];
-        let script = Script::new_relaxed(script_bytes);
+        let script_bytes = vec![crate::OpCode::NOP as u8];
+        let script = crate::Script::new_relaxed(script_bytes);
 
         // Load the script
         engine
@@ -569,8 +569,8 @@ mod tests {
         let mut engine = ExecutionEngine::new(None);
 
         // Create a script
-        let script_bytes = vec![OpCode::NOP as u8];
-        let script = Script::new_relaxed(script_bytes);
+        let script_bytes = vec![crate::OpCode::NOP as u8];
+        let script = crate::Script::new_relaxed(script_bytes);
 
         // Load the script
         engine.load_script(script, -1, 0).unwrap();
