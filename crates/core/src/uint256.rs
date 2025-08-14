@@ -56,9 +56,8 @@ impl UInt256 {
     }
 
     /// Returns the bytes representation of this UInt256.
-    pub fn as_bytes(&self) -> &[u8; HASH_SIZE] {
-        // SAFETY: Transmute is safe here as types have identical memory layout
-        unsafe { std::mem::transmute(self) }
+    pub fn as_bytes(&self) -> [u8; HASH_SIZE] {
+        self.to_array()
     }
 
     /// Returns the bytes as a Vec<u8>

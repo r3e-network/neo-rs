@@ -190,7 +190,7 @@ impl ContractManagement {
     ) -> Result<ContractState> {
         // Parse and validate NEF file
         let mut reader = MemoryReader::new(&nef_file);
-        let nef = NefFile::deserialize(&mut reader)
+        let nef = <NefFile as neo_io::Serializable>::deserialize(&mut reader)
             .map_err(|e| Error::Deserialization(format!("Invalid NEF file: {}", e)))?;
 
         Self::validate_nef_file(&nef)?;
@@ -296,7 +296,7 @@ impl ContractManagement {
         // Update NEF if provided
         if let Some(nef_bytes) = nef_file {
             let mut reader = MemoryReader::new(&nef_bytes);
-            let nef = NefFile::deserialize(&mut reader)
+            let nef = <NefFile as neo_io::Serializable>::deserialize(&mut reader)
                 .map_err(|e| Error::Deserialization(format!("Invalid NEF file: {}", e)))?;
 
             Self::validate_nef_file(&nef)?;
@@ -666,7 +666,7 @@ impl NativeContract for ContractManagement {
                     Error::Serialization(format!("Failed to write hash count: {}", e))
                 })?;
                 for hash in hashes {
-                    writer.write_bytes(hash.as_bytes()).map_err(|e| {
+                    writer.write_bytes(&hash.as_bytes()).map_err(|e| {
                         Error::Serialization(format!("Failed to write hash: {}", e))
                     })?;
                 }

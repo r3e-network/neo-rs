@@ -117,6 +117,10 @@ pub mod error;
 pub mod evaluation_stack;
 /// Exception handling and try-catch support
 pub mod exception_handling;
+/// Memory pool for optimizing allocations
+pub mod memory_pool;
+/// Performance metrics collection
+pub mod metrics;
 /// Script execution context and local variables
 pub mod execution_context;
 /// Low-level VM execution engine
@@ -139,6 +143,12 @@ pub mod script_builder;
 pub mod stack_item;
 /// Graph algorithms for garbage collection
 pub mod strongly_connected_components;
+/// Safe execution utilities for VM operations
+pub mod safe_execution;
+/// Performance optimization utilities
+pub mod performance_opt;
+/// Safe type conversion utilities
+pub mod safe_type_conversion;
 
 /// Test utilities and compatibility tests
 #[cfg(test)]

@@ -7,11 +7,11 @@ use crate::{
     contract::Contract,
     key_pair::KeyPair,
     wallet_account::WalletAccount,
-    wallet_factory::{IWalletFactory, WalletFactory},
-    ContractParameterType, Error, Result, Version,
+    wallet_factory::IWalletFactory,
+    Version,
 };
 use async_trait::async_trait;
-use neo_core::{Signer, Transaction, UInt160, UInt256, Witness};
+use neo_core::{Transaction, UInt160, UInt256};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;

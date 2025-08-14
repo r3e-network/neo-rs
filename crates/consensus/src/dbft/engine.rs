@@ -739,7 +739,7 @@ impl DbftEngine {
         data.extend_from_slice(&block_index.to_le_bytes());
         data.push(view_number);
         data.extend_from_slice(&timestamp.to_le_bytes());
-        data.extend_from_slice(block_hash.as_bytes());
+        data.extend_from_slice(&block_hash.as_bytes());
         data
     }
 

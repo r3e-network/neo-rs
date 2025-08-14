@@ -64,6 +64,7 @@ pub const MAINNET_CHECKPOINTS: &[(u32, &str)] = &[
 
 /// Snapshot metadata for fast sync
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct SnapshotMetadata {
     /// Block height of the snapshot
     pub height: u32,
@@ -83,6 +84,7 @@ pub struct SnapshotMetadata {
 pub const MAINNET_SNAPSHOTS: &[SnapshotMetadata] = &[];
 
 /// Get the best available snapshot for a target height
+    /// Gets a value from the internal state.
 pub fn get_best_snapshot(target_height: u32) -> Option<&'static SnapshotMetadata> {
     MAINNET_SNAPSHOTS
         .iter()
@@ -91,6 +93,7 @@ pub fn get_best_snapshot(target_height: u32) -> Option<&'static SnapshotMetadata
 }
 
 /// Get the best checkpoint to start syncing from based on target height
+    /// Gets a value from the internal state.
 pub fn get_best_checkpoint(target_height: u32) -> (u32, &'static str) {
     let mut best = MAINNET_CHECKPOINTS[0];
 
@@ -107,6 +110,7 @@ pub fn get_best_checkpoint(target_height: u32) -> (u32, &'static str) {
 
 /// Synchronization state (matches C# Neo synchronization states exactly)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Represents an enumeration of values.
 pub enum SyncState {
     /// Not synchronizing - node is idle
     Idle,
@@ -137,19 +141,44 @@ impl std::fmt::Display for SyncState {
 
 /// Synchronization events
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Represents an enumeration of values.
 pub enum SyncEvent {
     /// Sync started
-    SyncStarted { target_height: u32 },
+    SyncStarted { 
+        /// Target blockchain height
+        target_height: u32 
+    },
     /// Headers sync progress
-    HeadersProgress { current: u32, target: u32 },
+    HeadersProgress { 
+        /// Current progress
+        current: u32, 
+        /// Target value
+        target: u32 
+    },
     /// Blocks sync progress
-    BlocksProgress { current: u32, target: u32 },
+    BlocksProgress { 
+        /// Current progress
+        current: u32, 
+        /// Target value
+        target: u32 
+    },
     /// Sync completed
-    SyncCompleted { final_height: u32 },
+    SyncCompleted { 
+        /// Final blockchain height
+        final_height: u32 
+    },
     /// Sync failed
-    SyncFailed { error: String },
+    SyncFailed { 
+        /// Error message
+        error: String 
+    },
     /// New best height discovered
-    NewBestHeight { height: u32, peer: SocketAddr },
+    NewBestHeight { 
+        /// Block height
+        height: u32, 
+        /// Peer address
+        peer: SocketAddr 
+    },
 }
 
 /// Pending block request with retry logic
@@ -169,6 +198,7 @@ struct BlockRequest {
 
 /// Synchronization statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct SyncStats {
     /// Current sync state
     pub state: SyncState,
@@ -187,6 +217,7 @@ pub struct SyncStats {
 }
 
 /// Blockchain synchronization manager
+/// Represents a data structure.
 pub struct SyncManager {
     /// Current sync state
     state: Arc<RwLock<SyncState>>,
@@ -214,6 +245,7 @@ pub struct SyncManager {
 
 impl SyncManager {
     /// Creates a new sync manager
+    /// Creates a new instance.
     pub fn new(blockchain: Arc<neo_ledger::Blockchain>, p2p_node: Arc<P2pNode>) -> Self {
         let (event_tx, _) = broadcast::channel(1000);
 
@@ -1446,6 +1478,7 @@ impl MessageHandler for SyncManager {
 
 /// Comprehensive sync health information
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct SyncHealthStatus {
     /// Current sync state
     pub state: SyncState,
@@ -1486,11 +1519,14 @@ mod tests {
         let blockchain = Arc::new(
             Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some(&suffix))
                 .await
-                .unwrap(),
+                .expect("Failed to create test blockchain"),
         );
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
-        let p2p_node = Arc::new(P2pNode::new(config, command_receiver).unwrap());
+        let p2p_node = Arc::new(
+            P2pNode::new(config, command_receiver)
+                .expect("Failed to create P2P node for test")
+        );
         let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), p2p_node.clone()));
         (sync_manager, blockchain, p2p_node)
     }
@@ -1513,7 +1549,8 @@ mod tests {
         ];
 
         for state in states {
-            let serialized = serde_json::to_string(&state).unwrap();
+            let serialized = serde_json::to_string(&state)
+                .expect("Failed to serialize sync state");
             let deserialized: SyncState =
                 serde_json::from_str(&serialized).expect("Failed to parse from string");
             assert_eq!(state, deserialized);

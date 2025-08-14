@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
 /// Safe array access without panicking
+/// Defines a trait interface.
 pub trait SafeIndex<T> {
     /// Get element at index, returning None if out of bounds
     fn safe_get(&self, index: usize) -> Option<&T>;
@@ -50,6 +51,7 @@ impl<T> SafeIndex<T> for Vec<T> {
 }
 
 /// Safe hashmap operations
+/// Defines a trait interface.
 pub trait SafeMap<K, V> {
     /// Get value with proper error handling
     fn safe_get(&self, key: &K) -> Option<&V>;
@@ -88,6 +90,7 @@ impl<K: Eq + std::hash::Hash + std::fmt::Debug, V> SafeMap<K, V> for HashMap<K, 
 }
 
 /// Safe arithmetic operations that prevent overflow/underflow panics
+/// Defines a trait interface.
 pub trait SafeArithmetic: Sized {
     /// Safe addition with overflow check
     fn safe_add(self, rhs: Self) -> Result<Self>;
@@ -137,11 +140,14 @@ macro_rules! impl_safe_arithmetic {
 impl_safe_arithmetic!(u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize);
 
 /// Safe mutex operations without poisoning panics
+/// Represents a data structure.
 pub struct SafeMutex<T> {
     inner: Arc<Mutex<T>>,
 }
 
 impl<T> SafeMutex<T> {
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(value: T) -> Self {
         Self {
             inner: Arc::new(Mutex::new(value)),
@@ -181,11 +187,14 @@ impl<T: Clone> Clone for SafeMutex<T> {
 }
 
 /// Safe RwLock operations
+/// Represents a data structure.
 pub struct SafeRwLock<T> {
     inner: Arc<RwLock<T>>,
 }
 
 impl<T> SafeRwLock<T> {
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(value: T) -> Self {
         Self {
             inner: Arc::new(RwLock::new(value)),
@@ -224,7 +233,9 @@ impl<T: Clone> Clone for SafeRwLock<T> {
 }
 
 /// Safe string parsing without panics
+/// Defines a trait interface.
 pub trait SafeParse {
+    /// Output type for the operation.
     type Output;
     
     /// Parse with proper error handling
@@ -241,6 +252,7 @@ impl SafeParse for str {
 }
 
 /// Safe conversion between types
+/// Defines a trait interface.
 pub trait SafeConvert<T> {
     /// Convert with overflow/underflow protection
     fn safe_into(self) -> Result<T>;

@@ -19,22 +19,28 @@ pub const SHUTDOWN_STAGE_DELAY: Duration = Duration::from_millis(100);
 
 /// Shutdown-specific errors
 #[derive(Error, Debug)]
+/// Represents an enumeration of values.
 pub enum ShutdownError {
     #[error("Shutdown timeout exceeded")]
+    /// Shutdown timed out
     Timeout,
 
     #[error("Component failed to shutdown: {0}")]
+    /// Component error occurred
     ComponentError(String),
 
     #[error("Shutdown already in progress")]
+    /// Shutdown already in progress
     AlreadyInProgress,
 
     #[error("Shutdown cancelled")]
+    /// Shutdown was cancelled
     Cancelled,
 }
 
 /// Shutdown stages (matches C# Neo shutdown sequence exactly)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// Represents an enumeration of values.
 pub enum ShutdownStage {
     /// Initial stage - prepare for shutdown
     Prepare,
@@ -77,43 +83,57 @@ impl std::fmt::Display for ShutdownStage {
 
 /// Shutdown events for monitoring
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum ShutdownEvent {
     /// Shutdown initiated
     Initiated {
+        /// Reason for shutdown
         reason: String,
+        /// Timestamp of event
         timestamp: std::time::SystemTime,
     },
     /// Stage started
     StageStarted {
+        /// Current shutdown stage
         stage: ShutdownStage,
+        /// Timestamp of event
         timestamp: std::time::SystemTime,
     },
     /// Stage completed
     StageCompleted {
+        /// Current shutdown stage
         stage: ShutdownStage,
+        /// Duration of operation
         duration: Duration,
+        /// Timestamp of event
         timestamp: std::time::SystemTime,
     },
     /// Stage failed
     StageFailed {
+        /// Current shutdown stage
         stage: ShutdownStage,
         error: String,
+        /// Timestamp of event
         timestamp: std::time::SystemTime,
     },
     /// Shutdown completed
     Completed {
+        /// Duration of operation
         total_duration: Duration,
+        /// Timestamp of event
         timestamp: std::time::SystemTime,
     },
     /// Shutdown failed
     Failed {
         error: String,
+        /// Timestamp of event
         timestamp: std::time::SystemTime,
     },
 }
 
 /// Component that can be shut down gracefully
 #[async_trait::async_trait]
+/// Defines a trait interface.
 pub trait Shutdown: Send + Sync {
     /// Component name for logging
     fn name(&self) -> &str;
@@ -133,6 +153,7 @@ pub trait Shutdown: Send + Sync {
 }
 
 /// Graceful shutdown coordinator
+/// Represents a data structure.
 pub struct ShutdownCoordinator {
     /// Current shutdown stage
     current_stage: Arc<RwLock<Option<ShutdownStage>>>,
@@ -150,6 +171,7 @@ pub struct ShutdownCoordinator {
 
 impl ShutdownCoordinator {
     /// Creates a new shutdown coordinator
+    /// Creates a new instance.
     pub fn new() -> Self {
         let (event_sender, _) = broadcast::channel(100);
 
@@ -179,6 +201,7 @@ impl ShutdownCoordinator {
     }
 
     /// Gets a shutdown signal that can be awaited
+    /// Gets a value from the internal state.
     pub fn get_shutdown_signal(&self) -> Arc<Notify> {
         Arc::clone(&self.shutdown_notify)
     }
@@ -425,12 +448,14 @@ impl Default for ShutdownCoordinator {
 }
 
 /// Signal handler for graceful shutdown
+/// Represents a data structure.
 pub struct SignalHandler {
     shutdown_coordinator: Arc<ShutdownCoordinator>,
 }
 
 impl SignalHandler {
     /// Creates a new signal handler
+    /// Creates a new instance.
     pub fn new(shutdown_coordinator: Arc<ShutdownCoordinator>) -> Self {
         Self {
             shutdown_coordinator,

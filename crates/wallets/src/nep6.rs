@@ -10,14 +10,12 @@ use crate::{
     wallet::{Wallet, WalletError, WalletResult},
     wallet_account::{StandardWalletAccount, WalletAccount},
     wallet_factory::{IWalletFactory, WalletFactory},
-    Error, Result, Version,
+    Version,
 };
 use async_trait::async_trait;
-use log::{debug, error, info, warn};
-use neo_core::{Signer, Transaction, UInt160, UInt256, Witness};
+use neo_core::{Transaction, UInt160, UInt256, Witness};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::fs;

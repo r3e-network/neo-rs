@@ -424,7 +424,7 @@ impl ContractManifest {
         match &permission.contract {
             crate::manifest::ContractPermissionDescriptor::Hash(contract_hash) => {
                 writer.write_u8(0x01)?; // Indicator for specific contract
-                writer.write_bytes(contract_hash.as_bytes())?;
+                writer.write_bytes(&contract_hash.as_bytes())?;
             }
             _ => {
                 // Wildcard permission or group

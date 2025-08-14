@@ -529,7 +529,7 @@ impl NeoToken {
         ])?; // GAS contract hash from C# NativeContract.GAS.Hash
 
         // 2. Construct storage key for GAS balance: account address
-        let storage_key = construct_storage_key(gas_contract_hash.as_bytes(), account.as_bytes());
+        let storage_key = construct_storage_key(&gas_contract_hash.as_bytes(), &account.as_bytes());
 
         // 3. Query blockchain storage (production implementation)
 
@@ -582,7 +582,7 @@ impl NeoToken {
         let new_balance = current_balance - amount;
 
         // 4. Update GAS balance in storage (production implementation)
-        let storage_key = construct_storage_key(gas_contract_hash.as_bytes(), account.as_bytes());
+        let storage_key = construct_storage_key(&gas_contract_hash.as_bytes(), &account.as_bytes());
 
         self.put_blockchain_storage_item(&storage_key, &new_balance.to_le_bytes())?;
 
@@ -693,7 +693,7 @@ impl NeoToken {
 
         let mut key = Vec::new();
         key.push(PREFIX_ACCOUNT);
-        key.extend_from_slice(account.as_bytes());
+        key.extend_from_slice(&account.as_bytes());
 
         key
     }
@@ -1055,7 +1055,7 @@ impl NeoToken {
         // 1. Create state manager storage key (production key format)
         let mut state_key = Vec::with_capacity(25); // 5 bytes prefix + ADDRESS_SIZE bytes account
         state_key.extend_from_slice(b"STATE"); // State manager prefix
-        state_key.extend_from_slice(account.as_bytes());
+        state_key.extend_from_slice(&account.as_bytes());
 
         // 2. Serialize state data (production serialization)
         let state_data = amount.to_le_bytes();
@@ -1086,7 +1086,7 @@ impl NeoToken {
         // 2. Create log storage key (production key format)
         let mut log_key = Vec::with_capacity(33); // 5 bytes prefix + ADDRESS_SIZE bytes account + 8 bytes timestamp
         log_key.extend_from_slice(b"BCHNG"); // Balance change prefix
-        log_key.extend_from_slice(account.as_bytes());
+        log_key.extend_from_slice(&account.as_bytes());
         log_key.extend_from_slice(&timestamp.to_le_bytes());
 
         // 3. Serialize log data (production serialization)
@@ -1129,7 +1129,7 @@ impl NeoToken {
         // 2. Create notification storage key (production key format)
         let mut notification_key = Vec::with_capacity(33); // 5 bytes prefix + ADDRESS_SIZE bytes contract + 8 bytes timestamp
         notification_key.extend_from_slice(b"EVENT"); // Event prefix
-        notification_key.extend_from_slice(self.hash().as_bytes());
+        notification_key.extend_from_slice(&self.hash().as_bytes());
         notification_key.extend_from_slice(&timestamp.to_le_bytes());
 
         // 3. Serialize notification data (production serialization)

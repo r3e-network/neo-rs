@@ -62,6 +62,16 @@ pub mod error_handling;
 pub mod error_utils;
 /// Safe arithmetic and type operations
 pub mod safe_operations;
+/// Enhanced safe error handling system
+pub mod safe_error_handling;
+/// Migration helpers for transitioning to safe error handling
+pub mod migration_helpers;
+/// Safe memory operations for core types
+pub mod safe_memory;
+/// Transaction validation module
+pub mod transaction_validator;
+/// System-wide monitoring and metrics
+pub mod system_monitoring;
 /// Event system for blockchain events
 pub mod events;
 /// Core extensions and utility traits

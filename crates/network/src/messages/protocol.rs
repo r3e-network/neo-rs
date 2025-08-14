@@ -6,13 +6,14 @@ use super::{commands::MessageCommand, inventory::InventoryItem};
 use crate::{NetworkError, NetworkResult as Result, NodeInfo};
 use neo_config::{ADDRESS_SIZE, HASH_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use neo_core::{Transaction, UInt256};
-use neo_io::{BinaryWriter, MemoryReader};
+use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_ledger::{Block, BlockHeader};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 /// Protocol message payloads
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Represents an enumeration of values.
 pub enum ProtocolMessage {
     /// Version message for handshake
     Version {
@@ -247,9 +248,9 @@ impl ProtocolMessage {
             } => {
                 writer.write_var_int(hash_start.len() as u64)?;
                 for hash in hash_start {
-                    writer.write_bytes(hash.as_bytes())?;
+                    writer.write_bytes(&hash.as_bytes())?;
                 }
-                writer.write_bytes(hash_stop.as_bytes())?;
+                writer.write_bytes(&hash_stop.as_bytes())?;
             }
 
             ProtocolMessage::Mempool => {
@@ -332,7 +333,7 @@ impl ProtocolMessage {
                 writer.write_u32(*tx_count)?;
                 writer.write_var_int(hashes.len() as u64)?;
                 for hash in hashes {
-                    writer.write_bytes(hash.as_bytes())?;
+                    writer.write_bytes(&hash.as_bytes())?;
                 }
                 writer.write_var_bytes(flags)?;
             }
@@ -343,7 +344,7 @@ impl ProtocolMessage {
             }
 
             ProtocolMessage::Extensible { payload } => {
-                payload.serialize(&mut writer)?;
+                Serializable::serialize(payload, &mut writer)?;
             }
 
             ProtocolMessage::Unknown {
@@ -703,7 +704,7 @@ impl ProtocolMessage {
             cmd if *cmd == MessageCommand::Mempool => Ok(ProtocolMessage::Mempool),
 
             cmd if *cmd == MessageCommand::Extensible => {
-                let payload = super::ExtensiblePayload::deserialize(&mut reader)?;
+                let payload = <super::ExtensiblePayload as Serializable>::deserialize(&mut reader)?;
                 Ok(ProtocolMessage::Extensible { payload })
             }
 
@@ -756,6 +757,7 @@ impl ProtocolMessage {
     }
 
     /// Creates a get data message
+    /// Gets a value from the internal state.
     pub fn get_data(inventory: Vec<InventoryItem>) -> Self {
         ProtocolMessage::GetData { inventory }
     }
@@ -763,13 +765,13 @@ impl ProtocolMessage {
     /// Serializes a block header (production-ready implementation matching C# Header.Serialize exactly)
     fn serialize_block_header(header: &BlockHeader, writer: &mut BinaryWriter) -> Result<()> {
         writer.write_u32(header.version)?;
-        writer.write_bytes(header.previous_hash.as_bytes())?;
-        writer.write_bytes(header.merkle_root.as_bytes())?;
+        writer.write_bytes(&header.previous_hash.as_bytes())?;
+        writer.write_bytes(&header.merkle_root.as_bytes())?;
         writer.write_u64(header.timestamp)?;
         writer.write_u64(header.nonce)?;
         writer.write_u32(header.index)?;
         writer.write_u8(header.primary_index)?;
-        writer.write_bytes(header.next_consensus.as_bytes())?;
+        writer.write_bytes(&header.next_consensus.as_bytes())?;
 
         writer.write_var_int(header.witnesses.len() as u64)?;
         for witness in &header.witnesses {

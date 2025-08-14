@@ -10,45 +10,79 @@ use thiserror::Error;
 pub enum CoreError {
     /// Invalid format error with detailed description
     #[error("Invalid format: {message}")]
-    InvalidFormat { message: String },
+    InvalidFormat { 
+        /// Error message describing the format issue
+        message: String 
+    },
 
     /// Invalid data error with context
     #[error("Invalid data: {message}")]
-    InvalidData { message: String },
+    InvalidData { 
+        /// Error message describing the data issue
+        message: String 
+    },
 
     /// I/O operation failed
     #[error("I/O error: {message}")]
-    Io { message: String },
+    Io { 
+        /// Error message describing the I/O issue
+        message: String 
+    },
 
     /// Serialization failed
     #[error("Serialization error: {message}")]
-    Serialization { message: String },
+    Serialization { 
+        /// Error message describing the serialization issue
+        message: String 
+    },
 
     /// Deserialization failed
     #[error("Deserialization error: {message}")]
-    Deserialization { message: String },
+    Deserialization { 
+        /// Error message describing the deserialization issue
+        message: String 
+    },
 
     /// Invalid operation attempted
     #[error("Invalid operation: {message}")]
-    InvalidOperation { message: String },
+    InvalidOperation { 
+        /// Error message describing the invalid operation
+        message: String 
+    },
 
     /// System-level error
     #[error("System error: {message}")]
-    System { message: String },
+    System { 
+        /// Error message describing the system issue
+        message: String 
+    },
 
     /// Insufficient gas for operation
     #[error("Insufficient gas: required {required}, available {available}")]
-    InsufficientGas { required: u64, available: u64 },
+    InsufficientGas { 
+        /// Amount of gas required for the operation
+        required: u64, 
+        /// Amount of gas available
+        available: u64 
+    },
 
     /// Cryptographic operation failed
     #[error("Cryptographic error: {message}")]
-    Cryptographic { message: String },
+    Cryptographic { 
+        /// Error message describing the cryptographic issue
+        message: String 
+    },
 
     /// Buffer overflow or underflow
     #[error(
         "Buffer overflow: attempted to read {requested} bytes, but only {available} available"
     )]
-    BufferOverflow { requested: usize, available: usize },
+    BufferOverflow { 
+        /// Amount of space requested
+        requested: usize, 
+        /// Amount of space available
+        available: usize 
+    },
 
     /// Unexpected end of stream
     #[error("Unexpected end of stream")]
@@ -56,35 +90,61 @@ pub enum CoreError {
 
     /// Configuration error
     #[error("Configuration error: {message}")]
-    Configuration { message: String },
+    Configuration { 
+        /// Error message describing the configuration issue
+        message: String 
+    },
 
     /// Network-related error
     #[error("Network error: {message}")]
-    Network { message: String },
+    Network { 
+        /// Error message describing the network issue
+        message: String 
+    },
 
     /// Timeout error
     #[error("Operation timed out after {duration_ms}ms")]
-    Timeout { duration_ms: u64 },
+    Timeout { 
+        /// Duration in milliseconds before timeout
+        duration_ms: u64 
+    },
 
     /// Resource not found
     #[error("Resource not found: {resource}")]
-    NotFound { resource: String },
+    NotFound { 
+        /// Name of the resource that was not found
+        resource: String 
+    },
 
     /// Resource already exists
     #[error("Resource already exists: {resource}")]
-    AlreadyExists { resource: String },
+    AlreadyExists { 
+        /// Name of the resource that already exists
+        resource: String 
+    },
 
     /// Validation failed
     #[error("Validation failed: {reason}")]
-    ValidationFailed { reason: String },
+    ValidationFailed { 
+        /// Reason why validation failed
+        reason: String 
+    },
 
     /// Type conversion failed
     #[error("Type conversion failed: cannot convert {from} to {to}")]
-    TypeConversion { from: String, to: String },
+    TypeConversion { 
+        /// Source type name
+        from: String, 
+        /// Target type name
+        to: String 
+    },
 
     /// Validation error
     #[error("Validation error: {message}")]
-    Validation { message: String },
+    Validation { 
+        /// Validation error message
+        message: String 
+    },
 }
 
 impl CoreError {

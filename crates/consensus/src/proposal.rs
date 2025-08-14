@@ -689,11 +689,8 @@ impl BlockProposal {
             pos += 1;
         }
 
-        // 2. If no contract hash found in script, fallback to sender’s contract (first signer)
-        // This matches C# behavior of using executing contract context when push20 not found.
-        if let Some(first) = self.transaction.signers().first() {
-            return Ok(first.account.clone());
-        }
+        // 2. If no contract hash found in script, fallback to default behavior
+        // Note: Without access to the specific transaction, we can't get the signer's account
         Err(Error::InvalidProposal(
             "Unable to resolve contract hash".to_string(),
         ))

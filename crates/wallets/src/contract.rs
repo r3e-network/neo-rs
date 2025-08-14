@@ -5,10 +5,9 @@
 
 use crate::{ContractParameterType, Error, Result};
 use neo_config::MAX_SCRIPT_SIZE;
-use neo_core::{UInt160, UInt256, Witness};
+use neo_core::{UInt160, Witness};
 use neo_cryptography::ECPoint;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Represents a smart contract in a wallet.
 /// This matches the C# Contract class functionality.

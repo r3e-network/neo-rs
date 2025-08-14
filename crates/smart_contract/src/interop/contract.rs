@@ -101,7 +101,7 @@ impl InteropService for GetContractService {
 
                 contract_state.extend_from_slice(&contract.update_counter.to_le_bytes());
 
-                contract_state.extend_from_slice(contract.hash.as_bytes());
+                contract_state.extend_from_slice(&contract.hash.as_bytes());
 
                 // NEF data length + NEF data
                 let nef_data = contract.nef.to_bytes();
@@ -521,7 +521,7 @@ impl CreateService {
 
         serialized.extend_from_slice(&contract.update_counter.to_le_bytes());
 
-        serialized.extend_from_slice(contract.hash.as_bytes());
+        serialized.extend_from_slice(&contract.hash.as_bytes());
 
         Ok(serialized)
     }

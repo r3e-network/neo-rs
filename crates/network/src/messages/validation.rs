@@ -37,6 +37,8 @@ pub const MAX_PROTOCOL_VERSION: u32 = 1;
 pub const FUTURE_TIMESTAMP_TOLERANCE: u64 = MILLISECONDS_PER_BLOCK;
 
 /// Message validator that enforces Neo N3 protocol rules
+#[derive(Debug)]
+/// Represents a data structure.
 pub struct MessageValidator {
     /// Network magic number for validation
     magic: u32,
@@ -48,6 +50,7 @@ pub struct MessageValidator {
 
 impl MessageValidator {
     /// Creates a new message validator
+    /// Creates a new instance.
     pub fn new(magic: u32, current_height: u32) -> Self {
         Self {
             magic,
@@ -57,11 +60,13 @@ impl MessageValidator {
     }
 
     /// Updates the current blockchain height for validation context
+    /// Updates the internal state.
     pub fn update_height(&mut self, height: u32) {
         self.current_height = height;
     }
 
     /// Validates a complete network message
+    /// Validates the input or state.
     pub fn validate_message(&self, message: &NetworkMessage) -> Result<()> {
         // 1. Validate message header
         self.validate_message_header(message)?;

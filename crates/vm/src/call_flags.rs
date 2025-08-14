@@ -5,7 +5,7 @@
 use std::ops::BitOr;
 
 /// Flags that control what operations a contract can perform.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CallFlags(pub u8);
 
 impl CallFlags {

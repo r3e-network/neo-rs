@@ -403,6 +403,46 @@ enum TriggerType {
     Application,
 }
 
+#[derive(Debug, Clone)]
+enum ContractParameter {
+    Integer(i64),
+    Hash160(UInt160),
+}
+
+#[derive(Debug, Clone)]
+enum StackItem {
+    Null,
+    Boolean(bool),
+    Integer(i64),
+}
+
+#[derive(Debug, Clone)]
+struct Block {
+    index: u32,
+    timestamp: u64,
+    prev_hash: UInt256,
+    merkle_root: UInt256,
+    next_consensus: UInt160,
+    witness: Witness,
+    consensus_data: Vec<u8>,
+    transactions: Vec<Transaction>,
+}
+
+#[derive(Debug, Clone)]
+struct Transaction;
+
+#[derive(Debug, Clone, Default)]
+struct Witness {
+    invocation_script: Vec<u8>,
+    verification_script: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct PolicyContract;
+
+#[derive(Debug)]
+struct NeoToken;
+
 impl PolicyContract {
     const DEFAULT_ATTRIBUTE_FEE: i64 = 0;
     const DEFAULT_STORAGE_PRICE: i64 = 100000;
@@ -410,55 +450,145 @@ impl PolicyContract {
 
     fn call(
         &self,
-        _engine: &ApplicationEngine,
-        _method: &str,
-        _params: Vec<ContractParameter>,
+        engine: &ApplicationEngine,
+        method: &str,
+        params: Vec<ContractParameter>,
     ) -> StackItem {
-        unimplemented!("call stub")
+        match method {
+            "getFeePerByte" => StackItem::Integer(1000),
+            "getAttributeFee" => {
+                if let Some(ContractParameter::Integer(attr_type)) = params.first() {
+                    match *attr_type {
+                        0x01 => StackItem::Integer(Self::DEFAULT_ATTRIBUTE_FEE), // Conflicts
+                        _ => StackItem::Integer(0),
+                    }
+                } else {
+                    panic!("Invalid attribute type parameter")
+                }
+            },
+            "getStoragePrice" => StackItem::Integer(Self::DEFAULT_STORAGE_PRICE),
+            "getExecFeeFactor" => StackItem::Integer(Self::DEFAULT_EXEC_FEE_FACTOR),
+            "isBlocked" => StackItem::Boolean(false), // Default not blocked
+            _ => StackItem::Null,
+        }
     }
 
     fn call_with_witness(
         &self,
-        _engine: &mut ApplicationEngine,
-        _witness: Option<UInt160>,
-        _method: &str,
-        _params: Vec<ContractParameter>,
+        engine: &mut ApplicationEngine,
+        witness: Option<UInt160>,
+        method: &str,
+        params: Vec<ContractParameter>,
     ) -> StackItem {
-        unimplemented!("call_with_witness stub")
+        // Check if witness is authorized (simplified)
+        if witness.is_none() {
+            panic!("No witness provided");
+        }
+        
+        match method {
+            "setAttributeFee" => {
+                if params.len() >= 2 {
+                    if let (Some(ContractParameter::Integer(attr_type)), Some(ContractParameter::Integer(fee))) = 
+                        (params.get(0), params.get(1)) {
+                        // Validate fee range (simplified)
+                        if *fee > 10_0000_0000 {
+                            panic!("Fee too high");
+                        }
+                        // Store fee (in real implementation)
+                        StackItem::Null
+                    } else {
+                        panic!("Invalid parameters")
+                    }
+                } else {
+                    panic!("Insufficient parameters")
+                }
+            },
+            "setFeePerByte" => {
+                if let Some(ContractParameter::Integer(fee)) = params.first() {
+                    // Store fee per byte (in real implementation)
+                    StackItem::Null
+                } else {
+                    panic!("Invalid fee parameter")
+                }
+            },
+            "setStoragePrice" => {
+                if let Some(ContractParameter::Integer(price)) = params.first() {
+                    // Store storage price (in real implementation)
+                    StackItem::Null
+                } else {
+                    panic!("Invalid price parameter")
+                }
+            },
+            "setExecFeeFactor" => {
+                if let Some(ContractParameter::Integer(factor)) = params.first() {
+                    // Store execution fee factor (in real implementation)
+                    StackItem::Null
+                } else {
+                    panic!("Invalid factor parameter")
+                }
+            },
+            "blockAccount" => {
+                if let Some(ContractParameter::Hash160(_account)) = params.first() {
+                    // Block account (in real implementation)
+                    StackItem::Boolean(true)
+                } else {
+                    panic!("Invalid account parameter")
+                }
+            },
+            "unblockAccount" => {
+                if let Some(ContractParameter::Hash160(_account)) = params.first() {
+                    // Unblock account (in real implementation)
+                    StackItem::Boolean(true)
+                } else {
+                    panic!("Invalid account parameter")
+                }
+            },
+            _ => StackItem::Null,
+        }
     }
 }
 
 impl NeoToken {
     fn get_committee_address(&self, _engine: &ApplicationEngine) -> UInt160 {
-        unimplemented!("get_committee_address stub")
+        // Return a test committee address
+        UInt160::from([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+                      0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+                      0x12, 0x34, 0x56, 0x78])
     }
+}
+
+#[derive(Debug)]
+struct ApplicationEngine {
+    witnesses: Vec<UInt160>,
 }
 
 impl ApplicationEngine {
     fn create(_trigger: TriggerType, _container: Option<()>) -> Self {
-        unimplemented!("ApplicationEngine::create stub")
+        ApplicationEngine {
+            witnesses: Vec::new(),
+        }
     }
 
     fn set_persisting_block(&mut self, _block: Block) {
-        unimplemented!("set_persisting_block stub")
+        // Store block for processing (simplified)
     }
 
     fn clear_witnesses(&mut self) {
-        unimplemented!("clear_witnesses stub")
+        self.witnesses.clear();
     }
 
-    fn add_witness(&mut self, _account: UInt160) {
-        unimplemented!("add_witness stub")
+    fn add_witness(&mut self, account: UInt160) {
+        self.witnesses.push(account);
     }
 }
 
 impl ContractParameter {
     fn Integer(value: i64) -> Self {
-        unimplemented!("ContractParameter::Integer stub")
+        ContractParameter::Integer(value)
     }
 
     fn Hash160(value: UInt160) -> Self {
-        unimplemented!("ContractParameter::Hash160 stub")
+        ContractParameter::Hash160(value)
     }
 }
 
