@@ -79,7 +79,7 @@ impl SafeP2pNodeBuilder {
     /// Build the P2P node with safe error handling
     pub async fn build(
         self,
-        mut command_receiver: mpsc::Receiver<crate::NetworkCommand>
+        command_receiver: mpsc::Receiver<crate::NetworkCommand>
     ) -> Result<Arc<P2pNode>> {
         // Validate configuration if requested
         if self.validate_config {
@@ -179,7 +179,7 @@ impl MessageValidator {
     
     /// Validate message size
     /// Validates the input or state.
-    pub fn validate_size(&self, size: usize, context: &str) -> Result<()> {
+    pub fn validate_size(&self, size: usize, _context: &str) -> Result<()> {
         if size > self.max_message_size {
             return Err(NetworkError::MessageTooLarge {
                 size,

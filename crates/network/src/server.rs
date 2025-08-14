@@ -11,10 +11,6 @@ use crate::{
     NetworkConfig, NetworkError, NetworkStats, P2PConfig, P2PEvent, P2pNode, PeerManager, Result,
     SyncEvent, SyncManager,
 };
-use neo_config::DEFAULT_NEO_PORT;
-use neo_config::DEFAULT_RPC_PORT;
-use neo_config::DEFAULT_TESTNET_PORT;
-use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use neo_core::{ShutdownCoordinator, SignalHandler, UInt160};
 use neo_ledger::{Blockchain, Ledger};
 
@@ -183,7 +179,7 @@ impl NetworkServer {
             ..NetworkConfig::default()
         };
 
-        let (command_sender, command_receiver) = tokio::sync::mpsc::channel(100);
+        let (_command_sender, command_receiver) = tokio::sync::mpsc::channel(100);
 
         // Create a temporary P2P node first to get sync manager
         let temp_p2p = Arc::new(P2pNode::new(
@@ -270,7 +266,7 @@ impl NetworkServer {
         // Start sync manager
         self.sync_manager.start().await?;
 
-        if let Some(rpc_server) = &self.rpc_server {
+        if let Some(_rpc_server) = &self.rpc_server {
             rpc_server.start().await?;
         }
 
@@ -314,7 +310,7 @@ impl NetworkServer {
             self.sync_manager.stop().await;
             self.p2p_node.stop().await;
 
-            if let Some(rpc_server) = &self.rpc_server {
+            if let Some(_rpc_server) = &self.rpc_server {
                 rpc_server.stop().await;
             }
         }
@@ -344,7 +340,7 @@ impl NetworkServer {
             .register_component(network_wrapper)
             .await;
 
-        if let Some(rpc_server) = &self.rpc_server {
+        if let Some(_rpc_server) = &self.rpc_server {
             let rpc_shutdown = Arc::new(RpcServerShutdown::new(
                 Arc::clone(&self.running),
                 format!(
@@ -432,7 +428,7 @@ impl NetworkServer {
     async fn spawn_event_handlers(&self) {
         let running = self.running.clone();
         let event_tx = self.event_tx.clone();
-        let sync_manager = self.sync_manager.clone();
+        let _sync_manager = self.sync_manager.clone();
 
         // Handle P2P events
         let mut p2p_events = self.p2p_node.event_receiver();
@@ -474,7 +470,7 @@ impl NetworkServer {
         let event_tx = self.event_tx.clone();
         let blockchain = self.blockchain.clone();
         let p2p_node = self.p2p_node.clone();
-        let sync_manager = self.sync_manager.clone();
+        let _sync_manager = self.sync_manager.clone();
         let interval_secs = self.config.stats_interval;
 
         tokio::spawn(async move {
@@ -512,7 +508,7 @@ impl NetworkServer {
     /// Spawns sync checker
     async fn spawn_sync_checker(&self) {
         let running = self.running.clone();
-        let sync_manager = self.sync_manager.clone();
+        let _sync_manager = self.sync_manager.clone();
         let interval_secs = self.config.sync_check_interval;
 
         tokio::spawn(async move {

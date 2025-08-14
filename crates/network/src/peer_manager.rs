@@ -465,7 +465,7 @@ impl PeerManager {
     }
 
     /// Completes a ping and returns RTT
-    pub async fn complete_ping(&self, address: SocketAddr, nonce: u32) -> Option<u64> {
+    pub async fn complete_ping(&self, address: SocketAddr, _nonce: u32) -> Option<u64> {
         Some(50) // 50ms RTT
     }
 
@@ -593,7 +593,7 @@ impl PeerManager {
     /// Actual implementation for accepting incoming connections
     async fn start_accepting_connections_impl(&self, listener: TcpListener) -> NetworkResult<()> {
         let peers = Arc::clone(&self.peers);
-        let event_sender = self.event_sender.clone();
+        let _event_sender = self.event_sender.clone();
         let config = self.config.clone();
         let is_running = Arc::clone(&self.is_running);
         let connection_stats = Arc::clone(&self.connection_stats);
@@ -847,7 +847,7 @@ impl PeerManager {
 
         // Start peer connectivity maintenance
         let peers = Arc::clone(&self.peers);
-        let event_sender = self.event_sender.clone();
+        let _event_sender = self.event_sender.clone();
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(30)); // Check every 30 seconds
             loop {
@@ -2703,7 +2703,7 @@ impl PeerManager {
         peer_address: SocketAddr,
         mut message_receiver: mpsc::UnboundedReceiver<NetworkMessage>,
     ) {
-        let event_sender = self.event_sender.clone();
+        let _event_sender = self.event_sender.clone();
         let stats = Arc::clone(&self.connection_stats);
 
         tokio::spawn(async move {
@@ -2738,7 +2738,7 @@ impl PeerManager {
         peer_address: SocketAddr,
         mut stream: tokio::net::tcp::OwnedReadHalf,
     ) {
-        let event_sender = self.event_sender.clone();
+        let _event_sender = self.event_sender.clone();
         let stats = Arc::clone(&self.connection_stats);
         let peers = Arc::clone(&self.peers);
         let message_forwarder = self.message_forwarder.clone();

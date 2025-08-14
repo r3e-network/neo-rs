@@ -20,7 +20,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, RwLock};
 use tokio::time::interval;
-use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 /// Maximum number of blocks to request at once (Conservative for reliability)
 pub const MAX_BLOCKS_PER_REQUEST: u16 = 100;

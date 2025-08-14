@@ -428,7 +428,7 @@ async fn handle_websocket_connection(mut socket: WebSocket, state: RpcState) {
 
 /// Handles RPC method calls
 async fn handle_rpc_method(
-    state: &RpcState,
+    _state: &RpcState,
     request: &RpcRequest,
 ) -> std::result::Result<Value, RpcError> {
     match request.method.as_str() {
@@ -495,7 +495,7 @@ async fn handle_get_block_count(state: &RpcState) -> std::result::Result<Value, 
 
 /// Handles getblock method
 async fn handle_get_block(
-    state: &RpcState,
+    _state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let block_result = if let Some(block_id_value) = params.as_ref() {
@@ -537,7 +537,7 @@ async fn handle_get_block(
 
 /// Handles getblockhash method
 async fn handle_get_block_hash(
-    state: &RpcState,
+    _state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -565,7 +565,7 @@ async fn handle_get_best_block_hash(state: &RpcState) -> std::result::Result<Val
 
 /// Handles getrawtransaction method
 async fn handle_get_raw_transaction(
-    state: &RpcState,
+    _state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -689,7 +689,7 @@ async fn handle_ping() -> std::result::Result<Value, RpcError> {
 
 /// Handles getblockheader method
 async fn handle_get_block_header(
-    state: &RpcState,
+    _state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -755,7 +755,7 @@ async fn handle_get_committee(_state: &RpcState) -> std::result::Result<Value, R
 
 /// Handles getcontractstate method
 async fn handle_get_contract_state(
-    _state: &RpcState,
+    __state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -821,7 +821,7 @@ async fn handle_get_native_contracts(_state: &RpcState) -> std::result::Result<V
 
 /// Handles getnextblockvalidators method
 async fn handle_get_next_block_validators(
-    _state: &RpcState,
+    __state: &RpcState,
 ) -> std::result::Result<Value, RpcError> {
     Ok(json!([
         {
@@ -839,7 +839,7 @@ async fn handle_get_next_block_validators(
 
 /// Handles getrawmempool method
 async fn handle_get_raw_mempool(
-    state: &RpcState,
+    _state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let verbose = params
@@ -878,7 +878,7 @@ async fn handle_get_raw_mempool(
 
 /// Handles getstorage method
 async fn handle_get_storage(
-    _state: &RpcState,
+    __state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -897,7 +897,7 @@ async fn handle_get_storage(
 
 /// Handles gettransactionheight method
 async fn handle_get_transaction_height(
-    _state: &RpcState,
+    __state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -922,7 +922,7 @@ async fn handle_get_validators(_state: &RpcState) -> std::result::Result<Value, 
 
 /// Handles invokefunction method
 async fn handle_invoke_function(
-    _state: &RpcState,
+    __state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -951,7 +951,7 @@ async fn handle_invoke_function(
 
 /// Handles invokescript method
 async fn handle_invoke_script(
-    _state: &RpcState,
+    __state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -971,7 +971,7 @@ async fn handle_invoke_script(
 
 /// Handles testinvoke method
 async fn handle_test_invoke(
-    state: &RpcState,
+    _state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     // Test invocation uses the same execution engine as invokescript
@@ -981,7 +981,7 @@ async fn handle_test_invoke(
 
 /// Handles sendrawtransaction method
 async fn handle_send_raw_transaction(
-    _state: &RpcState,
+    __state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -998,7 +998,7 @@ async fn handle_send_raw_transaction(
 
 /// Handles getapplicationlog method
 async fn handle_get_application_log(
-    _state: &RpcState,
+    __state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -1020,7 +1020,7 @@ async fn handle_get_application_log(
 
 /// Handles getnetworkfee method
 async fn handle_get_network_fee(
-    _state: &RpcState,
+    __state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;
@@ -1037,7 +1037,7 @@ async fn handle_get_network_fee(
 
 /// Handles calculatenetworkfee method  
 async fn handle_calculate_network_fee(
-    _state: &RpcState,
+    __state: &RpcState,
     params: &Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.as_ref().ok_or_else(RpcError::invalid_params)?;

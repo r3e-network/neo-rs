@@ -379,7 +379,7 @@ impl PeerManager {
     }
 
     /// Disconnects a peer
-    pub async fn disconnect_peer(&self, address: SocketAddr, reason: String) -> Option<Peer> {
+    pub async fn disconnect_peer(&self, address: SocketAddr, _reason: String) -> Option<Peer> {
         let peer = self.peers.write().await.remove(&address);
 
         // Update known peers

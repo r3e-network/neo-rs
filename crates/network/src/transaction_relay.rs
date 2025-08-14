@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 /// Transaction relay events
 #[derive(Debug, Clone)]
 /// Represents an enumeration of values.

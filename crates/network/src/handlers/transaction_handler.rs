@@ -30,7 +30,7 @@ impl MessageHandler for TransactionMessageHandler {
         message: &NetworkMessage,
     ) -> NetworkResult<()> {
         // Extract protocol message from network message
-        let protocol_message = match &message.payload {
+        let _protocol_message = match &message.payload {
             ProtocolMessage::Tx { transaction } => {
                 debug!("Handling transaction message from peer {}", peer_address);
                 self.transaction_relay

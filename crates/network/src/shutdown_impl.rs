@@ -3,11 +3,7 @@
 //! This module provides shutdown implementations for all network components,
 //! ensuring graceful shutdown in the correct order.
 
-use crate::{NetworkError, NetworkResult as Result, P2pNode, PeerManager, SyncManager};
-use neo_config::DEFAULT_NEO_PORT;
-use neo_config::DEFAULT_RPC_PORT;
-use neo_config::DEFAULT_TESTNET_PORT;
-use neo_config::DEFAULT_TESTNET_RPC_PORT;
+use crate::{P2pNode, PeerManager, SyncManager};
 use neo_core::{Shutdown, ShutdownError};
 use std::sync::Arc;
 use tokio::sync::RwLock;

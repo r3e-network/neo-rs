@@ -3,7 +3,7 @@
 //! These tests ensure full compatibility with C# Neo's MPT Trie functionality.
 //! Tests are based on the C# Neo.Cryptography.MPTTrie.Trie test suite.
 
-use super::super::MockTrieStorage;
+use super::MockTrieStorage;
 use neo_core::UInt256;
 use neo_mpt_trie::*;
 
