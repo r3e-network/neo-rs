@@ -68,6 +68,8 @@ pub mod safe_error_handling;
 pub mod migration_helpers;
 /// Safe memory operations for core types
 pub mod safe_memory;
+pub mod safe_result;
+pub mod unwrap_migration;
 /// Transaction validation module
 pub mod transaction_validator;
 /// System-wide monitoring and metrics
@@ -98,6 +100,7 @@ pub mod uint160;
 pub mod uint256;
 /// Witness verification system
 pub mod witness;
+pub mod witness_safe;
 /// Witness rule evaluation
 pub mod witness_rule;
 /// Witness scope definitions

@@ -9,6 +9,7 @@ use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::StackItem;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use num_traits::ToPrimitive;
 
 /// Represents a map of stack items in the VM.
 #[derive(Debug, Clone)]
