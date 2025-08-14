@@ -259,10 +259,6 @@ pub type SyncEvent = crate::sync::SyncEvent;
 
 // Configuration types are already defined in this file
 
-use neo_config::DEFAULT_NEO_PORT;
-use neo_config::DEFAULT_RPC_PORT;
-use neo_config::DEFAULT_TESTNET_PORT;
-use neo_config::DEFAULT_TESTNET_RPC_PORT;
 use neo_config::{MAINNET_SEEDS, N3_TESTNET_SEEDS};
 use neo_core::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};

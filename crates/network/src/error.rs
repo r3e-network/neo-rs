@@ -653,14 +653,14 @@ impl From<crate::Error> for NetworkError {
             crate::Error::Serialization(msg) => {
                 NetworkError::message_serialization("unknown", &msg)
             }
-            crate::Error::Peer(msg) => NetworkError::peer_not_connected(
+            crate::Error::Peer(_msg) => NetworkError::peer_not_connected(
                 UNKNOWN_PEER_ADDR
                     .parse()
                     .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
             ),
             crate::Error::Sync(msg) => NetworkError::SyncFailed { reason: msg },
             crate::Error::Rpc(msg) => NetworkError::rpc("unknown", -1, &msg),
-            crate::Error::Timeout(msg) => NetworkError::connection_timeout(
+            crate::Error::Timeout(_msg) => NetworkError::connection_timeout(
                 UNKNOWN_PEER_ADDR
                     .parse()
                     .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
@@ -672,7 +672,7 @@ impl From<crate::Error> for NetworkError {
                     .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),
                 &msg,
             ),
-            crate::Error::RateLimit(msg) => NetworkError::rate_limit_exceeded(
+            crate::Error::RateLimit(_msg) => NetworkError::rate_limit_exceeded(
                 UNKNOWN_PEER_ADDR
                     .parse()
                     .unwrap_or_else(|_| UNKNOWN_PEER_ADDR.parse().expect("value should parse")),

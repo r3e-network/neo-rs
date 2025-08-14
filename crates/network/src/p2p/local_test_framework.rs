@@ -203,10 +203,10 @@ impl TestNode {
             ProtocolMessage::Version {
                 version,
                 services,
-                timestamp,
-                port,
+                timestamp: _,
+                port: _,
                 nonce,
-                user_agent,
+                user_agent: _,
                 start_height,
                 relay,
             } => {
@@ -289,7 +289,7 @@ impl LocalTestFramework {
             self.nodes.len()
         );
 
-        for (address, node) in &self.nodes {
+        for (address, _node) in &self.nodes {
             self.spawn_node_handler(*address).await;
         }
 
@@ -308,9 +308,9 @@ impl LocalTestFramework {
     }
 
     /// Spawns a message handler for a node
-    async fn spawn_node_handler(&self, address: SocketAddr) {
+    async fn spawn_node_handler(&self, _address: SocketAddr) {
         let running = self.running.clone();
-        let router = self.message_router.clone();
+        let _router = self.message_router.clone();
 
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_millis(100));

@@ -3,7 +3,6 @@
 //! This module provides configuration for blockchain snapshots that enable
 //! fast initial sync by downloading pre-validated blockchain state.
 
-use neo_core::UInt256;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
