@@ -6,6 +6,7 @@ use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::StackItem;
 use std::sync::Arc;
+use num_traits::ToPrimitive;
 
 /// Represents an array of stack items in the VM.
 #[derive(Debug, Clone)]
