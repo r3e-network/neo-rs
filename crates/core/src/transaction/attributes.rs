@@ -216,7 +216,7 @@ impl TransactionAttribute {
             }
             TransactionAttribute::Conflicts { hash } => {
                 writer
-                    .write_bytes(hash.as_bytes())
+                    .write_bytes(&hash.as_bytes())
                     .map_err(|e| CoreError::Serialization {
                         message: e.to_string(),
                     })?;

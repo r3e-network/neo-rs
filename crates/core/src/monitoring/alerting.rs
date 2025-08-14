@@ -12,6 +12,7 @@ use tracing::{error, info, warn};
 
 /// Alert severity levels
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Represents an enumeration of values.
 pub enum AlertLevel {
     /// Informational alert
     Info,
@@ -37,6 +38,7 @@ impl AlertLevel {
 
 /// Alert threshold configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct AlertThreshold {
     /// Metric name to monitor
     pub metric: String,
@@ -56,6 +58,7 @@ pub struct AlertThreshold {
 
 /// Threshold comparison operators
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents an enumeration of values.
 pub enum ThresholdOperator {
     /// Greater than threshold
     GreaterThan,
@@ -81,6 +84,7 @@ impl ThresholdOperator {
 
 /// Alert instance
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct Alert {
     /// Unique alert ID
     pub id: String,
@@ -106,6 +110,8 @@ pub struct Alert {
 
 impl Alert {
     /// Create new alert
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(
         level: AlertLevel,
         metric: String,
@@ -144,6 +150,7 @@ impl Alert {
     }
 
     /// Check if alert is active
+    /// Checks a boolean condition.
     pub fn is_active(&self) -> bool {
         self.resolved_at.is_none()
     }
@@ -159,6 +166,7 @@ impl Alert {
 
 /// Alert rule definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct AlertRule {
     /// Rule name
     pub name: String,
@@ -176,6 +184,7 @@ pub struct AlertRule {
 
 /// Notification channel trait
 #[async_trait::async_trait]
+/// Defines a trait interface.
 pub trait NotificationChannel: Send + Sync {
     /// Send alert notification
     async fn send(&self, alert: &Alert) -> Result<()>;
@@ -185,11 +194,14 @@ pub trait NotificationChannel: Send + Sync {
 }
 
 /// Log-based notification channel
+/// Represents a data structure.
 pub struct LogChannel {
     name: String,
 }
 
 impl LogChannel {
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(name: String) -> Self {
         Self { name }
     }
@@ -232,6 +244,7 @@ impl NotificationChannel for LogChannel {
 }
 
 /// Webhook notification channel
+/// Represents a data structure.
 pub struct WebhookChannel {
     name: String,
     url: String,
@@ -239,6 +252,8 @@ pub struct WebhookChannel {
 }
 
 impl WebhookChannel {
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(name: String, url: String) -> Self {
         Self {
             name,
@@ -288,6 +303,7 @@ impl NotificationChannel for WebhookChannel {
 }
 
 /// Alert manager for handling alerts and notifications
+/// Represents a data structure.
 pub struct AlertManager {
     /// Alert rules
     rules: Arc<RwLock<HashMap<String, AlertRule>>>,
@@ -301,6 +317,8 @@ pub struct AlertManager {
 
 impl AlertManager {
     /// Create new alert manager
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new() -> Self {
         Self {
             rules: Arc::new(RwLock::new(HashMap::new())),
@@ -507,6 +525,7 @@ impl Default for AlertManager {
 
 /// Alert statistics
 #[derive(Debug, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct AlertStats {
     /// Total number of alerts
     pub total_alerts: usize,

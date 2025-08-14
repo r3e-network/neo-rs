@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 /// Common error conversion utilities to reduce duplication
+/// Defines a trait interface.
 pub trait ErrorMapper<T> {
     /// Maps an error to a formatted error with context
     fn map_err_context<E, F>(self, context: F) -> Result<T, E>
@@ -39,7 +40,9 @@ macro_rules! map_err_ctx {
 }
 
 /// Helper trait for consistent error conversion
+/// Defines a trait interface.
 pub trait IntoError<E> {
+    /// Converts self into an error with context.
     fn into_error(self, context: &str) -> E;
 }
 

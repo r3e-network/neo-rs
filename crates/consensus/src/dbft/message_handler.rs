@@ -375,8 +375,8 @@ impl MessageHandler {
         use sha2::{Digest, Sha256};
 
         let mut hasher = Sha256::new();
-        hasher.update(left.as_bytes());
-        hasher.update(right.as_bytes());
+        hasher.update(&left.as_bytes());
+        hasher.update(&right.as_bytes());
         let first_hash = hasher.finalize();
 
         let mut hasher = Sha256::new();

@@ -63,7 +63,7 @@ impl SignatureProvider {
         let mut hasher = Sha256::new();
         hasher.update(b"NEO_CONSENSUS_SIGNATURE");
         hasher.update(message);
-        hasher.update(self.validator_hash.as_bytes());
+        hasher.update(&self.validator_hash.as_bytes());
         let hash1 = hasher.finalize();
 
         let mut hasher2 = Sha256::new();
@@ -97,7 +97,7 @@ impl MessageSigner {
         data.extend_from_slice(&block_index.to_le_bytes());
         data.push(view_number);
         data.extend_from_slice(&timestamp.to_le_bytes());
-        data.extend_from_slice(block_hash.as_bytes());
+        data.extend_from_slice(&block_hash.as_bytes());
         data
     }
 
@@ -111,7 +111,7 @@ impl MessageSigner {
         data.push(b'R'); // PrepareResponse marker
         data.extend_from_slice(&block_index.to_le_bytes());
         data.push(view_number);
-        data.extend_from_slice(block_hash.as_bytes());
+        data.extend_from_slice(&block_hash.as_bytes());
         data
     }
 
@@ -125,7 +125,7 @@ impl MessageSigner {
         data.push(b'C'); // Commit marker
         data.extend_from_slice(&block_index.to_le_bytes());
         data.push(view_number);
-        data.extend_from_slice(block_hash.as_bytes());
+        data.extend_from_slice(&block_hash.as_bytes());
         data
     }
 

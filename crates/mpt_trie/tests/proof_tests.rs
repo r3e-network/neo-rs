@@ -76,7 +76,7 @@ mod proof_tests {
 
         // Generate proof
         let proof = trie.get_proof(&key).unwrap();
-        let root_hash = trie.root().hash();
+        let root_hash = trie.root_mut().hash();
 
         let verification_result =
             ProofVerifier::verify_inclusion(&root_hash, &key, &value, &proof).unwrap();
@@ -97,7 +97,7 @@ mod proof_tests {
 
         // Generate valid proof
         let mut proof = trie.get_proof(&key).unwrap();
-        let root_hash = trie.root().hash();
+        let root_hash = trie.root_mut().hash();
 
         // Corrupt the proof by modifying a node's first byte (node type)
         if !proof.is_empty() {
@@ -137,7 +137,7 @@ mod proof_tests {
 
         // Generate proof with correct root
         let proof = trie.get_proof(&key).unwrap();
-        let _correct_root_hash = trie.root().hash();
+        let _correct_root_hash = trie.root_mut().hash();
 
         let wrong_root_hash = UInt256::from_bytes(&[255u8; 32]).unwrap();
 
@@ -178,7 +178,7 @@ mod proof_tests {
             assert!(trie.put(key, value).is_ok());
         }
 
-        let root_hash = trie.root().hash();
+        let root_hash = trie.root_mut().hash();
         let verifier = ProofVerifier;
 
         for (key, expected_value) in &complex_data {
@@ -186,15 +186,8 @@ mod proof_tests {
             assert!(!proof.is_empty());
 
             // Verify each proof
-            let verification_result = verifier.verify(&root_hash, key, &proof).unwrap();
-            match verification_result {
-                Some(verified_value) => {
-                    assert_eq!(verified_value, *expected_value);
-                }
-                None => {
-                    panic!("Proof verification should succeed for key: {:?}", key);
-                }
-            }
+            let is_valid = ProofVerifier::verify_inclusion(&root_hash, key, expected_value, &proof).unwrap();
+            assert!(is_valid, "Proof verification should succeed for key: {:?}", key);
         }
 
         let non_existing = b"complex_prefix_xyz";
@@ -220,10 +213,10 @@ mod proof_tests {
         let serialized = serde_json::to_string(&original_proof).unwrap();
 
         // Deserialize proof
-        let deserialized_proof: Vec<ProofNode> = serde_json::from_str(&serialized).unwrap();
+        let deserialized_proof: Vec<Vec<u8>> = serde_json::from_str(&serialized).unwrap();
 
         // Verify deserialized proof works
-        let root_hash = trie.root().hash();
+        let root_hash = trie.root_mut().hash();
         let verification_result =
             ProofVerifier::verify_inclusion(&root_hash, &key, &value, &deserialized_proof).unwrap();
 
@@ -263,7 +256,7 @@ mod proof_tests {
         let single_proof = trie.get_proof(b"single_key").unwrap();
         assert!(!single_proof.is_empty());
 
-        let root_hash = trie.root().hash();
+        let root_hash = trie.root_mut().hash();
         let single_result = ProofVerifier::verify_inclusion(
             &root_hash,
             b"single_key",
@@ -277,7 +270,7 @@ mod proof_tests {
         assert!(trie.put(b"", b"empty_key_value").is_ok());
         let empty_key_proof = trie.get_proof(b"").unwrap();
 
-        let updated_root_hash = trie.root().hash();
+        let updated_root_hash = trie.root_mut().hash();
         let empty_key_result = ProofVerifier::verify_inclusion(
             &updated_root_hash,
             b"",
@@ -292,7 +285,7 @@ mod proof_tests {
         assert!(trie.put(&long_key, b"long_key_value").is_ok());
         let long_key_proof = trie.get_proof(&long_key).unwrap();
 
-        let final_root_hash = trie.root().hash();
+        let final_root_hash = trie.root_mut().hash();
         let long_key_result = ProofVerifier::verify_inclusion(
             &final_root_hash,
             &long_key,
@@ -328,7 +321,7 @@ mod proof_tests {
         }
 
         // Verify all proofs
-        let root_hash = trie.root().hash();
+        let root_hash = trie.root_mut().hash();
         for (i, (key, proof)) in keys.iter().zip(proofs.iter()).enumerate() {
             let expected_value = format!("batch_value_{}", i).into_bytes();
             let verification_result =

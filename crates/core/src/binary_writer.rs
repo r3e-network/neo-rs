@@ -49,18 +49,7 @@ impl BinaryWriter {
         }
         
         // 4. Write data efficiently (production performance)
-        if data.len() <= 8 {
-            // SAFETY: Operation is safe within this context
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    data.as_ptr(),
-                    self.buffer.as_mut_ptr().add(self.position),
-                    data.len()
-                );
-            }
-        } else {
-            self.buffer[self.position..self.position + data.len()].copy_from_slice(data);
-        }
+        self.buffer[self.position..self.position + data.len()].copy_from_slice(data);
         
         // 5. Update position (production state tracking)
         self.position += data.len();

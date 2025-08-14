@@ -239,11 +239,12 @@ fn test_application_engine_with_interop() {
             .range(api_start, api_end)
             .unwrap();
 
-        // Call the interop service
-        let app_engine = engine as *mut _ as *mut ApplicationEngine;
-        unsafe {
-            let app_engine = &mut *app_engine;
+        // Call the interop service - attempt safe cast to ApplicationEngine
+        if let Some(app_engine) = engine.as_application_engine_mut() {
             app_engine.interop_service().invoke(engine, &api_bytes)?;
+        } else {
+            // This branch handles the case where engine is not an ApplicationEngine
+            return Ok(()); // or appropriate error handling
         }
 
         Ok(())

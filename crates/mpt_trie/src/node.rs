@@ -249,7 +249,7 @@ impl Node {
                         if let Some(Some(child)) = children.get(i) {
                             result.push(0x01); // Child exists marker
                             let child_hash = child.hash.unwrap_or_default();
-                            result.extend_from_slice(child_hash.as_bytes());
+                            result.extend_from_slice(&child_hash.as_bytes());
                         } else {
                             result.push(0x00); // No child marker
                         }
@@ -281,7 +281,7 @@ impl Node {
 
                 if let Some(ref next_node) = self.next {
                     let next_hash = next_node.hash.unwrap_or_default();
-                    result.extend_from_slice(next_hash.as_bytes());
+                    result.extend_from_slice(&next_hash.as_bytes());
                 } else {
                     result.extend_from_slice(&[0u8; HASH_SIZE]); // Zero hash for null reference
                 }
@@ -307,7 +307,7 @@ impl Node {
                 result.push(0x03); // HashNode type marker
 
                 if let Some(ref hash) = self.hash {
-                    result.extend_from_slice(hash.as_bytes());
+                    result.extend_from_slice(&hash.as_bytes());
                 } else {
                     result.extend_from_slice(&[0u8; HASH_SIZE]); // Zero hash
                 }

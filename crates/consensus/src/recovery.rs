@@ -700,7 +700,7 @@ impl RecoveryManager {
             // Signatures are handled at the ConsensusMessage level
             // Signature verification is performed at the message wrapper level
             // This check is redundant and can be removed
-            if !self.verify_message_signature(&change_view, validator_idx)? {
+            if !self.verify_message_signature(&change_view, *validator_idx)? {
                 return Err(Error::Generic(format!(
                     "Invalid change view signature from validator {}",
                     validator_idx
@@ -886,7 +886,7 @@ impl RecoveryManager {
         let mut data = Vec::new();
         data.extend_from_slice(&block_index.value().to_le_bytes());
         data.push(view_number.value());
-        data.extend_from_slice(block_hash.as_bytes());
+        data.extend_from_slice(&block_hash.as_bytes());
         data
     }
 
@@ -900,7 +900,7 @@ impl RecoveryManager {
         let mut data = Vec::new();
         data.extend_from_slice(&block_index.value().to_le_bytes());
         data.push(view_number.value());
-        data.extend_from_slice(block_hash.as_bytes());
+        data.extend_from_slice(&block_hash.as_bytes());
         data
     }
 
@@ -977,7 +977,7 @@ impl RecoveryManager {
                     .as_secs(),
                 data: {
                     let mut data = Vec::new();
-                    data.extend_from_slice(prepare_request.block_hash.as_bytes());
+                    data.extend_from_slice(&prepare_request.block_hash.as_bytes());
                     data
                 },
             },
@@ -1067,7 +1067,7 @@ impl RecoveryManager {
                 data: {
                     let mut data = Vec::new();
                     if let Some(prepared_hash) = round.prepared_block_hash {
-                        data.extend_from_slice(prepared_hash.as_bytes());
+                        data.extend_from_slice(&prepared_hash.as_bytes());
                     } else {
                         data.extend_from_slice(&[0u8; HASH_SIZE]); // Zero hash if no prepared block
                     }

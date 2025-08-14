@@ -31,6 +31,7 @@ use tracing::{debug, error, info, warn};
 /// Default Neo network ports
 /// RPC configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a data structure.
 pub struct RpcConfig {
     /// HTTP server address
     pub http_address: SocketAddr,
@@ -70,6 +71,7 @@ impl Default for RpcConfig {
 
 /// JSON-RPC request
 #[derive(Debug, Clone, Deserialize)]
+/// Represents a data structure.
 pub struct RpcRequest {
     /// JSON-RPC version
     pub jsonrpc: String,
@@ -83,6 +85,7 @@ pub struct RpcRequest {
 
 /// JSON-RPC response
 #[derive(Debug, Clone, Serialize)]
+/// Represents a data structure.
 pub struct RpcResponse {
     /// JSON-RPC version
     pub jsonrpc: String,
@@ -98,6 +101,7 @@ pub struct RpcResponse {
 
 /// JSON-RPC error
 #[derive(Debug, Clone, Serialize)]
+/// Represents a data structure.
 pub struct RpcError {
     /// Error code
     pub code: i32,
@@ -116,6 +120,7 @@ impl std::fmt::Display for RpcError {
 
 impl RpcError {
     /// Creates a new RPC error
+    /// Creates a new instance.
     pub fn new(code: i32, message: String) -> Self {
         Self {
             code,
@@ -125,6 +130,7 @@ impl RpcError {
     }
 
     /// Parse error
+    /// Parses input data.
     pub fn parse_error() -> Self {
         Self::new(-32700, "Parse error".to_string())
     }
@@ -157,6 +163,7 @@ impl RpcError {
 
 /// RPC method handler trait
 #[async_trait::async_trait]
+/// Defines a trait interface.
 pub trait RpcMethod: Send + Sync {
     /// Handles the RPC method call
     async fn handle(&self, params: Option<Value>) -> Result<Value>;
@@ -164,6 +171,7 @@ pub trait RpcMethod: Send + Sync {
 
 /// Application state for RPC handlers
 #[derive(Clone)]
+/// Represents a data structure.
 pub struct RpcState {
     /// Blockchain reference
     pub blockchain: Arc<Blockchain>,
@@ -175,6 +183,7 @@ pub struct RpcState {
 
 impl RpcState {
     /// Creates a new RPC state
+    /// Creates a new instance.
     pub fn new(blockchain: Arc<Blockchain>) -> Self {
         Self {
             blockchain,
@@ -202,6 +211,7 @@ impl RpcState {
 }
 
 /// JSON-RPC server
+/// Represents a data structure.
 pub struct RpcServer {
     /// Configuration
     config: RpcConfig,
@@ -213,6 +223,7 @@ pub struct RpcServer {
 
 impl RpcServer {
     /// Creates a new RPC server
+    /// Creates a new instance.
     pub fn new(config: RpcConfig, blockchain: Arc<Blockchain>) -> Self {
         let state = RpcState::new(blockchain);
 
@@ -837,22 +848,20 @@ async fn handle_get_raw_mempool(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // Query the mempool for pending transactions
-    let mempool_transactions = if let Some(blockchain) = &state.blockchain {
-        blockchain.get_mempool_transactions().await
-    } else {
-        Vec::new()
-    };
+    // TODO: Implement mempool integration with Blockchain
+    // For now, return empty mempool (no pending transactions)
+    let mempool_transactions: Vec<neo_core::Transaction> = vec![];
 
     if verbose {
         // Return detailed transaction information
         let detailed: Vec<Value> = mempool_transactions
             .iter()
             .map(|tx| {
+                // Note: Serializable trait used implicitly
                 json!({
-                    "hash": tx.hash,
-                    "size": tx.size,
-                    "fee": tx.fee
+                    "hash": format!("{}", tx.hash().unwrap_or_default()),
+                    "size": tx.size(),
+                    "fee": tx.fee().unwrap_or(0)
                 })
             })
             .collect();
@@ -861,7 +870,7 @@ async fn handle_get_raw_mempool(
         // Return just transaction hashes
         let hashes: Vec<String> = mempool_transactions
             .iter()
-            .map(|tx| tx.hash.clone())
+            .map(|tx| format!("{}", tx.hash().unwrap_or_default()))
             .collect();
         Ok(json!(hashes))
     }

@@ -1158,7 +1158,7 @@ impl BlockchainState {
 
         // Add transaction hash
         let tx_hash = transaction.hash()?;
-        data.extend_from_slice(tx_hash.as_bytes());
+        data.extend_from_slice(&tx_hash.as_bytes());
 
         Ok(data)
     }
@@ -1505,7 +1505,7 @@ impl BlockchainState {
     ) -> Result<Option<Vec<u8>>> {
         // Create storage key following Neo's format
         let mut storage_key = Vec::with_capacity(ADDRESS_SIZE + key.len());
-        storage_key.extend_from_slice(contract_hash.as_bytes());
+        storage_key.extend_from_slice(&contract_hash.as_bytes());
         storage_key.extend_from_slice(key);
 
         // This implements the C# logic: creating proper storage keys and querying RocksDB
@@ -1521,7 +1521,7 @@ impl BlockchainState {
 
         // 1. Create the full storage key (production key formatting)
         let mut storage_key = Vec::with_capacity(ADDRESS_SIZE + key.len());
-        storage_key.extend_from_slice(contract_hash.as_bytes());
+        storage_key.extend_from_slice(&contract_hash.as_bytes());
         storage_key.extend_from_slice(key);
 
         // 2. Query RocksDB storage synchronously (production storage access)

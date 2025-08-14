@@ -25,6 +25,7 @@ pub const NETWORK_OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Error severity levels for determining recovery strategy
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents an enumeration of values.
 pub enum ErrorSeverity {
     /// Low severity - retry immediately
     Low,
@@ -38,6 +39,7 @@ pub enum ErrorSeverity {
 
 /// Error recovery strategy
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Represents an enumeration of values.
 pub enum RecoveryStrategy {
     /// Retry the operation immediately
     RetryImmediate,
@@ -53,6 +55,7 @@ pub enum RecoveryStrategy {
 
 /// Network operation context for error handling
 #[derive(Debug, Clone)]
+/// Represents a data structure.
 pub struct OperationContext {
     /// Operation identifier
     pub operation_id: String,
@@ -70,6 +73,7 @@ pub struct OperationContext {
 
 impl OperationContext {
     /// Creates a new operation context
+    /// Creates a new instance.
     pub fn new(operation_id: String, peer_address: SocketAddr) -> Self {
         Self {
             operation_id,
@@ -82,12 +86,14 @@ impl OperationContext {
     }
 
     /// Updates the context after a failure
+    /// Records an event or metric.
     pub fn record_failure(&mut self, error: &NetworkError) {
         self.retry_count += 1;
         self.last_error = Some(error.to_string());
     }
 
     /// Checks if the operation has exceeded maximum retries
+    /// Checks if something exists.
     pub fn has_exceeded_max_retries(&self) -> bool {
         self.retry_count >= MAX_RETRY_ATTEMPTS
     }
@@ -99,12 +105,15 @@ impl OperationContext {
     }
 
     /// Checks if the operation has timed out
+    /// Checks if something exists.
     pub fn has_timed_out(&self) -> bool {
         self.started_at.elapsed() > self.timeout
     }
 }
 
 /// Comprehensive network error handler
+#[derive(Debug)]
+/// Represents a data structure.
 pub struct NetworkErrorHandler {
     /// Event broadcaster for error notifications
     event_sender: broadcast::Sender<NetworkErrorEvent>,
@@ -118,6 +127,7 @@ pub struct NetworkErrorHandler {
 
 /// Network error events
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum NetworkErrorEvent {
     /// Operation failed and will be retried
     OperationRetrying {
@@ -154,6 +164,7 @@ pub enum NetworkErrorEvent {
 
 /// Peer failure tracking information
 #[derive(Debug, Clone)]
+/// Represents a data structure.
 pub struct PeerFailureInfo {
     /// Number of consecutive failures
     pub failure_count: u32,
@@ -171,6 +182,7 @@ pub struct PeerFailureInfo {
 
 /// Error statistics tracking
 #[derive(Debug, Clone)]
+/// Represents a data structure.
 pub struct ErrorStatistics {
     /// Total errors by type
     pub error_counts: std::collections::HashMap<String, u64>,
@@ -198,6 +210,7 @@ impl Default for ErrorStatistics {
 
 impl NetworkErrorHandler {
     /// Creates a new network error handler
+    /// Creates a new instance.
     pub fn new() -> Self {
         let (event_sender, _) = broadcast::channel(1000);
 
@@ -584,7 +597,7 @@ mod tests {
         assert!(context
             .last_error
             .as_ref()
-            .unwrap()
+            .expect("Last error should be present")
             .to_string()
             .contains("test error"));
     }
@@ -833,7 +846,7 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "success");
+        assert_eq!(result.expect("Result should be Ok"), "success");
     }
 
     #[tokio::test]
@@ -862,7 +875,7 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "success after retries");
+        assert_eq!(result.expect("Result should be Ok"), "success after retries");
         assert_eq!(attempt_count.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 

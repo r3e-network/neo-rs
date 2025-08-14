@@ -20,7 +20,7 @@ impl EvaluationStack {
     /// Creates a new evaluation stack with the specified reference counter.
     pub fn new(reference_counter: ReferenceCounter) -> Self {
         Self {
-            stack: Vec::new(),
+            stack: Vec::with_capacity(32), // Pre-allocate for typical stack usage
             reference_counter,
         }
     }

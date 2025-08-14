@@ -12,6 +12,7 @@ pub type Result<T> = StdResult<T, NeoError>;
 
 /// Main error type for Neo blockchain operations
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum NeoError {
     /// Blockchain-related errors
     Blockchain(BlockchainError),
@@ -39,78 +40,127 @@ pub enum NeoError {
 
 /// Blockchain-specific errors
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum BlockchainError {
+    /// Invalid block structure or content
     InvalidBlock(String),
+    /// Invalid transaction structure or content
     InvalidTransaction(String),
+    /// Invalid cryptographic signature
     InvalidSignature,
+    /// Block not found at the specified height
     BlockNotFound(u32),
+    /// Chain tip does not match expected value
     ChainTipMismatch,
+    /// Block or transaction validation failed
     ValidationFailed(String),
+    /// Blockchain state corruption detected
     StateCorruption(String),
 }
 
 /// Network-specific errors
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum NetworkError {
+    /// Network connection failed
     ConnectionFailed(String),
+    /// Peer not found in the network
     PeerNotFound,
+    /// Failed to parse network message
     MessageParsingError(String),
+    /// Network protocol violation detected
     ProtocolViolation(String),
+    /// Network operation timed out
     Timeout,
+    /// Maximum number of peers reached
     MaxPeersReached,
 }
 
 /// VM execution errors
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum VmError {
+    /// VM stack overflow occurred
     StackOverflow,
+    /// VM stack underflow occurred
     StackUnderflow,
+    /// Invalid VM opcode encountered
     InvalidOpcode(u8),
+    /// VM ran out of gas
     OutOfGas,
+    /// VM execution failed
     ExecutionFailed(String),
+    /// Invalid script format
     InvalidScript,
+    /// Memory access violation
     AccessViolation,
 }
 
 /// Consensus-related errors
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum ConsensusError {
+    /// Invalid consensus proposal
     InvalidProposal,
+    /// Invalid consensus vote
     InvalidVote,
+    /// Consensus quorum not reached
     QuorumNotReached,
+    /// View change operation timed out
     ViewChangeTimeout,
+    /// Invalid consensus signature
     InvalidSignature,
+    /// Consensus state is corrupted
     ConsensusStateCorrupted,
 }
 
 /// Storage errors
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum StorageError {
+    /// Database operation failed
     DatabaseError(String),
+    /// Data serialization failed
     SerializationError(String),
+    /// Data deserialization failed
     DeserializationError(String),
+    /// Data corruption detected
     CorruptedData,
+    /// Insufficient storage space
     InsufficientSpace,
+    /// Storage lock timeout
     LockTimeout,
 }
 
 /// Cryptography errors
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum CryptoError {
+    /// Invalid cryptographic key
     InvalidKey,
+    /// Invalid cryptographic signature
     InvalidSignature,
+    /// Hash values do not match
     HashMismatch,
+    /// Encryption operation failed
     EncryptionFailed,
+    /// Decryption operation failed
     DecryptionFailed,
+    /// Invalid cryptographic proof
     InvalidProof,
 }
 
 /// Configuration errors
 #[derive(Debug, Clone)]
+/// Represents an enumeration of values.
 pub enum ConfigError {
+    /// Invalid configuration value
     InvalidValue(String),
+    /// Required configuration field is missing
     MissingField(String),
+    /// Failed to parse configuration data
     ParseError(String),
+    /// Configuration validation failed
     ValidationFailed(String),
 }
 
@@ -135,6 +185,7 @@ impl fmt::Display for NeoError {
 impl StdError for NeoError {}
 
 /// Error context trait for adding context to errors
+/// Defines a trait interface.
 pub trait ErrorContext<T> {
     /// Add context to an error
     fn context<C>(self, context: C) -> Result<T>
@@ -175,6 +226,7 @@ where
 }
 
 /// Safe unwrap alternatives
+/// Defines a trait interface.
 pub trait SafeUnwrap<T> {
     /// Unwrap with a default value
     fn unwrap_or_default(self) -> T
@@ -225,12 +277,15 @@ impl<T> SafeUnwrap<T> for Result<T> {
 }
 
 /// Retry mechanism for transient failures
+/// Represents a data structure.
 pub struct RetryPolicy {
     max_attempts: u32,
     backoff_ms: u64,
 }
 
 impl RetryPolicy {
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(max_attempts: u32, backoff_ms: u64) -> Self {
         Self {
             max_attempts,
@@ -270,6 +325,7 @@ impl RetryPolicy {
 }
 
 /// Circuit breaker for preventing cascading failures
+/// Represents a data structure.
 pub struct CircuitBreaker {
     _failure_threshold: u32,
     _success_threshold: u32,
@@ -285,6 +341,8 @@ enum CircuitState {
 }
 
 impl CircuitBreaker {
+    /// Creates a new instance.
+    /// Creates a new instance.
     pub fn new(failure_threshold: u32, success_threshold: u32, timeout_ms: u64) -> Self {
         Self {
             _failure_threshold: failure_threshold,

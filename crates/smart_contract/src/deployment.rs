@@ -394,7 +394,7 @@ impl DeploymentManager {
         );
 
         // Delete each storage item from the blockchain storage
-        let storage_prefix = contract.hash.as_bytes();
+        let storage_prefix = &contract.hash.as_bytes();
         engine.delete_storage_by_prefix(storage_prefix)?;
 
         // Remove the contract from the contract storage

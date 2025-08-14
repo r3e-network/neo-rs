@@ -712,7 +712,7 @@ impl Trie {
 
                     // 4. Verify stored hash matches requested hash (production integrity check)
                     let stored_hash = neo_cryptography::hash256(&node_data);
-                    if stored_hash != *hash.as_bytes() {
+                    if stored_hash != hash.as_bytes() {
                         return Err("Hash mismatch in stored node".into());
                     }
 
