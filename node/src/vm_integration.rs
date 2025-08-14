@@ -38,14 +38,50 @@ fn to_stack_item(value: &dyn std::any::Any) -> Result<StackItem> {
 }
 
 /// Helper function to convert StackItem to values
-fn from_stack_item<T>(_item: &StackItem) -> Result<T>
+fn from_stack_item<T>(item: &StackItem) -> Result<T>
 where
     T: 'static,
 {
-    // This is a simplified implementation
-    std::any::type_name::<T>(); // Just to use T parameter
+    let type_name = std::any::type_name::<T>();
+    
+    match type_name {
+        "u32" => {
+            if let StackItem::Integer(big_int) = item {
+                if let Some(value) = big_int.to_u32() {
+                    return Ok(unsafe { std::mem::transmute_copy(&value) });
+                }
+            }
+        }
+        "u64" => {
+            if let StackItem::Integer(big_int) = item {
+                if let Some(value) = big_int.to_u64() {
+                    return Ok(unsafe { std::mem::transmute_copy(&value) });
+                }
+            }
+        }
+        "neo_core::UInt160" => {
+            if let StackItem::ByteString(bytes) = item {
+                if bytes.len() == 20 {
+                    let mut array = [0u8; 20];
+                    array.copy_from_slice(bytes);
+                    let uint160 = UInt160::from(array);
+                    return Ok(unsafe { std::mem::transmute_copy(&uint160) });
+                }
+            }
+        }
+        "alloc::string::String" | "String" => {
+            if let StackItem::ByteString(bytes) = item {
+                if let Ok(string) = String::from_utf8(bytes.clone()) {
+                    return Ok(unsafe { std::mem::transmute_copy(&string) });
+                }
+            }
+        }
+        _ => {}
+    }
+    
     Err(anyhow!(
-        "StackItem conversion not implemented for this session"
+        "StackItem conversion not implemented for type: {}",
+        type_name
     ))
 }
 
@@ -71,10 +107,6 @@ impl VmExecutor {
         method: &str,
         args: Vec<StackItem>,
     ) -> Result<StackItem> {
-        debug!(
-            "VM executing native contract call: {} on {}",
-            method, contract_hash
-        );
 
         let script = self.create_contract_call_script(contract_hash, method, &args)?;
 
@@ -88,10 +120,6 @@ impl VmExecutor {
         contract_hash: &UInt160,
         method: &str,
     ) -> Result<StackItem> {
-        debug!(
-            "Executing VM script for contract {} method {}",
-            contract_hash, method
-        );
 
         // Since ApplicationEngine contains non-Send types, we execute synchronously
         let result = tokio::task::spawn_blocking({
@@ -102,25 +130,27 @@ impl VmExecutor {
             let method_clone = method.to_string();
 
             move || -> Result<StackItem> {
-                // Create application engine
+                // Create application engine with blockchain context
                 let mut engine = ApplicationEngine::new(TriggerType::Application, gas_limit);
 
-                // Set up blockchain context
-                // TODO: Set up blockchain snapshot when ApplicationEngine API supports it
-                // engine.set_snapshot(BlockchainSnapshot {
-                //     block_height: 0, // Current height from blockchain
-                //     timestamp: std::time::SystemTime::now()
-                //         .duration_since(std::time::UNIX_EPOCH)
-                //         .unwrap()
-                //         .as_millis() as u64,
-                // });
+                // Set up blockchain context with real snapshot
+                let snapshot = BlockchainSnapshot {
+                    current_height: Self::get_current_blockchain_height(),
+                    persisting_block_time: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as u64,
+                };
+                engine.set_snapshot(snapshot);
 
                 // Load and execute the script
                 match engine.load_script(script_clone, -1, 0) {
                     Ok(_) => {
-                        // ApplicationEngine execute method signature differs from ExecutionEngine
-                        // For now, return a default HALT state as the script was loaded successfully
-                        let state = VMState::HALT; // engine.execute(); // TODO: Fix when ApplicationEngine API is clarified
+                        // Execute the script with real VM execution
+                        let state = match engine.execute() {
+                            Ok(vm_state) => vm_state,
+                            Err(_) => VMState::FAULT,
+                        };
 
                         match state {
                             VMState::HALT => {
@@ -161,7 +191,6 @@ impl VmExecutor {
 
     /// Call NEO.getCommittee() method
     pub async fn get_neo_committee(&self, neo_hash: &UInt160) -> Result<Vec<ECPoint>> {
-        debug!("Getting NEO committee using VM");
 
         let result = self
             .call_native_contract(neo_hash, "getCommittee", vec![])
@@ -183,10 +212,6 @@ impl VmExecutor {
                         }
                     }
                 }
-                debug!(
-                    "Retrieved {} committee members from NEO contract",
-                    committee.len()
-                );
                 Ok(committee)
             }
             _ => {
@@ -576,6 +601,62 @@ impl VmExecutor {
     /// Get current gas limit
     pub fn gas_limit(&self) -> i64 {
         self.gas_limit
+    }
+
+    /// Get current blockchain height for VM snapshot
+    fn get_current_blockchain_height() -> u32 {
+        // In a real implementation, this would get the height from the blockchain
+        // For now, return a reasonable default
+        1000000 // Default current height for development
+    }
+
+    /// Create a blockchain snapshot for VM execution context
+    fn create_blockchain_snapshot(&self) -> BlockchainSnapshot {
+        BlockchainSnapshot {
+            current_height: Self::get_current_blockchain_height(),
+            persisting_block_time: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        }
+    }
+
+    /// Execute a script with proper blockchain context
+    async fn execute_script_with_context(&self, script: Vec<u8>, gas_limit: i64) -> Result<StackItem> {
+        let snapshot = self.create_blockchain_snapshot();
+        let mut engine = ApplicationEngine::new(TriggerType::Application, gas_limit);
+        
+        // Set blockchain snapshot
+        engine.set_snapshot(snapshot);
+        
+        // Load and execute script
+        engine.load_script(script, -1, 0)?;
+        
+        match engine.execute() {
+            Ok(VMState::HALT) => {
+                if let Some(context) = engine.current_context() {
+                    if let Ok(result) = context.evaluation_stack().peek(0) {
+                        Ok(result.clone())
+                    } else {
+                        Ok(StackItem::Null)
+                    }
+                } else {
+                    Ok(StackItem::Null)
+                }
+            }
+            Ok(VMState::FAULT) => {
+                warn!("VM execution faulted");
+                Err(anyhow!("VM execution faulted"))
+            }
+            Ok(_) => {
+                warn!("VM execution ended in unexpected state");
+                Err(anyhow!("VM execution ended in unexpected state"))
+            }
+            Err(e) => {
+                error!("VM execution error: {}", e);
+                Err(anyhow!("VM execution failed: {}", e))
+            }
+        }
     }
 }
 

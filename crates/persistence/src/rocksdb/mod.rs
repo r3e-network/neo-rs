@@ -12,6 +12,7 @@ use std::sync::Arc;
 use tracing::{debug, error, warn};
 
 /// RocksDB store implementation (matches C# Neo RocksDB store)
+#[derive(Debug)]
 pub struct RocksDbStore {
     db: Arc<DB>,
 }

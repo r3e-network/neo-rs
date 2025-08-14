@@ -33,6 +33,8 @@ base64 = "0.21"
 
 # Compression
 lz4 = { version = "1.24", optional = true }
+zstd = "0.13"
+flate2 = "1.0"
 
 # Cryptography
 rand = "0.8"

@@ -266,7 +266,7 @@ impl NetworkServer {
         // Start sync manager
         self.sync_manager.start().await?;
 
-        if let Some(_rpc_server) = &self.rpc_server {
+        if let Some(rpc_server) = &self.rpc_server {
             rpc_server.start().await?;
         }
 
@@ -310,7 +310,7 @@ impl NetworkServer {
             self.sync_manager.stop().await;
             self.p2p_node.stop().await;
 
-            if let Some(_rpc_server) = &self.rpc_server {
+            if let Some(rpc_server) = &self.rpc_server {
                 rpc_server.stop().await;
             }
         }
@@ -470,7 +470,7 @@ impl NetworkServer {
         let event_tx = self.event_tx.clone();
         let blockchain = self.blockchain.clone();
         let p2p_node = self.p2p_node.clone();
-        let _sync_manager = self.sync_manager.clone();
+        let sync_manager = self.sync_manager.clone();
         let interval_secs = self.config.stats_interval;
 
         tokio::spawn(async move {
@@ -508,7 +508,7 @@ impl NetworkServer {
     /// Spawns sync checker
     async fn spawn_sync_checker(&self) {
         let running = self.running.clone();
-        let _sync_manager = self.sync_manager.clone();
+        let sync_manager = self.sync_manager.clone();
         let interval_secs = self.config.sync_check_interval;
 
         tokio::spawn(async move {

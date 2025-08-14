@@ -247,12 +247,12 @@ impl MessageValidator {
         &self,
         version: u32,
         services: u64,
-        _timestamp: u64,
+        __timestamp: u64,
         port: u16,
         nonce: u32,
         user_agent: &str,
         start_height: u32,
-        _relay: bool,
+        __relay: bool,
     ) -> Result<()> {
         // 1. Validate protocol version (version is u32, so always >= 0)
         if version > MAX_PROTOCOL_VERSION {
@@ -486,7 +486,7 @@ impl MessageValidator {
     fn validate_get_blocks_message(
         &self,
         hash_start: &[UInt256],
-        _hash_stop: &UInt256,
+        __hash_stop: &UInt256,
     ) -> Result<()> {
         // GetBlocks still uses hash-based format (similar to old GetHeaders)
         if hash_start.is_empty() {
