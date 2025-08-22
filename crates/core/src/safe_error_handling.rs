@@ -210,7 +210,7 @@ impl ErrorChain {
         if self.errors.is_empty() {
             return Err(SafeError::new(
                 "ErrorChain::to_result called with no errors",
-                "Invalid usage - call has_errors() first"
+                "Invalid usage - call has_errors() first",
             ));
         }
 
