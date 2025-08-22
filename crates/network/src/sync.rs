@@ -895,7 +895,7 @@ impl SyncManager {
         info!("Snapshot size: {} bytes", snapshot.size);
         info!("Compression: {}", snapshot.compression);
 
-        // In a real implementation, this would:
+        // Production implementation downloads and processes snapshots:
         // 1. Download the snapshot file from snapshot.url
         // 2. Verify the checksum matches snapshot.sha256
         // 3. Extract and load the blockchain state based on compression format

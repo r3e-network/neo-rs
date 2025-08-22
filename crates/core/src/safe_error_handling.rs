@@ -208,7 +208,10 @@ impl ErrorChain {
     /// Convert to Result
     pub fn to_result<T>(self) -> Result<T, SafeError> {
         if self.errors.is_empty() {
-            panic!("ErrorChain::to_result called with no errors");
+            return Err(SafeError::new(
+                "ErrorChain::to_result called with no errors",
+                "Invalid usage - call has_errors() first"
+            ));
         }
 
         let combined_message = self

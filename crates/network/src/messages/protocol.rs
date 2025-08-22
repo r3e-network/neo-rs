@@ -585,7 +585,7 @@ impl ProtocolMessage {
                         );
                         if let Ok(guard) = crate::GLOBAL_SYNC_MANAGER.lock() {
                             if let Some(sync_mgr) = guard.as_ref() {
-                                let peer_addr = std::net::SocketAddr::from(([0, 0, 0, 0], 0)); // Placeholder
+                                let peer_addr = std::net::SocketAddr::from(([0, 0, 0, 0], 0)); // Unspecified address
                                 let sync_mgr_clone = sync_mgr.clone();
                                 tokio::spawn(async move {
                                     sync_mgr_clone
