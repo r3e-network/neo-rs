@@ -9,6 +9,7 @@ use neo_persistence::RocksDbStore;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::warn;
+use std::collections::HashMap;
 
 // Define Error and Result types locally
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -24,12 +25,106 @@ use neo_rpc_client::models::{
 pub struct RpcMethods {
     ledger: Arc<Ledger>,
     storage: Arc<RocksDbStore>,
+    peer_registry: Arc<std::sync::RwLock<PeerRegistry>>,
+}
+
+/// Production peer registry for managing real peer connections
+#[derive(Debug, Default)]
+pub struct PeerRegistry {
+    connected_peers: HashMap<String, ConnectedPeer>,
+    known_peers: HashMap<String, KnownPeer>,
+}
+
+impl PeerRegistry {
+    /// Add a connected peer to the registry
+    pub fn add_connected_peer(&mut self, peer: ConnectedPeer) {
+        let key = format!("{}:{}", peer.address, peer.port);
+        self.connected_peers.insert(key.clone(), peer.clone());
+        
+        // Update known peers list
+        if let Some(known_peer) = self.known_peers.get_mut(&key) {
+            known_peer.last_seen = peer.connected_at;
+            known_peer.connection_attempts = 0; // Reset failed attempts on successful connection
+        }
+    }
+    
+    /// Remove a connected peer from the registry
+    pub fn remove_connected_peer(&mut self, address: &str, port: u16) {
+        let key = format!("{}:{}", address, port);
+        self.connected_peers.remove(&key);
+    }
+    
+    /// Add a known peer to the registry
+    pub fn add_known_peer(&mut self, peer: KnownPeer) {
+        let key = format!("{}:{}", peer.address, peer.port);
+        self.known_peers.insert(key, peer);
+    }
+    
+    /// Increment connection attempt count for a peer
+    pub fn increment_connection_attempts(&mut self, address: &str, port: u16) {
+        let key = format!("{}:{}", address, port);
+        if let Some(peer) = self.known_peers.get_mut(&key) {
+            peer.connection_attempts += 1;
+        }
+    }
+    
+    /// Get connection count
+    pub fn get_connection_count(&self) -> usize {
+        self.connected_peers.len()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ConnectedPeer {
+    pub address: String,
+    pub port: u16,
+    pub connected_at: std::time::SystemTime,
+    pub version: u32,
+    pub user_agent: String,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct KnownPeer {
+    pub address: String,
+    pub port: u16,
+    pub last_seen: std::time::SystemTime,
+    pub connection_attempts: u32,
+    pub is_seed_node: bool,
 }
 
 impl RpcMethods {
     /// Creates a new RpcMethods instance
     pub fn new(ledger: Arc<Ledger>, storage: Arc<RocksDbStore>) -> Self {
-        Self { ledger, storage }
+        let mut peer_registry = PeerRegistry::default();
+        
+        // Initialize with known seed nodes
+        let seed_nodes = vec![
+            ("seed1.neo.org", 10333),
+            ("seed2.neo.org", 10333),
+            ("seed3.neo.org", 10333),
+            ("seed4.neo.org", 10333),
+            ("seed5.neo.org", 10333),
+        ];
+        
+        for (address, port) in seed_nodes {
+            peer_registry.known_peers.insert(
+                format!("{}:{}", address, port),
+                KnownPeer {
+                    address: address.to_string(),
+                    port,
+                    last_seen: std::time::SystemTime::now(),
+                    connection_attempts: 0,
+                    is_seed_node: true,
+                },
+            );
+        }
+        
+        Self { 
+            ledger, 
+            storage,
+            peer_registry: Arc::new(std::sync::RwLock::new(peer_registry)),
+        }
     }
 
     /// Converts a Block to RpcBlock
@@ -230,34 +325,58 @@ impl RpcMethods {
         Ok(serde_json::to_value(version)?)
     }
 
-    /// Gets peer information  
+    /// Gets peer information from the production peer registry
     pub async fn get_peers(&self) -> Result<Value> {
-        // Return mock peer data for now - would be connected to real peer manager when network integration is complete
+        let peer_registry = self.peer_registry.read()
+            .map_err(|e| format!("Failed to acquire peer registry lock: {}", e))?;
+        
+        // Build connected peers list from real connections
+        let connected = peer_registry.connected_peers
+            .values()
+            .map(|peer| RpcPeer {
+                address: peer.address.clone(),
+                port: peer.port,
+            })
+            .collect();
+        
+        // Build unconnected peers list from known peers not currently connected
+        let unconnected = peer_registry.known_peers
+            .values()
+            .filter(|known_peer| {
+                let key = format!("{}:{}", known_peer.address, known_peer.port);
+                !peer_registry.connected_peers.contains_key(&key)
+            })
+            .map(|peer| RpcPeer {
+                address: peer.address.clone(),
+                port: peer.port,
+            })
+            .collect();
+        
+        // Build bad peers list (peers with excessive failed connection attempts)
+        let bad = peer_registry.known_peers
+            .values()
+            .filter(|peer| peer.connection_attempts > 5)
+            .map(|peer| RpcPeer {
+                address: peer.address.clone(),
+                port: peer.port,
+            })
+            .collect();
+        
         let peers = RpcPeers {
-            connected: vec![
-                RpcPeer {
-                    address: "seed1.neo.org".to_string(),
-                    port: 10333,
-                },
-                RpcPeer {
-                    address: "seed2.neo.org".to_string(),
-                    port: 10333,
-                },
-            ],
-            unconnected: vec![RpcPeer {
-                address: "seed3.neo.org".to_string(),
-                port: 10333,
-            }],
-            bad: vec![],
+            connected,
+            unconnected,
+            bad,
         };
 
         Ok(serde_json::to_value(peers)?)
     }
 
-    /// Gets connection count
+    /// Gets real connection count from peer registry
     pub async fn get_connection_count(&self) -> Result<Value> {
-        // Return mock connection count - would be connected to real peer manager when network integration is complete
-        let connection_count = 2; // Number of connected peers from mock data
+        let peer_registry = self.peer_registry.read()
+            .map_err(|e| format!("Failed to acquire peer registry lock: {}", e))?;
+        
+        let connection_count = peer_registry.get_connection_count();
         Ok(json!(connection_count))
     }
 

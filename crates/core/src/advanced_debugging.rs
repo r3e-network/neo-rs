@@ -687,12 +687,81 @@ impl PerformanceProfiler {
         });
     }
 
+    /// Get current CPU usage percentage
+    async fn get_cpu_usage() -> f64 {
+        // Read from /proc/stat on Linux systems
+        match std::fs::read_to_string("/proc/stat") {
+            Ok(content) => {
+                if let Some(line) = content.lines().next() {
+                    if line.starts_with("cpu ") {
+                        let fields: Vec<&str> = line.split_whitespace().collect();
+                        if fields.len() >= 5 {
+                            let user: u64 = fields[1].parse().unwrap_or(0);
+                            let nice: u64 = fields[2].parse().unwrap_or(0);
+                            let system: u64 = fields[3].parse().unwrap_or(0);
+                            let idle: u64 = fields[4].parse().unwrap_or(0);
+                            
+                            let total = user + nice + system + idle;
+                            let usage = user + nice + system;
+                            
+                            if total > 0 {
+                                return (usage as f64 / total as f64) * 100.0;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // Fallback for non-Linux systems or read errors
+                return 0.0;
+            }
+        }
+        0.0
+    }
+    
+    /// Get current memory usage in MB
+    async fn get_memory_usage() -> f64 {
+        // Read from /proc/meminfo on Linux systems
+        match std::fs::read_to_string("/proc/meminfo") {
+            Ok(content) => {
+                let mut total_kb = 0;
+                let mut available_kb = 0;
+                
+                for line in content.lines() {
+                    if line.starts_with("MemTotal:") {
+                        if let Some(value) = line.split_whitespace().nth(1) {
+                            total_kb = value.parse().unwrap_or(0);
+                        }
+                    } else if line.starts_with("MemAvailable:") {
+                        if let Some(value) = line.split_whitespace().nth(1) {
+                            available_kb = value.parse().unwrap_or(0);
+                        }
+                    }
+                }
+                
+                if total_kb > 0 && available_kb > 0 {
+                    let used_kb = total_kb - available_kb;
+                    return used_kb as f64 / 1024.0; // Convert KB to MB
+                }
+            }
+            Err(_) => {
+                // Fallback for non-Linux systems or read errors
+                return 0.0;
+            }
+        }
+        0.0
+    }
+
     /// Collects a performance sample
     async fn collect_performance_sample() -> PerformanceSample {
+        // Get real system performance metrics
+        let cpu_usage = Self::get_cpu_usage().await;
+        let memory_usage = Self::get_memory_usage().await;
+        
         PerformanceSample {
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
-            cpu_usage_percent: 0.0, // Placeholder
-            memory_usage_mb: 0.0,   // Placeholder
+            cpu_usage_percent: cpu_usage,
+            memory_usage_mb: memory_usage,
             network_activity: NetworkActivity {
                 messages_per_second: 0.0,
                 bandwidth_mbps: 0.0,

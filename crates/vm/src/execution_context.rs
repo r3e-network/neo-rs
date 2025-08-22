@@ -14,6 +14,26 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Maximum exception handler stack size
+const MAX_EXCEPTION_STACK_SIZE: usize = 32;
+
+/// Exception handler state
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExceptionHandlerState {
+    Try,
+    Catch,
+    Finally,
+}
+
+/// Execution state for context
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionState {
+    None,
+    Fault,
+    Break,
+    Halt,
+}
+
 /// A slot for storing variables or arguments in a context.
 #[derive(Clone, Debug)]
 pub struct Slot {
@@ -268,8 +288,8 @@ pub struct ExecutionContext {
     /// Exception handlers stack for TRY/CATCH/FINALLY operations
     exception_handlers: Vec<ExceptionHandler>,
 
-    /// Any additional state associated with this context (stub implementation)
-    _state: (),
+    /// Current execution state
+    state: ExecutionState,
 }
 
 impl ExecutionContext {
@@ -284,7 +304,7 @@ impl ExecutionContext {
             arguments: None,
             try_stack: None,
             exception_handlers: Vec::new(),
-            _state: (),
+            state: ExecutionState::None,
         }
     }
 
@@ -357,16 +377,28 @@ impl ExecutionContext {
     /// This matches the C# implementation's exception state management.
     pub fn set_exception_state(&mut self, in_exception: bool) {
         if in_exception {
-            // 1. Mark the context as being in an exception state
-            // In production, this would set internal exception flags
+            // Mark the context as being in an exception state
+            self.exception_handlers.push(ExceptionHandler {
+                catch_offset: Some(self.instruction_pointer),
+                finally_offset: None,
+                stack_depth: 0, // Would be set based on current evaluation stack depth
+            });
+            
+            // Set VM state to fault if needed
+            if self.exception_handlers.len() > MAX_EXCEPTION_STACK_SIZE {
+                self.state = ExecutionState::Fault;
+            }
         } else {
-            // 2. Clear the exception state
-            // In production, this would clear internal exception flags
-            // The exception handlers stack manages the actual exception state
+            // Clear the exception state by removing the top exception handler
+            if !self.exception_handlers.is_empty() {
+                self.exception_handlers.pop();
+            }
+            
+            // Restore normal execution state if no more exceptions
+            if self.exception_handlers.is_empty() && self.state == ExecutionState::Fault {
+                self.state = ExecutionState::None;
+            }
         }
-
-        // Note: The actual exception state is managed through the exception_handlers stack
-        // and try_stack, so this method primarily serves as a state synchronization point
     }
 
     /// Returns the current instruction pointer.
@@ -572,7 +604,7 @@ impl ExecutionContext {
             arguments: None,
             try_stack: self.try_stack.clone(),
             exception_handlers: self.exception_handlers.clone(),
-            _state: (),
+            state: ExecutionState::None,
         }
     }
 
@@ -593,7 +625,7 @@ impl ExecutionContext {
             arguments: None,
             try_stack: None,
             exception_handlers: Vec::new(),
-            _state: (),
+            state: ExecutionState::None,
         }
     }
 

@@ -3,7 +3,7 @@
 //! This module implements background task management exactly matching C# Neo's TaskManager pattern.
 
 use crate::{NetworkError, NetworkMessage, NetworkResult as Result, NodeInfo};
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::{Duration, Instant}};
 use tokio::{
     net::TcpListener,
     sync::{broadcast, RwLock},
@@ -18,13 +18,31 @@ use super::{connection::PeerConnection, events::P2PEvent};
 pub struct TaskManager {
     /// Active task handles
     task_handles: Arc<RwLock<Vec<JoinHandle<()>>>>,
+    /// Ping timing for RTT calculation
+    ping_times: Arc<RwLock<HashMap<SocketAddr, Instant>>>,
 }
 
 impl TaskManager {
+    /// Record ping sent time for RTT calculation
+    pub async fn record_ping_sent(&self, address: SocketAddr) {
+        self.ping_times.write().await.insert(address, Instant::now());
+    }
+    
+    /// Calculate RTT from recorded ping time
+    pub async fn calculate_rtt(&self, address: SocketAddr) -> u64 {
+        if let Some(ping_time) = self.ping_times.write().await.remove(&address) {
+            ping_time.elapsed().as_millis() as u64
+        } else {
+            0 // No ping time recorded
+        }
+    }
+}
+
     /// Creates a new task manager
     pub fn new() -> Self {
         Self {
             task_handles: Arc::new(RwLock::new(Vec::new())),
+            ping_times: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -83,6 +101,8 @@ impl TaskManager {
         _magic: u32,
         running: Arc<RwLock<bool>>,
     ) {
+        let ping_times = Arc::clone(&self.ping_times);
+        
         let handle = tokio::spawn(async move {
             info!(
                 "Ping manager task started with interval: {:?}",
@@ -100,12 +120,17 @@ impl TaskManager {
                         // Generate ping nonce
                         let nonce = rand::random::<u32>();
 
+                        // Record ping send time for RTT calculation
+                        ping_times.write().await.insert(*address, Instant::now());
+
                         // Create ping message
                         let ping = crate::ProtocolMessage::ping();
                         let ping_msg = NetworkMessage::new(ping);
 
                         if let Err(e) = connection.message_tx.send(ping_msg) {
                             warn!("Failed to send ping to {}: {}", address, e);
+                            // Remove ping time on send failure
+                            ping_times.write().await.remove(address);
                         } else {
                             debug!("Sent ping to {} with nonce {}", address, nonce);
                         }
@@ -173,6 +198,8 @@ impl TaskManager {
         magic: u32,
         node_info: NodeInfo,
     ) {
+        let ping_times = Arc::clone(&self.ping_times);
+        
         let handle = tokio::spawn(async move {
             info!("Connection handler started for {}", address);
 
@@ -201,6 +228,7 @@ impl TaskManager {
                         if let Err(e) = Self::handle_message_static(
                             &connections,
                             &event_tx,
+                            &ping_times,
                             address,
                             message,
                             magic,
@@ -241,6 +269,7 @@ impl TaskManager {
     async fn handle_message_static(
         connections: &Arc<RwLock<HashMap<SocketAddr, PeerConnection>>>,
         event_tx: &broadcast::Sender<P2PEvent>,
+        ping_times: &Arc<RwLock<HashMap<SocketAddr, Instant>>>,
         address: SocketAddr,
         message: NetworkMessage,
         magic: u32,
@@ -338,10 +367,17 @@ impl TaskManager {
             crate::ProtocolMessage::Pong { nonce } => {
                 debug!("Received Pong from {}: nonce={}", address, nonce);
 
-                // Emit ping completed event
+                // Calculate actual RTT from recorded ping time
+                let rtt_ms = if let Some(ping_time) = ping_times.write().await.remove(&address) {
+                    ping_time.elapsed().as_millis() as u64
+                } else {
+                    0 // No ping time recorded
+                };
+
+                // Emit ping completed event with real RTT
                 let _ = event_tx.send(P2PEvent::PingCompleted {
                     address,
-                    rtt_ms: 0, // Would calculate actual RTT in production
+                    rtt_ms,
                 });
             }
 

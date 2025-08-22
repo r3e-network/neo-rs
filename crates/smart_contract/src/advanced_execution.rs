@@ -256,14 +256,23 @@ impl AdvancedExecutionEngine {
         Ok(result)
     }
 
+    /// Create execution engine for script execution
+    fn create_execution_engine(&self, script: &[u8]) -> Result<ExecutionEngine> {
+        let mut engine = ExecutionEngine::new();
+        engine.load_script(script.to_vec())?;
+        engine.set_gas_limit(self.limits.max_gas);
+        Ok(engine)
+    }
+
     /// Executes script with comprehensive monitoring
     async fn execute_with_monitoring(&mut self, script: &[u8]) -> Result<serde_json::Value> {
         let mut step_count = 0;
         let start_time = Instant::now();
         
-        // For now, simulate execution
+        // Create execution engine for real script execution
+        let mut engine = self.create_execution_engine(script)?;
         
-        while step_count < self.limits.max_steps {
+        while step_count < self.limits.max_steps && !engine.is_halted() {
             // Check execution time limit
             if start_time.elapsed().as_millis() as u64 > self.limits.max_execution_time_ms {
                 return Err(Error::VmError("Execution timeout".to_string()));
@@ -274,29 +283,50 @@ impl AdvancedExecutionEngine {
                 return Err(Error::VmError("Gas limit exceeded".to_string()));
             }
             
-            // Simulate execution step
+            // Execute real VM step
+            let step_start = Instant::now();
+            let step_result = engine.execute_next_instruction();
+            let step_time = step_start.elapsed().as_nanos() as u64;
+            
+            // Record debug information if enabled
             if let Some(debug_info) = &mut self.debug_info {
+                let current_instruction = engine.get_current_instruction();
                 let step_info = ExecutionStep {
                     step: step_count,
-                    instruction_pointer: step_count as i32,
-                    opcode: "SIMULATED".to_string(),
-                    execution_time_ns: 1000, // 1 microsecond
-                    gas_consumed: 1,
-                    result: StepResult::Success,
+                    instruction_pointer: engine.get_instruction_pointer(),
+                    opcode: current_instruction.map(|i| i.opcode_name()).unwrap_or("UNKNOWN".to_string()),
+                    execution_time_ns: step_time,
+                    gas_consumed: engine.get_gas_consumed_this_step(),
+                    result: match step_result {
+                        Ok(_) => StepResult::Success,
+                        Err(_) => StepResult::Error,
+                    },
                 };
                 debug_info.steps.push(step_info);
             }
             
-            step_count += 1;
-            
-            // For simulation, complete after a few steps
-            if step_count > 10 {
-                break;
+            // Handle execution result
+            match step_result {
+                Ok(continue_execution) => {
+                    if !continue_execution {
+                        break; // Execution completed normally
+                    }
+                }
+                Err(e) => {
+                    return Err(Error::VmError(format!("Execution failed at step {}: {}", step_count, e)));
+                }
             }
+            
+            step_count += 1;
         }
         
-        // Return simulated result
-        Ok(serde_json::Value::Bool(true))
+        // Return execution result from the VM engine
+        let result = engine.get_result_stack();
+        if let Some(result_value) = result.first() {
+            Ok(serde_json::Value::String(format!("{:?}", result_value)))
+        } else {
+            Ok(serde_json::Value::Bool(true)) // Default success if no result
+        }
     }
 
     /// Gets current gas consumption
