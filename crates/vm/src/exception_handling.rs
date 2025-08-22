@@ -296,6 +296,7 @@ mod tests {
 
     #[test]
     fn test_exception_handling_context_full_creation() {
+        use neo_config::ADDRESS_SIZE;
         let context = ExceptionHandlingContext::new(10, ADDRESS_SIZE, 30, 40, 50);
 
         assert_eq!(context.try_start(), 10);
