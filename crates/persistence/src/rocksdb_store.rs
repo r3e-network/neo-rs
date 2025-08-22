@@ -448,7 +448,7 @@ impl IStore for RocksDBStore {
         debug!("Database snapshot created with ID: {}", snapshot_id);
         Box::new(RocksDBSnapshotWrapper { 
             snapshot,
-            store_placeholder: RocksDBStoreReference {
+            store_reference: RocksDBStoreReference {
                 db: Arc::clone(&self.db),
                 config: self.config.clone(),
             },
@@ -496,7 +496,7 @@ impl RocksDBSnapshot {
 /// Wrapper for RocksDB snapshot to implement IStoreSnapshot
 pub struct RocksDBSnapshotWrapper {
     snapshot: Arc<RocksDBSnapshot>,
-    store_placeholder: RocksDBStoreReference,
+    store_reference: RocksDBStoreReference,
 }
 
 /
@@ -544,7 +544,7 @@ impl IStore for RocksDBStoreReference {
                 Arc::clone(&self.db),
                 self.config.clone(),
             )),
-            store_placeholder: RocksDBStoreReference {
+            store_reference: RocksDBStoreReference {
                 db: Arc::clone(&self.db),
                 config: self.config.clone(),
             },
@@ -645,7 +645,7 @@ impl IStoreSnapshot for RocksDBSnapshotWrapper {
     /// Gets the store this snapshot belongs to
     fn store(&self) -> &dyn IStore {
         // Return reference to the store placeholder
-        &self.store_placeholder
+        &self.store_reference
     }
 
     /// Commits all changes in the snapshot to the database (matches C# RocksDBSnapshot.Commit exactly)

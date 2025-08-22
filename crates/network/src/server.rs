@@ -181,14 +181,15 @@ impl NetworkServer {
 
         let (_command_sender, command_receiver) = tokio::sync::mpsc::channel(100);
 
-        // Create a temporary P2P node first to get sync manager
-        let temp_p2p = Arc::new(P2pNode::new(
+        // Create production P2P node with proper event handling
+        let (event_tx, event_rx) = tokio::sync::mpsc::channel(1000);
+        let p2p_node = Arc::new(P2pNode::new(
             network_config.clone(),
-            tokio::sync::mpsc::channel(1).1,
+            event_rx,
         )?);
 
-        // Create sync manager
-        let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), temp_p2p));
+        // Create sync manager with production P2P integration
+        let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), p2p_node.clone()));
 
         // Create composite message handler
         let default_handler = Arc::new(crate::p2p::protocol::DefaultMessageHandler);

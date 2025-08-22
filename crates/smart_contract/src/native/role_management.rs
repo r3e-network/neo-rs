@@ -187,15 +187,13 @@ impl RoleManagement {
         );
 
         // Emit proper Designation event to the blockchain
-        let event_data = vec![
-            // Event signature: Designation(byte role, ECPoint[] keys)
-            role as u8,
-            public_keys.len() as u8,
-        ];
+        let role_bytes = vec![role as u8];
+        let key_count_bytes = vec![public_keys.len() as u8];
+        let event_data = vec![role_bytes, key_count_bytes];
         
         // Store the designation change in blockchain state
         // This matches C# Neo.SmartContract.Native.RoleManagement behavior
-        engine.emit_event("Designation".to_string(), event_data)?;
+        engine.emit_event("Designation", event_data)?;
         
         // Log successful designation for monitoring
         info!(

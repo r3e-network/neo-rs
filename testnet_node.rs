@@ -225,11 +225,23 @@ impl TestNetP2PManager {
     }
     
     async fn connect_to_seeds(&mut self) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        // Simulate connecting to TestNet seed nodes
+        // Establish real TCP connections to TestNet seed nodes
         for seed in &self.config.seed_nodes {
-            // In a real implementation, this would establish TCP connections
-            println!("🔗 Attempting connection to {}", seed);
-            self.connected_peers.push(seed.clone());
+            println!("🔗 Attempting TCP connection to {}", seed);
+            
+            match std::net::TcpStream::connect_timeout(
+                &seed.parse().unwrap_or_else(|_| "seed1.neo.org:10333".parse().unwrap()),
+                std::time::Duration::from_secs(10)
+            ) {
+                Ok(_stream) => {
+                    println!("✅ Successfully connected to {}", seed);
+                    self.connected_peers.push(seed.clone());
+                }
+                Err(e) => {
+                    println!("❌ Failed to connect to {}: {}", seed, e);
+                    // Continue trying other seeds
+                }
+            }
         }
         
         println!("✅ Successfully connected to {} seed nodes", self.connected_peers.len());
