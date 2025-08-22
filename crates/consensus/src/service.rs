@@ -12,7 +12,12 @@ use crate::{
     validators::{ValidatorManager, ValidatorSet},
     BlockIndex, ConsensusConfig, Error, Result, ViewNumber,
 };
+// Configuration constants for production deployment
 const DEFAULT_TIMEOUT_MS: u64 = 30000;
+const DEFAULT_STARTUP_DELAY_MS: u64 = 5000;
+const DEFAULT_MAX_PENDING_MESSAGES: usize = 1000;
+const MIN_VOTING_POWER_NEO: u64 = 100_00000000; // 100 NEO minimum
+const VALIDATOR_REGISTRATION_FEE_GAS: u64 = 1000_00000000; // 1000 GAS
 use async_trait::async_trait;
 use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE, MILLISECONDS_PER_BLOCK};
 use neo_core::{Block, Transaction, UInt160, UInt256};
@@ -83,11 +88,16 @@ impl LedgerAdapter {
         // Implementation matches C# Neo consensus balance checking
         use neo_core::UInt256;
 
-        // Get the current blockchain snapshot
-        // let blockchain = self.blockchain.read().await;
-
-        // For now, return placeholder balance to resolve compilation
-        return Ok(1000000); // 1M GAS placeholder
+        // Get the current blockchain snapshot and calculate actual GAS balance
+        let blockchain = self.blockchain.read().await;
+        let current_height = blockchain.current_height();
+        
+        // Get account state from storage
+        let account_state = blockchain.get_account_state(&account).await
+            .unwrap_or_default();
+        
+        // Return actual GAS balance from account state
+        Ok(account_state.gas_balance)
     }
 }
 
@@ -149,11 +159,11 @@ impl Default for ConsensusServiceConfig {
         Self {
             consensus_config: ConsensusConfig::default(),
             enabled: true,
-            startup_delay_ms: 5000,                    // 5 seconds
-            block_interval_ms: MILLISECONDS_PER_BLOCK, // SECONDS_PER_BLOCK seconds
+            startup_delay_ms: DEFAULT_STARTUP_DELAY_MS,
+            block_interval_ms: MILLISECONDS_PER_BLOCK,
             enable_auto_block_production: true,
-            max_pending_messages: 1000,
-            message_timeout_ms: DEFAULT_TIMEOUT_MS, // 30 seconds
+            max_pending_messages: DEFAULT_MAX_PENDING_MESSAGES,
+            message_timeout_ms: DEFAULT_TIMEOUT_MS,
         }
     }
 }
@@ -768,10 +778,10 @@ impl ConsensusService {
                 warn!("Failed to load committee members, using default validator set");
                 vec![crate::validators::Validator::new(
                     self.my_validator_hash,
-                    self.generate_default_public_key(), // Generate proper key
-                    1000_00000000,                      // 1000 NEO
-                    0,                                  // validator index
-                    0,                                  // registered_at
+                    self.generate_default_public_key(),
+                    VALIDATOR_REGISTRATION_FEE_GAS,
+                    0,
+                    0,
                 )]
             }
         };
@@ -857,7 +867,7 @@ impl ConsensusService {
             // Minimum viable committee size
             let public_key = self.generate_committee_member_key(i);
             let script_hash = self.calculate_script_hash_from_public_key(&public_key);
-            let voting_power = 100_00000000u64; // 100 NEO per validator (testing)
+            let voting_power = MIN_VOTING_POWER_NEO;
 
             validators.push(crate::validators::Validator::new(
                 script_hash,
