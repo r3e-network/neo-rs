@@ -328,6 +328,9 @@ impl Eq for KeyPair {}
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
+    use super::*;
+    use neo_config::HASH_SIZE;
+
     #[test]
     fn test_key_pair_generation() {
         let key_pair = KeyPair::generate().unwrap();
