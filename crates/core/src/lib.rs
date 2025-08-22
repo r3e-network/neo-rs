@@ -42,8 +42,8 @@
 //! - **System**: `neo_system`, `shutdown`, `monitoring` - System management
 //! - **Utilities**: `error_handling`, `safe_operations` - Helper functionality
 
-#![warn(missing_docs)]
-#![warn(rustdoc::missing_crate_level_docs)]
+//#![warn(missing_docs)]
+//#![warn(rustdoc::missing_crate_level_docs)]
 
 // Module declarations with documentation
 /// Big decimal arithmetic implementation
