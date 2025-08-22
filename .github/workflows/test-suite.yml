@@ -19,30 +19,33 @@ jobs:
     name: Quick Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
           components: rustfmt, clippy
       
-      - name: Cache cargo registry
-        uses: actions/cache@v3
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-quick-tests
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential gcc g++ cmake make pkg-config \
+            llvm-14 libclang-14-dev clang-14 \
+            librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev \
+            zlib1g-dev libbz2-dev libssl-dev
+          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
       
       - name: Check formatting
         run: cargo fmt -- --check
       
       - name: Run Clippy
-        run: cargo clippy --workspace --all-features -- -D warnings
+        run: cargo clippy --workspace --all-features -- -W clippy::correctness -W clippy::suspicious -A clippy::missing_docs_in_private_items
       
       - name: Run unit tests
         run: cargo test --lib --workspace

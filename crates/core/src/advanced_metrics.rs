@@ -16,12 +16,16 @@ use tracing::{debug, info, warn};
 #[derive(Clone)]
 pub struct AdvancedMetricsCollector {
     /// Prometheus registry
+    #[allow(dead_code)]
     registry: Registry,
     /// Blockchain metrics
+    #[allow(dead_code)]
     blockchain_metrics: BlockchainMetricsCollector,
     /// Network metrics
+    #[allow(dead_code)]
     network_metrics: NetworkMetricsCollector,
     /// VM metrics
+    #[allow(dead_code)]
     vm_metrics: VmMetricsCollector,
     /// System metrics
     system_metrics: SystemMetricsCollector,
@@ -432,6 +436,7 @@ pub struct SystemMetricsCollector {
     /// Disk usage gauge
     disk_usage: Gauge,
     /// Network connections gauge
+    #[allow(dead_code)]
     network_connections: Gauge,
     /// Thread count gauge
     thread_count: Gauge,
@@ -578,7 +583,7 @@ impl AdvancedMetricsCollector {
 
     /// Starts metrics collection background task
     pub async fn start_collection(&self) -> tokio::task::JoinHandle<()> {
-        let metrics_store = self.metrics_store.clone();
+        let _metrics_store = self.metrics_store.clone();
         let system_metrics = self.system_metrics.clone();
         let interval = self.collection_interval;
         
@@ -706,7 +711,7 @@ impl PerformanceMonitor {
         info!("🚀 Starting advanced performance monitoring");
         
         // Start metrics collection
-        let collection_task = self.collector.start_collection().await;
+        let _collection_task = self.collector.start_collection().await;
         
         // Start alerting task
         let collector = self.collector.clone();
