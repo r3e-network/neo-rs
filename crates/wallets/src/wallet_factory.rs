@@ -101,7 +101,8 @@ impl WalletFactory {
             ));
         }
 
-        if password.len() > MAX_SCRIPT_SIZE {
+        // Password should have reasonable length limit (not script size limit)
+        if password.len() > 256 {
             return Err(Error::Other("Password is too long".to_string()));
         }
 
