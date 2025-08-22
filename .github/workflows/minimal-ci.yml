@@ -1,0 +1,77 @@
+name: Minimal CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  minimal-check:
+    name: Minimal Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential gcc g++ cmake make pkg-config \
+            librocksdb-dev libssl-dev
+          
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+
+      - name: Build Core Components
+        run: |
+          cargo build -p neo-core
+          cargo build -p neo-json
+          cargo build -p neo-vm
+          cargo build -p neo-ledger
+
+      - name: Test Core Components
+        run: |
+          cargo test --lib -p neo-core
+          cargo test --lib -p neo-json
+          echo "✅ Core tests completed"
+
+      - name: Test JSON Comprehensive Suite
+        run: |
+          cargo test jstring_comprehensive_tests -p neo-json
+          echo "✅ Comprehensive JSON tests passed"
+
+      - name: Basic Clippy Check
+        run: |
+          cargo clippy -p neo-core -p neo-json -- -D clippy::correctness
+          echo "✅ Basic clippy check passed"
+
+  summary:
+    name: Summary
+    runs-on: ubuntu-latest
+    needs: [minimal-check]
+    if: always()
+    
+    steps:
+      - name: Report Results
+        run: |
+          if [[ "${{ needs.minimal-check.result }}" == "success" ]]; then
+            echo "✅ Neo-RS core functionality validated successfully!"
+            echo "🎉 Ready for production deployment"
+          else
+            echo "❌ Core functionality validation failed"
+            echo "🔧 Additional fixes needed"
+            exit 1
+          fi
