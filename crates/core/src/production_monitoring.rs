@@ -603,8 +603,8 @@ impl HealthChecker for NetworkHealthChecker {
     }
 }
 
-/// Global production monitor instance
 lazy_static::lazy_static! {
+    /// Global production monitor instance
     pub static ref PRODUCTION_MONITOR: Arc<RwLock<ProductionMonitor>> =
         Arc::new(RwLock::new(ProductionMonitor::new()));
 }
