@@ -1,18 +1,18 @@
 //! Migration Helpers for Safe Error Handling
-//! 
+//!
 //! This module provides utilities to help migrate existing code from
 //! unsafe unwrap() and panic!() patterns to the new safe error handling system.
 
-use crate::safe_error_handling::{SafeUnwrap, SafeExpect, SafeError};
+use crate::safe_error_handling::{SafeError, SafeExpect, SafeUnwrap};
 use std::fmt::Debug;
 
 /// Helper macro to migrate unwrap() calls with minimal code changes
-/// 
+///
 /// Usage:
 /// ```ignore
 /// // Before:
 /// let value = some_result.unwrap();
-/// 
+///
 /// // After:
 /// let value = migrate_unwrap!(some_result, "operation context")?;
 /// ```
@@ -24,12 +24,12 @@ macro_rules! migrate_unwrap {
 }
 
 /// Helper macro to migrate expect() calls
-/// 
+///
 /// Usage:
 /// ```ignore
 /// // Before:
 /// let value = some_option.expect("error message");
-/// 
+///
 /// // After:
 /// let value = migrate_expect!(some_option, "error message")?;
 /// ```
@@ -54,17 +54,17 @@ impl<T> MigrationWrapper<T> {
             context: context.into(),
         }
     }
-    
+
     /// Get the inner value
     pub fn into_inner(self) -> T {
         self.inner
     }
-    
+
     /// Get a reference to the inner value
     pub fn as_ref(&self) -> &T {
         &self.inner
     }
-    
+
     /// Get a mutable reference to the inner value
     pub fn as_mut(&mut self) -> &mut T {
         &mut self.inner
@@ -76,7 +76,7 @@ impl<T> MigrationWrapper<Option<T>> {
     pub fn safe_unwrap(self) -> Result<T, SafeError> {
         self.inner.safe_expect(&self.context)
     }
-    
+
     /// Safe version of unwrap_or
     pub fn safe_unwrap_or(self, default: T) -> T {
         self.inner.unwrap_or(default)
@@ -91,7 +91,7 @@ where
     pub fn safe_unwrap(self) -> Result<T, SafeError> {
         self.inner.safe_unwrap(&self.context)
     }
-    
+
     /// Safe version of unwrap_or for Result
     pub fn safe_unwrap_or(self, default: T) -> T {
         self.inner.unwrap_or(default)
@@ -118,27 +118,29 @@ impl LegacyErrorConversion for &str {
 
 /// Helper function to safely handle vector access
 pub fn safe_vec_get<T: Clone>(vec: &[T], index: usize, context: &str) -> Result<T, SafeError> {
-    vec.get(index)
-        .cloned()
-        .ok_or_else(|| SafeError::new(
-            format!("Index {} out of bounds for vector of length {}", index, vec.len()),
-            context
-        ))
+    vec.get(index).cloned().ok_or_else(|| {
+        SafeError::new(
+            format!(
+                "Index {} out of bounds for vector of length {}",
+                index,
+                vec.len()
+            ),
+            context,
+        )
+    })
 }
 
 /// Helper function to safely handle hashmap access
 pub fn safe_map_get<'a, K, V>(
-    map: &'a std::collections::HashMap<K, V>, 
-    key: &K, 
-    context: &str
+    map: &'a std::collections::HashMap<K, V>,
+    key: &K,
+    context: &str,
 ) -> Result<&'a V, SafeError>
 where
     K: Debug + Eq + std::hash::Hash,
 {
-    map.get(key).ok_or_else(|| SafeError::new(
-        format!("Key {:?} not found in map", key),
-        context
-    ))
+    map.get(key)
+        .ok_or_else(|| SafeError::new(format!("Key {:?} not found in map", key), context))
 }
 
 /// Batch error handler for collecting multiple potential errors
@@ -155,7 +157,7 @@ impl BatchErrorHandler {
             context: context.into(),
         }
     }
-    
+
     /// Try an operation and collect any errors
     pub fn try_operation<T, F>(&mut self, operation: F) -> Option<T>
     where
@@ -169,29 +171,27 @@ impl BatchErrorHandler {
             }
         }
     }
-    
+
     /// Check if any errors occurred
     pub fn has_errors(&self) -> bool {
         !self.errors.is_empty()
     }
-    
+
     /// Get all collected errors
     pub fn errors(&self) -> &[SafeError] {
         &self.errors
     }
-    
+
     /// Convert to a result, returning error if any operations failed
     pub fn to_result<T>(self, success_value: T) -> Result<T, SafeError> {
         if self.errors.is_empty() {
             Ok(success_value)
         } else {
-            let error_messages: Vec<String> = self.errors
-                .iter()
-                .map(|e| format!("{}", e))
-                .collect();
+            let error_messages: Vec<String> =
+                self.errors.iter().map(|e| format!("{}", e)).collect();
             Err(SafeError::new(
                 format!("{} errors occurred", self.errors.len()),
-                format!("{}: {}", self.context, error_messages.join("; "))
+                format!("{}: {}", self.context, error_messages.join("; ")),
             ))
         }
     }
@@ -200,7 +200,7 @@ impl BatchErrorHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_migration_wrapper_option() {
         let wrapper = MigrationWrapper::new(Some(42), "test context");
@@ -208,44 +208,45 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
     }
-    
+
     #[test]
     fn test_migration_wrapper_none() {
         let wrapper = MigrationWrapper::new(None::<i32>, "test context");
         let result = wrapper.safe_unwrap();
         assert!(result.is_err());
     }
-    
+
     #[test]
     fn test_batch_error_handler() {
         let mut handler = BatchErrorHandler::new("batch operation");
-        
+
         // Successful operation
         let result1 = handler.try_operation(|| Ok(42));
         assert_eq!(result1, Some(42));
-        
+
         // Failed operation
-        let result2: Option<i32> = handler.try_operation(|| Err(SafeError::new("test error", "test")));
+        let result2: Option<i32> =
+            handler.try_operation(|| Err(SafeError::new("test error", "test")));
         assert_eq!(result2, None);
-        
+
         assert!(handler.has_errors());
         assert_eq!(handler.errors().len(), 1);
     }
-    
+
     #[test]
     fn test_safe_vec_get() {
         let vec = vec![1, 2, 3];
-        
+
         // Valid index
         let result = safe_vec_get(&vec, 1, "getting element");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 2);
-        
+
         // Invalid index
         let result = safe_vec_get(&vec, 10, "getting element");
         assert!(result.is_err());
     }
-    
+
     #[test]
     fn test_legacy_error_conversion() {
         let error_string = "legacy error".to_string();

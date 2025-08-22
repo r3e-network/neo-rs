@@ -187,7 +187,8 @@ impl Debugger {
         }
 
         let current_context = self.engine.current_context().cloned();
-        let _current_instruction_pointer = current_context.as_ref().map(|c| c.instruction_pointer());
+        let _current_instruction_pointer =
+            current_context.as_ref().map(|c| c.instruction_pointer());
 
         // Execute the next instruction
         self.engine.execute_next()?;

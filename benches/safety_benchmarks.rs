@@ -3,25 +3,25 @@
 //! This file benchmarks the performance impact of our safety improvements
 //! to ensure they don't introduce significant overhead.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use neo_core::{
     safe_error_handling::SafeError,
-    safe_memory::{SafeBuffer, MemoryPool},
-    transaction_validator::TransactionValidator,
+    safe_memory::{MemoryPool, SafeBuffer},
     system_monitoring::{self, SYSTEM_MONITOR},
+    transaction_validator::TransactionValidator,
 };
 use neo_vm::{
-    safe_execution::{SafeVmExecutor, ExecutionGuard},
-    safe_type_conversion::SafeTypeConverter,
     performance_opt::SmartCloneStrategy,
+    safe_execution::{ExecutionGuard, SafeVmExecutor},
+    safe_type_conversion::SafeTypeConverter,
 };
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Benchmark safe error handling vs traditional error handling
 fn bench_error_handling(c: &mut Criterion) {
     let mut group = c.benchmark_group("error_handling");
-    
+
     // Traditional Result<T, String> error
     group.bench_function("traditional_error", |b| {
         b.iter(|| {
@@ -29,7 +29,7 @@ fn bench_error_handling(c: &mut Criterion) {
             black_box(result)
         })
     });
-    
+
     // SafeError with full context
     group.bench_function("safe_error", |b| {
         b.iter(|| {
@@ -37,19 +37,19 @@ fn bench_error_handling(c: &mut Criterion) {
                 "test error",
                 "bench_module",
                 42,
-                "BenchError"
+                "BenchError",
             ));
             black_box(result)
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark memory pool performance
 fn bench_memory_pool(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory_pool");
-    
+
     // Direct allocation
     group.bench_function("direct_allocation", |b| {
         b.iter(|| {
@@ -57,7 +57,7 @@ fn bench_memory_pool(c: &mut Criterion) {
             black_box(buffer)
         })
     });
-    
+
     // Memory pool allocation
     let pool: MemoryPool<Vec<u8>> = MemoryPool::new(100);
     group.bench_function("pool_allocation", |b| {
@@ -66,14 +66,14 @@ fn bench_memory_pool(c: &mut Criterion) {
             pool.return_item(buffer);
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark monitoring overhead
 fn bench_monitoring(c: &mut Criterion) {
     let mut group = c.benchmark_group("monitoring");
-    
+
     // Transaction without monitoring
     group.bench_function("transaction_no_monitoring", |b| {
         b.iter(|| {
@@ -83,18 +83,14 @@ fn bench_monitoring(c: &mut Criterion) {
             let _ = black_box(true);
         })
     });
-    
+
     // Transaction with monitoring
     group.bench_function("transaction_with_monitoring", |b| {
         b.iter(|| {
-            system_monitoring::record_transaction(
-                1024,
-                Duration::from_micros(100),
-                true
-            );
+            system_monitoring::record_transaction(1024, Duration::from_micros(100), true);
         })
     });
-    
+
     // Block without monitoring
     group.bench_function("block_no_monitoring", |b| {
         b.iter(|| {
@@ -103,23 +99,23 @@ fn bench_monitoring(c: &mut Criterion) {
             let _ = black_box(150u64);
         })
     });
-    
+
     // Block with monitoring
     group.bench_function("block_with_monitoring", |b| {
         b.iter(|| {
             system_monitoring::record_block(12345, 50000, 150);
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark smart cloning strategies
 fn bench_smart_cloning(c: &mut Criterion) {
     let mut group = c.benchmark_group("smart_cloning");
-    
+
     let strategy = SmartCloneStrategy::default();
-    
+
     // Small data (should clone)
     let small_data = vec![1u8; 100];
     group.bench_function("small_data_clone", |b| {
@@ -131,7 +127,7 @@ fn bench_smart_cloning(c: &mut Criterion) {
             }
         })
     });
-    
+
     // Large data (should use Arc)
     let large_data = vec![1u8; 10000];
     group.bench_function("large_data_arc", |b| {
@@ -143,28 +139,20 @@ fn bench_smart_cloning(c: &mut Criterion) {
             }
         })
     });
-    
+
     // Arc clone vs deep clone
     let arc_data = Arc::new(vec![1u8; 10000]);
-    group.bench_function("arc_clone", |b| {
-        b.iter(|| {
-            arc_data.clone()
-        })
-    });
-    
-    group.bench_function("deep_clone", |b| {
-        b.iter(|| {
-            (*arc_data).clone()
-        })
-    });
-    
+    group.bench_function("arc_clone", |b| b.iter(|| arc_data.clone()));
+
+    group.bench_function("deep_clone", |b| b.iter(|| (*arc_data).clone()));
+
     group.finish();
 }
 
 /// Benchmark safe buffer operations
 fn bench_safe_buffer(c: &mut Criterion) {
     let mut group = c.benchmark_group("safe_buffer");
-    
+
     // Unsafe buffer write
     group.bench_function("unsafe_write", |b| {
         let mut buffer = vec![0u8; 1024];
@@ -176,7 +164,7 @@ fn bench_safe_buffer(c: &mut Criterion) {
             }
         })
     });
-    
+
     // Safe buffer write
     group.bench_function("safe_write", |b| {
         let mut buffer = SafeBuffer::new(1024);
@@ -185,30 +173,26 @@ fn bench_safe_buffer(c: &mut Criterion) {
             buffer.clear();
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark monitoring snapshot generation
 fn bench_snapshot_generation(c: &mut Criterion) {
     let mut group = c.benchmark_group("snapshot");
-    
+
     // Populate some metrics
     for i in 0..100 {
-        system_monitoring::record_transaction(
-            i * 1024,
-            Duration::from_micros(i),
-            i % 2 == 0
-        );
+        system_monitoring::record_transaction(i * 1024, Duration::from_micros(i), i % 2 == 0);
     }
-    
+
     group.bench_function("generate_snapshot", |b| {
         b.iter(|| {
             let snapshot = SYSTEM_MONITOR.snapshot();
             black_box(snapshot)
         })
     });
-    
+
     group.bench_function("serialize_snapshot", |b| {
         let snapshot = SYSTEM_MONITOR.snapshot();
         b.iter(|| {
@@ -216,14 +200,14 @@ fn bench_snapshot_generation(c: &mut Criterion) {
             black_box(json)
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark execution guard overhead
 fn bench_execution_guard(c: &mut Criterion) {
     let mut group = c.benchmark_group("execution_guard");
-    
+
     // Execution without guard
     group.bench_function("no_guard", |b| {
         b.iter(|| {
@@ -235,7 +219,7 @@ fn bench_execution_guard(c: &mut Criterion) {
             black_box(sum)
         })
     });
-    
+
     // Execution with guard
     group.bench_function("with_guard", |b| {
         b.iter(|| {
@@ -248,14 +232,14 @@ fn bench_execution_guard(c: &mut Criterion) {
             black_box(sum)
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark type conversion safety
 fn bench_type_conversion(c: &mut Criterion) {
     let mut group = c.benchmark_group("type_conversion");
-    
+
     // Unsafe transmute (simulated)
     group.bench_function("unsafe_transmute", |b| {
         b.iter(|| {
@@ -264,7 +248,7 @@ fn bench_type_conversion(c: &mut Criterion) {
             black_box(bytes)
         })
     });
-    
+
     // Safe type conversion
     group.bench_function("safe_conversion", |b| {
         b.iter(|| {
@@ -276,30 +260,26 @@ fn bench_type_conversion(c: &mut Criterion) {
             }
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark concurrent monitoring
 fn bench_concurrent_monitoring(c: &mut Criterion) {
     let mut group = c.benchmark_group("concurrent_monitoring");
-    
-    use std::thread;
+
     use std::sync::Arc;
-    
+    use std::thread;
+
     // Single-threaded monitoring
     group.bench_function("single_thread", |b| {
         b.iter(|| {
             for i in 0..100 {
-                system_monitoring::record_transaction(
-                    i,
-                    Duration::from_micros(1),
-                    true
-                );
+                system_monitoring::record_transaction(i, Duration::from_micros(1), true);
             }
         })
     });
-    
+
     // Multi-threaded monitoring
     group.bench_function("multi_thread", |b| {
         b.iter(|| {
@@ -310,7 +290,7 @@ fn bench_concurrent_monitoring(c: &mut Criterion) {
                         system_monitoring::record_transaction(
                             t * 25 + i,
                             Duration::from_micros(1),
-                            true
+                            true,
                         );
                     }
                 });
@@ -321,7 +301,7 @@ fn bench_concurrent_monitoring(c: &mut Criterion) {
             }
         })
     });
-    
+
     group.finish();
 }
 

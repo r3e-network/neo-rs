@@ -3,11 +3,11 @@
 //! This module provides comprehensive monitoring for all blockchain components
 //! including performance metrics, error tracking, and health monitoring.
 
-use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::time::Duration;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 /// System-wide metrics collector
 /// Represents a data structure.
@@ -48,7 +48,7 @@ impl SystemMonitor {
             performance: PerformanceTracker::new(),
         }
     }
-    
+
     /// Get a snapshot of all metrics
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
@@ -69,7 +69,7 @@ impl SystemMonitor {
             performance: self.performance.snapshot(),
         }
     }
-    
+
     /// Reset all metrics
     /// Resets the internal state.
     /// Resets the internal state.
@@ -112,35 +112,36 @@ impl TransactionMetrics {
             mempool_size: AtomicUsize::new(0),
         }
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
     pub fn record_transaction(&self, size: u64, verification_time: Duration, success: bool) {
         self.total_count.fetch_add(1, Ordering::Relaxed);
         self.total_size_bytes.fetch_add(size, Ordering::Relaxed);
-        
+
         if success {
             self.verified_count.fetch_add(1, Ordering::Relaxed);
         } else {
             self.failed_count.fetch_add(1, Ordering::Relaxed);
         }
-        
+
         // Update average verification time
         let new_time = verification_time.as_micros() as u64;
         let current_avg = self.average_verification_time_us.load(Ordering::Relaxed);
         let count = self.total_count.load(Ordering::Relaxed);
         let new_avg = ((current_avg * (count - 1)) + new_time) / count;
-        self.average_verification_time_us.store(new_avg, Ordering::Relaxed);
+        self.average_verification_time_us
+            .store(new_avg, Ordering::Relaxed);
     }
-    
+
     /// Updates the internal state with new data.
     /// Updates the internal state.
     /// Updates the internal state.
     pub fn update_mempool_size(&self, size: usize) {
         self.mempool_size.store(size, Ordering::Relaxed);
     }
-    
+
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
@@ -154,7 +155,7 @@ impl TransactionMetrics {
             mempool_size: self.mempool_size.load(Ordering::Relaxed),
         }
     }
-    
+
     /// Resets the internal state.
     /// Resets the internal state.
     /// Resets the internal state.
@@ -163,7 +164,8 @@ impl TransactionMetrics {
         self.verified_count.store(0, Ordering::Relaxed);
         self.failed_count.store(0, Ordering::Relaxed);
         self.total_size_bytes.store(0, Ordering::Relaxed);
-        self.average_verification_time_us.store(0, Ordering::Relaxed);
+        self.average_verification_time_us
+            .store(0, Ordering::Relaxed);
     }
 }
 
@@ -193,20 +195,20 @@ impl BlockMetrics {
             last_block_time: RwLock::new(None),
         }
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
     pub fn record_block(&self, height: u64, size: u64, tx_count: u64) {
         self.total_count.fetch_add(1, Ordering::Relaxed);
         self.current_height.store(height, Ordering::Relaxed);
-        
+
         // Calculate block time
         let now = std::time::Instant::now();
         if let Ok(mut last_time) = self.last_block_time.write() {
             if let Some(last) = *last_time {
                 let block_time_ms = now.duration_since(last).as_millis() as u64;
-                
+
                 // Update average block time
                 let count = self.total_count.load(Ordering::Relaxed);
                 let current_avg = self.average_block_time_ms.load(Ordering::Relaxed);
@@ -215,19 +217,21 @@ impl BlockMetrics {
             }
             *last_time = Some(now);
         }
-        
+
         // Update averages
         let count = self.total_count.load(Ordering::Relaxed);
-        
+
         let current_size_avg = self.average_block_size_bytes.load(Ordering::Relaxed);
         let new_size_avg = ((current_size_avg * (count - 1)) + size) / count;
-        self.average_block_size_bytes.store(new_size_avg, Ordering::Relaxed);
-        
+        self.average_block_size_bytes
+            .store(new_size_avg, Ordering::Relaxed);
+
         let current_tx_avg = self.average_tx_per_block.load(Ordering::Relaxed);
         let new_tx_avg = ((current_tx_avg * (count - 1)) + tx_count) / count;
-        self.average_tx_per_block.store(new_tx_avg, Ordering::Relaxed);
+        self.average_tx_per_block
+            .store(new_tx_avg, Ordering::Relaxed);
     }
-    
+
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
@@ -240,7 +244,7 @@ impl BlockMetrics {
             average_tx_per_block: self.average_tx_per_block.load(Ordering::Relaxed),
         }
     }
-    
+
     /// Resets the internal state.
     /// Resets the internal state.
     /// Resets the internal state.
@@ -283,14 +287,14 @@ impl NetworkMetrics {
             average_latency_ms: AtomicU64::new(0),
         }
     }
-    
+
     /// Updates the internal state with new data.
     /// Updates the internal state.
     /// Updates the internal state.
     pub fn update_peer_count(&self, count: usize) {
         self.peer_count.store(count, Ordering::Relaxed);
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
@@ -298,7 +302,7 @@ impl NetworkMetrics {
         self.messages_sent.fetch_add(1, Ordering::Relaxed);
         self.bytes_sent.fetch_add(size, Ordering::Relaxed);
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
@@ -306,27 +310,27 @@ impl NetworkMetrics {
         self.messages_received.fetch_add(1, Ordering::Relaxed);
         self.bytes_received.fetch_add(size, Ordering::Relaxed);
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
     pub fn record_connection_failure(&self) {
         self.connection_failures.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Updates the internal state with new data.
     /// Updates the internal state.
     /// Updates the internal state.
     pub fn update_average_latency(&self, latency_ms: u64) {
-        let count = self.messages_sent.load(Ordering::Relaxed) + 
-                   self.messages_received.load(Ordering::Relaxed);
+        let count = self.messages_sent.load(Ordering::Relaxed)
+            + self.messages_received.load(Ordering::Relaxed);
         if count > 0 {
             let current_avg = self.average_latency_ms.load(Ordering::Relaxed);
             let new_avg = ((current_avg * (count - 1)) + latency_ms) / count;
             self.average_latency_ms.store(new_avg, Ordering::Relaxed);
         }
     }
-    
+
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
@@ -341,7 +345,7 @@ impl NetworkMetrics {
             average_latency_ms: self.average_latency_ms.load(Ordering::Relaxed),
         }
     }
-    
+
     /// Resets the internal state.
     /// Resets the internal state.
     /// Resets the internal state.
@@ -381,7 +385,7 @@ impl VmMetrics {
             opcodes_executed: AtomicU64::new(0),
         }
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
@@ -389,21 +393,22 @@ impl VmMetrics {
         self.executions.fetch_add(1, Ordering::Relaxed);
         self.total_gas_consumed.fetch_add(gas, Ordering::Relaxed);
         self.opcodes_executed.fetch_add(opcodes, Ordering::Relaxed);
-        
+
         if success {
             self.successful_executions.fetch_add(1, Ordering::Relaxed);
         } else {
             self.failed_executions.fetch_add(1, Ordering::Relaxed);
         }
-        
+
         // Update average execution time
         let count = self.executions.load(Ordering::Relaxed);
         let current_avg = self.average_execution_time_us.load(Ordering::Relaxed);
         let new_time = time.as_micros() as u64;
         let new_avg = ((current_avg * (count - 1)) + new_time) / count;
-        self.average_execution_time_us.store(new_avg, Ordering::Relaxed);
+        self.average_execution_time_us
+            .store(new_avg, Ordering::Relaxed);
     }
-    
+
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
@@ -417,7 +422,7 @@ impl VmMetrics {
             opcodes_executed: self.opcodes_executed.load(Ordering::Relaxed),
         }
     }
-    
+
     /// Resets the internal state.
     /// Resets the internal state.
     /// Resets the internal state.
@@ -457,41 +462,42 @@ impl ConsensusMetrics {
             timeouts: AtomicU64::new(0),
         }
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
     pub fn record_view_change(&self) {
         self.view_changes.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
     pub fn record_block_proposal(&self, accepted: bool, consensus_time: Duration) {
         self.blocks_proposed.fetch_add(1, Ordering::Relaxed);
-        
+
         if accepted {
             self.blocks_accepted.fetch_add(1, Ordering::Relaxed);
         } else {
             self.blocks_rejected.fetch_add(1, Ordering::Relaxed);
         }
-        
+
         // Update average consensus time
         let count = self.blocks_proposed.load(Ordering::Relaxed);
         let current_avg = self.average_consensus_time_ms.load(Ordering::Relaxed);
         let new_time = consensus_time.as_millis() as u64;
         let new_avg = ((current_avg * (count - 1)) + new_time) / count;
-        self.average_consensus_time_ms.store(new_avg, Ordering::Relaxed);
+        self.average_consensus_time_ms
+            .store(new_avg, Ordering::Relaxed);
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
     pub fn record_timeout(&self) {
         self.timeouts.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
@@ -505,7 +511,7 @@ impl ConsensusMetrics {
             timeouts: self.timeouts.load(Ordering::Relaxed),
         }
     }
-    
+
     /// Resets the internal state.
     /// Resets the internal state.
     /// Resets the internal state.
@@ -549,19 +555,19 @@ impl StorageMetrics {
             average_write_time_us: AtomicU64::new(0),
         }
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
     pub fn record_read(&self, time: Duration, cache_hit: bool) {
         self.reads.fetch_add(1, Ordering::Relaxed);
-        
+
         if cache_hit {
             self.cache_hits.fetch_add(1, Ordering::Relaxed);
         } else {
             self.cache_misses.fetch_add(1, Ordering::Relaxed);
         }
-        
+
         // Update average read time
         let count = self.reads.load(Ordering::Relaxed);
         let current_avg = self.average_read_time_us.load(Ordering::Relaxed);
@@ -569,13 +575,13 @@ impl StorageMetrics {
         let new_avg = ((current_avg * (count - 1)) + new_time) / count;
         self.average_read_time_us.store(new_avg, Ordering::Relaxed);
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
     pub fn record_write(&self, time: Duration) {
         self.writes.fetch_add(1, Ordering::Relaxed);
-        
+
         // Update average write time
         let count = self.writes.load(Ordering::Relaxed);
         let current_avg = self.average_write_time_us.load(Ordering::Relaxed);
@@ -583,21 +589,21 @@ impl StorageMetrics {
         let new_avg = ((current_avg * (count - 1)) + new_time) / count;
         self.average_write_time_us.store(new_avg, Ordering::Relaxed);
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
     pub fn record_delete(&self) {
         self.deletes.fetch_add(1, Ordering::Relaxed);
     }
-    
+
     /// Updates the internal state with new data.
     /// Updates the internal state.
     /// Updates the internal state.
     pub fn update_disk_usage(&self, bytes: u64) {
         self.disk_usage_bytes.store(bytes, Ordering::Relaxed);
     }
-    
+
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
@@ -613,7 +619,7 @@ impl StorageMetrics {
             average_write_time_us: self.average_write_time_us.load(Ordering::Relaxed),
         }
     }
-    
+
     /// Resets the internal state.
     /// Resets the internal state.
     /// Resets the internal state.
@@ -650,36 +656,41 @@ impl ErrorTracker {
             warnings: AtomicU64::new(0),
         }
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
     pub fn record_error(&self, category: String, is_critical: bool) {
         self.total_errors.fetch_add(1, Ordering::Relaxed);
-        
+
         if is_critical {
             self.critical_errors.fetch_add(1, Ordering::Relaxed);
         } else {
             self.warnings.fetch_add(1, Ordering::Relaxed);
         }
-        
+
         if let Ok(mut guard) = self.errors_by_category.write() {
             *guard.entry(category).or_insert(0) += 1;
         }
     }
-    
+
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
     pub fn snapshot(&self) -> ErrorTrackerSnapshot {
         ErrorTrackerSnapshot {
-            errors_by_category: self.errors_by_category.read().ok().map(|g| g.clone()).unwrap_or_default(),
+            errors_by_category: self
+                .errors_by_category
+                .read()
+                .ok()
+                .map(|g| g.clone())
+                .unwrap_or_default(),
             total_errors: self.total_errors.load(Ordering::Relaxed),
             critical_errors: self.critical_errors.load(Ordering::Relaxed),
             warnings: self.warnings.load(Ordering::Relaxed),
         }
     }
-    
+
     /// Resets the internal state.
     /// Resets the internal state.
     /// Resets the internal state.
@@ -717,28 +728,29 @@ impl PerformanceTracker {
             gc_pause_time_ms: AtomicU64::new(0),
         }
     }
-    
+
     /// Updates the internal state with new data.
     /// Updates the internal state.
     /// Updates the internal state.
     pub fn update_cpu_usage(&self, percent: u64) {
-        self.cpu_usage_percent.store(percent.min(100), Ordering::Relaxed);
+        self.cpu_usage_percent
+            .store(percent.min(100), Ordering::Relaxed);
     }
-    
+
     /// Updates the internal state with new data.
     /// Updates the internal state.
     /// Updates the internal state.
     pub fn update_memory_usage(&self, bytes: u64) {
         self.memory_usage_bytes.store(bytes, Ordering::Relaxed);
     }
-    
+
     /// Updates the internal state with new data.
     /// Updates the internal state.
     /// Updates the internal state.
     pub fn update_thread_count(&self, count: usize) {
         self.thread_count.store(count, Ordering::Relaxed);
     }
-    
+
     /// Records an event for metrics tracking.
     /// Records an event or metric.
     /// Records an event or metric.
@@ -746,9 +758,10 @@ impl PerformanceTracker {
         self.gc_collections.fetch_add(1, Ordering::Relaxed);
         let pause_ms = pause_time.as_millis() as u64;
         let current = self.gc_pause_time_ms.load(Ordering::Relaxed);
-        self.gc_pause_time_ms.store(current + pause_ms, Ordering::Relaxed);
+        self.gc_pause_time_ms
+            .store(current + pause_ms, Ordering::Relaxed);
     }
-    
+
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
     /// Returns a snapshot of the current state.
@@ -761,7 +774,7 @@ impl PerformanceTracker {
             gc_pause_time_ms: self.gc_pause_time_ms.load(Ordering::Relaxed),
         }
     }
-    
+
     /// Resets the internal state.
     /// Resets the internal state.
     /// Resets the internal state.
@@ -897,36 +910,42 @@ lazy_static::lazy_static! {
 }
 
 /// Convenience functions for monitoring
-    /// Records an event for metrics tracking.
-    /// Records an event or metric.
-    /// Records an event or metric.
+/// Records an event for metrics tracking.
+/// Records an event or metric.
+/// Records an event or metric.
 pub fn record_transaction(size: u64, verification_time: Duration, success: bool) {
-    SYSTEM_MONITOR.transactions.record_transaction(size, verification_time, success);
+    SYSTEM_MONITOR
+        .transactions
+        .record_transaction(size, verification_time, success);
 }
 
-    /// Records an event for metrics tracking.
-    /// Records an event or metric.
-    /// Records an event or metric.
+/// Records an event for metrics tracking.
+/// Records an event or metric.
+/// Records an event or metric.
 pub fn record_block(height: u64, size: u64, tx_count: u64) {
     SYSTEM_MONITOR.blocks.record_block(height, size, tx_count);
 }
 
-    /// Records an event for metrics tracking.
-    /// Records an event or metric.
-    /// Records an event or metric.
+/// Records an event for metrics tracking.
+/// Records an event or metric.
+/// Records an event or metric.
 pub fn record_vm_execution(gas: u64, time: Duration, opcodes: u64, success: bool) {
-    SYSTEM_MONITOR.vm.record_execution(gas, time, opcodes, success);
+    SYSTEM_MONITOR
+        .vm
+        .record_execution(gas, time, opcodes, success);
 }
 
-    /// Records an event for metrics tracking.
-    /// Records an event or metric.
-    /// Records an event or metric.
+/// Records an event for metrics tracking.
+/// Records an event or metric.
+/// Records an event or metric.
 pub fn record_error(category: impl Into<String>, is_critical: bool) {
-    SYSTEM_MONITOR.errors.record_error(category.into(), is_critical);
+    SYSTEM_MONITOR
+        .errors
+        .record_error(category.into(), is_critical);
 }
 
-    /// Gets a value from the internal state.
-    /// Gets a value from the internal state.
+/// Gets a value from the internal state.
+/// Gets a value from the internal state.
 pub fn get_metrics_snapshot() -> SystemMetricsSnapshot {
     SYSTEM_MONITOR.snapshot()
 }

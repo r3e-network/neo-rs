@@ -285,10 +285,13 @@ impl NativeContract for LedgerContract {
                     Some(block) => {
                         // Serialize block using proper binary format (matches C# Neo exactly)
                         use serde::Serialize;
-                        let serialized = bincode::serialize(&block).map_err(|e| 
-                            crate::Error::InvalidOperation(format!("Block serialization failed: {}", e))
-                        )?;
-                        
+                        let serialized = bincode::serialize(&block).map_err(|e| {
+                            crate::Error::InvalidOperation(format!(
+                                "Block serialization failed: {}",
+                                e
+                            ))
+                        })?;
+
                         Ok(serialized)
                     }
                     None => Ok(vec![]),

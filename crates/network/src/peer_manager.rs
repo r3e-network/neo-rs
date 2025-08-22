@@ -370,7 +370,7 @@ impl PeerManager {
         info!("Successfully disconnected from peer: {}", address);
         Ok(())
     }
-    
+
     /// Get current blockchain height from integrated blockchain instance
     async fn get_current_blockchain_height(&self) -> NetworkResult<u32> {
         // Query the actual blockchain height from the system

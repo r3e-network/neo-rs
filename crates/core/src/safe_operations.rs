@@ -1,5 +1,5 @@
 //! Safe Operations Module
-//! 
+//!
 //! Provides safe alternatives to common operations that might panic,
 //! replacing unwrap(), expect(), and panic! patterns with recoverable errors.
 
@@ -12,10 +12,10 @@ use std::sync::{Arc, Mutex, RwLock};
 pub trait SafeIndex<T> {
     /// Get element at index, returning None if out of bounds
     fn safe_get(&self, index: usize) -> Option<&T>;
-    
+
     /// Get mutable element at index, returning None if out of bounds
     fn safe_get_mut(&mut self, index: usize) -> Option<&mut T>;
-    
+
     /// Get element or default if out of bounds
     fn get_or_default(&self, index: usize) -> T
     where
@@ -27,11 +27,15 @@ impl<T> SafeIndex<T> for Vec<T> {
         if index < self.len() {
             Some(&self[index])
         } else {
-            tracing::warn!("Index {} out of bounds for vector of length {}", index, self.len());
+            tracing::warn!(
+                "Index {} out of bounds for vector of length {}",
+                index,
+                self.len()
+            );
             None
         }
     }
-    
+
     fn safe_get_mut(&mut self, index: usize) -> Option<&mut T> {
         let len = self.len();
         if index < len {
@@ -41,7 +45,7 @@ impl<T> SafeIndex<T> for Vec<T> {
             None
         }
     }
-    
+
     fn get_or_default(&self, index: usize) -> T
     where
         T: Default + Clone,
@@ -55,10 +59,10 @@ impl<T> SafeIndex<T> for Vec<T> {
 pub trait SafeMap<K, V> {
     /// Get value with proper error handling
     fn safe_get(&self, key: &K) -> Option<&V>;
-    
+
     /// Insert with overflow protection
     fn safe_insert(&mut self, key: K, value: V) -> Result<Option<V>>;
-    
+
     /// Remove with existence check
     fn safe_remove(&mut self, key: &K) -> Option<V>;
 }
@@ -71,15 +75,17 @@ impl<K: Eq + std::hash::Hash + std::fmt::Debug, V> SafeMap<K, V> for HashMap<K, 
         }
         result
     }
-    
+
     fn safe_insert(&mut self, key: K, value: V) -> Result<Option<V>> {
         // Check for capacity issues
         if self.len() >= self.capacity() && self.capacity() > usize::MAX / 2 {
-            return Err(NeoError::Internal("HashMap capacity overflow risk".to_string()));
+            return Err(NeoError::Internal(
+                "HashMap capacity overflow risk".to_string(),
+            ));
         }
         Ok(self.insert(key, value))
     }
-    
+
     fn safe_remove(&mut self, key: &K) -> Option<V> {
         let result = self.remove(key);
         if result.is_none() {
@@ -94,13 +100,13 @@ impl<K: Eq + std::hash::Hash + std::fmt::Debug, V> SafeMap<K, V> for HashMap<K, 
 pub trait SafeArithmetic: Sized {
     /// Safe addition with overflow check
     fn safe_add(self, rhs: Self) -> Result<Self>;
-    
+
     /// Safe subtraction with underflow check
     fn safe_sub(self, rhs: Self) -> Result<Self>;
-    
+
     /// Safe multiplication with overflow check
     fn safe_mul(self, rhs: Self) -> Result<Self>;
-    
+
     /// Safe division with zero check
     fn safe_div(self, rhs: Self) -> Result<Self>;
 }
@@ -113,17 +119,17 @@ macro_rules! impl_safe_arithmetic {
                     self.checked_add(rhs)
                         .ok_or_else(|| NeoError::Internal(format!("Arithmetic overflow: {} + {}", self, rhs)))
                 }
-                
+
                 fn safe_sub(self, rhs: Self) -> Result<Self> {
                     self.checked_sub(rhs)
                         .ok_or_else(|| NeoError::Internal(format!("Arithmetic underflow: {} - {}", self, rhs)))
                 }
-                
+
                 fn safe_mul(self, rhs: Self) -> Result<Self> {
                     self.checked_mul(rhs)
                         .ok_or_else(|| NeoError::Internal(format!("Arithmetic overflow: {} * {}", self, rhs)))
                 }
-                
+
                 fn safe_div(self, rhs: Self) -> Result<Self> {
                     if rhs == 0 {
                         Err(NeoError::Internal("Division by zero".to_string()))
@@ -153,7 +159,7 @@ impl<T> SafeMutex<T> {
             inner: Arc::new(Mutex::new(value)),
         }
     }
-    
+
     /// Lock the mutex, recovering from poisoned state if necessary
     pub fn safe_lock(&self) -> Result<std::sync::MutexGuard<'_, T>> {
         match self.inner.lock() {
@@ -164,7 +170,7 @@ impl<T> SafeMutex<T> {
             }
         }
     }
-    
+
     /// Try to lock without blocking
     pub fn safe_try_lock(&self) -> Result<Option<std::sync::MutexGuard<'_, T>>> {
         match self.inner.try_lock() {
@@ -200,7 +206,7 @@ impl<T> SafeRwLock<T> {
             inner: Arc::new(RwLock::new(value)),
         }
     }
-    
+
     /// Read lock with poison recovery
     pub fn safe_read(&self) -> Result<std::sync::RwLockReadGuard<'_, T>> {
         match self.inner.read() {
@@ -211,7 +217,7 @@ impl<T> SafeRwLock<T> {
             }
         }
     }
-    
+
     /// Write lock with poison recovery
     pub fn safe_write(&self) -> Result<std::sync::RwLockWriteGuard<'_, T>> {
         match self.inner.write() {
@@ -237,14 +243,14 @@ impl<T: Clone> Clone for SafeRwLock<T> {
 pub trait SafeParse {
     /// Output type for the operation.
     type Output;
-    
+
     /// Parse with proper error handling
     fn safe_parse(&self) -> Result<Self::Output>;
 }
 
 impl SafeParse for str {
     type Output = i64;
-    
+
     fn safe_parse(&self) -> Result<Self::Output> {
         self.parse()
             .map_err(|e| NeoError::InvalidInput(format!("Failed to parse '{}': {}", self, e)))
@@ -284,20 +290,20 @@ pub mod file {
     use std::fs;
     use std::io::Read;
     use std::path::Path;
-    
+
     /// Safe file reading with size limits
     pub fn safe_read_file<P: AsRef<Path>>(path: P, max_size: usize) -> Result<Vec<u8>> {
         let path = path.as_ref();
-        
+
         // Check file exists
         if !path.exists() {
             return Err(NeoError::NotFound(format!("File not found: {:?}", path)));
         }
-        
+
         // Check file size
         let metadata = fs::metadata(path)
             .map_err(|e| NeoError::Internal(format!("Failed to read metadata: {}", e)))?;
-        
+
         if metadata.len() > max_size as u64 {
             return Err(NeoError::InvalidInput(format!(
                 "File too large: {} bytes (max: {} bytes)",
@@ -305,15 +311,15 @@ pub mod file {
                 max_size
             )));
         }
-        
+
         // Read file
         let mut file = fs::File::open(path)
             .map_err(|e| NeoError::Internal(format!("Failed to open file: {}", e)))?;
-        
+
         let mut buffer = Vec::with_capacity(metadata.len() as usize);
         file.read_to_end(&mut buffer)
             .map_err(|e| NeoError::Internal(format!("Failed to read file: {}", e)))?;
-        
+
         Ok(buffer)
     }
 }
@@ -322,7 +328,7 @@ pub mod file {
 #[allow(dead_code)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_safe_index() {
         let vec = vec![1, 2, 3];
@@ -330,7 +336,7 @@ mod tests {
         assert_eq!(vec.safe_get(10), None);
         assert_eq!(vec.get_or_default(10), 0);
     }
-    
+
     #[test]
     fn test_safe_arithmetic() {
         assert!(255u8.safe_add(1).is_err());
@@ -338,28 +344,28 @@ mod tests {
         assert!(0u32.safe_sub(1).is_err());
         assert!(10u32.safe_div(0).is_err());
     }
-    
+
     #[test]
     fn test_safe_mutex() {
         let mutex = SafeMutex::new(42);
         let guard = mutex.safe_lock().unwrap();
         assert_eq!(*guard, 42);
     }
-    
+
     #[test]
     fn test_safe_parse() {
         assert_eq!("42".safe_parse().unwrap(), 42i64);
         assert!("not_a_number".safe_parse().is_err());
     }
-    
+
     #[test]
     fn test_safe_convert() {
         use SafeConvert;
-        
+
         let large: usize = 1_000_000_000_000;
         let result: Result<u32> = large.safe_into();
         assert!(result.is_err());
-        
+
         let small: usize = 42;
         let result: Result<u32> = small.safe_into();
         assert_eq!(result.unwrap(), 42u32);

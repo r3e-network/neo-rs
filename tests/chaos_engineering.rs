@@ -4,19 +4,19 @@
 //! the resilience and fault tolerance of the Neo-RS blockchain implementation
 //! under various adverse conditions and failure scenarios.
 
-use neo_core::{Transaction, UInt256, UInt160};
-use neo_network::{P2PNode, NetworkConfig, PeerManager};
-use neo_consensus::{ConsensusEngine, ConsensusConfig};
-use neo_vm::ExecutionEngine;
+use neo_consensus::{ConsensusConfig, ConsensusEngine};
+use neo_core::{Transaction, UInt160, UInt256};
 use neo_ledger::Blockchain;
+use neo_network::{NetworkConfig, P2PNode, PeerManager};
+use neo_vm::ExecutionEngine;
+use rand::{seq::SliceRandom, thread_rng, Rng};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 use tokio::time::{sleep, timeout};
-use rand::{Rng, thread_rng, seq::SliceRandom};
-use serde::{Serialize, Deserialize};
 
 /// Chaos engineering test configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,11 +87,11 @@ pub enum ChaosFailure {
 /// Types of node failures
 #[derive(Debug, Clone)]
 pub enum NodeFailureType {
-    Crash,          // Complete node shutdown
-    Hang,           // Node becomes unresponsive
-    SlowDown,       // Node processing becomes very slow
-    MemoryLeak,     // Simulated memory exhaustion
-    DiskFull,       // Simulated disk space exhaustion
+    Crash,            // Complete node shutdown
+    Hang,             // Node becomes unresponsive
+    SlowDown,         // Node processing becomes very slow
+    MemoryLeak,       // Simulated memory exhaustion
+    DiskFull,         // Simulated disk space exhaustion
     NetworkIsolation, // Node can't communicate
 }
 
@@ -109,12 +109,12 @@ pub enum ResourceType {
 /// Types of Byzantine behavior
 #[derive(Debug, Clone)]
 pub enum ByzantineBehaviorType {
-    DoubleVoting,       // Vote for multiple conflicting proposals
-    InvalidMessages,    // Send malformed or invalid messages
-    DelayedMessages,    // Intentionally delay message responses
-    FalseInformation,   // Provide incorrect blockchain state
-    Equivocation,       // Send different information to different peers
-    DoSAttack,          // Flood network with requests
+    DoubleVoting,     // Vote for multiple conflicting proposals
+    InvalidMessages,  // Send malformed or invalid messages
+    DelayedMessages,  // Intentionally delay message responses
+    FalseInformation, // Provide incorrect blockchain state
+    Equivocation,     // Send different information to different peers
+    DoSAttack,        // Flood network with requests
 }
 
 /// Result of a chaos engineering test
@@ -152,7 +152,7 @@ impl ChaosEngineer {
     /// Creates a new chaos engineering test runner
     pub fn new(config: ChaosConfig) -> Self {
         let runtime = Arc::new(Runtime::new().expect("Failed to create async runtime"));
-        
+
         Self {
             config,
             active_failures: Arc::new(Mutex::new(HashMap::new())),
@@ -170,19 +170,19 @@ impl ChaosEngineer {
 
         // Network partition tests
         results.extend(self.test_network_partitions().await);
-        
+
         // Node failure tests
         results.extend(self.test_node_failures().await);
-        
+
         // Message chaos tests
         results.extend(self.test_message_chaos().await);
-        
+
         // Resource exhaustion tests
         results.extend(self.test_resource_exhaustion().await);
-        
+
         // Byzantine behavior tests
         results.extend(self.test_byzantine_behavior().await);
-        
+
         // Combined failure scenarios
         results.extend(self.test_combined_failures().await);
 
@@ -196,28 +196,37 @@ impl ChaosEngineer {
         let mut results = Vec::new();
 
         // Test simple network partition (50/50 split)
-        results.push(self.simulate_network_partition(
-            "simple_partition_50_50",
-            vec!["node1", "node2"],
-            vec!["node3", "node4"],
-            Duration::from_secs(30)
-        ).await);
+        results.push(
+            self.simulate_network_partition(
+                "simple_partition_50_50",
+                vec!["node1", "node2"],
+                vec!["node3", "node4"],
+                Duration::from_secs(30),
+            )
+            .await,
+        );
 
         // Test minority partition (1 node isolated)
-        results.push(self.simulate_network_partition(
-            "minority_partition_1_vs_3",
-            vec!["node1"],
-            vec!["node2", "node3", "node4"],
-            Duration::from_secs(45)
-        ).await);
+        results.push(
+            self.simulate_network_partition(
+                "minority_partition_1_vs_3",
+                vec!["node1"],
+                vec!["node2", "node3", "node4"],
+                Duration::from_secs(45),
+            )
+            .await,
+        );
 
         // Test majority partition (3 nodes isolated)
-        results.push(self.simulate_network_partition(
-            "majority_partition_3_vs_1",
-            vec!["node1", "node2", "node3"],
-            vec!["node4"],
-            Duration::from_secs(20)
-        ).await);
+        results.push(
+            self.simulate_network_partition(
+                "majority_partition_3_vs_1",
+                vec!["node1", "node2", "node3"],
+                vec!["node4"],
+                Duration::from_secs(20),
+            )
+            .await,
+        );
 
         // Test cascading partitions
         results.push(self.simulate_cascading_partitions().await);
@@ -240,12 +249,19 @@ impl ChaosEngineer {
 
         // Create the partition
         let failure = ChaosFailure::NetworkPartition {
-            affected_nodes: group_a.iter().chain(group_b.iter()).map(|s| s.to_string()).collect(),
+            affected_nodes: group_a
+                .iter()
+                .chain(group_b.iter())
+                .map(|s| s.to_string())
+                .collect(),
             duration,
             started_at: start_time,
         };
 
-        self.active_failures.lock().unwrap().insert(test_name.to_string(), failure);
+        self.active_failures
+            .lock()
+            .unwrap()
+            .insert(test_name.to_string(), failure);
 
         // Monitor system behavior during partition
         let mut consensus_maintained = true;
@@ -261,8 +277,10 @@ impl ChaosEngineer {
 
         // Verify recovery
         let recovery_timeout = Duration::from_secs(self.config.recovery_timeout_seconds);
-        let network_recovered = timeout(recovery_timeout, self.wait_for_network_recovery()).await.is_ok();
-        
+        let network_recovered = timeout(recovery_timeout, self.wait_for_network_recovery())
+            .await
+            .is_ok();
+
         let recovery_time = if network_recovered {
             Some(recovery_start.elapsed())
         } else {
@@ -341,14 +359,19 @@ impl ChaosEngineer {
             started_at: start_time,
         };
 
-        self.active_failures.lock().unwrap().insert(test_name.clone(), failure);
+        self.active_failures
+            .lock()
+            .unwrap()
+            .insert(test_name.clone(), failure);
 
         // Simulate failure duration (30-90 seconds)
         let failure_duration = Duration::from_secs(thread_rng().gen_range(30..=90));
         sleep(failure_duration).await;
 
         // Monitor system response
-        let consensus_maintained = self.verify_consensus_continues_without_failed_node(&node_id).await;
+        let consensus_maintained = self
+            .verify_consensus_continues_without_failed_node(&node_id)
+            .await;
         let network_recovered = self.verify_network_adapts_to_failure(&node_id).await;
         let data_integrity_preserved = self.verify_data_integrity().await;
 
@@ -357,7 +380,9 @@ impl ChaosEngineer {
         self.active_failures.lock().unwrap().remove(&test_name);
 
         let recovery_timeout = Duration::from_secs(120);
-        let node_recovered = timeout(recovery_timeout, self.wait_for_node_recovery(&node_id)).await.is_ok();
+        let node_recovered = timeout(recovery_timeout, self.wait_for_node_recovery(&node_id))
+            .await
+            .is_ok();
 
         let recovery_time = if node_recovered {
             Some(recovery_start.elapsed())
@@ -389,36 +414,48 @@ impl ChaosEngineer {
         let mut results = Vec::new();
 
         // High message drop rate
-        results.push(self.simulate_message_chaos(
-            "high_message_drops",
-            0.2, // 20% drop rate
-            (Duration::from_millis(10), Duration::from_millis(50)),
-            0.0, // No corruption
-        ).await);
+        results.push(
+            self.simulate_message_chaos(
+                "high_message_drops",
+                0.2, // 20% drop rate
+                (Duration::from_millis(10), Duration::from_millis(50)),
+                0.0, // No corruption
+            )
+            .await,
+        );
 
         // High network latency
-        results.push(self.simulate_message_chaos(
-            "high_network_latency",
-            0.05, // 5% drop rate
-            (Duration::from_millis(500), Duration::from_millis(2000)),
-            0.0, // No corruption
-        ).await);
+        results.push(
+            self.simulate_message_chaos(
+                "high_network_latency",
+                0.05, // 5% drop rate
+                (Duration::from_millis(500), Duration::from_millis(2000)),
+                0.0, // No corruption
+            )
+            .await,
+        );
 
         // Message corruption
-        results.push(self.simulate_message_chaos(
-            "message_corruption",
-            0.05, // 5% drop rate
-            (Duration::from_millis(10), Duration::from_millis(100)),
-            0.1, // 10% corruption rate
-        ).await);
+        results.push(
+            self.simulate_message_chaos(
+                "message_corruption",
+                0.05, // 5% drop rate
+                (Duration::from_millis(10), Duration::from_millis(100)),
+                0.1, // 10% corruption rate
+            )
+            .await,
+        );
 
         // Combined message chaos
-        results.push(self.simulate_message_chaos(
-            "combined_message_chaos",
-            0.15, // 15% drop rate
-            (Duration::from_millis(100), Duration::from_millis(1000)),
-            0.05, // 5% corruption rate
-        ).await);
+        results.push(
+            self.simulate_message_chaos(
+                "combined_message_chaos",
+                0.15, // 15% drop rate
+                (Duration::from_millis(100), Duration::from_millis(1000)),
+                0.05, // 5% corruption rate
+            )
+            .await,
+        );
 
         println!("✅ Message chaos tests completed");
         results
@@ -441,7 +478,10 @@ impl ChaosEngineer {
             corruption_probability,
         };
 
-        self.active_failures.lock().unwrap().insert(test_name.to_string(), failure);
+        self.active_failures
+            .lock()
+            .unwrap()
+            .insert(test_name.to_string(), failure);
 
         // Run chaos for 2 minutes
         let chaos_duration = Duration::from_secs(120);
@@ -511,10 +551,17 @@ impl ChaosEngineer {
         let failure = ChaosFailure::ResourceExhaustion {
             resource_type: resource_type.clone(),
             severity,
-            affected_components: vec!["consensus".to_string(), "network".to_string(), "vm".to_string()],
+            affected_components: vec![
+                "consensus".to_string(),
+                "network".to_string(),
+                "vm".to_string(),
+            ],
         };
 
-        self.active_failures.lock().unwrap().insert(test_name.clone(), failure);
+        self.active_failures
+            .lock()
+            .unwrap()
+            .insert(test_name.clone(), failure);
 
         // Simulate resource exhaustion for 60 seconds
         sleep(Duration::from_secs(60)).await;
@@ -530,12 +577,17 @@ impl ChaosEngineer {
         // Wait for recovery
         let recovery_start = Instant::now();
         let recovery_timeout = Duration::from_secs(180); // 3 minutes for resource recovery
-        let system_recovered = timeout(recovery_timeout, self.wait_for_system_recovery()).await.is_ok();
+        let system_recovered = timeout(recovery_timeout, self.wait_for_system_recovery())
+            .await
+            .is_ok();
 
         let recovery_time = if system_recovered {
             Some(recovery_start.elapsed())
         } else {
-            errors.push(format!("System failed to recover from {:?} exhaustion", resource_type));
+            errors.push(format!(
+                "System failed to recover from {:?} exhaustion",
+                resource_type
+            ));
             None
         };
 
@@ -546,7 +598,10 @@ impl ChaosEngineer {
             failure_type: format!("ResourceExhaustion::{:?}", resource_type),
             duration: start_time.elapsed(),
             recovery_time,
-            success: graceful_degradation && system_stability && recovery_mechanisms && system_recovered,
+            success: graceful_degradation
+                && system_stability
+                && recovery_mechanisms
+                && system_recovered,
             consensus_maintained: system_stability,
             network_recovered: system_recovered,
             data_integrity_preserved: self.verify_data_integrity().await,
@@ -582,7 +637,10 @@ impl ChaosEngineer {
     }
 
     /// Simulates Byzantine behavior from a node
-    async fn simulate_byzantine_behavior(&self, behavior_type: ByzantineBehaviorType) -> ChaosTestResult {
+    async fn simulate_byzantine_behavior(
+        &self,
+        behavior_type: ByzantineBehaviorType,
+    ) -> ChaosTestResult {
         let test_name = format!("byzantine_behavior_{:?}", behavior_type);
         let start_time = Instant::now();
         let mut metrics = ChaosMetrics::default();
@@ -598,13 +656,18 @@ impl ChaosEngineer {
             intensity,
         };
 
-        self.active_failures.lock().unwrap().insert(test_name.clone(), failure);
+        self.active_failures
+            .lock()
+            .unwrap()
+            .insert(test_name.clone(), failure);
 
         // Run Byzantine behavior for 90 seconds
         sleep(Duration::from_secs(90)).await;
 
         // Verify system resilience
-        let consensus_resilient = self.verify_consensus_resilience_to_byzantine(&node_id, &behavior_type).await;
+        let consensus_resilient = self
+            .verify_consensus_resilience_to_byzantine(&node_id, &behavior_type)
+            .await;
         let byzantine_detection = self.verify_byzantine_node_detection(&node_id).await;
         let system_isolation = self.verify_byzantine_node_isolation(&node_id).await;
         let data_integrity_preserved = self.verify_data_integrity().await;
@@ -664,13 +727,13 @@ impl ChaosEngineer {
     /// Simulates cascading network partitions
     async fn simulate_cascading_partitions(&self) -> ChaosTestResult {
         let start_time = Instant::now();
-        
+
         // Start with small partition, then expand
         sleep(Duration::from_secs(15)).await;
-        
+
         // Expand partition
         sleep(Duration::from_secs(30)).await;
-        
+
         // Heal partition gradually
         sleep(Duration::from_secs(45)).await;
 
@@ -692,10 +755,10 @@ impl ChaosEngineer {
     /// Simulates multiple simultaneous node failures
     async fn simulate_multiple_node_failures(&self) -> ChaosTestResult {
         let start_time = Instant::now();
-        
+
         // Fail multiple nodes simultaneously (but keep majority)
         sleep(Duration::from_secs(60)).await;
-        
+
         // Recover nodes one by one
         sleep(Duration::from_secs(90)).await;
 
@@ -717,10 +780,10 @@ impl ChaosEngineer {
     /// Simulates leader failure during active consensus
     async fn simulate_leader_failure_during_consensus(&self) -> ChaosTestResult {
         let start_time = Instant::now();
-        
+
         // Fail leader at critical consensus moment
         sleep(Duration::from_secs(45)).await;
-        
+
         // Verify new leader election
         sleep(Duration::from_secs(30)).await;
 
@@ -742,10 +805,10 @@ impl ChaosEngineer {
     /// Simulates multiple resource exhaustion
     async fn simulate_multiple_resource_exhaustion(&self) -> ChaosTestResult {
         let start_time = Instant::now();
-        
+
         // Exhaust multiple resources simultaneously
         sleep(Duration::from_secs(90)).await;
-        
+
         // Allow gradual recovery
         sleep(Duration::from_secs(120)).await;
 
@@ -767,10 +830,10 @@ impl ChaosEngineer {
     /// Simulates multiple Byzantine nodes (within fault tolerance)
     async fn simulate_multiple_byzantine_nodes(&self) -> ChaosTestResult {
         let start_time = Instant::now();
-        
+
         // Activate multiple Byzantine nodes (< n/3)
         sleep(Duration::from_secs(120)).await;
-        
+
         // Verify system continues to operate
         sleep(Duration::from_secs(60)).await;
 
@@ -792,10 +855,10 @@ impl ChaosEngineer {
     /// Simulates network partition combined with node failure
     async fn simulate_partition_and_node_failure(&self) -> ChaosTestResult {
         let start_time = Instant::now();
-        
+
         // Create partition and fail node in minority partition
         sleep(Duration::from_secs(75)).await;
-        
+
         // Heal partition and recover node
         sleep(Duration::from_secs(90)).await;
 
@@ -817,10 +880,10 @@ impl ChaosEngineer {
     /// Simulates resource exhaustion with Byzantine behavior
     async fn simulate_resource_exhaustion_and_byzantine(&self) -> ChaosTestResult {
         let start_time = Instant::now();
-        
+
         // Exhaust resources while node behaves byzantinely
         sleep(Duration::from_secs(90)).await;
-        
+
         // Recover resources and isolate Byzantine node
         sleep(Duration::from_secs(60)).await;
 
@@ -842,10 +905,10 @@ impl ChaosEngineer {
     /// Simulates message chaos with node failures
     async fn simulate_message_chaos_and_node_failures(&self) -> ChaosTestResult {
         let start_time = Instant::now();
-        
+
         // High message loss with node failures
         sleep(Duration::from_secs(105)).await;
-        
+
         // Recover nodes and stabilize network
         sleep(Duration::from_secs(75)).await;
 
@@ -867,7 +930,7 @@ impl ChaosEngineer {
     /// Simulates cascading failure scenarios
     async fn simulate_cascading_failures(&self) -> ChaosTestResult {
         let start_time = Instant::now();
-        
+
         // Start with small failure that cascades
         sleep(Duration::from_secs(30)).await; // Initial failure
         sleep(Duration::from_secs(45)).await; // Cascade effects
@@ -954,7 +1017,11 @@ impl ChaosEngineer {
         true
     }
 
-    async fn verify_consensus_resilience_to_byzantine(&self, _node_id: &str, _behavior_type: &ByzantineBehaviorType) -> bool {
+    async fn verify_consensus_resilience_to_byzantine(
+        &self,
+        _node_id: &str,
+        _behavior_type: &ByzantineBehaviorType,
+    ) -> bool {
         sleep(Duration::from_millis(100)).await;
         true
     }
@@ -978,32 +1045,55 @@ impl ChaosEngineer {
         let successful_tests = results.iter().filter(|r| r.success).count();
         let consensus_maintained_tests = results.iter().filter(|r| r.consensus_maintained).count();
         let network_recovered_tests = results.iter().filter(|r| r.network_recovered).count();
-        let data_integrity_tests = results.iter().filter(|r| r.data_integrity_preserved).count();
+        let data_integrity_tests = results
+            .iter()
+            .filter(|r| r.data_integrity_preserved)
+            .count();
 
         println!("📊 Overall Results:");
         println!("  Total Tests: {}", total_tests);
-        println!("  Successful: {} ({:.1}%)", successful_tests, 
-                (successful_tests as f64 / total_tests as f64) * 100.0);
-        println!("  Consensus Maintained: {} ({:.1}%)", consensus_maintained_tests,
-                (consensus_maintained_tests as f64 / total_tests as f64) * 100.0);
-        println!("  Network Recovered: {} ({:.1}%)", network_recovered_tests,
-                (network_recovered_tests as f64 / total_tests as f64) * 100.0);
-        println!("  Data Integrity Preserved: {} ({:.1}%)", data_integrity_tests,
-                (data_integrity_tests as f64 / total_tests as f64) * 100.0);
+        println!(
+            "  Successful: {} ({:.1}%)",
+            successful_tests,
+            (successful_tests as f64 / total_tests as f64) * 100.0
+        );
+        println!(
+            "  Consensus Maintained: {} ({:.1}%)",
+            consensus_maintained_tests,
+            (consensus_maintained_tests as f64 / total_tests as f64) * 100.0
+        );
+        println!(
+            "  Network Recovered: {} ({:.1}%)",
+            network_recovered_tests,
+            (network_recovered_tests as f64 / total_tests as f64) * 100.0
+        );
+        println!(
+            "  Data Integrity Preserved: {} ({:.1}%)",
+            data_integrity_tests,
+            (data_integrity_tests as f64 / total_tests as f64) * 100.0
+        );
 
         // Group results by failure type
         let mut by_type: HashMap<String, Vec<&ChaosTestResult>> = HashMap::new();
         for result in results {
-            by_type.entry(result.failure_type.clone()).or_default().push(result);
+            by_type
+                .entry(result.failure_type.clone())
+                .or_default()
+                .push(result);
         }
 
         println!("\n📋 Results by Failure Type:");
         for (failure_type, type_results) in &by_type {
-            let type_success_rate = (type_results.iter().filter(|r| r.success).count() as f64 
-                                   / type_results.len() as f64) * 100.0;
-            println!("  {}: {}/{} ({:.1}%)", failure_type, 
-                    type_results.iter().filter(|r| r.success).count(),
-                    type_results.len(), type_success_rate);
+            let type_success_rate = (type_results.iter().filter(|r| r.success).count() as f64
+                / type_results.len() as f64)
+                * 100.0;
+            println!(
+                "  {}: {}/{} ({:.1}%)",
+                failure_type,
+                type_results.iter().filter(|r| r.success).count(),
+                type_results.len(),
+                type_success_rate
+            );
         }
 
         // Show failed tests
@@ -1019,22 +1109,30 @@ impl ChaosEngineer {
         }
 
         // Calculate average metrics
-        let avg_recovery_time: f64 = results.iter()
+        let avg_recovery_time: f64 = results
+            .iter()
             .filter_map(|r| r.recovery_time)
             .map(|d| d.as_secs_f64())
-            .sum::<f64>() / results.iter().filter(|r| r.recovery_time.is_some()).count().max(1) as f64;
+            .sum::<f64>()
+            / results
+                .iter()
+                .filter(|r| r.recovery_time.is_some())
+                .count()
+                .max(1) as f64;
 
-        let avg_performance_impact: f64 = results.iter()
-            .map(|r| r.performance_impact)
-            .sum::<f64>() / results.len() as f64;
+        let avg_performance_impact: f64 =
+            results.iter().map(|r| r.performance_impact).sum::<f64>() / results.len() as f64;
 
         println!("\n📈 Performance Metrics:");
         println!("  Average Recovery Time: {:.1} seconds", avg_recovery_time);
-        println!("  Average Performance Impact: {:.1}%", avg_performance_impact * 100.0);
+        println!(
+            "  Average Performance Impact: {:.1}%",
+            avg_performance_impact * 100.0
+        );
 
         // Overall resilience assessment
         let resilience_score = (successful_tests as f64 / total_tests as f64) * 100.0;
-        
+
         println!("\n🎯 Resilience Assessment:");
         if resilience_score >= 90.0 {
             println!("🏆 EXCELLENT: System demonstrates exceptional resilience to failures");
@@ -1048,7 +1146,7 @@ impl ChaosEngineer {
 
         println!("\n💡 Recommendations:");
         println!("  - Focus on failure scenarios with low success rates");
-        println!("  - Improve recovery time for resource exhaustion scenarios");  
+        println!("  - Improve recovery time for resource exhaustion scenarios");
         println!("  - Enhance Byzantine fault detection mechanisms");
         println!("  - Implement better graceful degradation strategies");
         println!("  - Add monitoring and alerting for cascade failure prevention");
@@ -1083,16 +1181,18 @@ mod tests {
         assert!(engineer.active_failures.lock().unwrap().is_empty());
     }
 
-    #[tokio::test] 
+    #[tokio::test]
     async fn test_network_partition_simulation() {
         let engineer = ChaosEngineer::new(ChaosConfig::default());
-        let result = engineer.simulate_network_partition(
-            "test_partition",
-            vec!["node1", "node2"],
-            vec!["node3", "node4"],
-            Duration::from_millis(100)
-        ).await;
-        
+        let result = engineer
+            .simulate_network_partition(
+                "test_partition",
+                vec!["node1", "node2"],
+                vec!["node3", "node4"],
+                Duration::from_millis(100),
+            )
+            .await;
+
         assert!(result.duration > Duration::from_millis(90));
         assert_eq!(result.test_name, "test_partition");
     }
@@ -1101,7 +1201,7 @@ mod tests {
     async fn test_node_failure_simulation() {
         let engineer = ChaosEngineer::new(ChaosConfig::default());
         let result = engineer.simulate_node_failure(NodeFailureType::Crash).await;
-        
+
         assert!(result.test_name.contains("node_failure_Crash"));
         assert_eq!(result.failure_type, "NodeFailure::Crash");
     }
@@ -1116,13 +1216,15 @@ mod tests {
     #[tokio::test]
     async fn test_message_chaos_simulation() {
         let engineer = ChaosEngineer::new(ChaosConfig::default());
-        let result = engineer.simulate_message_chaos(
-            "test_message_chaos",
-            0.1,
-            (Duration::from_millis(10), Duration::from_millis(100)),
-            0.05
-        ).await;
-        
+        let result = engineer
+            .simulate_message_chaos(
+                "test_message_chaos",
+                0.1,
+                (Duration::from_millis(10), Duration::from_millis(100)),
+                0.05,
+            )
+            .await;
+
         assert_eq!(result.test_name, "test_message_chaos");
         assert_eq!(result.failure_type, "MessageChaos");
     }

@@ -560,7 +560,6 @@ impl ExecutionContext {
             .copy_to(shared_states.evaluation_stack_mut());
 
         // Create the new context
-        
 
         // Note: Not cloning static_fields, local_variables, or arguments
         // as they would need separate reference counter handling

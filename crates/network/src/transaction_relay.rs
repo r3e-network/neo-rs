@@ -153,7 +153,7 @@ impl TransactionRelay {
     }
 
     /// Handles incoming transaction message
-    /// 
+    ///
     /// # Arguments
     /// * `transaction` - The transaction to handle
     /// * `from_peer` - Source peer address
@@ -287,7 +287,7 @@ impl TransactionRelay {
     }
 
     /// Handles inventory message (transaction announcements)
-    /// 
+    ///
     /// # Arguments
     /// * `inventory` - Vector of inventory items to process
     /// * `from_peer` - Source peer address
@@ -339,7 +339,7 @@ impl TransactionRelay {
     }
 
     /// Handles get data requests
-    /// 
+    ///
     /// # Arguments
     /// * `requested_items` - Vector of inventory items requested by peer
     /// * `from_peer` - Source peer address

@@ -1099,23 +1099,28 @@ impl P2pNode {
                 interval.tick().await;
 
                 debug!("🔍 Running peer discovery");
-                
+
                 // Implement peer discovery via GetAddr messages (matches C# Neo exactly)
                 let peers_read = peers_clone2.read().await;
                 for (peer_addr, peer_info) in peers_read.iter() {
                     // If peer is in the collection, assume it's connected
                     if true {
                         // Send GetAddr message to request more peer addresses
-                        let getaddr_message = NetworkMessage::new(crate::messages::protocol::ProtocolMessage::GetAddr);
-                        
+                        let getaddr_message = NetworkMessage::new(
+                            crate::messages::protocol::ProtocolMessage::GetAddr,
+                        );
+
                         // Send via peer manager
-                        if let Err(e) = peer_manager_clone.send_message(*peer_addr, getaddr_message).await {
+                        if let Err(e) = peer_manager_clone
+                            .send_message(*peer_addr, getaddr_message)
+                            .await
+                        {
                             debug!("Failed to send GetAddr to {}: {}", peer_addr, e);
                         }
                     }
                 }
                 drop(peers_read);
-                
+
                 debug!("Peer discovery cycle completed");
             }
         });
@@ -1265,8 +1270,7 @@ mod tests {
         // Use ephemeral port 0 to avoid binding failures in tests
         config.port = 0;
         let (cmd_tx, cmd_rx) = mpsc::channel(100);
-        let node = P2pNode::new(config, cmd_rx)
-            .expect("Failed to create P2P node for test");
+        let node = P2pNode::new(config, cmd_rx).expect("Failed to create P2P node for test");
         (node, cmd_tx)
     }
 
@@ -1300,8 +1304,8 @@ mod tests {
         ];
 
         for capability in capabilities {
-            let serialized = serde_json::to_string(&capability)
-                .expect("Failed to serialize capability");
+            let serialized =
+                serde_json::to_string(&capability).expect("Failed to serialize capability");
             let deserialized: NodeCapability =
                 serde_json::from_str(&serialized).expect("Failed to parse from string");
             assert_eq!(capability, deserialized);
@@ -1338,8 +1342,7 @@ mod tests {
         let address: SocketAddr = "127.0.0.1:20333".parse().expect("valid address");
         let peer_info = create_test_peer_info(address, true);
 
-        let serialized = serde_json::to_string(&peer_info)
-            .expect("Failed to serialize peer info");
+        let serialized = serde_json::to_string(&peer_info).expect("Failed to serialize peer info");
         let deserialized: PeerInfo =
             serde_json::from_str(&serialized).expect("Failed to parse from string");
 
@@ -1902,8 +1905,7 @@ mod tests {
         // Test that dropping a node doesn't panic
         let config = NetworkConfig::testnet();
         let (_cmd_tx, cmd_rx) = mpsc::channel(100);
-        let node = P2pNode::new(config, cmd_rx)
-            .expect("Failed to create P2P node for test");
+        let node = P2pNode::new(config, cmd_rx).expect("Failed to create P2P node for test");
 
         // Drop the node explicitly
         drop(node);

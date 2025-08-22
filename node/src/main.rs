@@ -105,18 +105,21 @@ async fn main() -> Result<()> {
             return Err(e.into());
         }
     };
-    
+
     // Check if import is requested
     if let Some(import_file) = matches.get_one::<String>("import") {
         info!("📥 Fast sync mode: importing from {}", import_file);
-        
+
         match blockchain.import_from_acc_file(import_file).await {
             Ok(stats) => {
                 info!("✅ Blockchain import completed successfully");
                 info!("   📊 Final height: {}", blockchain.get_height().await);
                 info!("   💾 {} blocks imported", stats.blocks_imported);
-                info!("   💳 {} transactions imported", stats.transactions_imported);
-                
+                info!(
+                    "   💳 {} transactions imported",
+                    stats.transactions_imported
+                );
+
                 // After successful import, continue with normal node operation
                 info!("🔄 Continuing with normal node operation...");
             }
@@ -144,7 +147,7 @@ async fn main() -> Result<()> {
 
     // Create production peer manager for network operations
     let peer_manager = Arc::new(SimplePeerManager::new());
-    
+
     // Start blockchain services with real peer synchronization
     info!("🔄 Starting blockchain synchronization service...");
     let sync_handle = tokio::spawn({
@@ -152,44 +155,51 @@ async fn main() -> Result<()> {
         let peer_manager = peer_manager.clone();
         async move {
             let mut interval = tokio::time::interval(Duration::from_secs(SECONDS_PER_BLOCK));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 let current_height = blockchain.get_height().await;
                 info!("📊 Current blockchain height: {}", current_height);
-                
+
                 // Get connected peers for synchronization
                 let connected_peers = peer_manager.get_connected_peers().await;
                 if connected_peers.is_empty() {
                     warn!("⚠️ No connected peers for synchronization");
                     continue;
                 }
-                
+
                 // Sync with peers to get latest blocks
                 let mut max_peer_height = current_height;
                 let mut blocks_to_sync = Vec::new();
-                
+
                 for peer in &connected_peers {
                     // Request peer's current height
                     if let Ok(peer_height) = peer_manager.get_peer_height(&peer.address).await {
                         if peer_height > max_peer_height {
                             max_peer_height = peer_height;
-                            
+
                             // Request missing blocks (batch of 10 max for performance)
-                            for height in (current_height + 1)..=peer_height.min(current_height + 10) {
-                                if let Ok(block_data) = peer_manager.request_block(&peer.address, height).await {
+                            for height in
+                                (current_height + 1)..=peer_height.min(current_height + 10)
+                            {
+                                if let Ok(block_data) =
+                                    peer_manager.request_block(&peer.address, height).await
+                                {
                                     blocks_to_sync.push(block_data);
                                 }
                             }
                         }
                     }
                 }
-                
+
                 // Apply synchronized blocks to blockchain
                 if !blocks_to_sync.is_empty() {
-                    info!("📥 Synchronizing {} blocks from peers", blocks_to_sync.len());
-                    
+                    info!(
+                        "📥 Synchronizing {} blocks from peers",
+                        blocks_to_sync.len()
+                    );
+
                     for block_data in blocks_to_sync {
                         // For now, skip to resolve compilation
                         // match blockchain.persist_block(&block_data).await {
@@ -202,7 +212,7 @@ async fn main() -> Result<()> {
                             }
                         }
                     }
-                    
+
                     let new_height = blockchain.get_height().await;
                     if new_height > current_height {
                         info!("🔄 Blockchain synchronized to height: {}", new_height);
@@ -221,43 +231,56 @@ async fn main() -> Result<()> {
         let peer_manager = peer_manager.clone();
         async move {
             let mut interval = tokio::time::interval(Duration::from_secs(5));
-            
+
             loop {
                 interval.tick().await;
-                
+
                 // Get pending transactions from peers
                 let connected_peers = peer_manager.get_connected_peers().await;
                 let mut _new_transactions = Vec::<u8>::new(); // Simplified
-                
+
                 for peer in &connected_peers {
                     // Request pending transactions from peer
-                    if let Ok(tx_data_list) = peer_manager.request_mempool_transactions(&peer.address, 50).await {
+                    if let Ok(tx_data_list) = peer_manager
+                        .request_mempool_transactions(&peer.address, 50)
+                        .await
+                    {
                         for tx_data in tx_data_list.iter() {
                             // Process and validate transaction (real implementation)
-                        // match blockchain.validate_transaction(tx_data).await {
-                        match Ok::<bool, neo_ledger::Error>(true) {
+                            // match blockchain.validate_transaction(tx_data).await {
+                            match Ok::<bool, neo_ledger::Error>(true) {
                                 Ok(true) => {
                                     debug!("✅ Transaction validated from {}", peer.address);
                                 }
                                 Ok(false) => {
-                                    debug!("❌ Transaction validation failed from {}", peer.address);
+                                    debug!(
+                                        "❌ Transaction validation failed from {}",
+                                        peer.address
+                                    );
                                 }
                                 Err(e) => {
-                                    debug!("❌ Transaction validation error from {}: {}", peer.address, e);
+                                    debug!(
+                                        "❌ Transaction validation error from {}: {}",
+                                        peer.address, e
+                                    );
                                 }
                             }
                         }
                     }
                 }
-                
+
                 // Block creation and consensus logic (production implementation)
                 let current_height = blockchain.get_height().await;
-                if current_height % 10 == 0 { // Every 10th check
+                if current_height % 10 == 0 {
+                    // Every 10th check
                     // Check mempool and trigger block creation if needed
                     // Use existing blockchain methods to check pending transactions
-                    debug!("🔍 Checking blockchain state for block creation at height {}", current_height);
+                    debug!(
+                        "🔍 Checking blockchain state for block creation at height {}",
+                        current_height
+                    );
                 }
-                
+
                 debug!("✅ Transaction processing service active");
             }
         }
@@ -429,7 +452,7 @@ impl SimplePeerManager {
     fn new() -> Self {
         Self {}
     }
-    
+
     async fn get_connected_peers(&self) -> Vec<PeerInfo> {
         // Return mock peers for development
         vec![
@@ -441,18 +464,22 @@ impl SimplePeerManager {
             },
         ]
     }
-    
+
     async fn get_peer_height(&self, _address: &str) -> Result<u32> {
         // Mock peer height
         Ok(1000000)
     }
-    
+
     async fn request_block(&self, _address: &str, _height: u32) -> Result<Vec<u8>> {
         // Mock empty block data
         Ok(vec![])
     }
-    
-    async fn request_mempool_transactions(&self, _address: &str, _count: usize) -> Result<Vec<Vec<u8>>> {
+
+    async fn request_mempool_transactions(
+        &self,
+        _address: &str,
+        _count: usize,
+    ) -> Result<Vec<Vec<u8>>> {
         // Mock empty transaction list
         let _ = _count; // Suppress unused warning
         Ok(vec![])

@@ -36,8 +36,8 @@ impl Default for DosProtectionConfig {
             max_connections_per_ip: 10,
             max_message_rate: 100.0,
             max_bandwidth_per_connection: 1024 * 1024, // 1MB/s
-            max_connection_rate: 60, // 1 per second
-            ban_duration_seconds: 3600, // 1 hour
+            max_connection_rate: 60,                   // 1 per second
+            ban_duration_seconds: 3600,                // 1 hour
             trusted_ips: Vec::new(),
             adaptive_rate_limiting: true,
         }
@@ -76,13 +76,13 @@ impl ConnectionInfo {
             rate_limit_reset: None,
         }
     }
-    
+
     fn reset_window(&mut self) {
         self.message_count = 0;
         self.bytes_transferred = 0;
         self.last_message = Instant::now();
     }
-    
+
     fn should_reset_window(&self) -> bool {
         self.last_message.elapsed() > Duration::from_secs(60)
     }
@@ -105,13 +105,13 @@ impl BanInfo {
     fn is_expired(&self) -> bool {
         self.start_time.elapsed() >= self.duration
     }
-    
+
     fn extend_ban(&mut self) {
         self.extensions += 1;
         // Progressive ban duration: 1h, 4h, 24h, 7 days
         let multiplier = match self.extensions {
             1 => 4,
-            2 => 24, 
+            2 => 24,
             _ => 168, // 7 days
         };
         self.duration = Duration::from_secs(3600 * multiplier);
@@ -156,36 +156,36 @@ impl EnhancedDosProtection {
             global_metrics: Arc::new(RwLock::new(GlobalNetworkMetrics::default())),
         }
     }
-    
+
     /// Check if a connection should be allowed
     pub async fn should_allow_connection(&self, addr: &SocketAddr) -> NetworkResult<bool> {
         let ip = addr.ip();
-        
+
         // Check if IP is banned
         if self.is_ip_banned(&ip).await {
             return Ok(false);
         }
-        
+
         // Check if IP is trusted
         if self.config.trusted_ips.contains(&ip) {
             return Ok(true);
         }
-        
+
         // Check connection count per IP
         let ip_connections = self.ip_connections.read().await;
         let current_connections = ip_connections.get(&ip).unwrap_or(&0);
-        
+
         if *current_connections >= self.config.max_connections_per_ip {
             warn!("Connection rejected: IP {} exceeds connection limit", ip);
             return Ok(false);
         }
-        
+
         // Check connection rate
         if !self.check_connection_rate(&ip).await {
             warn!("Connection rejected: IP {} exceeds connection rate", ip);
             return Ok(false);
         }
-        
+
         // Check adaptive rate limiting based on global load
         if self.config.adaptive_rate_limiting {
             let global_metrics = self.global_metrics.read().await;
@@ -197,30 +197,30 @@ impl EnhancedDosProtection {
                 }
             }
         }
-        
+
         Ok(true)
     }
-    
+
     /// Register a new connection
     pub async fn register_connection(&self, addr: &SocketAddr) -> NetworkResult<()> {
         let ip = addr.ip();
-        
+
         // Update IP connection count
         let mut ip_connections = self.ip_connections.write().await;
         *ip_connections.entry(ip).or_insert(0) += 1;
-        
+
         // Create connection tracking
         let mut connections = self.connections.write().await;
         connections.insert(*addr, ConnectionInfo::new());
-        
+
         debug!("Registered connection from {}", addr);
         Ok(())
     }
-    
+
     /// Remove a connection
     pub async fn unregister_connection(&self, addr: &SocketAddr) -> NetworkResult<()> {
         let ip = addr.ip();
-        
+
         // Update IP connection count
         let mut ip_connections = self.ip_connections.write().await;
         if let Some(count) = ip_connections.get_mut(&ip) {
@@ -229,34 +229,38 @@ impl EnhancedDosProtection {
                 ip_connections.remove(&ip);
             }
         }
-        
+
         // Remove connection tracking
         let mut connections = self.connections.write().await;
         connections.remove(addr);
-        
+
         debug!("Unregistered connection from {}", addr);
         Ok(())
     }
-    
+
     /// Check if a message should be rate limited
-    pub async fn should_rate_limit_message(&self, addr: &SocketAddr, message_size: usize) -> NetworkResult<bool> {
+    pub async fn should_rate_limit_message(
+        &self,
+        addr: &SocketAddr,
+        message_size: usize,
+    ) -> NetworkResult<bool> {
         let ip = addr.ip();
-        
+
         // Trusted IPs bypass rate limiting
         if self.config.trusted_ips.contains(&ip) {
             return Ok(false);
         }
-        
+
         let mut connections = self.connections.write().await;
         let connection_info = connections.get_mut(addr).ok_or_else(|| {
             NetworkError::InvalidConnection(format!("Connection not registered: {}", addr))
         })?;
-        
+
         // Reset window if needed
         if connection_info.should_reset_window() {
             connection_info.reset_window();
         }
-        
+
         // Check if currently rate limited
         if connection_info.is_rate_limited {
             if let Some(reset_time) = connection_info.rate_limit_reset {
@@ -269,71 +273,78 @@ impl EnhancedDosProtection {
                 }
             }
         }
-        
+
         // Update message statistics
         connection_info.message_count += 1;
         connection_info.bytes_transferred += message_size as u64;
         connection_info.last_message = Instant::now();
-        
+
         // Check rate limits
         let time_window = 60.0; // 1 minute window
         let message_rate = connection_info.message_count as f64 / time_window;
         let bandwidth_rate = connection_info.bytes_transferred / 60; // bytes per second
-        
+
         if message_rate > self.config.max_message_rate {
             connection_info.violations += 1;
             connection_info.is_rate_limited = true;
             connection_info.rate_limit_reset = Some(Instant::now() + Duration::from_secs(60));
-            
-            warn!("Rate limiting connection {}: message rate {:.2}/s exceeds limit {:.2}/s", 
-                  addr, message_rate, self.config.max_message_rate);
-            
+
+            warn!(
+                "Rate limiting connection {}: message rate {:.2}/s exceeds limit {:.2}/s",
+                addr, message_rate, self.config.max_message_rate
+            );
+
             // Consider banning for repeated violations
             if connection_info.violations >= 3 {
                 self.ban_ip(&ip, "Repeated rate limit violations").await;
             }
-            
+
             return Ok(true);
         }
-        
+
         if bandwidth_rate > self.config.max_bandwidth_per_connection {
             connection_info.violations += 1;
             connection_info.is_rate_limited = true;
             connection_info.rate_limit_reset = Some(Instant::now() + Duration::from_secs(60));
-            
-            warn!("Rate limiting connection {}: bandwidth {} B/s exceeds limit {} B/s",
-                  addr, bandwidth_rate, self.config.max_bandwidth_per_connection);
-            
+
+            warn!(
+                "Rate limiting connection {}: bandwidth {} B/s exceeds limit {} B/s",
+                addr, bandwidth_rate, self.config.max_bandwidth_per_connection
+            );
+
             return Ok(true);
         }
-        
+
         Ok(false)
     }
-    
+
     /// Ban an IP address
     async fn ban_ip(&self, ip: &IpAddr, reason: &str) {
         let mut banned_ips = self.banned_ips.write().await;
-        
+
         let ban_info = BanInfo {
             start_time: Instant::now(),
             duration: Duration::from_secs(self.config.ban_duration_seconds),
             reason: reason.to_string(),
             extensions: 0,
         };
-        
+
         if let Some(existing_ban) = banned_ips.get_mut(ip) {
             existing_ban.extend_ban();
-            warn!("Extended ban for IP {}: {} (extension #{})", ip, reason, existing_ban.extensions);
+            warn!(
+                "Extended ban for IP {}: {} (extension #{})",
+                ip, reason, existing_ban.extensions
+            );
         } else {
             banned_ips.insert(*ip, ban_info);
             warn!("Banned IP {}: {}", ip, reason);
         }
     }
-    
+
     /// Check if an IP is currently banned
     async fn is_ip_banned(&self, ip: &IpAddr) -> bool {
         let mut banned_ips = self.banned_ips.write().await;
-        
+
         if let Some(ban_info) = banned_ips.get(ip) {
             if ban_info.is_expired() {
                 banned_ips.remove(ip);
@@ -346,64 +357,62 @@ impl EnhancedDosProtection {
             false
         }
     }
-    
+
     /// Check connection rate for an IP
     async fn check_connection_rate(&self, ip: &IpAddr) -> bool {
         let mut connection_rates = self.connection_rates.write().await;
         let now = Instant::now();
-        
+
         // Get or create rate tracking for this IP
         let timestamps = connection_rates.entry(*ip).or_insert_with(Vec::new);
-        
+
         // Remove old timestamps (older than 1 minute)
         timestamps.retain(|&ts| now.duration_since(ts) < Duration::from_secs(60));
-        
+
         // Check if adding this connection would exceed rate limit
         if timestamps.len() >= self.config.max_connection_rate {
             return false;
         }
-        
+
         // Add current timestamp
         timestamps.push(now);
         true
     }
-    
+
     /// Update global network metrics for adaptive rate limiting
     pub async fn update_global_metrics(&self, cpu_usage: f64, memory_usage: f64) {
         let mut metrics = self.global_metrics.write().await;
         metrics.cpu_usage = cpu_usage;
         metrics.memory_usage = memory_usage;
-        
+
         // Update connection and traffic metrics
         let connections = self.connections.read().await;
         metrics.total_connections = connections.len();
-        
-        let total_messages: u64 = connections.values()
-            .map(|conn| conn.message_count)
-            .sum();
+
+        let total_messages: u64 = connections.values().map(|conn| conn.message_count).sum();
         metrics.total_message_rate = total_messages as f64 / 60.0; // messages per second
-        
-        let total_bandwidth: u64 = connections.values()
+
+        let total_bandwidth: u64 = connections
+            .values()
             .map(|conn| conn.bytes_transferred)
             .sum();
         metrics.total_bandwidth = total_bandwidth / 60; // bytes per second
     }
-    
+
     /// Get DoS protection statistics
     pub async fn get_statistics(&self) -> DosProtectionStats {
         let connections = self.connections.read().await;
         let banned_ips = self.banned_ips.read().await;
         let ip_connections = self.ip_connections.read().await;
         let global_metrics = self.global_metrics.read().await;
-        
-        let rate_limited_connections = connections.values()
+
+        let rate_limited_connections = connections
+            .values()
             .filter(|conn| conn.is_rate_limited)
             .count();
-        
-        let total_violations: u32 = connections.values()
-            .map(|conn| conn.violations)
-            .sum();
-        
+
+        let total_violations: u32 = connections.values().map(|conn| conn.violations).sum();
+
         DosProtectionStats {
             total_connections: connections.len(),
             rate_limited_connections,
@@ -412,11 +421,11 @@ impl EnhancedDosProtection {
             total_violations,
             global_message_rate: global_metrics.total_message_rate,
             global_bandwidth: global_metrics.total_bandwidth,
-            adaptive_throttling_active: self.config.adaptive_rate_limiting && 
-                (global_metrics.cpu_usage > 80.0 || global_metrics.memory_usage > 75.0),
+            adaptive_throttling_active: self.config.adaptive_rate_limiting
+                && (global_metrics.cpu_usage > 80.0 || global_metrics.memory_usage > 75.0),
         }
     }
-    
+
     /// Cleanup expired bans and old connection data
     pub async fn cleanup_expired_data(&self) {
         // Clean up expired bans
@@ -429,7 +438,7 @@ impl EnhancedDosProtection {
                 true
             }
         });
-        
+
         // Clean up old connection rate data
         let mut connection_rates = self.connection_rates.write().await;
         let now = Instant::now();
@@ -495,62 +504,74 @@ mod tests {
             max_connection_rate: 2, // 2 connections per minute
             ..Default::default()
         };
-        
+
         let dos_protection = EnhancedDosProtection::new(config);
         let test_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
         let addr1 = SocketAddr::new(test_ip, 8000);
         let addr2 = SocketAddr::new(test_ip, 8001);
         let addr3 = SocketAddr::new(test_ip, 8002);
-        
+
         // First two connections should be allowed
-        assert!(dos_protection.should_allow_connection(&addr1).await.unwrap());
+        assert!(dos_protection
+            .should_allow_connection(&addr1)
+            .await
+            .unwrap());
         dos_protection.register_connection(&addr1).await.unwrap();
-        
-        assert!(dos_protection.should_allow_connection(&addr2).await.unwrap());
+
+        assert!(dos_protection
+            .should_allow_connection(&addr2)
+            .await
+            .unwrap());
         dos_protection.register_connection(&addr2).await.unwrap();
-        
+
         // Third connection should be rejected (exceeds max_connections_per_ip)
-        assert!(!dos_protection.should_allow_connection(&addr3).await.unwrap());
+        assert!(!dos_protection
+            .should_allow_connection(&addr3)
+            .await
+            .unwrap());
     }
-    
+
     #[tokio::test]
     async fn test_message_rate_limiting() {
         let config = DosProtectionConfig {
             max_message_rate: 10.0, // 10 messages per second
             ..Default::default()
         };
-        
+
         let dos_protection = EnhancedDosProtection::new(config);
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 101)), 8000);
-        
+
         // Register connection
         dos_protection.register_connection(&addr).await.unwrap();
-        
+
         // Send messages within rate limit
         for _ in 0..10 {
-            assert!(!dos_protection.should_rate_limit_message(&addr, 100).await.unwrap());
+            assert!(!dos_protection
+                .should_rate_limit_message(&addr, 100)
+                .await
+                .unwrap());
         }
-        
+
         // Additional messages should be rate limited
         // Note: This test is simplified - in practice would need time simulation
     }
-    
+
     #[test]
     fn test_ban_info_expiration() {
         let mut ban_info = BanInfo {
             start_time: Instant::now() - Duration::from_secs(7200), // 2 hours ago
-            duration: Duration::from_secs(3600), // 1 hour duration
+            duration: Duration::from_secs(3600),                    // 1 hour duration
             reason: "test".to_string(),
             extensions: 0,
         };
-        
+
         assert!(ban_info.is_expired());
-        
+
         ban_info.extend_ban();
         assert!(!ban_info.is_expired()); // Should be active again with extended duration
         assert_eq!(ban_info.extensions, 1);
     }
-    
+
     #[test]
     fn test_message_type_rate_multipliers() {
         assert_eq!(MessageType::Consensus.rate_multiplier(), 2.0);

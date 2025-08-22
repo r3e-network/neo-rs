@@ -475,7 +475,10 @@ impl ExecutionEngine {
                 .map(|sf| sf as *const _);
 
             if current_static_fields.is_none()
-                || !std::ptr::eq(current_static_fields.expect("Operation failed"), static_fields)
+                || !std::ptr::eq(
+                    current_static_fields.expect("Operation failed"),
+                    static_fields,
+                )
             {
                 static_fields.clear_references();
             }
@@ -540,7 +543,7 @@ impl ExecutionEngine {
         self.current_context()
             .ok_or_else(|| VmError::InvalidOperation {
                 operation: "load_script_and_return_context".to_string(),
-                reason: "No current execution context after loading".to_string()
+                reason: "No current execution context after loading".to_string(),
             })
             .map(|ctx| ctx.clone())
     }

@@ -27,7 +27,7 @@
 //!
 //! // Create a new transaction hash
 //! let hash = UInt256::zero();
-//! 
+//!
 //! // Work with transactions and blocks
 //! // let transaction = Transaction::new();
 //! // let block = Block::new();
@@ -46,6 +46,8 @@
 //#![warn(rustdoc::missing_crate_level_docs)]
 
 // Module declarations with documentation
+/// Advanced performance metrics and monitoring
+pub mod advanced_metrics;
 /// Big decimal arithmetic implementation
 pub mod big_decimal;
 /// Block and block header structures
@@ -54,32 +56,14 @@ pub mod block;
 pub mod builders;
 /// System-wide constants
 pub mod constants;
+/// Enhanced error handling patterns for blockchain operations
+pub mod enhanced_error_handling;
 /// Core error types and error handling
 pub mod error;
 /// Advanced error handling utilities
 pub mod error_handling;
 /// Error utility functions
 pub mod error_utils;
-/// Safe arithmetic and type operations
-pub mod safe_operations;
-/// Enhanced safe error handling system
-pub mod safe_error_handling;
-/// Enhanced error handling patterns for blockchain operations
-pub mod enhanced_error_handling;
-/// Production monitoring and health checks
-pub mod production_monitoring;
-/// Advanced performance metrics and monitoring
-pub mod advanced_metrics;
-/// Migration helpers for transitioning to safe error handling
-pub mod migration_helpers;
-/// Safe memory operations for core types
-pub mod safe_memory;
-pub mod safe_result;
-pub mod unwrap_migration;
-/// Transaction validation module
-pub mod transaction_validator;
-/// System-wide monitoring and metrics
-pub mod system_monitoring;
 /// Event system for blockchain events
 pub mod events;
 /// Core extensions and utility traits
@@ -88,27 +72,43 @@ pub mod extensions;
 pub mod hardfork;
 /// System metrics collection
 pub mod metrics;
+/// Migration helpers for transitioning to safe error handling
+pub mod migration_helpers;
 /// Monitoring and alerting system
 pub mod monitoring;
 /// Neo system management
 pub mod neo_system;
+/// Production monitoring and health checks
+pub mod production_monitoring;
+/// Enhanced safe error handling system
+pub mod safe_error_handling;
+/// Safe memory operations for core types
+pub mod safe_memory;
+/// Safe arithmetic and type operations
+pub mod safe_operations;
+pub mod safe_result;
 /// Graceful shutdown coordination
 pub mod shutdown;
 /// Transaction signer implementation
 pub mod signer;
+/// System-wide monitoring and metrics
+pub mod system_monitoring;
 /// Transaction structures and validation
 pub mod transaction;
 /// Transaction type definitions
 pub mod transaction_type;
+/// Transaction validation module
+pub mod transaction_validator;
 /// 160-bit unsigned integer implementation
 pub mod uint160;
 /// 256-bit unsigned integer implementation
 pub mod uint256;
+pub mod unwrap_migration;
 /// Witness verification system
 pub mod witness;
-pub mod witness_safe;
 /// Witness rule evaluation
 pub mod witness_rule;
+pub mod witness_safe;
 /// Witness scope definitions
 pub mod witness_scope;
 

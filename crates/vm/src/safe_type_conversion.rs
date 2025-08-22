@@ -1,5 +1,5 @@
 //! Safe type conversion utilities for the VM
-//! 
+//!
 //! This module provides safe alternatives to unsafe transmute operations
 //! by using proper type conversion and validation.
 
@@ -12,25 +12,28 @@ pub struct SafeTypeConverter;
 
 impl SafeTypeConverter {
     /// Safely convert core signers to VM signers
-    /// 
+    ///
     /// This avoids unsafe transmute by properly converting each signer
     pub fn convert_signers(core_signers: &[CoreSigner]) -> Vec<Signer> {
         core_signers.iter().map(|s| Signer::from_core(s)).collect()
     }
-    
+
     /// Safely convert core attributes to VM attributes
-    /// 
+    ///
     /// This avoids unsafe transmute by properly converting each attribute
     pub fn convert_attributes(core_attrs: &[CoreAttribute]) -> Vec<TransactionAttribute> {
-        core_attrs.iter().map(|a| TransactionAttribute::from_core(a)).collect()
+        core_attrs
+            .iter()
+            .map(|a| TransactionAttribute::from_core(a))
+            .collect()
     }
-    
+
     /// Safe memory layout validation
-    /// 
+    ///
     /// Verifies that types have compatible memory layouts before conversion
     pub fn validate_layout<T, U>() -> bool {
-        std::mem::size_of::<T>() == std::mem::size_of::<U>() &&
-        std::mem::align_of::<T>() == std::mem::align_of::<U>()
+        std::mem::size_of::<T>() == std::mem::size_of::<U>()
+            && std::mem::align_of::<T>() == std::mem::align_of::<U>()
     }
 }
 
@@ -50,11 +53,15 @@ impl Signer {
         Self {
             account: core.account.to_array().to_vec(),
             scopes: core.scopes.to_byte(),
-            allowed_contracts: core.allowed_contracts.iter()
+            allowed_contracts: core
+                .allowed_contracts
+                .iter()
                 .map(|c| c.to_array().to_vec())
                 .collect(),
             allowed_groups: core.allowed_groups.clone(),
-            rules: core.rules.iter()
+            rules: core
+                .rules
+                .iter()
                 .map(|r| WitnessRule::from_core(r))
                 .collect(),
         }
@@ -75,19 +82,15 @@ impl TransactionAttribute {
     pub fn from_core(core: &CoreAttribute) -> Self {
         match core {
             CoreAttribute::HighPriority => Self::HighPriority,
-            CoreAttribute::OracleResponse { id, code, result } => {
-                Self::OracleResponse {
-                    id: *id,
-                    code: *code as u8,
-                    result: result.clone(),
-                }
-            }
-            CoreAttribute::NotValidBefore { height } => {
-                Self::NotValidBefore { height: *height }
-            }
-            CoreAttribute::Conflicts { hash } => {
-                Self::Conflicts { hash: hash.to_array().to_vec() }
-            }
+            CoreAttribute::OracleResponse { id, code, result } => Self::OracleResponse {
+                id: *id,
+                code: *code as u8,
+                result: result.clone(),
+            },
+            CoreAttribute::NotValidBefore { height } => Self::NotValidBefore { height: *height },
+            CoreAttribute::Conflicts { hash } => Self::Conflicts {
+                hash: hash.to_array().to_vec(),
+            },
         }
     }
 }
@@ -113,7 +116,7 @@ impl WitnessRule {
 }
 
 /// Safe static access wrapper
-/// 
+///
 /// Provides thread-safe access to static variables without unsafe blocks
 pub struct SafeStatic<T: Clone> {
     value: std::sync::RwLock<Option<T>>,
@@ -126,11 +129,11 @@ impl<T: Clone> SafeStatic<T> {
             value: std::sync::RwLock::new(None),
         }
     }
-    
+
     /// Get or initialize the static value
-    pub fn get_or_init<F>(&self, init: F) -> T 
+    pub fn get_or_init<F>(&self, init: F) -> T
     where
-        F: FnOnce() -> T
+        F: FnOnce() -> T,
     {
         // Try to read first
         if let Ok(guard) = self.value.read() {
@@ -138,7 +141,7 @@ impl<T: Clone> SafeStatic<T> {
                 return val.clone();
             }
         }
-        
+
         // Need to initialize
         if let Ok(mut guard) = self.value.write() {
             if guard.is_none() {
@@ -161,28 +164,28 @@ impl SafePointerOps {
         if ptr.is_null() {
             return None;
         }
-        
+
         // Check alignment requirements
         let t_align = std::mem::align_of::<T>();
         let u_align = std::mem::align_of::<U>();
-        
+
         if (ptr as usize) % u_align != 0 {
             return None; // Misaligned pointer
         }
-        
+
         // Only allow if target alignment is less restrictive
         if u_align > t_align {
             return None;
         }
-        
+
         Some(ptr as *const U)
     }
-    
+
     /// Safe slice conversion with bounds checking
-    /// 
+    ///
     /// Note: This returns None as a safe alternative to unsafe transmutation.
     /// In production, use proper type conversion traits or serialization.
-    pub fn safe_slice_cast<T, U>(slice: &[T]) -> Option<Vec<U>> 
+    pub fn safe_slice_cast<T, U>(slice: &[T]) -> Option<Vec<U>>
     where
         T: Clone,
         U: Default + Clone,
@@ -190,25 +193,25 @@ impl SafePointerOps {
         // Validate size compatibility
         let t_size = std::mem::size_of::<T>();
         let u_size = std::mem::size_of::<U>();
-        
+
         if t_size == 0 || u_size == 0 {
             return None; // Zero-sized types
         }
-        
+
         let total_bytes = slice.len() * t_size;
         if total_bytes % u_size != 0 {
             return None; // Size mismatch
         }
-        
+
         let new_len = total_bytes / u_size;
-        
+
         // Safe alternative: create new vector with default values
         // In production, implement proper conversion traits
         let mut result = Vec::with_capacity(new_len);
         for _ in 0..new_len {
             result.push(U::default());
         }
-        
+
         // Return the safe vector
         Some(result)
     }
@@ -217,38 +220,38 @@ impl SafePointerOps {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_safe_static() {
         static COUNTER: SafeStatic<u32> = SafeStatic::new();
-        
+
         let val1 = COUNTER.get_or_init(|| 42);
         assert_eq!(val1, 42);
-        
+
         let val2 = COUNTER.get_or_init(|| 100); // Should return 42, not 100
         assert_eq!(val2, 42);
     }
-    
+
     #[test]
     fn test_layout_validation() {
         // Same size types
         assert!(SafeTypeConverter::validate_layout::<u32, i32>());
         assert!(SafeTypeConverter::validate_layout::<[u8; 4], u32>());
-        
+
         // Different size types
         assert!(!SafeTypeConverter::validate_layout::<u32, u64>());
         assert!(!SafeTypeConverter::validate_layout::<u8, u16>());
     }
-    
+
     #[test]
     fn test_safe_pointer_cast() {
         let value: u32 = 42;
         let ptr = &value as *const u32;
-        
+
         // Valid cast to u8 (less restrictive alignment)
         let u8_ptr = SafePointerOps::safe_cast::<u32, u8>(ptr);
         assert!(u8_ptr.is_some());
-        
+
         // Null pointer returns None
         let null_ptr: *const u32 = std::ptr::null();
         let result = SafePointerOps::safe_cast::<u32, u8>(null_ptr);

@@ -1,5 +1,5 @@
 //! Comprehensive NEO Token Tests for C# Compatibility
-//! 
+//!
 //! This module implements all 31 test methods from C# UT_NeoToken.cs
 //! to ensure complete behavioral compatibility between Neo-RS and Neo-CS.
 
@@ -196,7 +196,8 @@ impl MockApplicationEngine {
     }
 
     pub fn emit_notification(&mut self, event_name: String, data: Vec<Vec<u8>>) {
-        self.notifications.push(MockNotification { event_name, data });
+        self.notifications
+            .push(MockNotification { event_name, data });
     }
 }
 
@@ -206,7 +207,8 @@ impl MockNeoToken {
         let hash = UInt160::from_bytes(&[
             0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x84, 0x6b, 0x0a, 0x40, 0xb2, 0xa9, 0x7d, 0x4a, 0x38,
             0x14, 0x39, 0x4b, 0x95, 0x2a, 0x85,
-        ]).unwrap();
+        ])
+        .unwrap();
 
         // Initialize with standby validators from C# TestProtocolSettings.Default.StandbyValidators
         let standby_validators = get_standby_validators();
@@ -215,12 +217,15 @@ impl MockNeoToken {
         // Initialize initial NEO distribution
         let mut account_states = HashMap::new();
         let bft_address = get_bft_address(&standby_validators);
-        account_states.insert(bft_address, NeoAccountState {
-            balance: 100_000_000, // Total NEO supply
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+        account_states.insert(
+            bft_address,
+            NeoAccountState {
+                balance: 100_000_000, // Total NEO supply
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
 
         Self {
             hash,
@@ -251,14 +256,21 @@ impl MockNeoToken {
         states.get(&account).map(|s| s.balance).unwrap_or(0)
     }
 
-    pub fn transfer(&self, engine: &mut MockApplicationEngine, from: UInt160, to: UInt160, amount: u64, _data: Option<()>) -> bool {
+    pub fn transfer(
+        &self,
+        engine: &mut MockApplicationEngine,
+        from: UInt160,
+        to: UInt160,
+        amount: u64,
+        _data: Option<()>,
+    ) -> bool {
         // Check witness
         if !engine.witnesses.contains(&from) {
             return false;
         }
 
         let mut states = self.account_states.lock().unwrap();
-        
+
         // Get balances
         let from_balance = states.get(&from).map(|s| s.balance).unwrap_or(0);
         if from_balance < amount {
@@ -279,11 +291,14 @@ impl MockNeoToken {
         to_state.balance += amount;
 
         // Emit transfer event
-        engine.emit_notification("Transfer".to_string(), vec![
-            from.as_bytes().to_vec(),
-            to.as_bytes().to_vec(),
-            amount.to_le_bytes().to_vec(),
-        ]);
+        engine.emit_notification(
+            "Transfer".to_string(),
+            vec![
+                from.as_bytes().to_vec(),
+                to.as_bytes().to_vec(),
+                amount.to_le_bytes().to_vec(),
+            ],
+        );
 
         true
     }
@@ -299,13 +314,18 @@ impl MockNeoToken {
 
     pub fn get_candidates(&self) -> Vec<(ECPoint, u64)> {
         let states = self.candidate_states.lock().unwrap();
-        states.iter()
+        states
+            .iter()
             .filter(|(_, state)| state.registered)
             .map(|(point, state)| (point.clone(), state.votes))
             .collect()
     }
 
-    pub fn register_candidate(&self, engine: &mut MockApplicationEngine, public_key: &ECPoint) -> bool {
+    pub fn register_candidate(
+        &self,
+        engine: &mut MockApplicationEngine,
+        public_key: &ECPoint,
+    ) -> bool {
         // Check if public key is valid
         if public_key.to_bytes().len() != 33 {
             return false;
@@ -324,19 +344,28 @@ impl MockNeoToken {
         }
 
         // Burn registration fee
-        engine.gas_balances.insert(account, gas_balance - 1000_00000000);
+        engine
+            .gas_balances
+            .insert(account, gas_balance - 1000_00000000);
 
         // Register candidate
         let mut candidates = self.candidate_states.lock().unwrap();
-        candidates.insert(public_key.clone(), CandidateState {
-            registered: true,
-            votes: 0,
-        });
+        candidates.insert(
+            public_key.clone(),
+            CandidateState {
+                registered: true,
+                votes: 0,
+            },
+        );
 
         true
     }
 
-    pub fn unregister_candidate(&self, engine: &mut MockApplicationEngine, public_key: &ECPoint) -> bool {
+    pub fn unregister_candidate(
+        &self,
+        engine: &mut MockApplicationEngine,
+        public_key: &ECPoint,
+    ) -> bool {
         let account = create_signature_contract_address(public_key);
         if !engine.witnesses.contains(&account) {
             return false;
@@ -355,7 +384,12 @@ impl MockNeoToken {
         }
     }
 
-    pub fn vote(&self, engine: &mut MockApplicationEngine, account: UInt160, candidate: Option<&ECPoint>) -> bool {
+    pub fn vote(
+        &self,
+        engine: &mut MockApplicationEngine,
+        account: UInt160,
+        candidate: Option<&ECPoint>,
+    ) -> bool {
         if !engine.witnesses.contains(&account) {
             return false;
         }
@@ -387,7 +421,7 @@ impl MockNeoToken {
             } else {
                 return false; // Candidate does not exist
             }
-            
+
             drop(candidates);
             let mut candidates = self.candidate_states.lock().unwrap();
             if let Some(new_candidate) = candidates.get_mut(new_vote) {
@@ -404,7 +438,7 @@ impl MockNeoToken {
     pub fn unclaimed_gas(&self, account: UInt160, end_height: u32) -> u64 {
         let states = self.account_states.lock().unwrap();
         let account_state = states.get(&account);
-        
+
         if let Some(state) = account_state {
             if state.balance <= 0 {
                 return 0;
@@ -417,7 +451,7 @@ impl MockNeoToken {
 
             let duration = end_height - start_height;
             let base_gas = (state.balance as f64 * duration as f64 * 0.5) as u64;
-            
+
             // Add committee bonus if voted for committee member
             if let Some(vote_to) = &state.vote_to {
                 let committee = self.committee.lock().unwrap();
@@ -435,11 +469,32 @@ impl MockNeoToken {
 
     pub fn get_contract_methods(&self, engine: &MockApplicationEngine) -> Vec<ContractMethod> {
         let echidna_active = engine.is_hardfork_active("HF_Echidna");
-        
+
         vec![
-            ContractMethod { name: "vote".to_string(), required_call_flags: if echidna_active { CallFlags::States | CallFlags::AllowNotify } else { CallFlags::States } },
-            ContractMethod { name: "registerCandidate".to_string(), required_call_flags: if echidna_active { CallFlags::States | CallFlags::AllowNotify } else { CallFlags::States } },
-            ContractMethod { name: "unregisterCandidate".to_string(), required_call_flags: if echidna_active { CallFlags::States | CallFlags::AllowNotify } else { CallFlags::States } },
+            ContractMethod {
+                name: "vote".to_string(),
+                required_call_flags: if echidna_active {
+                    CallFlags::States | CallFlags::AllowNotify
+                } else {
+                    CallFlags::States
+                },
+            },
+            ContractMethod {
+                name: "registerCandidate".to_string(),
+                required_call_flags: if echidna_active {
+                    CallFlags::States | CallFlags::AllowNotify
+                } else {
+                    CallFlags::States
+                },
+            },
+            ContractMethod {
+                name: "unregisterCandidate".to_string(),
+                required_call_flags: if echidna_active {
+                    CallFlags::States | CallFlags::AllowNotify
+                } else {
+                    CallFlags::States
+                },
+            },
         ]
     }
 
@@ -470,7 +525,9 @@ impl MockNeoToken {
         for (i, member) in committee.iter().enumerate().take(2) {
             let account = create_signature_contract_address(member);
             let current_gas = engine.gas_balances.get(&account).copied().unwrap_or(0);
-            engine.gas_balances.insert(account, current_gas + bonus_per_member);
+            engine
+                .gas_balances
+                .insert(account, current_gas + bonus_per_member);
         }
 
         true
@@ -490,17 +547,23 @@ pub struct ContractMethod {
 fn get_standby_validators() -> Vec<ECPoint> {
     vec![
         ECPoint::from_bytes(&[
-            0x02, 0x48, 0x6f, 0xd1, 0x57, 0x02, 0xc4, 0x49, 0x0a, 0x26, 0x70, 0x31, 0x12, 0xa5, 0xcc, 0x1d,
-            0x09, 0x23, 0xfd, 0x69, 0x7a, 0x33, 0x40, 0x6b, 0xd5, 0xa1, 0xc0, 0x0e, 0x00, 0x13, 0xb0, 0x9a, 0x70,
-        ]).unwrap(),
+            0x02, 0x48, 0x6f, 0xd1, 0x57, 0x02, 0xc4, 0x49, 0x0a, 0x26, 0x70, 0x31, 0x12, 0xa5,
+            0xcc, 0x1d, 0x09, 0x23, 0xfd, 0x69, 0x7a, 0x33, 0x40, 0x6b, 0xd5, 0xa1, 0xc0, 0x0e,
+            0x00, 0x13, 0xb0, 0x9a, 0x70,
+        ])
+        .unwrap(),
         ECPoint::from_bytes(&[
-            0x02, 0x4c, 0x7b, 0x7f, 0xb6, 0xc3, 0x10, 0xfc, 0xcf, 0x1b, 0xa3, 0x3b, 0x08, 0x25, 0x19, 0xd8,
-            0x29, 0x64, 0xea, 0x93, 0x86, 0x8d, 0x67, 0x66, 0x62, 0xd4, 0xa5, 0x9a, 0xd5, 0x48, 0xdf, 0x0e, 0x7d,
-        ]).unwrap(),
+            0x02, 0x4c, 0x7b, 0x7f, 0xb6, 0xc3, 0x10, 0xfc, 0xcf, 0x1b, 0xa3, 0x3b, 0x08, 0x25,
+            0x19, 0xd8, 0x29, 0x64, 0xea, 0x93, 0x86, 0x8d, 0x67, 0x66, 0x62, 0xd4, 0xa5, 0x9a,
+            0xd5, 0x48, 0xdf, 0x0e, 0x7d,
+        ])
+        .unwrap(),
         ECPoint::from_bytes(&[
-            0x02, 0xaa, 0xec, 0x38, 0x47, 0x0f, 0x6a, 0xad, 0x00, 0x42, 0xc6, 0xe8, 0x77, 0xcf, 0xd8, 0x08,
-            0x7d, 0x26, 0x76, 0xb0, 0xf5, 0x16, 0xfd, 0xdd, 0x36, 0x28, 0x01, 0xb9, 0xbd, 0x39, 0x36, 0x39, 0x9e,
-        ]).unwrap(),
+            0x02, 0xaa, 0xec, 0x38, 0x47, 0x0f, 0x6a, 0xad, 0x00, 0x42, 0xc6, 0xe8, 0x77, 0xcf,
+            0xd8, 0x08, 0x7d, 0x26, 0x76, 0xb0, 0xf5, 0x16, 0xfd, 0xdd, 0x36, 0x28, 0x01, 0xb9,
+            0xbd, 0x39, 0x36, 0x39, 0x9e,
+        ])
+        .unwrap(),
     ]
 }
 
@@ -565,16 +628,25 @@ mod tests {
             // Test WITHOUT HF_Echidna (block 9)
             let engine = MockApplicationEngine::new(9).with_hardfork("HF_Echidna", 10);
             let contract_methods = neo.get_contract_methods(&engine);
-            
-            let method = contract_methods.iter().find(|m| m.name == method_name).unwrap();
+
+            let method = contract_methods
+                .iter()
+                .find(|m| m.name == method_name)
+                .unwrap();
             assert_eq!(method.required_call_flags, CallFlags::States);
 
-            // Test WITH HF_Echidna (block 10) 
+            // Test WITH HF_Echidna (block 10)
             let engine = MockApplicationEngine::new(10).with_hardfork("HF_Echidna", 10);
             let contract_methods = neo.get_contract_methods(&engine);
-            
-            let method = contract_methods.iter().find(|m| m.name == method_name).unwrap();
-            assert_eq!(method.required_call_flags, CallFlags::States | CallFlags::AllowNotify);
+
+            let method = contract_methods
+                .iter()
+                .find(|m| m.name == method_name)
+                .unwrap();
+            assert_eq!(
+                method.required_call_flags,
+                CallFlags::States | CallFlags::AllowNotify
+            );
         }
     }
 
@@ -583,7 +655,7 @@ mod tests {
     fn test_check_vote() {
         let neo = MockNeoToken::new();
         let mut engine = MockApplicationEngine::new(1000);
-        
+
         let validators = get_standby_validators();
         let from = get_bft_address(&validators);
 
@@ -601,12 +673,15 @@ mod tests {
 
         // No registered candidate - add account with balance
         engine.add_witness(from);
-        neo.account_states.lock().unwrap().insert(from, NeoAccountState {
-            balance: 100,
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+        neo.account_states.lock().unwrap().insert(
+            from,
+            NeoAccountState {
+                balance: 100,
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
 
         let ec_point = ECPoint::secp256r1_g();
         let result = neo.vote(&mut engine, from, Some(&ec_point));
@@ -621,7 +696,7 @@ mod tests {
         // Now vote should succeed
         let result = neo.vote(&mut engine, from, Some(&ec_point));
         assert!(result);
-        
+
         let account_state = neo.get_account_state(from).unwrap();
         assert_eq!(account_state.vote_to, Some(ec_point));
     }
@@ -631,18 +706,21 @@ mod tests {
     fn test_check_vote_same_accounts() {
         let neo = MockNeoToken::new();
         let mut engine = MockApplicationEngine::new(1000);
-        
+
         let validators = get_standby_validators();
         let from = get_bft_address(&validators);
         engine.add_witness(from);
 
         // Set up first account with balance
-        neo.account_states.lock().unwrap().insert(from, NeoAccountState {
-            balance: 100,
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+        neo.account_states.lock().unwrap().insert(
+            from,
+            NeoAccountState {
+                balance: 100,
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
 
         // Register candidate
         let ec_point = ECPoint::secp256r1_g();
@@ -653,7 +731,7 @@ mod tests {
 
         // First account votes
         assert!(neo.vote(&mut engine, from, Some(&ec_point)));
-        
+
         // Check votes increased
         let candidates = neo.get_candidates();
         let candidate_votes = candidates.iter().find(|(pk, _)| pk == &ec_point).unwrap().1;
@@ -662,12 +740,15 @@ mod tests {
         // Second account votes for same candidate
         let second_account = UInt160::from_bytes(&[1u8; 20]).unwrap();
         engine.add_witness(second_account);
-        neo.account_states.lock().unwrap().insert(second_account, NeoAccountState {
-            balance: 200,
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+        neo.account_states.lock().unwrap().insert(
+            second_account,
+            NeoAccountState {
+                balance: 200,
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
 
         assert!(neo.vote(&mut engine, second_account, Some(&ec_point)));
 
@@ -682,17 +763,20 @@ mod tests {
     fn test_check_vote_change_vote() {
         let neo = MockNeoToken::new();
         let mut engine = MockApplicationEngine::new(1000);
-        
+
         let validators = get_standby_validators();
         let from_account = create_signature_contract_address(&validators[0]);
         engine.add_witness(from_account);
-        
-        neo.account_states.lock().unwrap().insert(from_account, NeoAccountState {
-            balance: 100,
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+
+        neo.account_states.lock().unwrap().insert(
+            from_account,
+            NeoAccountState {
+                balance: 100,
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
 
         // Register two candidates
         let candidate_g = ECPoint::secp256r1_g();
@@ -710,17 +794,29 @@ mod tests {
 
         // Vote for G
         assert!(neo.vote(&mut engine, from_account, Some(&candidate_g)));
-        
+
         let candidates = neo.get_candidates();
-        let g_votes = candidates.iter().find(|(pk, _)| pk == &candidate_g).unwrap().1;
+        let g_votes = candidates
+            .iter()
+            .find(|(pk, _)| pk == &candidate_g)
+            .unwrap()
+            .1;
         assert_eq!(g_votes, 100);
 
         // Change vote to self
         assert!(neo.vote(&mut engine, from_account, Some(&candidate_self)));
-        
+
         let candidates = neo.get_candidates();
-        let g_votes = candidates.iter().find(|(pk, _)| pk == &candidate_g).unwrap().1;
-        let self_votes = candidates.iter().find(|(pk, _)| pk == &candidate_self).unwrap().1;
+        let g_votes = candidates
+            .iter()
+            .find(|(pk, _)| pk == &candidate_g)
+            .unwrap()
+            .1;
+        let self_votes = candidates
+            .iter()
+            .find(|(pk, _)| pk == &candidate_self)
+            .unwrap()
+            .1;
         assert_eq!(g_votes, 0);
         assert_eq!(self_votes, 100);
     }
@@ -730,17 +826,20 @@ mod tests {
     fn test_check_vote_vote_to_null() {
         let neo = MockNeoToken::new();
         let mut engine = MockApplicationEngine::new(1000);
-        
+
         let validators = get_standby_validators();
         let from_account = create_signature_contract_address(&validators[0]);
         engine.add_witness(from_account);
-        
-        neo.account_states.lock().unwrap().insert(from_account, NeoAccountState {
-            balance: 100,
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+
+        neo.account_states.lock().unwrap().insert(
+            from_account,
+            NeoAccountState {
+                balance: 100,
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
 
         // Register candidate
         let candidate_g = ECPoint::secp256r1_g();
@@ -751,14 +850,21 @@ mod tests {
 
         // Vote for G
         assert!(neo.vote(&mut engine, from_account, Some(&candidate_g)));
-        assert_eq!(neo.get_account_state(from_account).unwrap().vote_to, Some(candidate_g.clone()));
+        assert_eq!(
+            neo.get_account_state(from_account).unwrap().vote_to,
+            Some(candidate_g.clone())
+        );
 
         // Vote to null (unvote)
         assert!(neo.vote(&mut engine, from_account, None));
         assert_eq!(neo.get_account_state(from_account).unwrap().vote_to, None);
-        
+
         let candidates = neo.get_candidates();
-        let g_votes = candidates.iter().find(|(pk, _)| pk == &candidate_g).unwrap().1;
+        let g_votes = candidates
+            .iter()
+            .find(|(pk, _)| pk == &candidate_g)
+            .unwrap()
+            .1;
         assert_eq!(g_votes, 0);
     }
 
@@ -766,7 +872,7 @@ mod tests {
     #[test]
     fn test_check_unclaimed_gas() {
         let neo = MockNeoToken::new();
-        
+
         let validators = get_standby_validators();
         let from = get_bft_address(&validators);
 
@@ -784,28 +890,30 @@ mod tests {
     fn test_check_register_validator() {
         let neo = MockNeoToken::new();
         let mut engine = MockApplicationEngine::new(0);
-        
+
         let validators = get_standby_validators();
         let existing_validator = &validators[0];
-        
+
         // Test registering existing validator
         let account = create_signature_contract_address(existing_validator);
         engine.add_witness(account);
         engine.gas_balances.insert(account, 2000_00000000);
-        
+
         let result = neo.register_candidate(&mut engine, existing_validator);
         assert!(result);
 
         // Test registering new validator
         let new_validator = ECPoint::from_bytes(&[
-            0x03, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde,
-            0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-        ]).unwrap();
-        
+            0x03, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a,
+            0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56,
+            0x78, 0x9a, 0xbc, 0xde, 0xf0,
+        ])
+        .unwrap();
+
         let new_account = create_signature_contract_address(&new_validator);
         engine.add_witness(new_account);
         engine.gas_balances.insert(new_account, 2000_00000000);
-        
+
         let result = neo.register_candidate(&mut engine, &new_validator);
         assert!(result);
 
@@ -819,11 +927,11 @@ mod tests {
     fn test_check_unregister_candidate() {
         let neo = MockNeoToken::new();
         let mut engine = MockApplicationEngine::new(1);
-        
+
         let validators = get_standby_validators();
         let validator = &validators[0];
         let account = create_signature_contract_address(validator);
-        
+
         // Test unregister without registering first
         engine.add_witness(account);
         let result = neo.unregister_candidate(&mut engine, validator);
@@ -840,21 +948,24 @@ mod tests {
 
         // Test unregister with votes (should mark as unregistered but not remove)
         assert!(neo.register_candidate(&mut engine, validator));
-        
+
         // Add votes
         let voter_account = UInt160::from_bytes(&[2u8; 20]).unwrap();
         engine.add_witness(voter_account);
-        neo.account_states.lock().unwrap().insert(voter_account, NeoAccountState {
-            balance: 100,
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+        neo.account_states.lock().unwrap().insert(
+            voter_account,
+            NeoAccountState {
+                balance: 100,
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
         assert!(neo.vote(&mut engine, voter_account, Some(validator)));
 
         let result = neo.unregister_candidate(&mut engine, validator);
         assert!(result);
-        
+
         // Candidate should still exist but be unregistered
         let candidate_state = neo.candidate_states.lock().unwrap().get(validator).cloned();
         assert!(candidate_state.is_some());
@@ -866,10 +977,10 @@ mod tests {
     #[test]
     fn test_check_get_committee() {
         let neo = MockNeoToken::new();
-        
+
         let committee = neo.get_committee();
         assert!(!committee.is_empty());
-        
+
         // Should return standby validators initially
         let standby_validators = get_standby_validators();
         assert_eq!(committee.len(), standby_validators.len());
@@ -880,7 +991,7 @@ mod tests {
     fn test_check_transfer() {
         let neo = MockNeoToken::new();
         let mut engine = MockApplicationEngine::new(1000);
-        
+
         let validators = get_standby_validators();
         let from = get_bft_address(&validators);
         let to = UInt160::from_bytes(&[1u8; 20]).unwrap();
@@ -893,7 +1004,7 @@ mod tests {
         engine.add_witness(from);
         let result = neo.transfer(&mut engine, from, to, 1, None);
         assert!(result);
-        
+
         assert_eq!(neo.balance_of(from), 99_999_999);
         assert_eq!(neo.balance_of(to), 1);
 
@@ -912,7 +1023,7 @@ mod tests {
     #[test]
     fn test_check_balance_of() {
         let neo = MockNeoToken::new();
-        
+
         let validators = get_standby_validators();
         let account = get_bft_address(&validators);
 
@@ -928,7 +1039,7 @@ mod tests {
     fn test_check_committee_bonus() {
         let neo = MockNeoToken::new();
         let mut engine = MockApplicationEngine::new(1);
-        
+
         assert!(neo.post_persist(&mut engine));
 
         let committee = get_standby_validators();
@@ -936,20 +1047,41 @@ mod tests {
         let member2_account = create_signature_contract_address(&committee[1]);
         let member3_account = create_signature_contract_address(&committee[2]);
 
-        assert_eq!(engine.gas_balances.get(&member1_account).copied().unwrap_or(0), 50_000_000);
-        assert_eq!(engine.gas_balances.get(&member2_account).copied().unwrap_or(0), 50_000_000);
-        assert_eq!(engine.gas_balances.get(&member3_account).copied().unwrap_or(0), 0);
+        assert_eq!(
+            engine
+                .gas_balances
+                .get(&member1_account)
+                .copied()
+                .unwrap_or(0),
+            50_000_000
+        );
+        assert_eq!(
+            engine
+                .gas_balances
+                .get(&member2_account)
+                .copied()
+                .unwrap_or(0),
+            50_000_000
+        );
+        assert_eq!(
+            engine
+                .gas_balances
+                .get(&member3_account)
+                .copied()
+                .unwrap_or(0),
+            0
+        );
     }
 
     /// Test Check_Initialize functionality (matches C# UT_NeoToken.Check_Initialize)
     #[test]
     fn test_check_initialize() {
         let neo = MockNeoToken::new();
-        
+
         // Test initial committee setup
         let committee = neo.get_committee();
         assert!(!committee.is_empty());
-        
+
         // Should match standby validators
         let standby_validators = get_standby_validators();
         assert_eq!(committee, standby_validators);
@@ -959,27 +1091,35 @@ mod tests {
     #[test]
     fn test_calculate_bonus() {
         let neo = MockNeoToken::new();
-        
+
         // Test with negative balance (should handle gracefully)
         let account = UInt160::zero();
         let unclaimed = neo.unclaimed_gas(account, 10);
         assert_eq!(unclaimed, 0);
 
         // Test with valid account
-        neo.account_states.lock().unwrap().insert(account, NeoAccountState {
-            balance: 100,
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+        neo.account_states.lock().unwrap().insert(
+            account,
+            NeoAccountState {
+                balance: 100,
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
 
         let unclaimed = neo.unclaimed_gas(account, 100);
         assert_eq!(unclaimed, (0.5 * 100.0 * 100.0) as u64);
 
         // Test with committee vote
         let committee = get_standby_validators();
-        neo.account_states.lock().unwrap().get_mut(&account).unwrap().vote_to = Some(committee[0].clone());
-        
+        neo.account_states
+            .lock()
+            .unwrap()
+            .get_mut(&account)
+            .unwrap()
+            .vote_to = Some(committee[0].clone());
+
         let unclaimed = neo.unclaimed_gas(account, 100);
         assert!(unclaimed > (0.5 * 100.0 * 100.0) as u64); // Should include bonus
     }
@@ -988,21 +1128,21 @@ mod tests {
     #[test]
     fn test_get_next_block_validators1() {
         let neo = MockNeoToken::new();
-        
+
         let validators = neo.get_next_block_validators();
         assert_eq!(validators.len(), 3); // Limited by our test setup
-        
+
         // Should be first 7 from committee (or all if less than 7)
         let committee = neo.get_committee();
         let expected = committee.into_iter().take(7).collect::<Vec<_>>();
         assert_eq!(validators, expected);
     }
 
-    /// Test TestGetNextBlockValidators2 functionality (matches C# UT_NeoToken.TestGetNextBlockValidators2) 
+    /// Test TestGetNextBlockValidators2 functionality (matches C# UT_NeoToken.TestGetNextBlockValidators2)
     #[test]
     fn test_get_next_block_validators2() {
         let neo = MockNeoToken::new();
-        
+
         let validators = neo.compute_next_block_validators();
         assert_eq!(validators.len(), 3); // Limited by our test setup
     }
@@ -1011,7 +1151,7 @@ mod tests {
     #[test]
     fn test_get_candidates1() {
         let neo = MockNeoToken::new();
-        
+
         let candidates = neo.get_candidates();
         assert!(candidates.is_empty()); // No candidates registered initially
     }
@@ -1020,17 +1160,20 @@ mod tests {
     #[test]
     fn test_get_candidates2() {
         let neo = MockNeoToken::new();
-        
+
         let candidates = neo.get_candidates();
         assert_eq!(candidates.len(), 0);
 
         // Register a candidate
         let candidate = ECPoint::secp256r1_g();
-        neo.candidate_states.lock().unwrap().insert(candidate.clone(), CandidateState {
-            registered: true,
-            votes: 0,
-        });
-        
+        neo.candidate_states.lock().unwrap().insert(
+            candidate.clone(),
+            CandidateState {
+                registered: true,
+                votes: 0,
+            },
+        );
+
         let candidates = neo.get_candidates();
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].0, candidate);
@@ -1048,7 +1191,7 @@ mod tests {
     fn test_on_balance_changing() {
         let neo = MockNeoToken::new();
         let mut engine = MockApplicationEngine::new(1);
-        
+
         let account = UInt160::zero();
         engine.add_witness(account);
 
@@ -1062,12 +1205,15 @@ mod tests {
         assert!(!result); // Should fail due to insufficient balance
 
         // Add balance and test
-        neo.account_states.lock().unwrap().insert(account, NeoAccountState {
-            balance: 1000,
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+        neo.account_states.lock().unwrap().insert(
+            account,
+            NeoAccountState {
+                balance: 1000,
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
 
         let result = neo.transfer(&mut engine, account, to, 1, None);
         assert!(result);
@@ -1077,16 +1223,19 @@ mod tests {
     #[test]
     fn test_unclaimed_gas() {
         let neo = MockNeoToken::new();
-        
+
         let account = UInt160::zero();
         assert_eq!(neo.unclaimed_gas(account, 10), 0);
-        
-        neo.account_states.lock().unwrap().insert(account, NeoAccountState {
-            balance: 0,
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+
+        neo.account_states.lock().unwrap().insert(
+            account,
+            NeoAccountState {
+                balance: 0,
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
         assert_eq!(neo.unclaimed_gas(account, 10), 0);
     }
 
@@ -1095,8 +1244,12 @@ mod tests {
     fn test_vote() {
         let neo = MockNeoToken::new();
         let mut engine = MockApplicationEngine::new(1);
-        
-        let account = UInt160::from_bytes(&[0x01, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xa4]).unwrap();
+
+        let account = UInt160::from_bytes(&[
+            0x01, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff, 0x00, 0xff,
+            0x00, 0xff, 0x00, 0xff, 0x00, 0xa4,
+        ])
+        .unwrap();
         let candidate = ECPoint::secp256r1_g();
 
         // Test vote without signature
@@ -1109,12 +1262,15 @@ mod tests {
         assert!(!result);
 
         // Add account with balance
-        neo.account_states.lock().unwrap().insert(account, NeoAccountState {
-            balance: 1,
-            balance_height: 0,
-            vote_to: None,
-            last_gas_per_vote: 0,
-        });
+        neo.account_states.lock().unwrap().insert(
+            account,
+            NeoAccountState {
+                balance: 1,
+                balance_height: 0,
+                vote_to: None,
+                last_gas_per_vote: 0,
+            },
+        );
 
         // Vote for unregistered candidate
         let result = neo.vote(&mut engine, account, Some(&candidate));
@@ -1128,7 +1284,7 @@ mod tests {
 
         let result = neo.vote(&mut engine, account, Some(&candidate));
         assert!(result);
-        
+
         let account_state = neo.get_account_state(account).unwrap();
         assert_eq!(account_state.vote_to, Some(candidate));
     }

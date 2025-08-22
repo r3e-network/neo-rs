@@ -39,7 +39,7 @@
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create storage configuration
 //! let config = StorageConfig::default();
-//! 
+//!
 //! // Create RocksDB storage provider
 //! let provider = Arc::new(RocksDbStorageProvider::new("./data".into())?);
 //!
@@ -73,7 +73,7 @@
 //!         value: b"value1".to_vec(),
 //!     },
 //!     BatchOperation::Put {
-//!         key: b"key2".to_vec(), 
+//!         key: b"key2".to_vec(),
 //!         value: b"value2".to_vec(),
 //!     },
 //!     BatchOperation::Delete {
@@ -569,10 +569,10 @@ pub struct StorageStats {
 ///
 /// // Create a storage key for contract 5 with key "balance"
 /// let key = StorageKey::new(5, b"balance".to_vec());
-/// 
+///
 /// // Convert to bytes for storage
 /// let bytes = key.as_bytes();
-/// 
+///
 /// // Reconstruct from bytes
 /// let reconstructed = StorageKey::from_bytes(bytes);
 /// assert_eq!(key, reconstructed);
@@ -691,7 +691,7 @@ impl fmt::Display for StorageKey {
 ///
 /// // Create from bytes
 /// let value = StorageValue::from_bytes(b"hello world".to_vec());
-/// 
+///
 /// // Access the data
 /// assert_eq!(value.as_bytes(), b"hello world");
 /// assert_eq!(value.len(), 11);

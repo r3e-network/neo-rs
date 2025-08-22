@@ -45,7 +45,7 @@ impl SnapshotFormat {
         let accounts_size = self.account_states.len() * 32; // Approximate account state size
         let contracts_size: usize = self.contract_states.values().map(|v| v.len()).sum();
         let validators_size = self.validators.len() * 100; // Approximate validator size
-        
+
         headers_size + accounts_size + contracts_size + validators_size + 8 // +8 for height field
     }
 }
@@ -88,195 +88,242 @@ impl SnapshotFormat {
     pub fn parse_neo_snapshot(data: &[u8]) -> Result<Self, SnapshotError> {
         if data.len() < 16 {
             return Err(SnapshotError::InvalidFormat(
-                "Snapshot data too short".to_string()
+                "Snapshot data too short".to_string(),
             ));
         }
-        
+
         // Neo snapshot format:
         // - Magic number (4 bytes): 0x4E, 0x45, 0x4F, 0x53 ("NEOS")
         // - Version (4 bytes)
         // - Height (4 bytes)
         // - Compressed data length (4 bytes)
         // - Compressed blockchain state data
-        
+
         let magic = &data[0..4];
         if magic != [0x4E, 0x45, 0x4F, 0x53] {
             return Err(SnapshotError::InvalidFormat(
-                "Invalid magic number".to_string()
+                "Invalid magic number".to_string(),
             ));
         }
-        
+
         let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
         if version != 1 {
-            return Err(SnapshotError::InvalidFormat(
-                format!("Unsupported snapshot version: {}", version)
-            ));
+            return Err(SnapshotError::InvalidFormat(format!(
+                "Unsupported snapshot version: {}",
+                version
+            )));
         }
-        
+
         let height = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
         let compressed_len = u32::from_le_bytes([data[12], data[13], data[14], data[15]]) as usize;
-        
+
         if data.len() < 16 + compressed_len {
             return Err(SnapshotError::InvalidFormat(
-                "Compressed data length mismatch".to_string()
+                "Compressed data length mismatch".to_string(),
             ));
         }
-        
+
         // Decompress the blockchain state data
         let compressed_data = &data[16..16 + compressed_len];
         let decompressed_data = Self::decompress_snapshot_data(compressed_data)?;
-        
+
         // Parse the decompressed blockchain state
         Self::parse_blockchain_state(&decompressed_data, height)
     }
-    
+
     /// Decompress snapshot data using the same algorithm as C# Neo
     fn decompress_snapshot_data(compressed: &[u8]) -> Result<Vec<u8>, SnapshotError> {
         use flate2::read::GzDecoder;
         use std::io::Read;
-        
+
         let mut decoder = GzDecoder::new(compressed);
         let mut decompressed = Vec::new();
-        
-        decoder.read_to_end(&mut decompressed)
+
+        decoder
+            .read_to_end(&mut decompressed)
             .map_err(|e| SnapshotError::CompressionError(e.to_string()))?;
-        
+
         Ok(decompressed)
     }
-    
+
     /// Parse blockchain state from decompressed data (matches C# Neo exactly)
     fn parse_blockchain_state(data: &[u8], height: u32) -> Result<SnapshotFormat, SnapshotError> {
         if data.len() < 8 {
-            return Err(SnapshotError::ParseError("Insufficient data for state parsing".to_string()));
+            return Err(SnapshotError::ParseError(
+                "Insufficient data for state parsing".to_string(),
+            ));
         }
-        
+
         let mut offset = 0;
-        
+
         // Parse number of headers (4 bytes)
         let header_count = u32::from_le_bytes([
-            data[offset], data[offset + 1], data[offset + 2], data[offset + 3]
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
         ]) as usize;
         offset += 4;
-        
+
         // Parse number of accounts (4 bytes)
         let account_count = u32::from_le_bytes([
-            data[offset], data[offset + 1], data[offset + 2], data[offset + 3]
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
         ]) as usize;
         offset += 4;
-        
+
         // Parse headers (simplified parsing for core structure)
         let headers = Vec::with_capacity(header_count);
-        for _ in 0..header_count.min(1000) { // Limit for safety
-            if offset + 80 > data.len() { break; }
-            
+        for _ in 0..header_count.min(1000) {
+            // Limit for safety
+            if offset + 80 > data.len() {
+                break;
+            }
+
             // For now, skip header parsing to avoid compilation errors
             offset += 80;
         }
-        
+
         // Parse account states
         let mut account_states = HashMap::with_capacity(account_count);
-        for _ in 0..account_count.min(10000) { // Limit for safety
-            if offset + 32 > data.len() { break; }
-            
+        for _ in 0..account_count.min(10000) {
+            // Limit for safety
+            if offset + 32 > data.len() {
+                break;
+            }
+
             // Parse account hash (20 bytes) + balance (8 bytes) + metadata (4 bytes)
             let account_hash = UInt160::from_span(&data[offset..offset + 20]);
             offset += 20;
-            
+
             let balance = u64::from_le_bytes([
-                data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
-                data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+                data[offset + 4],
+                data[offset + 5],
+                data[offset + 6],
+                data[offset + 7],
             ]);
             offset += 8;
-            
+
             let last_height = u32::from_le_bytes([
-                data[offset], data[offset + 1], data[offset + 2], data[offset + 3]
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
             ]);
             offset += 4;
-            
-            account_states.insert(account_hash, AccountState {
-                balance,
-                vote_to: None,
-                last_gas_fee_height: last_height,
-            });
+
+            account_states.insert(
+                account_hash,
+                AccountState {
+                    balance,
+                    vote_to: None,
+                    last_gas_fee_height: last_height,
+                },
+            );
         }
-        
+
         Ok(SnapshotFormat {
             height,
             headers,
             account_states,
             contract_states: Self::parse_contract_states(&data[offset..], height)?,
-            validators: Self::parse_validator_states(&data[offset..])?,  
+            validators: Self::parse_validator_states(&data[offset..])?,
         })
     }
-    
+
     /// Parse contract states from snapshot data
-    fn parse_contract_states(data: &[u8], _height: u32) -> Result<HashMap<UInt160, Vec<u8>>, SnapshotError> {
+    fn parse_contract_states(
+        data: &[u8],
+        _height: u32,
+    ) -> Result<HashMap<UInt160, Vec<u8>>, SnapshotError> {
         let mut contract_states = HashMap::new();
-        
+
         if data.len() < 4 {
             return Ok(contract_states);
         }
-        
+
         let contract_count = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
         let mut offset = 4;
-        
+
         for _ in 0..contract_count.min(1000) {
-            if offset + 24 > data.len() { break; }
-            
+            if offset + 24 > data.len() {
+                break;
+            }
+
             // Parse contract hash (20 bytes) + data length (4 bytes)
             let contract_hash = UInt160::from_span(&data[offset..offset + 20]);
             offset += 20;
-            
+
             let data_length = u32::from_le_bytes([
-                data[offset], data[offset + 1], data[offset + 2], data[offset + 3]
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
             ]) as usize;
             offset += 4;
-            
-            if offset + data_length > data.len() { break; }
-            
+
+            if offset + data_length > data.len() {
+                break;
+            }
+
             let contract_data = data[offset..offset + data_length].to_vec();
             offset += data_length;
-            
+
             contract_states.insert(contract_hash, contract_data);
         }
-        
+
         Ok(contract_states)
     }
-    
+
     /// Parse validator states from snapshot data
     fn parse_validator_states(data: &[u8]) -> Result<Vec<ValidatorInfo>, SnapshotError> {
         let mut validators = Vec::new();
-        
+
         if data.len() < 4 {
             return Ok(validators);
         }
-        
+
         let validator_count = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
         let mut offset = 4;
-        
-        for _ in 0..validator_count.min(21) { // Neo has max 21 consensus nodes
-            if offset + 45 > data.len() { break; }
-            
+
+        for _ in 0..validator_count.min(21) {
+            // Neo has max 21 consensus nodes
+            if offset + 45 > data.len() {
+                break;
+            }
+
             // Parse public key (33 bytes) + votes (8 bytes) + active flag (1 byte) + reserved (3 bytes)
             let public_key = data[offset..offset + 33].to_vec();
             offset += 33;
-            
+
             let votes = u64::from_le_bytes([
-                data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
-                data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7]
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+                data[offset + 4],
+                data[offset + 5],
+                data[offset + 6],
+                data[offset + 7],
             ]);
             offset += 8;
-            
+
             let active = data[offset] != 0;
             offset += 4; // Include reserved bytes
-            
+
             validators.push(ValidatorInfo {
                 public_key,
                 votes,
                 active,
             });
         }
-        
+
         Ok(validators)
     }
 }
@@ -342,7 +389,7 @@ pub struct SnapshotMetadata {
 pub const MAINNET_SNAPSHOTS: &[SnapshotMetadata] = &[];
 
 /// Get the best available snapshot for a target height
-    /// Gets a value from the internal state.
+/// Gets a value from the internal state.
 pub fn get_best_snapshot(target_height: u32) -> Option<&'static SnapshotMetadata> {
     MAINNET_SNAPSHOTS
         .iter()
@@ -351,7 +398,7 @@ pub fn get_best_snapshot(target_height: u32) -> Option<&'static SnapshotMetadata
 }
 
 /// Get the best checkpoint to start syncing from based on target height
-    /// Gets a value from the internal state.
+/// Gets a value from the internal state.
 pub fn get_best_checkpoint(target_height: u32) -> (u32, &'static str) {
     let mut best = MAINNET_CHECKPOINTS[0];
 
@@ -402,40 +449,40 @@ impl std::fmt::Display for SyncState {
 /// Represents an enumeration of values.
 pub enum SyncEvent {
     /// Sync started
-    SyncStarted { 
+    SyncStarted {
         /// Target blockchain height
-        target_height: u32 
+        target_height: u32,
     },
     /// Headers sync progress
-    HeadersProgress { 
+    HeadersProgress {
         /// Current progress
-        current: u32, 
+        current: u32,
         /// Target value
-        target: u32 
+        target: u32,
     },
     /// Blocks sync progress
-    BlocksProgress { 
+    BlocksProgress {
         /// Current progress
-        current: u32, 
+        current: u32,
         /// Target value
-        target: u32 
+        target: u32,
     },
     /// Sync completed
-    SyncCompleted { 
+    SyncCompleted {
         /// Final blockchain height
-        final_height: u32 
+        final_height: u32,
     },
     /// Sync failed
-    SyncFailed { 
+    SyncFailed {
         /// Error message
-        error: String 
+        error: String,
     },
     /// New best height discovered
-    NewBestHeight { 
+    NewBestHeight {
         /// Block height
-        height: u32, 
+        height: u32,
         /// Peer address
-        peer: SocketAddr 
+        peer: SocketAddr,
     },
 }
 
@@ -1008,14 +1055,20 @@ impl SyncManager {
     async fn extract_zstd_snapshot(&self, path: &str, height: u32) -> NetworkResult<()> {
         use std::io::Read;
         use zstd::stream::read::Decoder;
-        
-        info!("🗜️ Extracting zstd snapshot from {} at height {}", path, height);
-        
+
+        info!(
+            "🗜️ Extracting zstd snapshot from {} at height {}",
+            path, height
+        );
+
         // Read compressed file
-        let compressed_data = tokio::fs::read(path).await.map_err(|e| NetworkError::SyncFailed {
-            reason: format!("Failed to read snapshot file: {}", e),
-        })?;
-        
+        let compressed_data =
+            tokio::fs::read(path)
+                .await
+                .map_err(|e| NetworkError::SyncFailed {
+                    reason: format!("Failed to read snapshot file: {}", e),
+                })?;
+
         // Decompress using zstd
         let decompressed_data = tokio::task::spawn_blocking({
             let data = compressed_data.clone();
@@ -1025,15 +1078,18 @@ impl SyncManager {
                 decoder.read_to_end(&mut decompressed)?;
                 Ok(decompressed)
             }
-        }).await.map_err(|e| NetworkError::SyncFailed {
+        })
+        .await
+        .map_err(|e| NetworkError::SyncFailed {
             reason: format!("Task join error during zstd decompression: {}", e),
-        })?.map_err(|e| NetworkError::SyncFailed {
+        })?
+        .map_err(|e| NetworkError::SyncFailed {
             reason: format!("Zstd decompression failed: {}", e),
         })?;
-        
+
         // Parse and apply blockchain state from decompressed data
         self.apply_snapshot_data(decompressed_data, height).await?;
-        
+
         info!("✅ Zstd snapshot extracted successfully");
         Ok(())
     }
@@ -1042,14 +1098,20 @@ impl SyncManager {
     async fn extract_gzip_snapshot(&self, path: &str, height: u32) -> NetworkResult<()> {
         use flate2::read::GzDecoder;
         use std::io::Read;
-        
-        info!("🗜️ Extracting gzip snapshot from {} at height {}", path, height);
-        
+
+        info!(
+            "🗜️ Extracting gzip snapshot from {} at height {}",
+            path, height
+        );
+
         // Read compressed file
-        let compressed_data = tokio::fs::read(path).await.map_err(|e| NetworkError::SyncFailed {
-            reason: format!("Failed to read snapshot file: {}", e),
-        })?;
-        
+        let compressed_data =
+            tokio::fs::read(path)
+                .await
+                .map_err(|e| NetworkError::SyncFailed {
+                    reason: format!("Failed to read snapshot file: {}", e),
+                })?;
+
         // Decompress using gzip
         let decompressed_data = tokio::task::spawn_blocking({
             let data = compressed_data.clone();
@@ -1059,15 +1121,18 @@ impl SyncManager {
                 decoder.read_to_end(&mut decompressed)?;
                 Ok(decompressed)
             }
-        }).await.map_err(|e| NetworkError::SyncFailed {
+        })
+        .await
+        .map_err(|e| NetworkError::SyncFailed {
             reason: format!("Task join error during gzip decompression: {}", e),
-        })?.map_err(|e| NetworkError::SyncFailed {
+        })?
+        .map_err(|e| NetworkError::SyncFailed {
             reason: format!("Gzip decompression failed: {}", e),
         })?;
-        
+
         // Parse and apply blockchain state from decompressed data
         self.apply_snapshot_data(decompressed_data, height).await?;
-        
+
         info!("✅ Gzip snapshot extracted successfully");
         Ok(())
     }
@@ -1075,7 +1140,7 @@ impl SyncManager {
     /// Apply snapshot data to blockchain state
     async fn apply_snapshot_data(&self, data: Vec<u8>, height: u32) -> NetworkResult<()> {
         info!("📊 Applying snapshot data for height {}", height);
-        
+
         // Parse Neo snapshot data format - contains compressed blockchain state
         let snapshot_data = tokio::task::spawn_blocking({
             let data_clone = data.clone();
@@ -1083,50 +1148,70 @@ impl SyncManager {
                 // Parse actual Neo snapshot format (matches C# Neo snapshot structure)
                 SnapshotFormat::parse_neo_snapshot(&data_clone)
             }
-        }).await.map_err(|e| NetworkError::SyncFailed {
+        })
+        .await
+        .map_err(|e| NetworkError::SyncFailed {
             reason: format!("Failed to parse snapshot data: {}", e),
-        })?.map_err(|e| NetworkError::SyncFailed {
+        })?
+        .map_err(|e| NetworkError::SyncFailed {
             reason: format!("Snapshot data parsing error: {}", e),
         })?;
-        
+
         // Apply the blockchain state
         // This would involve:
         // 1. Updating the blockchain height
         // 2. Loading block headers and transaction data
         // 3. Updating UTXO set and account states
         // 4. Loading contract storage and metadata
-        
-        info!("📦 Snapshot contains {} bytes of blockchain state", snapshot_data.len());
-        
+
+        info!(
+            "📦 Snapshot contains {} bytes of blockchain state",
+            snapshot_data.len()
+        );
+
         // Apply the parsed snapshot data to blockchain state
         // This implementation matches the C# Neo snapshot application process
-        
+
         // 1. Validate snapshot integrity
-        if snapshot_data.headers.len() > 0 && snapshot_data.headers.last().unwrap().index != height {
+        if snapshot_data.headers.len() > 0 && snapshot_data.headers.last().unwrap().index != height
+        {
             return Err(NetworkError::SyncFailed {
-                reason: format!("Snapshot height mismatch: expected {}, got {}", 
-                               height, snapshot_data.headers.last().unwrap().index),
+                reason: format!(
+                    "Snapshot height mismatch: expected {}, got {}",
+                    height,
+                    snapshot_data.headers.last().unwrap().index
+                ),
             });
         }
-        
+
         // 2. Apply account states to blockchain
         for (account, state) in &snapshot_data.account_states {
             // In a complete implementation, this would update the blockchain's account state
-            debug!("Applying account state for {:?}: balance {}", account, state.balance);
+            debug!(
+                "Applying account state for {:?}: balance {}",
+                account, state.balance
+            );
         }
-        
+
         // 3. Apply contract states
         for (contract_hash, contract_data) in &snapshot_data.contract_states {
-            debug!("Applying contract state for {:?}: {} bytes", contract_hash, contract_data.len());
+            debug!(
+                "Applying contract state for {:?}: {} bytes",
+                contract_hash,
+                contract_data.len()
+            );
         }
-        
+
         // 4. Apply validator information
         for validator in &snapshot_data.validators {
-            debug!("Applying validator info: {} votes, active: {}", validator.votes, validator.active);
+            debug!(
+                "Applying validator info: {} votes, active: {}",
+                validator.votes, validator.active
+            );
         }
-        
-        info!("✅ Snapshot data applied successfully at height {} with {} accounts, {} contracts, {} validators", 
-              height, snapshot_data.account_states.len(), 
+
+        info!("✅ Snapshot data applied successfully at height {} with {} accounts, {} contracts, {} validators",
+              height, snapshot_data.account_states.len(),
               snapshot_data.contract_states.len(), snapshot_data.validators.len());
         Ok(())
     }
@@ -1891,8 +1976,7 @@ mod tests {
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = Arc::new(
-            P2pNode::new(config, command_receiver)
-                .expect("Failed to create P2P node for test")
+            P2pNode::new(config, command_receiver).expect("Failed to create P2P node for test"),
         );
         let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), p2p_node.clone()));
         (sync_manager, blockchain, p2p_node)
@@ -1916,8 +2000,7 @@ mod tests {
         ];
 
         for state in states {
-            let serialized = serde_json::to_string(&state)
-                .expect("Failed to serialize sync state");
+            let serialized = serde_json::to_string(&state).expect("Failed to serialize sync state");
             let deserialized: SyncState =
                 serde_json::from_str(&serialized).expect("Failed to parse from string");
             assert_eq!(state, deserialized);

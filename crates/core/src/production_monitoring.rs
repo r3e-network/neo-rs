@@ -122,16 +122,16 @@ pub struct ProductionMonitor {
 
 #[derive(Debug, Clone)]
 pub struct AlertThresholds {
-    pub memory_usage_warning: f64,     // 70%
-    pub memory_usage_critical: f64,    // 85%
-    pub cpu_usage_warning: f64,        // 80%
-    pub cpu_usage_critical: f64,       // 95%
-    pub disk_usage_warning: f64,       // 80%
-    pub disk_usage_critical: f64,      // 90%
-    pub peer_count_warning: usize,     // 3
-    pub peer_count_critical: usize,    // 1
-    pub block_sync_lag_warning: u64,   // 10 blocks
-    pub block_sync_lag_critical: u64,  // 100 blocks
+    pub memory_usage_warning: f64,    // 70%
+    pub memory_usage_critical: f64,   // 85%
+    pub cpu_usage_warning: f64,       // 80%
+    pub cpu_usage_critical: f64,      // 95%
+    pub disk_usage_warning: f64,      // 80%
+    pub disk_usage_critical: f64,     // 90%
+    pub peer_count_warning: usize,    // 3
+    pub peer_count_critical: usize,   // 1
+    pub block_sync_lag_warning: u64,  // 10 blocks
+    pub block_sync_lag_critical: u64, // 100 blocks
 }
 
 impl Default for AlertThresholds {
@@ -177,29 +177,32 @@ impl ProductionMonitor {
             last_check: Arc::new(RwLock::new(Instant::now())),
         }
     }
-    
+
     /// Register a health checker for a component
     pub fn register_health_checker(&mut self, checker: Box<dyn HealthChecker + Send + Sync>) {
         let name = checker.component_name().to_string();
         self.health_checkers.insert(name, checker);
     }
-    
+
     /// Register a metrics collector
-    pub fn register_metrics_collector(&mut self, collector: Box<dyn MetricsCollector + Send + Sync>) {
+    pub fn register_metrics_collector(
+        &mut self,
+        collector: Box<dyn MetricsCollector + Send + Sync>,
+    ) {
         let name = collector.metrics_prefix().to_string();
         self.metrics_collectors.insert(name, collector);
     }
-    
+
     /// Perform comprehensive health check
     pub async fn check_health(&self) -> HealthStatus {
         let start_check = Instant::now();
         let mut components = HashMap::new();
         let mut overall_level = HealthLevel::Healthy;
-        
+
         // Check all registered components
         for (name, checker) in &self.health_checkers {
             let component_health = checker.check_health().await;
-            
+
             // Update overall health based on component status
             match component_health.status {
                 HealthLevel::Critical | HealthLevel::Down => overall_level = HealthLevel::Critical,
@@ -208,13 +211,13 @@ impl ProductionMonitor {
                 }
                 _ => {}
             }
-            
+
             components.insert(name.clone(), component_health);
         }
-        
+
         // Collect production metrics
         let metrics = self.collect_production_metrics().await;
-        
+
         let health_status = HealthStatus {
             overall: overall_level,
             components,
@@ -225,71 +228,115 @@ impl ProductionMonitor {
                 .as_secs(),
             metrics,
         };
-        
+
         // Cache the status
         *self.cached_status.write().await = Some(health_status.clone());
         *self.last_check.write().await = Instant::now();
-        
+
         let check_duration = start_check.elapsed();
         debug!("Health check completed in {:?}", check_duration);
-        
+
         health_status
     }
-    
+
     /// Get cached health status (fast endpoint for frequent checks)
     pub async fn get_cached_health(&self) -> Option<HealthStatus> {
         let cached = self.cached_status.read().await;
         cached.clone()
     }
-    
+
     /// Collect comprehensive production metrics from actual system components
     async fn collect_production_metrics(&self) -> ProductionMetrics {
         // Collect real metrics from all registered collectors
         let mut all_metrics = HashMap::new();
-        
+
         for (name, collector) in &self.metrics_collectors {
             let component_metrics = collector.collect_metrics().await;
             for (key, value) in component_metrics {
                 all_metrics.insert(format!("{}_{}", name, key), value);
             }
         }
-        
+
         // Extract structured metrics from collected data
         ProductionMetrics {
             blockchain: BlockchainMetrics {
                 current_height: all_metrics.get("blockchain_height").copied().unwrap_or(0.0) as u64,
-                blocks_per_minute: all_metrics.get("blockchain_blocks_per_minute").copied().unwrap_or(4.0),
-                transactions_per_second: all_metrics.get("blockchain_tps").copied().unwrap_or(1000.0),
-                average_block_size: all_metrics.get("blockchain_avg_block_size").copied().unwrap_or(1024.0) as u64,
-                mempool_size: all_metrics.get("blockchain_mempool_size").copied().unwrap_or(0.0) as usize,
-                pending_transactions: all_metrics.get("blockchain_pending_tx").copied().unwrap_or(0.0) as usize,
+                blocks_per_minute: all_metrics
+                    .get("blockchain_blocks_per_minute")
+                    .copied()
+                    .unwrap_or(4.0),
+                transactions_per_second: all_metrics
+                    .get("blockchain_tps")
+                    .copied()
+                    .unwrap_or(1000.0),
+                average_block_size: all_metrics
+                    .get("blockchain_avg_block_size")
+                    .copied()
+                    .unwrap_or(1024.0) as u64,
+                mempool_size: all_metrics
+                    .get("blockchain_mempool_size")
+                    .copied()
+                    .unwrap_or(0.0) as usize,
+                pending_transactions: all_metrics
+                    .get("blockchain_pending_tx")
+                    .copied()
+                    .unwrap_or(0.0) as usize,
             },
             network: NetworkMetrics {
                 connected_peers: all_metrics.get("network_peers").copied().unwrap_or(8.0) as usize,
-                messages_per_second: all_metrics.get("network_msg_rate").copied().unwrap_or(100.0),
-                bandwidth_usage_mbps: all_metrics.get("network_bandwidth").copied().unwrap_or(10.0),
+                messages_per_second: all_metrics
+                    .get("network_msg_rate")
+                    .copied()
+                    .unwrap_or(100.0),
+                bandwidth_usage_mbps: all_metrics
+                    .get("network_bandwidth")
+                    .copied()
+                    .unwrap_or(10.0),
                 connection_errors: all_metrics.get("network_errors").copied().unwrap_or(0.0) as u64,
                 average_latency_ms: all_metrics.get("network_latency").copied().unwrap_or(50.0),
             },
             vm: VmMetrics {
                 executions_per_second: all_metrics.get("vm_exec_rate").copied().unwrap_or(500.0),
-                average_gas_consumed: all_metrics.get("vm_avg_gas").copied().unwrap_or(1000000.0) as u64,
-                successful_executions: all_metrics.get("vm_success_count").copied().unwrap_or(1000.0) as u64,
-                failed_executions: all_metrics.get("vm_failure_count").copied().unwrap_or(10.0) as u64,
+                average_gas_consumed: all_metrics.get("vm_avg_gas").copied().unwrap_or(1000000.0)
+                    as u64,
+                successful_executions: all_metrics
+                    .get("vm_success_count")
+                    .copied()
+                    .unwrap_or(1000.0) as u64,
+                failed_executions: all_metrics.get("vm_failure_count").copied().unwrap_or(10.0)
+                    as u64,
                 average_execution_time_ms: all_metrics.get("vm_avg_time").copied().unwrap_or(2.0),
             },
             storage: StorageMetrics {
-                read_ops_per_second: all_metrics.get("storage_read_rate").copied().unwrap_or(5000.0),
-                write_ops_per_second: all_metrics.get("storage_write_rate").copied().unwrap_or(1000.0),
-                cache_hit_rate: all_metrics.get("storage_cache_hit_rate").copied().unwrap_or(95.0),
-                disk_usage_gb: all_metrics.get("storage_disk_usage").copied().unwrap_or(10.0),
-                average_read_latency_ms: all_metrics.get("storage_read_latency").copied().unwrap_or(0.5),
-                average_write_latency_ms: all_metrics.get("storage_write_latency").copied().unwrap_or(2.0),
+                read_ops_per_second: all_metrics
+                    .get("storage_read_rate")
+                    .copied()
+                    .unwrap_or(5000.0),
+                write_ops_per_second: all_metrics
+                    .get("storage_write_rate")
+                    .copied()
+                    .unwrap_or(1000.0),
+                cache_hit_rate: all_metrics
+                    .get("storage_cache_hit_rate")
+                    .copied()
+                    .unwrap_or(95.0),
+                disk_usage_gb: all_metrics
+                    .get("storage_disk_usage")
+                    .copied()
+                    .unwrap_or(10.0),
+                average_read_latency_ms: all_metrics
+                    .get("storage_read_latency")
+                    .copied()
+                    .unwrap_or(0.5),
+                average_write_latency_ms: all_metrics
+                    .get("storage_write_latency")
+                    .copied()
+                    .unwrap_or(2.0),
             },
             system: SystemMetrics {
                 cpu_usage_percent: {
                     // Use sysinfo to get actual CPU usage
-                    use sysinfo::{System, SystemExt, CpuExt};
+                    use sysinfo::{CpuExt, System, SystemExt};
                     let mut sys = System::new_all();
                     sys.refresh_cpu();
                     sys.global_cpu_info().cpu_usage() as f64
@@ -306,8 +353,12 @@ impl ProductionMonitor {
                     sys.refresh_memory();
                     (sys.used_memory() as f64 / sys.total_memory() as f64) * 100.0
                 },
-                disk_usage_percent: all_metrics.get("system_disk_usage").copied().unwrap_or(45.0),
-                open_file_descriptors: all_metrics.get("system_open_fds").copied().unwrap_or(128.0) as u64,
+                disk_usage_percent: all_metrics
+                    .get("system_disk_usage")
+                    .copied()
+                    .unwrap_or(45.0),
+                open_file_descriptors: all_metrics.get("system_open_fds").copied().unwrap_or(128.0)
+                    as u64,
                 load_average: [
                     all_metrics.get("system_load_1m").copied().unwrap_or(1.0),
                     all_metrics.get("system_load_5m").copied().unwrap_or(1.2),
@@ -316,43 +367,52 @@ impl ProductionMonitor {
             },
         }
     }
-    
+
     /// Check if any alert thresholds are exceeded
     pub async fn check_alerts(&self) -> Vec<Alert> {
         let mut alerts = Vec::new();
         let health = self.check_health().await;
-        
+
         // Check system resource alerts
         let sys_metrics = &health.metrics.system;
-        
+
         if sys_metrics.memory_usage_percent > self.alert_thresholds.memory_usage_critical {
             alerts.push(Alert::critical(
                 "memory_usage",
-                format!("Memory usage critical: {:.1}%", sys_metrics.memory_usage_percent)
+                format!(
+                    "Memory usage critical: {:.1}%",
+                    sys_metrics.memory_usage_percent
+                ),
             ));
         } else if sys_metrics.memory_usage_percent > self.alert_thresholds.memory_usage_warning {
             alerts.push(Alert::warning(
-                "memory_usage", 
-                format!("Memory usage high: {:.1}%", sys_metrics.memory_usage_percent)
+                "memory_usage",
+                format!(
+                    "Memory usage high: {:.1}%",
+                    sys_metrics.memory_usage_percent
+                ),
             ));
         }
-        
+
         if sys_metrics.cpu_usage_percent > self.alert_thresholds.cpu_usage_critical {
             alerts.push(Alert::critical(
                 "cpu_usage",
-                format!("CPU usage critical: {:.1}%", sys_metrics.cpu_usage_percent)
+                format!("CPU usage critical: {:.1}%", sys_metrics.cpu_usage_percent),
             ));
         }
-        
+
         // Check network connectivity
         let network_metrics = &health.metrics.network;
         if network_metrics.connected_peers < self.alert_thresholds.peer_count_critical {
             alerts.push(Alert::critical(
                 "peer_connectivity",
-                format!("Critical peer shortage: {} peers", network_metrics.connected_peers)
+                format!(
+                    "Critical peer shortage: {} peers",
+                    network_metrics.connected_peers
+                ),
             ));
         }
-        
+
         alerts
     }
 }
@@ -384,7 +444,7 @@ impl Alert {
                 .as_secs(),
         }
     }
-    
+
     pub fn critical(component: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             severity: AlertSeverity::Critical,
@@ -423,15 +483,16 @@ impl HealthChecker for BlockchainHealthChecker {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
-                .as_secs() % 1000000 // Deterministic but changing height value
+                .as_secs()
+                % 1000000 // Deterministic but changing height value
         };
-        
+
         let status = if current_height > 0 {
             HealthLevel::Healthy
         } else {
             HealthLevel::Warning
         };
-        
+
         ComponentHealth {
             status,
             message: format!("Blockchain at height {}", current_height),
@@ -448,10 +509,12 @@ impl HealthChecker for BlockchainHealthChecker {
                         .unwrap_or(0) as f64;
                     tx_count
                 }),
-            ].into_iter().collect(),
+            ]
+            .into_iter()
+            .collect(),
         }
     }
-    
+
     fn component_name(&self) -> &'static str {
         "blockchain"
     }
@@ -486,7 +549,7 @@ impl HealthChecker for NetworkHealthChecker {
                 8 // Default peer count if /proc is not available
             }
         };
-        
+
         let status = if peer_count >= 3 {
             HealthLevel::Healthy
         } else if peer_count >= 1 {
@@ -494,7 +557,7 @@ impl HealthChecker for NetworkHealthChecker {
         } else {
             HealthLevel::Critical
         };
-        
+
         ComponentHealth {
             status,
             message: format!("Network connected to {} peers", peer_count),
@@ -516,7 +579,8 @@ impl HealthChecker for NetworkHealthChecker {
                     use std::fs;
                     fs::read_to_string("/proc/net/dev")
                         .map(|content| {
-                            content.lines()
+                            content
+                                .lines()
                                 .skip(2) // Skip header lines
                                 .map(|line| {
                                     line.split_whitespace()
@@ -528,10 +592,12 @@ impl HealthChecker for NetworkHealthChecker {
                         })
                         .unwrap_or(5000.0)
                 }),
-            ].into_iter().collect(),
+            ]
+            .into_iter()
+            .collect(),
         }
     }
-    
+
     fn component_name(&self) -> &'static str {
         "network"
     }
@@ -539,26 +605,24 @@ impl HealthChecker for NetworkHealthChecker {
 
 /// Global production monitor instance
 lazy_static::lazy_static! {
-    pub static ref PRODUCTION_MONITOR: Arc<RwLock<ProductionMonitor>> = 
+    pub static ref PRODUCTION_MONITOR: Arc<RwLock<ProductionMonitor>> =
         Arc::new(RwLock::new(ProductionMonitor::new()));
 }
 
 /// Initialize production monitoring system
 pub async fn initialize_production_monitoring() -> Result<(), Box<dyn std::error::Error>> {
     let mut monitor = PRODUCTION_MONITOR.write().await;
-    
+
     // Register default health checkers
     // Note: In a complete implementation, these would receive actual component references
     let system_monitor = Arc::new(RwLock::new(crate::system_monitoring::SystemMonitor::new()));
-    
-    monitor.register_health_checker(Box::new(
-        BlockchainHealthChecker::new(system_monitor.clone())
-    ));
-    
-    monitor.register_health_checker(Box::new(
-        NetworkHealthChecker::new(system_monitor.clone())
-    ));
-    
+
+    monitor.register_health_checker(Box::new(BlockchainHealthChecker::new(
+        system_monitor.clone(),
+    )));
+
+    monitor.register_health_checker(Box::new(NetworkHealthChecker::new(system_monitor.clone())));
+
     info!("Production monitoring system initialized");
     Ok(())
 }
@@ -582,29 +646,29 @@ mod tests {
     #[tokio::test]
     async fn test_production_monitor() {
         let monitor = ProductionMonitor::new();
-        
+
         // Test health check
         let health = monitor.check_health().await;
         assert_eq!(health.components.len(), 0); // No components registered yet
-        
+
         // Test alert checking
         let alerts = monitor.check_alerts().await;
         assert!(alerts.is_empty()); // No alerts with default metrics
     }
-    
+
     #[test]
     fn test_alert_thresholds() {
         let thresholds = AlertThresholds::default();
         assert_eq!(thresholds.memory_usage_warning, 70.0);
         assert_eq!(thresholds.peer_count_critical, 1);
     }
-    
+
     #[test]
     fn test_alert_creation() {
         let warning = Alert::warning("test", "test message");
         assert!(matches!(warning.severity, AlertSeverity::Warning));
         assert_eq!(warning.component, "test");
-        
+
         let critical = Alert::critical("test", "critical message");
         assert!(matches!(critical.severity, AlertSeverity::Critical));
     }

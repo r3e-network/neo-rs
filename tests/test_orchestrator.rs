@@ -1,5 +1,5 @@
 //! Test Orchestrator for Enhanced Parallel Testing
-//! 
+//!
 //! This module provides enhanced test orchestration with intelligent
 //! parallelization, resource pooling, and performance monitoring.
 
@@ -100,21 +100,19 @@ impl TestOrchestrator {
     {
         // Acquire semaphore permit for concurrency control
         let _permit = self.semaphore.acquire().await.expect("Semaphore closed");
-        
+
         let start_time = Instant::now();
         let resource_pool = self.resource_pool.clone();
-        
+
         // Execute test with resource access
-        let handle = tokio::spawn(async move {
-            test_fn(resource_pool).await
-        });
-        
+        let handle = tokio::spawn(async move { test_fn(resource_pool).await });
+
         // Store handle for monitoring
         {
             let mut active = self.active_tests.lock().unwrap();
             active.insert(name.clone(), handle);
         }
-        
+
         // Wait for completion
         let result = {
             let mut active = self.active_tests.lock().unwrap();
@@ -136,10 +134,10 @@ impl TestOrchestrator {
                 }
             }
         };
-        
+
         // Update metrics
         self.update_metrics(&result);
-        
+
         result
     }
 
@@ -157,11 +155,11 @@ impl TestOrchestrator {
         if let Some(memory) = result.memory_usage {
             metrics.memory_usage += memory;
         }
-        
+
         // Calculate parallel efficiency
         if metrics.total_tests > 1 {
             let sequential_estimate = metrics.average_duration * metrics.total_tests;
-            metrics.parallel_efficiency = 
+            metrics.parallel_efficiency =
                 sequential_estimate.as_secs_f64() / metrics.total_duration.as_secs_f64();
         }
     }
@@ -189,7 +187,7 @@ impl TestResourcePool {
         let mut mock_blockchains = Vec::new();
         let mut mock_storages = Vec::new();
         let mut available_ports = Vec::new();
-        
+
         // Initialize mock blockchains
         for i in 0..10 {
             mock_blockchains.push(MockBlockchain {
@@ -198,7 +196,7 @@ impl TestResourcePool {
                 in_use: false,
             });
         }
-        
+
         // Initialize mock storages
         for _ in 0..20 {
             mock_storages.push(MockStorage {
@@ -206,12 +204,12 @@ impl TestResourcePool {
                 in_use: false,
             });
         }
-        
+
         // Initialize available test ports
         for port in 30000..32000 {
             available_ports.push(port);
         }
-        
+
         Self {
             mock_blockchains: Arc::new(Mutex::new(mock_blockchains)),
             mock_storages: Arc::new(Mutex::new(mock_storages)),
@@ -285,19 +283,19 @@ impl TestResourcePool {
         for i in 0..=height {
             let mut hash = [0u8; 32];
             hash[0..4].copy_from_slice(&i.to_le_bytes());
-            
+
             let mut transactions = Vec::new();
             for j in 0..5 {
                 let mut tx_hash = [0u8; 32];
                 tx_hash[0..4].copy_from_slice(&i.to_le_bytes());
                 tx_hash[4..8].copy_from_slice(&j.to_le_bytes());
-                
+
                 transactions.push(MockTransaction {
                     hash: tx_hash,
                     size: 250 + (j * 50),
                 });
             }
-            
+
             blocks.push(MockBlock {
                 height: i,
                 hash,
@@ -339,7 +337,7 @@ impl EnhancedTestRunner {
     /// Runs tests in the specified categories
     pub async fn run_category_tests(&self, category: TestCategory) -> Vec<TestResult> {
         let mut results = Vec::new();
-        
+
         match category {
             TestCategory::Unit => {
                 results.extend(self.run_unit_tests().await);
@@ -360,25 +358,24 @@ impl EnhancedTestRunner {
                 results.extend(self.run_network_tests().await);
             }
         }
-        
+
         results
     }
 
     /// Runs unit tests with parallelization
     async fn run_unit_tests(&self) -> Vec<TestResult> {
         vec![
-            self.orchestrator.execute_test(
-                "core_unit_tests".to_string(),
-                |pool| async move {
+            self.orchestrator
+                .execute_test("core_unit_tests".to_string(), |pool| async move {
                     if let Some(blockchain) = pool.acquire_blockchain() {
                         // Run core unit tests with mock blockchain
                         let start = Instant::now();
-                        
+
                         // Simulate test execution
                         tokio::time::sleep(Duration::from_millis(100)).await;
-                        
+
                         pool.release_blockchain(blockchain.height);
-                        
+
                         TestResult {
                             name: "core_unit_tests".to_string(),
                             success: true,
@@ -395,28 +392,27 @@ impl EnhancedTestRunner {
                             error: Some("Could not acquire blockchain".to_string()),
                         }
                     }
-                }
-            ).await
+                })
+                .await,
         ]
     }
 
     /// Runs integration tests
     async fn run_integration_tests(&self) -> Vec<TestResult> {
         vec![
-            self.orchestrator.execute_test(
-                "blockchain_integration".to_string(),
-                |pool| async move {
+            self.orchestrator
+                .execute_test("blockchain_integration".to_string(), |pool| async move {
                     let start = Instant::now();
-                    
+
                     // Simulate integration test
-                    if let (Some(blockchain), Some(storage)) = 
-                        (pool.acquire_blockchain(), pool.acquire_storage()) {
-                        
+                    if let (Some(blockchain), Some(storage)) =
+                        (pool.acquire_blockchain(), pool.acquire_storage())
+                    {
                         tokio::time::sleep(Duration::from_millis(500)).await;
-                        
+
                         pool.release_blockchain(blockchain.height);
                         pool.release_storage(&storage);
-                        
+
                         TestResult {
                             name: "blockchain_integration".to_string(),
                             success: true,
@@ -433,25 +429,24 @@ impl EnhancedTestRunner {
                             error: Some("Could not acquire resources".to_string()),
                         }
                     }
-                }
-            ).await
+                })
+                .await,
         ]
     }
 
     /// Runs performance tests
     async fn run_performance_tests(&self) -> Vec<TestResult> {
         vec![
-            self.orchestrator.execute_test(
-                "transaction_throughput".to_string(),
-                |pool| async move {
+            self.orchestrator
+                .execute_test("transaction_throughput".to_string(), |pool| async move {
                     let start = Instant::now();
-                    
+
                     if let Some(blockchain) = pool.acquire_blockchain() {
                         // Simulate performance test
                         tokio::time::sleep(Duration::from_millis(1000)).await;
-                        
+
                         pool.release_blockchain(blockchain.height);
-                        
+
                         TestResult {
                             name: "transaction_throughput".to_string(),
                             success: true,
@@ -468,25 +463,24 @@ impl EnhancedTestRunner {
                             error: Some("Could not acquire blockchain".to_string()),
                         }
                     }
-                }
-            ).await
+                })
+                .await,
         ]
     }
 
     /// Runs compatibility tests
     async fn run_compatibility_tests(&self) -> Vec<TestResult> {
         vec![
-            self.orchestrator.execute_test(
-                "csharp_compatibility".to_string(),
-                |pool| async move {
+            self.orchestrator
+                .execute_test("csharp_compatibility".to_string(), |pool| async move {
                     let start = Instant::now();
-                    
+
                     if let Some(storage) = pool.acquire_storage() {
                         // Simulate C# compatibility test
                         tokio::time::sleep(Duration::from_millis(300)).await;
-                        
+
                         pool.release_storage(&storage);
-                        
+
                         TestResult {
                             name: "csharp_compatibility".to_string(),
                             success: true,
@@ -503,22 +497,21 @@ impl EnhancedTestRunner {
                             error: Some("Could not acquire storage".to_string()),
                         }
                     }
-                }
-            ).await
+                })
+                .await,
         ]
     }
 
     /// Runs security tests
     async fn run_security_tests(&self) -> Vec<TestResult> {
         vec![
-            self.orchestrator.execute_test(
-                "cryptographic_security".to_string(),
-                |_pool| async move {
+            self.orchestrator
+                .execute_test("cryptographic_security".to_string(), |_pool| async move {
                     let start = Instant::now();
-                    
+
                     // Simulate security test
                     tokio::time::sleep(Duration::from_millis(750)).await;
-                    
+
                     TestResult {
                         name: "cryptographic_security".to_string(),
                         success: true,
@@ -526,25 +519,24 @@ impl EnhancedTestRunner {
                         memory_usage: Some(3 * 1024 * 1024), // 3MB
                         error: None,
                     }
-                }
-            ).await
+                })
+                .await,
         ]
     }
 
     /// Runs network tests
     async fn run_network_tests(&self) -> Vec<TestResult> {
         vec![
-            self.orchestrator.execute_test(
-                "p2p_connectivity".to_string(),
-                |pool| async move {
+            self.orchestrator
+                .execute_test("p2p_connectivity".to_string(), |pool| async move {
                     let start = Instant::now();
-                    
+
                     if let Some(port) = pool.acquire_port() {
                         // Simulate network test
                         tokio::time::sleep(Duration::from_millis(400)).await;
-                        
+
                         pool.release_port(port);
-                        
+
                         TestResult {
                             name: "p2p_connectivity".to_string(),
                             success: true,
@@ -561,15 +553,15 @@ impl EnhancedTestRunner {
                             error: Some("Could not acquire port".to_string()),
                         }
                     }
-                }
-            ).await
+                })
+                .await,
         ]
     }
 
     /// Generates a comprehensive test report
     pub async fn generate_report(&self) -> TestReport {
         let metrics = self.orchestrator.get_metrics();
-        
+
         TestReport {
             total_tests: metrics.total_tests,
             passed: metrics.passed_tests,
@@ -603,15 +595,23 @@ impl TestReport {
     pub fn print_summary(&self) {
         println!("\n🧪 Enhanced Test Suite Results");
         println!("==============================");
-        println!("📊 Tests: {} total, {} passed, {} failed", 
-                 self.total_tests, self.passed, self.failed);
+        println!(
+            "📊 Tests: {} total, {} passed, {} failed",
+            self.total_tests, self.passed, self.failed
+        );
         println!("✅ Success Rate: {:.1}%", self.success_rate);
-        println!("⏱️  Total Duration: {:.2}s", self.total_duration.as_secs_f64());
-        println!("⚡ Average Duration: {:.2}ms", self.average_duration.as_millis());
+        println!(
+            "⏱️  Total Duration: {:.2}s",
+            self.total_duration.as_secs_f64()
+        );
+        println!(
+            "⚡ Average Duration: {:.2}ms",
+            self.average_duration.as_millis()
+        );
         println!("🚀 Parallel Efficiency: {:.1}x", self.parallel_efficiency);
         println!("💾 Memory Usage: {} MB", self.memory_usage_mb);
         println!("🏷️  Categories: {:?}", self.categories_tested);
-        
+
         if self.success_rate >= 100.0 {
             println!("🎉 All tests passed!");
         } else if self.success_rate >= 90.0 {

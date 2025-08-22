@@ -3,11 +3,11 @@
 //! Provides detailed performance tracking and bottleneck detection.
 
 use crate::error_handling::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 
 /// Performance sample for a specific metric
@@ -84,7 +84,7 @@ impl PerformanceMetric {
             stats: MetricStatistics::default(),
         }
     }
-    
+
     /// Add a sample to the metric
     pub fn add_sample(&mut self, value: f64, metadata: Option<HashMap<String, String>>) {
         let sample = PerformanceSample {
@@ -92,71 +92,67 @@ impl PerformanceMetric {
             value,
             metadata,
         };
-        
+
         // Add sample and maintain max size
         self.samples.push_back(sample);
         if self.samples.len() > self.max_samples {
             self.samples.pop_front();
         }
-        
+
         // Update statistics
         self.update_statistics();
     }
-    
+
     /// Update statistics based on current samples
     fn update_statistics(&mut self) {
         if self.samples.is_empty() {
             return;
         }
-        
+
         let values: Vec<f64> = self.samples.iter().map(|s| s.value).collect();
         let count = values.len();
-        
+
         self.stats.current = values.last().copied().unwrap_or(0.0);
         self.stats.min = values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
         self.stats.max = values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
         self.stats.avg = values.iter().sum::<f64>() / count as f64;
         self.stats.count = count;
-        
+
         // Calculate standard deviation
         let variance = values
             .iter()
             .map(|&v| (v - self.stats.avg).powi(2))
-            .sum::<f64>() / count as f64;
+            .sum::<f64>()
+            / count as f64;
         self.stats.std_dev = variance.sqrt();
-        
+
         // Calculate percentiles
         let mut sorted = values.clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        
+
         self.stats.p50 = self.percentile(&sorted, 0.50);
         self.stats.p90 = self.percentile(&sorted, 0.90);
         self.stats.p99 = self.percentile(&sorted, 0.99);
     }
-    
+
     /// Calculate percentile from sorted values
     fn percentile(&self, sorted: &[f64], p: f64) -> f64 {
         if sorted.is_empty() {
             return 0.0;
         }
-        
+
         let index = ((sorted.len() - 1) as f64 * p) as usize;
         sorted[index]
     }
-    
+
     /// Get current statistics
     pub fn get_stats(&self) -> &MetricStatistics {
         &self.stats
     }
-    
+
     /// Get recent samples
     pub fn get_samples(&self, count: usize) -> Vec<PerformanceSample> {
-        self.samples
-            .iter()
-            .rev()
-            .take(count)
-            .cloned()
-            .collect()
+        self.samples.iter().rev().take(count).cloned().collect()
     }
 }
 
@@ -228,18 +224,18 @@ impl PerformanceMonitor {
             alert_callbacks: Arc::new(RwLock::new(Vec::new())),
         }
     }
-    
+
     /// Register a new metric
     pub async fn register_metric(&self, name: String, max_samples: usize) {
         let mut metrics = self.metrics.write().await;
         metrics.insert(name.clone(), PerformanceMetric::new(name, max_samples));
     }
-    
+
     /// Record a metric value
     pub async fn record(&self, metric: &str, value: f64) -> Result<()> {
         self.record_with_metadata(metric, value, None).await
     }
-    
+
     /// Record a metric value with metadata
     pub async fn record_with_metadata(
         &self,
@@ -248,10 +244,10 @@ impl PerformanceMonitor {
         metadata: Option<HashMap<String, String>>,
     ) -> Result<()> {
         let mut metrics = self.metrics.write().await;
-        
+
         if let Some(m) = metrics.get_mut(metric) {
             m.add_sample(value, metadata);
-            
+
             // Check thresholds
             let thresholds = self.thresholds.read().await;
             if let Some(threshold) = thresholds.get(metric) {
@@ -260,16 +256,16 @@ impl PerformanceMonitor {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Set threshold for a metric
     pub async fn set_threshold(&self, threshold: PerformanceThreshold) {
         let mut thresholds = self.thresholds.write().await;
         thresholds.insert(threshold.metric.clone(), threshold);
     }
-    
+
     /// Register alert callback
     pub async fn register_alert_callback<F>(&self, callback: F)
     where
@@ -278,7 +274,7 @@ impl PerformanceMonitor {
         let mut callbacks = self.alert_callbacks.write().await;
         callbacks.push(Box::new(callback));
     }
-    
+
     /// Check if value violates threshold
     fn check_threshold(
         &self,
@@ -306,7 +302,7 @@ impl PerformanceMonitor {
                 }
             }
         };
-        
+
         Some(PerformanceAlert {
             metric: metric.to_string(),
             level,
@@ -319,7 +315,7 @@ impl PerformanceMonitor {
             timestamp: Utc::now(),
         })
     }
-    
+
     /// Trigger alert callbacks
     async fn trigger_alert(&self, alert: PerformanceAlert) {
         let callbacks = self.alert_callbacks.read().await;
@@ -327,13 +323,13 @@ impl PerformanceMonitor {
             callback(alert.clone());
         }
     }
-    
+
     /// Get statistics for a metric
     pub async fn get_stats(&self, metric: &str) -> Option<MetricStatistics> {
         let metrics = self.metrics.read().await;
         metrics.get(metric).map(|m| m.get_stats().clone())
     }
-    
+
     /// Get all metrics statistics
     pub async fn get_all_stats(&self) -> HashMap<String, MetricStatistics> {
         let metrics = self.metrics.read().await;
@@ -342,7 +338,7 @@ impl PerformanceMonitor {
             .map(|(name, metric)| (name.clone(), metric.get_stats().clone()))
             .collect()
     }
-    
+
     /// Get recent samples for a metric
     pub async fn get_samples(&self, metric: &str, count: usize) -> Vec<PerformanceSample> {
         let metrics = self.metrics.read().await;
@@ -372,7 +368,7 @@ impl Profiler {
             monitor: None,
         }
     }
-    
+
     /// Start profiling with monitor
     pub fn start_with_monitor(
         operation: impl Into<String>,
@@ -384,16 +380,16 @@ impl Profiler {
             monitor: Some(monitor),
         }
     }
-    
+
     /// Stop profiling and get duration
     pub fn stop(self) -> Duration {
         self.start.elapsed()
     }
-    
+
     /// Stop profiling and record to monitor
     pub async fn stop_and_record(self) {
         let duration = self.start.elapsed();
-        
+
         if let Some(monitor) = self.monitor {
             let _ = monitor
                 .record(&self.operation, duration.as_secs_f64())
@@ -406,48 +402,50 @@ impl Profiler {
 #[allow(dead_code)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_performance_metric() {
         let mut metric = PerformanceMetric::new("test".to_string(), 100);
-        
+
         // Add samples
         for i in 0..10 {
             metric.add_sample(i as f64, None);
         }
-        
+
         let stats = metric.get_stats();
         assert_eq!(stats.count, 10);
         assert_eq!(stats.min, 0.0);
         assert_eq!(stats.max, 9.0);
         assert_eq!(stats.avg, 4.5);
     }
-    
+
     #[tokio::test]
     async fn test_performance_monitor() {
         let monitor = PerformanceMonitor::new();
-        
+
         // Register metric
-        monitor.register_metric("test_metric".to_string(), 100).await;
-        
+        monitor
+            .register_metric("test_metric".to_string(), 100)
+            .await;
+
         // Record values
         for i in 0..5 {
             monitor.record("test_metric", i as f64).await.unwrap();
         }
-        
+
         // Get statistics
         let stats = monitor.get_stats("test_metric").await.unwrap();
         assert_eq!(stats.count, 5);
         assert_eq!(stats.avg, 2.0);
     }
-    
+
     #[tokio::test]
     async fn test_threshold_alerts() {
         let monitor = Arc::new(PerformanceMonitor::new());
-        
+
         // Register metric
         monitor.register_metric("cpu".to_string(), 100).await;
-        
+
         // Set threshold
         let threshold = PerformanceThreshold {
             metric: "cpu".to_string(),
@@ -456,11 +454,11 @@ mod tests {
             threshold_type: ThresholdType::Max,
         };
         monitor.set_threshold(threshold).await;
-        
+
         // Register alert callback
         let alert_triggered = Arc::new(RwLock::new(false));
         let alert_flag = alert_triggered.clone();
-        
+
         monitor
             .register_alert_callback(move |_alert| {
                 let flag = alert_flag.clone();
@@ -470,13 +468,13 @@ mod tests {
                 });
             })
             .await;
-        
+
         // Trigger alert
         monitor.record("cpu", 95.0).await.unwrap();
-        
+
         // Wait a bit for async callback
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         let triggered = alert_triggered.read().await;
         assert!(*triggered);
     }

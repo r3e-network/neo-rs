@@ -13,7 +13,7 @@ use neo_core::{Transaction, UInt160, UInt256};
 // Temporarily disabled smart contract imports due to compilation issues
 // use neo_smart_contract::{
 //     ContractState, ContractManifest, NefFile, ContractGroup, ContractAbi, ContractPermission,
-//     ContractParameterType, ContractMethodDescriptor, ContractEventDescriptor, 
+//     ContractParameterType, ContractMethodDescriptor, ContractEventDescriptor,
 //     ContractParameterDefinition, MethodToken, PermissionContract
 // };
 use std::collections::HashMap;

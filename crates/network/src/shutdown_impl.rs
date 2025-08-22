@@ -322,8 +322,8 @@ mod tests {
     #[tokio::test]
     async fn test_peer_manager_shutdown() {
         let config = NetworkConfig::testnet();
-        let peer_manager = PeerManager::new(config)
-            .expect("Failed to create peer manager for test");
+        let peer_manager =
+            PeerManager::new(config).expect("Failed to create peer manager for test");
 
         // Test shutdown
         let result = peer_manager.shutdown().await;
@@ -388,8 +388,7 @@ mod tests {
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = std::sync::Arc::new(
-            P2pNode::new(config, command_receiver)
-                .expect("Failed to create P2P node for test")
+            P2pNode::new(config, command_receiver).expect("Failed to create P2P node for test"),
         );
         let sync_manager = SyncManager::new(blockchain, p2p_node);
 
@@ -415,8 +414,7 @@ mod tests {
         let config = NetworkConfig::testnet();
         let (_, command_receiver) = tokio::sync::mpsc::channel(100);
         let p2p_node = std::sync::Arc::new(
-            P2pNode::new(config, command_receiver)
-                .expect("Failed to create P2P node for test")
+            P2pNode::new(config, command_receiver).expect("Failed to create P2P node for test"),
         );
         let sync_manager = SyncManager::new(blockchain, p2p_node);
 

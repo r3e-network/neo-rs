@@ -4,8 +4,8 @@
 //! for production Neo node deployment with real-time metrics collection.
 
 use prometheus::{Counter, Gauge, Histogram, Registry};
-use sysinfo::{SystemExt, CpuExt};
 use serde::{Deserialize, Serialize};
+use sysinfo::{CpuExt, SystemExt};
 // use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -191,42 +191,38 @@ impl BlockchainMetricsCollector {
     pub fn new(registry: &Registry) -> prometheus::Result<Self> {
         let blocks_processed = Counter::new(
             "neo_blocks_processed_total",
-            "Total number of blocks processed"
+            "Total number of blocks processed",
         )?;
         registry.register(Box::new(blocks_processed.clone()))?;
 
         let transactions_processed = Counter::new(
-            "neo_transactions_processed_total", 
-            "Total number of transactions processed"
+            "neo_transactions_processed_total",
+            "Total number of transactions processed",
         )?;
         registry.register(Box::new(transactions_processed.clone()))?;
 
         let block_processing_time = Histogram::with_opts(
             prometheus::HistogramOpts::new(
                 "neo_block_processing_duration_seconds",
-                "Block processing time in seconds"
-            ).buckets(vec![0.001, 0.01, 0.1, 1.0, 10.0])
+                "Block processing time in seconds",
+            )
+            .buckets(vec![0.001, 0.01, 0.1, 1.0, 10.0]),
         )?;
         registry.register(Box::new(block_processing_time.clone()))?;
 
         let tx_validation_time = Histogram::with_opts(
             prometheus::HistogramOpts::new(
                 "neo_transaction_validation_duration_seconds",
-                "Transaction validation time in seconds"
-            ).buckets(vec![0.0001, 0.001, 0.01, 0.1, 1.0])
+                "Transaction validation time in seconds",
+            )
+            .buckets(vec![0.0001, 0.001, 0.01, 0.1, 1.0]),
         )?;
         registry.register(Box::new(tx_validation_time.clone()))?;
 
-        let current_height = Gauge::new(
-            "neo_blockchain_height",
-            "Current blockchain height"
-        )?;
+        let current_height = Gauge::new("neo_blockchain_height", "Current blockchain height")?;
         registry.register(Box::new(current_height.clone()))?;
 
-        let mempool_size = Gauge::new(
-            "neo_mempool_size",
-            "Current mempool size"
-        )?;
+        let mempool_size = Gauge::new("neo_mempool_size", "Current mempool size")?;
         registry.register(Box::new(mempool_size.clone()))?;
 
         Ok(Self {
@@ -242,13 +238,15 @@ impl BlockchainMetricsCollector {
     /// Records a block processing event
     pub fn record_block_processed(&self, processing_time: Duration) {
         self.blocks_processed.inc();
-        self.block_processing_time.observe(processing_time.as_secs_f64());
+        self.block_processing_time
+            .observe(processing_time.as_secs_f64());
     }
 
     /// Records a transaction validation event
     pub fn record_transaction_validated(&self, validation_time: Duration) {
         self.transactions_processed.inc();
-        self.tx_validation_time.observe(validation_time.as_secs_f64());
+        self.tx_validation_time
+            .observe(validation_time.as_secs_f64());
     }
 
     /// Updates current blockchain height
@@ -284,39 +282,35 @@ impl NetworkMetricsCollector {
     pub fn new(registry: &Registry) -> prometheus::Result<Self> {
         let messages_sent = Counter::new(
             "neo_network_messages_sent_total",
-            "Total network messages sent"
+            "Total network messages sent",
         )?;
         registry.register(Box::new(messages_sent.clone()))?;
 
         let messages_received = Counter::new(
             "neo_network_messages_received_total",
-            "Total network messages received"
+            "Total network messages received",
         )?;
         registry.register(Box::new(messages_received.clone()))?;
 
-        let bytes_sent = Counter::new(
-            "neo_network_bytes_sent_total",
-            "Total network bytes sent"
-        )?;
+        let bytes_sent = Counter::new("neo_network_bytes_sent_total", "Total network bytes sent")?;
         registry.register(Box::new(bytes_sent.clone()))?;
 
         let bytes_received = Counter::new(
             "neo_network_bytes_received_total",
-            "Total network bytes received"
+            "Total network bytes received",
         )?;
         registry.register(Box::new(bytes_received.clone()))?;
 
-        let connected_peers = Gauge::new(
-            "neo_network_connected_peers",
-            "Number of connected peers"
-        )?;
+        let connected_peers =
+            Gauge::new("neo_network_connected_peers", "Number of connected peers")?;
         registry.register(Box::new(connected_peers.clone()))?;
 
         let message_latency = Histogram::with_opts(
             prometheus::HistogramOpts::new(
                 "neo_network_message_latency_seconds",
-                "Network message latency"
-            ).buckets(vec![0.001, 0.01, 0.1, 1.0, 5.0])
+                "Network message latency",
+            )
+            .buckets(vec![0.001, 0.01, 0.1, 1.0, 5.0]),
         )?;
         registry.register(Box::new(message_latency.clone()))?;
 
@@ -367,36 +361,25 @@ pub struct VmMetricsCollector {
 impl VmMetricsCollector {
     /// Creates a new VM metrics collector
     pub fn new(registry: &Registry) -> prometheus::Result<Self> {
-        let executions = Counter::new(
-            "neo_vm_executions_total",
-            "Total VM script executions"
-        )?;
+        let executions = Counter::new("neo_vm_executions_total", "Total VM script executions")?;
         registry.register(Box::new(executions.clone()))?;
 
-        let gas_consumed = Counter::new(
-            "neo_vm_gas_consumed_total",
-            "Total gas consumed by VM"
-        )?;
+        let gas_consumed = Counter::new("neo_vm_gas_consumed_total", "Total gas consumed by VM")?;
         registry.register(Box::new(gas_consumed.clone()))?;
 
         let execution_time = Histogram::with_opts(
             prometheus::HistogramOpts::new(
                 "neo_vm_execution_duration_seconds",
-                "VM script execution time"
-            ).buckets(vec![0.0001, 0.001, 0.01, 0.1, 1.0])
+                "VM script execution time",
+            )
+            .buckets(vec![0.0001, 0.001, 0.01, 0.1, 1.0]),
         )?;
         registry.register(Box::new(execution_time.clone()))?;
 
-        let contract_calls = Counter::new(
-            "neo_vm_contract_calls_total",
-            "Total contract calls"
-        )?;
+        let contract_calls = Counter::new("neo_vm_contract_calls_total", "Total contract calls")?;
         registry.register(Box::new(contract_calls.clone()))?;
 
-        let vm_memory_usage = Gauge::new(
-            "neo_vm_memory_usage_bytes",
-            "VM memory usage in bytes"
-        )?;
+        let vm_memory_usage = Gauge::new("neo_vm_memory_usage_bytes", "VM memory usage in bytes")?;
         registry.register(Box::new(vm_memory_usage.clone()))?;
 
         Ok(Self {
@@ -447,32 +430,29 @@ impl SystemMetricsCollector {
     pub fn new(registry: &Registry) -> prometheus::Result<Self> {
         let cpu_usage = Gauge::new(
             "neo_system_cpu_usage_percent",
-            "System CPU usage percentage"
+            "System CPU usage percentage",
         )?;
         registry.register(Box::new(cpu_usage.clone()))?;
 
         let memory_usage = Gauge::new(
             "neo_system_memory_usage_bytes",
-            "System memory usage in bytes"
+            "System memory usage in bytes",
         )?;
         registry.register(Box::new(memory_usage.clone()))?;
 
         let disk_usage = Gauge::new(
             "neo_system_disk_usage_percent",
-            "System disk usage percentage"
+            "System disk usage percentage",
         )?;
         registry.register(Box::new(disk_usage.clone()))?;
 
         let network_connections = Gauge::new(
             "neo_system_network_connections",
-            "Number of network connections"
+            "Number of network connections",
         )?;
         registry.register(Box::new(network_connections.clone()))?;
 
-        let thread_count = Gauge::new(
-            "neo_system_thread_count",
-            "Number of system threads"
-        )?;
+        let thread_count = Gauge::new("neo_system_thread_count", "Number of system threads")?;
         registry.register(Box::new(thread_count.clone()))?;
 
         Ok(Self {
@@ -485,20 +465,22 @@ impl SystemMetricsCollector {
     }
 
     /// Updates system metrics
-    pub async fn update_system_metrics(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn update_system_metrics(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Collect system information
         let mut system = sysinfo::System::new();
         system.refresh_all();
-        
+
         // Update CPU usage
         let cpu_usage = system.global_cpu_info().cpu_usage();
         self.cpu_usage.set(cpu_usage as f64);
-        
+
         // Update memory usage
         let used_memory = system.used_memory();
         let total_memory = system.total_memory();
         self.memory_usage.set(used_memory as f64);
-        
+
         // Update disk usage (approximate)
         let disk_usage = if total_memory > 0 {
             (used_memory as f64 / total_memory as f64) * 100.0
@@ -506,11 +488,11 @@ impl SystemMetricsCollector {
             0.0
         };
         self.disk_usage.set(disk_usage);
-        
+
         // Update process count (approximate thread count)
         let process_count = system.processes().len();
         self.thread_count.set(process_count as f64);
-        
+
         Ok(())
     }
 }
@@ -519,12 +501,12 @@ impl AdvancedMetricsCollector {
     /// Creates a new advanced metrics collector
     pub fn new() -> prometheus::Result<Self> {
         let registry = Registry::new();
-        
+
         let blockchain_metrics = BlockchainMetricsCollector::new(&registry)?;
         let network_metrics = NetworkMetricsCollector::new(&registry)?;
         let vm_metrics = VmMetricsCollector::new(&registry)?;
         let system_metrics = SystemMetricsCollector::new(&registry)?;
-        
+
         Ok(Self {
             registry,
             blockchain_metrics,
@@ -534,7 +516,10 @@ impl AdvancedMetricsCollector {
             collection_interval: Duration::from_secs(30),
             metrics_store: Arc::new(RwLock::new(MetricsStore {
                 current: MetricsSnapshot {
-                    timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                    timestamp: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs(),
                     blockchain: BlockchainPerformanceMetrics {
                         height: 0,
                         blocks_per_minute: 0.0,
@@ -586,18 +571,18 @@ impl AdvancedMetricsCollector {
         let _metrics_store = self.metrics_store.clone();
         let system_metrics = self.system_metrics.clone();
         let interval = self.collection_interval;
-        
+
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(interval);
-            
+
             loop {
                 ticker.tick().await;
-                
+
                 // Collect system metrics
                 if let Err(e) = system_metrics.update_system_metrics().await {
                     warn!("Failed to update system metrics: {}", e);
                 }
-                
+
                 debug!("Metrics collection cycle completed");
             }
         })
@@ -615,9 +600,11 @@ impl AdvancedMetricsCollector {
         let cutoff_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs() - (duration_hours as u64 * 3600);
-        
-        store.history
+            .as_secs()
+            - (duration_hours as u64 * 3600);
+
+        store
+            .history
             .iter()
             .filter(|snapshot| snapshot.timestamp >= cutoff_time)
             .cloned()
@@ -633,7 +620,7 @@ impl AdvancedMetricsCollector {
     pub async fn record_alert(&self, alert: PerformanceAlert) {
         let mut store = self.metrics_store.write().await;
         store.alerts.push(alert);
-        
+
         // Keep only last 1000 alerts
         if store.alerts.len() > 1000 {
             store.alerts.remove(0);
@@ -641,11 +628,16 @@ impl AdvancedMetricsCollector {
     }
 
     /// Gets recent alerts
-    pub async fn get_recent_alerts(&self, severity: Option<AlertSeverity>) -> Vec<PerformanceAlert> {
+    pub async fn get_recent_alerts(
+        &self,
+        severity: Option<AlertSeverity>,
+    ) -> Vec<PerformanceAlert> {
         let store = self.metrics_store.read().await;
-        
+
         match severity {
-            Some(sev) => store.alerts.iter()
+            Some(sev) => store
+                .alerts
+                .iter()
                 .filter(|alert| alert.severity == sev)
                 .cloned()
                 .collect(),
@@ -698,7 +690,7 @@ impl PerformanceMonitor {
     /// Creates a new performance monitor
     pub fn new() -> prometheus::Result<Self> {
         let collector = AdvancedMetricsCollector::new()?;
-        
+
         Ok(Self {
             collector,
             thresholds: AlertThresholds::default(),
@@ -709,30 +701,36 @@ impl PerformanceMonitor {
     /// Starts performance monitoring
     pub async fn start_monitoring(&mut self) {
         info!("🚀 Starting advanced performance monitoring");
-        
+
         // Start metrics collection
         let _collection_task = self.collector.start_collection().await;
-        
+
         // Start alerting task
         let collector = self.collector.clone();
         let thresholds = self.thresholds.clone();
-        
+
         let monitoring_task = tokio::spawn(async move {
             let mut ticker = tokio::time::interval(Duration::from_secs(60));
-            
+
             loop {
                 ticker.tick().await;
-                
+
                 // Check thresholds and generate alerts
                 let current_metrics = collector.get_current_metrics().await;
-                
+
                 // CPU usage alerts
                 if current_metrics.system.cpu_usage_percent > thresholds.cpu_critical {
                     let alert = PerformanceAlert {
                         severity: AlertSeverity::Critical,
                         category: "System".to_string(),
-                        message: format!("Critical CPU usage: {:.1}%", current_metrics.system.cpu_usage_percent),
-                        timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                        message: format!(
+                            "Critical CPU usage: {:.1}%",
+                            current_metrics.system.cpu_usage_percent
+                        ),
+                        timestamp: SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs(),
                         metric_value: current_metrics.system.cpu_usage_percent,
                         threshold: thresholds.cpu_critical,
                     };
@@ -741,21 +739,33 @@ impl PerformanceMonitor {
                     let alert = PerformanceAlert {
                         severity: AlertSeverity::Warning,
                         category: "System".to_string(),
-                        message: format!("High CPU usage: {:.1}%", current_metrics.system.cpu_usage_percent),
-                        timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                        message: format!(
+                            "High CPU usage: {:.1}%",
+                            current_metrics.system.cpu_usage_percent
+                        ),
+                        timestamp: SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs(),
                         metric_value: current_metrics.system.cpu_usage_percent,
                         threshold: thresholds.cpu_warning,
                     };
                     collector.record_alert(alert).await;
                 }
-                
+
                 // Memory usage alerts
                 if current_metrics.system.memory_usage_percent > thresholds.memory_critical {
                     let alert = PerformanceAlert {
                         severity: AlertSeverity::Critical,
                         category: "System".to_string(),
-                        message: format!("Critical memory usage: {:.1}%", current_metrics.system.memory_usage_percent),
-                        timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                        message: format!(
+                            "Critical memory usage: {:.1}%",
+                            current_metrics.system.memory_usage_percent
+                        ),
+                        timestamp: SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs(),
                         metric_value: current_metrics.system.memory_usage_percent,
                         threshold: thresholds.memory_critical,
                     };
@@ -763,7 +773,7 @@ impl PerformanceMonitor {
                 }
             }
         });
-        
+
         self.monitoring_task = Some(monitoring_task);
         info!("✅ Performance monitoring started");
     }

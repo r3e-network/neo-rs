@@ -171,7 +171,9 @@ impl Serializable for ExtensiblePayload {
             _hash: None,
         };
 
-        payload.validate().map_err(|e| neo_io::IoError::invalid_format("ExtensiblePayload", &format!("{}", e)))?;
+        payload
+            .validate()
+            .map_err(|e| neo_io::IoError::invalid_format("ExtensiblePayload", &format!("{}", e)))?;
         Ok(payload)
     }
 

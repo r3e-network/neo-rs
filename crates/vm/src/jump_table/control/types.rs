@@ -236,23 +236,31 @@ impl Transaction {
     /// Gets the signers of the transaction
     pub fn signers(&self) -> Vec<Signer> {
         // Safe conversion from neo_core::Signer to local Signer
-        self.inner.signers().iter().map(|s| Signer::from_core(s.clone())).collect()
+        self.inner
+            .signers()
+            .iter()
+            .map(|s| Signer::from_core(s.clone()))
+            .collect()
     }
 
     /// Gets the attributes of the transaction
     pub fn attributes(&self) -> Vec<TransactionAttribute> {
         // Safe conversion from neo_core attributes to VM types
         // Currently only supporting OracleResponse attribute in VM
-        self.inner.attributes().iter().filter_map(|a| match a {
-            neo_core::TransactionAttribute::OracleResponse { id, code, result } => {
-                Some(TransactionAttribute::OracleResponse {
-                    id: *id,
-                    code: *code as u8,
-                    result: result.clone(),
-                })
-            }
-            _ => None, // Other attribute types not yet implemented in VM
-        }).collect()
+        self.inner
+            .attributes()
+            .iter()
+            .filter_map(|a| match a {
+                neo_core::TransactionAttribute::OracleResponse { id, code, result } => {
+                    Some(TransactionAttribute::OracleResponse {
+                        id: *id,
+                        code: *code as u8,
+                        result: result.clone(),
+                    })
+                }
+                _ => None, // Other attribute types not yet implemented in VM
+            })
+            .collect()
     }
 
     /// Creates a minimal transaction for VM testing

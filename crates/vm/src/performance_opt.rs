@@ -1,19 +1,19 @@
 //! Performance optimization utilities for the VM
-//! 
+//!
 //! This module provides optimized alternatives to expensive operations
 //! like cloning and memory allocation in hot paths.
 
-use crate::{StackItem, VmResult, VmError};
+use crate::{StackItem, VmError, VmResult};
+use std::borrow::Cow;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::borrow::Cow;
 
 /// Smart cloning strategies for stack items
 pub struct SmartClone;
 
 impl SmartClone {
     /// Clone only if necessary using reference counting
-    /// 
+    ///
     /// This method avoids cloning when the item is already reference-counted
     /// or when a reference would suffice.
     pub fn clone_if_needed(item: &StackItem) -> StackItem {
@@ -21,19 +21,19 @@ impl SmartClone {
         // which is much cheaper than deep cloning
         match item {
             StackItem::Array(arr) => StackItem::Array(arr.clone()), // Rc clone
-            StackItem::Map(map) => StackItem::Map(map.clone()), // Rc clone
-            StackItem::Struct(s) => StackItem::Struct(s.clone()), // Rc clone
+            StackItem::Map(map) => StackItem::Map(map.clone()),     // Rc clone
+            StackItem::Struct(s) => StackItem::Struct(s.clone()),   // Rc clone
             StackItem::Buffer(buf) => StackItem::Buffer(buf.clone()), // Rc clone
             // For primitive types, cloning is cheap anyway
-            _ => item.clone()
+            _ => item.clone(),
         }
     }
-    
+
     /// Get a reference or clone only if mutation is needed
     pub fn cow_item<'a>(item: &'a StackItem) -> Cow<'a, StackItem> {
         Cow::Borrowed(item)
     }
-    
+
     /// Share data using Arc for thread-safe access without cloning
     pub fn share_data<T: Clone>(data: T) -> Arc<T> {
         Arc::new(data)
@@ -49,23 +49,23 @@ impl OptimizedStack {
         // Direct move instead of clone when we own the item
         stack.push(item);
     }
-    
+
     /// Peek without cloning
     pub fn peek_ref(stack: &[StackItem], index: usize) -> VmResult<&StackItem> {
-        stack.get(stack.len() - 1 - index)
+        stack
+            .get(stack.len() - 1 - index)
             .ok_or_else(|| VmError::StackUnderflow {
                 requested: index + 1,
-                available: stack.len()
+                available: stack.len(),
             })
     }
-    
+
     /// Pop and return ownership without extra cloning
     pub fn pop_owned(stack: &mut Vec<StackItem>) -> VmResult<StackItem> {
-        stack.pop()
-            .ok_or_else(|| VmError::StackUnderflow {
-                requested: 1,
-                available: 0
-            })
+        stack.pop().ok_or_else(|| VmError::StackUnderflow {
+            requested: 1,
+            available: 0,
+        })
     }
 }
 
@@ -87,12 +87,12 @@ impl<T> MemoryPool<T> {
             factory: Box::new(factory),
         }
     }
-    
+
     /// Get an item from the pool or create a new one
     pub fn get(&mut self) -> T {
         self.pool.pop().unwrap_or_else(|| (self.factory)())
     }
-    
+
     /// Return an item to the pool for reuse
     pub fn put(&mut self, item: T) {
         if self.pool.len() < self.pool.capacity() {
@@ -113,7 +113,7 @@ impl StringInterner {
             interned: std::collections::HashMap::new(),
         }
     }
-    
+
     /// Intern a string to avoid duplicates
     pub fn intern(&mut self, s: &str) -> Rc<str> {
         if let Some(interned) = self.interned.get(s) {
@@ -140,7 +140,7 @@ impl<T> LazyValue<T> {
             factory: Some(Box::new(factory)),
         }
     }
-    
+
     /// Get the value, computing it if necessary
     pub fn get(&mut self) -> &T {
         if self.value.is_none() {
@@ -148,7 +148,9 @@ impl<T> LazyValue<T> {
                 self.value = Some(factory());
             }
         }
-        self.value.as_ref().expect("LazyValue should have value after factory call")
+        self.value
+            .as_ref()
+            .expect("LazyValue should have value after factory call")
     }
 }
 
@@ -168,7 +170,7 @@ impl<T> BatchProcessor<T> {
             processor: Box::new(processor),
         }
     }
-    
+
     /// Add an item to the batch
     pub fn add(&mut self, item: T) {
         self.batch.push(item);
@@ -176,7 +178,7 @@ impl<T> BatchProcessor<T> {
             self.flush();
         }
     }
-    
+
     /// Process all pending items
     pub fn flush(&mut self) {
         if !self.batch.is_empty() {
@@ -189,51 +191,51 @@ impl<T> BatchProcessor<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_memory_pool() {
         let mut pool = MemoryPool::new(5, || vec![0u8; 1024]);
-        
+
         let mut items = Vec::new();
         for _ in 0..10 {
             items.push(pool.get());
         }
-        
+
         // Return some items
         for item in items.drain(0..5) {
             pool.put(item);
         }
-        
+
         // Get should reuse returned items
         let reused = pool.get();
         assert_eq!(reused.len(), 1024);
     }
-    
+
     #[test]
     fn test_string_interner() {
         let mut interner = StringInterner::new();
-        
+
         let s1 = interner.intern("hello");
         let s2 = interner.intern("hello");
-        
+
         // Should return the same Rc
         assert!(Rc::ptr_eq(&s1, &s2));
     }
-    
+
     #[test]
     fn test_lazy_value() {
         let mut lazy = LazyValue::new(|| {
             // Expensive computation
             vec![1, 2, 3, 4, 5]
         });
-        
+
         // Value is computed on first access
         let value_len = {
             let value = lazy.get();
             value.len()
         };
         assert_eq!(value_len, 5);
-        
+
         // Subsequent accesses return the same value
         let value2_len = {
             let value2 = lazy.get();

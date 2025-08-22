@@ -82,7 +82,10 @@ mod proof_tests {
             ProofVerifier::verify_inclusion(&root_hash, &key, &value, &proof).unwrap();
 
         // verify_inclusion returns bool, not Option
-        assert!(verification_result, "Proof verification should succeed for existing key");
+        assert!(
+            verification_result,
+            "Proof verification should succeed for existing key"
+        );
     }
 
     /// Test proof verification for invalid proofs (matches C# invalid proof handling exactly)
@@ -186,8 +189,13 @@ mod proof_tests {
             assert!(!proof.is_empty());
 
             // Verify each proof
-            let is_valid = ProofVerifier::verify_inclusion(&root_hash, key, expected_value, &proof).unwrap();
-            assert!(is_valid, "Proof verification should succeed for key: {:?}", key);
+            let is_valid =
+                ProofVerifier::verify_inclusion(&root_hash, key, expected_value, &proof).unwrap();
+            assert!(
+                is_valid,
+                "Proof verification should succeed for key: {:?}",
+                key
+            );
         }
 
         let non_existing = b"complex_prefix_xyz";
@@ -221,7 +229,10 @@ mod proof_tests {
             ProofVerifier::verify_inclusion(&root_hash, &key, &value, &deserialized_proof).unwrap();
 
         // verify_inclusion returns bool
-        assert!(verification_result, "Deserialized proof should verify successfully");
+        assert!(
+            verification_result,
+            "Deserialized proof should verify successfully"
+        );
     }
 
     /// Test proof node types and structure (matches C# ProofNode structure exactly)

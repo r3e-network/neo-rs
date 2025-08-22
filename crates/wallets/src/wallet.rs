@@ -4,11 +4,8 @@
 //! converted from the C# Neo Wallet class (@neo-sharp/src/Neo/Wallets/Wallet.cs).
 
 use crate::{
-    contract::Contract,
-    key_pair::KeyPair,
-    wallet_account::WalletAccount,
-    wallet_factory::IWalletFactory,
-    Version,
+    contract::Contract, key_pair::KeyPair, wallet_account::WalletAccount,
+    wallet_factory::IWalletFactory, Version,
 };
 use async_trait::async_trait;
 use neo_core::{Transaction, UInt160, UInt256};

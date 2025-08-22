@@ -1,13 +1,13 @@
 //! Memory pool for optimizing allocations in hot paths
-//! 
+//!
 //! This module provides object pooling to reduce allocation overhead
 //! for frequently created and destroyed objects in the VM.
 
-use std::sync::{Arc, Mutex};
+use crate::execution_context::ExecutionContext;
+use crate::stack_item::StackItem;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::stack_item::StackItem;
-use crate::execution_context::ExecutionContext;
+use std::sync::{Arc, Mutex};
 
 /// Maximum number of pooled objects per type
 const MAX_POOL_SIZE: usize = 1024;
@@ -49,7 +49,7 @@ impl<T> ObjectPool<T> {
             self.allocations.fetch_add(1, Ordering::Relaxed);
             (self.factory)()
         };
-        
+
         PooledObject {
             inner: Some(obj),
             pool: Arc::clone(&self.pool),
@@ -67,17 +67,17 @@ impl<T> ObjectPool<T> {
     pub fn clear(&self) {
         self.pool.lock().unwrap().clear();
     }
-    
+
     /// Gets the total number of allocations made
     pub fn total_allocations(&self) -> usize {
         self.allocations.load(Ordering::Relaxed)
     }
-    
+
     /// Gets the number of pool hits (reused objects)
     pub fn pool_hits(&self) -> usize {
         self.hits.load(Ordering::Relaxed)
     }
-    
+
     /// Gets the hit ratio as a percentage (0-100)
     pub fn hit_ratio(&self) -> f32 {
         let hits = self.hits.load(Ordering::Relaxed);
@@ -124,7 +124,7 @@ impl<T> Drop for PooledObject<T> {
         if let Some(mut obj) = self.inner.take() {
             // Reset the object before returning to pool
             (self.reset)(&mut obj);
-            
+
             // Return to pool if not full
             let mut pool = self.pool.lock().unwrap();
             if pool.len() < self.max_size {
@@ -150,15 +150,24 @@ impl VmMemoryPools {
         Self {
             byte_buffers: ObjectPool::new(
                 || Vec::with_capacity(512), // Increased for typical script sizes
-                |v| { v.clear(); v.shrink_to(512); }, // Prevent excessive growth
+                |v| {
+                    v.clear();
+                    v.shrink_to(512);
+                }, // Prevent excessive growth
             ),
             instruction_buffers: ObjectPool::new(
                 || Vec::with_capacity(128), // Increased for complex scripts
-                |v| { v.clear(); v.shrink_to(128); },
+                |v| {
+                    v.clear();
+                    v.shrink_to(128);
+                },
             ),
             stack_item_vecs: ObjectPool::new(
                 || Vec::with_capacity(32), // Increased for typical stack operations
-                |v| { v.clear(); v.shrink_to(32); },
+                |v| {
+                    v.clear();
+                    v.shrink_to(32);
+                },
             ),
         }
     }
@@ -190,13 +199,12 @@ impl VmMemoryPools {
         let byte_buffer_allocs = self.byte_buffers.total_allocations();
         let instruction_allocs = self.instruction_buffers.total_allocations();
         let stack_item_allocs = self.stack_item_vecs.total_allocations();
-        
+
         // Estimate memory usage (rough calculation)
-        let estimated_memory = 
-            byte_buffer_allocs * 512 + // avg byte buffer size
+        let estimated_memory = byte_buffer_allocs * 512 + // avg byte buffer size
             instruction_allocs * 128 * std::mem::size_of::<crate::instruction::Instruction>() +
             stack_item_allocs * 32 * std::mem::size_of::<crate::stack_item::StackItem>();
-        
+
         MemoryPoolStats {
             byte_buffers_pooled: self.byte_buffers.size(),
             instruction_buffers_pooled: self.instruction_buffers.size(),
@@ -207,18 +215,17 @@ impl VmMemoryPools {
             total_memory_used: estimated_memory,
         }
     }
-    
+
     /// Gets detailed pool performance metrics
     pub fn performance_metrics(&self) -> PoolPerformanceMetrics {
         PoolPerformanceMetrics {
             byte_buffer_hit_ratio: self.byte_buffers.hit_ratio(),
             instruction_buffer_hit_ratio: self.instruction_buffers.hit_ratio(),
             stack_item_vec_hit_ratio: self.stack_item_vecs.hit_ratio(),
-            overall_efficiency: (
-                self.byte_buffers.hit_ratio() +
-                self.instruction_buffers.hit_ratio() +
-                self.stack_item_vecs.hit_ratio()
-            ) / 3.0,
+            overall_efficiency: (self.byte_buffers.hit_ratio()
+                + self.instruction_buffers.hit_ratio()
+                + self.stack_item_vecs.hit_ratio())
+                / 3.0,
         }
     }
 }
@@ -256,7 +263,7 @@ thread_local! {
 }
 
 /// Gets the thread-local memory pools
-/// 
+///
 /// Returns a reference to the thread-local memory pools with safe access.
 /// Uses a closure-based API to ensure memory safety.
 pub fn with_pools<F, R>(f: F) -> R
@@ -272,10 +279,7 @@ mod tests {
 
     #[test]
     fn test_object_pool() {
-        let pool: ObjectPool<Vec<u8>> = ObjectPool::new(
-            || Vec::with_capacity(100),
-            |v| v.clear(),
-        );
+        let pool: ObjectPool<Vec<u8>> = ObjectPool::new(|| Vec::with_capacity(100), |v| v.clear());
 
         // Get object from pool
         let mut obj1 = pool.get();
@@ -296,17 +300,17 @@ mod tests {
     #[test]
     fn test_vm_memory_pools() {
         let pools = VmMemoryPools::new();
-        
+
         // Test byte buffer pool
         {
             let mut buffer = pools.get_byte_buffer();
             buffer.extend_from_slice(b"test");
             assert_eq!(buffer.len(), 4);
         }
-        
+
         // Check that buffer was returned to pool
         assert_eq!(pools.byte_buffers.size(), 1);
-        
+
         // Get stats
         let stats = pools.stats();
         assert_eq!(stats.byte_buffers_pooled, 1);

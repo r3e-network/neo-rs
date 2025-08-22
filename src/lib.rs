@@ -73,16 +73,16 @@ pub use neo_rpc_client as rpc_client;
 
 /// Common imports for Neo development
 pub mod prelude {
-    pub use crate::core::{UInt160, UInt256, Transaction, Block};
+    pub use crate::core::{Block, Transaction, UInt160, UInt256};
     // pub use crate::crypto::{PublicKey, PrivateKey, Signature};
-    pub use crate::vm::{ApplicationEngine, Script, StackItem};
-    pub use crate::ledger::{Blockchain, BlockHeader};
+    pub use crate::ledger::{BlockHeader, Blockchain};
     pub use crate::network::{NetworkConfig, P2pNode};
     pub use crate::persistence::Storage;
-    
+    pub use crate::vm::{ApplicationEngine, Script, StackItem};
+
     #[cfg(feature = "consensus")]
     pub use crate::consensus::ConsensusService;
-    
+
     #[cfg(feature = "rpc")]
     pub use crate::rpc_server::RpcServer;
 }
@@ -128,8 +128,9 @@ impl NeoNode {
         let blockchain = std::sync::Arc::new(
             ledger::Blockchain::new_with_storage_suffix(
                 neo_config::NetworkType::MainNet,
-                Some("node")
-            ).await?
+                Some("node"),
+            )
+            .await?,
         );
 
         Ok(Self {
