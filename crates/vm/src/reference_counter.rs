@@ -205,13 +205,13 @@ impl ReferenceCounter {
 
         // 3. Check for potential references to other zero-count items (production heuristic)
         for (&other_id, &other_count) in references.iter() {
-            if other_count == 0 && !processed.contains(&other_id)
-                && self.items_might_reference_each_other(start_id, other_id) {
-                    // Recursively find connected items
-                    self.find_strongly_connected_component(
-                        other_id, references, component, processed,
-                    );
-                }
+            if other_count == 0
+                && !processed.contains(&other_id)
+                && self.items_might_reference_each_other(start_id, other_id)
+            {
+                // Recursively find connected items
+                self.find_strongly_connected_component(other_id, references, component, processed);
+            }
         }
     }
 

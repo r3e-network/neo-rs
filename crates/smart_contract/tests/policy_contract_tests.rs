@@ -465,7 +465,7 @@ impl PolicyContract {
                 } else {
                     panic!("Invalid attribute type parameter")
                 }
-            },
+            }
             "getStoragePrice" => StackItem::Integer(Self::DEFAULT_STORAGE_PRICE),
             "getExecFeeFactor" => StackItem::Integer(Self::DEFAULT_EXEC_FEE_FACTOR),
             "isBlocked" => StackItem::Boolean(false), // Default not blocked
@@ -484,12 +484,15 @@ impl PolicyContract {
         if witness.is_none() {
             panic!("No witness provided");
         }
-        
+
         match method {
             "setAttributeFee" => {
                 if params.len() >= 2 {
-                    if let (Some(ContractParameter::Integer(attr_type)), Some(ContractParameter::Integer(fee))) = 
-                        (params.get(0), params.get(1)) {
+                    if let (
+                        Some(ContractParameter::Integer(attr_type)),
+                        Some(ContractParameter::Integer(fee)),
+                    ) = (params.get(0), params.get(1))
+                    {
                         // Validate fee range (simplified)
                         if *fee > 10_0000_0000 {
                             panic!("Fee too high");
@@ -502,7 +505,7 @@ impl PolicyContract {
                 } else {
                     panic!("Insufficient parameters")
                 }
-            },
+            }
             "setFeePerByte" => {
                 if let Some(ContractParameter::Integer(fee)) = params.first() {
                     // Store fee per byte (in real implementation)
@@ -510,7 +513,7 @@ impl PolicyContract {
                 } else {
                     panic!("Invalid fee parameter")
                 }
-            },
+            }
             "setStoragePrice" => {
                 if let Some(ContractParameter::Integer(price)) = params.first() {
                     // Store storage price (in real implementation)
@@ -518,7 +521,7 @@ impl PolicyContract {
                 } else {
                     panic!("Invalid price parameter")
                 }
-            },
+            }
             "setExecFeeFactor" => {
                 if let Some(ContractParameter::Integer(factor)) = params.first() {
                     // Store execution fee factor (in real implementation)
@@ -526,7 +529,7 @@ impl PolicyContract {
                 } else {
                     panic!("Invalid factor parameter")
                 }
-            },
+            }
             "blockAccount" => {
                 if let Some(ContractParameter::Hash160(_account)) = params.first() {
                     // Block account (in real implementation)
@@ -534,7 +537,7 @@ impl PolicyContract {
                 } else {
                     panic!("Invalid account parameter")
                 }
-            },
+            }
             "unblockAccount" => {
                 if let Some(ContractParameter::Hash160(_account)) = params.first() {
                     // Unblock account (in real implementation)
@@ -542,7 +545,7 @@ impl PolicyContract {
                 } else {
                     panic!("Invalid account parameter")
                 }
-            },
+            }
             _ => StackItem::Null,
         }
     }
@@ -551,9 +554,10 @@ impl PolicyContract {
 impl NeoToken {
     fn get_committee_address(&self, _engine: &ApplicationEngine) -> UInt160 {
         // Return a test committee address
-        UInt160::from([0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-                      0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
-                      0x12, 0x34, 0x56, 0x78])
+        UInt160::from([
+            0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc,
+            0xde, 0xf0, 0x12, 0x34, 0x56, 0x78,
+        ])
     }
 }
 

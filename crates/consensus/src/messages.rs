@@ -109,19 +109,21 @@ impl ConsensusMessageData {
         message_type: ConsensusMessageType,
     ) -> neo_io::IoResult<Self> {
         match message_type {
-            ConsensusMessageType::PrepareRequest => {
-                Ok(Self::PrepareRequest(<PrepareRequest as Serializable>::deserialize(reader)?))
+            ConsensusMessageType::PrepareRequest => Ok(Self::PrepareRequest(
+                <PrepareRequest as Serializable>::deserialize(reader)?,
+            )),
+            ConsensusMessageType::PrepareResponse => Ok(Self::PrepareResponse(
+                <PrepareResponse as Serializable>::deserialize(reader)?,
+            )),
+            ConsensusMessageType::Commit => {
+                Ok(Self::Commit(<Commit as Serializable>::deserialize(reader)?))
             }
-            ConsensusMessageType::PrepareResponse => {
-                Ok(Self::PrepareResponse(<PrepareResponse as Serializable>::deserialize(reader)?))
-            }
-            ConsensusMessageType::Commit => Ok(Self::Commit(<Commit as Serializable>::deserialize(reader)?)),
-            ConsensusMessageType::ChangeView => {
-                Ok(Self::ChangeView(<ChangeView as Serializable>::deserialize(reader)?))
-            }
-            ConsensusMessageType::RecoveryRequest => {
-                Ok(Self::RecoveryRequest(<RecoveryRequest as Serializable>::deserialize(reader)?))
-            }
+            ConsensusMessageType::ChangeView => Ok(Self::ChangeView(
+                <ChangeView as Serializable>::deserialize(reader)?,
+            )),
+            ConsensusMessageType::RecoveryRequest => Ok(Self::RecoveryRequest(
+                <RecoveryRequest as Serializable>::deserialize(reader)?,
+            )),
             ConsensusMessageType::RecoveryResponse => Ok(Self::RecoveryResponse(
                 <RecoveryResponse as Serializable>::deserialize(reader)?,
             )),
@@ -233,7 +235,7 @@ impl Serializable for ConsensusMessage {
         // Serialize message type
         let _ = writer.write_u8(self.message_type.to_byte())?;
 
-        // Serialize payload  
+        // Serialize payload
         let _ = writer.write_u8(self.payload.validator_index)?;
         let _ = writer.write_u32(self.payload.block_index.value())?;
         let _ = writer.write_u8(self.payload.view_number.value())?;
@@ -251,10 +253,12 @@ impl Serializable for ConsensusMessage {
     }
 
     fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
-        let message_type = ConsensusMessageType::from_byte(reader.read_byte()?)
-            .ok_or_else(|| neo_io::IoError::InvalidFormat {
-                expected_format: "ConsensusMessageType".to_string(),
-                reason: "Unknown message type".to_string(),
+        let message_type =
+            ConsensusMessageType::from_byte(reader.read_byte()?).ok_or_else(|| {
+                neo_io::IoError::InvalidFormat {
+                    expected_format: "ConsensusMessageType".to_string(),
+                    reason: "Unknown message type".to_string(),
+                }
             })?;
 
         let validator_index = reader.read_byte()?;
@@ -262,7 +266,7 @@ impl Serializable for ConsensusMessage {
         let view_number = ViewNumber::new(reader.read_byte()?);
         let timestamp = reader.read_u64()?;
         let payload_data = reader.read_var_bytes(1024)?; // Payload data
-        
+
         let payload = ConsensusPayload {
             validator_index,
             block_index,
@@ -378,7 +382,11 @@ impl Serializable for PrepareResponse {
     fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
         writer.write_serializable(&self.preparation_hash)?;
         let _ = writer.write_u8(if self.accepted { 1 } else { 0 })?;
-        let _ = writer.write_u8(if self.rejection_reason.is_some() { 1 } else { 0 })?;
+        let _ = writer.write_u8(if self.rejection_reason.is_some() {
+            1
+        } else {
+            0
+        })?;
         if let Some(ref reason) = self.rejection_reason {
             let _ = writer.write_var_string(reason)?;
         }
@@ -462,43 +470,43 @@ impl Serializable for RecoveryResponse {
         neo_io::helper::get_var_size(self.commits.len() as u64) +
         self.prepare_request.as_ref().map_or(1, |m| 1 + m.size())
     }
-    
+
     fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
         // Serialize block index and view number
         let _ = writer.write_u32(self.block_index.value())?;
         let _ = writer.write_u8(self.view_number.value())?;
-        
+
         // Serialize change views
         let _ = writer.write_var_int(self.change_views.len() as u64)?;
         for (_, cv) in &self.change_views {
             Serializable::serialize(cv, writer)?;
         }
-        
+
         // Serialize prepare responses
         let _ = writer.write_var_int(self.prepare_responses.len() as u64)?;
         for (_, pr) in &self.prepare_responses {
             Serializable::serialize(pr, writer)?;
         }
-        
+
         // Serialize commits
         let _ = writer.write_var_int(self.commits.len() as u64)?;
         for (_, c) in &self.commits {
             Serializable::serialize(c, writer)?;
         }
-        
+
         // Serialize prepare request
         let _ = writer.write_u8(if self.prepare_request.is_some() { 1 } else { 0 })?;
         if let Some(ref pr) = self.prepare_request {
             Serializable::serialize(pr, writer)?;
         }
-        
+
         Ok(())
     }
-    
+
     fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
         let block_index = BlockIndex::new(reader.read_u32()?);
         let view_number = ViewNumber::new(reader.read_byte()?);
-        
+
         // Read change views
         let cv_count = reader.read_var_int(1000)? as usize;
         let mut change_views = HashMap::new();
@@ -506,7 +514,7 @@ impl Serializable for RecoveryResponse {
             let cv = <ChangeView as Serializable>::deserialize(reader)?;
             change_views.insert(i as u8, cv);
         }
-        
+
         // Read prepare responses
         let pr_count = reader.read_var_int(1000)? as usize;
         let mut prepare_responses = HashMap::new();
@@ -514,7 +522,7 @@ impl Serializable for RecoveryResponse {
             let pr = <PrepareResponse as Serializable>::deserialize(reader)?;
             prepare_responses.insert(i as u8, pr);
         }
-        
+
         // Read commits
         let c_count = reader.read_var_int(1000)? as usize;
         let mut commits = HashMap::new();
@@ -522,7 +530,7 @@ impl Serializable for RecoveryResponse {
             let c = <Commit as Serializable>::deserialize(reader)?;
             commits.insert(i as u8, c);
         }
-        
+
         // Read prepare request
         let has_prepare = reader.read_byte()? != 0;
         let prepare_request = if has_prepare {
@@ -530,7 +538,7 @@ impl Serializable for RecoveryResponse {
         } else {
             None
         };
-        
+
         Ok(Self {
             block_index,
             view_number,

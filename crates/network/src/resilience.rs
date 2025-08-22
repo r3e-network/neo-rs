@@ -4,8 +4,8 @@
 //! including circuit breakers, retry logic, and fallback mechanisms.
 
 use crate::{NetworkError, NetworkResult as Result};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
@@ -73,11 +73,11 @@ impl CircuitBreaker {
             config,
         }
     }
-    
+
     /// Check if request should be allowed
     pub async fn should_allow_request(&self) -> Result<()> {
         let mut state = self.state.write().await;
-        
+
         match *state {
             CircuitState::Open => {
                 // Check if timeout has passed
@@ -99,14 +99,14 @@ impl CircuitBreaker {
                 // Normal operation
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Record a successful operation
     pub async fn record_success(&self) {
         let mut state = self.state.write().await;
-        
+
         match *state {
             CircuitState::HalfOpen => {
                 let count = self.success_count.fetch_add(1, Ordering::Relaxed) + 1;
@@ -123,11 +123,11 @@ impl CircuitBreaker {
             _ => {}
         }
     }
-    
+
     /// Record a failed operation
     pub async fn record_failure(&self) {
         let mut state = self.state.write().await;
-        
+
         match *state {
             CircuitState::Closed => {
                 let count = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
@@ -145,7 +145,7 @@ impl CircuitBreaker {
             _ => {}
         }
     }
-    
+
     /// Get current state
     pub async fn get_state(&self) -> CircuitState {
         *self.state.read().await
@@ -185,7 +185,7 @@ impl AdaptiveRetry {
             successful_attempts: AtomicU64::new(0),
         }
     }
-    
+
     /// Execute operation with retry
     pub async fn execute<F, Fut, T>(&self, mut f: F) -> Result<T>
     where
@@ -194,10 +194,10 @@ impl AdaptiveRetry {
     {
         let mut attempt = 0;
         let mut delay = self.base_delay;
-        
+
         loop {
             self.total_attempts.fetch_add(1, Ordering::Relaxed);
-            
+
             match f().await {
                 Ok(result) => {
                     self.successful_attempts.fetch_add(1, Ordering::Relaxed);
@@ -214,28 +214,28 @@ impl AdaptiveRetry {
                 }
                 Err(_) => {
                     attempt += 1;
-                    
+
                     // Apply exponential backoff with jitter
                     let jitter = self.calculate_jitter(delay);
                     tokio::time::sleep(delay + jitter).await;
-                    
+
                     // Increase delay for next attempt
                     delay = (delay * 2).min(self.max_delay);
                 }
             }
         }
     }
-    
+
     /// Check if error is retryable
     fn should_retry(&self, error: &NetworkError) -> bool {
         match error {
-            NetworkError::ConnectionTimeout { .. } |
-            NetworkError::ConnectionRefused { .. } |
-            NetworkError::TemporaryFailure { .. } => true,
+            NetworkError::ConnectionTimeout { .. }
+            | NetworkError::ConnectionRefused { .. }
+            | NetworkError::TemporaryFailure { .. } => true,
             _ => false,
         }
     }
-    
+
     /// Calculate jitter for delay
     fn calculate_jitter(&self, delay: Duration) -> Duration {
         use rand::Rng;
@@ -243,16 +243,16 @@ impl AdaptiveRetry {
         let random_jitter = rand::thread_rng().gen_range(0..=jitter_ms);
         Duration::from_millis(random_jitter)
     }
-    
+
     /// Update success rate
     async fn update_success_rate(&self) {
         let total = self.total_attempts.load(Ordering::Relaxed);
         let successful = self.successful_attempts.load(Ordering::Relaxed);
-        
+
         if total > 0 {
             let rate = successful as f64 / total as f64;
             *self.success_rate.write().await = rate;
-            
+
             // Adjust retry strategy based on success rate
             if rate < 0.5 && total > 10 {
                 // Poor success rate - might want to adjust strategy
@@ -260,7 +260,7 @@ impl AdaptiveRetry {
             }
         }
     }
-    
+
     /// Get current success rate
     pub async fn get_success_rate(&self) -> f64 {
         *self.success_rate.read().await
@@ -291,11 +291,11 @@ impl Bulkhead {
             queue_size: AtomicU32::new(0),
         }
     }
-    
+
     /// Acquire a permit to execute
     pub fn try_acquire(&self) -> Result<BulkheadPermit> {
         let current = self.current_concurrent.load(Ordering::Relaxed);
-        
+
         if current as usize >= self.max_concurrent {
             // Try to queue
             let queue = self.queue_size.load(Ordering::Relaxed);
@@ -306,21 +306,21 @@ impl Bulkhead {
                     limit: self.max_queue_size as u64,
                 });
             }
-            
+
             self.queue_size.fetch_add(1, Ordering::Relaxed);
             return Err(NetworkError::Queued {
                 reason: "Request queued in bulkhead".to_string(),
             });
         }
-        
+
         self.current_concurrent.fetch_add(1, Ordering::Relaxed);
         Ok(BulkheadPermit { bulkhead: self })
     }
-    
+
     /// Release a permit
     fn release(&self) {
         self.current_concurrent.fetch_sub(1, Ordering::Relaxed);
-        
+
         // Process queued item if any
         let queue = self.queue_size.load(Ordering::Relaxed);
         if queue > 0 {
@@ -366,7 +366,7 @@ impl HealthChecker {
             is_healthy: Arc::new(RwLock::new(true)),
         }
     }
-    
+
     /// Check if service is healthy
     pub async fn is_healthy(&self) -> bool {
         // Check if we need to perform a health check
@@ -377,21 +377,21 @@ impl HealthChecker {
                 Some(time) => time.elapsed() >= self.check_interval,
             }
         };
-        
+
         if should_check {
             self.perform_health_check().await;
         }
-        
+
         *self.is_healthy.read().await
     }
-    
+
     /// Perform health check
     async fn perform_health_check(&self) {
         *self.last_check.write().await = Some(Instant::now());
-        
+
         // Simulate health check (in real implementation, would ping service)
         let check_future = tokio::time::sleep(Duration::from_millis(10));
-        
+
         match tokio::time::timeout(self.check_timeout, check_future).await {
             Ok(_) => {
                 *self.is_healthy.write().await = true;
@@ -402,7 +402,7 @@ impl HealthChecker {
             }
         }
     }
-    
+
     /// Mark service as unhealthy
     pub async fn mark_unhealthy(&self) {
         *self.is_healthy.write().await = false;
@@ -412,7 +412,7 @@ impl HealthChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_circuit_breaker() {
         let config = CircuitBreakerConfig {
@@ -421,75 +421,74 @@ mod tests {
             timeout: Duration::from_millis(100),
             reset_timeout: Duration::from_millis(200),
         };
-        
+
         let breaker = CircuitBreaker::new(config);
-        
+
         // Initially closed
         assert_eq!(breaker.get_state().await, CircuitState::Closed);
         assert!(breaker.should_allow_request().await.is_ok());
-        
+
         // Record failures to open circuit
         breaker.record_failure().await;
         breaker.record_failure().await;
         assert_eq!(breaker.get_state().await, CircuitState::Open);
-        
+
         // Circuit is open
         assert!(breaker.should_allow_request().await.is_err());
-        
+
         // Wait for timeout
         tokio::time::sleep(Duration::from_millis(150)).await;
         assert!(breaker.should_allow_request().await.is_ok());
         assert_eq!(breaker.get_state().await, CircuitState::HalfOpen);
     }
-    
+
     #[tokio::test]
     async fn test_adaptive_retry() {
-        let retry = AdaptiveRetry::new(
-            Duration::from_millis(10),
-            Duration::from_millis(100),
-            3
-        );
-        
+        let retry = AdaptiveRetry::new(Duration::from_millis(10), Duration::from_millis(100), 3);
+
         let attempt = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let attempt_clone = attempt.clone();
-        
-        let result = retry.execute(move || {
-            let attempt_val = attempt_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            async move {
-                if attempt_val < 3 {
-                    Err(NetworkError::ConnectionTimeout {
-                        address: "127.0.0.1:8333".parse().unwrap(),
-                        timeout_ms: 1000,
-                    })
-                } else {
-                    Ok(42)
+
+        let result = retry
+            .execute(move || {
+                let attempt_val =
+                    attempt_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                async move {
+                    if attempt_val < 3 {
+                        Err(NetworkError::ConnectionTimeout {
+                            address: "127.0.0.1:8333".parse().unwrap(),
+                            timeout_ms: 1000,
+                        })
+                    } else {
+                        Ok(42)
+                    }
                 }
-            }
-        }).await;
-        
+            })
+            .await;
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
         assert_eq!(attempt.load(std::sync::atomic::Ordering::Relaxed), 3);
     }
-    
+
     #[test]
     fn test_bulkhead() {
         let bulkhead = Bulkhead::new(2, 1);
-        
+
         // First two should succeed
         let permit1 = bulkhead.try_acquire();
         assert!(permit1.is_ok());
-        
+
         let permit2 = bulkhead.try_acquire();
         assert!(permit2.is_ok());
-        
+
         // Third should be queued
         let permit3 = bulkhead.try_acquire();
         assert!(permit3.is_err());
-        
+
         // Drop a permit to free capacity
         drop(permit1);
-        
+
         // Now should succeed
         let permit4 = bulkhead.try_acquire();
         assert!(permit4.is_ok());

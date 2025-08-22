@@ -23,7 +23,7 @@ pub struct StatusReport {
 pub trait MetricsExporter: Send + Sync {
     /// Export metrics in the target format
     fn export(&self, report: &StatusReport) -> Result<String>;
-    
+
     /// Get the content type for HTTP responses
     fn content_type(&self) -> &str;
 }
@@ -34,17 +34,17 @@ pub struct PrometheusExporter;
 impl MetricsExporter for PrometheusExporter {
     fn export(&self, report: &StatusReport) -> Result<String> {
         let mut output = String::new();
-        
+
         // Add raw Prometheus metrics
         output.push_str(&report.metrics);
-        
+
         // Add health metrics
         writeln!(
             &mut output,
             "# HELP neo_health_status Overall health status (0=unknown, 1=healthy, 2=degraded, 3=unhealthy)"
         )?;
         writeln!(&mut output, "# TYPE neo_health_status gauge")?;
-        
+
         let health_value = match report.health.status {
             crate::monitoring::HealthStatus::Unknown => 0,
             crate::monitoring::HealthStatus::Healthy => 1,
@@ -52,7 +52,7 @@ impl MetricsExporter for PrometheusExporter {
             crate::monitoring::HealthStatus::Unhealthy => 3,
         };
         writeln!(&mut output, "neo_health_status {}", health_value)?;
-        
+
         // Add component health metrics
         for component in &report.health.components {
             let component_value = match component.status {
@@ -61,14 +61,14 @@ impl MetricsExporter for PrometheusExporter {
                 crate::monitoring::HealthStatus::Degraded => 2,
                 crate::monitoring::HealthStatus::Unhealthy => 3,
             };
-            
+
             writeln!(
                 &mut output,
                 "neo_component_health{{component=\"{}\"}} {}",
                 component.component, component_value
             )?;
         }
-        
+
         // Add performance metrics
         for (metric_name, stats) in &report.performance {
             writeln!(
@@ -77,7 +77,7 @@ impl MetricsExporter for PrometheusExporter {
                 metric_name, metric_name
             )?;
             writeln!(&mut output, "# TYPE neo_perf_{} summary", metric_name)?;
-            
+
             writeln!(
                 &mut output,
                 "neo_perf_{}_current {}",
@@ -91,7 +91,7 @@ impl MetricsExporter for PrometheusExporter {
                 "neo_perf_{}_count {}",
                 metric_name, stats.count
             )?;
-            
+
             // Add percentiles
             writeln!(
                 &mut output,
@@ -109,10 +109,10 @@ impl MetricsExporter for PrometheusExporter {
                 metric_name, stats.p99
             )?;
         }
-        
+
         Ok(output)
     }
-    
+
     fn content_type(&self) -> &str {
         "text/plain; version=0.0.4"
     }
@@ -138,10 +138,10 @@ impl MetricsExporter for JsonExporter {
         } else {
             serde_json::to_string(report)?
         };
-        
+
         Ok(json)
     }
-    
+
     fn content_type(&self) -> &str {
         "application/json"
     }
@@ -183,10 +183,10 @@ impl MetricsExporter for OpenTelemetryExporter {
             },
             metrics: self.convert_to_otlp_metrics(report),
         };
-        
+
         Ok(serde_json::to_string(&otlp)?)
     }
-    
+
     fn content_type(&self) -> &str {
         "application/json"
     }
@@ -195,7 +195,7 @@ impl MetricsExporter for OpenTelemetryExporter {
 impl OpenTelemetryExporter {
     fn convert_to_otlp_metrics(&self, report: &StatusReport) -> Vec<OtlpMetric> {
         let mut metrics = Vec::new();
-        
+
         // Convert health metrics
         metrics.push(OtlpMetric {
             name: "health.status".to_string(),
@@ -210,7 +210,7 @@ impl OpenTelemetryExporter {
                 },
             },
         });
-        
+
         // Convert performance metrics
         for (name, stats) in &report.performance {
             metrics.push(OtlpMetric {
@@ -237,7 +237,7 @@ impl OpenTelemetryExporter {
                 },
             });
         }
-        
+
         metrics
     }
 }
@@ -271,8 +271,12 @@ struct OtlpMetric {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 enum MetricData {
-    Gauge { value: f64 },
-    Counter { value: f64 },
+    Gauge {
+        value: f64,
+    },
+    Counter {
+        value: f64,
+    },
     Summary {
         count: u64,
         sum: f64,
@@ -292,15 +296,15 @@ pub struct CsvExporter;
 impl MetricsExporter for CsvExporter {
     fn export(&self, report: &StatusReport) -> Result<String> {
         let mut output = String::new();
-        
+
         // Header
         writeln!(
             &mut output,
             "timestamp,component,status,metric,value,min,max,avg,p50,p90,p99"
         )?;
-        
+
         let timestamp = chrono::Utc::now().to_rfc3339();
-        
+
         // Health data
         for component in &report.health.components {
             writeln!(
@@ -309,7 +313,7 @@ impl MetricsExporter for CsvExporter {
                 timestamp, component.component, component.status
             )?;
         }
-        
+
         // Performance data
         for (metric_name, stats) in &report.performance {
             writeln!(
@@ -326,10 +330,10 @@ impl MetricsExporter for CsvExporter {
                 stats.p99
             )?;
         }
-        
+
         Ok(output)
     }
-    
+
     fn content_type(&self) -> &str {
         "text/csv"
     }
@@ -349,7 +353,7 @@ impl ExporterFactory {
             _ => None,
         }
     }
-    
+
     /// Create OpenTelemetry exporter
     pub fn create_otlp(endpoint: String, service_name: String) -> Box<dyn MetricsExporter> {
         Box::new(OpenTelemetryExporter::new(endpoint, service_name))
@@ -361,9 +365,9 @@ impl ExporterFactory {
 mod tests {
     use super::*;
     use crate::monitoring::{HealthCheckResult, HealthStatus};
-    use std::time::Duration;
     use chrono::Utc;
-    
+    use std::time::Duration;
+
     fn create_test_report() -> StatusReport {
         let health = HealthReport {
             status: HealthStatus::Healthy,
@@ -379,7 +383,7 @@ mod tests {
             timestamp: Utc::now(),
             version: "1.0.0".to_string(),
         };
-        
+
         let mut performance = HashMap::new();
         performance.insert(
             "test_metric".to_string(),
@@ -395,48 +399,48 @@ mod tests {
                 count: 100,
             },
         );
-        
+
         StatusReport {
             health,
             performance,
             metrics: "# Test metrics\n".to_string(),
         }
     }
-    
+
     #[test]
     fn test_prometheus_exporter() {
         let exporter = PrometheusExporter;
         let report = create_test_report();
-        
+
         let output = exporter.export(&report).unwrap();
         assert!(output.contains("neo_health_status"));
         assert!(output.contains("neo_component_health"));
         assert!(output.contains("neo_perf_test_metric"));
     }
-    
+
     #[test]
     fn test_json_exporter() {
         let exporter = JsonExporter::new(false);
         let report = create_test_report();
-        
+
         let output = exporter.export(&report).unwrap();
         assert!(output.contains("\"health\""));
         assert!(output.contains("\"performance\""));
-        
+
         // Verify valid JSON
         let _: StatusReport = serde_json::from_str(&output).unwrap();
     }
-    
+
     #[test]
     fn test_csv_exporter() {
         let exporter = CsvExporter;
         let report = create_test_report();
-        
+
         let output = exporter.export(&report).unwrap();
         assert!(output.contains("timestamp,component,status"));
         assert!(output.contains("test_metric"));
     }
-    
+
     #[test]
     fn test_exporter_factory() {
         assert!(ExporterFactory::create("prometheus").is_some());

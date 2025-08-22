@@ -133,6 +133,10 @@
 
 /// Composite message handler for protocol processing
 pub mod composite_handler;
+/// DOS protection and rate limiting
+pub mod dos_protection;
+/// Enhanced DoS protection with adaptive rate limiting
+pub mod enhanced_dos_protection;
 /// Network error types and result handling
 pub mod error;
 /// Advanced error handling and recovery strategies
@@ -151,8 +155,12 @@ pub mod peer_manager;
 pub mod peers;
 /// Transaction and inventory relay cache
 pub mod relay_cache;
+/// Network resilience patterns
+pub mod resilience;
 /// JSON-RPC server implementation
 pub mod rpc;
+/// Safe P2P networking utilities
+pub mod safe_p2p;
 /// Network server coordination
 pub mod server;
 /// Graceful shutdown implementation
@@ -163,14 +171,6 @@ pub mod snapshot_config;
 pub mod sync;
 /// Transaction relay and propagation
 pub mod transaction_relay;
-/// Safe P2P networking utilities
-pub mod safe_p2p;
-/// DOS protection and rate limiting
-pub mod dos_protection;
-/// Enhanced DoS protection with adaptive rate limiting
-pub mod enhanced_dos_protection;
-/// Network resilience patterns
-pub mod resilience;
 
 // Constants
 const UNKNOWN_PEER_ADDR: &str = "0.0.0.0:0";
@@ -249,7 +249,7 @@ pub static GLOBAL_SYNC_MANAGER: Lazy<Mutex<Option<std::sync::Arc<sync::SyncManag
 /// # Thread Safety
 ///
 /// This function is thread-safe and can be called from any thread.
-    /// Sets a value in the internal state.
+/// Sets a value in the internal state.
 pub fn set_global_sync_manager(sync_manager: std::sync::Arc<sync::SyncManager>) {
     if let Ok(mut guard) = GLOBAL_SYNC_MANAGER.lock() {
         *guard = Some(sync_manager);

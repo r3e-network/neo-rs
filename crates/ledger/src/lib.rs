@@ -420,7 +420,7 @@ mod tests {
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = LedgerConfig::default();
 /// let ledger = Arc::new(Ledger::new(config).await?);
-/// 
+///
 /// // Share ledger across threads
 /// let ledger_clone = Arc::clone(&ledger);
 /// tokio::spawn(async move {

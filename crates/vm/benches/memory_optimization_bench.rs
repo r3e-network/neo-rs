@@ -3,8 +3,8 @@
 //! This benchmark validates the effectiveness of our memory optimizations
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use neo_vm::memory_pool::{VmMemoryPools, with_pools};
 use neo_vm::evaluation_stack::EvaluationStack;
+use neo_vm::memory_pool::{with_pools, VmMemoryPools};
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::StackItem;
 
@@ -28,7 +28,7 @@ fn benchmark_memory_pool_allocation(c: &mut Criterion) {
                     buffer.push(neo_vm::instruction::Instruction::new(
                         neo_vm::op_code::OpCode::PUSH1,
                         i,
-                        Some(vec![i as u8])
+                        Some(vec![i as u8]),
                     ));
                 }
                 buffer.len()
@@ -52,23 +52,23 @@ fn benchmark_memory_pool_allocation(c: &mut Criterion) {
 
 fn benchmark_evaluation_stack(c: &mut Criterion) {
     let rc = ReferenceCounter::new();
-    
+
     c.bench_function("evaluation_stack_operations", |b| {
         b.iter(|| {
             let mut stack = EvaluationStack::new(rc.clone());
-            
+
             // Simulate typical stack operations
             for i in 0..black_box(20) {
                 stack.push(StackItem::from_int(i));
             }
-            
+
             // Pop some items
             for _ in 0..black_box(10) {
                 if let Ok(_) = stack.pop() {
                     // Item popped successfully
                 }
             }
-            
+
             stack.size()
         })
     });
@@ -82,7 +82,7 @@ fn benchmark_memory_pool_performance(c: &mut Criterion) {
                 for _ in 0..50 {
                     let _buffer = pools.get_byte_buffer();
                 }
-                
+
                 let metrics = pools.performance_metrics();
                 black_box(metrics.overall_efficiency)
             })

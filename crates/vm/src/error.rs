@@ -132,7 +132,7 @@ pub enum VmError {
 
     /// Implementation provided I/O error (for testing)
     #[cfg(test)]
-#[allow(dead_code)]
+    #[allow(dead_code)]
     #[error("Mock I/O error: {message}")]
     MockIo { message: String },
 }
@@ -309,7 +309,7 @@ impl VmError {
 
     /// Implementation provided I/O error (for testing)
     #[cfg(test)]
-#[allow(dead_code)]
+    #[allow(dead_code)]
     pub fn real_io<S: Into<String>>(message: S) -> Self {
         Self::MockIo {
             message: message.into(),
@@ -400,7 +400,7 @@ impl VmError {
             VmError::InvalidScriptHash { .. } => "hash",
             VmError::InvalidWitness { .. } | VmError::VerificationFailed { .. } => "verification",
             #[cfg(test)]
-#[allow(dead_code)]
+            #[allow(dead_code)]
             VmError::MockIo { .. } => "real_io",
         }
     }

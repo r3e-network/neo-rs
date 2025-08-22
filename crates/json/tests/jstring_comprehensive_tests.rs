@@ -1,5 +1,5 @@
 //! Comprehensive JString Tests for C# Compatibility
-//! 
+//!
 //! This module implements all 40 test methods from C# UT_JString.cs
 //! to ensure complete behavioral compatibility between Neo-RS and Neo-CS.
 
@@ -9,41 +9,111 @@ use neo_json::JString;
 mod test_data {
     use super::*;
 
-    pub fn asic_string() -> JString { JString::from("hello world") }
-    pub fn escape_string() -> JString { JString::from("\n\t\'\"") }
-    pub fn bad_char() -> JString { JString::from((0xff as char).to_string()) }
-    pub fn integer_string() -> JString { JString::from("123") }
-    pub fn empty_string() -> JString { JString::from("") }
-    pub fn space_string() -> JString { JString::from("    ") }
-    pub fn double_string() -> JString { JString::from("123.456") }
-    pub fn unicode_string() -> JString { JString::from("😃😁") }
-    pub fn emoji_string() -> JString { JString::from("ã🦆") }
-    pub fn mixed_string() -> JString { JString::from("abc123!@# ") }
-    pub fn long_string() -> JString { JString::from("x".repeat(5000)) }
-    pub fn multi_lang_string() -> JString { JString::from("Hello 你好 مرحبا") }
-    pub fn json_string() -> JString { JString::from("{\"key\": \"value\"}") }
-    pub fn html_entity_string() -> JString { JString::from("&amp; &lt; &gt;") }
-    pub fn control_char_string() -> JString { JString::from("\t\n\r") }
-    pub fn single_char_string() -> JString { JString::from("a") }
-    pub fn long_word_string() -> JString { JString::from("Supercalifragilisticexpialidocious") }
-    pub fn concatenated_string() -> JString { JString::from(format!("{}{}{}", "Hello", "123", "!@#")) }
-    pub fn white_space_string() -> JString { JString::from("   leading and trailing spaces   ") }
-    pub fn file_path_string() -> JString { JString::from(r"C:\Users\Example\file.txt") }
-    pub fn large_number_string() -> JString { JString::from("12345678901234567890") }
-    pub fn hexadecimal_string() -> JString { JString::from("0x1A3F") }
-    pub fn palindrome_string() -> JString { JString::from("racecar") }
-    pub fn sql_injection_string() -> JString { JString::from("SELECT * FROM users WHERE name = 'a'; DROP TABLE users;") }
-    pub fn regex_string() -> JString { JString::from(r"^\d{3}-\d{2}-\d{4}$") }
-    pub fn date_time_string() -> JString { JString::from("2023-01-01T00:00:00") }
-    pub fn special_char_string() -> JString { JString::from("!?@#$%^&*()") }
-    pub fn substring_string() -> JString { JString::from(&"Hello world"[0..5]) }
-    pub fn case_sensitive_string1() -> JString { JString::from("TestString") }
-    pub fn case_sensitive_string2() -> JString { JString::from("teststring") }
-    pub fn boolean_string() -> JString { JString::from("true") }
-    pub fn format_specifier_string() -> JString { JString::from("{0:C}") }
-    pub fn emoji_sequence_string() -> JString { JString::from("👨‍👩‍👦") }
-    pub fn null_char_string() -> JString { JString::from("Hello\0World") }
-    pub fn repeating_pattern_string() -> JString { JString::from("abcabcabc") }
+    pub fn asic_string() -> JString {
+        JString::from("hello world")
+    }
+    pub fn escape_string() -> JString {
+        JString::from("\n\t\'\"")
+    }
+    pub fn bad_char() -> JString {
+        JString::from((0xff as char).to_string())
+    }
+    pub fn integer_string() -> JString {
+        JString::from("123")
+    }
+    pub fn empty_string() -> JString {
+        JString::from("")
+    }
+    pub fn space_string() -> JString {
+        JString::from("    ")
+    }
+    pub fn double_string() -> JString {
+        JString::from("123.456")
+    }
+    pub fn unicode_string() -> JString {
+        JString::from("😃😁")
+    }
+    pub fn emoji_string() -> JString {
+        JString::from("ã🦆")
+    }
+    pub fn mixed_string() -> JString {
+        JString::from("abc123!@# ")
+    }
+    pub fn long_string() -> JString {
+        JString::from("x".repeat(5000))
+    }
+    pub fn multi_lang_string() -> JString {
+        JString::from("Hello 你好 مرحبا")
+    }
+    pub fn json_string() -> JString {
+        JString::from("{\"key\": \"value\"}")
+    }
+    pub fn html_entity_string() -> JString {
+        JString::from("&amp; &lt; &gt;")
+    }
+    pub fn control_char_string() -> JString {
+        JString::from("\t\n\r")
+    }
+    pub fn single_char_string() -> JString {
+        JString::from("a")
+    }
+    pub fn long_word_string() -> JString {
+        JString::from("Supercalifragilisticexpialidocious")
+    }
+    pub fn concatenated_string() -> JString {
+        JString::from(format!("{}{}{}", "Hello", "123", "!@#"))
+    }
+    pub fn white_space_string() -> JString {
+        JString::from("   leading and trailing spaces   ")
+    }
+    pub fn file_path_string() -> JString {
+        JString::from(r"C:\Users\Example\file.txt")
+    }
+    pub fn large_number_string() -> JString {
+        JString::from("12345678901234567890")
+    }
+    pub fn hexadecimal_string() -> JString {
+        JString::from("0x1A3F")
+    }
+    pub fn palindrome_string() -> JString {
+        JString::from("racecar")
+    }
+    pub fn sql_injection_string() -> JString {
+        JString::from("SELECT * FROM users WHERE name = 'a'; DROP TABLE users;")
+    }
+    pub fn regex_string() -> JString {
+        JString::from(r"^\d{3}-\d{2}-\d{4}$")
+    }
+    pub fn date_time_string() -> JString {
+        JString::from("2023-01-01T00:00:00")
+    }
+    pub fn special_char_string() -> JString {
+        JString::from("!?@#$%^&*()")
+    }
+    pub fn substring_string() -> JString {
+        JString::from(&"Hello world"[0..5])
+    }
+    pub fn case_sensitive_string1() -> JString {
+        JString::from("TestString")
+    }
+    pub fn case_sensitive_string2() -> JString {
+        JString::from("teststring")
+    }
+    pub fn boolean_string() -> JString {
+        JString::from("true")
+    }
+    pub fn format_specifier_string() -> JString {
+        JString::from("{0:C}")
+    }
+    pub fn emoji_sequence_string() -> JString {
+        JString::from("👨‍👩‍👦")
+    }
+    pub fn null_char_string() -> JString {
+        JString::from("Hello\0World")
+    }
+    pub fn repeating_pattern_string() -> JString {
+        JString::from("abcabcabc")
+    }
 }
 
 /// Enum for testing - matches C# Woo enum
@@ -55,12 +125,12 @@ enum Woo {
 
 impl std::str::FromStr for Woo {
     type Err = ();
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "James" => Ok(Woo::James),
             "Jerry" => Ok(Woo::Jerry),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -79,7 +149,6 @@ impl std::fmt::Display for EnumExample {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,13 +160,13 @@ mod tests {
         let s = "hello world";
         let jstring = JString::from(s);
         assert_eq!(jstring.value(), s);
-        
+
         // Test null constructor should panic (Rust equivalent)
         // In Rust, we can't pass null, so we test with empty string
     }
 
     /// Test null constructor (matches C# UT_JString.TestConstructorNull)
-    #[test] 
+    #[test]
     fn test_constructor_null() {
         // In Rust, we can't have null strings, so this test ensures
         // we handle the empty case properly
@@ -113,7 +182,7 @@ mod tests {
         assert_eq!(jstring.value(), s);
     }
 
-    /// Test space constructor (matches C# UT_JString.TestConstructorSpace) 
+    /// Test space constructor (matches C# UT_JString.TestConstructorSpace)
     #[test]
     fn test_constructor_space() {
         let s = "    ";
@@ -228,7 +297,7 @@ mod tests {
     }
 
     /// Test long string (matches C# UT_JString.TestLongString)
-    #[test] 
+    #[test]
     fn test_long_string() {
         assert_eq!(long_string().value(), "x".repeat(5000));
     }
@@ -266,7 +335,10 @@ mod tests {
     /// Test long word string (matches C# UT_JString.TestLongWordString)
     #[test]
     fn test_long_word_string() {
-        assert_eq!(long_word_string().value(), "Supercalifragilisticexpialidocious");
+        assert_eq!(
+            long_word_string().value(),
+            "Supercalifragilisticexpialidocious"
+        );
     }
 
     /// Test concatenated string (matches C# UT_JString.TestConcatenatedString)
@@ -278,7 +350,10 @@ mod tests {
     /// Test whitespace string (matches C# UT_JString.TestWhiteSpaceString)
     #[test]
     fn test_white_space_string() {
-        assert_eq!(white_space_string().value(), "   leading and trailing spaces   ");
+        assert_eq!(
+            white_space_string().value(),
+            "   leading and trailing spaces   "
+        );
     }
 
     /// Test file path string (matches C# UT_JString.TestFilePathString)
@@ -308,7 +383,10 @@ mod tests {
     /// Test SQL injection string (matches C# UT_JString.TestSqlInjectionString)
     #[test]
     fn test_sql_injection_string() {
-        assert_eq!(sql_injection_string().value(), "SELECT * FROM users WHERE name = 'a'; DROP TABLE users;");
+        assert_eq!(
+            sql_injection_string().value(),
+            "SELECT * FROM users WHERE name = 'a'; DROP TABLE users;"
+        );
     }
 
     /// Test regex string (matches C# UT_JString.TestRegexString)
@@ -338,7 +416,10 @@ mod tests {
     /// Test case-sensitive strings (matches C# UT_JString.TestCaseSensitiveStrings)
     #[test]
     fn test_case_sensitive_strings() {
-        assert_ne!(case_sensitive_string1().value(), case_sensitive_string2().value());
+        assert_ne!(
+            case_sensitive_string1().value(),
+            case_sensitive_string2().value()
+        );
     }
 
     /// Test boolean string (matches C# UT_JString.TestBooleanString)
@@ -384,7 +465,7 @@ mod tests {
         assert_eq!(jstring.get_string(), str_val);
         assert_eq!(jstring.value(), jstring.value());
         assert_ne!(jstring.value(), jstring2.value());
-        
+
         let reference = &jstring;
         assert_eq!(jstring.value(), reference.value());
     }

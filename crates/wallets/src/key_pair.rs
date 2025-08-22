@@ -65,7 +65,9 @@ impl KeyPair {
     /// The encrypted_key should be base64-encoded NEP-2 data.
     pub fn from_nep2(encrypted_key: &[u8], password: &str) -> Result<Self> {
         // First try to decode as base64
-        let decoded = base64::engine::general_purpose::STANDARD.decode(encrypted_key).map_err(|_| Error::InvalidNep2Key)?;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(encrypted_key)
+            .map_err(|_| Error::InvalidNep2Key)?;
 
         let private_key = Self::decrypt_nep2(&decoded, password)?;
         Self::from_private_key(&private_key)

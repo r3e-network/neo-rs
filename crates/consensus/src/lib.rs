@@ -21,10 +21,10 @@ pub mod mempool_adapter;
 pub mod messages;
 pub mod proposal;
 pub mod recovery;
+pub mod safe_consensus;
 pub mod service;
 pub mod signature;
 pub mod validators;
-pub mod safe_consensus;
 pub mod view_change_optimization;
 
 // Re-export main types
@@ -45,12 +45,11 @@ pub use service::{
     ConsensusEvent, ConsensusService, ConsensusServiceConfig, ConsensusStats, LedgerService,
     MempoolService, NetworkService,
 };
-pub use signature::{MessageSigner, SignatureProvider};
 use sha2::{Digest, Sha256};
+pub use signature::{MessageSigner, SignatureProvider};
 use std::fmt;
 use thiserror::Error;
 pub use validators::{Validator, ValidatorConfig, ValidatorManager, ValidatorSet, ValidatorStats};
-
 
 /// Result type for consensus operations
 pub type Result<T> = std::result::Result<T, Error>;
@@ -97,35 +96,35 @@ pub enum Error {
     /// Configuration error
     #[error("Configuration error: {0}")]
     Configuration(String),
-    
+
     /// Invalid configuration
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
-    
+
     /// Invalid view
     #[error("Invalid view: {0}")]
     InvalidView(String),
-    
+
     /// Invalid state
     #[error("Invalid state: {0}")]
     InvalidState(String),
-    
+
     /// Invalid vote
     #[error("Invalid vote: {0}")]
     InvalidVote(String),
-    
+
     /// Rate limit exceeded
     #[error("Rate limit exceeded: {0}")]
     RateLimitExceeded(String),
-    
+
     /// Circuit breaker open
     #[error("Circuit breaker open: {0}")]
     CircuitBreakerOpen(String),
-    
+
     /// Recovery failed
     #[error("Recovery failed: {0}")]
     RecoveryFailed(String),
-    
+
     /// Recovery too soon
     #[error("Recovery too soon: {0}")]
     RecoveryTooSoon(String),

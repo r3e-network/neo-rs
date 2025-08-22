@@ -1,5 +1,5 @@
 //! Enhanced Error Handling Module
-//! 
+//!
 //! Provides comprehensive error handling utilities to replace unwrap() and panic! patterns
 //! throughout the Neo Rust codebase.
 
@@ -191,7 +191,7 @@ pub trait ErrorContext<T> {
     fn context<C>(self, context: C) -> Result<T>
     where
         C: fmt::Display + Send + Sync + 'static;
-    
+
     /// Add context with a closure (lazy evaluation)
     fn with_context<C, F>(self, f: F) -> Result<T>
     where
@@ -212,7 +212,7 @@ where
             NeoError::Internal(format!("{}: {}", context, base_error))
         })
     }
-    
+
     fn with_context<C, F>(self, f: F) -> Result<T>
     where
         C: fmt::Display + Send + Sync + 'static,
@@ -232,12 +232,12 @@ pub trait SafeUnwrap<T> {
     fn unwrap_or_default(self) -> T
     where
         T: Default;
-    
+
     /// Unwrap with a provided default
     fn unwrap_or_else_default<F>(self, f: F) -> T
     where
         F: FnOnce() -> T;
-    
+
     /// Log error and return default
     fn unwrap_or_log(self, message: &str) -> T
     where
@@ -254,7 +254,7 @@ impl<T> SafeUnwrap<T> for Result<T> {
             T::default()
         })
     }
-    
+
     fn unwrap_or_else_default<F>(self, f: F) -> T
     where
         F: FnOnce() -> T,
@@ -264,7 +264,7 @@ impl<T> SafeUnwrap<T> for Result<T> {
             f()
         })
     }
-    
+
     fn unwrap_or_log(self, message: &str) -> T
     where
         T: Default,
@@ -292,17 +292,17 @@ impl RetryPolicy {
             backoff_ms,
         }
     }
-    
+
     pub async fn retry<F, Fut, T>(&self, mut f: F) -> Result<T>
     where
         F: FnMut() -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
         let mut attempts = 0;
-        
+
         loop {
             attempts += 1;
-            
+
             match f().await {
                 Ok(value) => return Ok(value),
                 Err(e) if attempts >= self.max_attempts => return Err(e),
@@ -314,10 +314,11 @@ impl RetryPolicy {
                         e,
                         self.backoff_ms * attempts as u64
                     );
-                    
-                    tokio::time::sleep(
-                        std::time::Duration::from_millis(self.backoff_ms * attempts as u64)
-                    ).await;
+
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        self.backoff_ms * attempts as u64,
+                    ))
+                    .await;
                 }
             }
         }
@@ -351,14 +352,14 @@ impl CircuitBreaker {
             state: std::sync::Arc::new(std::sync::Mutex::new(CircuitState::Closed)),
         }
     }
-    
+
     pub async fn call<F, Fut, T>(&self, f: F) -> Result<T>
     where
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
         let state = self.state.lock().unwrap().clone();
-        
+
         match state {
             CircuitState::Open(opened_at) => {
                 if opened_at.elapsed().as_millis() > self.timeout_ms as u128 {
@@ -370,7 +371,8 @@ impl CircuitBreaker {
                             Ok(value)
                         }
                         Err(e) => {
-                            *self.state.lock().unwrap() = CircuitState::Open(std::time::Instant::now());
+                            *self.state.lock().unwrap() =
+                                CircuitState::Open(std::time::Instant::now());
                             Err(e)
                         }
                     }
@@ -378,18 +380,16 @@ impl CircuitBreaker {
                     Err(NeoError::Internal("Circuit breaker is open".to_string()))
                 }
             }
-            CircuitState::HalfOpen | CircuitState::Closed => {
-                match f().await {
-                    Ok(value) => {
-                        *self.state.lock().unwrap() = CircuitState::Closed;
-                        Ok(value)
-                    }
-                    Err(e) => {
-                        *self.state.lock().unwrap() = CircuitState::Open(std::time::Instant::now());
-                        Err(e)
-                    }
+            CircuitState::HalfOpen | CircuitState::Closed => match f().await {
+                Ok(value) => {
+                    *self.state.lock().unwrap() = CircuitState::Closed;
+                    Ok(value)
                 }
-            }
+                Err(e) => {
+                    *self.state.lock().unwrap() = CircuitState::Open(std::time::Instant::now());
+                    Err(e)
+                }
+            },
         }
     }
 }
@@ -429,40 +429,42 @@ impl From<Box<dyn std::error::Error>> for NeoError {
 #[allow(dead_code)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_error_context() {
         let result: Result<()> = Err(NeoError::NotFound("block".to_string()));
         let with_context = result.context("Failed to process block");
         assert!(with_context.is_err());
     }
-    
+
     #[test]
     fn test_safe_unwrap() {
         let result: Result<i32> = Err(NeoError::Internal("test".to_string()));
         let value = result.unwrap_or_default();
         assert_eq!(value, 0);
     }
-    
+
     #[tokio::test]
     async fn test_retry_policy() {
         let policy = RetryPolicy::new(3, 100);
         let attempts = std::sync::Arc::new(std::sync::Mutex::new(0));
         let attempts_clone = attempts.clone();
-        
-        let result = policy.retry(move || {
-            let attempts = attempts_clone.clone();
-            async move {
-                let mut count = attempts.lock().unwrap();
-                *count += 1;
-                if *count < 3 {
-                    Err(NeoError::Internal("retry test".to_string()))
-                } else {
-                    Ok(42)
+
+        let result = policy
+            .retry(move || {
+                let attempts = attempts_clone.clone();
+                async move {
+                    let mut count = attempts.lock().unwrap();
+                    *count += 1;
+                    if *count < 3 {
+                        Err(NeoError::Internal("retry test".to_string()))
+                    } else {
+                        Ok(42)
+                    }
                 }
-            }
-        }).await;
-        
+            })
+            .await;
+
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
     }

@@ -1,12 +1,12 @@
 //! Performance metrics collection for the Neo VM
-//! 
+//!
 //! This module provides comprehensive metrics tracking for monitoring
 //! VM performance, memory usage, and operation statistics.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
 
 /// VM performance metrics
 #[derive(Debug, Clone)]
@@ -75,21 +75,22 @@ impl VmMetrics {
     /// Records a script execution
     pub fn record_execution(&self, success: bool, duration: Duration) {
         self.scripts_executed.fetch_add(1, Ordering::Relaxed);
-        
+
         if success {
             self.successful_executions.fetch_add(1, Ordering::Relaxed);
         } else {
             self.failed_executions.fetch_add(1, Ordering::Relaxed);
         }
-        
+
         let micros = duration.as_micros() as u64;
-        self.total_execution_time_us.fetch_add(micros, Ordering::Relaxed);
+        self.total_execution_time_us
+            .fetch_add(micros, Ordering::Relaxed);
     }
 
     /// Updates stack depth
     pub fn update_stack_depth(&self, depth: usize) {
         self.current_stack_depth.store(depth, Ordering::Relaxed);
-        
+
         // Update peak if necessary
         let mut peak = self.peak_stack_depth.load(Ordering::Relaxed);
         while depth > peak {
@@ -108,8 +109,11 @@ impl VmMetrics {
     /// Records a memory allocation
     pub fn record_allocation(&self, bytes: usize) {
         self.memory_allocations.fetch_add(1, Ordering::Relaxed);
-        let new_total = self.current_memory_bytes.fetch_add(bytes, Ordering::Relaxed) + bytes;
-        
+        let new_total = self
+            .current_memory_bytes
+            .fetch_add(bytes, Ordering::Relaxed)
+            + bytes;
+
         // Update peak if necessary
         let mut peak = self.peak_memory_bytes.load(Ordering::Relaxed);
         while new_total > peak {
@@ -128,13 +132,16 @@ impl VmMetrics {
     /// Records a memory deallocation
     pub fn record_deallocation(&self, bytes: usize) {
         self.memory_deallocations.fetch_add(1, Ordering::Relaxed);
-        self.current_memory_bytes.fetch_sub(bytes, Ordering::Relaxed);
+        self.current_memory_bytes
+            .fetch_sub(bytes, Ordering::Relaxed);
     }
 
     /// Records an operation timing
     pub fn record_operation(&self, name: &str, duration: Duration) {
         let mut timings = self.operation_timings.write().unwrap();
-        let metrics = timings.entry(name.to_string()).or_insert_with(OperationMetrics::new);
+        let metrics = timings
+            .entry(name.to_string())
+            .or_insert_with(OperationMetrics::new);
         metrics.record(duration);
     }
 
@@ -148,7 +155,7 @@ impl VmMetrics {
     pub fn snapshot(&self) -> MetricsSnapshot {
         let operation_timings = self.operation_timings.read().unwrap().clone();
         let syscall_counts = self.syscall_counts.read().unwrap().clone();
-        
+
         MetricsSnapshot {
             timestamp: Instant::now(),
             instructions_executed: self.instructions_executed.load(Ordering::Relaxed),
@@ -267,40 +274,55 @@ impl MetricsSnapshot {
     /// Formats metrics as a human-readable report
     pub fn format_report(&self) -> String {
         let mut report = String::new();
-        
+
         report.push_str("=== VM Performance Metrics ===\n");
-        report.push_str(&format!("Instructions Executed: {}\n", self.instructions_executed));
+        report.push_str(&format!(
+            "Instructions Executed: {}\n",
+            self.instructions_executed
+        ));
         report.push_str(&format!("Gas Consumed: {}\n", self.gas_consumed));
-        report.push_str(&format!("Scripts Executed: {} (Success: {}, Failed: {})\n", 
-            self.scripts_executed, self.successful_executions, self.failed_executions));
-        report.push_str(&format!("Average Execution Time: {} μs\n", self.average_execution_time_us));
+        report.push_str(&format!(
+            "Scripts Executed: {} (Success: {}, Failed: {})\n",
+            self.scripts_executed, self.successful_executions, self.failed_executions
+        ));
+        report.push_str(&format!(
+            "Average Execution Time: {} μs\n",
+            self.average_execution_time_us
+        ));
         report.push_str(&format!("Peak Stack Depth: {}\n", self.peak_stack_depth));
-        report.push_str(&format!("Memory: {} allocations, {} deallocations\n", 
-            self.memory_allocations, self.memory_deallocations));
+        report.push_str(&format!(
+            "Memory: {} allocations, {} deallocations\n",
+            self.memory_allocations, self.memory_deallocations
+        ));
         report.push_str(&format!("Peak Memory: {} bytes\n", self.peak_memory_bytes));
-        
+
         if !self.operation_timings.is_empty() {
             report.push_str("\n=== Operation Timings ===\n");
             for (name, metrics) in &self.operation_timings {
-                report.push_str(&format!("{}: {} calls, avg {} μs (min: {}, max: {})\n",
-                    name, metrics.count, metrics.average_time_us(), 
-                    metrics.min_time_us, metrics.max_time_us));
+                report.push_str(&format!(
+                    "{}: {} calls, avg {} μs (min: {}, max: {})\n",
+                    name,
+                    metrics.count,
+                    metrics.average_time_us(),
+                    metrics.min_time_us,
+                    metrics.max_time_us
+                ));
             }
         }
-        
+
         if !self.syscall_counts.is_empty() {
             report.push_str("\n=== Syscall Counts ===\n");
             for (name, count) in &self.syscall_counts {
                 report.push_str(&format!("{}: {}\n", name, count));
             }
         }
-        
+
         report
     }
 }
 
 /// Global metrics instance
-static GLOBAL_METRICS: once_cell::sync::Lazy<VmMetrics> = 
+static GLOBAL_METRICS: once_cell::sync::Lazy<VmMetrics> =
     once_cell::sync::Lazy::new(|| VmMetrics::new());
 
 /// Gets the global metrics instance
@@ -342,13 +364,13 @@ mod tests {
     #[test]
     fn test_metrics_recording() {
         let metrics = VmMetrics::new();
-        
+
         // Record some operations
         metrics.record_instruction();
         metrics.record_instruction();
         metrics.record_gas(100);
         metrics.record_execution(true, Duration::from_millis(10));
-        
+
         // Check metrics
         assert_eq!(metrics.instructions_executed.load(Ordering::Relaxed), 2);
         assert_eq!(metrics.gas_consumed.load(Ordering::Relaxed), 100);
@@ -358,11 +380,11 @@ mod tests {
     #[test]
     fn test_stack_depth_tracking() {
         let metrics = VmMetrics::new();
-        
+
         metrics.update_stack_depth(5);
         metrics.update_stack_depth(10);
         metrics.update_stack_depth(3);
-        
+
         assert_eq!(metrics.peak_stack_depth.load(Ordering::Relaxed), 10);
         assert_eq!(metrics.current_stack_depth.load(Ordering::Relaxed), 3);
     }
@@ -370,12 +392,12 @@ mod tests {
     #[test]
     fn test_operation_timing() {
         let metrics = Arc::new(VmMetrics::new());
-        
+
         {
             let _timer = MetricsTimer::new("test_op", Arc::clone(&metrics));
             thread::sleep(Duration::from_millis(10));
         }
-        
+
         let snapshot = metrics.snapshot();
         assert!(snapshot.operation_timings.contains_key("test_op"));
         let op_metrics = &snapshot.operation_timings["test_op"];

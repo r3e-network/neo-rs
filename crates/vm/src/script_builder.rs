@@ -198,7 +198,7 @@ impl ScriptBuilder {
         {
             return Err(crate::error::VmError::InvalidOperation {
                 operation: "emit_jump".to_string(),
-                reason: format!("Invalid jump operation: {:?}", op)
+                reason: format!("Invalid jump operation: {:?}", op),
             });
         }
 
@@ -224,7 +224,7 @@ impl ScriptBuilder {
         if api_bytes_len > 252 {
             return Err(crate::error::VmError::InvalidOperation {
                 operation: "emit_syscall".to_string(),
-                reason: format!("Syscall API too long: {} bytes (max 252)", api_bytes_len)
+                reason: format!("Syscall API too long: {} bytes (max 252)", api_bytes_len),
             });
         }
 

@@ -2,11 +2,11 @@
 //! These tests ensure 100% compatibility with C# Neo witness scope validation
 
 use neo_core::{UInt160, UInt256};
-use neo_smart_contract::{WitnessRule, WitnessScope, WitnessRuleAction, WitnessCondition};
+use neo_smart_contract::{WitnessCondition, WitnessRule, WitnessRuleAction, WitnessScope};
 use std::collections::HashSet;
 
 // ============================================================================
-// Witness Scope Validation Compatibility (20 tests)  
+// Witness Scope Validation Compatibility (20 tests)
 // ============================================================================
 
 #[test]
@@ -15,7 +15,7 @@ fn test_witness_scope_values_compatibility() {
     assert_eq!(WitnessScope::None as u8, 0x00);
     assert_eq!(WitnessScope::CalledByEntry as u8, 0x01);
     assert_eq!(WitnessScope::CustomContracts as u8, 0x10);
-    assert_eq!(WitnessScope::CustomGroups as u8, 0x20);  
+    assert_eq!(WitnessScope::CustomGroups as u8, 0x20);
     assert_eq!(WitnessScope::WitnessRules as u8, 0x40);
     assert_eq!(WitnessScope::Global as u8, 0x80);
 }
@@ -24,29 +24,29 @@ fn test_witness_scope_values_compatibility() {
 fn test_witness_scope_none_validation() {
     // Test None scope validation matches C# Neo
     let scope = WitnessScope::None;
-    
+
     // None scope should have no allowed contracts or groups
     assert!(!scope.has_custom_contracts());
     assert!(!scope.has_custom_groups());
     assert!(!scope.has_witness_rules());
     assert!(!scope.is_global());
-    
+
     // Validate scope restrictions
     assert!(!scope.allows_contract(&UInt160::from([42u8; 20])));
     assert!(!scope.allows_group(&[0u8; 33])); // Public key
 }
 
-#[test] 
+#[test]
 fn test_witness_scope_called_by_entry_validation() {
     // Test CalledByEntry scope validation matches C# Neo
     let scope = WitnessScope::CalledByEntry;
-    
+
     // CalledByEntry should only work for entry contracts
     assert!(!scope.has_custom_contracts());
     assert!(!scope.has_custom_groups());
     assert!(!scope.has_witness_rules());
     assert!(!scope.is_global());
-    
+
     // Should allow entry contract only
     assert!(scope.is_called_by_entry());
 }
@@ -59,21 +59,21 @@ fn test_witness_scope_custom_contracts_validation() {
         UInt160::from([2u8; 20]),
         UInt160::from([3u8; 20]),
     ];
-    
+
     let scope = WitnessScope::CustomContracts;
     let mut witness_scope = WitnessScopeValidator::new(scope);
     witness_scope.add_allowed_contracts(contracts.clone());
-    
+
     assert!(witness_scope.has_custom_contracts());
     assert!(!witness_scope.has_custom_groups());
     assert!(!witness_scope.has_witness_rules());
     assert!(!witness_scope.is_global());
-    
+
     // Test allowed contracts
     for contract in &contracts {
         assert!(witness_scope.allows_contract(contract));
     }
-    
+
     // Test disallowed contract
     let disallowed = UInt160::from([99u8; 20]);
     assert!(!witness_scope.allows_contract(&disallowed));
@@ -87,21 +87,21 @@ fn test_witness_scope_custom_groups_validation() {
         [2u8; 33], // Public key 2
         [3u8; 33], // Public key 3
     ];
-    
+
     let scope = WitnessScope::CustomGroups;
     let mut witness_scope = WitnessScopeValidator::new(scope);
     witness_scope.add_allowed_groups(groups.clone());
-    
+
     assert!(!witness_scope.has_custom_contracts());
     assert!(witness_scope.has_custom_groups());
     assert!(!witness_scope.has_witness_rules());
     assert!(!witness_scope.is_global());
-    
+
     // Test allowed groups
     for group in &groups {
         assert!(witness_scope.allows_group(group));
     }
-    
+
     // Test disallowed group
     let disallowed = [99u8; 33];
     assert!(!witness_scope.allows_group(&disallowed));
@@ -120,21 +120,21 @@ fn test_witness_scope_witness_rules_validation() {
             condition: WitnessCondition::ScriptHash(UInt160::from([2u8; 20])),
         },
     ];
-    
+
     let scope = WitnessScope::WitnessRules;
     let mut witness_scope = WitnessScopeValidator::new(scope);
     witness_scope.add_witness_rules(rules.clone());
-    
+
     assert!(!witness_scope.has_custom_contracts());
     assert!(!witness_scope.has_custom_groups());
     assert!(witness_scope.has_witness_rules());
     assert!(!witness_scope.is_global());
-    
+
     // Test witness rule evaluation
     let allowed_contract = UInt160::from([1u8; 20]);
     let denied_contract = UInt160::from([2u8; 20]);
     let neutral_contract = UInt160::from([3u8; 20]);
-    
+
     assert!(witness_scope.check_witness_rules(&allowed_contract));
     assert!(!witness_scope.check_witness_rules(&denied_contract));
     assert!(!witness_scope.check_witness_rules(&neutral_contract)); // Default deny
@@ -145,12 +145,12 @@ fn test_witness_scope_global_validation() {
     // Test Global scope validation matches C# Neo
     let scope = WitnessScope::Global;
     let witness_scope = WitnessScopeValidator::new(scope);
-    
+
     assert!(!witness_scope.has_custom_contracts());
     assert!(!witness_scope.has_custom_groups());
     assert!(!witness_scope.has_witness_rules());
     assert!(witness_scope.is_global());
-    
+
     // Global should allow everything
     assert!(witness_scope.allows_contract(&UInt160::from([1u8; 20])));
     assert!(witness_scope.allows_contract(&UInt160::from([99u8; 20])));
@@ -158,23 +158,23 @@ fn test_witness_scope_global_validation() {
     assert!(witness_scope.allows_group(&[99u8; 33]));
 }
 
-#[test] 
+#[test]
 fn test_witness_scope_combination_validation() {
     // Test combined scopes validation matches C# Neo
     let combined_scope = WitnessScope::CustomContracts | WitnessScope::CustomGroups;
     let mut witness_scope = WitnessScopeValidator::new(combined_scope);
-    
+
     let contracts = vec![UInt160::from([1u8; 20])];
     let groups = vec![[2u8; 33]];
-    
+
     witness_scope.add_allowed_contracts(contracts.clone());
     witness_scope.add_allowed_groups(groups.clone());
-    
+
     assert!(witness_scope.has_custom_contracts());
     assert!(witness_scope.has_custom_groups());
     assert!(!witness_scope.has_witness_rules());
     assert!(!witness_scope.is_global());
-    
+
     // Both contracts and groups should be allowed
     assert!(witness_scope.allows_contract(&contracts[0]));
     assert!(witness_scope.allows_group(&groups[0]));
@@ -190,13 +190,16 @@ fn test_witness_scope_serialization_compatibility() {
         (WitnessScope::CustomGroups, vec![0x20]),
         (WitnessScope::WitnessRules, vec![0x40]),
         (WitnessScope::Global, vec![0x80]),
-        (WitnessScope::CustomContracts | WitnessScope::CustomGroups, vec![0x30]),
+        (
+            WitnessScope::CustomContracts | WitnessScope::CustomGroups,
+            vec![0x30],
+        ),
     ];
-    
+
     for (scope, expected_bytes) in test_cases {
         let serialized = scope.to_bytes();
         assert_eq!(serialized, expected_bytes);
-        
+
         let deserialized = WitnessScope::from_bytes(&serialized).unwrap();
         assert_eq!(deserialized, scope);
     }
@@ -212,9 +215,12 @@ fn test_witness_scope_deserialization_compatibility() {
         (vec![0x20], WitnessScope::CustomGroups),
         (vec![0x40], WitnessScope::WitnessRules),
         (vec![0x80], WitnessScope::Global),
-        (vec![0x30], WitnessScope::CustomContracts | WitnessScope::CustomGroups),
+        (
+            vec![0x30],
+            WitnessScope::CustomContracts | WitnessScope::CustomGroups,
+        ),
     ];
-    
+
     for (bytes, expected_scope) in test_cases {
         let deserialized = WitnessScope::from_bytes(&bytes).unwrap();
         assert_eq!(deserialized, expected_scope);
@@ -247,10 +253,10 @@ fn test_witness_condition_boolean_compatibility() {
     // Test boolean witness conditions match C# Neo
     let condition_true = WitnessCondition::Boolean(true);
     let condition_false = WitnessCondition::Boolean(false);
-    
+
     assert_eq!(condition_true.get_type(), WitnessConditionType::Boolean);
     assert_eq!(condition_false.get_type(), WitnessConditionType::Boolean);
-    
+
     // Test evaluation
     assert!(condition_true.evaluate(&create_test_context()));
     assert!(!condition_false.evaluate(&create_test_context()));
@@ -261,9 +267,9 @@ fn test_witness_condition_not_compatibility() {
     // Test NOT witness conditions match C# Neo
     let inner_condition = WitnessCondition::Boolean(true);
     let not_condition = WitnessCondition::Not(Box::new(inner_condition));
-    
+
     assert_eq!(not_condition.get_type(), WitnessConditionType::Not);
-    
+
     // Test evaluation (should invert inner condition)
     assert!(!not_condition.evaluate(&create_test_context()));
 }
@@ -276,12 +282,12 @@ fn test_witness_condition_and_compatibility() {
         WitnessCondition::Boolean(true),
     ];
     let and_condition = WitnessCondition::And(conditions);
-    
+
     assert_eq!(and_condition.get_type(), WitnessConditionType::And);
-    
+
     // Test evaluation (all must be true)
     assert!(and_condition.evaluate(&create_test_context()));
-    
+
     // Test with one false condition
     let conditions_with_false = vec![
         WitnessCondition::Boolean(true),
@@ -299,12 +305,12 @@ fn test_witness_condition_or_compatibility() {
         WitnessCondition::Boolean(true),
     ];
     let or_condition = WitnessCondition::Or(conditions);
-    
+
     assert_eq!(or_condition.get_type(), WitnessConditionType::Or);
-    
+
     // Test evaluation (at least one must be true)
     assert!(or_condition.evaluate(&create_test_context()));
-    
+
     // Test with all false conditions
     let conditions_all_false = vec![
         WitnessCondition::Boolean(false),
@@ -319,14 +325,14 @@ fn test_witness_condition_script_hash_compatibility() {
     // Test ScriptHash witness conditions match C# Neo
     let script_hash = UInt160::from([42u8; 20]);
     let condition = WitnessCondition::ScriptHash(script_hash);
-    
+
     assert_eq!(condition.get_type(), WitnessConditionType::ScriptHash);
-    
+
     // Test evaluation with matching contract
     let mut context = create_test_context();
     context.current_script_hash = script_hash;
     assert!(condition.evaluate(&context));
-    
+
     // Test evaluation with non-matching contract
     context.current_script_hash = UInt160::from([99u8; 20]);
     assert!(!condition.evaluate(&context));
@@ -337,14 +343,14 @@ fn test_witness_condition_group_compatibility() {
     // Test Group witness conditions match C# Neo
     let group_pubkey = [42u8; 33];
     let condition = WitnessCondition::Group(group_pubkey);
-    
+
     assert_eq!(condition.get_type(), WitnessConditionType::Group);
-    
+
     // Test evaluation with matching group
     let mut context = create_test_context();
     context.contract_groups.insert(group_pubkey);
     assert!(condition.evaluate(&context));
-    
+
     // Test evaluation with non-matching group
     context.contract_groups.clear();
     context.contract_groups.insert([99u8; 33]);
@@ -355,14 +361,14 @@ fn test_witness_condition_group_compatibility() {
 fn test_witness_condition_called_by_entry_compatibility() {
     // Test CalledByEntry witness conditions match C# Neo
     let condition = WitnessCondition::CalledByEntry;
-    
+
     assert_eq!(condition.get_type(), WitnessConditionType::CalledByEntry);
-    
+
     // Test evaluation when called by entry
     let mut context = create_test_context();
     context.is_entry_script = true;
     assert!(condition.evaluate(&context));
-    
+
     // Test evaluation when not called by entry
     context.is_entry_script = false;
     assert!(!condition.evaluate(&context));
@@ -373,18 +379,18 @@ fn test_witness_condition_called_by_contract_compatibility() {
     // Test CalledByContract witness conditions match C# Neo
     let contract_hash = UInt160::from([42u8; 20]);
     let condition = WitnessCondition::CalledByContract(contract_hash);
-    
+
     assert_eq!(condition.get_type(), WitnessConditionType::CalledByContract);
-    
+
     // Test evaluation with matching caller
     let mut context = create_test_context();
     context.calling_script_hash = Some(contract_hash);
     assert!(condition.evaluate(&context));
-    
+
     // Test evaluation with non-matching caller
     context.calling_script_hash = Some(UInt160::from([99u8; 20]));
     assert!(!condition.evaluate(&context));
-    
+
     // Test evaluation with no caller
     context.calling_script_hash = None;
     assert!(!condition.evaluate(&context));
@@ -395,14 +401,14 @@ fn test_witness_condition_called_by_group_compatibility() {
     // Test CalledByGroup witness conditions match C# Neo
     let group_pubkey = [42u8; 33];
     let condition = WitnessCondition::CalledByGroup(group_pubkey);
-    
+
     assert_eq!(condition.get_type(), WitnessConditionType::CalledByGroup);
-    
+
     // Test evaluation with matching caller group
     let mut context = create_test_context();
     context.calling_contract_groups.insert(group_pubkey);
     assert!(condition.evaluate(&context));
-    
+
     // Test evaluation with non-matching caller group
     context.calling_contract_groups.clear();
     context.calling_contract_groups.insert([99u8; 33]);
@@ -431,64 +437,64 @@ impl WitnessScopeValidator {
             witness_rules: Vec::new(),
         }
     }
-    
+
     pub fn add_allowed_contracts(&mut self, contracts: Vec<UInt160>) {
         self.allowed_contracts.extend(contracts);
     }
-    
+
     pub fn add_allowed_groups(&mut self, groups: Vec<[u8; 33]>) {
         self.allowed_groups.extend(groups);
     }
-    
+
     pub fn add_witness_rules(&mut self, rules: Vec<WitnessRule>) {
         self.witness_rules.extend(rules);
     }
-    
+
     pub fn has_custom_contracts(&self) -> bool {
         self.scope.contains(WitnessScope::CustomContracts)
     }
-    
+
     pub fn has_custom_groups(&self) -> bool {
         self.scope.contains(WitnessScope::CustomGroups)
     }
-    
+
     pub fn has_witness_rules(&self) -> bool {
         self.scope.contains(WitnessScope::WitnessRules)
     }
-    
+
     pub fn is_global(&self) -> bool {
         self.scope.contains(WitnessScope::Global)
     }
-    
+
     pub fn allows_contract(&self, contract: &UInt160) -> bool {
         if self.is_global() {
             return true;
         }
-        
+
         if self.has_custom_contracts() {
             return self.allowed_contracts.contains(contract);
         }
-        
+
         false
     }
-    
+
     pub fn allows_group(&self, group: &[u8; 33]) -> bool {
         if self.is_global() {
             return true;
         }
-        
+
         if self.has_custom_groups() {
             return self.allowed_groups.contains(group);
         }
-        
+
         false
     }
-    
+
     pub fn check_witness_rules(&self, contract: &UInt160) -> bool {
         if !self.has_witness_rules() {
             return false;
         }
-        
+
         let context = WitnessContext {
             current_script_hash: *contract,
             calling_script_hash: None,
@@ -496,14 +502,14 @@ impl WitnessScopeValidator {
             calling_contract_groups: HashSet::new(),
             is_entry_script: false,
         };
-        
+
         // Evaluate rules in order - first match wins
         for rule in &self.witness_rules {
             if rule.condition.evaluate(&context) {
                 return matches!(rule.action, WitnessRuleAction::Allow);
             }
         }
-        
+
         false // Default deny if no rules match
     }
 }
@@ -547,16 +553,16 @@ impl WitnessScope {
     pub fn is_called_by_entry(&self) -> bool {
         self.contains(WitnessScope::CalledByEntry)
     }
-    
+
     pub fn to_bytes(&self) -> Vec<u8> {
         vec![self.bits()]
     }
-    
+
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.is_empty() {
             return Err("Empty bytes".to_string());
         }
-        
+
         WitnessScope::from_bits(bytes[0])
             .ok_or_else(|| format!("Invalid witness scope: {:#x}", bytes[0]))
     }
@@ -614,30 +620,20 @@ impl WitnessCondition {
             WitnessCondition::CalledByGroup(_) => WitnessConditionType::CalledByGroup,
         }
     }
-    
+
     pub fn evaluate(&self, context: &WitnessContext) -> bool {
         match self {
             WitnessCondition::Boolean(value) => *value,
             WitnessCondition::Not(inner) => !inner.evaluate(context),
-            WitnessCondition::And(conditions) => {
-                conditions.iter().all(|c| c.evaluate(context))
-            },
-            WitnessCondition::Or(conditions) => {
-                conditions.iter().any(|c| c.evaluate(context))
-            },
-            WitnessCondition::ScriptHash(hash) => {
-                context.current_script_hash == *hash
-            },
-            WitnessCondition::Group(group) => {
-                context.contract_groups.contains(group)
-            },
+            WitnessCondition::And(conditions) => conditions.iter().all(|c| c.evaluate(context)),
+            WitnessCondition::Or(conditions) => conditions.iter().any(|c| c.evaluate(context)),
+            WitnessCondition::ScriptHash(hash) => context.current_script_hash == *hash,
+            WitnessCondition::Group(group) => context.contract_groups.contains(group),
             WitnessCondition::CalledByEntry => context.is_entry_script,
-            WitnessCondition::CalledByContract(hash) => {
-                context.calling_script_hash == Some(*hash)
-            },
+            WitnessCondition::CalledByContract(hash) => context.calling_script_hash == Some(*hash),
             WitnessCondition::CalledByGroup(group) => {
                 context.calling_contract_groups.contains(group)
-            },
+            }
         }
     }
 }

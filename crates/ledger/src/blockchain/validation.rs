@@ -2,11 +2,13 @@
 //!
 //! This module provides comprehensive validation functionality exactly matching C# Neo validation logic.
 
-use crate::{Error, Result, Block, BlockHeader};
-use neo_core::{Transaction, UInt160, UInt256, Witness, Signer};
-use neo_core::constants::{MILLISECONDS_PER_BLOCK, MAX_SCRIPT_SIZE, MAX_TRANSACTION_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
-use neo_vm::{ApplicationEngine, TriggerType, VMState};
+use crate::{Block, BlockHeader, Error, Result};
+use neo_core::constants::{
+    MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, MAX_TRANSACTION_SIZE, MILLISECONDS_PER_BLOCK,
+};
+use neo_core::{Signer, Transaction, UInt160, UInt256, Witness};
 use neo_cryptography::ecdsa::ECDsa;
+use neo_vm::{ApplicationEngine, TriggerType, VMState};
 use std::collections::HashMap;
 use std::sync::Arc;
 /// Block validation results (matches C# VerifyResult)
@@ -60,8 +62,8 @@ impl Default for BlockchainVerifier {
     fn default() -> Self {
         Self {
             max_block_size: MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE, // 1MB (matches C# Neo)
-            max_block_system_fee: 10_000_000_000, // 10M GAS (matches C# Neo)
-            max_transaction_size: MAX_TRANSACTION_SIZE, // 100KB (matches C# Neo)
+            max_block_system_fee: 10_000_000_000,              // 10M GAS (matches C# Neo)
+            max_transaction_size: MAX_TRANSACTION_SIZE,        // 100KB (matches C# Neo)
             max_transactions_per_block: MAX_TRANSACTIONS_PER_BLOCK,
             fee_per_byte: 1000, // 0.001 GAS per byte (matches C# Neo)
         }
@@ -87,7 +89,11 @@ impl BlockchainVerifier {
     }
 
     /// Verifies a block header (matches C# Blockchain.VerifyBlockHeader exactly)
-    pub fn verify_block_header(&self, header: &BlockHeader, previous_header: Option<&BlockHeader>) -> Result<VerifyResult> {
+    pub fn verify_block_header(
+        &self,
+        header: &BlockHeader,
+        previous_header: Option<&BlockHeader>,
+    ) -> Result<VerifyResult> {
         // 1. Check basic header format
         if !self.verify_header_format(header)? {
             return Ok(VerifyResult::InvalidFormat);
@@ -112,7 +118,11 @@ impl BlockchainVerifier {
     }
 
     /// Verifies a complete block (matches C# Blockchain.VerifyBlock exactly)
-    pub fn verify_block(&self, block: &Block, previous_header: Option<&BlockHeader>) -> Result<VerifyResult> {
+    pub fn verify_block(
+        &self,
+        block: &Block,
+        previous_header: Option<&BlockHeader>,
+    ) -> Result<VerifyResult> {
         // 1. Verify header first
         let header_result = self.verify_block_header(&block.header, previous_header)?;
         if !header_result.is_success() {
@@ -213,7 +223,11 @@ impl BlockchainVerifier {
     }
 
     /// Verifies header timestamp (matches C# timestamp validation)
-    fn verify_header_timestamp(&self, header: &BlockHeader, previous_header: Option<&BlockHeader>) -> Result<bool> {
+    fn verify_header_timestamp(
+        &self,
+        header: &BlockHeader,
+        previous_header: Option<&BlockHeader>,
+    ) -> Result<bool> {
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| Error::Generic(format!("Failed to get current time: {}", e)))?
@@ -247,8 +261,8 @@ impl BlockchainVerifier {
             return Ok(false);
         }
         let witness = &header.witnesses[0];
-        
-        // Verify the witness signature against header hash  
+
+        // Verify the witness signature against header hash
         let header_hash = header.hash();
         self.verify_witness(witness, &header_hash.as_bytes())
     }
@@ -256,7 +270,7 @@ impl BlockchainVerifier {
     /// Verifies block size constraints (matches C# block size validation)
     fn verify_block_size(&self, block: &Block) -> Result<bool> {
         let block_size = block.size();
-        
+
         // 1. Check total block size
         if block_size > self.max_block_size {
             return Ok(false);
@@ -313,7 +327,7 @@ impl BlockchainVerifier {
     /// Verifies transaction size (matches C# transaction size validation)
     fn verify_transaction_size(&self, transaction: &Transaction) -> Result<bool> {
         let tx_size = transaction.size();
-        
+
         if tx_size > self.max_transaction_size {
             return Ok(false);
         }
@@ -325,7 +339,7 @@ impl BlockchainVerifier {
     fn verify_network_fee(&self, transaction: &Transaction) -> Result<bool> {
         let tx_size = transaction.size();
         let required_fee = tx_size as u64 * self.fee_per_byte;
-        
+
         if transaction.network_fee() < required_fee as i64 {
             return Ok(false);
         }
@@ -336,12 +350,12 @@ impl BlockchainVerifier {
     /// Verifies transaction witnesses (matches C# witness verification)
     fn verify_transaction_witnesses(&self, transaction: &Transaction) -> Result<bool> {
         let tx_hash = transaction.hash()?;
-        
+
         for (i, witness) in transaction.witnesses().iter().enumerate() {
             if i >= transaction.signers().len() {
                 return Ok(false);
             }
-            
+
             // Verify witness against transaction hash
             if !self.verify_witness(witness, &tx_hash.as_bytes())? {
                 return Ok(false);
@@ -377,7 +391,8 @@ impl BlockchainVerifier {
         }
 
         // 3. Extract public key from verification script
-        let public_key = self.extract_public_key_from_verification(witness.verification_script())?;
+        let public_key =
+            self.extract_public_key_from_verification(witness.verification_script())?;
         if public_key.is_empty() {
             return Ok(false);
         }
@@ -411,9 +426,10 @@ impl BlockchainVerifier {
             return Ok(vec![]);
         }
 
-        if verification_script[0] == 0x0C && 
-           verification_script[1] == 0x21 && 
-           verification_script[34] == 0x41 {
+        if verification_script[0] == 0x0C
+            && verification_script[1] == 0x21
+            && verification_script[34] == 0x41
+        {
             return Ok(verification_script[2..34].to_vec());
         }
 
@@ -440,23 +456,26 @@ mod tests {
         assert_eq!(verifier.max_block_size, MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE);
         assert_eq!(verifier.max_block_system_fee, 10_000_000_000);
         assert_eq!(verifier.max_transaction_size, MAX_TRANSACTION_SIZE);
-        assert_eq!(verifier.max_transactions_per_block, MAX_TRANSACTIONS_PER_BLOCK);
+        assert_eq!(
+            verifier.max_transactions_per_block,
+            MAX_TRANSACTIONS_PER_BLOCK
+        );
         assert_eq!(verifier.fee_per_byte, 1000);
     }
 
     #[test]
     fn test_header_format_validation() {
         let verifier = BlockchainVerifier::default();
-        
+
         // Create a test header
         let header = BlockHeader::new(
-            0, // version
+            0,               // version
             UInt256::zero(), // previous hash
             UInt256::zero(), // merkle root
-            1640995200000, // timestamp
+            1640995200000,   // timestamp
             42,
             1,
-            UInt160::zero(), // next consensus
+            UInt160::zero(),    // next consensus
             Witness::default(), // witness
         );
 
@@ -467,7 +486,7 @@ mod tests {
     #[test]
     fn test_signature_extraction() {
         let verifier = BlockchainVerifier::default();
-        
+
         // Test invocation script with PUSHDATA1
         let invocation_script = vec![
             0x0C, // PUSHDATA1
@@ -475,8 +494,10 @@ mod tests {
         ];
         let mut full_script = invocation_script;
         full_script.extend_from_slice(&vec![0xAB; 64]); // 64 dummy signature bytes
-        
-        let signature = verifier.extract_signature_from_invocation(&full_script).unwrap();
+
+        let signature = verifier
+            .extract_signature_from_invocation(&full_script)
+            .unwrap();
         assert_eq!(signature.len(), 64);
         assert_eq!(signature[0], 0xAB);
     }
@@ -484,7 +505,7 @@ mod tests {
     #[test]
     fn test_public_key_extraction() {
         let verifier = BlockchainVerifier::default();
-        
+
         // Test verification script: PUSHDATA1 33 <pubkey> CHECKSIG
         let mut verification_script = vec![
             0x0C, // PUSHDATA1
@@ -492,8 +513,10 @@ mod tests {
         ];
         verification_script.extend_from_slice(&vec![0xCD; 33]); // 33 dummy pubkey bytes
         verification_script.push(0x41); // CHECKSIG
-        
-        let public_key = verifier.extract_public_key_from_verification(&verification_script).unwrap();
+
+        let public_key = verifier
+            .extract_public_key_from_verification(&verification_script)
+            .unwrap();
         assert_eq!(public_key.len(), 33);
         assert_eq!(public_key[0], 0xCD);
     }

@@ -3,14 +3,15 @@
 //! This module implements the Block structure exactly matching C# Neo's Block.cs.
 //! It provides full block validation, transaction management, and size calculations.
 
-use super::{
-    header::BlockHeader, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
-};
+use super::{header::BlockHeader, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::{Result, VerifyResult};
 use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTION_SIZE};
 use neo_core::{Transaction, UInt160, UInt256};
 use neo_cryptography::MerkleTree;
-use p256::{EncodedPoint, ecdsa::{Signature, VerifyingKey, signature::Verifier}};
+use p256::{
+    ecdsa::{signature::Verifier, Signature, VerifyingKey},
+    EncodedPoint,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 

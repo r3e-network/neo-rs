@@ -117,10 +117,6 @@ pub mod error;
 pub mod evaluation_stack;
 /// Exception handling and try-catch support
 pub mod exception_handling;
-/// Memory pool for optimizing allocations
-pub mod memory_pool;
-/// Performance metrics collection
-pub mod metrics;
 /// Script execution context and local variables
 pub mod execution_context;
 /// Low-level VM execution engine
@@ -131,10 +127,20 @@ pub mod instruction;
 pub mod interop_service;
 /// OpCode implementation and instruction dispatch
 pub mod jump_table;
+/// Memory pool for optimizing allocations
+pub mod memory_pool;
+/// Performance metrics collection
+pub mod metrics;
 /// VM opcode definitions and utilities
 pub mod op_code;
+/// Performance optimization utilities
+pub mod performance_opt;
 /// Memory management for complex data structures
 pub mod reference_counter;
+/// Safe execution utilities for VM operations
+pub mod safe_execution;
+/// Safe type conversion utilities
+pub mod safe_type_conversion;
 /// VM script representation and validation
 pub mod script;
 /// Utility for constructing VM bytecode
@@ -143,12 +149,6 @@ pub mod script_builder;
 pub mod stack_item;
 /// Graph algorithms for garbage collection
 pub mod strongly_connected_components;
-/// Safe execution utilities for VM operations
-pub mod safe_execution;
-/// Performance optimization utilities
-pub mod performance_opt;
-/// Safe type conversion utilities
-pub mod safe_type_conversion;
 
 /// Test utilities and compatibility tests
 #[cfg(test)]

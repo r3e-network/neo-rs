@@ -5,6 +5,6 @@
 
 mod blockchain_tests;
 mod integration_tests;
-mod mempool_tests;
 mod mempool_comprehensive_tests;
+mod mempool_tests;
 mod storage_tests;

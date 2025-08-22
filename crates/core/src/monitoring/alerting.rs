@@ -188,7 +188,7 @@ pub struct AlertRule {
 pub trait NotificationChannel: Send + Sync {
     /// Send alert notification
     async fn send(&self, alert: &Alert) -> Result<()>;
-    
+
     /// Get channel name
     fn name(&self) -> &str;
 }
@@ -282,15 +282,18 @@ impl NotificationChannel for WebhookChannel {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| crate::error_handling::NeoError::Network(
-                crate::error_handling::NetworkError::ConnectionFailed(e.to_string())
-            ))?;
+            .map_err(|e| {
+                crate::error_handling::NeoError::Network(
+                    crate::error_handling::NetworkError::ConnectionFailed(e.to_string()),
+                )
+            })?;
 
         if !response.status().is_success() {
             return Err(crate::error_handling::NeoError::Network(
-                crate::error_handling::NetworkError::ProtocolViolation(
-                    format!("Webhook returned status: {}", response.status())
-                )
+                crate::error_handling::NetworkError::ProtocolViolation(format!(
+                    "Webhook returned status: {}",
+                    response.status()
+                )),
             ));
         }
 
@@ -349,13 +352,13 @@ impl AlertManager {
     /// Evaluate metric value against all rules
     pub async fn evaluate(&self, metric: &str, value: f64) -> Result<()> {
         let rules = self.rules.read().await;
-        
+
         for rule in rules.values() {
             if rule.threshold.metric == metric && rule.enabled {
                 self.evaluate_rule(rule, value).await?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -502,7 +505,7 @@ impl AlertManager {
         let total = alerts.len();
         let active = alerts.values().filter(|a| a.is_active()).count();
         let acknowledged = alerts.values().filter(|a| a.acknowledged).count();
-        
+
         let mut by_level = HashMap::new();
         for alert in alerts.values().filter(|a| a.is_active()) {
             *by_level.entry(alert.level).or_insert(0) += 1;
@@ -569,7 +572,7 @@ mod tests {
     #[tokio::test]
     async fn test_alert_manager() {
         let manager = AlertManager::new();
-        
+
         // Add log channel
         let log_channel = Arc::new(LogChannel::new("log".to_string()));
         manager.add_channel(log_channel).await;
@@ -591,12 +594,12 @@ mod tests {
             channels: vec!["log".to_string()],
             cooldown_seconds: 300,
         };
-        
+
         manager.add_rule(rule).await;
 
         // Test evaluation
         manager.evaluate("cpu_usage", 80.0).await.unwrap();
-        
+
         let active_alerts = manager.get_active_alerts().await;
         assert_eq!(active_alerts.len(), 1);
         assert_eq!(active_alerts[0].level, AlertLevel::Warning);

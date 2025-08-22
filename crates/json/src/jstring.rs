@@ -72,14 +72,16 @@ impl JString {
         if self.value.is_empty() {
             return 0.0;
         }
-        
+
         self.value.parse::<f64>().unwrap_or(f64::NAN)
     }
 
     /// Get enum from JString (matches C# GetEnum behavior)
     /// Throws error if conversion fails
     pub fn get_enum<T: std::str::FromStr>(&self) -> Result<T, String> {
-        self.value.parse().map_err(|_| "Invalid enum value".to_string())
+        self.value
+            .parse()
+            .map_err(|_| "Invalid enum value".to_string())
     }
 
     /// Get enum from JString with default (matches C# AsEnum behavior)

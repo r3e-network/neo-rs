@@ -176,7 +176,7 @@ pub fn init_metrics() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Get metrics in Prometheus text format
-    /// Gets a value from the internal state.
+/// Gets a value from the internal state.
 pub fn get_metrics() -> String {
     let encoder = TextEncoder::new();
     let metric_families = REGISTRY.read().unwrap().gather();
@@ -186,7 +186,7 @@ pub fn get_metrics() -> String {
 }
 
 /// Update blockchain metrics
-    /// Updates the internal state.
+/// Updates the internal state.
 pub fn update_blockchain_metrics(height: u64, processing_time: f64) {
     BLOCK_HEIGHT.set(height as i64);
     BLOCK_PROCESSING_TIME.observe(processing_time);
@@ -194,14 +194,14 @@ pub fn update_blockchain_metrics(height: u64, processing_time: f64) {
 }
 
 /// Update transaction metrics
-    /// Updates the internal state.
+/// Updates the internal state.
 pub fn update_tx_metrics(tx_type: &str, validation_time: f64) {
     TX_PROCESSED.with_label_values(&[tx_type]).inc();
     TX_VALIDATION_TIME.observe(validation_time);
 }
 
 /// Update network metrics
-    /// Updates the internal state.
+/// Updates the internal state.
 pub fn update_network_metrics(msg_type: &str, is_received: bool, bytes: usize) {
     if is_received {
         MESSAGES_RECEIVED.with_label_values(&[msg_type]).inc();
@@ -213,7 +213,7 @@ pub fn update_network_metrics(msg_type: &str, is_received: bool, bytes: usize) {
 }
 
 /// Update consensus metrics
-    /// Updates the internal state.
+/// Updates the internal state.
 pub fn update_consensus_metrics(view: u64, duration: f64, success: bool) {
     CONSENSUS_VIEW.set(view as i64);
     CONSENSUS_DURATION.observe(duration);
@@ -222,7 +222,7 @@ pub fn update_consensus_metrics(view: u64, duration: f64, success: bool) {
 }
 
 /// Update VM metrics
-    /// Updates the internal state.
+/// Updates the internal state.
 pub fn update_vm_metrics(gas_consumed: u64, execution_time: f64, success: bool) {
     VM_GAS_CONSUMED.inc_by(gas_consumed as f64);
     VM_EXECUTION_TIME.observe(execution_time);
@@ -231,7 +231,7 @@ pub fn update_vm_metrics(gas_consumed: u64, execution_time: f64, success: bool) 
 }
 
 /// Update peer count
-    /// Updates the internal state.
+/// Updates the internal state.
 pub fn update_peer_count(connected: i64, connecting: i64, disconnected: i64) {
     PEER_COUNT.with_label_values(&["connected"]).set(connected);
     PEER_COUNT
@@ -243,7 +243,7 @@ pub fn update_peer_count(connected: i64, connecting: i64, disconnected: i64) {
 }
 
 /// Update system metrics
-    /// Updates the internal state.
+/// Updates the internal state.
 pub fn update_system_metrics() {
     use std::process;
     use sysinfo::{CpuExt, Pid, ProcessExt, System, SystemExt};

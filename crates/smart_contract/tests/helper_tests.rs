@@ -301,28 +301,26 @@ mod neo_smart_contract {
     pub struct Helper;
 
     impl Helper {
-        pub fn get_contract_hash(
-            sender: &UInt160,
-            nef_checksum: u32,
-            manifest: &str,
-        ) -> UInt160 {
+        pub fn get_contract_hash(sender: &UInt160, nef_checksum: u32, manifest: &str) -> UInt160 {
             // Implementation matches C# Neo Helper.GetContractHash
             use neo_cryptography::hash::Hash256;
-            
+
             let mut data = Vec::new();
             data.extend_from_slice(&sender.to_vec());
             data.extend_from_slice(&nef_checksum.to_le_bytes());
             data.extend_from_slice(manifest.as_bytes());
-            
+
             UInt160::from_slice(&Hash256::hash(&data)[..20]).unwrap_or(UInt160::zero())
         }
 
         pub fn is_multi_sig_contract(script: &[u8]) -> bool {
             // Implementation matches C# Neo Helper.IsMultiSigContract
-            if script.len() < 42 || script[script.len() - 1] != 0x41 /* OpCode.CHECKSIG */ {
+            if script.len() < 42 || script[script.len() - 1] != 0x41
+            /* OpCode.CHECKSIG */
+            {
                 return false;
             }
-            
+
             // Check for multi-sig pattern: PUSH<n> PUSH<pubkey1> ... PUSH<pubkeym> PUSH<m> CHECKMULTISIG
             script.len() >= 42 && script[script.len() - 1] == 0xC1 /* OpCode.CHECKMULTISIG */
         }
@@ -332,7 +330,7 @@ mod neo_smart_contract {
             if script.len() < 42 {
                 return (false, 0, Vec::new());
             }
-            
+
             // For testing purposes, return a simple validation
             let is_multi = Self::is_multi_sig_contract(script);
             if is_multi {
@@ -348,10 +346,10 @@ mod neo_smart_contract {
         pub fn is_signature_contract(script: &[u8]) -> bool {
             // Implementation matches C# Neo Helper.IsSignatureContract
             // Standard signature contract: PUSH<pubkey> CHECKSIG
-            script.len() == 35 && 
+            script.len() == 35 &&
             script[0] == 0x0C && // PUSHDATA1
             script[1] == 33 &&   // 33 bytes
-            script[34] == 0x41   // CHECKSIG
+            script[34] == 0x41 // CHECKSIG
         }
 
         pub fn signature_contract_cost() -> i64 {
@@ -364,9 +362,9 @@ mod neo_smart_contract {
             // Implementation matches C# Neo Helper.MultiSignatureContractCost
             // Cost calculation: base cost + (m * signature_cost) + (n * public_key_cost)
             let base_cost = 1000000i64; // 0.01 GAS base
-            let sig_cost = 1000000i64;   // 0.01 GAS per signature
+            let sig_cost = 1000000i64; // 0.01 GAS per signature
             let pubkey_cost = 100000i64; // 0.001 GAS per public key
-            
+
             base_cost + (m as i64 * sig_cost) + (n as i64 * pubkey_cost)
         }
     }
@@ -383,12 +381,12 @@ mod neo_smart_contract {
         pub fn compute_checksum(nef: &NefFile) -> u32 {
             // Implementation matches C# Neo NefFile.ComputeChecksum
             use neo_cryptography::hash::Hash256;
-            
+
             let mut data = Vec::new();
             data.extend_from_slice(nef.compiler.as_bytes());
             data.extend_from_slice(nef.source.as_bytes());
             data.extend_from_slice(&nef.script);
-            
+
             let hash = Hash256::hash(&data);
             u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
         }
@@ -401,12 +399,13 @@ mod neo_smart_contract {
             // Implementation matches C# Neo Contract.CreateSignatureContract
             let mut script = Vec::new();
             script.push(0x0C); // PUSHDATA1
-            script.push(33);   // 33 bytes
+            script.push(33); // 33 bytes
             script.extend_from_slice(&pubkey.to_bytes()); // compressed public key
             script.push(0x41); // CHECKSIG
-            
+
             ContractInfo {
-                hash: UInt160::from_slice(&neo_cryptography::hash::Hash160::hash(&script)[..]).unwrap_or(UInt160::zero()),
+                hash: UInt160::from_slice(&neo_cryptography::hash::Hash160::hash(&script)[..])
+                    .unwrap_or(UInt160::zero()),
                 script,
             }
         }
@@ -415,7 +414,8 @@ mod neo_smart_contract {
             // Implementation matches C# Neo Contract.CreateMultiSigContract
             let script = Self::create_multi_sig_redeem_script(m, pubkeys);
             ContractInfo {
-                hash: UInt160::from_slice(&neo_cryptography::hash::Hash160::hash(&script)[..]).unwrap_or(UInt160::zero()),
+                hash: UInt160::from_slice(&neo_cryptography::hash::Hash160::hash(&script)[..])
+                    .unwrap_or(UInt160::zero()),
                 script,
             }
         }
@@ -424,7 +424,7 @@ mod neo_smart_contract {
             // Implementation matches C# Neo Contract.CreateSignatureRedeemScript
             let mut script = Vec::new();
             script.push(0x0C); // PUSHDATA1
-            script.push(33);   // 33 bytes
+            script.push(33); // 33 bytes
             script.extend_from_slice(&pubkey.to_bytes()); // compressed public key
             script.push(0x41); // CHECKSIG
             script
@@ -435,9 +435,9 @@ mod neo_smart_contract {
             if m < 1 || m > pubkeys.len() || pubkeys.len() > 1024 {
                 return Vec::new();
             }
-            
+
             let mut script = Vec::new();
-            
+
             // PUSH m
             if m <= 16 {
                 script.push(0x50 + m as u8); // PUSH1..PUSH16
@@ -446,17 +446,17 @@ mod neo_smart_contract {
                 script.push(1);
                 script.push(m as u8);
             }
-            
+
             // PUSH pubkeys (sorted)
             let mut sorted_pubkeys = pubkeys.to_vec();
             sorted_pubkeys.sort_by(|a, b| a.to_bytes().cmp(&b.to_bytes()));
-            
+
             for pubkey in &sorted_pubkeys {
                 script.push(0x0C); // PUSHDATA1
-                script.push(33);   // 33 bytes
+                script.push(33); // 33 bytes
                 script.extend_from_slice(&pubkey.to_bytes());
             }
-            
+
             // PUSH n
             let n = pubkeys.len();
             if n <= 16 {
@@ -466,10 +466,10 @@ mod neo_smart_contract {
                 script.push(1);
                 script.push(n as u8);
             }
-            
+
             // CHECKMULTISIG
             script.push(0xC1);
-            
+
             script
         }
     }

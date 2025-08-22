@@ -4,7 +4,7 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
-use crate::instruction::{Instruction};
+use crate::instruction::Instruction;
 use crate::op_code::OpCode;
 use neo_io::MemoryReader;
 use std::collections::hash_map::DefaultHasher;

@@ -1001,9 +1001,9 @@ mod tests {
         // Register the ADD opcode handler
         let jump_table = engine_mut.jump_table_mut();
         jump_table.set(OpCode::ADD, |engine, _instruction| {
-            let context = engine
-                .current_context_mut()
-                .ok_or_else(|| crate::VmError::invalid_operation_msg("No current context".to_string()))?;
+            let context = engine.current_context_mut().ok_or_else(|| {
+                crate::VmError::invalid_operation_msg("No current context".to_string())
+            })?;
             let stack = context.evaluation_stack_mut();
 
             // Pop the operands

@@ -7,8 +7,8 @@ use neo_persistence::DataCache;
 use neo_smart_contract::{ApplicationEngine, NotifyEventArgs, OpCode, ScriptBuilder, TriggerType};
 use neo_vm::types::{Array, StackItem};
 use neo_vm::ReferenceCounter;
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 // ============================================================================
 // Test NotifyEventArgs basic functionality

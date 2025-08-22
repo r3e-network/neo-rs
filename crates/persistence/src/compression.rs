@@ -23,8 +23,10 @@ pub fn compress(data: &[u8], algorithm: CompressionAlgorithm) -> crate::Result<V
         CompressionAlgorithm::Zstd => {
             #[cfg(feature = "compression")]
             {
-                // ZSTD temporarily disabled due to build issues  
-                Err(crate::Error::CompressionError("ZSTD compression not available".to_string()))
+                // ZSTD temporarily disabled due to build issues
+                Err(crate::Error::CompressionError(
+                    "ZSTD compression not available".to_string(),
+                ))
             }
             #[cfg(not(feature = "compression"))]
             {
@@ -59,7 +61,9 @@ pub fn decompress(
             #[cfg(feature = "compression")]
             {
                 // ZSTD temporarily disabled due to build issues
-                Err(crate::Error::CompressionError("ZSTD decompression not available".to_string()))
+                Err(crate::Error::CompressionError(
+                    "ZSTD decompression not available".to_string(),
+                ))
             }
             #[cfg(not(feature = "compression"))]
             {

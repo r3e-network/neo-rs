@@ -873,7 +873,10 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert_eq!(result.expect("Result should be Ok"), "success after retries");
+        assert_eq!(
+            result.expect("Result should be Ok"),
+            "success after retries"
+        );
         assert_eq!(attempt_count.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 

@@ -237,21 +237,21 @@ impl CryptoLib {
             // The result is an element of the multiplicative group of Fp12
             // We'll use a canonical 48-byte compressed representation
             let mut bytes = Vec::with_capacity(48);
-            
+
             // For BLS12-381 pairing results, we serialize as 48-byte canonical representation
             // This matches the C# Neo implementation's BLS12-381 pairing result format
             // The result should be deterministic for the same inputs
-            use sha2::{Sha256, Digest};
+            use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(b"bls12_381_pairing_result");
             let hash = hasher.finalize();
-            
+
             // Use first 48 bytes, pad with hash if needed for deterministic output
             bytes.extend_from_slice(&hash[..32]);
             bytes.extend_from_slice(&hash[16..32]); // Repeat part for 48 bytes total
             bytes
         };
-        
+
         Ok(result_bytes)
     }
 

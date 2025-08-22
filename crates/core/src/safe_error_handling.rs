@@ -1,5 +1,5 @@
 //! Safe Error Handling Module
-//! 
+//!
 //! This module provides safe alternatives to unwrap() and panic!() calls,
 //! improving the robustness and production-readiness of the Neo-RS codebase.
 
@@ -11,12 +11,12 @@ use std::panic::Location;
 pub trait SafeUnwrap<T> {
     /// Safely unwrap a Result with context information
     fn safe_unwrap(self, context: &str) -> Result<T, SafeError>;
-    
+
     /// Unwrap with a default value on error
     fn unwrap_or_default_with_log(self, context: &str) -> T
     where
         T: Default;
-    
+
     /// Convert error to SafeError with context
     fn with_context(self, context: impl Into<String>) -> Result<T, SafeError>;
 }
@@ -25,7 +25,7 @@ pub trait SafeUnwrap<T> {
 pub trait SafeExpect<T> {
     /// Safely expect a value with context information
     fn safe_expect(self, context: &str) -> Result<T, SafeError>;
-    
+
     /// Convert None to an error with context
     fn ok_or_context(self, context: impl Into<String>) -> Result<T, SafeError>;
 }
@@ -55,7 +55,7 @@ impl SafeError {
             source: None,
         }
     }
-    
+
     /// Create SafeError from another error type
     #[track_caller]
     pub fn from_error<E: StdError>(error: E, context: impl Into<String>) -> Self {
@@ -67,7 +67,7 @@ impl SafeError {
             source: Some(format!("{:?}", error)),
         }
     }
-    
+
     /// Add additional context to an existing error
     pub fn add_context(mut self, additional: impl Into<String>) -> Self {
         self.context = format!("{} | {}", self.context, additional.into());
@@ -100,7 +100,7 @@ where
     fn safe_unwrap(self, context: &str) -> Result<T, SafeError> {
         self.map_err(|e| SafeError::from_error(e, context))
     }
-    
+
     fn unwrap_or_default_with_log(self, context: &str) -> T
     where
         T: Default,
@@ -108,12 +108,16 @@ where
         match self {
             Ok(val) => val,
             Err(e) => {
-                log::error!("Using default value due to error: {} | Context: {}", e, context);
+                log::error!(
+                    "Using default value due to error: {} | Context: {}",
+                    e,
+                    context
+                );
                 T::default()
             }
         }
     }
-    
+
     #[track_caller]
     fn with_context(self, context: impl Into<String>) -> Result<T, SafeError> {
         self.map_err(|e| SafeError::from_error(e, context))
@@ -126,7 +130,7 @@ impl<T> SafeExpect<T> for Option<T> {
     fn safe_expect(self, context: &str) -> Result<T, SafeError> {
         self.ok_or_else(|| SafeError::new("Expected value was None", context))
     }
-    
+
     #[track_caller]
     fn ok_or_context(self, context: impl Into<String>) -> Result<T, SafeError> {
         self.ok_or_else(|| SafeError::new("Value was None", context))
@@ -161,7 +165,7 @@ macro_rules! safe_assert {
             log::error!("Assertion failed: {}", $msg);
             return Err($crate::safe_error_handling::SafeError::new(
                 format!("Assertion failed: {}", $msg),
-                "Runtime assertion failure"
+                "Runtime assertion failure",
             ));
         }
     };
@@ -170,9 +174,9 @@ macro_rules! safe_assert {
 /// Helper function to convert multiple Results into a single Result
 pub fn collect_results<T, E>(results: Vec<Result<T, E>>) -> Result<Vec<T>, Vec<E>> {
     let (oks, errs): (Vec<_>, Vec<_>) = results.into_iter().partition(Result::is_ok);
-    
+
     let errs: Vec<E> = errs.into_iter().filter_map(Result::err).collect();
-    
+
     if errs.is_empty() {
         Ok(oks.into_iter().filter_map(Result::ok).collect())
     } else {
@@ -188,39 +192,39 @@ pub struct ErrorChain {
 impl ErrorChain {
     /// Create a new error chain
     pub fn new() -> Self {
-        Self {
-            errors: Vec::new(),
-        }
+        Self { errors: Vec::new() }
     }
-    
+
     /// Add an error to the chain
     pub fn add_error(&mut self, error: SafeError) {
         self.errors.push(error);
     }
-    
+
     /// Check if there are any errors
     pub fn has_errors(&self) -> bool {
         !self.errors.is_empty()
     }
-    
+
     /// Convert to Result
     pub fn to_result<T>(self) -> Result<T, SafeError> {
         if self.errors.is_empty() {
             panic!("ErrorChain::to_result called with no errors");
         }
-        
-        let combined_message = self.errors
+
+        let combined_message = self
+            .errors
             .iter()
             .map(|e| e.message.clone())
             .collect::<Vec<_>>()
             .join("; ");
-            
-        let combined_context = self.errors
+
+        let combined_context = self
+            .errors
             .iter()
             .map(|e| e.context.clone())
             .collect::<Vec<_>>()
             .join("; ");
-            
+
         Err(SafeError::new(combined_message, combined_context))
     }
 }
@@ -234,59 +238,61 @@ impl Default for ErrorChain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_safe_unwrap_ok() {
         let result: Result<i32, std::io::Error> = Ok(42);
         let value = result.safe_unwrap("test context").unwrap();
         assert_eq!(value, 42);
     }
-    
+
     #[test]
     fn test_safe_unwrap_err() {
         let result: Result<i32, std::io::Error> = Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            "file not found"
+            "file not found",
         ));
         let err = result.safe_unwrap("loading configuration").unwrap_err();
         assert!(err.context.contains("loading configuration"));
         assert!(err.message.contains("file not found"));
     }
-    
+
     #[test]
     fn test_safe_expect_some() {
         let option = Some(42);
         let value = option.safe_expect("expected value").unwrap();
         assert_eq!(value, 42);
     }
-    
+
     #[test]
     fn test_safe_expect_none() {
         let option: Option<i32> = None;
-        let err = option.safe_expect("expected configuration value").unwrap_err();
+        let err = option
+            .safe_expect("expected configuration value")
+            .unwrap_err();
         assert!(err.context.contains("expected configuration value"));
     }
-    
+
     #[test]
     fn test_error_chain() {
         let mut chain = ErrorChain::new();
         chain.add_error(SafeError::new("Error 1", "Context 1"));
         chain.add_error(SafeError::new("Error 2", "Context 2"));
-        
+
         assert!(chain.has_errors());
         let result: Result<(), SafeError> = chain.to_result();
         assert!(result.is_err());
-        
+
         let err = result.unwrap_err();
         assert!(err.message.contains("Error 1"));
         assert!(err.message.contains("Error 2"));
     }
-    
+
     #[test]
     fn test_unwrap_or_default_with_log() {
         let result: Result<Vec<i32>, std::io::Error> = Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
-            "not found"
+            "not found",
         ));
         let value = result.unwrap_or_default_with_log("getting list");
         assert_eq!(value, Vec::<i32>::new());

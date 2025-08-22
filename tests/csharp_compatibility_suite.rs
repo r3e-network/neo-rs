@@ -4,10 +4,13 @@
 //! the Rust implementation and the official C# Neo implementation
 //! to ensure protocol-level compatibility and correct behavior.
 
-use neo_core::{UInt160, UInt256, Transaction, TransactionAttribute};
-use neo_cryptography::{ecdsa::ECDsa, hash::{Hash160, Hash256}};
-use neo_vm::{ExecutionEngine, OpCode};
+use neo_core::{Transaction, TransactionAttribute, UInt160, UInt256};
+use neo_cryptography::{
+    ecdsa::ECDsa,
+    hash::{Hash160, Hash256},
+};
 use neo_ledger::{Block, BlockHeader};
+use neo_vm::{ExecutionEngine, OpCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -66,11 +69,17 @@ impl CSharpCompatibilityRunner {
     }
 
     /// Loads test vectors from C# Neo test data
-    pub fn load_test_vectors(&mut self, test_data_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn load_test_vectors(
+        &mut self,
+        test_data_path: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if Path::new(test_data_path).exists() {
             let content = fs::read_to_string(test_data_path)?;
             self.test_vectors = serde_json::from_str(&content)?;
-            println!("✅ Loaded {} C# compatibility test vectors", self.test_vectors.len());
+            println!(
+                "✅ Loaded {} C# compatibility test vectors",
+                self.test_vectors.len()
+            );
         } else {
             // Create sample test vectors if file doesn't exist
             self.create_sample_test_vectors();
@@ -96,7 +105,6 @@ impl CSharpCompatibilityRunner {
                 neo_version: "3.6.0".to_string(),
                 test_type: TestType::Cryptography,
             },
-            
             // Hash function tests
             CSharpTestVector {
                 name: "Hash256_empty_input".to_string(),
@@ -108,7 +116,6 @@ impl CSharpCompatibilityRunner {
                 neo_version: "3.6.0".to_string(),
                 test_type: TestType::Cryptography,
             },
-
             // Transaction serialization test
             CSharpTestVector {
                 name: "Transaction_serialization_basic".to_string(),
@@ -127,7 +134,6 @@ impl CSharpCompatibilityRunner {
                 neo_version: "3.6.0".to_string(),
                 test_type: TestType::Serialization,
             },
-
             // Block header serialization test
             CSharpTestVector {
                 name: "BlockHeader_serialization".to_string(),
@@ -147,7 +153,6 @@ impl CSharpCompatibilityRunner {
                 neo_version: "3.6.0".to_string(),
                 test_type: TestType::Serialization,
             },
-
             // VM opcode execution test
             CSharpTestVector {
                 name: "VM_PUSH_opcodes".to_string(),
@@ -164,7 +169,6 @@ impl CSharpCompatibilityRunner {
                 neo_version: "3.6.0".to_string(),
                 test_type: TestType::VmExecution,
             },
-
             // Network protocol test
             CSharpTestVector {
                 name: "Network_version_message".to_string(),
@@ -201,10 +205,10 @@ impl CSharpCompatibilityRunner {
     /// Runs all compatibility tests
     pub async fn run_all_tests(&mut self) -> Vec<CompatibilityTestResult> {
         println!("🚀 Running C# Neo compatibility tests...");
-        
+
         for test_vector in &self.test_vectors {
             let start_time = std::time::Instant::now();
-            
+
             let result = match test_vector.test_type {
                 TestType::Cryptography => self.run_cryptography_test(test_vector).await,
                 TestType::Serialization => self.run_serialization_test(test_vector).await,
@@ -225,7 +229,7 @@ impl CSharpCompatibilityRunner {
 
             let mut final_result = result;
             final_result.execution_time_ms = start_time.elapsed().as_millis();
-            
+
             println!(
                 "{} {} - {} ({}ms)",
                 if final_result.passed { "✅" } else { "❌" },
@@ -233,11 +237,11 @@ impl CSharpCompatibilityRunner {
                 if final_result.passed { "PASS" } else { "FAIL" },
                 final_result.execution_time_ms
             );
-            
+
             if let Some(error) = &final_result.error_message {
                 println!("   Error: {}", error);
             }
-            
+
             self.results.push(final_result);
         }
 
@@ -269,8 +273,9 @@ impl CSharpCompatibilityRunner {
 
                     match ECDsa::verify_signature_secp256r1(&message_array, &signature, &pubkey) {
                         Ok(is_valid) => {
-                            let expected_valid = test.expected_output["valid"].as_bool().unwrap_or(false);
-                            
+                            let expected_valid =
+                                test.expected_output["valid"].as_bool().unwrap_or(false);
+
                             CompatibilityTestResult {
                                 test_name: test.name.clone(),
                                 category: test.category.clone(),
@@ -307,7 +312,7 @@ impl CSharpCompatibilityRunner {
                     }
                 }
             }
-            
+
             "Hash256_empty_input" => {
                 let input_data = test.input["data"].as_str().unwrap_or("");
                 let data_bytes = if input_data.is_empty() {
@@ -325,7 +330,10 @@ impl CSharpCompatibilityRunner {
                     category: test.category.clone(),
                     passed: hash_hex == expected_hash,
                     error_message: if hash_hex != expected_hash {
-                        Some(format!("Hash mismatch: expected {}, got {}", expected_hash, hash_hex))
+                        Some(format!(
+                            "Hash mismatch: expected {}, got {}",
+                            expected_hash, hash_hex
+                        ))
                     } else {
                         None
                     },
@@ -352,7 +360,7 @@ impl CSharpCompatibilityRunner {
         match test.name.as_str() {
             "Transaction_serialization_basic" => {
                 let input = &test.input;
-                
+
                 // Create transaction from input data
                 let mut tx = Transaction::new();
                 tx.set_version(input["version"].as_u64().unwrap_or(0) as u8);
@@ -360,7 +368,7 @@ impl CSharpCompatibilityRunner {
                 tx.set_system_fee(input["system_fee"].as_u64().unwrap_or(0));
                 tx.set_network_fee(input["network_fee"].as_u64().unwrap_or(0));
                 tx.set_valid_until_block(input["valid_until_block"].as_u64().unwrap_or(0) as u32);
-                
+
                 if let Some(script_hex) = input["script"].as_str() {
                     if let Ok(script_bytes) = hex::decode(script_hex) {
                         tx.set_script(script_bytes);
@@ -372,13 +380,16 @@ impl CSharpCompatibilityRunner {
                     Ok(serialized) => {
                         let actual_hex = hex::encode(&serialized);
                         let expected_hex = test.expected_output["hex"].as_str().unwrap_or("");
-                        
+
                         CompatibilityTestResult {
                             test_name: test.name.clone(),
                             category: test.category.clone(),
                             passed: actual_hex == expected_hex,
                             error_message: if actual_hex != expected_hex {
-                                Some(format!("Serialization mismatch: expected {}, got {}", expected_hex, actual_hex))
+                                Some(format!(
+                                    "Serialization mismatch: expected {}, got {}",
+                                    expected_hex, actual_hex
+                                ))
                             } else {
                                 None
                             },
@@ -401,18 +412,24 @@ impl CSharpCompatibilityRunner {
 
             "BlockHeader_serialization" => {
                 let input = &test.input;
-                
+
                 // Create block header from input data
                 let previous_hash = UInt256::from_hex_string(
-                    input["previous_hash"].as_str().unwrap_or("0".repeat(64).as_str())
-                ).unwrap_or(UInt256::zero());
-                
-                let merkle_root = UInt256::from_hex_string(
-                    input["merkle_root"].as_str().unwrap_or("0".repeat(64).as_str())
-                ).unwrap_or(UInt256::zero());
+                    input["previous_hash"]
+                        .as_str()
+                        .unwrap_or("0".repeat(64).as_str()),
+                )
+                .unwrap_or(UInt256::zero());
 
-                let next_consensus = UInt160::from_hex_string("0".repeat(40).as_str())
-                    .unwrap_or(UInt160::zero());
+                let merkle_root = UInt256::from_hex_string(
+                    input["merkle_root"]
+                        .as_str()
+                        .unwrap_or("0".repeat(64).as_str()),
+                )
+                .unwrap_or(UInt256::zero());
+
+                let next_consensus =
+                    UInt160::from_hex_string("0".repeat(40).as_str()).unwrap_or(UInt160::zero());
 
                 let header = BlockHeader {
                     version: input["version"].as_u64().unwrap_or(0) as u32,
@@ -431,7 +448,7 @@ impl CSharpCompatibilityRunner {
                     Ok(serialized) => {
                         let actual_hex = hex::encode(&serialized);
                         let expected_hex = test.expected_output["hex"].as_str().unwrap_or("");
-                        
+
                         CompatibilityTestResult {
                             test_name: test.name.clone(),
                             category: test.category.clone(),
@@ -476,28 +493,30 @@ impl CSharpCompatibilityRunner {
             "VM_PUSH_opcodes" => {
                 let input = &test.input;
                 let script_hex = input["script"].as_str().unwrap_or("");
-                
+
                 if let Ok(script_bytes) = hex::decode(script_hex) {
                     let mut engine = ExecutionEngine::new(None);
-                    
+
                     // Load and execute script
                     match engine.load_script(script_bytes.into(), -1, 0) {
                         Ok(_) => {
                             // Execute with gas limit
                             let gas_limit = input["gas_limit"].as_u64().unwrap_or(1000000);
-                            
+
                             match engine.execute_with_gas_limit(gas_limit) {
                                 Ok(_) => {
                                     let stack = engine.result_stack();
-                                    let expected_stack = test.expected_output["result_stack"].as_array()
+                                    let expected_stack = test.expected_output["result_stack"]
+                                        .as_array()
                                         .unwrap_or(&Vec::new());
-                                    
+
                                     // Compare stack results
                                     let mut stack_matches = stack.len() == expected_stack.len();
                                     if stack_matches {
                                         for (i, item) in stack.iter().enumerate() {
                                             if let Ok(value) = item.as_int() {
-                                                let expected = expected_stack[i].as_i64().unwrap_or(0);
+                                                let expected =
+                                                    expected_stack[i].as_i64().unwrap_or(0);
                                                 if value.to_i64().unwrap_or(0) != expected {
                                                     stack_matches = false;
                                                     break;
@@ -505,7 +524,7 @@ impl CSharpCompatibilityRunner {
                                             }
                                         }
                                     }
-                                    
+
                                     CompatibilityTestResult {
                                         test_name: test.name.clone(),
                                         category: test.category.clone(),
@@ -568,11 +587,11 @@ impl CSharpCompatibilityRunner {
 
     /// Runs network protocol compatibility tests
     async fn run_network_test(&self, test: &CSharpTestVector) -> CompatibilityTestResult {
-        use neo_network::messages::{NetworkMessage, MessagePayload};
         use neo_network::messages::version::VersionPayload;
-        
+        use neo_network::messages::{MessagePayload, NetworkMessage};
+
         let start_time = std::time::Instant::now();
-        
+
         match test.name.as_str() {
             "test_version_message" => {
                 // Test version message compatibility with C# Neo
@@ -586,9 +605,9 @@ impl CSharpCompatibilityRunner {
                     start_height: 0,
                     relay: true,
                 };
-                
+
                 let message = NetworkMessage::new(MessagePayload::Version(version_payload.clone()));
-                
+
                 // Test serialization/deserialization roundtrip
                 match message.to_bytes() {
                     Ok(serialized) => {
@@ -597,72 +616,91 @@ impl CSharpCompatibilityRunner {
                                 // Verify the message survived roundtrip
                                 let passed = match deserialized.payload {
                                     MessagePayload::Version(v) => {
-                                        v.version == version_payload.version &&
-                                        v.services == version_payload.services &&
-                                        v.port == version_payload.port &&
-                                        v.nonce == version_payload.nonce &&
-                                        v.user_agent == version_payload.user_agent &&
-                                        v.start_height == version_payload.start_height &&
-                                        v.relay == version_payload.relay
+                                        v.version == version_payload.version
+                                            && v.services == version_payload.services
+                                            && v.port == version_payload.port
+                                            && v.nonce == version_payload.nonce
+                                            && v.user_agent == version_payload.user_agent
+                                            && v.start_height == version_payload.start_height
+                                            && v.relay == version_payload.relay
                                     }
                                     _ => false,
                                 };
-                                
+
                                 CompatibilityTestResult {
                                     test_name: test.name.clone(),
                                     category: test.category.clone(),
                                     passed,
-                                    error_message: if passed { None } else { Some("Version message fields don't match after roundtrip".to_string()) },
-                                    expected: Some(format!("Version message with port {}, user_agent '{}'", version_payload.port, version_payload.user_agent)),
+                                    error_message: if passed {
+                                        None
+                                    } else {
+                                        Some(
+                                            "Version message fields don't match after roundtrip"
+                                                .to_string(),
+                                        )
+                                    },
+                                    expected: Some(format!(
+                                        "Version message with port {}, user_agent '{}'",
+                                        version_payload.port, version_payload.user_agent
+                                    )),
                                     actual: Some(format!("Deserialized version message")),
                                     execution_time_ms: start_time.elapsed().as_millis() as u64,
                                 }
                             }
-                            Err(e) => {
-                                CompatibilityTestResult {
-                                    test_name: test.name.clone(),
-                                    category: test.category.clone(),
-                                    passed: false,
-                                    error_message: Some(format!("Failed to deserialize network message: {}", e)),
-                                    expected: Some("Valid deserialized version message".to_string()),
-                                    actual: Some("Deserialization error".to_string()),
-                                    execution_time_ms: start_time.elapsed().as_millis() as u64,
-                                }
-                            }
+                            Err(e) => CompatibilityTestResult {
+                                test_name: test.name.clone(),
+                                category: test.category.clone(),
+                                passed: false,
+                                error_message: Some(format!(
+                                    "Failed to deserialize network message: {}",
+                                    e
+                                )),
+                                expected: Some("Valid deserialized version message".to_string()),
+                                actual: Some("Deserialization error".to_string()),
+                                execution_time_ms: start_time.elapsed().as_millis() as u64,
+                            },
                         }
                     }
-                    Err(e) => {
-                        CompatibilityTestResult {
-                            test_name: test.name.clone(),
-                            category: test.category.clone(),
-                            passed: false,
-                            error_message: Some(format!("Failed to serialize network message: {}", e)),
-                            expected: Some("Valid serialized version message".to_string()),
-                            actual: Some("Serialization error".to_string()),
-                            execution_time_ms: start_time.elapsed().as_millis() as u64,
-                        }
-                    }
+                    Err(e) => CompatibilityTestResult {
+                        test_name: test.name.clone(),
+                        category: test.category.clone(),
+                        passed: false,
+                        error_message: Some(format!("Failed to serialize network message: {}", e)),
+                        expected: Some("Valid serialized version message".to_string()),
+                        actual: Some("Serialization error".to_string()),
+                        execution_time_ms: start_time.elapsed().as_millis() as u64,
+                    },
                 }
             }
-            
+
             "test_network_magic" => {
                 // Test network magic numbers match C# Neo
                 const MAINNET_MAGIC: u32 = 0x4F454E; // "NEO" in ASCII
                 const TESTNET_MAGIC: u32 = 0x3352454E; // "NEO3" in ASCII
-                
+
                 let passed = MAINNET_MAGIC == 0x4F454E && TESTNET_MAGIC == 0x3352454E;
-                
+
                 CompatibilityTestResult {
                     test_name: test.name.clone(),
                     category: test.category.clone(),
                     passed,
-                    error_message: if passed { None } else { Some("Network magic numbers don't match C# Neo".to_string()) },
-                    expected: Some(format!("MainNet: 0x{:X}, TestNet: 0x{:X}", 0x4F454E, 0x3352454E)),
-                    actual: Some(format!("MainNet: 0x{:X}, TestNet: 0x{:X}", MAINNET_MAGIC, TESTNET_MAGIC)),
+                    error_message: if passed {
+                        None
+                    } else {
+                        Some("Network magic numbers don't match C# Neo".to_string())
+                    },
+                    expected: Some(format!(
+                        "MainNet: 0x{:X}, TestNet: 0x{:X}",
+                        0x4F454E, 0x3352454E
+                    )),
+                    actual: Some(format!(
+                        "MainNet: 0x{:X}, TestNet: 0x{:X}",
+                        MAINNET_MAGIC, TESTNET_MAGIC
+                    )),
                     execution_time_ms: start_time.elapsed().as_millis() as u64,
                 }
             }
-            
+
             _ => {
                 // Default case for unrecognized network tests
                 CompatibilityTestResult {
@@ -680,12 +718,12 @@ impl CSharpCompatibilityRunner {
 
     /// Runs block processing compatibility tests
     async fn run_block_test(&self, test: &CSharpTestVector) -> CompatibilityTestResult {
-        use neo_ledger::block::Block;
-        use neo_core::{UInt256, UInt160};
         use neo_core::transaction::Transaction;
-        
+        use neo_core::{UInt160, UInt256};
+        use neo_ledger::block::Block;
+
         let start_time = std::time::Instant::now();
-        
+
         match test.name.as_str() {
             "test_block_serialization" => {
                 // Test block serialization/deserialization compatibility
@@ -695,7 +733,7 @@ impl CSharpCompatibilityRunner {
                 block.set_timestamp(chrono::Utc::now().timestamp() as u64);
                 block.set_nonce(rand::random());
                 block.set_index(1);
-                
+
                 // Add a sample transaction
                 let mut tx = Transaction::new();
                 tx.set_version(0);
@@ -704,7 +742,7 @@ impl CSharpCompatibilityRunner {
                 tx.set_network_fee(100000);
                 tx.set_valid_until_block(1000000);
                 tx.set_script(vec![0x10, 0x11, 0x93]); // PUSH0, PUSH1, ADD
-                
+
                 let signer = neo_core::signer::Signer {
                     account: UInt160::from([42u8; 20]),
                     scopes: neo_core::signer::WitnessScope::CalledByEntry,
@@ -713,83 +751,98 @@ impl CSharpCompatibilityRunner {
                     rules: Vec::new(),
                 };
                 tx.add_signer(signer);
-                
+
                 let witness = neo_core::witness::Witness {
                     invocation_script: vec![0x0C, 0x40],
                     verification_script: vec![0x21],
                 };
                 tx.add_witness(witness);
-                
+
                 block.add_transaction(tx);
-                
+
                 // Test serialization roundtrip
                 match block.to_bytes() {
-                    Ok(serialized) => {
-                        match Block::from_bytes(&serialized) {
-                            Ok(deserialized) => {
-                                let passed = deserialized.version() == block.version() &&
-                                           deserialized.prev_hash() == block.prev_hash() &&
-                                           deserialized.index() == block.index() &&
-                                           deserialized.transactions().len() == block.transactions().len();
-                                
-                                CompatibilityTestResult {
-                                    test_name: test.name.clone(),
-                                    category: test.category.clone(),
-                                    passed,
-                                    error_message: if passed { None } else { Some("Block fields don't match after roundtrip".to_string()) },
-                                    expected: Some(format!("Block with version {}, index {}", block.version(), block.index())),
-                                    actual: Some(format!("Deserialized block with {} transactions", deserialized.transactions().len())),
-                                    execution_time_ms: start_time.elapsed().as_millis() as u64,
-                                }
-                            }
-                            Err(e) => {
-                                CompatibilityTestResult {
-                                    test_name: test.name.clone(),
-                                    category: test.category.clone(),
-                                    passed: false,
-                                    error_message: Some(format!("Failed to deserialize block: {}", e)),
-                                    expected: Some("Valid deserialized block".to_string()),
-                                    actual: Some("Deserialization error".to_string()),
-                                    execution_time_ms: start_time.elapsed().as_millis() as u64,
-                                }
+                    Ok(serialized) => match Block::from_bytes(&serialized) {
+                        Ok(deserialized) => {
+                            let passed = deserialized.version() == block.version()
+                                && deserialized.prev_hash() == block.prev_hash()
+                                && deserialized.index() == block.index()
+                                && deserialized.transactions().len() == block.transactions().len();
+
+                            CompatibilityTestResult {
+                                test_name: test.name.clone(),
+                                category: test.category.clone(),
+                                passed,
+                                error_message: if passed {
+                                    None
+                                } else {
+                                    Some("Block fields don't match after roundtrip".to_string())
+                                },
+                                expected: Some(format!(
+                                    "Block with version {}, index {}",
+                                    block.version(),
+                                    block.index()
+                                )),
+                                actual: Some(format!(
+                                    "Deserialized block with {} transactions",
+                                    deserialized.transactions().len()
+                                )),
+                                execution_time_ms: start_time.elapsed().as_millis() as u64,
                             }
                         }
-                    }
-                    Err(e) => {
-                        CompatibilityTestResult {
+                        Err(e) => CompatibilityTestResult {
                             test_name: test.name.clone(),
                             category: test.category.clone(),
                             passed: false,
-                            error_message: Some(format!("Failed to serialize block: {}", e)),
-                            expected: Some("Valid serialized block".to_string()),
-                            actual: Some("Serialization error".to_string()),
+                            error_message: Some(format!("Failed to deserialize block: {}", e)),
+                            expected: Some("Valid deserialized block".to_string()),
+                            actual: Some("Deserialization error".to_string()),
                             execution_time_ms: start_time.elapsed().as_millis() as u64,
-                        }
-                    }
+                        },
+                    },
+                    Err(e) => CompatibilityTestResult {
+                        test_name: test.name.clone(),
+                        category: test.category.clone(),
+                        passed: false,
+                        error_message: Some(format!("Failed to serialize block: {}", e)),
+                        expected: Some("Valid serialized block".to_string()),
+                        actual: Some("Serialization error".to_string()),
+                        execution_time_ms: start_time.elapsed().as_millis() as u64,
+                    },
                 }
             }
-            
+
             "test_block_constants" => {
                 // Test block constants match C# Neo
                 const MAX_BLOCK_SIZE: usize = 2_097_152; // 2MB
                 const MAX_TRANSACTIONS_PER_BLOCK: usize = 512;
                 const MILLISECONDS_PER_BLOCK: u64 = 15000; // 15 seconds
-                
-                let passed = MAX_BLOCK_SIZE == 2_097_152 && 
-                           MAX_TRANSACTIONS_PER_BLOCK == 512 && 
-                           MILLISECONDS_PER_BLOCK == 15000;
-                
+
+                let passed = MAX_BLOCK_SIZE == 2_097_152
+                    && MAX_TRANSACTIONS_PER_BLOCK == 512
+                    && MILLISECONDS_PER_BLOCK == 15000;
+
                 CompatibilityTestResult {
                     test_name: test.name.clone(),
                     category: test.category.clone(),
                     passed,
-                    error_message: if passed { None } else { Some("Block constants don't match C# Neo".to_string()) },
-                    expected: Some(format!("MaxSize: {}, MaxTxs: {}, BlockTime: {}ms", 2_097_152, 512, 15000)),
-                    actual: Some(format!("MaxSize: {}, MaxTxs: {}, BlockTime: {}ms", MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK, MILLISECONDS_PER_BLOCK)),
+                    error_message: if passed {
+                        None
+                    } else {
+                        Some("Block constants don't match C# Neo".to_string())
+                    },
+                    expected: Some(format!(
+                        "MaxSize: {}, MaxTxs: {}, BlockTime: {}ms",
+                        2_097_152, 512, 15000
+                    )),
+                    actual: Some(format!(
+                        "MaxSize: {}, MaxTxs: {}, BlockTime: {}ms",
+                        MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK, MILLISECONDS_PER_BLOCK
+                    )),
                     execution_time_ms: start_time.elapsed().as_millis() as u64,
                 }
             }
-            
+
             _ => {
                 // Default case for unrecognized block tests
                 CompatibilityTestResult {
@@ -807,12 +860,12 @@ impl CSharpCompatibilityRunner {
 
     /// Runs transaction validation compatibility tests
     async fn run_transaction_test(&self, test: &CSharpTestVector) -> CompatibilityTestResult {
-        use neo_core::transaction::Transaction;
         use neo_core::transaction::validation::TransactionValidator;
+        use neo_core::transaction::Transaction;
         use neo_core::{UInt160, UInt256};
-        
+
         let start_time = std::time::Instant::now();
-        
+
         match test.name.as_str() {
             "test_transaction_serialization" => {
                 // Test transaction serialization/deserialization compatibility
@@ -823,7 +876,7 @@ impl CSharpCompatibilityRunner {
                 tx.set_network_fee(100000);
                 tx.set_valid_until_block(1000000);
                 tx.set_script(vec![0x10, 0x11, 0x93]); // PUSH0, PUSH1, ADD
-                
+
                 let signer = neo_core::signer::Signer {
                     account: UInt160::from([42u8; 20]),
                     scopes: neo_core::signer::WitnessScope::CalledByEntry,
@@ -832,62 +885,73 @@ impl CSharpCompatibilityRunner {
                     rules: Vec::new(),
                 };
                 tx.add_signer(signer);
-                
+
                 let witness = neo_core::witness::Witness {
                     invocation_script: vec![0x0C, 0x40],
                     verification_script: vec![0x21],
                 };
                 tx.add_witness(witness);
-                
+
                 // Test serialization roundtrip
                 match tx.to_bytes() {
-                    Ok(serialized) => {
-                        match Transaction::from_bytes(&serialized) {
-                            Ok(deserialized) => {
-                                let passed = deserialized.version() == tx.version() &&
-                                           deserialized.nonce() == tx.nonce() &&
-                                           deserialized.system_fee() == tx.system_fee() &&
-                                           deserialized.network_fee() == tx.network_fee() &&
-                                           deserialized.script() == tx.script() &&
-                                           deserialized.signers().len() == tx.signers().len();
-                                
-                                CompatibilityTestResult {
-                                    test_name: test.name.clone(),
-                                    category: test.category.clone(),
-                                    passed,
-                                    error_message: if passed { None } else { Some("Transaction fields don't match after roundtrip".to_string()) },
-                                    expected: Some(format!("Transaction with nonce {}, system fee {}", tx.nonce(), tx.system_fee())),
-                                    actual: Some(format!("Deserialized transaction with {} signers", deserialized.signers().len())),
-                                    execution_time_ms: start_time.elapsed().as_millis() as u64,
-                                }
-                            }
-                            Err(e) => {
-                                CompatibilityTestResult {
-                                    test_name: test.name.clone(),
-                                    category: test.category.clone(),
-                                    passed: false,
-                                    error_message: Some(format!("Failed to deserialize transaction: {}", e)),
-                                    expected: Some("Valid deserialized transaction".to_string()),
-                                    actual: Some("Deserialization error".to_string()),
-                                    execution_time_ms: start_time.elapsed().as_millis() as u64,
-                                }
+                    Ok(serialized) => match Transaction::from_bytes(&serialized) {
+                        Ok(deserialized) => {
+                            let passed = deserialized.version() == tx.version()
+                                && deserialized.nonce() == tx.nonce()
+                                && deserialized.system_fee() == tx.system_fee()
+                                && deserialized.network_fee() == tx.network_fee()
+                                && deserialized.script() == tx.script()
+                                && deserialized.signers().len() == tx.signers().len();
+
+                            CompatibilityTestResult {
+                                test_name: test.name.clone(),
+                                category: test.category.clone(),
+                                passed,
+                                error_message: if passed {
+                                    None
+                                } else {
+                                    Some(
+                                        "Transaction fields don't match after roundtrip"
+                                            .to_string(),
+                                    )
+                                },
+                                expected: Some(format!(
+                                    "Transaction with nonce {}, system fee {}",
+                                    tx.nonce(),
+                                    tx.system_fee()
+                                )),
+                                actual: Some(format!(
+                                    "Deserialized transaction with {} signers",
+                                    deserialized.signers().len()
+                                )),
+                                execution_time_ms: start_time.elapsed().as_millis() as u64,
                             }
                         }
-                    }
-                    Err(e) => {
-                        CompatibilityTestResult {
+                        Err(e) => CompatibilityTestResult {
                             test_name: test.name.clone(),
                             category: test.category.clone(),
                             passed: false,
-                            error_message: Some(format!("Failed to serialize transaction: {}", e)),
-                            expected: Some("Valid serialized transaction".to_string()),
-                            actual: Some("Serialization error".to_string()),
+                            error_message: Some(format!(
+                                "Failed to deserialize transaction: {}",
+                                e
+                            )),
+                            expected: Some("Valid deserialized transaction".to_string()),
+                            actual: Some("Deserialization error".to_string()),
                             execution_time_ms: start_time.elapsed().as_millis() as u64,
-                        }
-                    }
+                        },
+                    },
+                    Err(e) => CompatibilityTestResult {
+                        test_name: test.name.clone(),
+                        category: test.category.clone(),
+                        passed: false,
+                        error_message: Some(format!("Failed to serialize transaction: {}", e)),
+                        expected: Some("Valid serialized transaction".to_string()),
+                        actual: Some("Serialization error".to_string()),
+                        execution_time_ms: start_time.elapsed().as_millis() as u64,
+                    },
                 }
             }
-            
+
             "test_transaction_validation" => {
                 // Test transaction validation
                 let mut tx = Transaction::new();
@@ -897,7 +961,7 @@ impl CSharpCompatibilityRunner {
                 tx.set_network_fee(100000);
                 tx.set_valid_until_block(1000000);
                 tx.set_script(vec![0x10, 0x11, 0x93]); // PUSH0, PUSH1, ADD
-                
+
                 let signer = neo_core::signer::Signer {
                     account: UInt160::from([42u8; 20]),
                     scopes: neo_core::signer::WitnessScope::CalledByEntry,
@@ -906,45 +970,57 @@ impl CSharpCompatibilityRunner {
                     rules: Vec::new(),
                 };
                 tx.add_signer(signer);
-                
+
                 let witness = neo_core::witness::Witness {
                     invocation_script: vec![0x0C, 0x40],
                     verification_script: vec![0x21],
                 };
                 tx.add_witness(witness);
-                
+
                 let validator = TransactionValidator::new();
                 let validation_result = validator.validate(&tx);
-                
+
                 CompatibilityTestResult {
                     test_name: test.name.clone(),
                     category: test.category.clone(),
                     passed: validation_result.is_ok(),
-                    error_message: validation_result.err().map(|e| format!("Validation failed: {}", e)),
+                    error_message: validation_result
+                        .err()
+                        .map(|e| format!("Validation failed: {}", e)),
                     expected: Some("Valid transaction passing validation".to_string()),
-                    actual: Some(format!("Validation result: {:?}", validation_result.is_ok())),
+                    actual: Some(format!(
+                        "Validation result: {:?}",
+                        validation_result.is_ok()
+                    )),
                     execution_time_ms: start_time.elapsed().as_millis() as u64,
                 }
             }
-            
+
             "test_transaction_constants" => {
                 // Test transaction constants match C# Neo
                 const MAX_TRANSACTION_SIZE: usize = 102_400; // 100KB
                 const MAX_TRANSACTION_ATTRIBUTES: usize = 16;
-                
+
                 let passed = MAX_TRANSACTION_SIZE == 102_400 && MAX_TRANSACTION_ATTRIBUTES == 16;
-                
+
                 CompatibilityTestResult {
                     test_name: test.name.clone(),
                     category: test.category.clone(),
                     passed,
-                    error_message: if passed { None } else { Some("Transaction constants don't match C# Neo".to_string()) },
+                    error_message: if passed {
+                        None
+                    } else {
+                        Some("Transaction constants don't match C# Neo".to_string())
+                    },
                     expected: Some(format!("MaxSize: {}, MaxAttrs: {}", 102_400, 16)),
-                    actual: Some(format!("MaxSize: {}, MaxAttrs: {}", MAX_TRANSACTION_SIZE, MAX_TRANSACTION_ATTRIBUTES)),
+                    actual: Some(format!(
+                        "MaxSize: {}, MaxAttrs: {}",
+                        MAX_TRANSACTION_SIZE, MAX_TRANSACTION_ATTRIBUTES
+                    )),
                     execution_time_ms: start_time.elapsed().as_millis() as u64,
                 }
             }
-            
+
             _ => {
                 // Default case for unrecognized transaction tests
                 CompatibilityTestResult {
@@ -965,7 +1041,7 @@ impl CSharpCompatibilityRunner {
         let total_tests = self.results.len();
         let passed_tests = self.results.iter().filter(|r| r.passed).count();
         let failed_tests = total_tests - passed_tests;
-        
+
         let mut by_category: HashMap<String, (usize, usize)> = HashMap::new();
         for result in &self.results {
             let entry = by_category.entry(result.category.clone()).or_insert((0, 0));
@@ -975,7 +1051,9 @@ impl CSharpCompatibilityRunner {
             }
         }
 
-        let total_execution_time = self.results.iter()
+        let total_execution_time = self
+            .results
+            .iter()
             .map(|r| r.execution_time_ms)
             .sum::<u128>();
 
@@ -986,10 +1064,7 @@ impl CSharpCompatibilityRunner {
             success_rate: (passed_tests as f64 / total_tests as f64) * 100.0,
             total_execution_time_ms: total_execution_time,
             by_category,
-            failed_tests_details: self.results.iter()
-                .filter(|r| !r.passed)
-                .cloned()
-                .collect(),
+            failed_tests_details: self.results.iter().filter(|r| !r.passed).cloned().collect(),
         }
     }
 }
@@ -1011,11 +1086,16 @@ impl CompatibilityReport {
     pub fn print_detailed_report(&self) {
         println!("\n🔄 C# Neo Compatibility Test Report");
         println!("=====================================");
-        println!("📊 Tests: {} total, {} passed, {} failed", 
-                 self.total_tests, self.passed_tests, self.failed_tests);
+        println!(
+            "📊 Tests: {} total, {} passed, {} failed",
+            self.total_tests, self.passed_tests, self.failed_tests
+        );
         println!("✅ Success Rate: {:.1}%", self.success_rate);
-        println!("⏱️  Total Execution Time: {}ms", self.total_execution_time_ms);
-        
+        println!(
+            "⏱️  Total Execution Time: {}ms",
+            self.total_execution_time_ms
+        );
+
         println!("\n📋 By Category:");
         for (category, (total, passed)) in &self.by_category {
             let rate = (*passed as f64 / *total as f64) * 100.0;
@@ -1071,21 +1151,19 @@ mod tests {
     async fn test_sample_test_vectors() {
         let mut runner = CSharpCompatibilityRunner::new();
         runner.create_sample_test_vectors();
-        
+
         assert!(!runner.test_vectors.is_empty());
-        
+
         // Check that we have different test types
-        let test_types: std::collections::HashSet<_> = runner.test_vectors
-            .iter()
-            .map(|t| &t.test_type)
-            .collect();
+        let test_types: std::collections::HashSet<_> =
+            runner.test_vectors.iter().map(|t| &t.test_type).collect();
         assert!(test_types.len() > 1);
     }
 
     #[test]
     fn test_compatibility_report_generation() {
         let mut runner = CSharpCompatibilityRunner::new();
-        
+
         // Add some mock results
         runner.results.push(CompatibilityTestResult {
             test_name: "test1".to_string(),
@@ -1096,7 +1174,7 @@ mod tests {
             actual: None,
             execution_time_ms: 10,
         });
-        
+
         runner.results.push(CompatibilityTestResult {
             test_name: "test2".to_string(),
             category: "Crypto".to_string(),

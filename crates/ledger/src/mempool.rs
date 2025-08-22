@@ -319,7 +319,7 @@ impl MemoryPool {
     pub fn new(config: MempoolConfig) -> Self {
         // Pre-allocate collections based on expected capacity
         let initial_capacity = (config.max_transactions / 4).max(1000);
-        
+
         Self {
             config,
             transactions: Arc::new(RwLock::new(HashMap::with_capacity(initial_capacity))),

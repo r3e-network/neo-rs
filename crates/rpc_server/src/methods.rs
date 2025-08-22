@@ -119,7 +119,6 @@ impl RpcMethods {
 
     /// Gets a block by hash or index
     pub async fn get_block(&self, params: Option<Value>) -> Result<Value> {
-
         let params = params.ok_or("Missing parameters")?;
         let params_array = params.as_array().ok_or("Invalid parameters format")?;
 
@@ -178,7 +177,6 @@ impl RpcMethods {
 
     /// Gets block hash by index
     pub async fn get_block_hash(&self, params: Option<Value>) -> Result<Value> {
-
         let params = params.ok_or("Missing parameters")?;
         let params_array = params.as_array().ok_or("Invalid parameters format")?;
 
@@ -207,7 +205,6 @@ impl RpcMethods {
 
     /// Gets version information
     pub async fn get_version(&self) -> Result<Value> {
-
         // Get version from environment at compile time
         const VERSION: &str = env!("CARGO_PKG_VERSION");
         const NEO_VERSION: &str = "3.6.0";
@@ -235,7 +232,6 @@ impl RpcMethods {
 
     /// Gets peer information  
     pub async fn get_peers(&self) -> Result<Value> {
-        
         // Return mock peer data for now - would be connected to real peer manager when network integration is complete
         let peers = RpcPeers {
             connected: vec![
@@ -248,22 +244,18 @@ impl RpcMethods {
                     port: 10333,
                 },
             ],
-            unconnected: vec![
-                RpcPeer {
-                    address: "seed3.neo.org".to_string(),
-                    port: 10333,
-                },
-            ],
+            unconnected: vec![RpcPeer {
+                address: "seed3.neo.org".to_string(),
+                port: 10333,
+            }],
             bad: vec![],
         };
-        
-              
+
         Ok(serde_json::to_value(peers)?)
     }
 
     /// Gets connection count
     pub async fn get_connection_count(&self) -> Result<Value> {
-        
         // Return mock connection count - would be connected to real peer manager when network integration is complete
         let connection_count = 2; // Number of connected peers from mock data
         Ok(json!(connection_count))
@@ -271,7 +263,6 @@ impl RpcMethods {
 
     /// Validates an address
     pub async fn validate_address(&self, params: Option<Value>) -> Result<Value> {
-
         let params = params.ok_or("Missing parameters")?;
         let params_array = params.as_array().ok_or("Invalid parameters format")?;
 
@@ -294,7 +285,6 @@ impl RpcMethods {
 
     /// Gets native contracts
     pub async fn get_native_contracts(&self) -> Result<Value> {
-
         let contracts = json!([
             {
                 "id": -1,
