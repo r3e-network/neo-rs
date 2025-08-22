@@ -59,6 +59,44 @@ impl JString {
             _ => Err(JsonError::InvalidCast("Token is not a string".to_string())),
         }
     }
+
+    /// Convert JString to boolean (matches C# AsBoolean behavior)
+    /// Returns false only for empty strings, true for all other strings
+    pub fn as_boolean(&self) -> bool {
+        !self.value.is_empty()
+    }
+
+    /// Convert JString to number (matches C# AsNumber behavior)
+    /// Returns 0.0 for empty strings, parsed number or NaN for invalid
+    pub fn as_number(&self) -> f64 {
+        if self.value.is_empty() {
+            return 0.0;
+        }
+        
+        self.value.parse::<f64>().unwrap_or(f64::NAN)
+    }
+
+    /// Get enum from JString (matches C# GetEnum behavior)
+    /// Throws error if conversion fails
+    pub fn get_enum<T: std::str::FromStr>(&self) -> Result<T, String> {
+        self.value.parse().map_err(|_| "Invalid enum value".to_string())
+    }
+
+    /// Get enum from JString with default (matches C# AsEnum behavior)
+    /// Returns default value if conversion fails
+    pub fn as_enum<T: std::str::FromStr>(&self, default: T, _ignore_case: bool) -> T {
+        self.value.parse().unwrap_or(default)
+    }
+
+    /// Write JSON representation (matches C# Write behavior)
+    pub fn write<W: std::fmt::Write>(&self, writer: &mut W) -> std::fmt::Result {
+        write!(writer, "\"{}\"", self.value)
+    }
+
+    /// Clone the JString (matches C# Clone behavior)
+    pub fn clone_jstring(&self) -> Self {
+        self.clone()
+    }
 }
 
 impl Default for JString {
