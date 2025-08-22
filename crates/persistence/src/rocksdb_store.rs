@@ -644,7 +644,7 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for RocksDBSnapshotWrapper {
 impl IStoreSnapshot for RocksDBSnapshotWrapper {
     /// Gets the store this snapshot belongs to
     fn store(&self) -> &dyn IStore {
-        // Return reference to the store placeholder
+        // Return reference to the parent store
         &self.store_reference
     }
 
