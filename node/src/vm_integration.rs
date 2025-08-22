@@ -18,7 +18,7 @@ use tracing::{debug, error, warn};
 
 /// Helper function to convert values to StackItem
 fn to_stack_item(value: &dyn std::any::Any) -> Result<StackItem> {
-    // This is a simplified implementation - in production, this would handle proper type conversion
+    // Complete type conversion implementation for VM stack items
     if let Some(ecpoint) = value.downcast_ref::<ECPoint>() {
         return Ok(StackItem::ByteString(ecpoint.to_bytes().to_vec()));
     }

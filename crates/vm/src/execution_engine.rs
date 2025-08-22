@@ -537,7 +537,12 @@ impl ExecutionEngine {
         self.load_context(context)?;
 
         // Return a reference to the loaded context
-        Ok(self.current_context().unwrap().clone())
+        self.current_context()
+            .ok_or_else(|| VmError::InvalidOperation {
+                operation: "load_script_and_return_context".to_string(),
+                reason: "No current execution context after loading".to_string()
+            })
+            .map(|ctx| ctx.clone())
     }
 
     /// Returns the item at the specified index from the top of the current stack without removing it.

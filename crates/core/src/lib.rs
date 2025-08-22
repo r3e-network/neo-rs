@@ -64,6 +64,12 @@ pub mod error_utils;
 pub mod safe_operations;
 /// Enhanced safe error handling system
 pub mod safe_error_handling;
+/// Enhanced error handling patterns for blockchain operations
+pub mod enhanced_error_handling;
+/// Production monitoring and health checks
+pub mod production_monitoring;
+/// Advanced performance metrics and monitoring
+pub mod advanced_metrics;
 /// Migration helpers for transitioning to safe error handling
 pub mod migration_helpers;
 /// Safe memory operations for core types

@@ -254,6 +254,8 @@ impl std::fmt::Display for WalletInfo {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
+    use crate::WalletFactory;
+
     #[test]
     fn test_validate_name() {
         assert!(WalletFactory::validate_name("valid_name").is_ok());

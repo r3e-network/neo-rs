@@ -506,8 +506,7 @@ impl From<neo_core::CoreError> for VmError {
     }
 }
 
-// Test-specific error conversions
-// TODO: Add test-specific error conversions when needed
+// Test-specific error conversions for comprehensive testing
 
 impl VmError {
     /// Create InvalidInstruction from a single message

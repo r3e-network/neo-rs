@@ -167,6 +167,8 @@ pub mod transaction_relay;
 pub mod safe_p2p;
 /// DOS protection and rate limiting
 pub mod dos_protection;
+/// Enhanced DoS protection with adaptive rate limiting
+pub mod enhanced_dos_protection;
 /// Network resilience patterns
 pub mod resilience;
 

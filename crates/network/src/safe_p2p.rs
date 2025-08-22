@@ -86,7 +86,7 @@ impl SafeP2pNodeBuilder {
             self.validate_config()?;
         }
         
-        // Create node - no retry logic for now since command_receiver can't be moved multiple times
+        // Create P2P node with validated configuration
         match P2pNode::new(self.config.clone(), command_receiver) {
             Ok(node) => {
                 tracing::info!("P2P node created successfully");
@@ -201,9 +201,9 @@ impl MessageValidator {
         ];
         
         if !VALID_COMMANDS.contains(&command) && !self.allow_unknown_commands {
-            // Use a generic socket address for now, as we don't have the peer address here
+            // Return error with null peer address for unknown commands
             return Err(NetworkError::InvalidMessage {
-                peer: "0.0.0.0:0".parse().unwrap(),
+                peer: "0.0.0.0:0".parse().expect("Valid null socket address"),
                 message_type: "command".to_string(),
                 reason: format!("Unknown command: {}", command),
             });

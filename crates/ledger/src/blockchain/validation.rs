@@ -3,13 +3,12 @@
 //! This module provides comprehensive validation functionality exactly matching C# Neo validation logic.
 
 use crate::{Error, Result, Block, BlockHeader};
-use neo_config::MILLISECONDS_PER_BLOCK;
-use crate::constants::MILLISECONDS_PER_BLOCK;use neo_core::{Transaction, UInt160, UInt256, Witness, Signer};
-use crate::constants::MILLISECONDS_PER_BLOCK;use neo_vm::{ApplicationEngine, TriggerType, VMState};
-use crate::constants::MILLISECONDS_PER_BLOCK;use neo_cryptography::ecdsa::ECDsa;
-use crate::constants::MILLISECONDS_PER_BLOCK;use std::collections::HashMap;
-use crate::constants::MILLISECONDS_PER_BLOCK;use std::sync::Arc;
-use crate::constants::MILLISECONDS_PER_BLOCK;
+use neo_core::{Transaction, UInt160, UInt256, Witness, Signer};
+use neo_core::constants::{MILLISECONDS_PER_BLOCK, MAX_SCRIPT_SIZE, MAX_TRANSACTION_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
+use neo_vm::{ApplicationEngine, TriggerType, VMState};
+use neo_cryptography::ecdsa::ECDsa;
+use std::collections::HashMap;
+use std::sync::Arc;
 /// Block validation results (matches C# VerifyResult)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerifyResult {
@@ -142,7 +141,7 @@ impl BlockchainVerifier {
             }
 
             // Accumulate system fees
-            total_system_fee = total_system_fee.saturating_add(transaction.system_fee());
+            total_system_fee = total_system_fee.saturating_add(transaction.system_fee() as u64);
         }
 
         // 4. Check total system fee limit
@@ -191,22 +190,22 @@ impl BlockchainVerifier {
     /// Verifies header format (matches C# validation)
     fn verify_header_format(&self, header: &BlockHeader) -> Result<bool> {
         // 1. Check version
-        if header.version() != 0 {
+        if header.version != 0 {
             return Ok(false);
         }
 
         // 2. Check index
-        if header.index() == u32::MAX {
+        if header.index == u32::MAX {
             return Ok(false);
         }
 
         // 3. Check timestamp format
-        if header.timestamp() == 0 {
+        if header.timestamp == 0 {
             return Ok(false);
         }
 
         // 4. Check nonce format
-        if header.nonce() == u64::MAX {
+        if header.nonce == u64::MAX {
             return Ok(false);
         }
 
@@ -217,17 +216,17 @@ impl BlockchainVerifier {
     fn verify_header_timestamp(&self, header: &BlockHeader, previous_header: Option<&BlockHeader>) -> Result<bool> {
         let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            ?
+            .map_err(|e| Error::Generic(format!("Failed to get current time: {}", e)))?
             .as_millis() as u64;
 
         // 1. Check timestamp is not too far in the future (SECONDS_PER_BLOCK seconds max)
-        if header.timestamp() > current_time + MILLISECONDS_PER_BLOCK {
+        if header.timestamp > current_time + MILLISECONDS_PER_BLOCK {
             return Ok(false);
         }
 
         // 2. Check timestamp is after previous block
         if let Some(prev) = previous_header {
-            if header.timestamp() <= prev.timestamp() {
+            if header.timestamp <= prev.timestamp {
                 return Ok(false);
             }
         }
@@ -243,12 +242,15 @@ impl BlockchainVerifier {
 
     /// Verifies header witness (matches C# witness validation)
     fn verify_header_witness(&self, header: &BlockHeader) -> Result<bool> {
-        // Get the witness from header
-        let witness = header.witness();
+        // Get the first witness from header (if any)
+        if header.witnesses.is_empty() {
+            return Ok(false);
+        }
+        let witness = &header.witnesses[0];
         
-        // Verify the witness signature against header hash
-        let header_hash = header.hash()?;
-        self.verify_witness(&witness, &header_hash.as_bytes())
+        // Verify the witness signature against header hash  
+        let header_hash = header.hash();
+        self.verify_witness(witness, &header_hash.as_bytes())
     }
 
     /// Verifies block size constraints (matches C# block size validation)

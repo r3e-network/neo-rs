@@ -481,7 +481,8 @@ mod tests {
                 assert_eq!(required, 5000);
             }
             _ => {
-                panic!("Wrong error type");
+                error!("Unexpected error type in storage error handler");
+                return Err(Error::StorageError("Unexpected error type".to_string()));
             }
         }
     }

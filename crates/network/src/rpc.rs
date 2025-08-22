@@ -848,9 +848,8 @@ async fn handle_get_raw_mempool(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // TODO: Implement mempool integration with Blockchain
-    // For now, return empty mempool (no pending transactions)
-    let mempool_transactions: Vec<neo_core::Transaction> = vec![];
+    // For now, return empty list to resolve compilation error
+    let mempool_transactions: Vec<neo_core::Transaction> = Vec::new();
 
     if verbose {
         // Return detailed transaction information

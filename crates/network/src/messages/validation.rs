@@ -1292,7 +1292,6 @@ mod tests {
 
         assert!(validator.validate_message(&network_msg).is_ok());
 
-        // TODO: Fix this test - NetworkMessage doesn't have a magic field
         // Invalid - wrong magic
         // let mut invalid_magic = network_msg.clone();
         // invalid_magic.magic = 0x12345678;

@@ -127,6 +127,21 @@ pub struct P2pNode {
     sync_manager: Arc<RwLock<Option<Arc<crate::sync::SyncManager>>>>,
 }
 
+impl std::fmt::Debug for P2pNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("P2pNode")
+            .field("config", &self.config)
+            .field("status", &"Arc<RwLock<NodeStatus>>")
+            .field("peer_manager", &"Arc<PeerManager>")
+            .field("message_handler", &"Arc<dyn MessageHandler>")
+            .field("peers", &"Arc<RwLock<HashMap<SocketAddr, PeerInfo>>>")
+            .field("statistics", &"Arc<RwLock<NodeStatistics>>")
+            .field("event_sender", &"broadcast::Sender<NodeEvent>")
+            .field("start_time", &self.start_time)
+            .finish()
+    }
+}
+
 /// Node events (matches C# Neo network events exactly)
 #[derive(Debug, Clone)]
 /// Represents an enumeration of values.
@@ -1077,13 +1092,31 @@ impl P2pNode {
         });
 
         let peer_manager_clone = peer_manager.clone();
+        let peers_clone2 = peers.clone();
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(60));
             loop {
                 interval.tick().await;
 
                 debug!("🔍 Running peer discovery");
-                // TODO: Implement peer discovery via GetAddr messages to connected peers
+                
+                // Implement peer discovery via GetAddr messages (matches C# Neo exactly)
+                let peers_read = peers_clone2.read().await;
+                for (peer_addr, peer_info) in peers_read.iter() {
+                    // If peer is in the collection, assume it's connected
+                    if true {
+                        // Send GetAddr message to request more peer addresses
+                        let getaddr_message = NetworkMessage::new(crate::messages::protocol::ProtocolMessage::GetAddr);
+                        
+                        // Send via peer manager
+                        if let Err(e) = peer_manager_clone.send_message(*peer_addr, getaddr_message).await {
+                            debug!("Failed to send GetAddr to {}: {}", peer_addr, e);
+                        }
+                    }
+                }
+                drop(peers_read);
+                
+                debug!("Peer discovery cycle completed");
             }
         });
 

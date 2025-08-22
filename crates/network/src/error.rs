@@ -41,6 +41,14 @@ pub enum NetworkError {
     #[error("Peer is banned: {address}")]
     PeerBanned { address: SocketAddr },
 
+    /// Invalid connection
+    #[error("Invalid connection: {0}")]
+    InvalidConnection(String),
+
+    /// Internal error
+    #[error("Internal error: {0}")]
+    InternalError(String),
+
     /// Protocol violation
     #[error("Protocol violation from {peer}: {violation}")]
     ProtocolViolation { peer: SocketAddr, violation: String },
@@ -463,7 +471,8 @@ impl NetworkError {
             | NetworkError::ConnectionLimitReached { .. }
             | NetworkError::PeerAlreadyConnected { .. }
             | NetworkError::PeerNotConnected { .. }
-            | NetworkError::ConnectionRefused { .. } => "connection",
+            | NetworkError::ConnectionRefused { .. }
+            | NetworkError::InvalidConnection(..) => "connection",
 
             NetworkError::ProtocolViolation { .. }
             | NetworkError::InvalidProtocolVersion { .. }
@@ -507,6 +516,7 @@ impl NetworkError {
             NetworkError::Ledger { .. } => "ledger",
             NetworkError::ServerError(_) => "server",
             NetworkError::Generic { .. } => "generic",
+            NetworkError::InternalError(..) => "internal",
             NetworkError::PeerBanned { .. } => "peer",
             NetworkError::TransactionValidation { .. } => "transaction",
             NetworkError::MessageSend { .. } => "messaging",

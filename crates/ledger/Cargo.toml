@@ -28,6 +28,9 @@ chrono = { version = "0.4", features = ["serde"] }
 # Collections and utilities
 indexmap = "2.0"
 dashmap = "5.5"
+
+# File and compression handling
+zip = "0.6"
 parking_lot = "0.12"
 rand = "0.8"
 hex = "0.4"
