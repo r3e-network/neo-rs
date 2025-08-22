@@ -622,6 +622,7 @@ mod tests {
 
     #[test]
     fn test_resource_limit_errors() {
+        use neo_core::constants::MAX_SCRIPT_SIZE;
         let error = VmError::memory_limit_exceeded(2048, MAX_SCRIPT_SIZE);
         assert_eq!(
             error.to_string(),
