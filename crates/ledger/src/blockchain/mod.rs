@@ -9,11 +9,14 @@
 //! - state: Blockchain state management (matches C# state handling)
 //! - blockchain: Main Blockchain struct (matches C# Blockchain class)
 
+pub mod advanced_validation;
 pub mod blockchain;
 pub mod genesis;
+pub mod import;
 pub mod persistence;
 pub mod state;
 pub mod storage;
+pub mod validation;
 pub mod verification;
 
 pub use blockchain::{Blockchain, BlockchainStats};

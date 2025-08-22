@@ -214,9 +214,7 @@ fn not_equal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    // NOTE: Tests temporarily disabled due to compilation errors
-    // TODO: Fix tests to properly handle Result types
-    /*
+    // Bitwise operation tests with proper Result handling
     use super::*;
     use crate::execution_engine::ExecutionEngine;
     use crate::instruction::Instruction;
@@ -552,5 +550,4 @@ mod tests {
             true
         );
     }
-    */
 }

@@ -14,7 +14,7 @@ use crate::{
 };
 use neo_config::MAX_BLOCK_SIZE;
 use std::sync::Arc;
-use crate::constants::ONE_MEGABYTE;
+use neo_core::constants::ONE_MEGABYTE;
 /// Storage context for interop services (matches C# StorageContext exactly)
 #[derive(Debug, Clone)]
 pub struct StorageContext {

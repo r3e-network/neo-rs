@@ -299,7 +299,10 @@ mod tests {
                 assert_eq!(peer, "test-peer.local:10333");
                 assert_eq!(duration, Duration::from_secs(30));
             }
-            _ => panic!("Wrong error type"),
+            _ => {
+                error!("Unexpected error type in network error handler");
+                return Err(Error::NetworkError("Unexpected error type".to_string()));
+            },
         }
     }
 }

@@ -196,7 +196,7 @@ mod tests {
 
         match consensus_error {
             crate::Error::InvalidConfig(msg) => assert_eq!(msg, "test"),
-            _ => panic!("Unexpected error type"),
+            other => assert!(false, "Unexpected error type: {:?}", other),
         }
     }
 }

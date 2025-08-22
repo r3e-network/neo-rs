@@ -193,10 +193,13 @@ impl ScriptBuilder {
     }
 
     /// Emits a jump operation.
-    pub fn emit_jump(&mut self, op: OpCode, offset: i16) -> &mut Self {
+    pub fn emit_jump(&mut self, op: OpCode, offset: i16) -> VmResult<&mut Self> {
         if op != OpCode::JMP && op != OpCode::JMPIF && op != OpCode::JMPIFNOT && op != OpCode::CALL
         {
-            panic!("Invalid jump operation");
+            return Err(crate::error::VmError::InvalidOperation {
+                operation: "emit_jump".to_string(),
+                reason: format!("Invalid jump operation: {:?}", op)
+            });
         }
 
         self.emit_opcode(op);
@@ -205,28 +208,31 @@ impl ScriptBuilder {
         self.emit((offset & 0xFF) as u8);
         self.emit(((offset >> 8) & 0xFF) as u8);
 
-        self
+        Ok(self)
     }
 
     /// Emits a call operation.
-    pub fn emit_call(&mut self, offset: i16) -> &mut Self {
+    pub fn emit_call(&mut self, offset: i16) -> VmResult<&mut Self> {
         self.emit_jump(OpCode::CALL, offset)
     }
 
     /// Emits a syscall operation.
-    pub fn emit_syscall(&mut self, api: &str) -> &mut Self {
+    pub fn emit_syscall(&mut self, api: &str) -> VmResult<&mut Self> {
         let api_bytes = api.as_bytes();
         let api_bytes_len = api_bytes.len();
 
         if api_bytes_len > 252 {
-            panic!("Syscall api is too long");
+            return Err(crate::error::VmError::InvalidOperation {
+                operation: "emit_syscall".to_string(),
+                reason: format!("Syscall API too long: {} bytes (max 252)", api_bytes_len)
+            });
         }
 
         self.emit_opcode(OpCode::SYSCALL);
         self.emit(api_bytes_len as u8);
         self.script.extend_from_slice(api_bytes);
 
-        self
+        Ok(self)
     }
 
     /// Emits an append operation.

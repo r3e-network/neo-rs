@@ -228,11 +228,17 @@ mod tests {
         });
         
         // Value is computed on first access
-        let value = lazy.get();
-        assert_eq!(value.len(), 5);
+        let value_len = {
+            let value = lazy.get();
+            value.len()
+        };
+        assert_eq!(value_len, 5);
         
         // Subsequent accesses return the same value
-        let value2 = lazy.get();
-        assert_eq!(value.len(), value2.len());
+        let value2_len = {
+            let value2 = lazy.get();
+            value2.len()
+        };
+        assert_eq!(value_len, value2_len);
     }
 }

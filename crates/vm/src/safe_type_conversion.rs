@@ -3,9 +3,9 @@
 //! This module provides safe alternatives to unsafe transmute operations
 //! by using proper type conversion and validation.
 
-use crate::{VmResult, VmError};
-use neo_core::{Signer as CoreSigner, TransactionAttribute as CoreAttribute, OracleResponseCode, UInt256, WitnessScope};
-use std::convert::TryFrom;
+// use crate::{VmResult, VmError};
+use neo_core::{Signer as CoreSigner, TransactionAttribute as CoreAttribute};
+// use std::convert::TryFrom;
 
 /// Safe type converter for VM types
 pub struct SafeTypeConverter;

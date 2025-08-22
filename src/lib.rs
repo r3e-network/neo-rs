@@ -74,7 +74,7 @@ pub use neo_rpc_client as rpc_client;
 /// Common imports for Neo development
 pub mod prelude {
     pub use crate::core::{UInt160, UInt256, Transaction, Block};
-    pub use crate::crypto::{PublicKey, PrivateKey, Signature};
+    // pub use crate::crypto::{PublicKey, PrivateKey, Signature};
     pub use crate::vm::{ApplicationEngine, Script, StackItem};
     pub use crate::ledger::{Blockchain, BlockHeader};
     pub use crate::network::{NetworkConfig, P2pNode};
@@ -123,7 +123,7 @@ pub struct NeoNode {
 
 impl NeoNode {
     /// Creates a new Neo node with the given configuration
-    pub async fn new(config: NodeConfig) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(config: NodeConfig) -> Result<Self> {
         // Initialize blockchain
         let blockchain = std::sync::Arc::new(
             ledger::Blockchain::new_with_storage_suffix(
@@ -142,30 +142,29 @@ impl NeoNode {
     }
 
     /// Starts the Neo node
-    pub async fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn start(&mut self) -> Result<()> {
         // Start network layer
-        let (event_tx, _event_rx) = tokio::sync::mpsc::channel(100);
-        let mut p2p_node = network::P2pNode::new(self.config.network.clone(), event_tx).await?;
+        let (_event_tx, event_rx) = tokio::sync::mpsc::channel(100);
+        let p2p_node = network::P2pNode::new(self.config.network.clone(), event_rx)?;
         p2p_node.start().await?;
         self.network = Some(p2p_node);
 
         // Start RPC server if enabled
         #[cfg(feature = "rpc")]
         if self.config.enable_rpc {
-            if let Some(rpc_config) = &self.config.network.rpc_config {
-                let rpc_server = rpc_server::RpcServer::new(rpc_config.clone());
-                // Start RPC server
-                self.rpc_server = Some(rpc_server);
-            }
+            // if let Some(rpc_config) = &self.config.network.rpc_config {
+            //     let rpc_server = rpc_server::RpcServer::new(rpc_config.clone());
+            //     self.rpc_server = Some(rpc_server);
+            // }
         }
 
         Ok(())
     }
 
     /// Stops the Neo node
-    pub async fn stop(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn stop(&mut self) -> Result<()> {
         // Stop network
-        if let Some(mut network) = self.network.take() {
+        if let Some(network) = self.network.take() {
             network.stop().await?;
         }
 

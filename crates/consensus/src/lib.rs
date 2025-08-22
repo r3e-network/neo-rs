@@ -25,6 +25,7 @@ pub mod service;
 pub mod signature;
 pub mod validators;
 pub mod safe_consensus;
+pub mod view_change_optimization;
 
 // Re-export main types
 pub use context::{ConsensusContext, ConsensusPhase, ConsensusRound, ConsensusTimer};

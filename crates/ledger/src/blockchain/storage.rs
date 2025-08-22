@@ -382,8 +382,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_rocksdb_storage() {
-        let final_dir = tempdir().unwrap();
-        let storage = Storage::new_rocksdb(final_dir.path().to_str().unwrap_or("")).unwrap();
+        let final_dir = tempdir().expect("Failed to create temporary directory");
+        let storage = Storage::new_rocksdb(final_dir.path().to_str().unwrap_or(""))
+            .expect("Failed to create storage instance");
 
         let key = StorageKey::new(b"test".to_vec(), b"key".to_vec());
         let item = StorageItem::new(b"value".to_vec());

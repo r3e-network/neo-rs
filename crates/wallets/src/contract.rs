@@ -268,7 +268,7 @@ mod tests {
     fn test_contract_validation() {
         let script = vec![0x0c, 33]; // Incomplete script
         let parameter_list = vec![ContractParameterType::Signature];
-        let contract = Contract::new(script.clone(), parameter_list.clone()).unwrap();
+        let contract = Contract::new(script.clone(), parameter_list.clone());
         // This should fail validation
         assert!(contract.validate().is_err());
     }

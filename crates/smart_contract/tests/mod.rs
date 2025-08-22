@@ -21,6 +21,7 @@ mod method_token_tests;
 mod native_contract_tests;
 mod nef_file_tests;
 mod neo_token_tests;
+mod neo_token_comprehensive_tests;
 mod opcode_prices_tests;
 mod policy_contract_tests;
 mod role_management_tests;

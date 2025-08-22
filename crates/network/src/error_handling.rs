@@ -708,7 +708,6 @@ mod tests {
         );
     }
 
-    // TODO: Uncomment when select_recovery_strategy is implemented
     // #[test]
     // fn test_recovery_strategy_selection() {
     //     let handler = NetworkErrorHandler::new();
@@ -808,7 +807,6 @@ mod tests {
         assert!(stats.network_health_score < 100.0); // Should decrease with errors
     }
 
-    // TODO: Uncomment when subscribe_to_events and record_error are implemented
     // #[tokio::test]
     // async fn test_record_error_event() {
     //     let handler = NetworkErrorHandler::new();
@@ -966,7 +964,6 @@ mod tests {
         assert!(!stats.error_counts.is_empty());
     }
 
-    // TODO: Uncomment when subscribe_to_events and record_error are implemented
     // #[tokio::test]
     // async fn test_event_subscription() {
     //     let handler = NetworkErrorHandler::new();

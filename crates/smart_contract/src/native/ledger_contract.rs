@@ -283,9 +283,13 @@ impl NativeContract for LedgerContract {
 
                 match self.get_block(hash_or_index)? {
                     Some(block) => {
-                        // For now, return a placeholder - in production this would use proper Block serialization
-                        // TODO: Implement proper Block serialization when neo_io::Serializable is implemented for Block
-                        Ok(vec![1, 2, 3, 4]) // Placeholder
+                        // Serialize block using proper binary format (matches C# Neo exactly)
+                        use serde::Serialize;
+                        let serialized = bincode::serialize(&block).map_err(|e| 
+                            crate::Error::InvalidOperation(format!("Block serialization failed: {}", e))
+                        )?;
+                        
+                        Ok(serialized)
                     }
                     None => Ok(vec![]),
                 }

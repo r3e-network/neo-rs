@@ -1034,7 +1034,7 @@ mod tests {
                 BigInt::from(3)
             );
         } else {
-            panic!("Execution failed: {state:?}");
+            assert!(false, "Execution failed: {:?}", state);
         }
     }
 }
