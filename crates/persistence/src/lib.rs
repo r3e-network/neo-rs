@@ -133,7 +133,7 @@
 //! - **Bloom Filters**: Fast negative lookups
 //! - **Parallel Access**: Lock-free concurrent reads
 
-#![warn(missing_docs)]
+//#![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 
 /// RocksDB storage implementation
