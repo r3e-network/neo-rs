@@ -1504,12 +1504,13 @@ impl PeerManager {
                 warn!("Accepting Unknown response (0x{:02x}) during handshake for TestNet compatibility", command);
             }
             other => {
-                warn!(
-                    "Expected verack but received {:?} from {}. Command byte: {:?}",
+                error!(
+                    "Invalid handshake response: expected verack but received {:?} from {}. Command byte: {:?}",
                     other, address, peer_verack.header.command
                 );
-                // For now, let's accept any response as TestNet might have different behavior
-                warn!("Accepting non-verack response during handshake for TestNet compatibility");
+                return Err(NetworkError::HandshakeError(format!(
+                    "Expected verack during handshake, received: {:?}", other
+                )));
             }
         }
 
