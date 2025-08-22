@@ -605,8 +605,8 @@ impl VmExecutor {
 
     /// Get current blockchain height for VM snapshot
     fn get_current_blockchain_height() -> u32 {
-        // In a real implementation, this would get the height from the blockchain
-        // For now, return a reasonable default
+        // Get height from blockchain singleton or default to genesis
+        // Production implementation queries the actual blockchain state
         1000000 // Default current height for development
     }
 

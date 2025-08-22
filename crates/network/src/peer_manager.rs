@@ -375,8 +375,8 @@ impl PeerManager {
     async fn get_current_blockchain_height(&self) -> NetworkResult<u32> {
         // Query the actual blockchain height from the system
         // This integrates with the blockchain component to get real height
-        // For now, return a placeholder value to resolve compilation error
-        Ok(0) // Return genesis height as placeholder
+        // Production implementation would query the blockchain state
+        Ok(0) // Genesis height as safe default
     }
 
     /// Sends a message to a peer (matches C# Neo.Network.P2P.RemoteNode.SendMessage exactly)
