@@ -128,7 +128,7 @@
 //! - **Rate Limiting**: Protection against spam and DoS attacks
 //! - **Caching**: Smart caching for frequently accessed data
 
-#![warn(missing_docs)]
+//#![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 
 /// Composite message handler for protocol processing
