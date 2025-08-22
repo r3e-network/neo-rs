@@ -401,7 +401,7 @@ impl NativeContract for LedgerContract {
 
     fn on_persist(&self, engine: &mut ApplicationEngine) -> Result<()> {
         // Called when a block is persisted - update ledger state
-        let block = engine.get_current_block().ok_or_else(|| {
+        let block = engine.persisting_block().ok_or_else(|| {
             Error::NativeContractError("No current block available for persistence".to_string())
         })?;
         

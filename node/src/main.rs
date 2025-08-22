@@ -201,14 +201,16 @@ async fn main() -> Result<()> {
                     );
 
                     for block_data in blocks_to_sync {
-                        // For now, skip to resolve compilation
-                        // match blockchain.persist_block(&block_data).await {
-                        match Ok::<(), neo_ledger::Error>(()) {
+                        // Real block persistence implementation
+                        match blockchain.persist_block(&block_data).await {
                             Ok(_) => {
-                                debug!("✅ Block validated and added to blockchain");
+                                debug!("✅ Block validated and persisted to blockchain");
+                                // Update local state
+                                info!("📦 Block {} persisted successfully", block_data.index());
                             }
                             Err(e) => {
-                                warn!("❌ Failed to validate block: {}", e);
+                                warn!("❌ Failed to persist block {}: {}", block_data.index(), e);
+                                // Continue with next block - don't fail entire sync
                             }
                         }
                     }
@@ -237,7 +239,7 @@ async fn main() -> Result<()> {
 
                 // Get pending transactions from peers
                 let connected_peers = peer_manager.get_connected_peers().await;
-                let mut _new_transactions = Vec::<u8>::new(); // Simplified
+                let mut new_transactions = Vec::<neo_core::Transaction>::new();
 
                 for peer in &connected_peers {
                     // Request pending transactions from peer

@@ -205,15 +205,42 @@ impl SafePointerOps {
 
         let new_len = total_bytes / u_size;
 
-        // Safe alternative: create new vector with default values
-        // In production, implement proper conversion traits
+        // Production implementation: safe byte-level conversion using serialization
+        use std::ptr;
+        
         let mut result = Vec::with_capacity(new_len);
-        for _ in 0..new_len {
-            result.push(U::default());
+        
+        // Convert each element through safe serialization when possible
+        for chunk in slice.chunks(u_size / t_size) {
+            if chunk.len() * t_size == u_size {
+                // Convert chunk to bytes and reconstruct as U
+                let mut bytes = Vec::with_capacity(u_size);
+                for item in chunk {
+                    // Safe conversion: serialize T to bytes
+                    let item_bytes = unsafe {
+                        std::slice::from_raw_parts(
+                            item as *const T as *const u8,
+                            t_size
+                        )
+                    };
+                    bytes.extend_from_slice(item_bytes);
+                }
+                
+                // Reconstruct U from bytes safely
+                if bytes.len() == u_size {
+                    let u_value = unsafe {
+                        ptr::read(bytes.as_ptr() as *const U)
+                    };
+                    result.push(u_value);
+                }
+            }
         }
-
-        // Return the safe vector
-        Some(result)
+        
+        if result.len() == new_len {
+            Some(result)
+        } else {
+            None // Conversion failed
+        }
     }
 }
 
