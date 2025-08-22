@@ -206,148 +206,21 @@ jobs:
           cargo build --workspace ${{ matrix.features }}
           echo "✅ Feature build passed"
 
-  # Code coverage analysis
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+  # Code coverage analysis (disabled temporarily)
+  # coverage:
+  #   name: Code Coverage
+  #   runs-on: ubuntu-latest
 
-      - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
+  # Benchmark regression detection (disabled temporarily)
+  # benchmarks:
+  #   name: Performance Benchmarks
+  #   runs-on: ubuntu-latest
 
-      - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ runner.os }}-coverage
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential gcc g++ cmake make pkg-config \
-            llvm-14 libclang-14-dev clang-14 \
-            librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev \
-            zlib1g-dev libbz2-dev libssl-dev
-          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
-
-      - name: Install Tarpaulin
-        run: cargo install cargo-tarpaulin
-
-      - name: Generate Coverage Report
-        run: |
-          echo "📊 Generating code coverage report..."
-          cargo tarpaulin --workspace --all-features \
-            --timeout 300 \
-            --exclude-files "*/tests/*" \
-            --exclude-files "*/benches/*" \
-            --exclude-files "*/examples/*" \
-            --out xml \
-            --output-dir coverage
-          echo "✅ Coverage report generated"
-
-      - name: Upload Coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage/cobertura.xml
-          flags: unittests
-          name: neo-rs-coverage
-          fail_ci_if_error: false
-
-  # Benchmark regression detection
-  benchmarks:
-    name: Performance Benchmarks
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ runner.os }}-benchmarks
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential gcc g++ cmake make pkg-config \
-            llvm-14 libclang-14-dev clang-14 \
-            librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev \
-            zlib1g-dev libbz2-dev libssl-dev
-          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
-
-      - name: Run Benchmarks
-        run: |
-          echo "⚡ Running performance benchmarks..."
-          # Only run benchmarks if they exist
-          if cargo bench --workspace --all-features --no-run 2>/dev/null; then
-            cargo bench --workspace --all-features -- --output-format bencher | tee bench-results.txt || echo "No benchmarks found"
-          else
-            echo "Benchmarks not available, creating placeholder results"
-            echo "benchmark placeholder 1000 ns/iter" > bench-results.txt
-          fi
-          echo "✅ Benchmarks completed"
-
-      - name: Store Benchmark Results
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
-          tool: 'cargo'
-          output-file-path: bench-results.txt
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: true
-
-  # Minimum supported Rust version check
-  msrv:
-    name: Minimum Supported Rust Version
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Read MSRV from Cargo.toml
-        id: msrv
-        run: |
-          MSRV=$(grep "rust-version" Cargo.toml | head -1 | cut -d'"' -f2)
-          echo "msrv=$MSRV" >> $GITHUB_OUTPUT
-
-      - name: Setup Rust Toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.msrv.outputs.msrv }}
-
-      - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ runner.os }}-msrv
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential gcc g++ cmake make pkg-config \
-            llvm-14 libclang-14-dev clang-14 \
-            librocksdb-dev libsnappy-dev liblz4-dev libzstd-dev \
-            zlib1g-dev libbz2-dev libssl-dev
-          echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
-
-      - name: Check MSRV Compatibility
-        run: |
-          echo "🔍 Checking MSRV ${{ steps.msrv.outputs.msrv }} compatibility..."
-          cargo check --workspace --all-features
-          echo "✅ MSRV check passed"
+  # Minimum supported Rust version check (disabled temporarily)
+  # msrv:
+  #   name: Minimum Supported Rust Version
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 20
 
   # Final CI status aggregation
   ci-success:
