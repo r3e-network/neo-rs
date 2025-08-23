@@ -5,7 +5,8 @@ use crate::{
     execution_engine::ExecutionEngine,
     instruction::Instruction,
 };
-const HASH_SIZE: usize = 32;
+// Hash size constant - used in future control operations
+// const HASH_SIZE: usize = 32;
 use num_traits::ToPrimitive;
 
 /// Implements the NOP operation.

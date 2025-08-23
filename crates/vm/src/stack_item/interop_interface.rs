@@ -38,11 +38,16 @@ impl InteropInterfaceItem {
     }
 
     /// Attempts to downcast the interface to the specified type.
+    /// Production implementation with proper type downcasting for C# compatibility.
     pub fn downcast<T: InteropInterface + 'static>(&self) -> VmResult<&T> {
-        // In Rust, we can't easily downcast a trait object without using a crate like `any` or similar.
-        Err(VmError::invalid_type_simple(
-            "Type conversion not supported for InteropInterface in Rust - use proper type casting",
-        ))
+        // Use Any trait for runtime type checking (matches C# reflection pattern)
+        let interface_any = self.interface.as_any();
+        
+        // Attempt to downcast to the requested type
+        interface_any.downcast_ref::<T>()
+            .ok_or_else(|| VmError::invalid_type_simple(
+                &format!("Cannot cast InteropInterface to type {}", std::any::type_name::<T>())
+            ))
     }
 
     /// Converts the interop interface to a boolean.

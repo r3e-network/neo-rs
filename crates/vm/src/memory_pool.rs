@@ -3,7 +3,7 @@
 //! This module provides object pooling to reduce allocation overhead
 //! for frequently created and destroyed objects in the VM.
 
-use crate::execution_context::ExecutionContext;
+// ExecutionContext import removed - not used in current implementation
 use crate::stack_item::StackItem;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -257,7 +257,7 @@ pub struct PoolPerformanceMetrics {
     pub overall_efficiency: f32,
 }
 
-/// Thread-local storage for memory pools
+// Thread-local storage for memory pools - using thread_local! macro
 thread_local! {
     static POOLS: VmMemoryPools = VmMemoryPools::new();
 }

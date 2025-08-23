@@ -6,7 +6,8 @@ use crate::{
     execution_engine::ExecutionEngine,
     instruction::Instruction,
 };
-const HASH_SIZE: usize = 32;
+// Hash size constant - used in future exception handling operations
+// const HASH_SIZE: usize = 32;
 
 /// Implements the TRY operation.
 pub fn try_op(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {

@@ -11,8 +11,11 @@ use tracing::{debug, error, info, warn};
 use neo_config::{NetworkType, SECONDS_PER_BLOCK};
 use neo_core::ShutdownCoordinator;
 use neo_ledger::Blockchain;
+use neo_network::{P2pNode, NetworkConfig, NetworkEvent};
+use neo_consensus::{ConsensusService, ConsensusConfig};
 // use neo_persistence::RocksDbStore;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> Result<()> {

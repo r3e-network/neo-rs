@@ -19,14 +19,14 @@ neo-core = { path = "../crates/core" }
 neo-cryptography = { path = "../crates/cryptography" }
 neo-io = { path = "../crates/io" }
 neo-vm = { path = "../crates/vm" }
-# neo-smart-contract = { path = "../crates/smart_contract" } # Temporarily disabled due to compilation issues
+# neo-smart-contract = { path = "../crates/smart_contract" } # Compilation error in role_management.rs
 neo-ledger = { path = "../crates/ledger" }
-# neo-network = { path = "../crates/network" } # Temporarily disabled due to compilation issues
+neo-network = { path = "../crates/network" }
 neo-persistence = { path = "../crates/persistence" }
 neo-wallets = { path = "../crates/wallets" }
 neo-config = { path = "../crates/config" }
-# neo-rpc-server = { path = "../crates/rpc_server" } # Temporarily disabled
-# neo-consensus = { path = "../crates/consensus" } # Temporarily disabled due to compilation issues
+neo-rpc-server = { path = "../crates/rpc_server" }
+neo-consensus = { path = "../crates/consensus" }
 
 # External dependencies
 tokio = { version = "1.28", features = ["full"] }

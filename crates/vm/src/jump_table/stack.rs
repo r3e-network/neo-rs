@@ -190,7 +190,7 @@ fn xdrop(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
 
     // Remove the item at the specified index
     let mut items = Vec::new();
-    for i in 0..n {
+    for _i in 0..n {
         items.push(context.pop()?);
     }
 

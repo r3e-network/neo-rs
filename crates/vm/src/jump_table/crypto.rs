@@ -2,13 +2,15 @@
 //!
 //! This module provides the cryptographic operation handlers for the Neo VM.
 
-use crate::error::VmError;
-use crate::error::VmResult;
-use crate::execution_engine::ExecutionEngine;
-use crate::instruction::Instruction;
+// Imports for crypto operations - currently unused as functions are placeholder
+// use crate::error::VmError;
+// use crate::error::VmResult;
+// use crate::execution_engine::ExecutionEngine;
+// use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
-use crate::stack_item::StackItem;
-const HASH_SIZE: usize = 32;
+// use crate::stack_item::StackItem;
+// Hash size constant - used in future crypto operations
+// const HASH_SIZE: usize = 32;
 
 /// Registers the cryptographic operation handlers.
 pub fn register_handlers(_jump_table: &mut JumpTable) {
@@ -28,6 +30,8 @@ pub fn register_handlers(_jump_table: &mut JumpTable) {
 /// 3. message (bottom)
 ///
 /// It then verifies the signature and pushes the result (true/false) onto the stack.
+/*
+// Verify function placeholder - will be implemented with interop services
 fn verify(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
@@ -51,11 +55,13 @@ fn verify(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
     Ok(())
 }
+*/
 
 /// Verifies a signature against a message using a public key.
 ///
 /// This function implements the exact signature verification logic used in the C# Neo implementation.
 /// It supports ECDSA signature verification using the secp256r1 curve.
+/*
 fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> VmResult<bool> {
     // Validate input lengths
     if signature.len() != 64 {
@@ -72,6 +78,7 @@ fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> VmRe
         Err(_) => Ok(false), // Any error in verification means the signature is invalid
     }
 }
+*/
 
 #[cfg(test)]
 #[allow(dead_code)]

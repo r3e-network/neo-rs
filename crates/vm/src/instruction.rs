@@ -5,7 +5,8 @@
 use crate::error::{VmError, VmResult};
 use crate::op_code::OpCode;
 use neo_io;
-const HASH_SIZE: usize = 32;
+// Hash size constant - used in future VM operations
+// const HASH_SIZE: usize = 32;
 
 /// Represents the size of an operand for an instruction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

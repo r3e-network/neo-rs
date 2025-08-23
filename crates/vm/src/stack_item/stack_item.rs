@@ -153,7 +153,7 @@ impl StackItem {
             StackItem::Array(a) | StackItem::Struct(a) => Ok(!a.is_empty()),
             StackItem::Map(m) => Ok(!m.is_empty()),
             StackItem::Pointer(_) => Ok(true),
-            StackItem::InteropInterface(i) => Ok(true),
+            StackItem::InteropInterface(_i) => Ok(true),
         }
     }
 
@@ -235,21 +235,21 @@ impl StackItem {
     }
 
     /// Gets the interop interface from the stack item.
+    /// Production implementation with proper type downcasting for C# compatibility.
     pub fn as_interface<T: InteropInterface + 'static>(&self) -> VmResult<&T> {
         match self {
             StackItem::InteropInterface(i) => {
-                // Attempt to downcast the Arc<dyn InteropInterface> to the specific type
-                let interface = Arc::as_ref(i);
-
-                // In Rust, we need proper type checking and downcasting to ensure type safety.
-                // This is a production implementation that provides proper error handling.
-
-                Err(VmError::invalid_type_simple(
-                    "Type conversion not supported for InteropInterface in Rust - use proper type casting",
-                ))
+                // Use Any trait for runtime type checking (matches C# reflection pattern)
+                let interface_any = i.as_any();
+                
+                // Attempt to downcast to the requested type
+                interface_any.downcast_ref::<T>()
+                    .ok_or_else(|| VmError::invalid_type_simple(
+                        &format!("Cannot cast InteropInterface to type {}", std::any::type_name::<T>())
+                    ))
             }
             _ => Err(VmError::invalid_type_simple(
-                "Cannot convert to InteropInterface",
+                "Stack item is not an InteropInterface",
             )),
         }
     }
@@ -528,8 +528,8 @@ impl Ord for StackItem {
                 std::cmp::Ordering::Equal
             }
             _ => {
-                let self_discriminant = std::mem::discriminant(self);
-                let other_discriminant = std::mem::discriminant(other);
+                let _self_discriminant = std::mem::discriminant(self);
+                let _other_discriminant = std::mem::discriminant(other);
                 // based on the variant order in the enum
                 match (self, other) {
                     (StackItem::Null, _) => std::cmp::Ordering::Less,

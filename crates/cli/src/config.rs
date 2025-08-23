@@ -24,6 +24,7 @@ pub struct StorageConfig {
 /// Network configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkConfig {
+    pub bind_address: String,
     pub bind_port: u16,
     pub public_port: u16,
     pub max_peers: usize,
@@ -88,6 +89,7 @@ impl Default for StorageConfig {
 impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
+            bind_address: "127.0.0.1".to_string(),
             bind_port: 10332,
             public_port: 10333,
             max_peers: 10,

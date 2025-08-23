@@ -593,6 +593,12 @@ impl NeoNode {
             .keys()
             .next()
             .copied()
-            .unwrap_or_else(|| "127.0.0.1:10333".parse().unwrap())
+            .unwrap_or_else(|| {
+                let default_addr = std::env::var("NEO_DEFAULT_PEER_ADDRESS")
+                    .unwrap_or_else(|_| "127.0.0.1:10333".to_string());
+                default_addr.parse().unwrap_or_else(|_| {
+                    "127.0.0.1:10333".parse().expect("Default peer address should always parse correctly")
+                })
+            })
     }
 }

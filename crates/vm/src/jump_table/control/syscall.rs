@@ -4,10 +4,11 @@ use super::{
     types::{InteropParameter, ParameterType, SyscallDescriptor},
     witness::validate_call_flags,
 };
-const ONE_MEGABYTE: usize = 1024 * 1024;
+// Size constants for future syscall operations
+// const ONE_MEGABYTE: usize = 1024 * 1024;
 const MAX_SCRIPT_SIZE: u64 = 1 << 10; // 1024
 const ADDRESS_SIZE: usize = 20;
-const SECONDS_PER_BLOCK: u64 = 15;
+// const SECONDS_PER_BLOCK: u64 = 15;
 use crate::{
     error::{VmError, VmResult},
     execution_engine::ExecutionEngine,

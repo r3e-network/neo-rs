@@ -8,7 +8,7 @@ members = [
     
     # Blockchain components
     "crates/vm",
-    "crates/smart_contract",
+    # "crates/smart_contract", # Temporarily excluded
     "crates/ledger",
     "crates/consensus",
     

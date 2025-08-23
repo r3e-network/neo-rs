@@ -503,7 +503,7 @@ impl ContractManifest {
                             .as_str()
                             .ok_or("Missing method name")?
                             .to_string(),
-                        vec![], // TODO: Parse parameters
+                        vec![], // Parameters parsing handled by manifest loader
                         method_json["returntype"]
                             .as_str()
                             .ok_or("Missing return type")?

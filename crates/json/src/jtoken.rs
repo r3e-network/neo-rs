@@ -390,7 +390,8 @@ mod tests {
             assert_eq!(token.get_property("name").unwrap().as_string(), "test");
             assert_eq!(token.get_property("value").unwrap().as_number(), 42.0);
         } else {
-            panic!("Expected object token");
+            // Test expectation: this should never happen in valid scenarios
+            assert!(false, "Expected object token but got different token type");
         }
     }
 

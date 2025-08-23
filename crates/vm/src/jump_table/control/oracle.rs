@@ -21,8 +21,7 @@ pub fn get_oracle_response_attribute(transaction: &Transaction) -> Option<Oracle
                     code: *code,
                     result: result.clone(),
                 })
-            } // Handle other attribute types when they are added
-            _ => None,
+            }
         }
     })
 }

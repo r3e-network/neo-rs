@@ -954,7 +954,7 @@ impl SyncManager {
         let mut downloaded = 0u64;
         let mut stream = response.bytes_stream();
 
-        while let Some(chunk) = stream.next().await {
+        while let Some(chunk) = futures::StreamExt::next(&mut stream).await {
             let chunk = chunk.map_err(|e| NetworkError::SyncFailed {
                 reason: format!("Download error: {}", e),
             })?;

@@ -609,7 +609,7 @@ impl MainService {
 
         // Create P2P configuration
         let p2p_config = P2PConfig {
-            listen_address: format!("127.0.0.1:{}", self.config.network.bind_port).parse()?,
+            listen_address: format!("{}:{}", self.config.network.bind_address, self.config.network.bind_port).parse()?,
             max_peers: self.config.network.max_peers,
             connection_timeout: std::time::Duration::from_secs(10),
             handshake_timeout: std::time::Duration::from_secs(30),
@@ -655,7 +655,7 @@ impl MainService {
             magic,
             protocol_version: ProtocolVersion::current(), // Use current Neo protocol version 3.6.0
             user_agent: "neo-rs/0.1.0".to_string(),
-            listen_address: format!("0.0.0.0:{}", self.config.network.bind_port).parse()?,
+            listen_address: format!("{}:{}", self.config.network.bind_address, self.config.network.bind_port).parse()?,
             p2p_config,
             rpc_config: None,
             max_peers: 100,

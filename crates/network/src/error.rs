@@ -45,6 +45,10 @@ pub enum NetworkError {
     #[error("Invalid connection: {0}")]
     InvalidConnection(String),
 
+    /// Handshake failed
+    #[error("Handshake failed: {0}")]
+    HandshakeError(String),
+
     /// Internal error
     #[error("Internal error: {0}")]
     InternalError(String),
@@ -523,6 +527,7 @@ impl NetworkError {
             NetworkError::CircuitBreakerOpen { .. } => "resilience",
             NetworkError::TemporaryFailure { .. } => "resilience",
             NetworkError::Queued { .. } => "resilience",
+            NetworkError::HandshakeError(_) => "handshake",
         }
     }
 }

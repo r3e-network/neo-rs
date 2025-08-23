@@ -175,7 +175,8 @@ mod integration_tests {
             assert!(obj.contains_key(&"null".to_string()));
             assert!(obj.contains_key(&"array".to_string()));
         } else {
-            panic!("Expected object");
+            // Test expectation: this should never happen in valid test scenarios
+            assert!(false, "Expected object but got different token type");
         }
     }
 

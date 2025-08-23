@@ -410,16 +410,16 @@ impl NativeContract for LedgerContract {
         })?;
 
         // Update block storage
-        storage.blocks.insert(block.hash(), block.clone());
-        storage.block_hashes.insert(block.index(), block.hash());
+        storage.blocks.insert(block.hash()?, block.clone());
+        storage.block_hashes.insert(block.index(), block.hash()?);
 
         // Update current state
         storage.current_height = block.index();
-        storage.current_hash = block.hash();
+        storage.current_hash = block.hash()?;
 
         // Update transaction storage
-        for tx in block.transactions() {
-            storage.transactions.insert(tx.hash(), tx.clone());
+        for tx in &block.transactions {
+            storage.transactions.insert(tx.hash()?, tx.clone());
         }
 
         Ok(())
