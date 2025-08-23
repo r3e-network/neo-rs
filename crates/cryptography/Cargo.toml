@@ -1,6 +1,6 @@
 [package]
 name = "neo-cryptography"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["R3E Network <jimmy@r3e.network>"]
 description = "Cryptographic primitives for the Neo blockchain"

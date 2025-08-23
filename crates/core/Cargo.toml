@@ -1,6 +1,6 @@
 [package]
 name = "neo-core"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "Core functionality for Neo blockchain"
 authors = ["R3E Network <jimmy@r3e.network>"]

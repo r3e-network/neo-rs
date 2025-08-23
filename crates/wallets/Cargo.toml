@@ -1,6 +1,6 @@
 [package]
 name = "neo-wallets"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["R3E Network <jimmy@r3e.network>"]
 repository = "https://github.com/r3e-network/neo-rs"
