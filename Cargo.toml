@@ -44,7 +44,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.75"
 authors = [
@@ -64,24 +64,24 @@ msrv = "1.70.0"
 
 [workspace.dependencies]
 # === Internal crates ===
-neo-core = { path = "crates/core", version = "0.3.0" }
-neo-cryptography = { path = "crates/cryptography", version = "0.3.0" }
-neo-io = { path = "crates/io", version = "0.3.0" }
-neo-vm = { path = "crates/vm", version = "0.3.0" }
-neo-smart-contract = { path = "crates/smart_contract", version = "0.3.0" }
-neo-ledger = { path = "crates/ledger", version = "0.3.0" }
-neo-network = { path = "crates/network", version = "0.3.0" }
-neo-persistence = { path = "crates/persistence", version = "0.3.0" }
-neo-wallets = { path = "crates/wallets", version = "0.3.0" }
-neo-consensus = { path = "crates/consensus", version = "0.3.0" }
-neo-json = { path = "crates/json", version = "0.3.0" }
-neo-mpt-trie = { path = "crates/mpt_trie", version = "0.3.0" }
-neo-config = { path = "crates/config", version = "0.3.0" }
-neo-rpc-server = { path = "crates/rpc_server", version = "0.3.0" }
-neo-rpc-client = { path = "crates/rpc_client", version = "0.3.0" }
-# neo-cli = { path = "crates/cli", version = "0.3.0" } # Temporarily disabled
-neo-bls12-381 = { path = "crates/bls12_381", version = "0.3.0" }
-neo-extensions = { path = "crates/extensions", version = "0.3.0" }
+neo-core = { path = "crates/core", version = "0.4.0" }
+neo-cryptography = { path = "crates/cryptography", version = "0.4.0" }
+neo-io = { path = "crates/io", version = "0.4.0" }
+neo-vm = { path = "crates/vm", version = "0.4.0" }
+neo-smart-contract = { path = "crates/smart_contract", version = "0.4.0" }
+neo-ledger = { path = "crates/ledger", version = "0.4.0" }
+neo-network = { path = "crates/network", version = "0.4.0" }
+neo-persistence = { path = "crates/persistence", version = "0.4.0" }
+neo-wallets = { path = "crates/wallets", version = "0.4.0" }
+neo-consensus = { path = "crates/consensus", version = "0.4.0" }
+neo-json = { path = "crates/json", version = "0.4.0" }
+neo-mpt-trie = { path = "crates/mpt_trie", version = "0.4.0" }
+neo-config = { path = "crates/config", version = "0.4.0" }
+neo-rpc-server = { path = "crates/rpc_server", version = "0.4.0" }
+neo-rpc-client = { path = "crates/rpc_client", version = "0.4.0" }
+# neo-cli = { path = "crates/cli", version = "0.4.0" } # Temporarily disabled
+neo-bls12-381 = { path = "crates/bls12_381", version = "0.4.0" }
+neo-extensions = { path = "crates/extensions", version = "0.4.0" }
 
 # === Core dependencies ===
 # Async runtime
