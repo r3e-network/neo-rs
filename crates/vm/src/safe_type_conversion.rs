@@ -207,9 +207,9 @@ impl SafePointerOps {
 
         // Production implementation: safe byte-level conversion using serialization
         use std::ptr;
-        
+
         let mut result = Vec::with_capacity(new_len);
-        
+
         // Convert each element through safe serialization when possible
         for chunk in slice.chunks(u_size / t_size) {
             if chunk.len() * t_size == u_size {
@@ -218,24 +218,19 @@ impl SafePointerOps {
                 for item in chunk {
                     // Safe conversion: serialize T to bytes
                     let item_bytes = unsafe {
-                        std::slice::from_raw_parts(
-                            item as *const T as *const u8,
-                            t_size
-                        )
+                        std::slice::from_raw_parts(item as *const T as *const u8, t_size)
                     };
                     bytes.extend_from_slice(item_bytes);
                 }
-                
+
                 // Reconstruct U from bytes safely
                 if bytes.len() == u_size {
-                    let u_value = unsafe {
-                        ptr::read(bytes.as_ptr() as *const U)
-                    };
+                    let u_value = unsafe { ptr::read(bytes.as_ptr() as *const U) };
                     result.push(u_value);
                 }
             }
         }
-        
+
         if result.len() == new_len {
             Some(result)
         } else {

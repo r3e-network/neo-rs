@@ -3,7 +3,12 @@
 //! This module implements background task management exactly matching C# Neo's TaskManager pattern.
 
 use crate::{NetworkError, NetworkMessage, NetworkResult as Result, NodeInfo};
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::{Duration, Instant}};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::{
     net::TcpListener,
     sync::{broadcast, RwLock},
@@ -23,26 +28,28 @@ pub struct TaskManager {
 }
 
 impl TaskManager {
+    /// Creates a new task manager
+    pub fn new() -> Self {
+        Self {
+            task_handles: Arc::new(RwLock::new(Vec::new())),
+            ping_times: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
     /// Record ping sent time for RTT calculation
     pub async fn record_ping_sent(&self, address: SocketAddr) {
-        self.ping_times.write().await.insert(address, Instant::now());
+        self.ping_times
+            .write()
+            .await
+            .insert(address, Instant::now());
     }
-    
+
     /// Calculate RTT from recorded ping time
     pub async fn calculate_rtt(&self, address: SocketAddr) -> u64 {
         if let Some(ping_time) = self.ping_times.write().await.remove(&address) {
             ping_time.elapsed().as_millis() as u64
         } else {
             0 // No ping time recorded
-        }
-    }
-}
-
-    /// Creates a new task manager
-    pub fn new() -> Self {
-        Self {
-            task_handles: Arc::new(RwLock::new(Vec::new())),
-            ping_times: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -102,7 +109,7 @@ impl TaskManager {
         running: Arc<RwLock<bool>>,
     ) {
         let ping_times = Arc::clone(&self.ping_times);
-        
+
         let handle = tokio::spawn(async move {
             info!(
                 "Ping manager task started with interval: {:?}",
@@ -199,7 +206,7 @@ impl TaskManager {
         node_info: NodeInfo,
     ) {
         let ping_times = Arc::clone(&self.ping_times);
-        
+
         let handle = tokio::spawn(async move {
             info!("Connection handler started for {}", address);
 
@@ -375,10 +382,7 @@ impl TaskManager {
                 };
 
                 // Emit ping completed event with real RTT
-                let _ = event_tx.send(P2PEvent::PingCompleted {
-                    address,
-                    rtt_ms,
-                });
+                let _ = event_tx.send(P2PEvent::PingCompleted { address, rtt_ms });
             }
 
             _ => {

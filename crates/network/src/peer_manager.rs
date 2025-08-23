@@ -1509,7 +1509,8 @@ impl PeerManager {
                     other, address, peer_verack.header.command
                 );
                 return Err(NetworkError::HandshakeError(format!(
-                    "Expected verack during handshake, received: {:?}", other
+                    "Expected verack during handshake, received: {:?}",
+                    other
                 )));
             }
         }

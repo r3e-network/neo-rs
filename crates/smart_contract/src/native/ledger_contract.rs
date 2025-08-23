@@ -404,24 +404,24 @@ impl NativeContract for LedgerContract {
         let block = engine.persisting_block().ok_or_else(|| {
             Error::NativeContractError("No current block available for persistence".to_string())
         })?;
-        
+
         let mut storage = self.storage.write().map_err(|e| {
             Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
         })?;
-        
+
         // Update block storage
         storage.blocks.insert(block.hash(), block.clone());
         storage.block_hashes.insert(block.index(), block.hash());
-        
+
         // Update current state
         storage.current_height = block.index();
         storage.current_hash = block.hash();
-        
+
         // Update transaction storage
         for tx in block.transactions() {
             storage.transactions.insert(tx.hash(), tx.clone());
         }
-        
+
         Ok(())
     }
 }

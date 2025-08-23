@@ -183,10 +183,7 @@ impl NetworkServer {
 
         // Create production P2P node with proper event handling
         let (event_tx, event_rx) = tokio::sync::mpsc::channel(1000);
-        let p2p_node = Arc::new(P2pNode::new(
-            network_config.clone(),
-            event_rx,
-        )?);
+        let p2p_node = Arc::new(P2pNode::new(network_config.clone(), event_rx)?);
 
         // Create sync manager with production P2P integration
         let sync_manager = Arc::new(SyncManager::new(blockchain.clone(), p2p_node.clone()));

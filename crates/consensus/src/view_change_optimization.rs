@@ -342,26 +342,29 @@ impl ViewChangeOptimizer {
 
         // Query the current validator set from blockchain state
         let current_validators = self.get_current_validator_set().await?;
-        
+
         // Update cache with real validator data
         cache.validators.clear();
         for (index, validator) in current_validators.into_iter().enumerate() {
             cache.validators.insert(index as u32, validator);
         }
-        
+
         cache.last_update = Instant::now();
         cache.cache_hits += 1; // Increment for metrics
 
-        debug!("Updated validator cache with {} validators", cache.validators.len());
+        debug!(
+            "Updated validator cache with {} validators",
+            cache.validators.len()
+        );
         Ok(())
     }
-    
+
     /// Get current validator set from blockchain
     async fn get_current_validator_set(&self) -> Result<Vec<ValidatorInfo>> {
         // Query validators from RoleManagement native contract
         let role_management = self.get_role_management_contract();
         let committee_members = role_management.get_designated_by_role(Role::NeoCommittee, 0)?;
-        
+
         // Convert ECPoints to ValidatorInfo
         let mut validators = Vec::new();
         for (index, public_key) in committee_members.into_iter().enumerate() {
@@ -373,7 +376,7 @@ impl ViewChangeOptimizer {
                 last_activity: Instant::now(),
             });
         }
-        
+
         Ok(validators)
     }
 
