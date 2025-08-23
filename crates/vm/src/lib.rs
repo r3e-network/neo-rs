@@ -129,6 +129,8 @@ pub mod interop_service;
 pub mod jump_table;
 /// Memory pool for optimizing allocations
 pub mod memory_pool;
+/// Gas calculation system matching C# exactly
+pub mod gas_calculator;
 /// Performance metrics collection
 pub mod metrics;
 /// VM opcode definitions and utilities

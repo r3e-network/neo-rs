@@ -5,6 +5,16 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Message flags for Neo protocol (matches C# MessageFlags exactly)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum MessageFlags {
+    /// No flag is set for the message
+    None = 0,
+    /// Indicates that the message is compressed
+    Compressed = 1,
+}
+
 /// Neo 3 message command (single byte enum, not 12-byte string)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]

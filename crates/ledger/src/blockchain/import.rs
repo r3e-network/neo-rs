@@ -487,7 +487,8 @@ impl Blockchain {
         // This would implement the exact Neo binary format parsing
         // For now, create a minimal block structure for testing
         
-        use neo_core::{BlockHeader, UInt256, UInt160, Witness};
+        use neo_core::{UInt256, UInt160, Witness};
+        use crate::BlockHeader;
         
         // Create a test block with proper structure
         let header = BlockHeader {

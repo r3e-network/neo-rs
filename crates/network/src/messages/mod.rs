@@ -8,7 +8,10 @@
 //! - protocol: Protocol message payloads (matches C# protocol messages)
 //! - network: Complete network message wrapper (matches C# NetworkMessage)
 
+pub mod capabilities;
 pub mod commands;
+pub mod message;
+pub mod version_payload;
 pub mod extensible_payload;
 pub mod header;
 pub mod inventory;
@@ -280,7 +283,10 @@ pub mod compat {
     }
 }
 
+pub use capabilities::NodeCapability;
 pub use commands::{varlen, MessageCommand, MessageFlags};
+pub use message::{Message, PAYLOAD_MAX_SIZE};
+pub use version_payload::{VersionPayload, MAX_CAPABILITIES};
 pub use extensible_payload::ExtensiblePayload;
 pub use header::{Neo3Message, MAX_MESSAGE_SIZE};
 pub use inventory::{InventoryItem, InventoryType};

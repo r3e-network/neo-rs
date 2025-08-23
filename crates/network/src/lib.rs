@@ -132,6 +132,7 @@
 #![warn(rustdoc::missing_crate_level_docs)]
 
 /// Composite message handler for protocol processing
+pub mod compression;
 pub mod composite_handler;
 /// DOS protection and rate limiting
 pub mod dos_protection;

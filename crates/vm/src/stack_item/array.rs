@@ -5,7 +5,7 @@
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::StackItem;
-// num_traits::ToPrimitive removed - not used in current implementation
+use num_traits::ToPrimitive;
 use std::sync::Arc;
 
 /// Represents an array of stack items in the VM.

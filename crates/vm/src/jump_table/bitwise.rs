@@ -229,16 +229,16 @@ mod tests {
         let script = Script::new_relaxed(vec![]);
         let _context = engine
             .load_script(script, -1, 0)
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
 
         // Test integer inversion
         engine
             .current_context_mut()
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
+            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
             .push(StackItem::from_int(42))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         invert(&mut engine, &Instruction::new(OpCode::INVERT, &[]))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
@@ -247,18 +247,18 @@ mod tests {
         assert_eq!(
             result
                 .as_int()
-                .map_err(|_| VmError::InvalidOperation("operation failed".into()))?,
+                .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?,
             BigInt::from(-43)
         );
 
         // Test boolean inversion
         engine
             .current_context_mut()
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
+            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
             .push(StackItem::from_bool(true))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         invert(&mut engine, &Instruction::new(OpCode::INVERT, &[]))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
@@ -278,21 +278,21 @@ mod tests {
         let script = Script::new_relaxed(vec![]);
         let _context = engine
             .load_script(script, -1, 0)
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
 
         // Test integer AND
         engine
             .current_context_mut()
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
+            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
             .push(StackItem::from_int(0b1010))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         engine
             .current_context_mut()
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
+            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
             .push(StackItem::from_int(0b1100))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         and(&mut engine, &Instruction::new(OpCode::AND, &[]))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
@@ -301,14 +301,14 @@ mod tests {
         assert_eq!(
             result
                 .as_int()
-                .map_err(|_| VmError::InvalidOperation("operation failed".into()))?,
+                .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?,
             BigInt::from(0b1000)
         );
 
         // Test boolean AND
         engine
             .current_context_mut()
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
+            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
             .push(StackItem::from_bool(true))
             .expect("Operation failed");
         engine
@@ -336,21 +336,21 @@ mod tests {
         let script = Script::new_relaxed(vec![]);
         let _context = engine
             .load_script(script, -1, 0)
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
 
         // Test integer OR
         engine
             .current_context_mut()
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
+            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
             .push(StackItem::from_int(0b1010))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         engine
             .current_context_mut()
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
+            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
             .push(StackItem::from_int(0b1100))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         or(&mut engine, &Instruction::new(OpCode::OR, &[]))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
@@ -359,14 +359,14 @@ mod tests {
         assert_eq!(
             result
                 .as_int()
-                .map_err(|_| VmError::InvalidOperation("operation failed".into()))?,
+                .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?,
             BigInt::from(0b1110)
         );
 
         // Test boolean OR
         engine
             .current_context_mut()
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
+            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
             .push(StackItem::from_bool(true))
             .expect("Operation failed");
         engine
@@ -394,21 +394,21 @@ mod tests {
         let script = Script::new_relaxed(vec![]);
         let _context = engine
             .load_script(script, -1, 0)
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
 
         // Test integer XOR
         engine
             .current_context_mut()
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
+            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
             .push(StackItem::from_int(0b1010))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         engine
             .current_context_mut()
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?
+            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
             .push(StackItem::from_int(0b1100))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         xor(&mut engine, &Instruction::new(OpCode::XOR, &[]))
-            .map_err(|_| VmError::InvalidOperation("operation failed".into()))?;
+            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?

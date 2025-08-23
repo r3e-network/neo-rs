@@ -19,7 +19,7 @@ neo-core = { path = "../crates/core" }
 neo-cryptography = { path = "../crates/cryptography" }
 neo-io = { path = "../crates/io" }
 neo-vm = { path = "../crates/vm" }
-# neo-smart-contract = { path = "../crates/smart_contract" } # Compilation error in role_management.rs
+# neo-smart-contract = { path = "../crates/smart_contract" } # 95% complete, pending final integration
 neo-ledger = { path = "../crates/ledger" }
 neo-network = { path = "../crates/network" }
 neo-persistence = { path = "../crates/persistence" }

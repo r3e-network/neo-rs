@@ -2,7 +2,7 @@
 //!
 //! This module provides protocol message types exactly matching C# Neo protocol messages.
 
-use super::{commands::MessageCommand, inventory::InventoryItem};
+use super::{commands::MessageCommand, inventory::InventoryItem, capabilities::NodeCapability};
 use crate::{NetworkError, NetworkResult as Result, NodeInfo};
 use neo_config::{ADDRESS_SIZE, HASH_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use neo_core::{Transaction, UInt256};
@@ -15,16 +15,22 @@ use std::net::SocketAddr;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 /// Represents an enumeration of values.
 pub enum ProtocolMessage {
-    /// Version message for handshake
+    /// Version message for handshake (matches C# VersionPayload exactly)
     Version {
+        /// The magic number of the network
+        network: u32,
+        /// The protocol version of the node  
         version: u32,
-        services: u64,
-        timestamp: u64,
-        port: u16,
+        /// The time when connected to the node (UTC)
+        timestamp: u32,
+        /// A random number used to identify the node
         nonce: u32,
+        /// String used to identify the client software
         user_agent: String,
-        start_height: u32,
-        relay: bool,
+        /// True if compression is allowed
+        allow_compression: bool,
+        /// The capabilities of the node
+        capabilities: Vec<NodeCapability>,
     },
 
     /// Version acknowledgment

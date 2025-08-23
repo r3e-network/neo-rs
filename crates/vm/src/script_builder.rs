@@ -365,7 +365,7 @@ mod tests {
         // Check length - "System.Runtime.Log" is 18 characters
         assert_eq!(script[1], 18);
 
-        let api_bytes = &script[2..ADDRESS_SIZE];
+        let api_bytes = &script[2..20]; // ADDRESS_SIZE = 20
         assert_eq!(api_bytes, b"System.Runtime.Log");
     }
 

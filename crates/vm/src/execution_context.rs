@@ -836,7 +836,7 @@ mod tests {
         // Create a try stack with one context
         use crate::exception_handling::{ExceptionHandlingContext, ExceptionHandlingState};
         let mut try_stack = Vec::new();
-        let try_context = ExceptionHandlingContext::new(0, 10, 10, ADDRESS_SIZE, 30);
+        let try_context = ExceptionHandlingContext::new(0, 10, 10, 20, 30); // ADDRESS_SIZE = 20
         try_stack.push(try_context);
 
         // Set the try stack
@@ -857,7 +857,7 @@ mod tests {
         );
         assert_eq!(
             context.try_stack().expect("Operation failed")[0].finally_pointer as usize,
-            ADDRESS_SIZE
+            20 // ADDRESS_SIZE constant
         );
 
         // Modify the try stack

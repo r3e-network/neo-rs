@@ -196,7 +196,7 @@ impl RoleManagement {
         engine.emit_event("Designation", event_data)?;
 
         // Log successful designation for monitoring
-        info!(
+        tracing::info!(
             "Role designation completed: role={:?}, public_keys_count={}, index={}",
             role,
             public_keys.len(),

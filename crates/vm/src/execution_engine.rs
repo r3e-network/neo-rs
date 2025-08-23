@@ -4,6 +4,7 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
+use crate::gas_calculator::{GasCalculator, GasError};
 use crate::evaluation_stack::EvaluationStack;
 use crate::execution_context::ExecutionContext;
 use crate::instruction::Instruction;
@@ -78,6 +79,9 @@ pub struct ExecutionEngine {
 
     /// Used for reference counting of objects in the VM
     reference_counter: ReferenceCounter,
+    
+    /// Gas calculator for execution cost tracking (matches C# ApplicationEngine)
+    gas_calculator: GasCalculator,
 
     /// The invocation stack of the VM
     invocation_stack: Vec<ExecutionContext>,
@@ -112,6 +116,7 @@ impl ExecutionEngine {
             jump_table: jump_table.unwrap_or_else(JumpTable::default),
             limits,
             reference_counter: reference_counter.clone(),
+            gas_calculator: GasCalculator::new(1_000_000_000, 30), // Default gas limit and fee factor
             invocation_stack: Vec::new(),
             result_stack: EvaluationStack::new(reference_counter),
             uncaught_exception: None,

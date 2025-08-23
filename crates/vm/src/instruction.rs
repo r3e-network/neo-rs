@@ -813,7 +813,7 @@ mod tests {
         assert_eq!(Instruction::get_operand_size(OpCode::PUSHINT128).size(), 16);
         assert_eq!(
             Instruction::get_operand_size(OpCode::PUSHINT256).size(),
-            HASH_SIZE
+            32 // HASH_SIZE constant
         );
         assert_eq!(Instruction::get_operand_size(OpCode::PUSHA).size(), 4);
 

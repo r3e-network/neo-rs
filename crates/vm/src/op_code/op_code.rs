@@ -4,7 +4,7 @@ use super::operand_size::OperandSize;
 use neo_config::HASH_SIZE;
 
 /// Represents the opcode of an instruction in the Neo Virtual Machine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum OpCode {
     // Constants
