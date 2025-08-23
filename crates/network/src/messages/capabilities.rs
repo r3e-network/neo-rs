@@ -1,5 +1,5 @@
 //! Node capabilities for Neo network protocol
-//! 
+//!
 //! Matches C# Neo.Network.P2P.Capabilities exactly
 
 use serde::{Deserialize, Serialize};
@@ -33,7 +33,7 @@ impl NodeCapability {
             data: port.to_le_bytes().to_vec(),
         }
     }
-    
+
     /// Create WebSocket server capability  
     pub fn ws_server(port: u16) -> Self {
         Self {
@@ -41,7 +41,7 @@ impl NodeCapability {
             data: port.to_le_bytes().to_vec(),
         }
     }
-    
+
     /// Create full node capability (matches C# FullNodeCapability)
     pub fn full_node(start_height: u32) -> Self {
         Self {
@@ -49,7 +49,7 @@ impl NodeCapability {
             data: start_height.to_le_bytes().to_vec(),
         }
     }
-    
+
     /// Get size in bytes (matches C# Size property)
     pub fn size(&self) -> usize {
         1 + self.data.len() // type + data

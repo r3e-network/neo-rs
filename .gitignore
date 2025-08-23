@@ -1,63 +1,57 @@
-# Build outputs
-target/
+# Build artifacts
+/target/
+**/target/
 Cargo.lock
 
-# Data directories
-data/
-testnet-data/
-node-data/
-
-# Development files
-dev/debug/*
-dev/logs/*
-dev/test-files/*
+# Data and logs
 *.log
+*.acc
+*.zip
+/data/
+**/data/
+/logs/
+**/logs/
+
+# Database files
+*.db
+*.db-*
+*.db-shm
+*.db-wal
+
+# Test artifacts
+/tmp/
+**/tmp/
 *.tmp
 
-# Configuration (use examples instead)
-neo-config.toml
-
-# IDE files
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# AI/ML tool files
-.hive-mind/
+# Claude and AI artifacts
 .claude-flow/
-.swarm/
+.hive-mind/
 
-# Build scripts and error logs
-build_errors.sh
-*_errors.sh
+# Compiled binaries
+neo-node
+neo-cli
+*.exe
 
-# Debug and test files
-debug_*.txt
-test_*.txt
-*_test.txt
-*_output.txt
-*_output?.txt
-neo_*.txt
-sync_test.txt
-testnet_test.txt
-version_*.txt
-test_*.sh
-final_*.sh
-debug_*.sh
-*.py
-!examples/**/*.py
-extended_debug.txt
-final_debug.txt
-quick_sync_test.sh
-run_and_save_logs.sh
-run_test.sh
-simple_test.sh
-test_fixes.rs
-test_getheaders.rs
-test_getheaders_format.rs
-test_message_format.rs
+# Development artifacts
+*.bak
+*.orig
+*.rej
+
+# Large test data
+chain.*
+blockchain_data/
+testnet_data/
+
+# Generated documentation
+/docs/build/

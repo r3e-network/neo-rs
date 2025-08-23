@@ -127,8 +127,11 @@ mod tests {
             JToken::Boolean(value) => assert!(value),
             _ => {
                 // Test expectation: this should never happen in valid scenarios
-                assert!(false, "Expected JToken::Boolean but got different token type");
-            },
+                assert!(
+                    false,
+                    "Expected JToken::Boolean but got different token type"
+                );
+            }
         }
 
         let jbool2 =

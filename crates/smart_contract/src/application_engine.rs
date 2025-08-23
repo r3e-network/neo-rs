@@ -999,22 +999,22 @@ impl ApplicationEngine {
         method: &str,
     ) -> Result<usize> {
         // Production implementation: Parse NEF tokens and method table
-        
+
         // 1. Check if method is in contract manifest (production implementation)
         // NEF file method table parsing would go here in full implementation
         // For now, use contract manifest method lookup
-        
+
         // 2. Fallback: scan for method name in NEF tokens (production pattern)
         let script_bytes = &nef.script;
         if let Some(offset) = self.find_method_in_script(script_bytes, method) {
             return Ok(offset as usize);
         }
-        
+
         // 3. Default fallback for compatibility (matches C# behavior)
         if method == "_initialize" || method == "_deploy" {
             return Ok(0); // Standard entry point
         }
-        
+
         Err(Error::InvalidOperation(format!(
             "Method '{}' not found in NEF method table - contract may not expose this method",
             method
@@ -1086,7 +1086,7 @@ impl ApplicationEngine {
     fn find_method_in_script(&self, script: &[u8], method: &str) -> Option<u32> {
         // Production implementation: scan for PUSH method name patterns
         let method_bytes = method.as_bytes();
-        
+
         // Look for PUSHDATA opcodes followed by method name
         for i in 0..script.len().saturating_sub(method_bytes.len() + 2) {
             // Check for PUSHDATA1 (0x4C) + length + method name
@@ -1102,7 +1102,7 @@ impl ApplicationEngine {
                 }
             }
         }
-        
+
         // If not found, return entry point for standard methods
         if method == "_initialize" || method == "_deploy" || method == "verify" {
             Some(0)

@@ -9,10 +9,10 @@ use tokio::time::Duration;
 use tracing::{debug, error, info, warn};
 
 use neo_config::{NetworkType, SECONDS_PER_BLOCK};
+use neo_consensus::{ConsensusConfig, ConsensusService};
 use neo_core::ShutdownCoordinator;
 use neo_ledger::Blockchain;
-use neo_network::{P2pNode, NetworkConfig, NetworkEvent};
-use neo_consensus::{ConsensusService, ConsensusConfig};
+use neo_network::{NetworkConfig, NetworkEvent, P2pNode};
 // use neo_persistence::RocksDbStore;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -205,9 +205,14 @@ async fn main() -> Result<()> {
 
                     for (index, block_data) in blocks_to_sync.into_iter().enumerate() {
                         // Process block data - in production this would deserialize properly
-                        if block_data.len() > 100 { // Minimum valid block size
-                            info!("📦 Processing block data {} ({} bytes)", index, block_data.len());
-                            
+                        if block_data.len() > 100 {
+                            // Minimum valid block size
+                            info!(
+                                "📦 Processing block data {} ({} bytes)",
+                                index,
+                                block_data.len()
+                            );
+
                             // Create a minimal block for testing persistence path using ledger Block
                             let test_block = neo_ledger::Block {
                                 header: neo_ledger::BlockHeader {
@@ -217,7 +222,8 @@ async fn main() -> Result<()> {
                                     timestamp: std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .unwrap_or_default()
-                                        .as_millis() as u64,
+                                        .as_millis()
+                                        as u64,
                                     index: index as u32,
                                     nonce: 0,
                                     primary_index: 0,
@@ -226,20 +232,28 @@ async fn main() -> Result<()> {
                                 },
                                 transactions: Vec::new(),
                             };
-                            
-                            // Real block persistence implementation  
+
+                            // Real block persistence implementation
                             match blockchain.persist_block(&test_block).await {
                                 Ok(_) => {
                                     debug!("✅ Block validated and persisted to blockchain");
                                     info!("📦 Block {} persisted successfully", test_block.index());
                                 }
                                 Err(e) => {
-                                    warn!("❌ Failed to persist block {}: {}", test_block.index(), e);
+                                    warn!(
+                                        "❌ Failed to persist block {}: {}",
+                                        test_block.index(),
+                                        e
+                                    );
                                     // Continue with next block - don't fail entire sync
                                 }
                             }
                         } else {
-                            warn!("❌ Invalid block data size for block {}: {} bytes", index, block_data.len());
+                            warn!(
+                                "❌ Invalid block data size for block {}: {} bytes",
+                                index,
+                                block_data.len()
+                            );
                         }
                     }
 

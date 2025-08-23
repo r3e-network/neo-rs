@@ -188,16 +188,19 @@ impl BlockchainImporter {
 
         // Read .acc file format (matches C# Neo GetBlocks exactly)
         // Format: [start_index: u32] + [count: u32] + [blocks...]
-        
+
         let start_index = reader
             .read_u32()
             .map_err(|e| Error::IoError(e.to_string()))?;
-        
+
         let block_count = reader
             .read_u32()
             .map_err(|e| Error::IoError(e.to_string()))?;
-            
-        info!("📦 .acc file contains {} blocks starting from height {}", block_count, start_index);
+
+        info!(
+            "📦 .acc file contains {} blocks starting from height {}",
+            block_count, start_index
+        );
         info!("✅ .acc file format validated");
 
         // Process blocks sequentially (matches C# Neo import order)
@@ -208,30 +211,39 @@ impl BlockchainImporter {
             if self.max_blocks > 0 && imported_count >= self.max_blocks {
                 break;
             }
-            
+
             // Read block size (matches C# r.ReadInt32())
             let block_size = reader
                 .read_u32()
-                .map_err(|e| Error::IoError(format!("Failed to read block size: {}", e)))? as usize;
-                
-            if block_size > 1_000_000 { // Reasonable limit
+                .map_err(|e| Error::IoError(format!("Failed to read block size: {}", e)))?
+                as usize;
+
+            if block_size > 1_000_000 {
+                // Reasonable limit
                 return Err(Error::IoError(format!(
-                    "Block at height {} has invalid size: {} bytes", height, block_size
+                    "Block at height {} has invalid size: {} bytes",
+                    height, block_size
                 )));
             }
-            
+
             // Read block data (matches C# r.ReadBytes(size))
             let mut block_data = vec![0u8; block_size];
             reader
                 .read_exact(&mut block_data)
                 .map_err(|e| Error::IoError(format!("Failed to read block data: {}", e)))?;
-                
+
             // Deserialize and import block (matches C# array.AsSerializable<Block>())
-            match self.deserialize_and_import_block(&block_data, height, blockchain).await {
+            match self
+                .deserialize_and_import_block(&block_data, height, blockchain)
+                .await
+            {
                 Ok(true) => {
                     imported_count += 1;
                     if imported_count % 1000 == 0 {
-                        info!("📦 Imported {} blocks (height: {})...", imported_count, height);
+                        info!(
+                            "📦 Imported {} blocks (height: {})...",
+                            imported_count, height
+                        );
                     }
                 }
                 Ok(false) => {
@@ -397,7 +409,7 @@ impl Blockchain {
 
         result
     }
-    
+
     /// Deserialize and import a single block (matches C# array.AsSerializable<Block>())
     async fn deserialize_and_import_block(
         &mut self,
@@ -410,7 +422,7 @@ impl Blockchain {
             debug!("Block {} already exists, skipping", height);
             return Ok(false);
         }
-        
+
         // Attempt to deserialize block using Neo binary format
         // This should match the C# Block.Deserialize() method
         let block = match self.deserialize_neo_block(block_data) {
@@ -420,13 +432,17 @@ impl Blockchain {
                 return Ok(false);
             }
         };
-        
+
         // Validate block structure
         if block.index() != height {
-            warn!("⚠️ Block index mismatch: expected {}, got {}", height, block.index());
+            warn!(
+                "⚠️ Block index mismatch: expected {}, got {}",
+                height,
+                block.index()
+            );
             return Ok(false);
         }
-        
+
         // Validate block if validation is enabled
         if self.validation_enabled {
             if !self.validate_imported_block(&block, blockchain).await? {
@@ -434,19 +450,19 @@ impl Blockchain {
                 return Ok(false);
             }
         }
-        
+
         // Import block into blockchain (matches C# blockchain persistence)
         match blockchain.persist_block(&block).await {
             Ok(_) => {
                 // Update statistics
                 self.import_stats.transactions_imported += block.transactions.len() as u64;
-                
+
                 debug!(
                     "✅ Imported block {} with {} transactions",
                     height,
                     block.transactions.len()
                 );
-                
+
                 Ok(true)
             }
             Err(e) => {
@@ -455,41 +471,42 @@ impl Blockchain {
             }
         }
     }
-    
+
     /// Deserialize Neo block from binary data (production implementation)
     fn deserialize_neo_block(&self, data: &[u8]) -> Result<Block> {
         // Try multiple deserialization approaches
-        
+
         // Attempt 1: Direct bincode deserialization
         if let Ok(block) = bincode::deserialize::<Block>(data) {
             return Ok(block);
         }
-        
+
         // Attempt 2: Neo binary format parsing
         if let Ok(block) = self.parse_neo_binary_format(data) {
             return Ok(block);
         }
-        
+
         // Attempt 3: JSON format (if data is JSON)
         if data.starts_with(b"{") {
             if let Ok(block) = serde_json::from_slice::<Block>(data) {
                 return Ok(block);
             }
         }
-        
+
         Err(Error::IoError(format!(
-            "Failed to deserialize block data ({} bytes)", data.len()
+            "Failed to deserialize block data ({} bytes)",
+            data.len()
         )))
     }
-    
+
     /// Parse Neo binary format (matches C# Neo binary serialization)
     fn parse_neo_binary_format(&self, data: &[u8]) -> Result<Block> {
         // This would implement the exact Neo binary format parsing
         // For now, create a minimal block structure for testing
-        
-        use neo_core::{UInt256, UInt160, Witness};
+
         use crate::BlockHeader;
-        
+        use neo_core::{UInt160, UInt256, Witness};
+
         // Create a test block with proper structure
         let header = BlockHeader {
             version: 0,
@@ -505,12 +522,12 @@ impl Blockchain {
             next_consensus: UInt160::zero(),
             witnesses: vec![],
         };
-        
+
         let block = Block {
             header,
             transactions: vec![], // Would parse transactions from data
         };
-        
+
         Ok(block)
     }
 

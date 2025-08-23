@@ -380,8 +380,8 @@ impl WalletManager {
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_url = std::env::var("NEO_RPC_URL")
-            .unwrap_or_else(|_| "http://localhost:20332".to_string());
+        let rpc_url =
+            std::env::var("NEO_RPC_URL").unwrap_or_else(|_| "http://localhost:20332".to_string());
         let rpc_client = RpcClient::new(rpc_url)
             .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 
@@ -420,8 +420,8 @@ impl WalletManager {
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_url = std::env::var("NEO_RPC_URL")
-            .unwrap_or_else(|_| "http://localhost:20332".to_string());
+        let rpc_url =
+            std::env::var("NEO_RPC_URL").unwrap_or_else(|_| "http://localhost:20332".to_string());
         let rpc_client = RpcClient::new(rpc_url)
             .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 
@@ -579,8 +579,8 @@ impl WalletManager {
         }
 
         // Create RPC client with configurable endpoint
-        let rpc_url = std::env::var("NEO_RPC_URL")
-            .unwrap_or_else(|_| "http://localhost:20332".to_string());
+        let rpc_url =
+            std::env::var("NEO_RPC_URL").unwrap_or_else(|_| "http://localhost:20332".to_string());
         let rpc_client = RpcClientBuilder::new()
             .endpoint(&rpc_url)
             .build()
@@ -679,8 +679,8 @@ impl WalletManager {
         }
 
         // 1. Create RPC client for blockchain queries (matches C# RpcClient usage)
-        let rpc_url = std::env::var("NEO_RPC_URL")
-            .unwrap_or_else(|_| "http://localhost:20332".to_string());
+        let rpc_url =
+            std::env::var("NEO_RPC_URL").unwrap_or_else(|_| "http://localhost:20332".to_string());
         let rpc_client = RpcClient::new(rpc_url)
             .map_err(|e| Box::new(WalletError(format!("Failed to create RPC client: {}", e))))?;
 

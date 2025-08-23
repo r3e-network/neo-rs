@@ -190,8 +190,11 @@ mod tests {
             JToken::String(value) => assert_eq!(value, "test"),
             _ => {
                 // Test expectation: this should never happen in valid scenarios
-                assert!(false, "Expected JToken::String but got different token type");
-            },
+                assert!(
+                    false,
+                    "Expected JToken::String but got different token type"
+                );
+            }
         }
 
         let jstr2 = JString::from_jtoken(JToken::String("hello".to_string()))

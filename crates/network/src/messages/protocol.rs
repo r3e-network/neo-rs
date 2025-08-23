@@ -2,7 +2,7 @@
 //!
 //! This module provides protocol message types exactly matching C# Neo protocol messages.
 
-use super::{commands::MessageCommand, inventory::InventoryItem, capabilities::NodeCapability};
+use super::{capabilities::NodeCapability, commands::MessageCommand, inventory::InventoryItem};
 use crate::{NetworkError, NetworkResult as Result, NodeInfo};
 use neo_config::{ADDRESS_SIZE, HASH_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use neo_core::{Transaction, UInt256};

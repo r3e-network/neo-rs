@@ -241,12 +241,14 @@ impl StackItem {
             StackItem::InteropInterface(i) => {
                 // Use Any trait for runtime type checking (matches C# reflection pattern)
                 let interface_any = i.as_any();
-                
+
                 // Attempt to downcast to the requested type
-                interface_any.downcast_ref::<T>()
-                    .ok_or_else(|| VmError::invalid_type_simple(
-                        &format!("Cannot cast InteropInterface to type {}", std::any::type_name::<T>())
+                interface_any.downcast_ref::<T>().ok_or_else(|| {
+                    VmError::invalid_type_simple(&format!(
+                        "Cannot cast InteropInterface to type {}",
+                        std::any::type_name::<T>()
                     ))
+                })
             }
             _ => Err(VmError::invalid_type_simple(
                 "Stack item is not an InteropInterface",

@@ -249,8 +249,11 @@ mod tests {
             JToken::Number(value) => assert_eq!(value, 42.0),
             _ => {
                 // Test expectation: this should never happen in valid scenarios
-                assert!(false, "Expected JToken::Number but got different token type");
-            },
+                assert!(
+                    false,
+                    "Expected JToken::Number but got different token type"
+                );
+            }
         }
 
         let jnum2 = JNumber::from_jtoken(JToken::Number(123.5)).expect("operation should succeed");

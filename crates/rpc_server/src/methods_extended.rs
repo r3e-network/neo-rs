@@ -1,5 +1,5 @@
 //! Extended RPC methods for 100% C# Neo compatibility
-//! 
+//!
 //! Implements remaining RPC methods to match C# Neo.Plugins.RpcServer exactly
 
 use super::RpcMethods;
@@ -12,19 +12,20 @@ use std::sync::Arc;
 
 impl RpcMethods {
     /// Get raw transaction (matches C# getrawtransaction)
-    pub async fn get_raw_transaction(&self, params: Value) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        let tx_hash = params.get(0)
+    pub async fn get_raw_transaction(
+        &self,
+        params: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let tx_hash = params
+            .get(0)
             .and_then(|v| v.as_str())
             .ok_or("Missing transaction hash parameter")?;
-            
-        let verbose = params.get(1)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-            
+
+        let verbose = params.get(1).and_then(|v| v.as_bool()).unwrap_or(false);
+
         // Parse transaction hash
-        let hash = UInt256::from_str(tx_hash)
-            .map_err(|_| "Invalid transaction hash format")?;
-            
+        let hash = UInt256::from_str(tx_hash).map_err(|_| "Invalid transaction hash format")?;
+
         // Look up transaction in storage
         if let Some(transaction) = self.storage.get_transaction(&hash).await? {
             if verbose {
@@ -52,21 +53,22 @@ impl RpcMethods {
             Err("Transaction not found".into())
         }
     }
-    
+
     /// Get raw mempool (matches C# getrawmempool)
-    pub async fn get_raw_mempool(&self, params: Value) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        let should_get_unverified = params.get(0)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-            
+    pub async fn get_raw_mempool(
+        &self,
+        params: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let should_get_unverified = params.get(0).and_then(|v| v.as_bool()).unwrap_or(false);
+
         // Get mempool transactions
         let mempool_txs = self.ledger.get_mempool_transactions().await?;
-        
+
         if should_get_unverified {
             // Return both verified and unverified (matches C# format)
             let mut verified = Vec::new();
             let mut unverified = Vec::new();
-            
+
             for tx in mempool_txs {
                 let tx_hash = tx.hash()?.to_string();
                 if tx.is_verified() {
@@ -75,7 +77,7 @@ impl RpcMethods {
                     unverified.push(tx_hash);
                 }
             }
-            
+
             Ok(json!({
                 "height": self.ledger.get_height().await,
                 "verified": verified,
@@ -88,25 +90,28 @@ impl RpcMethods {
                 .filter(|tx| tx.is_verified())
                 .map(|tx| tx.hash().unwrap().to_string())
                 .collect();
-                
+
             Ok(json!(verified))
         }
     }
-    
+
     /// Send raw transaction (matches C# sendrawtransaction)
-    pub async fn send_raw_transaction(&self, params: Value) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        let raw_tx = params.get(0)
+    pub async fn send_raw_transaction(
+        &self,
+        params: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let raw_tx = params
+            .get(0)
             .and_then(|v| v.as_str())
             .ok_or("Missing raw transaction parameter")?;
-            
+
         // Decode transaction from hex
-        let tx_bytes = hex::decode(raw_tx)
-            .map_err(|_| "Invalid hex format")?;
-            
+        let tx_bytes = hex::decode(raw_tx).map_err(|_| "Invalid hex format")?;
+
         // Deserialize transaction
-        let transaction = Transaction::from_bytes(&tx_bytes)
-            .map_err(|_| "Invalid transaction format")?;
-            
+        let transaction =
+            Transaction::from_bytes(&tx_bytes).map_err(|_| "Invalid transaction format")?;
+
         // Validate and add to mempool
         match self.ledger.add_transaction(transaction.clone()).await {
             Ok(_) => {
@@ -115,30 +120,32 @@ impl RpcMethods {
                     "hash": transaction.hash()?.to_string()
                 }))
             }
-            Err(e) => {
-                Err(format!("Transaction rejected: {}", e).into())
-            }
+            Err(e) => Err(format!("Transaction rejected: {}", e).into()),
         }
     }
-    
+
     /// Get storage value (matches C# getstorage)
-    pub async fn get_storage(&self, params: Value) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        let script_hash = params.get(0)
+    pub async fn get_storage(
+        &self,
+        params: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let script_hash = params
+            .get(0)
             .and_then(|v| v.as_str())
             .ok_or("Missing script hash parameter")?;
-            
-        let key = params.get(1)
+
+        let key = params
+            .get(1)
             .and_then(|v| v.as_str())
             .ok_or("Missing storage key parameter")?;
-            
+
         // Parse script hash
-        let contract_hash = UInt160::from_str(script_hash)
-            .map_err(|_| "Invalid script hash format")?;
-            
+        let contract_hash =
+            UInt160::from_str(script_hash).map_err(|_| "Invalid script hash format")?;
+
         // Decode storage key
-        let key_bytes = hex::decode(key)
-            .map_err(|_| "Invalid storage key format")?;
-            
+        let key_bytes = hex::decode(key).map_err(|_| "Invalid storage key format")?;
+
         // Get storage value
         if let Some(storage_item) = self.storage.get_storage(&contract_hash, &key_bytes).await? {
             Ok(json!(hex::encode(storage_item.value())))
@@ -146,25 +153,31 @@ impl RpcMethods {
             Ok(json!(null))
         }
     }
-    
+
     /// Invoke function (matches C# invokefunction)
-    pub async fn invoke_function(&self, params: Value) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        let script_hash = params.get(0)
+    pub async fn invoke_function(
+        &self,
+        params: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let script_hash = params
+            .get(0)
             .and_then(|v| v.as_str())
             .ok_or("Missing script hash parameter")?;
-            
-        let operation = params.get(1)
+
+        let operation = params
+            .get(1)
             .and_then(|v| v.as_str())
             .ok_or("Missing operation parameter")?;
-            
-        let args = params.get(2)
+
+        let args = params
+            .get(2)
             .and_then(|v| v.as_array())
             .unwrap_or(&Vec::new());
-            
+
         // Parse contract hash
-        let contract_hash = UInt160::from_str(script_hash)
-            .map_err(|_| "Invalid script hash format")?;
-            
+        let contract_hash =
+            UInt160::from_str(script_hash).map_err(|_| "Invalid script hash format")?;
+
         // Create ApplicationEngine for execution
         let mut engine = neo_smart_contract::ApplicationEngine::new(
             neo_vm::TriggerType::Application,
@@ -172,40 +185,43 @@ impl RpcMethods {
             None,
             Some(1_000_000_000), // Gas limit
         )?;
-        
+
         // Load contract and invoke method
-        match engine.call_contract(&contract_hash, operation, args.clone()).await {
-            Ok(result) => {
-                Ok(json!({
-                    "script": hex::encode(engine.get_script()),
-                    "state": engine.get_state().to_string(),
-                    "gasconsumed": engine.gas_consumed().to_string(),
-                    "exception": engine.get_exception().map(|e| e.to_string()),
-                    "stack": engine.get_result_stack()
-                }))
-            }
-            Err(e) => {
-                Ok(json!({
-                    "script": "",
-                    "state": "FAULT",
-                    "gasconsumed": "0",
-                    "exception": e.to_string(),
-                    "stack": []
-                }))
-            }
+        match engine
+            .call_contract(&contract_hash, operation, args.clone())
+            .await
+        {
+            Ok(result) => Ok(json!({
+                "script": hex::encode(engine.get_script()),
+                "state": engine.get_state().to_string(),
+                "gasconsumed": engine.gas_consumed().to_string(),
+                "exception": engine.get_exception().map(|e| e.to_string()),
+                "stack": engine.get_result_stack()
+            })),
+            Err(e) => Ok(json!({
+                "script": "",
+                "state": "FAULT",
+                "gasconsumed": "0",
+                "exception": e.to_string(),
+                "stack": []
+            })),
         }
     }
-    
+
     /// Get contract state (matches C# getcontractstate)
-    pub async fn get_contract_state(&self, params: Value) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        let script_hash = params.get(0)
+    pub async fn get_contract_state(
+        &self,
+        params: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let script_hash = params
+            .get(0)
             .and_then(|v| v.as_str())
             .ok_or("Missing script hash parameter")?;
-            
+
         // Parse contract hash
-        let contract_hash = UInt160::from_str(script_hash)
-            .map_err(|_| "Invalid script hash format")?;
-            
+        let contract_hash =
+            UInt160::from_str(script_hash).map_err(|_| "Invalid script hash format")?;
+
         // Get contract state from storage
         if let Some(contract_state) = self.storage.get_contract_state(&contract_hash).await? {
             Ok(json!({
@@ -224,9 +240,12 @@ impl RpcMethods {
             Ok(json!(null))
         }
     }
-    
+
     /// List plugins (matches C# listplugins)
-    pub async fn list_plugins(&self, _params: Value) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn list_plugins(
+        &self,
+        _params: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         // Return neo-rust as the only "plugin"
         Ok(json!([
             {
@@ -236,17 +255,20 @@ impl RpcMethods {
             }
         ]))
     }
-    
+
     /// Get transaction height (matches C# gettransactionheight)
-    pub async fn get_transaction_height(&self, params: Value) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        let tx_hash = params.get(0)
+    pub async fn get_transaction_height(
+        &self,
+        params: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let tx_hash = params
+            .get(0)
             .and_then(|v| v.as_str())
             .ok_or("Missing transaction hash parameter")?;
-            
+
         // Parse transaction hash
-        let hash = UInt256::from_str(tx_hash)
-            .map_err(|_| "Invalid transaction hash format")?;
-            
+        let hash = UInt256::from_str(tx_hash).map_err(|_| "Invalid transaction hash format")?;
+
         // Get transaction height from storage
         if let Some(height) = self.storage.get_transaction_height(&hash).await? {
             Ok(json!(height))
@@ -254,21 +276,26 @@ impl RpcMethods {
             Ok(json!(null))
         }
     }
-    
+
     /// Get next block validators (matches C# getnextblockvalidators)
-    pub async fn get_next_block_validators(&self, _params: Value) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_next_block_validators(
+        &self,
+        _params: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         // Get current committee/validators
         let validators = self.ledger.get_next_validators().await?;
-        
+
         let validator_info: Vec<Value> = validators
             .into_iter()
-            .map(|validator| json!({
-                "publickey": hex::encode(validator.encode_point(true)),
-                "votes": "0", // Would need to get actual vote count
-                "active": true
-            }))
+            .map(|validator| {
+                json!({
+                    "publickey": hex::encode(validator.encode_point(true)),
+                    "votes": "0", // Would need to get actual vote count
+                    "active": true
+                })
+            })
             .collect();
-            
+
         Ok(json!(validator_info))
     }
 }
@@ -276,33 +303,59 @@ impl RpcMethods {
 // Extension trait for additional storage methods needed by RPC
 #[async_trait::async_trait]
 pub trait ExtendedStorage {
-    async fn get_transaction(&self, hash: &UInt256) -> Result<Option<Transaction>, Box<dyn std::error::Error + Send + Sync>>;
-    async fn get_transaction_height(&self, hash: &UInt256) -> Result<Option<u32>, Box<dyn std::error::Error + Send + Sync>>;
-    async fn get_storage(&self, contract: &UInt160, key: &[u8]) -> Result<Option<StorageItem>, Box<dyn std::error::Error + Send + Sync>>;
-    async fn get_contract_state(&self, hash: &UInt160) -> Result<Option<ContractState>, Box<dyn std::error::Error + Send + Sync>>;
+    async fn get_transaction(
+        &self,
+        hash: &UInt256,
+    ) -> Result<Option<Transaction>, Box<dyn std::error::Error + Send + Sync>>;
+    async fn get_transaction_height(
+        &self,
+        hash: &UInt256,
+    ) -> Result<Option<u32>, Box<dyn std::error::Error + Send + Sync>>;
+    async fn get_storage(
+        &self,
+        contract: &UInt160,
+        key: &[u8],
+    ) -> Result<Option<StorageItem>, Box<dyn std::error::Error + Send + Sync>>;
+    async fn get_contract_state(
+        &self,
+        hash: &UInt160,
+    ) -> Result<Option<ContractState>, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 // Mock implementations for the storage extension
-use neo_smart_contract::{StorageItem, ContractState};
+use neo_smart_contract::{ContractState, StorageItem};
 
 #[async_trait::async_trait]
 impl ExtendedStorage for RocksDbStore {
-    async fn get_transaction(&self, _hash: &UInt256) -> Result<Option<Transaction>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn get_transaction(
+        &self,
+        _hash: &UInt256,
+    ) -> Result<Option<Transaction>, Box<dyn std::error::Error + Send + Sync>> {
         // Would implement actual transaction lookup in storage
         Ok(None)
     }
-    
-    async fn get_transaction_height(&self, _hash: &UInt256) -> Result<Option<u32>, Box<dyn std::error::Error + Send + Sync>> {
+
+    async fn get_transaction_height(
+        &self,
+        _hash: &UInt256,
+    ) -> Result<Option<u32>, Box<dyn std::error::Error + Send + Sync>> {
         // Would implement actual height lookup
         Ok(None)
     }
-    
-    async fn get_storage(&self, _contract: &UInt160, _key: &[u8]) -> Result<Option<StorageItem>, Box<dyn std::error::Error + Send + Sync>> {
+
+    async fn get_storage(
+        &self,
+        _contract: &UInt160,
+        _key: &[u8],
+    ) -> Result<Option<StorageItem>, Box<dyn std::error::Error + Send + Sync>> {
         // Would implement actual storage lookup
         Ok(None)
     }
-    
-    async fn get_contract_state(&self, _hash: &UInt160) -> Result<Option<ContractState>, Box<dyn std::error::Error + Send + Sync>> {
+
+    async fn get_contract_state(
+        &self,
+        _hash: &UInt160,
+    ) -> Result<Option<ContractState>, Box<dyn std::error::Error + Send + Sync>> {
         // Would implement actual contract state lookup
         Ok(None)
     }
@@ -311,24 +364,38 @@ impl ExtendedStorage for RocksDbStore {
 // Extension trait for additional ledger methods
 #[async_trait::async_trait]
 pub trait ExtendedLedger {
-    async fn get_mempool_transactions(&self) -> Result<Vec<Transaction>, Box<dyn std::error::Error + Send + Sync>>;
-    async fn add_transaction(&self, tx: Transaction) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
-    async fn get_next_validators(&self) -> Result<Vec<neo_cryptography::ECPoint>, Box<dyn std::error::Error + Send + Sync>>;
+    async fn get_mempool_transactions(
+        &self,
+    ) -> Result<Vec<Transaction>, Box<dyn std::error::Error + Send + Sync>>;
+    async fn add_transaction(
+        &self,
+        tx: Transaction,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    async fn get_next_validators(
+        &self,
+    ) -> Result<Vec<neo_cryptography::ECPoint>, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 #[async_trait::async_trait]
 impl ExtendedLedger for Blockchain {
-    async fn get_mempool_transactions(&self) -> Result<Vec<Transaction>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn get_mempool_transactions(
+        &self,
+    ) -> Result<Vec<Transaction>, Box<dyn std::error::Error + Send + Sync>> {
         // Would get actual mempool transactions
         Ok(Vec::new())
     }
-    
-    async fn add_transaction(&self, _tx: Transaction) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+
+    async fn add_transaction(
+        &self,
+        _tx: Transaction,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Would add transaction to mempool with validation
         Ok(())
     }
-    
-    async fn get_next_validators(&self) -> Result<Vec<neo_cryptography::ECPoint>, Box<dyn std::error::Error + Send + Sync>> {
+
+    async fn get_next_validators(
+        &self,
+    ) -> Result<Vec<neo_cryptography::ECPoint>, Box<dyn std::error::Error + Send + Sync>> {
         // Would get actual next block validators
         Ok(Vec::new())
     }

@@ -10,14 +10,14 @@
 
 pub mod capabilities;
 pub mod commands;
-pub mod message;
-pub mod version_payload;
 pub mod extensible_payload;
 pub mod header;
 pub mod inventory;
+pub mod message;
 pub mod network;
 pub mod protocol;
 pub mod validation;
+pub mod version_payload;
 
 // Compatibility message wrappers expected by some tests (C# parity)
 pub mod compat {
@@ -285,11 +285,11 @@ pub mod compat {
 
 pub use capabilities::NodeCapability;
 pub use commands::{varlen, MessageCommand, MessageFlags};
-pub use message::{Message, PAYLOAD_MAX_SIZE};
-pub use version_payload::{VersionPayload, MAX_CAPABILITIES};
 pub use extensible_payload::ExtensiblePayload;
 pub use header::{Neo3Message, MAX_MESSAGE_SIZE};
 pub use inventory::{InventoryItem, InventoryType};
+pub use message::{Message, PAYLOAD_MAX_SIZE};
 pub use network::NetworkMessage;
 pub use protocol::ProtocolMessage;
 pub use validation::MessageValidator;
+pub use version_payload::{VersionPayload, MAX_CAPABILITIES};
