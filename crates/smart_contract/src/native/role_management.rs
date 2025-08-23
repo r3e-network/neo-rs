@@ -8,7 +8,7 @@ use crate::native::{NativeContract, NativeMethod};
 use crate::{Error, Result};
 use neo_config::{HASH_SIZE, SECONDS_PER_BLOCK};
 use neo_core::UInt160;
-use neo_cryptography::ecc::ECPoint;
+use neo_cryptography::ECPoint;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

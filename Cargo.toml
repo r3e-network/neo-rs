@@ -8,7 +8,7 @@ members = [
     
     # Blockchain components
     "crates/vm",
-    # "crates/smart_contract", # Smart contracts 95% complete, final integration pending
+    "crates/smart_contract",
     "crates/ledger",
     "crates/consensus",
     

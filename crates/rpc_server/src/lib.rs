@@ -12,6 +12,7 @@ use tracing::{error, info, warn};
 use warp::Filter;
 
 pub mod methods;
+pub mod methods_extended;
 pub mod types;
 
 use methods::RpcMethods;
@@ -161,6 +162,30 @@ async fn handle_rpc_request(
         }
         "getnativecontracts" => {
             let result = methods.get_native_contracts().await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getrawtransaction" => {
+            let result = methods.get_raw_transaction(req.params).await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getrawmempool" => {
+            let result = methods.get_raw_mempool(req.params).await?;
+            RpcResponse::success(result, req.id)
+        }
+        "sendrawtransaction" => {
+            let result = methods.send_raw_transaction(req.params).await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getstorage" => {
+            let result = methods.get_storage(req.params).await?;
+            RpcResponse::success(result, req.id)
+        }
+        "invokefunction" => {
+            let result = methods.invoke_function(req.params).await?;
+            RpcResponse::success(result, req.id)
+        }
+        "getcontractstate" => {
+            let result = methods.get_contract_state(req.params).await?;
             RpcResponse::success(result, req.id)
         }
         _ => RpcResponse::error(-32601, "Method not found", req.id),
