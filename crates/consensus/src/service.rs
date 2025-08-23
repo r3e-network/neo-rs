@@ -91,11 +91,13 @@ impl LedgerAdapter {
         // Get the current blockchain snapshot and calculate actual GAS balance
         let blockchain = self.blockchain.read().await;
         let current_height = blockchain.current_height();
-        
+
         // Get account state from storage
-        let account_state = blockchain.get_account_state(&account).await
+        let account_state = blockchain
+            .get_account_state(&account)
+            .await
             .unwrap_or_default();
-        
+
         // Return actual GAS balance from account state
         Ok(account_state.gas_balance)
     }

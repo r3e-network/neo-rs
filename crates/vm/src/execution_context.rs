@@ -383,7 +383,7 @@ impl ExecutionContext {
                 finally_offset: None,
                 stack_depth: 0, // Would be set based on current evaluation stack depth
             });
-            
+
             // Set VM state to fault if needed
             if self.exception_handlers.len() > MAX_EXCEPTION_STACK_SIZE {
                 self.state = ExecutionState::Fault;
@@ -393,7 +393,7 @@ impl ExecutionContext {
             if !self.exception_handlers.is_empty() {
                 self.exception_handlers.pop();
             }
-            
+
             // Restore normal execution state if no more exceptions
             if self.exception_handlers.is_empty() && self.state == ExecutionState::Fault {
                 self.state = ExecutionState::None;

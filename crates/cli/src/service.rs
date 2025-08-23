@@ -681,10 +681,7 @@ impl MainService {
 
         // Create production P2P node with proper initialization
         let (event_tx, event_rx) = tokio::sync::mpsc::channel(1000);
-        let p2p_node = Arc::new(P2PNode::new(
-            network_config.clone(),
-            event_rx,
-        )?);
+        let p2p_node = Arc::new(P2PNode::new(network_config.clone(), event_rx)?);
 
         // Initialize SyncManager with production P2P node
         info!("🔄 Starting sync manager with production P2P integration");
