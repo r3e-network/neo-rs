@@ -4,8 +4,11 @@
 //! matching the C# Neo implementation plugins.
 
 pub mod application_logs;
+pub mod complete_plugin_system;
+pub mod console_commands;
 pub mod dbft_plugin;
 pub mod oracle_service;
+pub mod plugin_loader;
 pub mod rpc_server;
 pub mod sqlite_wallet;
 pub mod state_service;

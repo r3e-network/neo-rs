@@ -27,6 +27,8 @@ neo-wallets = { path = "../crates/wallets" }
 neo-config = { path = "../crates/config" }
 neo-rpc-server = { path = "../crates/rpc_server" }
 neo-consensus = { path = "../crates/consensus" }
+neo-plugins = { path = "../crates/plugins" }
+neo-extensions = { path = "../crates/extensions" }
 
 # External dependencies
 tokio = { version = "1.28", features = ["full"] }
