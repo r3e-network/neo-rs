@@ -423,7 +423,14 @@ impl ExecutionEngine {
     }
 
     /// Called before executing an instruction.
-    fn pre_execute_instruction(&mut self, _instruction: &Instruction) -> VmResult<()> {
+    fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
+        // Consume gas for instruction execution (matches C# ApplicationEngine exactly)
+        if let Err(gas_error) = self.gas_calculator.consume_gas(instruction.opcode()) {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Gas limit exceeded: {}", gas_error
+            )));
+        }
+
         // Record instruction execution in metrics
         if let Ok(metrics) = std::env::var("NEO_VM_METRICS") {
             if metrics == "1" {
@@ -578,25 +585,27 @@ impl ExecutionEngine {
         Ok(())
     }
 
-    /// Adds gas consumed (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual gas tracking
-    pub fn add_gas_consumed(&mut self, _gas: i64) -> VmResult<()> {
-        // Base implementation does nothing
+    /// Adds gas consumed (integrated with gas calculator)
+    /// ApplicationEngine overrides this with additional gas tracking
+    pub fn add_gas_consumed(&mut self, gas: i64) -> VmResult<()> {
+        if let Err(gas_error) = self.gas_calculator.add_gas(gas) {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Gas limit exceeded: {}", gas_error
+            )));
+        }
         Ok(())
     }
 
-    /// Gets gas consumed (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual gas tracking
+    /// Gets gas consumed (integrated with gas calculator)
+    /// ApplicationEngine overrides this with additional gas tracking
     pub fn gas_consumed(&self) -> i64 {
-        // Base implementation returns 0
-        0
+        self.gas_calculator.gas_consumed()
     }
 
-    /// Gets gas limit (stub implementation for base ExecutionEngine)
+    /// Gets gas limit (integrated with gas calculator)
     /// ApplicationEngine overrides this with actual gas limit
     pub fn gas_limit(&self) -> i64 {
-        // Base implementation returns unlimited
-        i64::MAX
+        self.gas_calculator.gas_limit()
     }
 
     /// Gets current script hash (stub implementation for base ExecutionEngine)

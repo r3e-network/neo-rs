@@ -182,14 +182,30 @@ impl ApplicationEngine {
         }
     }
 
-    /// Returns the gas consumed.
+    /// Returns the gas consumed (overrides ExecutionEngine implementation).
     pub fn gas_consumed(&self) -> i64 {
-        self.gas_consumed
+        // ApplicationEngine tracks gas in two places for compatibility:
+        // 1. Its own gas_consumed field (for ApplicationEngine-specific logic)
+        // 2. The underlying ExecutionEngine's gas calculator (for VM-level operations)
+        // Return the maximum to ensure consistency
+        std::cmp::max(self.gas_consumed, self.engine.gas_consumed())
     }
 
-    /// Returns the gas limit.
+    /// Returns the gas limit (overrides ExecutionEngine implementation).
     pub fn gas_limit(&self) -> i64 {
         self.gas_limit
+    }
+
+    /// Adds gas consumed (overrides ExecutionEngine implementation).
+    pub fn add_gas_consumed(&mut self, gas: i64) -> VmResult<()> {
+        // Update ApplicationEngine's gas tracking first
+        self.consume_gas(gas)?;
+        
+        // Also update the underlying ExecutionEngine's gas calculator
+        // Note: consume_gas already validates the limit, so we can safely add to engine
+        let _ = self.engine.add_gas_consumed(gas);
+        
+        Ok(())
     }
 
     /// Returns the trigger type.

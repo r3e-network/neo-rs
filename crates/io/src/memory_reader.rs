@@ -298,6 +298,15 @@ impl MemoryReader {
         Ok(result)
     }
 
+    /// Reads exactly the number of bytes to fill the provided buffer.
+    /// Matches standard library Read::read_exact behavior.
+    pub fn read_exact(&mut self, buf: &mut [u8]) -> IoResult<()> {
+        self.ensure_position(buf.len())?;
+        buf.copy_from_slice(&self.span[self.pos..self.pos + buf.len()]);
+        self.pos += buf.len();
+        Ok(())
+    }
+
     /// Reads a variable-length byte array.
     pub fn read_var_bytes(&mut self, max: usize) -> IoResult<Vec<u8>> {
         let length = self.read_var_int(max as u64)? as usize;

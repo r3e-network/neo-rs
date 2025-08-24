@@ -360,6 +360,10 @@ impl UInt160 {
         bs58::encode(data).into_string()
     }
 
+    // Duplicate method removed - using implementation at line 307
+
+    // Duplicate method removed - using implementation at line 183
+
     /// Parses a Neo address string to a UInt160.
     ///
     /// # Arguments

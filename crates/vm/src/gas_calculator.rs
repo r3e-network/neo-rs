@@ -187,6 +187,11 @@ impl GasCalculator {
         self.gas_consumed
     }
 
+    /// Get gas limit
+    pub fn gas_limit(&self) -> i64 {
+        self.gas_limit
+    }
+
     /// Get remaining gas
     pub fn gas_remaining(&self) -> i64 {
         self.gas_limit - self.gas_consumed
@@ -247,10 +252,10 @@ mod tests {
     #[test]
     fn test_opcode_gas_costs() {
         // Test that gas costs match C# exactly
-        assert_eq!(OPCODE_GAS_COSTS[&OpCode::PUSHINT8], 30);
-        assert_eq!(OPCODE_GAS_COSTS[&OpCode::ADD], 90);
-        assert_eq!(OPCODE_GAS_COSTS[&OpCode::CALL], 22000);
-        assert_eq!(OPCODE_GAS_COSTS[&OpCode::SYSCALL], 0); // Variable cost
+        assert_eq!(OPCODE_GAS_COSTS[&OpCode::PUSHINT8], 1);  // 1 << 0 = 1
+        assert_eq!(OPCODE_GAS_COSTS[&OpCode::ADD], 90);      // As defined
+        assert_eq!(OPCODE_GAS_COSTS[&OpCode::CALL], 512);    // 1 << 9 = 512
+        assert_eq!(OPCODE_GAS_COSTS[&OpCode::SYSCALL], 0);   // Variable cost
     }
 
     #[test]
@@ -259,13 +264,13 @@ mod tests {
 
         // Test basic gas consumption
         assert!(calculator.consume_gas(OpCode::PUSHINT8).is_ok());
-        assert_eq!(calculator.gas_consumed(), 30 * 30); // base_cost * exec_fee_factor
+        assert_eq!(calculator.gas_consumed(), 1 * 30); // base_cost(1) * exec_fee_factor(30) = 30
 
         // Test gas limit
         assert!(calculator.consume_gas(OpCode::CALL).is_ok()); // Should still fit
 
         // Test out of gas
         let mut small_calculator = GasCalculator::new(1000, 30);
-        assert!(small_calculator.consume_gas(OpCode::CALL).is_err()); // Should exceed limit
+        assert!(small_calculator.consume_gas(OpCode::CALL).is_err()); // 512 * 30 = 15360 > 1000, should exceed limit
     }
 }

@@ -242,8 +242,8 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_int()
@@ -262,12 +262,12 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_bool()
-                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
             false
         );
     }
@@ -296,8 +296,8 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_int()
@@ -320,12 +320,12 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_bool()
-                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
             false
         );
     }
@@ -354,8 +354,8 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_int()
@@ -378,12 +378,12 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_bool()
-                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
             true
         );
     }
@@ -412,8 +412,8 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(result.as_int().unwrap(), BigInt::from(0b0110));
 
         // Test boolean XOR
@@ -431,12 +431,12 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_bool()
-                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
             true
         );
     }
@@ -462,12 +462,12 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_bool()
-                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
             true
         );
 
@@ -486,12 +486,12 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_bool()
-                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
             false
         );
     }
@@ -517,12 +517,12 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_bool()
-                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
             false
         );
 
@@ -541,12 +541,12 @@ mod tests {
         let result = engine
             .current_context_mut()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
-            .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Collection is empty"))?;
+            .evaluation_stack_mut()
+            .pop()?;
         assert_eq!(
             result
                 .as_bool()
-                .ok_or_else(|| VmError::invalid_type_msg("Expected boolean"))?,
+                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
             true
         );
     }

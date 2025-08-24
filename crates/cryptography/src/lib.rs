@@ -7,6 +7,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod base58;
+pub mod ecrecover;
 pub mod bloom_filter;
 pub mod crypto;
 pub mod ecc;
@@ -23,6 +24,7 @@ pub mod ripemd160;
 pub use ecc::{ECCurve, ECFieldElement, ECPoint};
 pub use ecdsa::ECDsa;
 pub use hash::{hash160, hash256, ripemd160, sha256, sha512};
+pub use ecrecover::ECRecover;
 pub use hash_algorithm::HashAlgorithm;
 pub use hasher::Hasher;
 pub use merkle_tree::MerkleTree;

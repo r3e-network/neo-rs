@@ -21,6 +21,7 @@ pub use storage::{StorageItem, StorageKey};
 // Note: Types are accessed through proper crate boundaries to maintain clean architecture
 
 pub mod application_engine;
+pub mod complete_application_engine;
 pub mod contract_state;
 pub mod deployment;
 pub mod events;

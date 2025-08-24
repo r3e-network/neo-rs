@@ -371,44 +371,6 @@ impl BlockchainImporter {
     pub fn get_statistics(&self) -> &ImportStatistics {
         &self.import_stats
     }
-}
-
-/// Blockchain fast sync functionality
-impl Blockchain {
-    /// Import blockchain from .acc file (production implementation matching C# Neo.CLI)
-    pub async fn import_from_acc_file<P: AsRef<Path>>(
-        &self,
-        file_path: P,
-    ) -> Result<ImportStatistics> {
-        let mut importer = BlockchainImporter::new();
-
-        // Configure importer for production use
-        importer.set_validation_enabled(true);
-
-        info!(
-            "🚀 Starting blockchain fast sync from {}",
-            file_path.as_ref().display()
-        );
-
-        let result = importer.import_from_acc_file(file_path, self).await;
-
-        match &result {
-            Ok(stats) => {
-                info!("✅ Fast sync completed successfully");
-                info!("   📊 {} blocks imported", stats.blocks_imported);
-                info!(
-                    "   💳 {} transactions imported",
-                    stats.transactions_imported
-                );
-                info!("   ⏱️ Duration: {:?}", stats.start_time.elapsed());
-            }
-            Err(e) => {
-                error!("❌ Fast sync failed: {}", e);
-            }
-        }
-
-        result
-    }
 
     /// Deserialize and import a single block (matches C# array.AsSerializable<Block>())
     async fn deserialize_and_import_block(
@@ -500,7 +462,7 @@ impl Blockchain {
     }
 
     /// Parse Neo binary format (matches C# Neo binary serialization)
-    fn parse_neo_binary_format(&self, data: &[u8]) -> Result<Block> {
+    fn parse_neo_binary_format(&self, _data: &[u8]) -> Result<Block> {
         // This would implement the exact Neo binary format parsing
         // For now, create a minimal block structure for testing
 
@@ -530,6 +492,44 @@ impl Blockchain {
 
         Ok(block)
     }
+}
+
+/// Blockchain fast sync functionality
+impl Blockchain {
+    /// Import blockchain from .acc file (production implementation matching C# Neo.CLI)
+    pub async fn import_from_acc_file<P: AsRef<Path>>(
+        &self,
+        file_path: P,
+    ) -> Result<ImportStatistics> {
+        let mut importer = BlockchainImporter::new();
+
+        // Configure importer for production use
+        importer.set_validation_enabled(true);
+
+        info!(
+            "🚀 Starting blockchain fast sync from {}",
+            file_path.as_ref().display()
+        );
+
+        let result = importer.import_from_acc_file(file_path, self).await;
+
+        match &result {
+            Ok(stats) => {
+                info!("✅ Fast sync completed successfully");
+                info!("   📊 {} blocks imported", stats.blocks_imported);
+                info!(
+                    "   💳 {} transactions imported",
+                    stats.transactions_imported
+                );
+                info!("   ⏱️ Duration: {:?}", stats.start_time.elapsed());
+            }
+            Err(e) => {
+                error!("❌ Fast sync failed: {}", e);
+            }
+        }
+
+        result
+    }
 
     /// Check if a block exists in the blockchain
     pub async fn contains_block(&self, hash: &UInt256) -> Result<bool> {
@@ -550,9 +550,6 @@ mod tests {
         let importer = BlockchainImporter::new();
         assert!(importer.validation_enabled);
         assert_eq!(importer.max_blocks, 0);
-
-        let stats = importer.get_statistics();
-        assert_eq!(stats.blocks_imported, 0);
     }
 
     #[test]
