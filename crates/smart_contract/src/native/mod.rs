@@ -5,6 +5,7 @@
 
 pub mod contract_management;
 pub mod crypto_lib;
+pub mod fungible_token;
 pub mod gas_token;
 pub mod governance_types;
 pub mod ledger_contract;
@@ -17,6 +18,7 @@ pub mod std_lib;
 
 pub use contract_management::ContractManagement;
 pub use crypto_lib::CryptoLib;
+pub use fungible_token::{DefaultTokenAccountState, FungibleToken, TokenAccountState};
 pub use gas_token::GasToken;
 pub use ledger_contract::LedgerContract;
 pub use native_contract::{NativeContract, NativeMethod};

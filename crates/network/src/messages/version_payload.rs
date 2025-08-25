@@ -55,7 +55,8 @@ impl VersionPayload {
         if self.capabilities.len() >= MAX_CAPABILITIES {
             return Err(NetworkError::InvalidMessage {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
-                message: format!("Too many capabilities: {}", self.capabilities.len()),
+                message_type: "version".to_string(),
+                reason: format!("Too many capabilities: {}", self.capabilities.len()),
             });
         }
 
@@ -76,7 +77,7 @@ impl VersionPayload {
 
 impl Serializable for VersionPayload {
     /// Deserialize VersionPayload (matches C# ISerializable.Deserialize exactly)
-    fn deserialize(reader: &mut MemoryReader) -> std::io::Result<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
         let network = reader.read_u32()?;
         let version = reader.read_u32()?;
         let timestamp = reader.read_u32()?;
@@ -94,7 +95,7 @@ impl Serializable for VersionPayload {
 
         for _ in 0..capabilities_count {
             // Each capability is: type (1 byte) + data length + data
-            let cap_type = reader.read_u8()?;
+            let cap_type = reader.read_byte()?;
             let data_len = reader.read_var_int(1024)? as usize;
             let data = reader.read_bytes(data_len)?;
 
@@ -123,7 +124,7 @@ impl Serializable for VersionPayload {
     }
 
     /// Serialize VersionPayload (matches C# ISerializable.Serialize exactly)
-    fn serialize(&self, writer: &mut BinaryWriter) -> std::io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
         writer.write_u32(self.network)?;
         writer.write_u32(self.version)?;
         writer.write_u32(self.timestamp)?;
@@ -151,7 +152,7 @@ impl Serializable for VersionPayload {
         4 + // timestamp
         4 + // nonce
         self.get_var_string_size(&self.user_agent) + // user_agent
-        self.get_var_size(self.capabilities.len()) + // capabilities count
+        neo_io::helper::get_var_size(self.capabilities.len() as u64) + // capabilities count
         self.capabilities.iter().map(|c| c.size()).sum::<usize>() // capabilities data
     }
 }

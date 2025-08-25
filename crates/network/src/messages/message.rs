@@ -3,12 +3,12 @@
 //! This module provides the exact Neo Message structure and serialization
 //! as implemented in C# Neo.Network.P2P.Message.cs
 
-use super::{
-    commands::{MessageCommand, MessageFlags},
-    compression::{compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD},
+use super::commands::{MessageCommand, MessageFlags};
+use crate::compression::{
+    compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD,
 };
 use crate::{NetworkError, NetworkResult as Result};
-use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
 use serde::{Deserialize, Serialize};
 
 /// Maximum payload size (matches C# PayloadMaxSize exactly)
@@ -25,10 +25,6 @@ pub struct Message {
 
     /// The raw payload data (matches C# _payloadCompressed)
     pub payload_raw: Vec<u8>,
-
-    /// The deserialized payload (matches C# Payload property)
-    #[serde(skip)]
-    pub payload: Option<Box<dyn Serializable + Send + Sync>>,
 }
 
 impl Message {
@@ -39,12 +35,15 @@ impl Message {
         enable_compression: bool,
     ) -> Result<Self> {
         let payload_bytes = if let Some(payload) = payload {
+            let mut writer = BinaryWriter::new();
             payload
-                .to_array()
+                .serialize(&mut writer)
                 .map_err(|e| NetworkError::InvalidMessage {
                     peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
-                    message: format!("Failed to serialize payload: {}", e),
-                })?
+                    message_type: "payload".to_string(),
+                    reason: format!("Failed to serialize payload: {}", e),
+                })?;
+            writer.to_bytes()
         } else {
             Vec::new()
         };
@@ -53,7 +52,6 @@ impl Message {
             flags: MessageFlags::None,
             command,
             payload_raw: payload_bytes.clone(),
-            payload: None,
         };
 
         // Apply compression if enabled and beneficial (matches C# compression logic)
@@ -113,36 +111,34 @@ impl Message {
     }
 
     /// Write variable-length integer (matches C# WriteVarInt)
-    fn write_var_int(&self, writer: &mut BinaryWriter, value: u64) -> std::io::Result<()> {
+    fn write_var_int(&self, writer: &mut BinaryWriter, value: u64) -> neo_io::IoResult<()> {
         if value < 0xFD {
-            writer.write_u8(value as u8)
+            writer.write_u8(value as u8)?;
         } else if value <= 0xFFFF {
             writer.write_u8(0xFD)?;
-            writer.write_u16(value as u16)
+            writer.write_u16(value as u16)?;
         } else if value <= 0xFFFFFFFF {
             writer.write_u8(0xFE)?;
-            writer.write_u32(value as u32)
+            writer.write_u32(value as u32)?;
         } else {
             writer.write_u8(0xFF)?;
-            writer.write_u64(value)
+            writer.write_u64(value)?;
         }
+        Ok(())
     }
 
     /// Read variable-length integer (matches C# ReadVarInt)
-    fn read_var_int(reader: &mut MemoryReader, max: u64) -> std::io::Result<u64> {
-        let fb = reader.read_u8()?;
+    fn read_var_int(reader: &mut MemoryReader, max: u64) -> neo_io::IoResult<u64> {
+        let fb = reader.read_byte()?;
         let value = match fb {
-            0xFD => reader.read_u16()? as u64,
-            0xFE => reader.read_u32()? as u64,
-            0xFF => reader.read_u64()?,
+            0xFD => reader.read_uint16()? as u64,
+            0xFE => reader.read_uint32()? as u64,
+            0xFF => reader.read_uint64()?,
             _ => fb as u64,
         };
 
         if value > max {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("VarInt value {} exceeds maximum {}", value, max),
-            ));
+            return Err(neo_io::IoError::end_of_stream(0, "message"));
         }
 
         Ok(value)
@@ -151,19 +147,20 @@ impl Message {
 
 impl Serializable for Message {
     /// Deserialize message (matches C# ISerializable.Deserialize exactly)
-    fn deserialize(reader: &mut MemoryReader) -> std::io::Result<Self> {
-        let flags = MessageFlags::from_byte(reader.read_u8()?);
-        let command = MessageCommand::from_byte(reader.read_u8()?);
+    fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
+        let flags = MessageFlags::from_byte(reader.read_byte()?)
+            .map_err(|_| neo_io::IoError::end_of_stream(0, "message"))?;
+        let command = MessageCommand::from_byte(reader.read_byte()? as u8)
+            .map_err(|_| neo_io::IoError::end_of_stream(0, "message"))?;
 
         // Read payload using VarBytes (matches C# ReadVarMemory)
-        let payload_len = Self::read_var_int_static(reader, PAYLOAD_MAX_SIZE as u64)? as usize;
+        let payload_len = Self::read_var_int(reader, PAYLOAD_MAX_SIZE as u64)? as usize;
         let payload_raw = reader.read_bytes(payload_len)?;
 
         let mut message = Self {
             flags,
             command,
             payload_raw,
-            payload: None,
         };
 
         // Decompress if needed
@@ -175,7 +172,7 @@ impl Serializable for Message {
     }
 
     /// Serialize message (matches C# ISerializable.Serialize exactly)
-    fn serialize(&self, writer: &mut BinaryWriter) -> std::io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
         writer.write_u8(self.flags as u8)?;
         writer.write_u8(self.command as u8)?;
 
@@ -189,70 +186,5 @@ impl Serializable for Message {
     /// Get serialized size
     fn size(&self) -> usize {
         self.size()
-    }
-}
-
-impl MessageFlags {
-    /// Convert from byte value (helper for deserialization)
-    pub fn from_byte(byte: u8) -> Self {
-        match byte {
-            0 => MessageFlags::None,
-            1 => MessageFlags::Compressed,
-            _ => MessageFlags::None, // Default to None for invalid values
-        }
-    }
-}
-
-impl MessageCommand {
-    /// Convert from byte value (helper for deserialization)
-    pub fn from_byte(byte: u8) -> Self {
-        match byte {
-            0x00 => MessageCommand::Version,
-            0x01 => MessageCommand::Verack,
-            0x10 => MessageCommand::GetAddr,
-            0x11 => MessageCommand::Addr,
-            0x18 => MessageCommand::Ping,
-            0x19 => MessageCommand::Pong,
-            0x20 => MessageCommand::GetHeaders,
-            0x21 => MessageCommand::Headers,
-            0x24 => MessageCommand::GetBlocks,
-            0x25 => MessageCommand::Mempool,
-            0x27 => MessageCommand::Inv,
-            0x28 => MessageCommand::GetData,
-            0x29 => MessageCommand::GetBlockByIndex,
-            0x2a => MessageCommand::NotFound,
-            0x2b => MessageCommand::Transaction,
-            0x2c => MessageCommand::Block,
-            0x2e => MessageCommand::Extensible,
-            0x2f => MessageCommand::Reject,
-            0x30 => MessageCommand::FilterLoad,
-            0x31 => MessageCommand::FilterAdd,
-            0x32 => MessageCommand::FilterClear,
-            0x38 => MessageCommand::MerkleBlock,
-            0x40 => MessageCommand::Alert,
-            _ => MessageCommand::Version, // Default for unknown commands
-        }
-    }
-}
-
-// Static helper for reading VarInt without instance
-impl Message {
-    fn read_var_int_static(reader: &mut MemoryReader, max: u64) -> std::io::Result<u64> {
-        let fb = reader.read_u8()?;
-        let value = match fb {
-            0xFD => reader.read_u16()? as u64,
-            0xFE => reader.read_u32()? as u64,
-            0xFF => reader.read_u64()?,
-            _ => fb as u64,
-        };
-
-        if value > max {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("VarInt value {} exceeds maximum {}", value, max),
-            ));
-        }
-
-        Ok(value)
     }
 }

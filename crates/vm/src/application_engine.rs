@@ -200,11 +200,11 @@ impl ApplicationEngine {
     pub fn add_gas_consumed(&mut self, gas: i64) -> VmResult<()> {
         // Update ApplicationEngine's gas tracking first
         self.consume_gas(gas)?;
-        
+
         // Also update the underlying ExecutionEngine's gas calculator
         // Note: consume_gas already validates the limit, so we can safely add to engine
         let _ = self.engine.add_gas_consumed(gas);
-        
+
         Ok(())
     }
 

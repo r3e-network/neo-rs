@@ -19,7 +19,7 @@ pub use binary_reader::BinaryReader;
 pub use binary_writer::BinaryWriter;
 pub use error::{ErrorSeverity, IoError, IoResult, Result};
 pub use memory_reader::MemoryReader;
-pub use serializable::{helper, Serializable};
+pub use serializable::{helper, Serializable, SerializableExt};
 
 /// Legacy error type for backward compatibility
 ///

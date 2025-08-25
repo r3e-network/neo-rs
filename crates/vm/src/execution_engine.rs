@@ -427,7 +427,8 @@ impl ExecutionEngine {
         // Consume gas for instruction execution (matches C# ApplicationEngine exactly)
         if let Err(gas_error) = self.gas_calculator.consume_gas(instruction.opcode()) {
             return Err(VmError::invalid_operation_msg(format!(
-                "Gas limit exceeded: {}", gas_error
+                "Gas limit exceeded: {}",
+                gas_error
             )));
         }
 
@@ -590,7 +591,8 @@ impl ExecutionEngine {
     pub fn add_gas_consumed(&mut self, gas: i64) -> VmResult<()> {
         if let Err(gas_error) = self.gas_calculator.add_gas(gas) {
             return Err(VmError::invalid_operation_msg(format!(
-                "Gas limit exceeded: {}", gas_error
+                "Gas limit exceeded: {}",
+                gas_error
             )));
         }
         Ok(())

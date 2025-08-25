@@ -47,7 +47,8 @@ pub fn decompress_lz4(data: &[u8], max_size: usize) -> Result<Vec<u8>> {
                 if decompressed.len() > max_size {
                     return Err(NetworkError::InvalidMessage {
                         peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
-                        message: format!(
+                        message_type: "compressed_data".to_string(),
+                        reason: format!(
                             "Decompressed size {} exceeds limit {}",
                             decompressed.len(),
                             max_size
@@ -58,7 +59,8 @@ pub fn decompress_lz4(data: &[u8], max_size: usize) -> Result<Vec<u8>> {
             }
             Err(e) => Err(NetworkError::InvalidMessage {
                 peer: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
-                message: format!("LZ4 decompression failed: {}", e),
+                message_type: "compressed_data".to_string(),
+                reason: format!("LZ4 decompression failed: {}", e),
             }),
         }
     }

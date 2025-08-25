@@ -17,20 +17,22 @@ use std::net::SocketAddr;
 pub enum ProtocolMessage {
     /// Version message for handshake (matches C# VersionPayload exactly)
     Version {
-        /// The magic number of the network
-        network: u32,
         /// The protocol version of the node  
         version: u32,
+        /// Services provided by this node (bitfield)
+        services: u64,
         /// The time when connected to the node (UTC)
-        timestamp: u32,
+        timestamp: u64,
+        /// Port number this node is listening on
+        port: u16,
         /// A random number used to identify the node
         nonce: u32,
         /// String used to identify the client software
         user_agent: String,
-        /// True if compression is allowed
-        allow_compression: bool,
-        /// The capabilities of the node
-        capabilities: Vec<NodeCapability>,
+        /// Starting block height of this node
+        start_height: u32,
+        /// Whether to relay transactions
+        relay: bool,
     },
 
     /// Version acknowledgment
