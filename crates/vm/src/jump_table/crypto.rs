@@ -2,15 +2,15 @@
 //!
 //! This module provides the cryptographic operation handlers for the Neo VM.
 
-// Imports for crypto operations - currently unused as functions are placeholder
-// use crate::error::VmError;
-// use crate::error::VmResult;
-// use crate::execution_engine::ExecutionEngine;
-// use crate::instruction::Instruction;
+use crate::error::{VmError, VmResult};
+use crate::execution_engine::ExecutionEngine;
+use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
-// use crate::stack_item::StackItem;
-// Hash size constant - used in future crypto operations
-// const HASH_SIZE: usize = 32;
+use crate::stack_item::StackItem;
+use neo_cryptography::ed25519::Ed25519;
+
+/// Hash size constant for cryptographic operations
+const HASH_SIZE: usize = 32;
 
 /// Registers the cryptographic operation handlers.
 pub fn register_handlers(_jump_table: &mut JumpTable) {
@@ -30,38 +30,88 @@ pub fn register_handlers(_jump_table: &mut JumpTable) {
 /// 3. message (bottom)
 ///
 /// It then verifies the signature and pushes the result (true/false) onto the stack.
-/*
-// Verify function placeholder - will be implemented with interop services
-fn verify(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
+pub fn verify(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
     let context = engine
         .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        .ok_or_else(|| VmError::invalid_operation_msg("No current context".to_string()))?;
 
-    let signature = context.pop()?;
-    let signature_bytes = signature.as_bytes()?;
+    let evaluation_stack = context.evaluation_stack_mut();
 
-    let public_key = context.pop()?;
-    let public_key_bytes = public_key.as_bytes()?;
+    // Pop signature from stack (top item)
+    let signature = evaluation_stack.pop()?;
+    let signature_bytes = signature.as_bytes()
+        .map_err(|_| VmError::invalid_operation_msg("Invalid signature format".to_string()))?;
 
-    let message = context.pop()?;
-    let message_bytes = message.as_bytes()?;
+    // Pop public key from stack
+    let public_key = evaluation_stack.pop()?;
+    let public_key_bytes = public_key.as_bytes()
+        .map_err(|_| VmError::invalid_operation_msg("Invalid public key format".to_string()))?;
 
-    // Perform signature verification
-    // This is a production-ready implementation that matches C# Neo exactly
-    let result = verify_signature(&message_bytes, &signature_bytes, &public_key_bytes)?;
+    // Pop message from stack (bottom item)
+    let message = evaluation_stack.pop()?;
+    let message_bytes = message.as_bytes()
+        .map_err(|_| VmError::invalid_operation_msg("Invalid message format".to_string()))?;
 
-    context.push(StackItem::from_bool(result))?;
+    // Perform signature verification based on key type
+    let verification_result = if public_key_bytes.len() == 32 {
+        // Ed25519 verification
+        verify_ed25519_signature(&message_bytes, &signature_bytes, &public_key_bytes)
+    } else if public_key_bytes.len() == 33 || public_key_bytes.len() == 65 {
+        // ECDSA verification (secp256k1 or secp256r1)
+        verify_ecdsa_signature(&message_bytes, &signature_bytes, &public_key_bytes)
+    } else {
+        false // Invalid public key size
+    };
+
+    // Push result onto stack
+    evaluation_stack.push(StackItem::from_bool(verification_result));
 
     Ok(())
 }
-*/
+
+/// Verifies an ECDSA signature (secp256k1 or secp256r1).
+fn verify_ecdsa_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
+    // Validate input sizes
+    if signature.len() != 64 {
+        return false; // Invalid signature size
+    }
+
+    if message.len() != 32 {
+        return false; // Message should be a hash (32 bytes)
+    }
+
+    if public_key.len() != 33 && public_key.len() != 65 {
+        return false; // Invalid public key size
+    }
+
+    // Use neo-cryptography crate for verification
+    match verify_signature(message, signature, public_key) {
+        Ok(is_valid) => is_valid,
+        Err(_) => false, // Verification failed
+    }
+}
+
+/// Verifies an Ed25519 signature.
+fn verify_ed25519_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
+    // Validate input sizes
+    if signature.len() != 64 {
+        return false; // Invalid signature size for Ed25519
+    }
+
+    if public_key.len() != 32 {
+        return false; // Invalid public key size for Ed25519
+    }
+
+    // Use Ed25519 verification
+    Ed25519::verify(message, signature, public_key)
+}
 
 /// Verifies a signature against a message using a public key.
 ///
 /// This function implements the exact signature verification logic used in the C# Neo implementation.
 /// It supports ECDSA signature verification using the secp256r1 curve.
-/*
+#[allow(dead_code)]
 fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> VmResult<bool> {
     // Validate input lengths
     if signature.len() != 64 {
@@ -78,7 +128,6 @@ fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> VmRe
         Err(_) => Ok(false), // Any error in verification means the signature is invalid
     }
 }
-*/
 
 #[cfg(test)]
 #[allow(dead_code)]
@@ -118,11 +167,11 @@ mod tests {
         // Call verify function
         // Note: VERIFY opcode doesn't exist in C# Neo implementation
         let instruction = crate::instruction::Instruction::new(OpCode::NOP, &[]);
-        // TODO: Implement verify function for crypto operations
-        // let result = verify(&mut engine, &instruction);
+        // Implement verify function for crypto operations
+        let result = verify(&mut engine, &instruction);
 
         // The function should complete without error
-        // assert!(result.is_ok());
+        assert!(result.is_ok());
 
         let stack_result = engine
             .current_context_mut()
@@ -166,11 +215,11 @@ mod tests {
         // Call verify function
         // Note: VERIFY opcode doesn't exist in C# Neo implementation
         let instruction = crate::instruction::Instruction::new(OpCode::NOP, &[]);
-        // TODO: Implement verify function for crypto operations
-        // let result = verify(&mut engine, &instruction);
+        // Implement verify function for crypto operations
+        let result = verify(&mut engine, &instruction);
 
         // The function should complete without error
-        // assert!(result.is_ok());
+        assert!(result.is_ok());
 
         let stack_result = engine
             .current_context_mut()
@@ -214,11 +263,11 @@ mod tests {
         // Call verify function
         // Note: VERIFY opcode doesn't exist in C# Neo implementation
         let instruction = crate::instruction::Instruction::new(OpCode::NOP, &[]);
-        // TODO: Implement verify function for crypto operations
-        // let result = verify(&mut engine, &instruction);
+        // Implement verify function for crypto operations
+        let result = verify(&mut engine, &instruction);
 
         // The function should complete without error
-        // assert!(result.is_ok());
+        assert!(result.is_ok());
 
         let stack_result = engine
             .current_context_mut()

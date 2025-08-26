@@ -3,16 +3,30 @@
 
 #[cfg(test)]
 mod ut_evaluationstack_comprehensive_tests {
-    use crate::*;
+    use neo_vm::{EvaluationStack, ReferenceCounter, StackItem};
     
     /// Test TestClear functionality (matches C# UT_EvaluationStack.TestClear)
     #[test]
     fn test_clear() {
-        // TODO: Implement TestClear test to match C# behavior exactly
-        // Original C# test: UT_EvaluationStack.TestClear
+        // Test stack clear operation
+        // C# test: EvaluationStack.Clear() empties the stack
         
-        // Placeholder test - implement actual test logic
-        assert!(true, "Test TestClear needs implementation");
+        let ref_counter = ReferenceCounter::new();
+        let mut stack = EvaluationStack::new(ref_counter);
+        
+        // Add some items
+        stack.push(StackItem::from_int(1));
+        stack.push(StackItem::from_int(2));
+        stack.push(StackItem::from_int(3));
+        
+        assert_eq!(stack.len(), 3);
+        assert!(!stack.is_empty());
+        
+        // Clear the stack
+        stack.clear();
+        
+        assert_eq!(stack.len(), 0);
+        assert!(stack.is_empty());
     }
     
     /// Test TestCopyTo functionality (matches C# UT_EvaluationStack.TestCopyTo)
@@ -48,11 +62,35 @@ mod ut_evaluationstack_comprehensive_tests {
     /// Test TestPopPush functionality (matches C# UT_EvaluationStack.TestPopPush)
     #[test]
     fn test_pop_push() {
-        // TODO: Implement TestPopPush test to match C# behavior exactly
-        // Original C# test: UT_EvaluationStack.TestPopPush
+        // Test stack push and pop operations
+        // C# test: Push items and verify pop order (LIFO)
         
-        // Placeholder test - implement actual test logic
-        assert!(true, "Test TestPopPush needs implementation");
+        let ref_counter = ReferenceCounter::new();
+        let mut stack = EvaluationStack::new(ref_counter);
+        
+        // Push items in order
+        stack.push(StackItem::from_int(1));
+        stack.push(StackItem::from_int(2));
+        stack.push(StackItem::from_int(3));
+        
+        assert_eq!(stack.len(), 3);
+        
+        // Pop items in reverse order (LIFO)
+        let item3 = stack.pop().expect("Should pop item 3");
+        assert_eq!(item3.as_int().unwrap(), num_bigint::BigInt::from(3));
+        
+        let item2 = stack.pop().expect("Should pop item 2");
+        assert_eq!(item2.as_int().unwrap(), num_bigint::BigInt::from(2));
+        
+        let item1 = stack.pop().expect("Should pop item 1");
+        assert_eq!(item1.as_int().unwrap(), num_bigint::BigInt::from(1));
+        
+        assert_eq!(stack.len(), 0);
+        assert!(stack.is_empty());
+        
+        // Test underflow
+        let result = stack.pop();
+        assert!(result.is_err(), "Pop from empty stack should fail");
     }
     
     /// Test TestRemove functionality (matches C# UT_EvaluationStack.TestRemove)
