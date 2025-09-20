@@ -145,8 +145,9 @@ impl MessageValidator {
     /// Calculates checksum for payload (SHA256(SHA256(payload))) - matches MessageHeader implementation
     fn calculate_checksum(payload: &[u8]) -> u32 {
         use sha2::{Digest, Sha256};
-        let hash = Sha256::digest(payload);
-        u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
+        let first = Sha256::digest(payload);
+        let second = Sha256::digest(first);
+        u32::from_le_bytes([second[0], second[1], second[2], second[3]])
     }
 
     /// Helper method to check if an IP address is private

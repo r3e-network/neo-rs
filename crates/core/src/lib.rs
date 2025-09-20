@@ -101,8 +101,12 @@ pub mod transaction_type;
 pub mod transaction_validator;
 /// 160-bit unsigned integer implementation
 pub mod uint160;
+/// Additional UInt160 tests for C# parity
+pub mod uint160_additional_tests;
 /// 256-bit unsigned integer implementation
 pub mod uint256;
+/// Additional UInt256 tests for C# parity
+pub mod uint256_additional_tests;
 pub mod unwrap_migration;
 /// Witness verification system
 pub mod witness;

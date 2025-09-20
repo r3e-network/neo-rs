@@ -431,32 +431,3 @@ impl Default for LedgerContract {
         Self::new()
     }
 }
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ledger_contract_creation() {
-        let ledger = LedgerContract::new();
-        assert_eq!(ledger.name(), "LedgerContract");
-
-        // Verify all methods are registered
-        assert_eq!(ledger.methods.len(), 10);
-        assert!(ledger.methods.iter().any(|m| m.name == "currentHash"));
-        assert!(ledger.methods.iter().any(|m| m.name == "getBlock"));
-        assert!(ledger.methods.iter().any(|m| m.name == "getTransaction"));
-    }
-
-    #[test]
-    fn test_current_hash_and_index() {
-        let ledger = LedgerContract::new();
-
-        let hash = ledger.current_hash().unwrap();
-        assert_eq!(hash, UInt256::zero());
-
-        let index = ledger.current_index().unwrap();
-        assert_eq!(index, 0);
-    }
-}

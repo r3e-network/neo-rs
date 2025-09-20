@@ -5,9 +5,14 @@
 use crate::native_contracts::NativeContractsManager;
 use async_trait::async_trait;
 use neo_consensus::{Error as ConsensusError, Result as ConsensusResult};
-use neo_core::{Block, Transaction, UInt256};
+use neo_core::{Block, Transaction, UInt160, UInt256, Witness};
 use neo_ledger::Blockchain;
-use neo_network::P2pNode;
+use neo_network::{
+    messages::{ExtensiblePayload, NetworkMessage, ProtocolMessage},
+    P2pNode,
+};
+use once_cell::sync::Lazy;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -49,6 +54,11 @@ fn convert_core_block_to_ledger(core_block: &neo_core::Block) -> neo_ledger::Blo
 
     neo_ledger::Block::new(header, core_block.transactions.clone())
 }
+
+static GAS_CONTRACT_HASH: Lazy<UInt160> = Lazy::new(|| {
+    UInt160::from_str("d2a4cff31913016155e38e474a2c06d08be276cf")
+        .expect("valid GAS contract hash")
+});
 
 /// Consensus ledger adapter that bridges consensus to the actual blockchain
 pub struct ConsensusLedgerAdapter {
@@ -111,10 +121,8 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
     }
 
     async fn add_block(&self, block: Block) -> ConsensusResult<()> {
-        // Convert neo_core::Block to neo_ledger::Block
         let ledger_block = convert_core_block_to_ledger(&block);
 
-        // Persist the block to the blockchain
         match self.blockchain.persist_block(&ledger_block).await {
             Ok(()) => {
                 tracing::info!(
@@ -170,7 +178,9 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
                 }
             }
         } else {
-            tracing::debug!("get_next_block_validators called - returning empty set (native contracts not initialized)");
+            tracing::debug!(
+                "get_next_block_validators called - returning empty set (native contracts not initialized)"
+            );
             Ok(vec![])
         }
     }
@@ -196,7 +206,10 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
                 }
             }
         } else {
-            tracing::debug!("get_validators called for height {} - returning empty set (native contracts not initialized)", height);
+            tracing::debug!(
+                "get_validators called for height {} - returning empty set (native contracts not initialized)",
+                height
+            );
             Ok(vec![])
         }
     }
@@ -226,75 +239,51 @@ impl neo_consensus::LedgerService for ConsensusLedgerAdapter {
             }
         }
     }
-}
 
-impl ConsensusLedgerAdapter {
-    /// Get comprehensive blockchain statistics for monitoring
-    pub async fn get_blockchain_stats(&self) -> Result<BlockchainStats, ConsensusError> {
-        let stats = self.blockchain.get_stats().await;
-        Ok(BlockchainStats {
-            current_height: stats.height,
-            total_transactions: (stats.transaction_cache_size as u64), // Approximate from cache size
-            memory_usage_mb: ((stats.block_cache_size + stats.transaction_cache_size) as u64),
-            cache_hit_rate: 0.0,     // Not available in current stats
-            pending_transactions: 0, // Not available in current stats
-        })
-    }
+    async fn get_account_balance(&self, account: &UInt160) -> ConsensusResult<u64> {
+        if let Some(native_contracts) = &self.native_contracts {
+            return native_contracts
+                .gas
+                .get_balance(account)
+                .await
+                .map_err(|e| ConsensusError::Ledger(format!(
+                    "Failed to get GAS balance via native contract: {}",
+                    e
+                )));
+        }
 
-    /// Clear blockchain caches to free memory
-    pub async fn clear_caches(&self) {
-        self.blockchain.clear_caches().await;
-        tracing::info!("Blockchain caches cleared");
-    }
+        let balance = self
+            .blockchain
+            .get_nep17_balance(&GAS_CONTRACT_HASH, account)
+            .await
+            .map_err(|e| {
+                ConsensusError::Ledger(format!("Failed to read GAS balance from storage: {}", e))
+            })?;
 
-    /// Get memory usage information
-    pub async fn get_memory_usage(&self) -> Result<MemoryUsage, ConsensusError> {
-        let usage = self.blockchain.get_memory_usage().await;
-        Ok(MemoryUsage {
-            total_bytes: usage.total_bytes as u64,
-            blockchain_bytes: usage.block_cache_bytes as u64,
-            mempool_bytes: 0, // Not available in current usage stats
-            cache_bytes: (usage.transaction_cache_bytes + usage.storage_cache_bytes) as u64,
-        })
-    }
-}
-
-/// Blockchain statistics for monitoring
-#[derive(Debug, Clone)]
-pub struct BlockchainStats {
-    pub current_height: u32,
-    pub total_transactions: u64,
-    pub memory_usage_mb: u64,
-    pub cache_hit_rate: f64,
-    pub pending_transactions: usize,
-}
-
-/// Memory usage information
-#[derive(Debug, Clone)]
-pub struct MemoryUsage {
-    pub total_bytes: u64,
-    pub blockchain_bytes: u64,
-    pub mempool_bytes: u64,
-    pub cache_bytes: u64,
-}
-
-/// Consensus network adapter that bridges consensus to the P2P network
-pub struct ConsensusNetworkAdapter {
-    p2p_node: Arc<P2pNode>,
-}
-
-impl ConsensusNetworkAdapter {
-    pub fn new(p2p_node: Arc<P2pNode>) -> Self {
-        Self { p2p_node }
+        Ok(balance.amount.min(u128::from(u64::MAX)) as u64)
     }
 }
 
 #[async_trait]
 impl neo_consensus::NetworkService for ConsensusNetworkAdapter {
     async fn broadcast_consensus_message(&self, message: Vec<u8>) -> ConsensusResult<()> {
-        // Create a consensus protocol message
-        let protocol_msg = neo_network::messages::ProtocolMessage::Consensus { payload: message };
-        let network_msg = neo_network::messages::NetworkMessage::new(protocol_msg);
+        let payload = ExtensiblePayload::new(
+            "dBFT".to_string(),
+            0,
+            u32::MAX,
+            UInt160::zero(),
+            message,
+            Witness::empty(),
+        );
+
+        if let Err(e) = payload.validate() {
+            return Err(ConsensusError::Network(format!(
+                "Consensus payload validation failed: {}",
+                e
+            )));
+        }
+
+        let network_msg = NetworkMessage::new(ProtocolMessage::Extensible { payload });
         self.p2p_node
             .broadcast_message(network_msg)
             .await
@@ -302,11 +291,24 @@ impl neo_consensus::NetworkService for ConsensusNetworkAdapter {
     }
 
     async fn send_consensus_message(&self, peer_id: &str, message: Vec<u8>) -> ConsensusResult<()> {
-        // Create a consensus protocol message
-        let protocol_msg = neo_network::messages::ProtocolMessage::Consensus { payload: message };
-        let network_msg = neo_network::messages::NetworkMessage::new(protocol_msg);
+        let payload = ExtensiblePayload::new(
+            "dBFT".to_string(),
+            0,
+            u32::MAX,
+            UInt160::zero(),
+            message,
+            Witness::empty(),
+        );
 
-        // Parse peer_id as socket address
+        if let Err(e) = payload.validate() {
+            return Err(ConsensusError::Network(format!(
+                "Consensus payload validation failed: {}",
+                e
+            )));
+        }
+
+        let network_msg = NetworkMessage::new(ProtocolMessage::Extensible { payload });
+
         if let Ok(addr) = peer_id.parse() {
             self.p2p_node
                 .send_message_to_peer(addr, network_msg)

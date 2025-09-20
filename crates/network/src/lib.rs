@@ -716,6 +716,8 @@ pub struct NetworkConfig {
     pub websocket_enabled: bool,
     /// WebSocket port
     pub websocket_port: u16,
+    /// Optional DoS/rate limit configuration
+    pub dos_config: Option<crate::dos_protection::DosProtectionConfig>,
 }
 
 /// P2P configuration
@@ -808,6 +810,7 @@ impl Default for NetworkConfig {
             port: 10333,
             websocket_enabled: false,
             websocket_port: 10334,
+            dos_config: None,
         }
     }
 }
@@ -869,6 +872,7 @@ impl NetworkConfig {
             },
             seed_nodes: vec![], // No seed nodes for private network
             max_peers: 10,
+            dos_config: None,
             ..Default::default()
         }
     }

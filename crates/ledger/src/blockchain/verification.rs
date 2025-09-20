@@ -2,6 +2,7 @@
 //!
 //! This module provides verification functionality exactly matching C# Neo blockchain verification.
 
+use crate::block::verification::WitnessVerifier;
 use crate::{BlockHeader, Error, Result};
 use neo_config::{MAX_TRANSACTION_SIZE, MILLISECONDS_PER_BLOCK};
 use neo_core::{Transaction, UInt160, UInt256, Witness};
@@ -205,8 +206,25 @@ impl BlockchainVerifier {
     }
 
     /// Checks transaction against policy rules
-    fn check_transaction_policy(&self, _transaction: &Transaction) -> Result<()> {
-        // This would check against PolicyContract rules
+    fn check_transaction_policy(&self, transaction: &Transaction) -> Result<()> {
+        // Basic policy checks aligned with C# defaults
+        // 1) Enforce fee per byte minimum for network fee
+        let fee_per_byte: i64 = 1000; // 0.00001 GAS per byte (default)
+        let tx_size = transaction.size() as i64;
+        let min_network_fee = fee_per_byte.saturating_mul(tx_size);
+        if transaction.network_fee() < min_network_fee {
+            return Err(Error::Validation(
+                "Insufficient network fee per policy".to_string(),
+            ));
+        }
+
+        // 2) Check system fee non-negative
+        if transaction.system_fee() < 0 {
+            return Err(Error::Validation(
+                "System fee cannot be negative".to_string(),
+            ));
+        }
+
         Ok(())
     }
 
@@ -239,17 +257,14 @@ impl BlockchainVerifier {
 
     /// Verifies header witnesses (consensus validation)
     async fn verify_header_witnesses(&self, header: &BlockHeader) -> Result<()> {
-        // This would verify consensus signatures
-        // In a full implementation, this would check against committee signatures
-        for (index, witness) in header.witnesses.iter().enumerate() {
-            if witness.verification_script.is_empty() {
-                return Err(Error::Validation(format!(
-                    "Header witness {} has empty verification script",
-                    index
-                )));
-            }
+        // Delegate to the comprehensive verifier used by block header logic
+        let verifier = WitnessVerifier::new();
+        match verifier.verify_header_witnesses(header) {
+            crate::verify_result::VerifyResult::Succeed => Ok(()),
+            _ => Err(Error::Validation(
+                "Header witness verification failed".to_string(),
+            )),
         }
-        Ok(())
     }
 
     /// Verifies the consensus data in a block header
@@ -319,7 +334,9 @@ impl BlockchainVerifier {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use crate::{Error, Result};
+    use super::*;
+    use crate::Result;
+    use neo_core::Transaction;
 
     #[test]
     fn test_verifier_creation() {
@@ -335,7 +352,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_basic_validation() {
+    async fn test_basic_validation() -> Result<()> {
         let verifier = BlockchainVerifier::new();
 
         let transaction = Transaction::default();
@@ -343,5 +360,7 @@ mod tests {
         // This should fail due to empty witnesses
         let result = verifier.verify_transaction(&transaction).await?;
         assert_eq!(result, VerifyResult::Fail);
+
+        Ok(())
     }
 }

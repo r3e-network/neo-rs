@@ -876,7 +876,8 @@ impl ApplicationEngine {
         self.validate_call_flags(call_flags)?;
 
         // 2. Create contract call script (matches C# script generation exactly)
-        let call_script = self.create_contract_call_script(script_hash, method, &arguments)?;
+        let call_script =
+            self.create_contract_call_script(script_hash, method, &arguments, call_flags)?;
 
         // 3. Execute the contract call in a new context (matches C# exactly)
         let result = self.execute_contract_call(call_script)?;
@@ -890,22 +891,25 @@ impl ApplicationEngine {
         script_hash: &[u8],
         method: &str,
         arguments: &[StackItem],
+        call_flags: CallFlags,
     ) -> VmResult<Script> {
         let mut builder = ScriptBuilder::new();
 
-        // 1. Push arguments in reverse order (matches C# calling convention)
-        for arg in arguments.iter().rev() {
-            builder.emit_push_stack_item(arg.clone())?;
-        }
+        // Build arguments array as a single StackItem to match syscall signature
+        let args_array = StackItem::from_array(arguments.to_vec());
+        builder.emit_push_stack_item(args_array)?;
 
-        // 2. Push method name
+        // Push call flags (as integer)
+        builder.emit_push_int(call_flags.0 as i64);
+
+        // Push method name
         builder.emit_push_string(method);
 
-        // 3. Push script hash
+        // Push script hash
         builder.emit_push_bytes(script_hash);
 
-        // 4. Emit SYSCALL for System.Contract.Call
-        builder.emit_syscall("System.Contract.Call");
+        // Emit SYSCALL for System.Contract.Call
+        let _ = builder.emit_syscall("System.Contract.Call");
 
         Ok(builder.to_script())
     }

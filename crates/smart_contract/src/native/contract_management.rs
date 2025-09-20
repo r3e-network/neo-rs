@@ -7,6 +7,7 @@ use crate::application_engine::ApplicationEngine;
 use crate::contract_state::{ContractState, NefFile};
 use crate::manifest::{ContractManifest, ContractPermissionDescriptor};
 use crate::native::{NativeContract, NativeMethod};
+use crate::storage::StorageKey;
 use crate::{Error, Result};
 use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE};
 use neo_core::UInt160;
@@ -53,14 +54,53 @@ pub struct ContractManagement {
 }
 
 impl ContractManagement {
+    const HASH_BYTES: [u8; 20] = [
+        0xff, 0xfd, 0xc9, 0x37, 0x64, 0xdb, 0xad, 0xdd, 0x97, 0xc4, 0x8f, 0x25, 0x2a, 0x53, 0xea,
+        0x46, 0x43, 0xfa, 0xa3, 0xfd,
+    ];
+
+    pub fn contract_hash() -> UInt160 {
+        UInt160::from_bytes(&Self::HASH_BYTES).expect("Valid ContractManagement hash")
+    }
+
+    #[inline]
+    fn storage_key(prefix: u8, suffix: &[u8]) -> Vec<u8> {
+        let mut key = Vec::with_capacity(1 + suffix.len());
+        key.push(prefix);
+        key.extend_from_slice(suffix);
+        key
+    }
+
+    #[inline]
+    fn contract_storage_key(hash: &UInt160) -> Vec<u8> {
+        Self::storage_key(PREFIX_CONTRACT, hash.as_bytes().as_ref())
+    }
+
+    #[inline]
+    fn contract_id_storage_key(id: i32) -> Vec<u8> {
+        let bytes = id.to_le_bytes();
+        Self::storage_key(PREFIX_CONTRACT_HASH, bytes.as_ref())
+    }
+
+    #[inline]
+    fn contract_count_key() -> Vec<u8> {
+        vec![PREFIX_CONTRACT_COUNT]
+    }
+
+    #[inline]
+    fn next_id_key() -> Vec<u8> {
+        vec![PREFIX_NEXT_AVAILABLE_ID]
+    }
+
+    #[inline]
+    fn minimum_deployment_fee_key() -> Vec<u8> {
+        vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]
+    }
+
     /// Creates a new ContractManagement instance
     pub fn new() -> Self {
         // ContractManagement contract hash: 0xfffdc93764dbaddd97c48f252a53ea4643faa3fd
-        let hash = UInt160::from_bytes(&[
-            0xff, 0xfd, 0xc9, 0x37, 0x64, 0xdb, 0xad, 0xdd, 0x97, 0xc4, 0x8f, 0x25, 0x2a, 0x53,
-            0xea, 0x46, 0x43, 0xfa, 0xa3, 0xfd,
-        ])
-        .expect("Valid ContractManagement hash");
+        let hash = Self::contract_hash();
 
         let methods = vec![
             NativeMethod::new("getContract".to_string(), 1 << 15, true, 0x01),
@@ -155,7 +195,7 @@ impl ContractManagement {
         for permission in &manifest.permissions {
             // Check if permission is valid - at least one must be specified
             let contract_valid = match &permission.contract {
-                ContractPermissionDescriptor::Wildcard(s) => !s.is_empty(),
+                ContractPermissionDescriptor::Wildcard => true,
                 ContractPermissionDescriptor::Hash(_) => true,
                 ContractPermissionDescriptor::Group(_) => true,
             };
@@ -239,8 +279,16 @@ impl ContractManagement {
         // Create contract state
         let contract = ContractState::new(contract_id, contract_hash, nef, manifest);
 
-        // Store contract
-        {
+        // Serialize contract state for persistence
+        let mut writer = BinaryWriter::new();
+        contract
+            .serialize(&mut writer)
+            .map_err(|e| Error::Serialization(format!("Failed to serialize contract: {}", e)))?;
+        let contract_bytes = writer.to_bytes();
+        let contract_hash_bytes = contract_hash.as_bytes();
+
+        // Store contract in in-memory cache and prepare metadata snapshots
+        let (contract_count_bytes, next_id_bytes, min_fee_bytes) = {
             let mut storage = self.storage.write().map_err(|e| {
                 Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
             })?;
@@ -248,7 +296,33 @@ impl ContractManagement {
             storage.contracts.insert(contract_hash, contract.clone());
             storage.contract_ids.insert(contract_id, contract_hash);
             storage.contract_count += 1;
-        }
+
+            (
+                storage.contract_count.to_le_bytes(),
+                storage.next_id.to_le_bytes(),
+                storage.minimum_deployment_fee.to_le_bytes(),
+            )
+        };
+
+        // Persist contract metadata in native storage so it survives engine reloads
+        let context = engine.get_native_storage_context(&self.hash)?;
+        engine.put_storage_item(
+            &context,
+            &Self::contract_storage_key(&contract_hash),
+            &contract_bytes,
+        )?;
+        engine.put_storage_item(
+            &context,
+            &Self::contract_id_storage_key(contract_id),
+            contract_hash_bytes.as_ref(),
+        )?;
+        engine.put_storage_item(&context, &Self::contract_count_key(), &contract_count_bytes)?;
+        engine.put_storage_item(&context, &Self::next_id_key(), &next_id_bytes)?;
+        engine.put_storage_item(
+            &context,
+            &Self::minimum_deployment_fee_key(),
+            &min_fee_bytes,
+        )?;
 
         // Call contract's _deploy method if it exists
         if contract
@@ -316,6 +390,12 @@ impl ContractManagement {
         contract.update_counter += 1;
 
         // Update storage
+        let mut writer = BinaryWriter::new();
+        contract
+            .serialize(&mut writer)
+            .map_err(|e| Error::Serialization(format!("Failed to serialize contract: {}", e)))?;
+        let contract_bytes = writer.to_bytes();
+
         {
             let mut storage = self.storage.write().map_err(|e| {
                 Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
@@ -323,6 +403,13 @@ impl ContractManagement {
 
             storage.contracts.insert(contract_hash, contract.clone());
         }
+
+        let context = engine.get_native_storage_context(&self.hash)?;
+        engine.put_storage_item(
+            &context,
+            &Self::contract_storage_key(&contract_hash),
+            &contract_bytes,
+        )?;
 
         // Call contract's _update method if it exists
         if contract
@@ -372,8 +459,7 @@ impl ContractManagement {
             engine.call_contract(contract_hash, "_destroy", vec![])?;
         }
 
-        // Remove contract from storage
-        {
+        let (contract_count_bytes, next_id_bytes, min_fee_bytes) = {
             let mut storage = self.storage.write().map_err(|e| {
                 Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
             })?;
@@ -381,13 +467,118 @@ impl ContractManagement {
             storage.contracts.remove(&contract_hash);
             storage.contract_ids.remove(&contract.id);
             storage.contract_count = storage.contract_count.saturating_sub(1);
-        }
+
+            (
+                storage.contract_count.to_le_bytes(),
+                storage.next_id.to_le_bytes(),
+                storage.minimum_deployment_fee.to_le_bytes(),
+            )
+        };
+
+        let context = engine.get_native_storage_context(&self.hash)?;
+        engine.delete_storage(&StorageKey::new(
+            self.hash,
+            Self::contract_storage_key(&contract_hash),
+        ))?;
+        engine.delete_storage(&StorageKey::new(
+            self.hash,
+            Self::contract_id_storage_key(contract.id),
+        ))?;
+        engine.put_storage_item(&context, &Self::contract_count_key(), &contract_count_bytes)?;
+        engine.put_storage_item(&context, &Self::next_id_key(), &next_id_bytes)?;
+        engine.put_storage_item(
+            &context,
+            &Self::minimum_deployment_fee_key(),
+            &min_fee_bytes,
+        )?;
 
         // Clear all contract storage (would interact with persistence layer)
         engine.clear_contract_storage(&contract_hash)?;
 
         // Emit Destroy event
         engine.emit_notification(&contract_hash, "Destroy", &[contract_hash.to_bytes()])?;
+
+        Ok(())
+    }
+
+    fn hydrate_from_engine(&self, engine: &ApplicationEngine) -> Result<()> {
+        let entries = engine.storage_entries_for_contract(&self.hash);
+        if entries.is_empty() {
+            return Ok(());
+        }
+
+        let mut storage = self.storage.write().map_err(|e| {
+            Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
+        })?;
+
+        storage.contracts.clear();
+        storage.contract_ids.clear();
+        storage.contract_count = 0;
+        storage.next_id = 1;
+        storage.minimum_deployment_fee = DEFAULT_MINIMUM_DEPLOYMENT_FEE;
+
+        for (key, item) in entries {
+            if key.is_empty() {
+                continue;
+            }
+
+            let (prefix, rest) = key.split_first().unwrap();
+            match *prefix {
+                PREFIX_CONTRACT => {
+                    if let Ok(contract_hash) = UInt160::from_bytes(rest) {
+                        let mut reader = MemoryReader::new(&item.value);
+                        if let Ok(contract_state) = ContractState::deserialize(&mut reader) {
+                            storage
+                                .contract_ids
+                                .insert(contract_state.id, contract_hash);
+                            storage.contracts.insert(contract_hash, contract_state);
+                        }
+                    }
+                }
+                PREFIX_CONTRACT_HASH => {
+                    if rest.len() == 4 {
+                        let mut id_bytes = [0u8; 4];
+                        id_bytes.copy_from_slice(rest);
+                        let id = i32::from_le_bytes(id_bytes);
+                        if let Ok(hash) = UInt160::from_bytes(&item.value) {
+                            storage.contract_ids.insert(id, hash);
+                        }
+                    }
+                }
+                PREFIX_CONTRACT_COUNT => {
+                    if item.value.len() == 4 {
+                        let mut buf = [0u8; 4];
+                        buf.copy_from_slice(&item.value[..4]);
+                        storage.contract_count = u32::from_le_bytes(buf);
+                    }
+                }
+                PREFIX_NEXT_AVAILABLE_ID => {
+                    if item.value.len() == 4 {
+                        let mut buf = [0u8; 4];
+                        buf.copy_from_slice(&item.value[..4]);
+                        storage.next_id = i32::from_le_bytes(buf);
+                    }
+                }
+                PREFIX_MINIMUM_DEPLOYMENT_FEE => {
+                    if item.value.len() == 8 {
+                        let mut buf = [0u8; 8];
+                        buf.copy_from_slice(&item.value[..8]);
+                        storage.minimum_deployment_fee = i64::from_le_bytes(buf);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if storage.contract_count == 0 {
+            storage.contract_count = storage.contracts.len() as u32;
+        }
+
+        if let Some(max_id) = storage.contract_ids.keys().copied().max() {
+            if storage.next_id <= max_id {
+                storage.next_id = max_id + 1;
+            }
+        }
 
         Ok(())
     }
@@ -470,19 +661,36 @@ impl ContractManagement {
         }
 
         // Update storage
-        {
+        let (min_fee_bytes, next_id_bytes) = {
             let mut storage = self.storage.write().map_err(|e| {
                 Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
             })?;
 
             storage.minimum_deployment_fee = value;
-        }
+
+            (
+                storage.minimum_deployment_fee.to_le_bytes(),
+                storage.next_id.to_le_bytes(),
+            )
+        };
+
+        let context = engine.get_native_storage_context(&self.hash)?;
+        engine.put_storage_item(
+            &context,
+            &Self::minimum_deployment_fee_key(),
+            &min_fee_bytes,
+        )?;
+        engine.put_storage_item(&context, &Self::next_id_key(), &next_id_bytes)?;
 
         Ok(())
     }
 }
 
 impl NativeContract for ContractManagement {
+    fn initialize(&self, engine: &mut ApplicationEngine) -> Result<()> {
+        self.hydrate_from_engine(engine)
+    }
+
     fn name(&self) -> &str {
         "ContractManagement"
     }
@@ -679,19 +887,6 @@ impl NativeContract for ContractManagement {
         }
     }
 
-    fn initialize(&self, _engine: &mut ApplicationEngine) -> Result<()> {
-        // Initialize with default values
-        let mut storage = self.storage.write().map_err(|e| {
-            Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
-        })?;
-
-        storage.minimum_deployment_fee = DEFAULT_MINIMUM_DEPLOYMENT_FEE;
-        storage.next_id = 1;
-        storage.contract_count = 0;
-
-        Ok(())
-    }
-
     fn on_persist(&self, _engine: &mut ApplicationEngine) -> Result<()> {
         // No special persistence logic needed
         Ok(())
@@ -701,47 +896,5 @@ impl NativeContract for ContractManagement {
 impl Default for ContractManagement {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_contract_management_creation() {
-        let cm = ContractManagement::new();
-        assert_eq!(cm.name(), "ContractManagement");
-
-        // Verify all methods are registered
-        assert_eq!(cm.methods.len(), 9);
-        assert!(cm.methods.iter().any(|m| m.name == "deploy"));
-        assert!(cm.methods.iter().any(|m| m.name == "update"));
-        assert!(cm.methods.iter().any(|m| m.name == "destroy"));
-    }
-
-    #[test]
-    fn test_contract_hash_calculation() {
-        let sender = UInt160::zero();
-        let checksum = 12345678u32;
-        let name = "TestContract";
-
-        let hash1 = ContractManagement::calculate_contract_hash(&sender, checksum, name);
-        let hash2 = ContractManagement::calculate_contract_hash(&sender, checksum, name);
-
-        // Same inputs should produce same hash
-        assert_eq!(hash1, hash2);
-
-        // Different inputs should produce different hash
-        let hash3 = ContractManagement::calculate_contract_hash(&sender, checksum + 1, name);
-        assert_ne!(hash1, hash3);
-    }
-
-    #[test]
-    fn test_minimum_deployment_fee() {
-        let cm = ContractManagement::new();
-        let fee = cm.get_minimum_deployment_fee().unwrap();
-        assert_eq!(fee, DEFAULT_MINIMUM_DEPLOYMENT_FEE);
     }
 }

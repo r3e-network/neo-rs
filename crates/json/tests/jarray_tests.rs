@@ -482,7 +482,7 @@ mod jarray_tests {
         // Test modification performance
         for i in 0..element_count {
             let new_value = format!("modified_{i:04}");
-            array.set(i, Some(JToken::String(new_value)));
+            let _ = array.set(i, Some(JToken::String(new_value)));
         }
 
         // Verify modifications
@@ -492,7 +492,7 @@ mod jarray_tests {
         }
 
         let initial_len = array.len();
-        array.insert(0, Some(JToken::String("inserted_at_start".to_string())));
+        let _ = array.insert(0, Some(JToken::String("inserted_at_start".to_string())));
         assert_eq!(array.len(), initial_len + 1);
         assert_eq!(
             array.get(0),

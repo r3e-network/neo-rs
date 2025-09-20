@@ -129,9 +129,10 @@ pub fn get_interop_descriptor(hash: u32) -> Option<SyscallDescriptor> {
             required_call_flags: crate::call_flags::CallFlags::READ_STATES
                 | crate::call_flags::CallFlags::ALLOW_CALL,
             parameters: vec![
-                ParameterType::Hash160,
-                ParameterType::String,
-                ParameterType::Array,
+                ParameterType::Hash160, // script hash
+                ParameterType::String,  // method name
+                ParameterType::Array,   // arguments array
+                ParameterType::Integer, // call flags
             ],
             return_type: ParameterType::Any,
         }),

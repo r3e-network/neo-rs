@@ -47,7 +47,7 @@ neo-io = { path = "../io" }
 neo-vm = { path = "../vm" }
 neo-config = { path = "../config" }
 neo-persistence = { path = "../persistence" }
-# neo-smart-contract = { path = "../smart_contract" } # Temporarily disabled
+neo-smart-contract = { path = "../smart_contract" }
 
 [dev-dependencies]
 tokio-test = "0.4"

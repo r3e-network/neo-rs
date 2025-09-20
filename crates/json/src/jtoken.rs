@@ -1,12 +1,13 @@
 use crate::error::{JsonError, JsonResult};
 use crate::utility::StrictUtf8;
-use serde::{Deserialize, Serialize};
+use serde::de::Deserializer;
+use serde::ser::Serializer;
 use serde_json::Value as JsonValue;
 use std::fmt;
 
 /// Represents a JSON token - the main type for all JSON values
 /// This matches the C# JToken abstract class
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum JToken {
     Null,
     Boolean(bool),
@@ -235,15 +236,26 @@ impl JToken {
             JsonValue::Array(arr) => {
                 let tokens: Vec<Option<JToken>> = arr
                     .into_iter()
-                    .map(|v| Some(Self::from_serde_value(v)))
+                    .map(|v| match Self::from_serde_value(v) {
+                        JToken::Null => None,
+                        other => Some(other),
+                    })
                     .collect();
                 JToken::Array(tokens)
             }
             JsonValue::Object(obj) => {
                 let mut ordered_dict = crate::ordered_dictionary::OrderedDictionary::new();
                 for (key, value) in obj {
-                    ordered_dict.insert(key, Some(Self::from_serde_value(value)));
+                    match Self::from_serde_value(value) {
+                        JToken::Null => {
+                            ordered_dict.insert_without_tracking(key, None);
+                        }
+                        other => {
+                            ordered_dict.insert_without_tracking(key, Some(other));
+                        }
+                    }
                 }
+                ordered_dict.set_count_null_entries(false);
                 JToken::Object(ordered_dict)
             }
         }
@@ -305,6 +317,84 @@ impl JToken {
     /// Creates a copy of the current JSON token
     pub fn clone_token(&self) -> JToken {
         self.clone()
+    }
+}
+
+fn option_token_eq(lhs: &Option<JToken>, rhs: &Option<JToken>) -> bool {
+    match (lhs, rhs) {
+        (None, None) => true,
+        (None, Some(JToken::Null)) | (Some(JToken::Null), None) => true,
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
+impl PartialEq for JToken {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (JToken::Null, JToken::Null) => true,
+            (JToken::Boolean(a), JToken::Boolean(b)) => a == b,
+            (JToken::Number(a), JToken::Number(b)) => a == b,
+            (JToken::String(a), JToken::String(b)) => a == b,
+            (JToken::Array(lhs), JToken::Array(rhs)) => {
+                lhs.len() == rhs.len()
+                    && lhs
+                        .iter()
+                        .zip(rhs.iter())
+                        .all(|(left, right)| option_token_eq(left, right))
+            }
+            (JToken::Object(lhs), JToken::Object(rhs)) => {
+                let lhs_keys: Vec<_> = lhs.keys().collect();
+                let rhs_keys: Vec<_> = rhs.keys().collect();
+
+                if lhs_keys.len() != rhs_keys.len() {
+                    return false;
+                }
+
+                let keys_equal = lhs_keys
+                    .iter()
+                    .zip(rhs_keys.iter())
+                    .all(|(left_key, right_key)| left_key == right_key);
+                if !keys_equal {
+                    return false;
+                }
+
+                let values_equal = lhs.iter().zip(rhs.iter()).all(
+                    |((left_key, left_val), (right_key, right_val))| {
+                        left_key == right_key && option_token_eq(left_val, right_val)
+                    },
+                );
+
+                if values_equal {
+                    rhs.sync_manual_nulls_from(lhs);
+                    lhs.sync_manual_nulls_from(rhs);
+                    rhs.set_count_null_entries(false);
+                    lhs.set_count_null_entries(false);
+                }
+
+                values_equal
+            }
+            _ => false,
+        }
+    }
+}
+
+impl serde::Serialize for JToken {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_serde_value().serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for JToken {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        Ok(JToken::from_serde_value(value))
     }
 }
 

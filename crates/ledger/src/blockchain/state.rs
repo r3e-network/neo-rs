@@ -4,100 +4,21 @@
 
 use super::persistence::BlockchainPersistence;
 use super::storage::{StorageItem, StorageKey};
-use crate::{Error, Result};
+use crate::{Error, NetworkType, Result};
 use neo_config::{
     ADDRESS_SIZE, MAX_BLOCK_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK,
     MAX_TRANSACTION_SIZE, SECONDS_PER_BLOCK,
 };
 use neo_core::{Transaction, UInt160, UInt256};
-// Temporarily disabled smart contract imports due to compilation issues
-// use neo_smart_contract::{
-//     ContractState, ContractManifest, NefFile, ContractGroup, ContractAbi, ContractPermission,
-//     ContractParameterType, ContractMethodDescriptor, ContractEventDescriptor,
-//     ContractParameterDefinition, MethodToken, PermissionContract
-// };
+use neo_io::{BinaryWriter, MemoryReader};
+use neo_smart_contract::{
+    ContractAbi, ContractManifest, ContractMethodDescriptor, ContractParameterDefinition,
+    ContractState, NefFile,
+};
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
-// Temporary stub definitions for smart contract types
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractState {
-    pub hash: UInt160,
-    pub id: i32,
-    pub update_counter: u16,
-    pub nef: NefFile,
-    pub manifest: ContractManifest,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct NefFile {
-    pub compiler: String,
-    pub source: String,
-    pub tokens: Vec<MethodToken>,
-    pub script: Vec<u8>,
-    pub checksum: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct MethodToken {
-    pub hash: UInt160,
-    pub method: String,
-    pub params_count: u16,
-    pub has_return_value: bool,
-    pub call_flags: u8,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractManifest {
-    pub name: String,
-    pub groups: Vec<ContractGroup>,
-    pub features: HashMap<String, String>,
-    pub supported_standards: Vec<String>,
-    pub abi: ContractAbi,
-    pub permissions: Vec<ContractPermission>,
-    pub trusts: Vec<UInt160>,
-    pub extra: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractGroup {
-    pub public_key: Vec<u8>,
-    pub signature: Vec<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractAbi {
-    pub methods: Vec<ContractMethodDescriptor>,
-    pub events: Vec<ContractEventDescriptor>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractMethodDescriptor {
-    pub name: String,
-    pub parameters: Vec<ContractParameterDefinition>,
-    pub return_type: String,
-    pub offset: i32,
-    pub safe: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractEventDescriptor {
-    pub name: String,
-    pub parameters: Vec<ContractParameterDefinition>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractParameterDefinition {
-    pub name: String,
-    pub param_type: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ContractPermission {
-    pub contract: String,
-    pub methods: Vec<String>,
-}
 
 /// Committee candidate with vote count (matches C# NEO candidate structure exactly)
 #[derive(Debug, Clone)]
@@ -121,19 +42,49 @@ pub struct BlockchainState {
     committee_cache: Option<CachedCommittee>,
     /// Policy contract settings (matches C# PolicyContract exactly)
     policy_settings: PolicySettings,
+    /// Network type for this blockchain state (used for magic)
+    network: NetworkType,
 }
 
 /// Native contract information (matches C# Neo NativeContract exactly)
 #[derive(Debug, Clone)]
 pub struct NativeContractInfo {
+    /// Contract identifier (matches C# native contract IDs)
+    pub id: i32,
     /// Contract hash
     pub hash: UInt160,
     /// Contract name
     pub name: String,
-    /// Management methods
+    /// Exposed methods (mirrors the native manifest)
     pub methods: Vec<String>,
+    /// Supported standards (e.g. NEP-17)
+    pub supported_standards: Vec<String>,
     /// Service level
     pub service_level: u8,
+}
+
+impl NativeContractInfo {
+    pub fn to_contract_state(&self) -> ContractState {
+        let mut state = ContractState::new_native(self.id, self.hash, self.name.clone());
+        state.manifest.abi = ContractAbi {
+            methods: self
+                .methods
+                .iter()
+                .map(|method| {
+                    ContractMethodDescriptor::new(
+                        method.clone(),
+                        Vec::<ContractParameterDefinition>::new(),
+                        "Any".to_string(),
+                        0,
+                        true,
+                    )
+                })
+                .collect(),
+            events: Vec::new(),
+        };
+        state.manifest.supported_standards = self.supported_standards.clone();
+        state
+    }
 }
 
 /// Cached committee information (matches C# Neo Committee cache exactly)
@@ -176,78 +127,205 @@ impl Default for PolicySettings {
 
 impl BlockchainState {
     /// Creates a new blockchain state manager
-    pub fn new(persistence: Arc<BlockchainPersistence>) -> Self {
+    pub fn new(persistence: Arc<BlockchainPersistence>, network: NetworkType) -> Self {
         Self {
             persistence,
             contract_cache: Arc::new(RwLock::new(HashMap::new())),
             native_contracts: Self::initialize_native_contracts(),
             committee_cache: None,
             policy_settings: PolicySettings::default(),
+            network,
         }
     }
 
     /// Initializes native contracts (matches C# Neo native contracts exactly)
     fn initialize_native_contracts() -> HashMap<UInt160, NativeContractInfo> {
+        struct Seed {
+            id: i32,
+            hash: &'static str,
+            name: &'static str,
+            methods: &'static [&'static str],
+            supported_standards: &'static [&'static str],
+        }
+
+        const SEEDS: &[Seed] = &[
+            Seed {
+                id: -1,
+                hash: "fffdc93764dbaddd97c48f252a53ea4643faa3fd",
+                name: "ContractManagement",
+                methods: &[
+                    "getContract",
+                    "deploy",
+                    "update",
+                    "destroy",
+                    "getMinimumDeploymentFee",
+                    "setMinimumDeploymentFee",
+                    "hasMethod",
+                    "getContractById",
+                    "getContractHashes",
+                ],
+                supported_standards: &[],
+            },
+            Seed {
+                id: -2,
+                hash: "acce6fd80d44e1796aa0c2c625e9e4e0ce39efc0",
+                name: "StdLib",
+                methods: &[
+                    "atoi",
+                    "itoa",
+                    "base64Encode",
+                    "base64Decode",
+                    "jsonSerialize",
+                    "jsonDeserialize",
+                    "memoryCompare",
+                    "memorySearch",
+                    "stringSplit",
+                    "stringLen",
+                ],
+                supported_standards: &[],
+            },
+            Seed {
+                id: -3,
+                hash: "726cb6e0cd8628a1350a611384688911ab75f51b",
+                name: "CryptoLib",
+                methods: &[
+                    "sha256",
+                    "ripemd160",
+                    "verifyWithECDsa",
+                    "verifyWithECDsaSecp256k1",
+                    "verifyWithECDsaSecp256r1",
+                    "checkMultisig",
+                    "checkMultisigWithECDsaSecp256k1",
+                    "checkMultisigWithECDsaSecp256r1",
+                    "bls12381Add",
+                    "bls12381Mul",
+                    "bls12381Pairing",
+                    "bls12381Serialize",
+                    "bls12381Deserialize",
+                ],
+                supported_standards: &[],
+            },
+            Seed {
+                id: -4,
+                hash: "da65b600f7124ce6c79950c1772a36403104f2be",
+                name: "LedgerContract",
+                methods: &[
+                    "currentHash",
+                    "currentIndex",
+                    "getBlock",
+                    "getTransaction",
+                    "getTransactionFromBlock",
+                    "getTransactionHeight",
+                    "getTransactionSigners",
+                    "getTransactionVMState",
+                    "containsBlock",
+                    "containsTransaction",
+                ],
+                supported_standards: &[],
+            },
+            Seed {
+                id: -5,
+                hash: "ef4073a0f2b305a38ec4050e4d3d28bc40ea63f5",
+                name: "NeoToken",
+                methods: &[
+                    "symbol",
+                    "decimals",
+                    "totalSupply",
+                    "balanceOf",
+                    "transfer",
+                    "getCommittee",
+                    "getCandidates",
+                    "registerCandidate",
+                    "unregisterCandidate",
+                    "vote",
+                    "getAccountState",
+                    "getCandidateVotes",
+                    "setCommittee",
+                ],
+                supported_standards: &["NEP-17"],
+            },
+            Seed {
+                id: -6,
+                hash: "d2a4cff31913016155e38e474a2c06d08be276cf",
+                name: "GasToken",
+                methods: &[
+                    "symbol",
+                    "decimals",
+                    "totalSupply",
+                    "balanceOf",
+                    "transfer",
+                    "mint",
+                    "burn",
+                    "getTotalBurned",
+                    "getSupplyHistory",
+                    "burnFee",
+                    "mintReward",
+                ],
+                supported_standards: &["NEP-17"],
+            },
+            Seed {
+                id: -7,
+                hash: "cc5e4edd9f5f8dba8bb65734541df7a1c081c67b",
+                name: "PolicyContract",
+                methods: &[
+                    "getFeePerByte",
+                    "getExecFeeFactor",
+                    "getStoragePrice",
+                    "getAttributeFee",
+                    "getMaxTransactionsPerBlock",
+                    "getMaxBlockSize",
+                    "getMaxBlockSystemFee",
+                    "getMaxTraceableBlocks",
+                    "setFeePerByte",
+                    "setExecFeeFactor",
+                    "setStoragePrice",
+                    "setAttributeFee",
+                    "setMaxTransactionsPerBlock",
+                    "setMaxBlockSize",
+                    "setMaxBlockSystemFee",
+                    "setMaxTraceableBlocks",
+                    "getBlockedAccounts",
+                    "blockAccount",
+                    "unblockAccount",
+                    "isBlocked",
+                ],
+                supported_standards: &[],
+            },
+            Seed {
+                id: -8,
+                hash: "49cf4e5378ffcd4dec034fd98a174c5491e395e2",
+                name: "RoleManagement",
+                methods: &["getDesignatedByRole", "designateAsRole"],
+                supported_standards: &[],
+            },
+            Seed {
+                id: -9,
+                hash: "fe924b7cfe89ddd271abaf7210a80a7e11178758",
+                name: "OracleContract",
+                methods: &["request", "getPrice", "finish", "verify"],
+                supported_standards: &[],
+            },
+        ];
+
         let mut contracts = HashMap::new();
-
-        // NEO Token Contract
-        let neo_hash = UInt160::from_bytes(&[
-            0xef, 0x4f, 0x73, 0xa4, 0x85, 0x65, 0x05, 0x1d, 0x82, 0xf3, 0xf9, 0x11, 0x73, 0xf7,
-            0x72, 0xf8, 0xd6, 0x0f, 0xd0, 0xc1,
-        ])
-        .expect("Operation failed");
-        contracts.insert(
-            neo_hash,
-            NativeContractInfo {
-                hash: neo_hash,
-                name: "NeoToken".to_string(),
-                methods: vec![
-                    "symbol".to_string(),
-                    "decimals".to_string(),
-                    "totalSupply".to_string(),
-                ],
-                service_level: 1,
-            },
-        );
-
-        // GAS Token Contract
-        let gas_hash = UInt160::from_bytes(&[
-            0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xe6, 0x8e, 0xb0, 0xcc, 0xd7, 0xa3, 0x7c, 0x1b,
-            0x15, 0x11, 0xe1, 0x2c, 0xce, 0x81,
-        ])
-        .expect("Operation failed");
-        contracts.insert(
-            gas_hash,
-            NativeContractInfo {
-                hash: gas_hash,
-                name: "GasToken".to_string(),
-                methods: vec![
-                    "symbol".to_string(),
-                    "decimals".to_string(),
-                    "totalSupply".to_string(),
-                ],
-                service_level: 1,
-            },
-        );
-
-        // Policy Contract
-        let policy_hash = UInt160::from_bytes(&[
-            0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xdf, 0xad, 0xd4, 0x95, 0x12, 0x5b, 0xe9, 0xed, 0xc5,
-            0x8e, 0x78, 0x1d, 0xda, 0x7c, 0xfc,
-        ])
-        .expect("Operation failed");
-        contracts.insert(
-            policy_hash,
-            NativeContractInfo {
-                hash: policy_hash,
-                name: "PolicyContract".to_string(),
-                methods: vec![
-                    "getMaxTransactionsPerBlock".to_string(),
-                    "getMaxBlockSize".to_string(),
-                ],
-                service_level: 1,
-            },
-        );
+        for seed in SEEDS {
+            let hash = UInt160::from_str(seed.hash).expect("Valid native contract hash");
+            contracts.insert(
+                hash,
+                NativeContractInfo {
+                    id: seed.id,
+                    hash,
+                    name: seed.name.to_string(),
+                    methods: seed.methods.iter().map(|m| m.to_string()).collect(),
+                    supported_standards: seed
+                        .supported_standards
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                    service_level: 1,
+                },
+            );
+        }
 
         contracts
     }
@@ -263,16 +341,18 @@ impl BlockchainState {
         }
 
         if let Some(native_info) = self.native_contracts.get(script_hash) {
-            return Ok(Some(self.create_native_contract_state(native_info)));
+            return Ok(Some(native_info.to_contract_state()));
         }
 
         // Load from storage
         let contract_key = StorageKey::contract(*script_hash);
         match self.persistence.get(&contract_key).await? {
             Some(item) => {
-                let contract: ContractState = bincode::deserialize(&item.value)?;
+                let mut reader = MemoryReader::new(&item.value);
+                let contract = ContractState::deserialize(&mut reader).map_err(|e| {
+                    Error::StorageError(format!("Failed to deserialize contract state: {e}"))
+                })?;
 
-                // Cache the contract
                 {
                     let mut cache = self.contract_cache.write().await;
                     cache.insert(*script_hash, contract.clone());
@@ -284,57 +364,21 @@ impl BlockchainState {
         }
     }
 
-    /// Creates a native contract state
-    fn create_native_contract_state(&self, native_info: &NativeContractInfo) -> ContractState {
-        ContractState {
-            hash: native_info.hash,
-            manifest: ContractManifest {
-                name: native_info.name.clone(),
-                groups: Vec::new(),
-                features: HashMap::new(),
-                supported_standards: vec!["NEP-17".to_string()],
-                abi: ContractAbi {
-                    methods: native_info
-                        .methods
-                        .iter()
-                        .map(|method| ContractMethodDescriptor {
-                            name: method.clone(),
-                            parameters: Vec::new(),
-                            return_type: "Any".to_string(),
-                            offset: 0,
-                            safe: true,
-                        })
-                        .collect(),
-                    events: Vec::new(),
-                },
-                permissions: Vec::new(),
-                trusts: Vec::new(),
-                extra: None,
-            },
-            id: 0, // Native contracts have special IDs
-            update_counter: 0,
-            nef: NefFile {
-                compiler: "native".to_string(),
-                source: "".to_string(),
-                tokens: Vec::new(),
-                script: Vec::new(),
-                checksum: 0,
-            },
-        }
-    }
-
     /// Puts a contract state (matches C# Neo StateService.PutContract exactly)
     pub async fn put_contract(&self, contract: ContractState) -> Result<()> {
         let contract_key = StorageKey::contract(contract.hash);
-        let contract_item = StorageItem::new(bincode::serialize(&contract)?);
 
-        // Update cache
+        let mut writer = BinaryWriter::new();
+        contract
+            .serialize(&mut writer)
+            .map_err(|e| Error::StorageError(format!("Failed to serialize contract state: {e}")))?;
+        let contract_item = StorageItem::new(writer.to_bytes());
+
         {
             let mut cache = self.contract_cache.write().await;
             cache.insert(contract.hash, contract.clone());
         }
 
-        // Persist to storage
         self.persistence.put(contract_key, contract_item).await?;
 
         Ok(())
@@ -372,7 +416,9 @@ impl BlockchainState {
 
     /// Lists all native contracts
     pub fn list_native_contracts(&self) -> Vec<&NativeContractInfo> {
-        self.native_contracts.values().collect()
+        let mut contracts: Vec<_> = self.native_contracts.values().collect();
+        contracts.sort_by_key(|info| info.id);
+        contracts
     }
 
     /// Validates a transaction against current state (matches C# Neo validation exactly)
@@ -502,6 +548,13 @@ impl BlockchainState {
             return Err(Error::Validation("Insufficient network fee".to_string()));
         }
 
+        // Check system fee does not exceed per-block maximum policy (C#-compatible safeguard)
+        if transaction.system_fee() > self.policy_settings.max_block_system_fee {
+            return Err(Error::Validation(
+                "System fee exceeds maximum allowed per block".to_string(),
+            ));
+        }
+
         Ok(())
     }
 
@@ -519,7 +572,18 @@ impl BlockchainState {
             )));
         }
 
-        // 3. Check sender has sufficient GAS balance (matches C# GAS balance check)
+        // 3. Enforce fee per byte policy (matches C# PolicyContract.FeePerByte)
+        let tx_size = transaction.size() as i64;
+        let min_net_fee = tx_size.saturating_mul(self.policy_settings.fee_per_byte.max(0));
+        if transaction.network_fee() < min_net_fee {
+            return Err(Error::Validation(format!(
+                "Network fee below minimum per-byte fee. Required: {}, Provided: {}",
+                min_net_fee,
+                transaction.network_fee()
+            )));
+        }
+
+        // 4. Check sender has sufficient GAS balance (matches C# GAS balance check)
         let sender = &transaction.signers()[0].account; // First signer is sender
         let gas_balance = self.get_gas_balance(sender).await?;
         let total_fee = transaction.system_fee() + transaction.network_fee();
@@ -1165,8 +1229,7 @@ impl BlockchainState {
 
     /// Gets network magic number
     fn get_network_magic(&self) -> u32 {
-        // This would come from blockchain configuration
-        0x334f454e // "NEO3" in little endian (mainnet)
+        self.network.magic()
     }
 
     /// Validates transaction state-dependent checks (production-ready implementation)
@@ -1778,52 +1841,42 @@ impl BlockchainState {
     }
 }
 
-impl ContractState {
-    /// Creates a new contract state
-    pub fn new(script_hash: UInt160, manifest: ContractManifest, id: i32, nef: NefFile) -> Self {
-        Self {
-            hash: script_hash,
-            manifest,
-            id,
-            update_counter: 0,
-            nef,
-        }
-    }
-
-    /// Updates the contract
-    pub fn update(&mut self, nef: Option<NefFile>, manifest: Option<ContractManifest>) {
-        if let Some(new_nef) = nef {
-            self.nef = new_nef;
-        }
-        if let Some(new_manifest) = manifest {
-            self.manifest = new_manifest;
-        }
-        self.update_counter += 1;
-    }
-}
-
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use crate::blockchain::storage::{RocksDBStorage, Storage};
-    use crate::{Error, Result};
+    use super::*;
+    use crate::blockchain::storage::Storage;
+    use crate::{NetworkType, Result};
+    use std::sync::Arc;
+    use tempfile::tempdir;
 
     #[tokio::test]
-    async fn test_blockchain_state_creation() {
-        let storage = Arc::new(Storage::new_rocksdb("/tmp/neo-test-state-1"));
-        let persistence = Arc::new(BlockchainPersistence::new(storage));
-        let state = BlockchainState::new(persistence);
+    async fn test_blockchain_state_creation() -> Result<()> {
+        let dir = tempdir().expect("operation should succeed");
+        let storage = Arc::new(
+            Storage::new_rocksdb(dir.path().to_str().unwrap_or(""))
+                .expect("operation should succeed"),
+        );
+        let persistence = Arc::new(BlockchainPersistence::new(storage.clone()));
+        let state = BlockchainState::new(persistence, NetworkType::TestNet);
 
         // Test native contracts are loaded
         let native_contracts = state.list_native_contracts();
-        assert!(native_contracts.len() >= 3); // NEO, GAS, Policy
+        assert_eq!(native_contracts.len(), 9);
+        assert_eq!(native_contracts.first().unwrap().id, -9);
+        assert_eq!(native_contracts.last().unwrap().id, -1);
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_contract_state_operations() {
-        let storage = Arc::new(Storage::new_rocksdb("/tmp/neo-test-state-2"));
-        let persistence = Arc::new(BlockchainPersistence::new(storage));
-        let mut state = BlockchainState::new(persistence);
+    async fn test_contract_state_operations() -> Result<()> {
+        let dir = tempdir().expect("operation should succeed");
+        let storage = Arc::new(
+            Storage::new_rocksdb(dir.path().to_str().unwrap_or(""))
+                .expect("operation should succeed"),
+        );
+        let persistence = Arc::new(BlockchainPersistence::new(storage.clone()));
+        let state = BlockchainState::new(persistence, NetworkType::TestNet);
 
         let script_hash = UInt160::zero();
         let manifest = ContractManifest {
@@ -1847,7 +1900,7 @@ mod tests {
             checksum: 123,
         };
 
-        let contract = ContractState::new(script_hash, manifest, 1, nef);
+        let contract = ContractState::new(1, script_hash, nef, manifest);
 
         // Test put and get
         state.put_contract(contract.clone()).await?;
@@ -1858,6 +1911,7 @@ mod tests {
         state.delete_contract(&script_hash).await?;
         let deleted = state.get_contract(&script_hash).await?;
         assert_eq!(deleted, None);
+        Ok(())
     }
 
     #[test]
@@ -1865,9 +1919,9 @@ mod tests {
         let settings = PolicySettings::default();
         assert_eq!(
             settings.max_transactions_per_block,
-            MAX_TRANSACTIONS_PER_BLOCK
+            MAX_TRANSACTIONS_PER_BLOCK as u32
         );
-        assert_eq!(settings.max_block_size, MAX_BLOCK_SIZE);
+        assert_eq!(settings.max_block_size, MAX_BLOCK_SIZE as u32);
         assert_eq!(settings.fee_per_byte, 1000);
     }
 }

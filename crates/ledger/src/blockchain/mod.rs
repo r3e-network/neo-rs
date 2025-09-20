@@ -19,7 +19,6 @@ pub mod storage;
 pub mod validation;
 pub mod verification;
 
-pub use blockchain::{Blockchain, BlockchainStats};
 pub use genesis::GenesisManager;
 pub use persistence::{BlockchainPersistence, BlockchainSnapshot};
 pub use state::{BlockchainState, PolicySettings};

@@ -2,7 +2,7 @@
 //! Addresses the 15 missing advanced signature scheme tests identified in analysis
 
 use neo_cryptography::ecdsa::ECDsa;
-use neo_cryptography::{hash160, hash256};
+use neo_cryptography::hash256;
 
 // ============================================================================
 // Advanced ECDSA Signature Tests (matching C# Neo.Cryptography.Tests)
@@ -247,27 +247,17 @@ fn test_signature_malleability_protection() {
 
 #[test]
 fn test_ecdsa_signature_recovery() {
-    // Test signature recovery functionality
     let message = b"Recovery test message";
-    let message_hash = hash256(message); // Create proper hash for recovery
+    let message_hash = hash256(message);
     let private_key = ECDsa::generate_private_key();
-    let expected_public_key = ECDsa::derive_public_key(&private_key).unwrap();
 
-    // Create Neo format signature for recovery
     let neo_signature = ECDsa::sign_neo_format(&message_hash, &private_key).unwrap();
 
-    // Test recovery with different recovery IDs
     for recovery_id in 0..=3 {
         if let Ok(recovered_key) =
             ECDsa::recover_public_key(&message_hash, &neo_signature, recovery_id)
         {
-            // If recovery succeeds, verify it's a valid public key
-            assert!(
-                ECDsa::validate_public_key(&recovered_key),
-                "Recovered public key should be valid for recovery_id {}",
-                recovery_id
-            );
+            assert!(ECDsa::validate_public_key(&recovered_key));
         }
-        // Note: Recovery may not always succeed for all IDs, which is normal
     }
 }

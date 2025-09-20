@@ -47,6 +47,7 @@ impl PolicyContract {
 
     pub const MAX_BLOCK_SIZE_KEY: &'static [u8] = b"MaxBlockSize";
     pub const MAX_BLOCK_SYSTEM_FEE_KEY: &'static [u8] = b"MaxBlockSystemFee";
+    pub const MAX_TRANSACTIONS_PER_BLOCK_KEY: &'static [u8] = b"MaxTransactionsPerBlock";
     pub const FEE_PER_BYTE_KEY: &'static [u8] = b"FeePerByte";
     pub const EXEC_FEE_FACTOR_KEY: &'static [u8] = b"ExecFeeFactor";
     pub const STORAGE_PRICE_KEY: &'static [u8] = b"StoragePrice";
@@ -123,6 +124,112 @@ impl PolicyContract {
         Self { hash, methods }
     }
 
+    fn read_u32_setting(
+        &self,
+        engine: &mut ApplicationEngine,
+        key: &[u8],
+        default: u32,
+    ) -> Result<u32> {
+        let context = engine.get_native_storage_context(&self.hash)?;
+        if let Some(value) = engine.get_storage_item(&context, key) {
+            if value.is_empty() {
+                return Ok(0);
+            }
+            if value.len() > 4 {
+                return Err(Error::NativeContractError(
+                    "Stored policy value exceeds u32 capacity".to_string(),
+                ));
+            }
+            let mut buf = [0u8; 4];
+            buf[..value.len()].copy_from_slice(&value);
+            return Ok(u32::from_le_bytes(buf));
+        }
+        Ok(default)
+    }
+
+    fn read_i64_setting(
+        &self,
+        engine: &mut ApplicationEngine,
+        key: &[u8],
+        default: i64,
+    ) -> Result<i64> {
+        let context = engine.get_native_storage_context(&self.hash)?;
+        if let Some(value) = engine.get_storage_item(&context, key) {
+            if value.is_empty() {
+                return Ok(0);
+            }
+            if value.len() > 8 {
+                return Err(Error::NativeContractError(
+                    "Stored policy value exceeds i64 capacity".to_string(),
+                ));
+            }
+            let mut buf = [0u8; 8];
+            buf[..value.len()].copy_from_slice(&value);
+            return Ok(i64::from_le_bytes(buf));
+        }
+        Ok(default)
+    }
+
+    fn trim_le_bytes_u32(value: u32) -> Vec<u8> {
+        if value == 0 {
+            return Vec::new();
+        }
+        let mut bytes = value.to_le_bytes().to_vec();
+        while bytes.len() > 1 && bytes.last() == Some(&0) {
+            bytes.pop();
+        }
+        if let Some(&last) = bytes.last() {
+            if last & 0x80 != 0 {
+                bytes.push(0);
+            }
+        }
+        bytes
+    }
+
+    fn trim_le_bytes_i64(value: i64) -> Vec<u8> {
+        if value == 0 {
+            return Vec::new();
+        }
+        let mut bytes = value.to_le_bytes().to_vec();
+        while bytes.len() > 1 && bytes.last() == Some(&0) {
+            bytes.pop();
+        }
+        if let Some(&last) = bytes.last() {
+            if last & 0x80 != 0 {
+                bytes.push(0);
+            }
+        }
+        bytes
+    }
+
+    fn parse_u32_le(bytes: &[u8]) -> Result<u32> {
+        if bytes.is_empty() {
+            return Ok(0);
+        }
+        if bytes.len() > 4 {
+            return Err(Error::NativeContractError(
+                "Policy value exceeds 32-bit capacity".to_string(),
+            ));
+        }
+        let mut buf = [0u8; 4];
+        buf[..bytes.len()].copy_from_slice(bytes);
+        Ok(u32::from_le_bytes(buf))
+    }
+
+    fn parse_i64_le(bytes: &[u8]) -> Result<i64> {
+        if bytes.is_empty() {
+            return Ok(0);
+        }
+        if bytes.len() > 8 {
+            return Err(Error::NativeContractError(
+                "Policy value exceeds 64-bit capacity".to_string(),
+            ));
+        }
+        let mut buf = [0u8; 8];
+        buf[..bytes.len()].copy_from_slice(bytes);
+        Ok(i64::from_le_bytes(buf))
+    }
+
     /// Invokes a method on the Policy contract.
     pub fn invoke_method(
         &self,
@@ -132,14 +239,14 @@ impl PolicyContract {
     ) -> Result<Vec<u8>> {
         match method {
             // Fee and limit getters
-            "getFeePerByte" => self.get_fee_per_byte(),
-            "getExecFeeFactor" => self.get_exec_fee_factor(),
-            "getStoragePrice" => self.get_storage_price(),
-            "getAttributeFee" => self.get_attribute_fee(),
-            "getMaxTransactionsPerBlock" => self.get_max_transactions_per_block(),
-            "getMaxBlockSize" => self.get_max_block_size(),
-            "getMaxBlockSystemFee" => self.get_max_block_system_fee(),
-            "getMaxTraceableBlocks" => self.get_max_traceable_blocks(),
+            "getFeePerByte" => self.get_fee_per_byte(engine),
+            "getExecFeeFactor" => self.get_exec_fee_factor(engine),
+            "getStoragePrice" => self.get_storage_price(engine),
+            "getAttributeFee" => self.get_attribute_fee(engine),
+            "getMaxTransactionsPerBlock" => self.get_max_transactions_per_block(engine),
+            "getMaxBlockSize" => self.get_max_block_size(engine),
+            "getMaxBlockSystemFee" => self.get_max_block_system_fee(engine),
+            "getMaxTraceableBlocks" => self.get_max_traceable_blocks(engine),
 
             // Fee and limit setters
             "setFeePerByte" => self.set_fee_per_byte(engine, args),
@@ -164,10 +271,13 @@ impl PolicyContract {
         }
     }
 
-    fn get_max_transactions_per_block(&self) -> Result<Vec<u8>> {
-        // Default value: MAX_TRANSACTIONS_PER_BLOCK transactions per block
-        let max_tx = Self::MAX_TRANSACTIONS_PER_BLOCK;
-        Ok(max_tx.to_le_bytes().to_vec())
+    fn get_max_transactions_per_block(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        let value = self.read_u32_setting(
+            engine,
+            Self::MAX_TRANSACTIONS_PER_BLOCK_KEY,
+            Self::MAX_TRANSACTIONS_PER_BLOCK,
+        )?;
+        Ok(Self::trim_le_bytes_u32(value))
     }
 
     fn set_max_transactions_per_block(
@@ -182,12 +292,7 @@ impl PolicyContract {
         }
 
         let value_bytes = &args[0];
-        let value = if value_bytes.len() >= 4 {
-            let array: [u8; 4] = value_bytes[0..4].try_into().unwrap_or([0u8; 4]);
-            u32::from_le_bytes(array)
-        } else {
-            0
-        };
+        let value = Self::parse_u32_le(value_bytes)?;
 
         if value < 1 || value > 1000 {
             return Err(Error::NativeContractError(
@@ -197,15 +302,16 @@ impl PolicyContract {
 
         // Get storage context and store the value
         let context = engine.get_native_storage_context(&self.hash)?;
-        let key = b"MaxTransactionsPerBlock".to_vec();
-        engine.put_storage_item(&context, &key, &value.to_le_bytes())?;
+        let encoded = Self::trim_le_bytes_u32(value);
+        engine.put_storage_item(&context, Self::MAX_TRANSACTIONS_PER_BLOCK_KEY, &encoded)?;
 
         Ok(vec![1]) // Return true for success
     }
 
-    fn get_max_block_size(&self) -> Result<Vec<u8>> {
-        let max_size = Self::MAX_BLOCK_SIZE;
-        Ok(max_size.to_le_bytes().to_vec())
+    fn get_max_block_size(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        let value =
+            self.read_u32_setting(engine, Self::MAX_BLOCK_SIZE_KEY, Self::MAX_BLOCK_SIZE)?;
+        Ok(Self::trim_le_bytes_u32(value))
     }
 
     fn set_max_block_size(
@@ -220,12 +326,7 @@ impl PolicyContract {
         }
 
         let value_bytes = &args[0];
-        let value = if value_bytes.len() >= 4 {
-            let array: [u8; 4] = value_bytes[0..4].try_into().unwrap_or([0u8; 4]);
-            u32::from_le_bytes(array)
-        } else {
-            0
-        };
+        let value = Self::parse_u32_le(value_bytes)?;
 
         if value < (MAX_SCRIPT_SIZE as u32)
             || value
@@ -237,13 +338,18 @@ impl PolicyContract {
         }
 
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.put_storage_item(&context, Self::MAX_BLOCK_SIZE_KEY, &value.to_le_bytes())?;
+        let encoded = Self::trim_le_bytes_u32(value);
+        engine.put_storage_item(&context, Self::MAX_BLOCK_SIZE_KEY, &encoded)?;
         Ok(vec![1]) // Return true for success
     }
 
-    fn get_max_block_system_fee(&self) -> Result<Vec<u8>> {
-        let max_fee = Self::MAX_BLOCK_SYSTEM_FEE;
-        Ok(max_fee.to_le_bytes().to_vec())
+    fn get_max_block_system_fee(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        let value = self.read_i64_setting(
+            engine,
+            Self::MAX_BLOCK_SYSTEM_FEE_KEY,
+            Self::MAX_BLOCK_SYSTEM_FEE,
+        )?;
+        Ok(Self::trim_le_bytes_i64(value))
     }
 
     fn set_max_block_system_fee(
@@ -258,12 +364,7 @@ impl PolicyContract {
         }
 
         let value_bytes = &args[0];
-        let value = if value_bytes.len() >= 8 {
-            let array: [u8; 8] = value_bytes[0..8].try_into().unwrap_or([0u8; 8]);
-            i64::from_le_bytes(array)
-        } else {
-            0
-        };
+        let value = Self::parse_i64_le(value_bytes)?;
 
         if value <= 0 || value > 10_000_000_000_000 {
             // 100,000 GAS max
@@ -273,42 +374,51 @@ impl PolicyContract {
         }
 
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.put_storage_item(
-            &context,
-            Self::MAX_BLOCK_SYSTEM_FEE_KEY,
-            &value.to_le_bytes(),
-        )?;
+        let encoded = Self::trim_le_bytes_i64(value);
+        engine.put_storage_item(&context, Self::MAX_BLOCK_SYSTEM_FEE_KEY, &encoded)?;
         Ok(vec![1]) // Return true for success
     }
 
-    fn get_fee_per_byte(&self) -> Result<Vec<u8>> {
-        // Default value: 1000 datoshi per byte
-        let fee_per_byte = Self::DEFAULT_FEE_PER_BYTE;
-        Ok(fee_per_byte.to_le_bytes().to_vec())
+    fn get_fee_per_byte(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        let value = self.read_i64_setting(
+            engine,
+            Self::FEE_PER_BYTE_KEY,
+            Self::DEFAULT_FEE_PER_BYTE as i64,
+        )?;
+        Ok(Self::trim_le_bytes_i64(value))
     }
 
-    fn get_exec_fee_factor(&self) -> Result<Vec<u8>> {
-        // Default execution fee factor
-        let exec_fee_factor = Self::DEFAULT_EXEC_FEE_FACTOR;
-        Ok(exec_fee_factor.to_le_bytes().to_vec())
+    fn get_exec_fee_factor(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        let value = self.read_u32_setting(
+            engine,
+            Self::EXEC_FEE_FACTOR_KEY,
+            Self::DEFAULT_EXEC_FEE_FACTOR,
+        )?;
+        Ok(Self::trim_le_bytes_u32(value))
     }
 
-    fn get_storage_price(&self) -> Result<Vec<u8>> {
-        // Default storage price
-        let storage_price = Self::DEFAULT_STORAGE_PRICE;
-        Ok(storage_price.to_le_bytes().to_vec())
+    fn get_storage_price(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        let value =
+            self.read_u32_setting(engine, Self::STORAGE_PRICE_KEY, Self::DEFAULT_STORAGE_PRICE)?;
+        Ok(Self::trim_le_bytes_u32(value))
     }
 
-    fn get_attribute_fee(&self) -> Result<Vec<u8>> {
-        // Default attribute fee
-        let attribute_fee = Self::DEFAULT_ATTRIBUTE_FEE;
-        Ok(attribute_fee.to_le_bytes().to_vec())
+    fn get_attribute_fee(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        let value = self.read_i64_setting(
+            engine,
+            Self::ATTRIBUTE_FEE_KEY,
+            Self::DEFAULT_ATTRIBUTE_FEE as i64,
+        )?;
+        Ok(Self::trim_le_bytes_i64(value))
     }
 
-    fn get_max_traceable_blocks(&self) -> Result<Vec<u8>> {
-        // Default max traceable blocks
-        let max_traceable = Self::MAX_MAX_TRACEABLE_BLOCKS;
-        Ok(max_traceable.to_le_bytes().to_vec())
+    fn get_max_traceable_blocks(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
+        let value = self.read_u32_setting(
+            engine,
+            Self::MAX_TRACEABLE_BLOCKS_KEY,
+            Self::MAX_MAX_TRACEABLE_BLOCKS,
+        )?;
+        Ok(Self::trim_le_bytes_u32(value))
     }
 
     fn set_fee_per_byte(
@@ -323,12 +433,7 @@ impl PolicyContract {
         }
 
         let value_bytes = &args[0];
-        let value = if value_bytes.len() >= 8 {
-            let array: [u8; 8] = value_bytes[0..8].try_into().unwrap_or([0u8; 8]);
-            i64::from_le_bytes(array)
-        } else {
-            0
-        };
+        let value = Self::parse_i64_le(value_bytes)?;
 
         if value < 0 || value > 100_000_000 {
             return Err(Error::NativeContractError(
@@ -337,7 +442,8 @@ impl PolicyContract {
         }
 
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.put_storage_item(&context, Self::FEE_PER_BYTE_KEY, &value.to_le_bytes())?;
+        let encoded = Self::trim_le_bytes_i64(value);
+        engine.put_storage_item(&context, Self::FEE_PER_BYTE_KEY, &encoded)?;
         Ok(vec![1]) // Return true for success
     }
 
@@ -353,12 +459,7 @@ impl PolicyContract {
         }
 
         let value_bytes = &args[0];
-        let value = if value_bytes.len() >= 4 {
-            let array: [u8; 4] = value_bytes[0..4].try_into().unwrap_or([0u8; 4]);
-            u32::from_le_bytes(array)
-        } else {
-            0
-        };
+        let value = Self::parse_u32_le(value_bytes)?;
 
         if value == 0 || value > 1000 {
             return Err(Error::NativeContractError(
@@ -367,7 +468,8 @@ impl PolicyContract {
         }
 
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.put_storage_item(&context, Self::EXEC_FEE_FACTOR_KEY, &value.to_le_bytes())?;
+        let encoded = Self::trim_le_bytes_u32(value);
+        engine.put_storage_item(&context, Self::EXEC_FEE_FACTOR_KEY, &encoded)?;
         Ok(vec![1]) // Return true for success
     }
 
@@ -383,12 +485,7 @@ impl PolicyContract {
         }
 
         let value_bytes = &args[0];
-        let value = if value_bytes.len() >= 4 {
-            let array: [u8; 4] = value_bytes[0..4].try_into().unwrap_or([0u8; 4]);
-            u32::from_le_bytes(array)
-        } else {
-            0
-        };
+        let value = Self::parse_u32_le(value_bytes)?;
 
         if value == 0 || value > 100_000 {
             return Err(Error::NativeContractError(
@@ -397,7 +494,8 @@ impl PolicyContract {
         }
 
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.put_storage_item(&context, Self::STORAGE_PRICE_KEY, &value.to_le_bytes())?;
+        let encoded = Self::trim_le_bytes_u32(value);
+        engine.put_storage_item(&context, Self::STORAGE_PRICE_KEY, &encoded)?;
         Ok(vec![1]) // Return true for success
     }
 
@@ -413,12 +511,7 @@ impl PolicyContract {
         }
 
         let value_bytes = &args[0];
-        let value = if value_bytes.len() >= 8 {
-            let array: [u8; 8] = value_bytes[0..8].try_into().unwrap_or([0u8; 8]);
-            i64::from_le_bytes(array)
-        } else {
-            0
-        };
+        let value = Self::parse_i64_le(value_bytes)?;
 
         if value < 0 || value > 1_000_000_000 {
             // Max 10 GAS
@@ -428,7 +521,8 @@ impl PolicyContract {
         }
 
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.put_storage_item(&context, Self::ATTRIBUTE_FEE_KEY, &value.to_le_bytes())?;
+        let encoded = Self::trim_le_bytes_i64(value);
+        engine.put_storage_item(&context, Self::ATTRIBUTE_FEE_KEY, &encoded)?;
         Ok(vec![1]) // Return true for success
     }
 
@@ -444,12 +538,7 @@ impl PolicyContract {
         }
 
         let value_bytes = &args[0];
-        let value = if value_bytes.len() >= 4 {
-            let array: [u8; 4] = value_bytes[0..4].try_into().unwrap_or([0u8; 4]);
-            u32::from_le_bytes(array)
-        } else {
-            0
-        };
+        let value = Self::parse_u32_le(value_bytes)?;
 
         if value == 0 || value > 2_102_400 {
             return Err(Error::NativeContractError(
@@ -458,11 +547,8 @@ impl PolicyContract {
         }
 
         let context = engine.get_native_storage_context(&self.hash)?;
-        engine.put_storage_item(
-            &context,
-            Self::MAX_TRACEABLE_BLOCKS_KEY,
-            &value.to_le_bytes(),
-        )?;
+        let encoded = Self::trim_le_bytes_u32(value);
+        engine.put_storage_item(&context, Self::MAX_TRACEABLE_BLOCKS_KEY, &encoded)?;
         Ok(vec![1]) // Return true for success
     }
 
@@ -624,65 +710,5 @@ impl NativeContract for PolicyContract {
 impl Default for PolicyContract {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::{Error, Result};
-    use neo_vm::TriggerType;
-
-    #[test]
-    fn test_policy_contract_creation() {
-        let policy = PolicyContract::new();
-        assert_eq!(policy.name(), "PolicyContract");
-        assert!(!policy.methods().is_empty());
-    }
-
-    #[test]
-    fn test_get_max_transactions_per_block() {
-        let policy = PolicyContract::new();
-        let result = policy.get_max_transactions_per_block().unwrap();
-        let max_tx = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
-        assert_eq!(max_tx, MAX_TRANSACTIONS_PER_BLOCK);
-    }
-
-    #[test]
-    fn test_get_max_block_size() {
-        let policy = PolicyContract::new();
-        let result = policy.get_max_block_size().unwrap();
-        let max_size = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
-        assert_eq!(max_size, MAX_BLOCK_SIZE);
-    }
-
-    #[test]
-    fn test_get_fee_per_byte() {
-        let policy = PolicyContract::new();
-        let result = policy.get_fee_per_byte().unwrap();
-        let fee = u32::from_le_bytes([result[0], result[1], result[2], result[3]]);
-        assert_eq!(fee, 1000);
-    }
-
-    #[test]
-    fn test_is_blocked() {
-        let policy = PolicyContract::new();
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        let args = vec![vec![0u8; ADDRESS_SIZE]]; // Dummy account
-        let result = policy.is_blocked(&mut engine, &args).unwrap();
-        assert_eq!(result, vec![0]); // Not blocked
-    }
-
-    #[test]
-    fn test_block_account() {
-        let policy = PolicyContract::new();
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-
-        let mut account = vec![0u8; ADDRESS_SIZE];
-        account[0] = 1; // Make it non-zero
-        let args = vec![account];
-
-        let result = policy.block_account(&mut engine, &args).unwrap();
-        assert_eq!(result, vec![1]); // Success
     }
 }

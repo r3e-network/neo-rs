@@ -15,6 +15,8 @@ use num_bigint::BigInt;
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::sync::Arc;
 use tracing::{debug, error, warn};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 
 /// Helper function to convert values to StackItem
 fn to_stack_item(value: &dyn std::any::Any) -> Result<StackItem> {
@@ -529,6 +531,80 @@ impl VmExecutor {
                     result
                 );
                 Ok(1000) // Default fee per byte
+            }
+        }
+    }
+
+    /// Call Policy.getMaxBlockSystemFee() method
+    pub async fn get_max_block_system_fee(&self, policy_hash: &UInt160) -> Result<u64> {
+        debug!("Getting max block system fee using VM");
+
+        let result = self
+            .call_native_contract(policy_hash, "getMaxBlockSystemFee", vec![])
+            .await?;
+
+        match result {
+            StackItem::Integer(val) => {
+                match ToPrimitive::to_u64(&val) {
+                    Some(v) => Ok(v),
+                    None => {
+                        warn!("Max block system fee too large for u64: {}", val);
+                        Ok(900000000000) // Default 9000 GAS
+                    }
+                }
+            }
+            _ => {
+                warn!(
+                    "Unexpected result type from Policy.getMaxBlockSystemFee(): {:?}",
+                    result
+                );
+                Ok(900000000000)
+            }
+        }
+    }
+
+    /// Call Policy.getBlockedAccounts() and return as a Vec<UInt160>
+    pub async fn get_blocked_accounts(&self, policy_hash: &UInt160) -> Result<Vec<UInt160>> {
+        debug!("Getting blocked accounts using VM");
+        let result = self
+            .call_native_contract(policy_hash, "getBlockedAccounts", vec![])
+            .await?;
+
+        match result {
+            StackItem::Array(items) => {
+                let mut accounts = Vec::with_capacity(items.len());
+                for it in items {
+                    match it {
+                        StackItem::ByteString(bs) | StackItem::Buffer(bs) => {
+                            if bs.len() == 20 {
+                                if let Ok(h) = UInt160::from_bytes(&bs) {
+                                    accounts.push(h);
+                                }
+                            } else if let Ok(decoded) = hex::decode(&bs) {
+                                if decoded.len() == 20 {
+                                    if let Ok(h) = UInt160::from_bytes(&decoded) {
+                                        accounts.push(h);
+                                    }
+                                }
+                            } else if let Ok(decoded) = BASE64.decode(&bs) {
+                                if decoded.len() == 20 {
+                                    if let Ok(h) = UInt160::from_bytes(&decoded) {
+                                        accounts.push(h);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(accounts)
+            }
+            _ => {
+                warn!(
+                    "Unexpected result from Policy.getBlockedAccounts(): {:?}",
+                    result
+                );
+                Ok(Vec::new())
             }
         }
     }

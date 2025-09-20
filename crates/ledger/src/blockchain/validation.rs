@@ -426,11 +426,13 @@ impl BlockchainVerifier {
             return Ok(vec![]);
         }
 
+        let expected_length = 2 + 33; // opcode + length + compressed public key
         if verification_script[0] == 0x0C
             && verification_script[1] == 0x21
-            && verification_script[34] == 0x41
+            && verification_script.len() >= expected_length + 1
+            && *verification_script.last().unwrap() == 0x41
         {
-            return Ok(verification_script[2..34].to_vec());
+            return Ok(verification_script[2..expected_length].to_vec());
         }
 
         Ok(vec![])
@@ -440,7 +442,9 @@ impl BlockchainVerifier {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use crate::{Error, Result};
+    use super::*;
+    use crate::{block::MAX_TRANSACTIONS_PER_BLOCK, Error, Result};
+    use neo_config::{MAX_SCRIPT_SIZE, MAX_TRANSACTION_SIZE};
     use neo_core::{UInt160, UInt256};
 
     #[test]
@@ -468,16 +472,17 @@ mod tests {
         let verifier = BlockchainVerifier::default();
 
         // Create a test header
-        let header = BlockHeader::new(
-            0,               // version
-            UInt256::zero(), // previous hash
-            UInt256::zero(), // merkle root
-            1640995200000,   // timestamp
+        let mut header = BlockHeader::new(
+            0,
+            UInt256::zero(),
+            UInt256::zero(),
+            1640995200000,
             42,
             1,
-            UInt160::zero(),    // next consensus
-            Witness::default(), // witness
+            0,
+            UInt160::zero(),
         );
+        header.add_witness(Witness::default());
 
         let result = verifier.verify_header_format(&header).unwrap();
         assert!(result);

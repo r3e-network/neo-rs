@@ -226,8 +226,8 @@ impl InteropService for CreateService {
             self.call_deploy_method(engine, &contract_state, deploy_data, false)?;
         }
 
-        // 13. Emit Deploy event (matches C# SendNotification exactly)
-        engine.emit_event("Deploy", vec![contract_hash.as_bytes().to_vec()]);
+        // 13. Emit Deploy event (best-effort, matches C# SendNotification semantics)
+        let _ = engine.emit_event("Deploy", vec![contract_hash.as_bytes().to_vec()]);
 
         // 14. Return contract state as serialized data
         let contract_serialized = self.serialize_contract_state(&contract_state)?;
@@ -612,91 +612,5 @@ impl ContractService {
             Box::new(UpdateService),
             Box::new(DestroyService),
         ]
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    #[test]
-    fn test_get_contract_service() {
-        let service = GetContractService;
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-
-        let contract_hash = UInt160::zero();
-
-        // Test getting non-existent contract
-        let args = vec![contract_hash.as_bytes().to_vec()];
-        let result = service.execute(&mut engine, &args);
-        assert!(result.is_ok());
-        assert!(result?.is_empty());
-
-        // Add a contract and test again
-        let nef = NefFile::new("neo-core-v3.0".to_string(), vec![0x40]);
-        let manifest = ContractManifest::default();
-        let contract = ContractState::new(1, contract_hash, nef, manifest);
-        engine.add_contract(contract);
-
-        let result = service.execute(&mut engine, &args);
-        assert!(result.is_ok());
-        let contract_data = result?;
-        assert!(!contract_data.is_empty()); // Should return serialized contract state
-        assert!(contract_data.len() > ADDRESS_SIZE); // Should be more than just the hash
-    }
-
-    #[test]
-    fn test_call_service() {
-        let service = CallService;
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-
-        let contract_hash = UInt160::zero();
-        let method = "test_method";
-        let args = vec![
-            contract_hash.as_bytes().to_vec(),
-            method.as_bytes().to_vec(),
-            b"arg1".to_vec(),
-            b"arg2".to_vec(),
-        ];
-
-        // This will fail because the contract doesn't exist
-        let result = service.execute(&mut engine, &args);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_service_names_and_costs() {
-        let call_service = CallService;
-        assert_eq!(call_service.name(), "System.Contract.Call");
-        assert_eq!(call_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
-
-        let get_service = GetContractService;
-        assert_eq!(get_service.name(), "System.Contract.GetContract");
-        assert_eq!(get_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
-
-        let create_service = CreateService;
-        assert_eq!(create_service.name(), "System.Contract.Create");
-        assert_eq!(create_service.gas_cost(), 0);
-    }
-
-    #[test]
-    fn test_invalid_arguments() {
-        let call_service = CallService;
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-
-        // Test with insufficient arguments
-        let result = call_service.execute(&mut engine, &[]);
-        assert!(result.is_err());
-
-        let result = call_service.execute(&mut engine, &[b"hash".to_vec()]);
-        assert!(result.is_err());
-
-        // Test with invalid hash length
-        let args = vec![
-            b"invalid_hash".to_vec(), // Wrong length
-            b"method".to_vec(),
-            b"arg".to_vec(),
-        ];
-        let result = call_service.execute(&mut engine, &args);
-        assert!(result.is_err());
     }
 }

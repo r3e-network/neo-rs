@@ -3,12 +3,15 @@
 //! This plugin provides JSON-RPC API functionality equivalent to the C# RpcServer plugin
 
 use crate::Plugin;
+use async_trait::async_trait;
 use neo_extensions::plugin::{PluginCategory, PluginContext, PluginEvent, PluginInfo};
 use neo_extensions::ExtensionResult;
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
+use warp::Filter;
 
 /// RPC Server Plugin configuration (matches C# RpcServerSettings exactly)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,7 +84,7 @@ pub struct RpcServerPlugin {
     info: PluginInfo,
     settings: RpcServerSettings,
     server_handle: Option<tokio::task::JoinHandle<()>>,
-    rpc_methods: HashMap<String, Box<dyn RpcMethod>>,
+    rpc_methods: Arc<RwLock<HashMap<String, Box<dyn RpcMethod>>>>,
 }
 
 impl RpcServerPlugin {
@@ -93,108 +96,125 @@ impl RpcServerPlugin {
                 version: "3.0.0".to_string(),
                 author: "Neo Project".to_string(),
                 description: "Neo JSON-RPC API Server".to_string(),
-                category: PluginCategory::Network,
+                category: PluginCategory::Rpc,
                 dependencies: Vec::new(),
-                website: Some("https://neo.org".to_string()),
-                repository: Some("https://github.com/neo-project/neo".to_string()),
+                min_neo_version: "3.6.0".to_string(),
+                priority: 0,
             },
             settings: RpcServerSettings::default(),
             server_handle: None,
-            rpc_methods: HashMap::new(),
+            rpc_methods: Arc::new(RwLock::new(HashMap::new())),
         }
     }
-    
+
     /// Register RPC method (matches C# RPC method registration)
     pub fn register_method<T: RpcMethod + 'static>(&mut self, method: T) {
-        self.rpc_methods.insert(method.name().to_string(), Box::new(method));
+        let mut map = futures::executor::block_on(self.rpc_methods.write());
+        map.insert(method.name().to_string(), Box::new(method));
     }
-    
+
     /// Start RPC server
     async fn start_server(&mut self) -> ExtensionResult<()> {
-        info!("Starting RPC server on {}:{}", self.settings.bind_address, self.settings.port);
-        
+        info!(
+            "Starting RPC server on {}:{}",
+            self.settings.bind_address, self.settings.port
+        );
+
         // Create HTTP server with all registered methods
-        let server = warp::serve(self.create_routes())
-            .bind((
-                self.settings.bind_address.parse::<std::net::IpAddr>()
-                    .map_err(|e| neo_extensions::error::ExtensionError::InvalidConfig(e.to_string()))?,
-                self.settings.port,
-            ));
-            
+        let server = warp::serve(self.create_routes()).bind((
+            self.settings
+                .bind_address
+                .parse::<std::net::IpAddr>()
+                .map_err(|e| {
+                    neo_extensions::error::ExtensionError::invalid_config(e.to_string())
+                })?,
+            self.settings.port,
+        ));
+
         // Start server in background
         let handle = tokio::spawn(async move {
             server.await;
         });
-        
+
         self.server_handle = Some(handle);
         info!("✅ RPC server started successfully");
-        
+
         Ok(())
     }
-    
+
     /// Create warp routes for all RPC methods
     fn create_routes(&self) -> impl warp::Filter<Extract = impl warp::Reply> + Clone {
         // Create JSON-RPC endpoint
+        let methods = self.rpc_methods.clone();
         let rpc = warp::path("rpc")
             .and(warp::post())
             .and(warp::body::json())
             .and_then(move |request: serde_json::Value| {
+                let methods = methods.clone();
                 async move {
-                    self.handle_rpc_request(request).await
+                    handle_rpc_request_with_methods(methods, request)
+                        .await
                         .map(|response| warp::reply::json(&response))
                         .map_err(|e| warp::reject::custom(RpcError(e.to_string())))
                 }
             });
-            
+
         // Create health endpoint
-        let health = warp::path("health")
-            .and(warp::get())
-            .map(|| {
-                warp::reply::json(&serde_json::json!({
-                    "status": "ok",
-                    "service": "neo-rpc"
-                }))
-            });
-            
+        let health = warp::path("health").and(warp::get()).map(|| {
+            warp::reply::json(&serde_json::json!({
+                "status": "ok",
+                "service": "neo-rpc"
+            }))
+        });
+
         // Combine routes with CORS
         let cors = warp::cors()
             .allow_any_origin()
             .allow_headers(vec!["content-type"])
             .allow_methods(vec!["GET", "POST", "OPTIONS"]);
-            
+
         rpc.or(health).with(cors)
     }
-    
+
     /// Handle JSON-RPC request
-    async fn handle_rpc_request(&self, request: serde_json::Value) -> ExtensionResult<serde_json::Value> {
+    async fn handle_rpc_request(
+        &self,
+        request: serde_json::Value,
+    ) -> ExtensionResult<serde_json::Value> {
         // Parse JSON-RPC request
-        let method = request.get("method")
+        let method = request
+            .get("method")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| neo_extensions::error::ExtensionError::InvalidConfig("Missing method".to_string()))?;
-            
-        let params = request.get("params").cloned().unwrap_or(serde_json::Value::Null);
-        let id = request.get("id").cloned().unwrap_or(serde_json::Value::Null);
-        
+            .ok_or_else(|| {
+                neo_extensions::error::ExtensionError::invalid_config("Missing method".to_string())
+            })?;
+
+        let params = request
+            .get("params")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let id = request
+            .get("id")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+
         // Execute RPC method
-        if let Some(rpc_method) = self.rpc_methods.get(method) {
+        let map = self.rpc_methods.read().await;
+        if let Some(rpc_method) = map.get(method) {
             match rpc_method.execute(params).await {
-                Ok(result) => {
-                    Ok(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "result": result,
-                        "id": id
-                    }))
-                }
-                Err(e) => {
-                    Ok(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "error": {
-                            "code": -32603,
-                            "message": e.to_string()
-                        },
-                        "id": id
-                    }))
-                }
+                Ok(result) => Ok(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "result": result,
+                    "id": id
+                })),
+                Err(e) => Ok(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32603,
+                        "message": e.to_string()
+                    },
+                    "id": id
+                })),
             }
         } else {
             Ok(serde_json::json!({
@@ -209,52 +229,122 @@ impl RpcServerPlugin {
     }
 }
 
+async fn handle_rpc_request_with_methods(
+    methods: Arc<RwLock<HashMap<String, Box<dyn RpcMethod>>>>,
+    request: serde_json::Value,
+) -> ExtensionResult<serde_json::Value> {
+    // Parse JSON-RPC request
+    let method = request
+        .get("method")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            neo_extensions::error::ExtensionError::invalid_config("Missing method".to_string())
+        })?;
+
+    let params = request
+        .get("params")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    let id = request
+        .get("id")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    let map = methods.read().await;
+    if let Some(rpc_method) = map.get(method) {
+        match rpc_method.execute(params).await {
+            Ok(result) => Ok(serde_json::json!({
+                "jsonrpc": "2.0",
+                "result": result,
+                "id": id
+            })),
+            Err(e) => Ok(serde_json::json!({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32603,
+                    "message": e.to_string()
+                },
+                "id": id
+            })),
+        }
+    } else {
+        Ok(serde_json::json!({
+            "jsonrpc": "2.0",
+            "error": {
+                "code": -32601,
+                "message": "Method not found"
+            },
+            "id": id
+        }))
+    }
+}
+
 #[async_trait]
 impl Plugin for RpcServerPlugin {
     fn info(&self) -> &PluginInfo {
         &self.info
     }
-    
+
     async fn initialize(&mut self, context: &PluginContext) -> ExtensionResult<()> {
         debug!("Initializing RPC server plugin");
-        
-        // Load configuration from context
-        if let Some(config) = context.config.get("RpcServer") {
-            self.settings = serde_json::from_value(config.clone())
-                .map_err(|e| neo_extensions::error::ExtensionError::InvalidConfig(e.to_string()))?;
+
+        // Load configuration from config_dir/RpcServer.json if present
+        let config_file = context.config_dir.join("RpcServer.json");
+        if config_file.exists() {
+            match tokio::fs::read_to_string(&config_file).await {
+                Ok(config_str) => match serde_json::from_str::<RpcServerSettings>(&config_str) {
+                    Ok(cfg) => self.settings = cfg,
+                    Err(e) => {
+                        return Err(neo_extensions::error::ExtensionError::invalid_config(
+                            e.to_string(),
+                        ))
+                    }
+                },
+                Err(e) => {
+                    return Err(neo_extensions::error::ExtensionError::invalid_config(
+                        format!("failed to read {}: {}", config_file.display(), e),
+                    ))
+                }
+            }
         }
-        
+
         // Register default RPC methods (matches C# RpcServer plugin)
         self.register_default_methods();
-        
+
         info!("✅ RPC server plugin initialized");
         Ok(())
     }
-    
+
     async fn start(&mut self) -> ExtensionResult<()> {
         info!("Starting RPC server plugin");
         self.start_server().await?;
         Ok(())
     }
-    
+
     async fn stop(&mut self) -> ExtensionResult<()> {
         info!("Stopping RPC server plugin");
-        
+
         if let Some(handle) = self.server_handle.take() {
             handle.abort();
         }
-        
+
         info!("✅ RPC server plugin stopped");
         Ok(())
     }
-    
+
     async fn handle_event(&mut self, event: &PluginEvent) -> ExtensionResult<()> {
         match event {
-            PluginEvent::BlockCommitted { block, .. } => {
-                debug!("RPC server: Block {} committed", block.index);
+            PluginEvent::BlockReceived {
+                block_hash,
+                block_height,
+            } => {
+                debug!(
+                    "RPC server: Block {} received at height {}",
+                    block_hash, block_height
+                );
             }
-            PluginEvent::TransactionAdded { transaction, .. } => {
-                debug!("RPC server: Transaction {} added", transaction.hash);
+            PluginEvent::TransactionReceived { tx_hash } => {
+                debug!("RPC server: Transaction {} received", tx_hash);
             }
             _ => {}
         }
@@ -274,18 +364,18 @@ impl RpcServerPlugin {
         self.register_method(GetPeersMethod::new());
         self.register_method(GetConnectionCountMethod::new());
         self.register_method(ValidateAddressMethod::new());
-        
+
         // Transaction methods
         self.register_method(GetRawTransactionMethod::new());
         self.register_method(GetRawMempoolMethod::new());
         self.register_method(SendRawTransactionMethod::new());
-        
+
         // Smart contract methods
         self.register_method(InvokeFunctionMethod::new());
         self.register_method(InvokeScriptMethod::new());
         self.register_method(GetStorageMethod::new());
         self.register_method(GetContractStateMethod::new());
-        
+
         // Utility methods
         self.register_method(ListPluginsMethod::new());
         self.register_method(GetApplicationLogMethod::new());
@@ -297,9 +387,12 @@ impl RpcServerPlugin {
 pub trait RpcMethod: Send + Sync {
     /// Get method name
     fn name(&self) -> &str;
-    
+
     /// Execute RPC method
-    async fn execute(&self, params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 /// Custom error for warp rejections
@@ -310,14 +403,21 @@ impl warp::reject::Reject for RpcError {}
 // Example RPC method implementations
 struct GetBlockCountMethod;
 impl GetBlockCountMethod {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }
 
 #[async_trait]
 impl RpcMethod for GetBlockCountMethod {
-    fn name(&self) -> &str { "getblockcount" }
-    
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "getblockcount"
+    }
+
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         // Would integrate with actual blockchain to get block count
         Ok(serde_json::json!(1000)) // Mock value
     }
@@ -325,18 +425,26 @@ impl RpcMethod for GetBlockCountMethod {
 
 struct GetBlockMethod;
 impl GetBlockMethod {
-    fn new() -> Self { Self }
+    fn new() -> Self {
+        Self
+    }
 }
 
 #[async_trait]
 impl RpcMethod for GetBlockMethod {
-    fn name(&self) -> &str { "getblock" }
-    
-    async fn execute(&self, params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let block_hash = params.get(0)
+    fn name(&self) -> &str {
+        "getblock"
+    }
+
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        let block_hash = params
+            .get(0)
             .and_then(|v| v.as_str())
             .ok_or("Missing block hash parameter")?;
-            
+
         // Would integrate with actual blockchain to get block
         Ok(serde_json::json!({
             "hash": block_hash,
@@ -349,31 +457,62 @@ impl RpcMethod for GetBlockMethod {
 
 // Additional method implementations would follow the same pattern...
 struct GetBlockHashMethod;
-impl GetBlockHashMethod { fn new() -> Self { Self } }
+impl GetBlockHashMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for GetBlockHashMethod {
-    fn name(&self) -> &str { "getblockhash" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(serde_json::json!("0x0000000000000000000000000000000000000000000000000000000000000000"))
+    fn name(&self) -> &str {
+        "getblockhash"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(serde_json::json!(
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ))
     }
 }
 
 struct GetBestBlockHashMethod;
-impl GetBestBlockHashMethod { fn new() -> Self { Self } }
+impl GetBestBlockHashMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for GetBestBlockHashMethod {
-    fn name(&self) -> &str { "getbestblockhash" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(serde_json::json!("0x0000000000000000000000000000000000000000000000000000000000000000"))
+    fn name(&self) -> &str {
+        "getbestblockhash"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(serde_json::json!(
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ))
     }
 }
 
 struct GetVersionMethod;
-impl GetVersionMethod { fn new() -> Self { Self } }
+impl GetVersionMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for GetVersionMethod {
-    fn name(&self) -> &str { "getversion" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "getversion"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::json!({
             "tcpport": 10333,
             "wsport": 10334,
@@ -384,11 +523,20 @@ impl RpcMethod for GetVersionMethod {
 }
 
 struct GetPeersMethod;
-impl GetPeersMethod { fn new() -> Self { Self } }
+impl GetPeersMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for GetPeersMethod {
-    fn name(&self) -> &str { "getpeers" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "getpeers"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::json!({
             "unconnected": [],
             "bad": [],
@@ -398,25 +546,44 @@ impl RpcMethod for GetPeersMethod {
 }
 
 struct GetConnectionCountMethod;
-impl GetConnectionCountMethod { fn new() -> Self { Self } }
+impl GetConnectionCountMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for GetConnectionCountMethod {
-    fn name(&self) -> &str { "getconnectioncount" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "getconnectioncount"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::json!(0))
     }
 }
 
 struct ValidateAddressMethod;
-impl ValidateAddressMethod { fn new() -> Self { Self } }
+impl ValidateAddressMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for ValidateAddressMethod {
-    fn name(&self) -> &str { "validateaddress" }
-    async fn execute(&self, params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let address = params.get(0)
+    fn name(&self) -> &str {
+        "validateaddress"
+    }
+    async fn execute(
+        &self,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        let address = params
+            .get(0)
             .and_then(|v| v.as_str())
             .ok_or("Missing address parameter")?;
-            
+
         Ok(serde_json::json!({
             "address": address,
             "isvalid": true // Would implement actual validation
@@ -425,31 +592,58 @@ impl RpcMethod for ValidateAddressMethod {
 }
 
 struct GetRawTransactionMethod;
-impl GetRawTransactionMethod { fn new() -> Self { Self } }
+impl GetRawTransactionMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for GetRawTransactionMethod {
-    fn name(&self) -> &str { "getrawtransaction" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "getrawtransaction"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::Value::Null)
     }
 }
 
 struct GetRawMempoolMethod;
-impl GetRawMempoolMethod { fn new() -> Self { Self } }
+impl GetRawMempoolMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for GetRawMempoolMethod {
-    fn name(&self) -> &str { "getrawmempool" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "getrawmempool"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::json!([]))
     }
 }
 
 struct SendRawTransactionMethod;
-impl SendRawTransactionMethod { fn new() -> Self { Self } }
+impl SendRawTransactionMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for SendRawTransactionMethod {
-    fn name(&self) -> &str { "sendrawtransaction" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "sendrawtransaction"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::json!({
             "hash": "0x0000000000000000000000000000000000000000000000000000000000000000"
         }))
@@ -457,11 +651,20 @@ impl RpcMethod for SendRawTransactionMethod {
 }
 
 struct InvokeFunctionMethod;
-impl InvokeFunctionMethod { fn new() -> Self { Self } }
+impl InvokeFunctionMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for InvokeFunctionMethod {
-    fn name(&self) -> &str { "invokefunction" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "invokefunction"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::json!({
             "script": "",
             "state": "HALT",
@@ -472,14 +675,23 @@ impl RpcMethod for InvokeFunctionMethod {
 }
 
 struct InvokeScriptMethod;
-impl InvokeScriptMethod { fn new() -> Self { Self } }
+impl InvokeScriptMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for InvokeScriptMethod {
-    fn name(&self) -> &str { "invokescript" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "invokescript"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::json!({
             "script": "",
-            "state": "HALT", 
+            "state": "HALT",
             "gasconsumed": "0",
             "stack": []
         }))
@@ -487,31 +699,58 @@ impl RpcMethod for InvokeScriptMethod {
 }
 
 struct GetStorageMethod;
-impl GetStorageMethod { fn new() -> Self { Self } }
+impl GetStorageMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for GetStorageMethod {
-    fn name(&self) -> &str { "getstorage" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "getstorage"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::Value::Null)
     }
 }
 
 struct GetContractStateMethod;
-impl GetContractStateMethod { fn new() -> Self { Self } }
+impl GetContractStateMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for GetContractStateMethod {
-    fn name(&self) -> &str { "getcontractstate" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "getcontractstate"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::Value::Null)
     }
 }
 
 struct ListPluginsMethod;
-impl ListPluginsMethod { fn new() -> Self { Self } }
+impl ListPluginsMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for ListPluginsMethod {
-    fn name(&self) -> &str { "listplugins" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "listplugins"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::json!([
             {
                 "name": "RpcServer",
@@ -523,11 +762,20 @@ impl RpcMethod for ListPluginsMethod {
 }
 
 struct GetApplicationLogMethod;
-impl GetApplicationLogMethod { fn new() -> Self { Self } }
+impl GetApplicationLogMethod {
+    fn new() -> Self {
+        Self
+    }
+}
 #[async_trait]
 impl RpcMethod for GetApplicationLogMethod {
-    fn name(&self) -> &str { "getapplicationlog" }
-    async fn execute(&self, _params: serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    fn name(&self) -> &str {
+        "getapplicationlog"
+    }
+    async fn execute(
+        &self,
+        _params: serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(serde_json::json!({
             "executions": []
         }))

@@ -3,6 +3,7 @@
 //! This module provides comprehensive peer connection management that exactly matches
 //! the C# Neo peer management functionality for real P2P connections.
 
+use crate::dos_protection::{DosProtectionConfig, DosProtectionManager};
 use crate::messages::commands::varlen;
 use crate::messages::header::Neo3Message;
 use crate::messages::network::NetworkMessage as NetMsg;
@@ -116,6 +117,8 @@ pub struct PeerManager {
     error_handler: Arc<NetworkErrorHandler>,
     /// Message forwarder to P2pNode (optional)
     message_forwarder: Option<mpsc::UnboundedSender<(SocketAddr, NetworkMessage)>>,
+    /// DoS protection and rate limiting manager
+    dos: Arc<DosProtectionManager>,
 }
 
 /// Connection statistics (matches C# Neo connection tracking exactly)
@@ -154,6 +157,13 @@ impl PeerManager {
         // Initialize error handler
         let error_handler = Arc::new(NetworkErrorHandler::new());
 
+        // Initialize DoS protection from config if provided
+        let dos_manager = if let Some(cfg) = &config.dos_config {
+            DosProtectionManager::new(cfg.clone())
+        } else {
+            DosProtectionManager::new(DosProtectionConfig::default())
+        };
+
         Ok(Self {
             config,
             peers: Arc::new(RwLock::new(HashMap::new())),
@@ -164,6 +174,7 @@ impl PeerManager {
             message_validator: Arc::new(RwLock::new(message_validator)),
             error_handler,
             message_forwarder: None,
+            dos: Arc::new(dos_manager),
         })
     }
 
@@ -232,7 +243,15 @@ impl PeerManager {
             return Err(NetworkError::PeerAlreadyConnected { address });
         }
 
-        // 3. Use error handler to execute connection with retry logic
+        // 3. DoS protection for outbound connection
+        if !self.dos.should_allow_connection(address.ip()).await {
+            return Err(NetworkError::ConnectionFailed {
+                address,
+                reason: "Outbound connection limited by DoS manager".to_string(),
+            });
+        }
+
+        // 4. Use error handler to execute connection with retry logic
         let operation_id = format!("connect_to_peer_{}", address);
         let error_handler: Arc<NetworkErrorHandler> = Arc::clone(&self.error_handler);
         let config = self.config.clone();
@@ -288,7 +307,8 @@ impl PeerManager {
             })
             .await?;
 
-        // 4. Create peer connection
+        // 4. Create peer connection (register with DoS manager upon success)
+        self.dos.register_connection(address.ip()).await;
         let (message_tx, message_rx) = mpsc::unbounded_channel();
         let message_tx_clone = message_tx.clone();
         let peer_connection = PeerConnection {
@@ -321,6 +341,7 @@ impl PeerManager {
         let stats = Arc::clone(&self.connection_stats);
         let message_validator = Arc::clone(&self.message_validator);
         let error_handler = Arc::clone(&self.error_handler);
+        let dos = Arc::clone(&self.dos);
 
         // Spawn the message handler task
         tokio::spawn(async move {
@@ -332,6 +353,7 @@ impl PeerManager {
                 stats,
                 message_validator,
                 error_handler,
+                dos,
             )
             .await
             {
@@ -368,6 +390,8 @@ impl PeerManager {
         let _ = self.event_sender.send(PeerEvent::Disconnected(address));
 
         info!("Successfully disconnected from peer: {}", address);
+        // Unregister from DoS manager
+        self.dos.unregister_connection(address.ip()).await;
         Ok(())
     }
 
@@ -569,6 +593,7 @@ impl PeerManager {
             self.connection_stats.clone(),
             self.message_validator.clone(),
             self.error_handler.clone(),
+            self.dos.clone(),
         )
         .await?;
 
@@ -607,6 +632,7 @@ impl PeerManager {
         let connection_stats = Arc::clone(&self.connection_stats);
         let message_validator = Arc::clone(&self.message_validator);
         let error_handler: Arc<NetworkErrorHandler> = Arc::clone(&self.error_handler);
+        let dos = Arc::clone(&self.dos);
 
         tokio::spawn(async move {
             info!("🔄 Starting to accept incoming TCP connections");
@@ -625,12 +651,21 @@ impl PeerManager {
                             continue;
                         }
 
+                        // DoS: enforce per-IP connection limits and rate limits
+                        let ip = addr.ip();
+                        if !dos.should_allow_connection(ip).await {
+                            warn!("❌ Connection from {} rejected by DoS manager", addr);
+                            continue;
+                        }
+                        dos.register_connection(ip).await;
+
                         let peers_clone = Arc::clone(&peers);
                         let event_sender_clone = event_sender.clone();
                         let config_clone = config.clone();
                         let stats_clone = Arc::clone(&connection_stats);
                         let message_validator_clone = Arc::clone(&message_validator);
                         let error_handler_clone = Arc::clone(&error_handler);
+                        let dos_clone = Arc::clone(&dos);
 
                         tokio::spawn(async move {
                             if let Err(e) = Self::handle_incoming_connection(
@@ -642,6 +677,7 @@ impl PeerManager {
                                 stats_clone,
                                 message_validator_clone,
                                 error_handler_clone,
+                                dos_clone.clone(),
                             )
                             .await
                             {
@@ -649,6 +685,8 @@ impl PeerManager {
                                     "❌ Failed to handle incoming connection from {}: {}",
                                     addr, e
                                 );
+                                // Unregister on failure
+                                dos_clone.unregister_connection(addr.ip()).await;
                             }
                         });
                     }
@@ -675,6 +713,7 @@ impl PeerManager {
         stats: Arc<RwLock<ConnectionStats>>,
         message_validator: Arc<RwLock<MessageValidator>>,
         error_handler: Arc<NetworkErrorHandler>,
+        dos: Arc<DosProtectionManager>,
     ) -> NetworkResult<()> {
         info!("🤝 Starting handshake with incoming peer: {}", address);
 
@@ -723,6 +762,7 @@ impl PeerManager {
                     stats,
                     message_validator,
                     error_handler,
+                    dos.clone(),
                 )
                 .await?;
             }
@@ -856,6 +896,7 @@ impl PeerManager {
         // Start peer connectivity maintenance
         let peers = Arc::clone(&self.peers);
         let event_sender = self.event_sender.clone();
+        let dos = Arc::clone(&self.dos);
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(30)); // Check every 30 seconds
             loop {
@@ -880,6 +921,8 @@ impl PeerManager {
                     peers.write().await.remove(&addr);
                     let _ = event_sender.send(PeerEvent::Disconnected(addr));
                     debug!("Removed stale peer connection: {}", addr);
+                    // Unregister DoS connection count
+                    dos.unregister_connection(addr.ip()).await;
                 }
             }
         });
@@ -2423,6 +2466,7 @@ impl PeerManager {
         stats: Arc<RwLock<ConnectionStats>>,
         message_validator: Arc<RwLock<MessageValidator>>,
         error_handler: Arc<NetworkErrorHandler>,
+        dos: Arc<DosProtectionManager>,
     ) -> NetworkResult<()> {
         info!("📨 Starting message handler for peer: {}", address);
 
@@ -2517,6 +2561,15 @@ impl PeerManager {
                     Ok(n) => {
                         // Process received message
                         let message_data = &buffer[..n];
+
+                        // DoS: check message allowance by size and rate
+                        if !dos.should_allow_message(address.ip(), n).await {
+                            warn!(
+                                "🚫 Dropping message from {} due to DoS/rate policy ({} bytes)",
+                                address, n
+                            );
+                            continue;
+                        }
 
                         // Update statistics
                         {

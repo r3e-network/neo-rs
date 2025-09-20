@@ -127,19 +127,36 @@ mod comprehensive_uint160_tests {
     /// Test TryParse functionality (matches C# TestTryParse)
     #[test]
     fn test_uint160_try_parse() {
-        // Test valid parse
-        let hex_str = "0000000000000000000000000000000000000001";
-        let result = UInt160::try_parse(hex_str);
-        assert!(result.is_ok());
+        // Test with null/empty should fail
+        let mut result = None;
+        assert!(!UInt160::try_parse("", &mut result));
         
-        // Test invalid parse
-        let invalid_str = "invalid";
-        let result = UInt160::try_parse(invalid_str);
-        assert!(result.is_err());
+        // Test with valid hex string with 0x prefix should succeed
+        let mut result = None;
+        assert!(UInt160::try_parse("0x0000000000000000000000000000000000000000", &mut result));
+        if let Some(temp) = result {
+            assert_eq!(temp.to_string(), "0x0000000000000000000000000000000000000000");
+            assert_eq!(temp, UInt160::zero());
+        }
         
-        // Test empty string
-        let result = UInt160::try_parse("");
-        assert!(result.is_err());
+        // Test with valid hex string with 0x prefix should succeed
+        let mut result = None;
+        assert!(UInt160::try_parse("0x1230000000000000000000000000000000000000", &mut result));
+        if let Some(temp) = result {
+            assert_eq!(temp.to_string(), "0x1230000000000000000000000000000000000000");
+        }
+        
+        // Test with invalid length should fail
+        let mut result = None;
+        assert!(!UInt160::try_parse("000000000000000000000000000000000000000", &mut result));
+        
+        // Test with invalid characters should fail
+        let mut result = None;
+        assert!(!UInt160::try_parse("0xKK00000000000000000000000000000000000000", &mut result));
+        
+        // Test with spaces should fail
+        let mut result = None;
+        assert!(!UInt160::try_parse(" 1 2 3 45 000000000000000000000000000000", &mut result));
     }
 
     /// Test ToArray functionality (matches C# TestToArray)

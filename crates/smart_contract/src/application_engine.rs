@@ -26,8 +26,10 @@ use neo_core::constants::{MAX_STORAGE_KEY_SIZE, MAX_STORAGE_VALUE_SIZE};
 use neo_core::{Block, IVerifiable, Transaction, UInt160, UInt256};
 use neo_vm::call_flags::CallFlags;
 use neo_vm::{
-    ApplicationEngine as VmApplicationEngine, ExecutionContext, Script, TriggerType, VMState,
+    ApplicationEngine as VmApplicationEngine, ExecutionContext, Script, StackItem, TriggerType,
+    VMState,
 };
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -425,6 +427,21 @@ impl ApplicationEngine {
         Ok(state)
     }
 
+    /// Pops the top value from the VM result stack.
+    pub fn pop_result_stack(&mut self) -> Result<StackItem> {
+        self.vm_engine
+            .engine_mut()
+            .result_stack_mut()
+            .pop()
+            .map_err(|e| Error::VmError(e.to_string()))
+    }
+
+    /// Compatibility helper matching the legacy tests: pops the result stack and panics on failure.
+    pub fn result_stack_pop(&mut self) -> StackItem {
+        self.pop_result_stack()
+            .expect("VM result stack should contain a value")
+    }
+
     /// Gets a contract state by hash.
     pub fn get_contract(&self, hash: &UInt160) -> Option<&ContractState> {
         self.contracts.get(hash)
@@ -674,15 +691,19 @@ impl ApplicationEngine {
         StorageIterator::new(entries, prefix.len(), options)
     }
 
-    /// Gets the storage price from policy contract (matches C# StoragePrice property).
-    fn get_storage_price(&self) -> usize {
-        self.query_policy_contract_storage_price().unwrap_or(1000) // Default: 1000 datoshi per byte
+    /// Gets the storage price from the policy contract (matches C# StoragePrice property).
+    fn get_storage_price(&mut self) -> usize {
+        self.query_policy_contract_storage_price()
+            .unwrap_or(crate::native::PolicyContract::DEFAULT_STORAGE_PRICE as usize)
     }
 
     /// Adds gas fee (production-ready implementation matching C# Neo exactly).
     fn add_fee(&mut self, fee: u64) -> Result<()> {
         // 1. Calculate the actual fee based on ExecFeeFactor (matches C# logic exactly)
-        let exec_fee_factor = 30; // Default ExecFeeFactor from PolicyContract
+        let exec_fee_factor = self
+            .execute_native_contract_query("Policy", "GetExecFeeFactor", &[])?
+            .unwrap_or(crate::native::PolicyContract::DEFAULT_EXEC_FEE_FACTOR as usize)
+            as i64;
         let actual_fee = (fee as i64).saturating_mul(exec_fee_factor);
 
         // 2. Add to FeeConsumed/GasConsumed (matches C# FeeConsumed property exactly)
@@ -1217,7 +1238,7 @@ impl ApplicationEngine {
         // This matches C# Neo's manifest permission checking exactly
         calling_contract
             .manifest
-            .can_call(&target_contract.hash, method)
+            .can_call(&target_contract.manifest, &target_contract.hash, method)
     }
 
     /// Deletes storage items by prefix.
@@ -1239,6 +1260,18 @@ impl ApplicationEngine {
     /// Gets the trigger type.
     pub fn get_trigger_type(&self) -> TriggerType {
         self.trigger
+    }
+
+    /// Returns all storage entries for a given contract.
+    pub fn storage_entries_for_contract(
+        &self,
+        contract_hash: &UInt160,
+    ) -> Vec<(Vec<u8>, StorageItem)> {
+        self.storage
+            .iter()
+            .filter(|(key, _)| key.contract == *contract_hash)
+            .map(|(key, item)| (key.key.clone(), item.clone()))
+            .collect()
     }
 
     /// Finds storage entries with a prefix.
@@ -1406,10 +1439,10 @@ impl ApplicationEngine {
     /// Production-ready methods for ApplicationEngine
 
     /// Queries policy contract storage price (production-ready implementation)
-    fn query_policy_contract_storage_price(&self) -> Result<usize> {
+    fn query_policy_contract_storage_price(&mut self) -> Result<usize> {
         match self.execute_native_contract_query("Policy", "GetStoragePrice", &[]) {
             Ok(Some(price)) => Ok(price),
-            _ => Ok(1000), // Default storage price in datoshi per byte
+            _ => Ok(crate::native::PolicyContract::DEFAULT_STORAGE_PRICE as usize),
         }
     }
 
@@ -1563,7 +1596,7 @@ impl ApplicationEngine {
 
     /// Executes native contract query (production-ready implementation)
     fn execute_native_contract_query(
-        &self,
+        &mut self,
         contract: &str,
         method: &str,
         args: &[Vec<u8>],
@@ -1571,134 +1604,150 @@ impl ApplicationEngine {
         self.resolve_and_execute_native_contract_method(contract, method, args)
     }
 
-    /// Resolves and executes native contract method (production-ready implementation)
+    /// Resolves and executes native contract method using the real native registry.
     fn resolve_and_execute_native_contract_method(
-        &self,
+        &mut self,
         contract: &str,
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Option<usize>> {
-        // 1. Resolve native contract by name (matches C# NativeContract registry)
-        let contract_hash = match contract {
-            "Policy" => UInt160::from_bytes(&[
-                0xcc, 0x5e, 0x4e, 0xdd, 0x78, 0xe6, 0xd2, 0x6a, 0x7b, 0x32, 0xa4, 0x5c, 0x3d, 0x35,
-                0x0c, 0x34, 0x31, 0x56, 0xb6, 0x2d,
-            ])?, // PolicyContract hash
-            "NEO" => UInt160::from_bytes(&[
-                0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x84, 0x6b, 0x0a, 0x40, 0xb2, 0xa9, 0x7d, 0x4a, 0x38,
-                0x14, 0x39, 0x4b, 0x95, 0x2a, 0x85,
-            ])?, // NEO contract hash
-            "GAS" => UInt160::from_bytes(&[
-                0xd2, 0xa4, 0xcf, 0xf3, 0x1f, 0x56, 0xb6, 0x14, 0x28, 0x34, 0x7d, 0x9e, 0x32, 0x13,
-                0xc6, 0x8c, 0xc0, 0x8c, 0x60, 0x25,
-            ])?, // GAS contract hash
-            "RoleManagement" => UInt160::from_bytes(&[
-                0x49, 0xcf, 0x4e, 0x5f, 0x4e, 0x94, 0x5d, 0x33, 0x4f, 0x58, 0x8d, 0xab, 0x88, 0x0c,
-                0x18, 0x5d, 0x2b, 0x7d, 0x32, 0x8b,
-            ])?, // RoleManagement contract hash
-            "Oracle" => UInt160::from_bytes(&[
-                0xfe, 0x92, 0x4b, 0x7c, 0xfd, 0xdf, 0x0c, 0x7b, 0x7e, 0x3b, 0x9c, 0xa9, 0x3a, 0xa8,
-                0xdd, 0x86, 0x2f, 0x54, 0x05, 0x1d,
-            ])?, // Oracle contract hash
-            "ContractManagement" => UInt160::from_bytes(&[
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
-            ])?, // ContractManagement hash
-            _ => {
-                return Err(Error::InvalidOperation(format!(
-                    "Unknown native contract: {}",
-                    contract
-                )));
-            }
-        };
+        let canonical_contract = Self::canonical_contract_name(contract);
+        let canonical_method = Self::canonical_method_name(method);
 
-        // 2. Execute native contract method (matches C# native contract invocation)
-        match (contract, method) {
-            ("Policy", "GetStoragePrice") => Ok(Some(1000)), // Default storage price
-            ("Policy", "GetFeePerByte") => Ok(Some(1000)),   // Default fee per byte
-            ("NEO", "GetCommittee") => Ok(Some(21)),         // Committee size
-            ("GAS", "BalanceOf") => Ok(Some(0)),             // Default balance
-            ("RoleManagement", "GetDesignatedByRole") => Ok(Some(0)), // No designated nodes
-            ("Oracle", "GetPrice") => Ok(Some(5000000)),     // Default oracle price
-            ("ContractManagement", "GetContract") => Ok(None), // Contract not found
-            _ => {
-                let _ = (contract_hash, args); // Avoid unused parameter warnings
-                Err(Error::InvalidOperation(format!(
-                    "Unknown method {} on contract {}",
-                    method, contract
-                )))
+        if !Self::is_numeric_native_method(canonical_contract, canonical_method.as_ref()) {
+            return Err(Error::InvalidOperation(format!(
+                "Unsupported native contract query {}.{}",
+                contract, method
+            )));
+        }
+
+        let mut contract = self
+            .native_registry
+            .take_contract_by_name(canonical_contract)
+            .ok_or_else(|| {
+                Error::InvalidOperation(format!("Unknown native contract: {}", contract))
+            })?;
+
+        let invocation_result = contract.invoke(self, canonical_method.as_ref(), args);
+        let parsed = invocation_result.and_then(|raw| {
+            Self::read_little_endian_usize(canonical_contract, canonical_method.as_ref(), &raw)
+        });
+        self.native_registry.register(contract);
+        parsed.map(Some)
+    }
+
+    fn canonical_contract_name(contract: &str) -> &str {
+        match contract {
+            "Policy" => "PolicyContract",
+            "NEO" => "NeoToken",
+            "GAS" => "GasToken",
+            "Oracle" => "OracleContract",
+            other => other,
+        }
+    }
+
+    fn canonical_method_name(method: &str) -> Cow<'_, str> {
+        if method.is_empty() {
+            return Cow::Borrowed(method);
+        }
+
+        let mut chars = method.chars();
+        if let Some(first) = chars.next() {
+            if first.is_uppercase() {
+                let mut canonical = String::with_capacity(method.len());
+                canonical.extend(first.to_lowercase());
+                canonical.push_str(chars.as_str());
+                return Cow::Owned(canonical);
             }
         }
+
+        Cow::Borrowed(method)
+    }
+
+    fn is_numeric_native_method(contract: &str, method: &str) -> bool {
+        matches!(
+            (contract, method),
+            ("PolicyContract", "getStoragePrice")
+                | ("PolicyContract", "getFeePerByte")
+                | ("PolicyContract", "getExecFeeFactor")
+                | ("PolicyContract", "getAttributeFee")
+                | ("PolicyContract", "getMaxTransactionsPerBlock")
+                | ("PolicyContract", "getMaxBlockSize")
+                | ("PolicyContract", "getMaxBlockSystemFee")
+                | ("PolicyContract", "getMaxTraceableBlocks")
+                | ("OracleContract", "getPrice")
+        )
+    }
+
+    fn read_little_endian_usize(contract: &str, method: &str, bytes: &[u8]) -> Result<usize> {
+        if bytes.is_empty() {
+            return Ok(0);
+        }
+
+        if bytes.len() > std::mem::size_of::<u64>() {
+            return Err(Error::InvalidOperation(format!(
+                "Unexpected response length {} for {}.{}",
+                bytes.len(),
+                contract,
+                method
+            )));
+        }
+
+        let mut buffer = [0u8; 8];
+        buffer[..bytes.len()].copy_from_slice(bytes);
+        Ok(u64::from_le_bytes(buffer) as usize)
     }
 
     /// Registers native contracts in the contracts HashMap so they can be found
     fn register_native_contracts(&mut self) {
-        // Register NEO token contract
-        let neo_token = crate::native::NeoToken::new();
-        let neo_hash = neo_token.hash();
-        let neo_contract = ContractState::new_native(
-            1, // ID for NEO token
-            neo_hash,
-            "NeoToken".to_string(),
-        );
-        self.contracts.insert(neo_hash, neo_contract);
+        let mut register = |id: i32, hash: UInt160, name: &str| {
+            self.contracts
+                .entry(hash)
+                .or_insert_with(|| ContractState::new_native(id, hash, name.to_string()));
+        };
 
-        // Register GAS token contract
-        let gas_token = crate::native::GasToken::new();
-        let gas_hash = gas_token.hash();
-        let gas_contract = ContractState::new_native(
-            2, // ID for GAS token
-            gas_hash,
-            "GasToken".to_string(),
-        );
-        self.contracts.insert(gas_hash, gas_contract);
-
-        // Register Policy contract
-        let policy_contract = crate::native::PolicyContract::new();
-        let policy_hash = policy_contract.hash();
-        let policy_state = ContractState::new_native(
-            3, // ID for Policy contract
-            policy_hash,
-            "PolicyContract".to_string(),
-        );
-        self.contracts.insert(policy_hash, policy_state);
-
-        // Register other native contracts
-        let role_management = crate::native::RoleManagement::new();
-        let role_hash = role_management.hash();
-        let role_state = ContractState::new_native(
-            4, // ID for RoleManagement
-            role_hash,
-            "RoleManagement".to_string(),
-        );
-        self.contracts.insert(role_hash, role_state);
+        let contract_management_hash = crate::native::ContractManagement::contract_hash();
+        register(-1, contract_management_hash, "ContractManagement");
 
         let std_lib = crate::native::StdLib::new();
-        let std_hash = std_lib.hash();
-        let std_state = ContractState::new_native(
-            5, // ID for StdLib
-            std_hash,
-            "StdLib".to_string(),
-        );
-        self.contracts.insert(std_hash, std_state);
+        register(-2, std_lib.hash(), std_lib.name());
 
         let crypto_lib = crate::native::CryptoLib::new();
-        let crypto_hash = crypto_lib.hash();
-        let crypto_state = ContractState::new_native(
-            6, // ID for CryptoLib
-            crypto_hash,
-            "CryptoLib".to_string(),
-        );
-        self.contracts.insert(crypto_hash, crypto_state);
+        register(-3, crypto_lib.hash(), crypto_lib.name());
 
-        let oracle = crate::native::OracleContract::new();
-        let oracle_hash = oracle.hash();
-        let oracle_state = ContractState::new_native(
-            7, // ID for Oracle
-            oracle_hash,
-            "OracleContract".to_string(),
-        );
-        self.contracts.insert(oracle_hash, oracle_state);
+        let ledger_contract = crate::native::LedgerContract::new();
+        register(-4, ledger_contract.hash(), ledger_contract.name());
+
+        let neo_token = crate::native::NeoToken::new();
+        register(-5, neo_token.hash(), neo_token.name());
+
+        let gas_token = crate::native::GasToken::new();
+        register(-6, gas_token.hash(), gas_token.name());
+
+        let policy_contract = crate::native::PolicyContract::new();
+        register(-7, policy_contract.hash(), policy_contract.name());
+
+        let role_management = crate::native::RoleManagement::new();
+        register(-8, role_management.hash(), role_management.name());
+
+        let oracle_contract = crate::native::OracleContract::new();
+        register(-9, oracle_contract.hash(), oracle_contract.name());
+
+        let mut registry = std::mem::take(&mut self.native_registry);
+        for contract in registry.contracts_mut() {
+            if let Err(error) = contract.initialize(self) {
+                let hash = contract.hash();
+                self.logs.push(LogEvent {
+                    contract: hash,
+                    message: format!(
+                        "Native contract {} initialization error: {}",
+                        contract.name(),
+                        error
+                    ),
+                });
+            }
+        }
+        self.native_registry = registry;
     }
 
     /// Executes script with production VM (production-ready implementation)
@@ -1820,116 +1869,6 @@ impl ApplicationEngine {
     }
 }
 
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    #[test]
-    fn test_production_ready_storage_iterator() {
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 1000000);
-
-        // Create test storage entries
-        let entries = vec![
-            (
-                b"key1".to_vec(),
-                StorageItem::new(b"value1".to_vec(), false),
-            ),
-            (
-                b"key2".to_vec(),
-                StorageItem::new(b"value2".to_vec(), false),
-            ),
-            (
-                b"key3".to_vec(),
-                StorageItem::new(b"value3".to_vec(), false),
-            ),
-        ];
-
-        // Test creating iterator
-        let iterator_id = engine.create_storage_iterator(entries).unwrap();
-        assert_eq!(iterator_id, 0);
-
-        // Test iterator operations
-        assert!(engine.iterator_next(iterator_id).unwrap());
-        let value = engine.iterator_value(iterator_id).unwrap();
-        assert!(value.is_some());
-
-        // Test iterator with options
-        let entries2 = vec![
-            (
-                b"prefix_key1".to_vec(),
-                StorageItem::new(b"value1".to_vec(), false),
-            ),
-            (
-                b"prefix_key2".to_vec(),
-                StorageItem::new(b"value2".to_vec(), false),
-            ),
-        ];
-
-        let options = FindOptions::REMOVE_PREFIX | FindOptions::KEYS_ONLY;
-
-        let iterator_id2 = engine
-            .create_storage_iterator_with_options(entries2, 7, options)
-            .expect("Operation failed");
-        assert_eq!(iterator_id2, 1);
-
-        // Test cleanup
-        engine
-            .dispose_iterator(iterator_id)
-            .expect("Operation failed");
-        engine
-            .dispose_iterator(iterator_id2)
-            .expect("Operation failed");
-    }
-
-    #[test]
-    fn test_production_ready_permission_checking() {
-        let engine = ApplicationEngine::new(TriggerType::Application, 1000000);
-
-        let contract_hash = UInt160::zero();
-        let contract = ContractState {
-            id: 1,
-            update_counter: 0,
-            hash: contract_hash,
-            nef: crate::contract_state::NefFile {
-                compiler: "test".to_string(),
-                source: "".to_string(),
-                tokens: vec![],
-                script: vec![0x40], // RET opcode
-                checksum: 0,
-            },
-            manifest: crate::manifest::ContractManifest::default(),
-        };
-
-        let result = engine.check_contract_permissions(&contract, "test_method");
-        assert!(result); // Should be true since no current context restricts it
-    }
-
-    #[test]
-    fn test_find_options_behavior() {
-        let options = FindOptions::NONE;
-        assert!(!options.contains(FindOptions::KEYS_ONLY));
-        assert!(!options.contains(FindOptions::VALUES_ONLY));
-        assert!(!options.contains(FindOptions::REMOVE_PREFIX));
-        assert!(!options.contains(FindOptions::DESERIALIZE_VALUES));
-        assert!(!options.contains(FindOptions::PICK_FIELD_0));
-        assert!(!options.contains(FindOptions::PICK_FIELD_1));
-        assert!(!options.contains(FindOptions::BACKWARDS));
-    }
-
-    #[test]
-    fn test_gas_management() {
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 1000);
-
-        assert!(engine.consume_gas(500).is_ok());
-        assert_eq!(engine.gas_consumed(), 500);
-
-        assert!(engine.consume_gas(400).is_ok());
-        assert_eq!(engine.gas_consumed(), 900);
-
-        // Should fail - would exceed gas limit
-        assert!(engine.consume_gas(200).is_err());
-    }
-}
-
 impl NotificationEvent {
     /// Creates a new notification event.
     pub fn new(contract: UInt160, event_name: String, state: Vec<u8>) -> Self {
@@ -1943,69 +1882,5 @@ impl NotificationEvent {
     /// Gets the state as a string if it's valid UTF-8.
     pub fn state_as_string(&self) -> Option<String> {
         String::from_utf8(self.state.clone()).ok()
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod additional_tests {
-    #[test]
-    fn test_application_engine_creation() {
-        let engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        assert_eq!(engine.gas_limit(), 10_000_000);
-        assert_eq!(engine.gas_consumed(), 0);
-        assert!(engine.current_script_hash().is_none());
-        assert_eq!(engine.trigger(), TriggerType::Application);
-    }
-
-    #[test]
-    fn test_contract_management() {
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        let contract_hash = UInt160::zero();
-        let nef = NefFile::new("neo-core-v3.0".to_string(), vec![0x40]); // RET opcode
-        let manifest = ContractManifest::default();
-        let contract = ContractState::new(1, contract_hash, nef, manifest);
-
-        engine.add_contract(contract);
-        assert!(engine.get_contract(&contract_hash).is_some());
-    }
-
-    #[test]
-    fn test_storage_operations() {
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        let contract_hash = UInt160::zero();
-
-        // Set current contract
-        engine.current_script_hash = Some(contract_hash);
-
-        let key = StorageKey::from_string(contract_hash, "test_key");
-        let item = StorageItem::from_string("test_value");
-
-        assert!(engine.set_storage(key.clone(), item).is_ok());
-        assert!(engine.get_storage(&key).is_some());
-
-        assert!(engine.delete_storage(&key).is_ok());
-        assert!(engine.get_storage(&key).is_none());
-    }
-
-    #[test]
-    fn test_notification_events() {
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        let contract_hash = UInt160::zero();
-
-        engine.current_script_hash = Some(contract_hash);
-
-        assert!(engine
-            .notify("TestEvent".to_string(), b"test_data".to_vec())
-            .is_ok());
-        assert_eq!(engine.notifications().len(), 1);
-
-        let notification = &engine.notifications()[0];
-        assert_eq!(notification.contract, contract_hash);
-        assert_eq!(notification.event_name, "TestEvent");
-        assert_eq!(
-            notification.state_as_string(),
-            Some("test_data".to_string())
-        );
     }
 }

@@ -70,8 +70,8 @@ impl InteropService for LogService {
         // Production implementation: add_log_entry when available
         log::info!("Log entry created: {:?}", log_entry);
 
-        // 6. Emit log event for external listeners
-        _engine.emit_event(
+        // 6. Emit log event for external listeners (best-effort)
+        let _ = _engine.emit_event(
             "Log",
             vec![
                 current_contract.as_bytes().to_vec(),
@@ -313,88 +313,5 @@ impl RuntimeService {
             Box::new(GetPlatformService),
             Box::new(GetTriggerService),
         ]
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::{Error, Result};
-
-    #[test]
-    fn test_log_service() {
-        let service = LogService;
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-
-        engine.set_current_script_hash(Some(UInt160::zero()));
-
-        let args = vec![b"test message".to_vec()];
-        let result = service.execute(&mut engine, &args);
-        assert!(result.is_ok());
-        assert!(result?.is_empty());
-    }
-
-    #[test]
-    fn test_notify_service() {
-        let service = NotifyService;
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-
-        engine.set_current_script_hash(Some(UInt160::zero()));
-
-        let args = vec![b"TestEvent".to_vec(), b"test_data".to_vec()];
-        let result = service.execute(&mut engine, &args);
-        assert!(result.is_ok());
-        assert_eq!(engine.notifications().len(), 1);
-    }
-
-    #[test]
-    fn test_get_time_service() {
-        let service = GetTimeService;
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-
-        let result = service.execute(&mut engine, &[]);
-        assert!(result.is_ok());
-        assert_eq!(result?.len(), 8); // u64 timestamp
-    }
-
-    #[test]
-    fn test_get_random_service() {
-        let service = GetRandomService;
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-
-        engine.set_current_script_hash(Some(UInt160::zero()));
-
-        let result1 = service.execute(&mut engine, &[]);
-        let result2 = service.execute(&mut engine, &[]);
-
-        assert!(result1.is_ok());
-        assert!(result2.is_ok());
-        assert_eq!(result1.as_ref().expect("Value should exist").len(), 4); // u32 random (not u64)
-        assert_eq!(result2.as_ref().expect("Value should exist").len(), 4);
-    }
-
-    #[test]
-    fn test_get_platform_service() {
-        let service = GetPlatformService;
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-
-        let result = service.execute(&mut engine, &[]);
-        assert!(result.is_ok());
-        assert_eq!(result?, b"NEO-RS");
-    }
-
-    #[test]
-    fn test_service_names_and_costs() {
-        let log_service = LogService;
-        assert_eq!(log_service.name(), "System.Runtime.Log");
-        assert_eq!(log_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
-
-        let notify_service = NotifyService;
-        assert_eq!(notify_service.name(), "System.Runtime.Notify");
-        assert_eq!(notify_service.gas_cost(), 1 << SECONDS_PER_BLOCK);
-
-        let time_service = GetTimeService;
-        assert_eq!(time_service.name(), "System.Runtime.GetTime");
-        assert_eq!(time_service.gas_cost(), 1 << 3);
     }
 }

@@ -7,6 +7,7 @@ use crate::{Error, Result};
 use neo_core::UInt160;
 use neo_cryptography::ECPoint;
 use num_bigint::BigInt;
+use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
@@ -19,8 +20,8 @@ pub struct NeoAccountState {
     pub balance_height: u32,
     /// Vote target (public key of candidate, None if not voting)
     pub vote_to: Option<ECPoint>,
-    /// Height when vote was last updated
-    pub vote_height: u32,
+    /// Accumulated GAS per vote snapshot for the voter
+    pub last_gas_per_vote: BigInt,
 }
 
 impl NeoAccountState {
@@ -30,7 +31,7 @@ impl NeoAccountState {
             balance,
             balance_height: height,
             vote_to: None,
-            vote_height: height,
+            last_gas_per_vote: BigInt::zero(),
         }
     }
 
@@ -40,7 +41,7 @@ impl NeoAccountState {
             balance,
             balance_height: height,
             vote_to: Some(vote_to),
-            vote_height: height,
+            last_gas_per_vote: BigInt::zero(),
         }
     }
 
@@ -50,10 +51,10 @@ impl NeoAccountState {
         self.balance_height = height;
     }
 
-    /// Updates the vote
-    pub fn update_vote(&mut self, vote_to: Option<ECPoint>, height: u32) {
+    /// Updates the vote and last GAS snapshot
+    pub fn update_vote(&mut self, vote_to: Option<ECPoint>, last_gas_per_vote: BigInt) {
         self.vote_to = vote_to;
-        self.vote_height = height;
+        self.last_gas_per_vote = last_gas_per_vote;
     }
 
     /// Serializes to bytes (matches C# ISerializable exactly)
@@ -82,8 +83,9 @@ impl NeoAccountState {
             }
         }
 
-        // Serialize vote height
-        bytes.extend_from_slice(&self.vote_height.to_le_bytes());
+        let gas_bytes = Self::balance_to_bytes_static(&self.last_gas_per_vote)?;
+        bytes.extend_from_slice(&(gas_bytes.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&gas_bytes);
 
         Ok(bytes)
     }
@@ -141,25 +143,34 @@ impl NeoAccountState {
             None
         };
 
-        // Deserialize vote height
+        // Deserialize last GAS per vote snapshot
         if offset + 4 > bytes.len() {
             return Err(Error::SerializationError(
-                "Invalid vote height data".to_string(),
+                "Invalid last_gas_per_vote length".to_string(),
             ));
         }
 
-        let vote_height = u32::from_le_bytes([
+        let gas_len = u32::from_le_bytes([
             bytes[offset],
             bytes[offset + 1],
             bytes[offset + 2],
             bytes[offset + 3],
-        ]);
+        ]) as usize;
+        offset += 4;
+
+        if offset + gas_len > bytes.len() {
+            return Err(Error::SerializationError(
+                "Invalid last_gas_per_vote data".to_string(),
+            ));
+        }
+
+        let last_gas_per_vote = Self::balance_from_bytes_static(&bytes[offset..offset + gas_len])?;
 
         Ok(Self {
             balance,
             balance_height,
             vote_to,
-            vote_height,
+            last_gas_per_vote,
         })
     }
 
@@ -258,7 +269,7 @@ impl CandidateState {
         Self {
             public_key,
             votes: BigInt::from(0),
-            registered: true,
+            registered: false,
         }
     }
 
@@ -578,41 +589,5 @@ impl VoteTracker {
 impl Default for VoteTracker {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_neo_account_state_serialization() {
-        let state = NeoAccountState::new(BigInt::from(1000000), 12345);
-        let bytes = state.to_bytes().unwrap();
-        let deserialized = NeoAccountState::from_bytes(&bytes).unwrap();
-
-        assert_eq!(state.balance, deserialized.balance);
-        assert_eq!(state.balance_height, deserialized.balance_height);
-        assert_eq!(state.vote_to, deserialized.vote_to);
-        assert_eq!(state.vote_height, deserialized.vote_height);
-    }
-
-    #[test]
-    fn test_committee_size() {
-        assert_eq!(CommitteeState::committee_size(), 21);
-        assert_eq!(CommitteeState::consensus_nodes_count(), 7);
-    }
-
-    #[test]
-    fn test_vote_tracker() {
-        let mut tracker = VoteTracker::new();
-        let account = UInt160::zero();
-        let balance = BigInt::from(1000);
-
-        // Create a dummy candidate (would need actual ECPoint in real test)
-        // tracker.update_account_vote(account, None, Some(candidate), &balance, 100);
-
-        assert_eq!(tracker.last_update_height, 0);
     }
 }

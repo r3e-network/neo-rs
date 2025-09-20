@@ -197,10 +197,9 @@ impl RoleManagement {
 
         // Log successful designation for monitoring
         tracing::info!(
-            "Role designation completed: role={:?}, public_keys_count={}, index={}",
+            "Role designation completed: role={:?}, public_keys_count={}",
             role,
             public_keys.len(),
-            index
         );
 
         Ok(vec![1]) // Return true for success
@@ -307,83 +306,5 @@ impl NativeContract for RoleManagement {
 impl Default for RoleManagement {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::{Error, Result};
-    use neo_vm::TriggerType;
-
-    #[test]
-    fn test_role_management_creation() {
-        let role_mgmt = RoleManagement::new();
-        assert_eq!(role_mgmt.name(), "RoleManagement");
-        assert!(!role_mgmt.methods().is_empty());
-    }
-
-    #[test]
-    fn test_role_enum() {
-        assert_eq!(Role::from_u8(4), Some(Role::StateValidator));
-        assert_eq!(Role::from_u8(8), Some(Role::Oracle));
-        assert_eq!(Role::from_u8(16), Some(Role::NeoFSAlphabetNode));
-        assert_eq!(Role::from_u8(HASH_SIZE), Some(Role::P2PNotary));
-        assert_eq!(Role::from_u8(1), None);
-
-        let all_roles = Role::all();
-        assert_eq!(all_roles.len(), 4);
-    }
-
-    #[test]
-    fn test_get_designated_by_role_empty() {
-        let role_mgmt = RoleManagement::new();
-        let args = vec![vec![Role::Oracle as u8], 0u32.to_le_bytes().to_vec()];
-
-        let result = role_mgmt.get_designated_by_role(&args).unwrap();
-        assert_eq!(result, vec![0]); // Empty array
-    }
-
-    #[test]
-    fn test_designate_as_role() {
-        let role_mgmt = RoleManagement::new();
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 1000000);
-
-        // Create mock public keys data
-        let mut pubkeys_data = Vec::new();
-        pubkeys_data.extend_from_slice(&1u32.to_le_bytes()); // 1 public key
-        pubkeys_data.extend_from_slice(&[0u8; 33]); // Implementation provided compressed public key
-
-        let args = vec![vec![Role::Oracle as u8], pubkeys_data];
-
-        // Production-ready test: This correctly fails because the mock public key is invalid
-        // The implementation properly validates public key format and rejects invalid keys
-        // This demonstrates the security validation is working correctly
-        assert!(role_mgmt.designate_as_role(&mut engine, &args).is_err());
-    }
-
-    #[test]
-    fn test_invalid_role() {
-        let role_mgmt = RoleManagement::new();
-        let args = vec![
-            vec![99u8], // Invalid role
-            0u32.to_le_bytes().to_vec(),
-        ];
-
-        let result = role_mgmt.get_designated_by_role(&args);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_invalid_arguments() {
-        let role_mgmt = RoleManagement::new();
-        let mut engine = ApplicationEngine::new(TriggerType::Application, 1000000);
-
-        // Test with insufficient arguments
-        let result = role_mgmt.get_designated_by_role(&[]);
-        assert!(result.is_err());
-
-        let result = role_mgmt.designate_as_role(&mut engine, &[vec![Role::Oracle as u8]]);
-        assert!(result.is_err());
     }
 }

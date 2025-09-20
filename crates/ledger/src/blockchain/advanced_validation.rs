@@ -609,7 +609,12 @@ mod tests {
     #[tokio::test]
     async fn test_advanced_validator_creation() {
         let blockchain = Arc::new(RwLock::new(
-            Blockchain::new(NetworkType::TestNet, None).await.unwrap(),
+            Blockchain::new_with_storage_suffix(
+                NetworkType::TestNet,
+                Some("advanced_validator_creation"),
+            )
+            .await
+            .expect("blockchain initialization"),
         ));
 
         let validator = AdvancedValidator::new(blockchain);
@@ -622,7 +627,12 @@ mod tests {
     #[tokio::test]
     async fn test_transaction_pool_creation() {
         let blockchain = Arc::new(RwLock::new(
-            Blockchain::new(NetworkType::TestNet, None).await.unwrap(),
+            Blockchain::new_with_storage_suffix(
+                NetworkType::TestNet,
+                Some("advanced_tx_pool_creation"),
+            )
+            .await
+            .expect("blockchain initialization"),
         ));
 
         let pool = AdvancedTransactionPool::new(blockchain);
@@ -635,7 +645,12 @@ mod tests {
     #[tokio::test]
     async fn test_sync_manager_creation() {
         let blockchain = Arc::new(RwLock::new(
-            Blockchain::new(NetworkType::TestNet, None).await.unwrap(),
+            Blockchain::new_with_storage_suffix(
+                NetworkType::TestNet,
+                Some("advanced_sync_manager_creation"),
+            )
+            .await
+            .expect("blockchain initialization"),
         ));
 
         let sync_manager = AdvancedSyncManager::new(blockchain);

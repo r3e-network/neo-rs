@@ -40,17 +40,20 @@ pub fn verify(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
 
     // Pop signature from stack (top item)
     let signature = evaluation_stack.pop()?;
-    let signature_bytes = signature.as_bytes()
+    let signature_bytes = signature
+        .as_bytes()
         .map_err(|_| VmError::invalid_operation_msg("Invalid signature format".to_string()))?;
 
     // Pop public key from stack
     let public_key = evaluation_stack.pop()?;
-    let public_key_bytes = public_key.as_bytes()
+    let public_key_bytes = public_key
+        .as_bytes()
         .map_err(|_| VmError::invalid_operation_msg("Invalid public key format".to_string()))?;
 
     // Pop message from stack (bottom item)
     let message = evaluation_stack.pop()?;
-    let message_bytes = message.as_bytes()
+    let message_bytes = message
+        .as_bytes()
         .map_err(|_| VmError::invalid_operation_msg("Invalid message format".to_string()))?;
 
     // Perform signature verification based on key type

@@ -3,15 +3,16 @@
 //! Implementation of Neo N3 JSON-RPC server for blockchain interaction.
 
 use neo_config::RpcServerConfig;
-use neo_ledger::Ledger;
+use neo_ledger::{Ledger, MemoryPool};
 use neo_persistence::RocksDbStore;
 use serde_json::json;
 use std::sync::Arc;
-use tokio::sync::broadcast;
-use tracing::{error, info, warn};
+use tokio::sync::{broadcast, RwLock as AsyncRwLock};
+use tracing::{info, warn};
 use warp::Filter;
 
 pub mod methods;
+pub use methods::PeerRegistry;
 pub mod methods_extended;
 pub mod types;
 
@@ -19,7 +20,6 @@ use methods::RpcMethods;
 use types::{RpcRequest, RpcResponse};
 
 /// Neo N3 RPC Server implementation
-#[derive(Debug)]
 pub struct RpcServer {
     config: RpcServerConfig,
     ledger: Arc<Ledger>,
@@ -28,19 +28,30 @@ pub struct RpcServer {
     methods: RpcMethods,
 }
 
+impl std::fmt::Debug for RpcServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RpcServer")
+            .field("bind_address", &self.config.bind_address)
+            .field("port", &self.config.port)
+            .finish()
+    }
+}
+
 impl RpcServer {
     /// Creates a new RPC server instance
     pub async fn new(
         config: RpcServerConfig,
         ledger: Arc<Ledger>,
         storage: Arc<RocksDbStore>,
+        peer_registry: Arc<std::sync::RwLock<methods::PeerRegistry>>,
+        mempool: Arc<AsyncRwLock<MemoryPool>>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         info!(
             "Creating RPC server on {}:{}",
             config.bind_address, config.port
         );
 
-        let methods = RpcMethods::new(ledger.clone(), storage.clone());
+        let methods = RpcMethods::new(ledger.clone(), storage.clone(), peer_registry, mempool);
 
         Ok(Self {
             config,
@@ -160,32 +171,55 @@ async fn handle_rpc_request(
             let result = methods.validate_address(req.params).await?;
             RpcResponse::success(result, req.id)
         }
+        "getnep17balances" => {
+            let params = req.params.unwrap_or(serde_json::Value::Null);
+            let result = methods.get_nep17_balances(params).await?;
+            RpcResponse::success(result, req.id)
+        }
         "getnativecontracts" => {
             let result = methods.get_native_contracts().await?;
             RpcResponse::success(result, req.id)
         }
         "getrawtransaction" => {
-            let result = methods.get_raw_transaction(req.params).await?;
+            let result = methods
+                .get_raw_transaction(req.params.unwrap_or(serde_json::Value::Null))
+                .await?;
             RpcResponse::success(result, req.id)
         }
         "getrawmempool" => {
-            let result = methods.get_raw_mempool(req.params).await?;
+            let result = methods
+                .get_raw_mempool(req.params.unwrap_or(serde_json::Value::Null))
+                .await?;
             RpcResponse::success(result, req.id)
         }
         "sendrawtransaction" => {
-            let result = methods.send_raw_transaction(req.params).await?;
+            let result = methods
+                .send_raw_transaction(req.params.unwrap_or(serde_json::Value::Null))
+                .await?;
             RpcResponse::success(result, req.id)
         }
         "getstorage" => {
-            let result = methods.get_storage(req.params).await?;
+            let result = methods
+                .get_storage(req.params.unwrap_or(serde_json::Value::Null))
+                .await?;
+            RpcResponse::success(result, req.id)
+        }
+        "gettransactionheight" => {
+            let result = methods
+                .get_transaction_height(req.params.unwrap_or(serde_json::Value::Null))
+                .await?;
             RpcResponse::success(result, req.id)
         }
         "invokefunction" => {
-            let result = methods.invoke_function(req.params).await?;
+            let result = methods
+                .invoke_function(req.params.unwrap_or(serde_json::Value::Null))
+                .await?;
             RpcResponse::success(result, req.id)
         }
         "getcontractstate" => {
-            let result = methods.get_contract_state(req.params).await?;
+            let result = methods
+                .get_contract_state(req.params.unwrap_or(serde_json::Value::Null))
+                .await?;
             RpcResponse::success(result, req.id)
         }
         _ => RpcResponse::error(-32601, "Method not found", req.id),

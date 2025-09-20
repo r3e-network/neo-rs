@@ -857,7 +857,8 @@ impl MemoryPool {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use crate::{Error, Result};
+    use super::*;
+    use crate::{MemoryPool, MempoolConfig};
     use neo_core::{Signer, Transaction, UInt160, UInt256, Witness, WitnessScope};
 
     #[test]
@@ -875,6 +876,7 @@ mod tests {
         let mut tx = Transaction::new();
         tx.set_script(vec![0x40]); // Simple RET script
         tx.set_network_fee(1000);
+        tx.set_valid_until_block(1);
         tx.add_signer(Signer {
             account: UInt160::zero(),
             scopes: WitnessScope::CALLED_BY_ENTRY,
@@ -898,6 +900,7 @@ mod tests {
         let mut tx = Transaction::new();
         tx.set_script(vec![0x40]); // Simple RET script
         tx.set_network_fee(100000); // High fee
+        tx.set_valid_until_block(1);
         tx.add_signer(Signer {
             account: UInt160::zero(),
             scopes: WitnessScope::CALLED_BY_ENTRY,
@@ -927,7 +930,8 @@ mod tests {
             let mut tx = Transaction::new();
             tx.set_nonce(i); // Make each transaction unique
             tx.set_script(vec![0x40]);
-            tx.set_network_fee((i + 1) * 10000); // Different fees
+            tx.set_network_fee(((i + 1) * 1_000_000) as i64); // Different fees
+            tx.set_valid_until_block(1);
             tx.add_signer(Signer {
                 account: UInt160::zero(),
                 scopes: WitnessScope::CALLED_BY_ENTRY,
@@ -940,7 +944,7 @@ mod tests {
             pool.try_add(tx, false).expect("operation should succeed");
         }
 
-        let sorted_txs = pool.get_sorted_transactions(Some(3));
+        let sorted_txs = pool.get_sorted_transactions(3);
         assert_eq!(sorted_txs.len(), 3);
 
         assert!(sorted_txs[0].network_fee() >= sorted_txs[1].network_fee());
@@ -957,7 +961,8 @@ mod tests {
             let mut tx = Transaction::new();
             tx.set_nonce(i);
             tx.set_script(vec![0x40]);
-            tx.set_network_fee(10000);
+            tx.set_network_fee(1_000_000);
+            tx.set_valid_until_block(1);
             tx.add_signer(Signer {
                 account: UInt160::zero(),
                 scopes: WitnessScope::CALLED_BY_ENTRY,
@@ -972,8 +977,7 @@ mod tests {
 
         assert_eq!(pool.get_stats().transaction_count, 3);
 
-        let cleared_count = pool.clear().expect("operation should succeed");
-        assert_eq!(cleared_count, 3);
+        pool.clear().expect("operation should succeed");
         assert_eq!(pool.get_stats().transaction_count, 0);
     }
 }

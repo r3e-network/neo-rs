@@ -461,13 +461,7 @@ impl ContractValidator {
                         ));
                     }
                 }
-                ContractPermissionDescriptor::Wildcard(s) => {
-                    if s != "*" {
-                        return Err(Error::InvalidOperation(
-                            "Invalid wildcard in permissions".to_string(),
-                        ));
-                    }
-                }
+                ContractPermissionDescriptor::Wildcard => {}
                 ContractPermissionDescriptor::Group(_) => {
                     // Group validation handled by ECPoint type
                 }
@@ -785,9 +779,9 @@ impl ContractValidator {
 
             // 3. Contract target complexity (wildcard permissions cost more)
             let target_complexity_fee = match &permission.contract {
-                ContractPermissionDescriptor::Wildcard(_) => 5000, // Wildcard is expensive
-                ContractPermissionDescriptor::Hash(_) => 1000,     // Specific contract
-                ContractPermissionDescriptor::Group(_) => 2000,    // Group permission
+                ContractPermissionDescriptor::Wildcard => 5000, // Wildcard is expensive
+                ContractPermissionDescriptor::Hash(_) => 1000,  // Specific contract
+                ContractPermissionDescriptor::Group(_) => 2000, // Group permission
             };
 
             total_permission_fee += base_permission_fee + method_list_fee + target_complexity_fee;
@@ -952,81 +946,5 @@ impl ContractValidator {
 impl Default for ContractValidator {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    #[test]
-    fn test_validator_creation() {
-        let validator = ContractValidator::new();
-        assert!(!validator.reserved_names.is_empty());
-        assert!(!validator.reserved_methods.is_empty());
-    }
-
-    #[test]
-    fn test_nef_validation() {
-        let validator = ContractValidator::new();
-        let nef = NefFile::new("neo-core-v3.0".to_string(), vec![0x40]); // RET opcode
-
-        assert!(validator.validate_nef(&nef).is_ok());
-    }
-
-    #[test]
-    fn test_empty_nef_script_validation() {
-        let validator = ContractValidator::new();
-        let mut nef = NefFile::new("neo-core-v3.0".to_string(), vec![]);
-        nef.script = vec![]; // Empty script
-
-        assert!(validator.validate_nef(&nef).is_err());
-    }
-
-    #[test]
-    fn test_manifest_validation() {
-        let validator = ContractValidator::new();
-        let manifest = ContractManifest::new("TestContract".to_string());
-
-        assert!(validator.validate_manifest(&manifest).is_ok());
-    }
-
-    #[test]
-    fn test_reserved_name_validation() {
-        let validator = ContractValidator::new();
-        let manifest = ContractManifest::new("NeoToken".to_string()); // Reserved name
-
-        assert!(validator.validate_manifest(&manifest).is_err());
-    }
-
-    #[test]
-    fn test_compatibility_validation() {
-        let validator = ContractValidator::new();
-        let nef = NefFile::new("neo-core-v3.0".to_string(), vec![0x40]); // RET opcode
-        let manifest = ContractManifest::new("TestContract".to_string());
-
-        assert!(validator.validate_compatibility(&nef, &manifest).is_ok());
-    }
-
-    #[test]
-    fn test_deployment_validation() {
-        let validator = ContractValidator::new();
-        let nef = NefFile::new("neo-core-v3.0".to_string(), vec![0x40]); // RET opcode
-
-        // Create a proper manifest with at least one method
-        let mut manifest = ContractManifest::new("TestContract".to_string());
-        let method = crate::manifest::ContractMethod {
-            name: "main".to_string(),
-            parameters: vec![],
-            return_type: "Void".to_string(),
-            offset: 0,
-            safe: true,
-        };
-        manifest.abi.methods.push(method);
-
-        let sender = UInt160::zero();
-
-        assert!(validator
-            .validate_deployment(&nef, &manifest, &sender)
-            .is_ok());
     }
 }

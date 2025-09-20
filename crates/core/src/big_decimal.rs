@@ -10,6 +10,7 @@ use num_integer::Integer;
 use num_traits::{One, Pow, Signed, Zero};
 use std::cmp::Ordering;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::ops::{Add, Mul};
 use std::str::FromStr;
 
@@ -21,6 +22,13 @@ pub struct BigDecimal {
 
     /// The number of decimal places.
     decimals: u8,
+}
+
+impl Hash for BigDecimal {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.value.hash(state);
+        self.decimals.hash(state);
+    }
 }
 
 impl BigDecimal {
@@ -105,6 +113,23 @@ impl BigDecimal {
         };
 
         Ok(Self { value, decimals })
+    }
+
+    /// Try parse a BigDecimal from a string.
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The string to parse.
+    /// * `decimals` - The number of decimal places for the result.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing (success, BigDecimal) - success is true if parsing succeeded.
+    pub fn try_parse(s: &str, decimals: u8) -> (bool, Self) {
+        match Self::parse(s, decimals) {
+            Ok(value) => (true, value),
+            Err(_) => (false, Self::zero()),
+        }
     }
 
     /// Parses a BigDecimal from a string.

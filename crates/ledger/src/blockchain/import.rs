@@ -511,7 +511,7 @@ impl Blockchain {
             file_path.as_ref().display()
         );
 
-        let result = importer.import_from_acc_file(file_path, self).await;
+        let result: Result<ImportStatistics> = importer.import_from_acc_file(file_path, self).await;
 
         match &result {
             Ok(stats) => {

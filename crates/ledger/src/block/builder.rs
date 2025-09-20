@@ -260,6 +260,10 @@ impl Default for BlockBuilder {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
+    use super::*;
+    use neo_config::ADDRESS_SIZE;
+    use neo_core::{UInt160, UInt256};
+
     #[test]
     fn test_block_builder_creation() {
         let builder = BlockBuilder::new();

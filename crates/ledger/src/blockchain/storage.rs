@@ -4,10 +4,11 @@
 
 use crate::{Error, Result};
 use neo_config::{MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
-use rocksdb::{Options, Snapshot, DB};
+use rocksdb::{IteratorMode, Options, DB};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+
+const STORAGE_PREFIX_STORAGE: u8 = 0x05; // Matches C# StoragePrefix.Storage
 
 /// Storage key for blockchain data (matches C# Neo Storage key structure)
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -39,6 +40,14 @@ impl StorageKey {
         Self::new(b"ST".to_vec(), script_hash.as_bytes().to_vec())
     }
 
+    /// Creates a storage key for contract storage entries (script hash prefix + raw key).
+    pub fn contract_storage(script_hash: &neo_core::UInt160, key: &[u8]) -> Self {
+        let mut prefix = Vec::with_capacity(1 + script_hash.as_bytes().len());
+        prefix.push(STORAGE_PREFIX_STORAGE);
+        prefix.extend_from_slice(&script_hash.as_bytes());
+        Self::new(prefix, key.to_vec())
+    }
+
     /// Creates a storage key for block header
     pub fn block_header(index: u32) -> Self {
         Self::new(b"DATA_BlockHeader".to_vec(), index.to_le_bytes().to_vec())
@@ -62,6 +71,11 @@ impl StorageKey {
     /// Creates a storage key for transaction index within block
     pub fn transaction_index(hash: neo_core::UInt256) -> Self {
         Self::new(b"DATA_TransactionIndex".to_vec(), hash.as_bytes().to_vec())
+    }
+
+    /// Creates a storage key for the list of transactions in a block
+    pub fn block_transactions(index: u32) -> Self {
+        Self::new(b"DATA_BlockTxs".to_vec(), index.to_le_bytes().to_vec())
     }
 }
 
@@ -200,69 +214,53 @@ impl StorageProvider for RocksDBStorage {
     }
 
     async fn snapshot(&self) -> Result<Arc<dyn StorageProvider>> {
-        // This implements the C# logic: creating read-only consistent view with RocksDB snapshots
-
-        // 1. Create RocksDB snapshot for consistent read view (production snapshot)
         let db = self.db.clone();
 
-        // 2. Use RocksDB's built-in snapshot feature for production consistency
-        let snapshot_storage = tokio::task::spawn_blocking(move || RocksDBSnapshot::new(db))
-            .await
-            .map_err(|e| Error::StorageError(format!("Task join error: {}", e)))?;
+        let data = tokio::task::spawn_blocking(move || -> Result<HashMap<Vec<u8>, Vec<u8>>> {
+            let mut map = HashMap::new();
+            let iter = db.iterator(IteratorMode::Start);
+            for entry in iter {
+                match entry {
+                    Ok((key, value)) => {
+                        map.insert(key.to_vec(), value.to_vec());
+                    }
+                    Err(e) => {
+                        return Err(Error::StorageError(format!(
+                            "RocksDB snapshot iteration error: {}",
+                            e
+                        )));
+                    }
+                }
+            }
+            Ok(map)
+        })
+        .await
+        .map_err(|e| Error::StorageError(format!("Task join error: {}", e)))??;
 
-        // 3. Return snapshot as storage provider (production wrapper)
-        Ok(Arc::new(snapshot_storage?))
+        Ok(Arc::new(InMemorySnapshot::new(data)))
     }
 }
 
-/// RocksDB snapshot storage provider (production-ready implementation)
-pub struct RocksDBSnapshot {
-    db: Arc<DB>,
-    snapshot_id: u64,
+/// In-memory snapshot used for consistent read views during testing and lightweight usage
+struct InMemorySnapshot {
+    data: Arc<HashMap<Vec<u8>, Vec<u8>>>,
 }
 
-impl RocksDBSnapshot {
-    /// Creates a new RocksDB snapshot
-    pub fn new(db: Arc<DB>) -> Result<Self> {
-        // This implements the C# logic: creating consistent read-only view with proper resource management
-
-        // 1. Create snapshot ID for consistent read view (production snapshot tracking)
-        let snapshot_id = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64;
-
-        // 2. Return snapshot wrapper with proper tracking (production wrapper)
-        Ok(Self { db, snapshot_id })
-    }
-
-    /// Gets the snapshot ID for tracking
-    pub fn snapshot_id(&self) -> u64 {
-        self.snapshot_id
+impl InMemorySnapshot {
+    fn new(data: HashMap<Vec<u8>, Vec<u8>>) -> Self {
+        Self {
+            data: Arc::new(data),
+        }
     }
 }
 
 #[async_trait::async_trait]
-impl StorageProvider for RocksDBSnapshot {
+impl StorageProvider for InMemorySnapshot {
     async fn get(&self, key: &StorageKey) -> Result<StorageItem> {
-        // This implements the C# logic: consistent read from snapshot with proper error handling
-
         let full_key = key.to_bytes();
-        let db = self.db.clone();
-
-        // 1. Use spawn_blocking for synchronous database operation (production async)
-        let result = tokio::task::spawn_blocking(move || db.get(&full_key))
-            .await
-            .map_err(|e| Error::StorageError(format!("Task join error: {}", e)))?;
-
-        // 2. Handle snapshot result (production result handling)
-        match result {
-            Ok(Some(value)) => Ok(StorageItem::new(value)),
-            Ok(None) => Err(Error::NotFound),
-            Err(e) => Err(Error::StorageError(format!(
-                "RocksDB snapshot get error: {}",
-                e
-            ))),
+        match self.data.get(&full_key) {
+            Some(value) => Ok(StorageItem::new(value.clone())),
+            None => Err(Error::NotFound),
         }
     }
 
@@ -276,29 +274,13 @@ impl StorageProvider for RocksDBSnapshot {
 
     async fn contains(&self, key: &StorageKey) -> Result<bool> {
         let full_key = key.to_bytes();
-        let db = self.db.clone();
-
-        // 1. Use spawn_blocking for synchronous database operation (production async)
-        let result = tokio::task::spawn_blocking(move || db.get(&full_key))
-            .await
-            .map_err(|e| Error::StorageError(format!("Task join error: {}", e)))?;
-
-        // 2. Check existence from snapshot result (production existence check)
-        match result {
-            Ok(Some(_)) => Ok(true),
-            Ok(None) => Ok(false),
-            Err(e) => Err(Error::StorageError(format!(
-                "RocksDB snapshot contains error: {}",
-                e
-            ))),
-        }
+        Ok(self.data.contains_key(&full_key))
     }
 
     async fn snapshot(&self) -> Result<Arc<dyn StorageProvider>> {
-        // This matches C# Neo behavior where snapshots cannot create sub-snapshots
-        Err(Error::StorageError(
-            "Cannot create snapshot from snapshot".to_string(),
-        ))
+        Ok(Arc::new(InMemorySnapshot {
+            data: self.data.clone(),
+        }))
     }
 }
 
@@ -377,11 +359,12 @@ impl Storage {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use crate::{Error, Result};
+    use super::*;
+    use crate::Result;
     use tempfile::tempdir;
 
     #[tokio::test]
-    async fn test_rocksdb_storage() {
+    async fn test_rocksdb_storage() -> Result<()> {
         let final_dir = tempdir().expect("Failed to create temporary directory");
         let storage = Storage::new_rocksdb(final_dir.path().to_str().unwrap_or(""))
             .expect("Failed to create storage instance");
@@ -402,10 +385,12 @@ mod tests {
         // Test delete
         storage.delete(&key).await?;
         assert!(!storage.contains(&key).await?);
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_storage_snapshot() {
+    async fn test_storage_snapshot() -> Result<()> {
         let final_dir = tempdir().expect("operation should succeed");
         let storage = Storage::new_rocksdb(final_dir.path().to_str().unwrap_or(""))
             .expect("operation should succeed");
@@ -429,55 +414,7 @@ mod tests {
         // Check storage has new value
         let new_value = storage.get(&key).await?;
         assert_eq!(new_value.value, b"new_value");
-    }
 
-    /// Scans storage with prefix efficiently (production implementation)
-    pub async fn scan_prefix(&self, prefix: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        let prefix = prefix.to_vec();
-        let db = self.db.clone();
-
-        tokio::task::spawn_blocking(move || {
-            // 1. Create RocksDB iterator with prefix optimization (production performance)
-            let mut iter_opts = rocksdb::ReadOptions::default();
-            iter_opts.set_prefix_same_as_start(true); // Enable prefix bloom filter optimization
-
-            let iter = db.iterator_opt(
-                rocksdb::IteratorMode::From(&prefix, rocksdb::Direction::Forward),
-                iter_opts,
-            );
-
-            // 2. Collect matching entries efficiently (production implementation)
-            let mut results = Vec::new();
-            let max_results = 10000; // Prevent unbounded memory usage (production safety)
-
-            for item_result in iter.take(max_results) {
-                match item_result {
-                    Ok((key, value)) => {
-                        // 3. Check prefix match efficiently (production prefix comparison)
-                        if key.starts_with(&prefix) {
-                            results.push((key.to_vec(), value.to_vec()));
-                        } else {
-                            // 4. Break early when prefix no longer matches (production optimization)
-                            // RocksDB keys are lexicographically ordered, so we can stop here
-                            break;
-                        }
-                    }
-                    Err(_) => break, // Stop on error
-                }
-            }
-
-            // 5. Log performance metrics for monitoring (production monitoring)
-            if results.len() >= max_results {
-                log::info!(
-                    "Warning: Prefix scan reached maximum results limit: {}",
-                    max_results
-                );
-            }
-
-            // 6. Return collected results (production result)
-            Ok(results)
-        })
-        .await
-        .map_err(|e| Error::StorageError(format!("Task join error: {}", e)))?
+        Ok(())
     }
 }

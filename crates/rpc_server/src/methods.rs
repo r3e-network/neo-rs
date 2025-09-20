@@ -4,12 +4,16 @@
 
 use hex;
 use neo_config::HASH_SIZE;
-use neo_ledger::Ledger;
+use neo_core::UInt160;
+use neo_cryptography::base58;
+use neo_ledger::{Ledger, MemoryPool};
 use neo_persistence::RocksDbStore;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
-use tracing::warn;
+use tokio::sync::RwLock as AsyncRwLock;
 
 // Define Error and Result types locally
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -21,11 +25,12 @@ use neo_rpc_client::models::{
 };
 
 /// RPC methods implementation
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RpcMethods {
-    ledger: Arc<Ledger>,
-    storage: Arc<RocksDbStore>,
-    peer_registry: Arc<std::sync::RwLock<PeerRegistry>>,
+    pub(crate) ledger: Arc<Ledger>,
+    pub(crate) storage: Arc<RocksDbStore>,
+    pub(crate) peer_registry: Arc<std::sync::RwLock<PeerRegistry>>,
+    pub(crate) mempool: Arc<AsyncRwLock<MemoryPool>>,
 }
 
 /// Production peer registry for managing real peer connections
@@ -95,35 +100,41 @@ pub struct KnownPeer {
 
 impl RpcMethods {
     /// Creates a new RpcMethods instance
-    pub fn new(ledger: Arc<Ledger>, storage: Arc<RocksDbStore>) -> Self {
-        let mut peer_registry = PeerRegistry::default();
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        ledger: Arc<Ledger>,
+        storage: Arc<RocksDbStore>,
+        peer_registry: Arc<std::sync::RwLock<PeerRegistry>>,
+        mempool: Arc<AsyncRwLock<MemoryPool>>,
+    ) -> Self {
+        {
+            let mut registry = peer_registry.write().expect("peer registry poisoned");
 
-        // Initialize with known seed nodes
-        let seed_nodes = vec![
-            ("seed1.neo.org", 10333),
-            ("seed2.neo.org", 10333),
-            ("seed3.neo.org", 10333),
-            ("seed4.neo.org", 10333),
-            ("seed5.neo.org", 10333),
-        ];
+            // Seed with known peers to match C# behavior
+            let seed_nodes = vec![
+                ("seed1.neo.org", 10333),
+                ("seed2.neo.org", 10333),
+                ("seed3.neo.org", 10333),
+                ("seed4.neo.org", 10333),
+                ("seed5.neo.org", 10333),
+            ];
 
-        for (address, port) in seed_nodes {
-            peer_registry.known_peers.insert(
-                format!("{}:{}", address, port),
-                KnownPeer {
+            for (address, port) in seed_nodes {
+                registry.add_known_peer(KnownPeer {
                     address: address.to_string(),
                     port,
                     last_seen: std::time::SystemTime::now(),
                     connection_attempts: 0,
                     is_seed_node: true,
-                },
-            );
+                });
+            }
         }
 
         Self {
             ledger,
             storage,
-            peer_registry: Arc::new(std::sync::RwLock::new(peer_registry)),
+            peer_registry,
+            mempool,
         }
     }
 
@@ -210,6 +221,49 @@ impl RpcMethods {
     pub async fn get_block_count(&self) -> Result<Value> {
         let height = self.ledger.get_height().await;
         Ok(json!(height + 1)) // Neo returns count (height + 1)
+    }
+
+    pub async fn get_nep17_balances(&self, params: Value) -> Result<Value> {
+        let params_array = params.as_array().ok_or("Invalid parameters format")?;
+        if params_array.is_empty() {
+            return Err("Missing address".into());
+        }
+
+        let address = params_array[0].as_str().ok_or("Invalid address format")?;
+        let script_hash = Self::parse_address_or_hash(address)?;
+
+        let contracts = self.ledger.list_native_contracts().await;
+        let mut balances = Vec::new();
+        for contract in contracts {
+            if !contract
+                .manifest
+                .supported_standards
+                .iter()
+                .any(|standard| standard.eq_ignore_ascii_case("NEP-17"))
+            {
+                continue;
+            }
+
+            let balance = self
+                .ledger
+                .get_nep17_balance(&contract.hash, &script_hash)
+                .await?;
+
+            if balance.amount == 0 {
+                continue;
+            }
+
+            balances.push(json!({
+                "assethash": contract.hash.to_string(),
+                "amount": balance.amount.to_string(),
+                "lastupdatedblock": balance.last_updated_block
+            }));
+        }
+
+        Ok(json!({
+            "address": address,
+            "balance": balances
+        }))
     }
 
     /// Gets a block by hash or index
@@ -300,26 +354,26 @@ impl RpcMethods {
 
     /// Gets version information
     pub async fn get_version(&self) -> Result<Value> {
-        // Get version from environment at compile time
         const VERSION: &str = env!("CARGO_PKG_VERSION");
-        const NEO_VERSION: &str = "3.6.0";
+
+        let protocol = neo_rpc_client::models::RpcProtocolConfiguration {
+            addressversion: 53,
+            network: 5195086,
+            validatorscount: 7,
+            msperblock: 15_000,
+            maxtraceableblocks: 2_102_400,
+            maxvaliduntilblockincrement: 5_760,
+            maxtransactionsperblock: 512,
+            memorypoolmaxtransactions: 50_000,
+            initialgasdistribution: "52000000".to_string(),
+        };
 
         let version = RpcVersion {
-            tcpport: 20333,
-            wsport: 20334,
+            tcpport: 10_333,
+            wsport: 10_334,
             nonce: rand::random_u32(),
             useragent: format!("neo-rs/{}", VERSION),
-            protocol: neo_rpc_client::models::RpcProtocolConfiguration {
-                addressversion: 53,
-                network: 5195086,
-                validatorscount: 7,
-                msperblock: 15000,
-                maxtraceableblocks: 2102400,
-                maxvaliduntilblockincrement: 5760,
-                maxtransactionsperblock: 512,
-                memorypoolmaxtransactions: 50000,
-                initialgasdistribution: "52000000".to_string(),
-            },
+            protocol,
         };
 
         Ok(serde_json::to_value(version)?)
@@ -411,26 +465,51 @@ impl RpcMethods {
 
     /// Gets native contracts
     pub async fn get_native_contracts(&self) -> Result<Value> {
-        let contracts = json!([
-            {
-                "id": -1,
-                "hash": "0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5",
-                "nef": {
-                    "checksum": 0
-                },
-                "updatehistory": [0]
-            },
-            {
-                "id": -2,
-                "hash": "0x43cf98eddbe047e198a3e5d57006311442a0ca15",
-                "nef": {
-                    "checksum": 0
-                },
-                "updatehistory": [0]
-            }
-        ]);
+        let contracts = self.ledger.list_native_contracts().await;
+        let mut result = Vec::with_capacity(contracts.len());
+        for contract in contracts {
+            result.push(self.contract_state_to_json(&contract)?);
+        }
+        Ok(json!(result))
+    }
 
-        Ok(contracts)
+    fn parse_address_or_hash(value: &str) -> Result<UInt160> {
+        match Self::parse_address(value) {
+            Ok(hash) => Ok(hash),
+            Err(_) => {
+                let trimmed = value.trim_start_matches("0x");
+                UInt160::from_str(trimmed).map_err(|e| format!("Invalid address: {}", e).into())
+            }
+        }
+    }
+
+    fn parse_address(address: &str) -> Result<UInt160> {
+        let decoded = base58::decode(address).map_err(|_| "Invalid address format")?;
+        if decoded.len() != 25 {
+            return Err("Invalid address length".into());
+        }
+
+        let version = decoded[0];
+        if version != 0x35 {
+            return Err("Invalid address version".into());
+        }
+
+        let payload = &decoded[1..21];
+        let checksum = &decoded[21..25];
+
+        let mut hasher = Sha256::new();
+        hasher.update(&decoded[..21]);
+        let first_hash = hasher.finalize();
+
+        let mut hasher = Sha256::new();
+        hasher.update(first_hash);
+        let second_hash = hasher.finalize();
+
+        if &second_hash[..4] != checksum {
+            return Err("Invalid address checksum".into());
+        }
+
+        UInt160::from_bytes(payload).map_err(|e| format!("Invalid address: {}", e).into())
     }
 }
 

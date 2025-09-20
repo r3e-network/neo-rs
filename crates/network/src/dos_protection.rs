@@ -3,6 +3,7 @@
 //! This module provides protection against denial-of-service attacks
 //! by implementing rate limiting, connection throttling, and resource management.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, warn};
 
 /// DOS protection configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DosProtectionConfig {
     /// Maximum connections per IP address
     pub max_connections_per_ip: usize,
@@ -78,6 +79,7 @@ impl Default for PeerStats {
 }
 
 /// DOS protection manager
+#[derive(Debug)]
 pub struct DosProtectionManager {
     config: DosProtectionConfig,
     peer_stats: Arc<RwLock<HashMap<IpAddr, PeerStats>>>,
@@ -331,6 +333,7 @@ impl DosProtectionManager {
 }
 
 /// Rate limiter implementation
+#[derive(Debug)]
 struct RateLimiter {
     capacity: u32,
     tokens: u32,

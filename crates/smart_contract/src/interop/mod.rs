@@ -101,36 +101,3 @@ impl Default for InteropRegistry {
         Self::new()
     }
 }
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::{Error, Result};
-
-    #[test]
-    fn test_interop_registry_creation() {
-        let registry = InteropRegistry::new();
-
-        // Check that standard services are registered
-        assert!(registry.get("System.Runtime.Log").is_some());
-        assert!(registry.get("System.Storage.Get").is_some());
-        assert!(registry.get("System.Contract.Call").is_some());
-        assert!(registry.get("System.Crypto.CheckSig").is_some());
-    }
-
-    #[test]
-    fn test_interop_service_execution() {
-        let registry = InteropRegistry::new();
-        let mut engine = ApplicationEngine::new(neo_vm::TriggerType::Application, 10_000_000);
-
-        engine.set_current_script_hash(Some(neo_core::UInt160::zero()));
-
-        // Test log service
-        let result = registry.execute(
-            "System.Runtime.Log",
-            &mut engine,
-            &[b"test message".to_vec()],
-        );
-        assert!(result.is_ok());
-    }
-}

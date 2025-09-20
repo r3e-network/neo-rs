@@ -1,4 +1,3 @@
-//! ECRecover implementation for secp256k1
 //!
 //! Matches C# Neo cryptography ECRecover functionality exactly
 
@@ -41,27 +40,22 @@ impl ECRecover {
 
         let secp = Secp256k1::new();
 
-        // Create message from hash
         let message = Message::from_digest_slice(message_hash)
-            .map_err(|e| CryptographyError::InvalidInput(format!("Invalid message hash: {}", e)))?;
+            .map_err(|e| CryptographyError::InvalidInput(format!("Invalid message hash: {e}")))?;
 
-        // Create recovery ID
         let recovery_id = RecoveryId::from_i32(recovery_id as i32)
-            .map_err(|e| CryptographyError::InvalidInput(format!("Invalid recovery ID: {}", e)))?;
+            .map_err(|e| CryptographyError::InvalidInput(format!("Invalid recovery ID: {e}")))?;
 
-        // Create recoverable signature
         let mut sig_bytes = [0u8; 64];
         sig_bytes.copy_from_slice(signature);
 
         let recoverable_sig = RecoverableSignature::from_compact(&sig_bytes, recovery_id)
-            .map_err(|e| CryptographyError::InvalidInput(format!("Invalid signature: {}", e)))?;
+            .map_err(|e| CryptographyError::InvalidInput(format!("Invalid signature: {e}")))?;
 
-        // Recover public key
         let recovered_pubkey = secp
             .recover_ecdsa(&message, &recoverable_sig)
-            .map_err(|e| CryptographyError::InvalidInput(format!("Recovery failed: {}", e)))?;
+            .map_err(|e| CryptographyError::InvalidInput(format!("Recovery failed: {e}")))?;
 
-        // Return uncompressed public key (65 bytes)
         Ok(recovered_pubkey.serialize_uncompressed().to_vec())
     }
 
@@ -70,7 +64,6 @@ impl ECRecover {
         message_hash: &[u8],
         signature: &[u8],
     ) -> CryptographyResult<Vec<u8>> {
-        // Try all possible recovery IDs (0-3)
         for recovery_id in 0..4 {
             if let Ok(public_key) = Self::try_recover(message_hash, signature, recovery_id) {
                 return Ok(public_key);
@@ -88,25 +81,19 @@ impl ECRecover {
         signature: &[u8],
         expected_pubkey: &[u8],
     ) -> CryptographyResult<bool> {
-        // Recover public key from signature
         let recovered_pubkey = Self::recover_public_key(message_hash, signature)?;
 
-        // Compare with expected public key
         if recovered_pubkey.len() != expected_pubkey.len() {
             return Ok(false);
         }
 
-        // Handle both compressed and uncompressed formats
         if expected_pubkey.len() == 33 {
-            // Expected is compressed, convert recovered to compressed
-            let secp = Secp256k1::new();
             let pubkey = PublicKey::from_slice(&recovered_pubkey).map_err(|e| {
-                CryptographyError::InvalidInput(format!("Invalid recovered key: {}", e))
+                CryptographyError::InvalidInput(format!("Invalid recovered key: {e}"))
             })?;
             let compressed = pubkey.serialize();
             Ok(compressed.to_vec() == expected_pubkey)
         } else if expected_pubkey.len() == 65 {
-            // Both uncompressed
             Ok(recovered_pubkey == expected_pubkey)
         } else {
             Err(CryptographyError::InvalidInput(
@@ -119,48 +106,76 @@ impl ECRecover {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex;
+    use secp256k1::{
+        ecdsa::RecoverableSignature, Message, Secp256k1, SecretKey as Secp256k1SecretKey,
+    };
+    use sha2::{Digest, Sha256};
+
+    fn sample_message_hash() -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(b"neo-ecrecover-test");
+        hasher.finalize().into()
+    }
+
+    fn sample_signature() -> ([u8; 32], [u8; 32], u8, Vec<u8>) {
+        let secp = Secp256k1::new();
+        let secret_key = Secp256k1SecretKey::from_slice(&[0x11u8; 32]).expect("valid secret key");
+        let public_key = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+
+        let message_hash = sample_message_hash();
+        let message = Message::from_digest_slice(&message_hash).expect("32-byte digest");
+
+        let recoverable: RecoverableSignature = secp.sign_ecdsa_recoverable(&message, &secret_key);
+        let (rec_id, compact) = recoverable.serialize_compact();
+
+        let mut r = [0u8; 32];
+        let mut s = [0u8; 32];
+        r.copy_from_slice(&compact[..32]);
+        s.copy_from_slice(&compact[32..]);
+
+        (
+            r,
+            s,
+            rec_id.to_i32() as u8,
+            public_key.serialize_uncompressed().to_vec(),
+        )
+    }
 
     #[test]
     fn test_ecrecover_basic() {
-        // Test vector from Ethereum (compatible with secp256k1)
-        let message_hash =
-            hex::decode("a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3")
-                .unwrap();
-        let signature = hex::decode("28ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276667cac6e0a9e74b9b8f21a7d6d4b75dc3e4c3f8b9d5f3b3f1a1b9c8d2e3f4a5b6").unwrap();
+        let (r, s, recovery_id, expected_pubkey) = sample_signature();
+        let message_hash = sample_message_hash();
 
-        // Test recovery with different recovery IDs
-        for recovery_id in 0..4 {
-            if let Ok(recovered) =
-                ECRecover::try_recover(&message_hash, &signature[..64], recovery_id)
-            {
-                assert_eq!(recovered.len(), 65);
-                assert_eq!(recovered[0], 0x04); // Uncompressed prefix
-                println!("✅ Recovery successful with ID {}", recovery_id);
-                break;
-            }
-        }
+        let mut signature = [0u8; 64];
+        signature[..32].copy_from_slice(&r);
+        signature[32..].copy_from_slice(&s);
+
+        let recovered = ECRecover::try_recover(&message_hash, &signature, recovery_id)
+            .expect("public key recovery to succeed");
+
+        assert_eq!(recovered.len(), 65);
+        assert_eq!(recovered, expected_pubkey);
     }
 
     #[test]
     fn test_ecrecover_verification() {
-        // Generate test data
-        let message_hash = [0x42u8; 32];
-        let signature = [0x12u8; 64];
+        let (r, s, _recovery_id, expected_uncompressed) = sample_signature();
+        let message_hash = sample_message_hash();
 
-        // Test that verification works correctly
-        match ECRecover::recover_public_key(&message_hash, &signature) {
-            Ok(recovered) => {
-                let is_valid =
-                    ECRecover::verify_signature(&message_hash, &signature, &recovered).unwrap();
-                assert!(is_valid, "Verification should succeed with recovered key");
-            }
-            Err(_) => {
-                // Some test vectors may not have valid signatures, which is OK
-                println!(
-                    "Test vector does not produce valid recovery (expected for some test data)"
-                );
-            }
-        }
+        let mut signature = [0u8; 64];
+        signature[..32].copy_from_slice(&r);
+        signature[32..].copy_from_slice(&s);
+
+        let is_valid =
+            ECRecover::verify_signature(&message_hash, &signature, &expected_uncompressed)
+                .expect("verification");
+        assert!(is_valid);
+
+        let mut tampered_hash = message_hash;
+        tampered_hash[0] ^= 0xFF;
+        let tampered =
+            ECRecover::verify_signature(&tampered_hash, &signature, &expected_uncompressed)
+                .expect("verification");
+        assert!(!tampered);
     }
 }

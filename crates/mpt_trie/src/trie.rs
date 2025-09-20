@@ -3,6 +3,7 @@ use crate::helper::{common_prefix_length, from_nibbles, to_nibbles};
 use crate::{Cache, Node, NodeType};
 use neo_config::HASH_SIZE;
 use neo_core::UInt256;
+use sha2::Digest;
 
 /// MPT Trie implementation
 /// This matches the C# Trie class
@@ -68,7 +69,7 @@ impl Trie {
 
     /// Commits changes to the trie
     pub fn commit(&mut self) {
-        self.cache.commit();
+        let _ = self.cache.commit();
     }
 
     /// Gets value from a child node (production implementation matching C# Neo exactly)
@@ -711,8 +712,9 @@ impl Trie {
                     }
 
                     // 4. Verify stored hash matches requested hash (production integrity check)
-                    let stored_hash = neo_cryptography::hash256(&node_data);
-                    if stored_hash != hash.as_bytes() {
+                    // Use the same single SHA-256 hash as Node::hash and proof calculations
+                    let stored_hash = sha2::Sha256::digest(&node_data);
+                    if stored_hash.as_slice() != hash.as_bytes() {
                         return Err("Hash mismatch in stored node".into());
                     }
 

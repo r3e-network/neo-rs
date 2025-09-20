@@ -8,7 +8,7 @@ pub use neo_core::{
     WitnessCondition, WitnessScope,
 };
 pub use neo_cryptography::ECPoint;
-pub use neo_vm::{ApplicationEngine, TriggerType};
+pub use neo_vm::{ApplicationEngine, CallFlags, ScriptBuilder, TriggerType, VMState};
 
 // Re-export smart contract types
 pub use contract_state::{ContractState, MethodToken, NefFile};
@@ -17,6 +17,8 @@ pub use manifest::{
     ContractMethod as ContractMethodDescriptor, ContractParameter as ContractParameterDefinition,
     ContractParameterType, ContractPermission, ContractPermissionDescriptor as PermissionContract,
 };
+pub use native::crypto_lib::CryptoLib;
+pub use native::native_contract::NativeContract;
 pub use storage::{StorageItem, StorageKey};
 // Note: Types are accessed through proper crate boundaries to maintain clean architecture
 

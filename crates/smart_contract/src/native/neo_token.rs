@@ -2,6 +2,7 @@
 
 use crate::application_engine::ApplicationEngine;
 use crate::application_engine::StorageContext;
+use crate::native::fungible_token;
 use crate::native::governance_types::{
     CandidateState, CommitteeState, NeoAccountState, VoteTracker,
 };
@@ -14,18 +15,21 @@ use neo_core::{
     UInt160,
 };
 use neo_cryptography::ECPoint;
-use neo_vm::TriggerType;
 use num_bigint::BigInt;
-use num_traits::{One, Zero};
+use num_traits::{One, Signed, Zero};
 use rocksdb::{Options, DB};
-use std::collections::{BTreeMap, HashMap};
-use std::str::FromStr;
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// NEO token configuration constants (matches C# Neo exactly)
 pub const NEO_TOTAL_SUPPLY: u64 = 100_000_000;
 pub const NEO_DECIMALS: u8 = 0;
+
+const PREFIX_ACCOUNT: u8 = fungible_token::PREFIX_ACCOUNT;
+const PREFIX_VOTERS_COUNT: u8 = 0x01;
+const PREFIX_CANDIDATE: u8 = 0x21;
+const PREFIX_VOTER_REWARD_PER_COMMITTEE: u8 = 0x17;
 
 /// The NEO token native contract.
 pub struct NeoToken {
@@ -111,9 +115,8 @@ impl NeoToken {
     }
 
     fn total_supply(&self, _engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
-        // NEO total supply is 100,000,000
-        let total_supply = 100_000_000i64;
-        Ok(total_supply.to_le_bytes().to_vec())
+        let total_supply = BigInt::from(NEO_TOTAL_SUPPLY);
+        Ok(self.big_int_to_le_bytes(&total_supply))
     }
 
     fn balance_of(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -123,52 +126,21 @@ impl NeoToken {
             ));
         }
 
-        // 1. Get NEO token storage context (production implementation)
-        let neo_storage_context = StorageContext {
-            id: self.hash().as_bytes()[0] as i32, // Use first byte of hash as ID
-            is_read_only: true,                   // Read-only for balance queries
+        let account_bytes = &args[0];
+        if account_bytes.len() != ADDRESS_SIZE {
+            return Err(Error::NativeContractError(
+                "Invalid account length".to_string(),
+            ));
+        }
+
+        let account = UInt160::from_bytes(account_bytes)?;
+        let context = engine.get_native_storage_context(&self.hash)?;
+        let balance = match self.read_account_state(engine, &context, &account)? {
+            Some(state) => state.balance,
+            None => BigInt::zero(),
         };
 
-        // 2. Create storage key for account balance (matches C# NEO storage exactly)
-        let account = &args[0];
-        let account_hash = neo_core::UInt160::from_bytes(&account)?;
-        let balance_key = format!("balance:{}", account_hash).into_bytes();
-
-        // 3. Query storage through ApplicationEngine (production integration)
-        match engine.get_storage_item(&neo_storage_context, &balance_key) {
-            Some(balance_data) => {
-                // 4. Deserialize balance from storage (matches C# BigInteger deserialization exactly)
-                if balance_data.len() >= 8 {
-                    let balance = i64::from_le_bytes([
-                        balance_data[0],
-                        balance_data[1],
-                        balance_data[2],
-                        balance_data[3],
-                        balance_data[4],
-                        balance_data[5],
-                        balance_data[6],
-                        balance_data[7],
-                    ]);
-                    Ok(balance.to_le_bytes().to_vec())
-                } else if balance_data.len() >= 4 {
-                    // Handle smaller balance values
-                    let balance = i32::from_le_bytes([
-                        balance_data[0],
-                        balance_data[1],
-                        balance_data[2],
-                        balance_data[3],
-                    ]) as i64;
-                    Ok(balance.to_le_bytes().to_vec())
-                } else {
-                    // Invalid balance data format
-                    Ok(vec![0])
-                }
-            }
-            None => {
-                // 5. Account not found in storage - return zero balance (matches C# behavior exactly)
-                Ok(vec![0])
-            }
-        }
+        Ok(self.big_int_to_le_bytes(&balance))
     }
 
     fn transfer(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -178,85 +150,63 @@ impl NeoToken {
             ));
         }
 
-        let from = &args[0];
-        let to = &args[1];
+        let from_bytes = &args[0];
+        let to_bytes = &args[1];
         let amount_bytes = &args[2];
 
-        // Validate addresses
-        if from.len() != ADDRESS_SIZE || to.len() != ADDRESS_SIZE {
+        if from_bytes.len() != ADDRESS_SIZE || to_bytes.len() != ADDRESS_SIZE {
             return Err(Error::NativeContractError(
                 "Invalid address length".to_string(),
             ));
         }
 
-        // Parse amount
-        let amount = if amount_bytes.len() >= 8 {
-            let array: [u8; 8] = amount_bytes[0..8].try_into().unwrap_or([0u8; 8]);
-            i64::from_le_bytes(array)
-        } else {
-            return Err(Error::NativeContractError(
-                "Invalid amount format".to_string(),
-            ));
-        };
+        let from = UInt160::from_bytes(from_bytes)?;
+        let to = UInt160::from_bytes(to_bytes)?;
+        let amount = self.parse_big_int(amount_bytes);
 
-        if amount < 0 {
+        if amount.is_negative() {
             return Err(Error::NativeContractError(
                 "Amount cannot be negative".to_string(),
             ));
         }
 
-        if amount % 100_000_000 != 0 {
-            return Err(Error::NativeContractError(
-                "NEO amount must be whole number".to_string(),
-            ));
+        if amount.is_zero() {
+            return Ok(vec![1]);
         }
 
         if from == to {
-            return Ok(vec![1]); // Transfer to self is always successful
+            return Ok(vec![1]);
         }
 
         let context = engine.get_native_storage_context(&self.hash)?;
-
-        let from_key = from;
-        let to_key = to;
-
-        // Get current balances
-        let from_balance = match engine.get_storage_item(&context, from_key) {
-            Some(value) => {
-                if value.len() == 8 {
-                    i64::from_le_bytes(value.try_into().unwrap_or([0u8; 8]))
-                } else {
-                    0i64
-                }
-            }
-            None => 0i64,
+        let mut from_state = match self.read_account_state(engine, &context, &from)? {
+            Some(state) => state,
+            None => return Ok(vec![0]),
         };
 
-        // Check sufficient balance
-        if from_balance < amount {
-            return Ok(vec![0]); // Insufficient balance
+        if from_state.balance < amount {
+            return Ok(vec![0]);
         }
 
-        let to_balance = match engine.get_storage_item(&context, to_key) {
-            Some(value) => {
-                if value.len() == 8 {
-                    i64::from_le_bytes(value.try_into().unwrap_or([0u8; 8]))
-                } else {
-                    0i64
-                }
-            }
-            None => 0i64,
-        };
+        let mut to_state = self
+            .read_account_state(engine, &context, &to)?
+            .unwrap_or_else(|| NeoAccountState::new(BigInt::zero(), engine.block_height()));
 
-        // Calculate new balances
-        let new_from_balance = from_balance - amount;
-        let new_to_balance = to_balance + amount;
+        let new_from_balance = from_state.balance.clone() - &amount;
+        let new_to_balance = to_state.balance.clone() + &amount;
 
-        // Update storage
-        engine.put_storage_item(&context, from_key, &new_from_balance.to_le_bytes())?;
-        engine.put_storage_item(&context, to_key, &new_to_balance.to_le_bytes())?;
+        from_state.update_balance(new_from_balance.clone(), engine.block_height());
+        to_state.update_balance(new_to_balance, engine.block_height());
 
-        Ok(vec![1]) // Return true for success
+        if from_state.balance.is_zero() {
+            self.delete_account_state(engine, &context, &from)?;
+        } else {
+            self.write_account_state(engine, &context, &from, &from_state)?;
+        }
+
+        self.write_account_state(engine, &context, &to, &to_state)?;
+
+        Ok(vec![1])
     }
 
     fn get_committee(&self, engine: &mut ApplicationEngine) -> Result<Vec<u8>> {
@@ -300,67 +250,56 @@ impl NeoToken {
             ));
         }
 
-        // 1. Validate public key format
-        if args.is_empty() || args[0].len() != 33 {
+        let public_key_bytes = &args[0];
+        if public_key_bytes.len() != 33 {
             return Err(Error::InvalidArguments(
                 "Invalid public key format (must be 33 bytes)".to_string(),
             ));
         }
 
-        let public_key = &args[0];
+        let public_key = ECPoint::from_bytes(public_key_bytes)
+            .map_err(|_| Error::InvalidArguments("Invalid secp256r1 public key".to_string()))?;
 
-        // 2. Validate public key is valid secp256r1 point
-        if !self.validate_public_key(public_key) {
-            return Err(Error::InvalidArguments(
-                "Invalid secp256r1 public key".to_string(),
-            ));
-        }
-
-        // 3. Get storage context for this native contract
-        let context = engine.get_native_storage_context(&self.hash)?;
-
-        // 4. Check if candidate is already registered
-        let candidate_key = format!("candidate:{}", hex::encode(public_key));
-        if engine
-            .get_storage_item(&context, candidate_key.as_bytes())
-            .is_some()
-        {
+        let caller = engine.calling_script_hash();
+        let expected_hash = neo_core::UInt160::from_bytes(
+            &neo_cryptography::helper::public_key_to_script_hash(public_key_bytes),
+        )?;
+        if caller != expected_hash {
             return Err(Error::InvalidOperation(
-                "Candidate already registered".to_string(),
+                "Only the candidate can register themselves".to_string(),
             ));
         }
 
-        // 5. Check registration fee (1000 GAS required)
-        let registration_fee = 1000_00000000u64; // 1000 GAS in smallest units
+        let context = engine.get_native_storage_context(&self.hash)?;
+        let mut state = self
+            .read_candidate_state(engine, &context, &public_key)?
+            .unwrap_or_else(|| CandidateState::new(public_key.clone()));
+
+        if state.registered {
+            return Ok(vec![1]);
+        }
+
+        let registration_fee = 1_000_0000_0000u64; // 1000 GAS (GAS has 8 decimals)
         if !self.check_gas_balance(engine, registration_fee) {
             return Err(Error::InsufficientFunds(
                 "Insufficient GAS for candidate registration".to_string(),
             ));
         }
-
-        // 6. Burn registration fee
         self.burn_gas(engine, registration_fee)?;
 
-        // 7. Register candidate
-        let candidate_data = CandidateData {
-            public_key: public_key.to_vec(),
-            votes: 0,
-            registered_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| Error::RuntimeError(format!("Failed to get timestamp: {}", e)))?
-                .as_secs(),
-        };
+        state.registered = true;
+        state.public_key = public_key.clone();
+        self.write_candidate_state(engine, &context, &public_key, &state)?;
+        self.write_voter_reward_per_committee(engine, &context, &public_key, &BigInt::zero())?;
 
-        let candidate_bytes = serde_json::to_vec(&candidate_data)
-            .map_err(|e| Error::SerializationError(e.to_string()))?;
-
-        engine.put_storage_item(&context, candidate_key.as_bytes(), &candidate_bytes)?;
-
-        // 8. Emit registration event
-        engine.emit_event("CandidateRegistered", vec![public_key.to_vec()]);
-
-        log::info!("Candidate registered: {}", hex::encode(public_key));
-        Ok(vec![1]) // Return true for success
+        let event_payload = vec![
+            public_key_bytes.to_vec(),
+            vec![1],
+            self.big_int_to_le_bytes(&state.votes),
+        ];
+        let _ = engine.emit_event("CandidateStateChanged", event_payload);
+        log::info!("Candidate registered: {}", hex::encode(public_key_bytes));
+        Ok(vec![1])
     }
 
     fn unregister_candidate(
@@ -375,34 +314,51 @@ impl NeoToken {
         }
 
         let public_key_bytes = &args[0];
-
         if public_key_bytes.len() != 33 {
             return Err(Error::NativeContractError(
                 "Invalid public key length (must be 33 bytes)".to_string(),
             ));
         }
 
-        // Validate public key is valid secp256r1 point
-        if let Err(_) = neo_cryptography::ecc::ECPoint::from_bytes(public_key_bytes) {
-            return Err(Error::NativeContractError(
-                "Invalid public key format".to_string(),
-            ));
-        }
+        let public_key = ECPoint::from_bytes(public_key_bytes)
+            .map_err(|_| Error::NativeContractError("Invalid public key format".to_string()))?;
 
         let caller = engine.calling_script_hash();
-        let candidate_hash_bytes =
-            neo_cryptography::helper::public_key_to_script_hash(public_key_bytes);
-        let candidate_hash = neo_core::UInt160::from_bytes(&candidate_hash_bytes)?;
-
+        let candidate_hash = neo_core::UInt160::from_bytes(
+            &neo_cryptography::helper::public_key_to_script_hash(public_key_bytes),
+        )?;
         if caller != candidate_hash {
             return Err(Error::NativeContractError(
                 "Only the candidate can unregister themselves".to_string(),
             ));
         }
 
-        log::info!("Unregistering candidate: {}", hex::encode(public_key_bytes));
+        let context = engine.get_native_storage_context(&self.hash)?;
+        let mut state = match self.read_candidate_state(engine, &context, &public_key)? {
+            Some(state) => state,
+            None => return Ok(vec![1]),
+        };
 
-        Ok(vec![1]) // Return true for success
+        if !state.registered {
+            return Ok(vec![1]);
+        }
+
+        state.registered = false;
+
+        if state.votes.is_zero() {
+            self.delete_candidate_state(engine, &context, &public_key)?;
+        } else {
+            self.write_candidate_state(engine, &context, &public_key, &state)?;
+        }
+
+        let event_payload = vec![
+            public_key_bytes.to_vec(),
+            vec![0],
+            self.big_int_to_le_bytes(&state.votes),
+        ];
+        let _ = engine.emit_event("CandidateStateChanged", event_payload);
+        log::info!("Candidate unregistered: {}", hex::encode(public_key_bytes));
+        Ok(vec![1])
     }
 
     fn vote(&self, engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Result<Vec<u8>> {
@@ -413,63 +369,128 @@ impl NeoToken {
         }
 
         let account_bytes = &args[0];
-        let candidate_bytes = &args[1];
-
         if account_bytes.len() != ADDRESS_SIZE {
             return Err(Error::NativeContractError(
                 "Invalid account hash length (must be ADDRESS_SIZE bytes)".to_string(),
             ));
         }
-
-        if !candidate_bytes.is_empty() && candidate_bytes.len() != 33 {
-            return Err(Error::NativeContractError(
-                "Invalid candidate public key length (must be 33 bytes or empty)".to_string(),
-            ));
-        }
+        let account_hash = UInt160::from_bytes(account_bytes)?;
 
         let caller = engine.calling_script_hash();
-        let account_hash = neo_core::UInt160::from_bytes(account_bytes)?;
-
         if caller != account_hash {
             return Err(Error::NativeContractError(
                 "Only the account owner can vote".to_string(),
             ));
         }
 
-        if !candidate_bytes.is_empty() {
-            if let Err(_) = neo_cryptography::ecc::ECPoint::from_bytes(candidate_bytes) {
+        let candidate_bytes = &args[1];
+        let candidate_point = if candidate_bytes.is_empty() {
+            None
+        } else {
+            if candidate_bytes.len() != 33 {
                 return Err(Error::NativeContractError(
-                    "Invalid candidate public key format".to_string(),
+                    "Invalid candidate public key length (must be 33 bytes or empty)".to_string(),
                 ));
             }
+            Some(ECPoint::from_bytes(candidate_bytes).map_err(|_| {
+                Error::NativeContractError("Invalid candidate public key format".to_string())
+            })?)
+        };
+
+        let context = engine.get_native_storage_context(&self.hash)?;
+        let mut account_state = match self.read_account_state(engine, &context, &account_hash)? {
+            Some(state) => state,
+            None => return Ok(vec![0]),
+        };
+
+        if account_state.balance.is_zero() {
+            return Ok(vec![0]);
         }
 
-        if candidate_bytes.is_empty() {
-            log::info!("Account {} unvoted", hex::encode(account_bytes));
-        } else {
-            log::info!(
-                "Account {} voted for candidate {}",
-                hex::encode(account_bytes),
-                hex::encode(candidate_bytes)
-            );
-        }
+        let balance = account_state.balance.clone();
+        let previous_vote = account_state.vote_to.clone();
 
-        Ok(vec![1]) // Return true for success
-    }
-
-    /// Validates a public key format (production-ready implementation)
-    fn validate_public_key(&self, public_key: &[u8]) -> bool {
-        if public_key.len() != 33 {
-            return false;
-        }
-
-        match public_key[0] {
-            0x02 | 0x03 => {
-                // Validate it's a valid secp256r1 point
-                neo_cryptography::ecc::ECPoint::from_bytes(public_key).is_ok()
+        let vote_state_changed = previous_vote.is_none() ^ candidate_point.is_none();
+        if vote_state_changed {
+            let mut voters_count = self.read_voters_count(engine, &context)?;
+            if previous_vote.is_none() {
+                voters_count = voters_count + balance.clone();
+            } else {
+                voters_count = voters_count - balance.clone();
             }
-            _ => false,
+            self.write_voters_count(engine, &context, &voters_count)?;
         }
+
+        // Remove previous vote weight if any
+        if let Some(ref prev_candidate) = previous_vote {
+            if let Some(mut prev_state) =
+                self.read_candidate_state(engine, &context, prev_candidate)?
+            {
+                prev_state.votes -= balance.clone();
+                if prev_state.votes.is_zero() && !prev_state.registered {
+                    self.delete_candidate_state(engine, &context, prev_candidate)?;
+                } else {
+                    self.write_candidate_state(engine, &context, prev_candidate, &prev_state)?;
+                }
+            }
+        }
+
+        // Add new vote weight if any
+        if let Some(ref candidate) = candidate_point {
+            let mut candidate_state =
+                match self.read_candidate_state(engine, &context, candidate)? {
+                    Some(state) => {
+                        if !state.registered {
+                            return Ok(vec![0]);
+                        }
+                        state
+                    }
+                    None => return Ok(vec![0]),
+                };
+
+            candidate_state.votes += balance.clone();
+            self.write_candidate_state(engine, &context, candidate, &candidate_state)?;
+        }
+
+        let mut new_last_gas = account_state.last_gas_per_vote.clone();
+        if let Some(ref candidate) = candidate_point {
+            if previous_vote.as_ref() != Some(candidate) {
+                new_last_gas = self.read_voter_reward_per_committee(engine, &context, candidate)?;
+            }
+        } else {
+            new_last_gas = BigInt::zero();
+        }
+
+        account_state.balance_height = engine.block_height();
+        account_state.update_vote(candidate_point.clone(), new_last_gas.clone());
+        self.write_account_state(engine, &context, &account_hash, &account_state)?;
+
+        let from_payload = if let Some(ref prev_candidate) = previous_vote {
+            prev_candidate.encode_point(true).map_err(|_| {
+                Error::NativeContractError("Failed to encode previous candidate".to_string())
+            })?
+        } else {
+            Vec::new()
+        };
+        let vote_payload = if let Some(ref candidate) = candidate_point {
+            candidate.encode_point(true).map_err(|_| {
+                Error::NativeContractError("Failed to encode candidate vote".to_string())
+            })?
+        } else {
+            Vec::new()
+        };
+        let amount_payload = self.big_int_to_le_bytes(&balance);
+        let _ = engine.emit_event(
+            "Vote",
+            vec![
+                account_bytes.to_vec(),
+                from_payload,
+                vote_payload,
+                amount_payload,
+            ],
+        );
+
+        Ok(vec![1])
     }
 
     /// Checks if account has sufficient GAS balance
@@ -672,16 +693,9 @@ impl NeoToken {
 
     /// Gets account balance from storage (production-ready implementation)
     fn get_account_balance_from_storage(&self, account: &UInt160) -> Option<u64> {
-        // 1. Create storage key for account balance (matches C# CreateStorageKey exactly)
-        let storage_key = self.create_account_storage_key(account);
-
-        // 2. Query storage for balance data
-        // This integrates with the actual blockchain storage layer through ApplicationEngine
-
-        // 3. Parse balance from storage item (matches C# AccountState.FromByteArray exactly)
-
+        // Storage integration pending for account-level balance reads.
         if account.is_zero() {
-            Some(0) // Genesis account starts with zero
+            Some(0)
         } else {
             None
         }
@@ -689,13 +703,193 @@ impl NeoToken {
 
     /// Creates storage key for account balance (production-ready implementation)
     fn create_account_storage_key(&self, account: &UInt160) -> Vec<u8> {
-        const PREFIX_ACCOUNT: u8 = 0x14; // From C# NeoToken.Prefix_Account
-
-        let mut key = Vec::new();
+        let mut key = Vec::with_capacity(1 + ADDRESS_SIZE);
         key.push(PREFIX_ACCOUNT);
         key.extend_from_slice(&account.as_bytes());
-
         key
+    }
+
+    fn create_candidate_storage_key_bytes(&self, compressed_key: &[u8]) -> Vec<u8> {
+        let mut key = Vec::with_capacity(1 + compressed_key.len());
+        key.push(PREFIX_CANDIDATE);
+        key.extend_from_slice(compressed_key);
+        key
+    }
+
+    fn create_voters_count_key(&self) -> Vec<u8> {
+        vec![PREFIX_VOTERS_COUNT]
+    }
+
+    fn create_voter_reward_key_bytes(&self, compressed_key: &[u8]) -> Vec<u8> {
+        let mut key = Vec::with_capacity(1 + compressed_key.len());
+        key.push(PREFIX_VOTER_REWARD_PER_COMMITTEE);
+        key.extend_from_slice(compressed_key);
+        key
+    }
+
+    fn read_voters_count(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+    ) -> Result<BigInt> {
+        let key = self.create_voters_count_key();
+        match engine.get_storage_item(context, &key) {
+            Some(raw) => Ok(self.parse_big_int(&raw)),
+            None => Ok(BigInt::zero()),
+        }
+    }
+
+    fn write_voters_count(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+        value: &BigInt,
+    ) -> Result<()> {
+        let key = self.create_voters_count_key();
+        let bytes = self.big_int_to_le_bytes(value);
+        engine.put_storage_item(context, &key, &bytes)
+    }
+
+    fn read_voter_reward_per_committee(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+        candidate: &ECPoint,
+    ) -> Result<BigInt> {
+        let compressed = candidate
+            .encode_point(true)
+            .map_err(|_| Error::InvalidArguments("Unable to encode candidate key".to_string()))?;
+        let key = self.create_voter_reward_key_bytes(&compressed);
+        match engine.get_storage_item(context, &key) {
+            Some(raw) => Ok(self.parse_big_int(&raw)),
+            None => Ok(BigInt::zero()),
+        }
+    }
+
+    #[allow(dead_code)]
+    #[allow(dead_code)]
+    fn write_voter_reward_per_committee(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+        candidate: &ECPoint,
+        value: &BigInt,
+    ) -> Result<()> {
+        let compressed = candidate
+            .encode_point(true)
+            .map_err(|_| Error::InvalidArguments("Unable to encode candidate key".to_string()))?;
+        let key = self.create_voter_reward_key_bytes(&compressed);
+        let bytes = self.big_int_to_le_bytes(value);
+        engine.put_storage_item(context, &key, &bytes)
+    }
+
+    fn delete_voter_reward_per_committee(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+        candidate: &ECPoint,
+    ) -> Result<()> {
+        let compressed = candidate
+            .encode_point(true)
+            .map_err(|_| Error::InvalidArguments("Unable to encode candidate key".to_string()))?;
+        let key = self.create_voter_reward_key_bytes(&compressed);
+        engine.delete_storage_item(context, &key)?;
+        Ok(())
+    }
+
+    fn read_candidate_state(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+        candidate: &ECPoint,
+    ) -> Result<Option<CandidateState>> {
+        let compressed = candidate
+            .encode_point(true)
+            .map_err(|_| Error::InvalidArguments("Unable to encode candidate key".to_string()))?;
+        let key = self.create_candidate_storage_key_bytes(&compressed);
+        match engine.get_storage_item(context, &key) {
+            Some(raw) => Ok(Some(CandidateState::from_bytes(&raw)?)),
+            None => Ok(None),
+        }
+    }
+
+    fn write_candidate_state(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+        candidate: &ECPoint,
+        state: &CandidateState,
+    ) -> Result<()> {
+        let compressed = candidate
+            .encode_point(true)
+            .map_err(|_| Error::InvalidArguments("Unable to encode candidate key".to_string()))?;
+        let key = self.create_candidate_storage_key_bytes(&compressed);
+        engine.put_storage_item(context, &key, &state.to_bytes()?)
+    }
+
+    fn delete_candidate_state(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+        candidate: &ECPoint,
+    ) -> Result<()> {
+        let compressed = candidate
+            .encode_point(true)
+            .map_err(|_| Error::InvalidArguments("Unable to encode candidate key".to_string()))?;
+        let key = self.create_candidate_storage_key_bytes(&compressed);
+        engine.delete_storage_item(context, &key)?;
+        self.delete_voter_reward_per_committee(engine, context, candidate)
+    }
+
+    fn read_account_state(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+        account: &UInt160,
+    ) -> Result<Option<NeoAccountState>> {
+        let key = self.create_account_storage_key(account);
+        match engine.get_storage_item(context, &key) {
+            Some(raw) => Ok(Some(NeoAccountState::from_bytes(&raw)?)),
+            None => Ok(None),
+        }
+    }
+
+    fn write_account_state(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+        account: &UInt160,
+        state: &NeoAccountState,
+    ) -> Result<()> {
+        let key = self.create_account_storage_key(account);
+        let bytes = state.to_bytes()?;
+        engine.put_storage_item(context, &key, &bytes)
+    }
+
+    fn delete_account_state(
+        &self,
+        engine: &mut ApplicationEngine,
+        context: &StorageContext,
+        account: &UInt160,
+    ) -> Result<()> {
+        let key = self.create_account_storage_key(account);
+        engine.delete_storage_item(context, &key)
+    }
+
+    fn big_int_to_le_bytes(&self, value: &BigInt) -> Vec<u8> {
+        let mut bytes = value.to_signed_bytes_le();
+        if bytes.is_empty() {
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    fn parse_big_int(&self, bytes: &[u8]) -> BigInt {
+        if bytes.is_empty() {
+            BigInt::zero()
+        } else {
+            BigInt::from_signed_bytes_le(bytes)
+        }
     }
 
     pub fn get_candidate_votes(
@@ -721,18 +915,11 @@ impl NeoToken {
 
     /// Creates storage key for candidate data (matches C# NEO storage key format exactly)
     fn create_candidate_storage_key(&self, candidate: &ECPoint) -> Result<StorageKey> {
-        // 1. Get compressed public key bytes (matches C# ECPoint.EncodePoint(true) exactly)
         let compressed_key = candidate.encode_point(true).map_err(|_| {
             NeoTokenError::InvalidCandidate("Failed to encode public key".to_string())
         })?;
-
-        // 2. Create storage key with Prefix_Candidate (matches C# NEO storage format exactly)
-        let mut key_data = Vec::with_capacity(34); // 1 byte prefix + 33 bytes compressed key
-        key_data.push(0x21); // Prefix_Candidate (matches C# NEO.Prefix_Candidate exactly)
-        key_data.extend_from_slice(&compressed_key);
-
-        // 3. Return storage key with NEO contract hash (production key format)
-        Ok(StorageKey::new(self.get_neo_contract_hash(), key_data))
+        let key_data = self.create_candidate_storage_key_bytes(&compressed_key);
+        Ok(StorageKey::new(self.hash, key_data))
     }
 
     /// Deserializes candidate votes from storage item (matches C# CandidateState deserialization exactly)
@@ -740,20 +927,8 @@ impl NeoToken {
         &self,
         storage_item: &StorageItem,
     ) -> Result<BigInt> {
-        let data = storage_item.data();
-
-        // 1. Validate minimum data length (matches C# validation exactly)
-        if data.len() < 34 {
-            return Err(
-                NeoTokenError::InvalidCandidate("Insufficient data length".to_string()).into(),
-            );
-        }
-
-        // 2. Skip public key (first 33 bytes) - we only need votes (matches C# CandidateState structure)
-        let votes_data = &data[33..];
-
-        // 3. Deserialize BigInteger votes (matches C# BigInteger.ToByteArray format exactly)
-        self.deserialize_bigint_from_bytes(votes_data)
+        let candidate = CandidateState::from_bytes(storage_item.data())?;
+        Ok(candidate.votes)
     }
 
     /// Deserializes BigInteger from bytes (matches C# BigInteger.ToByteArray format exactly)
@@ -779,16 +954,6 @@ impl NeoToken {
         }
 
         Ok(value)
-    }
-
-    /// Gets NEO contract hash (production implementation)
-    fn get_neo_contract_hash(&self) -> UInt160 {
-        // NEO Token Contract Hash: 0xef4c73d42d846b0a40b2a97d4a3814394b952a85
-        UInt160::from_bytes(&[
-            0xef, 0x4c, 0x73, 0xd4, 0x2d, 0x84, 0x6b, 0x0a, 0x40, 0xb2, 0xa9, 0x7d, 0x4a, 0x38,
-            0x14, 0x39, 0x4b, 0x95, 0x2a, 0x85,
-        ])
-        .unwrap_or_else(|_| UInt160::zero())
     }
 
     /// Gets blockchain storage item (production-ready implementation)
@@ -1265,14 +1430,6 @@ fn construct_storage_key(contract_hash: &[u8], key: &[u8]) -> Vec<u8> {
     storage_key
 }
 
-/// Candidate data structure
-#[derive(serde::Serialize, serde::Deserialize)]
-struct CandidateData {
-    pub public_key: Vec<u8>,
-    pub votes: u64,
-    pub registered_at: u64,
-}
-
 impl NativeContract for NeoToken {
     fn hash(&self) -> UInt160 {
         self.hash
@@ -1303,46 +1460,42 @@ impl Default for NeoToken {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests {
+    use super::*;
+    use neo_config::ADDRESS_SIZE;
+    use neo_vm::TriggerType;
+    use num_bigint::BigInt;
+
     #[test]
-    fn test_neo_token_creation() {
+    fn neo_token_initializes_metadata() {
         let neo = NeoToken::new();
         assert_eq!(neo.name(), "NeoToken");
         assert!(!neo.methods().is_empty());
     }
 
     #[test]
-    fn test_neo_token_symbol() {
+    fn neo_token_symbol_and_decimals_match_spec() {
         let neo = NeoToken::new();
-        let result = neo.symbol().unwrap();
-        assert_eq!(result, b"NEO");
+        assert_eq!(neo.symbol().unwrap(), b"NEO".to_vec());
+        assert_eq!(neo.decimals().unwrap(), vec![NEO_DECIMALS]);
     }
 
     #[test]
-    fn test_neo_token_decimals() {
-        let neo = NeoToken::new();
-        let result = neo.decimals().unwrap();
-        assert_eq!(result, vec![0]);
-    }
-
-    #[test]
-    fn test_neo_token_total_supply() {
+    fn neo_token_total_supply_matches_constant() {
         let neo = NeoToken::new();
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        let result = neo.total_supply(&mut engine).unwrap();
-        let total_supply = i64::from_le_bytes([
-            result[0], result[1], result[2], result[3], result[4], result[5], result[6], result[7],
-        ]);
-        assert_eq!(total_supply, 100_000_000);
+        let bytes = neo.total_supply(&mut engine).unwrap();
+        let supply = BigInt::from_signed_bytes_le(&bytes);
+        assert_eq!(supply, BigInt::from(NEO_TOTAL_SUPPLY));
     }
 
     #[test]
-    fn test_neo_token_balance_of() {
+    fn neo_token_balance_of_defaults_to_zero() {
         let neo = NeoToken::new();
         let mut engine = ApplicationEngine::new(TriggerType::Application, 10_000_000);
-        let args = vec![vec![0u8; ADDRESS_SIZE]]; // Dummy account
-        let result = neo.balance_of(&mut engine, &args).unwrap();
-        assert_eq!(result.len(), 8); // i64 balance
+        let args = vec![vec![0u8; ADDRESS_SIZE]];
+        let bytes = neo.balance_of(&mut engine, &args).unwrap();
+        let balance = BigInt::from_signed_bytes_le(&bytes);
+        assert_eq!(balance, BigInt::zero());
     }
 }

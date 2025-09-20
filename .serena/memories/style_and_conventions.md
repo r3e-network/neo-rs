@@ -1,0 +1,5 @@
+- Rust 2021 edition codebase using workspace-wide rustfmt (`rustfmt.toml`) and clippy with warnings elevated to errors (see `.pre-commit-config.yaml`).
+- Emphasis on safe Rust: automated checks track `.unwrap()` usage and warn on `unsafe` blocks.
+- Prefer async Rust patterns with Tokio; extensive use of serde for serialization, tracing for logging.
+- Keep compatibility with C# reference implementation; match API surface/enums/config with upstream.
+- Documentation expected via `cargo doc`; workspace organized into feature-gated crates (consensus, rpc, metrics, etc.).

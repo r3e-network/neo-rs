@@ -10,11 +10,22 @@ use super::{
     verification::{BlockchainVerifier, VerifyResult},
 };
 use crate::{Block, BlockHeader, Error, NetworkType, Result};
-use neo_config::{MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
+use neo_config::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use neo_core::{Transaction, UInt160, UInt256};
+use neo_io::MemoryReader;
+use neo_smart_contract::{contract_state::ContractState, native::fungible_token::PREFIX_ACCOUNT};
+use num_bigint::{BigInt, BigUint, Sign};
+use num_traits::{ToPrimitive, Zero};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
+
+/// Snapshot of a NEP-17 balance including the last update height.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Nep17Balance {
+    pub amount: u128,
+    pub last_updated_block: u32,
+}
 
 /// Main blockchain manager (matches C# Neo Blockchain exactly)
 #[derive(Debug, Clone)]
@@ -33,6 +44,8 @@ pub struct Blockchain {
     block_cache: Arc<RwLock<HashMap<u32, Block>>>,
     /// Transaction cache
     transaction_cache: Arc<RwLock<HashMap<UInt256, Transaction>>>,
+    /// Registered contract states (native + deployed)
+    contract_states: Arc<RwLock<HashMap<UInt160, ContractState>>>,
     /// Sync lock for block persistence
     persist_lock: Arc<Mutex<()>>,
     /// Network configuration
@@ -70,18 +83,37 @@ impl Blockchain {
             network
         );
 
-        let storage = Arc::new(Storage::new_default().unwrap_or_else(|_| {
-            log::info!(
-                "Warning: Failed to create default storage, using temporary RocksDB storage"
-            );
-            let final_dir = match suffix {
-                Some(suffix) => format!("/tmp/neo-blockchain-{}-{}", std::process::id(), suffix),
-                None => format!("/tmp/neo-blockchain-{}", std::process::id()),
-            };
-            Storage::new_rocksdb(&final_dir).expect("Failed to create temporary RocksDB storage")
-        }));
+        let storage = Arc::new({
+            if let Some(suffix) = suffix {
+                let final_dir = format!("/tmp/neo-blockchain-{}-{}", std::process::id(), suffix);
+                match Storage::new_rocksdb(&final_dir) {
+                    Ok(storage) => storage,
+                    Err(err) => {
+                        log::warn!(
+                            "Failed to open RocksDB at {} for suffix {:?}: {}. Falling back to temporary storage.",
+                            final_dir,
+                            suffix,
+                            err
+                        );
+                        Storage::new_temp()
+                    }
+                }
+            } else {
+                Storage::new_default().unwrap_or_else(|_| {
+                    log::info!(
+                        "Warning: Failed to create default storage, using temporary RocksDB storage"
+                    );
+                    let final_dir = format!("/tmp/neo-blockchain-{}", std::process::id());
+                    Storage::new_rocksdb(&final_dir)
+                        .expect("Failed to create temporary RocksDB storage")
+                })
+            }
+        });
         let persistence = Arc::new(BlockchainPersistence::new(storage.clone()));
-        let state = Arc::new(RwLock::new(BlockchainState::new(persistence.clone())));
+        let state = Arc::new(RwLock::new(BlockchainState::new(
+            persistence.clone(),
+            network,
+        )));
         let verifier = Arc::new(BlockchainVerifier::new());
         let genesis = Arc::new(GenesisManager::new(storage.clone()));
 
@@ -93,6 +125,7 @@ impl Blockchain {
             current_height: Arc::new(RwLock::new(0)),
             block_cache: Arc::new(RwLock::new(HashMap::new())),
             transaction_cache: Arc::new(RwLock::new(HashMap::new())),
+            contract_states: Arc::new(RwLock::new(HashMap::new())),
             persist_lock: Arc::new(Mutex::new(())),
             network,
             fork_cache: Arc::new(RwLock::new(HashMap::new())),
@@ -155,6 +188,26 @@ impl Blockchain {
                 let mut height = self.current_height.write().await;
                 *height = current_height;
             }
+        }
+
+        self.initialize_native_contract_states().await?;
+
+        Ok(())
+    }
+
+    /// Seeds native contract metadata so higher layers can query it without C# fallbacks.
+    async fn initialize_native_contract_states(&self) -> Result<()> {
+        let state_guard = self.state.read().await;
+        let native_states: Vec<_> = state_guard
+            .list_native_contracts()
+            .into_iter()
+            .map(|info| info.to_contract_state())
+            .collect();
+        drop(state_guard);
+
+        let mut registry = self.contract_states.write().await;
+        for contract in native_states {
+            registry.entry(contract.hash).or_insert(contract);
         }
 
         Ok(())
@@ -224,6 +277,138 @@ impl Blockchain {
             }
             None => Ok(None),
         }
+    }
+
+    /// Retrieves the block height where a transaction was included, if any.
+    pub async fn get_transaction_height(&self, hash: &UInt256) -> Result<Option<u32>> {
+        self.persistence.get_transaction_block_index(hash).await
+    }
+
+    /// Returns the registered contract state for the given hash if it exists.
+    pub async fn get_contract_state(&self, hash: &UInt160) -> Result<Option<ContractState>> {
+        if let Some(cached) = {
+            let registry = self.contract_states.read().await;
+            registry.get(hash).cloned()
+        } {
+            return Ok(Some(cached));
+        }
+
+        let state_result = {
+            let state_guard = self.state.read().await;
+            state_guard.get_contract(hash).await?
+        };
+
+        if let Some(state) = state_result {
+            let mut registry = self.contract_states.write().await;
+            registry.insert(state.hash, state.clone());
+            Ok(Some(state))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Registers or updates a contract state within the persistence-backed registry.
+    pub async fn register_contract_state(&self, state: ContractState) -> Result<()> {
+        {
+            let state_guard = self.state.read().await;
+            state_guard.put_contract(state.clone()).await?;
+        }
+
+        {
+            let mut registry = self.contract_states.write().await;
+            registry.insert(state.hash, state);
+        }
+
+        // Ensure the persisted contract is durable so subsequent processes can observe it.
+        self.persistence.commit().await
+    }
+
+    /// Lists the known native contract states in deterministic order.
+    pub async fn list_native_contracts(&self) -> Vec<ContractState> {
+        let registry = self.contract_states.read().await;
+        let mut contracts: Vec<_> = registry.values().cloned().collect();
+        contracts.sort_by_key(|c| c.id);
+        contracts
+    }
+
+    /// Returns a raw storage value for the provided contract hash/key pair, if persisted.
+    pub async fn get_raw_storage_value(
+        &self,
+        script_hash: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
+        let hash = UInt160::from_bytes(script_hash)
+            .map_err(|e| Error::InvalidData(format!("Invalid script hash bytes: {}", e)))?;
+        let storage_key = StorageKey::contract_storage(&hash, key);
+        Ok(self
+            .persistence
+            .get(&storage_key)
+            .await?
+            .map(|item| item.value))
+    }
+
+    /// Retrieves a NEP-17 (fungible token) balance for the given account.
+    pub async fn get_nep17_balance(
+        &self,
+        contract_hash: &UInt160,
+        account: &UInt160,
+    ) -> Result<Nep17Balance> {
+        let mut storage_key_bytes = Vec::with_capacity(1 + account.as_bytes().len());
+        storage_key_bytes.push(PREFIX_ACCOUNT);
+        storage_key_bytes.extend_from_slice(&account.as_bytes());
+
+        let storage_key = StorageKey::contract_storage(contract_hash, &storage_key_bytes);
+        let storage_item = match self.persistence.get(&storage_key).await? {
+            Some(item) => item,
+            None => {
+                return Ok(Nep17Balance {
+                    amount: 0,
+                    last_updated_block: 0,
+                });
+            }
+        };
+
+        let mut reader = MemoryReader::new(&storage_item.value);
+        let balance_bytes = reader.read_var_bytes(MAX_SCRIPT_SIZE).map_err(|e| {
+            Error::InvalidData(format!("Failed to decode NEP-17 balance state: {}", e))
+        })?;
+
+        let balance_bigint = if balance_bytes.is_empty() {
+            BigInt::zero()
+        } else {
+            BigInt::from_signed_bytes_le(&balance_bytes)
+        };
+
+        let last_updated_block = reader.read_u32().unwrap_or(0);
+
+        let positive = match balance_bigint.sign() {
+            Sign::Minus => BigInt::zero(),
+            _ => balance_bigint,
+        };
+
+        let balance_biguint = positive.to_biguint().unwrap_or_else(BigUint::zero);
+        let amount = balance_biguint.to_u128().unwrap_or(u128::MAX);
+
+        Ok(Nep17Balance {
+            amount,
+            last_updated_block,
+        })
+    }
+
+    /// Stores a raw storage value for a contract. Useful for synchronising state from
+    /// external sources during testing or bootstrap scenarios.
+    pub async fn set_raw_storage_value(
+        &self,
+        script_hash: &UInt160,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Result<()> {
+        let storage_key = StorageKey::contract_storage(script_hash, &key);
+        self.persistence
+            .put(storage_key, StorageItem::new(value))
+            .await?;
+        // Ensure writes are flushed so later reads observe the new value.
+        self.persistence.commit().await
     }
 
     /// Gets the header of the latest block (matches C# Neo Blockchain.HeaderHeight exactly)
@@ -802,11 +987,21 @@ impl IntegrityReport {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use crate::{Error, Result};
+    use super::*;
+    use crate::{blockchain::storage::StorageKey, Error, Result};
+    use neo_core::UInt160;
+    use neo_io::MemoryReader;
+    use neo_smart_contract::contract_state::{ContractState, NefFile};
+    use neo_smart_contract::manifest::ContractManifest;
+    use neo_smart_contract::native::fungible_token::PREFIX_ACCOUNT;
+    use num_bigint::BigInt;
+    use std::str::FromStr;
 
     #[tokio::test]
-    async fn test_blockchain_creation() {
-        let blockchain = Blockchain::new(NetworkType::TestNet).await?;
+    async fn test_blockchain_creation() -> Result<()> {
+        let blockchain =
+            Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some("blockchain_creation"))
+                .await?;
 
         // Should start with genesis block
         assert_eq!(blockchain.get_height().await, 0);
@@ -814,30 +1009,180 @@ mod tests {
         // Genesis block should exist
         let genesis = blockchain.get_block(0).await?;
         assert!(genesis.is_some());
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_network_types() {
         assert_eq!(NetworkType::MainNet.magic(), 0x334f454e);
-        assert_eq!(NetworkType::TestNet.magic(), 0x3254334e);
+        assert_eq!(NetworkType::TestNet.magic(), 0x3554334e);
         assert_eq!(NetworkType::Private.magic(), 0x00000000);
     }
 
     #[tokio::test]
-    async fn test_blockchain_stats() {
-        let blockchain = Blockchain::new(NetworkType::TestNet).await?;
+    async fn test_blockchain_stats() -> Result<()> {
+        let blockchain =
+            Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some("blockchain_stats"))
+                .await?;
         let stats = blockchain.get_stats().await;
 
         assert_eq!(stats.height, 0); // Only genesis block
         assert!(stats.block_cache_size <= 1); // Genesis might be cached
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_integrity_validation() {
-        let blockchain = Blockchain::new(NetworkType::TestNet).await?;
+    async fn test_integrity_validation() -> Result<()> {
+        let blockchain =
+            Blockchain::new_with_storage_suffix(NetworkType::TestNet, Some("integrity_validation"))
+                .await?;
         let report = blockchain.validate_integrity().await?;
 
         assert!(report.is_valid());
         assert_eq!(report.blocks_checked, 1); // Genesis block
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn contract_state_round_trip_hits_persistence() -> Result<()> {
+        let blockchain = Blockchain::new_with_storage_suffix(
+            NetworkType::Private,
+            Some("contract_state_round_trip"),
+        )
+        .await?;
+
+        let contract_hash = UInt160::from_bytes(&[0x11u8; 20]).expect("valid hash");
+        let contract_state = ContractState::new(
+            42,
+            contract_hash,
+            NefFile::new("test-compiler".to_string(), vec![0x40]),
+            ContractManifest::new("TestContract".to_string()),
+        );
+
+        blockchain
+            .register_contract_state(contract_state.clone())
+            .await?;
+
+        // Clear the in-memory cache so we must hit persistence via BlockchainState.
+        blockchain
+            .contract_states
+            .write()
+            .await
+            .remove(&contract_hash);
+
+        let storage_key = StorageKey::contract(contract_hash.clone());
+        let storage_item = blockchain
+            .persistence
+            .get(&storage_key)
+            .await?
+            .expect("contract state persisted");
+
+        let mut reader = MemoryReader::new(&storage_item.value);
+        let stored_state = ContractState::deserialize(&mut reader)
+            .map_err(|e| Error::StorageError(format!("Contract state decode failed: {e}")))?;
+        assert_eq!(stored_state, contract_state);
+
+        let fetched = blockchain.get_contract_state(&contract_hash).await?;
+        assert_eq!(fetched, Some(contract_state.clone()));
+
+        // Drop the in-memory blockchain to ensure we reopen the persisted store.
+        drop(blockchain);
+
+        let blockchain_reopened = Blockchain::new_with_storage_suffix(
+            NetworkType::Private,
+            Some("contract_state_round_trip"),
+        )
+        .await?;
+        let fetched_after_restart = blockchain_reopened
+            .get_contract_state(&contract_hash)
+            .await?;
+        assert_eq!(fetched_after_restart, Some(contract_state));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn raw_storage_round_trip_hits_persistence() -> Result<()> {
+        let blockchain = Blockchain::new_with_storage_suffix(
+            NetworkType::Private,
+            Some("contract_storage_round_trip"),
+        )
+        .await?;
+
+        let contract_hash = UInt160::from_bytes(&[0x22u8; 20]).expect("valid hash");
+        let key = vec![0xAA, 0xBB, 0xCC];
+        let value = vec![0x01, 0x02, 0x03];
+
+        blockchain
+            .set_raw_storage_value(&contract_hash, key.clone(), value.clone())
+            .await?;
+
+        let fetched = blockchain
+            .get_raw_storage_value(&contract_hash.as_bytes(), &key)
+            .await?;
+        assert_eq!(fetched, Some(value));
+        Ok(())
+    }
+
+    fn encode_balance_state(balance: u64, height: u32) -> Vec<u8> {
+        let mut payload = Vec::new();
+        let mut balance_bytes = BigInt::from(balance).to_signed_bytes_le();
+        if balance_bytes.is_empty() {
+            balance_bytes.push(0);
+        }
+
+        match balance_bytes.len() {
+            len if len < 0xFD => payload.push(len as u8),
+            len if len <= 0xFFFF => {
+                payload.push(0xFD);
+                payload.extend_from_slice(&(len as u16).to_le_bytes());
+            }
+            len if len <= 0xFFFF_FFFF => {
+                payload.push(0xFE);
+                payload.extend_from_slice(&(len as u32).to_le_bytes());
+            }
+            len => {
+                payload.push(0xFF);
+                payload.extend_from_slice(&(len as u64).to_le_bytes());
+            }
+        }
+
+        payload.extend_from_slice(&balance_bytes);
+        payload.extend_from_slice(&height.to_le_bytes());
+        payload
+    }
+
+    #[tokio::test]
+    async fn nep17_balance_reads_balance_state() -> Result<()> {
+        let blockchain = Blockchain::new_with_storage_suffix(
+            NetworkType::Private,
+            Some("nep17_balance_round_trip"),
+        )
+        .await?;
+
+        let contract_hash = UInt160::from_str("d2a4cff31913016155e38e474a2c06d08be276cf")?;
+        let account = UInt160::from_bytes(&[0xAAu8; 20]).expect("valid account");
+
+        let mut key = vec![PREFIX_ACCOUNT];
+        key.extend_from_slice(&account.as_bytes());
+        let value = encode_balance_state(1_000_000_000, 123);
+
+        blockchain
+            .set_raw_storage_value(&contract_hash, key, value)
+            .await?;
+
+        let balance = blockchain
+            .get_nep17_balance(&contract_hash, &account)
+            .await?;
+        assert_eq!(balance.amount, 1_000_000_000u128);
+        assert_eq!(balance.last_updated_block, 123);
+
+        let other_account = UInt160::from_bytes(&[0xBBu8; 20]).expect("valid account");
+        let other_balance = blockchain
+            .get_nep17_balance(&contract_hash, &other_account)
+            .await?;
+        assert_eq!(other_balance.amount, 0);
+        assert_eq!(other_balance.last_updated_block, 0);
+
+        Ok(())
     }
 }

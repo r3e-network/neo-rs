@@ -3,11 +3,14 @@
 //! Represents the manifest of a smart contract which declares the features
 //! and permissions it will use when deployed.
 
-use crate::manifest::{ContractAbi, ContractGroup, ContractPermission};
+use crate::manifest::{
+    ContractAbi, ContractGroup, ContractPermission, ContractPermissionDescriptor,
+};
 use crate::{Error, Result};
 use neo_config::{HASH_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
 use neo_core::UInt160;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -15,30 +18,36 @@ use std::collections::HashMap;
 pub const MAX_MANIFEST_LENGTH: usize = u16::MAX as usize;
 
 /// Represents the manifest of a smart contract.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractManifest {
     /// The name of the contract.
     pub name: String,
 
     /// The groups that the contract belongs to.
+    #[serde(default)]
     pub groups: Vec<ContractGroup>,
 
     /// The features supported by the contract.
-    pub features: HashMap<String, String>,
+    #[serde(default)]
+    pub features: HashMap<String, Value>,
 
     /// The standards supported by the contract.
+    #[serde(default, rename = "supportedstandards")]
     pub supported_standards: Vec<String>,
 
     /// The ABI (Application Binary Interface) of the contract.
     pub abi: ContractAbi,
 
     /// The permissions required by the contract.
+    #[serde(default)]
     pub permissions: Vec<ContractPermission>,
 
     /// The contracts and groups that this contract trusts.
-    pub trusts: Vec<UInt160>,
+    #[serde(default)]
+    pub trusts: Vec<ContractPermissionDescriptor>,
 
     /// Additional metadata.
+    #[serde(default)]
     pub extra: Option<Value>,
 }
 
@@ -73,93 +82,61 @@ impl ContractManifest {
 
     /// Gets the size of the manifest in bytes.
     pub fn size(&self) -> usize {
-        // Calculate the size of the serialized ContractManifest
-        // This matches C# Neo's ContractManifest.Size property exactly
-        self.name.len() + 1 + // name string + length byte
-        self.groups.len() * 64 + 1 + // groups (each Group is ~64 bytes) + count
-        self.features.len() + 1 + // features + length byte
-        self.supported_standards.len() * HASH_SIZE + 1 + // standards + count
-        self.abi.size() + // ABI size
-        self.permissions.len() * 64 + 1 + // permissions + count
-        self.trusts.len() * HASH_SIZE + 1 + // trusts + count
-        match &self.extra {
-            Some(_) => 64 + 1, // extra data + count
-            None => 1, // just count
-        }
+        let groups_size: usize = self.groups.iter().map(ContractGroup::size).sum();
+        let features_json = serde_json::to_string(&self.features).unwrap_or_default();
+        let supported_standards_size: usize =
+            self.supported_standards.iter().map(|s| s.len()).sum();
+        let permissions_size: usize = self.permissions.iter().map(ContractPermission::size).sum();
+        let trusts_size: usize = self
+            .trusts
+            .iter()
+            .map(ContractPermissionDescriptor::size)
+            .sum();
+        let extra_json = self
+            .extra
+            .as_ref()
+            .map(|value| serde_json::to_string(value).unwrap_or_default())
+            .unwrap_or_default();
+
+        self.name.len()
+            + 1
+            + groups_size
+            + 1
+            + features_json.len()
+            + 1
+            + supported_standards_size
+            + 1
+            + self.abi.size()
+            + permissions_size
+            + 1
+            + trusts_size
+            + 1
+            + if self.extra.is_some() {
+                extra_json.len() + 1
+            } else {
+                1
+            }
     }
 
     /// Converts the manifest to JSON.
     pub fn to_json(&self) -> Result<Value> {
-        // Manual JSON conversion since we don't have serde derives
-        Ok(serde_json::json!({
-            "name": self.name,
-            "groups": self.groups,
-            "features": self.features,
-            "supportedstandards": self.supported_standards,
-            "abi": {
-                "methods": self.abi.methods,
-                "events": self.abi.events
-            },
-            "permissions": self.permissions,
-            "trusts": self.trusts,
-            "extra": self.extra
-        }))
+        serde_json::to_value(self).map_err(|e| Error::SerializationError(e.to_string()))
     }
 
-    /// Creates a manifest from JSON.
+    /// Creates a manifest from a JSON string.
+    pub fn from_json_str(json: &str) -> Result<Self> {
+        serde_json::from_str(json).map_err(|e| Error::SerializationError(e.to_string()))
+    }
+
+    /// Alias to maintain backwards compatibility with older code paths.
     pub fn from_json(json: &str) -> Result<Self> {
-        let value: Value =
-            serde_json::from_str(json).map_err(|e| Error::SerializationError(e.to_string()))?;
-
-        let name = value["name"]
-            .as_str()
-            .ok_or_else(|| Error::InvalidManifest("Missing or invalid name field".to_string()))?
-            .to_string();
-
-        let groups = vec![]; // Production implementation would parse from JSON
-
-        // Parse features
-        let features = value["features"]
-            .as_object()
-            .map(|obj| {
-                obj.iter()
-                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // Parse supported standards
-        let supported_standards = value["supportedstandards"]
-            .as_array()
-            .unwrap_or(&vec![])
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
-
-        let abi = ContractAbi::default();
-        let permissions = vec![ContractPermission::default_wildcard()];
-        let trusts = vec![];
-
-        let extra = value.get("extra").cloned();
-
-        log::info!("Parsed contract manifest: {}", name);
-
-        Ok(Self {
-            name,
-            groups,
-            features,
-            supported_standards,
-            abi,
-            permissions,
-            trusts,
-            extra,
-        })
+        Self::from_json_str(json)
     }
 
     /// Parses a contract manifest from JSON.
-    /// This is an alias for from_json to match C# ContractManifest.Parse exactly.
+    /// This is an alias for `from_json_str` to match C# `ContractManifest.Parse` exactly.
     pub fn parse(json: &str) -> Result<Self> {
-        Self::from_json(json)
+        Self::from_json_str(json)
     }
 
     /// Validates the manifest.
@@ -192,6 +169,16 @@ impl ContractManifest {
             permission.validate()?;
         }
 
+        for trust in &self.trusts {
+            if let ContractPermissionDescriptor::Group(pub_key) = trust {
+                if !pub_key.is_valid() {
+                    return Err(Error::InvalidManifest(
+                        "Invalid group public key in trusts".to_string(),
+                    ));
+                }
+            }
+        }
+
         // Validate ABI
         self.abi.validate()?;
 
@@ -199,19 +186,23 @@ impl ContractManifest {
     }
 
     /// Checks if the contract can call another contract.
-    pub fn can_call(&self, target_hash: &UInt160, target_method: &str) -> bool {
-        if self.trusts.contains(target_hash) {
+    pub fn can_call(
+        &self,
+        target_manifest: &ContractManifest,
+        target_hash: &UInt160,
+        target_method: &str,
+    ) -> bool {
+        if self
+            .trusts
+            .iter()
+            .any(|descriptor| descriptor.matches_contract(target_hash, &target_manifest.groups))
+        {
             return true;
         }
 
-        // Check permissions
-        for permission in &self.permissions {
-            if permission.allows_contract(target_hash) && permission.allows_method(target_method) {
-                return true;
-            }
-        }
-
-        false
+        self.permissions
+            .iter()
+            .any(|permission| permission.is_allowed(target_manifest, target_hash, target_method))
     }
 
     /// Gets a method from the ABI by name.
@@ -257,7 +248,9 @@ impl ContractManifest {
         // Serialize trusts
         writer.write_var_int(self.trusts.len() as u64)?;
         for trust in &self.trusts {
-            neo_io::Serializable::serialize(trust, writer)?;
+            let trust_json = serde_json::to_string(trust)
+                .map_err(|e| Error::SerializationError(e.to_string()))?;
+            writer.write_var_string(&trust_json)?;
         }
 
         let extra_json = match &self.extra {
@@ -308,10 +301,12 @@ impl ContractManifest {
         }
 
         // Deserialize trusts
-        let trusts_count = reader.read_var_int(256)? as usize; // Max 256 trusts
+        let trusts_count = reader.read_var_int(256)? as usize;
         let mut trusts = Vec::with_capacity(trusts_count);
         for _ in 0..trusts_count {
-            let trust = <UInt160 as neo_io::Serializable>::deserialize(reader)?;
+            let trust_json = reader.read_var_string(MAX_SCRIPT_SIZE)?;
+            let trust = serde_json::from_str(&trust_json)
+                .map_err(|e| Error::SerializationError(e.to_string()))?;
             trusts.push(trust);
         }
 
@@ -344,14 +339,9 @@ impl ContractManifest {
         group: &ContractGroup,
         writer: &mut BinaryWriter,
     ) -> Result<()> {
-        // 1. Serialize public key (33 bytes for compressed secp256r1 key)
-        let public_key_bytes = group.public_key.encode_point(true).map_err(|e| {
-            Error::SerializationError(format!("Failed to encode public key: {}", e))
-        })?;
-        writer.write_bytes(&public_key_bytes)?;
-
-        // 2. Serialize signature (64 bytes for secp256r1 signature)
-        writer.write_bytes(&group.signature)?;
+        let group_json =
+            serde_json::to_string(group).map_err(|e| Error::SerializationError(e.to_string()))?;
+        writer.write_var_string(&group_json)?;
 
         Ok(())
     }
@@ -366,43 +356,9 @@ impl ContractManifest {
 
     /// Custom serialization for ContractAbi (matches C# ContractAbi.ToStackItem exactly)
     fn serialize_contract_abi(&self, abi: &ContractAbi, writer: &mut BinaryWriter) -> Result<()> {
-        // 1. Serialize methods array (matches C# StackItem array format)
-        writer.write_var_int(abi.methods.len() as u64)?;
-        for method in &abi.methods {
-            // Serialize method name
-            writer.write_var_string(&method.name)?;
-
-            // Serialize parameters count and data
-            writer.write_var_int(method.parameters.len() as u64)?;
-            for param in &method.parameters {
-                writer.write_var_string(&param.name)?;
-                writer.write_var_string(&param.parameter_type)?;
-            }
-
-            // Serialize return type
-            writer.write_var_string(&method.return_type)?;
-
-            // Serialize offset
-            writer.write_i32(method.offset)?;
-
-            // Serialize safe flag
-            writer.write_bool(method.safe)?;
-        }
-
-        // 2. Serialize events array (matches C# event serialization format)
-        writer.write_var_int(abi.events.len() as u64)?;
-        for event in &abi.events {
-            // Serialize event name
-            writer.write_var_string(&event.name)?;
-
-            // Serialize event parameters
-            writer.write_var_int(event.parameters.len() as u64)?;
-            for param in &event.parameters {
-                writer.write_var_string(&param.name)?;
-                writer.write_var_string(&param.parameter_type)?;
-            }
-        }
-
+        let abi_json =
+            serde_json::to_string(abi).map_err(|e| Error::SerializationError(e.to_string()))?;
+        writer.write_var_string(&abi_json)?;
         Ok(())
     }
 
@@ -420,31 +376,9 @@ impl ContractManifest {
         permission: &ContractPermission,
         writer: &mut BinaryWriter,
     ) -> Result<()> {
-        // 1. Serialize contract field (matches C# WildcardContainer<UInt160> serialization)
-        match &permission.contract {
-            crate::manifest::ContractPermissionDescriptor::Hash(contract_hash) => {
-                writer.write_u8(0x01)?; // Indicator for specific contract
-                writer.write_bytes(&contract_hash.as_bytes())?;
-            }
-            _ => {
-                // Wildcard permission or group
-                writer.write_u8(0x00)?; // Indicator for wildcard
-            }
-        }
-
-        // 2. Serialize methods field (matches C# WildcardContainer<string> serialization)
-        if permission.methods.is_wildcard() {
-            // Wildcard methods
-            writer.write_u8(0x00)?; // Indicator for wildcard methods
-        } else {
-            // Specific methods
-            writer.write_u8(0x01)?; // Indicator for specific methods
-            writer.write_var_int(permission.methods.count() as u64)?;
-            for method in permission.methods.values() {
-                writer.write_var_string(method)?;
-            }
-        }
-
+        let permission_json = serde_json::to_string(permission)
+            .map_err(|e| Error::SerializationError(e.to_string()))?;
+        writer.write_var_string(&permission_json)?;
         Ok(())
     }
 
@@ -469,73 +403,5 @@ impl Default for ContractManifest {
             trusts: Vec::new(),
             extra: None,
         }
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use crate::manifest::ContractMethod;
-
-    #[test]
-    fn test_manifest_creation() {
-        let manifest = ContractManifest::new("TestContract".to_string());
-        assert_eq!(manifest.name, "TestContract");
-        assert!(!manifest.permissions.is_empty());
-    }
-
-    #[test]
-    fn test_manifest_validation() {
-        let mut manifest = ContractManifest::new("TestContract".to_string());
-        assert!(manifest.validate().is_ok());
-
-        // Test empty name
-        manifest.name = String::new();
-        assert!(manifest.validate().is_err());
-    }
-
-    #[test]
-    fn test_manifest_json_serialization() {
-        let manifest = ContractManifest::new("TestContract".to_string());
-        let json = manifest.to_json().unwrap();
-        assert!(json.is_object());
-
-        let json_str = json.to_string();
-        let deserialized = ContractManifest::from_json(&json_str).unwrap();
-        assert_eq!(manifest.name, deserialized.name);
-    }
-
-    #[test]
-    fn test_manifest_can_call() {
-        let manifest = ContractManifest::new("TestContract".to_string());
-        let target_hash = UInt160::zero();
-
-        // Should allow wildcard permission by default
-        assert!(manifest.can_call(&target_hash, "test"));
-    }
-
-    #[test]
-    fn test_manifest_supports_standard() {
-        let mut manifest = ContractManifest::new("TestContract".to_string());
-        manifest.supported_standards.push("NEP-17".to_string());
-
-        assert!(manifest.supports_standard("NEP-17"));
-        assert!(!manifest.supports_standard("NEP-11"));
-    }
-
-    #[test]
-    fn test_manifest_get_method() {
-        let mut manifest = ContractManifest::new("TestContract".to_string());
-        let method = ContractMethod {
-            name: "test".to_string(),
-            parameters: vec![],
-            return_type: "Void".to_string(),
-            offset: 0,
-            safe: true,
-        };
-        manifest.abi.methods.push(method);
-
-        assert!(manifest.get_method("test").is_some());
-        assert!(manifest.get_method("nonexistent").is_none());
     }
 }

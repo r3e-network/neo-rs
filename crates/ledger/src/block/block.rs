@@ -6,12 +6,8 @@
 use super::{header::BlockHeader, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::{Result, VerifyResult};
 use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTION_SIZE};
-use neo_core::{Transaction, UInt160, UInt256};
-use neo_cryptography::MerkleTree;
-use p256::{
-    ecdsa::{signature::Verifier, Signature, VerifyingKey},
-    EncodedPoint,
-};
+use neo_core::{Transaction, UInt160, UInt256, Witness};
+use neo_cryptography::{ecdsa::ECDsa, MerkleTree};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -262,10 +258,6 @@ impl Block {
             neo_core::TransactionAttributeType::Conflicts => {
                 // Conflicts validation would check conflict hash format
                 self.validate_conflicts_attribute(attribute)
-            }
-            _ => {
-                // Unknown attribute types are invalid
-                false
             }
         }
     }
@@ -701,25 +693,35 @@ impl Block {
         witness: &neo_core::Witness,
         transaction: &Transaction,
     ) -> bool {
-        // 1. Extract public key from verification script
-        if witness.verification_script.len() < 36 {
+        // 1. Ensure the scripts have the expected canonical structure
+        if witness.verification_script.len() != 35
+            || witness.verification_script[0] != 0x0C
+            || witness.verification_script[1] != 0x21
+            || witness.verification_script[34] != 0x41
+        {
             return false;
         }
 
-        let public_key = &witness.verification_script[2..35];
-
-        // 2. Validate public key format (33 bytes, compressed secp256r1)
-        if public_key.len() != 33 || (public_key[0] != 0x02 && public_key[0] != 0x03) {
+        if witness.invocation_script.len() != 66
+            || witness.invocation_script[0] != 0x0C
+            || witness.invocation_script[1] != 0x40
+        {
             return false;
         }
 
-        // 3. Extract signature from invocation script
-        if witness.invocation_script.len() < 66 {
-            return false; // Signature + length prefix
-        }
+        // 2. Hash the transaction payload exactly as the signer would have
+        let tx_hash = match transaction.hash() {
+            Ok(hash) => hash,
+            Err(_) => return false,
+        };
+        let hash_bytes = tx_hash.as_bytes();
 
-        // 4. Basic signature format validation
-        true
+        let mut witness_clone: Witness = witness.clone();
+        let expected_account = witness_clone.script_hash();
+
+        witness_clone
+            .verify_signature(hash_bytes.as_ref(), &expected_account)
+            .unwrap_or(false)
     }
 
     /// Validates multi-signature witness (production implementation)
@@ -757,74 +759,76 @@ impl Block {
         // 5. Verify each DER-encoded ECDSA signature against the message hash using the provided public keys
         // Note: This is a simplified check; full multi-sig script parsing is done above for m and n.
         // Extract n public keys from verification_script
-        let mut pubkeys: Vec<EncodedPoint> = Vec::with_capacity(n);
-        let mut idx = 1; // after m
+        let mut pubkeys: Vec<[u8; 33]> = Vec::with_capacity(n);
+        let mut idx = 1; // after m opcode
         for _ in 0..n {
             if idx + 34 > witness.verification_script.len() {
                 return false;
             }
             if witness.verification_script[idx] != 0x21 {
-                // PUSHDATA1 33
                 return false;
             }
-            let key_bytes = &witness.verification_script[idx + 1..idx + 34];
-            let point = EncodedPoint::from_bytes(key_bytes);
-            if point.is_err() {
+            let mut key_bytes = [0u8; 33];
+            key_bytes.copy_from_slice(&witness.verification_script[idx + 1..idx + 34]);
+            if key_bytes[0] != 0x02 && key_bytes[0] != 0x03 {
                 return false;
             }
-            pubkeys.push(point.unwrap());
+            pubkeys.push(key_bytes);
             idx += 34;
         }
 
-        // Collect m signatures from invocation_script (each 65 bytes compact DER not guaranteed; here assume 64+1 prefix)
-        // For robustness, accept 64-byte raw r||s with optional 1-byte prefix trimmed.
-        let mut sigs: Vec<Vec<u8>> = Vec::with_capacity(m);
+        // Collect signatures from invocation script (each encoded as PUSHDATA1 0x40 <64 bytes>)
+        let mut sigs: Vec<[u8; 64]> = Vec::with_capacity(m);
         let mut sig_idx = 0usize;
-        while sigs.len() < m && sig_idx < witness.invocation_script.len() {
-            // Try 64 first
-            if sig_idx + 64 <= witness.invocation_script.len() {
-                sigs.push(witness.invocation_script[sig_idx..sig_idx + 64].to_vec());
-                sig_idx += 64;
-            } else {
-                break;
+        while sig_idx < witness.invocation_script.len() {
+            if sigs.len() == m {
+                return false; // extra data beyond expected signatures
             }
+            if sig_idx + 2 > witness.invocation_script.len() {
+                return false;
+            }
+            if witness.invocation_script[sig_idx] != 0x0C {
+                return false;
+            }
+            let len = witness.invocation_script[sig_idx + 1] as usize;
+            if len != 64 || sig_idx + 2 + len > witness.invocation_script.len() {
+                return false;
+            }
+            let mut sig = [0u8; 64];
+            sig.copy_from_slice(&witness.invocation_script[sig_idx + 2..sig_idx + 2 + len]);
+            sigs.push(sig);
+            sig_idx += 2 + len;
         }
-        if sigs.len() < m {
+        if sigs.len() != m {
             return false;
         }
 
-        // Get message hash for signature verification
         let message_hash = match transaction.hash() {
-            Ok(hash) => hash.to_string(),
+            Ok(hash) => hash,
             Err(_) => return false,
         };
+        let message_bytes = message_hash.as_bytes();
+        let message_slice = &message_bytes[..];
 
-        // Verify at least m valid signatures across n pubkeys
-        let mut valid = 0usize;
-        for sig_bytes in sigs.iter() {
-            // Convert raw signature to proper format if possible
-            if sig_bytes.len() >= 64 {
-                // Try against any pubkey
-                let mut matched = false;
-                for pk in &pubkeys {
-                    if let Ok(vk) = VerifyingKey::from_encoded_point(pk) {
-                        // Create signature from bytes
-                        if let Ok(sig) = Signature::from_bytes((&sig_bytes[..64]).into()) {
-                            if vk.verify(message_hash.as_bytes(), &sig).is_ok() {
-                                valid += 1;
-                                matched = true;
-                                break;
-                            }
-                        }
-                    }
+        let mut key_cursor = 0usize;
+        for sig in sigs.iter() {
+            let mut matched = false;
+            let mut search_index = key_cursor;
+            while search_index < pubkeys.len() {
+                let pk = &pubkeys[search_index];
+                if ECDsa::verify_neo_format(message_slice, sig, pk.as_ref()).unwrap_or(false) {
+                    matched = true;
+                    key_cursor = search_index + 1;
+                    break;
                 }
-                if !matched { /* try next signature */ }
+                search_index += 1;
             }
-            if valid >= m {
-                return true;
+            if !matched {
+                return false;
             }
         }
-        valid >= m
+
+        true
     }
 
     /// Validates contract witness (production implementation)
@@ -857,12 +861,22 @@ impl Block {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use crate::{Error, Result};
+    use super::*;
+    use neo_config::ADDRESS_SIZE;
     use neo_core::{UInt160, UInt256};
 
     #[test]
     fn test_block_creation() {
-        let header = BlockHeader::new(0, UInt256::zero(), 1609459200000, 0, UInt160::zero());
+        let header = BlockHeader::new(
+            0,
+            UInt256::zero(),
+            UInt256::zero(),
+            1609459200000,
+            0,
+            0,
+            0,
+            UInt160::zero(),
+        );
 
         let block = Block::new(header, Vec::new());
 
@@ -874,7 +888,16 @@ mod tests {
 
     #[test]
     fn test_merkle_root_calculation() {
-        let header = BlockHeader::new(0, UInt256::zero(), 1609459200000, 0, UInt160::zero());
+        let header = BlockHeader::new(
+            0,
+            UInt256::zero(),
+            UInt256::zero(),
+            1609459200000,
+            0,
+            0,
+            0,
+            UInt160::zero(),
+        );
 
         let block = Block::new(header, Vec::new());
         let merkle_root = block.calculate_merkle_root();

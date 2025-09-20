@@ -75,6 +75,8 @@ impl BlockHeader {
 
     /// Calculates the hash of this block header (matches C# Header.Hash property).
     /// Uses proper serialization and double SHA256 hash like the C# implementation.
+    ///
+    /// Important: Witnesses are NOT included in the hash (matches C# UnsignedHeader hashing).
     pub fn hash(&self) -> UInt256 {
         // Serialize the header exactly like C# implementation
         let mut writer = BinaryWriter::new();
@@ -89,10 +91,7 @@ impl BlockHeader {
         let _ = writer.write_u8(self.primary_index);
         let _ = writer.write_bytes(&self.next_consensus.as_bytes());
 
-        let _ = writer.write_var_int(self.witnesses.len() as u64);
-        for witness in &self.witnesses {
-            let _ = <Witness as neo_io::Serializable>::serialize(witness, &mut writer);
-        }
+        // Do NOT include witnesses in hashing (matches C# UnsignedHeader)
 
         let header_data = writer.to_bytes();
 
@@ -234,12 +233,19 @@ impl BlockHeader {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
+    use super::*;
+    use neo_config::ADDRESS_SIZE;
+    use neo_core::{UInt160, UInt256};
+
     #[test]
     fn test_block_header_creation() {
         let header = BlockHeader::new(
             0,
             UInt256::zero(),
+            UInt256::zero(),
             1609459200000, // 2021-01-01 00:00:00 UTC
+            0,
+            0,
             0,
             UInt160::zero(),
         );
@@ -257,7 +263,16 @@ mod tests {
 
     #[test]
     fn test_block_header_hash() {
-        let header = BlockHeader::new(0, UInt256::zero(), 1609459200000, 0, UInt160::zero());
+        let header = BlockHeader::new(
+            0,
+            UInt256::zero(),
+            UInt256::zero(),
+            1609459200000,
+            0,
+            0,
+            0,
+            UInt160::zero(),
+        );
 
         let hash = header.hash();
         assert_ne!(hash, UInt256::zero());

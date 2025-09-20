@@ -9,10 +9,7 @@ use neo_core::{ShutdownCoordinator, UInt160};
 use neo_ledger::{Blockchain, MempoolConfig};
 use neo_network::{NetworkCommand, NetworkConfig, P2pNode};
 use std::sync::Arc;
-use tokio::{
-    sync::{mpsc, RwLock},
-    time::{timeout, Duration},
-};
+use tokio::sync::{mpsc, RwLock};
 
 #[tokio::test]
 async fn test_node_components_integration() {
@@ -27,6 +24,7 @@ async fn test_node_components_integration() {
     // Initialize mempool
     let mempool_config = MempoolConfig::default();
     let mempool = Arc::new(RwLock::new(neo_ledger::MemoryPool::new(mempool_config)));
+    assert_eq!(mempool.read().await.get_stats().transaction_count, 0);
 
     // Consensus is optional; this integration test focuses on blockchain + network wiring only
 
@@ -34,15 +32,28 @@ async fn test_node_components_integration() {
     assert_eq!(blockchain.get_height().await, 0);
     assert_eq!(p2p_node.get_connected_peer_addresses().await.len(), 0);
 
-    // Test consensus message creation
-    let consensus_msg = neo_network::messages::ProtocolMessage::Consensus {
-        payload: vec![1, 2, 3, 4],
+    // Test consensus message creation using extensible payloads
+    let consensus_payload = neo_network::messages::ExtensiblePayload::consensus(
+        0,
+        u32::MAX,
+        UInt160::zero(),
+        vec![1, 2, 3, 4],
+        neo_core::Witness::empty(),
+    );
+    let consensus_msg = neo_network::messages::ProtocolMessage::Extensible {
+        payload: consensus_payload.clone(),
     };
-    let network_msg = neo_network::messages::NetworkMessage::new(consensus_msg);
+    let network_msg = neo_network::messages::NetworkMessage::new(consensus_msg.clone());
     assert_eq!(
         network_msg.command(),
-        neo_network::messages::MessageCommand::Consensus
+        neo_network::messages::MessageCommand::Extensible
     );
+
+    if let neo_network::messages::ProtocolMessage::Extensible { payload } = consensus_msg {
+        assert_eq!(payload.category, "dBFT");
+    } else {
+        panic!("expected extensible consensus payload");
+    }
 }
 
 #[tokio::test]

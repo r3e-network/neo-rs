@@ -76,9 +76,9 @@ pub mod mempool;
 /// Verification result types
 pub mod verify_result;
 
+pub use crate::blockchain::blockchain::{Blockchain, BlockchainStats, Nep17Balance};
 pub use block::{Block, BlockHeader, Header};
 pub use blockchain::storage::{Storage, StorageItem, StorageKey};
-pub use blockchain::Blockchain;
 pub use header_cache::HeaderCache;
 pub use mempool::{MemoryPool, MempoolConfig, PooledTransaction};
 pub use verify_result::VerifyResult;
@@ -88,7 +88,8 @@ pub use neo_config::{
     SECONDS_PER_BLOCK,
 };
 
-use neo_core::UInt160;
+use neo_core::{UInt160, UInt256};
+use neo_smart_contract::contract_state::ContractState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;
@@ -312,43 +313,14 @@ impl VerificationResult {
     }
 }
 
-/// Blockchain statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockchainStats {
-    /// Current block height
-    pub height: u32,
-    /// Total number of transactions
-    pub transaction_count: u64,
-    /// Total number of accounts
-    pub account_count: u64,
-    /// Total number of contracts
-    pub contract_count: u64,
-    /// Current mempool size
-    pub mempool_size: usize,
-    /// Average block time in seconds
-    pub average_block_time: f64,
-    /// Network hash rate (if applicable)
-    pub network_hashrate: Option<f64>,
-}
-
-impl Default for BlockchainStats {
-    fn default() -> Self {
-        Self {
-            height: 0,
-            transaction_count: 0,
-            account_count: 0,
-            contract_count: 0,
-            mempool_size: 0,
-            average_block_time: SECONDS_PER_BLOCK as f64, // Default SECONDS_PER_BLOCK seconds for Neo
-            network_hashrate: None,
-        }
-    }
-}
-
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use super::{BlockchainStats, Error, Result, ValidationResult, VerificationResult};
+    use super::{Error, Result, ValidationResult, VerificationResult};
+    use crate::{
+        LedgerConfig, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK, MILLISECONDS_PER_BLOCK,
+        SECONDS_PER_BLOCK,
+    };
 
     #[test]
     fn test_validation_result() {
@@ -389,14 +361,6 @@ mod tests {
             MAX_TRANSACTIONS_PER_BLOCK
         );
     }
-
-    #[test]
-    fn test_blockchain_stats_default() {
-        let stats = BlockchainStats::default();
-        assert_eq!(stats.height, 0);
-        assert_eq!(stats.transaction_count, 0);
-        assert_eq!(stats.average_block_time, SECONDS_PER_BLOCK as f64);
-    }
 }
 
 /// Main ledger implementation.
@@ -433,7 +397,6 @@ mod tests {
 #[derive(Debug)]
 pub struct Ledger {
     config: LedgerConfig,
-    stats: BlockchainStats,
     blockchain: Arc<Blockchain>,
 }
 
@@ -459,11 +422,7 @@ impl Ledger {
             Blockchain::new_with_storage_suffix(NetworkType::MainNet, Some("ledger-main")).await?,
         );
 
-        Ok(Self {
-            config,
-            stats: BlockchainStats::default(),
-            blockchain,
-        })
+        Ok(Self { config, blockchain })
     }
 
     /// Creates a new Ledger instance with specific network configuration.
@@ -484,11 +443,7 @@ impl Ledger {
         let blockchain =
             Arc::new(Blockchain::new_with_storage_suffix(network, Some("ledger")).await?);
 
-        Ok(Self {
-            config,
-            stats: BlockchainStats::default(),
-            blockchain,
-        })
+        Ok(Self { config, blockchain })
     }
 
     /// Creates a new Ledger instance with an existing blockchain.
@@ -505,21 +460,16 @@ impl Ledger {
     ///
     /// A new `Ledger` instance using the provided blockchain.
     pub fn new_with_blockchain(config: LedgerConfig, blockchain: Arc<Blockchain>) -> Self {
-        Self {
-            config,
-            stats: BlockchainStats::default(),
-            blockchain,
-        }
+        Self { config, blockchain }
     }
 
     /// Gets the current blockchain statistics.
     ///
     /// # Returns
     ///
-    /// A reference to the current `BlockchainStats` containing metrics
-    /// such as height, transaction count, and mempool size.
-    pub fn get_stats(&self) -> &BlockchainStats {
-        &self.stats
+    /// A snapshot of metrics reported by the underlying blockchain implementation.
+    pub async fn get_stats(&self) -> BlockchainStats {
+        self.blockchain.get_stats().await
     }
 
     /// Gets the ledger configuration.
@@ -650,5 +600,48 @@ impl Ledger {
 
         // Block persistence would be handled by storage layer
         Ok(())
+    }
+
+    pub async fn get_transaction_height(&self, hash: &UInt256) -> Result<Option<u32>> {
+        self.blockchain.get_transaction_height(hash).await
+    }
+
+    pub async fn get_contract_state(&self, hash: &UInt160) -> Result<Option<ContractState>> {
+        self.blockchain.get_contract_state(hash).await
+    }
+
+    pub async fn list_native_contracts(&self) -> Vec<ContractState> {
+        self.blockchain.list_native_contracts().await
+    }
+
+    pub async fn get_raw_storage_value(
+        &self,
+        script_hash: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>> {
+        self.blockchain
+            .get_raw_storage_value(script_hash, key)
+            .await
+    }
+
+    pub async fn get_nep17_balance(
+        &self,
+        contract_hash: &UInt160,
+        account: &UInt160,
+    ) -> Result<Nep17Balance> {
+        self.blockchain
+            .get_nep17_balance(contract_hash, account)
+            .await
+    }
+
+    pub async fn set_raw_storage_value(
+        &self,
+        contract_hash: &UInt160,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Result<()> {
+        self.blockchain
+            .set_raw_storage_value(contract_hash, key, value)
+            .await
     }
 }

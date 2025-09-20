@@ -252,10 +252,10 @@ mod tests {
     #[test]
     fn test_opcode_gas_costs() {
         // Test that gas costs match C# exactly
-        assert_eq!(OPCODE_GAS_COSTS[&OpCode::PUSHINT8], 1);  // 1 << 0 = 1
-        assert_eq!(OPCODE_GAS_COSTS[&OpCode::ADD], 90);      // As defined
-        assert_eq!(OPCODE_GAS_COSTS[&OpCode::CALL], 512);    // 1 << 9 = 512
-        assert_eq!(OPCODE_GAS_COSTS[&OpCode::SYSCALL], 0);   // Variable cost
+        assert_eq!(OPCODE_GAS_COSTS[&OpCode::PUSHINT8], 1); // 1 << 0 = 1
+        assert_eq!(OPCODE_GAS_COSTS[&OpCode::ADD], 90); // As defined
+        assert_eq!(OPCODE_GAS_COSTS[&OpCode::CALL], 512); // 1 << 9 = 512
+        assert_eq!(OPCODE_GAS_COSTS[&OpCode::SYSCALL], 0); // Variable cost
     }
 
     #[test]

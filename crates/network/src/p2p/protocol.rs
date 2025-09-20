@@ -113,14 +113,11 @@ impl ProtocolUtils {
         Ok(())
     }
 
-    /// Calculates message checksum (matches C# Neo checksum calculation exactly)
+    /// Calculates message checksum (matches C# Neo legacy checksum: first 4 bytes of double SHA-256)
     pub fn calculate_checksum(payload: &[u8]) -> u32 {
-        let mut hasher = Sha256::new();
-        hasher.update(payload);
-        let hash = hasher.finalize();
-
-        // Take first 4 bytes as checksum
-        u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
+        let first = Sha256::digest(payload);
+        let second = Sha256::digest(first);
+        u32::from_le_bytes([second[0], second[1], second[2], second[3]])
     }
 
     /// Checks if a message type is critical for sync (matches C# Neo sync protocol exactly)

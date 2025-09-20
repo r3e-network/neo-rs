@@ -5,6 +5,7 @@
 use neo_config::{MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK, MILLISECONDS_PER_BLOCK};
 use neo_persistence::storage::StorageConfig;
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -35,6 +36,8 @@ pub struct NodeConfig {
     pub p2p_port: u16,
     /// Data directory for blockchain data (convenience field)
     pub data_dir: PathBuf,
+    /// Optional DoS/rate limit settings for network layer
+    pub dos: Option<DosConfig>,
 }
 
 /// Node identification information
@@ -132,6 +135,7 @@ impl Default for NodeConfig {
             rpc_port: ports::MAINNET_RPC,
             p2p_port: ports::MAINNET_P2P,
             data_dir: PathBuf::from("./data"),
+            dos: None,
         }
     }
 }
@@ -197,6 +201,69 @@ impl NetworkConfig {
             connection_timeout: 10, // Faster timeouts for local testing
             ping_interval: 15,      // 15 seconds ping interval
         }
+    }
+}
+
+/// Node-level DoS/rate limit configuration (converted to neo_network::DosProtectionConfig)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DosConfig {
+    pub max_connections_per_ip: Option<usize>,
+    pub max_messages_per_second: Option<u32>,
+    pub ban_duration_secs: Option<u64>,
+    pub max_pending_connections: Option<usize>,
+    pub connection_rate_limit: Option<u32>,
+    pub max_message_size: Option<usize>,
+    pub auto_ban_enabled: Option<bool>,
+    pub whitelisted_ips: Option<Vec<String>>,
+}
+
+impl DosConfig {
+    pub fn to_neo(&self) -> neo_network::dos_protection::DosProtectionConfig {
+        let mut cfg = neo_network::dos_protection::DosProtectionConfig::default();
+        if let Some(v) = self.max_connections_per_ip {
+            cfg.max_connections_per_ip = v;
+        }
+        if let Some(v) = self.max_messages_per_second {
+            cfg.max_messages_per_second = v;
+        }
+        if let Some(v) = self.ban_duration_secs {
+            cfg.ban_duration = std::time::Duration::from_secs(v);
+        }
+        if let Some(v) = self.max_pending_connections {
+            cfg.max_pending_connections = v;
+        }
+        if let Some(v) = self.connection_rate_limit {
+            cfg.connection_rate_limit = v;
+        }
+        if let Some(v) = self.max_message_size {
+            cfg.max_message_size = v;
+        }
+        if let Some(v) = self.auto_ban_enabled {
+            cfg.auto_ban_enabled = v;
+        }
+        if let Some(list) = &self.whitelisted_ips {
+            cfg.whitelisted_ips = list
+                .iter()
+                .filter_map(|s| s.parse::<IpAddr>().ok())
+                .collect();
+        }
+        cfg
+    }
+}
+
+impl NetworkConfig {
+    /// Convert node network config + optional DoS settings to neo_network::NetworkConfig
+    pub fn to_neo_network(&self, dos: Option<&DosConfig>) -> neo_network::NetworkConfig {
+        let mut cfg = neo_network::NetworkConfig::default();
+        cfg.magic = self.magic;
+        cfg.listen_address = self.listen_addr;
+        cfg.max_peers = self.max_peers;
+        cfg.connection_timeout = self.connection_timeout as u64;
+        cfg.ping_interval = self.ping_interval as u64;
+        cfg.seed_nodes = self.seed_nodes.clone();
+        cfg.port = self.listen_addr.port();
+        cfg.dos_config = dos.map(|d| d.to_neo());
+        cfg
     }
 }
 

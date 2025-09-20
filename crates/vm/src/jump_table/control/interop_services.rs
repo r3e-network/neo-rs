@@ -280,14 +280,18 @@ pub fn invoke_interop_service(
         }
         "System.Contract.Call" => {
             // Production implementation: Call contract
-            if parameters.len() >= 3 {
+            if parameters.len() >= 4 {
                 if let (
                     Some(InteropParameter::Hash160(script_hash)),
                     Some(InteropParameter::String(method)),
+                    Some(InteropParameter::Array(args_array)),
                     Some(InteropParameter::Integer(call_flags)),
-                ) = (parameters.first(), parameters.get(1), parameters.get(2))
-                {
-                    // Production-ready contract calling
+                ) = (
+                    parameters.get(0),
+                    parameters.get(1),
+                    parameters.get(2),
+                    parameters.get(3),
+                ) {
                     if let Some(app_engine) = engine.as_application_engine_mut() {
                         // 1. Validate call flags
                         let flags = crate::call_flags::CallFlags::from_bits(*call_flags as u32)
@@ -295,10 +299,9 @@ pub fn invoke_interop_service(
                                 VmError::invalid_operation_msg("Invalid call flags".to_string())
                             })?;
 
-                        // 2. Prepare arguments
-                        let arguments: Vec<StackItem> = parameters
+                        // 2. Convert arguments array to VM stack items
+                        let arguments: Vec<StackItem> = args_array
                             .iter()
-                            .skip(3)
                             .map(convert_parameter_to_stack_item)
                             .collect();
 

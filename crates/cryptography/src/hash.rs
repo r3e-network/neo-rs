@@ -127,6 +127,13 @@ impl HashFunction for Hash160 {
     }
 }
 
+impl Hash160 {
+    /// Convenience inherent method used by tests
+    pub fn hash(data: &[u8]) -> Vec<u8> {
+        hash160(data).to_vec()
+    }
+}
+
 /// Hash256 hash function implementation.
 pub struct Hash256;
 
@@ -134,6 +141,13 @@ impl HashFunction for Hash256 {
     const OUTPUT_SIZE: usize = HASH_SIZE;
 
     fn hash(&self, data: &[u8]) -> Vec<u8> {
+        hash256(data).to_vec()
+    }
+}
+
+impl Hash256 {
+    /// Convenience inherent method used by tests
+    pub fn hash(data: &[u8]) -> Vec<u8> {
         hash256(data).to_vec()
     }
 }

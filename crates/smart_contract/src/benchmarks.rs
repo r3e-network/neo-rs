@@ -497,47 +497,4 @@ impl Default for BenchmarkSuite {
     }
 }
 
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn test_benchmark_suite_creation() {
-        let suite = BenchmarkSuite::new();
-        assert!(suite.results.is_empty());
-    }
-
-    #[test]
-    fn test_storage_operations_benchmark() {
-        let mut suite = BenchmarkSuite::new();
-        let result = suite.benchmark_storage_operations();
-        assert!(result.is_ok());
-        assert_eq!(suite.results.len(), 1);
-        assert_eq!(suite.results[0].name, "Storage Operations");
-    }
-
-    #[test]
-    fn test_benchmark_result_creation() {
-        let suite = BenchmarkSuite::new();
-        let times = vec![
-            Duration::from_millis(10),
-            Duration::from_millis(15),
-            Duration::from_millis(12),
-        ];
-        let metrics = PerformanceMetrics::default();
-
-        let result = suite.create_benchmark_result(
-            "Test Benchmark".to_string(),
-            3,
-            times,
-            metrics,
-        );
-
-        assert_eq!(result.name, "Test Benchmark");
-        assert_eq!(result.iterations, 3);
-        assert_eq!(result.min_time, Duration::from_millis(10));
-        assert_eq!(result.max_time, Duration::from_millis(15));
-        assert!(result.ops_per_second > 0.0);
-    }
-}

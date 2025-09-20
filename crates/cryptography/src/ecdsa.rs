@@ -8,7 +8,7 @@ use neo_config::HASH_SIZE;
 use p256::{
     ecdsa::{signature::Signer, signature::Verifier, Signature, SigningKey, VerifyingKey},
     elliptic_curve::sec1::ToEncodedPoint,
-    PublicKey, SecretKey,
+    AffinePoint, EncodedPoint, FieldBytes, NistP256, ProjectivePoint, PublicKey, Scalar, SecretKey,
 };
 use rand::rngs::OsRng;
 use secp256k1::{
@@ -234,51 +234,106 @@ impl ECDsa {
         message_hash: &[u8],
         recovery_id: u8,
     ) -> Result<Vec<u8>> {
-        // 1. Validate recovery ID (0-3 are all valid for complete recovery)
+        use p256::elliptic_curve::{
+            bigint::{Encoding, U256},
+            group::Group,
+            ops::Reduce,
+            sec1::FromEncodedPoint,
+            Curve, Field, PrimeField,
+        };
+
         if recovery_id > 3 {
             return Err(Error::InvalidSignature(
                 "Recovery ID must be 0-3 for secp256r1".to_string(),
             ));
         }
 
-        // 2. Validate signature components are non-zero (security requirement)
-        let r_zero_check = r_bytes.iter().all(|&b| b == 0);
-        let s_zero_check = s_bytes.iter().all(|&b| b == 0);
-        if r_zero_check || s_zero_check {
+        let r_scalar =
+            Option::<Scalar>::from(Scalar::from_repr(FieldBytes::clone_from_slice(r_bytes)))
+                .ok_or_else(|| {
+                    Error::InvalidSignature("Invalid signature: r not canonical".to_string())
+                })?;
+        let s_scalar =
+            Option::<Scalar>::from(Scalar::from_repr(FieldBytes::clone_from_slice(s_bytes)))
+                .ok_or_else(|| {
+                    Error::InvalidSignature("Invalid signature: s not canonical".to_string())
+                })?;
+
+        if bool::from(r_scalar.is_zero()) || bool::from(s_scalar.is_zero()) {
             return Err(Error::InvalidSignature(
                 "Invalid signature: r or s is zero".to_string(),
             ));
         }
 
-        // 3. Validate message hash length
         if message_hash.len() != HASH_SIZE {
             return Err(Error::InvalidSignature(
                 "Message hash must be HASH_SIZE bytes".to_string(),
             ));
         }
 
-        // 4. Use mathematical approach compatible with current p256 crate
-        // Implementation of the full ECDSA recovery algorithm using available APIs
+        let mut message_bytes = [0u8; HASH_SIZE];
+        message_bytes.copy_from_slice(message_hash);
+        let z_scalar = Scalar::reduce(U256::from_be_bytes(message_bytes));
 
-        // This ensures reliable recovery operations across both curves
-        // Note: This is a production-ready approach - most Neo applications benefit from
-        // unified recovery operations that work consistently across both secp256r1 and secp256k1
-
-        // Attempt recovery using signature verification approach:
-        // Generate candidate public keys and verify against the signature
-
-        // This approach provides reliable signature verification when direct
-        // mathematical recovery encounters API limitations
-
-        // Try different candidate approaches based on recovery_id
-        match recovery_id {
-            0..=3 => {
-                // since both curves support ECDSA and the math is equivalent
-
-                Self::recover_public_key_secp256k1(r_bytes, s_bytes, message_hash, recovery_id % 2)
+        let mut x_candidate = U256::from_be_bytes(*r_bytes);
+        if (recovery_id & 0b10) != 0 {
+            let candidate = x_candidate.wrapping_add(&NistP256::ORDER);
+            if candidate < x_candidate {
+                return Err(Error::InvalidSignature(
+                    "Invalid recovery ID for secp256r1".to_string(),
+                ));
             }
-            _ => Err(Error::InvalidSignature("Invalid recovery ID".to_string())),
+            x_candidate = candidate;
         }
+
+        let mut encoded = [0u8; 33];
+        encoded[0] = if (recovery_id & 0b01) != 0 {
+            0x03
+        } else {
+            0x02
+        };
+        encoded[1..].copy_from_slice(&x_candidate.to_be_bytes());
+
+        let encoded_point = EncodedPoint::from_bytes(encoded)
+            .map_err(|_| Error::InvalidSignature("Failed to decode candidate point".to_string()))?;
+
+        let r_affine = Option::<AffinePoint>::from(AffinePoint::from_encoded_point(&encoded_point))
+            .ok_or_else(|| {
+                Error::InvalidSignature("Candidate point is not on the secp256r1 curve".to_string())
+            })?;
+
+        if bool::from(r_affine.is_identity()) {
+            return Err(Error::InvalidSignature(
+                "Candidate point resolves to point at infinity".to_string(),
+            ));
+        }
+
+        let r_projective = ProjectivePoint::from(r_affine);
+
+        let r_inv = Option::<Scalar>::from(r_scalar.invert()).ok_or_else(|| {
+            Error::InvalidSignature("Failed to compute modular inverse of r".to_string())
+        })?;
+
+        let u1 = (-z_scalar) * r_inv;
+        let u2 = s_scalar * r_inv;
+
+        let recovered_point = ProjectivePoint::generator() * u1 + r_projective * u2;
+
+        if bool::from(recovered_point.is_identity()) {
+            return Err(Error::InvalidSignature(
+                "Recovered public key is the point at infinity".to_string(),
+            ));
+        }
+
+        let recovered = recovered_point.to_affine().to_encoded_point(true);
+
+        if !ECDsa::validate_public_key(recovered.as_bytes()) {
+            return Err(Error::InvalidSignature(
+                "Recovered public key failed validation".to_string(),
+            ));
+        }
+
+        Ok(recovered.as_bytes().to_vec())
     }
 
     /// Recovers public key for secp256k1 curve (production implementation)

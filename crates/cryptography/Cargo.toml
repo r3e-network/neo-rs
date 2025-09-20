@@ -51,6 +51,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.4"
 tokio-test = "0.4"
 uuid = "1.0"
+hex-literal = "0.4"
 
 [features]
 default = ["std"]

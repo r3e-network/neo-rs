@@ -3,9 +3,9 @@
 //! This plugin provides consensus functionality using delegated Byzantine Fault Tolerance
 
 use crate::Plugin;
+use async_trait::async_trait;
 use neo_extensions::plugin::{PluginCategory, PluginContext, PluginEvent, PluginInfo};
 use neo_extensions::ExtensionResult;
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -57,58 +57,55 @@ impl DbftPlugin {
                 description: "dBFT Consensus Algorithm".to_string(),
                 category: PluginCategory::Consensus,
                 dependencies: Vec::new(),
-                website: Some("https://neo.org".to_string()),
-                repository: Some("https://github.com/neo-project/neo".to_string()),
+                min_neo_version: "3.6.0".to_string(),
+                priority: 0,
             },
             settings: DbftSettings::default(),
             consensus_service: None,
             is_running: false,
         }
     }
-    
+
     /// Start consensus service
     async fn start_consensus(&mut self) -> ExtensionResult<()> {
         if self.is_running {
             return Ok(());
         }
-        
+
         info!("Starting dBFT consensus service");
-        
+
         // Create consensus service (would integrate with neo-consensus crate)
-        let consensus_config = neo_consensus::ConsensusConfig {
-            network_type: if self.settings.network == 0x334F454E {
-                neo_config::NetworkType::MainNet
-            } else {
-                neo_config::NetworkType::TestNet
-            },
-            enabled: true,
-            view_change_timeout: std::time::Duration::from_millis(20000),
-            min_committee_size: 21,
-            ..Default::default()
-        };
-        
+        let mut consensus_config = neo_consensus::ConsensusConfig::default();
+        // Map settings to current ConsensusConfig fields
+        consensus_config.block_time_ms = self.settings.milliseconds_per_block as u64;
+        consensus_config.max_transactions_per_block =
+            self.settings.max_transactions_per_block as usize;
+        // Enable recovery unless settings explicitly ignore recovery logs
+        consensus_config.enable_recovery = !self.settings.ignore_recovery_logs;
+        // Keep other values at defaults (validator_count, view_timeout_ms, etc.)
+
         // Would create actual consensus service here
         let service = ConsensusService::new(consensus_config);
         self.consensus_service = Some(Arc::new(RwLock::new(service)));
         self.is_running = true;
-        
+
         info!("✅ dBFT consensus service started");
         Ok(())
     }
-    
+
     /// Stop consensus service
     async fn stop_consensus(&mut self) -> ExtensionResult<()> {
         if !self.is_running {
             return Ok(());
         }
-        
+
         info!("Stopping dBFT consensus service");
-        
+
         if let Some(service) = self.consensus_service.take() {
             // Would properly shut down consensus service
             drop(service);
         }
-        
+
         self.is_running = false;
         info!("✅ dBFT consensus service stopped");
         Ok(())
@@ -120,49 +117,69 @@ impl Plugin for DbftPlugin {
     fn info(&self) -> &PluginInfo {
         &self.info
     }
-    
+
     async fn initialize(&mut self, context: &PluginContext) -> ExtensionResult<()> {
         debug!("Initializing dBFT plugin");
-        
-        // Load configuration
-        if let Some(config) = context.config.get("DBFTPlugin") {
-            self.settings = serde_json::from_value(config.clone())
-                .map_err(|e| neo_extensions::error::ExtensionError::InvalidConfig(e.to_string()))?;
+
+        // Load configuration from config_dir/DBFTPlugin.json if present
+        let config_file = context.config_dir.join("DBFTPlugin.json");
+        if config_file.exists() {
+            match tokio::fs::read_to_string(&config_file).await {
+                Ok(config_str) => match serde_json::from_str::<DbftSettings>(&config_str) {
+                    Ok(cfg) => self.settings = cfg,
+                    Err(e) => {
+                        return Err(neo_extensions::error::ExtensionError::invalid_config(
+                            e.to_string(),
+                        ))
+                    }
+                },
+                Err(e) => {
+                    return Err(neo_extensions::error::ExtensionError::invalid_config(
+                        format!("failed to read {}: {}", config_file.display(), e),
+                    ))
+                }
+            }
         }
-        
+
         info!("✅ dBFT plugin initialized");
         Ok(())
     }
-    
+
     async fn start(&mut self) -> ExtensionResult<()> {
         info!("Starting dBFT plugin");
-        
+
         if self.settings.auto_start {
             self.start_consensus().await?;
         }
-        
+
         Ok(())
     }
-    
+
     async fn stop(&mut self) -> ExtensionResult<()> {
         info!("Stopping dBFT plugin");
         self.stop_consensus().await?;
         Ok(())
     }
-    
+
     async fn handle_event(&mut self, event: &PluginEvent) -> ExtensionResult<()> {
         match event {
-            PluginEvent::BlockCommitted { block, .. } => {
-                debug!("dBFT: Block {} committed", block.index);
-                
+            PluginEvent::BlockReceived {
+                block_hash,
+                block_height,
+            } => {
+                debug!(
+                    "dBFT: Block {} received at height {}",
+                    block_hash, block_height
+                );
+
                 // Would handle consensus state updates
                 if self.is_running {
                     // Update consensus state based on committed block
                 }
             }
-            PluginEvent::TransactionAdded { transaction, .. } => {
-                debug!("dBFT: Transaction {} added to mempool", transaction.hash);
-                
+            PluginEvent::TransactionReceived { tx_hash } => {
+                debug!("dBFT: Transaction {} received", tx_hash);
+
                 // Would handle transaction pool updates for block creation
             }
             _ => {}

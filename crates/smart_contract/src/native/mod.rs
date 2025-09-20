@@ -59,6 +59,26 @@ impl NativeRegistry {
         self.contracts.get(hash).map(|c| c.as_ref())
     }
 
+    /// Gets a native contract by name.
+    pub fn get_by_name(&self, name: &str) -> Option<&dyn NativeContract> {
+        self.contracts
+            .values()
+            .find(|contract| contract.name().eq_ignore_ascii_case(name))
+            .map(|contract| contract.as_ref())
+    }
+
+    fn find_hash_by_name(&self, name: &str) -> Option<UInt160> {
+        self.contracts
+            .iter()
+            .find(|(_, contract)| contract.name().eq_ignore_ascii_case(name))
+            .map(|(hash, _)| hash.clone())
+    }
+
+    pub fn take_contract_by_name(&mut self, name: &str) -> Option<Box<dyn NativeContract>> {
+        let hash = self.find_hash_by_name(name)?;
+        self.contracts.remove(&hash)
+    }
+
     /// Checks if a contract hash is a native contract.
     pub fn is_native(&self, hash: &UInt160) -> bool {
         self.contracts.contains_key(hash)
@@ -67,6 +87,13 @@ impl NativeRegistry {
     /// Gets all native contract hashes.
     pub fn all_hashes(&self) -> Vec<UInt160> {
         self.contracts.keys().copied().collect()
+    }
+
+    /// Returns mutable references to all registered native contracts.
+    pub fn contracts_mut(&mut self) -> impl Iterator<Item = &mut dyn NativeContract> + '_ {
+        self.contracts
+            .values_mut()
+            .map(|contract| -> &mut dyn NativeContract { contract.as_mut() })
     }
 
     /// Registers standard Neo native contracts.
@@ -109,7 +136,8 @@ impl Default for NativeRegistry {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use super::{Error, Result};
+    use super::{GasToken, NativeContract, NativeRegistry, NeoToken};
+    use neo_core::UInt160;
 
     #[test]
     fn test_native_registry_creation() {

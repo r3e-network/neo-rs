@@ -119,6 +119,9 @@ pub struct RocksDbSnapshot {
     store_instance: Box<RocksDbStore>,
 }
 
+unsafe impl Send for RocksDbSnapshot {}
+unsafe impl Sync for RocksDbSnapshot {}
+
 impl RocksDbSnapshot {
     pub fn new(db: Arc<DB>) -> Self {
         // Create a store instance that shares the same DB

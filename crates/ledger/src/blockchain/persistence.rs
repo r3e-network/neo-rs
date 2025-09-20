@@ -142,6 +142,7 @@ impl BlockchainPersistence {
     /// Commits all pending changes to storage (matches C# Neo DataCache.Commit)
     pub async fn commit(&self) -> Result<()> {
         let mut write_cache = self.write_cache.write().await;
+        let mut cleared_keys = Vec::new();
 
         // Apply all changes from write cache to storage
         for (key, cache_item) in write_cache.iter() {
@@ -153,6 +154,7 @@ impl BlockchainPersistence {
                             return Err(e);
                         }
                     }
+                    cleared_keys.push(key.clone());
                 } else if let Some(ref item) = cache_item.item {
                     // Put to storage
                     self.storage.put(key, item).await?;
@@ -162,6 +164,15 @@ impl BlockchainPersistence {
 
         // Clear write cache after successful commit
         write_cache.clear();
+        drop(write_cache);
+
+        if !cleared_keys.is_empty() {
+            let mut read_cache = self.read_cache.write().await;
+            for key in cleared_keys {
+                read_cache.remove(&key);
+            }
+        }
+
         Ok(())
     }
 
@@ -200,10 +211,23 @@ impl BlockchainPersistence {
         self.put(block_data_key, block_data_item).await?;
 
         // Store transactions
+        let mut tx_hashes: Vec<neo_core::UInt256> = Vec::with_capacity(block.transactions.len());
         for (tx_index, transaction) in block.transactions.iter().enumerate() {
             self.persist_transaction(transaction, block.header.index, tx_index as u32)
                 .await?;
+            tx_hashes.push(transaction.hash()?);
         }
+
+        // Store block's transaction list for fast reassembly on read
+        let tx_list_key = StorageKey::block_transactions(block.header.index);
+        let tx_list_bytes = bincode::serialize(
+            &tx_hashes
+                .iter()
+                .map(|h| h.as_bytes().to_vec())
+                .collect::<Vec<Vec<u8>>>(),
+        )?;
+        self.put(tx_list_key, StorageItem::new(tx_list_bytes))
+            .await?;
 
         // Update current block height
         let height_key = StorageKey::current_height();
@@ -274,12 +298,31 @@ impl BlockchainPersistence {
 
         let block_hash = UInt256::from_bytes(&hash_item.value)?;
 
-        let mut transactions = Vec::new();
-        let mut tx_index = 0u32;
-
-        // Keep loading transactions until we don't find any more
-        // In production, we would maintain better indexing to efficiently
-        // load all transactions belonging to a specific block
+        // Reassemble transactions by consulting stored block transaction list
+        let mut transactions: Vec<Transaction> = Vec::new();
+        let tx_list_key = StorageKey::block_transactions(index);
+        if let Some(tx_list_item) = self.get(&tx_list_key).await? {
+            // Deserialize list of hashes (Vec<Vec<u8>> of 32-byte hashes)
+            if let Ok(list) = bincode::deserialize::<Vec<Vec<u8>>>(&tx_list_item.value) {
+                // Fetch each transaction and preserve order
+                for h in list {
+                    if h.len() == neo_config::HASH_SIZE {
+                        if let Ok(hash) = UInt256::from_bytes(&h) {
+                            if let Some(tx) = self.get_transaction(&hash).await? {
+                                transactions.push(tx);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Fallback: slow path by scanning indices (best-effort)
+            // Note: this is intentionally minimal to avoid API churn
+            let current_height = self.get_current_block_height().await.unwrap_or(0);
+            if index <= current_height {
+                // Attempt to locate by scanning transaction_index entries would go here
+            }
+        }
 
         let block = Block {
             header,
@@ -361,6 +404,24 @@ impl BlockchainPersistence {
             Some(item) => {
                 let transaction: Transaction = bincode::deserialize(&item.value)?;
                 Ok(Some(transaction))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Retrieves the block height for a given transaction hash, if it is known.
+    pub async fn get_transaction_block_index(&self, hash: &UInt256) -> Result<Option<u32>> {
+        let key = StorageKey::transaction_block(*hash);
+        match self.get(&key).await? {
+            Some(item) => {
+                if item.value.len() < 4 {
+                    return Err(Error::InvalidData(
+                        "Stored transaction height has invalid length".to_string(),
+                    ));
+                }
+                let mut buf = [0u8; 4];
+                buf.copy_from_slice(&item.value[..4]);
+                Ok(Some(u32::from_le_bytes(buf)))
             }
             None => Ok(None),
         }
@@ -523,12 +584,18 @@ impl BlockchainSnapshot {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use super::super::storage::RocksDBStorage;
-    use super::{StorageError, StorageKey, Store};
+    use super::*;
+    use crate::Result;
+    use std::sync::Arc;
+    use tempfile::tempdir;
 
     #[tokio::test]
-    async fn test_persistence_basic_operations() {
-        let storage = Arc::new(Storage::new_rocksdb("/tmp/neo-test-persistence-1"));
+    async fn test_persistence_basic_operations() -> Result<()> {
+        let dir = tempdir().expect("operation should succeed");
+        let storage = Arc::new(
+            Storage::new_rocksdb(dir.path().to_str().unwrap_or(""))
+                .expect("operation should succeed"),
+        );
         let persistence = BlockchainPersistence::new(storage);
 
         let key = StorageKey::new(b"test_prefix".to_vec(), b"test_key".to_vec());
@@ -548,11 +615,17 @@ mod tests {
             retrieved_after_commit,
             Some(StorageItem::new(b"test_value".to_vec()))
         );
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_persistence_caching() {
-        let storage = Arc::new(Storage::new_rocksdb("/tmp/neo-test-persistence-2"));
+    async fn test_persistence_caching() -> Result<()> {
+        let dir = tempdir().expect("operation should succeed");
+        let storage = Arc::new(
+            Storage::new_rocksdb(dir.path().to_str().unwrap_or(""))
+                .expect("operation should succeed"),
+        );
         let persistence = BlockchainPersistence::new(storage);
 
         let key = StorageKey::new(b"cache_test".to_vec(), b"key1".to_vec());
@@ -573,11 +646,17 @@ mod tests {
         let (read_cache_size, write_cache_size) = persistence.cache_stats().await;
         assert_eq!(write_cache_size, 0); // Should be cleared after commit
         assert_eq!(read_cache_size, 1); // Should have one cached item
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_persistence_deletion() {
-        let storage = Arc::new(Storage::new_rocksdb("/tmp/neo-test-persistence-3"));
+    async fn test_persistence_deletion() -> Result<()> {
+        let dir = tempdir().expect("operation should succeed");
+        let storage = Arc::new(
+            Storage::new_rocksdb(dir.path().to_str().unwrap_or(""))
+                .expect("operation should succeed"),
+        );
         let persistence = BlockchainPersistence::new(storage);
 
         let key = StorageKey::new(b"delete_test".to_vec(), b"key1".to_vec());
@@ -593,5 +672,7 @@ mod tests {
         persistence.commit().await?;
 
         assert!(!persistence.contains(&key).await?);
+
+        Ok(())
     }
 }

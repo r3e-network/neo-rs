@@ -37,11 +37,12 @@ impl NetworkMessage {
         let payload_length = serialized_payload.len() as u32;
         let neo3_message = Neo3Message::new(command, serialized_payload);
         // Calculate checksum for compatibility with legacy tests
+        // Use double SHA-256 first 4 bytes to match legacy spec
         let checksum = if payload_length > 0 {
-            let mut hasher = Sha256::new();
-            hasher.update(neo3_message.get_payload().unwrap_or_default());
-            let hash = hasher.finalize();
-            u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
+            let payload = neo3_message.get_payload().unwrap_or_default();
+            let first = Sha256::digest(&payload);
+            let second = Sha256::digest(&first);
+            u32::from_le_bytes([second[0], second[1], second[2], second[3]])
         } else {
             0
         };
@@ -200,13 +201,13 @@ impl NetworkMessage {
 
         let payload_bytes = bytes[payload_start..payload_start + length as usize].to_vec();
 
-        // Verify checksum if payload exists
+        // Verify checksum if payload exists (double SHA-256)
         if length > 0 {
             use sha2::{Digest, Sha256};
-            let mut hasher = Sha256::new();
-            hasher.update(&payload_bytes);
-            let hash = hasher.finalize();
-            let calculated_checksum = u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]]);
+            let first = Sha256::digest(&payload_bytes);
+            let second = Sha256::digest(first);
+            let calculated_checksum =
+                u32::from_le_bytes([second[0], second[1], second[2], second[3]]);
 
             if calculated_checksum != checksum {
                 return Err(NetworkError::ProtocolViolation {
@@ -270,13 +271,12 @@ impl NetworkMessage {
         // Length (4 bytes)
         bytes.extend_from_slice(&length.to_le_bytes());
 
-        // Checksum (4 bytes)
+        // Checksum (4 bytes) - double SHA-256 first 4 bytes
         let checksum = if length > 0 {
             use sha2::{Digest, Sha256};
-            let mut hasher = Sha256::new();
-            hasher.update(&payload_bytes);
-            let hash = hasher.finalize();
-            u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
+            let first = Sha256::digest(&payload_bytes);
+            let second = Sha256::digest(first);
+            u32::from_le_bytes([second[0], second[1], second[2], second[3]])
         } else {
             0
         };

@@ -50,11 +50,12 @@ pub const MAINNET_SEEDS: &[&str] = &[
 
 /// Neo TestNet seed nodes  
 pub const TESTNET_SEEDS: &[&str] = &[
-    "seed1t.neo.org:20333",
-    "seed2t.neo.org:20333",
-    "seed3t.neo.org:20333",
-    "seed4t.neo.org:20333",
-    "seed5t.neo.org:20333",
+    // Neo N3 TestNet (T5)
+    "seed1t5.neo.org:20333",
+    "seed2t5.neo.org:20333",
+    "seed3t5.neo.org:20333",
+    "seed4t5.neo.org:20333",
+    "seed5t5.neo.org:20333",
 ];
 
 /// Neo N3 TestNet seed nodes
@@ -71,7 +72,7 @@ impl NetworkType {
     pub fn magic(&self) -> u32 {
         match self {
             NetworkType::MainNet => 0x334f454e, // "NEO3" in little endian
-            NetworkType::TestNet => 0x3254334e, // "N3T2" in little endian
+            NetworkType::TestNet => 0x3554334e, // "N3T5" in little endian (current N3 testnet)
             NetworkType::Private => 0x00000000,
         }
     }
@@ -182,20 +183,14 @@ impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            port: 20333, // TestNet port
+            port: 20333, // TestNet (T5)
             max_outbound_connections: 10,
             max_inbound_connections: 40,
             connection_timeout_secs: 30,
-            seed_nodes: vec![
-                "seed1t.neo.org:20333".parse().ok(),
-                "seed2t.neo.org:20333".parse().ok(),
-                "seed3t.neo.org:20333".parse().ok(),
-                "seed4t.neo.org:20333".parse().ok(),
-                "seed5t.neo.org:20333".parse().ok(),
-            ]
-            .into_iter()
-            .flatten()
-            .collect(),
+            seed_nodes: TESTNET_SEEDS
+                .iter()
+                .filter_map(|s| s.parse().ok())
+                .collect(),
             user_agent: "Neo-Rust/0.1.0".to_string(),
             protocol_version: 3,
             websocket_enabled: false,

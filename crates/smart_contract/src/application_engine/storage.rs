@@ -193,7 +193,7 @@ pub trait StorageOperations {
     ) -> StorageIterator;
 
     /// Gets the storage price per byte.
-    fn get_storage_price(&self) -> usize;
+    fn get_storage_price(&mut self) -> usize;
 
     /// Queries blockchain storage for a given key.
     fn query_blockchain_storage(&self, storage_key: &StorageKey) -> Option<Vec<u8>>;

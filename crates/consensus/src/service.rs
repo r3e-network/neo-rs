@@ -85,21 +85,8 @@ impl LedgerAdapter {
 
     /// Gets account balance (GAS balance for fee payment)
     pub async fn get_account_balance(&self, account: &UInt160) -> Result<u64> {
-        // Implementation matches C# Neo consensus balance checking
-        use neo_core::UInt256;
-
-        // Get the current blockchain snapshot and calculate actual GAS balance
-        let blockchain = self.blockchain.read().await;
-        let current_height = blockchain.current_height();
-
-        // Get account state from storage
-        let account_state = blockchain
-            .get_account_state(&account)
-            .await
-            .unwrap_or_default();
-
-        // Return actual GAS balance from account state
-        Ok(account_state.gas_balance)
+        // Delegate to the underlying ledger service
+        self.ledger.get_account_balance(account).await
     }
 }
 
@@ -115,6 +102,7 @@ pub trait LedgerService {
     async fn get_next_block_validators(&self) -> Result<Vec<ECPoint>>;
     async fn get_validators(&self, height: u32) -> Result<Vec<ECPoint>>;
     async fn validate_transaction(&self, transaction: &Transaction) -> Result<bool>;
+    async fn get_account_balance(&self, account: &UInt160) -> Result<u64>;
 }
 
 /// Network service trait for consensus integration
@@ -317,6 +305,51 @@ impl MockLedger {
     pub async fn commit_block(&self, _block: &Block) -> Result<()> {
         *self.height.write() += 1;
         Ok(())
+    }
+}
+
+#[async_trait]
+impl LedgerService for MockLedger {
+    async fn get_block(&self, _height: u32) -> Result<Option<Block>> {
+        Ok(None)
+    }
+
+    async fn get_block_by_hash(&self, _hash: &UInt256) -> Result<Option<Block>> {
+        Ok(None)
+    }
+
+    async fn get_current_height(&self) -> Result<u32> {
+        Ok(*self.height.read())
+    }
+
+    async fn add_block(&self, _block: Block) -> Result<()> {
+        *self.height.write() += 1;
+        Ok(())
+    }
+
+    async fn get_transaction(&self, _hash: &UInt256) -> Result<Option<Transaction>> {
+        Ok(None)
+    }
+
+    async fn contains_transaction(&self, _hash: &UInt256) -> Result<bool> {
+        Ok(false)
+    }
+
+    async fn get_next_block_validators(&self) -> Result<Vec<ECPoint>> {
+        Ok(Vec::new())
+    }
+
+    async fn get_validators(&self, _height: u32) -> Result<Vec<ECPoint>> {
+        Ok(Vec::new())
+    }
+
+    async fn validate_transaction(&self, _transaction: &Transaction) -> Result<bool> {
+        Ok(true)
+    }
+
+    async fn get_account_balance(&self, _account: &UInt160) -> Result<u64> {
+        // Provide a generous default for testing paths
+        Ok(1_000_000_000)
     }
 }
 

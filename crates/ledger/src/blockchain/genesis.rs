@@ -203,6 +203,9 @@ impl GenesisManager {
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
+    use super::*;
+    use crate::Result;
+    use neo_core::UInt256;
     #[tokio::test]
     async fn test_genesis_block_creation() {
         let storage = std::sync::Arc::new(Storage::new_temp());
@@ -231,7 +234,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_genesis_initialization() {
+    async fn test_genesis_initialization() -> Result<()> {
         let storage = std::sync::Arc::new(Storage::new_temp());
         let genesis_manager = GenesisManager::new(storage.clone());
 
@@ -244,5 +247,7 @@ mod tests {
         // Check now initialized
         assert!(genesis_manager.is_genesis_initialized().await?);
         assert_eq!(genesis_block.index(), 0);
+
+        Ok(())
     }
 }

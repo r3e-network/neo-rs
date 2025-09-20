@@ -3,7 +3,7 @@
 //! This module provides the main network server that coordinates all networking
 //! components including P2P, synchronization, and RPC services.
 
-use crate::rpc::{RpcConfig as InternalRpcConfig, RpcServer};
+use crate::rpc::{RpcConfig as InternalRpcConfig, RpcServer, RpcState};
 use crate::shutdown_impl::{
     DatabaseShutdown, NetworkServerShutdown, RpcServerShutdown, TransactionPoolShutdown,
 };
@@ -84,11 +84,6 @@ impl NetworkServerConfig {
                 http_address: "127.0.0.1:20332"
                     .parse()
                     .expect("Failed to parse hardcoded address"),
-                ws_address: Some(
-                    "127.0.0.1:20334"
-                        .parse()
-                        .expect("Failed to parse hardcoded address"),
-                ),
                 ..Default::default()
             }),
             seed_nodes: vec![
@@ -118,11 +113,6 @@ impl NetworkServerConfig {
                 http_address: "127.0.0.1:30332"
                     .parse()
                     .expect("Failed to parse hardcoded address"),
-                ws_address: Some(
-                    "127.0.0.1:30334"
-                        .parse()
-                        .expect("Failed to parse hardcoded address"),
-                ),
                 ..Default::default()
             }),
             seed_nodes: vec![], // No seed nodes for private network
@@ -217,11 +207,9 @@ impl NetworkServer {
         )?);
 
         let rpc_server = config.rpc_config.as_ref().map(|rpc_config| {
-            Arc::new(RpcServer::with_p2p_node(
-                rpc_config.clone(),
-                blockchain.clone(),
-                p2p_node.clone(),
-            ))
+            let mut state = RpcState::default();
+            state.blockchain = Some(blockchain.clone());
+            Arc::new(RpcServer::new(rpc_config.clone(), state))
         });
 
         let (event_tx, _) = broadcast::channel(1000);

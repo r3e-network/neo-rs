@@ -7,6 +7,7 @@
 use crate::witness_rule::{WitnessCondition, WitnessConditionType, WitnessRuleAction};
 use crate::{UInt160, WitnessRule, WitnessScope};
 use neo_config::{ADDRESS_SIZE, HASH_SIZE};
+use neo_io::serializable::helper::get_var_size;
 use neo_io::Serializable;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -125,7 +126,11 @@ impl Signer {
         } else {
             5
         };
-        let data_size: usize = groups.iter().map(|g| g.len()).sum();
+        // Each group is encoded as var-bytes (length prefix + data)
+        let data_size: usize = groups
+            .iter()
+            .map(|g| get_var_size(g.len() as u64) + g.len())
+            .sum();
         var_int_size + data_size
     }
 
@@ -272,7 +277,7 @@ impl Serializable for Signer {
         if self.scopes.has_flag(WitnessScope::CUSTOM_GROUPS) {
             writer.write_var_int(self.allowed_groups.len() as u64)?;
             for group in &self.allowed_groups {
-                writer.write_bytes(group)?;
+                writer.write_var_bytes(group)?;
             }
         }
 
