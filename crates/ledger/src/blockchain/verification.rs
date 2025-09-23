@@ -6,7 +6,7 @@ use crate::block::verification::WitnessVerifier;
 use crate::{BlockHeader, Error, Result};
 use neo_config::{MAX_TRANSACTION_SIZE, MILLISECONDS_PER_BLOCK};
 use neo_core::{Transaction, UInt160, UInt256, Witness};
-use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm::{ApplicationEngine, TriggerType, VMState};
 /// Block verification result
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -13,10 +13,21 @@
 //! - **C# Compatibility**: Exact API compatibility with C# implementation
 
 pub mod client;
+pub mod contract_client;
 pub mod error;
 pub mod methods;
 pub mod models;
 pub mod neo_rpc;
+pub mod nep17_api;
+pub mod policy_api;
+pub mod properties;
+pub mod rpc_client;
+pub mod rpc_exception;
+pub mod state_api;
+pub mod transaction_manager;
+pub mod transaction_manager_factory;
+pub mod utility;
+pub mod wallet_api;
 
 pub use client::{RpcClient, RpcClientBuilder};
 pub use error::{RpcError, RpcResult};

@@ -15,7 +15,7 @@ neo-ledger = { path = "../ledger" }
 neo-extensions = { path = "../extensions" }
 neo-io = { path = "../io" }
 neo-json = { path = "../json" }
-neo-cryptography = { path = "../cryptography" }
+# Removed neo-cryptography - using external crypto crates directly
 neo-rpc-client = { path = "../rpc_client" }
 neo-consensus = { path = "../consensus" }
 

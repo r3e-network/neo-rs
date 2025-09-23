@@ -4,6 +4,7 @@ use crate::application_engine::ApplicationEngine;
 use crate::interop::InteropService;
 use crate::{Error, Result};
 use neo_config::{ADDRESS_SIZE, HASH_SIZE, SECONDS_PER_BLOCK};
+use neo_core::crypto_utils::NeoHash;
 
 /// Service for verifying ECDSA signatures.
 pub struct CheckSigService;
@@ -53,7 +54,7 @@ impl InteropService for CheckSigService {
         };
 
         let is_valid =
-            match neo_cryptography::ecdsa::ECDsa::verify_signature(&message, signature, public_key)
+            match neo_core::crypto_utils::Secp256r1Crypto::verify(&message, signature, public_key)
             {
                 Ok(valid) => valid,
                 Err(_) => false,
@@ -138,7 +139,7 @@ impl InteropService for CheckMultiSigService {
             }
 
             // Try to verify current signature with current public key
-            match neo_cryptography::ecdsa::ECDsa::verify_signature_secp256r1(
+            match neo_core::crypto_utils::Secp256r1Crypto::verify(
                 message,
                 &signatures[sig_index],
                 public_key,
@@ -198,12 +199,7 @@ impl InteropService for Sha256Service {
 
         let data = &args[0];
 
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(data);
-        let hash = hasher.finalize();
-
-        Ok(hash.to_vec())
+        Ok(Crypto::sha256(data))
     }
 }
 
@@ -228,12 +224,7 @@ impl InteropService for Ripemd160Service {
 
         let data = &args[0];
 
-        use ripemd::{Digest, Ripemd160};
-        let mut hasher = Ripemd160::new();
-        hasher.update(data);
-        let hash = hasher.finalize();
-
-        Ok(hash.to_vec())
+        Ok(Crypto::ripemd160(data))
     }
 }
 
@@ -277,7 +268,7 @@ impl InteropService for VerifyWithECDsaSecp256r1Service {
         // Production-ready ECDSA signature verification using secp256r1 curve
         // This matches the C# Neo implementation exactly
 
-        let is_valid = match neo_cryptography::ecdsa::ECDsa::verify_signature(
+        let is_valid = match neo_core::crypto_utils::Secp256r1Crypto::verify(
             message, signature, public_key,
         ) {
             Ok(valid) => valid,
@@ -322,7 +313,7 @@ pub fn verify_signature(engine: &mut ApplicationEngine, args: &[Vec<u8>]) -> Res
     }
 
     // Verify the signature using secp256r1
-    let is_valid = match neo_cryptography::ecdsa::ECDsa::verify_signature_secp256r1(
+    let is_valid = match neo_core::crypto_utils::Secp256r1Crypto::verify(
         message, signature, public_key,
     ) {
         Ok(valid) => valid,

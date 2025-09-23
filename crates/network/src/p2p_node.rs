@@ -6,6 +6,7 @@
 const SECONDS_PER_HOUR: u64 = 3600;
 use crate::p2p::protocol::{DefaultMessageHandler, MessageHandler};
 use crate::{
+    messages::capabilities::NodeCapability,
     NetworkCommand, NetworkConfig, NetworkError, NetworkMessage, NetworkResult as Result,
     PeerManager,
 };
@@ -19,20 +20,6 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{interval, Duration};
 use tracing::{debug, error, info, warn};
-/// P2P Node capabilities (matches C# Neo.Network.P2P.NodeCapabilityType exactly)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-/// Represents an enumeration of values.
-pub enum NodeCapability {
-    /// TCP server capability
-    TcpServer = 0x01,
-    /// WebSocket server capability
-    WsServer = 0x02,
-    /// Full node capability
-    FullNode = 0x10,
-    /// Pruned node capability
-    PrunedNode = 0x11,
-}
-
 /// P2P Node status (matches C# Neo node lifecycle exactly)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// Represents an enumeration of values.
@@ -862,7 +849,7 @@ impl P2pNode {
 
                                     let peer_info = PeerInfo {
                                         address: peer_addr,
-                                        capabilities: vec![NodeCapability::WsServer],
+                                        capabilities: vec![NodeCapability::ws_server(0)],
                                         connected_at: std::time::SystemTime::now(),
                                         last_message_at: std::time::SystemTime::now(),
                                         version: 0,
@@ -1278,7 +1265,7 @@ mod tests {
     fn create_test_peer_info(address: SocketAddr, is_outbound: bool) -> PeerInfo {
         PeerInfo {
             address,
-            capabilities: vec![NodeCapability::FullNode],
+            capabilities: vec![NodeCapability::full_node(1000)],
             connected_at: std::time::SystemTime::now(),
             last_message_at: std::time::SystemTime::now(),
             version: 0,
@@ -1297,10 +1284,12 @@ mod tests {
     #[test]
     fn test_node_capability_serialization() {
         let capabilities = vec![
-            NodeCapability::TcpServer,
-            NodeCapability::WsServer,
-            NodeCapability::FullNode,
-            NodeCapability::PrunedNode,
+            NodeCapability::tcp_server(20333),
+            NodeCapability::ws_server(20334),
+            NodeCapability::full_node(1_000),
+            NodeCapability::archival_node(),
+            NodeCapability::disable_compression(),
+            NodeCapability::unknown_from_byte(0x42, vec![1, 2, 3]),
         ];
 
         for capability in capabilities {
@@ -1332,7 +1321,10 @@ mod tests {
 
         assert_eq!(peer_info.address, address);
         assert!(peer_info.is_outbound);
-        assert_eq!(peer_info.capabilities, vec![NodeCapability::FullNode]);
+        assert_eq!(
+            peer_info.capabilities,
+            vec![NodeCapability::full_node(1000)]
+        );
         assert_eq!(peer_info.user_agent, "neo-rs-test/1.0");
         assert_eq!(peer_info.start_height, 1000);
     }

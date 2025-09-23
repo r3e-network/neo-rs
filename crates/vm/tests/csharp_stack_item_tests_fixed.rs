@@ -42,7 +42,7 @@ mod tests {
     /// Test null item behavior (matches C# TestNull)
     #[test]
     fn test_null() {
-        let null_item = StackItem::from_byte_string(vec![]);
+        let null_item = StackItem::from_byte_string(Vec::<u8>::new());
         assert_ne!(
             StackItem::Null,
             null_item,
@@ -147,14 +147,14 @@ mod tests {
             StackItem::Integer(BigInt::from(3)),
         );
 
-        let array = StackItem::Array(vec![
+        let array = StackItem::from_array(vec![
             StackItem::Boolean(true),
             StackItem::Integer(BigInt::from(1)),
             StackItem::from_byte_string(vec![1u8]),
             StackItem::Null,
-            StackItem::Buffer(vec![1u8]),
-            StackItem::Map(map),
-            StackItem::Struct(vec![
+            StackItem::from_buffer(vec![1u8]),
+            StackItem::from_map(map),
+            StackItem::from_struct(vec![
                 StackItem::Integer(BigInt::from(1)),
                 StackItem::Integer(BigInt::from(2)),
                 StackItem::Integer(BigInt::from(3)),
@@ -184,29 +184,39 @@ mod tests {
         assert!(StackItem::Integer(BigInt::from(-1)).as_bool().unwrap());
 
         assert!(StackItem::from_byte_string(vec![1u8]).as_bool().unwrap());
-        assert!(!StackItem::from_byte_string(vec![]).as_bool().unwrap());
+        assert!(!StackItem::from_byte_string(Vec::<u8>::new())
+            .as_bool()
+            .unwrap());
         assert!(!StackItem::from_byte_string(vec![0u8]).as_bool().unwrap());
         assert!(StackItem::from_byte_string(vec![0u8, 1u8])
             .as_bool()
             .unwrap());
 
         // Test buffer values
-        assert!(StackItem::Buffer(vec![1u8]).as_bool().unwrap());
-        assert!(!StackItem::Buffer(vec![]).as_bool().unwrap());
-        assert!(!StackItem::Buffer(vec![0u8]).as_bool().unwrap());
+        assert!(StackItem::from_buffer(vec![1u8]).as_bool().unwrap());
+        assert!(!StackItem::from_buffer(Vec::<u8>::new()).as_bool().unwrap());
+        assert!(!StackItem::from_buffer(vec![0u8]).as_bool().unwrap());
 
         // Test array values
-        assert!(StackItem::Array(vec![StackItem::Null]).as_bool().unwrap());
-        assert!(!StackItem::Array(vec![]).as_bool().unwrap());
+        assert!(StackItem::from_array(vec![StackItem::Null])
+            .as_bool()
+            .unwrap());
+        assert!(!StackItem::from_array(Vec::<StackItem>::new())
+            .as_bool()
+            .unwrap());
 
-        assert!(StackItem::Struct(vec![StackItem::Null]).as_bool().unwrap());
-        assert!(!StackItem::Struct(vec![]).as_bool().unwrap());
+        assert!(StackItem::from_struct(vec![StackItem::Null])
+            .as_bool()
+            .unwrap());
+        assert!(!StackItem::from_struct(Vec::<StackItem>::new())
+            .as_bool()
+            .unwrap());
 
         // Test map values
         let mut map = BTreeMap::new();
         map.insert(StackItem::Integer(BigInt::from(0)), StackItem::Null);
-        assert!(StackItem::Map(map).as_bool().unwrap());
-        assert!(!StackItem::Map(BTreeMap::new()).as_bool().unwrap());
+        assert!(StackItem::from_map(map).as_bool().unwrap());
+        assert!(!StackItem::from_map(BTreeMap::new()).as_bool().unwrap());
     }
 
     /// Test integer conversion (matches C# TestInteger)
@@ -227,7 +237,9 @@ mod tests {
         );
 
         assert_eq!(
-            StackItem::from_byte_string(vec![]).as_int().unwrap(),
+            StackItem::from_byte_string(Vec::<u8>::new())
+                .as_int()
+                .unwrap(),
             BigInt::from(0)
         );
         assert_eq!(
@@ -242,9 +254,12 @@ mod tests {
         );
 
         // Test buffer to integer
-        assert_eq!(StackItem::Buffer(vec![]).as_int().unwrap(), BigInt::from(0));
         assert_eq!(
-            StackItem::Buffer(vec![1u8]).as_int().unwrap(),
+            StackItem::from_buffer(Vec::<u8>::new()).as_int().unwrap(),
+            BigInt::from(0)
+        );
+        assert_eq!(
+            StackItem::from_buffer(vec![1u8]).as_int().unwrap(),
             BigInt::from(1)
         );
 
@@ -256,7 +271,7 @@ mod tests {
     #[test]
     fn test_byte_array() {
         // Test null to bytes
-        assert_eq!(StackItem::Null.as_bytes().unwrap(), vec![]);
+        assert_eq!(StackItem::Null.as_bytes().unwrap(), Vec::<u8>::new());
 
         // Test boolean to bytes
         assert_eq!(StackItem::Boolean(true).as_bytes().unwrap(), vec![1u8]);
@@ -265,7 +280,7 @@ mod tests {
         // Test integer to bytes
         assert_eq!(
             StackItem::Integer(BigInt::from(0)).as_bytes().unwrap(),
-            vec![]
+            Vec::<u8>::new()
         );
         assert_eq!(
             StackItem::Integer(BigInt::from(1)).as_bytes().unwrap(),
@@ -285,13 +300,16 @@ mod tests {
         );
 
         // Test buffer to bytes
-        assert_eq!(StackItem::Buffer(data.clone()).as_bytes().unwrap(), data);
+        assert_eq!(
+            StackItem::from_buffer(data.clone()).as_bytes().unwrap(),
+            data
+        );
     }
 
     /// Test array operations (matches C# TestArray)
     #[test]
     fn test_array() {
-        let array = StackItem::Array(vec![
+        let array = StackItem::from_array(vec![
             StackItem::Integer(BigInt::from(1)),
             StackItem::Integer(BigInt::from(2)),
             StackItem::Integer(BigInt::from(3)),
@@ -303,7 +321,7 @@ mod tests {
         assert_eq!(array_ref[1], StackItem::Integer(BigInt::from(2)));
         assert_eq!(array_ref[2], StackItem::Integer(BigInt::from(3)));
 
-        let struct_item = StackItem::Struct(vec![
+        let struct_item = StackItem::from_struct(vec![
             StackItem::Integer(BigInt::from(4)),
             StackItem::Integer(BigInt::from(5)),
         ]);
@@ -330,7 +348,7 @@ mod tests {
             StackItem::from_byte_string("two"),
         );
 
-        let map_item = StackItem::Map(map.clone());
+        let map_item = StackItem::from_map(map.clone());
         let map_ref = map_item.as_map().unwrap();
 
         assert_eq!(map_ref.len(), 2);

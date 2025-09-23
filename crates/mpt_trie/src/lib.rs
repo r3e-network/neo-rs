@@ -7,9 +7,27 @@ pub mod cache;
 pub mod error;
 pub mod helper;
 pub mod node;
+#[allow(dead_code)]
+pub mod node_branch;
+#[allow(dead_code)]
+pub mod node_extension;
+#[allow(dead_code)]
+pub mod node_hash;
+#[allow(dead_code)]
+pub mod node_leaf;
 pub mod node_type;
 pub mod proof;
 pub mod trie;
+#[allow(dead_code)]
+pub mod trie_delete;
+#[allow(dead_code)]
+pub mod trie_find;
+#[allow(dead_code)]
+pub mod trie_get;
+#[allow(dead_code)]
+pub mod trie_proof;
+#[allow(dead_code)]
+pub mod trie_put;
 
 // Re-export main types
 pub use cache::{Cache, CacheStats, MemoryStorage, Storage};

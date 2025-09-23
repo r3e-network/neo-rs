@@ -1,32 +1,27 @@
-//! Performance and benchmark tests
-//!
-//! Tests that measure performance and handle edge cases
-//! like malformed JSON and error conditions.
+//! Performance and benchmark tests for the JSON runner.
 
+use crate::csharp_tests::{resolve_test_dir, JsonTestRunner, VMUT};
 use serde_json;
 use std::fs;
-use std::path::Path;
 use std::time::Instant;
-
-use crate::csharp_tests::{JsonTestRunner, VMUT};
 
 /// Benchmark test to compare performance with C# implementation
 #[test]
 fn benchmark_json_test_performance() {
-    let test_path = "/Users/jinghuiliao/git/will/neo-dev/neo-sharp/tests/Neo.VM.Tests/Tests/OpCodes/Push/PUSHNULL.json";
-    if Path::new(test_path).exists() {
+    if let Some(test_path) = resolve_test_dir("OpCodes/Push/PUSHNULL.json") {
+        let path_str = test_path.to_str().expect("valid UTF-8 path");
         let mut runner = JsonTestRunner::new();
 
         let start = Instant::now();
         for _ in 0..100 {
-            runner.test_json_file(test_path).unwrap();
+            runner.test_json_file(path_str).unwrap();
         }
         let duration = start.elapsed();
 
         println!("100 iterations of PUSHNULL test took: {:?}", duration);
         println!("Average per test: {:?}", duration / 100);
     } else {
-        println!("C# test file not found for benchmark: {}", test_path);
+        eprintln!("C# test file not found for benchmark: OpCodes/Push/PUSHNULL.json");
     }
 }
 
@@ -47,13 +42,12 @@ fn test_malformed_json_handling() {
 /// Test JSON file parsing without execution
 #[test]
 fn test_json_file_parsing() {
-    let test_path = "/Users/jinghuiliao/git/will/neo-dev/neo-sharp/tests/Neo.VM.Tests/Tests/OpCodes/Push/PUSHNULL.json";
-
-    if std::path::Path::new(test_path).exists() {
-        println!("📁 Loading JSON test file: {}", test_path);
+    if let Some(test_path) = resolve_test_dir("OpCodes/Push/PUSHNULL.json") {
+        let path_str = test_path.to_str().expect("valid UTF-8 path");
+        println!("📁 Loading JSON test file: {}", path_str);
 
         // Try to read and parse the JSON file
-        let file_content = fs::read_to_string(test_path).expect("Failed to read test file");
+        let file_content = fs::read_to_string(path_str).expect("Failed to read test file");
         println!("📄 File content length: {} bytes", file_content.len());
 
         // Try to parse as VMUT structure
@@ -65,14 +59,12 @@ fn test_json_file_parsing() {
                 println!("   Name: {}", vmut.name);
                 println!("   Number of tests: {}", vmut.tests.len());
 
-                // Try to compile the first test script
                 if let Some(first_test) = vmut.tests.first() {
                     println!("   First test: {}", first_test.name);
                     println!("   Script: {:?}", first_test.script);
 
                     let runner = JsonTestRunner::new();
-                    let compile_result = runner.compile_script(&first_test.script);
-                    match compile_result {
+                    match runner.compile_script(&first_test.script) {
                         Ok(bytecode) => {
                             println!("   ✅ Script compilation successful: {:?}", bytecode);
                         }
@@ -84,13 +76,10 @@ fn test_json_file_parsing() {
             }
             Err(e) => {
                 println!("❌ JSON parsing failed: {}", e);
-                println!(
-                    "   Raw content preview: {}",
-                    &file_content[..std::cmp::min(200, file_content.len())]
-                );
+                panic!("Failed to parse JSON test file");
             }
         }
     } else {
-        println!("❌ Test file not found: {}", test_path);
+        eprintln!("C# test file not found for parsing test: OpCodes/Push/PUSHNULL.json");
     }
 }

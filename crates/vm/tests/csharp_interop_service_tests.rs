@@ -18,7 +18,9 @@ fn test_runtime_get_notifications() {
     script_builder.emit_opcode(OpCode::SWAP);
     script_builder.emit_opcode(OpCode::NEWARRAY);
     script_builder.emit_opcode(OpCode::SWAP);
-    script_builder.emit_syscall("System.Runtime.Notify");
+    script_builder
+        .emit_syscall("System.Runtime.Notify")
+        .expect("emit_syscall failed");
     script_builder.emit_push_bool(true);
     script_builder.emit_opcode(OpCode::RET);
 
@@ -47,7 +49,9 @@ fn test_execution_engine_get_calling_script_hash() {
     let mut contract_script = ScriptBuilder::new();
     contract_script.emit_opcode(OpCode::DROP); // Drop arguments
     contract_script.emit_opcode(OpCode::DROP); // Drop method
-    contract_script.emit_syscall("System.Runtime.GetCallingScriptHash");
+    contract_script
+        .emit_syscall("System.Runtime.GetCallingScriptHash")
+        .expect("emit_syscall failed");
 
     let contract_bytes = contract_script.to_array();
     assert!(contract_bytes.len() > 0);
@@ -114,7 +118,9 @@ fn test_runtime_get_current_signers() {
 #[test]
 fn test_runtime_get_current_signers_syscall() {
     let mut script = ScriptBuilder::new();
-    script.emit_syscall("System.Runtime.CurrentSigners");
+    script
+        .emit_syscall("System.Runtime.CurrentSigners")
+        .expect("emit_syscall failed");
 
     let script_bytes = script.to_array();
     assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
@@ -161,7 +167,9 @@ fn test_blockchain_get_transaction_height() {
     // Test getting transaction height via script
     let mut script = ScriptBuilder::new();
     script.emit_push(&tx_hash.to_array());
-    script.emit_syscall("System.Blockchain.GetTransactionHeight");
+    script
+        .emit_syscall("System.Blockchain.GetTransactionHeight")
+        .expect("emit_syscall failed");
 
     let script_bytes = script.to_array();
     assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
@@ -170,7 +178,9 @@ fn test_blockchain_get_transaction_height() {
 #[test]
 fn test_storage_get_context() {
     let mut script = ScriptBuilder::new();
-    script.emit_syscall("System.Storage.GetContext");
+    script
+        .emit_syscall("System.Storage.GetContext")
+        .expect("emit_syscall failed");
 
     let script_bytes = script.to_array();
     assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
@@ -179,7 +189,9 @@ fn test_storage_get_context() {
 #[test]
 fn test_storage_get_readonly_context() {
     let mut script = ScriptBuilder::new();
-    script.emit_syscall("System.Storage.GetReadOnlyContext");
+    script
+        .emit_syscall("System.Storage.GetReadOnlyContext")
+        .expect("emit_syscall failed");
 
     let script_bytes = script.to_array();
     assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
@@ -190,17 +202,25 @@ fn test_storage_get_put_delete() {
     let mut script = ScriptBuilder::new();
 
     // Get storage context
-    script.emit_syscall("System.Storage.GetContext");
+    script
+        .emit_syscall("System.Storage.GetContext")
+        .expect("emit_syscall failed");
 
     // Put key-value pair
     script.emit_push(&[1, 2, 3]); // key
     script.emit_push(&[4, 5, 6]); // value
-    script.emit_syscall("System.Storage.Put");
+    script
+        .emit_syscall("System.Storage.Put")
+        .expect("emit_syscall failed");
 
     // Get the value back
-    script.emit_syscall("System.Storage.GetContext");
+    script
+        .emit_syscall("System.Storage.GetContext")
+        .expect("emit_syscall failed");
     script.emit_push(&[1, 2, 3]); // key
-    script.emit_syscall("System.Storage.Get");
+    script
+        .emit_syscall("System.Storage.Get")
+        .expect("emit_syscall failed");
 
     let script_bytes = script.to_array();
     assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
@@ -221,7 +241,9 @@ fn test_contract_call() {
     script.emit_push("test".as_bytes());
     script.emit_push_int(0);
     script.emit_opcode(OpCode::NEWARRAY);
-    script.emit_syscall("System.Contract.Call");
+    script
+        .emit_syscall("System.Contract.Call")
+        .expect("emit_syscall failed");
 
     let script_bytes = script.to_array();
     assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
@@ -233,7 +255,9 @@ fn test_contract_create_standard_account() {
 
     let mut script = ScriptBuilder::new();
     script.emit_push(&public_key);
-    script.emit_syscall("System.Contract.CreateStandardAccount");
+    script
+        .emit_syscall("System.Contract.CreateStandardAccount")
+        .expect("emit_syscall failed");
 
     let script_bytes = script.to_array();
     assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
@@ -246,7 +270,9 @@ fn test_sha256() {
 
     let mut script = ScriptBuilder::new();
     script.emit_push(data);
-    script.emit_syscall("System.Crypto.SHA256");
+    script
+        .emit_syscall("System.Crypto.SHA256")
+        .expect("emit_syscall failed");
 
     let script_bytes = script.to_array();
     assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
@@ -259,7 +285,9 @@ fn test_ripemd160() {
 
     let mut script = ScriptBuilder::new();
     script.emit_push(data);
-    script.emit_syscall("System.Crypto.RIPEMD160");
+    script
+        .emit_syscall("System.Crypto.RIPEMD160")
+        .expect("emit_syscall failed");
 
     let script_bytes = script.to_array();
     assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
@@ -274,7 +302,9 @@ fn test_murmur32() {
     let mut script = ScriptBuilder::new();
     script.emit_push(data);
     script.emit_push_int(seed as i64);
-    script.emit_syscall("System.Crypto.Murmur32");
+    script
+        .emit_syscall("System.Crypto.Murmur32")
+        .expect("emit_syscall failed");
 
     let script_bytes = script.to_array();
     assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
@@ -314,7 +344,7 @@ fn test_interop_service_structure() {
     // Test that all syscalls can be generated
     for syscall in syscalls {
         let mut script = ScriptBuilder::new();
-        script.emit_syscall(syscall);
+        script.emit_syscall(syscall).expect("emit_syscall failed");
         let script_bytes = script.to_array();
         assert!(script_bytes.contains(&(OpCode::SYSCALL as u8)));
         assert!(script_bytes.len() > syscall.len()); // Should contain syscall + length + name
@@ -339,7 +369,7 @@ fn test_stack_item_types() {
 
     // Test Array
     let array_items = vec![StackItem::Integer(1.into()), StackItem::Boolean(false)];
-    let array_item = StackItem::Array(array_items);
+    let array_item = StackItem::from_array(array_items);
     assert!(matches!(array_item, StackItem::Array(_)));
 
     // Test Null
@@ -368,23 +398,28 @@ fn test_uint_types() {
 
 // Helper function to assert notification structure
 fn assert_notification(stack_item: &StackItem, script_hash: &UInt160, notification: &str) {
-    if let StackItem::Array(array) = stack_item {
-        assert_eq!(array.len(), 3);
-
-        // Check script hash
-        if let StackItem::ByteString(hash_bytes) = &array[0] {
-            assert_eq!(hash_bytes, &script_hash.to_array());
-        } else {
-            panic!("Expected ByteString for script hash");
-        }
-
-        // Check notification name
-        if let StackItem::ByteString(name_bytes) = &array[1] {
-            assert_eq!(std::str::from_utf8(name_bytes).unwrap(), notification);
-        } else {
-            panic!("Expected ByteString for notification name");
-        }
-    } else {
+    let StackItem::Array(array) = stack_item else {
         panic!("Expected Array for notification");
+    };
+
+    assert_eq!(array.len(), 3);
+    let items = array.items();
+
+    // Check script hash
+    if let StackItem::ByteString(hash_bytes) = &items[0] {
+        assert_eq!(hash_bytes, &script_hash.to_array());
+    } else {
+        panic!("Expected ByteString for script hash");
+    }
+
+    // Check notification name
+    if let StackItem::ByteString(name_bytes) = &items[1] {
+        assert_eq!(std::str::from_utf8(name_bytes).unwrap(), notification);
+    } else {
+        panic!("Expected ByteString for notification name");
+    }
+
+    if let StackItem::Array(args) = &items[2] {
+        println!("Notification arguments: {:?}", args.items());
     }
 }

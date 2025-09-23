@@ -60,7 +60,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Neo dependencies
 neo-core = { workspace = true }
-neo-cryptography = { path = "../cryptography" }
+# Removed neo-cryptography - using external crypto crates directly
 neo-io = { path = "../io" }
 neo-ledger = { workspace = true }
 neo-config = { path = "../config" }

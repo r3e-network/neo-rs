@@ -89,7 +89,7 @@ fn test_emit_push_byte_array() {
 #[test]
 fn test_emit_syscall() {
     let mut sb = ScriptBuilder::new();
-    sb.emit_syscall("test");
+    sb.emit_syscall("test").expect("emit_syscall failed");
 
     // SYSCALL + length + "test"
     assert_eq!(
@@ -108,7 +108,8 @@ fn test_emit_dynamic_call_simple() {
     sb.emit_push_int(15); // CallFlags.All
     sb.emit_push(operation.as_bytes());
     sb.emit_push(&contract_hash.to_array());
-    sb.emit_syscall("System.Contract.Call");
+    sb.emit_syscall("System.Contract.Call")
+        .expect("emit_syscall failed");
 
     let result = sb.to_array();
     assert!(result.len() > 30); // Should be substantial
@@ -128,7 +129,8 @@ fn test_emit_dynamic_call_with_args() {
     sb.emit_push_int(15); // CallFlags.All
     sb.emit_push(operation.as_bytes());
     sb.emit_push(&contract_hash.to_array());
-    sb.emit_syscall("System.Contract.Call");
+    sb.emit_syscall("System.Contract.Call")
+        .expect("emit_syscall failed");
 
     let result = sb.to_array();
     assert!(result.len() > 30);
@@ -203,7 +205,8 @@ fn test_make_script() {
     sb.emit_push_int(15); // CallFlags.All
     sb.emit_push(operation.as_bytes());
     sb.emit_push(&contract_hash.to_array());
-    sb.emit_syscall("System.Contract.Call");
+    sb.emit_syscall("System.Contract.Call")
+        .expect("emit_syscall failed");
 
     let script = sb.to_array();
     assert!(script.len() > 20);
@@ -227,7 +230,7 @@ fn test_stack_item_json_serialization() {
 
     // Test Array
     let items = vec![StackItem::Integer(5.into()), StackItem::Boolean(true)];
-    let item = StackItem::Array(items);
+    let item = StackItem::from_array(items);
     // Should contain nested JSON structure
 }
 
@@ -247,7 +250,7 @@ fn test_stack_item_to_parameter() {
 
     // Test Array
     let items = vec![StackItem::Integer(1.into()), StackItem::Boolean(true)];
-    let item = StackItem::Array(items);
+    let item = StackItem::from_array(items);
     // Should convert to ContractParameterType::Array
 }
 

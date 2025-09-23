@@ -108,11 +108,11 @@ fn new_array_t(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmRes
         let default_value = match type_byte {
             0x00 => StackItem::Boolean(false),
             0x01 => StackItem::Integer(BigInt::from(0)),
-            0x02 => StackItem::ByteString(Vec::new()),
-            0x03 => StackItem::Buffer(Vec::new()),
-            0x04 => StackItem::Array(Vec::new()),
-            0x05 => StackItem::Struct(Vec::new()),
-            0x06 => StackItem::Map(BTreeMap::new()),
+            0x02 => StackItem::from_byte_string(Vec::<u8>::new()),
+            0x03 => StackItem::from_buffer(Vec::<u8>::new()),
+            0x04 => StackItem::from_array(Vec::<StackItem>::new()),
+            0x05 => StackItem::from_struct(Vec::<StackItem>::new()),
+            0x06 => StackItem::from_map(BTreeMap::new()),
             _ => {
                 return Err(VmError::invalid_instruction_msg(format!(
                     "Invalid type: {type_byte}"
@@ -194,13 +194,14 @@ fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     let item = context.pop()?;
     let array = context.pop()?;
 
-    // Append the item to the array
     match array {
-        StackItem::Array(mut items) => {
+        StackItem::Array(array) => {
+            let mut items: Vec<_> = array.into_iter().collect();
             items.push(item);
             context.push(StackItem::from_array(items))?;
         }
-        StackItem::Struct(mut items) => {
+        StackItem::Struct(structure) => {
+            let mut items: Vec<_> = structure.into_iter().collect();
             items.push(item);
             context.push(StackItem::from_struct(items))?;
         }
@@ -222,11 +223,13 @@ fn reverse(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
 
     // Reverse the array
     match array {
-        StackItem::Array(mut items) => {
+        StackItem::Array(array) => {
+            let mut items: Vec<_> = array.into_iter().collect();
             items.reverse();
             context.push(StackItem::from_array(items))?;
         }
-        StackItem::Struct(mut items) => {
+        StackItem::Struct(structure) => {
+            let mut items: Vec<_> = structure.into_iter().collect();
             items.reverse();
             context.push(StackItem::from_struct(items))?;
         }
@@ -247,9 +250,9 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     let key = context.pop()?;
     let collection = context.pop()?;
 
-    // Remove the item from the collection
     match collection {
-        StackItem::Array(mut items) => {
+        StackItem::Array(array) => {
+            let mut items: Vec<_> = array.into_iter().collect();
             let index = key
                 .as_int()?
                 .to_usize()
@@ -262,7 +265,8 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
             items.remove(index);
             context.push(StackItem::from_array(items))?;
         }
-        StackItem::Struct(mut items) => {
+        StackItem::Struct(structure) => {
+            let mut items: Vec<_> = structure.into_iter().collect();
             let index = key
                 .as_int()?
                 .to_usize()
@@ -275,9 +279,10 @@ fn remove(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
             items.remove(index);
             context.push(StackItem::from_struct(items))?;
         }
-        StackItem::Map(mut items) => {
-            items.remove(&key);
-            context.push(StackItem::from_map(items))?;
+        StackItem::Map(map) => {
+            let mut entries = map.into_map();
+            entries.remove(&key);
+            context.push(StackItem::from_map(entries))?;
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -301,17 +306,20 @@ fn clear_items(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRe
 
     // Clear the collection
     match collection {
-        StackItem::Array(mut items) => {
+        StackItem::Array(array) => {
+            let mut items: Vec<_> = array.into_iter().collect();
             items.clear();
             context.push(StackItem::from_array(items))?;
         }
-        StackItem::Struct(mut items) => {
+        StackItem::Struct(structure) => {
+            let mut items: Vec<_> = structure.into_iter().collect();
             items.clear();
             context.push(StackItem::from_struct(items))?;
         }
-        StackItem::Map(mut items) => {
-            items.clear();
-            context.push(StackItem::from_map(items))?;
+        StackItem::Map(map) => {
+            let mut entries = map.into_map();
+            entries.clear();
+            context.push(StackItem::from_map(entries))?;
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -333,9 +341,9 @@ fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
     // Pop the collection from the stack
     let collection = context.pop()?;
 
-    // Pop an item from the collection
     match collection {
-        StackItem::Array(mut items) => {
+        StackItem::Array(array) => {
+            let mut items: Vec<_> = array.into_iter().collect();
             if items.is_empty() {
                 return Err(VmError::invalid_operation_msg(
                     "Cannot pop from empty array",
@@ -347,7 +355,8 @@ fn pop_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
             context.push(StackItem::from_array(items))?;
             context.push(popped_item)?;
         }
-        StackItem::Struct(mut items) => {
+        StackItem::Struct(structure) => {
+            let mut items: Vec<_> = structure.into_iter().collect();
             if items.is_empty() {
                 return Err(VmError::invalid_operation_msg(
                     "Cannot pop from empty struct",
@@ -377,21 +386,21 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
     let collection = context.pop()?;
 
     let result = match collection {
-        StackItem::Array(items) => {
+        StackItem::Array(array) => {
             let index = key
                 .as_int()?
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
-            index < items.len()
+            index < array.len()
         }
-        StackItem::Struct(items) => {
+        StackItem::Struct(structure) => {
             let index = key
                 .as_int()?
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
-            index < items.len()
+            index < structure.len()
         }
-        StackItem::Map(items) => items.contains_key(&key),
+        StackItem::Map(map) => map.contains_key(&key),
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, or Map",
@@ -416,8 +425,8 @@ fn keys(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 
     // Get the keys from the map
     match map {
-        StackItem::Map(items) => {
-            let keys: Vec<StackItem> = items.keys().cloned().collect();
+        StackItem::Map(map) => {
+            let keys: Vec<StackItem> = map.iter().map(|(k, _)| k.clone()).collect();
             context.push(StackItem::from_array(keys))?;
         }
         _ => return Err(VmError::invalid_type_simple("Expected Map")),
@@ -438,8 +447,8 @@ fn values(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
     // Get the values from the map
     match map {
-        StackItem::Map(items) => {
-            let values: Vec<StackItem> = items.values().cloned().collect();
+        StackItem::Map(map) => {
+            let values: Vec<StackItem> = map.iter().map(|(_, v)| v.clone()).collect();
             context.push(StackItem::from_array(values))?;
         }
         _ => return Err(VmError::invalid_type_simple("Expected Map")),
@@ -548,14 +557,17 @@ fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
     // Unpack the array
     match array {
-        StackItem::Array(items) | StackItem::Struct(items) => {
-            // Push the items onto the stack
-            for item in items.iter() {
+        StackItem::Array(array) => {
+            for item in array.iter() {
                 context.push(item.clone())?;
             }
-
-            // Push the count onto the stack
-            context.push(StackItem::from_int(items.len()))?;
+            context.push(StackItem::from_int(array.len()))?;
+        }
+        StackItem::Struct(structure) => {
+            for item in structure.iter() {
+                context.push(item.clone())?;
+            }
+            context.push(StackItem::from_int(structure.len()))?;
         }
         _ => return Err(VmError::invalid_type_simple("Expected Array or Struct")),
     }
@@ -576,34 +588,23 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 
     // Get the item from the collection
     let result = match collection {
-        StackItem::Array(items) => {
+        StackItem::Array(array) => {
             let index = key
                 .as_int()?
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
-            if index >= items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
-                )));
-            }
-            items[index].clone()
+            array.items().get(index).cloned().ok_or_else(|| {
+                VmError::invalid_operation_msg(format!("Index out of range: {index}"))
+            })?
         }
-        StackItem::Struct(items) => {
+        StackItem::Struct(structure) => {
             let index = key
                 .as_int()?
                 .to_usize()
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
-            if index >= items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
-                )));
-            }
-            items[index].clone()
+            structure.get(index)?.clone()
         }
-        StackItem::Map(items) => items
-            .get(&key)
-            .cloned()
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?,
+        StackItem::Map(map) => map.get(&key)?.clone(),
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, or Map",
@@ -630,7 +631,8 @@ fn set_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
 
     // Set the item in the collection
     match collection {
-        StackItem::Array(mut items) => {
+        StackItem::Array(array) => {
+            let mut items: Vec<_> = array.into_iter().collect();
             let index = key
                 .as_int()?
                 .to_usize()
@@ -643,7 +645,8 @@ fn set_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
             items[index] = value;
             context.push(StackItem::from_array(items))?;
         }
-        StackItem::Struct(mut items) => {
+        StackItem::Struct(structure) => {
+            let mut items: Vec<_> = structure.into_iter().collect();
             let index = key
                 .as_int()?
                 .to_usize()
@@ -656,9 +659,10 @@ fn set_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResul
             items[index] = value;
             context.push(StackItem::from_struct(items))?;
         }
-        StackItem::Map(mut items) => {
-            items.insert(key, value);
-            context.push(StackItem::from_map(items))?;
+        StackItem::Map(map) => {
+            let mut entries = map.into_map();
+            entries.insert(key, value);
+            context.push(StackItem::from_map(entries))?;
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -682,9 +686,9 @@ fn size(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
 
     // Get the size of the collection
     let size = match collection {
-        StackItem::Array(items) => items.len(),
-        StackItem::Struct(items) => items.len(),
-        StackItem::Map(items) => items.len(),
+        StackItem::Array(array) => array.len(),
+        StackItem::Struct(structure) => structure.len(),
+        StackItem::Map(map) => map.len(),
         StackItem::ByteString(data) => data.len(),
         StackItem::Buffer(data) => data.len(),
         _ => {

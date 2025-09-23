@@ -4,7 +4,7 @@
 //! including block downloading, header verification, and consensus coordination.
 
 use crate::p2p::MessageHandler;
-use crate::snapshot_config::{SnapshotConfig, SnapshotInfo};
+// use crate::snapshot_config::{SnapshotConfig, SnapshotInfo}; // Removed - no C# counterpart
 use crate::{NetworkError, NetworkMessage, NetworkResult, P2pNode, ProtocolMessage};
 use futures::StreamExt;
 use neo_config::MILLISECONDS_PER_BLOCK;

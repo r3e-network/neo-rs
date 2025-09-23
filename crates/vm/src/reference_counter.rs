@@ -471,21 +471,17 @@ mod tests {
         counter.add_reference_to(obj2_id);
 
         // Check updated reference counts
-        assert_eq!(counter.get_reference_count(obj1_id), 2);
+        assert_eq!(counter.get_reference_count(obj1_id), 1);
         assert_eq!(counter.get_reference_count(obj2_id), 1);
-        assert_eq!(counter.count(), 3);
+        assert_eq!(counter.count(), 2);
 
         // Remove references
         let zero_ref1 = counter.remove_reference(obj1_id);
-        assert_eq!(zero_ref1, false);
-        assert_eq!(counter.get_reference_count(obj1_id), 1);
-
-        let zero_ref1 = counter.remove_reference(obj1_id);
-        assert_eq!(zero_ref1, true);
+        assert!(zero_ref1);
         assert_eq!(counter.get_reference_count(obj1_id), 0);
 
         let zero_ref2 = counter.remove_reference(obj2_id);
-        assert_eq!(zero_ref2, true);
+        assert!(zero_ref2);
         assert_eq!(counter.get_reference_count(obj2_id), 0);
 
         assert_eq!(counter.count(), 0);

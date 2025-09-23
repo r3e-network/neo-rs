@@ -12,7 +12,7 @@ use cbc::{
 };
 use neo_config::HASH_SIZE;
 use neo_core::UInt160;
-use neo_cryptography::{ECCurve, ECDsa, ECC};
+use neo_core::crypto_utils::{Secp256k1Crypto, Secp256r1Crypto, Ed25519Crypto};
 use rand::RngCore;
 use scrypt::Params;
 use std::fmt;

@@ -5,6 +5,7 @@
 pub mod bitwise;
 pub mod compound;
 pub mod control;
+pub mod control_ops;
 pub mod crypto;
 pub mod numeric;
 pub mod push;
@@ -115,15 +116,7 @@ impl JumpTable {
     pub fn execute_throw(&self, engine: &mut ExecutionEngine, message: &str) -> VmResult<()> {
         let exception = crate::stack_item::StackItem::from_byte_string(message.as_bytes().to_vec());
 
-        // Set the uncaught exception
-        engine.set_uncaught_exception(Some(exception));
-
-        if !engine.handle_exception() {
-            // No exception handler found, set VM state to FAULT
-            engine.set_state(crate::execution_engine::VMState::FAULT);
-        }
-
-        Ok(())
+        crate::jump_table::control::exception_handling::throw_uncaught(engine, exception)
     }
 
     /// Registers the default handlers for all opcodes.

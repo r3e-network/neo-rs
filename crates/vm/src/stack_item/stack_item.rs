@@ -4,7 +4,11 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
+use crate::stack_item::array::Array as ArrayItem;
+use crate::stack_item::buffer::Buffer as BufferItem;
+use crate::stack_item::map::Map as MapItem;
 use crate::stack_item::stack_item_type::StackItemType;
+use crate::stack_item::struct_item::Struct as StructItem;
 use num_bigint::BigInt;
 use num_traits::Zero;
 use std::collections::BTreeMap;
@@ -36,16 +40,16 @@ pub enum StackItem {
     ByteString(Vec<u8>),
 
     /// Represents a mutable byte buffer.
-    Buffer(Vec<u8>),
+    Buffer(BufferItem),
 
     /// Represents an array of stack items.
-    Array(Vec<StackItem>),
+    Array(ArrayItem),
 
     /// Represents a struct of stack items.
-    Struct(Vec<StackItem>),
+    Struct(StructItem),
 
     /// Represents a map of stack items.
-    Map(BTreeMap<StackItem, StackItem>),
+    Map(MapItem),
 
     /// Represents a pointer to a position in a script.
     Pointer(usize),
@@ -87,22 +91,22 @@ impl StackItem {
 
     /// Creates a buffer stack item.
     pub fn from_buffer<T: Into<Vec<u8>>>(value: T) -> Self {
-        StackItem::Buffer(value.into())
+        StackItem::Buffer(BufferItem::new(value.into()))
     }
 
     /// Creates an array stack item.
     pub fn from_array<T: Into<Vec<StackItem>>>(value: T) -> Self {
-        StackItem::Array(value.into())
+        StackItem::Array(ArrayItem::new(value.into(), None))
     }
 
     /// Creates a struct stack item.
     pub fn from_struct<T: Into<Vec<StackItem>>>(value: T) -> Self {
-        StackItem::Struct(value.into())
+        StackItem::Struct(StructItem::new(value.into(), None))
     }
 
     /// Creates a map stack item.
     pub fn from_map<T: Into<BTreeMap<StackItem, StackItem>>>(value: T) -> Self {
-        StackItem::Map(value.into())
+        StackItem::Map(MapItem::new(value.into(), None))
     }
 
     /// Creates a pointer stack item.
@@ -142,15 +146,22 @@ impl StackItem {
             StackItem::Null => Ok(false),
             StackItem::Boolean(b) => Ok(*b),
             StackItem::Integer(i) => Ok(!i.is_zero()),
-            StackItem::ByteString(b) | StackItem::Buffer(b) => {
+            StackItem::ByteString(b) => {
                 if b.is_empty() {
                     Ok(false)
                 } else {
-                    // All bytes are 0 -> false, any non-zero byte -> true
                     Ok(b.iter().any(|&byte| byte != 0))
                 }
             }
-            StackItem::Array(a) | StackItem::Struct(a) => Ok(!a.is_empty()),
+            StackItem::Buffer(b) => {
+                if b.is_empty() {
+                    Ok(false)
+                } else {
+                    Ok(b.data().iter().any(|&byte| byte != 0))
+                }
+            }
+            StackItem::Array(a) => Ok(!a.is_empty()),
+            StackItem::Struct(s) => Ok(!s.is_empty()),
             StackItem::Map(m) => Ok(!m.is_empty()),
             StackItem::Pointer(_) => Ok(true),
             StackItem::InteropInterface(_i) => Ok(true),
@@ -165,22 +176,36 @@ impl StackItem {
             )),
             StackItem::Boolean(b) => Ok(BigInt::from(if *b { 1 } else { 0 })),
             StackItem::Integer(i) => Ok(i.clone()),
-            StackItem::ByteString(b) | StackItem::Buffer(b) => {
+            StackItem::ByteString(b) => {
                 if b.is_empty() {
                     return Ok(BigInt::from(0));
                 }
 
-                // Don't reverse - the bytes are already in little-endian format
                 let bytes = b.clone();
-
                 let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
                 if is_negative {
                     let mut bytes_copy = bytes.clone();
                     let len = bytes_copy.len();
-                    bytes_copy[len - 1] &= 0x7F; // Clear the sign bit
+                    bytes_copy[len - 1] &= 0x7F;
                     let positive_value = BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes_copy);
+                    let sign_bit_value = BigInt::from(1) << (len * 8 - 1);
+                    Ok(-(sign_bit_value - positive_value))
+                } else {
+                    Ok(BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes))
+                }
+            }
+            StackItem::Buffer(b) => {
+                if b.is_empty() {
+                    return Ok(BigInt::from(0));
+                }
 
-                    // Add the sign bit value back and negate
+                let bytes = b.data().to_vec();
+                let is_negative = (bytes[bytes.len() - 1] & 0x80) != 0;
+                if is_negative {
+                    let mut bytes_copy = bytes.clone();
+                    let len = bytes_copy.len();
+                    bytes_copy[len - 1] &= 0x7F;
+                    let positive_value = BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes_copy);
                     let sign_bit_value = BigInt::from(1) << (len * 8 - 1);
                     Ok(-(sign_bit_value - positive_value))
                 } else {
@@ -213,7 +238,8 @@ impl StackItem {
 
                 Ok(bytes)
             }
-            StackItem::ByteString(b) | StackItem::Buffer(b) => Ok(b.clone()),
+            StackItem::ByteString(b) => Ok(b.clone()),
+            StackItem::Buffer(b) => Ok(b.data().to_vec()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to ByteArray")),
         }
     }
@@ -221,7 +247,8 @@ impl StackItem {
     /// Converts the stack item to an array.
     pub fn as_array(&self) -> VmResult<&[StackItem]> {
         match self {
-            StackItem::Array(a) | StackItem::Struct(a) => Ok(a),
+            StackItem::Array(a) => Ok(a.items()),
+            StackItem::Struct(s) => Ok(s.items()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to Array")),
         }
     }
@@ -229,7 +256,7 @@ impl StackItem {
     /// Converts the stack item to a map.
     pub fn as_map(&self) -> VmResult<&BTreeMap<StackItem, StackItem>> {
         match self {
-            StackItem::Map(m) => Ok(m),
+            StackItem::Map(m) => Ok(m.items()),
             _ => Err(VmError::invalid_type_simple("Cannot convert to Map")),
         }
     }
@@ -282,39 +309,28 @@ impl StackItem {
             StackItem::InteropInterface(i) => StackItem::InteropInterface(i.clone()),
 
             StackItem::Array(a) => {
-                let mut array = Vec::with_capacity(a.len());
-                // Add a placeholder to the refs map to handle cycles
-                refs.insert(self_ptr, StackItem::Array(Vec::new()));
-
-                // Clone each item in the array
-                for item in a {
-                    array.push(item.deep_clone_with_refs(refs));
+                let mut cloned_items = Vec::with_capacity(a.len());
+                refs.insert(self_ptr, StackItem::from_array(Vec::<StackItem>::new()));
+                for item in a.items() {
+                    cloned_items.push(item.deep_clone_with_refs(refs));
                 }
-
-                StackItem::Array(array)
+                StackItem::from_array(cloned_items)
             }
             StackItem::Struct(s) => {
-                let mut structure = Vec::with_capacity(s.len());
-                // Add a placeholder to the refs map to handle cycles
-                refs.insert(self_ptr, StackItem::Struct(Vec::new()));
-
-                for item in s {
-                    structure.push(item.deep_clone_with_refs(refs));
+                let mut cloned_items = Vec::with_capacity(s.len());
+                refs.insert(self_ptr, StackItem::from_struct(Vec::<StackItem>::new()));
+                for item in s.items() {
+                    cloned_items.push(item.deep_clone_with_refs(refs));
                 }
-
-                StackItem::Struct(structure)
+                StackItem::from_struct(cloned_items)
             }
             StackItem::Map(m) => {
-                let mut map = BTreeMap::new();
-                // Add a placeholder to the refs map to handle cycles
-                refs.insert(self_ptr, StackItem::Map(BTreeMap::new()));
-
-                // Clone each key-value pair in the map
-                for (k, v) in m {
-                    map.insert(k.deep_clone_with_refs(refs), v.deep_clone_with_refs(refs));
+                let mut cloned_map = BTreeMap::new();
+                refs.insert(self_ptr, StackItem::from_map(BTreeMap::new()));
+                for (k, v) in m.items() {
+                    cloned_map.insert(k.deep_clone_with_refs(refs), v.deep_clone_with_refs(refs));
                 }
-
-                StackItem::Map(map)
+                StackItem::from_map(cloned_map)
             }
         };
 
@@ -326,15 +342,9 @@ impl StackItem {
     /// Clears all references to other stack items.
     pub fn clear_references(&mut self) {
         match self {
-            StackItem::Array(items) => {
-                items.clear();
-            }
-            StackItem::Struct(items) => {
-                items.clear();
-            }
-            StackItem::Map(map) => {
-                map.clear();
-            }
+            StackItem::Array(array) => array.clear(),
+            StackItem::Struct(structure) => structure.clear(),
+            StackItem::Map(map) => map.clear(),
             _ => {}
         }
     }
@@ -349,7 +359,7 @@ impl StackItem {
             StackItemType::Boolean => Ok(StackItem::Boolean(self.as_bool()?)),
             StackItemType::Integer => Ok(StackItem::Integer(self.as_int()?)),
             StackItemType::ByteString => Ok(StackItem::ByteString(self.as_bytes()?)),
-            StackItemType::Buffer => Ok(StackItem::Buffer(self.as_bytes()?)),
+            StackItemType::Buffer => Ok(StackItem::Buffer(BufferItem::new(self.as_bytes()?))),
             _ => Err(VmError::invalid_type_simple(format!(
                 "Cannot convert to {item_type:?}"
             ))),
@@ -383,8 +393,8 @@ impl StackItem {
             (StackItem::Integer(a), StackItem::Integer(b)) => Ok(a == b),
             (StackItem::ByteString(a), StackItem::ByteString(b)) => Ok(a == b),
             (StackItem::Buffer(a), StackItem::Buffer(b)) => Ok(a == b),
-            (StackItem::ByteString(a), StackItem::Buffer(b)) => Ok(a == b),
-            (StackItem::Buffer(a), StackItem::ByteString(b)) => Ok(a == b),
+            (StackItem::ByteString(a), StackItem::Buffer(b)) => Ok(a.as_slice() == b.data()),
+            (StackItem::Buffer(a), StackItem::ByteString(b)) => Ok(a.data() == b.as_slice()),
             (StackItem::Pointer(a), StackItem::Pointer(b)) => Ok(a == b),
             (StackItem::InteropInterface(a), StackItem::InteropInterface(b)) => {
                 Ok(Arc::ptr_eq(a, b))
@@ -420,8 +430,8 @@ impl StackItem {
                     return Ok(false);
                 }
 
-                for (ak, av) in a {
-                    let found = b.iter().any(|(bk, bv)| {
+                for (ak, av) in a.items() {
+                    let found = b.items().iter().any(|(bk, bv)| {
                         ak.equals_with_refs(bk, visited).unwrap_or(false)
                             && av.equals_with_refs(bv, visited).unwrap_or(false)
                     });
@@ -476,8 +486,8 @@ impl Ord for StackItem {
             (StackItem::Integer(a), StackItem::Integer(b)) => a.cmp(b),
             (StackItem::ByteString(a), StackItem::ByteString(b)) => a.cmp(b),
             (StackItem::Buffer(a), StackItem::Buffer(b)) => a.cmp(b),
-            (StackItem::ByteString(a), StackItem::Buffer(b)) => a.cmp(b),
-            (StackItem::Buffer(a), StackItem::ByteString(b)) => a.cmp(b),
+            (StackItem::ByteString(a), StackItem::Buffer(b)) => a.as_slice().cmp(b.data()),
+            (StackItem::Buffer(a), StackItem::ByteString(b)) => a.data().cmp(b.as_slice()),
             (StackItem::Pointer(a), StackItem::Pointer(b)) => a.cmp(b),
             (StackItem::Array(a), StackItem::Array(b)) => {
                 let len_cmp = a.len().cmp(&b.len());
@@ -512,8 +522,8 @@ impl Ord for StackItem {
                     return len_cmp;
                 }
 
-                let mut a_pairs: Vec<_> = a.iter().collect();
-                let mut b_pairs: Vec<_> = b.iter().collect();
+                let mut a_pairs: Vec<_> = a.items().iter().collect();
+                let mut b_pairs: Vec<_> = b.items().iter().collect();
                 a_pairs.sort_by(|x, y| x.0.cmp(y.0));
                 b_pairs.sort_by(|x, y| x.0.cmp(y.0));
 
@@ -692,13 +702,13 @@ mod tests {
 
         // Add cycles
         let array1_clone = array1.clone();
-        if let StackItem::Array(items1) = &mut array1 {
-            items1.push(array1_clone);
+        if let StackItem::Array(array) = &mut array1 {
+            array.push(array1_clone);
         }
 
         let array2_clone = array2.clone();
-        if let StackItem::Array(items2) = &mut array2 {
-            items2.push(array2_clone);
+        if let StackItem::Array(array) = &mut array2 {
+            array.push(array2_clone);
         }
 
         // The arrays should be equal despite the cycles

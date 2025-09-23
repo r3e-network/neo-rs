@@ -9,7 +9,8 @@ use crate::{Error, Result};
 use log::debug;
 use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, SECONDS_PER_BLOCK};
 use neo_core::{UInt160, UInt256};
-use neo_cryptography::ECPoint;
+use neo_core::crypto_utils::NeoHash;
+// ECPoint functionality moved to external crypto crates
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -439,10 +440,7 @@ impl OracleContract {
 
     /// Calculates hash of oracle response data.
     pub fn calculate_response_hash(&self, data: &[u8]) -> Result<Vec<u8>> {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(data);
-        Ok(hasher.finalize().to_vec())
+        Ok(Crypto::sha256(data))
     }
 
     /// Checks if response was already processed.

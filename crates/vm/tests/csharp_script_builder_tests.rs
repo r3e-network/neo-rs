@@ -64,7 +64,7 @@ fn test_emit_push_big_integer_positive() {
 #[test]
 fn test_emit_syscall() {
     let mut script = ScriptBuilder::new();
-    script.emit_syscall("test");
+    script.emit_syscall("test").expect("emit_syscall failed");
 
     assert_eq!(
         script.to_array(),
@@ -75,7 +75,7 @@ fn test_emit_syscall() {
 #[test]
 fn test_emit_call_short() {
     let mut script = ScriptBuilder::new();
-    script.emit_call(0);
+    script.emit_call(0).expect("emit_call failed");
 
     assert_eq!(script.to_array(), vec![OpCode::CALL as u8, 0, 0]);
 }
@@ -83,7 +83,7 @@ fn test_emit_call_short() {
 #[test]
 fn test_emit_call_positive() {
     let mut script = ScriptBuilder::new();
-    script.emit_call(12345);
+    script.emit_call(12345).expect("emit_call failed");
 
     // CALL + offset as little-endian i16
     let mut expected = vec![OpCode::CALL as u8];
@@ -94,7 +94,7 @@ fn test_emit_call_positive() {
 #[test]
 fn test_emit_call_negative() {
     let mut script = ScriptBuilder::new();
-    script.emit_call(-12345);
+    script.emit_call(-12345).expect("emit_call failed");
 
     // CALL + offset as little-endian i16
     let mut expected = vec![OpCode::CALL as u8];
@@ -214,7 +214,9 @@ fn test_emit_jump_valid_opcodes() {
 
     // Test JMP
     let mut script = ScriptBuilder::new();
-    script.emit_jump(OpCode::JMP, offset);
+    script
+        .emit_jump(OpCode::JMP, offset)
+        .expect("emit_jump failed");
 
     let mut expected = vec![OpCode::JMP as u8];
     expected.extend_from_slice(&offset.to_le_bytes());
@@ -227,7 +229,7 @@ fn test_emit_jump_invalid_opcode() {
     let mut script = ScriptBuilder::new();
 
     // NOP is not a valid jump opcode - should panic
-    script.emit_jump(OpCode::NOP, 10i16);
+    script.emit_jump(OpCode::NOP, 10i16).unwrap();
 }
 
 #[test]

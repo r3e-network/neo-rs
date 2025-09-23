@@ -14,7 +14,7 @@ use neo_core::{
     transaction::blockchain::{BlockchainSnapshot, StorageItem, StorageKey},
     UInt160,
 };
-use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 use rocksdb::{Options, DB};
@@ -262,7 +262,7 @@ impl NeoToken {
 
         let caller = engine.calling_script_hash();
         let expected_hash = neo_core::UInt160::from_bytes(
-            &neo_cryptography::helper::public_key_to_script_hash(public_key_bytes),
+            &neo_core::crypto_utils::NeoHash::hash160(public_key_bytes),
         )?;
         if caller != expected_hash {
             return Err(Error::InvalidOperation(
@@ -325,7 +325,7 @@ impl NeoToken {
 
         let caller = engine.calling_script_hash();
         let candidate_hash = neo_core::UInt160::from_bytes(
-            &neo_cryptography::helper::public_key_to_script_hash(public_key_bytes),
+            &neo_core::crypto_utils::NeoHash::hash160(public_key_bytes),
         )?;
         if caller != candidate_hash {
             return Err(Error::NativeContractError(

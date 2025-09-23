@@ -9,6 +9,9 @@
 //! - network: Complete network message wrapper (matches C# NetworkMessage)
 
 pub mod capabilities;
+pub mod conditions;
+pub mod message_command;
+pub mod message_flags;
 pub mod commands;
 pub mod extensible_payload;
 pub mod header;

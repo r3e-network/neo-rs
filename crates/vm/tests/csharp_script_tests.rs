@@ -9,7 +9,7 @@ fn test_script_conversion() {
     builder.emit_opcode(OpCode::CALL);
     builder.emit(0x00);
     builder.emit(0x01);
-    builder.emit_syscall("test"); // Using string instead of numeric syscall
+    builder.emit_syscall("test").expect("emit_syscall failed"); // Using string instead of numeric syscall
 
     let raw_script = builder.to_array();
     let script = Script::new_relaxed(raw_script.clone());
@@ -65,7 +65,7 @@ fn test_script_parsing() {
     builder.emit_opcode(OpCode::CALL);
     builder.emit(0x00);
     builder.emit(0x01);
-    builder.emit_syscall("test");
+    builder.emit_syscall("test").expect("emit_syscall failed");
 
     let script = Script::new_relaxed(builder.to_array());
 
@@ -211,7 +211,9 @@ fn test_script_from_builder() {
 fn test_script_with_syscall() {
     // Test script with syscall
     let mut builder = ScriptBuilder::new();
-    builder.emit_syscall("System.Runtime.Log");
+    builder
+        .emit_syscall("System.Runtime.Log")
+        .expect("emit_syscall failed");
     builder.emit_opcode(OpCode::RET);
 
     let script = Script::new_relaxed(builder.to_array());

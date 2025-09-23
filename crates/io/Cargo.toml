@@ -25,14 +25,14 @@ indexmap = "2.0"
 # Internal dependencies
 neo-config = { workspace = true }
 # Temporarily commented out to break dependency cycle
-# neo-cryptography = { workspace = true, optional = true }
+# Removed neo-cryptography - using external crypto crates directly
 
 [features]
 default = ["std", "async"]
 std = []
 async = ["tokio", "async-trait", "futures"]
 # Temporarily commented out to break dependency cycle
-# crypto = ["neo-cryptography"]
+# Removed crypto feature - using external crypto crates directly
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }

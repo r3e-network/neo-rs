@@ -136,8 +136,6 @@ pub mod composite_handler;
 pub mod compression;
 /// DOS protection and rate limiting
 pub mod dos_protection;
-/// Enhanced DoS protection with adaptive rate limiting
-pub mod enhanced_dos_protection;
 /// Network error types and result handling
 pub mod error;
 /// Advanced error handling and recovery strategies
@@ -160,14 +158,10 @@ pub mod relay_cache;
 pub mod resilience;
 /// JSON-RPC server implementation
 pub mod rpc;
-/// Safe P2P networking utilities
-pub mod safe_p2p;
 /// Network server coordination
 pub mod server;
-/// Graceful shutdown implementation
-pub mod shutdown_impl;
-/// Snapshot configuration management
-pub mod snapshot_config;
+// /// Graceful shutdown implementation (removed - no C# counterpart)
+// pub mod shutdown_impl;
 /// Blockchain synchronization
 pub mod sync;
 /// Transaction relay and propagation
@@ -189,9 +183,8 @@ pub use crate::messages::{
     InventoryItem, InventoryType, MessageCommand, MessageValidator, Neo3Message, NetworkMessage,
     ProtocolMessage,
 };
-pub use crate::p2p_node::{
-    NodeCapability, NodeEvent, NodeStatistics, NodeStatus, P2pNode, PeerInfo,
-};
+pub use crate::messages::capabilities::{NodeCapability, NodeCapabilityType};
+pub use crate::p2p_node::{NodeEvent, NodeStatistics, NodeStatus, P2pNode, PeerInfo};
 pub use crate::peer_manager::{ConnectionStats, PeerConnection, PeerEvent, PeerManager, PeerState};
 pub use crate::relay_cache::RelayCache;
 pub use crate::transaction_relay::{

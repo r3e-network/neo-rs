@@ -15,6 +15,7 @@ fn test_execution_engine_limits() {
         max_item_size: 1024,
         max_invocation_stack_size: 10,
         catch_engine_exceptions: true,
+        ..ExecutionEngineLimits::default()
     };
 
     // Create an execution engine with custom limits

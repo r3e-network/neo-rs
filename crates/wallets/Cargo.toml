@@ -36,7 +36,7 @@ reqwest = { version = "0.11", features = ["json"] }
 
 # Neo dependencies
 neo-core = { path = "../core" }
-neo-cryptography = { path = "../cryptography" }
+# Removed neo-cryptography - using external crypto crates directly
 neo-io = { path = "../io" }
 neo-config = { path = "../config" }
 

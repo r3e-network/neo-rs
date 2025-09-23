@@ -601,7 +601,7 @@ impl PeerManager {
         // Note: The actual peer info would be returned from the handshake
         let peer_info = PeerInfo {
             address,
-            capabilities: vec![NodeCapability::TcpServer],
+            capabilities: vec![NodeCapability::tcp_server(address.port())],
             connected_at: std::time::SystemTime::now(),
             last_message_at: std::time::SystemTime::now(),
             version: 0,
@@ -2386,7 +2386,7 @@ impl PeerManager {
 
                 Ok(PeerInfo {
                     address,
-                    capabilities: vec![NodeCapability::FullNode], // Default capability
+                    capabilities: vec![NodeCapability::full_node(start_height)], // Default capability
                     connected_at: std::time::SystemTime::now(),
                     last_message_at: std::time::SystemTime::now(),
                     version,
@@ -2440,7 +2440,7 @@ impl PeerManager {
 
                 Ok(PeerInfo {
                     address,
-                    capabilities: vec![NodeCapability::FullNode], // Default capability
+                    capabilities: vec![NodeCapability::full_node(start_height)], // Default capability
                     connected_at: std::time::SystemTime::now(),
                     last_message_at: std::time::SystemTime::now(),
                     version,

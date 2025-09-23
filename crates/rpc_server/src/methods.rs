@@ -5,7 +5,7 @@
 use hex;
 use neo_config::HASH_SIZE;
 use neo_core::UInt160;
-use neo_cryptography::base58;
+use neo_core::crypto_utils::Base58;
 use neo_ledger::{Ledger, MemoryPool};
 use neo_persistence::RocksDbStore;
 use serde_json::{json, Value};

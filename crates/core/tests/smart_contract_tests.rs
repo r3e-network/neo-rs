@@ -5,7 +5,7 @@
 //! More advanced VM and smart contract tests will be in their respective crates.
 
 use neo_core::{Transaction, UInt160, UInt256};
-use neo_cryptography::{hash, murmur};
+use neo_core::crypto_utils::NeoHash;
 use std::str::FromStr;
 
 // ============================================================================

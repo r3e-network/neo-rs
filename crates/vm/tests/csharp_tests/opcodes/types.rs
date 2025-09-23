@@ -1,19 +1,15 @@
-//! Type operation opcode tests
-//!
-//! Tests for type operations like ISNULL, ISTYPE, etc.
+//! Type opcode tests (ISNULL, ISTYPE, CONVERT, etc.).
 
-use crate::csharp_tests::JsonTestRunner;
-use std::path::Path;
+use crate::csharp_tests::{resolve_test_dir, JsonTestRunner};
 
-/// Test OpCodes Types category (matches C# TestOpCodesTypes)
 #[test]
 fn test_opcodes_types() {
-    let test_path =
-        "/Users/jinghuiliao/git/will/neo-dev/neo-sharp/tests/Neo.VM.Tests/Tests/OpCodes/Types";
-    if Path::new(test_path).exists() {
+    if let Some(test_path) = resolve_test_dir("OpCodes/Types") {
         let mut runner = JsonTestRunner::new();
-        runner.test_json_directory(test_path).unwrap();
+        runner
+            .test_json_directory(test_path.to_str().expect("valid UTF-8 path"))
+            .unwrap();
     } else {
-        println!("C# test directory not found: {}", test_path);
+        eprintln!("C# test directory not found: OpCodes/Types");
     }
 }

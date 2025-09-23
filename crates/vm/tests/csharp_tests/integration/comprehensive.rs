@@ -1,33 +1,28 @@
-//! Comprehensive integration tests
-//!
-//! Tests that run the complete C# JSON test suite to ensure
-//! overall compatibility between Rust and C# implementations.
+//! Comprehensive integration tests executing the C# JSON fixtures.
 
-use crate::csharp_tests::JsonTestRunner;
-use std::path::Path;
+use crate::csharp_tests::{resolve_test_dir, JsonTestRunner};
 
 /// Test Others category (matches C# TestOthers)
 #[test]
 fn test_others() {
-    let test_path = "/Users/jinghuiliao/git/will/neo-dev/neo-sharp/tests/Neo.VM.Tests/Tests/Others";
-    if Path::new(test_path).exists() {
+    if let Some(test_path) = resolve_test_dir("Others") {
         let mut runner = JsonTestRunner::new();
-        runner.test_json_directory(test_path).unwrap();
+        runner
+            .test_json_directory(test_path.to_str().expect("valid UTF-8 path"))
+            .unwrap();
     } else {
-        println!("C# test directory not found: {}", test_path);
+        eprintln!("C# test directory not found: Others");
     }
 }
 
 /// Test all available JSON test files in the C# test suite
 #[test]
 fn test_all_csharp_json_tests() {
-    let base_test_path = "/Users/jinghuiliao/git/will/neo-dev/neo-sharp/tests/Neo.VM.Tests/Tests";
-    if Path::new(base_test_path).exists() {
+    if let Some(base_path) = resolve_test_dir("") {
         let mut runner = JsonTestRunner::new();
+        println!("Running comprehensive C# JSON test suite");
 
-        println!("Running comprehensive C# JSON test suite/* implementation */;");
-
-        let categories = vec![
+        let categories = [
             "Others",
             "OpCodes/Arrays",
             "OpCodes/Stack",
@@ -41,14 +36,14 @@ fn test_all_csharp_json_tests() {
         ];
 
         for category in categories {
-            let category_path = format!("{}/{}", base_test_path, category);
-            if Path::new(&category_path).exists() {
+            let category_path = base_path.join(category);
+            if category_path.exists() {
                 println!("Testing category: {}", category);
-                match runner.test_json_directory(&category_path) {
+                match runner.test_json_directory(category_path.to_str().expect("valid UTF-8 path"))
+                {
                     Ok(_) => println!("  ✓ Category {} passed", category),
                     Err(e) => {
                         println!("  ✗ Category {} failed: {}", category, e);
-                        // Continue with other categories instead of failing completely
                     }
                 }
             } else {
@@ -56,6 +51,6 @@ fn test_all_csharp_json_tests() {
             }
         }
     } else {
-        println!("C# test base directory not found: {}", base_test_path);
+        eprintln!("C# test base directory not found");
     }
 }

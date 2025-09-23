@@ -7,7 +7,6 @@ use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::StackItem;
-use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -36,6 +35,11 @@ impl Map {
             items,
             reference_id,
         }
+    }
+
+    /// Returns the reference identifier assigned by the reference counter, if any.
+    pub fn reference_id(&self) -> Option<usize> {
+        self.reference_id
     }
 
     /// Gets the items in the map.
@@ -80,9 +84,29 @@ impl Map {
         self.items.is_empty()
     }
 
+    /// Returns true if the map contains the given key.
+    pub fn contains_key(&self, key: &StackItem) -> bool {
+        self.items.contains_key(key)
+    }
+
     /// Removes all items from the map.
     pub fn clear(&mut self) {
         self.items.clear();
+    }
+
+    /// Consumes the map and returns the underlying entries.
+    pub fn into_map(self) -> BTreeMap<StackItem, StackItem> {
+        self.items
+    }
+
+    /// Returns an iterator over the key/value pairs.
+    pub fn iter(&self) -> std::collections::btree_map::Iter<'_, StackItem, StackItem> {
+        self.items.iter()
+    }
+
+    /// Returns a mutable iterator over the key/value pairs.
+    pub fn iter_mut(&mut self) -> std::collections::btree_map::IterMut<'_, StackItem, StackItem> {
+        self.items.iter_mut()
     }
 
     /// Creates a deep copy of the map.
@@ -105,9 +129,36 @@ impl Map {
     }
 }
 
-impl Drop for Map {
-    fn drop(&mut self) {
-        // Reference cleanup is handled by the ReferenceCounter automatically
+impl IntoIterator for Map {
+    type Item = (StackItem, StackItem);
+    type IntoIter = std::collections::btree_map::IntoIter<StackItem, StackItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Map {
+    type Item = (&'a StackItem, &'a StackItem);
+    type IntoIter = std::collections::btree_map::Iter<'a, StackItem, StackItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Map {
+    type Item = (&'a StackItem, &'a mut StackItem);
+    type IntoIter = std::collections::btree_map::IterMut<'a, StackItem, StackItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter_mut()
+    }
+}
+
+impl From<Map> for BTreeMap<StackItem, StackItem> {
+    fn from(map: Map) -> Self {
+        map.items
     }
 }
 
@@ -115,6 +166,7 @@ impl Drop for Map {
 #[allow(dead_code)]
 mod tests {
     use super::*;
+    use num_traits::ToPrimitive;
     use std::collections::BTreeMap;
 
     #[test]

@@ -9,7 +9,6 @@ use crate::instruction::Instruction;
 use crate::jump_table::control::ExceptionHandler;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
-use crate::stack_item::StackItem;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -35,87 +34,10 @@ pub enum ExecutionState {
 }
 
 /// A slot for storing variables or arguments in a context.
-#[derive(Clone, Debug)]
-pub struct Slot {
-    /// The items in the slot
-    items: Vec<StackItem>,
-
-    /// The reference counter
-    reference_counter: ReferenceCounter,
-}
-
-impl Slot {
-    /// Creates a new slot with the specified items and reference counter.
-    pub fn new(items: Vec<StackItem>, reference_counter: ReferenceCounter) -> Self {
-        let mut slot = Self {
-            items: Vec::with_capacity(items.len()),
-            reference_counter,
-        };
-
-        for item in items {
-            slot.set(slot.items.len(), item);
-        }
-
-        slot
-    }
-
-    /// Returns the number of items in the slot.
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    /// Returns true if the slot is empty.
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    /// Returns the item at the specified index.
-    pub fn get(&self, index: usize) -> VmResult<&StackItem> {
-        self.items
-            .get(index)
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Index out of range: {index}")))
-    }
-
-    /// Sets the item at the specified index.
-    pub fn set(&mut self, index: usize, item: StackItem) {
-        if index >= self.items.len() {
-            self.items.resize_with(index + 1, StackItem::null);
-        }
-
-        if index < self.items.len() {
-            self.reference_counter
-                .remove_stack_reference(&self.items[index]);
-        }
-
-        self.reference_counter.add_stack_reference(&item);
-
-        self.items[index] = item;
-    }
-
-    /// Clears all references in the slot.
-    pub fn clear_references(&mut self) {
-        for item in &self.items {
-            self.reference_counter.remove_stack_reference(item);
-        }
-        self.items.clear();
-    }
-
-    /// Returns an iterator over the items in the slot.
-    pub fn iter(&self) -> impl Iterator<Item = &StackItem> {
-        self.items.iter()
-    }
-
-    /// Returns a mutable iterator over the items in the slot.
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut StackItem> {
-        self.items.iter_mut()
-    }
-}
-
-impl Drop for Slot {
-    fn drop(&mut self) {
-        self.clear_references();
-    }
-}
+///
+/// This is a thin alias over [`crate::slot::Slot`] so existing call sites
+/// can continue to reference `execution_context::Slot`.
+pub type Slot = crate::slot::Slot;
 
 /// Shared states for execution contexts that can be cloned and shared.
 /// This matches the C# implementation's SharedStates class exactly.
@@ -652,20 +574,14 @@ impl ExecutionContext {
     pub fn init_slot(&mut self, local_count: usize, argument_count: usize) -> VmResult<()> {
         // Initialize local variables
         if local_count > 0 {
-            let local_items = vec![crate::stack_item::StackItem::null(); local_count];
-            self.local_variables = Some(Slot::new(
-                local_items,
-                self.shared_states.reference_counter().clone(),
-            ));
+            let reference_counter = self.shared_states.reference_counter().clone();
+            self.local_variables = Some(Slot::with_count(local_count, reference_counter));
         }
 
         // Initialize arguments
         if argument_count > 0 {
-            let arg_items = vec![crate::stack_item::StackItem::null(); argument_count];
-            self.arguments = Some(Slot::new(
-                arg_items,
-                self.shared_states.reference_counter().clone(),
-            ));
+            let reference_counter = self.shared_states.reference_counter().clone();
+            self.arguments = Some(Slot::with_count(argument_count, reference_counter));
         }
 
         Ok(())
@@ -689,7 +605,7 @@ impl ExecutionContext {
         value: crate::stack_item::StackItem,
     ) -> VmResult<()> {
         if let Some(static_fields) = self.shared_states.static_fields_mut() {
-            static_fields.set(index, value);
+            static_fields.set(index, value)?;
             Ok(())
         } else {
             Err(crate::VmError::invalid_operation_msg(
@@ -716,7 +632,7 @@ impl ExecutionContext {
         value: crate::stack_item::StackItem,
     ) -> VmResult<()> {
         if let Some(local_variables) = &mut self.local_variables {
-            local_variables.set(index, value);
+            local_variables.set(index, value)?;
             Ok(())
         } else {
             Err(crate::VmError::invalid_operation_msg(
@@ -743,7 +659,7 @@ impl ExecutionContext {
         value: crate::stack_item::StackItem,
     ) -> VmResult<()> {
         if let Some(arguments) = &mut self.arguments {
-            arguments.set(index, value);
+            arguments.set(index, value)?;
             Ok(())
         } else {
             Err(crate::VmError::invalid_operation_msg(
@@ -758,6 +674,7 @@ impl ExecutionContext {
 mod tests {
     use super::*;
     use crate::op_code::OpCode;
+    use crate::stack_item::StackItem;
     use num_bigint::BigInt;
 
     #[test]
@@ -836,7 +753,7 @@ mod tests {
         // Create a try stack with one context
         use crate::exception_handling::{ExceptionHandlingContext, ExceptionHandlingState};
         let mut try_stack = Vec::new();
-        let try_context = ExceptionHandlingContext::new(0, 10, 10, 20, 30); // ADDRESS_SIZE = 20
+        let try_context = ExceptionHandlingContext::new(10, 20);
         try_stack.push(try_context);
 
         // Set the try stack
@@ -852,12 +769,12 @@ mod tests {
             1
         );
         assert_eq!(
-            context.try_stack().expect("VM operation should succeed")[0].catch_pointer,
+            context.try_stack().expect("VM operation should succeed")[0].catch_pointer(),
             10
         );
         assert_eq!(
-            context.try_stack().expect("Operation failed")[0].finally_pointer as usize,
-            20 // ADDRESS_SIZE constant
+            context.try_stack().expect("Operation failed")[0].finally_pointer(),
+            20
         );
 
         // Modify the try stack
@@ -883,13 +800,12 @@ mod tests {
             StackItem::from_int(3),
         ];
 
-        let mut slot = Slot::new(items, reference_counter);
+        let mut slot = Slot::new(items, reference_counter.clone());
 
         assert_eq!(slot.len(), 3);
         assert_eq!(
-            slot.items
-                .first()
-                .expect("Empty collection")
+            slot.get(0)
+                .expect("Index out of bounds")
                 .as_int()
                 .expect("VM operation should succeed"),
             BigInt::from(1)
@@ -909,7 +825,7 @@ mod tests {
             BigInt::from(3)
         );
 
-        slot.set(1, StackItem::from_int(42));
+        slot.set(1, StackItem::from_int(42)).unwrap();
         assert_eq!(
             slot.get(1)
                 .expect("Index out of bounds")
@@ -918,19 +834,11 @@ mod tests {
             BigInt::from(42)
         );
 
-        slot.set(5, StackItem::from_int(5));
-        assert_eq!(slot.len(), 6);
-        assert_eq!(
-            slot.get(5)
-                .expect("Index out of bounds")
-                .as_int()
-                .expect("VM operation should succeed"),
-            BigInt::from(5)
-        );
+        assert!(slot.set(5, StackItem::from_int(5)).is_err());
 
         slot.clear_references();
-        assert_eq!(slot.len(), 0);
-        assert!(slot.is_empty());
+        assert_eq!(slot.len(), 3);
+        assert!(slot.iter().all(|item| item.is_null()));
     }
 
     #[test]

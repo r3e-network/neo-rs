@@ -21,11 +21,9 @@ pub mod mempool_adapter;
 pub mod messages;
 pub mod proposal;
 pub mod recovery;
-pub mod safe_consensus;
 pub mod service;
 pub mod signature;
 pub mod validators;
-pub mod view_change_optimization;
 
 // Re-export main types
 pub use context::{ConsensusContext, ConsensusPhase, ConsensusRound, ConsensusTimer};

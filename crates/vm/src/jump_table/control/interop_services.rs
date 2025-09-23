@@ -365,7 +365,7 @@ fn convert_parameter_to_stack_item(param: &InteropParameter) -> StackItem {
         InteropParameter::Array(items) => {
             let stack_items: Vec<StackItem> =
                 items.iter().map(convert_parameter_to_stack_item).collect();
-            StackItem::Array(stack_items)
+            StackItem::from_array(stack_items)
         }
         InteropParameter::InteropInterface(interface_item) => interface_item.clone(),
     }

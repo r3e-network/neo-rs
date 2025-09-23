@@ -7,7 +7,7 @@ use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::stack_item::StackItem;
-use neo_cryptography::ed25519::Ed25519;
+use neo_core::crypto_utils::{Secp256k1Crypto, Secp256r1Crypto, Ed25519Crypto};
 
 /// Hash size constant for cryptographic operations
 const HASH_SIZE: usize = 32;
@@ -88,10 +88,18 @@ fn verify_ecdsa_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -
         return false; // Invalid public key size
     }
 
-    // Use neo-cryptography crate for verification
-    match verify_signature(message, signature, public_key) {
-        Ok(is_valid) => is_valid,
-        Err(_) => false, // Verification failed
+    // Use external crypto crates for verification
+    if public_key.len() == 33 {
+        // Compressed secp256k1 key
+        let pub_key_array: [u8; 33] = public_key.try_into().unwrap_or([0; 33]);
+        let sig_array: [u8; 64] = signature.try_into().unwrap_or([0; 64]);
+        Secp256k1Crypto::verify(message, &sig_array, &pub_key_array).unwrap_or(false)
+    } else if public_key.len() == 65 {
+        // Uncompressed secp256r1 key
+        let sig_array: [u8; 64] = signature.try_into().unwrap_or([0; 64]);
+        Secp256r1Crypto::verify(message, &sig_array, public_key).unwrap_or(false)
+    } else {
+        false
     }
 }
 
@@ -107,30 +115,12 @@ fn verify_ed25519_signature(message: &[u8], signature: &[u8], public_key: &[u8])
     }
 
     // Use Ed25519 verification
-    Ed25519::verify(message, signature, public_key)
+    let pub_key_array: [u8; 32] = public_key.try_into().unwrap_or([0; 32]);
+    let sig_array: [u8; 64] = signature.try_into().unwrap_or([0; 64]);
+    Ed25519Crypto::verify(message, &sig_array, &pub_key_array).unwrap_or(false)
 }
 
-/// Verifies a signature against a message using a public key.
-///
-/// This function implements the exact signature verification logic used in the C# Neo implementation.
-/// It supports ECDSA signature verification using the secp256r1 curve.
-#[allow(dead_code)]
-fn verify_signature(message: &[u8], signature: &[u8], public_key: &[u8]) -> VmResult<bool> {
-    // Validate input lengths
-    if signature.len() != 64 {
-        return Ok(false); // Invalid signature length
-    }
-
-    if public_key.len() != 33 && public_key.len() != 65 {
-        return Ok(false); // Invalid public key length
-    }
-
-    // This matches the C# implementation exactly
-    match neo_cryptography::ecdsa::ECDsa::verify(message, signature, public_key) {
-        Ok(is_valid) => Ok(is_valid),
-        Err(_) => Ok(false), // Any error in verification means the signature is invalid
-    }
-}
+// Removed verify_signature function - now using external crypto crates directly
 
 #[cfg(test)]
 #[allow(dead_code)]

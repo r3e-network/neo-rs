@@ -8,7 +8,7 @@ use base64::{engine::general_purpose, Engine as _};
 use hex;
 use neo_config::ADDRESS_SIZE;
 use neo_core::UInt160;
-use neo_cryptography::ecc::{ECCurve, ECPoint};
+// Removed neo_cryptography dependency - using external crypto crates directly
 use serde::{Deserialize, Serialize};
 
 /// Represents a permission that a contract requires.

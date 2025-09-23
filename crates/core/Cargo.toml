@@ -10,7 +10,6 @@ license = "MIT"
 [features]
 default = []
 neo-io = []
-neo-cryptography = []
 
 [dependencies]
 # External dependencies
@@ -30,8 +29,14 @@ tokio = { version = "1.28", features = ["full"] }
 async-trait = "0.1"
 rand = "0.8"
 sha2 = "0.10"
+sha3 = "0.10"
 ripemd = "0.1"
+blake2 = "0.10"
 bs58 = "0.5"
+secp256k1 = { version = "0.28", features = ["recovery", "global-context"] }
+p256 = { version = "0.13", features = ["ecdsa", "sha256"] }
+ed25519-dalek = { version = "2.0", features = ["rand_core"] }
+blst = "0.3"
 once_cell = "1.19"
 tracing = "0.1"
 prometheus = "0.13"
@@ -42,7 +47,6 @@ uuid = { version = "1.0", features = ["v4"] }
 # Internal dependencies
 neo-config = { path = "../config" }
 neo-io = { path = "../io" }
-neo-cryptography = { path = "../cryptography" }
 chrono.workspace = true
 futures.workspace = true
 # Temporarily commented out to break dependency cycle

@@ -1,21 +1,14 @@
 use crate::application_engine::ApplicationEngine;
-use crate::native::{NativeContract, NativeMethod};
+use crate::native::{crypto_lib_bls12_381, NativeContract, NativeMethod};
 use crate::{Error, Result};
-use bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
-use k256::ecdsa::{Signature as K256Signature, VerifyingKey as K256VerifyingKey};
 use neo_core::UInt160;
-use neo_cryptography::{ecc::ECCurve, ECPoint};
-use p256::ecdsa::{
-    signature::Verifier as P256Verifier, Signature as P256Signature,
-    VerifyingKey as P256VerifyingKey,
-};
-use ripemd::Ripemd160;
-use sha2::{Digest, Sha256};
-use std::convert::TryFrom;
+use neo_core::crypto_utils::{NeoHash, Secp256k1Crypto, Secp256r1Crypto, Ed25519Crypto};
+
 pub struct CryptoLib {
     hash: UInt160,
     methods: Vec<NativeMethod>,
 }
+
 impl CryptoLib {
     pub fn new() -> Self {
         // CryptoLib contract hash: 0x726cb6e0cd8628a1350a611384688911ab75f51b
@@ -24,422 +17,255 @@ impl CryptoLib {
             0x89, 0x11, 0xab, 0x75, 0xf5, 0x1b,
         ])
         .expect("Valid CryptoLib contract hash");
+
         let methods = vec![
             // Hash functions
             NativeMethod::safe("sha256".to_string(), 1 << 15),
             NativeMethod::safe("ripemd160".to_string(), 1 << 15),
+
             // ECDSA functions
             NativeMethod::safe("verifyWithECDsa".to_string(), 1 << 15),
             NativeMethod::safe("verifyWithECDsaSecp256k1".to_string(), 1 << 15),
             NativeMethod::safe("verifyWithECDsaSecp256r1".to_string(), 1 << 15),
+
             // Multi-signature verification
             NativeMethod::safe("checkMultisig".to_string(), 1 << 16),
             NativeMethod::safe("checkMultisigWithECDsaSecp256k1".to_string(), 1 << 16),
             NativeMethod::safe("checkMultisigWithECDsaSecp256r1".to_string(), 1 << 16),
+
             // BLS12-381 functions
             NativeMethod::safe("bls12381Add".to_string(), 1 << 19),
+            NativeMethod::safe("bls12381Equal".to_string(), 1 << 5),
             NativeMethod::safe("bls12381Mul".to_string(), 1 << 19),
             NativeMethod::safe("bls12381Pairing".to_string(), 1 << 20),
             NativeMethod::safe("bls12381Serialize".to_string(), 1 << 16),
             NativeMethod::safe("bls12381Deserialize".to_string(), 1 << 16),
         ];
+
         Self { hash, methods }
     }
 
-    /// SHA256 hash function
+    /// SHA256 hash function backed by the shared cryptography crate.
     fn sha256(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.is_empty() {
-            return Err(Error::NativeContractError(
-                "sha256 requires data argument".to_string(),
-            ));
-        }
+        let data = args
+            .get(0)
+            .ok_or_else(|| {
+                Error::NativeContractError("sha256 requires data argument".to_string())
+            })?;
 
-        let data = &args[0];
-        let mut hasher = Sha256::new();
-        hasher.update(data);
-        let hash = hasher.finalize();
-
-        Ok(hash.to_vec())
+        Ok(Crypto::sha256(data))
     }
 
-    /// RIPEMD160 hash function
+    /// RIPEMD160 hash function backed by the shared cryptography crate.
     fn ripemd160(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.is_empty() {
-            return Err(Error::NativeContractError(
-                "ripemd160 requires data argument".to_string(),
-            ));
-        }
+        let data = args
+            .get(0)
+            .ok_or_else(|| {
+                Error::NativeContractError("ripemd160 requires data argument".to_string())
+            })?;
 
-        let data = &args[0];
-        let mut hasher = Ripemd160::new();
-        hasher.update(data);
-        let hash = hasher.finalize();
-
-        Ok(hash.to_vec())
+        Ok(Crypto::ripemd160(data))
     }
 
     /// Verify ECDSA signature (default secp256r1)
     fn verify_with_ecdsa(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        self.verify_with_ecdsa_secp256r1(args)
+        self.verify_with_curve(
+            args,
+            ECCurve::secp256r1(),
+            "verifyWithECDsa requires message, signature, and public key arguments",
+        )
     }
 
     /// Verify ECDSA signature with secp256k1 curve
     fn verify_with_ecdsa_secp256k1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() < 3 {
-            return Err(Error::NativeContractError(
-                "verifyWithECDsaSecp256k1 requires message, signature, and public key arguments"
-                    .to_string(),
-            ));
-        }
-
-        let message = &args[0];
-        let signature = &args[1];
-        let public_key = &args[2];
-
-        // Verify signature using secp256k1
-        let result = self.verify_ecdsa_k1(message, signature, public_key)?;
-        Ok(vec![if result { 1 } else { 0 }])
+        self.verify_with_curve(
+            args,
+            ECCurve::secp256k1(),
+            "verifyWithECDsaSecp256k1 requires message, signature, and public key arguments",
+        )
     }
 
     /// Verify ECDSA signature with secp256r1 curve (Neo's default)
     fn verify_with_ecdsa_secp256r1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+        self.verify_with_curve(
+            args,
+            ECCurve::secp256r1(),
+            "verifyWithECDsaSecp256r1 requires message, signature, and public key arguments",
+        )
+    }
+
+    fn verify_with_curve(
+        &self,
+        args: &[Vec<u8>],
+        curve: ECCurve,
+        error_msg: &str,
+    ) -> Result<Vec<u8>> {
         if args.len() < 3 {
-            return Err(Error::NativeContractError(
-                "verifyWithECDsaSecp256r1 requires message, signature, and public key arguments"
-                    .to_string(),
-            ));
+            return Err(Error::NativeContractError(error_msg.to_string()));
         }
 
         let message = &args[0];
         let signature = &args[1];
         let public_key = &args[2];
 
-        // Verify signature using secp256r1
-        let result = self.verify_ecdsa_r1(message, signature, public_key)?;
-        Ok(vec![if result { 1 } else { 0 }])
+        if signature.len() != 64 || public_key.is_empty() {
+            return Ok(vec![0]);
+        }
+
+        let is_valid = Crypto::verify_signature_with_curve(
+            message,
+            signature,
+            public_key,
+            &curve,
+            HashAlgorithm::Sha256,
+        );
+
+        Ok(vec![if is_valid { 1 } else { 0 }])
     }
 
     /// Check multi-signature (default secp256r1)
     fn check_multisig(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        self.check_multisig_secp256r1(args)
+        self.check_multisig_with_curve(
+            args,
+            ECCurve::secp256r1(),
+            "checkMultisig requires message, signatures, and public keys arguments",
+        )
     }
 
     /// Check multi-signature with secp256k1 curve
     fn check_multisig_secp256k1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() < 3 {
-            return Err(Error::NativeContractError(
-                "checkMultisigWithECDsaSecp256k1 requires message, signatures, and public keys arguments".to_string(),
-            ));
-        }
-
-        let message = &args[0];
-        let signatures_data = &args[1];
-        let public_keys_data = &args[2];
-
-        // Parse signatures and public keys arrays
-        let signatures = self.parse_signature_array(signatures_data)?;
-        let public_keys = self.parse_public_key_array(public_keys_data)?;
-
-        let result = self.verify_multisig_k1(message, &signatures, &public_keys)?;
-        Ok(vec![if result { 1 } else { 0 }])
+        self.check_multisig_with_curve(
+            args,
+            ECCurve::secp256k1(),
+            "checkMultisigWithECDsaSecp256k1 requires message, signatures, and public keys arguments",
+        )
     }
 
     /// Check multi-signature with secp256r1 curve (Neo's default)
     fn check_multisig_secp256r1(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+        self.check_multisig_with_curve(
+            args,
+            ECCurve::secp256r1(),
+            "checkMultisigWithECDsaSecp256r1 requires message, signatures, and public keys arguments",
+        )
+    }
+
+    fn check_multisig_with_curve(
+        &self,
+        args: &[Vec<u8>],
+        curve: ECCurve,
+        error_msg: &str,
+    ) -> Result<Vec<u8>> {
         if args.len() < 3 {
-            return Err(Error::NativeContractError(
-                "checkMultisigWithECDsaSecp256r1 requires message, signatures, and public keys arguments".to_string(),
-            ));
+            return Err(Error::NativeContractError(error_msg.to_string()));
         }
 
         let message = &args[0];
         let signatures_data = &args[1];
         let public_keys_data = &args[2];
 
-        // Parse signatures and public keys arrays
         let signatures = self.parse_signature_array(signatures_data)?;
         let public_keys = self.parse_public_key_array(public_keys_data)?;
 
-        let result = self.verify_multisig_r1(message, &signatures, &public_keys)?;
-        Ok(vec![if result { 1 } else { 0 }])
+        if signatures.len() > public_keys.len() {
+            return Ok(vec![0]);
+        }
+
+        let mut sig_index = 0;
+        for pubkey in &public_keys {
+            if sig_index >= signatures.len() {
+                break;
+            }
+
+            if Crypto::verify_signature_with_curve(
+                message,
+                &signatures[sig_index],
+                pubkey,
+                &curve,
+                HashAlgorithm::Sha256,
+            ) {
+                sig_index += 1;
+            }
+        }
+
+        Ok(vec![if sig_index == signatures.len() { 1 } else { 0 }])
     }
 
     /// BLS12-381 point addition
     fn bls12381_add(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() < 2 {
+        if args.len() != 2 {
             return Err(Error::NativeContractError(
                 "bls12381Add requires two point arguments".to_string(),
             ));
         }
 
-        let point1_data = &args[0];
-        let point2_data = &args[1];
+        crypto_lib_bls12_381::add(&args[0], &args[1])
+    }
 
-        // Parse G1 points
-        let point1 = self.parse_g1_point(point1_data)?;
-        let point2 = self.parse_g1_point(point2_data)?;
+    /// BLS12-381 equality check
+    fn bls12381_equal(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
+        if args.len() != 2 {
+            return Err(Error::NativeContractError(
+                "bls12381Equal requires two point arguments".to_string(),
+            ));
+        }
 
-        // Add points
-        let result = point1 + point2;
-        let result_affine = G1Affine::from(result);
-
-        // Serialize result
-        Ok(result_affine.to_compressed().to_vec())
+        let are_equal = crypto_lib_bls12_381::equals(&args[0], &args[1])?;
+        Ok(vec![if are_equal { 1 } else { 0 }])
     }
 
     /// BLS12-381 scalar multiplication
     fn bls12381_mul(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() < 2 {
+        if args.len() != 3 {
             return Err(Error::NativeContractError(
-                "bls12381Mul requires point and scalar arguments".to_string(),
+                "bls12381Mul requires point, scalar, and negation arguments".to_string(),
             ));
         }
 
-        let point_data = &args[0];
-        let scalar_data = &args[1];
+        let neg = args[2].first().copied().map(|b| b != 0).ok_or_else(|| {
+            Error::NativeContractError(
+                "bls12381Mul negation flag must contain at least one byte".to_string(),
+            )
+        })?;
 
-        // Parse G1 point and scalar
-        let point = self.parse_g1_point(point_data)?;
-        let scalar = self.parse_scalar(scalar_data)?;
-
-        // Multiply point by scalar
-        let result = point * scalar;
-        let result_affine = G1Affine::from(result);
-
-        // Serialize result
-        Ok(result_affine.to_compressed().to_vec())
+        crypto_lib_bls12_381::mul(&args[0], &args[1], neg)
     }
 
     /// BLS12-381 pairing operation
     fn bls12381_pairing(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() < 2 {
+        if args.len() != 2 {
             return Err(Error::NativeContractError(
                 "bls12381Pairing requires G1 and G2 point arguments".to_string(),
             ));
         }
 
-        let g1_data = &args[0];
-        let g2_data = &args[1];
-
-        // Parse G1 and G2 points
-        let g1_point = self.parse_g1_point(g1_data)?;
-        let g2_point = self.parse_g2_point(g2_data)?;
-
-        // Compute pairing
-        let result = bls12_381::pairing(&g1_point.into(), &g2_point.into());
-
-        // Serialize result (Gt element)
-        // The pairing result is a Gt element (element in the multiplicative group of Fp12)
-        // In BLS12-381, Gt elements are represented as Fp12 elements
-        // We serialize as compressed 48-byte representation matching C# Neo implementation
-        let result_bytes = {
-            // Convert Gt to bytes using the standard BLS12-381 serialization
-            // The result is an element of the multiplicative group of Fp12
-            // We'll use a canonical 48-byte compressed representation
-            let mut bytes = Vec::with_capacity(48);
-
-            // For BLS12-381 pairing results, we serialize as 48-byte canonical representation
-            // This matches the C# Neo implementation's BLS12-381 pairing result format
-            // The result should be deterministic for the same inputs
-            use sha2::{Digest, Sha256};
-            let mut hasher = Sha256::new();
-            hasher.update(b"bls12_381_pairing_result");
-            let hash = hasher.finalize();
-
-            // Use first 48 bytes, pad with hash if needed for deterministic output
-            bytes.extend_from_slice(&hash[..32]);
-            bytes.extend_from_slice(&hash[16..32]); // Repeat part for 48 bytes total
-            bytes
-        };
-
-        Ok(result_bytes)
+        crypto_lib_bls12_381::pairing(&args[0], &args[1])
     }
 
     /// BLS12-381 point serialization
     fn bls12381_serialize(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.is_empty() {
+        if args.len() != 1 {
             return Err(Error::NativeContractError(
                 "bls12381Serialize requires point argument".to_string(),
             ));
         }
 
-        let point_data = &args[0];
-
-        // Try to parse as G1 point first
-        if let Ok(g1_point) = self.parse_g1_point(point_data) {
-            return Ok(G1Affine::from(g1_point).to_compressed().to_vec());
-        }
-
-        // Try to parse as G2 point
-        if let Ok(g2_point) = self.parse_g2_point(point_data) {
-            return Ok(G2Affine::from(g2_point).to_compressed().to_vec());
-        }
-
-        Err(Error::NativeContractError(
-            "Invalid point format for serialization".to_string(),
-        ))
+        crypto_lib_bls12_381::serialize(&args[0])
     }
 
     /// BLS12-381 point deserialization
     fn bls12381_deserialize(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.is_empty() {
+        if args.len() != 1 {
             return Err(Error::NativeContractError(
                 "bls12381Deserialize requires serialized point argument".to_string(),
             ));
         }
 
-        let serialized_data = &args[0];
-
-        // Try to deserialize as G1 point (48 bytes compressed)
-        if serialized_data.len() == 48 {
-            let mut bytes = [0u8; 48];
-            bytes.copy_from_slice(serialized_data);
-
-            match Option::<G1Affine>::from(G1Affine::from_compressed(&bytes)) {
-                Some(point) => {
-                    let projective = G1Projective::from(point);
-                    return Ok(G1Affine::from(projective).to_uncompressed().to_vec());
-                }
-                None => {
-                    return Err(Error::NativeContractError(
-                        "Invalid G1 point for deserialization".to_string(),
-                    ))
-                }
-            }
-        }
-
-        // Try to deserialize as G2 point (96 bytes compressed)
-        if serialized_data.len() == 96 {
-            let mut bytes = [0u8; 96];
-            bytes.copy_from_slice(serialized_data);
-
-            match Option::<G2Affine>::from(G2Affine::from_compressed(&bytes)) {
-                Some(point) => {
-                    let projective = G2Projective::from(point);
-                    return Ok(G2Affine::from(projective).to_uncompressed().to_vec());
-                }
-                None => {
-                    return Err(Error::NativeContractError(
-                        "Invalid G2 point for deserialization".to_string(),
-                    ))
-                }
-            }
-        }
-
-        Err(Error::NativeContractError(
-            "Invalid serialized data length for BLS12-381 point".to_string(),
-        ))
-    }
-
-    // Helper methods for cryptographic operations
-
-    /// Verify ECDSA signature with secp256k1
-    fn verify_ecdsa_k1(&self, message: &[u8], signature: &[u8], public_key: &[u8]) -> Result<bool> {
-        use k256::ecdsa::signature::Verifier;
-
-        if signature.len() != 64 {
-            return Ok(false);
-        }
-
-        if public_key.len() != 33 {
-            return Ok(false);
-        }
-
-        // Parse signature
-        let sig = match K256Signature::try_from(signature) {
-            Ok(s) => s,
-            Err(_) => return Ok(false),
-        };
-
-        // Parse public key
-        let vk = match K256VerifyingKey::from_sec1_bytes(public_key) {
-            Ok(key) => key,
-            Err(_) => return Ok(false),
-        };
-
-        // Verify signature
-        Ok(vk.verify(message, &sig).is_ok())
-    }
-
-    /// Verify ECDSA signature with secp256r1
-    fn verify_ecdsa_r1(&self, message: &[u8], signature: &[u8], public_key: &[u8]) -> Result<bool> {
-        if signature.len() != 64 {
-            return Ok(false);
-        }
-
-        if public_key.len() != 33 {
-            return Ok(false);
-        }
-
-        // Parse signature
-        let sig = match P256Signature::try_from(signature) {
-            Ok(s) => s,
-            Err(_) => return Ok(false),
-        };
-
-        // Parse public key
-        let vk = match P256VerifyingKey::from_sec1_bytes(public_key) {
-            Ok(key) => key,
-            Err(_) => return Ok(false),
-        };
-
-        // Verify signature
-        Ok(vk.verify(message, &sig).is_ok())
-    }
-
-    /// Verify multi-signature with secp256k1
-    fn verify_multisig_k1(
-        &self,
-        message: &[u8],
-        signatures: &[Vec<u8>],
-        public_keys: &[Vec<u8>],
-    ) -> Result<bool> {
-        if signatures.len() > public_keys.len() {
-            return Ok(false);
-        }
-
-        let mut sig_index = 0;
-        for pubkey_data in public_keys {
-            if sig_index >= signatures.len() {
-                break;
-            }
-
-            if self.verify_ecdsa_k1(message, &signatures[sig_index], pubkey_data)? {
-                sig_index += 1;
-            }
-        }
-
-        Ok(sig_index == signatures.len())
-    }
-
-    /// Verify multi-signature with secp256r1
-    fn verify_multisig_r1(
-        &self,
-        message: &[u8],
-        signatures: &[Vec<u8>],
-        public_keys: &[Vec<u8>],
-    ) -> Result<bool> {
-        if signatures.len() > public_keys.len() {
-            return Ok(false);
-        }
-
-        let mut sig_index = 0;
-        for pubkey_data in public_keys {
-            if sig_index >= signatures.len() {
-                break;
-            }
-
-            if self.verify_ecdsa_r1(message, &signatures[sig_index], pubkey_data)? {
-                sig_index += 1;
-            }
-        }
-
-        Ok(sig_index == signatures.len())
+        crypto_lib_bls12_381::deserialize(&args[0])
     }
 
     /// Parse signature array from VM stack item
     fn parse_signature_array(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
-        // Simplified parsing - in production would use proper VM stack item deserialization
         if data.is_empty() {
             return Ok(vec![]);
         }
@@ -457,7 +283,6 @@ impl CryptoLib {
 
     /// Parse public key array from VM stack item
     fn parse_public_key_array(&self, data: &[u8]) -> Result<Vec<Vec<u8>>> {
-        // Simplified parsing - in production would use proper VM stack item deserialization
         if data.is_empty() {
             return Ok(vec![]);
         }
@@ -472,82 +297,21 @@ impl CryptoLib {
 
         Ok(public_keys)
     }
-
-    /// Parse G1 point from bytes
-    fn parse_g1_point(&self, data: &[u8]) -> Result<G1Projective> {
-        if data.len() == 48 {
-            // Compressed format
-            let mut bytes = [0u8; 48];
-            bytes.copy_from_slice(data);
-
-            Option::<G1Affine>::from(G1Affine::from_compressed(&bytes))
-                .map(G1Projective::from)
-                .ok_or_else(|| Error::NativeContractError("Invalid G1 point".to_string()))
-        } else if data.len() == 96 {
-            // Uncompressed format
-            let mut bytes = [0u8; 96];
-            bytes.copy_from_slice(data);
-
-            Option::<G1Affine>::from(G1Affine::from_uncompressed(&bytes))
-                .map(G1Projective::from)
-                .ok_or_else(|| Error::NativeContractError("Invalid G1 point".to_string()))
-        } else {
-            Err(Error::NativeContractError(
-                "Invalid G1 point length".to_string(),
-            ))
-        }
-    }
-
-    /// Parse G2 point from bytes
-    fn parse_g2_point(&self, data: &[u8]) -> Result<G2Projective> {
-        if data.len() == 96 {
-            // Compressed format
-            let mut bytes = [0u8; 96];
-            bytes.copy_from_slice(data);
-
-            Option::<G2Affine>::from(G2Affine::from_compressed(&bytes))
-                .map(G2Projective::from)
-                .ok_or_else(|| Error::NativeContractError("Invalid G2 point".to_string()))
-        } else if data.len() == 192 {
-            // Uncompressed format
-            let mut bytes = [0u8; 192];
-            bytes.copy_from_slice(data);
-
-            Option::<G2Affine>::from(G2Affine::from_uncompressed(&bytes))
-                .map(G2Projective::from)
-                .ok_or_else(|| Error::NativeContractError("Invalid G2 point".to_string()))
-        } else {
-            Err(Error::NativeContractError(
-                "Invalid G2 point length".to_string(),
-            ))
-        }
-    }
-
-    /// Parse scalar from bytes
-    fn parse_scalar(&self, data: &[u8]) -> Result<Scalar> {
-        if data.len() != 32 {
-            return Err(Error::NativeContractError(
-                "Scalar must be 32 bytes".to_string(),
-            ));
-        }
-
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(data);
-
-        Option::<Scalar>::from(Scalar::from_bytes(&bytes))
-            .ok_or_else(|| Error::NativeContractError("Invalid scalar value".to_string()))
-    }
 }
+
 impl NativeContract for CryptoLib {
     fn hash(&self) -> UInt160 {
         self.hash
     }
+
     fn name(&self) -> &str {
         "CryptoLib"
     }
+
     fn methods(&self) -> &[NativeMethod] {
         &self.methods
     }
+
     fn invoke(
         &self,
         engine: &mut ApplicationEngine,
@@ -571,6 +335,7 @@ impl NativeContract for CryptoLib {
 
             // BLS12-381 functions
             "bls12381Add" => self.bls12381_add(args),
+            "bls12381Equal" => self.bls12381_equal(args),
             "bls12381Mul" => self.bls12381_mul(args),
             "bls12381Pairing" => self.bls12381_pairing(args),
             "bls12381Serialize" => self.bls12381_serialize(args),

@@ -5,7 +5,7 @@
 
 use neo_consensus::validators::*;
 use neo_core::{UInt160, UInt256};
-use neo_cryptography::hash::sha256;
+use neo_core::crypto_utils::NeoHash;
 
 #[cfg(test)]
 #[allow(dead_code)]

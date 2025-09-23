@@ -11,7 +11,7 @@ use crate::uint256::UInt256;
 use neo_config::{
     ADDRESS_SIZE, MAX_TRACEABLE_BLOCKS, MAX_TRANSACTIONS_PER_BLOCK, MILLISECONDS_PER_BLOCK,
 };
-use neo_cryptography;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 

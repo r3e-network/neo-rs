@@ -7,32 +7,70 @@ pub use neo_core::{
     IVerifiable, Signer, Transaction, TransactionAttributeType, UInt160, UInt256, Witness,
     WitnessCondition, WitnessScope,
 };
-pub use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
+// ECPoint functionality is now available through neo_core::crypto_utils
 pub use neo_vm::{ApplicationEngine, CallFlags, ScriptBuilder, TriggerType, VMState};
 
 // Re-export smart contract types
+pub use call_flags::CallFlags;
+pub use contract_parameter::ContractParameter;
+pub use contract_parameter_type::ContractParameterType;
 pub use contract_state::{ContractState, MethodToken, NefFile};
 pub use manifest::{
     ContractAbi, ContractEvent as ContractEventDescriptor, ContractGroup, ContractManifest,
     ContractMethod as ContractMethodDescriptor, ContractParameter as ContractParameterDefinition,
     ContractParameterType, ContractPermission, ContractPermissionDescriptor as PermissionContract,
 };
+pub use method_token::MethodToken;
 pub use native::crypto_lib::CryptoLib;
 pub use native::native_contract::NativeContract;
+pub use nef_file::NefFile;
 pub use storage::{StorageItem, StorageKey};
+pub use storage_context::StorageContext;
+pub use storage_item::StorageItem;
+pub use storage_key::StorageKey;
 // Note: Types are accessed through proper crate boundaries to maintain clean architecture
 
 pub mod application_engine;
-pub mod complete_application_engine;
+// pub mod complete_application_engine; // Removed - no C# counterpart
+pub mod binary_serializer;
+pub mod call_flags;
+pub mod contract;
+pub mod contract_basic_method;
+pub mod contract_parameter;
+pub mod contract_parameter_type;
+pub mod contract_parameters_context;
 pub mod contract_state;
+pub mod contract_task;
+pub mod contract_task_awaiter;
+pub mod contract_task_method_builder;
+pub mod deployed_contract;
 pub mod deployment;
 pub mod events;
+pub mod execution_context_state;
+pub mod find_options;
+pub mod helper;
+pub mod i_application_engine_provider;
+pub mod i_diagnostic;
+pub mod i_interoperable;
+pub mod i_interoperable_verifiable;
 pub mod interop;
+pub mod key_builder;
+pub mod log_event_args;
 pub mod manifest;
+pub mod max_length_attribute;
+pub mod method_token;
 pub mod native;
+pub mod nef_file;
+pub mod notify_event_args;
 pub mod performance;
 pub mod storage;
+pub mod storage_context;
+pub mod storage_item;
+pub mod storage_key;
+pub mod trigger_type;
 pub mod validation;
+pub mod validator_attribute;
 
 use thiserror::Error;
 

@@ -274,8 +274,7 @@ impl JsonTestRunner {
                 self.engine.execute_next_instruction()?;
             }
             "stepOut" => {
-                while self.engine.state() != VMState::HALT && self.engine.state() != VMState::FAULT
-                {
+                while !self.engine.state().is_halt() && !self.engine.state().is_fault() {
                     self.engine.execute_next_instruction()?;
                 }
             }
@@ -290,11 +289,15 @@ impl JsonTestRunner {
         expected: &VMUTExecutionEngineState,
     ) -> Result<(), Box<dyn std::error::Error>> {
         // Verify VM state
-        let actual_state = match self.engine.state() {
-            VMState::NONE => "NONE",
-            VMState::HALT => "HALT",
-            VMState::FAULT => "FAULT",
-            VMState::BREAK => "BREAK",
+        let state = self.engine.state();
+        let actual_state = if state.is_fault() {
+            "FAULT"
+        } else if state.is_halt() {
+            "HALT"
+        } else if state.is_break() {
+            "BREAK"
+        } else {
+            "NONE"
         };
 
         if actual_state != expected.state {

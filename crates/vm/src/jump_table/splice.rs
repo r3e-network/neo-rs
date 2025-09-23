@@ -70,9 +70,10 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     let src = context.pop()?;
     let dst = context.pop()?;
 
-    // Get the source and destination data
-    let src_data = match src {
-        StackItem::ByteString(data) | StackItem::Buffer(data) => data,
+    // Resolve the source data without taking ownership when possible
+    let src_view: &[u8] = match &src {
+        StackItem::ByteString(data) => data.as_slice(),
+        StackItem::Buffer(buffer) => buffer.data(),
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected ByteString or Buffer for source",
@@ -81,34 +82,35 @@ fn memcpy(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     };
 
     // Check bounds
-    if src_offset + count > src_data.len() {
+    if src_offset + count > src_view.len() {
         return Err(VmError::invalid_operation_msg(format!(
             "Source out of bounds: {} + {} > {}",
             src_offset,
             count,
-            src_data.len()
+            src_view.len()
         )));
     }
 
     // Get the destination data
     match dst {
-        StackItem::Buffer(mut data) => {
+        StackItem::Buffer(mut buffer) => {
             // Check bounds
-            if dst_offset + count > data.len() {
+            if dst_offset + count > buffer.len() {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Destination out of bounds: {} + {} > {}",
                     dst_offset,
                     count,
-                    data.len()
+                    buffer.len()
                 )));
             }
 
             // Copy the data
-            data[dst_offset..(dst_offset + count)]
-                .copy_from_slice(&src_data[src_offset..(src_offset + count)]);
+            let dst_data = buffer.data_mut();
+            dst_data[dst_offset..dst_offset + count]
+                .copy_from_slice(&src_view[src_offset..src_offset + count]);
 
             // Push the updated buffer onto the stack
-            context.push(StackItem::from_buffer(data))?;
+            context.push(StackItem::Buffer(buffer))?;
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -133,25 +135,21 @@ fn cat(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 
     // Concatenate the values
     let result = match (a, b) {
-        (StackItem::ByteString(a), StackItem::ByteString(b)) => {
-            let mut result = a.clone();
-            result.extend_from_slice(&b);
-            StackItem::from_byte_string(result)
+        (StackItem::ByteString(mut a), StackItem::ByteString(b)) => {
+            a.extend_from_slice(&b);
+            StackItem::from_byte_string(a)
         }
-        (StackItem::Buffer(a), StackItem::Buffer(b)) => {
-            let mut result = a.clone();
-            result.extend_from_slice(&b);
-            StackItem::from_buffer(result)
+        (StackItem::Buffer(mut a), StackItem::Buffer(b)) => {
+            a.extend_from_slice(b.data());
+            StackItem::Buffer(a)
         }
-        (StackItem::ByteString(a), StackItem::Buffer(b)) => {
-            let mut result = a.clone();
-            result.extend_from_slice(&b);
-            StackItem::from_byte_string(result)
+        (StackItem::ByteString(mut a), StackItem::Buffer(b)) => {
+            a.extend_from_slice(b.data());
+            StackItem::from_byte_string(a)
         }
-        (StackItem::Buffer(a), StackItem::ByteString(b)) => {
-            let mut result = a.clone();
-            result.extend_from_slice(&b);
-            StackItem::from_buffer(result)
+        (StackItem::Buffer(mut a), StackItem::ByteString(b)) => {
+            a.extend_from_slice(&b);
+            StackItem::Buffer(a)
         }
         _ => {
             return Err(VmError::invalid_type_simple(
@@ -188,7 +186,6 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
     // Get the substring
     let result = match value {
         StackItem::ByteString(data) => {
-            // Check bounds
             if offset + count > data.len() {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Substring out of bounds: {} + {} > {}",
@@ -198,12 +195,11 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
                 )));
             }
 
-            // Get the substring
             let substring = data[offset..offset + count].to_vec();
             StackItem::from_byte_string(substring)
         }
-        StackItem::Buffer(data) => {
-            // Check bounds
+        StackItem::Buffer(buffer) => {
+            let data = buffer.data();
             if offset + count > data.len() {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Substring out of bounds: {} + {} > {}",
@@ -213,7 +209,6 @@ fn substr(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
                 )));
             }
 
-            // Get the substring
             let substring = data[offset..offset + count].to_vec();
             StackItem::from_buffer(substring)
         }
@@ -247,7 +242,6 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
     // Get the left part
     let result = match value {
         StackItem::ByteString(data) => {
-            // Check bounds
             if count > data.len() {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Left out of bounds: {} > {}",
@@ -256,12 +250,11 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
                 )));
             }
 
-            // Get the left part
             let left = data[..count].to_vec();
             StackItem::from_byte_string(left)
         }
-        StackItem::Buffer(data) => {
-            // Check bounds
+        StackItem::Buffer(buffer) => {
+            let data = buffer.data();
             if count > data.len() {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Left out of bounds: {} > {}",
@@ -270,7 +263,6 @@ fn left(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()
                 )));
             }
 
-            // Get the left part
             let left = data[..count].to_vec();
             StackItem::from_buffer(left)
         }
@@ -304,7 +296,6 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
     // Get the right part
     let result = match value {
         StackItem::ByteString(data) => {
-            // Check bounds
             if count > data.len() {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Right out of bounds: {} > {}",
@@ -313,12 +304,11 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
                 )));
             }
 
-            // Get the right part
             let right = data[data.len() - count..].to_vec();
             StackItem::from_byte_string(right)
         }
-        StackItem::Buffer(data) => {
-            // Check bounds
+        StackItem::Buffer(buffer) => {
+            let data = buffer.data();
             if count > data.len() {
                 return Err(VmError::invalid_operation_msg(format!(
                     "Right out of bounds: {} > {}",
@@ -327,7 +317,6 @@ fn right(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
                 )));
             }
 
-            // Get the right part
             let right = data[data.len() - count..].to_vec();
             StackItem::from_buffer(right)
         }

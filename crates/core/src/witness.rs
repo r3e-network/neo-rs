@@ -249,9 +249,9 @@ impl Witness {
     ) -> CoreResult<bool> {
         // Real C# Neo N3 implementation: ECDsa.VerifyData
 
-        use neo_cryptography::ecdsa::ECDsa;
+        use neo_core::crypto_utils::Secp256r1Crypto;
 
-        ECDsa::verify_signature_secp256r1(hash_data, signature, public_key).map_err(|e| {
+        Secp256r1Crypto::verify(hash_data, signature, public_key).map_err(|e| {
             CoreError::Cryptographic {
                 message: format!("ECDSA verification failed: {e}"),
             }
@@ -262,11 +262,11 @@ impl Witness {
     fn compute_script_hash_from_public_key(&self, public_key: &[u8]) -> CoreResult<UInt160> {
         // Implements C# Contract.CreateSignatureContract functionality
 
-        use neo_cryptography::hash::hash160;
+        use neo_core::crypto_utils::NeoHash;
 
         let verification_script = self.create_verification_script_from_public_key(public_key)?;
 
-        let script_hash = hash160(&verification_script);
+        let script_hash = NeoHash::hash160(&verification_script);
 
         UInt160::from_bytes(&script_hash).map_err(|e| CoreError::InvalidData {
             message: format!("Invalid script hash: {e}"),

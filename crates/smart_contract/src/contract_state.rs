@@ -8,7 +8,8 @@ use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE};
 use neo_core::UInt160;
 use neo_io::{BinaryWriter, Serializable};
 use neo_vm::CallFlags;
-use sha2::{Digest, Sha256};
+use neo_core::crypto_utils::NeoHash;
+use std::convert::TryInto;
 
 /// Represents the state of a deployed smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -120,13 +121,16 @@ impl ContractState {
 
     /// Calculates the hash of the contract from its NEF and manifest.
     pub fn calculate_hash(sender: &UInt160, nef_checksum: u32, manifest_name: &str) -> UInt160 {
-        let mut hasher = Sha256::new();
-        hasher.update(sender.as_bytes());
-        hasher.update(nef_checksum.to_le_bytes());
-        hasher.update(manifest_name.as_bytes());
+        let mut buffer = Vec::with_capacity(sender.as_bytes().len() + 4 + manifest_name.len());
+        buffer.extend_from_slice(sender.as_bytes());
+        buffer.extend_from_slice(&nef_checksum.to_le_bytes());
+        buffer.extend_from_slice(manifest_name.as_bytes());
 
-        let hash = hasher.finalize();
-        UInt160::from_bytes(&hash[..ADDRESS_SIZE]).expect("Operation failed")
+        let hash = Crypto::sha256(&buffer);
+        let prefix: [u8; ADDRESS_SIZE] = hash[..ADDRESS_SIZE]
+            .try_into()
+            .expect("sha256 output shorter than address size");
+        UInt160::from_bytes(&prefix).expect("Operation failed")
     }
 
     /// Serializes the contract state to bytes.
@@ -200,8 +204,8 @@ impl NefFile {
 
     /// Calculates the checksum of the script.
     fn calculate_checksum(script: &[u8]) -> u32 {
-        let hash = Sha256::digest(script);
-        u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
+        let hash = Crypto::sha256(script);
+        u32::from_le_bytes(hash[..4].try_into().expect("sha256 output shorter than 4 bytes"))
     }
 
     /// Converts the NEF file to bytes.

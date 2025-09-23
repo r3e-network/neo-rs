@@ -6,7 +6,7 @@ use super::{header::BlockHeader, Block, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLO
 use crate::{Error, Result};
 use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_core::{Transaction, UInt160, UInt256, Witness};
-use neo_cryptography::MerkleTree;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use neo_io::BinaryWriter;
 
 /// Block builder for constructing new blocks (matches C# Neo block construction)

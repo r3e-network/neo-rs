@@ -23,12 +23,10 @@ pub fn register_handlers(jump_table: &mut JumpTable) {
 /// Implements the INVERT operation.
 fn invert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = engine.current_context_mut().expect("No current context");
 
     // Pop the value from the stack
-    let value = context.pop()?;
+    let value = context.pop().expect("stack pop failed");
 
     // Invert the value
     let result = match value {
@@ -54,13 +52,11 @@ fn invert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 /// Implements the AND operation.
 fn and(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = engine.current_context_mut().expect("No current context");
 
     // Pop the values from the stack
-    let b = context.pop()?;
-    let a = context.pop()?;
+    let b = context.pop().expect("stack pop failed");
+    let a = context.pop().expect("stack pop failed");
 
     // Perform the AND operation
     let result = match (&a, &b) {
@@ -92,13 +88,11 @@ fn and(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 /// Implements the OR operation.
 fn or(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = engine.current_context_mut().expect("No current context");
 
     // Pop the values from the stack
-    let b = context.pop()?;
-    let a = context.pop()?;
+    let b = context.pop().expect("stack pop failed");
+    let a = context.pop().expect("stack pop failed");
 
     // Perform the OR operation
     let result = match (&a, &b) {
@@ -130,13 +124,11 @@ fn or(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> 
 /// Implements the XOR operation.
 fn xor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = engine.current_context_mut().expect("No current context");
 
     // Pop the values from the stack
-    let b = context.pop()?;
-    let a = context.pop()?;
+    let b = context.pop().expect("stack pop failed");
+    let a = context.pop().expect("stack pop failed");
 
     // Perform the XOR operation
     let result = match (&a, &b) {
@@ -168,9 +160,7 @@ fn xor(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
 /// Implements the EQUAL operation.
 fn equal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = engine.current_context_mut().expect("No current context");
 
     // Check stack has at least 2 items
     if context.evaluation_stack().len() < 2 {
@@ -181,8 +171,8 @@ fn equal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
     }
 
     // Pop the values from the stack
-    let b = context.pop()?;
-    let a = context.pop()?;
+    let b = context.pop().expect("stack pop failed");
+    let a = context.pop().expect("stack pop failed");
 
     // Compare the values
     let result = a.equals(&b)?;
@@ -195,13 +185,11 @@ fn equal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<(
 /// Implements the NOTEQUAL operation.
 fn not_equal(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     // Get the current context
-    let context = engine
-        .current_context_mut()
-        .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+    let context = engine.current_context_mut().expect("No current context");
 
     // Pop the values from the stack
-    let b = context.pop()?;
-    let a = context.pop()?;
+    let b = context.pop().expect("stack pop failed");
+    let a = context.pop().expect("stack pop failed");
 
     // Compare the values
     let result = !a.equals(&b)?;
@@ -227,88 +215,75 @@ mod tests {
     fn test_invert() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine
-            .load_script(script, -1, 0)
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+        let _context = engine.load_script(script, -1, 0).expect("operation failed");
 
         // Test integer inversion
         engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
+            .expect("operation failed")
             .push(StackItem::from_int(42))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
-        invert(&mut engine, &Instruction::new(OpCode::INVERT, &[]))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+            .expect("operation failed");
+        invert(&mut engine, &Instruction::new(OpCode::INVERT, &[])).expect("operation failed");
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
+            .pop()
+            .expect("stack pop failed");
         assert_eq!(
-            result
-                .as_int()
-                .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?,
+            result.as_int().expect("operation failed"),
             BigInt::from(-43)
         );
 
         // Test boolean inversion
         engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
+            .expect("operation failed")
             .push(StackItem::from_bool(true))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
-        invert(&mut engine, &Instruction::new(OpCode::INVERT, &[]))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+            .expect("operation failed");
+        invert(&mut engine, &Instruction::new(OpCode::INVERT, &[])).expect("operation failed");
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
-        assert_eq!(
-            result
-                .as_bool()
-                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
-            false
-        );
+            .pop()
+            .expect("stack pop failed");
+        assert_eq!(result.as_bool().expect("Expected boolean"), false);
     }
 
     #[test]
     fn test_and() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine
-            .load_script(script, -1, 0)
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+        let _context = engine.load_script(script, -1, 0).expect("operation failed");
 
         // Test integer AND
         engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
+            .expect("operation failed")
             .push(StackItem::from_int(0b1010))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+            .expect("operation failed");
         engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
+            .expect("operation failed")
             .push(StackItem::from_int(0b1100))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
-        and(&mut engine, &Instruction::new(OpCode::AND, &[]))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+            .expect("operation failed");
+        and(&mut engine, &Instruction::new(OpCode::AND, &[])).expect("operation failed");
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
+            .pop()
+            .expect("stack pop failed");
         assert_eq!(
-            result
-                .as_int()
-                .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?,
+            result.as_int().expect("operation failed"),
             BigInt::from(0b1000)
         );
 
         // Test boolean AND
         engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
+            .expect("operation failed")
             .push(StackItem::from_bool(true))
             .expect("Operation failed");
         engine
@@ -319,54 +294,46 @@ mod tests {
         and(&mut engine, &Instruction::new(OpCode::AND, &[])).expect("Operation failed");
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
-        assert_eq!(
-            result
-                .as_bool()
-                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
-            false
-        );
+            .pop()
+            .expect("stack pop failed");
+        assert_eq!(result.as_bool().expect("Expected boolean"), false);
     }
 
     #[test]
     fn test_or() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine
-            .load_script(script, -1, 0)
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+        let _context = engine.load_script(script, -1, 0).expect("operation failed");
 
         // Test integer OR
         engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
+            .expect("operation failed")
             .push(StackItem::from_int(0b1010))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+            .expect("operation failed");
         engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
+            .expect("operation failed")
             .push(StackItem::from_int(0b1100))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
-        or(&mut engine, &Instruction::new(OpCode::OR, &[]))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+            .expect("operation failed");
+        or(&mut engine, &Instruction::new(OpCode::OR, &[])).expect("operation failed");
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
+            .pop()
+            .expect("stack pop failed");
         assert_eq!(
-            result
-                .as_int()
-                .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?,
+            result.as_int().expect("operation failed"),
             BigInt::from(0b1110)
         );
 
         // Test boolean OR
         engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
+            .expect("operation failed")
             .push(StackItem::from_bool(true))
             .expect("Operation failed");
         engine
@@ -377,43 +344,37 @@ mod tests {
         or(&mut engine, &Instruction::new(OpCode::OR, &[])).expect("Operation failed");
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
-        assert_eq!(
-            result
-                .as_bool()
-                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
-            true
-        );
+            .pop()
+            .expect("stack pop failed");
+        assert_eq!(result.as_bool().expect("Expected boolean"), true);
     }
 
     #[test]
     fn test_xor() {
         let mut engine = ExecutionEngine::new(None);
         let script = Script::new_relaxed(vec![]);
-        let _context = engine
-            .load_script(script, -1, 0)
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+        let _context = engine.load_script(script, -1, 0).expect("operation failed");
 
         // Test integer XOR
         engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
+            .expect("operation failed")
             .push(StackItem::from_int(0b1010))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+            .expect("operation failed");
         engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("operation failed"))?
+            .expect("operation failed")
             .push(StackItem::from_int(0b1100))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
-        xor(&mut engine, &Instruction::new(OpCode::XOR, &[]))
-            .map_err(|_| VmError::invalid_operation_msg("operation failed"))?;
+            .expect("operation failed");
+        xor(&mut engine, &Instruction::new(OpCode::XOR, &[])).expect("operation failed");
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
+            .pop()
+            .expect("stack pop failed");
         assert_eq!(result.as_int().unwrap(), BigInt::from(0b0110));
 
         // Test boolean XOR
@@ -430,15 +391,11 @@ mod tests {
         xor(&mut engine, &Instruction::new(OpCode::XOR, &[])).expect("Operation failed");
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
-        assert_eq!(
-            result
-                .as_bool()
-                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
-            true
-        );
+            .pop()
+            .expect("stack pop failed");
+        assert_eq!(result.as_bool().expect("Expected boolean"), true);
     }
 
     #[test]
@@ -461,15 +418,11 @@ mod tests {
         equal(&mut engine, &Instruction::new(OpCode::EQUAL, &[])).unwrap();
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
-        assert_eq!(
-            result
-                .as_bool()
-                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
-            true
-        );
+            .pop()
+            .expect("stack pop failed");
+        assert_eq!(result.as_bool().expect("Expected boolean"), true);
 
         // Test unequal integers
         engine
@@ -485,15 +438,11 @@ mod tests {
         equal(&mut engine, &Instruction::new(OpCode::EQUAL, &[])).expect("Operation failed");
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
-        assert_eq!(
-            result
-                .as_bool()
-                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
-            false
-        );
+            .pop()
+            .expect("stack pop failed");
+        assert_eq!(result.as_bool().expect("Expected boolean"), false);
     }
 
     #[test]
@@ -516,15 +465,11 @@ mod tests {
         not_equal(&mut engine, &Instruction::new(OpCode::NOTEQUAL, &[])).unwrap();
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
-        assert_eq!(
-            result
-                .as_bool()
-                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
-            false
-        );
+            .pop()
+            .expect("stack pop failed");
+        assert_eq!(result.as_bool().expect("Expected boolean"), false);
 
         // Test unequal integers
         engine
@@ -540,14 +485,10 @@ mod tests {
         not_equal(&mut engine, &Instruction::new(OpCode::NOTEQUAL, &[])).expect("Operation failed");
         let result = engine
             .current_context_mut()
-            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?
+            .expect("No current context")
             .evaluation_stack_mut()
-            .pop()?;
-        assert_eq!(
-            result
-                .as_bool()
-                .ok_or_else(|| VmError::invalid_type_simple("Expected boolean"))?,
-            true
-        );
+            .pop()
+            .expect("stack pop failed");
+        assert_eq!(result.as_bool().expect("Expected boolean"), true);
     }
 }

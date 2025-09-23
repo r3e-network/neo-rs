@@ -147,20 +147,20 @@ fn test_reference_counter_with_complex_references() {
     let id4 = counter.register();
 
     // Add references
-    counter.add_reference(id1);
-    counter.add_reference(id2);
-    counter.add_reference(id3);
-    counter.add_reference(id4);
+    counter.add_reference_to(id1);
+    counter.add_reference_to(id2);
+    counter.add_reference_to(id3);
+    counter.add_reference_to(id4);
 
     // Add more references
-    counter.add_reference(id1);
-    counter.add_reference(id2);
-    counter.add_reference(id3);
-    counter.add_reference(id4);
+    counter.add_reference_to(id1);
+    counter.add_reference_to(id2);
+    counter.add_reference_to(id3);
+    counter.add_reference_to(id4);
 
     // Create additional references
-    counter.add_reference(id1);
-    counter.add_reference(id2);
+    counter.add_reference_to(id1);
+    counter.add_reference_to(id2);
 
     assert_eq!(counter.count(), 10);
 

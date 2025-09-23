@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     # Core infrastructure
     "crates/core",
-    "crates/cryptography",
     "crates/io",
     
     # Blockchain components
@@ -19,8 +18,8 @@ members = [
     # Utilities and extensions
     "crates/json",
     "crates/mpt_trie",
-    "crates/bls12_381",
     "crates/extensions",
+    "crates/monitoring",
     "crates/plugins",
     "crates/config",
     
@@ -65,7 +64,6 @@ msrv = "1.70.0"
 [workspace.dependencies]
 # === Internal crates ===
 neo-core = { path = "crates/core", version = "0.4.0" }
-neo-cryptography = { path = "crates/cryptography", version = "0.4.0" }
 neo-io = { path = "crates/io", version = "0.4.0" }
 neo-vm = { path = "crates/vm", version = "0.4.0" }
 neo-smart-contract = { path = "crates/smart_contract", version = "0.4.0" }
@@ -80,8 +78,8 @@ neo-config = { path = "crates/config", version = "0.4.0" }
 neo-rpc-server = { path = "crates/rpc_server", version = "0.4.0" }
 neo-rpc-client = { path = "crates/rpc_client", version = "0.4.0" }
 # neo-cli = { path = "crates/cli", version = "0.4.0" } # Temporarily disabled
-neo-bls12-381 = { path = "crates/bls12_381", version = "0.4.0" }
 neo-extensions = { path = "crates/extensions", version = "0.4.0" }
+neo-monitoring = { path = "crates/monitoring", version = "0.4.0" }
 
 # === Core dependencies ===
 # Async runtime
@@ -114,6 +112,10 @@ secp256k1 = { version = "0.28", features = ["recovery", "global-context"] }
 ed25519-dalek = { version = "2.0", features = ["rand_core"] }
 k256 = { version = "0.13", features = ["ecdsa", "sha256"] }
 p256 = { version = "0.13", features = ["ecdsa", "sha256"] }
+
+# BLS12-381 cryptography
+blst = "0.3"
+# Alternative: ark-bls12-381 = { version = "0.4", features = ["std"] }
 
 # Hashing
 sha2 = "0.10"
@@ -213,7 +215,6 @@ neo-ledger.workspace = true
 neo-network.workspace = true
 neo-persistence.workspace = true
 # neo-cli.workspace = true
-neo-cryptography.workspace = true
 neo-smart-contract.workspace = true
 neo-vm.workspace = true
 

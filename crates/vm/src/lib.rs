@@ -107,8 +107,14 @@ extern crate std;
 // Core VM modules
 /// High-level VM engine with interop services
 pub mod application_engine;
+/// Exception emitted when a script is invalid during loading
+pub mod bad_script_exception;
 /// Call permission flags for interop services  
 pub mod call_flags;
+/// Base class for VM exceptions that can be caught by smart contracts
+pub mod catchable_exception;
+/// Collection helpers used by VM stack types
+pub mod collections;
 /// Debugging support with breakpoints and step execution
 pub mod debugger;
 /// VM error types and result handling
@@ -117,40 +123,42 @@ pub mod error;
 pub mod evaluation_stack;
 /// Exception handling and try-catch support
 pub mod exception_handling;
+/// Shims for the C# source layout exposing the exception handling context types
+pub mod exception_handling_context;
+/// Shims for the C# exception handling state types
+pub mod exception_handling_state;
 /// Script execution context and local variables
 pub mod execution_context;
 /// Low-level VM execution engine
 pub mod execution_engine;
-/// Gas calculation system matching C# exactly
-pub mod gas_calculator;
+/// Configurable limits governing VM execution
+pub mod execution_engine_limits;
+/// Reference counter interface shared across VM components
+pub mod i_reference_counter;
 /// VM instruction representation
 pub mod instruction;
 /// Interop service registry and native calls
 pub mod interop_service;
 /// OpCode implementation and instruction dispatch
 pub mod jump_table;
-/// Memory pool for optimizing allocations
-pub mod memory_pool;
-/// Performance metrics collection
-pub mod metrics;
 /// VM opcode definitions and utilities
 pub mod op_code;
-/// Performance optimization utilities
-pub mod performance_opt;
 /// Memory management for complex data structures
 pub mod reference_counter;
-/// Safe execution utilities for VM operations
-pub mod safe_execution;
-/// Safe type conversion utilities
-pub mod safe_type_conversion;
 /// VM script representation and validation
 pub mod script;
 /// Utility for constructing VM bytecode
 pub mod script_builder;
+/// Slot storage for locals/arguments/static fields
+pub mod slot;
 /// Polymorphic data types for VM values
 pub mod stack_item;
 /// Graph algorithms for garbage collection
 pub mod strongly_connected_components;
+/// Virtual machine lifecycle states (HALT/FAULT/BREAK)
+pub mod vm_state;
+/// Exception raised when execution terminates without being caught
+pub mod vm_unhandled_exception;
 
 /// Test utilities and compatibility tests
 #[cfg(test)]
@@ -158,13 +166,18 @@ pub mod strongly_connected_components;
 pub mod tests;
 
 pub use application_engine::{ApplicationEngine, NotificationEvent, TriggerType};
+pub use bad_script_exception::BadScriptException;
 pub use call_flags::CallFlags;
+pub use catchable_exception::CatchableException;
+pub use collections::OrderedDictionary;
 pub use debugger::{Breakpoint, Debugger};
 pub use error::{VmError, VmResult};
 pub use evaluation_stack::EvaluationStack;
 pub use exception_handling::{ExceptionHandlingContext, ExceptionHandlingState};
-pub use execution_context::{ExecutionContext, Slot};
-pub use execution_engine::{ExecutionEngine, ExecutionEngineLimits, VMState};
+pub use execution_context::ExecutionContext;
+pub use execution_engine::ExecutionEngine;
+pub use execution_engine_limits::ExecutionEngineLimits;
+pub use i_reference_counter::IReferenceCounter;
 pub use instruction::Instruction;
 pub use interop_service::{InteropDescriptor, InteropMethod, InteropService};
 pub use jump_table::{InstructionHandler, JumpTable};
@@ -172,8 +185,11 @@ pub use op_code::OpCode;
 pub use reference_counter::ReferenceCounter;
 pub use script::Script;
 pub use script_builder::ScriptBuilder;
+pub use slot::Slot;
 pub use stack_item::{StackItem, StackItemType};
 pub use strongly_connected_components::Tarjan;
+pub use vm_state::VMState;
+pub use vm_unhandled_exception::VMUnhandledException;
 
 // I/O abstraction layer
 /// Test I/O implementation for unit tests

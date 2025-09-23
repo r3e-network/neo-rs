@@ -14,7 +14,9 @@ use neo_config::{
     SECONDS_PER_BLOCK,
 };
 use neo_core::{IVerifiable, Signer, Transaction, UInt160, WitnessScope};
+use neo_core::crypto_utils::NeoHash;
 use std::collections::HashSet;
+use std::convert::TryInto;
 
 /// Maximum size for a NEF file in bytes.
 pub const MAX_NEF_SIZE: usize = MAX_TRANSACTIONS_PER_BLOCK * MAX_SCRIPT_SIZE; // MAX_TRANSACTIONS_PER_BLOCK KB
@@ -349,10 +351,8 @@ impl ContractValidator {
 
     /// Calculates the checksum for a NEF script.
     fn calculate_nef_checksum(&self, script: &[u8]) -> u32 {
-        use sha2::{Digest, Sha256};
-
-        let hash = Sha256::digest(script);
-        u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
+        let hash = Crypto::sha256(script);
+        u32::from_le_bytes(hash[..4].try_into().expect("sha256 output shorter than 4 bytes"))
     }
 
     /// Validates deployment of a contract with production-ready checks

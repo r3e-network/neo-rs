@@ -197,8 +197,8 @@ impl Nep6Wallet {
 
     /// Hashes a password for verification.
     fn hash_password(password: &str) -> Vec<u8> {
-        use neo_cryptography::hash::sha256;
-        sha256(password.as_bytes()).to_vec()
+        use neo_core::crypto_utils::NeoHash;
+        NeoHash::sha256(password.as_bytes()).to_vec()
     }
 
     /// Gets the default account.

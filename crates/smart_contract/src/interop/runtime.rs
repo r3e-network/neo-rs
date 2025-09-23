@@ -6,6 +6,8 @@ use crate::{Error, Result};
 use neo_config::{MAX_SCRIPT_SIZE, SECONDS_PER_BLOCK};
 use neo_core::UInt160;
 use neo_vm::TriggerType;
+use neo_core::crypto_utils::NeoHash;
+use std::convert::TryInto;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Log entry structure for smart contract logs.
@@ -216,11 +218,10 @@ impl InteropService for GetRandomService {
         };
 
         // Create deterministic seed from blockchain state
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(current_script.as_bytes());
-        hasher.update(current_script.as_bytes()); // Use script hash as seed
-        hasher.update(current_script.as_bytes());
+        let mut seed = Vec::with_capacity(current_script.as_bytes().len() * 3 + 8);
+        seed.extend_from_slice(current_script.as_bytes());
+        seed.extend_from_slice(current_script.as_bytes()); // Use script hash as seed
+        seed.extend_from_slice(current_script.as_bytes());
 
         let nonce_key = format!("random_nonce:{}", current_script);
         let current_nonce = match engine.get_storage_item(&context, nonce_key.as_bytes()) {
@@ -241,8 +242,8 @@ impl InteropService for GetRandomService {
 
         let _ = engine.put_storage_item(&context, nonce_key.as_bytes(), &nonce_bytes);
 
-        hasher.update(&nonce_bytes);
-        let hash_result = hasher.finalize();
+        seed.extend_from_slice(&nonce_bytes);
+        let hash_result = Crypto::sha256(&seed);
 
         let random_bytes = &hash_result[0..4];
         let random_number = u32::from_le_bytes(

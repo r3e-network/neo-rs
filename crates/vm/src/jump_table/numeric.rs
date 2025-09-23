@@ -169,10 +169,9 @@ fn add(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()>
             result.extend_from_slice(&b);
             StackItem::from_byte_string(result)
         }
-        (StackItem::Buffer(a), StackItem::Buffer(b)) => {
-            let mut result = a.clone();
-            result.extend_from_slice(&b);
-            StackItem::from_buffer(result)
+        (StackItem::Buffer(mut a), StackItem::Buffer(b)) => {
+            a.extend_from_slice(b.data());
+            StackItem::Buffer(a)
         }
         (a, b) => {
             // Try to convert to integers and add

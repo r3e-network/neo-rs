@@ -11,7 +11,7 @@ use crate::{
     NetworkConfig, NetworkError, NetworkStats, P2PConfig, P2PEvent, P2pNode, PeerManager, Result,
     SyncEvent, SyncManager,
 };
-use neo_core::{ShutdownCoordinator, SignalHandler, UInt160};
+use neo_core::UInt160;
 use neo_ledger::{Blockchain, Ledger};
 
 use serde::{Deserialize, Serialize};
@@ -154,8 +154,8 @@ pub struct NetworkServer {
     stats: Arc<RwLock<NetworkStats>>,
     /// Running state
     running: Arc<RwLock<bool>>,
-    /// Shutdown coordinator
-    shutdown_coordinator: Arc<ShutdownCoordinator>,
+    /// Shutdown coordinator (removed - no C# counterpart)
+    // shutdown_coordinator: Arc<ShutdownCoordinator>,
 }
 
 impl NetworkServer {
@@ -213,7 +213,7 @@ impl NetworkServer {
         });
 
         let (event_tx, _) = broadcast::channel(1000);
-        let shutdown_coordinator = Arc::new(ShutdownCoordinator::new());
+        // let shutdown_coordinator = Arc::new(ShutdownCoordinator::new()); // Removed - no C# counterpart
 
         Ok(Self {
             config,
@@ -224,7 +224,7 @@ impl NetworkServer {
             event_tx,
             stats: Arc::new(RwLock::new(NetworkStats::default())),
             running: Arc::new(RwLock::new(false)),
-            shutdown_coordinator,
+            // shutdown_coordinator, // Removed - no C# counterpart
         })
     }
 
@@ -237,8 +237,8 @@ impl NetworkServer {
         // Register components with shutdown coordinator
         self.register_shutdown_handlers().await?;
 
-        let signal_handler = SignalHandler::new(Arc::clone(&self.shutdown_coordinator));
-        signal_handler.start().await;
+        // let signal_handler = SignalHandler::new(Arc::clone(&self.shutdown_coordinator)); // Removed - no C# counterpart
+        // signal_handler.start().await; // Removed - no C# counterpart
 
         // Set sync manager reference in P2P node before starting
         self.p2p_node
@@ -281,25 +281,25 @@ impl NetworkServer {
     pub async fn stop(&self) {
         info!("Stopping network server");
 
-        // Initiate graceful shutdown through the coordinator
-        if let Err(e) = self
-            .shutdown_coordinator
-            .initiate_shutdown("NetworkServer stop requested".to_string())
-            .await
-        {
-            warn!("Failed to initiate graceful shutdown: {}", e);
+        // Initiate graceful shutdown through the coordinator (removed - no C# counterpart)
+        // if let Err(e) = self
+        //     .shutdown_coordinator
+        //     .initiate_shutdown("NetworkServer stop requested".to_string())
+        //     .await
+        // {
+        //     warn!("Failed to initiate graceful shutdown: {}", e);
 
-            // Fallback to direct shutdown
-            *self.running.write().await = false;
+        // Fallback to direct shutdown
+        *self.running.write().await = false;
 
-            // Stop components directly
-            self.sync_manager.stop().await;
-            self.p2p_node.stop().await;
+        // Stop components directly
+        self.sync_manager.stop().await;
+        self.p2p_node.stop().await;
 
-            if let Some(rpc_server) = &self.rpc_server {
-                rpc_server.stop().await;
-            }
+        if let Some(rpc_server) = &self.rpc_server {
+            rpc_server.stop().await;
         }
+        // }
 
         let _ = self.event_tx.send(NetworkServerEvent::Stopped);
 

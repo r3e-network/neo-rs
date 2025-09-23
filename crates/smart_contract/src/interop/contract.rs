@@ -11,7 +11,8 @@ use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE, SECONDS_PER_BLOCK};
 use neo_core::UInt160;
 use neo_vm::TriggerType;
 use serde_json;
-use sha2::{Digest, Sha256};
+use neo_core::crypto_utils::NeoHash;
+use std::convert::TryInto;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 /// Service for calling other contracts.
@@ -309,18 +310,17 @@ impl CreateService {
         nef_checksum: u32,
         manifest_name: &str,
     ) -> Result<UInt160> {
-        let mut hasher = Sha256::new();
+        let mut buffer = Vec::with_capacity(sender.as_bytes().len() + 4 + manifest_name.len());
+        buffer.extend_from_slice(sender.as_bytes());
+        buffer.extend_from_slice(&nef_checksum.to_le_bytes());
+        buffer.extend_from_slice(manifest_name.as_bytes());
 
-        // Hash components in the same order as C# Neo
-        hasher.update(sender.as_bytes()); // Sender address
-        hasher.update(&nef_checksum.to_le_bytes()); // NEF checksum
-        hasher.update(manifest_name.as_bytes()); // Manifest name
+        let hash = Crypto::sha256(&buffer);
+        let hash_bytes: [u8; ADDRESS_SIZE] = hash[..ADDRESS_SIZE]
+            .try_into()
+            .expect("sha256 output shorter than address size");
 
-        let hash_result = hasher.finalize();
-        let mut hash_bytes = [0u8; ADDRESS_SIZE];
-        hash_bytes.copy_from_slice(&hash_result[..ADDRESS_SIZE]);
-
-        Ok(UInt160::from_bytes(&hash_bytes)?)
+        Ok(UInt160::from_bytes(&hash_bytes)?))
     }
 
     /// Checks if contract is blocked (matches C# Policy.IsBlocked exactly)

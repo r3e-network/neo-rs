@@ -14,7 +14,7 @@ path = "src/main.rs"
 log = "0.4"# Internal crates
 neo-core = { workspace = true }
 neo-config = { workspace = true }
-neo-cryptography = { workspace = true }
+# Removed neo-cryptography - using external crypto crates directly
 neo-io = { workspace = true }
 neo-vm = { workspace = true }
 # neo-smart-contract = { workspace = true }  # Temporarily disabled due to compilation errors

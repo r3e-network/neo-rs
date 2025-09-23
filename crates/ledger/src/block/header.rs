@@ -7,7 +7,7 @@ use super::verification::WitnessVerifier;
 use crate::{Error, Result, VerifyResult};
 use neo_config::{ADDRESS_SIZE, MILLISECONDS_PER_BLOCK};
 use neo_core::{Signer, UInt160, UInt256, Witness, WitnessCondition, WitnessScope};
-use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use neo_io::BinaryWriter;
 use neo_vm::ApplicationEngine;
 use serde::{Deserialize, Serialize};

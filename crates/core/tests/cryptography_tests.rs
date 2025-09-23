@@ -1,8 +1,7 @@
 //! Comprehensive cryptography tests converted from C# Neo unit tests.
 //! These tests ensure 100% compatibility with the C# Neo cryptography implementation.
 
-use neo_cryptography::crypto::Crypto;
-use neo_cryptography::helper;
+use neo_core::crypto_utils::{NeoHash, Secp256k1Crypto, Secp256r1Crypto, Ed25519Crypto};
 // use std::str::FromStr;
 
 // ============================================================================

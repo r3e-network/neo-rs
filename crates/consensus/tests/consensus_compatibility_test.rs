@@ -111,7 +111,7 @@ fn test_all_consensus_message_types() {
 
 #[test]
 fn test_consensus_message_signing() {
-    use neo_cryptography::Crypto;
+    use neo_core::crypto_utils::NeoHash;
 
     let consensus_msg = ConsensusMessage {
         view_number: 0,

@@ -5,7 +5,7 @@
 
 use crate::{Error, Result};
 use neo_core::UInt160;
-use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use num_bigint::BigInt;
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};

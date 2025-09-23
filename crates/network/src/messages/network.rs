@@ -221,7 +221,7 @@ impl NetworkMessage {
         }
 
         // Convert command string to enum
-        let command = MessageCommand::from_str(command_str)?;
+        let command = MessageCommand::parse_str(command_str)?;
 
         // Parse payload based on command
         let payload = ProtocolMessage::from_bytes(&command, &payload_bytes)?;
@@ -327,7 +327,7 @@ impl NetworkMessage {
             .trim_end_matches('\0')
             .to_string();
 
-        let command = MessageCommand::from_str(&command_str)?;
+        let command = MessageCommand::parse_str(&command_str)?;
         let payload = ProtocolMessage::from_bytes(&command, &payload_bytes)?;
 
         // Create Neo3Message for compatibility

@@ -85,7 +85,10 @@ fn test_interop_service_invoke() {
 
     // Create a script that calls the interop method
     let mut builder = ScriptBuilder::new();
-    builder.emit_syscall("Test.Method").emit_opcode(OpCode::RET);
+    builder
+        .emit_syscall("Test.Method")
+        .expect("emit_syscall failed")
+        .emit_opcode(OpCode::RET);
     let script = builder.to_script();
 
     // Load the script
@@ -121,6 +124,7 @@ fn test_interop_service_platform() {
     let mut builder = ScriptBuilder::new();
     builder
         .emit_syscall("System.Runtime.Platform")
+        .expect("emit_syscall failed")
         .emit_opcode(OpCode::RET);
     let script = builder.to_script();
 
@@ -157,6 +161,7 @@ fn test_interop_service_log() {
     let mut builder = ScriptBuilder::new();
     builder
         .emit_syscall("System.Runtime.Log")
+        .expect("emit_syscall failed")
         .emit_opcode(OpCode::RET);
     let script = builder.to_script();
 
@@ -198,7 +203,9 @@ fn test_interop_service_storage() {
     // Test 1: GetContext
     {
         let mut builder = ScriptBuilder::new();
-        builder.emit_syscall("System.Storage.GetContext");
+        builder
+            .emit_syscall("System.Storage.GetContext")
+            .expect("emit_syscall failed");
         let script = builder.to_script();
         engine.load_script(script, -1, 0).unwrap();
 
@@ -220,7 +227,9 @@ fn test_interop_service_storage() {
     // Test 2: Put operation
     {
         let mut builder = ScriptBuilder::new();
-        builder.emit_syscall("System.Storage.Put");
+        builder
+            .emit_syscall("System.Storage.Put")
+            .expect("emit_syscall failed");
         let script = builder.to_script();
         engine.load_script(script, -1, 0).unwrap();
 
@@ -252,7 +261,9 @@ fn test_interop_service_storage() {
     // Test 3: Get operation
     {
         let mut builder = ScriptBuilder::new();
-        builder.emit_syscall("System.Storage.Get");
+        builder
+            .emit_syscall("System.Storage.Get")
+            .expect("emit_syscall failed");
         let script = builder.to_script();
         engine.load_script(script, -1, 0).unwrap();
 

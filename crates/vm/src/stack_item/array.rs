@@ -5,7 +5,6 @@
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::StackItem;
-use num_traits::ToPrimitive;
 use std::sync::Arc;
 
 /// Represents an array of stack items in the VM.
@@ -32,6 +31,11 @@ impl Array {
         }
     }
 
+    /// Returns the reference identifier assigned by the reference counter, if any.
+    pub fn reference_id(&self) -> Option<usize> {
+        self.reference_id
+    }
+
     /// Gets the items in the array.
     pub fn items(&self) -> &[StackItem] {
         &self.items
@@ -40,6 +44,11 @@ impl Array {
     /// Gets a mutable reference to the items in the array.
     pub fn items_mut(&mut self) -> &mut Vec<StackItem> {
         &mut self.items
+    }
+
+    /// Returns a stable pointer used for identity tracking.
+    pub fn as_ptr(&self) -> *const StackItem {
+        self.items.as_ptr()
     }
 
     /// Gets the item at the specified index.
@@ -120,11 +129,43 @@ impl Array {
     pub fn items_ref(&self) -> &Vec<StackItem> {
         &self.items
     }
+
+    /// Consumes the array and returns the underlying items.
+    pub fn into_vec(self) -> Vec<StackItem> {
+        self.items
+    }
 }
 
-impl Drop for Array {
-    fn drop(&mut self) {
-        // Reference cleanup is handled by the ReferenceCounter automatically
+impl IntoIterator for Array {
+    type Item = StackItem;
+    type IntoIter = std::vec::IntoIter<StackItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Array {
+    type Item = &'a StackItem;
+    type IntoIter = std::slice::Iter<'a, StackItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Array {
+    type Item = &'a mut StackItem;
+    type IntoIter = std::slice::IterMut<'a, StackItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter_mut()
+    }
+}
+
+impl From<Array> for Vec<StackItem> {
+    fn from(array: Array) -> Self {
+        array.items
     }
 }
 
@@ -132,6 +173,7 @@ impl Drop for Array {
 #[allow(dead_code)]
 mod tests {
     use super::*;
+    use num_traits::ToPrimitive;
 
     #[test]
     fn test_array_creation() {

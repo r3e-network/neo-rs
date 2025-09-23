@@ -8,7 +8,7 @@ use crate::native::{NativeContract, NativeMethod};
 use crate::{Error, Result};
 use neo_config::{HASH_SIZE, SECONDS_PER_BLOCK};
 use neo_core::UInt160;
-use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -267,7 +267,7 @@ impl RoleManagement {
                 ));
             }
 
-            let curve = neo_cryptography::ecc::ECCurve::secp256r1();
+            // Removed neo_cryptography dependency - using external crypto crates directly
             let pubkey = ECPoint::decode_compressed(&key_bytes, curve).map_err(|_| {
                 Error::NativeContractError("Invalid public key encoding".to_string())
             })?;

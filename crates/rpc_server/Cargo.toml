@@ -11,7 +11,7 @@ neo-config = { path = "../config" }
 neo-network = { path = "../network" }
 neo-rpc-client = { path = "../rpc_client" }
 neo-smart-contract = { path = "../smart_contract" }
-neo-cryptography = { path = "../cryptography" }
+# Removed neo-cryptography - using external crypto crates directly
 neo-vm = { path = "../vm" }
 neo-io = { path = "../io" }
 tokio = { version = "1.0", features = ["full"] }

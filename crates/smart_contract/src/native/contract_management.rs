@@ -13,8 +13,9 @@ use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE};
 use neo_core::UInt160;
 use neo_io::{BinaryWriter, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use neo_core::crypto_utils::NeoHash;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::sync::{Arc, RwLock};
 
 /// Prefix for minimum deployment fee storage
@@ -138,14 +139,14 @@ impl ContractManagement {
 
     /// Calculates contract hash from script
     fn calculate_contract_hash(sender: &UInt160, checksum: u32, name: &str) -> UInt160 {
-        let mut hasher = Sha256::new();
-        hasher.update(&[0xFF]); // Contract prefix
-        hasher.update(sender.as_bytes());
-        hasher.update(&checksum.to_le_bytes());
-        hasher.update(name.as_bytes());
+        let mut buffer = Vec::with_capacity(1 + sender.as_bytes().len() + 4 + name.len());
+        buffer.push(0xFF); // Contract prefix
+        buffer.extend_from_slice(sender.as_bytes());
+        buffer.extend_from_slice(&checksum.to_le_bytes());
+        buffer.extend_from_slice(name.as_bytes());
 
-        let hash = hasher.finalize();
-        UInt160::from_bytes(&hash[0..20]).expect("Hash should be valid")
+        let hash = Crypto::sha256(&buffer);
+        UInt160::from_bytes(&hash[..20]).expect("Hash should be valid")
     }
 
     /// Validates NEF file structure
@@ -165,12 +166,13 @@ impl ContractManagement {
         }
 
         // Validate checksum
-        let mut hasher = Sha256::new();
-        hasher.update(&nef.compiler.as_bytes());
-        hasher.update(&nef.source.as_bytes());
-        hasher.update(&nef.script);
+        let mut data = Vec::with_capacity(nef.compiler.len() + nef.source.len() + nef.script.len());
+        data.extend_from_slice(nef.compiler.as_bytes());
+        data.extend_from_slice(nef.source.as_bytes());
+        data.extend_from_slice(&nef.script);
+        let hash = Crypto::sha256(&data);
         let calculated_checksum = u32::from_le_bytes(
-            hasher.finalize()[0..4]
+            hash[..4]
                 .try_into()
                 .expect("Should be 4 bytes"),
         );

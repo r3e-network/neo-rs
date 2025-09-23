@@ -150,7 +150,7 @@ pub mod compression;
 /// Secondary indexing system
 pub mod index;
 /// Schema migration and versioning
-pub mod migration;
+// pub mod migration; // Removed - no C# counterpart
 /// Data serialization utilities
 pub mod serialization;
 
@@ -170,7 +170,7 @@ pub use index::{BTreeIndex, HashIndex, IndexConfig, IndexType};
 pub use backup::{BackupConfig, BackupManager, BackupMetadata, BackupStatus, BackupType};
 
 // Re-export migration types
-pub use migration::{MigrationConfig, MigrationManager, SchemaMigration};
+// pub use migration::{MigrationConfig, MigrationManager, SchemaMigration}; // Removed - no C# counterpart
 
 use serde::{Deserialize, Serialize};
 use std::fmt;

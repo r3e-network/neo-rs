@@ -180,7 +180,7 @@ mod tests {
     /// Test null item behavior (matches C# TestNull)
     #[test]
     fn test_null() {
-        let null_item = StackItem::from_byte_string(vec![]);
+        let null_item = StackItem::from_byte_string(Vec::<u8>::new());
         assert_ne!(
             StackItem::Null,
             null_item,
@@ -353,10 +353,17 @@ mod tests {
 
         // Verify that the map item was deep copied correctly
         if let (StackItem::Array(ref items_a), StackItem::Array(ref items_aa)) = (&a, &aa) {
-            assert_eq!(items_a[5], items_aa[5], "Map items should be equal");
+            let items_a_slice = items_a.items();
+            let items_aa_slice = items_aa.items();
+            assert_eq!(
+                items_a_slice[5], items_aa_slice[5],
+                "Map items should be equal"
+            );
 
             // Verify all items are equal
-            for (i, (item_a, item_aa)) in items_a.iter().zip(items_aa.iter()).enumerate() {
+            for (i, (item_a, item_aa)) in
+                items_a_slice.iter().zip(items_aa_slice.iter()).enumerate()
+            {
                 assert_eq!(
                     item_a, item_aa,
                     "Item {} should be equal after deep copy",
@@ -390,7 +397,9 @@ mod tests {
             "Zero integer should convert to false"
         );
         assert!(
-            !StackItem::from_byte_string(vec![]).as_bool().unwrap(),
+            !StackItem::from_byte_string(Vec::<u8>::new())
+                .as_bool()
+                .unwrap(),
             "Empty byte string should convert to false"
         );
         assert!(
@@ -398,7 +407,9 @@ mod tests {
             "Non-empty byte string should convert to true"
         );
         assert!(
-            !StackItem::from_array(vec![]).as_bool().unwrap(),
+            !StackItem::from_array(Vec::<StackItem>::new())
+                .as_bool()
+                .unwrap(),
             "Empty array should convert to false"
         );
         assert!(
@@ -432,7 +443,9 @@ mod tests {
             "Integer should convert to itself"
         );
         assert_eq!(
-            StackItem::from_byte_string(vec![]).as_int().unwrap(),
+            StackItem::from_byte_string(Vec::<u8>::new())
+                .as_int()
+                .unwrap(),
             BigInt::from(0),
             "Empty bytes should convert to 0"
         );
@@ -448,7 +461,7 @@ mod tests {
         // Test byte array conversion behavior
         assert_eq!(
             StackItem::Null.as_bytes().unwrap(),
-            vec![],
+            Vec::<u8>::new(),
             "Null should convert to empty bytes"
         );
         assert_eq!(
@@ -463,7 +476,7 @@ mod tests {
         );
         assert_eq!(
             StackItem::from_int(0).as_bytes().unwrap(),
-            vec![],
+            Vec::<u8>::new(),
             "Zero should convert to empty bytes"
         );
         assert_eq!(
@@ -506,19 +519,19 @@ mod tests {
             StackItemType::Integer
         );
         assert_eq!(
-            StackItem::from_byte_string(vec![]).stack_item_type(),
+            StackItem::from_byte_string(Vec::<u8>::new()).stack_item_type(),
             StackItemType::ByteString
         );
         assert_eq!(
-            StackItem::from_buffer(vec![]).stack_item_type(),
+            StackItem::from_buffer(Vec::<u8>::new()).stack_item_type(),
             StackItemType::Buffer
         );
         assert_eq!(
-            StackItem::from_array(vec![]).stack_item_type(),
+            StackItem::from_array(Vec::<StackItem>::new()).stack_item_type(),
             StackItemType::Array
         );
         assert_eq!(
-            StackItem::from_struct(vec![]).stack_item_type(),
+            StackItem::from_struct(Vec::<StackItem>::new()).stack_item_type(),
             StackItemType::Struct
         );
         assert_eq!(

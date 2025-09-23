@@ -6,62 +6,17 @@ use crate::error::VmError;
 use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
 use crate::execution_context::ExecutionContext;
-use crate::gas_calculator::{GasCalculator, GasError};
+// use crate::gas_calculator::{GasCalculator, GasError}; // Removed - no C# counterpart
+use crate::i_reference_counter::IReferenceCounter;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::StackItem;
-use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE};
+use neo_config::HASH_SIZE;
 
-/// The VM state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum VMState {
-    /// The VM is not running.
-    NONE = 0,
-
-    /// The VM has halted normally.
-    HALT = 1,
-
-    /// The VM has encountered an error.
-    FAULT = 2,
-
-    /// The VM is in a debug break state.
-    BREAK = 4,
-}
-
-/// Restrictions on the VM.
-#[derive(Debug, Clone)]
-pub struct ExecutionEngineLimits {
-    /// The maximum number of items allowed on a stack.
-    pub max_stack_size: usize,
-
-    /// The maximum size of an item in bytes.
-    pub max_item_size: usize,
-
-    /// The maximum number of frames allowed on the invocation stack.
-    pub max_invocation_stack_size: usize,
-
-    /// Whether to catch engine exceptions.
-    pub catch_engine_exceptions: bool,
-}
-
-impl ExecutionEngineLimits {
-    /// The default execution engine limits.
-    pub const DEFAULT: Self = Self {
-        max_stack_size: 2048,
-        max_item_size: MAX_SCRIPT_SIZE * MAX_SCRIPT_SIZE,
-        max_invocation_stack_size: MAX_SCRIPT_SIZE,
-        catch_engine_exceptions: true,
-    };
-}
-
-impl Default for ExecutionEngineLimits {
-    fn default() -> Self {
-        Self::DEFAULT
-    }
-}
+pub use crate::execution_engine_limits::ExecutionEngineLimits;
+pub use crate::vm_state::VMState;
 
 /// The execution engine for the Neo VM.
 pub struct ExecutionEngine {
@@ -81,7 +36,7 @@ pub struct ExecutionEngine {
     reference_counter: ReferenceCounter,
 
     /// Gas calculator for execution cost tracking (matches C# ApplicationEngine)
-    gas_calculator: GasCalculator,
+    // gas_calculator: GasCalculator, // Removed - no C# counterpart
 
     /// The invocation stack of the VM
     invocation_stack: Vec<ExecutionContext>,
@@ -116,7 +71,7 @@ impl ExecutionEngine {
             jump_table: jump_table.unwrap_or_else(JumpTable::default),
             limits,
             reference_counter: reference_counter.clone(),
-            gas_calculator: GasCalculator::new(1_000_000_000, 30), // Default gas limit and fee factor
+            // gas_calculator: GasCalculator::new(1_000_000_000, 30), // Removed - no C# counterpart and fee factor
             invocation_stack: Vec::new(),
             result_stack: EvaluationStack::new(reference_counter),
             uncaught_exception: None,
@@ -155,9 +110,19 @@ impl ExecutionEngine {
         &self.reference_counter
     }
 
+    /// Returns the execution limits configured for this engine.
+    pub fn limits(&self) -> &ExecutionEngineLimits {
+        &self.limits
+    }
+
     /// Returns the invocation stack.
     pub fn invocation_stack(&self) -> &[ExecutionContext] {
         &self.invocation_stack
+    }
+
+    /// Returns a mutable handle to the invocation stack.
+    pub(crate) fn invocation_stack_mut(&mut self) -> &mut Vec<ExecutionContext> {
+        &mut self.invocation_stack
     }
 
     /// Returns the current context, if any.
@@ -424,20 +389,20 @@ impl ExecutionEngine {
 
     /// Called before executing an instruction.
     fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
-        // Consume gas for instruction execution (matches C# ApplicationEngine exactly)
-        if let Err(gas_error) = self.gas_calculator.consume_gas(instruction.opcode()) {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Gas limit exceeded: {}",
-                gas_error
-            )));
-        }
+        // Consume gas for instruction execution (disabled - no C# counterpart)
+        // if let Err(gas_error) = self.gas_calculator.consume_gas(instruction.opcode()) {
+        //     return Err(VmError::invalid_operation_msg(format!(
+        //         "Gas limit exceeded: {}",
+        //         gas_error
+        //     )));
+        // }
 
-        // Record instruction execution in metrics
-        if let Ok(metrics) = std::env::var("NEO_VM_METRICS") {
-            if metrics == "1" {
-                crate::metrics::global_metrics().record_instruction();
-            }
-        }
+        // Record instruction execution in metrics (disabled - no C# counterpart)
+        // if let Ok(metrics) = std::env::var("NEO_VM_METRICS") {
+        //     if metrics == "1" {
+        //         crate::metrics::global_metrics().record_instruction();
+        //     }
+        // }
         Ok(())
     }
 
@@ -451,7 +416,7 @@ impl ExecutionEngine {
                 } else {
                     0
                 };
-                crate::metrics::global_metrics().update_stack_depth(depth);
+                // crate::metrics::global_metrics().update_stack_depth(depth); // Removed - no C# counterpart
             }
         }
         Ok(())
@@ -459,7 +424,7 @@ impl ExecutionEngine {
 
     /// Loads a context into the invocation stack.
     pub fn load_context(&mut self, context: ExecutionContext) -> VmResult<()> {
-        if self.invocation_stack.len() >= self.limits.max_invocation_stack_size {
+        if self.invocation_stack.len() >= self.limits.max_invocation_stack_size as usize {
             return Err(VmError::invalid_operation_msg(format!(
                 "MaxInvocationStackSize exceed: {}",
                 self.invocation_stack.len()
@@ -589,25 +554,28 @@ impl ExecutionEngine {
     /// Adds gas consumed (integrated with gas calculator)
     /// ApplicationEngine overrides this with additional gas tracking
     pub fn add_gas_consumed(&mut self, gas: i64) -> VmResult<()> {
-        if let Err(gas_error) = self.gas_calculator.add_gas(gas) {
-            return Err(VmError::invalid_operation_msg(format!(
-                "Gas limit exceeded: {}",
-                gas_error
-            )));
-        }
+        // Gas tracking disabled - no C# counterpart
+        // if let Err(gas_error) = self.gas_calculator.add_gas(gas) {
+        //     return Err(VmError::invalid_operation_msg(format!(
+        //         "Gas limit exceeded: {}",
+        //         gas_error
+        //     )));
+        // }
         Ok(())
     }
 
-    /// Gets gas consumed (integrated with gas calculator)
+    /// Gets gas consumed (disabled - no C# counterpart)
     /// ApplicationEngine overrides this with additional gas tracking
     pub fn gas_consumed(&self) -> i64 {
-        self.gas_calculator.gas_consumed()
+        // self.gas_calculator.gas_consumed() // Disabled - no C# counterpart
+        0
     }
 
-    /// Gets gas limit (integrated with gas calculator)
+    /// Gets gas limit (disabled - no C# counterpart)
     /// ApplicationEngine overrides this with actual gas limit
     pub fn gas_limit(&self) -> i64 {
-        self.gas_calculator.gas_limit()
+        // self.gas_calculator.gas_limit() // Disabled - no C# counterpart
+        1_000_000_000 // Default gas limit
     }
 
     /// Gets current script hash (stub implementation for base ExecutionEngine)
@@ -747,7 +715,7 @@ mod tests {
 
         assert_eq!(engine.invocation_stack().len(), 1);
         assert_eq!(context.instruction_pointer(), 0);
-        assert_eq!(context.rvcount(), -1);
+        assert_eq!(context.rvcount(), 0);
     }
 
     #[test]

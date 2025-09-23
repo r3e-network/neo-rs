@@ -784,8 +784,8 @@ impl CommitteeMember {
         verification_script.extend_from_slice(public_key); // compressed public key
         verification_script.push(0x41); // OpCode.CHECKSIG
 
-        use neo_cryptography::hash::hash160;
-        let script_hash = hash160(&verification_script);
+        use neo_core::crypto_utils::NeoHash;
+        let script_hash = NeoHash::hash160(&verification_script);
 
         UInt160::from_bytes(&script_hash).unwrap_or_else(|_| UInt160::zero())
     }

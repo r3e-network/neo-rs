@@ -6,7 +6,7 @@
 use crate::{Error, Result};
 use neo_config::HASH_SIZE;
 use neo_core::UInt160;
-use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use neo_wallets::KeyPair;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

@@ -626,7 +626,7 @@ mod tests {
         let error = VmError::memory_limit_exceeded(2048, MAX_SCRIPT_SIZE);
         assert_eq!(
             error.to_string(),
-            "Memory limit exceeded: used 2048 bytes, limit MAX_SCRIPT_SIZE bytes"
+            "Memory limit exceeded: used 2048 bytes, limit 65536 bytes"
         );
 
         let error = VmError::gas_exhausted(1000, 800);

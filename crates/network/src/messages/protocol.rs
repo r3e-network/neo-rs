@@ -154,9 +154,9 @@ impl ProtocolMessage {
             ProtocolMessage::FilterAdd { .. } => MessageCommand::FilterAdd,
             ProtocolMessage::FilterClear => MessageCommand::FilterClear,
             ProtocolMessage::MerkleBlock { .. } => MessageCommand::MerkleBlock,
-            ProtocolMessage::Alert { .. } => MessageCommand::Reject, // Temporarily map to Reject
+            ProtocolMessage::Alert { .. } => MessageCommand::Alert,
             ProtocolMessage::Extensible { .. } => MessageCommand::Extensible,
-            ProtocolMessage::Unknown { .. } => MessageCommand::Unknown,
+            ProtocolMessage::Unknown { command, .. } => MessageCommand::Unknown(*command),
         }
     }
 
@@ -372,7 +372,7 @@ impl ProtocolMessage {
         let mut reader = MemoryReader::new(bytes);
 
         match command {
-            cmd if *cmd == MessageCommand::Version => {
+            MessageCommand::Version => {
                 if bytes.is_empty() {
                     return Ok(ProtocolMessage::Version {
                         version: 3,  // Neo N3 version
@@ -658,10 +658,10 @@ impl ProtocolMessage {
                 })
             }
 
-            cmd if *cmd == MessageCommand::Verack => Ok(ProtocolMessage::Verack),
-            cmd if *cmd == MessageCommand::GetAddr => Ok(ProtocolMessage::GetAddr),
+            MessageCommand::Verack => Ok(ProtocolMessage::Verack),
+            MessageCommand::GetAddr => Ok(ProtocolMessage::GetAddr),
 
-            cmd if *cmd == MessageCommand::Addr => {
+            MessageCommand::Addr => {
                 let count = reader.read_var_int(1000)? as usize;
                 let mut addresses = Vec::with_capacity(count);
                 for _ in 0..count {
@@ -677,7 +677,7 @@ impl ProtocolMessage {
                 Ok(ProtocolMessage::Addr { addresses })
             }
 
-            cmd if *cmd == MessageCommand::Ping => {
+            MessageCommand::Ping => {
                 if bytes.is_empty() {
                     return Ok(ProtocolMessage::Ping { nonce: 0 });
                 }
@@ -685,7 +685,7 @@ impl ProtocolMessage {
                 Ok(ProtocolMessage::Ping { nonce })
             }
 
-            cmd if *cmd == MessageCommand::Pong => {
+            MessageCommand::Pong => {
                 if bytes.is_empty() {
                     return Ok(ProtocolMessage::Pong { nonce: 0 });
                 }
@@ -693,13 +693,13 @@ impl ProtocolMessage {
                 Ok(ProtocolMessage::Pong { nonce })
             }
 
-            cmd if *cmd == MessageCommand::GetHeaders => {
+            MessageCommand::GetHeaders => {
                 let index_start = reader.read_u32()?;
                 let count = reader.read_int16()?;
                 Ok(ProtocolMessage::GetHeaders { index_start, count })
             }
 
-            cmd if *cmd == MessageCommand::Headers => {
+            MessageCommand::Headers => {
                 let count = reader.read_var_int(2000)? as usize; // Max 2000 headers
                 let mut headers = Vec::with_capacity(count);
                 for _ in 0..count {
@@ -709,9 +709,9 @@ impl ProtocolMessage {
                 Ok(ProtocolMessage::Headers { headers })
             }
 
-            cmd if *cmd == MessageCommand::Mempool => Ok(ProtocolMessage::Mempool),
+            MessageCommand::Mempool => Ok(ProtocolMessage::Mempool),
 
-            cmd if *cmd == MessageCommand::Extensible => {
+            MessageCommand::Extensible => {
                 let payload = <super::ExtensiblePayload as Serializable>::deserialize(&mut reader)?;
                 Ok(ProtocolMessage::Extensible { payload })
             }

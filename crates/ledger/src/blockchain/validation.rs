@@ -7,7 +7,7 @@ use neo_core::constants::{
     MAX_SCRIPT_SIZE, MAX_TRANSACTIONS_PER_BLOCK, MAX_TRANSACTION_SIZE, MILLISECONDS_PER_BLOCK,
 };
 use neo_core::{Signer, Transaction, UInt160, UInt256, Witness};
-use neo_cryptography::ecdsa::ECDsa;
+use neo_core::crypto_utils::Secp256r1Crypto;
 use neo_vm::{ApplicationEngine, TriggerType, VMState};
 use std::collections::HashMap;
 use std::sync::Arc;

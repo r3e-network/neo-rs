@@ -29,7 +29,7 @@ fn test_simple_vm_execution() {
 
                     // Execute the script step by step
                     println!("⚡ Executing script/* implementation */;");
-                    while engine.state() != VMState::HALT && engine.state() != VMState::FAULT {
+                    while !engine.state().is_halt() && !engine.state().is_fault() {
                         match engine.execute_next() {
                             Ok(_) => {
                                 println!("   ✅ Step executed, state: {:?}", engine.state());
@@ -81,7 +81,7 @@ fn test_ret_result_stack() {
     println!("🎯 Initial state: {:?}", engine.state());
 
     // Execute until completion
-    while engine.state() != VMState::HALT && engine.state() != VMState::FAULT {
+    while !engine.state().is_halt() && !engine.state().is_fault() {
         engine.execute_next().unwrap();
         println!("   Current state: {:?}", engine.state());
     }
@@ -143,16 +143,12 @@ fn test_vm_execution_with_malformed_pushdata1() {
     println!("Final VM state: {:?}", final_state);
 
     // The VM should FAULT, not HALT
-    match final_state {
-        VMState::FAULT => {
-            println!("✅ VM correctly faulted with malformed PUSHDATA1");
-        }
-        VMState::HALT => {
-            println!("❌ VM unexpectedly halted instead of faulting");
-        }
-        other => {
-            println!("❌ VM in unexpected state: {:?}", other);
-        }
+    if final_state.is_fault() {
+        println!("✅ VM correctly faulted with malformed PUSHDATA1");
+    } else if final_state.is_halt() {
+        println!("❌ VM unexpectedly halted instead of faulting");
+    } else {
+        println!("❌ VM in unexpected state: {:?}", final_state);
     }
 }
 
@@ -172,26 +168,19 @@ fn test_basic_opcode_execution() {
                 Ok(_) => {
                     let final_state = engine.execute();
 
-                    match final_state {
-                        VMState::HALT => {
-                            println!("   ✅ PUSH1 execution completed successfully");
+                    if final_state.is_halt() {
+                        println!("   ✅ PUSH1 execution completed successfully");
 
-                            let result_stack = engine.result_stack();
-                            assert_eq!(
-                                result_stack.len(),
-                                1,
-                                "PUSH1 should push one item to stack"
-                            );
-                            println!("   ✅ PUSH1 correctly pushed one item to stack");
+                        let result_stack = engine.result_stack();
+                        assert_eq!(result_stack.len(), 1, "PUSH1 should push one item to stack");
+                        println!("   ✅ PUSH1 correctly pushed one item to stack");
 
-                            // Verify the value is correct
-                            let item = result_stack.peek(0).unwrap();
-                            assert_eq!(item.as_int().unwrap().to_i64().unwrap(), 1);
-                            println!("   ✅ PUSH1 pushed the correct value: 1");
-                        }
-                        other => {
-                            panic!("PUSH1 execution failed with state: {:?}", other);
-                        }
+                        // Verify the value is correct
+                        let item = result_stack.peek(0).unwrap();
+                        assert_eq!(item.as_int().unwrap().to_i64().unwrap(), 1);
+                        println!("   ✅ PUSH1 pushed the correct value: 1");
+                    } else {
+                        panic!("PUSH1 execution failed with state: {:?}", final_state);
                     }
                 }
                 Err(e) => {

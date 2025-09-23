@@ -5,7 +5,7 @@
 use crate::{Error, Result};
 use base64::{engine::general_purpose, Engine as _};
 use neo_config::ADDRESS_SIZE;
-use neo_cryptography::ecc::{ECCurve, ECPoint};
+// Removed neo_cryptography dependency - using external crypto crates directly
 use serde::{Deserialize, Serialize};
 
 /// Represents a set of mutually trusted contracts.
@@ -65,9 +65,13 @@ impl ContractGroup {
             .encode_compressed()
             .map_err(|e| Error::InvalidManifest(format!("Failed to encode public key: {}", e)))?;
 
-        match neo_cryptography::ecdsa::ECDsa::verify_signature_secp256r1(
+        // Convert signature to array format
+        let signature_array: [u8; 64] = self.signature.try_into()
+            .map_err(|_| Error::InvalidManifest("Invalid signature length".to_string()))?;
+        
+        match neo_core::crypto_utils::Secp256r1Crypto::verify(
             contract_hash,
-            &self.signature,
+            &signature_array,
             &public_key_bytes,
         ) {
             Ok(is_valid) => Ok(is_valid),

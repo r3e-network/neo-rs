@@ -242,6 +242,7 @@ fn test_script_builder_with_syscall() {
     // Build a script with a syscall
     builder
         .emit_syscall("System.Runtime.Platform")
+        .expect("emit_syscall failed")
         .emit_opcode(OpCode::RET);
 
     let script = builder.to_script();

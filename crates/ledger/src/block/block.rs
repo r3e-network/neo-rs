@@ -7,7 +7,7 @@ use super::{header::BlockHeader, MAX_BLOCK_SIZE, MAX_TRANSACTIONS_PER_BLOCK};
 use crate::{Result, VerifyResult};
 use neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE, MAX_TRANSACTION_SIZE};
 use neo_core::{Transaction, UInt160, UInt256, Witness};
-use neo_cryptography::{ecdsa::ECDsa, MerkleTree};
+use neo_core::crypto_utils::{Secp256r1Crypto, NeoHash};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 

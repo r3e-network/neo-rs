@@ -46,8 +46,7 @@
 //#![warn(rustdoc::missing_crate_level_docs)]
 
 // Module declarations with documentation
-/// Advanced performance metrics and monitoring
-pub mod advanced_metrics;
+// Advanced metrics moved to neo-monitoring crate
 /// Big decimal arithmetic implementation
 pub mod big_decimal;
 /// Block and block header structures
@@ -56,43 +55,23 @@ pub mod block;
 pub mod builders;
 /// System-wide constants
 pub mod constants;
-/// Enhanced error handling patterns for blockchain operations
-pub mod enhanced_error_handling;
 /// Core error types and error handling
 pub mod error;
 /// Advanced error handling utilities
 pub mod error_handling;
-/// Error utility functions
-pub mod error_utils;
 /// Event system for blockchain events
 pub mod events;
-/// Core extensions and utility traits
-pub mod extensions;
+// Extensions moved to neo-extensions crate
+/// Cryptographic utilities using external crates
+pub mod crypto_utils;
 /// Hard fork management
 pub mod hardfork;
-/// System metrics collection
-pub mod metrics;
-/// Migration helpers for transitioning to safe error handling
-pub mod migration_helpers;
-/// Monitoring and alerting system
-pub mod monitoring;
+// System metrics moved to neo-monitoring crate
+// Monitoring moved to neo-monitoring crate
 /// Neo system management
 pub mod neo_system;
-/// Production monitoring and health checks
-pub mod production_monitoring;
-/// Enhanced safe error handling system
-pub mod safe_error_handling;
-/// Safe memory operations for core types
-pub mod safe_memory;
-/// Safe arithmetic and type operations
-pub mod safe_operations;
-pub mod safe_result;
-/// Graceful shutdown coordination
-pub mod shutdown;
 /// Transaction signer implementation
 pub mod signer;
-/// System-wide monitoring and metrics
-pub mod system_monitoring;
 /// Transaction structures and validation
 pub mod transaction;
 /// Transaction type definitions
@@ -101,18 +80,12 @@ pub mod transaction_type;
 pub mod transaction_validator;
 /// 160-bit unsigned integer implementation
 pub mod uint160;
-/// Additional UInt160 tests for C# parity
-pub mod uint160_additional_tests;
 /// 256-bit unsigned integer implementation
 pub mod uint256;
-/// Additional UInt256 tests for C# parity
-pub mod uint256_additional_tests;
-pub mod unwrap_migration;
 /// Witness verification system
 pub mod witness;
 /// Witness rule evaluation
 pub mod witness_rule;
-pub mod witness_safe;
 /// Witness scope definitions
 pub mod witness_scope;
 
@@ -121,9 +94,6 @@ pub use big_decimal::BigDecimal;
 pub use block::{Block, BlockHeader};
 pub use error::{CoreError, CoreResult, Result};
 pub use neo_system::NeoSystem;
-pub use shutdown::{
-    Shutdown, ShutdownCoordinator, ShutdownError, ShutdownEvent, ShutdownStage, SignalHandler,
-};
 pub use signer::Signer;
 pub use transaction::{
     OracleResponseCode, Transaction, TransactionAttribute, TransactionAttributeType, HEADER_SIZE,

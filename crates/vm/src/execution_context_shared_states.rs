@@ -18,7 +18,7 @@ pub struct SharedStates {
     pub(crate) evaluation_stack: EvaluationStack,
 
     /// The static fields for this context
-    pub(crate) static_fields: Option<crate::execution_context::Slot>,
+    pub(crate) static_fields: Option<crate::slot::Slot>,
 
     /// Reference counter for managing object lifetimes
     pub(crate) reference_counter: ReferenceCounter,
@@ -55,18 +55,18 @@ impl SharedStates {
     }
 
     /// Gets the static fields.
-    pub fn static_fields(&self) -> Option<&crate::execution_context::Slot> {
+    pub fn static_fields(&self) -> Option<&crate::slot::Slot> {
         self.static_fields.as_ref()
     }
 
     /// Gets the static fields (mutable).
-    pub fn static_fields_mut(&mut self) -> &mut Option<crate::execution_context::Slot> {
+    pub fn static_fields_mut(&mut self) -> &mut Option<crate::slot::Slot> {
         &mut self.static_fields
     }
 
     /// Sets the static fields.
     /// This matches the C# implementation's StaticFields property setter.
-    pub fn set_static_fields(&mut self, static_fields: Option<crate::execution_context::Slot>) {
+    pub fn set_static_fields(&mut self, static_fields: Option<crate::slot::Slot>) {
         self.static_fields = static_fields;
     }
 

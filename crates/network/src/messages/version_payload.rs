@@ -1,8 +1,6 @@
-//! VersionPayload implementation matching C# VersionPayload.cs exactly
-
 use super::capabilities::NodeCapability;
 use crate::{NetworkError, NetworkResult as Result};
-use neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_io::{helper, BinaryWriter, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
 
 /// Maximum number of capabilities (matches C# MaxCapabilities)
@@ -77,7 +75,7 @@ impl VersionPayload {
 
 impl Serializable for VersionPayload {
     /// Deserialize VersionPayload (matches C# ISerializable.Deserialize exactly)
-    fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let network = reader.read_u32()?;
         let version = reader.read_u32()?;
         let timestamp = reader.read_u32()?;
@@ -86,31 +84,11 @@ impl Serializable for VersionPayload {
         // Read UserAgent as VarString (matches C# ReadVarString)
         let user_agent = reader.read_var_string(1024)?;
 
-        // Read AllowCompression (not in current C# version but planned)
-        let allow_compression = true; // Default for compatibility
+        // AllowCompression is not serialized in the current protocol; default to true.
+        let allow_compression = true;
 
-        // Read capabilities array (matches C# ReadSerializableArray)
-        let capabilities_count = reader.read_var_int(MAX_CAPABILITIES as u64)? as usize;
-        let mut capabilities = Vec::with_capacity(capabilities_count);
-
-        for _ in 0..capabilities_count {
-            // Each capability is: type (1 byte) + data length + data
-            let cap_type = reader.read_byte()?;
-            let data_len = reader.read_var_int(1024)? as usize;
-            let data = reader.read_bytes(data_len)?;
-
-            let capability = NodeCapability {
-                capability_type: match cap_type {
-                    0x01 => super::capabilities::NodeCapabilityType::TcpServer,
-                    0x02 => super::capabilities::NodeCapabilityType::WsServer,
-                    0x10 => super::capabilities::NodeCapabilityType::FullNode,
-                    _ => super::capabilities::NodeCapabilityType::TcpServer, // Default
-                },
-                data,
-            };
-
-            capabilities.push(capability);
-        }
+        // Capabilities (matches C# ReadSerializableArray)
+        let capabilities = helper::deserialize_array::<NodeCapability>(reader, MAX_CAPABILITIES)?;
 
         Ok(Self {
             network,
@@ -124,7 +102,7 @@ impl Serializable for VersionPayload {
     }
 
     /// Serialize VersionPayload (matches C# ISerializable.Serialize exactly)
-    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         writer.write_u32(self.network)?;
         writer.write_u32(self.version)?;
         writer.write_u32(self.timestamp)?;
@@ -133,14 +111,8 @@ impl Serializable for VersionPayload {
         // Write UserAgent as VarString (matches C# WriteVarString)
         writer.write_var_string(&self.user_agent)?;
 
-        // Write capabilities array (matches C# WriteSerializableArray)
-        writer.write_var_int(self.capabilities.len() as u64)?;
-
-        for capability in &self.capabilities {
-            writer.write_u8(capability.capability_type as u8)?;
-            writer.write_var_int(capability.data.len() as u64)?;
-            writer.write_bytes(&capability.data)?;
-        }
+        // Capabilities (matches C# WriteSerializableArray)
+        helper::serialize_array(&self.capabilities, writer)?;
 
         Ok(())
     }
@@ -151,37 +123,14 @@ impl Serializable for VersionPayload {
         4 + // version  
         4 + // timestamp
         4 + // nonce
-        self.get_var_string_size(&self.user_agent) + // user_agent
-        neo_io::helper::get_var_size(self.capabilities.len() as u64) + // capabilities count
-        self.capabilities.iter().map(|c| c.size()).sum::<usize>() // capabilities data
-    }
-}
-
-impl VersionPayload {
-    /// Calculate VarString size (matches C# GetVarSize for strings)
-    fn get_var_string_size(&self, s: &str) -> usize {
-        let byte_len = s.len();
-        self.get_var_size_static(byte_len) + byte_len
-    }
-
-    /// Calculate VarSize statically
-    fn get_var_size_static(&self, value: usize) -> usize {
-        if value < 0xFD {
-            1
-        } else if value <= 0xFFFF {
-            3
-        } else if value <= 0xFFFFFFFF {
-            5
-        } else {
-            9
-        }
+        helper::get_var_size(self.user_agent.len() as u64) + self.user_agent.len() +
+        helper::get_array_size(&self.capabilities)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::messages::capabilities::NodeCapability;
 
     #[test]
     fn test_version_payload_creation() {
@@ -201,8 +150,8 @@ mod tests {
         payload.add_full_node_capability(1000).unwrap();
 
         // Test serialization roundtrip
-        let serialized = payload.to_array().unwrap();
-        let deserialized = VersionPayload::from_bytes(&serialized).unwrap();
+        let serialized = payload.to_array();
+        let deserialized = VersionPayload::from_array(&serialized).unwrap();
 
         assert_eq!(payload.network, deserialized.network);
         assert_eq!(payload.nonce, deserialized.nonce);

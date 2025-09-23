@@ -147,11 +147,23 @@ impl ScriptBuilder {
                     self.emit_push(&bytes);
                 }
             }
-            StackItem::ByteString(bytes) | StackItem::Buffer(bytes) => {
+            StackItem::ByteString(bytes) => {
                 self.emit_push(&bytes);
             }
-            StackItem::Array(items) | StackItem::Struct(items) => {
-                // Push items in reverse order, then pack
+            StackItem::Buffer(buffer) => {
+                self.emit_push(buffer.data());
+            }
+            StackItem::Array(array) => {
+                let mut items: Vec<_> = array.into_iter().collect();
+                let items_len = items.len();
+                for item in items.into_iter().rev() {
+                    self.emit_push_stack_item(item)?;
+                }
+                self.emit_push_int(items_len as i64);
+                self.emit_pack();
+            }
+            StackItem::Struct(structure) => {
+                let mut items: Vec<_> = structure.into_iter().collect();
                 let items_len = items.len();
                 for item in items.into_iter().rev() {
                     self.emit_push_stack_item(item)?;
@@ -345,7 +357,9 @@ mod tests {
     #[test]
     fn test_emit_jump() {
         let mut builder = ScriptBuilder::new();
-        builder.emit_jump(OpCode::JMP, 10);
+        builder
+            .emit_jump(OpCode::JMP, 10)
+            .expect("emit_jump failed");
 
         let script = builder.to_array();
         assert_eq!(script, vec![OpCode::JMP as u8, 10, 0]);
@@ -355,7 +369,7 @@ mod tests {
     fn test_emit_syscall() {
         let mut builder = ScriptBuilder::new();
         let api_name = "System.Runtime.Log";
-        builder.emit_syscall(api_name);
+        builder.emit_syscall(api_name).expect("emit_syscall failed");
 
         let script = builder.to_array();
 

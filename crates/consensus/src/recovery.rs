@@ -12,7 +12,7 @@ use crate::{
 use log::{debug, error, info, warn};
 use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_core::UInt160;
-use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

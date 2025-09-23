@@ -21,7 +21,7 @@ const VALIDATOR_REGISTRATION_FEE_GAS: u64 = 1000_00000000; // 1000 GAS
 use async_trait::async_trait;
 use neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE, MILLISECONDS_PER_BLOCK};
 use neo_core::{Block, Transaction, UInt160, UInt256};
-use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm::{ApplicationEngine, TriggerType, VMState};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -965,8 +965,8 @@ impl ConsensusService {
         verification_script.push(0x41); // OpCode.CHECKSIG
 
         // 2. Calculate script hash (matches C# script.ToScriptHash exactly)
-        use neo_cryptography::hash::hash160;
-        let script_hash = hash160(&verification_script);
+        use neo_core::crypto_utils::NeoHash;
+        let script_hash = NeoHash::hash160(&verification_script);
 
         UInt160::from_bytes(&script_hash).unwrap_or_else(|_| UInt160::zero())
     }

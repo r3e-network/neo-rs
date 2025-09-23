@@ -8,7 +8,7 @@ use crate::{Error, Result, VerifyResult};
 use hex;
 use neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use neo_core::{Signer, UInt160, UInt256, Witness, WitnessCondition, WitnessScope};
-use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm::{ApplicationEngine, TriggerType};
 use p256::{
     ecdsa::{signature::Verifier, Signature, VerifyingKey},

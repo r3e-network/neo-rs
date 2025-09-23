@@ -1,16 +1,10 @@
-use bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use hex::decode;
-use k256::ecdsa::{
-    signature::Signer as K256Signer, Signature as K256Signature, SigningKey as K256SigningKey,
-};
+// Removed neo_bls12_381 and neo_cryptography dependencies - using external crypto crates directly
 use neo_core::UInt160;
+use neo_core::crypto_utils::{NeoHash, Secp256k1Crypto, Secp256r1Crypto, Ed25519Crypto, Bls12381Crypto};
 use neo_smart_contract::application_engine::ApplicationEngine;
 use neo_smart_contract::{CryptoLib, NativeContract, TriggerType};
-use p256::ecdsa::{
-    signature::Signer as P256Signer, Signature as P256Signature, SigningKey as P256SigningKey,
-};
-use ripemd::Ripemd160;
-use sha2::{Digest, Sha256};
+use std::convert::TryInto;
 
 fn new_engine() -> ApplicationEngine {
     ApplicationEngine::new(TriggerType::Application, 10_000_000)
@@ -46,7 +40,7 @@ fn crypto_contract_hash_matches_reference() {
 fn crypto_sha256_matches_reference() {
     let data = b"neo-smart-contract";
 
-    let expected = Sha256::digest(data).to_vec();
+    let expected = Crypto::sha256(data);
     let result = run_contract("sha256", vec![data.to_vec()]);
 
     assert_eq!(result, expected);
@@ -56,52 +50,49 @@ fn crypto_sha256_matches_reference() {
 fn crypto_ripemd160_matches_reference() {
     let data = b"neo-smart-contract";
 
-    let mut hasher = Ripemd160::new();
-    hasher.update(data);
-    let expected = hasher.finalize().to_vec();
+    let expected = Crypto::ripemd160(data);
     let result = run_contract("ripemd160", vec![data.to_vec()]);
 
     assert_eq!(result, expected);
 }
 
-fn deterministic_p256_signing_key() -> P256SigningKey {
-    let key_bytes = decode("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721")
-        .expect("valid hex");
-    let mut key_array = [0u8; 32];
-    key_array.copy_from_slice(&key_bytes);
-    P256SigningKey::from_bytes(&key_array.into()).expect("valid signing key")
+fn hex32(hex: &str) -> [u8; 32] {
+    let bytes = decode(hex).expect("valid hex");
+    bytes.try_into().expect("32-byte key")
 }
 
-fn deterministic_p256_signing_key_two() -> P256SigningKey {
-    let key_bytes = decode("1e99423a4ed27608a15a2616cf8f81b0158906b3529438661d2b8a0cdb1c6ce9")
-        .expect("valid hex");
-    let mut key_array = [0u8; 32];
-    key_array.copy_from_slice(&key_bytes);
-    P256SigningKey::from_bytes(&key_array.into()).expect("valid signing key")
+fn secp256r1_private_key_one() -> [u8; 32] {
+    hex32("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721")
 }
 
-fn deterministic_k256_signing_key() -> K256SigningKey {
-    let key_bytes = decode("4c0883a69102937d6234147f1b886b5ef984d7454c5852b68d1f6f7f98c6d4c6")
-        .expect("valid hex");
-    let mut key_array = [0u8; 32];
-    key_array.copy_from_slice(&key_bytes);
-    K256SigningKey::from_bytes(&key_array.into()).expect("valid signing key")
+fn secp256r1_private_key_two() -> [u8; 32] {
+    hex32("1e99423a4ed27608a15a2616cf8f81b0158906b3529438661d2b8a0cdb1c6ce9")
 }
 
-fn deterministic_k256_signing_key_two() -> K256SigningKey {
-    let key_bytes = decode("bbf4b9f7a0e2f6d7c3a2b1e9f5d4c3b2a18765f1234567890fedcba987654321")
-        .expect("valid hex");
-    let mut key_array = [0u8; 32];
-    key_array.copy_from_slice(&key_bytes);
-    K256SigningKey::from_bytes(&key_array.into()).expect("valid signing key")
+fn secp256k1_private_key_one() -> [u8; 32] {
+    hex32("4c0883a69102937d6234147f1b886b5ef984d7454c5852b68d1f6f7f98c6d4c6")
 }
 
-fn to_p256_signature_bytes(signature: P256Signature) -> Vec<u8> {
-    signature.to_bytes().to_vec()
+fn secp256k1_private_key_two() -> [u8; 32] {
+    hex32("bbf4b9f7a0e2f6d7c3a2b1e9f5d4c3b2a18765f1234567890fedcba987654321")
 }
 
-fn to_k256_signature_bytes(signature: K256Signature) -> Vec<u8> {
-    signature.to_bytes().to_vec()
+fn sign_p256(message: &[u8], private_key: &[u8; 32]) -> Vec<u8> {
+    ECDsa::sign_neo_format(message, private_key)
+        .expect("signature generation")
+        .to_vec()
+}
+
+fn p256_public_key(private_key: &[u8; 32]) -> Vec<u8> {
+    ECDsa::derive_compressed_public_key(private_key).expect("public key derivation")
+}
+
+fn sign_k256(message: &[u8], private_key: &[u8; 32]) -> Vec<u8> {
+    ECDsa::sign_secp256k1(message, private_key).expect("signature generation")
+}
+
+fn k256_public_key(private_key: &[u8; 32]) -> Vec<u8> {
+    helper::private_key_to_public_key(private_key).expect("public key derivation")
 }
 
 fn concat_bytes(parts: &[&[u8]]) -> Vec<u8> {
@@ -114,117 +105,95 @@ fn concat_bytes(parts: &[&[u8]]) -> Vec<u8> {
 }
 
 fn g1_to_compressed(point: &G1Projective) -> Vec<u8> {
-    G1Affine::from(*point).to_compressed().to_vec()
+    point.to_affine().to_compressed().to_vec()
 }
 
 fn g1_to_uncompressed(point: &G1Projective) -> Vec<u8> {
-    G1Affine::from(*point).to_uncompressed().to_vec()
+    point.to_affine().to_uncompressed().to_vec()
 }
 
 fn g2_to_compressed(point: &G2Projective) -> Vec<u8> {
-    G2Affine::from(*point).to_compressed().to_vec()
+    point.to_affine().to_compressed().to_vec()
 }
 
 fn g2_to_uncompressed(point: &G2Projective) -> Vec<u8> {
-    G2Affine::from(*point).to_uncompressed().to_vec()
+    point.to_affine().to_uncompressed().to_vec()
+}
+
+fn scalar_from_u64(value: u64) -> Scalar {
+    let mut bytes = [0u8; Scalar::SIZE];
+    bytes[Scalar::SIZE - 8..].copy_from_slice(&value.to_be_bytes());
+    Scalar::from_fixed_bytes(&bytes).expect("valid scalar")
 }
 
 fn scalar_to_bytes(value: u64) -> Vec<u8> {
-    Scalar::from(value).to_bytes().to_vec()
+    scalar_from_u64(value).to_bytes().to_vec()
 }
 
 #[test]
 fn crypto_verify_with_ecdsa_secp256r1_accepts_valid_signature() {
-    let signing_key = deterministic_p256_signing_key();
-    let verifying_key = signing_key.verifying_key();
+    let private_key = secp256r1_private_key_one();
     let message = b"neo-smart-contract";
-    let signature = P256Signer::sign(&signing_key, message);
+    let signature = sign_p256(message, &private_key);
+    let public_key = p256_public_key(&private_key);
 
-    let args = vec![
-        message.to_vec(),
-        to_p256_signature_bytes(signature),
-        verifying_key.to_encoded_point(true).as_bytes().to_vec(),
-    ];
-
+    let args = vec![message.to_vec(), signature, public_key];
     let result = run_contract("verifyWithECDsaSecp256r1", args);
     assert_eq!(result, vec![1]);
 }
 
 #[test]
 fn crypto_verify_with_ecdsa_secp256r1_rejects_modified_message() {
-    let signing_key = deterministic_p256_signing_key();
-    let verifying_key = signing_key.verifying_key();
+    let private_key = secp256r1_private_key_one();
     let message = b"neo-smart-contract";
-    let signature = P256Signer::sign(&signing_key, message);
+    let signature = sign_p256(message, &private_key);
+    let public_key = p256_public_key(&private_key);
 
-    let args = vec![
-        b"neo-smart-contract!".to_vec(),
-        to_p256_signature_bytes(signature),
-        verifying_key.to_encoded_point(true).as_bytes().to_vec(),
-    ];
-
+    let args = vec![b"neo-smart-contract!".to_vec(), signature, public_key];
     let result = run_contract("verifyWithECDsaSecp256r1", args);
     assert_eq!(result, vec![0]);
 }
 
 #[test]
 fn crypto_verify_with_ecdsa_secp256k1_accepts_valid_signature() {
-    let signing_key = deterministic_k256_signing_key();
-    let verifying_key = signing_key.verifying_key();
+    let private_key = secp256k1_private_key_one();
     let message = b"neo-smart-contract";
-    let signature = K256Signer::sign(&signing_key, message);
+    let signature = sign_k256(message, &private_key);
+    let public_key = k256_public_key(&private_key);
 
-    let args = vec![
-        message.to_vec(),
-        to_k256_signature_bytes(signature),
-        verifying_key.to_encoded_point(true).as_bytes().to_vec(),
-    ];
-
+    let args = vec![message.to_vec(), signature, public_key];
     let result = run_contract("verifyWithECDsaSecp256k1", args);
     assert_eq!(result, vec![1]);
 }
 
 #[test]
 fn crypto_verify_with_ecdsa_secp256k1_rejects_modified_message() {
-    let signing_key = deterministic_k256_signing_key();
-    let verifying_key = signing_key.verifying_key();
+    let private_key = secp256k1_private_key_one();
     let message = b"neo-smart-contract";
-    let signature = K256Signer::sign(&signing_key, message);
+    let signature = sign_k256(message, &private_key);
+    let public_key = k256_public_key(&private_key);
 
-    let args = vec![
-        b"neo-smart-contract!".to_vec(),
-        to_k256_signature_bytes(signature),
-        verifying_key.to_encoded_point(true).as_bytes().to_vec(),
-    ];
-
+    let args = vec![b"neo-smart-contract!".to_vec(), signature, public_key];
     let result = run_contract("verifyWithECDsaSecp256k1", args);
     assert_eq!(result, vec![0]);
 }
 
 #[test]
 fn crypto_check_multisig_secp256r1_accepts_signatures() {
-    let signer_one = deterministic_p256_signing_key();
-    let signer_two = deterministic_p256_signing_key_two();
+    let key_one = secp256r1_private_key_one();
+    let key_two = secp256r1_private_key_two();
     let message = b"neo-multisig";
 
-    let signature_one = to_p256_signature_bytes(P256Signer::sign(&signer_one, message));
-    let signature_two = to_p256_signature_bytes(P256Signer::sign(&signer_two, message));
+    let signature_one = sign_p256(message, &key_one);
+    let signature_two = sign_p256(message, &key_two);
 
-    let public_key_one = signer_one
-        .verifying_key()
-        .to_encoded_point(true)
-        .as_bytes()
-        .to_vec();
-    let public_key_two = signer_two
-        .verifying_key()
-        .to_encoded_point(true)
-        .as_bytes()
-        .to_vec();
+    let public_key_one = p256_public_key(&key_one);
+    let public_key_two = p256_public_key(&key_two);
 
     let args = vec![
         message.to_vec(),
-        concat_bytes(&[signature_one.as_slice(), signature_two.as_slice()]),
-        concat_bytes(&[public_key_one.as_slice(), public_key_two.as_slice()]),
+        concat_bytes(&[&signature_one, &signature_two]),
+        concat_bytes(&[&public_key_one, &public_key_two]),
     ];
 
     let result = run_contract("checkMultisig", args);
@@ -233,28 +202,20 @@ fn crypto_check_multisig_secp256r1_accepts_signatures() {
 
 #[test]
 fn crypto_check_multisig_secp256k1_accepts_signatures() {
-    let signer_one = deterministic_k256_signing_key();
-    let signer_two = deterministic_k256_signing_key_two();
+    let key_one = secp256k1_private_key_one();
+    let key_two = secp256k1_private_key_two();
     let message = b"neo-multisig";
 
-    let signature_one = to_k256_signature_bytes(K256Signer::sign(&signer_one, message));
-    let signature_two = to_k256_signature_bytes(K256Signer::sign(&signer_two, message));
+    let signature_one = sign_k256(message, &key_one);
+    let signature_two = sign_k256(message, &key_two);
 
-    let public_key_one = signer_one
-        .verifying_key()
-        .to_encoded_point(true)
-        .as_bytes()
-        .to_vec();
-    let public_key_two = signer_two
-        .verifying_key()
-        .to_encoded_point(true)
-        .as_bytes()
-        .to_vec();
+    let public_key_one = k256_public_key(&key_one);
+    let public_key_two = k256_public_key(&key_two);
 
     let args = vec![
         message.to_vec(),
-        concat_bytes(&[signature_one.as_slice(), signature_two.as_slice()]),
-        concat_bytes(&[public_key_one.as_slice(), public_key_two.as_slice()]),
+        concat_bytes(&[&signature_one, &signature_two]),
+        concat_bytes(&[&public_key_one, &public_key_two]),
     ];
 
     let result = run_contract("checkMultisigWithECDsaSecp256k1", args);
@@ -263,29 +224,21 @@ fn crypto_check_multisig_secp256k1_accepts_signatures() {
 
 #[test]
 fn crypto_check_multisig_secp256k1_rejects_tampered_signature() {
-    let signer_one = deterministic_k256_signing_key();
-    let signer_two = deterministic_k256_signing_key_two();
+    let key_one = secp256k1_private_key_one();
+    let key_two = secp256k1_private_key_two();
     let message = b"neo-multisig";
 
-    let signature_one = to_k256_signature_bytes(K256Signer::sign(&signer_one, message));
-    let mut signature_two = to_k256_signature_bytes(K256Signer::sign(&signer_two, message));
+    let signature_one = sign_k256(message, &key_one);
+    let mut signature_two = sign_k256(message, &key_two);
     signature_two[0] ^= 0xFF; // corrupt signature
 
-    let public_key_one = signer_one
-        .verifying_key()
-        .to_encoded_point(true)
-        .as_bytes()
-        .to_vec();
-    let public_key_two = signer_two
-        .verifying_key()
-        .to_encoded_point(true)
-        .as_bytes()
-        .to_vec();
+    let public_key_one = k256_public_key(&key_one);
+    let public_key_two = k256_public_key(&key_two);
 
     let args = vec![
         message.to_vec(),
-        concat_bytes(&[signature_one.as_slice(), signature_two.as_slice()]),
-        concat_bytes(&[public_key_one.as_slice(), public_key_two.as_slice()]),
+        concat_bytes(&[&signature_one, &signature_two]),
+        concat_bytes(&[&public_key_one, &public_key_two]),
     ];
 
     let result = run_contract("checkMultisigWithECDsaSecp256k1", args);
@@ -295,8 +248,8 @@ fn crypto_check_multisig_secp256k1_rejects_tampered_signature() {
 #[test]
 fn crypto_bls12381_add_matches_expected() {
     let point_a = G1Projective::generator();
-    let point_b = point_a * Scalar::from(3u64);
-    let expected = g1_to_compressed(&(point_a + point_b));
+    let point_b = point_a * scalar_from_u64(3);
+    let expected = g1_to_compressed(&(point_a + point_b.clone()));
 
     let args = vec![g1_to_compressed(&point_a), g1_to_compressed(&point_b)];
     let result = run_contract("bls12381Add", args);
@@ -305,12 +258,29 @@ fn crypto_bls12381_add_matches_expected() {
 }
 
 #[test]
+fn crypto_bls12381_equal_matches_expected() {
+    let point = G1Projective::generator();
+    let equal_args = vec![g1_to_compressed(&point), g1_to_compressed(&point)];
+    let equal = run_contract("bls12381Equal", equal_args);
+    assert_eq!(equal, vec![1]);
+
+    let different = g1_to_compressed(&(point * scalar_from_u64(2)));
+    let unequal_args = vec![g1_to_compressed(&point), different];
+    let unequal = run_contract("bls12381Equal", unequal_args);
+    assert_eq!(unequal, vec![0]);
+}
+
+#[test]
 fn crypto_bls12381_mul_matches_expected() {
     let point = G1Projective::generator();
     let scalar_value = 7u64;
-    let expected = g1_to_compressed(&(point * Scalar::from(scalar_value)));
+    let expected = g1_to_compressed(&(point * scalar_from_u64(scalar_value)));
 
-    let args = vec![g1_to_compressed(&point), scalar_to_bytes(scalar_value)];
+    let args = vec![
+        g1_to_compressed(&point),
+        scalar_to_bytes(scalar_value),
+        vec![0u8],
+    ];
     let result = run_contract("bls12381Mul", args);
 
     assert_eq!(result, expected);
@@ -325,15 +295,9 @@ fn crypto_bls12381_pairing_matches_expected() {
         vec![g1_to_compressed(&g1), g2_to_compressed(&g2)],
     );
 
-    // The native contract deterministically hashes its pairing output; reproduce the same logic here.
-    use sha2::Digest as _;
-    let mut hasher = Sha256::new();
-    hasher.update(b"bls12_381_pairing_result");
-    let hash = hasher.finalize();
-
-    let mut expected = Vec::with_capacity(48);
-    expected.extend_from_slice(&hash[..32]);
-    expected.extend_from_slice(&hash[16..32]);
+    let expected = pairing(&G1Affine::from(g1.clone()), &G2Affine::from(g2.clone()))
+        .to_bytes()
+        .to_vec();
 
     assert_eq!(result, expected);
 }
@@ -347,14 +311,9 @@ fn crypto_bls12381_pairing_accepts_uncompressed_inputs() {
         vec![g1_to_uncompressed(&g1), g2_to_uncompressed(&g2)],
     );
 
-    use sha2::Digest as _;
-    let mut hasher = Sha256::new();
-    hasher.update(b"bls12_381_pairing_result");
-    let hash = hasher.finalize();
-
-    let mut expected = Vec::with_capacity(48);
-    expected.extend_from_slice(&hash[..32]);
-    expected.extend_from_slice(&hash[16..32]);
+    let expected = pairing(&G1Affine::from(g1.clone()), &G2Affine::from(g2.clone()))
+        .to_bytes()
+        .to_vec();
 
     assert_eq!(result, expected);
 }
@@ -404,7 +363,7 @@ fn crypto_bls12381_pairing_rejects_truncated_payload() {
     let error = run_contract_result("bls12381Pairing", vec![g1, g2])
         .expect_err("truncated g1 should error");
     assert!(
-        error.contains("Invalid G1 point"),
+        error.contains("Unsupported BLS12-381 encoding length"),
         "unexpected error: {error}"
     );
 }
@@ -426,7 +385,7 @@ fn crypto_bls12381_deserialize_rejects_invalid_length() {
     let error = run_contract_result("bls12381Deserialize", vec![vec![0u8; 10]])
         .expect_err("invalid length must return error");
     assert!(
-        error.contains("Invalid serialized data length"),
+        error.contains("Unsupported BLS12-381 encoding length"),
         "unexpected error: {error}"
     );
 }
@@ -462,7 +421,7 @@ fn crypto_bls12381_deserialize_rejects_g2_invalid_length() {
     let error = run_contract_result("bls12381Deserialize", vec![bytes])
         .expect_err("invalid G2 length must return error");
     assert!(
-        error.contains("Invalid serialized data length"),
+        error.contains("Unsupported BLS12-381 encoding length"),
         "unexpected error: {error}"
     );
 }

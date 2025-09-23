@@ -6,7 +6,7 @@
 #[cfg(test)]
 mod csharp_behavioral_compatibility_tests {
     use crate::{UInt160, UInt256, BigDecimal};
-    use neo_cryptography::{hash, ecdsa, base58};
+    use neo_core::crypto_utils::{NeoHash, Secp256r1Crypto, Base58};
     use neo_json::{JToken, JArray, JObject, JPath};
     use std::str::FromStr;
     use std::collections::HashMap;

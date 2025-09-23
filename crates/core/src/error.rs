@@ -388,12 +388,7 @@ impl From<neo_io::Error> for CoreError {
     }
 }
 
-#[cfg(feature = "neo-cryptography")]
-impl From<neo_cryptography::Error> for CoreError {
-    fn from(error: neo_cryptography::Error) -> Self {
-        CoreError::cryptographic(error.to_string())
-    }
-}
+// Removed neo-cryptography dependency - using external crypto crates directly
 
 #[cfg(test)]
 #[allow(dead_code)]

@@ -6,7 +6,7 @@
 use crate::{ContractParameterType, Error, Result};
 use neo_config::MAX_SCRIPT_SIZE;
 use neo_core::{UInt160, Witness};
-use neo_cryptography::ECPoint;
+// Removed neo_cryptography dependency - using external crypto crates directly
 use serde::{Deserialize, Serialize};
 
 /// Represents a smart contract in a wallet.
