@@ -1,10 +1,9 @@
-//! Plugin system for Neo Extensions
-//!
-//! This module provides a complete plugin architecture that matches
-//! the C# Neo plugin system for extensibility.
+//! Plugin system for Neo extensions, mirroring the behaviour of
+//! `Neo.Extensions.Plugin` in the C# codebase.
 
 use crate::error::{ExtensionError, ExtensionResult};
 use async_trait::async_trait;
+use neo_core::NeoSystem;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -12,142 +11,99 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-/// Plugin trait that all Neo plugins must implement
+/// Trait implemented by all Neo plugins.
 #[async_trait]
 pub trait Plugin: Send + Sync {
-    /// Get plugin information
+    /// Retrieve static plugin metadata.
     fn info(&self) -> &PluginInfo;
 
-    /// Initialize the plugin
+    /// Initialise the plugin (load configuration, prepare state, etc.).
     async fn initialize(&mut self, context: &PluginContext) -> ExtensionResult<()>;
 
-    /// Start the plugin
+    /// Start the plugin after initialisation completes.
     async fn start(&mut self) -> ExtensionResult<()>;
 
-    /// Stop the plugin
+    /// Stop the plugin and release resources.
     async fn stop(&mut self) -> ExtensionResult<()>;
 
-    /// Handle a plugin event
+    /// Handle an event broadcast by the runtime.
     async fn handle_event(&mut self, event: &PluginEvent) -> ExtensionResult<()>;
 
-    /// Get plugin configuration schema
+    /// Optional configuration schema hook.
     fn config_schema(&self) -> Option<serde_json::Value> {
         None
     }
 
-    /// Update plugin configuration
+    /// Optional dynamic configuration update hook.
     async fn update_config(&mut self, _config: serde_json::Value) -> ExtensionResult<()> {
         Ok(())
     }
 }
 
-/// Plugin information structure
+/// Metadata describing a plugin (matches the C# `Plugin` base class contract).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginInfo {
-    /// Plugin name
     pub name: String,
-
-    /// Plugin version
     pub version: String,
-
-    /// Plugin description
     pub description: String,
-
-    /// Plugin author
     pub author: String,
-
-    /// Plugin dependencies
     pub dependencies: Vec<String>,
-
-    /// Minimum Neo version required
     pub min_neo_version: String,
-
-    /// Plugin category
     pub category: PluginCategory,
-
-    /// Plugin priority (higher = loaded first)
     pub priority: i32,
 }
 
-/// Plugin categories
+/// Categories used for grouping plugins.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PluginCategory {
-    /// Core system plugins
     Core,
-
-    /// Network protocol plugins
     Network,
-
-    /// Consensus plugins
     Consensus,
-
-    /// RPC plugins
     Rpc,
-
-    /// Wallet plugins
     Wallet,
-
-    /// Storage plugins
     Storage,
-
-    /// Utility plugins
     Utility,
-
-    /// Custom plugins
     Custom(String),
 }
 
-/// Plugin context provided during initialization
+/// Context supplied to plugins during initialisation.
 #[derive(Debug, Clone)]
 pub struct PluginContext {
-    /// Neo version
     pub neo_version: String,
-
-    /// Plugin configuration directory
     pub config_dir: PathBuf,
-
-    /// Plugin data directory
     pub data_dir: PathBuf,
-
-    /// Shared plugin data
     pub shared_data: Arc<RwLock<HashMap<String, serde_json::Value>>>,
 }
 
-/// Plugin events
+/// Events that can be broadcast to plugins.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginEvent {
-    /// Node started
-    NodeStarted,
-
-    /// Node stopping
+    /// Equivalent to `Plugin.OnSystemLoaded` in C#, providing the `NeoSystem`.
+    NodeStarted { system: Arc<NeoSystem> },
+    /// Node stopping notification.
     NodeStopping,
-
-    /// Block received
+    /// New block received event.
     BlockReceived {
         block_hash: String,
         block_height: u32,
     },
-
-    /// Transaction received
+    /// New transaction received event.
     TransactionReceived { tx_hash: String },
-
-    /// Consensus state changed
+    /// Consensus state change notification.
     ConsensusStateChanged { state: String },
-
-    /// RPC request received
+    /// RPC request processed by the runtime.
     RpcRequest {
         method: String,
         params: serde_json::Value,
     },
-
-    /// Custom event
+    /// Custom application-specific event.
     Custom {
         event_type: String,
         data: serde_json::Value,
     },
 }
 
-/// Plugin manager for loading and managing plugins
+/// Manager responsible for orchestrating plugin lifecycle.
 pub struct PluginManager {
     plugins: HashMap<String, Box<dyn Plugin>>,
     plugin_order: Vec<String>,
@@ -156,7 +112,7 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
-    /// Create a new plugin manager
+    /// Create a new plugin manager instance.
     pub fn new(context: PluginContext) -> Self {
         Self {
             plugins: HashMap::new(),
@@ -166,7 +122,7 @@ impl PluginManager {
         }
     }
 
-    /// Register a plugin
+    /// Register a plugin with the manager.
     pub fn register_plugin(&mut self, plugin: Box<dyn Plugin>) -> ExtensionResult<()> {
         let info = plugin.info().clone();
 
@@ -174,11 +130,10 @@ impl PluginManager {
             return Err(ExtensionError::PluginAlreadyExists(info.name));
         }
 
-        // Check dependencies
         for dep in &info.dependencies {
             if !self.plugins.contains_key(dep) {
                 return Err(ExtensionError::MissingDependency {
-                    plugin: info.name,
+                    plugin: info.name.clone(),
                     dependency: dep.clone(),
                 });
             }
@@ -186,7 +141,6 @@ impl PluginManager {
 
         info!("Registering plugin: {} v{}", info.name, info.version);
 
-        // Insert in priority order
         let insert_pos = self
             .plugin_order
             .iter()
@@ -204,7 +158,7 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Initialize all plugins
+    /// Initialise all registered plugins.
     pub async fn initialize_all(&mut self) -> ExtensionResult<()> {
         if self.is_initialized {
             return Ok(());
@@ -215,16 +169,10 @@ impl PluginManager {
         for plugin_name in &self.plugin_order.clone() {
             if let Some(plugin) = self.plugins.get_mut(plugin_name) {
                 info!("Initializing plugin: {}", plugin_name);
-
-                match plugin.initialize(&self.context).await {
-                    Ok(()) => {
-                        debug!("Plugin {} initialized successfully", plugin_name);
-                    }
-                    Err(e) => {
-                        error!("Failed to initialize plugin {}: {}", plugin_name, e);
-                        return Err(e);
-                    }
-                }
+                plugin.initialize(&self.context).await.map_err(|err| {
+                    error!("Failed to initialize plugin {}: {}", plugin_name, err);
+                    err
+                })?;
             }
         }
 
@@ -233,7 +181,7 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Start all plugins
+    /// Start all registered plugins (requires successful initialisation).
     pub async fn start_all(&mut self) -> ExtensionResult<()> {
         if !self.is_initialized {
             return Err(ExtensionError::NotInitialized);
@@ -244,16 +192,10 @@ impl PluginManager {
         for plugin_name in &self.plugin_order.clone() {
             if let Some(plugin) = self.plugins.get_mut(plugin_name) {
                 info!("Starting plugin: {}", plugin_name);
-
-                match plugin.start().await {
-                    Ok(()) => {
-                        debug!("Plugin {} started successfully", plugin_name);
-                    }
-                    Err(e) => {
-                        error!("Failed to start plugin {}: {}", plugin_name, e);
-                        return Err(e);
-                    }
-                }
+                plugin.start().await.map_err(|err| {
+                    error!("Failed to start plugin {}: {}", plugin_name, err);
+                    err
+                })?;
             }
         }
 
@@ -261,22 +203,15 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Stop all plugins
+    /// Stop all plugins in reverse registration order.
     pub async fn stop_all(&mut self) -> ExtensionResult<()> {
         info!("Stopping {} plugins", self.plugins.len());
 
-        // Stop in reverse order
         for plugin_name in self.plugin_order.iter().rev() {
             if let Some(plugin) = self.plugins.get_mut(plugin_name) {
                 info!("Stopping plugin: {}", plugin_name);
-
-                match plugin.stop().await {
-                    Ok(()) => {
-                        debug!("Plugin {} stopped successfully", plugin_name);
-                    }
-                    Err(e) => {
-                        warn!("Error stopping plugin {}: {}", plugin_name, e);
-                    }
+                if let Err(err) = plugin.stop().await {
+                    warn!("Error stopping plugin {}: {}", plugin_name, err);
                 }
             }
         }
@@ -285,20 +220,14 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Broadcast an event to all plugins
+    /// Broadcast an event to every plugin.
     pub async fn broadcast_event(&mut self, event: &PluginEvent) -> ExtensionResult<()> {
         debug!("Broadcasting event: {:?}", event);
 
         for plugin_name in &self.plugin_order.clone() {
             if let Some(plugin) = self.plugins.get_mut(plugin_name) {
-                match plugin.handle_event(event).await {
-                    Ok(()) => {
-                        debug!("Plugin {} handled event successfully", plugin_name);
-                    }
-                    Err(e) => {
-                        warn!("Plugin {} failed to handle event: {}", plugin_name, e);
-                        // Continue with other plugins
-                    }
+                if let Err(err) = plugin.handle_event(event).await {
+                    warn!("Plugin {} failed to handle event: {}", plugin_name, err);
                 }
             }
         }
@@ -306,17 +235,17 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Get plugin by name
+    /// Retrieve an immutable plugin reference by name.
     pub fn get_plugin(&self, name: &str) -> Option<&dyn Plugin> {
         self.plugins.get(name).map(|p| p.as_ref())
     }
 
-    /// Get mutable plugin by name
+    /// Retrieve a mutable plugin reference by name.
     pub fn get_plugin_mut(&mut self, name: &str) -> Option<&mut Box<dyn Plugin>> {
         self.plugins.get_mut(name)
     }
 
-    /// List all plugins
+    /// List plugin metadata in execution order.
     pub fn list_plugins(&self) -> Vec<&PluginInfo> {
         self.plugin_order
             .iter()
@@ -324,7 +253,7 @@ impl PluginManager {
             .collect()
     }
 
-    /// Get plugins by category
+    /// Retrieve all plugin info entries matching the specified category.
     pub fn get_plugins_by_category(&self, category: &PluginCategory) -> Vec<&PluginInfo> {
         self.plugins
             .values()
@@ -333,18 +262,18 @@ impl PluginManager {
             .collect()
     }
 
-    /// Check if plugin exists
+    /// Whether a plugin with the supplied name has been registered.
     pub fn has_plugin(&self, name: &str) -> bool {
         self.plugins.contains_key(name)
     }
 
-    /// Get plugin count
+    /// Total number of registered plugins.
     pub fn plugin_count(&self) -> usize {
         self.plugins.len()
     }
 }
 
-/// Macro for registering plugins
+/// Helper macro for registering plugins via `inventory`.
 #[macro_export]
 macro_rules! register_plugin {
     ($plugin_type:ty) => {
@@ -357,7 +286,6 @@ macro_rules! register_plugin {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -415,11 +343,11 @@ mod tests {
     }
 
     fn create_test_context() -> PluginContext {
-        let final_dir = tempdir().expect("Operation failed");
+        let temp_dir = tempdir().expect("operation failed");
         PluginContext {
             neo_version: "3.6.0".to_string(),
-            config_dir: final_dir.path().to_path_buf(),
-            data_dir: final_dir.path().to_path_buf(),
+            config_dir: temp_dir.path().to_path_buf(),
+            data_dir: temp_dir.path().to_path_buf(),
             shared_data: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -429,37 +357,26 @@ mod tests {
         let context = create_test_context();
         let mut manager = PluginManager::new(context);
 
-        // Register plugins
         let plugin1 = Box::new(TestPlugin::new("plugin1", 10));
         let plugin2 = Box::new(TestPlugin::new("plugin2", 5));
 
-        manager
-            .register_plugin(plugin1)
-            .expect("operation should succeed");
-        manager
-            .register_plugin(plugin2)
-            .expect("operation should succeed");
+        manager.register_plugin(plugin1).unwrap();
+        manager.register_plugin(plugin2).unwrap();
 
         assert_eq!(manager.plugin_count(), 2);
         assert!(manager.has_plugin("plugin1"));
         assert!(manager.has_plugin("plugin2"));
 
-        // Initialize and start
-        manager
-            .initialize_all()
-            .await
-            .expect("operation should succeed");
-        manager.start_all().await.expect("operation should succeed");
+        manager.initialize_all().await.unwrap();
+        manager.start_all().await.unwrap();
 
-        // Test event broadcasting
-        let event = PluginEvent::NodeStarted;
-        manager
-            .broadcast_event(&event)
-            .await
-            .expect("operation should succeed");
+        let event = PluginEvent::Custom {
+            event_type: "test".to_string(),
+            data: json!({"value": 1}),
+        };
+        manager.broadcast_event(&event).await.unwrap();
 
-        // Stop plugins
-        manager.stop_all().await.expect("operation should succeed");
+        manager.stop_all().await.unwrap();
     }
 
     #[test]

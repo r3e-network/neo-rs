@@ -1,4 +1,9 @@
-//! Placeholder shim for Plugins/OracleService/Protocols/IOracleProtocol.cs from the Neo C# implementation.
-//! TODO: Port the real logic to Rust.
+//! Oracle Protocol Interface
+//!
+//! Interface for Oracle protocols.
 
-#![allow(dead_code)]
+/// Oracle Protocol Interface
+pub trait IOracleProtocol {
+    /// Execute the oracle protocol
+    fn execute(&self) -> Result<String, String>;
+}

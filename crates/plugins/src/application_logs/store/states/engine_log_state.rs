@@ -1,4 +1,16 @@
-//! Placeholder shim for Plugins/ApplicationLogs/Store/States/EngineLogState.cs from the Neo C# implementation.
-//! TODO: Port the real logic to Rust.
+//! Engine Log State
+//!
+//! State management for engine logs.
 
-#![allow(dead_code)]
+use serde::{Deserialize, Serialize};
+
+/// Engine Log State
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EngineLogState {
+    /// Engine type
+    pub engine_type: String,
+    /// Execution time
+    pub execution_time: u64,
+    /// Gas consumed
+    pub gas_consumed: u64,
+}

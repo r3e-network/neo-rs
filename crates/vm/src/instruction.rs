@@ -589,17 +589,17 @@ impl Instruction {
             | OpCode::JMPLE
             | OpCode::ENDTRY => OperandSizePrefix(1),
             // Jump instructions with 4-byte offset
-            OpCode::JmpL
-            | OpCode::JmpifL
-            | OpCode::JmpifnotL
-            | OpCode::CallL
-            | OpCode::JmpeqL
-            | OpCode::JmpneL
-            | OpCode::JmpgtL
-            | OpCode::JmpgeL
-            | OpCode::JmpltL
-            | OpCode::JmpleL
-            | OpCode::EndtryL => OperandSizePrefix(4),
+            OpCode::JMP_L
+            | OpCode::JMPIF_L
+            | OpCode::JMPIFNOT_L
+            | OpCode::CALL_L
+            | OpCode::JMPEQ_L
+            | OpCode::JMPNE_L
+            | OpCode::JMPGT_L
+            | OpCode::JMPGE_L
+            | OpCode::JMPLT_L
+            | OpCode::JMPLE_L
+            | OpCode::ENDTRY_L => OperandSizePrefix(4),
             OpCode::SYSCALL => OperandSizePrefix(1), // The actual size varies, this is just the prefix
             // Slot operations with operands
             OpCode::INITSLOT => OperandSizePrefix(2), // local_count (1 byte) + argument_count (1 byte)
@@ -610,9 +610,51 @@ impl Instruction {
             // Type operations with operands
             OpCode::CONVERT | OpCode::ISTYPE => OperandSizePrefix(1), // type (1 byte)
             // Compound operations with operands
-            OpCode::NewarrayT => OperandSizePrefix(1), // type (1 byte)
+            OpCode::NEWARRAY_T => OperandSizePrefix(1), // type (1 byte)
             _ => OperandSizePrefix(0),
         }
+    }
+
+    /// Creates a RET instruction.
+    pub fn token_i8(&self) -> i8 {
+        self.operand.get(0).copied().unwrap_or(0) as i8
+    }
+
+    /// Returns the second signed byte operand (used by TRY instructions).
+    pub fn token_i8_1(&self) -> i8 {
+        self.operand.get(1).copied().unwrap_or(0) as i8
+    }
+
+    /// Returns the first 32-bit signed operand.
+    pub fn token_i32(&self) -> i32 {
+        self.token_u32() as i32
+    }
+
+    /// Returns the second 32-bit signed operand.
+    pub fn token_i32_1(&self) -> i32 {
+        let mut bytes = [0u8; 4];
+        for (idx, slot) in bytes.iter_mut().enumerate() {
+            *slot = *self.operand.get(4 + idx).unwrap_or(&0);
+        }
+        i32::from_le_bytes(bytes)
+    }
+
+    /// Returns the first 16-bit unsigned operand.
+    pub fn token_u16(&self) -> u16 {
+        let mut bytes = [0u8; 2];
+        for (idx, slot) in bytes.iter_mut().enumerate() {
+            *slot = *self.operand.get(idx).unwrap_or(&0);
+        }
+        u16::from_le_bytes(bytes)
+    }
+
+    /// Returns the first 32-bit unsigned operand.
+    pub fn token_u32(&self) -> u32 {
+        let mut bytes = [0u8; 4];
+        for (idx, slot) in bytes.iter_mut().enumerate() {
+            *slot = *self.operand.get(idx).unwrap_or(&0);
+        }
+        u32::from_le_bytes(bytes)
     }
 
     /// Creates a RET instruction.
@@ -828,10 +870,10 @@ mod tests {
         assert_eq!(Instruction::get_operand_size(OpCode::CALL).size(), 1);
 
         // Jump instructions with 4-byte offset
-        assert_eq!(Instruction::get_operand_size(OpCode::JmpL).size(), 4);
-        assert_eq!(Instruction::get_operand_size(OpCode::JmpifL).size(), 4);
-        assert_eq!(Instruction::get_operand_size(OpCode::JmpifnotL).size(), 4);
-        assert_eq!(Instruction::get_operand_size(OpCode::CallL).size(), 4);
+        assert_eq!(Instruction::get_operand_size(OpCode::JMP_L).size(), 4);
+        assert_eq!(Instruction::get_operand_size(OpCode::JMPIF_L).size(), 4);
+        assert_eq!(Instruction::get_operand_size(OpCode::JMPIFNOT_L).size(), 4);
+        assert_eq!(Instruction::get_operand_size(OpCode::CALL_L).size(), 4);
         assert_eq!(Instruction::get_operand_size(OpCode::SYSCALL).size(), 1);
     }
 

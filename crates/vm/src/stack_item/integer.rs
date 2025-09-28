@@ -14,6 +14,9 @@ pub struct Integer {
 }
 
 impl Integer {
+    /// Maximum number of bytes allowed to represent an integer (matches Neo C# Integer.MaxSize).
+    pub const MAX_SIZE: usize = 32;
+
     /// Creates a new integer with the specified value.
     pub fn new<T: Into<BigInt>>(value: T) -> Self {
         Self {

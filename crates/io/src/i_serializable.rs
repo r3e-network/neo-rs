@@ -1,4 +1,16 @@
-//! Placeholder shim for Neo.IO/ISerializable.cs from the Neo C# implementation.
-//! TODO: Port the real logic to Rust.
+//! ISerializable interface - matches C# Neo.IO.ISerializable exactly
 
-#![allow(dead_code)]
+use crate::{IoResult, MemoryReader};
+use std::io::Write;
+
+/// Represents NEO objects that can be serialized (matches C# ISerializable)
+pub trait ISerializable {
+    /// The size of the object in bytes after serialization.
+    fn size(&self) -> usize;
+
+    /// Serializes the object using the specified writer (C# uses BinaryWriter).
+    fn serialize<W: Write>(&self, writer: &mut W) -> IoResult<()>;
+
+    /// Deserializes the object using the specified MemoryReader.
+    fn deserialize(&mut self, reader: &mut MemoryReader) -> IoResult<()>;
+}

@@ -1,42 +1,41 @@
-//! Exception raised when a malformed script is encountered during parsing.
+//! Bad script exception implementation.
 //!
-//! Direct port of `Neo.VM/BadScriptException.cs`.
+//! This module provides the BadScriptException functionality exactly matching C# Neo.VM.BadScriptException.
 
-use std::error::Error as StdError;
-use std::fmt::{self, Display, Formatter};
+// Matches C# using directives exactly:
+// using System;
 
-/// Represents the exception thrown when a bad script is parsed.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+use std::error::Error;
+use std::fmt;
+
+/// namespace Neo.VM -> public class BadScriptException : Exception
+
+/// Represents the exception thrown when the bad script is parsed.
+#[derive(Debug, Clone)]
 pub struct BadScriptException {
-    message: Option<String>,
+    message: String,
 }
 
 impl BadScriptException {
-    /// Creates a new exception without a message.
+    /// Initializes a new instance of the BadScriptException class.
+    /// public BadScriptException() { }
     pub fn new() -> Self {
-        Self { message: None }
-    }
-
-    /// Creates a new exception with the specified message.
-    pub fn with_message<M: Into<String>>(message: M) -> Self {
         Self {
-            message: Some(message.into()),
+            message: String::new(),
         }
     }
 
-    /// Returns the message, if any, associated with the exception.
-    pub fn message(&self) -> Option<&str> {
-        self.message.as_deref()
+    /// Initializes a new instance of the BadScriptException class with a specified error message.
+    /// public BadScriptException(string message) : base(message) { }
+    pub fn with_message(message: String) -> Self {
+        Self { message }
     }
 }
 
-impl Display for BadScriptException {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.message {
-            Some(message) => write!(f, "{message}"),
-            None => write!(f, "A malformed script was encountered."),
-        }
+impl fmt::Display for BadScriptException {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
     }
 }
 
-impl StdError for BadScriptException {}
+impl Error for BadScriptException {}

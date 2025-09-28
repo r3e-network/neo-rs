@@ -1,142 +1,60 @@
-//! Relay cache implementation for Neo.
-//!
-//! This module provides a cache for relayed messages in the Neo network.
+//! RelayCache - aligns with C# Neo.IO.Caching.RelayCache
 
-use super::TimedCache;
+use super::fifo_cache::FIFOCache;
 use std::hash::Hash;
-use std::time::Duration;
+use std::ops::{Deref, DerefMut};
 
-/// A key for the relay cache.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RelayKey {
-    /// The hash of the message
-    pub hash: Vec<u8>,
-
-    /// The type of the message
-    pub message_type: u8,
+/// Trait representing inventory payloads that expose a hash suitable for use as a cache key.
+pub trait InventoryHash<TKey>
+where
+    TKey: Clone + Eq + Hash,
+{
+    /// Returns the hash associated with the inventory item (matches C# `IInventory.Hash`).
+    fn inventory_hash(&self) -> &TKey;
 }
 
-impl RelayKey {
-    /// Creates a new relay key.
-    ///
-    /// # Arguments
-    ///
-    /// * `hash` - The hash of the message
-    /// * `message_type` - The type of the message
-    ///
-    /// # Returns
-    ///
-    /// A new relay key
-    pub fn new(hash: Vec<u8>, message_type: u8) -> Self {
-        Self { hash, message_type }
-    }
+/// FIFO cache specialising in inventory payloads, keyed by their hash.
+pub struct RelayCache<TKey, TInventory>
+where
+    TKey: Clone + Eq + Hash,
+    TInventory: InventoryHash<TKey> + Clone,
+{
+    inner: FIFOCache<TKey, TInventory>,
 }
 
-/// A cache for relayed messages in the Neo network.
-pub struct RelayCache {
-    /// The underlying cache
-    cache: TimedCache<RelayKey, ()>,
-}
-
-impl RelayCache {
-    /// Creates a new relay cache with the given capacity and default time-to-live.
-    ///
-    /// # Arguments
-    ///
-    /// * `capacity` - The capacity of the cache
-    /// * `default_ttl` - The default time-to-live for entries
-    ///
-    /// # Returns
-    ///
-    /// A new relay cache
-    pub fn new(capacity: usize, default_ttl: Duration) -> Self {
+impl<TKey, TInventory> RelayCache<TKey, TInventory>
+where
+    TKey: Clone + Eq + Hash,
+    TInventory: InventoryHash<TKey> + Clone,
+{
+    /// Creates a new relay cache with the specified capacity.
+    pub fn new(max_capacity: usize) -> Self {
         Self {
-            cache: TimedCache::new(capacity, default_ttl),
+            inner: FIFOCache::new(max_capacity, |item: &TInventory| {
+                item.inventory_hash().clone()
+            }),
         }
     }
+}
 
-    /// Returns the capacity of the cache.
-    pub fn capacity(&self) -> usize {
-        self.cache.capacity()
+impl<TKey, TInventory> Deref for RelayCache<TKey, TInventory>
+where
+    TKey: Clone + Eq + Hash,
+    TInventory: InventoryHash<TKey> + Clone,
+{
+    type Target = FIFOCache<TKey, TInventory>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
+}
 
-    /// Returns the number of entries in the cache.
-    pub fn len(&self) -> usize {
-        self.cache.len()
-    }
-
-    /// Returns whether the cache is empty.
-    pub fn is_empty(&self) -> bool {
-        self.cache.is_empty()
-    }
-
-    /// Returns the default time-to-live for entries.
-    pub fn default_ttl(&self) -> Duration {
-        self.cache.default_ttl()
-    }
-
-    /// Sets the default time-to-live for entries.
-    ///
-    /// # Arguments
-    ///
-    /// * `ttl` - The default time-to-live for entries
-    pub fn set_default_ttl(&mut self, ttl: Duration) {
-        self.cache.set_default_ttl(ttl);
-    }
-
-    /// Checks if a message is in the cache.
-    ///
-    /// # Arguments
-    ///
-    /// * `hash` - The hash of the message
-    /// * `message_type` - The type of the message
-    ///
-    /// # Returns
-    ///
-    /// `true` if the message is in the cache and has not expired, `false` otherwise
-    pub fn contains(&mut self, hash: &[u8], message_type: u8) -> bool {
-        let key = RelayKey::new(hash.to_vec(), message_type);
-        self.cache.get(&key).is_some()
-    }
-
-    /// Adds a message to the cache.
-    ///
-    /// # Arguments
-    ///
-    /// * `hash` - The hash of the message
-    /// * `message_type` - The type of the message
-    ///
-    /// # Returns
-    ///
-    /// `true` if the message was added, `false` if it was already in the cache
-    pub fn add(&mut self, hash: &[u8], message_type: u8) -> bool {
-        let key = RelayKey::new(hash.to_vec(), message_type);
-        if self.cache.get(&key).is_some() {
-            false
-        } else {
-            self.cache.put(key, ());
-            true
-        }
-    }
-
-    /// Removes a message from the cache.
-    ///
-    /// # Arguments
-    ///
-    /// * `hash` - The hash of the message
-    /// * `message_type` - The type of the message
-    pub fn remove(&mut self, hash: &[u8], message_type: u8) {
-        let key = RelayKey::new(hash.to_vec(), message_type);
-        self.cache.remove(&key);
-    }
-
-    /// Clears the cache.
-    pub fn clear(&mut self) {
-        self.cache.clear();
-    }
-
-    /// Removes all expired entries from the cache.
-    pub fn purge_expired(&mut self) {
-        self.cache.purge_expired();
+impl<TKey, TInventory> DerefMut for RelayCache<TKey, TInventory>
+where
+    TKey: Clone + Eq + Hash,
+    TInventory: InventoryHash<TKey> + Clone,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }

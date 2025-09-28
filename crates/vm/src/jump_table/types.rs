@@ -64,7 +64,7 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         (StackItem::Map(items), StackItemType::Map) => StackItem::from_map(items),
 
         // Convert to Pointer
-        (StackItem::Pointer(position), StackItemType::Pointer) => StackItem::from_pointer(position),
+        (StackItem::Pointer(pointer), StackItemType::Pointer) => StackItem::Pointer(pointer),
 
         // Convert to InteropInterface
         (StackItem::InteropInterface(interface), StackItemType::InteropInterface) => {

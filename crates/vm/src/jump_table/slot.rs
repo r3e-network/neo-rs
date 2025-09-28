@@ -105,7 +105,7 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
 
     if local_count > 0 {
         let reference_counter = context.evaluation_stack().reference_counter().clone();
-        let local_slot = crate::slot::Slot::with_count(local_count, reference_counter);
+        let local_slot = crate::slot::Slot::new(local_count, reference_counter);
         context.set_local_variables(Some(local_slot));
     }
 
@@ -117,7 +117,7 @@ fn init_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResul
         }
 
         let reference_counter = context.evaluation_stack().reference_counter().clone();
-        let arg_slot = crate::slot::Slot::new(arg_items, reference_counter);
+        let arg_slot = crate::slot::Slot::with_items(arg_items, reference_counter);
         context.set_arguments(Some(arg_slot));
     }
 
@@ -286,7 +286,7 @@ fn init_static_slot(engine: &mut ExecutionEngine, instruction: &Instruction) -> 
     // Create a new slot with the specified count, filled with null values
     if static_count > 0 {
         let reference_counter = context.evaluation_stack().reference_counter().clone();
-        let static_slot = crate::slot::Slot::with_count(static_count, reference_counter);
+        let static_slot = crate::slot::Slot::new(static_count, reference_counter);
         context.set_static_fields(Some(static_slot));
     }
 

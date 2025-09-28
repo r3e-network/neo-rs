@@ -131,7 +131,7 @@ pub fn execute_and_verify(script_bytes: Vec<u8>, expected: &ExpectedExecutionRes
 
         // Compare each stack item using peek instead of iter
         for (i, expected_item) in expected.result_stack.iter().enumerate() {
-            if let Ok(actual_item) = result_stack.peek(i as isize) {
+            if let Ok(actual_item) = result_stack.peek(i) {
                 if !expected_item.matches(&actual_item) {
                     println!("Stack item mismatch at position {}", i);
                     return false;
@@ -253,7 +253,7 @@ mod tests {
                 // Check each expected value
                 for (i, expected_value) in expected.iter().enumerate() {
                     let stack_item = result_stack
-                        .peek(i as isize)
+                        .peek(i)
                         .expect("Stack item should exist");
                     match stack_item.as_int() {
                         Ok(value) => assert_eq!(value.to_string(), *expected_value),
@@ -305,7 +305,7 @@ mod tests {
 
                 for (i, expected_value) in expected.iter().enumerate() {
                     let stack_item = result_stack
-                        .peek(i as isize)
+                        .peek(i)
                         .expect("Stack item should exist");
                     match stack_item.as_int() {
                         Ok(value) => assert_eq!(value.to_string(), *expected_value),
@@ -388,7 +388,7 @@ mod tests {
 
                 for (i, expected_value) in expected.iter().enumerate() {
                     let stack_item = result_stack
-                        .peek(i as isize)
+                        .peek(i)
                         .expect("Stack item should exist");
                     match stack_item.as_int() {
                         Ok(value) => assert_eq!(value.to_string(), *expected_value),

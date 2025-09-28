@@ -2,17 +2,16 @@
 //!
 //! This module provides the jump table implementation used in the Neo VM.
 
-pub mod bitwise;
-pub mod compound;
-pub mod control;
-pub mod control_ops;
-pub mod crypto;
-pub mod numeric;
-pub mod push;
-pub mod slot;
-pub mod splice;
-pub mod stack;
-pub mod types;
+pub mod bitwisee; // Matches JumpTable.Bitwisee.cs
+pub mod compound; // Matches JumpTable.Compound.cs
+pub mod control; // Matches JumpTable.Control.cs
+pub mod jump_table; // Matches JumpTable.cs
+pub mod numeric; // Matches JumpTable.Numeric.cs
+pub mod push; // Matches JumpTable.Push.cs
+pub mod slot; // Matches JumpTable.Slot.cs
+pub mod splice; // Matches JumpTable.Splice.cs
+pub mod stack; // Matches JumpTable.Stack.cs
+pub mod types; // Matches JumpTable.Types.cs
 
 use crate::error::VmError;
 use crate::error::VmResult;
@@ -112,26 +111,16 @@ impl JumpTable {
         )))
     }
 
-    /// Executes a throw operation.
-    pub fn execute_throw(&self, engine: &mut ExecutionEngine, message: &str) -> VmResult<()> {
-        let exception = crate::stack_item::StackItem::from_byte_string(message.as_bytes().to_vec());
-
-        crate::jump_table::control::exception_handling::throw_uncaught(engine, exception)
-    }
-
     /// Registers the default handlers for all opcodes.
     fn register_default_handlers(&mut self) {
-        // Register bitwise handlers
-        bitwise::register_handlers(self);
+        // Register bitwisee handlers
+        bitwisee::register_handlers(self);
 
         // Register compound handlers
         compound::register_handlers(self);
 
         // Register control handlers
         control::register_handlers(self);
-
-        // Register crypto handlers
-        crypto::register_handlers(self);
 
         // Register numeric handlers
         numeric::register_handlers(self);

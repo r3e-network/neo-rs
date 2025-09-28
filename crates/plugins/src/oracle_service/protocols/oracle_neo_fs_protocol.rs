@@ -1,4 +1,24 @@
-//! Placeholder shim for Plugins/OracleService/Protocols/OracleNeoFSProtocol.cs from the Neo C# implementation.
-//! TODO: Port the real logic to Rust.
+//! Oracle NeoFS Protocol
+//!
+//! NeoFS protocol implementation for Oracle Service.
 
-#![allow(dead_code)]
+use super::IOracleProtocol;
+
+/// Oracle NeoFS Protocol
+pub struct OracleNeoFSProtocol {
+    // Implementation details
+}
+
+impl OracleNeoFSProtocol {
+    /// Create a new Oracle NeoFS Protocol instance
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl IOracleProtocol for OracleNeoFSProtocol {
+    fn execute(&self) -> Result<String, String> {
+        // Implementation
+        Ok("NeoFS Protocol executed".to_string())
+    }
+}

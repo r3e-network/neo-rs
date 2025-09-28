@@ -1,25 +1,19 @@
-//! Port of `RestServerSettings.cs`.
-//!
-//! The structure mirrors the C# configuration contract so that the Rust REST
-//! server can be configured with the same JSON file (`RestServer.json`).
+// Copyright (C) 2015-2025 The Neo Project.
+//
+// rest_server_settings.rs belongs to the Neo project and is licensed
+// under the MIT license. See the LICENSE file in the project root
+// for more information.
 
-use anyhow::{Context, Result};
 use once_cell::sync::Lazy;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    net::{IpAddr, Ipv4Addr},
-    path::Path,
-    sync::RwLock,
-};
+use serde_json::Value;
+use std::net::{IpAddr, Ipv4Addr};
+use std::str::FromStr;
 
-/// Global storage for the currently loaded settings.
-static CURRENT: Lazy<RwLock<RestServerSettings>> =
-    Lazy::new(|| RwLock::new(RestServerSettings::default()));
-
-/// Compression level options used when HTTP compression is enabled.
+/// Compression level supported by the REST server (maps to
+/// `System.IO.Compression.CompressionLevel`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
 pub enum CompressionLevel {
     Optimal,
     Fastest,
@@ -33,26 +27,23 @@ impl Default for CompressionLevel {
     }
 }
 
-/// JSON contract resolver used by the REST server.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ContractResolverKind {
-    #[serde(rename = "CamelCasePropertyNamesContractResolver")]
+/// Contract resolver used when serialising JSON payloads.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ContractResolver {
     CamelCasePropertyNames,
 }
 
-impl Default for ContractResolverKind {
+impl Default for ContractResolver {
     fn default() -> Self {
-        ContractResolverKind::CamelCasePropertyNames
+        ContractResolver::CamelCasePropertyNames
     }
 }
 
-/// Behaviour when JSON payloads are missing members.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
+/// Behaviour when encountering missing members while deserialising.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MissingMemberHandling {
-    Error,
     Ignore,
+    Error,
 }
 
 impl Default for MissingMemberHandling {
@@ -61,9 +52,8 @@ impl Default for MissingMemberHandling {
     }
 }
 
-/// Behaviour when encountering null values.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
+/// Behaviour for serialising `null` values.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NullValueHandling {
     Include,
     Ignore,
@@ -75,23 +65,24 @@ impl Default for NullValueHandling {
     }
 }
 
-/// JSON formatting option.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
-pub enum Formatting {
+/// Formatting applied to JSON output.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum JsonFormatting {
     None,
     Indented,
 }
 
-impl Default for Formatting {
+impl Default for JsonFormatting {
     fn default() -> Self {
-        Formatting::None
+        JsonFormatting::None
     }
 }
 
-/// Enumeration of all JSON converter types required for feature parity.
+/// Known converters that correspond to the Newtonsoft converters
+/// registered by the C# plugin. Each variant maps one-to-one to the
+/// converter type used in the original implementation.
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
 pub enum JsonConverterKind {
     StringEnumConverter,
     BigDecimalJsonConverter,
@@ -109,7 +100,7 @@ pub enum JsonConverterKind {
     ContractParameterJsonConverter,
     ContractPermissionDescriptorJsonConverter,
     ContractPermissionJsonConverter,
-    EcPointJsonConverter,
+    ECPointJsonConverter,
     GuidJsonConverter,
     InteropInterfaceJsonConverter,
     MethodTokenJsonConverter,
@@ -135,76 +126,81 @@ pub enum JsonConverterKind {
     WitnessRuleJsonConverter,
 }
 
-/// Sub-structure that mirrors the Newtonsoft Json serializer configuration.
+impl JsonConverterKind {
+    fn all() -> Vec<JsonConverterKind> {
+        use JsonConverterKind::*;
+        vec![
+            StringEnumConverter,
+            BigDecimalJsonConverter,
+            BlockHeaderJsonConverter,
+            BlockJsonConverter,
+            ContractAbiJsonConverter,
+            ContractEventDescriptorJsonConverter,
+            ContractGroupJsonConverter,
+            ContractInvokeParametersJsonConverter,
+            ContractJsonConverter,
+            ContractManifestJsonConverter,
+            ContractMethodJsonConverter,
+            ContractMethodParametersJsonConverter,
+            ContractParameterDefinitionJsonConverter,
+            ContractParameterJsonConverter,
+            ContractPermissionDescriptorJsonConverter,
+            ContractPermissionJsonConverter,
+            ECPointJsonConverter,
+            GuidJsonConverter,
+            InteropInterfaceJsonConverter,
+            MethodTokenJsonConverter,
+            NefFileJsonConverter,
+            ReadOnlyMemoryBytesJsonConverter,
+            SignerJsonConverter,
+            StackItemJsonConverter,
+            TransactionAttributeJsonConverter,
+            TransactionJsonConverter,
+            UInt160JsonConverter,
+            UInt256JsonConverter,
+            VmArrayJsonConverter,
+            VmBooleanJsonConverter,
+            VmBufferJsonConverter,
+            VmByteStringJsonConverter,
+            VmIntegerJsonConverter,
+            VmMapJsonConverter,
+            VmNullJsonConverter,
+            VmPointerJsonConverter,
+            VmStructJsonConverter,
+            WitnessConditionJsonConverter,
+            WitnessJsonConverter,
+            WitnessRuleJsonConverter,
+        ]
+    }
+}
+
+/// Serialiser settings used by the REST server when encoding and
+/// decoding JSON payloads.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct JsonSerializerSettings {
-    pub contract_resolver: ContractResolverKind,
+    pub contract_resolver: ContractResolver,
     pub missing_member_handling: MissingMemberHandling,
     pub null_value_handling: NullValueHandling,
-    pub formatting: Formatting,
+    pub formatting: JsonFormatting,
     pub converters: Vec<JsonConverterKind>,
 }
 
 impl Default for JsonSerializerSettings {
     fn default() -> Self {
         Self {
-            contract_resolver: ContractResolverKind::default(),
+            contract_resolver: ContractResolver::default(),
             missing_member_handling: MissingMemberHandling::default(),
             null_value_handling: NullValueHandling::default(),
-            formatting: Formatting::default(),
-            converters: vec![
-                JsonConverterKind::StringEnumConverter,
-                JsonConverterKind::BigDecimalJsonConverter,
-                JsonConverterKind::BlockHeaderJsonConverter,
-                JsonConverterKind::BlockJsonConverter,
-                JsonConverterKind::ContractAbiJsonConverter,
-                JsonConverterKind::ContractEventDescriptorJsonConverter,
-                JsonConverterKind::ContractGroupJsonConverter,
-                JsonConverterKind::ContractInvokeParametersJsonConverter,
-                JsonConverterKind::ContractJsonConverter,
-                JsonConverterKind::ContractManifestJsonConverter,
-                JsonConverterKind::ContractMethodJsonConverter,
-                JsonConverterKind::ContractMethodParametersJsonConverter,
-                JsonConverterKind::ContractParameterDefinitionJsonConverter,
-                JsonConverterKind::ContractParameterJsonConverter,
-                JsonConverterKind::ContractPermissionDescriptorJsonConverter,
-                JsonConverterKind::ContractPermissionJsonConverter,
-                JsonConverterKind::EcPointJsonConverter,
-                JsonConverterKind::GuidJsonConverter,
-                JsonConverterKind::InteropInterfaceJsonConverter,
-                JsonConverterKind::MethodTokenJsonConverter,
-                JsonConverterKind::NefFileJsonConverter,
-                JsonConverterKind::ReadOnlyMemoryBytesJsonConverter,
-                JsonConverterKind::SignerJsonConverter,
-                JsonConverterKind::StackItemJsonConverter,
-                JsonConverterKind::TransactionAttributeJsonConverter,
-                JsonConverterKind::TransactionJsonConverter,
-                JsonConverterKind::UInt160JsonConverter,
-                JsonConverterKind::UInt256JsonConverter,
-                JsonConverterKind::VmArrayJsonConverter,
-                JsonConverterKind::VmBooleanJsonConverter,
-                JsonConverterKind::VmBufferJsonConverter,
-                JsonConverterKind::VmByteStringJsonConverter,
-                JsonConverterKind::VmIntegerJsonConverter,
-                JsonConverterKind::VmMapJsonConverter,
-                JsonConverterKind::VmNullJsonConverter,
-                JsonConverterKind::VmPointerJsonConverter,
-                JsonConverterKind::VmStructJsonConverter,
-                JsonConverterKind::WitnessConditionJsonConverter,
-                JsonConverterKind::WitnessJsonConverter,
-                JsonConverterKind::WitnessRuleJsonConverter,
-            ],
+            formatting: JsonFormatting::default(),
+            converters: JsonConverterKind::all(),
         }
     }
 }
 
-/// Rust representation of `RestServerSettings`.
+/// Full set of configuration options used by the REST server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct RestServerSettings {
     pub network: u32,
-    #[serde(with = "serde_ip_addr")]
     pub bind_address: IpAddr,
     pub port: u16,
     pub keep_alive_timeout: u32,
@@ -236,10 +232,10 @@ impl Default for RestServerSettings {
         Self {
             network: 860_833_102,
             bind_address: IpAddr::V4(Ipv4Addr::LOCALHOST),
-            port: 10_339,
+            port: 10339,
             keep_alive_timeout: 120,
-            ssl_cert_file: Some(String::new()),
-            ssl_cert_password: Some(String::new()),
+            ssl_cert_file: None,
+            ssl_cert_password: None,
             trusted_authorities: Vec::new(),
             enable_basic_authentication: false,
             rest_user: String::new(),
@@ -248,7 +244,7 @@ impl Default for RestServerSettings {
             allow_origins: Vec::new(),
             disable_controllers: Vec::new(),
             enable_compression: false,
-            compression_level: CompressionLevel::SmallestSize,
+            compression_level: CompressionLevel::default(),
             enable_forwarded_headers: false,
             enable_swagger: false,
             max_page_size: 50,
@@ -263,65 +259,166 @@ impl Default for RestServerSettings {
     }
 }
 
+static CURRENT_SETTINGS: Lazy<RwLock<RestServerSettings>> =
+    Lazy::new(|| RwLock::new(RestServerSettings::default()));
+
 impl RestServerSettings {
-    /// Load settings from the given JSON path and store them as the current instance.
-    pub fn load_from_path(path: &Path) -> Result<RestServerSettings> {
-        let settings = if path.exists() {
-            let raw = fs::read_to_string(path).with_context(|| {
-                format!("failed to read REST server config: {}", path.display())
-            })?;
-            if raw.trim().is_empty() {
-                RestServerSettings::default()
-            } else {
-                serde_json::from_str::<RestServerSettings>(&raw).with_context(|| {
-                    format!("failed to parse REST server config: {}", path.display())
-                })?
-            }
-        } else {
-            RestServerSettings::default()
-        };
-
-        if let Ok(mut guard) = CURRENT.write() {
-            *guard = settings.clone();
-        }
-
-        Ok(settings)
+    /// Load settings from an optional JSON configuration value.
+    /// When `config` is `None`, defaults are applied.
+    pub fn load(config: Option<&Value>) {
+        let settings = config
+            .map(RestServerSettings::from_config)
+            .unwrap_or_else(RestServerSettings::default);
+        *CURRENT_SETTINGS.write() = settings;
     }
 
-    /// Replace the current settings (useful for tests).
-    pub fn set_current(settings: RestServerSettings) {
-        if let Ok(mut guard) = CURRENT.write() {
-            *guard = settings;
-        }
-    }
-
-    /// Retrieve the currently loaded settings (cloned).
+    /// Returns the currently active configuration snapshot.
     pub fn current() -> RestServerSettings {
-        CURRENT.read().cloned().unwrap_or_default()
+        CURRENT_SETTINGS.read().clone()
+    }
+
+    fn from_config(config: &Value) -> Self {
+        let mut result = RestServerSettings::default();
+
+        if let Some(network) = config.get("Network").and_then(Value::as_u64) {
+            result.network = network as u32;
+        }
+
+        if let Some(address) = config
+            .get("BindAddress")
+            .and_then(Value::as_str)
+            .and_then(|s| IpAddr::from_str(s).ok())
+            .or_else(|| Some(IpAddr::V4(Ipv4Addr::UNSPECIFIED)))
+        {
+            result.bind_address = address;
+        }
+
+        if let Some(port) = config.get("Port").and_then(Value::as_u64) {
+            result.port = port as u16;
+        }
+
+        if let Some(keep_alive) = config.get("KeepAliveTimeout").and_then(Value::as_u64) {
+            result.keep_alive_timeout = keep_alive as u32;
+        }
+
+        result.ssl_cert_file = config
+            .get("SslCertFile")
+            .and_then(Value::as_str)
+            .map(String::from);
+        result.ssl_cert_password = config
+            .get("SslCertPassword")
+            .and_then(Value::as_str)
+            .map(String::from);
+
+        if let Some(authorities) = config.get("TrustedAuthorities").and_then(Value::as_array) {
+            result.trusted_authorities = authorities
+                .iter()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect();
+        }
+
+        if let Some(flag) = config
+            .get("EnableBasicAuthentication")
+            .and_then(Value::as_bool)
+        {
+            result.enable_basic_authentication = flag;
+        }
+
+        if let Some(user) = config.get("RestUser").and_then(Value::as_str) {
+            result.rest_user = user.to_string();
+        }
+
+        if let Some(pass) = config.get("RestPass").and_then(Value::as_str) {
+            result.rest_pass = pass.to_string();
+        }
+
+        if let Some(flag) = config.get("EnableCors").and_then(Value::as_bool) {
+            result.enable_cors = flag;
+        }
+
+        if let Some(origins) = config.get("AllowOrigins").and_then(Value::as_array) {
+            result.allow_origins = origins
+                .iter()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect();
+        }
+
+        if let Some(disabled) = config.get("DisableControllers").and_then(Value::as_array) {
+            result.disable_controllers = disabled
+                .iter()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect();
+        }
+
+        if let Some(flag) = config.get("EnableCompression").and_then(Value::as_bool) {
+            result.enable_compression = flag;
+        }
+
+        if let Some(level) = config.get("CompressionLevel").and_then(Value::as_str) {
+            if let Ok(parsed) = CompressionLevel::from_str(level) {
+                result.compression_level = parsed;
+            }
+        }
+
+        if let Some(flag) = config
+            .get("EnableForwardedHeaders")
+            .and_then(Value::as_bool)
+        {
+            result.enable_forwarded_headers = flag;
+        }
+
+        if let Some(flag) = config.get("EnableSwagger").and_then(Value::as_bool) {
+            result.enable_swagger = flag;
+        }
+
+        if let Some(page_size) = config.get("MaxPageSize").and_then(Value::as_u64) {
+            result.max_page_size = page_size as u32;
+        }
+
+        if let Some(connections) = config
+            .get("MaxConcurrentConnections")
+            .and_then(Value::as_i64)
+        {
+            result.max_concurrent_connections = connections;
+        }
+
+        if let Some(max_gas) = config.get("MaxGasInvoke").and_then(Value::as_i64) {
+            result.max_gas_invoke = max_gas;
+        }
+
+        if let Some(flag) = config.get("EnableRateLimiting").and_then(Value::as_bool) {
+            result.enable_rate_limiting = flag;
+        }
+
+        if let Some(limit) = config.get("RateLimitPermitLimit").and_then(Value::as_i64) {
+            result.rate_limit_permit_limit = limit as i32;
+        }
+
+        if let Some(window) = config.get("RateLimitWindowSeconds").and_then(Value::as_i64) {
+            result.rate_limit_window_seconds = window as i32;
+        }
+
+        if let Some(queue) = config.get("RateLimitQueueLimit").and_then(Value::as_i64) {
+            result.rate_limit_queue_limit = queue as i32;
+        }
+
+        result
     }
 }
 
-mod serde_ip_addr {
-    use serde::{de::Error, Deserialize, Deserializer, Serializer};
-    use std::net::{IpAddr, Ipv4Addr};
+impl FromStr for CompressionLevel {
+    type Err = ();
 
-    pub fn serialize<S>(addr: &IpAddr, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&addr.to_string())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<IpAddr, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = Option::<String>::deserialize(deserializer)?;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            Some(s) if !s.is_empty() => s
-                .parse::<IpAddr>()
-                .map_err(|err| D::Error::custom(format!("invalid IP address `{}`: {}", s, err))),
-            _ => Ok(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+            "Optimal" => Ok(CompressionLevel::Optimal),
+            "Fastest" => Ok(CompressionLevel::Fastest),
+            "NoCompression" => Ok(CompressionLevel::NoCompression),
+            "SmallestSize" => Ok(CompressionLevel::SmallestSize),
+            _ => Err(()),
         }
     }
 }

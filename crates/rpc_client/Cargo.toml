@@ -2,42 +2,38 @@
 name = "neo-rpc-client"
 version = "0.4.0"
 edition = "2021"
-description = "Neo N3 RPC Client implementation matching C# Neo.Network.RPC exactly"
+authors = ["Neo Core Developers"]
+description = "Neo RPC Client implementation"
 license = "MIT"
-repository = "https://github.com/r3e-network/neo-rs"
 
 [dependencies]
-# Core Neo dependencies
-neo-config = { path = "../config" }
-neo-core = { path = "../core" }
-neo-json = { path = "../json" }
+neo-core = { path = "../neo", package = "neo-core" }
 neo-io = { path = "../io" }
+neo-json = { path = "../json" }
+neo-vm = { path = "../vm" }
 
-# HTTP and JSON-RPC dependencies
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+async-trait = "0.1"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+hyper = "0.14"
+
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1.0", features = ["full"] }
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 
-# Async utilities
-futures = "0.3"
-
-# Logging
+# Utilities
+base64 = "0.22"
+hex = "0.4"
+num-bigint = "0.4"
+num-traits = "0.2"
 tracing = "0.1"
 
-# URL handling
-url = "2.4"
-
-# Base64 encoding/decoding
-base64 = "0.21"
-
-# Hex encoding/decoding
-hex = "0.4"
-
 [dev-dependencies]
-tokio-test = "0.4"
-mockito = "1.2" 
+mockito = "1.0"

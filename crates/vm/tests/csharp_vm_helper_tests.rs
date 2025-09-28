@@ -1,15 +1,17 @@
 // VM Helper Tests - Converted from C# Neo.UnitTests/VM/UT_Helper.cs
 // Tests the VM helper functionality including ScriptBuilder operations, JSON serialization, and parameter conversions
 
-use neo_core::{UInt160, UInt256};
 use neo_vm::{
-    evaluation_stack::EvaluationStack,
-    op_code::OpCode,
-    script::Script,
-    script_builder::ScriptBuilder,
-    stack_item::{StackItem, StackItemType},
+    op_code::OpCode, script::Script, script_builder::ScriptBuilder, stack_item::StackItem,
 };
-use std::collections::HashMap;
+
+fn zero_u160() -> [u8; 20] {
+    [0u8; 20]
+}
+
+fn zero_u256() -> [u8; 32] {
+    [0u8; 32]
+}
 
 #[test]
 fn test_emit_basic() {
@@ -21,8 +23,8 @@ fn test_emit_basic() {
 #[test]
 fn test_emit_push_uint160() {
     let mut sb = ScriptBuilder::new();
-    let uint160 = UInt160::zero();
-    sb.emit_push(&uint160.to_array());
+    let uint160 = zero_u160();
+    sb.emit_push(&uint160);
 
     let mut expected = vec![OpCode::PUSHDATA1 as u8, 0x14];
     expected.extend_from_slice(&[0u8; 20]);
@@ -33,11 +35,11 @@ fn test_emit_push_uint160() {
 fn test_emit_push_boolean() {
     let mut sb = ScriptBuilder::new();
     sb.emit_push_bool(false);
-    assert_eq!(vec![OpCode::PUSH0 as u8], sb.to_array());
+    assert_eq!(vec![OpCode::PUSHF as u8], sb.to_array());
 
     sb = ScriptBuilder::new();
     sb.emit_push_bool(true);
-    assert_eq!(vec![OpCode::PUSH1 as u8], sb.to_array());
+    assert_eq!(vec![OpCode::PUSHT as u8], sb.to_array());
 }
 
 #[test]
@@ -64,12 +66,12 @@ fn test_emit_push_integer() {
 #[test]
 fn test_emit_push_string() {
     let mut sb = ScriptBuilder::new();
-    sb.emit_push("".as_bytes());
-    assert_eq!(vec![0x00], sb.to_array()); // Empty string
+    sb.emit_push_string("");
+    assert_eq!(vec![OpCode::PUSHDATA1 as u8, 0], sb.to_array()); // Empty string
 
     sb = ScriptBuilder::new();
-    sb.emit_push("hello".as_bytes());
-    let mut expected = vec![0x05]; // Length
+    sb.emit_push_string("hello");
+    let mut expected = vec![OpCode::PUSHDATA1 as u8, 5];
     expected.extend_from_slice(b"hello");
     assert_eq!(expected, sb.to_array());
 }
@@ -78,11 +80,12 @@ fn test_emit_push_string() {
 fn test_emit_push_byte_array() {
     let mut sb = ScriptBuilder::new();
     sb.emit_push(&[]);
-    assert_eq!(vec![0x00], sb.to_array()); // Empty array
+    assert_eq!(vec![OpCode::PUSHDATA1 as u8, 0], sb.to_array()); // Empty array
 
     sb = ScriptBuilder::new();
     sb.emit_push(&[1, 2, 3]);
-    let expected = vec![0x03, 1, 2, 3]; // Length + data
+    let mut expected = vec![OpCode::PUSHDATA1 as u8, 0x03]; // Length + data
+    expected.extend_from_slice(&[1, 2, 3]);
     assert_eq!(expected, sb.to_array());
 }
 
@@ -91,23 +94,22 @@ fn test_emit_syscall() {
     let mut sb = ScriptBuilder::new();
     sb.emit_syscall("test").expect("emit_syscall failed");
 
-    // SYSCALL + length + "test"
-    assert_eq!(
-        sb.to_array(),
-        vec![OpCode::SYSCALL as u8, 4, b't', b'e', b's', b't']
-    );
+    let hash = ScriptBuilder::hash_syscall("test").expect("hash computation");
+    let mut expected = vec![OpCode::SYSCALL as u8];
+    expected.extend_from_slice(&hash.to_le_bytes());
+    assert_eq!(sb.to_array(), expected);
 }
 
 #[test]
 fn test_emit_dynamic_call_simple() {
     let mut sb = ScriptBuilder::new();
-    let contract_hash = UInt160::zero();
+    let contract_hash = zero_u160();
     let operation = "AAAAA";
 
     sb.emit_opcode(OpCode::NEWARRAY0);
     sb.emit_push_int(15); // CallFlags.All
     sb.emit_push(operation.as_bytes());
-    sb.emit_push(&contract_hash.to_array());
+    sb.emit_push(&contract_hash);
     sb.emit_syscall("System.Contract.Call")
         .expect("emit_syscall failed");
 
@@ -119,7 +121,7 @@ fn test_emit_dynamic_call_simple() {
 #[test]
 fn test_emit_dynamic_call_with_args() {
     let mut sb = ScriptBuilder::new();
-    let contract_hash = UInt160::zero();
+    let contract_hash = zero_u160();
     let operation = "AAAAA";
 
     // Simulate EmitDynamicCall with one parameter
@@ -128,7 +130,7 @@ fn test_emit_dynamic_call_with_args() {
     sb.emit_opcode(OpCode::PACK);
     sb.emit_push_int(15); // CallFlags.All
     sb.emit_push(operation.as_bytes());
-    sb.emit_push(&contract_hash.to_array());
+    sb.emit_push(&contract_hash);
     sb.emit_syscall("System.Contract.Call")
         .expect("emit_syscall failed");
 
@@ -195,16 +197,16 @@ fn test_create_map() {
 #[test]
 fn test_make_script() {
     let mut sb = ScriptBuilder::new();
-    let contract_hash = UInt160::zero();
+    let contract_hash = zero_u160();
     let operation = "balanceOf";
-    let parameter = UInt160::zero();
+    let parameter = zero_u160();
 
-    sb.emit_push(&parameter.to_array());
+    sb.emit_push(&parameter);
     sb.emit_push_int(1); // Parameter count
     sb.emit_opcode(OpCode::PACK);
     sb.emit_push_int(15); // CallFlags.All
     sb.emit_push(operation.as_bytes());
-    sb.emit_push(&contract_hash.to_array());
+    sb.emit_push(&contract_hash);
     sb.emit_syscall("System.Contract.Call")
         .expect("emit_syscall failed");
 
@@ -312,8 +314,8 @@ fn test_emit_push_various_types() {
 #[test]
 fn test_emit_push_uint256() {
     let mut sb = ScriptBuilder::new();
-    let uint256 = UInt256::zero();
-    sb.emit_push(&uint256.to_array());
+    let uint256 = zero_u256();
+    sb.emit_push(&uint256);
 
     let mut expected = vec![OpCode::PUSHDATA1 as u8, 0x20];
     expected.extend_from_slice(&[0u8; 32]);

@@ -1,59 +1,33 @@
-//! IO operations and data structures for the Neo blockchain.
+//! Neo.IO - matches C# Neo.IO exactly
 //!
-//! This crate provides IO functionality for the Neo blockchain, including binary serialization,
-//! caching, and other IO-related utilities.
+//! This crate provides IO functionality matching C# Neo.IO namespace
 
-#![cfg_attr(not(feature = "std"), no_std)]
-
-pub mod binary_reader;
-pub mod binary_writer;
-pub mod caching;
-pub mod error;
-pub mod memory_reader;
-pub mod serializable;
-
-#[cfg(feature = "async")]
 pub mod actors;
+pub mod caching;
 
-pub use binary_reader::BinaryReader;
-pub use binary_writer::BinaryWriter;
-pub use error::{ErrorSeverity, IoError, IoResult, Result};
-pub use memory_reader::MemoryReader;
-pub use serializable::{helper, Serializable, SerializableExt};
+// Core interfaces
+mod i_serializable;
+mod i_serializable_span;
+mod memory_reader;
 
-/// Legacy error type for backward compatibility
-///
-/// **Deprecated**: Use [`IoError`] instead for new code.
-#[deprecated(since = "0.3.0", note = "Use IoError instead")]
-pub use LegacyError as Error;
+// Re-export core types matching C# namespace structure
+pub use i_serializable::ISerializable;
+pub use i_serializable_span::ISerializableSpan;
+pub use memory_reader::{IoError, IoResult, MemoryReader};
 
-/// Legacy I/O errors for backward compatibility
-#[derive(Debug, thiserror::Error)]
-pub enum LegacyError {
-    #[error("IO error: {0}")]
-    Io(String),
+// Re-export actors
+pub use actors::idle::Idle;
 
-    #[error("Serialization error: {0}")]
-    Serialization(String),
-
-    #[error("Deserialization error: {0}")]
-    Deserialization(String),
-
-    #[error("Invalid format: {0}")]
-    InvalidFormat(String),
-
-    #[error("Invalid data: {0}")]
-    InvalidData(String),
-
-    #[error("Buffer overflow")]
-    BufferOverflow,
-
-    #[error("End of stream")]
-    EndOfStream,
-
-    #[error("Format exception")]
-    FormatException,
-
-    #[error("Invalid operation: {0}")]
-    InvalidOperation(String),
-}
+// Re-export caching types
+pub use caching::{
+    cache::Cache,
+    ec_point_cache::{ECPointCache, EncodablePoint},
+    ecdsa_cache::{ECDsaCache, ECDsaCacheItem},
+    fifo_cache::FIFOCache,
+    hashset_cache::HashSetCache,
+    indexed_queue::IndexedQueue,
+    keyed_collection_slim::KeyedCollectionSlim,
+    lru_cache::LRUCache,
+    reflection_cache_attribute::ReflectionCacheAttribute,
+    relay_cache::{InventoryHash, RelayCache},
+};

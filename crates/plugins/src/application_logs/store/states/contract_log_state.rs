@@ -1,4 +1,16 @@
-//! Placeholder shim for Plugins/ApplicationLogs/Store/States/ContractLogState.cs from the Neo C# implementation.
-//! TODO: Port the real logic to Rust.
+//! Contract Log State
+//!
+//! State management for contract logs.
 
-#![allow(dead_code)]
+use serde::{Deserialize, Serialize};
+
+/// Contract Log State
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContractLogState {
+    /// Contract hash
+    pub contract_hash: String,
+    /// Contract name
+    pub contract_name: String,
+    /// Deployment timestamp
+    pub deployment_timestamp: u64,
+}

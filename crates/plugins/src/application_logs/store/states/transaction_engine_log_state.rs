@@ -1,4 +1,16 @@
-//! Placeholder shim for Plugins/ApplicationLogs/Store/States/TransactionEngineLogState.cs from the Neo C# implementation.
-//! TODO: Port the real logic to Rust.
+//! Transaction Engine Log State
+//!
+//! State management for transaction engine logs.
 
-#![allow(dead_code)]
+use serde::{Deserialize, Serialize};
+
+/// Transaction Engine Log State
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionEngineLogState {
+    /// Transaction hash
+    pub transaction_hash: String,
+    /// Engine type
+    pub engine_type: String,
+    /// Execution time
+    pub execution_time: u64,
+}

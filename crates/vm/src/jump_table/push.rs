@@ -10,8 +10,9 @@ use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::StackItem;
 use crate::VMState;
-use neo_config::{HASH_SIZE, SECONDS_PER_BLOCK};
 use num_bigint::BigInt;
+
+const HASH_SIZE: usize = 32;
 
 /// Registers the push operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
@@ -184,7 +185,8 @@ fn push_a(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<(
     }
 
     // Push the address as a pointer onto the stack
-    let pointer_item = StackItem::from_pointer(address as usize);
+    let script = context.script_arc();
+    let pointer_item = StackItem::from_pointer(script, address as usize);
     context.push(pointer_item)?;
 
     Ok(())
@@ -567,8 +569,8 @@ fn push_15(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Push SECONDS_PER_BLOCK onto the stack
-    context.push(StackItem::from_int(SECONDS_PER_BLOCK))?;
+    // Push 15 onto the stack
+    context.push(StackItem::from_int(15))?;
 
     Ok(())
 }

@@ -79,9 +79,15 @@ impl<'a> CompoundTypeMut<'a> {
     /// Removes every element from the compound object.
     pub fn clear(&mut self) {
         match self.item {
-            StackItem::Array(array) => array.clear(),
-            StackItem::Struct(structure) => structure.clear(),
-            StackItem::Map(map) => map.clear(),
+            StackItem::Array(array) => {
+                let _ = array.clear();
+            }
+            StackItem::Struct(structure) => {
+                let _ = structure.clear();
+            }
+            StackItem::Map(map) => {
+                let _ = map.clear();
+            }
             _ => {}
         }
     }

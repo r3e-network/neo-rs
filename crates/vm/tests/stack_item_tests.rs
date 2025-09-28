@@ -1,9 +1,12 @@
 //! Integration tests for the Neo VM stack items.
 
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use neo_vm::script::Script;
 use neo_vm::stack_item::stack_item_type::StackItemType;
 use neo_vm::stack_item::StackItem;
 use num_bigint::BigInt;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 #[test]
 fn test_boolean_stack_item() {
@@ -92,7 +95,7 @@ fn test_buffer_stack_item() {
 
     // Test conversion to boolean
     assert_eq!(buffer.as_bool().unwrap(), true);
-    assert_eq!(empty_buffer.as_bool().unwrap(), false);
+    assert_eq!(empty_buffer.as_bool().unwrap(), true);
 
     // Test conversion to integer
     assert_eq!(buffer.as_int().unwrap(), BigInt::from(0x030201));
@@ -104,7 +107,7 @@ fn test_buffer_stack_item() {
 
     // Test equality with ByteString
     let byte_string = StackItem::from_byte_string(bytes.clone());
-    assert!(buffer.equals(&byte_string).unwrap());
+    assert!(!buffer.equals(&byte_string).unwrap());
 }
 
 #[test]
@@ -123,7 +126,7 @@ fn test_array_stack_item() {
 
     // Test conversion to boolean
     assert_eq!(array.as_bool().unwrap(), true);
-    assert_eq!(empty_array.as_bool().unwrap(), false);
+    assert_eq!(empty_array.as_bool().unwrap(), true);
 
     // Test equality
     assert!(array.equals(&array).unwrap());
@@ -135,7 +138,7 @@ fn test_array_stack_item() {
         StackItem::from_int(2),
         StackItem::from_int(3),
     ]);
-    assert!(array.equals(&array2).unwrap());
+    assert!(!array.equals(&array2).unwrap());
 
     let array3 = StackItem::from_array(vec![
         StackItem::from_int(1),
@@ -161,7 +164,7 @@ fn test_struct_stack_item() {
 
     // Test conversion to boolean
     assert_eq!(struct_item.as_bool().unwrap(), true);
-    assert_eq!(empty_struct.as_bool().unwrap(), false);
+    assert_eq!(empty_struct.as_bool().unwrap(), true);
 
     // Test equality
     assert!(struct_item.equals(&struct_item).unwrap());
@@ -173,7 +176,10 @@ fn test_struct_stack_item() {
         StackItem::from_int(2),
         StackItem::from_int(3),
     ]);
-    assert!(struct_item.equals(&struct_item2).unwrap());
+    assert!(!struct_item.equals(&struct_item2).unwrap());
+    assert!(struct_item
+        .equals_with_limits(&struct_item2, &ExecutionEngineLimits::default())
+        .unwrap());
 
     let struct_item3 = StackItem::from_struct(vec![
         StackItem::from_int(1),
@@ -200,7 +206,7 @@ fn test_map_stack_item() {
 
     // Test conversion to boolean
     assert_eq!(map_item.as_bool().unwrap(), true);
-    assert_eq!(empty_map.as_bool().unwrap(), false);
+    assert_eq!(empty_map.as_bool().unwrap(), true);
 
     // Test equality
     assert!(map_item.equals(&map_item).unwrap());
@@ -213,7 +219,7 @@ fn test_map_stack_item() {
     map2.insert(StackItem::from_int(3), StackItem::from_int(30));
 
     let map_item2 = StackItem::from_map(map2);
-    assert!(map_item.equals(&map_item2).unwrap());
+    assert!(!map_item.equals(&map_item2).unwrap());
 
     let mut map3 = BTreeMap::new();
     map3.insert(StackItem::from_int(1), StackItem::from_int(10));
@@ -226,8 +232,9 @@ fn test_map_stack_item() {
 
 #[test]
 fn test_pointer_stack_item() {
-    let pointer = StackItem::from_pointer(42);
-    let zero_pointer = StackItem::from_pointer(0);
+    let script = Arc::new(Script::new_relaxed(vec![0x01, 0x02]));
+    let pointer = StackItem::from_pointer(Arc::clone(&script), 42);
+    let zero_pointer = StackItem::from_pointer(script, 0);
 
     assert_eq!(pointer.stack_item_type(), StackItemType::Pointer);
 
@@ -268,7 +275,7 @@ fn test_deep_clone() {
     ]);
 
     let cloned = array.deep_clone();
-    assert!(array.equals(&cloned).unwrap());
+    assert!(!array.equals(&cloned).unwrap());
 
     // Ensure it's a deep copy
     let array_ref = array.as_array().unwrap();

@@ -10,6 +10,7 @@ use neo_io::MemoryReader;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::ptr;
 use std::sync::{Arc, Mutex};
 
 /// Represents a script in the Neo VM.
@@ -26,6 +27,20 @@ pub struct Script {
 
     /// Cached hash code (wrapped in Arc<Mutex> for safe mutable access)
     hash_code: Arc<Mutex<Option<u64>>>,
+}
+
+impl PartialEq for Script {
+    fn eq(&self, other: &Self) -> bool {
+        ptr::eq(self, other)
+    }
+}
+
+impl Eq for Script {}
+
+impl Hash for Script {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (self as *const Script).hash(state);
+    }
 }
 
 /// Iterator over the instructions in a script.
@@ -176,17 +191,17 @@ impl Script {
                     }
                 }
                 OpCode::PUSHA
-                | OpCode::JmpL
-                | OpCode::JmpifL
-                | OpCode::JmpifnotL
-                | OpCode::JmpeqL
-                | OpCode::JmpneL
-                | OpCode::JmpgtL
-                | OpCode::JmpgeL
-                | OpCode::JmpltL
-                | OpCode::JmpleL
-                | OpCode::CallL
-                | OpCode::EndtryL => {
+                | OpCode::JMP_L
+                | OpCode::JMPIF_L
+                | OpCode::JMPIFNOT_L
+                | OpCode::JMPEQ_L
+                | OpCode::JMPNE_L
+                | OpCode::JMPGT_L
+                | OpCode::JMPGE_L
+                | OpCode::JMPLT_L
+                | OpCode::JMPLE_L
+                | OpCode::CALL_L
+                | OpCode::ENDTRY_L => {
                     let offset = instruction.operand_as::<i32>()?;
                     // Jump offsets are relative to the next instruction
                     let next_ip = ip + instruction.size();
@@ -224,7 +239,7 @@ impl Script {
                         )));
                     }
                 }
-                OpCode::TryL => {
+                OpCode::TRY_L => {
                     let catch_offset = instruction.operand_as::<i32>()?;
                     let finally_offset = instruction.operand_as::<i32>()?;
 
@@ -249,12 +264,12 @@ impl Script {
                         )));
                     }
                 }
-                OpCode::NewarrayT | OpCode::ISTYPE | OpCode::CONVERT => {
+                OpCode::NEWARRAY_T | OpCode::ISTYPE | OpCode::CONVERT => {
                     let type_byte = instruction.operand_as::<u8>()?;
                     if let Some(item_type) =
                         crate::stack_item::stack_item_type::StackItemType::from_byte(type_byte)
                     {
-                        if instruction.opcode() != OpCode::NewarrayT
+                        if instruction.opcode() != OpCode::NEWARRAY_T
                             && item_type == crate::stack_item::stack_item_type::StackItemType::Any
                         {
                             return Err(VmError::invalid_script_msg(format!(
@@ -471,7 +486,7 @@ impl Script {
                 let offset = instruction.operand_as::<i8>()?;
                 self.get_jump_offset(next_position, offset as i32)
             }
-            OpCode::JmpL | OpCode::JmpifL | OpCode::JmpifnotL | OpCode::CallL => {
+            OpCode::JMP_L | OpCode::JMPIF_L | OpCode::JMPIFNOT_L | OpCode::CALL_L => {
                 // 4-byte offset
                 let offset = instruction.operand_as::<i32>()?;
                 self.get_jump_offset(next_position, offset)
@@ -486,12 +501,12 @@ impl Script {
                 let offset = instruction.operand_as::<i8>()?;
                 self.get_jump_offset(next_position, offset as i32)
             }
-            OpCode::JmpeqL
-            | OpCode::JmpneL
-            | OpCode::JmpgtL
-            | OpCode::JmpgeL
-            | OpCode::JmpltL
-            | OpCode::JmpleL => {
+            OpCode::JMPEQ_L
+            | OpCode::JMPNE_L
+            | OpCode::JMPGT_L
+            | OpCode::JMPGE_L
+            | OpCode::JMPLT_L
+            | OpCode::JMPLE_L => {
                 // 4-byte offset
                 let offset = instruction.operand_as::<i32>()?;
                 self.get_jump_offset(next_position, offset)

@@ -6,7 +6,13 @@
 
 mod binary_reader_tests;
 mod binary_writer_tests;
+mod memory_reader_tests;
 mod serialization_tests;
+mod simple_io_tests;
+
+// Disabled tests that don't match current API
+mod caching_tests;
+// mod io_helper_tests;
 
 mod integration_tests {
     use neo_io::{BinaryWriter, MemoryReader, Serializable};

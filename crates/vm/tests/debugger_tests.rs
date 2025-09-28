@@ -1,11 +1,11 @@
 //! Integration tests for the Neo VM debugger.
 
-use neo_vm::debugger::{Breakpoint, Debugger};
-use neo_vm::execution_engine::{ExecutionEngine, VMState};
+use neo_vm::debugger::Debugger;
 use neo_vm::jump_table::JumpTable;
 use neo_vm::op_code::OpCode;
 use neo_vm::script::Script;
-use neo_vm::stack_item::StackItem;
+use neo_vm::{ExecutionEngine, VMState};
+use std::sync::Arc;
 
 #[test]
 fn test_debugger_breakpoints() {
@@ -34,16 +34,15 @@ fn test_debugger_breakpoints() {
         .unwrap();
 
     // Add a breakpoint at the ADD instruction
-    let breakpoint = Breakpoint::new(script.hash().to_vec(), 2);
-    debugger.add_breakpoint(breakpoint.clone());
+    let script_arc = debugger.engine().current_context().unwrap().script_arc();
+    debugger.add_break_point(Arc::clone(&script_arc), 2);
 
     // Check that the breakpoint was added
-    assert_eq!(debugger.breakpoints().len(), 1);
-    assert_eq!(debugger.breakpoints()[0].script_hash(), script.hash());
-    assert_eq!(debugger.breakpoints()[0].instruction_pointer(), 2);
+    assert!(debugger.has_break_point(&script_arc, 2));
+    assert_eq!(debugger.break_point_count(), 1);
 
     // Execute until the breakpoint
-    let state = debugger.execute().unwrap();
+    let state = debugger.execute();
 
     // Check that execution stopped at the breakpoint
     assert_eq!(state, VMState::BREAK);
@@ -57,7 +56,7 @@ fn test_debugger_breakpoints() {
     );
 
     // Step over the breakpoint
-    let state = debugger.step().unwrap();
+    let state = debugger.step();
 
     // Check that execution continued
     assert_eq!(state, VMState::BREAK);
@@ -71,13 +70,14 @@ fn test_debugger_breakpoints() {
     );
 
     // Remove the breakpoint
-    debugger.remove_breakpoint(&breakpoint);
+    assert!(debugger.remove_break_point(&script_arc, 2));
 
     // Check that the breakpoint was removed
-    assert_eq!(debugger.breakpoints().len(), 0);
+    assert_eq!(debugger.break_point_count(), 0);
+    assert!(!debugger.has_break_point(&script_arc, 2));
 
     // Continue execution
-    let state = debugger.execute().unwrap();
+    let state = debugger.execute();
 
     // Check that execution completed
     assert_eq!(state, VMState::HALT);
@@ -107,7 +107,7 @@ fn test_debugger_step() {
     debugger.engine_mut().load_script(script, 0, 0).unwrap();
 
     // Step through the script
-    let state = debugger.step().unwrap();
+    let state = debugger.step();
     assert_eq!(state, VMState::BREAK);
     assert_eq!(
         debugger
@@ -118,7 +118,7 @@ fn test_debugger_step() {
         1
     );
 
-    let state = debugger.step().unwrap();
+    let state = debugger.step();
     assert_eq!(state, VMState::BREAK);
     assert_eq!(
         debugger
@@ -129,7 +129,7 @@ fn test_debugger_step() {
         2
     );
 
-    let state = debugger.step().unwrap();
+    let state = debugger.step();
     assert_eq!(state, VMState::BREAK);
     assert_eq!(
         debugger
@@ -140,7 +140,7 @@ fn test_debugger_step() {
         3
     );
 
-    let state = debugger.step().unwrap();
+    let state = debugger.step();
     assert_eq!(state, VMState::HALT);
 }
 
@@ -210,7 +210,7 @@ fn test_debugger_step_over() {
     debugger.engine_mut().load_script(script, 0, 0).unwrap();
 
     // Step through the script
-    let state = debugger.step().unwrap();
+    let state = debugger.step();
     assert_eq!(state, VMState::BREAK);
     assert_eq!(
         debugger
@@ -222,7 +222,7 @@ fn test_debugger_step_over() {
     );
 
     // Step over the call
-    let state = debugger.step_over().unwrap();
+    let state = debugger.step_over();
     assert_eq!(state, VMState::BREAK);
     assert_eq!(
         debugger
@@ -234,7 +234,7 @@ fn test_debugger_step_over() {
     );
 
     // Continue execution
-    let state = debugger.execute().unwrap();
+    let state = debugger.execute();
     assert_eq!(state, VMState::HALT);
 }
 
@@ -304,7 +304,7 @@ fn test_debugger_step_out() {
     debugger.engine_mut().load_script(script, 0, 0).unwrap();
 
     // Step into the function
-    let state = debugger.step().unwrap();
+    let state = debugger.step();
     assert_eq!(state, VMState::BREAK);
     assert_eq!(
         debugger
@@ -315,7 +315,7 @@ fn test_debugger_step_out() {
         1
     );
 
-    let state = debugger.step().unwrap();
+    let state = debugger.step();
     assert_eq!(state, VMState::BREAK);
     assert_eq!(
         debugger
@@ -327,7 +327,7 @@ fn test_debugger_step_out() {
     );
 
     // Step out of the function
-    let state = debugger.step_out().unwrap();
+    let state = debugger.step_out();
     assert_eq!(state, VMState::BREAK);
     assert_eq!(
         debugger
@@ -339,6 +339,6 @@ fn test_debugger_step_out() {
     );
 
     // Continue execution
-    let state = debugger.execute().unwrap();
+    let state = debugger.execute();
     assert_eq!(state, VMState::HALT);
 }

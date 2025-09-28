@@ -1,4 +1,530 @@
-//! Placeholder shim for Plugins/DBFTPlugin/Consensus/ConsensusService.OnMessage.cs from the Neo C# implementation.
-//! TODO: Port the real logic to Rust.
+// Copyright (C) 2015-2025 The Neo Project.
+//
+// consensus_service_on_message.rs file belongs to the neo project and is free
+// software distributed under the MIT software license, see the
+// accompanying file LICENSE in the main directory of the
+// repository or http://www.opensource.org/licenses/mit-license.php
+// for more details.
+//
+// Redistribution and use in source and binary forms with or without
+// modifications are permitted.
 
-#![allow(dead_code)]
+use crate::dbft_plugin::consensus::consensus_context::{ConsensusContext, ExtensiblePayload};
+use crate::dbft_plugin::consensus::consensus_service::ConsensusService;
+use crate::dbft_plugin::messages::{
+    ChangeView, Commit, ConsensusMessagePayload, PrepareRequest, PrepareResponse,
+    RecoveryMessage, RecoveryRequest,
+};
+use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
+use neo_core::cryptography::crypto_utils::Crypto;
+use neo_core::ledger::TransactionVerificationContext;
+use neo_core::network::p2p::helper::Helper;
+use neo_core::smart_contract::Contract;
+use neo_core::UInt256;
+use std::time::Instant;
+
+impl ConsensusService {
+    /// Handles consensus payload
+    /// Matches C# OnConsensusPayload method
+    pub async fn on_consensus_payload(&mut self, payload: ExtensiblePayload) {
+        let message_payload = {
+            let mut context = self.context.write().await;
+
+            if context.block_sent() {
+                return;
+            }
+
+            let message = match context.get_message(&payload) {
+                Some(msg) => msg,
+                None => {
+                    self.log("Failed to deserialize consensus message");
+                    return;
+                }
+            };
+
+            if !message.verify(self.neo_system.settings()) {
+                return;
+            }
+
+            let current_height = context.block().index();
+            let incoming_height = message.block_index();
+
+            if incoming_height != current_height {
+                if current_height < incoming_height {
+                    self.log(&format!(
+                        "Chain is behind: expected={} current={}",
+                        incoming_height,
+                        current_height.saturating_sub(1)
+                    ));
+                }
+                return;
+            }
+
+            let validator_index = message.validator_index() as usize;
+            let Some(validator) = context.validators().get(validator_index).cloned() else {
+                return;
+            };
+
+            let expected_sender =
+                Contract::create_signature_contract(validator.clone()).script_hash();
+            if payload.sender != expected_sender {
+                return;
+            }
+
+            context
+                .last_seen_message_mut()
+                .insert(validator, message.block_index());
+
+            message
+        };
+
+        match message_payload {
+            ConsensusMessagePayload::PrepareRequest(request) => {
+                self.on_prepare_request_received(payload.clone(), request).await;
+            }
+            ConsensusMessagePayload::PrepareResponse(response) => {
+                self.on_prepare_response_received(payload.clone(), response)
+                    .await;
+            }
+            ConsensusMessagePayload::ChangeView(change_view) => {
+                self.on_change_view_received(payload.clone(), change_view).await;
+            }
+            ConsensusMessagePayload::Commit(commit) => {
+                self.on_commit_received(payload.clone(), commit).await;
+            }
+            ConsensusMessagePayload::RecoveryRequest(recovery_request) => {
+                self.on_recovery_request_received(payload.clone(), recovery_request)
+                    .await;
+            }
+            ConsensusMessagePayload::RecoveryMessage(recovery_message) => {
+                self.on_recovery_message_received(recovery_message).await;
+            }
+        }
+    }
+
+    async fn on_prepare_request_received(
+        &mut self,
+        payload: ExtensiblePayload,
+        message: PrepareRequest,
+    ) {
+        let network = self.neo_system.settings.network;
+        let missing_hashes = {
+            let mut context = self.context.write().await;
+
+            if context.request_sent_or_received()
+                || context.not_accepting_payloads_due_to_view_changing()
+            {
+                return;
+            }
+
+            let block = context.block();
+
+            if message.validator_index() != block.primary_index()
+                || message.view_number() != context.view_number()
+                || message.version() != block.version()
+                || message.prev_hash() != block.prev_hash()
+            {
+                return;
+            }
+
+            if message.transaction_hashes().len()
+                > self.neo_system.settings().max_transactions_per_block as usize
+            {
+                return;
+            }
+
+            self.extend_timer_by_factor(&context, 2);
+
+            self.prepare_request_received_time = Some(Instant::now());
+            self.prepare_request_received_block_index = message.block_index();
+
+            {
+                let block_mut = context.block_mut();
+                block_mut.header.set_timestamp(message.timestamp());
+                block_mut.header.set_nonce(message.nonce());
+            }
+
+            context.transaction_hashes = Some(message.transaction_hashes().to_vec());
+            context.transactions = Some(Default::default());
+            context.verification_context = TransactionVerificationContext::new();
+
+            let mut request_payload_clone = payload.clone();
+            let request_hash = ConsensusContext::payload_hash(&mut request_payload_clone);
+
+            for index in 0..context.preparation_payloads.len() {
+                if let Some(existing_payload) = context.preparation_payloads[index].clone() {
+                    let remove = context
+                        .get_message(&existing_payload)
+                        .and_then(|message| {
+                            message
+                                .as_prepare_response()
+                                .map(|resp| resp.preparation_hash().clone())
+                        })
+                        .map(|hash| hash != request_hash)
+                        .unwrap_or(false);
+
+                    if remove {
+                        context.preparation_payloads[index] = None;
+                    }
+                }
+            }
+
+            let primary_index = context.block().primary_index() as usize;
+            if primary_index < context.preparation_payloads.len() {
+                context.preparation_payloads[primary_index] = Some(payload.clone());
+            }
+
+            context.ensure_header();
+
+            if let Ok(sign_data) = Helper::get_sign_data_vec(context.block(), network) {
+                for index in 0..context.commit_payloads.len() {
+                    if let Some(existing_payload) = context.commit_payloads[index].clone() {
+                        let remove = context
+                            .get_message(&existing_payload)
+                            .and_then(|message| message.as_commit().cloned())
+                            .map(|commit| {
+                                commit.view_number() == context.view_number()
+                                    && {
+                                        let public_key = context
+                                            .validators()
+                                            .get(index)
+                                            .map(|point| point.as_bytes().to_vec());
+                                        match public_key {
+                                            Some(pubkey)
+                                                if commit.signature().len() == 64
+                                                    && Crypto::verify_signature_secp256r1(
+                                                        &sign_data,
+                                                        commit.signature(),
+                                                        &pubkey,
+                                                    ) => false,
+                                            _ => true,
+                                        }
+                                    }
+                            })
+                            .unwrap_or(false);
+
+                        if remove {
+                            context.commit_payloads[index] = None;
+                        }
+                    }
+                }
+            } else {
+                self.log("Failed to compute sign data for commit verification");
+                for index in 0..context.commit_payloads.len() {
+                    if let Some(existing_payload) = context.commit_payloads[index].clone() {
+                        let should_clear = context
+                            .get_message(&existing_payload)
+                            .and_then(|message| message.as_commit())
+                            .map(|commit| commit.view_number() == context.view_number())
+                            .unwrap_or(false);
+                        if should_clear {
+                            context.commit_payloads[index] = None;
+                        }
+                    }
+                }
+            }
+
+            message.transaction_hashes().to_vec()
+        };
+
+        if !missing_hashes.is_empty() {
+            self.request_missing_transactions(&missing_hashes);
+        }
+
+        self.check_prepare_response().await;
+    }
+
+    async fn on_prepare_response_received(
+        &mut self,
+        payload: ExtensiblePayload,
+        message: PrepareResponse,
+    ) {
+        let should_check = {
+            let mut context = self.context.write().await;
+
+            if message.view_number() != context.view_number() {
+                return;
+            }
+
+            if context.not_accepting_payloads_due_to_view_changing() {
+                return;
+            }
+
+            let index = message.validator_index() as usize;
+            if index >= context.preparation_payloads.len() {
+                return;
+            }
+
+            if context.preparation_payloads[index].is_some() {
+                return;
+            }
+
+            let primary_index = context.block().primary_index() as usize;
+            if let Some(Some(primary_payload)) = context.preparation_payloads.get(primary_index) {
+                let mut payload_clone = primary_payload.clone();
+                let primary_hash = ConsensusContext::payload_hash(&mut payload_clone);
+                if message.preparation_hash() != &primary_hash {
+                    return;
+                }
+            }
+
+            self.extend_timer_by_factor(&context, 2);
+
+            self.log(&format!(
+                "OnPrepareResponseReceived: height={} view={} index={}",
+                message.block_index(),
+                message.view_number(),
+                message.validator_index()
+            ));
+
+            context.preparation_payloads[index] = Some(payload.clone());
+
+            !context.watch_only() && !context.commit_sent() && context.request_sent_or_received()
+        };
+
+        if should_check {
+            self.check_preparations().await;
+        }
+    }
+
+    async fn on_change_view_received(
+        &mut self,
+        payload: ExtensiblePayload,
+        message: ChangeView,
+    ) {
+        let expected_view = {
+            let mut context = self.context.write().await;
+
+            if message.view_number() != context.view_number() {
+                return;
+            }
+
+            self.log(&format!(
+                "OnChangeViewReceived: height={} view={} index={} nv={}",
+                message.block_index(),
+                message.view_number(),
+                message.validator_index(),
+                message.new_view_number()
+            ));
+
+            let index = message.validator_index() as usize;
+            if index >= context.change_view_payloads.len() {
+                return;
+            }
+
+            context.change_view_payloads[index] = Some(payload.clone());
+
+            message.new_view_number()
+        };
+
+        self.check_expected_view(expected_view).await;
+    }
+
+    async fn on_commit_received(&mut self, payload: ExtensiblePayload, message: Commit) {
+        let should_check = {
+            let mut context = self.context.write().await;
+
+            if message.view_number() != context.view_number() {
+                return;
+            }
+
+            let index = message.validator_index() as usize;
+            if index >= context.commit_payloads.len() {
+                return;
+            }
+
+            if let Some(existing) = &context.commit_payloads[index] {
+                let mut existing_clone = existing.clone();
+                let existing_hash = ConsensusContext::payload_hash(&mut existing_clone);
+                let mut payload_clone = payload.clone();
+                let payload_hash = ConsensusContext::payload_hash(&mut payload_clone);
+                if existing_hash != payload_hash {
+                    let existing_view = context
+                        .get_message(existing)
+                        .and_then(|m| m.as_commit().map(|c| c.view_number()))
+                        .unwrap_or_default();
+                    self.log(&format!(
+                        "Rejected Commit: height={} index={} view={} existing_view={}",
+                        message.block_index(),
+                        message.validator_index(),
+                        message.view_number(),
+                        existing_view
+                    ));
+                }
+                return;
+            }
+
+            self.extend_timer_by_factor(&context, 4);
+
+            self.log(&format!(
+                "OnCommitReceived: height={} view={} index={}",
+                message.block_index(),
+                message.view_number(),
+                message.validator_index()
+            ));
+
+            context.commit_payloads[index] = Some(payload.clone());
+
+            true
+        };
+
+        if should_check {
+            self.check_commits().await;
+        }
+    }
+
+    async fn on_recovery_request_received(
+        &mut self,
+        payload: ExtensiblePayload,
+        message: RecoveryRequest,
+    ) {
+        let mut payload_for_hash = payload.clone();
+        let payload_hash = ConsensusContext::payload_hash(&mut payload_for_hash);
+
+        if !self.known_hashes.insert(payload_hash) {
+            return;
+        }
+
+        let should_send = {
+            let context = self.context.read().await;
+
+            if message.view_number() != context.view_number() {
+                return;
+            }
+
+            if context.watch_only() {
+                return;
+            }
+
+            if context.commit_sent() {
+                true
+            } else {
+                let my_index = context.my_index;
+                if my_index < 0 {
+                    false
+                } else {
+                    let validator_count = context.validators().len();
+                    let f_plus_one = context.f() + 1;
+                    (1..=f_plus_one).any(|offset| {
+                        let candidate =
+                            (message.validator_index() as usize + offset) % validator_count;
+                        candidate == my_index as usize
+                    })
+                }
+            }
+        };
+
+        if !should_send {
+            return;
+        }
+
+        let recovery_payload = {
+            let mut context = self.context.write().await;
+            context.make_recovery_message()
+        };
+
+        self.broadcast_payload(recovery_payload);
+    }
+
+    async fn on_recovery_message_received(&mut self, message: RecoveryMessage) {
+        self.is_recovering = true;
+
+        let (
+            change_view_payloads,
+            prepare_request_payload,
+            prepare_response_payloads,
+            commit_payloads,
+            expected_view,
+        ) = {
+            let mut context = self.context.write().await;
+
+            let current_view = context.view_number();
+            let message_view = message.view_number();
+
+            if message_view > current_view && context.commit_sent() {
+                self.is_recovering = false;
+                return;
+            }
+
+            self.log(&format!(
+                "OnRecoveryMessageReceived: height={} view={} index={}",
+                message.block_index(),
+                message_view,
+                message.validator_index()
+            ));
+
+            let change_view_payloads = if message_view > current_view {
+                message.get_change_view_payloads(&context)
+            } else {
+                Vec::new()
+            };
+
+            let (prepare_request_payload, prepare_response_payloads) = if message_view == current_view
+                && !context.not_accepting_payloads_due_to_view_changing()
+                && !context.commit_sent()
+            {
+                (
+                    message.get_prepare_request_payload(&context),
+                    message.get_prepare_response_payloads(&context),
+                )
+            } else {
+                (None, Vec::new())
+            };
+
+            let commit_payloads = if message_view <= current_view {
+                message.get_commit_payloads_from_recovery_message(&context)
+            } else {
+                Vec::new()
+            };
+
+            (
+                change_view_payloads,
+                prepare_request_payload,
+                prepare_response_payloads,
+                commit_payloads,
+                current_view.wrapping_add(1),
+            )
+        };
+
+        let mut processed_change_views = 0usize;
+        let mut processed_prepare_responses = 0usize;
+        let mut processed_commits = 0usize;
+        let mut processed_prepare_request = 0usize;
+
+        for payload in change_view_payloads {
+            processed_change_views += 1;
+            self.on_consensus_payload(payload).await;
+        }
+
+        if let Some(payload) = prepare_request_payload {
+            processed_prepare_request = 1;
+            self.on_consensus_payload(payload).await;
+        }
+
+        for payload in prepare_response_payloads {
+            processed_prepare_responses += 1;
+            self.on_consensus_payload(payload).await;
+        }
+
+        for payload in commit_payloads {
+            processed_commits += 1;
+            self.on_consensus_payload(payload).await;
+        }
+
+        self.is_recovering = false;
+
+        if processed_change_views + processed_prepare_responses + processed_commits + processed_prepare_request
+            > 0
+        {
+            self.log(&format!(
+                "Recovery finished: ChgView={} PrepReq={} PrepResp={} Commits={}",
+                processed_change_views,
+                processed_prepare_request,
+                processed_prepare_responses,
+                processed_commits
+            ));
+        }
+
+        self.check_expected_view(expected_view).await;
+    }
+}

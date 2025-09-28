@@ -1,13 +1,12 @@
 //! Tests for the Neo VM exception handling opcodes after aligning with the
 //! C# reference implementation.
 
-use neo_vm::exception_handling::{ExceptionHandlingContext, ExceptionHandlingState};
-use neo_vm::execution_engine::{ExecutionEngine, VMState};
 use neo_vm::instruction::Instruction;
 use neo_vm::jump_table::control::exception_handling as vm_try;
 use neo_vm::op_code::OpCode;
 use neo_vm::script::Script;
 use neo_vm::stack_item::StackItem;
+use neo_vm::{ExceptionHandlingContext, ExceptionHandlingState, ExecutionEngine, VMState};
 
 fn make_script(bytes: &[u8]) -> Script {
     Script::new(bytes.to_vec(), false).expect("script should build")

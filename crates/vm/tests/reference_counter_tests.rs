@@ -22,7 +22,7 @@ fn test_reference_counter_add_reference() {
     assert_eq!(counter.get_reference_count(id), 1);
 
     // Add another reference to the same item
-    counter.add_reference_to(id);
+    counter.add_reference_to(id, 1);
 
     assert_eq!(counter.count(), 2);
     assert_eq!(counter.get_reference_count(id), 2);
@@ -36,7 +36,7 @@ fn test_reference_counter_remove_reference() {
     let id = counter.add_reference();
 
     // Add another reference to the same item
-    counter.add_reference_to(id);
+    counter.add_reference_to(id, 1);
 
     assert_eq!(counter.count(), 2);
     assert_eq!(counter.get_reference_count(id), 2);
@@ -62,7 +62,7 @@ fn test_reference_counter_check_zero_referred() {
     let id = counter.add_reference();
 
     // Add another reference to the same item
-    counter.add_reference_to(id);
+    counter.add_reference_to(id, 1);
 
     assert_eq!(counter.count(), 2);
 
@@ -115,11 +115,11 @@ fn test_reference_counter_with_circular_references() {
     let id2 = counter.register();
 
     // Add references
-    counter.add_reference_to(id1);
-    counter.add_reference_to(id2);
+    counter.add_reference_to(id1, 1);
+    counter.add_reference_to(id2, 1);
 
-    counter.add_reference_to(id1);
-    counter.add_reference_to(id2);
+    counter.add_reference_to(id1, 1);
+    counter.add_reference_to(id2, 1);
 
     assert_eq!(counter.count(), 4);
 
@@ -147,20 +147,20 @@ fn test_reference_counter_with_complex_references() {
     let id4 = counter.register();
 
     // Add references
-    counter.add_reference_to(id1);
-    counter.add_reference_to(id2);
-    counter.add_reference_to(id3);
-    counter.add_reference_to(id4);
+    counter.add_reference_to(id1, 1);
+    counter.add_reference_to(id2, 1);
+    counter.add_reference_to(id3, 1);
+    counter.add_reference_to(id4, 1);
 
     // Add more references
-    counter.add_reference_to(id1);
-    counter.add_reference_to(id2);
-    counter.add_reference_to(id3);
-    counter.add_reference_to(id4);
+    counter.add_reference_to(id1, 1);
+    counter.add_reference_to(id2, 1);
+    counter.add_reference_to(id3, 1);
+    counter.add_reference_to(id4, 1);
 
     // Create additional references
-    counter.add_reference_to(id1);
-    counter.add_reference_to(id2);
+    counter.add_reference_to(id1, 1);
+    counter.add_reference_to(id2, 1);
 
     assert_eq!(counter.count(), 10);
 

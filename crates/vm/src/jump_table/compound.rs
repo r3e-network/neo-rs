@@ -8,16 +8,29 @@ use crate::execution_engine::ExecutionEngine;
 use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
+use crate::stack_item::primitive_type::PrimitiveTypeExt;
 use crate::stack_item::StackItem;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use std::collections::BTreeMap;
 
+fn normalize_index(type_name: &str, index: &BigInt, length: usize) -> VmResult<usize> {
+    if let Some(idx) = index.to_usize() {
+        if idx < length {
+            return Ok(idx);
+        }
+    }
+
+    Err(VmError::catchable_exception_msg(format!(
+        "The index of {type_name} is out of range, {index}/[0, {length})."
+    )))
+}
+
 /// Registers the compound operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
     jump_table.register(OpCode::NEWARRAY0, new_array0);
     jump_table.register(OpCode::NEWARRAY, new_array);
-    jump_table.register(OpCode::NewarrayT, new_array_t);
+    jump_table.register(OpCode::NEWARRAY_T, new_array_t);
     jump_table.register(OpCode::NEWSTRUCT0, new_struct0);
     jump_table.register(OpCode::NEWSTRUCT, new_struct);
     jump_table.register(OpCode::NEWMAP, new_map);
@@ -185,25 +198,25 @@ fn new_map(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
 
 /// Implements the APPEND operation.
 fn append(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the item and array from the stack
-    let item = context.pop()?;
-    let array = context.pop()?;
+    let mut item = context.pop()?;
+    let collection = context.pop()?;
 
-    match array {
-        StackItem::Array(array) => {
-            let mut items: Vec<_> = array.into_iter().collect();
-            items.push(item);
-            context.push(StackItem::from_array(items))?;
+    if matches!(item, StackItem::Struct(_)) {
+        item = item.deep_clone();
+    }
+
+    match collection {
+        StackItem::Array(mut array) => {
+            array.push(item)?;
+            context.push(StackItem::Array(array))?;
         }
-        StackItem::Struct(structure) => {
-            let mut items: Vec<_> = structure.into_iter().collect();
-            items.push(item);
-            context.push(StackItem::from_struct(items))?;
+        StackItem::Struct(mut structure) => {
+            structure.push(item)?;
+            context.push(StackItem::Struct(structure))?;
         }
         _ => return Err(VmError::invalid_type_simple("Expected Array or Struct")),
     }
@@ -400,7 +413,7 @@ fn has_key(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult
                 .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
             index < structure.len()
         }
-        StackItem::Map(map) => map.contains_key(&key),
+        StackItem::Map(map) => map.contains_key(&key)?,
         _ => {
             return Err(VmError::invalid_type_simple(
                 "Expected Array, Struct, or Map",
@@ -577,37 +590,34 @@ fn unpack(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<
 
 /// Implements the PICKITEM operation.
 fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the key and collection from the stack
     let key = context.pop()?;
     let collection = context.pop()?;
 
-    // Get the item from the collection
     let result = match collection {
         StackItem::Array(array) => {
-            let index = key
-                .as_int()?
-                .to_usize()
-                .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
-            array.items().get(index).cloned().ok_or_else(|| {
-                VmError::invalid_operation_msg(format!("Index out of range: {index}"))
-            })?
+            let idx = normalize_index("VMArray", &key.get_integer()?, array.len())?;
+            array.items()[idx].clone()
         }
         StackItem::Struct(structure) => {
-            let index = key
-                .as_int()?
-                .to_usize()
-                .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
-            structure.get(index)?.clone()
+            let idx = normalize_index("Struct", &key.get_integer()?, structure.len())?;
+            structure.items()[idx].clone()
         }
         StackItem::Map(map) => map.get(&key)?.clone(),
+        StackItem::ByteString(bytes) => {
+            let idx = normalize_index("PrimitiveType", &key.get_integer()?, bytes.len())?;
+            StackItem::from_int(bytes[idx] as i64)
+        }
+        StackItem::Buffer(buffer) => {
+            let idx = normalize_index("Buffer", &key.get_integer()?, buffer.len())?;
+            StackItem::from_int(buffer.data()[idx] as i64)
+        }
         _ => {
             return Err(VmError::invalid_type_simple(
-                "Expected Array, Struct, or Map",
+                "Expected Array, Struct, Map, ByteString, or Buffer",
             ));
         }
     };
@@ -618,55 +628,66 @@ fn pick_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResu
 }
 
 /// Implements the SETITEM operation.
-fn set_item(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
-    // Get the current context
+fn set_item(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
     let context = engine
         .current_context_mut()
         .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
 
-    // Pop the value, key, and collection from the stack
-    let value = context.pop()?;
+    let mut value = context.pop()?;
     let key = context.pop()?;
     let collection = context.pop()?;
 
-    // Set the item in the collection
+    if matches!(value, StackItem::Struct(_)) {
+        value = value.deep_clone();
+    }
+
     match collection {
-        StackItem::Array(array) => {
-            let mut items: Vec<_> = array.into_iter().collect();
-            let index = key
-                .as_int()?
-                .to_usize()
-                .ok_or_else(|| VmError::invalid_operation_msg("Invalid array index"))?;
-            if index >= items.len() {
+        StackItem::Array(mut array) => {
+            let idx = normalize_index("VMArray", &key.get_integer()?, array.len())?;
+            array.set(idx, value)?;
+            context.push(StackItem::Array(array))?;
+        }
+        StackItem::Struct(mut structure) => {
+            let idx = normalize_index("Struct", &key.get_integer()?, structure.len())?;
+            structure.set(idx, value)?;
+            context.push(StackItem::Struct(structure))?;
+        }
+        StackItem::Map(mut map) => {
+            map.set(key, value)?;
+            context.push(StackItem::Map(map))?;
+        }
+        StackItem::Buffer(buffer) => {
+            let idx = normalize_index("Buffer", &key.get_integer()?, buffer.len())?;
+            let primitive = value.as_primitive().map_err(|_| {
+                VmError::invalid_operation_msg(format!(
+                    "Only primitive type values can be set in Buffer in {:?}.",
+                    instruction.opcode()
+                ))
+            })?;
+            let byte = primitive.get_integer().map_err(|_| {
+                VmError::invalid_operation_msg(format!(
+                    "Only primitive type values can be set in Buffer in {:?}.",
+                    instruction.opcode()
+                ))
+            })?;
+            let byte = byte.to_i32().ok_or_else(|| {
+                VmError::invalid_operation_msg(format!(
+                    "Only primitive type values can be set in Buffer in {:?}.",
+                    instruction.opcode()
+                ))
+            })?;
+            if byte < i8::MIN as i32 || byte > u8::MAX as i32 {
                 return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
+                    "Overflow in {:?}, {byte} is not a byte type.",
+                    instruction.opcode()
                 )));
             }
-            items[index] = value;
-            context.push(StackItem::from_array(items))?;
-        }
-        StackItem::Struct(structure) => {
-            let mut items: Vec<_> = structure.into_iter().collect();
-            let index = key
-                .as_int()?
-                .to_usize()
-                .ok_or_else(|| VmError::invalid_operation_msg("Invalid struct index"))?;
-            if index >= items.len() {
-                return Err(VmError::invalid_operation_msg(format!(
-                    "Index out of range: {index}"
-                )));
-            }
-            items[index] = value;
-            context.push(StackItem::from_struct(items))?;
-        }
-        StackItem::Map(map) => {
-            let mut entries = map.into_map();
-            entries.insert(key, value);
-            context.push(StackItem::from_map(entries))?;
+            buffer.set(idx, byte as u8)?;
+            context.push(StackItem::Buffer(buffer))?;
         }
         _ => {
             return Err(VmError::invalid_type_simple(
-                "Expected Array, Struct, or Map",
+                "Expected Array, Struct, Map, or Buffer",
             ));
         }
     }

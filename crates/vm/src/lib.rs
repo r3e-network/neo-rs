@@ -43,7 +43,7 @@
 //! ]);
 //!
 //! // Create and configure the VM engine
-//! let mut engine = ApplicationEngine::new();
+//! let engine = ExecutionEngine::new(None);
 //! engine.load_script(&script, false)?;
 //!
 //! // Execute the script
@@ -67,7 +67,7 @@
 //! use neo_vm::{ApplicationEngine, InteropService};
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let mut engine = ApplicationEngine::new();
+//! let engine = ExecutionEngine::new(None);
 //!
 //! // Register custom interop service
 //! engine.register_interop_service("MyService.Method", |engine, args| {
@@ -83,17 +83,17 @@
 //! The VM includes comprehensive debugging features:
 //!
 //! ```rust,no_run
-//! use neo_vm::{ApplicationEngine, Debugger, Breakpoint};
+//! use neo_vm::{Debugger, ExecutionEngine};
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let mut engine = ApplicationEngine::new();
-//! let mut debugger = Debugger::new();
+//! let engine = ExecutionEngine::new(None);
+//! let mut debugger = Debugger::new(engine);
 //!
 //! // Set breakpoint at instruction position
-//! debugger.add_breakpoint(Breakpoint::new(0, 10));
+//! // configure breakpoints as needed using `add_break_point`
 //!
 //! // Execute with debugging
-//! engine.set_debugger(debugger);
+//! let _state = debugger.execute();
 //! # Ok(())
 //! # }
 //! ```
@@ -105,11 +105,9 @@
 extern crate std;
 
 // Core VM modules
-/// High-level VM engine with interop services
-pub mod application_engine;
 /// Exception emitted when a script is invalid during loading
 pub mod bad_script_exception;
-/// Call permission flags for interop services  
+/// Interop service registry and native calls
 pub mod call_flags;
 /// Base class for VM exceptions that can be caught by smart contracts
 pub mod catchable_exception;
@@ -121,8 +119,6 @@ pub mod debugger;
 pub mod error;
 /// Type-safe evaluation stack implementation
 pub mod evaluation_stack;
-/// Exception handling and try-catch support
-pub mod exception_handling;
 /// Shims for the C# source layout exposing the exception handling context types
 pub mod exception_handling_context;
 /// Shims for the C# exception handling state types
@@ -137,8 +133,8 @@ pub mod execution_engine_limits;
 pub mod i_reference_counter;
 /// VM instruction representation
 pub mod instruction;
-/// Interop service registry and native calls
 pub mod interop_service;
+
 /// OpCode implementation and instruction dispatch
 pub mod jump_table;
 /// VM opcode definitions and utilities
@@ -165,21 +161,21 @@ pub mod vm_unhandled_exception;
 #[allow(dead_code)]
 pub mod tests;
 
-pub use application_engine::{ApplicationEngine, NotificationEvent, TriggerType};
 pub use bad_script_exception::BadScriptException;
 pub use call_flags::CallFlags;
 pub use catchable_exception::CatchableException;
 pub use collections::OrderedDictionary;
-pub use debugger::{Breakpoint, Debugger};
+pub use debugger::Debugger;
 pub use error::{VmError, VmResult};
 pub use evaluation_stack::EvaluationStack;
-pub use exception_handling::{ExceptionHandlingContext, ExceptionHandlingState};
+pub use exception_handling_context::ExceptionHandlingContext;
+pub use exception_handling_state::ExceptionHandlingState;
 pub use execution_context::ExecutionContext;
 pub use execution_engine::ExecutionEngine;
 pub use execution_engine_limits::ExecutionEngineLimits;
 pub use i_reference_counter::IReferenceCounter;
 pub use instruction::Instruction;
-pub use interop_service::{InteropDescriptor, InteropMethod, InteropService};
+pub use interop_service::{InteropDescriptor, InteropService};
 pub use jump_table::{InstructionHandler, JumpTable};
 pub use op_code::OpCode;
 pub use reference_counter::ReferenceCounter;

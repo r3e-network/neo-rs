@@ -1,4 +1,16 @@
-//! Placeholder shim for Plugins/ApplicationLogs/Store/States/NotifyLogState.cs from the Neo C# implementation.
-//! TODO: Port the real logic to Rust.
+//! Notify Log State
+//!
+//! State management for notification logs.
 
-#![allow(dead_code)]
+use serde::{Deserialize, Serialize};
+
+/// Notify Log State
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotifyLogState {
+    /// Event name
+    pub event_name: String,
+    /// Contract hash
+    pub contract_hash: String,
+    /// Notification data
+    pub notification_data: String,
+}

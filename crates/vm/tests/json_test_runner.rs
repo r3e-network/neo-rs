@@ -338,3 +338,4 @@ mod tests {
         assert_eq!(result, vec![0xf0, 0x40]); // PUSHNULL + RET
     }
 }
+#![cfg(feature = "neo_application_engine")]

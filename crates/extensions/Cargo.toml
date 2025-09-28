@@ -30,6 +30,9 @@ hex = "0.4"
 base64 = "0.22"
 uuid = { version = "1.6", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
+rand = { workspace = true }
+toml = { workspace = true }
+xxhash-rust = "0.8"
 
 [dev-dependencies]
 tempfile = { workspace = true }

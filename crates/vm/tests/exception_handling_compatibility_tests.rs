@@ -1,12 +1,11 @@
 //! Additional behavioural checks for the Neo VM exception handling port.
 
-use neo_vm::exception_handling::{ExceptionHandlingContext, ExceptionHandlingState};
-use neo_vm::execution_engine::{ExecutionEngine, VMState};
 use neo_vm::instruction::Instruction;
 use neo_vm::jump_table::control::exception_handling as vm_try;
 use neo_vm::op_code::OpCode;
 use neo_vm::script::Script;
 use neo_vm::stack_item::StackItem;
+use neo_vm::{ExceptionHandlingContext, ExceptionHandlingState, ExecutionEngine, VMState};
 
 fn make_engine() -> ExecutionEngine {
     ExecutionEngine::new(None)

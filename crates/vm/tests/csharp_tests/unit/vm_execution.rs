@@ -249,3 +249,4 @@ fn test_basic_opcode_execution_direct() {
         }
     }
 }
+#![cfg(feature = "neo_application_engine")]

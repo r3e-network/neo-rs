@@ -1,0 +1,189 @@
+// Copyright (C) 2015-2025 The Neo Project.
+//
+// block.rs file belongs to the neo project and is free
+// software distributed under the MIT software license, see the
+// accompanying file LICENSE in the main directory of the
+// repository or http://www.opensource.org/licenses/mit-license.php
+// for more details.
+//
+// Redistribution and use in source and binary forms with or without
+// modifications are permitted.
+
+use super::{
+    header::Header, i_inventory::IInventory, i_verifiable::IVerifiable,
+    inventory_type::InventoryType, transaction::Transaction, witness::Witness,
+};
+use crate::neo_io::{MemoryReader, Serializable};
+use crate::{neo_system::ProtocolSettings, persistence::DataCache, UInt160, UInt256};
+use serde::{Deserialize, Serialize};
+use std::io::{self, Write};
+
+/// Represents a block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Block {
+    /// The header of the block.
+    pub header: Header,
+
+    /// The transaction list of the block.
+    pub transactions: Vec<Transaction>,
+}
+
+impl Block {
+    /// Creates a new block.
+    pub fn new() -> Self {
+        Self {
+            header: Header::new(),
+            transactions: Vec::new(),
+        }
+    }
+
+    /// Gets the hash of the block.
+    pub fn hash(&mut self) -> UInt256 {
+        self.header.hash()
+    }
+
+    /// Gets the version of the block.
+    pub fn version(&self) -> u32 {
+        self.header.version()
+    }
+
+    /// Gets the hash of the previous block.
+    pub fn prev_hash(&self) -> &UInt256 {
+        self.header.prev_hash()
+    }
+
+    /// Gets the merkle root of the transactions.
+    pub fn merkle_root(&self) -> &UInt256 {
+        self.header.merkle_root()
+    }
+
+    /// Gets the timestamp of the block.
+    pub fn timestamp(&self) -> u64 {
+        self.header.timestamp()
+    }
+
+    /// Gets the nonce of the block.
+    pub fn nonce(&self) -> u64 {
+        self.header.nonce()
+    }
+
+    /// Gets the index of the block.
+    pub fn index(&self) -> u32 {
+        self.header.index()
+    }
+
+    /// Gets the primary index of the consensus node.
+    pub fn primary_index(&self) -> u8 {
+        self.header.primary_index()
+    }
+
+    /// Gets the next consensus address.
+    pub fn next_consensus(&self) -> &UInt160 {
+        self.header.next_consensus()
+    }
+
+    /// Gets the witness of the block.
+    pub fn witness(&self) -> &Witness {
+        &self.header.witness
+    }
+
+    /// Calculates the network fee for the block.
+    pub fn calculate_network_fee(&self, snapshot: &dyn DataCache) -> i64 {
+        // Sum of all transaction network fees
+        self.transactions.iter().map(|tx| tx.network_fee).sum()
+    }
+
+    /// Rebuilds the merkle root.
+    pub fn rebuild_merkle_root(&mut self) {
+        if self.transactions.is_empty() {
+            self.header.set_merkle_root(UInt256::default());
+            return;
+        }
+        let payload_hashes: Vec<Vec<u8>> = self
+            .transactions
+            .iter_mut()
+            .map(|tx| tx.hash().as_bytes().to_vec())
+            .collect();
+        if let Some(root) = crate::neo_cryptography::MerkleTree::compute_root(&payload_hashes) {
+            if let Ok(merkle_root) = UInt256::try_from(root.as_slice()) {
+                self.header.set_merkle_root(merkle_root);
+            }
+        }
+    }
+}
+
+impl IInventory for Block {
+    fn inventory_type(&self) -> InventoryType {
+        InventoryType::Block
+    }
+
+    fn hash(&mut self) -> UInt256 {
+        self.header.hash()
+    }
+}
+
+impl IVerifiable for Block {
+    fn get_script_hashes_for_verifying(&self, snapshot: &dyn DataCache) -> Vec<UInt160> {
+        self.header.get_script_hashes_for_verifying(snapshot)
+    }
+
+    fn get_witnesses(&self) -> Vec<&Witness> {
+        self.header.get_witnesses()
+    }
+
+    fn get_witnesses_mut(&mut self) -> Vec<&mut Witness> {
+        self.header.get_witnesses_mut()
+    }
+}
+
+impl Serializable for Block {
+    fn size(&self) -> usize {
+        self.header.size() + 1 + self.transactions.iter().map(|tx| tx.size()).sum::<usize>()
+    }
+
+    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
+        self.header.serialize(writer)?;
+
+        // Write transaction count
+        if self.transactions.len() > 0xFFFF {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Too many transactions",
+            ));
+        }
+        writer.write_all(&[self.transactions.len() as u8])?;
+
+        // Write transactions
+        for tx in &self.transactions {
+            tx.serialize(writer)?;
+        }
+
+        Ok(())
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
+        let header = Header::deserialize(reader)?;
+
+        // Read transaction count
+        let tx_count = reader.read_var_int().map_err(|e| e.to_string())?;
+        if tx_count > 0xFFFF {
+            return Err("Too many transactions".to_string());
+        }
+
+        let mut transactions = Vec::with_capacity(tx_count as usize);
+        for _ in 0..tx_count {
+            transactions.push(Transaction::deserialize(reader)?);
+        }
+
+        Ok(Self {
+            header,
+            transactions,
+        })
+    }
+}
+
+impl Default for Block {
+    fn default() -> Self {
+        Self::new()
+    }
+}

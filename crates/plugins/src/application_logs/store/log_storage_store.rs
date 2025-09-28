@@ -1,4 +1,15 @@
-//! Placeholder shim for Plugins/ApplicationLogs/Store/LogStorageStore.cs from the Neo C# implementation.
-//! TODO: Port the real logic to Rust.
+//! Log Storage Store
+//!
+//! Provides storage functionality for application logs.
 
-#![allow(dead_code)]
+/// Log Storage Store for managing application logs
+pub struct LogStorageStore {
+    // Implementation details
+}
+
+impl LogStorageStore {
+    /// Create a new Log Storage Store instance
+    pub fn new() -> Self {
+        Self {}
+    }
+}

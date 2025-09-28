@@ -6,36 +6,59 @@ use crate::error::VmError;
 use crate::error::VmResult;
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
+use crate::stack_item::stack_item_vertex::next_stack_item_id;
 use crate::stack_item::StackItem;
+use std::ops::{Index, IndexMut};
 use std::sync::Arc;
 
 /// Represents a struct of stack items in the VM.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Struct {
     /// The items in the struct.
     items: Vec<StackItem>,
-    /// The reference ID for the VM.
-    reference_id: Option<usize>,
+    /// Unique identifier mirroring reference equality semantics.
+    id: usize,
+    /// Reference counter shared with the VM (mirrors C# CompoundType semantics).
+    reference_counter: Option<Arc<ReferenceCounter>>,
+    /// Indicates whether the struct is read-only.
+    is_read_only: bool,
 }
 
 impl Struct {
     /// Creates a new struct with the specified items and reference counter.
     pub fn new(items: Vec<StackItem>, reference_counter: Option<Arc<ReferenceCounter>>) -> Self {
-        let mut reference_id = None;
-
-        if let Some(rc) = &reference_counter {
-            reference_id = Some(rc.add_reference());
-        }
-
-        Self {
+        let structure = Self {
             items,
-            reference_id,
+            id: next_stack_item_id(),
+            reference_counter,
+            is_read_only: false,
+        };
+
+        if let Some(rc) = &structure.reference_counter {
+            structure.add_reference_for_items(rc);
         }
+
+        structure
     }
 
-    /// Returns the reference identifier assigned by the reference counter, if any.
-    pub fn reference_id(&self) -> Option<usize> {
-        self.reference_id
+    /// Returns the unique identifier for this struct (used for reference equality).
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    /// Returns the reference counter assigned by the reference counter, if any.
+    pub fn reference_counter(&self) -> Option<&Arc<ReferenceCounter>> {
+        self.reference_counter.as_ref()
+    }
+
+    /// Returns whether the struct is marked as read-only.
+    pub fn is_read_only(&self) -> bool {
+        self.is_read_only
+    }
+
+    /// Sets the read-only state of the struct.
+    pub fn set_read_only(&mut self, read_only: bool) {
+        self.is_read_only = read_only;
     }
 
     /// Gets the items in the struct.
@@ -44,7 +67,7 @@ impl Struct {
     }
 
     /// Gets a mutable reference to the items in the struct.
-    pub fn items_mut(&mut self) -> &mut Vec<StackItem> {
+    pub(crate) fn items_mut(&mut self) -> &mut Vec<StackItem> {
         &mut self.items
     }
 
@@ -68,20 +91,41 @@ impl Struct {
             )));
         }
 
+        self.ensure_mutable()?;
+        if let Some(rc) = &self.reference_counter {
+            self.validate_compound_reference(rc, &item)?;
+            rc.remove_stack_reference(&self.items[index]);
+            rc.add_stack_reference(&item, 1);
+        }
+
         self.items[index] = item;
         Ok(())
     }
 
     /// Adds an item to the end of the struct.
-    pub fn push(&mut self, item: StackItem) {
+    pub fn push(&mut self, item: StackItem) -> VmResult<()> {
+        self.ensure_mutable()?;
+        if let Some(rc) = &self.reference_counter {
+            self.validate_compound_reference(rc, &item)?;
+            rc.add_stack_reference(&item, 1);
+        }
         self.items.push(item);
+        Ok(())
     }
 
     /// Removes and returns the last item in the struct.
     pub fn pop(&mut self) -> VmResult<StackItem> {
-        self.items
+        self.ensure_mutable()?;
+        let item = self
+            .items
             .pop()
-            .ok_or_else(|| VmError::invalid_operation_msg("Struct is empty"))
+            .ok_or_else(|| VmError::invalid_operation_msg("Struct is empty"))?;
+
+        if let Some(rc) = &self.reference_counter {
+            rc.remove_stack_reference(&item);
+        }
+
+        Ok(item)
     }
 
     /// Gets the number of items in the struct.
@@ -95,14 +139,25 @@ impl Struct {
     }
 
     /// Removes all items from the struct.
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self) -> VmResult<()> {
+        self.ensure_mutable()?;
+        if let Some(rc) = &self.reference_counter {
+            for item in &self.items {
+                rc.remove_stack_reference(item);
+            }
+        }
         self.items.clear();
+        Ok(())
     }
 
     /// Creates a deep copy of the struct.
     pub fn deep_copy(&self, reference_counter: Option<Arc<ReferenceCounter>>) -> Self {
-        let items = self.items.iter().map(|item| item.deep_clone()).collect();
-        Self::new(items, reference_counter)
+        let mut copy = Self::new(
+            self.items.iter().map(|item| item.deep_clone()).collect(),
+            reference_counter,
+        );
+        copy.set_read_only(true);
+        copy
     }
 
     /// Gets the type of the stack item.
@@ -127,18 +182,111 @@ impl Struct {
 
     /// Removes the item at the specified index.
     pub fn remove(&mut self, index: usize) -> VmResult<StackItem> {
+        self.ensure_mutable()?;
         if index >= self.items.len() {
             return Err(VmError::invalid_operation_msg(format!(
                 "Index out of range: {index}"
             )));
         }
 
-        Ok(self.items.remove(index))
+        let removed = self.items.remove(index);
+        if let Some(rc) = &self.reference_counter {
+            rc.remove_stack_reference(&removed);
+        }
+
+        Ok(removed)
     }
 
     /// Consumes the struct and returns the underlying items.
     pub fn into_vec(self) -> Vec<StackItem> {
         self.items
+    }
+
+    fn ensure_mutable(&self) -> VmResult<()> {
+        if self.is_read_only {
+            Err(VmError::invalid_operation_msg(
+                "The struct is readonly, can not modify.",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn add_reference_for_items(&self, rc: &Arc<ReferenceCounter>) {
+        for item in &self.items {
+            if let Err(err) = self.validate_compound_reference(rc, item) {
+                panic!("{err}");
+            }
+            rc.add_stack_reference(item, 1);
+        }
+    }
+
+    fn validate_compound_reference(
+        &self,
+        rc: &Arc<ReferenceCounter>,
+        item: &StackItem,
+    ) -> VmResult<()> {
+        match item {
+            StackItem::Array(inner) => match inner.reference_counter() {
+                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(_) => Err(VmError::invalid_operation_msg(
+                    "Can not set a Struct without a ReferenceCounter.".to_string(),
+                )),
+                None => Err(VmError::invalid_operation_msg(
+                    "Can not set a Struct without a ReferenceCounter.".to_string(),
+                )),
+            },
+            StackItem::Struct(inner) => match inner.reference_counter() {
+                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(_) => Err(VmError::invalid_operation_msg(
+                    "Can not set a Struct without a ReferenceCounter.".to_string(),
+                )),
+                None => Err(VmError::invalid_operation_msg(
+                    "Can not set a Struct without a ReferenceCounter.".to_string(),
+                )),
+            },
+            StackItem::Map(inner) => match inner.reference_counter() {
+                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(_) => Err(VmError::invalid_operation_msg(
+                    "Can not set a Struct without a ReferenceCounter.".to_string(),
+                )),
+                None => Err(VmError::invalid_operation_msg(
+                    "Can not set a Struct without a ReferenceCounter.".to_string(),
+                )),
+            },
+            _ => Ok(()),
+        }
+    }
+}
+
+impl Index<usize> for Struct {
+    type Output = StackItem;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.items[index]
+    }
+}
+
+impl IndexMut<usize> for Struct {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.items[index]
+    }
+}
+
+impl Clone for Struct {
+    fn clone(&self) -> Self {
+        let clone = Self {
+            items: self.items.clone(),
+            id: next_stack_item_id(),
+            reference_counter: self.reference_counter.clone(),
+            is_read_only: self.is_read_only,
+        };
+
+        if let Some(rc) = &clone.reference_counter {
+            clone.add_reference_for_items(rc);
+        }
+
+        clone
     }
 }
 
@@ -238,12 +386,12 @@ mod tests {
 
         let mut struct_item = Struct::new(items, None);
 
-        struct_item.push(StackItem::from_int(3));
+        struct_item.push(StackItem::from_int(3))?;
 
         assert_eq!(struct_item.len(), 3);
         assert_eq!(struct_item.get(2)?.as_int().unwrap().to_i32().unwrap(), 3);
 
-        let popped = struct_item.pop().unwrap();
+        let popped = struct_item.pop()?;
 
         assert_eq!(struct_item.len(), 2);
         assert_eq!(
@@ -267,7 +415,7 @@ mod tests {
 
         let mut struct_item = Struct::new(items, None);
 
-        struct_item.clear();
+        struct_item.clear().unwrap();
 
         assert_eq!(struct_item.len(), 0);
         assert!(struct_item.is_empty());
@@ -288,10 +436,6 @@ mod tests {
         assert_eq!(
             copied.get(0)?.as_int().unwrap(),
             struct_item.get(0)?.as_int().unwrap()
-        );
-        assert_eq!(
-            copied.get(0).unwrap().as_int().unwrap(),
-            struct_item.get(0).unwrap().as_int().unwrap()
         );
 
         // Check that the nested array was deep copied

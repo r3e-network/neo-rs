@@ -1,34 +1,31 @@
-//! Exceptions that can be caught within VM scripts.
+//! Catchable exception implementation.
 //!
-//! Port of `Neo.VM/CatchableException.cs` from the C# reference implementation.
+//! This module provides the CatchableException functionality exactly matching C# Neo.VM.CatchableException.
 
-use std::error::Error as StdError;
-use std::fmt::{self, Display, Formatter};
+// Matches C# using directives exactly:
+// using System;
 
-/// An exception type that smart contracts are allowed to intercept.
-#[derive(Debug, Clone, PartialEq, Eq)]
+use std::error::Error;
+use std::fmt;
+
+/// namespace Neo.VM -> public class CatchableException : Exception
+
+#[derive(Debug, Clone)]
 pub struct CatchableException {
     message: String,
 }
 
 impl CatchableException {
-    /// Creates a new catchable exception with the provided message.
-    pub fn new<M: Into<String>>(message: M) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-
-    /// Returns the exception message.
-    pub fn message(&self) -> &str {
-        &self.message
+    /// public CatchableException(string message) : base(message)
+    pub fn new(message: String) -> Self {
+        Self { message }
     }
 }
 
-impl Display for CatchableException {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
+impl fmt::Display for CatchableException {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
     }
 }
 
-impl StdError for CatchableException {}
+impl Error for CatchableException {}

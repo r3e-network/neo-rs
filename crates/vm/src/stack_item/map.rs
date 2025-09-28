@@ -2,21 +2,28 @@
 //!
 //! This module provides the Map stack item implementation used in the Neo VM.
 
-use crate::error::VmError;
-use crate::error::VmResult;
+use crate::error::{VmError, VmResult};
 use crate::reference_counter::ReferenceCounter;
 use crate::stack_item::stack_item_type::StackItemType;
+use crate::stack_item::stack_item_vertex::next_stack_item_id;
 use crate::stack_item::StackItem;
+use num_traits::Zero;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+const MAX_KEY_SIZE: usize = 64;
+
 /// Represents a map of stack items in the VM.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Map {
     /// The items in the map.
     items: BTreeMap<StackItem, StackItem>,
-    /// The reference ID for the VM.
-    reference_id: Option<usize>,
+    /// Unique identifier mirroring reference equality semantics.
+    id: usize,
+    /// Reference counter shared with the VM (mirrors C# CompoundType semantics).
+    reference_counter: Option<Arc<ReferenceCounter>>,
+    /// Indicates whether the map is read-only.
+    is_read_only: bool,
 }
 
 impl Map {
@@ -25,21 +32,38 @@ impl Map {
         items: BTreeMap<StackItem, StackItem>,
         reference_counter: Option<Arc<ReferenceCounter>>,
     ) -> Self {
-        let mut reference_id = None;
-
-        if let Some(rc) = &reference_counter {
-            reference_id = Some(rc.add_reference());
-        }
-
-        Self {
+        let map = Self {
             items,
-            reference_id,
+            id: next_stack_item_id(),
+            reference_counter,
+            is_read_only: false,
+        };
+
+        if let Some(rc) = &map.reference_counter {
+            map.add_reference_for_entries(rc);
         }
+
+        map
     }
 
-    /// Returns the reference identifier assigned by the reference counter, if any.
-    pub fn reference_id(&self) -> Option<usize> {
-        self.reference_id
+    /// Returns the reference counter assigned by the reference counter, if any.
+    pub fn reference_counter(&self) -> Option<&Arc<ReferenceCounter>> {
+        self.reference_counter.as_ref()
+    }
+
+    /// Returns the unique identifier for this map (used for reference equality).
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    /// Returns whether the map is marked as read-only.
+    pub fn is_read_only(&self) -> bool {
+        self.is_read_only
+    }
+
+    /// Sets the read-only state of the map.
+    pub fn set_read_only(&mut self, read_only: bool) {
+        self.is_read_only = read_only;
     }
 
     /// Gets the items in the map.
@@ -48,29 +72,54 @@ impl Map {
     }
 
     /// Gets a mutable reference to the items in the map.
-    pub fn items_mut(&mut self) -> &mut BTreeMap<StackItem, StackItem> {
+    pub(crate) fn items_mut(&mut self) -> &mut BTreeMap<StackItem, StackItem> {
         &mut self.items
     }
 
     /// Gets the value for the specified key.
     pub fn get(&self, key: &StackItem) -> VmResult<&StackItem> {
-        self.items
-            .get(key)
-            .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))
+        self.validate_key(key)?;
+        self.items.get(key).ok_or_else(|| {
+            VmError::catchable_exception_msg(format!("Key {:?} not found in Map.", key))
+        })
     }
 
     /// Sets the value for the specified key.
     pub fn set(&mut self, key: StackItem, value: StackItem) -> VmResult<()> {
+        self.ensure_mutable()?;
+        self.validate_key(&key)?;
+
+        if let Some(rc) = &self.reference_counter {
+            self.validate_compound_reference(rc, &value)?;
+
+            if let Some(old_value) = self.items.get(&key) {
+                rc.remove_stack_reference(old_value);
+            } else {
+                rc.add_stack_reference(&key, 1);
+            }
+
+            rc.add_stack_reference(&value, 1);
+        }
+
         self.items.insert(key, value);
         Ok(())
     }
 
     /// Removes the value for the specified key.
     pub fn remove(&mut self, key: &StackItem) -> VmResult<StackItem> {
+        self.ensure_mutable()?;
+        self.validate_key(key)?;
+
         let value = self
             .items
             .remove(key)
             .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?;
+
+        if let Some(rc) = &self.reference_counter {
+            rc.remove_stack_reference(key);
+            rc.remove_stack_reference(&value);
+        }
+
         Ok(value)
     }
 
@@ -85,13 +134,22 @@ impl Map {
     }
 
     /// Returns true if the map contains the given key.
-    pub fn contains_key(&self, key: &StackItem) -> bool {
-        self.items.contains_key(key)
+    pub fn contains_key(&self, key: &StackItem) -> VmResult<bool> {
+        self.validate_key(key)?;
+        Ok(self.items.contains_key(key))
     }
 
     /// Removes all items from the map.
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self) -> VmResult<()> {
+        self.ensure_mutable()?;
+        if let Some(rc) = &self.reference_counter {
+            for (key, value) in &self.items {
+                rc.remove_stack_reference(key);
+                rc.remove_stack_reference(value);
+            }
+        }
         self.items.clear();
+        Ok(())
     }
 
     /// Consumes the map and returns the underlying entries.
@@ -115,7 +173,9 @@ impl Map {
         for (k, v) in &self.items {
             items.insert(k.deep_clone(), v.deep_clone());
         }
-        Self::new(items, reference_counter)
+        let mut copy = Self::new(items, reference_counter);
+        copy.set_read_only(true);
+        copy
     }
 
     /// Gets the type of the stack item.
@@ -126,6 +186,123 @@ impl Map {
     /// Converts the map to a boolean.
     pub fn to_boolean(&self) -> bool {
         !self.items.is_empty()
+    }
+
+    fn ensure_mutable(&self) -> VmResult<()> {
+        if self.is_read_only {
+            Err(VmError::invalid_operation_msg(
+                "The map is readonly, can not modify.",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn add_reference_for_entries(&self, rc: &Arc<ReferenceCounter>) {
+        for (key, value) in &self.items {
+            if let Err(err) = self.validate_key(key) {
+                panic!("{err}");
+            }
+            if let Err(err) = self.validate_compound_reference(rc, value) {
+                panic!("{err}");
+            }
+            rc.add_stack_reference(key, 1);
+            rc.add_stack_reference(value, 1);
+        }
+    }
+
+    fn validate_key(&self, key: &StackItem) -> VmResult<()> {
+        match key {
+            StackItem::Boolean(_) => Ok(()),
+            StackItem::Integer(value) => {
+                let size = if value.is_zero() {
+                    0
+                } else {
+                    value.to_signed_bytes_le().len()
+                };
+                if size > MAX_KEY_SIZE {
+                    return Err(VmError::invalid_operation_msg(format!(
+                        "Key size {size} bytes exceeds maximum allowed size of {MAX_KEY_SIZE} bytes."
+                    )));
+                }
+                Ok(())
+            }
+            StackItem::ByteString(bytes) => {
+                if bytes.len() > MAX_KEY_SIZE {
+                    return Err(VmError::invalid_operation_msg(format!(
+                        "Key size {} bytes exceeds maximum allowed size of {MAX_KEY_SIZE} bytes.",
+                        bytes.len()
+                    )));
+                }
+                Ok(())
+            }
+            StackItem::Buffer(buffer) => {
+                if buffer.len() > MAX_KEY_SIZE {
+                    return Err(VmError::invalid_operation_msg(format!(
+                        "Key size {} bytes exceeds maximum allowed size of {MAX_KEY_SIZE} bytes.",
+                        buffer.len()
+                    )));
+                }
+                Ok(())
+            }
+            _ => Err(VmError::invalid_operation_msg(
+                "Map keys must be primitive types.".to_string(),
+            )),
+        }
+    }
+
+    fn validate_compound_reference(
+        &self,
+        rc: &Arc<ReferenceCounter>,
+        item: &StackItem,
+    ) -> VmResult<()> {
+        match item {
+            StackItem::Array(inner) => match inner.reference_counter() {
+                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(_) => Err(VmError::invalid_operation_msg(
+                    "Can not set a Map value without a ReferenceCounter.".to_string(),
+                )),
+                None => Err(VmError::invalid_operation_msg(
+                    "Can not set a Map value without a ReferenceCounter.".to_string(),
+                )),
+            },
+            StackItem::Struct(inner) => match inner.reference_counter() {
+                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(_) => Err(VmError::invalid_operation_msg(
+                    "Can not set a Map value without a ReferenceCounter.".to_string(),
+                )),
+                None => Err(VmError::invalid_operation_msg(
+                    "Can not set a Map value without a ReferenceCounter.".to_string(),
+                )),
+            },
+            StackItem::Map(inner) => match inner.reference_counter() {
+                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(_) => Err(VmError::invalid_operation_msg(
+                    "Can not set a Map value without a ReferenceCounter.".to_string(),
+                )),
+                None => Err(VmError::invalid_operation_msg(
+                    "Can not set a Map value without a ReferenceCounter.".to_string(),
+                )),
+            },
+            _ => Ok(()),
+        }
+    }
+}
+
+impl Clone for Map {
+    fn clone(&self) -> Self {
+        let clone = Self {
+            items: self.items.clone(),
+            id: next_stack_item_id(),
+            reference_counter: self.reference_counter.clone(),
+            is_read_only: self.is_read_only,
+        };
+
+        if let Some(rc) = &clone.reference_counter {
+            clone.add_reference_for_entries(rc);
+        }
+
+        clone
     }
 }
 
@@ -275,7 +452,7 @@ mod tests {
 
         let mut map = Map::new(items, None);
 
-        map.clear();
+        map.clear().unwrap();
 
         assert_eq!(map.len(), 0);
         assert!(map.is_empty());

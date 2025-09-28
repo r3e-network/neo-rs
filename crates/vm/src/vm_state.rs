@@ -1,36 +1,48 @@
-//! VM execution state flags.
+//! VM state implementation.
 //!
-//! Mirrors `Neo.VM/VMState.cs` from the C# reference implementation.
+//! This module provides the VMState functionality exactly matching C# Neo.VM.VMState.
 
-use bitflags::bitflags;
+/// namespace Neo.VM -> public enum VMState : byte
 
-bitflags! {
-    /// Indicates the status of the virtual machine.
-    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-    pub struct VMState: u8 {
-        /// Execution has not started or is currently running.
-        const NONE = 0;
-        /// Execution completed successfully.
-        const HALT = 1 << 0;
-        /// Execution terminated because of an unhandled fault.
-        const FAULT = 1 << 1;
-        /// Execution is paused at a breakpoint.
-        const BREAK = 1 << 2;
-    }
+/// Indicates the status of the VM.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VMState {
+    /// Indicates that the execution is in progress or has not yet begun.
+    NONE = 0,
+
+    /// Indicates that the execution has been completed successfully.
+    HALT = 1 << 0,
+
+    /// Indicates that the execution has ended, and an exception that cannot be caught is thrown.
+    FAULT = 1 << 1,
+
+    /// Indicates that a breakpoint is currently being hit.
+    BREAK = 1 << 2,
 }
 
 impl VMState {
-    /// Returns `true` when the VM has halted successfully.
+    #[inline]
+    pub fn contains(self, flag: VMState) -> bool {
+        (self as u8 & flag as u8) != 0
+    }
+
+    #[inline]
+    pub fn is_none(self) -> bool {
+        self == VMState::NONE
+    }
+
+    #[inline]
     pub fn is_halt(self) -> bool {
         self.contains(VMState::HALT)
     }
 
-    /// Returns `true` when the VM faulted.
+    #[inline]
     pub fn is_fault(self) -> bool {
         self.contains(VMState::FAULT)
     }
 
-    /// Returns `true` when the VM is currently at a breakpoint.
+    #[inline]
     pub fn is_break(self) -> bool {
         self.contains(VMState::BREAK)
     }

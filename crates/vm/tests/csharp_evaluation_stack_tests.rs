@@ -248,7 +248,9 @@ mod tests {
         stack1.push(StackItem::Integer(BigInt::from(3)));
 
         // Copy to another stack
-        stack1.copy_to(&mut stack2);
+        stack1
+            .copy_to(&mut stack2, None)
+            .expect("copy_to should succeed");
 
         assert_eq!(stack1.len(), 3, "Original stack should have 3 items");
         assert_eq!(stack2.len(), 3, "Copied stack should have 3 items");

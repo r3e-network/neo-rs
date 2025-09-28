@@ -1,132 +1,88 @@
-//! ECDsa cache implementation for Neo.
-//!
-//! This module provides a cache for ECDsa signatures to avoid redundant verification.
+//! ECDsaCache - aligns with C# Neo.IO.Caching.ECDsaCache
 
-use super::TimedCache;
-use std::time::Duration;
+use super::fifo_cache::FIFOCache;
+use std::hash::Hash;
+use std::ops::{Deref, DerefMut};
 
-/// A key for the ECDsa cache.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ECDsaCacheKey {
-    /// The message that was signed
-    pub message: Vec<u8>,
-
-    /// The public key used to verify the signature
-    pub public_key: Vec<u8>,
-
-    /// The signature to verify
-    pub signature: Vec<u8>,
+/// Cache item storing an elliptic-curve key and its associated signer instance.
+#[derive(Clone)]
+pub struct ECDsaCacheItem<TPoint, TSigner>
+where
+    TPoint: Clone,
+    TSigner: Clone,
+{
+    /// Cached point used as the key.
+    pub key: TPoint,
+    /// Cached signer corresponding to the point.
+    pub value: TSigner,
 }
 
-impl ECDsaCacheKey {
-    /// Creates a new ECDsa cache key.
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - The message that was signed
-    /// * `public_key` - The public key used to verify the signature
-    /// * `signature` - The signature to verify
-    ///
-    /// # Returns
-    ///
-    /// A new ECDsa cache key
-    pub fn new(message: Vec<u8>, public_key: Vec<u8>, signature: Vec<u8>) -> Self {
+impl<TPoint, TSigner> ECDsaCacheItem<TPoint, TSigner>
+where
+    TPoint: Clone,
+    TSigner: Clone,
+{
+    /// Creates a new cache item with the provided key/value pair.
+    pub fn new(key: TPoint, value: TSigner) -> Self {
+        Self { key, value }
+    }
+}
+
+/// FIFO cache specialised for ECDSA signer instances keyed by elliptic-curve points.
+pub struct ECDsaCache<TPoint, TSigner>
+where
+    TPoint: Eq + Hash + Clone,
+    TSigner: Clone,
+{
+    inner: FIFOCache<TPoint, ECDsaCacheItem<TPoint, TSigner>>,
+}
+
+impl<TPoint, TSigner> ECDsaCache<TPoint, TSigner>
+where
+    TPoint: Eq + Hash + Clone,
+    TSigner: Clone,
+{
+    /// Default maximum number of cached signer instances, matching the C# constant (20_000 entries).
+    pub const DEFAULT_CAPACITY: usize = 20_000;
+
+    /// Creates a cache with the specified maximum capacity.
+    pub fn new(max_capacity: usize) -> Self {
         Self {
-            message,
-            public_key,
-            signature,
+            inner: FIFOCache::new(max_capacity, |item: &ECDsaCacheItem<TPoint, TSigner>| {
+                item.key.clone()
+            }),
         }
     }
 }
 
-/// A cache for ECDsa signatures.
-pub struct ECDsaCache {
-    /// The underlying cache
-    cache: TimedCache<ECDsaCacheKey, bool>,
+impl<TPoint, TSigner> Default for ECDsaCache<TPoint, TSigner>
+where
+    TPoint: Eq + Hash + Clone,
+    TSigner: Clone,
+{
+    fn default() -> Self {
+        Self::new(Self::DEFAULT_CAPACITY)
+    }
 }
 
-impl ECDsaCache {
-    /// Creates a new ECDsa cache with the given capacity and default time-to-live.
-    ///
-    /// # Arguments
-    ///
-    /// * `capacity` - The capacity of the cache
-    /// * `default_ttl` - The default time-to-live for entries
-    ///
-    /// # Returns
-    ///
-    /// A new ECDsa cache
-    pub fn new(capacity: usize, default_ttl: Duration) -> Self {
-        Self {
-            cache: TimedCache::new(capacity, default_ttl),
-        }
-    }
+impl<TPoint, TSigner> Deref for ECDsaCache<TPoint, TSigner>
+where
+    TPoint: Eq + Hash + Clone,
+    TSigner: Clone,
+{
+    type Target = FIFOCache<TPoint, ECDsaCacheItem<TPoint, TSigner>>;
 
-    /// Returns the capacity of the cache.
-    pub fn capacity(&self) -> usize {
-        self.cache.capacity()
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
+}
 
-    /// Returns the number of entries in the cache.
-    pub fn len(&self) -> usize {
-        self.cache.len()
-    }
-
-    /// Returns whether the cache is empty.
-    pub fn is_empty(&self) -> bool {
-        self.cache.is_empty()
-    }
-
-    /// Returns the default time-to-live for entries.
-    pub fn default_ttl(&self) -> Duration {
-        self.cache.default_ttl()
-    }
-
-    /// Sets the default time-to-live for entries.
-    ///
-    /// # Arguments
-    ///
-    /// * `ttl` - The default time-to-live for entries
-    pub fn set_default_ttl(&mut self, ttl: Duration) {
-        self.cache.set_default_ttl(ttl);
-    }
-
-    /// Gets the verification result for a signature.
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - The message that was signed
-    /// * `public_key` - The public key used to verify the signature
-    /// * `signature` - The signature to verify
-    ///
-    /// # Returns
-    ///
-    /// The verification result if it exists and has not expired, or None otherwise
-    pub fn get(&mut self, message: &[u8], public_key: &[u8], signature: &[u8]) -> Option<bool> {
-        let key = ECDsaCacheKey::new(message.to_vec(), public_key.to_vec(), signature.to_vec());
-        self.cache.get(&key).copied()
-    }
-
-    /// Puts a verification result into the cache.
-    ///
-    /// # Arguments
-    ///
-    /// * `message` - The message that was signed
-    /// * `public_key` - The public key used to verify the signature
-    /// * `signature` - The signature to verify
-    /// * `result` - The verification result
-    pub fn put(&mut self, message: &[u8], public_key: &[u8], signature: &[u8], result: bool) {
-        let key = ECDsaCacheKey::new(message.to_vec(), public_key.to_vec(), signature.to_vec());
-        self.cache.put(key, result);
-    }
-
-    /// Clears the cache.
-    pub fn clear(&mut self) {
-        self.cache.clear();
-    }
-
-    /// Removes all expired entries from the cache.
-    pub fn purge_expired(&mut self) {
-        self.cache.purge_expired();
+impl<TPoint, TSigner> DerefMut for ECDsaCache<TPoint, TSigner>
+where
+    TPoint: Eq + Hash + Clone,
+    TSigner: Clone,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }

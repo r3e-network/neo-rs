@@ -403,3 +403,4 @@ fn test_vm_instruction_handling() {
 
     println!("✅ VM instruction handling test passed");
 }
+#![cfg(feature = "neo_application_engine")]

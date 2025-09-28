@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 #[allow(dead_code)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     /// Test circular reference handling (matches C# TestCircularReference)
     #[test]
@@ -169,12 +170,19 @@ mod tests {
         );
 
         // Pointer comparison
-        let item_a = StackItem::from_pointer(123);
-        let item_b = StackItem::from_pointer(123);
-        let item_c = StackItem::from_pointer(1234);
+        let script = Arc::new(Script::new_relaxed(vec![0x01, 0x02]));
+        let alt_script = Arc::new(Script::new_relaxed(vec![0xFF]));
+        let item_a = StackItem::from_pointer(Arc::clone(&script), 123);
+        let item_b = StackItem::from_pointer(Arc::clone(&script), 123);
+        let item_c = StackItem::from_pointer(Arc::clone(&script), 1234);
+        let item_d = StackItem::from_pointer(alt_script, 123);
 
         assert_eq!(item_a, item_b, "Same pointers should be equal");
-        assert_ne!(item_a, item_c, "Different pointers should not be equal");
+        assert_ne!(item_a, item_c, "Different positions should not be equal");
+        assert_ne!(
+            item_a, item_d,
+            "Pointers to different scripts should not be equal"
+        );
     }
 
     /// Test null item behavior (matches C# TestNull)
@@ -539,7 +547,7 @@ mod tests {
             StackItemType::Map
         );
         assert_eq!(
-            StackItem::from_pointer(0).stack_item_type(),
+            StackItem::from_pointer(Arc::new(Script::new_relaxed(vec![0xAA])), 0).stack_item_type(),
             StackItemType::Pointer
         );
     }

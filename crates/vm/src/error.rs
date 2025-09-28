@@ -24,6 +24,10 @@ pub enum VmError {
     #[error("Unsupported operation: {operation}")]
     UnsupportedOperation { operation: String },
 
+    /// Catchable exception that can be handled by TRY/CATCH blocks
+    #[error("Catchable exception: {message}")]
+    CatchableException { message: String },
+
     /// Invalid operation with context
     #[error("Invalid operation: {operation}, reason: {reason}")]
     InvalidOperation { operation: String, reason: String },
@@ -90,6 +94,10 @@ pub enum VmError {
     #[error("Call depth limit exceeded: depth {depth}, limit {limit}")]
     CallDepthLimitExceeded { depth: usize, limit: usize },
 
+    /// Gas exhausted
+    #[error("Gas exhausted: used {used}, limit {limit}")]
+    GasExhausted { used: u64, limit: u64 },
+
     /// Invalid contract state
     #[error("Invalid contract state: {reason}")]
     InvalidContractState { reason: String },
@@ -118,10 +126,6 @@ pub enum VmError {
     #[error("Invalid parameters: expected {expected}, got {actual}")]
     InvalidParameters { expected: String, actual: String },
 
-    /// Gas exhausted
-    #[error("Gas exhausted: used {used}, limit {limit}")]
-    GasExhausted { used: u64, limit: u64 },
-
     /// Invalid witness
     #[error("Invalid witness: {reason}")]
     InvalidWitness { reason: String },
@@ -129,6 +133,26 @@ pub enum VmError {
     /// Verification failed
     #[error("Verification failed: {reason}")]
     VerificationFailed { reason: String },
+
+    /// Invalid jump
+    #[error("Invalid jump: position {0}")]
+    InvalidJump(i32),
+
+    /// Unhandled exception
+    #[error("Unhandled exception")]
+    UnhandledException(crate::stack_item::StackItem),
+
+    /// Max try nesting depth exceeded
+    #[error("Max try nesting depth exceeded")]
+    MaxTryNestingDepthExceeded,
+
+    /// Abort operation
+    #[error("ABORT is executed")]
+    Abort,
+
+    /// Assert failed
+    #[error("ASSERT is executed with false result")]
+    AssertFailed,
 
     /// Implementation provided I/O error (for testing)
     #[cfg(test)]
@@ -162,6 +186,13 @@ impl VmError {
     pub fn unsupported_operation<S: Into<String>>(operation: S) -> Self {
         Self::UnsupportedOperation {
             operation: operation.into(),
+        }
+    }
+
+    /// Create a catchable exception error used for TRY/CATCH interop
+    pub fn catchable_exception_msg<S: Into<String>>(message: S) -> Self {
+        Self::CatchableException {
+            message: message.into(),
         }
     }
 
@@ -343,6 +374,7 @@ impl VmError {
             VmError::Parse { .. }
                 | VmError::InvalidInstruction { .. }
                 | VmError::InvalidOpCode { .. }
+                | VmError::CatchableException { .. }
                 | VmError::InvalidOperation { .. }
                 | VmError::InvalidOperand { .. }
                 | VmError::InvalidScript { .. }
@@ -368,6 +400,11 @@ impl VmError {
                 | VmError::InstructionLimitExceeded { .. }
                 | VmError::CallDepthLimitExceeded { .. }
                 | VmError::GasExhausted { .. }
+                | VmError::InvalidJump(_)
+                | VmError::UnhandledException(_)
+                | VmError::MaxTryNestingDepthExceeded
+                | VmError::Abort
+                | VmError::AssertFailed
         )
     }
 
@@ -376,7 +413,9 @@ impl VmError {
         match self {
             VmError::Parse { .. } => "parse",
             VmError::InvalidInstruction { .. } | VmError::InvalidOpCode { .. } => "instruction",
-            VmError::UnsupportedOperation { .. } | VmError::InvalidOperation { .. } => "operation",
+            VmError::UnsupportedOperation { .. }
+            | VmError::CatchableException { .. }
+            | VmError::InvalidOperation { .. } => "operation",
             VmError::InvalidOperand { .. } | VmError::InvalidParameters { .. } => "operand",
             VmError::InvalidScript { .. } => "script",
             VmError::StackUnderflow { .. }
@@ -399,6 +438,10 @@ impl VmError {
             VmError::ExecutionTimeout { .. } => "timeout",
             VmError::InvalidScriptHash { .. } => "hash",
             VmError::InvalidWitness { .. } | VmError::VerificationFailed { .. } => "verification",
+            VmError::InvalidJump(_) => "control",
+            VmError::UnhandledException(_) => "exception",
+            VmError::MaxTryNestingDepthExceeded => "resource",
+            VmError::Abort | VmError::AssertFailed => "control",
             #[cfg(test)]
             #[allow(dead_code)]
             VmError::MockIo { .. } => "real_io",
@@ -438,71 +481,13 @@ impl From<std::num::ParseFloatError> for VmError {
 }
 
 // Neo-specific error conversions
-impl From<neo_io::LegacyError> for VmError {
-    fn from(error: neo_io::LegacyError) -> Self {
-        match error {
-            neo_io::LegacyError::EndOfStream => VmError::io("Unexpected end of stream"),
-            neo_io::LegacyError::InvalidData(msg) => VmError::parse(msg),
-            neo_io::LegacyError::FormatException => VmError::parse("Format exception"),
-            neo_io::LegacyError::Deserialization(msg) => VmError::parse(msg),
-            neo_io::LegacyError::InvalidOperation(msg) => {
-                VmError::invalid_operation("io".to_string(), msg)
-            }
-            neo_io::LegacyError::Io(msg) => VmError::io(msg),
-            neo_io::LegacyError::Serialization(msg) => VmError::parse(msg),
-            neo_io::LegacyError::InvalidFormat(msg) => VmError::parse(msg),
-            neo_io::LegacyError::BufferOverflow => VmError::stack_overflow(usize::MAX),
-        }
-    }
-}
-
 impl From<neo_io::IoError> for VmError {
     fn from(error: neo_io::IoError) -> Self {
         match error {
-            neo_io::IoError::EndOfStream { context, .. } => {
-                VmError::io(format!("Unexpected end of stream: {context}"))
-            }
-            neo_io::IoError::InvalidData { context, value } => {
-                VmError::parse(format!("Invalid data in {context}: {value}"))
-            }
-            neo_io::IoError::FormatException { context, .. } => {
-                VmError::parse(format!("Format exception: {context}"))
-            }
-            neo_io::IoError::Deserialization { reason, .. } => VmError::parse(reason),
-            neo_io::IoError::InvalidOperation { operation, context } => {
-                VmError::invalid_operation(operation, context)
-            }
-            neo_io::IoError::Operation { operation, reason } => {
-                VmError::io(format!("{operation}: {reason}"))
-            }
-            neo_io::IoError::Serialization { type_name, reason } => {
-                VmError::parse(format!("Failed to serialize {type_name}: {reason}"))
-            }
-            neo_io::IoError::InvalidFormat { reason, .. } => VmError::parse(reason),
-            neo_io::IoError::BufferOverflow { .. } => VmError::stack_overflow(usize::MAX),
-            neo_io::IoError::Timeout { timeout_ms, .. } => VmError::ExecutionTimeout { timeout_ms },
-            neo_io::IoError::ResourceUnavailable { resource } => {
-                VmError::io(format!("Resource unavailable: {resource}"))
-            }
-            neo_io::IoError::PermissionDenied {
-                operation,
-                resource,
-            } => VmError::io(format!("Permission denied for {operation} on {resource}")),
-            neo_io::IoError::ResourceExists { resource } => {
-                VmError::io(format!("Resource already exists: {resource}"))
-            }
-            neo_io::IoError::ResourceNotFound { resource } => {
-                VmError::io(format!("Resource not found: {resource}"))
-            }
-            // Handle all other IoError variants
-            _ => VmError::io(format!("IO error: {error:?}")),
+            neo_io::IoError::Format => VmError::parse("format error"),
+            neo_io::IoError::InvalidUtf8 => VmError::parse("invalid utf-8 data"),
+            neo_io::IoError::Io(inner) => VmError::io(inner.to_string()),
         }
-    }
-}
-
-impl From<neo_core::CoreError> for VmError {
-    fn from(error: neo_core::CoreError) -> Self {
-        VmError::io(error.to_string())
     }
 }
 
@@ -622,8 +607,9 @@ mod tests {
 
     #[test]
     fn test_resource_limit_errors() {
-        use neo_core::constants::MAX_SCRIPT_SIZE;
-        let error = VmError::memory_limit_exceeded(2048, MAX_SCRIPT_SIZE);
+        let limit =
+            crate::execution_engine_limits::ExecutionEngineLimits::DEFAULT.max_item_size as usize;
+        let error = VmError::memory_limit_exceeded(2048, limit);
         assert_eq!(
             error.to_string(),
             "Memory limit exceeded: used 2048 bytes, limit 65536 bytes"

@@ -1,397 +1,121 @@
-//! HashSet Cache implementation that matches C# Neo.IO.Caching.HashSetCache exactly.
-//!
-//! This module provides a cache that stores unique items using a hash set.
+//! HashSetCache - faithful port of Neo.IO.Caching.HashSetCache
 
-use std::collections::HashSet;
+use super::keyed_collection_slim::KeyedCollectionSlim;
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
 
-/// HashSet cache implementation that matches C# HashSetCache<T> exactly.
-///
-/// This cache stores unique items and provides fast lookup and insertion.
-/// It automatically manages capacity by removing items when the limit is reached.
+/// A cache that uses a hash set to store items (matches C# `HashSetCache<T>`).
 pub struct HashSetCache<T>
 where
-    T: Hash + Eq + Clone + Send + Sync,
+    T: Eq + Hash + Clone,
 {
-    /// The internal hash set for storing items
-    items: Arc<Mutex<HashSet<T>>>,
-    /// Maximum capacity of the cache
-    max_capacity: usize,
+    capacity: usize,
+    items: KeyedCollectionSlim<T, T>,
 }
 
 impl<T> HashSetCache<T>
 where
-    T: Hash + Eq + Clone + Send + Sync,
+    T: Eq + Hash + Clone,
 {
-    /// Creates a new HashSet cache with the specified capacity.
-    ///
-    /// # Arguments
-    ///
-    /// * `max_capacity` - The maximum number of items the cache can hold
-    ///
-    /// # Returns
-    ///
-    /// A new HashSet cache
-    pub fn new(max_capacity: usize) -> Self {
+    /// Initializes a new instance with the given maximum capacity.
+    pub fn new(capacity: usize) -> Self {
+        if capacity == 0 {
+            panic!("capacity must be greater than zero");
+        }
+
+        let initial_capacity = capacity.min(4096);
         Self {
-            items: Arc::new(Mutex::new(HashSet::new())),
-            max_capacity,
+            capacity,
+            items: KeyedCollectionSlim::with_selector(initial_capacity, |item: &T| item.clone()),
         }
     }
 
-    /// Gets the maximum capacity of the cache.
-    pub fn max_capacity(&self) -> usize {
-        self.max_capacity
-    }
-
-    /// Gets the current count of items in the cache.
+    /// Number of items currently in the cache (C# `Count`).
+    #[inline]
     pub fn count(&self) -> usize {
-        self.items.lock().map(|items| items.len()).unwrap_or(0)
+        self.items.count()
     }
 
-    /// Returns whether the cache is empty.
-    pub fn is_empty(&self) -> bool {
-        self.items
-            .lock()
-            .map(|items| items.is_empty())
-            .unwrap_or(true)
-    }
-
-    /// Adds an item to the cache.
-    /// If the cache is at capacity, this may remove an existing item.
-    ///
-    /// # Arguments
-    ///
-    /// * `item` - The item to add
-    ///
-    /// # Returns
-    ///
-    /// True if the item was added (wasn't already present), false otherwise
-    pub fn add(&self, item: T) -> bool {
-        let mut items = match self.items.lock() {
-            Ok(items) => items,
-            Err(_) => return false,
-        };
-
-        if items.contains(&item) {
+    /// Attempts to add an item; evicts the oldest when the capacity is exceeded (C# `TryAdd`).
+    pub fn try_add(&mut self, item: T) -> bool {
+        if !self.items.try_add(item) {
             return false;
         }
-
-        if items.len() >= self.max_capacity {
-            if let Some(to_remove) = items.iter().next().cloned() {
-                items.remove(&to_remove);
-            }
+        if self.items.count() > self.capacity {
+            self.items.remove_first();
         }
-
-        items.insert(item)
+        true
     }
 
-    /// Checks if the cache contains the specified item.
-    ///
-    /// # Arguments
-    ///
-    /// * `item` - The item to check for
-    ///
-    /// # Returns
-    ///
-    /// True if the item is in the cache, false otherwise
+    /// Checks whether the cache already contains the item (C# `Contains`).
+    #[inline]
     pub fn contains(&self, item: &T) -> bool {
-        self.items
-            .lock()
-            .map(|items| items.contains(item))
-            .unwrap_or(false)
+        self.items.contains(item)
     }
 
-    /// Removes an item from the cache.
-    ///
-    /// # Arguments
-    ///
-    /// * `item` - The item to remove
-    ///
-    /// # Returns
-    ///
-    /// True if the item was removed, false if it wasn't present
-    pub fn remove(&self, item: &T) -> bool {
-        self.items
-            .lock()
-            .map(|mut items| items.remove(item))
-            .unwrap_or(false)
+    /// Clears all items (C# `Clear`).
+    #[inline]
+    pub fn clear(&mut self) {
+        self.items.clear();
     }
 
-    /// Clears all items from the cache.
-    pub fn clear(&self) {
-        if let Ok(mut items) = self.items.lock() {
-            items.clear();
-        }
-    }
-
-    /// Gets all items in the cache as a vector.
-    ///
-    /// # Returns
-    ///
-    /// A vector containing all items in the cache
-    pub fn to_vec(&self) -> Vec<T> {
-        self.items
-            .lock()
-            .map(|items| items.iter().cloned().collect())
-            .unwrap_or_default()
-    }
-
-    /// Adds multiple items to the cache.
-    ///
-    /// # Arguments
-    ///
-    /// * `items` - The items to add
-    pub fn add_range(&self, items: Vec<T>) {
+    /// Removes a collection of items from the cache (C# `ExceptWith`).
+    pub fn except_with<I>(&mut self, items: I)
+    where
+        I: IntoIterator<Item = T>,
+    {
         for item in items {
-            self.add(item);
+            self.items.remove(&item);
         }
     }
 
-    /// Copies items to the provided slice starting at the specified index.
-    ///
-    /// # Arguments
-    ///
-    /// * `array` - The array to copy items to
-    /// * `start_index` - The starting index in the array
-    ///
-    /// # Returns
-    ///
-    /// Result indicating success or error message
-    pub fn copy_to(&self, array: &mut [T], start_index: usize) -> Result<(), String> {
-        let items = self.items.lock().map_err(|_| "Lock error".to_string())?;
-        let count = items.len();
+    /// Adds an item ignoring the return flag (C# `ICollection<T>.Add`).
+    #[inline]
+    pub fn add(&mut self, item: T) {
+        let _ = self.try_add(item);
+    }
 
-        if start_index + count > array.len() {
-            return Err(format!(
-                "start_index({}) + count({}) > array.len({})",
+    /// Removes an item from the cache (C# `Remove`).
+    #[inline]
+    pub fn remove(&mut self, item: &T) -> bool {
+        self.items.remove(item)
+    }
+
+    /// Copies the elements into the destination slice starting at `start_index` (C# `CopyTo`).
+    pub fn copy_to(&self, destination: &mut [T], start_index: usize) {
+        if start_index > destination.len() {
+            panic!("start_index exceeds destination length");
+        }
+
+        let count = self.count();
+        if start_index + count > destination.len() {
+            panic!(
+                "start_index ({}) + count ({}) > destination length ({})",
                 start_index,
                 count,
-                array.len()
-            ));
+                destination.len()
+            );
         }
 
-        let mut index = start_index;
-        for item in items.iter() {
-            array[index] = item.clone();
-            index += 1;
+        for (offset, value) in self.items.iter().cloned().enumerate() {
+            destination[start_index + offset] = value;
         }
-
-        Ok(())
     }
 
-    /// Creates an iterator over the items in the cache.
-    /// Note: This creates a snapshot of the current items.
-    pub fn iter(&self) -> impl Iterator<Item = T> {
-        self.to_vec().into_iter()
+    /// Returns an iterator over the cached values (C# `GetEnumerator`).
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.items.iter()
     }
 }
 
-impl<T> Clone for HashSetCache<T>
+impl<T> IntoIterator for HashSetCache<T>
 where
-    T: Hash + Eq + Clone + Send + Sync,
+    T: Eq + Hash + Clone,
 {
-    fn clone(&self) -> Self {
-        let items = self
-            .items
-            .lock()
-            .map(|items| items.clone())
-            .unwrap_or_default();
-        Self {
-            items: Arc::new(Mutex::new(items)),
-            max_capacity: self.max_capacity,
-        }
-    }
-}
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
 
-impl<T> std::iter::FromIterator<T> for HashSetCache<T>
-where
-    T: Hash + Eq + Clone + Send + Sync,
-{
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let items: Vec<T> = iter.into_iter().collect();
-        let capacity = items.len().max(16); // Default minimum capacity
-        let cache = Self::new(capacity);
-        cache.add_range(items);
-        cache
-    }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_hashset_cache_basic_operations() {
-        let cache = HashSetCache::new(3);
-
-        // Test add and contains
-        assert!(cache.add(1));
-        assert!(cache.add(2));
-        assert!(cache.add(3));
-        assert_eq!(cache.count(), 3);
-
-        assert!(cache.contains(&1));
-        assert!(cache.contains(&2));
-        assert!(cache.contains(&3));
-        assert!(!cache.contains(&4));
-    }
-
-    #[test]
-    fn test_hashset_cache_duplicate_add() {
-        let cache = HashSetCache::new(3);
-
-        assert!(cache.add(1)); // First add should succeed
-        assert!(!cache.add(1)); // Duplicate add should fail
-        assert_eq!(cache.count(), 1);
-    }
-
-    #[test]
-    fn test_hashset_cache_capacity_management() {
-        let cache = HashSetCache::new(2);
-
-        // Add items up to capacity
-        assert!(cache.add(1));
-        assert!(cache.add(2));
-        assert_eq!(cache.count(), 2);
-
-        // Add one more item, should evict one existing item
-        assert!(cache.add(3));
-        assert_eq!(cache.count(), 2);
-
-        // One of the original items should be gone
-        let remaining_count = [1, 2].iter().filter(|&&x| cache.contains(&x)).count();
-        assert_eq!(remaining_count, 1);
-        assert!(cache.contains(&3)); // New item should be present
-    }
-
-    #[test]
-    fn test_hashset_cache_remove() {
-        let cache = HashSetCache::new(3);
-
-        cache.add(1);
-        cache.add(2);
-        cache.add(3);
-
-        assert!(cache.remove(&2));
-        assert_eq!(cache.count(), 2);
-        assert!(!cache.contains(&2));
-        assert!(cache.contains(&1));
-        assert!(cache.contains(&3));
-
-        // Try to remove non-existent item
-        assert!(!cache.remove(&4));
-        assert_eq!(cache.count(), 2);
-    }
-
-    #[test]
-    fn test_hashset_cache_clear() {
-        let cache = HashSetCache::new(3);
-
-        cache.add(1);
-        cache.add(2);
-        cache.add(3);
-        assert_eq!(cache.count(), 3);
-
-        cache.clear();
-        assert_eq!(cache.count(), 0);
-        assert!(cache.is_empty());
-        assert!(!cache.contains(&1));
-        assert!(!cache.contains(&2));
-        assert!(!cache.contains(&3));
-    }
-
-    #[test]
-    fn test_hashset_cache_add_range() {
-        let cache = HashSetCache::new(5);
-
-        cache.add_range(vec![1, 2, 3, 2, 4]); // Note: 2 is duplicated
-
-        // Should have 4 unique items
-        assert_eq!(cache.count(), 4);
-        assert!(cache.contains(&1));
-        assert!(cache.contains(&2));
-        assert!(cache.contains(&3));
-        assert!(cache.contains(&4));
-    }
-
-    #[test]
-    fn test_hashset_cache_to_vec() {
-        let cache = HashSetCache::new(3);
-
-        cache.add(1);
-        cache.add(2);
-        cache.add(3);
-
-        let items = cache.to_vec();
-        assert_eq!(items.len(), 3);
-
-        assert!(items.contains(&1));
-        assert!(items.contains(&2));
-        assert!(items.contains(&3));
-    }
-
-    #[test]
-    fn test_hashset_cache_copy_to() {
-        let cache = HashSetCache::new(3);
-
-        cache.add(1);
-        cache.add(2);
-
-        let mut array = [0; 5];
-        cache.copy_to(&mut array, 1).unwrap();
-
-        // Check that items were copied starting at index 1
-        assert_eq!(array[0], 0); // Should be unchanged
-        let copied_items = &array[1..3];
-        assert!(copied_items.contains(&1));
-        assert!(copied_items.contains(&2));
-        assert_eq!(array[3], 0); // Should be unchanged
-        assert_eq!(array[4], 0); // Should be unchanged
-    }
-
-    #[test]
-    fn test_hashset_cache_copy_to_error() {
-        let cache = HashSetCache::new(3);
-
-        cache.add(1);
-        cache.add(2);
-        cache.add(3);
-
-        let mut array = [0; 3];
-        let result = cache.copy_to(&mut array, 1);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_hashset_cache_from_iter() {
-        let cache: HashSetCache<i32> = [1, 2, 3, 2, 4].iter().cloned().collect();
-
-        assert_eq!(cache.count(), 4); // Should have 4 unique items
-        assert!(cache.contains(&1));
-        assert!(cache.contains(&2));
-        assert!(cache.contains(&3));
-        assert!(cache.contains(&4));
-    }
-
-    #[test]
-    fn test_hashset_cache_clone() {
-        let cache1 = HashSetCache::new(3);
-        cache1.add(1);
-        cache1.add(2);
-
-        let cache2 = cache1.clone();
-
-        // Both caches should have the same items
-        assert_eq!(cache1.count(), cache2.count());
-        assert!(cache2.contains(&1));
-        assert!(cache2.contains(&2));
-
-        // But they should be independent
-        cache1.add(3);
-        assert!(cache1.contains(&3));
-        assert!(!cache2.contains(&3));
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter().cloned().collect::<Vec<_>>().into_iter()
     }
 }

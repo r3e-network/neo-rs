@@ -1,37 +1,34 @@
 [workspace]
 resolver = "2"
 members = [
-    # Core infrastructure
-    "crates/core",
-    "crates/io",
+    # Core (matches C# Neo.csproj)
+    "crates/neo",
     
-    # Blockchain components
+    # VM (matches C# Neo.VM)
     "crates/vm",
-    "crates/smart_contract",
-    "crates/ledger",
-    "crates/consensus",
     
-    # Network and persistence
-    "crates/network",
-    "crates/persistence",
-    
-    # Utilities and extensions
-    "crates/json",
-    "crates/mpt_trie",
-    "crates/extensions",
-    "crates/monitoring",
-    "crates/plugins",
-    "crates/config",
-    
-    # RPC and interfaces
-    "crates/rpc_server",
+    # RPC Client (matches C# RpcClient)
     "crates/rpc_client",
     
-    # Applications
-    "crates/cli",
-    "crates/wallets",
+    # IO (matches C# Neo.IO)
+    "crates/io",
     
-    # Node implementations
+    # Actor runtime (Akka-inspired)
+    "crates/akka",
+    
+    # Extensions (matches C# Neo.Extensions)
+    "crates/extensions",
+    
+    # JSON (matches C# Neo.Json)
+    "crates/json",
+    
+    # Cryptography BLS12-381 (matches C# Neo.Cryptography.BLS12_381)
+    "crates/bls12_381",
+    
+    # Plugins (matches C# Neo.Plugins)
+    "crates/plugins",
+    
+    # Node implementation
     "node",
 ]
 exclude = [
@@ -63,23 +60,15 @@ msrv = "1.70.0"
 
 [workspace.dependencies]
 # === Internal crates ===
-neo-core = { path = "crates/core", version = "0.4.0" }
+neo-core = { path = "crates/neo", version = "0.4.0" }
 neo-io = { path = "crates/io", version = "0.4.0" }
 neo-vm = { path = "crates/vm", version = "0.4.0" }
-neo-smart-contract = { path = "crates/smart_contract", version = "0.4.0" }
-neo-ledger = { path = "crates/ledger", version = "0.4.0" }
-neo-network = { path = "crates/network", version = "0.4.0" }
-neo-persistence = { path = "crates/persistence", version = "0.4.0" }
-neo-wallets = { path = "crates/wallets", version = "0.4.0" }
-neo-consensus = { path = "crates/consensus", version = "0.4.0" }
 neo-json = { path = "crates/json", version = "0.4.0" }
-neo-mpt-trie = { path = "crates/mpt_trie", version = "0.4.0" }
-neo-config = { path = "crates/config", version = "0.4.0" }
-neo-rpc-server = { path = "crates/rpc_server", version = "0.4.0" }
-neo-rpc-client = { path = "crates/rpc_client", version = "0.4.0" }
+# Removed crates that don't exist in C# structure
 # neo-cli = { path = "crates/cli", version = "0.4.0" } # Temporarily disabled
 neo-extensions = { path = "crates/extensions", version = "0.4.0" }
-neo-monitoring = { path = "crates/monitoring", version = "0.4.0" }
+# Removed neo-monitoring - not in C# structure
+neo-plugins = { path = "crates/plugins", version = "0.4.0" }
 
 # === Core dependencies ===
 # Async runtime
@@ -180,6 +169,7 @@ mockall = "0.12"
 # Compression
 flate2 = "1.0"
 # zstd = "0.13" # Temporarily disabled due to C header issues
+lz4_flex = "0.11"
 
 # Metrics and monitoring
 prometheus = "0.13"
@@ -210,12 +200,8 @@ path = "src/lib.rs"
 [dependencies]
 # Core Neo crates
 neo-core.workspace = true
-neo-config.workspace = true
-neo-ledger.workspace = true
-neo-network.workspace = true
-neo-persistence.workspace = true
+# Removed neo-config - not in C# structure
 # neo-cli.workspace = true
-neo-smart-contract.workspace = true
 neo-vm.workspace = true
 
 # Runtime and async
@@ -237,12 +223,12 @@ anyhow.workspace = true
 default = ["full"]
 
 # Feature groups
-full = ["consensus", "rpc", "metrics", "compression"]
+full = ["consensus", "metrics", "compression"]
 minimal = []
 
 # Individual features
-consensus = ["neo-consensus"]
-rpc = ["neo-rpc-server", "neo-rpc-client"] 
+consensus = ["neo-plugins"]
+# Removed rpc feature - RPC is handled as plugins in C# 
 metrics = ["prometheus", "sysinfo"]
 compression = ["flate2"] # removed zstd due to build issues
 testing = ["tempfile", "mockall"]
@@ -252,19 +238,11 @@ integration-tests = []
 dev = ["testing", "tracing-subscriber/json"]
 
 # Optional consensus (can be disabled for minimal builds)
-[dependencies.neo-consensus]
+[dependencies.neo-plugins]
 workspace = true
 optional = true
 
-# Optional RPC server
-[dependencies.neo-rpc-server]
-workspace = true
-optional = true
-
-# Optional RPC client
-[dependencies.neo-rpc-client]
-workspace = true
-optional = true
+# Removed RPC dependencies - RPC is handled as plugins in C#
 
 # Optional metrics
 [dependencies.prometheus]

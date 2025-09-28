@@ -5,34 +5,15 @@
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
+use crate::exception_handling_context::ExceptionHandlingContext;
 use crate::instruction::Instruction;
-use crate::jump_table::control::ExceptionHandler;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, RwLock};
 
 /// Maximum exception handler stack size
-const MAX_EXCEPTION_STACK_SIZE: usize = 32;
-
-/// Exception handler state
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExceptionHandlerState {
-    Try,
-    Catch,
-    Finally,
-}
-
-/// Execution state for context
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExecutionState {
-    None,
-    Fault,
-    Break,
-    Halt,
-}
-
 /// A slot for storing variables or arguments in a context.
 ///
 /// This is a thin alias over [`crate::slot::Slot`] so existing call sites
@@ -43,12 +24,12 @@ pub type Slot = crate::slot::Slot;
 /// This matches the C# implementation's SharedStates class exactly.
 #[derive(Clone)]
 pub struct SharedStates {
-    pub script: crate::script::Script,
+    script: Arc<Script>,
     pub evaluation_stack: crate::evaluation_stack::EvaluationStack,
     pub static_fields: Option<Slot>,
     pub reference_counter: ReferenceCounter,
     /// State map matching C# Dictionary<Type, object>
-    states: Arc<std::sync::RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
+    states: Arc<RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>>,
 }
 
 impl std::fmt::Debug for SharedStates {
@@ -63,14 +44,15 @@ impl std::fmt::Debug for SharedStates {
 
 impl SharedStates {
     pub fn new(script: crate::script::Script, reference_counter: ReferenceCounter) -> Self {
+        let script = Arc::new(script);
         Self {
-            script,
+            script: Arc::clone(&script),
             evaluation_stack: crate::evaluation_stack::EvaluationStack::new(
                 reference_counter.clone(),
             ),
             static_fields: None,
             reference_counter,
-            states: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            states: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -79,7 +61,11 @@ impl SharedStates {
     }
 
     pub fn script(&self) -> &crate::script::Script {
-        &self.script
+        self.script.as_ref()
+    }
+
+    pub fn script_arc(&self) -> Arc<crate::script::Script> {
+        Arc::clone(&self.script)
     }
 
     pub fn evaluation_stack(&self) -> &crate::evaluation_stack::EvaluationStack {
@@ -103,74 +89,28 @@ impl SharedStates {
     }
 
     /// Gets custom data of the specified type. If the data does not exist, create a new one.
-    /// This matches the C# implementation's SharedStates.GetState<T> method.
-    pub fn get_state<T: 'static + Default + Send + Sync>(
-        &self,
-        key: &str,
-    ) -> Arc<std::sync::RwLock<T>> {
-        // Create a composite key using the type and the provided key
-        let composite_key = format!("{}::{}", std::any::type_name::<T>(), key);
-        let type_id = TypeId::of::<String>(); // Use String for the composite key
-
-        // Try to get existing state using the composite key
-        {
-            let states = self.states.read().expect("Lock poisoned");
-            if let Some(boxed_state) = states.get(&type_id) {
-                if let Some(state_map) = boxed_state
-                    .downcast_ref::<std::collections::HashMap<String, Arc<std::sync::RwLock<T>>>>()
-                {
-                    if let Some(state) = state_map.get(&composite_key) {
-                        return state.clone();
-                    }
-                }
-            }
-        }
-
-        self.get_state_with_factory(key, T::default)
+    /// Mirrors the C# SharedStates.GetState<T>() behaviour by caching instances per type.
+    pub fn get_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
+        self.get_state_with_factory(T::default)
     }
 
     /// Gets custom data of the specified type, creating it with the provided factory if it doesn't exist.
-    /// This matches the C# implementation's SharedStates.GetState<T>(Func<T>) method.
+    /// Mirrors the C# SharedStates.GetState<T>(Func<T>) API.
     pub fn get_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
         &self,
-        key: &str,
         factory: F,
-    ) -> Arc<std::sync::RwLock<T>> {
-        // Create a composite key using the type and the provided key
-        let composite_key = format!("{}::{}", std::any::type_name::<T>(), key);
-        let type_id = TypeId::of::<String>(); // Use String for the composite key
+    ) -> Arc<Mutex<T>> {
+        let type_id = TypeId::of::<T>();
 
-        // Try to get existing state using the composite key
-        {
-            let states = self.states.read().expect("Lock poisoned");
-            if let Some(boxed_state) = states.get(&type_id) {
-                if let Some(state_map) = boxed_state
-                    .downcast_ref::<std::collections::HashMap<String, Arc<std::sync::RwLock<T>>>>()
-                {
-                    if let Some(state) = state_map.get(&composite_key) {
-                        return state.clone();
-                    }
-                }
+        if let Some(existing) = self.states.read().expect("Lock poisoned").get(&type_id) {
+            if let Some(arc) = existing.downcast_ref::<Arc<Mutex<T>>>() {
+                return Arc::clone(arc);
             }
         }
 
-        let new_state = Arc::new(std::sync::RwLock::new(factory()));
-
-        // Store the state in the map
-        {
-            let mut states = self.states.write().expect("Lock poisoned");
-            let state_map = states.entry(type_id).or_insert_with(|| {
-                Box::new(std::collections::HashMap::<String, Arc<std::sync::RwLock<T>>>::new())
-                    as Box<dyn std::any::Any + Send + Sync>
-            });
-
-            if let Some(map) = state_map
-                .downcast_mut::<std::collections::HashMap<String, Arc<std::sync::RwLock<T>>>>()
-            {
-                map.insert(composite_key, new_state.clone());
-            }
-        }
-
+        let new_state = Arc::new(Mutex::new(factory()));
+        let mut states = self.states.write().expect("Lock poisoned");
+        states.insert(type_id, Box::new(Arc::clone(&new_state)));
         new_state
     }
 
@@ -178,7 +118,7 @@ impl SharedStates {
     /// This matches the C# implementation's state setting behavior.
     pub fn set_state<T: 'static + Send + Sync>(&self, value: T) {
         let type_id = TypeId::of::<T>();
-        let state = Arc::new(std::sync::RwLock::new(value));
+        let state = Arc::new(Mutex::new(value));
 
         let mut states = self.states.write().expect("Lock poisoned");
         states.insert(type_id, Box::new(state));
@@ -205,13 +145,7 @@ pub struct ExecutionContext {
     arguments: Option<Slot>,
 
     /// The stack containing nested exception handling contexts
-    try_stack: Option<Vec<crate::exception_handling::ExceptionHandlingContext>>,
-
-    /// Exception handlers stack for TRY/CATCH/FINALLY operations
-    exception_handlers: Vec<ExceptionHandler>,
-
-    /// Current execution state
-    state: ExecutionState,
+    try_stack: Option<Vec<ExceptionHandlingContext>>,
 }
 
 impl ExecutionContext {
@@ -225,8 +159,6 @@ impl ExecutionContext {
             local_variables: None,
             arguments: None,
             try_stack: None,
-            exception_handlers: Vec::new(),
-            state: ExecutionState::None,
         }
     }
 
@@ -236,12 +168,18 @@ impl ExecutionContext {
         self.shared_states.script()
     }
 
-    /// Returns the script hash for this context.
-    /// This matches the C# implementation's Script.ToScriptHash() behavior exactly.
-    /// Uses Hash160 (RIPEMD-160 of SHA-256) as per Neo protocol.
-    pub fn script_hash(&self) -> neo_core::UInt160 {
-        use ripemd::{Digest as RipemdDigest, Ripemd160};
-        use sha2::Sha256;
+    /// Returns the script as an Arc for identity-sensitive operations (matches C# reference semantics).
+    pub fn script_arc(&self) -> Arc<Script> {
+        self.shared_states.script_arc()
+    }
+
+    /// Returns the script hash for this context as a 20-byte array.
+    /// This mirrors the C# `Script.ToScriptHash()` behaviour (Hash160).
+    pub fn script_hash(&self) -> [u8; 20] {
+        #[allow(unused_imports)]
+        use ripemd::{Digest as _, Ripemd160};
+        #[allow(unused_imports)]
+        use sha2::{Digest as _, Sha256};
 
         let script_bytes = self.script().as_bytes();
 
@@ -255,72 +193,9 @@ impl ExecutionContext {
         ripemd_hasher.update(sha256_hash);
         let ripemd_hash = ripemd_hasher.finalize();
 
-        // Convert to UInt160
-        neo_core::UInt160::from_bytes(&ripemd_hash).unwrap_or_else(|_| neo_core::UInt160::zero())
-    }
-
-    /// Pushes an exception handler onto the exception handler stack.
-    /// This matches the C# implementation's exception handling exactly.
-    pub fn push_exception_handler(&mut self, handler: ExceptionHandler) {
-        self.exception_handlers.push(handler);
-    }
-
-    /// Pops an exception handler from the exception handler stack.
-    /// Returns None if the stack is empty.
-    /// This matches the C# implementation's exception handling exactly.
-    pub fn pop_exception_handler(&mut self) -> Option<ExceptionHandler> {
-        self.exception_handlers.pop()
-    }
-
-    /// Checks if the context is currently in an exception state.
-    /// This matches the C# implementation's exception state tracking.
-    pub fn is_in_exception(&self) -> bool {
-        // 1. Check if there are any active exception handlers
-        if !self.exception_handlers.is_empty() {
-            // 2. Check if the top handler is in an exception state
-            if let Some(top_handler) = self.exception_handlers.last() {
-                return top_handler.is_in_exception_state();
-            }
-        }
-
-        // 3. Check try stack for exception state (production exception tracking)
-        if let Some(try_stack) = &self.try_stack {
-            for try_context in try_stack {
-                if try_context.is_in_exception() {
-                    return true;
-                }
-            }
-        }
-
-        false
-    }
-
-    /// Sets the exception state for this context.
-    /// This matches the C# implementation's exception state management.
-    pub fn set_exception_state(&mut self, in_exception: bool) {
-        if in_exception {
-            // Mark the context as being in an exception state
-            self.exception_handlers.push(ExceptionHandler {
-                catch_offset: Some(self.instruction_pointer),
-                finally_offset: None,
-                stack_depth: 0, // Would be set based on current evaluation stack depth
-            });
-
-            // Set VM state to fault if needed
-            if self.exception_handlers.len() > MAX_EXCEPTION_STACK_SIZE {
-                self.state = ExecutionState::Fault;
-            }
-        } else {
-            // Clear the exception state by removing the top exception handler
-            if !self.exception_handlers.is_empty() {
-                self.exception_handlers.pop();
-            }
-
-            // Restore normal execution state if no more exceptions
-            if self.exception_handlers.is_empty() && self.state == ExecutionState::Fault {
-                self.state = ExecutionState::None;
-            }
-        }
+        let mut result = [0u8; 20];
+        result.copy_from_slice(&ripemd_hash);
+        result
     }
 
     /// Returns the current instruction pointer.
@@ -425,23 +300,51 @@ impl ExecutionContext {
     }
 
     /// Returns the try stack for this context.
-    pub fn try_stack(&self) -> Option<&Vec<crate::exception_handling::ExceptionHandlingContext>> {
+    pub fn try_stack(&self) -> Option<&Vec<ExceptionHandlingContext>> {
         self.try_stack.as_ref()
     }
 
     /// Returns the try stack for this context (mutable).
-    pub fn try_stack_mut(
-        &mut self,
-    ) -> Option<&mut Vec<crate::exception_handling::ExceptionHandlingContext>> {
+    pub fn try_stack_mut(&mut self) -> Option<&mut Vec<ExceptionHandlingContext>> {
         self.try_stack.as_mut()
     }
 
     /// Sets the try stack for this context.
-    pub fn set_try_stack(
-        &mut self,
-        try_stack: Option<Vec<crate::exception_handling::ExceptionHandlingContext>>,
-    ) {
+    pub fn set_try_stack(&mut self, try_stack: Option<Vec<ExceptionHandlingContext>>) {
         self.try_stack = try_stack;
+    }
+
+    /// Returns the number of nested try contexts currently tracked.
+    pub fn try_stack_len(&self) -> usize {
+        self.try_stack
+            .as_ref()
+            .map(|stack| stack.len())
+            .unwrap_or(0)
+    }
+
+    /// Returns true when at least one try context is active.
+    pub fn has_try_context(&self) -> bool {
+        self.try_stack_len() > 0
+    }
+
+    /// Pushes a new try context onto the stack, initialising the stack if needed.
+    pub fn push_try_context(&mut self, ctx: ExceptionHandlingContext) {
+        self.try_stack.get_or_insert_with(Vec::new).push(ctx);
+    }
+
+    /// Pops the current try context if one exists.
+    pub fn pop_try_context(&mut self) -> Option<ExceptionHandlingContext> {
+        self.try_stack.as_mut().and_then(|stack| stack.pop())
+    }
+
+    /// Returns the current try context if one exists.
+    pub fn try_stack_last(&self) -> Option<&ExceptionHandlingContext> {
+        self.try_stack.as_ref().and_then(|stack| stack.last())
+    }
+
+    /// Returns a mutable handle to the current try context if one exists.
+    pub fn try_stack_last_mut(&mut self) -> Option<&mut ExceptionHandlingContext> {
+        self.try_stack.as_mut().and_then(|stack| stack.last_mut())
     }
 
     /// Moves to the next instruction.
@@ -458,30 +361,24 @@ impl ExecutionContext {
         Ok(())
     }
 
-    /// Gets a state value by key, creating it if it doesn't exist.
-    /// This matches the C# implementation's GetState<T> method.
-    pub fn get_state<T: 'static + Default + Send + Sync>(
-        &self,
-        key: &str,
-    ) -> Arc<std::sync::RwLock<T>> {
-        // In the C# implementation, ExecutionContext has its own state management
-        self.shared_states.get_state::<T>(key)
+    /// Gets a state value for the specified type, creating it if it doesn't exist.
+    /// Mirrors the C# ExecutionContext.GetState<T>() helper.
+    pub fn get_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
+        self.shared_states.get_state::<T>()
     }
 
-    /// Gets a state value by key, creating it with the provided factory if it doesn't exist.
-    /// This matches the C# implementation's GetState<T>(Func<T>) method.
+    /// Gets a state value for the specified type using the provided factory when absent.
+    /// Mirrors the C# ExecutionContext.GetState<T>(Func<T>) helper.
     pub fn get_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
         &self,
-        key: &str,
         factory: F,
-    ) -> Arc<std::sync::RwLock<T>> {
-        self.shared_states.get_state_with_factory(key, factory)
+    ) -> Arc<Mutex<T>> {
+        self.shared_states.get_state_with_factory(factory)
     }
 
     /// Sets a state value by key.
     /// This matches the C# implementation's state setting behavior.
-    pub fn set_state<T: 'static + Send + Sync>(&self, _key: String, value: T) {
-        // Set state in the shared states
+    pub fn set_state<T: 'static + Send + Sync>(&self, value: T) {
         self.shared_states.set_state(value);
     }
 
@@ -500,8 +397,8 @@ impl ExecutionContext {
     pub fn peek(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
         self.shared_states
             .evaluation_stack()
-            .peek(index as isize)
-            .cloned()
+            .peek(index)
+            .map(|item| item.clone())
     }
 
     /// Clones the context with a new reference counter.
@@ -510,8 +407,10 @@ impl ExecutionContext {
         let mut shared_states = SharedStates::new(self.script().clone(), reference_counter.clone());
 
         // Copy the evaluation stack
-        self.evaluation_stack()
-            .copy_to(shared_states.evaluation_stack_mut());
+        self
+            .evaluation_stack()
+            .copy_to(shared_states.evaluation_stack_mut(), None)
+            .expect("evaluation stack copy should succeed");
 
         // Create the new context
 
@@ -525,8 +424,6 @@ impl ExecutionContext {
             local_variables: None,
             arguments: None,
             try_stack: self.try_stack.clone(),
-            exception_handlers: self.exception_handlers.clone(),
-            state: ExecutionState::None,
         }
     }
 
@@ -546,28 +443,21 @@ impl ExecutionContext {
             local_variables: None,
             arguments: None,
             try_stack: None,
-            exception_handlers: Vec::new(),
-            state: ExecutionState::None,
         }
     }
 
     /// Gets a shared state by type, creating it if it doesn't exist.
-    /// This matches the C# implementation's GetState<T> method.
-    pub fn get_shared_state<T: 'static + Default + Send + Sync>(
-        &self,
-        key: &str,
-    ) -> Arc<std::sync::RwLock<T>> {
-        self.shared_states.get_state::<T>(key)
+    /// Mirrors the C# ExecutionContext.GetState<T>() helper for shared state access.
+    pub fn get_shared_state<T: 'static + Default + Send + Sync>(&self) -> Arc<Mutex<T>> {
+        self.shared_states.get_state::<T>()
     }
 
     /// Gets a shared state by type, creating it with the provided factory if it doesn't exist.
-    /// This matches the C# implementation's GetState<T>(Func<T>) method.
     pub fn get_shared_state_with_factory<T: 'static + Send + Sync, F: FnOnce() -> T>(
         &self,
-        key: &str,
         factory: F,
-    ) -> Arc<std::sync::RwLock<T>> {
-        self.shared_states.get_state_with_factory(key, factory)
+    ) -> Arc<Mutex<T>> {
+        self.shared_states.get_state_with_factory(factory)
     }
 
     /// Initializes the slots for local variables and arguments.
@@ -575,13 +465,13 @@ impl ExecutionContext {
         // Initialize local variables
         if local_count > 0 {
             let reference_counter = self.shared_states.reference_counter().clone();
-            self.local_variables = Some(Slot::with_count(local_count, reference_counter));
+            self.local_variables = Some(Slot::new(local_count, reference_counter));
         }
 
         // Initialize arguments
         if argument_count > 0 {
             let reference_counter = self.shared_states.reference_counter().clone();
-            self.arguments = Some(Slot::with_count(argument_count, reference_counter));
+            self.arguments = Some(Slot::new(argument_count, reference_counter));
         }
 
         Ok(())
@@ -589,10 +479,13 @@ impl ExecutionContext {
 
     /// Loads a value from a static field.
     pub fn load_static_field(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
-        if let Some(static_fields) = &self.shared_states.static_fields() {
-            static_fields.get(index).cloned()
+        if let Some(static_fields) = self.shared_states.static_fields() {
+            static_fields
+                .get(index)
+                .cloned()
+                .ok_or_else(|| VmError::invalid_operation_msg("Static field index out of range"))
         } else {
-            Err(crate::VmError::invalid_operation_msg(
+            Err(VmError::invalid_operation_msg(
                 "No static fields initialized",
             ))
         }
@@ -608,7 +501,7 @@ impl ExecutionContext {
             static_fields.set(index, value)?;
             Ok(())
         } else {
-            Err(crate::VmError::invalid_operation_msg(
+            Err(VmError::invalid_operation_msg(
                 "No static fields initialized",
             ))
         }
@@ -617,9 +510,12 @@ impl ExecutionContext {
     /// Loads a value from a local variable.
     pub fn load_local(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
         if let Some(local_variables) = &self.local_variables {
-            local_variables.get(index).cloned()
+            local_variables
+                .get(index)
+                .cloned()
+                .ok_or_else(|| VmError::invalid_operation_msg("Local variable index out of range"))
         } else {
-            Err(crate::VmError::invalid_operation_msg(
+            Err(VmError::invalid_operation_msg(
                 "No local variables initialized",
             ))
         }
@@ -635,7 +531,7 @@ impl ExecutionContext {
             local_variables.set(index, value)?;
             Ok(())
         } else {
-            Err(crate::VmError::invalid_operation_msg(
+            Err(VmError::invalid_operation_msg(
                 "No local variables initialized",
             ))
         }
@@ -644,11 +540,12 @@ impl ExecutionContext {
     /// Loads a value from an argument.
     pub fn load_argument(&self, index: usize) -> VmResult<crate::stack_item::StackItem> {
         if let Some(arguments) = &self.arguments {
-            arguments.get(index).cloned()
+            arguments
+                .get(index)
+                .cloned()
+                .ok_or_else(|| VmError::invalid_operation_msg("Argument index out of range"))
         } else {
-            Err(crate::VmError::invalid_operation_msg(
-                "No arguments initialized",
-            ))
+            Err(VmError::invalid_operation_msg("No arguments initialized"))
         }
     }
 
@@ -662,9 +559,7 @@ impl ExecutionContext {
             arguments.set(index, value)?;
             Ok(())
         } else {
-            Err(crate::VmError::invalid_operation_msg(
-                "No arguments initialized",
-            ))
+            Err(VmError::invalid_operation_msg("No arguments initialized"))
         }
     }
 }
@@ -676,6 +571,12 @@ mod tests {
     use crate::op_code::OpCode;
     use crate::stack_item::StackItem;
     use num_bigint::BigInt;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct TestFlag {
+        flag: bool,
+    }
 
     #[test]
     fn test_execution_context_creation() {
@@ -751,7 +652,8 @@ mod tests {
         assert!(context.try_stack().is_none());
 
         // Create a try stack with one context
-        use crate::exception_handling::{ExceptionHandlingContext, ExceptionHandlingState};
+        use crate::exception_handling_context::ExceptionHandlingContext;
+        use crate::exception_handling_state::ExceptionHandlingState;
         let mut try_stack = Vec::new();
         let try_context = ExceptionHandlingContext::new(10, 20);
         try_stack.push(try_context);
@@ -780,12 +682,12 @@ mod tests {
         // Modify the try stack
         if let Some(stack) = context.try_stack_mut() {
             let exception_context = &mut stack[0];
-            exception_context.state = ExceptionHandlingState::Catch;
+            exception_context.set_state(ExceptionHandlingState::Catch);
         }
 
         // Check that the modification was applied
         assert_eq!(
-            context.try_stack().expect("Operation failed")[0].state,
+            context.try_stack().expect("Operation failed")[0].state(),
             ExceptionHandlingState::Catch
         );
     }
@@ -800,7 +702,7 @@ mod tests {
             StackItem::from_int(3),
         ];
 
-        let mut slot = Slot::new(items, reference_counter.clone());
+        let mut slot = Slot::with_items(items, reference_counter.clone());
 
         assert_eq!(slot.len(), 3);
         assert_eq!(
@@ -919,34 +821,39 @@ mod tests {
         let script = Script::new_relaxed(script_bytes);
         let reference_counter = ReferenceCounter::new();
 
-        let mut context = ExecutionContext::new(script, -1, &reference_counter);
+        let context = ExecutionContext::new(script, -1, &reference_counter);
 
-        // Test getting state with type inference
-        let state = context.get_state::<i32>("test");
+        let flag_state = context.get_state_with_factory::<TestFlag, _>(|| TestFlag { flag: true });
         {
-            let mut value = state.write().map_err(|_| "poisoned")?;
-            *value = 42;
+            let mut flag = flag_state.lock().map_err(|_| "poisoned")?;
+            assert!(flag.flag);
+            flag.flag = false;
         }
 
-        // Get the same state again - should be the same instance
-        let state2 = context.get_state::<i32>("test");
+        let flag_state_again = context.get_state::<TestFlag>();
         {
-            let value = state2.read().map_err(|_| "poisoned")?;
-            assert_eq!(*value, 42);
+            let flag = flag_state_again.lock().map_err(|_| "poisoned")?;
+            assert!(!flag.flag);
         }
 
-        // Test factory-created state
-        let state_with_factory = context.get_state_with_factory("test2", || "hello".to_string());
+        let stack_state = context.get_state_with_factory::<Vec<i32>, _>(|| Vec::new());
         {
-            let value = state_with_factory.read().map_err(|_| "poisoned")?;
-            assert_eq!(*value, "hello");
+            let mut stack = stack_state.lock().map_err(|_| "poisoned")?;
+            stack.push(100);
         }
 
-        // Test different type has different state
-        let int_state = context.get_state::<i32>("test3");
+        let clone = context.clone();
+        let cloned_stack_state = clone.get_state::<Vec<i32>>();
         {
-            let value = int_state.read().map_err(|_| "poisoned")?;
-            assert_eq!(*value, 0); // Default value
+            let mut stack = cloned_stack_state.lock().map_err(|_| "poisoned")?;
+            assert_eq!(stack.pop(), Some(100));
+            stack.push(200);
+        }
+
+        let original_stack_state = context.get_state::<Vec<i32>>();
+        {
+            let mut stack = original_stack_state.lock().map_err(|_| "poisoned")?;
+            assert_eq!(stack.pop(), Some(200));
         }
         Ok(())
     }
@@ -957,50 +864,48 @@ mod tests {
         let script = Script::new_relaxed(script_bytes);
         let reference_counter = ReferenceCounter::new();
 
-        let mut context = ExecutionContext::new(script, -1, &reference_counter);
+        let context = ExecutionContext::new(script, -1, &reference_counter);
 
-        // Test getting shared state
-        let state = context.get_shared_state::<i32>("test");
+        let shared_vec = context.get_shared_state::<Vec<i32>>();
         {
-            let mut value = state.write().map_err(|_| "poisoned")?;
-            *value = 100;
+            let mut vec = shared_vec.lock().map_err(|_| "poisoned")?;
+            vec.push(100);
         }
 
-        // Test factory-created shared state with SAME key "test"
-        let state_with_factory = context.get_shared_state_with_factory("test", || 200);
+        let shared_vec_again = context.get_shared_state::<Vec<i32>>();
         {
-            let value = state_with_factory.read().map_err(|_| "poisoned")?;
-            assert_eq!(*value, 100); // Should return existing value, not factory value
+            let vec = shared_vec_again.lock().map_err(|_| "poisoned")?;
+            assert_eq!(*vec, vec![100]);
         }
 
-        // Test factory-created shared state with DIFFERENT key "test2"
-        // Since this key doesn't exist, factory SHOULD be called
-        let state_with_factory_new = context.get_shared_state_with_factory("test2", || 300);
+        let shared_with_factory =
+            context.get_shared_state_with_factory::<Vec<i32>, _>(|| vec![200]);
         {
-            let value = state_with_factory_new.read().map_err(|_| "poisoned")?;
-            assert_eq!(*value, 300); // Should return factory value for new key
+            let vec = shared_with_factory.lock().map_err(|_| "poisoned")?;
+            assert_eq!(*vec, vec![100]);
         }
 
-        // Clone context to test shared state
         let clone = context.clone();
-        let shared_state = clone.get_shared_state::<i32>("test");
+        let clone_shared_vec = clone.get_shared_state::<Vec<i32>>();
         {
-            let value = shared_state.read().map_err(|_| "poisoned")?;
-            assert_eq!(*value, 100); // Should be shared
+            let mut vec = clone_shared_vec.lock().map_err(|_| "poisoned")?;
+            vec.push(300);
         }
 
-        // Modify shared state from clone
+        let context_shared_vec = context.get_shared_state::<Vec<i32>>();
         {
-            let mut value = shared_state.write().map_err(|_| "poisoned")?;
-            *value = 200;
+            let vec = context_shared_vec.lock().map_err(|_| "poisoned")?;
+            assert_eq!(*vec, vec![100, 300]);
         }
 
-        // Check that original context sees the change
-        let original_state = context.get_shared_state::<i32>("test");
+        context.set_state(vec![1, 2, 3]);
+        let context_shared_vec_after = context.get_shared_state::<Vec<i32>>();
+
         {
-            let value = original_state.read().map_err(|_| "poisoned")?;
-            assert_eq!(*value, 200); // Should be updated
+            let vec = context_shared_vec_after.lock().map_err(|_| "poisoned")?;
+            assert_eq!(*vec, vec![1, 2, 3]);
         }
+
         Ok(())
     }
 }

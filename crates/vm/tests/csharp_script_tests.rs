@@ -6,9 +6,7 @@ use neo_vm::{op_code::OpCode, script::Script, script_builder::ScriptBuilder};
 fn test_script_conversion() {
     let mut builder = ScriptBuilder::new();
     builder.emit_opcode(OpCode::PUSH0);
-    builder.emit_opcode(OpCode::CALL);
-    builder.emit(0x00);
-    builder.emit(0x01);
+    builder.emit_call(0).expect("emit_call failed");
     builder.emit_syscall("test").expect("emit_syscall failed"); // Using string instead of numeric syscall
 
     let raw_script = builder.to_array();
@@ -62,9 +60,7 @@ fn test_relaxed_mode() {
 fn test_script_parsing() {
     let mut builder = ScriptBuilder::new();
     builder.emit_opcode(OpCode::PUSH0);
-    builder.emit_opcode(OpCode::CALL);
-    builder.emit(0x00);
-    builder.emit(0x01);
+    builder.emit_call(0).expect("emit_call failed");
     builder.emit_syscall("test").expect("emit_syscall failed");
 
     let script = Script::new_relaxed(builder.to_array());

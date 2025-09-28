@@ -1,5 +1,6 @@
 //! Integration tests for the Neo VM execution engine.
 
+use neo_vm::error::VmError;
 use neo_vm::execution_engine::{ExecutionEngine, ExecutionEngineLimits, VMState};
 use neo_vm::jump_table::JumpTable;
 use neo_vm::op_code::OpCode;
@@ -266,4 +267,21 @@ fn test_execution_engine_multiple_contexts() {
 
     // In this case, the main function should have 1 and 2 on its stack before returning
     assert_eq!(engine.result_stack().len(), 0);
+}
+
+#[test]
+fn callt_without_override_produces_invalid_operation() {
+    let mut engine = ExecutionEngine::new(None);
+    let script = Script::new_relaxed(vec![OpCode::CALLT as u8, 0x01, 0x00]);
+    engine.load_script(script, -1, 0).expect("context loads");
+
+    let err = engine
+        .execute_next()
+        .expect_err("CALLT should fail by default");
+    match err {
+        VmError::InvalidOperation { operation, .. } => {
+            assert!(operation.contains("Token not found: 1"));
+        }
+        other => panic!("expected InvalidOperation, got {other:?}"),
+    }
 }

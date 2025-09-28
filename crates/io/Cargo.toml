@@ -21,9 +21,9 @@ tokio = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 indexmap = "2.0"
+linked-hash-map = "0.5"
 
 # Internal dependencies
-neo-config = { workspace = true }
 # Temporarily commented out to break dependency cycle
 # Removed neo-cryptography - using external crypto crates directly
 

@@ -1,107 +1,60 @@
-//! Operand size information for Neo VM opcodes.
+//! Operand size attribute implementation.
+//!
+//! This module provides the OperandSizeAttribute functionality exactly matching C# Neo.VM.OperandSizeAttribute.
 
-/// Represents the operand size information for an opcode.
-///
-/// This is equivalent to the OperandSizeAttribute in the C# implementation.
+// Matches C# using directives exactly:
+// using System;
+
+/// namespace Neo.VM -> [AttributeUsage(AttributeTargets.Field, AllowMultiple = false)]
+/// public class OperandSizeAttribute : Attribute
+
+/// Indicates the operand length of an OpCode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OperandSize {
-    /// The size of the operand, if fixed
-    size: usize,
+pub struct OperandSizeAttribute {
+    /// When it is greater than 0, indicates the size of the operand.
+    /// public int Size { get; set; }
+    pub size: i32,
 
-    /// The size prefix of the operand, if variable
-    size_prefix: usize,
+    /// When it is greater than 0, indicates the size prefix of the operand.
+    /// public int SizePrefix { get; set; }
+    pub size_prefix: i32,
 }
 
-impl OperandSize {
-    /// Creates a new operand size with a fixed size.
-    ///
-    /// # Arguments
-    ///
-    /// * `size` - The fixed size of the operand
-    ///
-    /// # Returns
-    ///
-    /// A new OperandSize with the specified fixed size
-    pub fn fixed(size: usize) -> Self {
+impl OperandSizeAttribute {
+    /// Creates a new OperandSizeAttribute with default values
+    pub fn new() -> Self {
+        Self {
+            size: 0,
+            size_prefix: 0,
+        }
+    }
+
+    /// Creates a new OperandSizeAttribute with a fixed size
+    pub fn with_size(size: i32) -> Self {
         Self {
             size,
             size_prefix: 0,
         }
     }
 
-    /// Creates a new operand size with a size prefix.
-    ///
-    /// # Arguments
-    ///
-    /// * `size_prefix` - The size of the prefix
-    ///
-    /// # Returns
-    ///
-    /// A new OperandSize with the specified size prefix
-    pub fn prefix(size_prefix: usize) -> Self {
+    /// Creates a new OperandSizeAttribute with a size prefix
+    pub fn with_size_prefix(size_prefix: i32) -> Self {
         Self {
             size: 0,
             size_prefix,
         }
     }
 
-    /// Gets the fixed size of the operand.
-    ///
-    /// # Returns
-    ///
-    /// The fixed size of the operand
-    pub fn size(&self) -> usize {
-        self.size
+    /// Helper mirroring C# OperandSizeAttribute.Fixed
+    pub fn fixed(size: i32) -> Self {
+        Self::with_size(size)
     }
 
-    /// Gets the size prefix of the operand.
-    ///
-    /// # Returns
-    ///
-    /// The size prefix of the operand
-    pub fn size_prefix(&self) -> usize {
-        self.size_prefix
-    }
-
-    /// Checks if the operand has a fixed size.
-    ///
-    /// # Returns
-    ///
-    /// true if the operand has a fixed size, false otherwise
-    pub fn has_fixed_size(&self) -> bool {
-        self.size > 0
-    }
-
-    /// Checks if the operand has a size prefix.
-    ///
-    /// # Returns
-    ///
-    /// true if the operand has a size prefix, false otherwise
-    pub fn has_size_prefix(&self) -> bool {
-        self.size_prefix > 0
+    /// Helper mirroring C# OperandSizeAttribute.SizePrefix
+    pub fn prefix(size_prefix: i32) -> Self {
+        Self::with_size_prefix(size_prefix)
     }
 }
 
-#[cfg(test)]
-#[allow(dead_code)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_fixed_size() {
-        let op_size = OperandSize::fixed(4);
-        assert_eq!(op_size.size(), 4);
-        assert_eq!(op_size.size_prefix(), 0);
-        assert!(op_size.has_fixed_size());
-        assert!(!op_size.has_size_prefix());
-    }
-
-    #[test]
-    fn test_size_prefix() {
-        let op_size = OperandSize::prefix(2);
-        assert_eq!(op_size.size(), 0);
-        assert_eq!(op_size.size_prefix(), 2);
-        assert!(!op_size.has_fixed_size());
-        assert!(op_size.has_size_prefix());
-    }
-}
+// Alias for compatibility
+pub type OperandSize = OperandSizeAttribute;

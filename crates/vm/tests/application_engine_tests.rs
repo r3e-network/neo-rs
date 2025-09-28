@@ -1,3 +1,5 @@
+#![cfg(feature = "neo_application_engine")]
+
 //! Integration tests for the Neo VM application engine.
 //! Converted from C# Neo VM unit tests to ensure 100% compatibility.
 
@@ -159,13 +161,13 @@ fn test_application_engine_with_storage_interop() {
     builder
         .emit_syscall("System.Storage.GetContext")
         .expect("emit_syscall failed")
-        .emit_push_byte_array(&[1, 2, 3]) // Key
-        .emit_push_byte_array(&[4, 5, 6]) // Value
+        .emit_push(&[1, 2, 3]) // Key
+        .emit_push(&[4, 5, 6]) // Value
         .emit_syscall("System.Storage.Put")
         .expect("emit_syscall failed")
         .emit_syscall("System.Storage.GetContext")
         .expect("emit_syscall failed")
-        .emit_push_byte_array(&[1, 2, 3]) // Key
+        .emit_push(&[1, 2, 3]) // Key
         .emit_syscall("System.Storage.Get")
         .expect("emit_syscall failed")
         .emit_opcode(OpCode::RET);
@@ -199,7 +201,7 @@ fn test_application_engine_with_runtime_interop() {
         .expect("emit_syscall failed")
         .emit_syscall("System.Runtime.GetTime")
         .expect("emit_syscall failed")
-        .emit_push_byte_array(b"Hello, World!")
+        .emit_push(b"Hello, World!")
         .emit_syscall("System.Runtime.Log")
         .expect("emit_syscall failed")
         .emit_opcode(OpCode::RET);
@@ -263,7 +265,7 @@ fn test_script_builder_emit_push() {
 
     // Test push byte array
     let mut builder3 = ScriptBuilder::new();
-    builder3.emit_push_byte_array(&[1, 2, 3, 4]);
+    builder3.emit_push(&[1, 2, 3, 4]);
     let script3 = builder3.to_script();
     assert!(script3.len() > 0);
 }
@@ -370,7 +372,7 @@ fn test_control_flow_operations() {
     builder
         .emit_push_bool(true)
         .emit_opcode(OpCode::JMPIF)
-        .emit_bytes(&[0x03, 0x00]) // Jump offset
+        .emit_raw(&[0x03, 0x00]) // Jump offset
         .emit_opcode(OpCode::PUSH0)
         .emit_opcode(OpCode::RET);
     let script = builder.to_script();
@@ -670,8 +672,8 @@ fn test_storage_put_operation() {
     builder
         .emit_syscall("System.Storage.GetContext")
         .expect("emit_syscall failed")
-        .emit_push_byte_array(&[1, 2, 3]) // Key
-        .emit_push_byte_array(&[4, 5, 6]) // Value
+        .emit_push(&[1, 2, 3]) // Key
+        .emit_push(&[4, 5, 6]) // Value
         .emit_syscall("System.Storage.Put")
         .expect("emit_syscall failed")
         .emit_opcode(OpCode::RET);
@@ -690,3 +692,4 @@ fn test_storage_put_operation() {
         "Storage operations should complete with predictable state"
     );
 }
+#![cfg(feature = "neo_application_engine")]

@@ -1,6 +1,6 @@
 [package]
 name = "neo-plugins"
-version = "0.1.0"
+version = "0.4.0"
 edition = "2021"
 description = "Neo blockchain plugins collection"
 license = "MIT"
@@ -8,16 +8,14 @@ authors = ["R3E Network <jimmy@r3e.network>"]
 
 [dependencies]
 # Neo crates
-neo-config = { path = "../config" }
-neo-core = { path = "../core" }
+# Removed neo-config - not in C# structure
+neo-core = { path = "../neo" }
 neo-vm = { path = "../vm" }
-neo-ledger = { path = "../ledger" }
 neo-extensions = { path = "../extensions" }
 neo-io = { path = "../io" }
 neo-json = { path = "../json" }
 # Removed neo-cryptography - using external crypto crates directly
-neo-rpc-client = { path = "../rpc_client" }
-neo-consensus = { path = "../consensus" }
+# Removed neo-rpc-client - not in C# structure
 
 # Async runtime
 tokio = { version = "1.0", features = ["full"] }
@@ -41,6 +39,8 @@ hex = "0.4"
 url = "2.0"
 bincode = "1.3"
 futures = { version = "0.3", features = ["executor"] }
+once_cell = "1.19"
+parking_lot = "0.12"
 
 # HTTP client for Oracle service
 reqwest = { version = "0.11", features = ["json"] }

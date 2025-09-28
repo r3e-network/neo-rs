@@ -1,62 +1,70 @@
-//! Unhandled exception wrapper for the Neo VM.
+//! VM unhandled exception implementation.
 //!
-//! Mirrors `Neo.VM/VMUnhandledException.cs` from the C# codebase.
+//! This module provides the VMUnhandledException functionality exactly matching C# Neo.VM.VMUnhandledException.
+
+// Matches C# using directives exactly:
+// using Neo.VM.Types;
+// using System;
+// using System.Text;
+// using Array = Neo.VM.Types.Array;
 
 use crate::stack_item::StackItem;
-use std::error::Error as StdError;
-use std::fmt::{self, Display, Formatter};
+use std::error::Error;
+use std::fmt;
 
-/// Represents an unhandled exception propagated out of the VM.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// namespace Neo.VM -> public class VMUnhandledException : Exception
+
+/// Represents an unhandled exception in the VM.
+/// Thrown when there is an exception in the VM that is not caught by any script.
+#[derive(Debug, Clone)]
 pub struct VMUnhandledException {
+    /// The unhandled exception in the VM.
+    /// public StackItem ExceptionObject { get; }
+    pub exception_object: StackItem,
     message: String,
-    exception_object: StackItem,
 }
 
 impl VMUnhandledException {
-    /// Creates a new wrapper for the supplied exception object.
-    pub fn new(exception: StackItem) -> Self {
-        let message = build_exception_message(&exception);
+    /// Initializes a new instance of the VMUnhandledException class.
+    /// public VMUnhandledException(StackItem ex) : base(GetExceptionMessage(ex))
+    pub fn new(ex: StackItem) -> Self {
+        let message = Self::get_exception_message(&ex);
         Self {
+            exception_object: ex,
             message,
-            exception_object: exception,
         }
     }
 
-    /// Returns the underlying VM exception object.
-    pub fn exception_object(&self) -> &StackItem {
-        &self.exception_object
-    }
-}
+    /// private static string GetExceptionMessage(StackItem e)
+    fn get_exception_message(e: &StackItem) -> String {
+        let mut message = String::from("An unhandled exception was thrown.");
 
-impl Display for VMUnhandledException {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
+        let mut bytes_opt = match e {
+            StackItem::ByteString(bytes) => Some(bytes.as_slice()),
+            _ => None,
+        };
 
-impl StdError for VMUnhandledException {}
-
-fn build_exception_message(exception: &StackItem) -> String {
-    let mut message = String::from("An unhandled exception was thrown.");
-
-    if let Some(text) = extract_payload(exception) {
-        message.push(' ');
-        message.push_str(&text);
-    }
-
-    message
-}
-
-fn extract_payload(exception: &StackItem) -> Option<String> {
-    match exception {
-        StackItem::ByteString(bytes) => String::from_utf8(bytes.clone()).ok(),
-        StackItem::Array(items) if !items.is_empty() => {
-            items.items().first().and_then(|first| match first {
-                StackItem::ByteString(bytes) => String::from_utf8(bytes.clone()).ok(),
-                _ => None,
-            })
+        if bytes_opt.is_none() {
+            if let Ok(array) = e.as_array() {
+                if let Some(StackItem::ByteString(bytes)) = array.first() {
+                    bytes_opt = Some(bytes.as_slice());
+                }
+            }
         }
-        _ => None,
+
+        if let Some(bytes) = bytes_opt {
+            message.push(' ');
+            message.push_str(&String::from_utf8_lossy(bytes));
+        }
+
+        message
     }
 }
+
+impl fmt::Display for VMUnhandledException {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl Error for VMUnhandledException {}

@@ -9,6 +9,33 @@ use neo_vm::stack_item::StackItem;
 use num_bigint::BigInt;
 
 #[test]
+fn pickitem_array_out_of_range_triggers_catchable_exception() {
+    let jump_table = JumpTable::new();
+    let mut engine = ExecutionEngine::new(Some(jump_table));
+
+    let script_bytes = vec![
+        OpCode::PUSH1 as u8, // count = 1
+        OpCode::NEWARRAY as u8,
+        OpCode::PUSH1 as u8, // index = 1 (out of range)
+        OpCode::PICKITEM as u8,
+    ];
+    let script = Script::new_relaxed(script_bytes);
+
+    engine.load_script(script, -1, 0).unwrap();
+    let state = engine.execute();
+
+    assert_eq!(state, VMState::FAULT);
+
+    let message = engine
+        .uncaught_exception()
+        .expect("exception available")
+        .as_bytes()
+        .expect("exception bytes");
+    let message = String::from_utf8(message).expect("valid utf8");
+    assert_eq!(message, "The index of VMArray is out of range, 1/[0, 1).");
+}
+
+#[test]
 fn test_bitwise_operations() {
     // Create a jump table with default handlers
     let jump_table = JumpTable::new();

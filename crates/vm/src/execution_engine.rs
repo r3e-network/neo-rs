@@ -2,18 +2,22 @@
 //!
 //! This module provides the execution engine implementation for the Neo VM.
 
+use crate::call_flags::CallFlags;
 use crate::error::VmError;
 use crate::error::VmResult;
 use crate::evaluation_stack::EvaluationStack;
 use crate::execution_context::ExecutionContext;
 // use crate::gas_calculator::{GasCalculator, GasError}; // Removed - no C# counterpart
-use crate::i_reference_counter::IReferenceCounter;
 use crate::instruction::Instruction;
+use crate::interop_service::{InteropHost, InteropService};
 use crate::jump_table::JumpTable;
 use crate::reference_counter::ReferenceCounter;
 use crate::script::Script;
 use crate::stack_item::StackItem;
-use neo_config::HASH_SIZE;
+
+use std::convert::TryFrom;
+
+const HASH_SIZE: usize = 32;
 
 pub use crate::execution_engine_limits::ExecutionEngineLimits;
 pub use crate::vm_state::VMState;
@@ -37,6 +41,15 @@ pub struct ExecutionEngine {
 
     /// Gas calculator for execution cost tracking (matches C# ApplicationEngine)
     // gas_calculator: GasCalculator, // Removed - no C# counterpart
+
+    /// Optional interop service used for handling syscalls
+    interop_service: Option<InteropService>,
+
+    /// Host responsible for advanced syscall execution (ApplicationEngine)
+    interop_host: Option<*mut dyn InteropHost>,
+
+    /// Effective call flags for the current execution context
+    call_flags: CallFlags,
 
     /// The invocation stack of the VM
     invocation_stack: Vec<ExecutionContext>,
@@ -72,6 +85,9 @@ impl ExecutionEngine {
             limits,
             reference_counter: reference_counter.clone(),
             // gas_calculator: GasCalculator::new(1_000_000_000, 30), // Removed - no C# counterpart and fee factor
+            interop_service: Some(InteropService::new()),
+            interop_host: None,
+            call_flags: CallFlags::ALL,
             invocation_stack: Vec::new(),
             result_stack: EvaluationStack::new(reference_counter),
             uncaught_exception: None,
@@ -177,11 +193,59 @@ impl ExecutionEngine {
         }
     }
 
-    /// Gets the interop service for this engine.
-    /// Returns None for base ExecutionEngine (ApplicationEngine overrides this).
-    /// This matches C# ExecutionEngine.InteropService behavior exactly.
-    pub fn interop_service(&self) -> Option<&dyn crate::interop_service::InteropServiceTrait> {
-        None
+    /// Sets the interop service used for syscall dispatch.
+    pub fn set_interop_service(&mut self, service: InteropService) {
+        self.interop_service = Some(service);
+    }
+
+    /// Clears the currently assigned interop service.
+    pub fn clear_interop_service(&mut self) {
+        self.interop_service = None;
+    }
+
+    /// Returns a reference to the configured interop service, if any.
+    pub fn interop_service(&self) -> Option<&InteropService> {
+        self.interop_service.as_ref()
+    }
+
+    /// Returns a mutable reference to the configured interop service, if any.
+    pub fn interop_service_mut(&mut self) -> Option<&mut InteropService> {
+        self.interop_service.as_mut()
+    }
+
+    /// Assigns the host responsible for advanced interop handling.
+    pub fn set_interop_host(&mut self, host: *mut dyn InteropHost) {
+        self.interop_host = Some(host);
+    }
+
+    /// Clears the registered interop host.
+    pub fn clear_interop_host(&mut self) {
+        self.interop_host = None;
+    }
+
+    /// Returns a mutable reference to the configured interop host, if any.
+    pub fn interop_host_mut(&mut self) -> Option<&mut dyn InteropHost> {
+        self.interop_host.map(|ptr| unsafe { &mut *ptr })
+    }
+
+    /// Returns the raw pointer to the configured interop host, if any.
+    pub fn interop_host_ptr(&self) -> Option<*mut dyn InteropHost> {
+        self.interop_host
+    }
+
+    /// Returns the effective call flags for this engine.
+    pub fn call_flags(&self) -> CallFlags {
+        self.call_flags
+    }
+
+    /// Sets the effective call flags for this engine.
+    pub fn set_call_flags(&mut self, flags: CallFlags) {
+        self.call_flags = flags;
+    }
+
+    /// Checks whether the required call flags are satisfied.
+    pub fn has_call_flags(&self, required: CallFlags) -> bool {
+        required.is_empty() || self.call_flags.contains(required)
     }
 
     /// Returns the jump table.
@@ -221,6 +285,11 @@ impl ExecutionEngine {
             return Ok(());
         }
 
+        if self.invocation_stack.is_empty() {
+            self.set_state(VMState::HALT);
+            return Ok(());
+        }
+
         self.is_jumping = false;
 
         // Get the current context
@@ -242,7 +311,7 @@ impl ExecutionEngine {
                 if rvcount == -1 {
                     // Return all items
                     for i in 0..eval_stack_len {
-                        if let Ok(item) = context.evaluation_stack().peek(i as isize) {
+                        if let Ok(item) = context.evaluation_stack().peek(i) {
                             items.push(item.clone());
                         }
                     }
@@ -250,7 +319,7 @@ impl ExecutionEngine {
                     // Return specific number of items
                     let count = (rvcount as usize).min(eval_stack_len);
                     for i in 0..count {
-                        if let Ok(item) = context.evaluation_stack().peek(i as isize) {
+                        if let Ok(item) = context.evaluation_stack().peek(i) {
                             items.push(item.clone());
                         }
                     }
@@ -361,18 +430,23 @@ impl ExecutionEngine {
         let jump_table = std::mem::take(&mut self.jump_table);
         let result = jump_table.execute(self, &instruction);
 
-        if let Err(err) = result {
-            if self.limits.catch_engine_exceptions {
-                // Execute the throw operation
-                let throw_result = jump_table.execute_throw(self, &err.to_string());
+        match result {
+            Ok(()) => {
                 self.jump_table = jump_table;
-                throw_result?;
-            } else {
+            }
+            Err(err) => {
+                if self.limits.catch_engine_exceptions {
+                    if let VmError::CatchableException { message } = &err {
+                        self.jump_table = jump_table;
+                        let exception = StackItem::from_byte_string(message.clone().into_bytes());
+                        self.execute_throw(Some(exception))?;
+                        return Ok(());
+                    }
+                }
+
                 self.jump_table = jump_table;
                 return Err(err);
             }
-        } else {
-            self.jump_table = jump_table;
         }
 
         self.post_execute_instruction(&instruction)?;
@@ -388,7 +462,7 @@ impl ExecutionEngine {
     }
 
     /// Called before executing an instruction.
-    fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
+    fn pre_execute_instruction(&mut self, _instruction: &Instruction) -> VmResult<()> {
         // Consume gas for instruction execution (disabled - no C# counterpart)
         // if let Err(gas_error) = self.gas_calculator.consume_gas(instruction.opcode()) {
         //     return Err(VmError::invalid_operation_msg(format!(
@@ -411,7 +485,7 @@ impl ExecutionEngine {
         // Update stack depth metrics
         if let Ok(metrics) = std::env::var("NEO_VM_METRICS") {
             if metrics == "1" {
-                let depth = if let Some(context) = self.current_context() {
+                let _depth = if let Some(context) = self.current_context() {
                     context.evaluation_stack().len()
                 } else {
                     0
@@ -468,6 +542,14 @@ impl ExecutionEngine {
 
         if let Some(arguments) = context.arguments_mut() {
             arguments.clear_references();
+        }
+
+        if let Some(host_ptr) = self.interop_host {
+            // SAFETY: The host pointer is managed by the caller and guaranteed to remain valid
+            // while the execution engine lives. We only borrow it mutably here for the duration
+            // of this callback.
+            let host = unsafe { &mut *host_ptr };
+            host.on_context_unloaded(self, context)?;
         }
 
         Ok(())
@@ -527,7 +609,7 @@ impl ExecutionEngine {
     }
 
     /// Returns the item at the specified index from the top of the current stack without removing it.
-    pub fn peek(&self, index: isize) -> VmResult<&StackItem> {
+    pub fn peek(&self, index: usize) -> VmResult<&StackItem> {
         let context = self
             .current_context()
             .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
@@ -553,7 +635,7 @@ impl ExecutionEngine {
 
     /// Adds gas consumed (integrated with gas calculator)
     /// ApplicationEngine overrides this with additional gas tracking
-    pub fn add_gas_consumed(&mut self, gas: i64) -> VmResult<()> {
+    pub fn add_gas_consumed(&mut self, _gas: i64) -> VmResult<()> {
         // Gas tracking disabled - no C# counterpart
         // if let Err(gas_error) = self.gas_calculator.add_gas(gas) {
         //     return Err(VmError::invalid_operation_msg(format!(
@@ -562,6 +644,332 @@ impl ExecutionEngine {
         //     )));
         // }
         Ok(())
+    }
+
+    pub fn execute_jump(&mut self, position: i32) -> VmResult<()> {
+        let script_len = self
+            .current_context()
+            .map(|ctx| ctx.script().len())
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+
+        if position < 0 || (position as usize) >= script_len {
+            return Err(VmError::InvalidJump(position));
+        }
+
+        let context = self
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        context.set_instruction_pointer(position as usize);
+        self.is_jumping = true;
+        Ok(())
+    }
+
+    pub fn execute_jump_offset(&mut self, offset: i32) -> VmResult<()> {
+        let current_ip = self
+            .current_context()
+            .map(|ctx| ctx.instruction_pointer())
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+
+        let new_position = (current_ip as i64)
+            .checked_add(offset as i64)
+            .ok_or_else(|| VmError::InvalidJump(offset))?;
+
+        if new_position < 0 || new_position > i32::MAX as i64 {
+            return Err(VmError::InvalidJump(offset));
+        }
+
+        self.execute_jump(new_position as i32)
+    }
+
+    pub fn execute_call(&mut self, position: usize) -> VmResult<()> {
+        let context = self
+            .current_context()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+        if position >= context.script().len() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Call target out of range: {position}"
+            )));
+        }
+
+        let new_context = context.clone_with_position(position);
+        self.load_context(new_context)?;
+        self.is_jumping = true;
+
+        Ok(())
+    }
+
+    /// Handles system calls. Delegates to the configured interop service when available.
+    pub fn on_syscall(&mut self, descriptor: u32) -> VmResult<()> {
+        if self.interop_service.is_none() {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Syscall {descriptor} not supported"
+            )));
+        }
+
+        let mut service = self
+            .interop_service
+            .take()
+            .expect("interop service should exist");
+        let result = service.invoke_by_hash(self, descriptor);
+        self.interop_service = Some(service);
+        result
+    }
+    /// Executes a try block
+    pub fn execute_try(&mut self, catch_offset: i32, finally_offset: i32) -> VmResult<()> {
+        use crate::exception_handling_context::ExceptionHandlingContext;
+
+        if catch_offset == 0 && finally_offset == 0 {
+            return Err(VmError::invalid_operation_msg(
+                "Both catch and finally offsets cannot be 0",
+            ));
+        }
+
+        let max_try_nesting = self.limits.max_try_nesting_depth as usize;
+
+        let context = self
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+
+        if context.try_stack_len() >= max_try_nesting {
+            return Err(VmError::MaxTryNestingDepthExceeded);
+        }
+
+        let base_ip = i32::try_from(context.instruction_pointer()).map_err(|_| {
+            VmError::invalid_operation_msg("Instruction pointer exceeds 32-bit range")
+        })?;
+
+        let catch_pointer = if catch_offset == 0 {
+            -1
+        } else {
+            base_ip
+                .checked_add(catch_offset)
+                .ok_or_else(|| VmError::InvalidJump(catch_offset))?
+        };
+
+        let finally_pointer = if finally_offset == 0 {
+            -1
+        } else {
+            base_ip
+                .checked_add(finally_offset)
+                .ok_or_else(|| VmError::InvalidJump(finally_offset))?
+        };
+
+        context.push_try_context(ExceptionHandlingContext::new(
+            catch_pointer,
+            finally_pointer,
+        ));
+
+        Ok(())
+    }
+
+    /// Executes an end try operation
+    pub fn execute_end_try(&mut self, end_offset: i32) -> VmResult<()> {
+        use crate::exception_handling_state::ExceptionHandlingState;
+
+        let context = self
+            .current_context_mut()
+            .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+
+        if !context.has_try_context() {
+            return Err(VmError::invalid_operation_msg("No try context"));
+        }
+
+        let current_try_snapshot = context
+            .try_stack_last()
+            .cloned()
+            .expect("try stack should not be empty");
+
+        let base_ip = i32::try_from(context.instruction_pointer()).map_err(|_| {
+            VmError::invalid_operation_msg("Instruction pointer exceeds 32-bit range")
+        })?;
+
+        if current_try_snapshot.state() == ExceptionHandlingState::Finally {
+            context.pop_try_context();
+            let end_pointer = base_ip
+                .checked_add(end_offset)
+                .ok_or_else(|| VmError::InvalidJump(end_offset))?;
+            let end_position =
+                usize::try_from(end_pointer).map_err(|_| VmError::InvalidJump(end_pointer))?;
+            context.set_instruction_pointer(end_position);
+        } else if current_try_snapshot.has_finally() {
+            let try_entry = context
+                .try_stack_last_mut()
+                .expect("try stack should not be empty");
+            try_entry.set_state(ExceptionHandlingState::Finally);
+
+            let end_pointer = base_ip
+                .checked_add(end_offset)
+                .ok_or_else(|| VmError::InvalidJump(end_offset))?;
+            try_entry.set_end_pointer(end_pointer);
+
+            let finally_pointer = try_entry.finally_pointer();
+            let finally_position = usize::try_from(finally_pointer)
+                .map_err(|_| VmError::InvalidJump(finally_pointer))?;
+            context.set_instruction_pointer(finally_position);
+        } else {
+            context.pop_try_context();
+            let end_pointer = base_ip
+                .checked_add(end_offset)
+                .ok_or_else(|| VmError::InvalidJump(end_offset))?;
+            let end_position =
+                usize::try_from(end_pointer).map_err(|_| VmError::InvalidJump(end_pointer))?;
+            context.set_instruction_pointer(end_position);
+        }
+
+        self.is_jumping = true;
+
+        Ok(())
+    }
+
+    /// Executes an end finally operation
+    pub fn execute_end_finally(&mut self) -> VmResult<()> {
+        use crate::exception_handling_state::ExceptionHandlingState;
+
+        let end_pointer = {
+            let context = self
+                .current_context_mut()
+                .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+
+            if !context.has_try_context() {
+                return Err(VmError::invalid_operation_msg("No try stack"));
+            }
+
+            let current_try_snapshot = context
+                .try_stack_last()
+                .expect("try stack should not be empty");
+
+            if current_try_snapshot.state() != ExceptionHandlingState::Finally {
+                return Err(VmError::invalid_operation_msg(
+                    "Invalid exception handling state",
+                ));
+            }
+
+            let end_pointer = current_try_snapshot.end_pointer();
+            context.pop_try_context();
+            end_pointer
+        };
+
+        if self.uncaught_exception.is_some() {
+            self.execute_throw(self.uncaught_exception.clone())?;
+        } else {
+            let end_position =
+                usize::try_from(end_pointer).map_err(|_| VmError::InvalidJump(end_pointer))?;
+            let context = self
+                .current_context_mut()
+                .ok_or_else(|| VmError::invalid_operation_msg("No current context"))?;
+            context.set_instruction_pointer(end_position);
+            self.is_jumping = true;
+        }
+
+        Ok(())
+    }
+
+    /// Executes a throw operation
+    pub fn execute_throw(&mut self, ex: Option<StackItem>) -> VmResult<()> {
+        use crate::exception_handling_state::ExceptionHandlingState;
+
+        self.uncaught_exception = ex;
+
+        let mut idx = self.invocation_stack.len();
+        while idx > 0 {
+            idx -= 1;
+
+            while self.invocation_stack.len() > idx + 1 {
+                if let Some(mut ctx) = self.invocation_stack.pop() {
+                    self.unload_context(&mut ctx)?;
+                }
+            }
+
+            if self.invocation_stack.is_empty() {
+                break;
+            }
+
+            if !self
+                .invocation_stack
+                .last()
+                .expect("context should exist")
+                .has_try_context()
+            {
+                if let Some(mut ctx) = self.invocation_stack.pop() {
+                    self.unload_context(&mut ctx)?;
+                }
+                continue;
+            }
+
+            loop {
+                let (state, has_finally, catch_pointer, finally_pointer) = {
+                    let context = self.invocation_stack.last().expect("context should exist");
+
+                    if let Some(try_context) = context.try_stack_last() {
+                        (
+                            try_context.state(),
+                            try_context.has_finally(),
+                            try_context.catch_pointer(),
+                            try_context.finally_pointer(),
+                        )
+                    } else {
+                        break;
+                    }
+                };
+
+                if state == ExceptionHandlingState::Finally
+                    || (state == ExceptionHandlingState::Catch && !has_finally)
+                {
+                    if let Some(context) = self.invocation_stack.last_mut() {
+                        context.pop_try_context();
+                    }
+                    continue;
+                }
+
+                if state == ExceptionHandlingState::Try && catch_pointer >= 0 {
+                    {
+                        let context = self
+                            .invocation_stack
+                            .last_mut()
+                            .expect("context should exist");
+                        let try_context = context
+                            .try_stack_last_mut()
+                            .expect("try context should exist");
+                        try_context.set_state(ExceptionHandlingState::Catch);
+                        if let Some(exception) = self.uncaught_exception.clone() {
+                            context.push(exception)?;
+                        }
+                        let catch_position = usize::try_from(catch_pointer)
+                            .map_err(|_| VmError::InvalidJump(catch_pointer))?;
+                        context.set_instruction_pointer(catch_position);
+                    }
+                    self.uncaught_exception = None;
+                    self.is_jumping = true;
+                    return Ok(());
+                }
+
+                {
+                    let context = self
+                        .invocation_stack
+                        .last_mut()
+                        .expect("context should exist");
+                    let try_context = context
+                        .try_stack_last_mut()
+                        .expect("try context should exist");
+                    try_context.set_state(ExceptionHandlingState::Finally);
+                    let finally_position = usize::try_from(finally_pointer)
+                        .map_err(|_| VmError::InvalidJump(finally_pointer))?;
+                    context.set_instruction_pointer(finally_position);
+                }
+                self.is_jumping = true;
+                return Ok(());
+            }
+
+            if let Some(mut ctx) = self.invocation_stack.pop() {
+                self.unload_context(&mut ctx)?;
+            }
+        }
+
+        if let Some(exception) = &self.uncaught_exception {
+            Err(VmError::UnhandledException(exception.clone()))
+        } else {
+            Ok(())
+        }
     }
 
     /// Gets gas consumed (disabled - no C# counterpart)
@@ -600,22 +1008,6 @@ impl ExecutionEngine {
         vec![0u8; HASH_SIZE]
     }
 
-    /// Attempts to cast this ExecutionEngine to an ApplicationEngine (immutable)
-    /// Returns None for base ExecutionEngine, Some for ApplicationEngine
-    pub fn as_application_engine(&self) -> Option<&crate::application_engine::ApplicationEngine> {
-        // Base ExecutionEngine cannot be cast to ApplicationEngine
-        None
-    }
-
-    /// Attempts to cast this ExecutionEngine to an ApplicationEngine (mutable)
-    /// Returns None for base ExecutionEngine, Some for ApplicationEngine
-    pub fn as_application_engine_mut(
-        &mut self,
-    ) -> Option<&mut crate::application_engine::ApplicationEngine> {
-        // Base ExecutionEngine cannot be cast to ApplicationEngine
-        None
-    }
-
     /// Gets the trigger type for this execution (stub implementation for base ExecutionEngine)
     /// ApplicationEngine overrides this with actual trigger type
     pub fn get_trigger_type(&self) -> u8 {
@@ -643,26 +1035,9 @@ impl ExecutionEngine {
         None
     }
 
-    /// Gets transaction by hash (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual blockchain access
-    pub fn get_transaction_by_hash(
-        &self,
-        _hash: &[u8],
-    ) -> Option<crate::jump_table::control::Transaction> {
-        // Base implementation returns None
-        None
-    }
-
     /// Gets current block hash (stub implementation for base ExecutionEngine)
     /// ApplicationEngine overrides this with actual blockchain access
     pub fn get_current_block_hash(&self) -> Option<Vec<u8>> {
-        // Base implementation returns None
-        None
-    }
-
-    /// Gets block by hash (stub implementation for base ExecutionEngine)
-    /// ApplicationEngine overrides this with actual blockchain access
-    pub fn get_block_by_hash(&self, _hash: &[u8]) -> Option<crate::jump_table::control::Block> {
         // Base implementation returns None
         None
     }
@@ -677,6 +1052,8 @@ impl ExecutionEngine {
 
 impl Drop for ExecutionEngine {
     fn drop(&mut self) {
+        // Clear host references to avoid dangling pointers
+        self.interop_host = None;
         // Clear the invocation stack
         self.invocation_stack.clear();
     }
