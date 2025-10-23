@@ -11,17 +11,32 @@
 
 use super::{
     i_inventory::IInventory, i_verifiable::IVerifiable, inventory_type::InventoryType,
-    signer::Signer, transaction_attribute::TransactionAttribute, witness::Witness,
+    signer::Signer, transaction_attribute::TransactionAttribute,
+    transaction_attribute_type::TransactionAttributeType, witness::Witness,
 };
+use crate::cryptography::crypto_utils::Secp256r1Crypto;
+use crate::hardfork::{is_hardfork_enabled, Hardfork};
 use crate::neo_crypto::sha256;
-use crate::neo_io::{MemoryReader, Serializable};
-use crate::neo_system::ProtocolSettings;
+use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::network::p2p::helper::Helper as P2PHelper;
 use crate::persistence::DataCache;
-use crate::{UInt160, UInt256};
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::call_flags::CallFlags;
+use crate::smart_contract::helper::Helper;
+use crate::smart_contract::native::{ContractManagement, LedgerContract, PolicyContract};
+use crate::smart_contract::trigger_type::TriggerType;
+use crate::smart_contract::{ContractBasicMethod, ContractParameterType, IInteroperable};
+use crate::wallets::helper::Helper as WalletHelper;
+use crate::{ledger::VerifyResult, CoreResult, UInt160, UInt256};
+use base64::{engine::general_purpose, Engine as _};
+use neo_vm::{op_code::OpCode, StackItem};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::io::{self, Write};
-use std::sync::Mutex;
+use std::any::Any;
+use std::collections::HashSet;
+use std::hash::{Hash as StdHash, Hasher};
+use std::sync::{Arc, Mutex};
 
 /// The maximum size of a transaction.
 pub const MAX_TRANSACTION_SIZE: usize = 102400;
@@ -32,27 +47,8 @@ pub const MAX_TRANSACTION_ATTRIBUTES: usize = 16;
 /// The size of a transaction header.
 pub const HEADER_SIZE: usize = 1 + 4 + 8 + 8 + 4; // Version + Nonce + SystemFee + NetworkFee + ValidUntilBlock
 
-/// Result of transaction verification.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VerifyResult {
-    Succeed,
-    AlreadyExists,
-    MemPoolFull,
-    AlreadyInPool,
-    InsufficientFunds,
-    UnableToVerify,
-    Invalid,
-    InvalidSignature,
-    OverSize,
-    Expired,
-    InvalidScript,
-    InvalidAttribute,
-    PolicyFail,
-    Unknown,
-}
-
 /// Represents a transaction.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Transaction {
     /// Version of the transaction format.
     version: u8,
@@ -86,9 +82,24 @@ pub struct Transaction {
 
     #[serde(skip)]
     _size: Mutex<Option<usize>>,
+}
 
-    #[serde(skip)]
-    _attributes_cache: Mutex<Option<HashMap<String, Vec<TransactionAttribute>>>>,
+impl Clone for Transaction {
+    fn clone(&self) -> Self {
+        Self {
+            version: self.version,
+            nonce: self.nonce,
+            system_fee: self.system_fee,
+            network_fee: self.network_fee,
+            valid_until_block: self.valid_until_block,
+            signers: self.signers.clone(),
+            attributes: self.attributes.clone(),
+            script: self.script.clone(),
+            witnesses: self.witnesses.clone(),
+            _hash: Mutex::new(None),
+            _size: Mutex::new(None),
+        }
+    }
 }
 
 impl Transaction {
@@ -106,7 +117,6 @@ impl Transaction {
             witnesses: Vec::new(),
             _hash: Mutex::new(None),
             _size: Mutex::new(None),
-            _attributes_cache: Mutex::new(None),
         }
     }
 
@@ -177,6 +187,13 @@ impl Transaction {
         *self._size.lock().unwrap() = None;
     }
 
+    /// Adds a signer to the transaction.
+    pub fn add_signer(&mut self, signer: Signer) {
+        self.signers.push(signer);
+        *self._hash.lock().unwrap() = None;
+        *self._size.lock().unwrap() = None;
+    }
+
     /// Gets the attributes of the transaction.
     pub fn attributes(&self) -> &[TransactionAttribute] {
         &self.attributes
@@ -185,7 +202,13 @@ impl Transaction {
     /// Sets the attributes of the transaction.
     pub fn set_attributes(&mut self, attributes: Vec<TransactionAttribute>) {
         self.attributes = attributes;
-        *self._attributes_cache.lock().unwrap() = None;
+        *self._hash.lock().unwrap() = None;
+        *self._size.lock().unwrap() = None;
+    }
+
+    /// Adds a single attribute to the transaction.
+    pub fn add_attribute(&mut self, attribute: TransactionAttribute) {
+        self.attributes.push(attribute);
         *self._hash.lock().unwrap() = None;
         *self._size.lock().unwrap() = None;
     }
@@ -213,6 +236,38 @@ impl Transaction {
         *self._size.lock().unwrap() = None;
     }
 
+    /// Adds a witness to the transaction.
+    pub fn add_witness(&mut self, witness: Witness) {
+        self.witnesses.push(witness);
+        *self._size.lock().unwrap() = None;
+    }
+
+    /// Returns the transaction hash (C# compatibility helper).
+    pub fn get_hash(&self) -> UInt256 {
+        self.hash()
+    }
+
+    /// Returns the unsigned serialization used for hashing.
+    pub fn get_hash_data(&self) -> Vec<u8> {
+        let mut writer = BinaryWriter::new();
+        Self::serialize_unsigned(self, &mut writer)
+            .expect("failed to serialize transaction unsigned data");
+        writer.into_bytes()
+    }
+
+    /// Serializes the transaction into bytes.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut writer = BinaryWriter::new();
+        <Self as Serializable>::serialize(self, &mut writer).expect("transaction serialization");
+        writer.into_bytes()
+    }
+
+    /// Deserializes a transaction from bytes.
+    pub fn from_bytes(bytes: &[u8]) -> IoResult<Self> {
+        let mut reader = MemoryReader::new(bytes);
+        <Self as Serializable>::deserialize(&mut reader)
+    }
+
     /// Gets the hash of the transaction.
     pub fn hash(&self) -> UInt256 {
         let mut hash_guard = self._hash.lock().unwrap();
@@ -221,17 +276,18 @@ impl Transaction {
         }
 
         // Calculate hash from serialized unsigned data
-        let mut data = Vec::new();
-        self.serialize_unsigned(&mut data).unwrap();
-        let hash = UInt256::from(sha256(&data));
+        let mut writer = BinaryWriter::new();
+        self.serialize_unsigned(&mut writer)
+            .expect("transaction serialization should not fail");
+        let hash = UInt256::from(sha256(&writer.into_bytes()));
         *hash_guard = Some(hash);
         hash
     }
 
     /// Gets the sender (first signer) of the transaction.
     /// The sender will pay the fees of the transaction.
-    pub fn sender(&self) -> UInt160 {
-        self.signers[0].account
+    pub fn sender(&self) -> Option<UInt160> {
+        self.signers.first().map(|s| s.account)
     }
 
     /// Gets the fee per byte.
@@ -244,91 +300,81 @@ impl Transaction {
         }
     }
 
-    /// Gets the attribute of the specified type.
-    pub fn get_attribute<T: 'static>(&self) -> Option<&TransactionAttribute> {
-        self.get_attributes::<T>().first().map(|a| *a)
+    /// Gets the first attribute of the specified type.
+    pub fn get_attribute(
+        &self,
+        attr_type: TransactionAttributeType,
+    ) -> Option<&TransactionAttribute> {
+        self.attributes
+            .iter()
+            .find(|attr| attr.get_type() == attr_type)
     }
 
     /// Gets all attributes of the specified type.
-    pub fn get_attributes<T: 'static>(&self) -> Vec<&TransactionAttribute> {
-        let mut cache_guard = self._attributes_cache.lock().unwrap();
-
-        if cache_guard.is_none() {
-            let mut cache = HashMap::new();
-            for attr in &self.attributes {
-                let type_name = std::any::type_name::<T>().to_string();
-                cache
-                    .entry(type_name.clone())
-                    .or_insert_with(Vec::new)
-                    .push(attr.clone());
-            }
-            *cache_guard = Some(cache);
-        }
-
-        if let Some(cache) = cache_guard.as_ref() {
-            let type_name = std::any::type_name::<T>().to_string();
-            if let Some(attrs) = cache.get(&type_name) {
-                return attrs.iter().collect();
-            }
-        }
-
-        Vec::new()
+    pub fn get_attributes(
+        &self,
+        attr_type: TransactionAttributeType,
+    ) -> Vec<&TransactionAttribute> {
+        self.attributes
+            .iter()
+            .filter(|attr| attr.get_type() == attr_type)
+            .collect()
     }
 
     /// Serialize without witnesses.
-    pub fn serialize_unsigned(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&[self.version])?;
-        writer.write_all(&self.nonce.to_le_bytes())?;
-        writer.write_all(&self.system_fee.to_le_bytes())?;
-        writer.write_all(&self.network_fee.to_le_bytes())?;
-        writer.write_all(&self.valid_until_block.to_le_bytes())?;
+    pub fn serialize_unsigned(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u8(self.version)?;
+        writer.write_u32(self.nonce)?;
+        writer.write_i64(self.system_fee)?;
+        writer.write_i64(self.network_fee)?;
+        writer.write_u32(self.valid_until_block)?;
 
         // Write signers
-        writer.write_all(&[self.signers.len() as u8])?;
+        writer.write_var_uint(self.signers.len() as u64)?;
         for signer in &self.signers {
-            signer.serialize(writer)?;
+            writer.write_serializable(signer)?;
         }
 
         // Write attributes
-        writer.write_all(&[self.attributes.len() as u8])?;
+        writer.write_var_uint(self.attributes.len() as u64)?;
         for attr in &self.attributes {
-            attr.serialize(writer)?;
+            writer.write_serializable(attr)?;
         }
 
-        // Write script
-        writer.write_all(&(self.script.len() as u16).to_le_bytes())?;
-        writer.write_all(&self.script)?;
+        if self.script.len() > u16::MAX as usize {
+            return Err(IoError::invalid_data(
+                "Transaction script exceeds maximum length",
+            ));
+        }
+        writer.write_var_bytes(&self.script)?;
 
         Ok(())
     }
 
     /// Deserialize unsigned transaction data.
-    pub fn deserialize_unsigned(reader: &mut MemoryReader) -> Result<Self, String> {
-        let version = reader.read_u8().map_err(|e| e.to_string())?;
+    pub fn deserialize_unsigned(reader: &mut MemoryReader) -> IoResult<Self> {
+        let version = reader.read_u8()?;
         if version > 0 {
-            return Err(format!("Invalid version: {}", version));
+            return Err(IoError::invalid_data("Invalid transaction version"));
         }
 
-        let nonce = reader.read_u32().map_err(|e| e.to_string())?;
+        let nonce = reader.read_u32()?;
 
-        let system_fee = reader.read_i64().map_err(|e| e.to_string())?;
+        let system_fee = reader.read_i64()?;
         if system_fee < 0 {
-            return Err(format!("Invalid system fee: {}", system_fee));
+            return Err(IoError::invalid_data("Invalid system fee"));
         }
 
-        let network_fee = reader.read_i64().map_err(|e| e.to_string())?;
+        let network_fee = reader.read_i64()?;
         if network_fee < 0 {
-            return Err(format!("Invalid network fee: {}", network_fee));
+            return Err(IoError::invalid_data("Invalid network fee"));
         }
 
         if system_fee + network_fee < system_fee {
-            return Err(format!(
-                "Invalid fee: {} + {} < {}",
-                system_fee, network_fee, system_fee
-            ));
+            return Err(IoError::invalid_data("Invalid combined fee"));
         }
 
-        let valid_until_block = reader.read_u32().map_err(|e| e.to_string())?;
+        let valid_until_block = reader.read_u32()?;
 
         // Read signers
         let signers = Self::deserialize_signers(reader, MAX_TRANSACTION_ATTRIBUTES)?;
@@ -338,13 +384,10 @@ impl Transaction {
             Self::deserialize_attributes(reader, MAX_TRANSACTION_ATTRIBUTES - signers.len())?;
 
         // Read script
-        let script_length = reader.read_var_int(65535).map_err(|e| e.to_string())?;
-        if script_length == 0 {
-            return Err("Script length cannot be zero".to_string());
+        let script = reader.read_var_bytes(u16::MAX as usize)?;
+        if script.is_empty() {
+            return Err(IoError::invalid_data("Script length cannot be zero"));
         }
-        let script = reader
-            .read_bytes(script_length as usize)
-            .map_err(|e| e.to_string())?;
 
         Ok(Self {
             version,
@@ -358,29 +401,25 @@ impl Transaction {
             witnesses: Vec::new(),
             _hash: Mutex::new(None),
             _size: Mutex::new(None),
-            _attributes_cache: Mutex::new(None),
         })
     }
 
-    fn deserialize_signers(
-        reader: &mut MemoryReader,
-        max_count: usize,
-    ) -> Result<Vec<Signer>, String> {
-        let count = reader.read_var_int(256).map_err(|e| e.to_string())? as usize;
+    fn deserialize_signers(reader: &mut MemoryReader, max_count: usize) -> IoResult<Vec<Signer>> {
+        let count = reader.read_var_int(max_count as u64)? as usize;
         if count == 0 {
-            return Err("Signer count cannot be zero".to_string());
+            return Err(IoError::invalid_data("Signer count cannot be zero"));
         }
         if count > max_count {
-            return Err("Too many signers".to_string());
+            return Err(IoError::invalid_data("Too many signers"));
         }
 
         let mut signers = Vec::with_capacity(count);
         let mut hashset = HashSet::new();
 
         for _ in 0..count {
-            let signer = Signer::deserialize(reader)?;
+            let signer = <Signer as Serializable>::deserialize(reader)?;
             if !hashset.insert(signer.account) {
-                return Err("Duplicate signer".to_string());
+                return Err(IoError::invalid_data("Duplicate signer"));
             }
             signers.push(signer);
         }
@@ -391,19 +430,19 @@ impl Transaction {
     fn deserialize_attributes(
         reader: &mut MemoryReader,
         max_count: usize,
-    ) -> Result<Vec<TransactionAttribute>, String> {
-        let count = reader.read_var_int(256).map_err(|e| e.to_string())? as usize;
+    ) -> IoResult<Vec<TransactionAttribute>> {
+        let count = reader.read_var_int(max_count as u64)? as usize;
         if count > max_count {
-            return Err("Too many attributes".to_string());
+            return Err(IoError::invalid_data("Too many attributes"));
         }
 
         let mut attributes = Vec::with_capacity(count);
         let mut hashset = HashSet::new();
 
         for _ in 0..count {
-            let attribute = TransactionAttribute::deserialize(reader)?;
+            let attribute = <TransactionAttribute as Serializable>::deserialize(reader)?;
             if !attribute.allow_multiple() && !hashset.insert(attribute.get_type()) {
-                return Err("Duplicate attribute".to_string());
+                return Err(IoError::invalid_data("Duplicate attribute"));
             }
             attributes.push(attribute);
         }
@@ -413,21 +452,63 @@ impl Transaction {
 
     /// Converts the transaction to a JSON object.
     pub fn to_json(&self, settings: &ProtocolSettings) -> serde_json::Value {
-        // TODO: Implement to_address and to_json methods for complete JSON conversion
-        serde_json::json!({
-            "hash": self.hash().to_string(),
-            "size": self.size(),
-            "version": self.version,
-            "nonce": self.nonce,
-            "sender": format!("0x{}", hex::encode(self.sender().to_array())),
-            "sysfee": self.system_fee.to_string(),
-            "netfee": self.network_fee.to_string(),
-            "validuntilblock": self.valid_until_block,
-            "signers": self.signers.len(), // TODO: map to JSON when to_json is available
-            "attributes": self.attributes.len(), // TODO: map to JSON when to_json is available
-            "script": hex::encode(&self.script),
-            "witnesses": self.witnesses.len(), // TODO: map to JSON when to_json is available
-        })
+        let mut json = serde_json::Map::new();
+
+        json.insert(
+            "hash".to_string(),
+            serde_json::json!(self.hash().to_string()),
+        );
+        json.insert("size".to_string(), serde_json::json!(self.size()));
+        json.insert("version".to_string(), serde_json::json!(self.version));
+        json.insert("nonce".to_string(), serde_json::json!(self.nonce));
+
+        let sender_value = self
+            .sender()
+            .map(|account| WalletHelper::to_address(&account, settings.address_version));
+        json.insert(
+            "sender".to_string(),
+            sender_value
+                .map(serde_json::Value::String)
+                .unwrap_or(serde_json::Value::Null),
+        );
+
+        json.insert(
+            "sysfee".to_string(),
+            serde_json::json!(self.system_fee.to_string()),
+        );
+        json.insert(
+            "netfee".to_string(),
+            serde_json::json!(self.network_fee.to_string()),
+        );
+        json.insert(
+            "validuntilblock".to_string(),
+            serde_json::json!(self.valid_until_block),
+        );
+
+        let signers_json: Vec<_> = self.signers.iter().map(|s| s.to_json()).collect();
+        json.insert(
+            "signers".to_string(),
+            serde_json::Value::Array(signers_json),
+        );
+
+        let attributes_json: Vec<_> = self.attributes.iter().map(|a| a.to_json()).collect();
+        json.insert(
+            "attributes".to_string(),
+            serde_json::Value::Array(attributes_json),
+        );
+
+        json.insert(
+            "script".to_string(),
+            serde_json::json!(general_purpose::STANDARD.encode(&self.script)),
+        );
+
+        let witnesses_json: Vec<_> = self.witnesses.iter().map(|w| w.to_json()).collect();
+        json.insert(
+            "witnesses".to_string(),
+            serde_json::Value::Array(witnesses_json),
+        );
+
+        serde_json::Value::Object(json)
     }
 
     /// Verifies the transaction.
@@ -453,46 +534,45 @@ impl Transaction {
         context: Option<&crate::ledger::TransactionVerificationContext>,
         conflicts_list: &[Transaction],
     ) -> VerifyResult {
-        // TODO: Import NativeContract when available
-        // use crate::smart_contract::native::NativeContract;
-
-        // TODO: Get current block height from ledger
-        let height = 0u32; // NativeContract::ledger().current_index(snapshot);
-        if self.valid_until_block <= height || self.valid_until_block > height + 2102400 {
-            // Default max increment
+        let ledger = LedgerContract::new();
+        let policy = PolicyContract::new();
+        let height = ledger.current_index(snapshot).unwrap_or(0);
+        let max_increment = policy
+            .get_max_valid_until_block_increment_snapshot(snapshot, settings)
+            .unwrap_or(settings.max_valid_until_block_increment);
+        if self.valid_until_block <= height || self.valid_until_block > height + max_increment {
             return VerifyResult::Expired;
         }
 
         let hashes = self.get_script_hashes_for_verifying(snapshot);
-        // TODO: Check blocked accounts when Policy contract is available
-        // for hash in &hashes {
-        //     if NativeContract::policy().is_blocked(snapshot, hash) {
-        //         return VerifyResult::PolicyFail;
-        //     }
-        // }
+        for hash in &hashes {
+            if policy.is_blocked_snapshot(snapshot, hash).unwrap_or(false) {
+                return VerifyResult::PolicyFail;
+            }
+        }
 
         if let Some(ctx) = context {
-            // TODO: Fix when check_transaction is properly implemented
-            // if !ctx.check_transaction(self, conflicts_list, snapshot, settings) {
-            //     return VerifyResult::InsufficientFunds;
-            // }
+            if !ctx.check_transaction(self, conflicts_list.iter(), snapshot) {
+                return VerifyResult::InsufficientFunds;
+            }
         }
 
         let mut attributes_fee = 0i64;
-        // TODO: Implement attribute verification when methods are available
-        // for attribute in &self.attributes {
-        //     if attribute.get_type() == TransactionAttributeType::NotaryAssisted &&
-        //        !settings.is_hardfork_enabled(Hardfork::HF_Echidna, height) {
-        //         return VerifyResult::InvalidAttribute;
-        //     }
-        //     if !attribute.verify(snapshot, self) {
-        //         return VerifyResult::InvalidAttribute;
-        //     }
-        //     attributes_fee += attribute.calculate_network_fee(snapshot, self);
-        // }
+        for attribute in &self.attributes {
+            if attribute.get_type() == TransactionAttributeType::NotaryAssisted
+                && !is_hardfork_enabled(Hardfork::HfEchidna, height)
+            {
+                return VerifyResult::InvalidAttribute;
+            }
+            if !attribute.verify(settings, snapshot, self) {
+                return VerifyResult::InvalidAttribute;
+            }
+            attributes_fee += attribute.calculate_network_fee(snapshot, self);
+        }
 
-        // TODO: Get fee per byte from Policy contract
-        let fee_per_byte = 1000i64; // Default fee per byte
+        let fee_per_byte = policy
+            .get_fee_per_byte_snapshot(snapshot)
+            .unwrap_or(PolicyContract::DEFAULT_FEE_PER_BYTE as i64);
         let mut net_fee_datoshi =
             self.network_fee - (self.size() as i64 * fee_per_byte) - attributes_fee;
 
@@ -500,28 +580,106 @@ impl Transaction {
             return VerifyResult::InsufficientFunds;
         }
 
-        const MAX_VERIFICATION_GAS: i64 = 1_00000000;
-        if net_fee_datoshi > MAX_VERIFICATION_GAS {
-            net_fee_datoshi = MAX_VERIFICATION_GAS;
+        let max_verification_gas = Helper::MAX_VERIFICATION_GAS;
+        if net_fee_datoshi > max_verification_gas {
+            net_fee_datoshi = max_verification_gas;
         }
 
-        // TODO: Get exec fee factor from Policy contract
-        let exec_fee_factor = 30u32; // Default exec fee factor
+        let exec_fee_factor = policy
+            .get_exec_fee_factor_snapshot(snapshot)
+            .unwrap_or(PolicyContract::DEFAULT_EXEC_FEE_FACTOR)
+            as i64;
+
+        let sign_data = self.get_sign_data(settings.network);
 
         for (i, hash) in hashes.iter().enumerate() {
             let witness = &self.witnesses[i];
 
-            // TODO: Implement witness verification with Helper methods
-            // if Helper::is_signature_contract(&witness.verification_script) {
-            //     if let Some(_sig) = Helper::is_single_signature_invocation_script(&witness.invocation_script) {
-            //         net_fee_datoshi -= exec_fee_factor as i64 * Helper::signature_contract_cost();
-            //     }
-            // } else if let Some((m, n)) = Helper::is_multi_sig_contract(&witness.verification_script) {
-            //     if Helper::is_multi_signature_invocation_script(m, &witness.invocation_script).is_some() {
-            //         net_fee_datoshi -= exec_fee_factor as i64 * Helper::multi_signature_contract_cost(m, n);
-            //     }
-            // } else {
+            if let Some(public_key) =
+                Self::parse_single_signature_contract(&witness.verification_script)
             {
+                if witness.script_hash() != *hash {
+                    return VerifyResult::Invalid;
+                }
+
+                let Some(signature) =
+                    Self::parse_single_signature_invocation(&witness.invocation_script)
+                else {
+                    return VerifyResult::Invalid;
+                };
+
+                let mut signature_bytes = [0u8; 64];
+                signature_bytes.copy_from_slice(signature);
+
+                let verified =
+                    match Secp256r1Crypto::verify(&sign_data, &signature_bytes, public_key) {
+                        Ok(result) => result,
+                        Err(_) => return VerifyResult::Invalid,
+                    };
+
+                if !verified {
+                    return VerifyResult::InvalidSignature;
+                }
+
+                net_fee_datoshi -= exec_fee_factor * Helper::signature_contract_cost();
+            } else if let Some((m, public_keys)) =
+                Helper::parse_multi_sig_contract(&witness.verification_script)
+            {
+                let Some(signatures) =
+                    Helper::parse_multi_sig_invocation(&witness.invocation_script, m)
+                else {
+                    return VerifyResult::Invalid;
+                };
+
+                if witness.script_hash() != *hash {
+                    return VerifyResult::Invalid;
+                }
+
+                if public_keys.is_empty() || signatures.len() != m {
+                    return VerifyResult::Invalid;
+                }
+
+                let total_keys = public_keys.len();
+                let mut sig_index = 0usize;
+                let mut key_index = 0usize;
+
+                while sig_index < m && key_index < total_keys {
+                    let signature = &signatures[sig_index];
+                    if signature.len() != 64 {
+                        return VerifyResult::Invalid;
+                    }
+
+                    let mut signature_bytes = [0u8; 64];
+                    signature_bytes.copy_from_slice(signature);
+
+                    let verified = match Secp256r1Crypto::verify(
+                        &sign_data,
+                        &signature_bytes,
+                        &public_keys[key_index],
+                    ) {
+                        Ok(result) => result,
+                        Err(_) => return VerifyResult::Invalid,
+                    };
+
+                    if verified {
+                        sig_index += 1;
+                    }
+
+                    key_index += 1;
+
+                    if m.saturating_sub(sig_index) > total_keys.saturating_sub(key_index) {
+                        return VerifyResult::InvalidSignature;
+                    }
+                }
+
+                if sig_index != m {
+                    return VerifyResult::InvalidSignature;
+                }
+
+                let n = public_keys.len() as i32;
+                net_fee_datoshi -=
+                    exec_fee_factor * Helper::multi_signature_contract_cost(m as i32, n);
+            } else {
                 let mut fee = 0i64;
                 if !self.verify_witness(
                     settings,
@@ -550,54 +708,97 @@ impl Transaction {
             return VerifyResult::OverSize;
         }
 
-        // TODO: Verify script validity when VM Script is available
-        // match crate::vm::Script::new(&self.script, true) {
-        //     Ok(_) => {},
-        //     Err(_) => return VerifyResult::InvalidScript,
-        // }
+        if neo_vm::Script::new(self.script.clone(), true).is_err() {
+            return VerifyResult::InvalidScript;
+        }
 
-        // TODO: Fix when get_script_hashes_for_verifying is properly implemented
-        let hashes = self.signers.iter().map(|s| s.account).collect::<Vec<_>>();
+        let hashes = self.get_script_hashes_for_verifying(&DataCache::new(true));
+        if hashes.len() != self.witnesses.len() {
+            return VerifyResult::Invalid;
+        }
+
+        let sign_data = self.get_sign_data(settings.network);
+
         for (i, hash) in hashes.iter().enumerate() {
             let witness = &self.witnesses[i];
 
-            // TODO: Implement signature verification when Helper methods are available
-            // if Helper::is_signature_contract(&witness.verification_script) {
-            //     if let Some(signature) = Helper::is_single_signature_invocation_script(&witness.invocation_script) {
-            //         if *hash != witness.script_hash() {
-            //             return VerifyResult::Invalid;
-            //         }
-            //
-            //         let pubkey = &witness.verification_script[2..35];
-            //         let message = self.get_sign_data(settings.network);
-            //
-            //         if !neo_crypto::verify_signature(&message, &signature, pubkey, neo_crypto::ECCurve::Secp256r1) {
-            //             return VerifyResult::InvalidSignature;
-            //         }
-            //     }
-            // } else if let Some((m, points)) = Helper::is_multi_sig_contract_with_points(&witness.verification_script) {
-            //     if let Some(signatures) = Helper::is_multi_signature_invocation_script(m, &witness.invocation_script) {
-            //         if *hash != witness.script_hash() {
-            //             return VerifyResult::Invalid;
-            //         }
-            //
-            //         let n = points.len();
-            //         let message = self.get_sign_data(settings.network);
-            //
-            //         let mut x = 0;
-            //         let mut y = 0;
-            //         while x < m && y < n {
-            //             if neo_crypto::verify_signature(&message, &signatures[x], &points[y], neo_crypto::ECCurve::Secp256r1) {
-            //                 x += 1;
-            //             }
-            //             y += 1;
-            //
-            //             if m - x > n - y {
-            //                 return VerifyResult::InvalidSignature;
-            //             }
-            //         }
-            //     }
-            // }
+            if witness.script_hash() != *hash {
+                return VerifyResult::Invalid;
+            }
+
+            if Helper::is_signature_contract(&witness.verification_script) {
+                if witness.verification_script.len() < 35 {
+                    return VerifyResult::Invalid;
+                }
+
+                let Some(signature) =
+                    Self::parse_single_signature_invocation(&witness.invocation_script)
+                else {
+                    return VerifyResult::Invalid;
+                };
+
+                let mut signature_bytes = [0u8; 64];
+                signature_bytes.copy_from_slice(signature);
+
+                let pubkey = &witness.verification_script[2..35];
+                let verified = match Secp256r1Crypto::verify(&sign_data, &signature_bytes, pubkey) {
+                    Ok(result) => result,
+                    Err(_) => return VerifyResult::Invalid,
+                };
+
+                if !verified {
+                    return VerifyResult::InvalidSignature;
+                }
+            } else if let Some((m, public_keys)) =
+                Helper::parse_multi_sig_contract(&witness.verification_script)
+            {
+                let Some(signatures) =
+                    Helper::parse_multi_sig_invocation(&witness.invocation_script, m)
+                else {
+                    return VerifyResult::Invalid;
+                };
+
+                if public_keys.is_empty() || signatures.len() != m {
+                    return VerifyResult::Invalid;
+                }
+
+                let total_keys = public_keys.len();
+                let mut sig_index = 0usize;
+                let mut key_index = 0usize;
+
+                while sig_index < m && key_index < total_keys {
+                    let signature = &signatures[sig_index];
+                    if signature.len() != 64 {
+                        return VerifyResult::Invalid;
+                    }
+
+                    let mut signature_bytes = [0u8; 64];
+                    signature_bytes.copy_from_slice(signature);
+
+                    let verified = match Secp256r1Crypto::verify(
+                        &sign_data,
+                        &signature_bytes,
+                        &public_keys[key_index],
+                    ) {
+                        Ok(result) => result,
+                        Err(_) => return VerifyResult::Invalid,
+                    };
+
+                    if verified {
+                        sig_index += 1;
+                    }
+
+                    key_index += 1;
+
+                    if m.saturating_sub(sig_index) > total_keys.saturating_sub(key_index) {
+                        return VerifyResult::InvalidSignature;
+                    }
+                }
+
+                if sig_index != m {
+                    return VerifyResult::InvalidSignature;
+                }
+            }
         }
 
         VerifyResult::Succeed
@@ -613,52 +814,146 @@ impl Transaction {
         gas: i64,
         fee: &mut i64,
     ) -> bool {
-        // TODO: Implement ApplicationEngine execution when available
-        // use crate::smart_contract::ApplicationEngine;
-        //
-        // let mut engine = ApplicationEngine::create(
-        //     TriggerType::Verification,
-        //     self,
-        //     snapshot,
-        //     None,
-        //     settings,
-        //     gas,
-        // );
-        //
-        // engine.load_script(witness.invocation_script.clone(), CallFlags::None);
-        // engine.load_script(witness.verification_script.clone(), CallFlags::ReadOnly);
-        //
-        // if engine.execute() == VMState::FAULT {
-        //     return false;
-        // }
-        //
-        // if engine.result_stack.len() != 1 || !engine.result_stack[0].get_boolean() {
-        //     return false;
-        // }
-        //
-        // *fee = engine.gas_consumed;
         *fee = 0;
-        true
+
+        if gas < 0 {
+            return false;
+        }
+
+        if witness.script_hash() != *hash {
+            return false;
+        }
+
+        let verification_gas = gas.min(Helper::MAX_VERIFICATION_GAS);
+
+        if neo_vm::Script::new(witness.invocation_script.clone(), true).is_err() {
+            return false;
+        }
+
+        let container: Arc<dyn crate::IVerifiable> = Arc::new(self.clone());
+        let snapshot_clone = Arc::new(snapshot.clone());
+
+        let mut engine = match ApplicationEngine::new(
+            TriggerType::Verification,
+            Some(container),
+            snapshot_clone,
+            None,
+            settings.clone(),
+            verification_gas,
+            None,
+        ) {
+            Ok(engine) => engine,
+            Err(_) => return false,
+        };
+
+        let verification_script = witness.verification_script.clone();
+
+        if verification_script.is_empty() {
+            let contract = match ContractManagement::get_contract_from_snapshot(snapshot, hash) {
+                Ok(Some(contract)) => contract,
+                _ => return false,
+            };
+
+            let mut abi = contract.manifest.abi.clone();
+            let method = match abi.get_method(
+                ContractBasicMethod::VERIFY,
+                ContractBasicMethod::VERIFY_P_COUNT,
+            ) {
+                Some(descriptor) => descriptor.clone(),
+                None => return false,
+            };
+
+            if method.return_type != ContractParameterType::Boolean {
+                return false;
+            }
+
+            if engine
+                .load_contract_method(contract, method, CallFlags::READ_ONLY)
+                .is_err()
+            {
+                return false;
+            }
+        } else {
+            if neo_vm::Script::new(verification_script.clone(), true).is_err() {
+                return false;
+            }
+            if engine
+                .load_script(
+                    verification_script,
+                    CallFlags::READ_ONLY,
+                    Some(hash.clone()),
+                )
+                .is_err()
+            {
+                return false;
+            }
+        }
+
+        if engine
+            .load_script(witness.invocation_script.clone(), CallFlags::NONE, None)
+            .is_err()
+        {
+            return false;
+        }
+
+        if engine.execute().is_err() {
+            return false;
+        }
+
+        if engine.result_stack().len() != 1 {
+            return false;
+        }
+
+        let Ok(result_item) = engine.result_stack().peek(0) else {
+            return false;
+        };
+
+        match result_item.get_boolean() {
+            Ok(true) => {
+                *fee = engine.fee_consumed();
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Get signature data for the transaction.
     fn get_sign_data(&self, network: u32) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.extend_from_slice(b"NEO3");
-        data.extend_from_slice(&network.to_le_bytes());
-        let hash_bytes = self.hash();
-        data.extend_from_slice(hash_bytes.as_bytes());
-        sha256(&data).to_vec()
+        P2PHelper::get_sign_data_vec(self, network)
+            .expect("transaction hash should always be available for signing")
+    }
+
+    fn parse_single_signature_contract(script: &[u8]) -> Option<&[u8]> {
+        if script.len() != 35 {
+            return None;
+        }
+        if script[0] != OpCode::PUSHDATA1 as u8 || script[1] != 0x21 {
+            return None;
+        }
+        if script[34] != OpCode::SYSCALL as u8 {
+            return None;
+        }
+        Some(&script[2..34])
+    }
+
+    fn parse_single_signature_invocation(invocation: &[u8]) -> Option<&[u8]> {
+        if invocation.len() != 66 {
+            return None;
+        }
+        if invocation[0] != OpCode::PUSHDATA1 as u8 || invocation[1] != 0x40 {
+            return None;
+        }
+        Some(&invocation[2..66])
     }
 }
 
 impl IInventory for Transaction {
     fn inventory_type(&self) -> InventoryType {
-        InventoryType::TX
+        InventoryType::Transaction
     }
 
     fn hash(&mut self) -> UInt256 {
-        self.hash()
+        Transaction::hash(self)
     }
 }
 
@@ -684,75 +979,101 @@ impl Serializable for Transaction {
         }
 
         let size = HEADER_SIZE
-            + 1
+            + get_var_size(self.signers.len() as u64)
             + self.signers.iter().map(|s| s.size()).sum::<usize>()
-            + 1
+            + get_var_size(self.attributes.len() as u64)
             + self.attributes.iter().map(|a| a.size()).sum::<usize>()
-            + 2
+            + get_var_size(self.script.len() as u64)
             + self.script.len()
-            + 1
+            + get_var_size(self.witnesses.len() as u64)
             + self.witnesses.iter().map(|w| w.size()).sum::<usize>();
 
         *size_guard = Some(size);
         size
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         self.serialize_unsigned(writer)?;
-        writer.write_all(&[self.witnesses.len() as u8])?;
+        if self.witnesses.len() != self.signers.len() {
+            return Err(IoError::invalid_data(
+                "Witness count must match signer count",
+            ));
+        }
+        writer.write_var_uint(self.witnesses.len() as u64)?;
         for witness in &self.witnesses {
-            witness.serialize(writer)?;
+            writer.write_serializable(witness)?;
         }
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let start_position = 0; // TODO: Get position when available
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let mut tx = Self::deserialize_unsigned(reader)?;
 
-        let witness_count = reader.read_var_int(256).map_err(|e| e.to_string())? as usize;
+        let witness_count = reader.read_var_int(tx.signers.len() as u64)? as usize;
         if witness_count != tx.signers.len() {
-            return Err("Witness count mismatch".to_string());
+            return Err(IoError::invalid_data("Witness count mismatch"));
         }
 
         let mut witnesses = Vec::with_capacity(witness_count);
         for _ in 0..witness_count {
-            witnesses.push(Witness::deserialize(reader)?);
+            witnesses.push(<Witness as Serializable>::deserialize(reader)?);
         }
         tx.witnesses = witnesses;
 
-        // TODO: Calculate size properly when position is available
         *tx._size.lock().unwrap() = None;
         Ok(tx)
     }
 }
 
-// TODO: Implement InteropInterface when the trait is available
-// impl InteropInterface for Transaction {
-//     fn to_stack_item(&self, reference_counter: &ReferenceCounter) -> StackItem {
-//         if self.signers.is_empty() {
-//             panic!("Sender is not specified in the transaction");
-//         }
-//
-//         StackItem::Array(vec![
-//             // Computed properties
-//             StackItem::ByteString(self.hash().to_array().to_vec()),
-//
-//             // Transaction properties
-//             StackItem::Integer(self.version as i64),
-//             StackItem::Integer(self.nonce as i64),
-//             StackItem::ByteString(self.sender().to_array().to_vec()),
-//             StackItem::Integer(self.system_fee),
-//             StackItem::Integer(self.network_fee),
-//             StackItem::Integer(self.valid_until_block as i64),
-//             StackItem::ByteString(self.script.clone()),
-//         ])
-//     }
-//
-//     fn from_stack_item(_stack_item: &StackItem) -> Result<Self, String> {
-//         Err("Not supported".to_string())
-//     }
-// }
+impl crate::IVerifiable for Transaction {
+    fn verify(&self) -> bool {
+        true
+    }
+
+    fn hash(&self) -> CoreResult<UInt256> {
+        Ok(Transaction::hash(self))
+    }
+
+    fn get_hash_data(&self) -> Vec<u8> {
+        Transaction::get_hash_data(self)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl IInteroperable for Transaction {
+    fn from_stack_item(&mut self, _stack_item: StackItem) {
+        panic!("NotSupportedException: Transaction::from_stack_item is not supported");
+    }
+
+    fn to_stack_item(&self) -> StackItem {
+        if self.signers.is_empty() {
+            panic!("ArgumentException: Sender is not specified in the transaction.");
+        }
+
+        let sender = self
+            .sender()
+            .expect("signers.is_empty() already validated")
+            .to_bytes();
+
+        StackItem::from_array(vec![
+            StackItem::from_byte_string(self.hash().to_bytes()),
+            StackItem::from_int(self.version as i64),
+            StackItem::from_int(self.nonce),
+            StackItem::from_byte_string(sender),
+            StackItem::from_int(self.system_fee),
+            StackItem::from_int(self.network_fee),
+            StackItem::from_int(self.valid_until_block),
+            StackItem::from_byte_string(self.script.clone()),
+        ])
+    }
+
+    fn clone_box(&self) -> Box<dyn IInteroperable> {
+        Box::new(self.clone())
+    }
+}
 
 impl Default for Transaction {
     fn default() -> Self {
@@ -762,9 +1083,9 @@ impl Default for Transaction {
 
 // Eq and PartialEq are already derived
 
-// TODO: Implement Hash trait when needed
-// impl std::hash::Hash for Transaction {
-//     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-//         self.hash().hash(state);
-//     }
-// }
+impl std::hash::Hash for Transaction {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let hash_bytes = self.hash().to_bytes();
+        StdHash::hash(&hash_bytes, state);
+    }
+}

@@ -15,5 +15,9 @@ pub trait IWalletChangedHandler {
     /// The handler of WalletChanged event from the IWalletProvider.
     /// Triggered when a new wallet is assigned to the node.
     /// Matches C# IWalletProvider_WalletChanged_Handler method
-    fn i_wallet_provider_wallet_changed_handler(&self, sender: &dyn std::any::Any, wallet: &Wallet);
+    fn i_wallet_provider_wallet_changed_handler(
+        &self,
+        sender: &dyn std::any::Any,
+        wallet: &dyn Wallet,
+    );
 }

@@ -16,35 +16,35 @@ pub trait StringExtensions {
     /// Converts a byte span to a strict UTF8 string.
     /// Matches C# TryToStrictUtf8String method
     fn try_to_strict_utf8_string(&self) -> Result<String, String>;
-    
+
     /// Converts a byte span to a strict UTF8 string.
     /// Matches C# ToStrictUtf8String method
     fn to_strict_utf8_string(&self) -> Result<String, String>;
-    
+
     /// Converts a string to a strict UTF8 byte array.
     /// Matches C# ToStrictUtf8Bytes method
     fn to_strict_utf8_bytes(&self) -> Result<Vec<u8>, String>;
-    
+
     /// Gets the size of the specified string encoded in strict UTF8.
     /// Matches C# GetStrictUtf8ByteCount method
     fn get_strict_utf8_byte_count(&self) -> Result<usize, String>;
-    
+
     /// Determines if the specified string is a valid hex string.
     /// Matches C# IsHex method
     fn is_hex(&self) -> bool;
-    
+
     /// Converts a hex string to byte array.
     /// Matches C# HexToBytes method
     fn hex_to_bytes(&self) -> Result<Vec<u8>, String>;
-    
+
     /// Converts a hex string to byte array then reverses the order of the bytes.
     /// Matches C# HexToBytesReversed method
     fn hex_to_bytes_reversed(&self) -> Result<Vec<u8>, String>;
-    
+
     /// Gets the size of the specified string encoded in variable-length encoding.
     /// Matches C# GetVarSize method
     fn get_var_size(&self) -> Result<usize, String>;
-    
+
     /// Trims the specified prefix from the start of the string, ignoring case.
     /// Matches C# TrimStartIgnoreCase method
     fn trim_start_ignore_case(&self, prefix: &str) -> String;
@@ -57,13 +57,19 @@ impl StringExtensions for &[u8] {
             Err(_) => Err("Invalid UTF-8 sequence".to_string()),
         }
     }
-    
+
     fn to_strict_utf8_string(&self) -> Result<String, String> {
         match str::from_utf8(self) {
             Ok(s) => Ok(s.to_string()),
             Err(e) => {
                 let bytes_info = if self.len() <= 32 {
-                    format!("Bytes: [{}]", self.iter().map(|b| format!("0x{:02X}", b)).collect::<Vec<_>>().join(", "))
+                    format!(
+                        "Bytes: [{}]",
+                        self.iter()
+                            .map(|b| format!("0x{:02X}", b))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
                 } else {
                     format!("Length: {} bytes", self.len())
                 };
@@ -71,32 +77,32 @@ impl StringExtensions for &[u8] {
             }
         }
     }
-    
+
     fn to_strict_utf8_bytes(&self) -> Result<Vec<u8>, String> {
         Ok(self.to_vec())
     }
-    
+
     fn get_strict_utf8_byte_count(&self) -> Result<usize, String> {
         Ok(self.len())
     }
-    
+
     fn is_hex(&self) -> bool {
         false // Not applicable for byte slices
     }
-    
+
     fn hex_to_bytes(&self) -> Result<Vec<u8>, String> {
         Err("Not applicable for byte slices".to_string())
     }
-    
+
     fn hex_to_bytes_reversed(&self) -> Result<Vec<u8>, String> {
         Err("Not applicable for byte slices".to_string())
     }
-    
+
     fn get_var_size(&self) -> Result<usize, String> {
         let size = self.len();
         Ok(get_var_size(size) + size)
     }
-    
+
     fn trim_start_ignore_case(&self, _prefix: &str) -> String {
         String::new() // Not applicable for byte slices
     }
@@ -106,28 +112,28 @@ impl StringExtensions for String {
     fn try_to_strict_utf8_string(&self) -> Result<String, String> {
         Ok(self.clone())
     }
-    
+
     fn to_strict_utf8_string(&self) -> Result<String, String> {
         Ok(self.clone())
     }
-    
+
     fn to_strict_utf8_bytes(&self) -> Result<Vec<u8>, String> {
         Ok(self.as_bytes().to_vec())
     }
-    
+
     fn get_strict_utf8_byte_count(&self) -> Result<usize, String> {
         Ok(self.len())
     }
-    
+
     fn is_hex(&self) -> bool {
         if self.is_empty() {
             return true;
         }
-        
+
         if self.len() % 2 == 1 {
             return false;
         }
-        
+
         for c in self.chars() {
             if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
                 return false;
@@ -135,12 +141,12 @@ impl StringExtensions for String {
         }
         true
     }
-    
+
     fn hex_to_bytes(&self) -> Result<Vec<u8>, String> {
         if self.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         match hex::decode(self) {
             Ok(bytes) => Ok(bytes),
             Err(_) => {
@@ -153,18 +159,18 @@ impl StringExtensions for String {
             }
         }
     }
-    
+
     fn hex_to_bytes_reversed(&self) -> Result<Vec<u8>, String> {
         let mut bytes = self.hex_to_bytes()?;
         bytes.reverse();
         Ok(bytes)
     }
-    
+
     fn get_var_size(&self) -> Result<usize, String> {
         let size = self.get_strict_utf8_byte_count()?;
         Ok(get_var_size(size) + size)
     }
-    
+
     fn trim_start_ignore_case(&self, prefix: &str) -> String {
         if self.len() >= prefix.len() && self[..prefix.len()].eq_ignore_ascii_case(prefix) {
             self[prefix.len()..].to_string()
@@ -178,28 +184,28 @@ impl StringExtensions for &str {
     fn try_to_strict_utf8_string(&self) -> Result<String, String> {
         Ok(self.to_string())
     }
-    
+
     fn to_strict_utf8_string(&self) -> Result<String, String> {
         Ok(self.to_string())
     }
-    
+
     fn to_strict_utf8_bytes(&self) -> Result<Vec<u8>, String> {
         Ok(self.as_bytes().to_vec())
     }
-    
+
     fn get_strict_utf8_byte_count(&self) -> Result<usize, String> {
         Ok(self.len())
     }
-    
+
     fn is_hex(&self) -> bool {
         if self.is_empty() {
             return true;
         }
-        
+
         if self.len() % 2 == 1 {
             return false;
         }
-        
+
         for c in self.chars() {
             if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
                 return false;
@@ -207,12 +213,12 @@ impl StringExtensions for &str {
         }
         true
     }
-    
+
     fn hex_to_bytes(&self) -> Result<Vec<u8>, String> {
         if self.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         match hex::decode(self) {
             Ok(bytes) => Ok(bytes),
             Err(_) => {
@@ -225,18 +231,18 @@ impl StringExtensions for &str {
             }
         }
     }
-    
+
     fn hex_to_bytes_reversed(&self) -> Result<Vec<u8>, String> {
         let mut bytes = self.hex_to_bytes()?;
         bytes.reverse();
         Ok(bytes)
     }
-    
+
     fn get_var_size(&self) -> Result<usize, String> {
         let size = self.get_strict_utf8_byte_count()?;
         Ok(get_var_size(size) + size)
     }
-    
+
     fn trim_start_ignore_case(&self, prefix: &str) -> String {
         if self.len() >= prefix.len() && self[..prefix.len()].eq_ignore_ascii_case(prefix) {
             self[prefix.len()..].to_string()

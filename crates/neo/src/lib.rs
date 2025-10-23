@@ -52,7 +52,7 @@ extern crate self as neo_core;
 pub mod big_decimal;
 // Block moved to ledger module
 /// Builder pattern implementations for complex types
-// Removed builders - not in C# structure
+pub mod builders;
 /// System-wide constants
 pub mod constants;
 /// Contains transaction type enumeration
@@ -68,6 +68,8 @@ pub mod compression;
 pub mod cryptography;
 /// Hard fork management
 pub mod hardfork;
+/// Commonly used type re-exports
+pub mod prelude;
 /// Protocol settings configuration (matches C# ProtocolSettings)
 pub mod protocol_settings;
 // System metrics moved to neo-monitoring crate
@@ -106,6 +108,8 @@ pub mod sign;
 pub mod i_event_handlers;
 // Extensions module (matches C# Neo.Extensions)
 pub mod extensions;
+// Events module (matches C# Neo.Events)
+pub mod events;
 // IO module (matches C# Neo.IO)
 pub mod io;
 // Plugins module (matches C# Neo.Plugins)
@@ -115,9 +119,11 @@ pub mod time_provider;
 
 // Re-exports for convenient access
 pub use big_decimal::BigDecimal;
+pub use builders::{SignerBuilder, TransactionBuilder, WitnessBuilder};
 pub use contains_transaction_type::ContainsTransactionType;
 pub use cryptography::crypto_utils::{ECCurve, ECPoint};
 pub use error::{CoreError, CoreResult, Result};
+pub use events::{EventHandler, EventManager};
 pub use hardfork::Hardfork;
 pub use neo_system::NeoSystem;
 pub use network::p2p::payloads::{
@@ -135,9 +141,6 @@ pub use witness_scope::WitnessScope;
 pub mod system {
     pub use crate::neo_system::*;
 }
-
-use once_cell::sync::Lazy;
-use std::sync::{Arc, RwLock};
 
 // NOTE: Global blockchain and store singletons will be implemented
 // when the proper types are available in their respective modules.
@@ -188,6 +191,11 @@ pub trait IVerifiable: std::any::Any + Send + Sync {
     /// A vector of bytes representing the hashable data.
     fn get_hash_data(&self) -> Vec<u8>;
 
+    /// Attempts to view this verifiable container as a transaction.
+    fn as_transaction(&self) -> Option<&crate::network::p2p::payloads::Transaction> {
+        self.as_any().downcast_ref()
+    }
+
     /// Returns a reference to self as `Any` for downcasting.
     ///
     /// This enables runtime type checking and downcasting to concrete types.
@@ -237,7 +245,7 @@ pub mod neo_io {
             {
                 writer.write_var_int(items.len() as u64)?;
                 for item in items {
-                    item.serialize(writer)?;
+                    Serializable::serialize(item, writer)?;
                 }
                 Ok(())
             }
@@ -254,7 +262,7 @@ pub mod neo_io {
 
                 let mut result = Vec::with_capacity(count);
                 for _ in 0..count {
-                    result.push(T::deserialize(reader)?);
+                    result.push(<T as Serializable>::deserialize(reader)?);
                 }
                 Ok(result)
             }
@@ -344,7 +352,7 @@ pub mod neo_cryptography {
     }
 
     pub mod ecc {
-        use super::{ECCurve, ECPoint, Error};
+        use super::{ECCurve, ECPoint};
 
         #[derive(Debug, Clone)]
         pub struct ECCError(pub String);
@@ -400,6 +408,10 @@ pub mod neo_cryptography {
             current.into_iter().next()
         }
     }
+}
+
+pub mod neo_vm {
+    pub use neo_vm::*;
 }
 
 pub mod neo_ledger {

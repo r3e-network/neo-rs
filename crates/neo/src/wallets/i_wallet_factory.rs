@@ -24,7 +24,7 @@ pub trait IWalletFactory {
         path: &str,
         password: &str,
         settings: &ProtocolSettings,
-    ) -> Result<Wallet, String>;
+    ) -> Result<Box<dyn Wallet>, String>;
 
     /// Opens a wallet.
     /// Matches C# OpenWallet method
@@ -33,5 +33,5 @@ pub trait IWalletFactory {
         path: &str,
         password: &str,
         settings: &ProtocolSettings,
-    ) -> Result<Wallet, String>;
+    ) -> Result<Box<dyn Wallet>, String>;
 }

@@ -61,11 +61,11 @@ impl Serializable for ServerCapability {
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
-        NodeCapability::from(self.clone()).serialize(writer)
+        Serializable::serialize(&NodeCapability::from(self.clone()), writer)
     }
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
-        let capability = NodeCapability::deserialize(reader)?;
+        let capability = <NodeCapability as Serializable>::deserialize(reader)?;
         ServerCapability::try_from(&capability).map_err(IoError::invalid_data)
     }
 }

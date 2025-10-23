@@ -3,9 +3,10 @@
 //! Critical transaction validation edge cases from C# UT_Transaction.cs
 //! ensuring behavioral compatibility between Neo-RS and Neo-CS.
 
+use neo_core::neo_io::Serializable;
+use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness};
 use neo_core::{
-    Signer, Transaction, TransactionAttribute, UInt160, UInt256, Witness, WitnessScope,
-    HEADER_SIZE, MAX_TRANSACTION_SIZE,
+    Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
 
 // ============================================================================
@@ -22,13 +23,7 @@ fn create_test_transaction() -> Transaction {
     tx.set_script(vec![0x11]); // PUSH1 opcode
 
     // Create signer with correct API
-    let mut signer = Signer::new();
-    signer.account = UInt160::zero();
-    signer.scopes = WitnessScope::CALLED_BY_ENTRY;
-    signer.allowed_contracts = vec![];
-    signer.allowed_groups = vec![];
-    signer.rules = vec![];
-
+    let signer = Signer::new(UInt160::zero(), WitnessScope::CALLED_BY_ENTRY);
     tx.add_signer(signer);
     tx.add_witness(Witness::empty());
     tx
@@ -139,7 +134,7 @@ mod tests {
         let account = UInt160::from_bytes(&[0x01; 20]).unwrap();
 
         // Test None scope (fee-only)
-        let mut signer_none = Signer::new();
+        let mut signer_none = Signer::new(UInt160::zero(), WitnessScope::NONE);
         signer_none.account = account;
         signer_none.scopes = WitnessScope::NONE;
         tx.add_signer(signer_none);
@@ -147,7 +142,7 @@ mod tests {
         assert_eq!(tx.signers()[0].scopes, WitnessScope::NONE);
 
         // Test Global scope
-        let mut signer_global = Signer::new();
+        let mut signer_global = Signer::new(UInt160::zero(), WitnessScope::GLOBAL);
         signer_global.account = account;
         signer_global.scopes = WitnessScope::GLOBAL;
 
@@ -156,7 +151,7 @@ mod tests {
         assert_eq!(tx2.signers()[0].scopes, WitnessScope::GLOBAL);
 
         // Test CalledByEntry scope
-        let mut signer_entry = Signer::new();
+        let mut signer_entry = Signer::new(UInt160::zero(), WitnessScope::CALLED_BY_ENTRY);
         signer_entry.account = account;
         signer_entry.scopes = WitnessScope::CALLED_BY_ENTRY;
 
@@ -165,7 +160,7 @@ mod tests {
         assert_eq!(tx3.signers()[0].scopes, WitnessScope::CALLED_BY_ENTRY);
 
         // Test CustomContracts scope
-        let mut signer_custom = Signer::new();
+        let mut signer_custom = Signer::new(UInt160::zero(), WitnessScope::CustomContracts);
         signer_custom.account = account;
         signer_custom.scopes = WitnessScope::CUSTOM_CONTRACTS;
 
@@ -184,7 +179,7 @@ mod tests {
         tx.set_network_fee(1);
         tx.set_valid_until_block(0x01020304);
 
-        let mut signer = Signer::new();
+        let mut signer = Signer::new(UInt160::zero(), WitnessScope::NONE);
         signer.account = UInt160::zero();
         signer.scopes = WitnessScope::CALLED_BY_ENTRY;
         tx.add_signer(signer);
@@ -232,7 +227,7 @@ mod tests {
             bytes[0] = i as u8;
             let account = UInt160::from_bytes(&bytes).unwrap();
 
-            let mut signer = Signer::new();
+            let mut signer = Signer::new(UInt160::zero(), WitnessScope::NONE);
             signer.account = account;
             signer.scopes = WitnessScope::CALLED_BY_ENTRY;
             tx.add_signer(signer);
@@ -258,12 +253,12 @@ mod tests {
         assert_eq!(tx.attributes().len(), 0);
 
         // Test with high priority attribute
-        tx.add_attribute(TransactionAttribute::HighPriority);
+        tx.add_attribute(TransactionAttribute::high_priority());
         assert_eq!(tx.attributes().len(), 1);
 
         // Test with multiple attributes
-        tx.add_attribute(TransactionAttribute::HighPriority);
-        tx.add_attribute(TransactionAttribute::HighPriority);
+        tx.add_attribute(TransactionAttribute::high_priority());
+        tx.add_attribute(TransactionAttribute::high_priority());
         assert!(tx.attributes().len() >= 1);
     }
 
@@ -276,10 +271,10 @@ mod tests {
         tx.set_script(vec![]); // Empty script
 
         // Create witness with verification script (PUSH0, DROP)
-        let witness = Witness::new(vec![], vec![0x10, 0x75]);
+        let witness = Witness::new_with_scripts(vec![], vec![0x10, 0x75]);
         tx.add_witness(witness);
 
-        let mut signer = Signer::new();
+        let mut signer = Signer::new(UInt160::zero(), WitnessScope::NONE);
         signer.account = UInt160::zero();
         signer.scopes = WitnessScope::CALLED_BY_ENTRY;
         tx.add_signer(signer);
@@ -298,7 +293,7 @@ mod tests {
 
         // Test with single signer
         let account1 = UInt160::from_bytes(&[0x01; 20]).unwrap();
-        let mut signer1 = Signer::new();
+        let mut signer1 = Signer::new(UInt160::zero(), WitnessScope::NONE);
         signer1.account = account1;
         signer1.scopes = WitnessScope::CALLED_BY_ENTRY;
         tx.add_signer(signer1);
@@ -313,7 +308,7 @@ mod tests {
 
         // Test with multiple signers
         let account2 = UInt160::from_bytes(&[0x02; 20]).unwrap();
-        let mut signer2 = Signer::new();
+        let mut signer2 = Signer::new(UInt160::zero(), WitnessScope::NONE);
         signer2.account = account2;
         signer2.scopes = WitnessScope::GLOBAL;
         tx.add_signer(signer2);
@@ -456,7 +451,7 @@ mod tests {
         // Test adding attributes up to limit
         for _ in 0..16 {
             // MAX_TRANSACTION_ATTRIBUTES
-            tx.add_attribute(TransactionAttribute::HighPriority);
+            tx.add_attribute(TransactionAttribute::high_priority());
         }
 
         // Should have some attributes (exact behavior depends on implementation)
@@ -476,8 +471,8 @@ mod tests {
         assert_eq!(tx.witnesses().len(), 1);
 
         // Test with multiple witnesses
-        tx.add_witness(Witness::new(vec![0x01], vec![0x02]));
-        tx.add_witness(Witness::new(vec![0x03], vec![0x04]));
+        tx.add_witness(Witness::new_with_scripts(vec![0x01], vec![0x02]));
+        tx.add_witness(Witness::new_with_scripts(vec![0x03], vec![0x04]));
 
         assert!(tx.witnesses().len() >= 3);
 
@@ -492,7 +487,7 @@ mod tests {
         let mut tx = Transaction::new();
 
         // Test with zero account
-        let mut signer = Signer::new();
+        let mut signer = Signer::new(UInt160::zero(), WitnessScope::NONE);
         signer.account = UInt160::zero();
         signer.scopes = WitnessScope::CALLED_BY_ENTRY;
         tx.add_signer(signer);
@@ -506,7 +501,7 @@ mod tests {
         ])
         .unwrap();
 
-        let mut signer2 = Signer::new();
+        let mut signer2 = Signer::new(UInt160::zero(), WitnessScope::NONE);
         signer2.account = account;
         signer2.scopes = WitnessScope::GLOBAL;
         tx.add_signer(signer2);
@@ -573,7 +568,7 @@ mod tests {
         assert!(script_size > empty_size);
 
         // Test size increases with signers
-        let mut signer = Signer::new();
+        let mut signer = Signer::new(UInt160::zero(), WitnessScope::NONE);
         signer.account = UInt160::from_bytes(&[0x01; 20]).unwrap();
         signer.scopes = WitnessScope::CALLED_BY_ENTRY;
         tx.add_signer(signer);
@@ -582,7 +577,10 @@ mod tests {
         assert!(signer_size > script_size);
 
         // Test size increases with witnesses
-        tx.add_witness(Witness::new(vec![0x01, 0x02], vec![0x03, 0x04]));
+        tx.add_witness(Witness::new_with_scripts(
+            vec![0x01, 0x02],
+            vec![0x03, 0x04],
+        ));
         let witness_size = tx.size();
         assert!(witness_size > signer_size);
     }
@@ -644,7 +642,7 @@ mod tests {
         ])
         .unwrap();
 
-        let mut signer = Signer::new();
+        let mut signer = Signer::new(UInt160::zero(), WitnessScope::NONE);
         signer.account = account;
         signer.scopes = WitnessScope::CUSTOM_CONTRACTS;
         signer.allowed_contracts = vec![gas_hash];
@@ -674,7 +672,7 @@ mod tests {
         ];
 
         for (account, scope) in accounts.iter().zip(scopes.iter()) {
-            let mut signer = Signer::new();
+            let mut signer = Signer::new(UInt160::zero(), WitnessScope::NONE);
             signer.account = *account;
             signer.scopes = *scope;
             tx.add_signer(signer);
@@ -699,7 +697,10 @@ mod tests {
         // Test witness with data
         let invocation = vec![0x40, 0x41, 0x42]; // Some signature data
         let verification = vec![0x21, 0x03, 0x12]; // Some verification script
-        tx.add_witness(Witness::new(invocation.clone(), verification.clone()));
+        tx.add_witness(Witness::new_with_scripts(
+            invocation.clone(),
+            verification.clone(),
+        ));
 
         assert_eq!(tx.witnesses()[1].invocation_script(), &invocation);
         assert_eq!(tx.witnesses()[1].verification_script(), &verification);
@@ -711,7 +712,7 @@ mod tests {
         let mut tx = Transaction::new();
 
         // Test high priority attribute
-        tx.add_attribute(TransactionAttribute::HighPriority);
+        tx.add_attribute(TransactionAttribute::high_priority());
 
         // Check attributes exist
         assert!(tx.attributes().len() > 0);

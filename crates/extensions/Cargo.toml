@@ -8,7 +8,6 @@ repository = "https://github.com/r3e-network/neo-rs"
 
 [dependencies]
 # Internal crates
-neo-core = { workspace = true }
 neo-io = { workspace = true }
 neo-vm = { workspace = true }
 
@@ -24,15 +23,19 @@ tracing = "0.1"
 # Plugin system
 libloading = "0.8"
 inventory = "0.3"
+once_cell = "1.19"
 
 # Utilities
 hex = "0.4"
-base64 = "0.22"
+base64 = { workspace = true }
 uuid = { version = "1.6", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 rand = { workspace = true }
 toml = { workspace = true }
-xxhash-rust = "0.8"
+xxhash-rust = { version = "0.8", features = ["xxh32"] }
+num-bigint = { version = "0.4", features = ["serde"] }
+num-traits = "0.2"
+lazy_static = "1.4"
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -9,6 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use neo_core::network::p2p::RemoteNodeSnapshot;
 use serde::{Deserialize, Serialize};
 
 /// Remote node model matching C# RemoteNodeModel exactly
@@ -56,6 +57,16 @@ impl RemoteNodeModel {
             remote_port,
             listen_tcp_port,
             last_block_index,
+        }
+    }
+
+    /// Builds a `RemoteNodeModel` from a runtime snapshot.
+    pub fn from_snapshot(snapshot: &RemoteNodeSnapshot) -> Self {
+        Self {
+            remote_address: snapshot.remote_address.ip().to_string(),
+            remote_port: snapshot.remote_port as i32,
+            listen_tcp_port: snapshot.listen_tcp_port as i32,
+            last_block_index: snapshot.last_block_index,
         }
     }
 }

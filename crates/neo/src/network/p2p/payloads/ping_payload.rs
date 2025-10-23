@@ -9,9 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Sent to detect whether the connection has been disconnected.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,17 +53,17 @@ impl Serializable for PingPayload {
         4 // Nonce
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&self.last_block_index.to_le_bytes())?;
-        writer.write_all(&self.timestamp.to_le_bytes())?;
-        writer.write_all(&self.nonce.to_le_bytes())?;
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u32(self.last_block_index)?;
+        writer.write_u32(self.timestamp)?;
+        writer.write_u32(self.nonce)?;
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let last_block_index = reader.read_u32().map_err(|e| e.to_string())?;
-        let timestamp = reader.read_u32().map_err(|e| e.to_string())?;
-        let nonce = reader.read_u32().map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let last_block_index = reader.read_u32()?;
+        let timestamp = reader.read_u32()?;
+        let nonce = reader.read_u32()?;
 
         Ok(Self {
             last_block_index,

@@ -7,7 +7,7 @@ use super::{message_command::MessageCommand, message_flags::MessageFlags};
 use crate::compression::{
     compress_lz4, decompress_lz4, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD,
 };
-use crate::neo_io::{BinaryWriter, MemoryReader, Serializable, SerializableExt};
+use crate::neo_io::{BinaryWriter, IoError, MemoryReader, Serializable};
 use crate::network::{NetworkError, NetworkResult as Result};
 use serde::{Deserialize, Serialize};
 
@@ -29,11 +29,14 @@ pub struct Message {
 
 impl Message {
     /// Create new message (matches C# Create method exactly)
-    pub fn create(
+    pub fn create<T>(
         command: MessageCommand,
-        payload: Option<&dyn Serializable>,
+        payload: Option<&T>,
         enable_compression: bool,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        T: Serializable,
+    {
         let payload_bytes = if let Some(payload) = payload {
             let mut writer = BinaryWriter::new();
             payload.serialize(&mut writer).map_err(|e| {
@@ -104,7 +107,7 @@ impl Message {
     }
 
     /// Write variable-length integer (matches C# WriteVarInt)
-    fn write_var_int(&self, writer: &mut BinaryWriter, value: u64) -> neo_io::IoResult<()> {
+    fn write_var_int(&self, writer: &mut BinaryWriter, value: u64) -> crate::neo_io::IoResult<()> {
         if value < 0xFD {
             writer.write_u8(value as u8)?;
         } else if value <= 0xFFFF {
@@ -121,17 +124,17 @@ impl Message {
     }
 
     /// Read variable-length integer (matches C# ReadVarInt)
-    fn read_var_int(reader: &mut MemoryReader, max: u64) -> neo_io::IoResult<u64> {
+    fn read_var_int(reader: &mut MemoryReader, max: u64) -> crate::neo_io::IoResult<u64> {
         let fb = reader.read_byte()?;
         let value = match fb {
-            0xFD => reader.read_uint16()? as u64,
-            0xFE => reader.read_uint32()? as u64,
-            0xFF => reader.read_uint64()?,
+            0xFD => reader.read_u16()? as u64,
+            0xFE => reader.read_u32()? as u64,
+            0xFF => reader.read_u64()?,
             _ => fb as u64,
         };
 
         if value > max {
-            return Err(neo_io::IoError::end_of_stream(0, "message"));
+            return Err(IoError::end_of_stream(0, "message"));
         }
 
         Ok(value)
@@ -140,11 +143,11 @@ impl Message {
 
 impl Serializable for Message {
     /// Deserialize message (matches C# ISerializable.Deserialize exactly)
-    fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
-        let flags = MessageFlags::from_byte(reader.read_byte()?)
-            .map_err(|_| neo_io::IoError::end_of_stream(0, "message"))?;
-        let command = MessageCommand::from_byte(reader.read_byte()? as u8)
-            .map_err(|_| neo_io::IoError::end_of_stream(0, "message"))?;
+    fn deserialize(reader: &mut MemoryReader) -> crate::neo_io::IoResult<Self> {
+        let flags = MessageFlags::from_byte(reader.read_u8()?)
+            .map_err(|_| IoError::end_of_stream(0, "message"))?;
+        let command = MessageCommand::from_byte(reader.read_u8()?)
+            .map_err(|_| IoError::end_of_stream(0, "message"))?;
 
         // Read payload using VarBytes (matches C# ReadVarMemory)
         let payload_len = Self::read_var_int(reader, PAYLOAD_MAX_SIZE as u64)? as usize;
@@ -159,15 +162,15 @@ impl Serializable for Message {
         // Decompress if needed
         message
             .decompress_payload()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+            .map_err(|e| IoError::invalid_data(e.to_string()))?;
 
         Ok(message)
     }
 
     /// Serialize message (matches C# ISerializable.Serialize exactly)
-    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
-        writer.write_u8(self.flags as u8)?;
-        writer.write_u8(self.command as u8)?;
+    fn serialize(&self, writer: &mut BinaryWriter) -> crate::neo_io::IoResult<()> {
+        writer.write_u8(self.flags.to_byte())?;
+        writer.write_u8(self.command.to_byte())?;
 
         // Write payload as VarBytes (matches C# WriteVarBytes)
         self.write_var_int(writer, self.payload_raw.len() as u64)?;

@@ -2,13 +2,13 @@
 //
 // Rust port of Neo.Plugins.RestServer.Models.ExecutionEngineModel.
 
-use crate::rest_server::models::error::ErrorModel;
+use crate::rest_server::models::error::error_model::ErrorModel;
 use neo_core::UInt160;
 use neo_vm::vm_state::VMState;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionEngineModel {
     pub gas_consumed: i64,
     #[serde(with = "vm_state_serde")]
@@ -38,7 +38,7 @@ impl ExecutionEngineModel {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockchainEventModel {
     pub script_hash: UInt160,
     pub event_name: String,

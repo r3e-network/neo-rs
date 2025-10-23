@@ -17,21 +17,25 @@ use serde::{Deserialize, Serialize};
 #[repr(u8)]
 pub enum InventoryType {
     /// Indicates that the inventory is a Transaction.
-    TX = 0x2b, // MessageCommand::Transaction value
+    Transaction = 0x2b,
 
     /// Indicates that the inventory is a Block.
-    Block = 0x2c, // MessageCommand::Block value
+    Block = 0x2c,
+
+    /// Indicates that the inventory is a consensus payload.
+    Consensus = 0x2d,
 
     /// Indicates that the inventory is an ExtensiblePayload.
-    Extensible = 0x2e, // MessageCommand::Extensible value
+    Extensible = 0x2e,
 }
 
 impl InventoryType {
     /// Convert from byte value.
     pub fn from_byte(value: u8) -> Option<Self> {
         match value {
-            0x2b => Some(Self::TX),
+            0x2b => Some(Self::Transaction),
             0x2c => Some(Self::Block),
+            0x2d => Some(Self::Consensus),
             0x2e => Some(Self::Extensible),
             _ => None,
         }
@@ -46,8 +50,9 @@ impl InventoryType {
 impl From<InventoryType> for MessageCommand {
     fn from(inv_type: InventoryType) -> Self {
         match inv_type {
-            InventoryType::TX => MessageCommand::Transaction,
+            InventoryType::Transaction => MessageCommand::Transaction,
             InventoryType::Block => MessageCommand::Block,
+            InventoryType::Consensus => MessageCommand::Extensible, // Placeholder; consensus maps to Extensible in N3
             InventoryType::Extensible => MessageCommand::Extensible,
         }
     }

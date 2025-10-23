@@ -39,6 +39,16 @@ impl BinaryWriter {
         Ok(())
     }
 
+    pub fn write_i32(&mut self, value: i32) -> IoResult<()> {
+        self.buffer.extend_from_slice(&value.to_le_bytes());
+        Ok(())
+    }
+
+    pub fn write_i64(&mut self, value: i64) -> IoResult<()> {
+        self.buffer.extend_from_slice(&value.to_le_bytes());
+        Ok(())
+    }
+
     pub fn write_u64(&mut self, value: u64) -> IoResult<()> {
         self.buffer.extend_from_slice(&value.to_le_bytes());
         Ok(())

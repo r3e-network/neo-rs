@@ -16,7 +16,9 @@ use crate::dbft_plugin::messages::recovery_message::{
 };
 use neo_core::network::p2p::payloads::ExtensiblePayload;
 use neo_core::smart_contract::Contract;
+use neo_core::neo_io::Serializable;
 use neo_core::{UInt160, UInt256};
+use tracing::debug;
 
 impl ConsensusContext {
     /// Retrieves (and caches) the consensus message embedded in the payload.
@@ -38,7 +40,10 @@ impl ConsensusContext {
                 Some(message)
             }
             Err(error) => {
-                self.log(&format!("Failed to deserialize consensus payload: {error}"));
+                debug!(
+                    target: "dbft::consensus_context",
+                    "Failed to deserialize consensus payload: {error}"
+                );
                 None
             }
         }

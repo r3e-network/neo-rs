@@ -28,9 +28,12 @@ impl StorageKey {
         }
     }
 
-    /// Get the key
-    pub fn key(&self) -> &[u8] {
-        &self.key
+    #[inline]
+    fn storage_key(prefix: u8, suffix: &[u8]) -> Vec<u8> {
+        let mut key = Vec::with_capacity(1 + suffix.len());
+        key.push(prefix);
+        key.extend_from_slice(suffix);
+        key
     }
 
     /// Get key length
@@ -43,33 +46,26 @@ impl StorageKey {
 
     /// Create StorageKey with just prefix
     pub fn create(id: i32, prefix: u8) -> Self {
-        let mut data = vec![0u8; Self::PREFIX_LENGTH];
-        Self::fill_header(&mut data, id, prefix);
-        Self::new(id, data)
+        let key = Self::storage_key(prefix, &[]);
+        Self::new(id, key)
     }
 
     /// Create StorageKey with byte content
     pub fn create_with_byte(id: i32, prefix: u8, content: u8) -> Self {
-        let mut data = vec![0u8; Self::PREFIX_LENGTH + 1];
-        Self::fill_header(&mut data, id, prefix);
-        data[Self::PREFIX_LENGTH] = content;
-        Self::new(id, data)
+        let key = Self::storage_key(prefix, &[content]);
+        Self::new(id, key)
     }
 
     /// Create StorageKey with UInt160
     pub fn create_with_uint160(id: i32, prefix: u8, hash: &UInt160) -> Self {
-        let mut data = vec![0u8; Self::PREFIX_LENGTH + UInt160::LENGTH];
-        Self::fill_header(&mut data, id, prefix);
-        data[Self::PREFIX_LENGTH..].copy_from_slice(&hash.to_bytes());
-        Self::new(id, data)
+        let key = Self::storage_key(prefix, hash.to_bytes().as_ref());
+        Self::new(id, key)
     }
 
     /// Create StorageKey with UInt256
     pub fn create_with_uint256(id: i32, prefix: u8, hash: &UInt256) -> Self {
-        let mut data = vec![0u8; Self::PREFIX_LENGTH + UInt256::LENGTH];
-        Self::fill_header(&mut data, id, prefix);
-        data[Self::PREFIX_LENGTH..].copy_from_slice(&hash.to_bytes());
-        Self::new(id, data)
+        let key = Self::storage_key(prefix, hash.to_bytes().as_ref());
+        Self::new(id, key)
     }
 
     /// Create StorageKey with UInt256 and UInt160
@@ -79,36 +75,28 @@ impl StorageKey {
         hash: &UInt256,
         signer: &UInt160,
     ) -> Self {
-        let mut data = vec![0u8; Self::PREFIX_LENGTH + UInt256::LENGTH + UInt160::LENGTH];
-        Self::fill_header(&mut data, id, prefix);
-        data[Self::PREFIX_LENGTH..Self::PREFIX_LENGTH + UInt256::LENGTH]
-            .copy_from_slice(&hash.to_bytes());
-        data[Self::PREFIX_LENGTH + UInt256::LENGTH..].copy_from_slice(&signer.to_bytes());
-        Self::new(id, data)
+        let mut suffix = hash.to_bytes();
+        suffix.extend_from_slice(&signer.to_bytes());
+        let key = Self::storage_key(prefix, &suffix);
+        Self::new(id, key)
     }
 
     /// Create StorageKey with int32 (big endian)
     pub fn create_with_int32(id: i32, prefix: u8, big_endian: i32) -> Self {
-        let mut data = vec![0u8; Self::PREFIX_LENGTH + 4];
-        Self::fill_header(&mut data, id, prefix);
-        data[Self::PREFIX_LENGTH..].copy_from_slice(&big_endian.to_be_bytes());
-        Self::new(id, data)
+        let key = Self::storage_key(prefix, &big_endian.to_be_bytes());
+        Self::new(id, key)
     }
 
     /// Create StorageKey with int64 (big endian)
     pub fn create_with_int64(id: i32, prefix: u8, big_endian: i64) -> Self {
-        let mut data = vec![0u8; Self::PREFIX_LENGTH + 8];
-        Self::fill_header(&mut data, id, prefix);
-        data[Self::PREFIX_LENGTH..].copy_from_slice(&big_endian.to_be_bytes());
-        Self::new(id, data)
+        let key = Self::storage_key(prefix, &big_endian.to_be_bytes());
+        Self::new(id, key)
     }
 
     /// Create StorageKey with bytes
     pub fn create_with_bytes(id: i32, prefix: u8, content: &[u8]) -> Self {
-        let mut data = vec![0u8; Self::PREFIX_LENGTH + content.len()];
-        Self::fill_header(&mut data, id, prefix);
-        data[Self::PREFIX_LENGTH..].copy_from_slice(content);
-        Self::new(id, data)
+        let key = Self::storage_key(prefix, content);
+        Self::new(id, key)
     }
 
     /// Creates a search prefix for a contract
@@ -119,10 +107,9 @@ impl StorageKey {
         buffer
     }
 
-    /// Fill header with id and prefix
-    fn fill_header(data: &mut [u8], id: i32, prefix: u8) {
-        data[..4].copy_from_slice(&id.to_le_bytes());
-        data[4] = prefix;
+    /// Returns the raw key bytes (excluding the contract ID prefix).
+    pub fn suffix(&self) -> &[u8] {
+        &self.key
     }
 
     /// Convert to byte array

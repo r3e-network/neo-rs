@@ -6,7 +6,9 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::ADDRESS_SIZE;
 use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::{ECCurve, ECPoint};
 use base64::{engine::general_purpose, Engine as _};
+use std::convert::TryFrom;
 // Removed neo_cryptography dependency - using external crypto crates directly
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
@@ -35,15 +37,11 @@ impl ContractGroup {
     /// Validates the contract group.
     pub fn validate(&self) -> Result<()> {
         if !self.pub_key.is_valid() {
-            return Err(Error::InvalidManifest(
-                "Invalid public key in group".to_string(),
-            ));
+            return Err(Error::invalid_data("Invalid public key in group"));
         }
 
         if self.signature.len() != 64 {
-            return Err(Error::InvalidManifest(
-                "Invalid signature length in group".to_string(),
-            ));
+            return Err(Error::invalid_data("Invalid signature length in group"));
         }
 
         Ok(())
@@ -52,27 +50,21 @@ impl ContractGroup {
     /// Verifies the group signature for a given contract hash.
     pub fn verify_signature(&self, contract_hash: &[u8]) -> Result<bool> {
         if contract_hash.len() != ADDRESS_SIZE {
-            return Err(Error::InvalidManifest(
-                "Invalid contract hash length".to_string(),
-            ));
+            return Err(Error::invalid_data("Invalid contract hash length"));
         }
 
         if self.signature.len() != 64 {
-            return Err(Error::InvalidManifest(
-                "Invalid signature length".to_string(),
-            ));
+            return Err(Error::invalid_data("Invalid signature length"));
         }
 
         let public_key_bytes = self
             .pub_key
             .encode_compressed()
-            .map_err(|e| Error::InvalidManifest(format!("Failed to encode public key: {}", e)))?;
+            .map_err(|e| Error::invalid_data(format!("Failed to encode public key: {}", e)))?;
 
         // Convert signature to array format
-        let signature_array: [u8; 64] = self
-            .signature
-            .try_into()
-            .map_err(|_| Error::InvalidManifest("Invalid signature length".to_string()))?;
+        let signature_array: [u8; 64] = <[u8; 64]>::try_from(self.signature.as_slice())
+            .map_err(|_| Error::invalid_data("Invalid signature length"))?;
 
         match crate::cryptography::crypto_utils::Secp256r1Crypto::verify(
             contract_hash,

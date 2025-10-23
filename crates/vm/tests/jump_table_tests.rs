@@ -1,12 +1,30 @@
 //! Integration tests for the Neo VM jump table operations.
 
 use neo_vm::execution_engine::{ExecutionEngine, VMState};
-use neo_vm::instruction::Instruction;
 use neo_vm::jump_table::JumpTable;
 use neo_vm::op_code::OpCode;
 use neo_vm::script::Script;
-use neo_vm::stack_item::StackItem;
 use num_bigint::BigInt;
+
+#[test]
+fn callt_without_application_engine_causes_fault() {
+    let jump_table = JumpTable::new();
+    let mut engine = ExecutionEngine::new(Some(jump_table));
+
+    let script = Script::new_relaxed(vec![OpCode::CALLT as u8, 0x00, 0x00]);
+    engine.load_script(script, -1, 0).unwrap();
+
+    let state = engine.execute();
+    assert_eq!(state, VMState::FAULT);
+
+    let message = engine
+        .uncaught_exception()
+        .expect("exception available")
+        .as_bytes()
+        .expect("bytes");
+    let message = String::from_utf8_lossy(&message);
+    assert!(message.contains("Token not found"));
+}
 
 #[test]
 fn pickitem_array_out_of_range_triggers_catchable_exception() {

@@ -1,10 +1,11 @@
 //! LogEventArgs - matches C# Neo.SmartContract.LogEventArgs exactly
 
 use crate::{IVerifiable, UInt160};
+use std::fmt;
 use std::sync::Arc;
 
 /// The EventArgs of ApplicationEngine.Log (matches C# LogEventArgs)
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct LogEventArgs {
     /// The container that containing the executed script
     pub script_container: Arc<dyn IVerifiable>,
@@ -24,5 +25,14 @@ impl LogEventArgs {
             script_hash,
             message,
         }
+    }
+}
+
+impl fmt::Debug for LogEventArgs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LogEventArgs")
+            .field("script_hash", &self.script_hash)
+            .field("message", &self.message)
+            .finish()
     }
 }

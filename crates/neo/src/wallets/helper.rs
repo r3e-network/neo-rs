@@ -9,13 +9,18 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use crate::network::p2p::payloads::i_verifiable::IVerifiable as PayloadIVerifiable;
+use crate::IVerifiable as CoreIVerifiable;
 use crate::{
     network::p2p,
     persistence::DataCache,
     protocol_settings::ProtocolSettings,
+    smart_contract::helper::Helper as ContractHelper,
+    smart_contract::native::PolicyContract,
     wallets::{wallet::Wallet, KeyPair},
-    IVerifiable, Transaction, UInt160,
+    Transaction, UInt160,
 };
+use neo_vm::op_code::OpCode;
 
 /// A helper class related to wallets.
 /// Matches C# Helper class exactly
@@ -25,7 +30,7 @@ impl Helper {
     /// Signs an IVerifiable with the specified private key.
     /// Matches C# Sign method
     pub fn sign(
-        verifiable: &dyn IVerifiable,
+        verifiable: &dyn CoreIVerifiable,
         key: &KeyPair,
         network: u32,
     ) -> Result<Vec<u8>, String> {
@@ -37,10 +42,10 @@ impl Helper {
     /// Converts the specified script hash to an address.
     /// Matches C# ToAddress method
     pub fn to_address(script_hash: &UInt160, version: u8) -> String {
-        let mut data = vec![0u8; 21];
-        data[0] = version;
-        script_hash.serialize(&mut data[1..]);
-        Base58::base58_check_encode(&data)
+        let mut data = Vec::with_capacity(21);
+        data.push(version);
+        data.extend_from_slice(&script_hash.to_array());
+        base58::base58_check_encode(&data)
     }
 
     /// Converts the specified address to a script hash.
@@ -53,7 +58,7 @@ impl Helper {
         if data[0] != version {
             return Err(format!("Invalid address version: expected version {}, but got {}. The address may be for a different network.", version, data[0]));
         }
-        Ok(UInt160::from_slice(&data[1..]))
+        UInt160::from_bytes(&data[1..]).map_err(|e| e.to_string())
     }
 
     /// XOR operation on byte arrays.
@@ -79,11 +84,19 @@ impl Helper {
         tx: &Transaction,
         snapshot: &DataCache,
         settings: &ProtocolSettings,
-        wallet: Option<&Wallet>,
+        wallet: Option<&dyn Wallet>,
         max_execution_cost: i64,
     ) -> Result<i64, String> {
-        // Network fee calculation implementation
-        Ok(1000)
+        if let Some(wallet) = wallet {
+            let lookup = |hash: &UInt160| -> Option<Vec<u8>> {
+                wallet
+                    .get_account(hash)
+                    .and_then(|account| account.contract().map(|c| c.script.clone()))
+            };
+            calculate_network_fee_impl(tx, snapshot, settings, Some(&lookup), max_execution_cost)
+        } else {
+            calculate_network_fee_impl(tx, snapshot, settings, None, max_execution_cost)
+        }
     }
 
     /// Calculates the network fee for the specified transaction.
@@ -92,25 +105,154 @@ impl Helper {
         tx: &Transaction,
         snapshot: &DataCache,
         settings: &ProtocolSettings,
-        account_script: Option<fn(UInt160) -> Option<Vec<u8>>>,
+        account_script: Option<&dyn Fn(&UInt160) -> Option<Vec<u8>>>,
         max_execution_cost: i64,
     ) -> Result<i64, String> {
-        // Network fee calculation implementation
-        Ok(1000)
+        calculate_network_fee_impl(tx, snapshot, settings, account_script, max_execution_cost)
     }
 }
 
+fn calculate_network_fee_impl(
+    tx: &Transaction,
+    snapshot: &DataCache,
+    settings: &ProtocolSettings,
+    account_script: Option<&dyn Fn(&UInt160) -> Option<Vec<u8>>>,
+    _max_execution_cost: i64,
+) -> Result<i64, String> {
+    let mut hashes = PayloadIVerifiable::get_script_hashes_for_verifying(tx, snapshot);
+    hashes.sort();
+    hashes.dedup();
+
+    let exec_fee_factor = PolicyContract::DEFAULT_EXEC_FEE_FACTOR as i64;
+    let fee_per_byte = PolicyContract::DEFAULT_FEE_PER_BYTE as i64;
+
+    let mut size: i64 = 0;
+    let mut network_fee: i64 = 0;
+
+    for (index, hash) in hashes.iter().enumerate() {
+        let witness_script = account_script
+            .and_then(|resolver| resolver(hash))
+            .or_else(|| {
+                tx.witnesses()
+                    .get(index)
+                    .map(|w| w.verification_script.clone())
+            });
+
+        if witness_script
+            .as_ref()
+            .map(|s| s.is_empty())
+            .unwrap_or(true)
+        {
+            return Err(format!(
+                "The smart contract or address {} ({}) is not found. If this is your wallet address and you want to sign a transaction with it, make sure you have opened this wallet.",
+                hex::encode(hash.to_array()),
+                Helper::to_address(hash, settings.address_version)
+            ));
+        }
+
+        let witness_script = witness_script.expect("script presence checked");
+
+        if ContractHelper::is_signature_contract(&witness_script) {
+            size += 67 + var_size_with_payload(witness_script.len());
+            network_fee += exec_fee_factor * ContractHelper::signature_contract_cost();
+        } else if let Some((m, n)) = parse_multi_sig_contract(&witness_script) {
+            let invocation_len = 66 * m as i64;
+            size += var_size_with_payload(invocation_len as usize) + invocation_len;
+            size += var_size_with_payload(witness_script.len());
+            network_fee +=
+                exec_fee_factor * ContractHelper::multi_signature_contract_cost(m as i32, n as i32);
+        } else {
+            return Err(format!(
+                "Contract-based verification for script hash {} is not yet supported in this build.",
+                hex::encode(hash.to_array())
+            ));
+        }
+    }
+
+    network_fee += size * fee_per_byte;
+    for attribute in tx.attributes() {
+        network_fee += attribute.calculate_network_fee(snapshot, tx);
+    }
+
+    Ok(network_fee)
+}
+
+fn var_size_prefix(len: usize) -> i64 {
+    if len < 0xFD {
+        1
+    } else if len <= 0xFFFF {
+        3
+    } else if len <= 0xFFFF_FFFF {
+        5
+    } else {
+        9
+    }
+}
+
+fn var_size_with_payload(len: usize) -> i64 {
+    var_size_prefix(len) + len as i64
+}
+
+fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, usize)> {
+    if script.len() < 43 {
+        return None;
+    }
+
+    let first = OpCode::try_from(script[0]).ok()?;
+    let first_byte = first as u8;
+    if !((OpCode::PUSH1 as u8)..=(OpCode::PUSH16 as u8)).contains(&first_byte) {
+        return None;
+    }
+    let m = (first as u8 - OpCode::PUSH0 as u8) as usize;
+
+    let mut offset = 1;
+    let mut n = 0usize;
+    while offset < script.len() {
+        if script[offset] != OpCode::PUSHDATA1 as u8 {
+            break;
+        }
+        if offset + 2 >= script.len() {
+            return None;
+        }
+        let key_len = script[offset + 1] as usize;
+        if key_len != 33 || offset + 2 + key_len > script.len() {
+            return None;
+        }
+        offset += 2 + key_len;
+        n += 1;
+    }
+
+    if n == 0 || offset >= script.len() {
+        return None;
+    }
+
+    let push_n = OpCode::try_from(script[offset]).ok()?;
+    let opcode_value = push_n as u8;
+    if !((OpCode::PUSH1 as u8)..=(OpCode::PUSH16 as u8)).contains(&opcode_value) {
+        return None;
+    }
+    if (push_n as u8 - OpCode::PUSH0 as u8) as usize != n {
+        return None;
+    }
+    offset += 1;
+
+    if offset + 5 != script.len() {
+        return None;
+    }
+    if script[offset] != OpCode::SYSCALL as u8 {
+        return None;
+    }
+
+    Some((m, n))
+}
+
 /// Base58 utilities
-pub mod Base58 {
-    use crate::cryptography::Crypto;
+pub mod base58 {
+    use crate::cryptography::crypto_utils::Base58;
 
     /// Encodes data with a 4-byte double-SHA256 checksum using Base58Check.
     pub fn base58_check_encode(data: &[u8]) -> String {
-        let mut payload = Vec::with_capacity(data.len() + 4);
-        payload.extend_from_slice(data);
-        let checksum = Crypto::hash256(data);
-        payload.extend_from_slice(&checksum[..4]);
-        bs58::encode(payload).into_string()
+        Base58::encode_check(data)
     }
 }
 
@@ -130,8 +272,8 @@ impl Base58CheckDecode for str {
         }
 
         let (payload, checksum) = bytes.split_at(bytes.len() - 4);
-        let expected = crate::cryptography::Crypto::hash256(payload);
-        if checksum != expected[..4] {
+        let expected = crate::cryptography::crypto_utils::NeoHash::hash256(payload);
+        if checksum != &expected[..4] {
             return Err("Invalid Base58Check checksum: provided checksum does not match calculated checksum.".to_string());
         }
 

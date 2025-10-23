@@ -10,33 +10,54 @@
 // modifications are permitted.
 
 use crate::log_level::LogLevel;
+use lazy_static::lazy_static;
+use std::sync::Mutex;
 
 /// Log event handler delegate
 /// Matches C# LogEventHandler delegate
 pub type LogEventHandler = fn(source: String, level: LogLevel, message: String);
+
+lazy_static! {
+    static ref LOG_LEVEL: Mutex<LogLevel> = Mutex::new(LogLevel::Info);
+    static ref LOGGING: Mutex<Option<LogEventHandler>> = Mutex::new(None);
+}
 
 /// A utility class that provides common functions.
 /// Matches C# Utility class
 pub struct Utility;
 
 impl Utility {
-    /// Log level property
-    /// Matches C# LogLevel property
-    pub static LOG_LEVEL: LogLevel = LogLevel::Info;
-    
-    /// Logging event
-    /// Matches C# Logging event
-    pub static LOGGING: Option<LogEventHandler> = None;
-    
+    /// Gets the current log level.
+    pub fn log_level() -> LogLevel {
+        *LOG_LEVEL.lock().unwrap()
+    }
+
+    /// Sets the global log level (matches C# setter semantics).
+    pub fn set_log_level(level: LogLevel) {
+        if let Ok(mut guard) = LOG_LEVEL.lock() {
+            *guard = level;
+        }
+    }
+
+    /// Registers a logging handler.
+    pub fn set_logging(handler: Option<LogEventHandler>) {
+        if let Ok(mut guard) = LOGGING.lock() {
+            *guard = handler;
+        }
+    }
+
     /// Writes a log.
     /// Matches C# Log method
     pub fn log(source: &str, level: LogLevel, message: &str) {
-        if (level as u8) < (Self::LOG_LEVEL as u8) {
+        let current_level = Utility::log_level();
+        if (level as u8) < (current_level as u8) {
             return;
         }
-        
-        if let Some(handler) = Self::LOGGING {
-            handler(source.to_string(), level, message.to_string());
+
+        if let Ok(handler_guard) = LOGGING.lock() {
+            if let Some(handler) = *handler_guard {
+                handler(source.to_string(), level, message.to_string());
+            }
         }
     }
 }

@@ -9,10 +9,13 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{MemoryReader, Serializable};
-use crate::{persistence::DataCache, UInt256};
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
+use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::native::LedgerContract;
+use crate::UInt256;
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
+use tracing::warn;
 
 /// Represents a conflicts transaction attribute.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,28 +31,34 @@ impl Conflicts {
     }
 
     /// Verify the conflicts attribute.
-    pub fn verify(&self, snapshot: &DataCache, _tx: &super::transaction::Transaction) -> bool {
-        // TODO: Check if conflicting transaction is on chain when DataCache methods are available
-        // Only check if conflicting transaction is on chain. It's OK if the
-        // conflicting transaction was in the Conflicts attribute of some other
-        // on-chain transaction.
-        // !snapshot.contains_transaction(&self.hash)
-        true
+    pub fn verify(
+        &self,
+        _settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        _tx: &super::transaction::Transaction,
+    ) -> bool {
+        let ledger = LedgerContract::new();
+        match ledger.contains_transaction(snapshot, &self.hash) {
+            Ok(exists) => !exists,
+            Err(err) => {
+                warn!(target: "neo", hash = %self.hash, error = %err, "failed to verify conflicts attribute against ledger");
+                false
+            }
+        }
     }
 
     /// Calculate network fee for this attribute.
     pub fn calculate_network_fee(
         &self,
-        _snapshot: &DataCache,
+        base_fee: i64,
         tx: &super::transaction::Transaction,
     ) -> i64 {
-        // Fee is multiplied by number of signers
-        tx.signers().len() as i64 * 1000000 // Base fee in datoshi
+        tx.signers().len() as i64 * base_fee
     }
 
     /// Serialize without type byte.
-    pub fn serialize_without_type(&self, writer: &mut dyn Write) -> io::Result<()> {
-        self.hash.serialize(writer)
+    pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        Serializable::serialize(&self.hash, writer)
     }
 }
 
@@ -58,12 +67,12 @@ impl Serializable for Conflicts {
         32 // UInt256
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        self.hash.serialize(writer)
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        Serializable::serialize(&self.hash, writer)
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let hash = UInt256::deserialize(reader)?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let hash = <UInt256 as Serializable>::deserialize(reader)?;
         Ok(Self { hash })
     }
 }

@@ -47,16 +47,16 @@ pub fn deserialize_json<T: for<'de> Deserialize<'de>>(data: &str) -> crate::Resu
 /// Serializes data using Neo's native binary format (matches C# ISerializable exactly)
 pub fn serialize_neo_binary<T>(data: &T, writer: &mut BinaryWriter) -> crate::Result<()>
 where
-    T: neo_io::Serializable,
+    T: crate::neo_io::Serializable,
 {
-    data.serialize(writer)
+    Serializable::serialize(data, writer)
         .map_err(|e| crate::Error::Generic(format!("Neo binary serialization failed: {}", e)))
 }
 
 /// Deserializes data using Neo's native binary format (matches C# ISerializable exactly)
 pub fn deserialize_neo_binary<T>(data: &[u8]) -> crate::Result<T>
 where
-    T: neo_io::Serializable + Default,
+    T: crate::neo_io::Serializable + Default,
 {
     // Validate input data
     if data.is_empty() {

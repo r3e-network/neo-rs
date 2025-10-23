@@ -10,11 +10,16 @@
 // modifications are permitted.
 
 use super::oracle_response_code::OracleResponseCode;
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::call_flags::CallFlags;
+use crate::smart_contract::native::{oracle_contract::OracleContract, NativeContract};
 use crate::WitnessScope;
+use lazy_static::lazy_static;
+use neo_vm::{op_code::OpCode, ScriptBuilder};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Indicates the maximum size of the Result field.
 pub const MAX_RESULT_SIZE: usize = u16::MAX as usize;
@@ -40,15 +45,33 @@ impl OracleResponse {
 
     /// Get the fixed script for oracle response transactions.
     pub fn get_fixed_script() -> Vec<u8> {
-        // This would emit: EmitDynamicCall(NativeContract.Oracle.Hash, "finish")
-        // For now, return a placeholder
-        vec![0x41, 0xC7, 0x24, 0x08] // Simplified script
+        lazy_static! {
+            static ref ORACLE_FINISH_SCRIPT: Vec<u8> = {
+                let oracle_hash = OracleContract::new().hash();
+                let mut builder = ScriptBuilder::new();
+                builder.emit_opcode(OpCode::NEWARRAY0);
+                builder.emit_push_int(CallFlags::ALL.bits() as i64);
+                builder.emit_push("finish".as_bytes());
+                builder.emit_push(&oracle_hash.to_array());
+                builder
+                    .emit_syscall("System.Contract.Call")
+                    .expect("emit_syscall should succeed");
+                builder.to_array()
+            };
+        }
+
+        ORACLE_FINISH_SCRIPT.clone()
     }
 
     /// Verify the oracle response attribute.
-    pub fn verify(&self, _snapshot: &DataCache, tx: &super::transaction::Transaction) -> bool {
+    pub fn verify(
+        &self,
+        _settings: &ProtocolSettings,
+        _snapshot: &DataCache,
+        tx: &super::transaction::Transaction,
+    ) -> bool {
         // Check that no signers have scopes other than None
-        if tx.signers.iter().any(|s| s.scopes != WitnessScope::NONE) {
+        if tx.signers().iter().any(|s| s.scopes != WitnessScope::NONE) {
             return false;
         }
 
@@ -63,19 +86,14 @@ impl OracleResponse {
     }
 
     /// Serialize without type byte.
-    pub fn serialize_without_type(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&self.id.to_le_bytes())?;
-        writer.write_all(&[self.code as u8])?;
+    pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u64(self.id)?;
+        writer.write_u8(self.code as u8)?;
 
-        // Write result as var bytes
         if self.result.len() > MAX_RESULT_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Result too large",
-            ));
+            return Err(IoError::invalid_data("Result too large"));
         }
-        writer.write_all(&(self.result.len() as u16).to_le_bytes())?;
-        writer.write_all(&self.result)?;
+        writer.write_var_bytes(&self.result)?;
         Ok(())
     }
 }
@@ -84,47 +102,38 @@ impl Serializable for OracleResponse {
     fn size(&self) -> usize {
         8 + // Id (u64)
         1 + // Code (u8)
-        2 + self.result.len() // Result with var length prefix
+        get_var_size(self.result.len() as u64) + self.result.len() // Result with var length prefix
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&self.id.to_le_bytes())?;
-        writer.write_all(&[self.code as u8])?;
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u64(self.id)?;
+        writer.write_u8(self.code as u8)?;
 
-        // Write result as var bytes
         if self.result.len() > MAX_RESULT_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Result too large",
-            ));
+            return Err(IoError::invalid_data("Result too large"));
         }
-        writer.write_all(&(self.result.len() as u16).to_le_bytes())?;
-        writer.write_all(&self.result)?;
+        writer.write_var_bytes(&self.result)?;
 
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let id = reader.read_u64().map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let id = reader.read_u64()?;
 
-        let code_byte = reader.read_u8().map_err(|e| e.to_string())?;
+        let code_byte = reader.read_u8()?;
         let code = OracleResponseCode::from_byte(code_byte)
-            .ok_or_else(|| format!("Invalid response code: {}", code_byte))?;
+            .ok_or_else(|| IoError::invalid_data("Invalid response code"))?;
 
-        let result_len = reader.read_var_int().map_err(|e| e.to_string())?;
-        if result_len > MAX_RESULT_SIZE as u64 {
-            return Err("Result too large".to_string());
-        }
-
-        let result = if result_len > 0 {
-            if code != OracleResponseCode::Success {
-                return Err("Non-success response cannot have result".to_string());
-            }
-            reader
-                .read_bytes(result_len as usize)
-                .map_err(|e| e.to_string())?
+        let result = if code == OracleResponseCode::Success {
+            reader.read_var_bytes(MAX_RESULT_SIZE)?
         } else {
-            Vec::new()
+            let bytes = reader.read_var_bytes(MAX_RESULT_SIZE)?;
+            if !bytes.is_empty() {
+                return Err(IoError::invalid_data(
+                    "Non-success response cannot have result",
+                ));
+            }
+            bytes
         };
 
         Ok(Self { id, code, result })

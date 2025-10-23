@@ -10,7 +10,7 @@ use num_traits::ToPrimitive;
 pub struct HashIndexState {
     /// The hash value
     pub hash: UInt256,
-    
+
     /// The index value
     pub index: u32,
 }
@@ -20,7 +20,7 @@ impl HashIndexState {
     pub fn new(hash: UInt256, index: u32) -> Self {
         Self { hash, index }
     }
-    
+
     /// Creates default state
     pub fn default() -> Self {
         Self {
@@ -40,7 +40,9 @@ impl IInteroperable for HashIndexState {
 
             if let Ok(bytes) = items[0].as_bytes() {
                 if bytes.len() == 32 {
-                    self.hash = UInt256::from_bytes(&bytes);
+                    if let Ok(hash) = UInt256::from_bytes(&bytes) {
+                        self.hash = hash;
+                    }
                 }
             }
 

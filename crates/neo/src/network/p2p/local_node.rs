@@ -16,15 +16,15 @@ use super::{
     peer::{PeerCommand, PeerState, PeerTimer, MAX_COUNT_FROM_SEED_LIST},
     remote_node::{RemoteNode, RemoteNodeCommand},
 };
-use crate::neo_system::{NeoSystemContext, ProtocolSettings};
 use crate::network::p2p::payloads::{
     addr_payload::MAX_COUNT_TO_SEND, network_address_with_time::NetworkAddressWithTime,
     VersionPayload,
 };
-use akka::{message::Terminated, Actor, ActorContext, ActorRef, ActorResult, Props};
+use crate::{neo_system::NeoSystemContext, protocol_settings::ProtocolSettings};
+use akka::{Actor, ActorContext, ActorRef, ActorResult, Props, Terminated};
 use async_trait::async_trait;
 use rand::{seq::IteratorRandom, thread_rng};
-use std::any::Any;
+use std::any::{type_name_of_val, Any};
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -67,7 +67,7 @@ impl RemoteNodeSnapshot {
 }
 
 /// Represents the local node in the P2P network (mirrors C# Neo.Network.P2P.LocalNode).
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LocalNode {
     /// Runtime protocol settings shared with the wider system.
     settings: Arc<ProtocolSettings>,
@@ -93,7 +93,7 @@ pub struct LocalNode {
     system_context: RwLock<Option<Arc<NeoSystemContext>>>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct RemoteActorEntry {
     actor: ActorRef,
     snapshot: RemoteNodeSnapshot,
@@ -101,6 +101,8 @@ struct RemoteActorEntry {
 }
 
 impl LocalNode {
+    pub const PROTOCOL_VERSION: u32 = 0;
+
     /// Creates a new local node matching the behaviour of the C# constructor.
     pub fn new(settings: Arc<ProtocolSettings>, port: u16, user_agent: String) -> Self {
         Self {
@@ -650,7 +652,7 @@ impl LocalNodeActor {
     async fn handle_local_command(
         &mut self,
         command: LocalNodeCommand,
-        _ctx: &mut ActorContext,
+        ctx: &mut ActorContext,
     ) -> ActorResult {
         match command {
             LocalNodeCommand::AddPeer {
@@ -816,7 +818,7 @@ impl LocalNodeActor {
         inbound: bool,
     ) -> ActorResult {
         let connection = Arc::new(Mutex::new(PeerConnection::new(stream, remote, inbound)));
-        let actor_name = ActorRef::unique_child_name();
+        let actor_name = format!("remote-{:016x}", rand::random::<u64>());
 
         let version_payload = self.state.version_payload();
         let settings = self.state.settings();
@@ -879,7 +881,8 @@ impl LocalNodeActor {
 
         let mut rng = thread_rng();
         let selection: Vec<_> = seeds
-            .into_iter()
+            .iter()
+            .copied()
             .choose_multiple(&mut rng, requested.min(seeds.len()));
 
         if selection.is_empty() {
@@ -972,7 +975,7 @@ impl Actor for LocalNodeActor {
                         Err(payload) => {
                             warn!(
                                 target: "neo",
-                                message_type = %payload.type_id().name(),
+                                message_type = %type_name_of_val(payload.as_ref()),
                                 "unknown message routed to local node actor"
                             );
                             Ok(())

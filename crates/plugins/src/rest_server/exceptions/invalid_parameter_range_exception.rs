@@ -3,7 +3,7 @@
 // Rust port of Neo.Plugins.RestServer.Exceptions.InvalidParameterRangeException.
 
 use crate::rest_server::exceptions::rest_error_codes::RestErrorCodes;
-use crate::rest_server::models::error::ErrorModel;
+use crate::rest_server::models::error::error_model::ErrorModel;
 use thiserror::Error;
 
 #[derive(Debug, Error, Clone)]

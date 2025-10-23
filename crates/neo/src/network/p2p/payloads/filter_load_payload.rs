@@ -9,9 +9,9 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Maximum filter size (36000 bytes)
 const MAX_FILTER_SIZE: usize = 36000;
@@ -39,7 +39,7 @@ impl FilterLoadPayload {
     }
 
     /// Creates from a bloom filter.
-    pub fn create_from_bloom_filter(m: usize, k: u8, tweak: u32, bits: Vec<u8>) -> Self {
+    pub fn create_from_bloom_filter(_m: usize, k: u8, tweak: u32, bits: Vec<u8>) -> Self {
         // The bits would be extracted from a BloomFilter
         // For now, use the provided bits directly
         Self {
@@ -52,44 +52,33 @@ impl FilterLoadPayload {
 
 impl Serializable for FilterLoadPayload {
     fn size(&self) -> usize {
-        2 + self.filter.len() + // Filter with var length prefix
+        get_var_size(self.filter.len() as u64) + self.filter.len() +
         1 + // K
         4 // Tweak
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         // Write filter as var bytes
         if self.filter.len() > MAX_FILTER_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Filter too large",
-            ));
+            return Err(IoError::invalid_data("Filter too large"));
         }
-        writer.write_all(&(self.filter.len() as u16).to_le_bytes())?;
-        writer.write_all(&self.filter)?;
+        writer.write_var_bytes(&self.filter)?;
 
-        writer.write_all(&[self.k])?;
-        writer.write_all(&self.tweak.to_le_bytes())?;
+        writer.write_u8(self.k)?;
+        writer.write_u32(self.tweak)?;
 
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let filter_len = reader.read_var_int().map_err(|e| e.to_string())?;
-        if filter_len > MAX_FILTER_SIZE as u64 {
-            return Err("Filter too large".to_string());
-        }
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let filter = reader.read_var_bytes(MAX_FILTER_SIZE)?;
 
-        let filter = reader
-            .read_bytes(filter_len as usize)
-            .map_err(|e| e.to_string())?;
-
-        let k = reader.read_u8().map_err(|e| e.to_string())?;
+        let k = reader.read_u8()?;
         if k > MAX_K {
-            return Err(format!("K value {} exceeds maximum {}", k, MAX_K));
+            return Err(IoError::invalid_data("K value exceeds maximum"));
         }
 
-        let tweak = reader.read_u32().map_err(|e| e.to_string())?;
+        let tweak = reader.read_u32()?;
 
         Ok(Self { filter, k, tweak })
     }

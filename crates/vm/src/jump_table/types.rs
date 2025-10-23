@@ -9,7 +9,7 @@ use crate::instruction::Instruction;
 use crate::jump_table::JumpTable;
 use crate::op_code::OpCode;
 use crate::stack_item::stack_item_type::StackItemType;
-use crate::stack_item::StackItem;
+use crate::stack_item::{Array, Map, StackItem, Struct};
 
 /// Registers the type operation handlers.
 pub fn register_handlers(jump_table: &mut JumpTable) {
@@ -54,14 +54,26 @@ fn convert(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<
         (item, StackItemType::Buffer) => StackItem::from_buffer(item.as_bytes()?),
 
         // Convert to Array
-        (StackItem::Array(items), StackItemType::Array) => StackItem::from_array(items),
-        (StackItem::Struct(items), StackItemType::Array) => StackItem::from_array(items),
+        (StackItem::Array(items), StackItemType::Array) => StackItem::Array(items),
+        (StackItem::Struct(items), StackItemType::Array) => StackItem::Array(Array::new(
+            items.into(),
+            Some(context.reference_counter().clone()),
+        )),
 
-        (StackItem::Array(items), StackItemType::Struct) => StackItem::from_struct(items),
-        (StackItem::Struct(items), StackItemType::Struct) => StackItem::from_struct(items),
+        (StackItem::Array(items), StackItemType::Struct) => StackItem::Struct(Struct::new(
+            items.into(),
+            Some(context.reference_counter().clone()),
+        )),
+        (StackItem::Struct(items), StackItemType::Struct) => StackItem::Struct(Struct::new(
+            items.into(),
+            Some(context.reference_counter().clone()),
+        )),
 
         // Convert to Map
-        (StackItem::Map(items), StackItemType::Map) => StackItem::from_map(items),
+        (StackItem::Map(entries), StackItemType::Map) => StackItem::Map(Map::new(
+            entries.into(),
+            Some(context.reference_counter().clone()),
+        )),
 
         // Convert to Pointer
         (StackItem::Pointer(pointer), StackItemType::Pointer) => StackItem::Pointer(pointer),

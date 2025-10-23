@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
+use std::str::FromStr;
 
 /// Represents the scope of a witness (matches C# WitnessScope [Flags] enum exactly).
 ///
@@ -36,6 +37,30 @@ impl WitnessScope {
     /// Global scope allows this witness in all contexts (default Neo 2 behavior).
     /// This cannot be combined with other flags.
     pub const GLOBAL: WitnessScope = WitnessScope(0x80);
+
+    #[allow(non_upper_case_globals)]
+    /// Alias matching C# casing for CalledByEntry.
+    pub const CalledByEntry: WitnessScope = WitnessScope::CALLED_BY_ENTRY;
+
+    #[allow(non_upper_case_globals)]
+    /// Alias matching C# casing for None.
+    pub const None: WitnessScope = WitnessScope::NONE;
+
+    #[allow(non_upper_case_globals)]
+    /// Alias matching C# casing for Global.
+    pub const Global: WitnessScope = WitnessScope::GLOBAL;
+
+    #[allow(non_upper_case_globals)]
+    /// Alias matching C# casing for CustomContracts.
+    pub const CustomContracts: WitnessScope = WitnessScope::CUSTOM_CONTRACTS;
+
+    #[allow(non_upper_case_globals)]
+    /// Alias matching C# casing for CustomGroups.
+    pub const CustomGroups: WitnessScope = WitnessScope::CUSTOM_GROUPS;
+
+    #[allow(non_upper_case_globals)]
+    /// Alias matching C# casing for WitnessRules.
+    pub const WitnessRules: WitnessScope = WitnessScope::WITNESS_RULES;
 }
 
 impl WitnessScope {
@@ -161,6 +186,57 @@ impl WitnessScope {
 impl Default for WitnessScope {
     fn default() -> Self {
         WitnessScope::NONE
+    }
+}
+
+impl FromStr for WitnessScope {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return Ok(WitnessScope::NONE);
+        }
+
+        let mut scope = WitnessScope::NONE;
+        let mut has_parts = false;
+        for part in trimmed
+            .split(|c| c == '|' || c == ',')
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty())
+        {
+            has_parts = true;
+            let flag = match part.to_ascii_lowercase().as_str() {
+                "none" => WitnessScope::NONE,
+                "calledbyentry" => WitnessScope::CALLED_BY_ENTRY,
+                "customcontracts" => WitnessScope::CUSTOM_CONTRACTS,
+                "customgroups" => WitnessScope::CUSTOM_GROUPS,
+                "witnessrules" => WitnessScope::WITNESS_RULES,
+                "global" => WitnessScope::GLOBAL,
+                other => {
+                    return Err(format!("Unknown witness scope: {other}"));
+                }
+            };
+
+            if flag == WitnessScope::GLOBAL && scope != WitnessScope::NONE {
+                return Err("Global scope cannot be combined with other flags".to_string());
+            }
+            if scope == WitnessScope::GLOBAL && flag != WitnessScope::GLOBAL {
+                return Err("Global scope cannot be combined with other flags".to_string());
+            }
+
+            scope = scope | flag;
+        }
+
+        if !has_parts {
+            return Ok(WitnessScope::NONE);
+        }
+
+        if !scope.is_valid() {
+            return Err(format!("Invalid witness scope combination: {trimmed}"));
+        }
+
+        Ok(scope)
     }
 }
 

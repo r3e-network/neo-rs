@@ -1,180 +1,129 @@
-//! Integration tests for the Neo VM reference counter.
+//! Parity tests for the Neo VM reference counter port.
 
-use neo_vm::reference_counter::ReferenceCounter;
-use neo_vm::stack_item::StackItem;
+use neo_vm::reference_counter::{CompoundParent, ReferenceCounter};
+use neo_vm::stack_item::{Array, Map, StackItem, Struct};
 use std::collections::BTreeMap;
 
-#[test]
-fn test_reference_counter_creation() {
-    let counter = ReferenceCounter::new();
+fn new_reference_counter() -> ReferenceCounter {
+    ReferenceCounter::new()
+}
 
-    assert_eq!(counter.count(), 0);
+fn new_array() -> StackItem {
+    StackItem::from_array(vec![StackItem::from_int(1), StackItem::Null])
+}
+
+fn new_struct() -> StackItem {
+    StackItem::from_struct(vec![StackItem::from_int(5)])
 }
 
 #[test]
-fn test_reference_counter_add_reference() {
-    let mut counter = ReferenceCounter::new();
+fn stack_references_are_counted() {
+    let counter = new_reference_counter();
+    let array = new_array();
 
-    // Add a reference
-    let id = counter.add_reference();
-
-    assert_eq!(counter.count(), 1);
-    assert_eq!(counter.get_reference_count(id), 1);
-
-    // Add another reference to the same item
-    counter.add_reference_to(id, 1);
-
-    assert_eq!(counter.count(), 2);
-    assert_eq!(counter.get_reference_count(id), 2);
-}
-
-#[test]
-fn test_reference_counter_remove_reference() {
-    let mut counter = ReferenceCounter::new();
-
-    // Add a reference
-    let id = counter.add_reference();
-
-    // Add another reference to the same item
-    counter.add_reference_to(id, 1);
-
-    assert_eq!(counter.count(), 2);
-    assert_eq!(counter.get_reference_count(id), 2);
-
-    // Remove a reference
-    counter.remove_reference(id);
-
-    assert_eq!(counter.count(), 1);
-    assert_eq!(counter.get_reference_count(id), 1);
-
-    // Remove another reference
-    counter.remove_reference(id);
-
-    assert_eq!(counter.count(), 0);
-    assert_eq!(counter.get_reference_count(id), 0);
-}
-
-#[test]
-fn test_reference_counter_check_zero_referred() {
-    let mut counter = ReferenceCounter::new();
-
-    // Add a reference
-    let id = counter.add_reference();
-
-    // Add another reference to the same item
-    counter.add_reference_to(id, 1);
-
-    assert_eq!(counter.count(), 2);
-
-    // Remove a reference
-    counter.remove_reference(id);
-
-    assert_eq!(counter.count(), 1);
-
-    // Remove another reference
-    counter.remove_reference(id);
-
-    assert_eq!(counter.count(), 0);
-
-    // Check zero referred
-    let count = counter.check_zero_referred();
-
-    assert_eq!(count, 0);
-}
-
-#[test]
-fn test_reference_counter_with_stack_items() {
-    let mut counter = ReferenceCounter::new();
-
-    // Create stack items
-    let item1 = StackItem::from_int(1);
-    let item2 = StackItem::from_int(2);
-    let item3 = StackItem::from_int(3);
-
-    // Add references
-    let id1 = counter.add_reference();
-    let id2 = counter.add_reference();
-    let id3 = counter.add_reference();
-
+    counter.add_stack_reference(&array, 1);
+    counter.add_stack_reference(&array, 2);
     assert_eq!(counter.count(), 3);
 
-    // Remove references
-    counter.remove_reference(id1);
-    counter.remove_reference(id2);
-    counter.remove_reference(id3);
+    counter.remove_stack_reference(&array);
+    counter.remove_stack_reference(&array);
+    counter.remove_stack_reference(&array);
+    assert_eq!(counter.count(), 0);
+
+    // Drain zero-referred queue without panicking.
+    assert_eq!(counter.check_zero_referred(), 0);
+}
+
+#[test]
+fn object_references_keep_children_alive() {
+    let counter = new_reference_counter();
+    let parent = new_array();
+    let child = new_struct();
+
+    counter.add_reference(&child, &parent);
+    assert_eq!(counter.count(), 1);
+
+    // While the parent still references the child the zero set should be empty.
+    assert_eq!(counter.check_zero_referred(), 1);
+
+    counter.remove_reference(&child, &parent);
+    assert_eq!(counter.count(), 0);
+    assert_eq!(counter.check_zero_referred(), 0);
+}
+
+#[test]
+fn zero_referred_records_are_cleared() {
+    let counter = new_reference_counter();
+    let array = new_array();
+
+    counter.add_stack_reference(&array, 1);
+    assert_eq!(counter.count(), 1);
+
+    counter.remove_stack_reference(&array);
+    assert_eq!(counter.count(), 0);
+
+    // First call removes the outstanding tracked record.
+    assert_eq!(counter.check_zero_referred(), 0);
+    // Second call is a no-op.
+    assert_eq!(counter.check_zero_referred(), 0);
+}
+
+#[test]
+fn array_compound_references_track_children() {
+    let counter = ReferenceCounter::new();
+    let child_struct = StackItem::Struct(Struct::new(Vec::new(), Some(counter.clone())));
+    let mut array = Array::new(Vec::new(), Some(counter.clone()));
 
     assert_eq!(counter.count(), 0);
+
+    array.push(child_struct.clone()).unwrap();
+    assert_eq!(counter.count(), 1);
+
+    let popped = array.pop().unwrap();
+    assert!(popped.equals(&child_struct).unwrap());
+    assert_eq!(counter.count(), 0);
+    assert_eq!(counter.check_zero_referred(), 0);
 }
 
 #[test]
-fn test_reference_counter_with_circular_references() {
+fn map_references_keys_and_values() {
     let counter = ReferenceCounter::new();
+    let mut map = Map::new(BTreeMap::new(), Some(counter.clone()));
 
-    // Register objects
-    let id1 = counter.register();
-    let id2 = counter.register();
+    let key = StackItem::from_int(7);
+    let value = StackItem::Struct(Struct::new(Vec::new(), Some(counter.clone())));
 
-    // Add references
-    counter.add_reference_to(id1, 1);
-    counter.add_reference_to(id2, 1);
-
-    counter.add_reference_to(id1, 1);
-    counter.add_reference_to(id2, 1);
-
-    assert_eq!(counter.count(), 4);
-
-    // Remove references
-    let _zero_ref1 = counter.remove_reference(id1);
-    let _zero_ref2 = counter.remove_reference(id2);
-
+    map.set(key.clone(), value.clone()).unwrap();
     assert_eq!(counter.count(), 2);
 
-    // Check zero referred
-    let count = counter.check_zero_referred();
-
-    // The remaining references should still be counted
-    assert_eq!(count, 2);
+    let removed = map.remove(&key).unwrap();
+    assert!(removed.equals(&value).unwrap());
+    assert_eq!(counter.count(), 0);
+    assert_eq!(counter.check_zero_referred(), 0);
 }
 
 #[test]
-fn test_reference_counter_with_complex_references() {
+fn cyclic_compound_items_are_collected() {
     let counter = ReferenceCounter::new();
 
-    // Create a complex reference structure
-    let id1 = counter.register();
-    let id2 = counter.register();
-    let id3 = counter.register();
-    let id4 = counter.register();
+    let array_a = Array::new(Vec::new(), Some(counter.clone()));
+    let array_b = Array::new(Vec::new(), Some(counter.clone()));
 
-    // Add references
-    counter.add_reference_to(id1, 1);
-    counter.add_reference_to(id2, 1);
-    counter.add_reference_to(id3, 1);
-    counter.add_reference_to(id4, 1);
+    let id_a = array_a.id();
+    let id_b = array_b.id();
 
-    // Add more references
-    counter.add_reference_to(id1, 1);
-    counter.add_reference_to(id2, 1);
-    counter.add_reference_to(id3, 1);
-    counter.add_reference_to(id4, 1);
+    let item_a = StackItem::Array(array_a);
+    let item_b = StackItem::Array(array_b);
 
-    // Create additional references
-    counter.add_reference_to(id1, 1);
-    counter.add_reference_to(id2, 1);
+    counter.add_stack_reference(&item_a, 1);
+    counter.add_stack_reference(&item_b, 1);
 
-    assert_eq!(counter.count(), 10);
+    counter.add_compound_reference(&item_a, CompoundParent::Array(id_b));
+    counter.add_compound_reference(&item_b, CompoundParent::Array(id_a));
 
-    // Remove references
-    let _zero_ref1 = counter.remove_reference(id1);
-    let _zero_ref2 = counter.remove_reference(id2);
-    let _zero_ref3 = counter.remove_reference(id3);
-    let _zero_ref4 = counter.remove_reference(id4);
+    counter.remove_stack_reference(&item_a);
+    counter.remove_stack_reference(&item_b);
 
-    assert_eq!(counter.count(), 6);
-
-    // Check zero referred
-    let count = counter.check_zero_referred();
-
-    // The remaining references should still be counted
-    assert_eq!(count, 6);
+    assert_eq!(counter.check_zero_referred(), 0);
+    assert_eq!(counter.check_zero_referred(), 0);
 }

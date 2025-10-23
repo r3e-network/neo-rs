@@ -75,7 +75,7 @@ impl IIterator for StorageIterator {
         let (key, value) = &self.items[idx];
 
         // Get key bytes
-        let mut key_bytes = key.key().to_vec();
+        let mut key_bytes = key.suffix().to_vec();
 
         // Remove prefix if requested
         if self.options.contains(FindOptions::RemovePrefix) && key_bytes.len() >= self.prefix_length

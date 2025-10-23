@@ -3,11 +3,13 @@
 //! This module implements critical transaction validation edge cases from C# UT_Transaction.cs
 //! to ensure complete behavioral compatibility between Neo-RS and Neo-CS.
 
+use neo_core::neo_io::Serializable;
+use neo_core::network::p2p::payloads::{signer::Signer, witness::Witness};
 use neo_core::{
-    CoreError, CoreResult, Signer, Transaction, TransactionAttribute, UInt160, UInt256, Witness,
-    WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
+    Transaction, TransactionAttribute, UInt160, WitnessScope, HEADER_SIZE, MAX_TRANSACTION_SIZE,
 };
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 // ============================================================================
 // Mock Transaction Verification Context (matches C# TransactionVerificationContext)
@@ -34,15 +36,17 @@ impl MockTransactionVerificationContext {
     pub fn check_transaction(&self, tx: &Transaction, _conflicts: &[Transaction]) -> bool {
         // Check for duplicate oracle responses
         for attr in tx.attributes() {
-            if let TransactionAttribute::OracleResponse(id) = attr {
-                if self.oracle_ids.contains(id) {
+            if let TransactionAttribute::OracleResponse(attr) = attr {
+                if self.oracle_ids.contains(&attr.id) {
                     return false;
                 }
             }
         }
 
         // Check sender fee balance (assume 8 GAS total balance for testing)
-        let sender = tx.sender();
+        let Some(sender) = tx.sender() else {
+            return true;
+        };
         let current_network = self.total_network_fees.get(&sender).copied().unwrap_or(0);
         let current_system = self.total_system_fees.get(&sender).copied().unwrap_or(0);
         let new_total = current_network + current_system + tx.network_fee() + tx.system_fee();
@@ -52,7 +56,9 @@ impl MockTransactionVerificationContext {
     }
 
     pub fn add_transaction(&mut self, tx: Transaction) {
-        let sender = tx.sender();
+        let Some(sender) = tx.sender() else {
+            return;
+        };
 
         // Update fee tracking
         let current_network = self.total_network_fees.get(&sender).copied().unwrap_or(0);
@@ -65,8 +71,8 @@ impl MockTransactionVerificationContext {
 
         // Track oracle IDs
         for attr in tx.attributes() {
-            if let TransactionAttribute::OracleResponse(id) = attr {
-                self.oracle_ids.insert(*id);
+            if let TransactionAttribute::OracleResponse(attr) = attr {
+                self.oracle_ids.insert(attr.id);
             }
         }
 
@@ -74,7 +80,9 @@ impl MockTransactionVerificationContext {
     }
 
     pub fn remove_transaction(&mut self, tx: &Transaction) {
-        let sender = tx.sender();
+        let Some(sender) = tx.sender() else {
+            return;
+        };
 
         // Update fee tracking
         if let Some(current_network) = self.total_network_fees.get_mut(&sender) {
@@ -93,8 +101,8 @@ impl MockTransactionVerificationContext {
 
         // Remove oracle IDs
         for attr in tx.attributes() {
-            if let TransactionAttribute::OracleResponse(id) = attr {
-                self.oracle_ids.remove(id);
+            if let TransactionAttribute::OracleResponse(attr) = attr {
+                self.oracle_ids.remove(&attr.id);
             }
         }
 
@@ -404,13 +412,13 @@ mod tests {
         assert_eq!(tx.attributes().len(), 0);
 
         // Test with high priority attribute
-        tx.set_attributes(vec![TransactionAttribute::HighPriority]);
+        tx.set_attributes(vec![TransactionAttribute::high_priority()]);
         assert_eq!(tx.attributes().len(), 1);
 
         // Test with multiple attributes
         tx.set_attributes(vec![
             TransactionAttribute::HighPriority,
-            TransactionAttribute::OracleResponse(42),
+            TransactionAttribute::oracle_response(42),
         ]);
         assert_eq!(tx.attributes().len(), 2);
     }
@@ -425,7 +433,7 @@ mod tests {
         tx.set_attributes(vec![]);
 
         // Create witness with invalid verification script
-        let witness = Witness::new(vec![], vec![0x10, 0x75]); // PUSH0, DROP
+        let witness = Witness::new_with_scripts(vec![], vec![0x10, 0x75]); // PUSH0, DROP
         tx.set_witnesses(vec![witness]);
 
         let signer = Signer::new(UInt160::zero(), WitnessScope::CalledByEntry);
@@ -443,7 +451,7 @@ mod tests {
 
         // Create first transaction with oracle response
         let mut tx1 = create_transaction_with_fee(1, 2);
-        tx1.set_attributes(vec![TransactionAttribute::OracleResponse(1)]);
+        tx1.set_attributes(vec![TransactionAttribute::oracle_response(1)]);
 
         let conflicts = vec![];
         assert!(context.check_transaction(&tx1, &conflicts));
@@ -451,7 +459,7 @@ mod tests {
 
         // Create second transaction with same oracle ID (should fail)
         let mut tx2 = create_transaction_with_fee(2, 1);
-        tx2.set_attributes(vec![TransactionAttribute::OracleResponse(1)]);
+        tx2.set_attributes(vec![TransactionAttribute::oracle_response(1)]);
 
         assert!(!context.check_transaction(&tx2, &conflicts));
     }
@@ -495,7 +503,7 @@ mod tests {
         assert!(tx.script().len() == 65536);
 
         // Test with many attributes (edge case)
-        let attributes = vec![TransactionAttribute::HighPriority; 16]; // Max attributes
+        let attributes = vec![TransactionAttribute::high_priority(); 16]; // Max attributes
         tx.set_attributes(attributes);
         assert_eq!(tx.attributes().len(), 16);
     }
@@ -623,8 +631,8 @@ mod tests {
         // Test with multiple witnesses
         tx.set_witnesses(vec![
             Witness::empty(),
-            Witness::new(vec![0x01], vec![0x02]),
-            Witness::new(vec![0x03], vec![0x04]),
+            Witness::new_with_scripts(vec![0x01], vec![0x02]),
+            Witness::new_with_scripts(vec![0x03], vec![0x04]),
         ]);
         assert_eq!(tx.witnesses().len(), 3);
 
@@ -674,18 +682,18 @@ mod tests {
         assert!(tx.attributes().is_empty());
 
         // Test with single attribute
-        tx.set_attributes(vec![TransactionAttribute::HighPriority]);
+        tx.set_attributes(vec![TransactionAttribute::high_priority()]);
         assert_eq!(tx.attributes().len(), 1);
 
         // Test with oracle response attribute
-        tx.set_attributes(vec![TransactionAttribute::OracleResponse(42)]);
+        tx.set_attributes(vec![TransactionAttribute::oracle_response(42)]);
         assert_eq!(tx.attributes().len(), 1);
 
         // Test with multiple mixed attributes
         tx.set_attributes(vec![
             TransactionAttribute::HighPriority,
-            TransactionAttribute::OracleResponse(1),
-            TransactionAttribute::OracleResponse(2),
+            TransactionAttribute::oracle_response(1),
+            TransactionAttribute::oracle_response(2),
         ]);
         assert_eq!(tx.attributes().len(), 3);
     }
@@ -698,7 +706,7 @@ mod tests {
         // Test with single signer
         let account1 = UInt160::from_bytes(&[0x01; 20]).unwrap();
         tx.set_signers(vec![Signer::new(account1, WitnessScope::CalledByEntry)]);
-        assert_eq!(tx.sender(), account1);
+        assert_eq!(tx.sender(), Some(account1));
 
         // Test with multiple signers (sender should be first)
         let account2 = UInt160::from_bytes(&[0x02; 20]).unwrap();
@@ -706,7 +714,7 @@ mod tests {
             Signer::new(account1, WitnessScope::CalledByEntry),
             Signer::new(account2, WitnessScope::Global),
         ]);
-        assert_eq!(tx.sender(), account1); // First signer is sender
+        assert_eq!(tx.sender(), Some(account1)); // First signer is sender
     }
 
     /// Test transaction version validation

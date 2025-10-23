@@ -9,9 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 // Maximum headers count from HeadersPayload
 const MAX_HEADERS_COUNT: i16 = 2000;
@@ -39,18 +38,18 @@ impl Serializable for GetBlockByIndexPayload {
         4 + 2 // u32 + i16
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&self.index_start.to_le_bytes())?;
-        writer.write_all(&self.count.to_le_bytes())?;
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u32(self.index_start)?;
+        writer.write_i16(self.count)?;
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let index_start = reader.read_u32().map_err(|e| e.to_string())?;
-        let count = reader.read_i16().map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let index_start = reader.read_u32()?;
+        let count = reader.read_i16()?;
 
         if count < -1 || count == 0 || count > MAX_HEADERS_COUNT {
-            return Err(format!("Invalid count: {}/{}", count, MAX_HEADERS_COUNT));
+            return Err(IoError::invalid_data("Invalid block count"));
         }
 
         Ok(Self { index_start, count })

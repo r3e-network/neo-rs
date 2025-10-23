@@ -58,6 +58,11 @@ impl ContractParameterDefinition {
             "type": format!("{:?}", self.param_type),
         })
     }
+
+    /// Approximate serialized size of the parameter definition.
+    pub fn size(&self) -> usize {
+        1 + self.name.len()
+    }
 }
 
 impl IInteroperable for ContractParameterDefinition {

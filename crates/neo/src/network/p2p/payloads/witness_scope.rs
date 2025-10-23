@@ -10,11 +10,12 @@
 // modifications are permitted.
 
 use bitflags::bitflags;
-use serde::{Deserialize, Serialize};
+use serde::de::Error as DeError;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 bitflags! {
     /// Represents the scope of a Witness.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct WitnessScope: u8 {
         /// Indicates that no contract was witnessed. Only sign the transaction.
         const NONE = 0x00;
@@ -36,5 +37,24 @@ bitflags! {
         /// This allows the witness in all contexts (default Neo2 behavior).
         /// Note: It cannot be combined with other flags.
         const GLOBAL = 0x80;
+    }
+}
+
+impl Serialize for WitnessScope {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8(self.bits())
+    }
+}
+
+impl<'de> Deserialize<'de> for WitnessScope {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bits = u8::deserialize(deserializer)?;
+        WitnessScope::from_bits(bits).ok_or_else(|| D::Error::custom("invalid witness scope bits"))
     }
 }

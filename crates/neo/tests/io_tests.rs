@@ -1,8 +1,14 @@
 //! Comprehensive IO tests converted from C# Neo unit tests.
 //! These tests ensure 100% compatibility with the C# Neo IO implementation.
 
-use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
+use neo_core::compression::CompressionError;
+use neo_core::extensions::{
+    BinaryReaderExtensions, BinaryWriterExtensions, ByteExtensions, CollectionExtensions,
+    MemoryReaderExtensions, SerializableExtensions,
+};
+use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::*;
+use std::io::Cursor;
 use std::str::FromStr;
 
 // ============================================================================
@@ -195,17 +201,28 @@ fn test_memory_reader_read_var_string() {
 /// Test converted from C# UT_MemoryReader.TestReadNullableArray
 #[test]
 fn test_memory_reader_read_nullable_array() {
-    let data = vec![4, 0, 0, 0, 0];
-    let mut reader = MemoryReader::new(&data);
+    let expected_third = UInt160::from_bytes(&[
+        0xAA, 0x00, 0x00, 0x00, 0x00, 0xBB, 0x00, 0x00, 0x00, 0x00, 0xCC, 0x00, 0x00, 0x00, 0x00,
+        0xDD, 0x00, 0x00, 0x00, 0x00,
+    ])
+    .unwrap();
 
-    let length = reader.read_u32().unwrap();
-    assert_eq!(4, length);
-    assert_eq!(4, reader.position());
+    let values = [None, Some(UInt160::zero()), Some(expected_third)];
 
-    // Read the null indicator
-    let null_indicator = reader.read_byte().unwrap();
-    assert_eq!(0, null_indicator);
-    assert_eq!(5, reader.position());
+    let mut writer = BinaryWriter::new();
+    writer.write_nullable_array(&values).unwrap();
+    let payload = writer.to_bytes();
+
+    let mut reader_too_small = MemoryReader::new(&payload);
+    assert!(reader_too_small
+        .read_nullable_array::<UInt160>(values.len() - 1)
+        .is_err());
+
+    let mut reader = MemoryReader::new(&payload);
+    let roundtrip = reader.read_nullable_array::<UInt160>(usize::MAX).unwrap();
+
+    assert_eq!(roundtrip, values.to_vec());
+    assert_eq!(reader.position(), payload.len());
 }
 
 // ============================================================================
@@ -306,6 +323,67 @@ fn test_memory_reader_read_var_bytes() {
 }
 
 // ============================================================================
+// BinaryReader Extension Tests
+// ============================================================================
+
+/// Test converted from C# UT_IOHelper.TestReadFixedBytes
+#[test]
+fn test_binary_reader_read_fixed_bytes() {
+    let data = vec![0x01, 0x02, 0x03, 0x04];
+
+    let mut reader = Cursor::new(data.clone());
+    let less = reader.read_fixed_bytes(3).unwrap();
+    assert_eq!(vec![0x01, 0x02, 0x03], less);
+    assert_eq!(3, reader.position());
+
+    let mut reader_exact = Cursor::new(data.clone());
+    let exact = reader_exact.read_fixed_bytes(4).unwrap();
+    assert_eq!(data, exact);
+    assert_eq!(4, reader_exact.position());
+
+    let mut reader_over = Cursor::new(data.clone());
+    assert!(reader_over.read_fixed_bytes(5).is_err());
+    assert_eq!(4, reader_over.position());
+}
+
+/// Test converted from C# UT_IOHelper.TestReadVarBytes
+#[test]
+fn test_binary_reader_read_var_bytes() {
+    let mut writer = BinaryWriter::new();
+    writer.write_var_bytes(&[0xAA, 0xAA]).unwrap();
+    let data = writer.to_bytes();
+
+    let mut reader = Cursor::new(data.clone());
+    let bytes = reader.read_var_bytes(10).unwrap();
+    assert_eq!(vec![0xAA, 0xAA], bytes);
+
+    let mut reader_too_big = Cursor::new(data);
+    assert!(reader_too_big.read_var_bytes(1).is_err());
+}
+
+/// Test converted from C# UT_IOHelper.TestReadVarInt
+#[test]
+fn test_binary_reader_read_var_int() {
+    let mut writer = BinaryWriter::new();
+    writer.write_var_int(0xFFFF).unwrap();
+    let data = writer.to_bytes();
+    let mut reader = Cursor::new(data);
+    assert_eq!(0xFFFF, reader.read_var_int(0xFFFF).unwrap());
+
+    let mut writer = BinaryWriter::new();
+    writer.write_var_int(0xFFFF_FFFF).unwrap();
+    let data = writer.to_bytes();
+    let mut reader = Cursor::new(data);
+    assert_eq!(0xFFFF_FFFF, reader.read_var_int(0xFFFF_FFFF).unwrap());
+
+    let mut writer = BinaryWriter::new();
+    writer.write_var_int(0xFFFF_FFFF_FF).unwrap();
+    let data = writer.to_bytes();
+    let mut reader = Cursor::new(data);
+    assert!(reader.read_var_int(0xFFFF_FFFF).is_err());
+}
+
+// ============================================================================
 // BinaryWriter Tests
 // ============================================================================
 
@@ -355,6 +433,191 @@ fn test_binary_writer_variable_length() {
     assert_eq!(0x12345678, reader.read_var_int(u64::MAX).unwrap());
     assert_eq!("Hello, Neo!", reader.read_var_string(20).unwrap());
     assert_eq!(test_bytes, reader.read_var_bytes(10).unwrap());
+}
+
+/// Test converted from C# UT_IOHelper.TestWrite
+#[test]
+fn test_binary_writer_write_serializable() {
+    let mut writer = BinaryWriter::new();
+    writer.write_serializable(&UInt160::zero()).unwrap();
+    assert_eq!(vec![0u8; 20], writer.to_bytes());
+}
+
+/// Test converted from C# UT_IOHelper.TestWriteGeneric
+#[test]
+fn test_binary_writer_write_serializable_collection() {
+    let mut writer = BinaryWriter::new();
+    let values = [UInt160::zero()];
+    writer.write_serializable_collection(&values).unwrap();
+
+    let mut expected = vec![0x01];
+    expected.extend(vec![0u8; 20]);
+    assert_eq!(expected, writer.to_bytes());
+}
+
+/// Test converted from C# UT_IOHelper.TestToByteArrayGeneric
+#[test]
+fn test_collection_extensions_to_byte_array() {
+    let values = vec![UInt160::zero()];
+    let bytes = values.to_byte_array().unwrap();
+
+    let mut expected = vec![0x01];
+    expected.extend(vec![0u8; 20]);
+    assert_eq!(expected, bytes);
+}
+
+/// Test converted from C# UT_IOHelper.TestWriteFixedString
+#[test]
+fn test_binary_writer_write_fixed_string() {
+    let mut writer = BinaryWriter::new();
+    assert!(writer.write_fixed_string("AA", 1).is_err());
+
+    let mut writer = BinaryWriter::new();
+    let wide = "\u{62C9}\u{62C9}";
+    assert!(writer.write_fixed_string(wide, 5).is_err());
+
+    let mut writer = BinaryWriter::new();
+    writer.write_fixed_string("AA", "AA".len() + 1).unwrap();
+    let mut expected = Vec::from("AA".as_bytes());
+    expected.push(0);
+    assert_eq!(expected, writer.to_bytes());
+}
+
+/// Test converted from C# UT_IOHelper.TestWriteVarBytes
+#[test]
+fn test_binary_writer_write_var_bytes() {
+    let mut writer = BinaryWriter::new();
+    writer.write_var_bytes(&[0xAA]).unwrap();
+    assert_eq!(vec![0x01, 0xAA], writer.to_bytes());
+}
+
+/// Test converted from C# UT_IOHelper.TestWriteVarInt
+#[test]
+fn test_binary_writer_write_var_int_boundaries() {
+    let mut writer = BinaryWriter::new();
+    writer.write_var_int(0xFC).unwrap();
+    assert_eq!(vec![0xFC], writer.to_bytes());
+
+    let mut writer = BinaryWriter::new();
+    writer.write_var_int(0xFFFF).unwrap();
+    let mut expected = vec![0xFD];
+    expected.extend_from_slice(&0xFFFFu16.to_le_bytes());
+    assert_eq!(expected, writer.to_bytes());
+
+    let mut writer = BinaryWriter::new();
+    writer.write_var_int(0xFFFF_FFFF).unwrap();
+    let mut expected = vec![0xFE];
+    expected.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+    assert_eq!(expected, writer.to_bytes());
+
+    let mut writer = BinaryWriter::new();
+    let large = 0xAEFF_FFFF_FFFFu64;
+    writer.write_var_int(large).unwrap();
+    let mut expected = vec![0xFF];
+    expected.extend_from_slice(&large.to_le_bytes());
+    assert_eq!(expected, writer.to_bytes());
+}
+
+/// Test converted from C# UT_IOHelper.TestWriteVarString
+#[test]
+fn test_binary_writer_write_var_string() {
+    let mut writer = BinaryWriter::new();
+    writer.write_var_string("a").unwrap();
+    assert_eq!(vec![0x01, b'a'], writer.to_bytes());
+}
+
+/// Test converted from C# UT_IOHelper.TestAsSerializable
+#[test]
+fn test_byte_extensions_as_serializable() {
+    let data = vec![0u8; 20];
+    let value: UInt160 = data.as_serializable(0).unwrap();
+    assert_eq!(UInt160::zero(), value);
+}
+
+/// Test converted from C# UT_IOHelper.TestAsSerializableArray
+#[test]
+fn test_byte_extensions_as_serializable_array() {
+    let mut writer = BinaryWriter::new();
+    let values = [UInt160::zero()];
+    writer.write_serializable_collection(&values).unwrap();
+    let data = writer.to_bytes();
+
+    let result: Vec<UInt160> = data.as_serializable_array(usize::MAX).unwrap();
+    assert_eq!(values.to_vec(), result);
+
+    assert!(data.as_serializable_array::<UInt160>(0).is_err());
+}
+
+/// Test converted from C# UT_IOHelper.TestReadSerializable
+#[test]
+fn test_memory_reader_read_serializable() {
+    let mut writer = BinaryWriter::new();
+    writer.write_serializable(&UInt160::zero()).unwrap();
+    let data = writer.to_bytes();
+
+    let mut reader = MemoryReader::new(&data);
+    let result: UInt160 = reader.read_serializable().unwrap();
+    assert_eq!(UInt160::zero(), result);
+}
+
+/// Test converted from C# UT_IOHelper.TestReadSerializableArray
+#[test]
+fn test_memory_reader_read_serializable_array() {
+    let mut writer = BinaryWriter::new();
+    let values = [UInt160::zero()];
+    writer.write_serializable_collection(&values).unwrap();
+    let data = writer.to_bytes();
+
+    let mut reader = MemoryReader::new(&data);
+    let result: Vec<UInt160> = reader.read_serializable_array(usize::MAX).unwrap();
+    assert_eq!(values.to_vec(), result);
+
+    let mut reader = MemoryReader::new(&data);
+    assert!(reader.read_serializable_array::<UInt160>(0).is_err());
+}
+
+/// Test converted from C# UT_IOHelper.TestToArray
+#[test]
+fn test_serializable_to_array() {
+    let bytes = SerializableExtensions::to_array(&UInt160::zero()).unwrap();
+    assert_eq!(vec![0u8; 20], bytes);
+}
+
+// ============================================================================
+// Byte Extension Tests
+// ============================================================================
+
+/// Test converted from C# UT_IOHelper.TestCompression (round-trip scenarios)
+#[test]
+fn test_byte_extensions_compression_round_trip() {
+    let data = vec![1u8, 2, 3, 4];
+    let compressed = data.compress_lz4().unwrap();
+    let decompressed = compressed.decompress_lz4(usize::MAX).unwrap();
+    assert_eq!(data, decompressed);
+
+    let repetitive = vec![1u8; 255];
+    let compressed = repetitive.compress_lz4().unwrap();
+    let decompressed = compressed.decompress_lz4(usize::MAX).unwrap();
+    assert!(compressed.len() < repetitive.len());
+    assert_eq!(repetitive, decompressed);
+}
+
+/// Test converted from C# UT_IOHelper.TestCompression (error scenarios)
+#[test]
+fn test_byte_extensions_compression_errors() {
+    let data = vec![1u8; 32];
+    let compressed = data.compress_lz4().unwrap();
+
+    let too_small = compressed.decompress_lz4(data.len() - 1);
+    assert!(matches!(too_small, Err(CompressionError::TooLarge { .. })));
+
+    let mut corrupted = compressed.clone();
+    corrupted[0] = corrupted[0].wrapping_add(1);
+    let corrupted_result = corrupted.decompress_lz4(usize::MAX);
+    assert!(matches!(
+        corrupted_result,
+        Err(CompressionError::Decompression(_))
+    ));
 }
 
 /// Test serialization round-trip with UInt160
@@ -418,11 +681,9 @@ fn test_serialization_round_trip_transaction() {
 /// Test comprehensive transaction serialization and deserialization
 #[test]
 fn test_transaction_serialization_comprehensive() {
-    use neo_core::signer::Signer;
-    use neo_core::transaction::Transaction;
-    use neo_core::uint160::UInt160;
-    use neo_core::witness::Witness;
-    use neo_core::witness_scope::WitnessScope;
+    use neo_core::network::p2p::payloads::{Signer, Witness};
+    use neo_core::{Transaction, UInt160, WitnessScope};
+    use std::str::FromStr;
 
     // Create a transaction with actual data
     let mut tx = Transaction::new();
@@ -450,7 +711,7 @@ fn test_transaction_serialization_comprehensive() {
     tx.add_witness(witness);
 
     // Test serialization
-    let serialized = tx.to_bytes().expect("Should serialize successfully");
+    let serialized = tx.to_bytes();
     assert!(
         !serialized.is_empty(),
         "Serialized data should not be empty"
@@ -479,8 +740,10 @@ fn test_transaction_serialization_comprehensive() {
     );
 
     // Test hex serialization
-    let hex = tx.to_hex().expect("Should serialize to hex");
-    let from_hex = Transaction::from_hex(&hex).expect("Should deserialize from hex");
+    let hex = hex::encode(&serialized);
+    let from_hex_bytes = hex::decode(&hex).expect("Hex decode should succeed");
+    let from_hex =
+        Transaction::from_bytes(&from_hex_bytes).expect("Should deserialize from hex bytes");
 
     // Verify hex round-trip
     assert_eq!(from_hex.nonce(), tx.nonce());

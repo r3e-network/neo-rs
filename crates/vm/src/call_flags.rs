@@ -3,6 +3,9 @@
 
 use bitflags::bitflags;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 bitflags! {
     /// Represents the operations allowed when a contract is invoked.
     #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -29,4 +32,26 @@ impl CallFlags {
     pub const ALL: CallFlags = CallFlags::STATES
         .union(CallFlags::ALLOW_CALL)
         .union(CallFlags::ALLOW_NOTIFY);
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for CallFlags {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8(self.bits())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for CallFlags {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        CallFlags::from_bits(value)
+            .ok_or_else(|| serde::de::Error::custom(format!("Invalid CallFlags value: {value}")))
+    }
 }

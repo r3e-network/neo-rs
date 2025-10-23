@@ -9,10 +9,11 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::native::LedgerContract;
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Represents a not-valid-before transaction attribute.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,16 +29,19 @@ impl NotValidBefore {
     }
 
     /// Verify the not-valid-before attribute.
-    pub fn verify(&self, snapshot: &DataCache, _tx: &super::transaction::Transaction) -> bool {
-        // TODO: Get current block height when DataCache methods are available
-        // let block_height = snapshot.get_current_block_height();
-        // block_height >= self.height
-        true
+    pub fn verify(
+        &self,
+        _settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        _tx: &super::transaction::Transaction,
+    ) -> bool {
+        let current_height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
+        current_height >= self.height
     }
 
     /// Serialize without type byte.
-    pub fn serialize_without_type(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&self.height.to_le_bytes())
+    pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u32(self.height)
     }
 }
 
@@ -46,12 +50,12 @@ impl Serializable for NotValidBefore {
         4 // u32
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&self.height.to_le_bytes())
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u32(self.height)
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let height = reader.read_u32().map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let height = reader.read_u32()?;
         Ok(Self { height })
     }
 }

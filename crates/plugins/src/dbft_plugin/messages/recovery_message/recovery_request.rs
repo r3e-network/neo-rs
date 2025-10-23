@@ -52,6 +52,21 @@ impl RecoveryRequest {
         &self.header
     }
 
+    /// Gets the block index carried by the request.
+    pub fn block_index(&self) -> u32 {
+        self.header.block_index
+    }
+
+    /// Gets the validator index carried by the request.
+    pub fn validator_index(&self) -> u8 {
+        self.header.validator_index
+    }
+
+    /// Gets the view number carried by the request.
+    pub fn view_number(&self) -> u8 {
+        self.header.view_number
+    }
+
     /// Returns a mutable reference to the message header.
     pub fn header_mut(&mut self) -> &mut ConsensusMessageHeader {
         &mut self.header

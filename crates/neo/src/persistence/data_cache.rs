@@ -46,6 +46,17 @@ pub struct DataCache {
     on_update: Arc<RwLock<Vec<OnEntryDelegate>>>,
 }
 
+impl Clone for DataCache {
+    fn clone(&self) -> Self {
+        Self {
+            dictionary: Arc::clone(&self.dictionary),
+            change_set: self.change_set.as_ref().map(Arc::clone),
+            on_read: Arc::clone(&self.on_read),
+            on_update: Arc::clone(&self.on_update),
+        }
+    }
+}
+
 impl DataCache {
     /// Creates a new DataCache.
     pub fn new(read_only: bool) -> Self {
@@ -185,6 +196,22 @@ impl DataCache {
             Vec::new()
         }
     }
+
+    /// Returns a snapshot of all tracked entries, typically used when
+    /// propagating changes into an underlying store.
+    pub fn tracked_items(&self) -> Vec<(StorageKey, Trackable)> {
+        let dict = self.dictionary.read().unwrap();
+        if let Some(change_set) = &self.change_set {
+            let keys: Vec<_> = change_set.read().unwrap().iter().cloned().collect();
+            keys.into_iter()
+                .filter_map(|key| dict.get(&key).cloned().map(|track| (key, track)))
+                .collect()
+        } else {
+            dict.iter()
+                .map(|(key, track)| (key.clone(), track.clone()))
+                .collect()
+        }
+    }
 }
 
 impl IReadOnlyStore for DataCache {}
@@ -207,8 +234,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
             })
             .filter(|(k, _)| {
                 if let Some(prefix) = key_prefix {
-                    // Check if key starts with prefix
-                    k.id == prefix.id && k.key.starts_with(&prefix.key)
+                    k.id == prefix.id && k.suffix().starts_with(prefix.suffix())
                 } else {
                     true
                 }
@@ -216,7 +242,7 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
             .map(|(k, trackable)| (k.clone(), trackable.item.clone()))
             .collect();
 
-        items.sort_by(|a, b| a.0.key().cmp(b.0.key()));
+        items.sort_by(|a, b| a.0.suffix().cmp(b.0.suffix()));
 
         if direction == SeekDirection::Backward {
             Box::new(items.into_iter().rev())

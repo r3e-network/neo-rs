@@ -11,12 +11,13 @@
 
 use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 
 /// The exception that is thrown when `Sign` fails.
 #[derive(Debug, Clone)]
 pub struct SignException {
     message: String,
-    cause: Option<Box<dyn Error + Send + Sync>>,
+    cause: Option<Arc<dyn Error + Send + Sync>>,
 }
 
 impl SignException {
@@ -39,7 +40,7 @@ impl SignException {
     pub fn with_cause(message: String, cause: Box<dyn Error + Send + Sync>) -> Self {
         Self {
             message,
-            cause: Some(cause),
+            cause: Some(cause.into()),
         }
     }
 }

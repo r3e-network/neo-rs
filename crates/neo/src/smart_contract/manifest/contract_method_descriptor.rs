@@ -1,14 +1,15 @@
 //! ContractMethodDescriptor - matches C# Neo.SmartContract.Manifest.ContractMethodDescriptor exactly
 
 use crate::smart_contract::i_interoperable::IInteroperable;
-use crate::smart_contract::manifest::{ContractEventDescriptor, ContractParameterDefinition};
+use crate::smart_contract::manifest::ContractParameterDefinition;
 use crate::smart_contract::ContractParameterType;
 use neo_vm::StackItem;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 /// Represents a method in a smart contract ABI (matches C# ContractMethodDescriptor)
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractMethodDescriptor {
     /// The name of the method
     pub name: String,
@@ -24,6 +25,18 @@ pub struct ContractMethodDescriptor {
 
     /// Indicates whether the method is a safe method
     pub safe: bool,
+}
+
+impl Default for ContractMethodDescriptor {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            parameters: Vec::new(),
+            return_type: ContractParameterType::Void,
+            offset: 0,
+            safe: false,
+        }
+    }
 }
 
 impl ContractMethodDescriptor {
@@ -102,6 +115,12 @@ impl ContractMethodDescriptor {
             "offset": self.offset,
             "safe": self.safe,
         })
+    }
+
+    /// Approximate serialized size of the method descriptor.
+    pub fn size(&self) -> usize {
+        let params_size: usize = self.parameters.iter().map(|p| p.size()).sum();
+        1 + self.name.len() + params_size + 1 + 4 + 1
     }
 }
 

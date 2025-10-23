@@ -1,4 +1,4 @@
-use crate::io::{BinaryWriter, IoError, IoResult, Serializable};
+use crate::io::{BinaryWriter, IoResult, Serializable};
 
 /// Collection helpers matching `Neo.Extensions.Collections.ICollectionExtensions`.
 pub trait CollectionExtensions<T> {

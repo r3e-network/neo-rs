@@ -10,5 +10,10 @@ pub mod notify_log_state;
 pub mod transaction_engine_log_state;
 pub mod transaction_log_state;
 
-// Re-export commonly used types
+pub use block_log_state::BlockLogState;
+pub use contract_log_state::ContractLogState;
+pub use engine_log_state::EngineLogState;
 pub use execution_log_state::ExecutionLogState;
+pub use notify_log_state::NotifyLogState;
+pub use transaction_engine_log_state::TransactionEngineLogState;
+pub use transaction_log_state::TransactionLogState;

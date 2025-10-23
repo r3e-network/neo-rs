@@ -1,7 +1,8 @@
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 // use crate::smart_contract::native::crypto_lib_bls12_381;  // Temporarily disabled
-use crate::cryptography::crypto_utils::{Ed25519Crypto, NeoHash, Secp256k1Crypto, Secp256r1Crypto};
+use crate::cryptography::crypto_utils::ECCurve;
+use crate::cryptography::{Crypto, HashAlgorithm};
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::UInt160;
@@ -53,20 +54,20 @@ impl CryptoLib {
 
     /// SHA256 hash function backed by the shared cryptography crate.
     fn sha256(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        let data = args.get(0).ok_or_else(|| {
-            Error::NativeContractError("sha256 requires data argument".to_string())
-        })?;
+        let data = args
+            .get(0)
+            .ok_or_else(|| Error::native_contract("sha256 requires data argument".to_string()))?;
 
-        Ok(Crypto::sha256(data))
+        Ok(Crypto::sha256(data).to_vec())
     }
 
     /// RIPEMD160 hash function backed by the shared cryptography crate.
     fn ripemd160(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         let data = args.get(0).ok_or_else(|| {
-            Error::NativeContractError("ripemd160 requires data argument".to_string())
+            Error::native_contract("ripemd160 requires data argument".to_string())
         })?;
 
-        Ok(Crypto::ripemd160(data))
+        Ok(Crypto::ripemd160(data).to_vec())
     }
 
     /// Verify ECDSA signature (default secp256r1)
@@ -103,7 +104,7 @@ impl CryptoLib {
         error_msg: &str,
     ) -> Result<Vec<u8>> {
         if args.len() < 3 {
-            return Err(Error::NativeContractError(error_msg.to_string()));
+            return Err(Error::native_contract(error_msg.to_string()));
         }
 
         let message = &args[0];
@@ -159,7 +160,7 @@ impl CryptoLib {
         error_msg: &str,
     ) -> Result<Vec<u8>> {
         if args.len() < 3 {
-            return Err(Error::NativeContractError(error_msg.to_string()));
+            return Err(Error::native_contract(error_msg.to_string()));
         }
 
         let message = &args[0];
@@ -195,75 +196,50 @@ impl CryptoLib {
 
     /// BLS12-381 point addition
     fn bls12381_add(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() != 2 {
-            return Err(Error::NativeContractError(
-                "bls12381Add requires two point arguments".to_string(),
-            ));
-        }
-
-        crypto_lib_bls12_381::add(&args[0], &args[1])
+        let _ = args;
+        Err(Error::invalid_operation(
+            "bls12381Add is not implemented yet".to_string(),
+        ))
     }
 
     /// BLS12-381 equality check
     fn bls12381_equal(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() != 2 {
-            return Err(Error::NativeContractError(
-                "bls12381Equal requires two point arguments".to_string(),
-            ));
-        }
-
-        let are_equal = crypto_lib_bls12_381::equals(&args[0], &args[1])?;
-        Ok(vec![if are_equal { 1 } else { 0 }])
+        let _ = args;
+        Err(Error::invalid_operation(
+            "bls12381Equal is not implemented yet".to_string(),
+        ))
     }
 
     /// BLS12-381 scalar multiplication
     fn bls12381_mul(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() != 3 {
-            return Err(Error::NativeContractError(
-                "bls12381Mul requires point, scalar, and negation arguments".to_string(),
-            ));
-        }
-
-        let neg = args[2].first().copied().map(|b| b != 0).ok_or_else(|| {
-            Error::NativeContractError(
-                "bls12381Mul negation flag must contain at least one byte".to_string(),
-            )
-        })?;
-
-        crypto_lib_bls12_381::mul(&args[0], &args[1], neg)
+        let _ = args;
+        Err(Error::invalid_operation(
+            "bls12381Mul is not implemented yet".to_string(),
+        ))
     }
 
     /// BLS12-381 pairing operation
     fn bls12381_pairing(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() != 2 {
-            return Err(Error::NativeContractError(
-                "bls12381Pairing requires G1 and G2 point arguments".to_string(),
-            ));
-        }
-
-        crypto_lib_bls12_381::pairing(&args[0], &args[1])
+        let _ = args;
+        Err(Error::invalid_operation(
+            "bls12381Pairing is not implemented yet".to_string(),
+        ))
     }
 
     /// BLS12-381 point serialization
     fn bls12381_serialize(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() != 1 {
-            return Err(Error::NativeContractError(
-                "bls12381Serialize requires point argument".to_string(),
-            ));
-        }
-
-        crypto_lib_bls12_381::serialize(&args[0])
+        let _ = args;
+        Err(Error::invalid_operation(
+            "bls12381Serialize is not implemented yet".to_string(),
+        ))
     }
 
     /// BLS12-381 point deserialization
     fn bls12381_deserialize(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
-        if args.len() != 1 {
-            return Err(Error::NativeContractError(
-                "bls12381Deserialize requires serialized point argument".to_string(),
-            ));
-        }
-
-        crypto_lib_bls12_381::deserialize(&args[0])
+        let _ = args;
+        Err(Error::invalid_operation(
+            "bls12381Deserialize is not implemented yet".to_string(),
+        ))
     }
 
     /// Parse signature array from VM stack item
@@ -320,7 +296,7 @@ impl NativeContract for CryptoLib {
 
     fn invoke(
         &self,
-        engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine,
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
@@ -347,7 +323,7 @@ impl NativeContract for CryptoLib {
             "bls12381Serialize" => self.bls12381_serialize(args),
             "bls12381Deserialize" => self.bls12381_deserialize(args),
 
-            _ => Err(Error::NativeContractError(format!(
+            _ => Err(Error::native_contract(format!(
                 "Unknown CryptoLib method: {}",
                 method
             ))),

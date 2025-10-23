@@ -3,24 +3,26 @@
 //! This module provides cryptographic key pair functionality,
 //! converted from the C# Neo KeyPair class (@neo-sharp/src/Neo/Wallets/KeyPair.cs).
 
+use crate::cryptography::{ECCurve, ECDsa, ECC};
 use crate::error::{CoreError as Error, CoreResult as Result};
-// use aes::Aes256; // TODO: Fix import after restructuring
-use base64::Engine;
-// use cbc::{ // TODO: Fix import after restructuring
-//     cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
-//     Decryptor, Encryptor,
-// };
-use crate::cryptography::crypto_utils::{Ed25519Crypto, Secp256k1Crypto, Secp256r1Crypto};
 use crate::neo_config::HASH_SIZE;
+use crate::smart_contract::helper::Helper;
 use crate::UInt160;
+use aes::Aes256;
+use base64::Engine;
+use cbc::{
+    cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit},
+    Decryptor, Encryptor,
+};
 use rand::RngCore;
 use scrypt::Params;
 use std::fmt;
-// use zeroize::{Zeroize, ZeroizeOnDrop}; // TODO: Fix import after restructuring
+use zeroize::Zeroize;
 
 /// A cryptographic key pair for Neo accounts.
 /// This matches the C# KeyPair class functionality.
-#[derive(Debug, Clone)] // TODO: Add Zeroize, ZeroizeOnDrop after restructuring
+#[derive(Debug, Clone, Zeroize)]
+#[zeroize(drop)]
 pub struct KeyPair {
     private_key: [u8; HASH_SIZE],
     public_key: Vec<u8>,
@@ -35,6 +37,11 @@ impl KeyPair {
         Self::from_private_key(&private_key)
     }
 
+    /// Creates a key pair from a raw private key buffer.
+    pub fn new(private_key: Vec<u8>) -> Result<Self> {
+        Self::from_private_key(&private_key)
+    }
+
     /// Creates a key pair from a private key.
     pub fn from_private_key(private_key: &[u8]) -> Result<Self> {
         if private_key.len() != HASH_SIZE {
@@ -45,8 +52,17 @@ impl KeyPair {
         key_bytes.copy_from_slice(private_key);
 
         // Generate public key from private key
-        let public_key = ECC::generate_public_key(&key_bytes)?;
-        let compressed_public_key = ECC::compress_public_key(&public_key)?;
+        let public_point =
+            ECC::generate_public_key(&key_bytes, ECCurve::secp256r1()).map_err(|e| {
+                Error::Other {
+                    message: format!("Failed to derive public key: {}", e),
+                }
+            })?;
+        let public_key = public_point.to_bytes();
+        let compressed_public_key =
+            ECC::compress_public_key(&public_point).map_err(|e| Error::Other {
+                message: format!("Failed to compress public key: {}", e),
+            })?;
 
         Ok(Self {
             private_key: key_bytes,
@@ -95,40 +111,41 @@ impl KeyPair {
     }
 
     /// Gets the public key as an ECPoint.
-    pub fn get_public_key_point(&self) -> Result<neo_cryptography::ECPoint> {
-        let curve = ECCurve::secp256r1();
-        neo_cryptography::ECPoint::decode_compressed(&self.compressed_public_key, curve)
-            .map_err(|e| Error::Other(format!("Failed to create ECPoint: {}", e)))
+    pub fn get_public_key_point(&self) -> Result<crate::neo_cryptography::ECPoint> {
+        crate::neo_cryptography::ECPoint::decode_compressed(&self.compressed_public_key).map_err(
+            |e| Error::Other {
+                message: format!("Failed to create ECPoint: {}", e),
+            },
+        )
     }
 
     /// Gets the script hash for this key pair.
     /// This matches the C# KeyPair.PublicKeyHash property.
     pub fn get_script_hash(&self) -> UInt160 {
-        UInt160::from_script(&self.compressed_public_key)
+        UInt160::from_script(&self.get_verification_script())
     }
 
     /// Gets the verification script for this key pair.
     pub fn get_verification_script(&self) -> Vec<u8> {
-        // Standard single-signature verification script
-        let mut script = Vec::new();
-        script.push(0x0c); // PUSHDATA1
-        script.push(self.compressed_public_key.len() as u8);
-        script.extend_from_slice(&self.compressed_public_key);
-        script.push(0x41); // SYSCALL
-        script.extend_from_slice(b"System.Crypto.CheckWitness");
-        script
+        Helper::signature_redeem_script(&self.compressed_public_key)
     }
 
     /// Signs data with this key pair.
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
-        ECDsa::sign(data, &self.private_key)
-            .map_err(|e| Error::Other(format!("Signing failed: {}", e)))
+        ECDsa::sign(data, &self.private_key, ECCurve::secp256r1())
+            .map(|sig| sig.to_vec())
+            .map_err(|e| Error::Other {
+                message: format!("Signing failed: {}", e),
+            })
     }
 
     /// Verifies a signature against data.
     pub fn verify(&self, data: &[u8], signature: &[u8]) -> Result<bool> {
-        ECDsa::verify(data, signature, &self.public_key)
-            .map_err(|e| Error::Other(format!("Verification failed: {}", e)))
+        ECDsa::verify(data, signature, &self.public_key, ECCurve::secp256r1()).map_err(|e| {
+            Error::Other {
+                message: format!("Verification failed: {}", e),
+            }
+        })
     }
 
     /// Exports the key pair to WIF format.
@@ -146,7 +163,9 @@ impl KeyPair {
     fn decode_wif(wif: &str) -> Result<[u8; HASH_SIZE]> {
         let decoded = bs58::decode(wif)
             .into_vec()
-            .map_err(|e| Error::Base58Decode(e.to_string()))?;
+            .map_err(|e| Error::Base58Decode {
+                message: e.to_string(),
+            })?;
 
         // Verify checksum manually
         if decoded.len() < 4 {
@@ -154,7 +173,7 @@ impl KeyPair {
         }
 
         let (data, checksum) = decoded.split_at(decoded.len() - 4);
-        let computed_checksum = &neo_cryptography::hash::hash256(data)[0..4];
+        let computed_checksum = &crate::neo_cryptography::hash::hash256(data)[0..4];
         if checksum != computed_checksum {
             return Err(Error::InvalidWif);
         }
@@ -186,7 +205,7 @@ impl KeyPair {
         data.push(0x01); // Compressed flag
 
         // Add checksum manually
-        let checksum = &neo_cryptography::hash::hash256(&data)[0..4];
+        let checksum = &crate::neo_cryptography::hash::hash256(&data)[0..4];
         data.extend_from_slice(checksum);
 
         bs58::encode(data).into_string()
@@ -202,16 +221,21 @@ impl KeyPair {
         // Generate address hash
         let address =
             UInt160::from_script(&Self::get_verification_script_for_key(private_key)).to_address();
-        let address_hash = &neo_cryptography::hash::sha256(address.as_bytes())[0..4];
+        let address_hash = &crate::neo_cryptography::hash::sha256(address.as_bytes())[0..4];
 
         // Derive key using scrypt
         let n: u32 = n;
-        let params = Params::new(n.trailing_zeros() as u8, r, p, 64)
-            .map_err(|e| Error::Scrypt(e.to_string()))?;
+        let params =
+            Params::new(n.trailing_zeros() as u8, r, p, 64).map_err(|e| Error::Scrypt {
+                message: e.to_string(),
+            })?;
 
         let mut derived_key = [0u8; 64];
-        scrypt::scrypt(password.as_bytes(), address_hash, &params, &mut derived_key)
-            .map_err(|e| Error::Scrypt(e.to_string()))?;
+        scrypt::scrypt(password.as_bytes(), address_hash, &params, &mut derived_key).map_err(
+            |e| Error::Scrypt {
+                message: e.to_string(),
+            },
+        )?;
 
         // Split derived key
         let derived_half1 = &derived_key[0..HASH_SIZE];
@@ -223,12 +247,19 @@ impl KeyPair {
             xor_key[i] = private_key[i] ^ derived_half1[i];
         }
 
-        let cipher = Encryptor::<Aes256>::new(derived_half2.into(), &[0u8; 16].into());
+        let cipher =
+            Encryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16]).map_err(|e| {
+                Error::Aes {
+                    message: e.to_string(),
+                }
+            })?;
         let mut buffer = xor_key.to_vec();
         buffer.resize(HASH_SIZE, 0); // Ensure exactly HASH_SIZE bytes
         let encrypted = cipher
             .encrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut buffer, HASH_SIZE)
-            .map_err(|e| Error::Aes(e.to_string()))?;
+            .map_err(|e| Error::Aes {
+                message: e.to_string(),
+            })?;
         let encrypted = encrypted.to_vec();
 
         let mut result = Vec::with_capacity(39);
@@ -250,7 +281,7 @@ impl KeyPair {
             return Err(Error::InvalidNep2Key);
         }
 
-        let flags = encrypted_key[2];
+        let _flags = encrypted_key[2];
         let address_hash = &encrypted_key[3..7];
         let encrypted_data = &encrypted_key[7..39];
 
@@ -261,21 +292,33 @@ impl KeyPair {
 
         // Derive key using scrypt
         let n: u32 = n;
-        let params = Params::new(n.trailing_zeros() as u8, r, p, 64)
-            .map_err(|e| Error::Scrypt(e.to_string()))?;
+        let params =
+            Params::new(n.trailing_zeros() as u8, r, p, 64).map_err(|e| Error::Scrypt {
+                message: e.to_string(),
+            })?;
 
         let mut derived_key = [0u8; 64];
-        scrypt::scrypt(password.as_bytes(), address_hash, &params, &mut derived_key)
-            .map_err(|e| Error::Scrypt(e.to_string()))?;
+        scrypt::scrypt(password.as_bytes(), address_hash, &params, &mut derived_key).map_err(
+            |e| Error::Scrypt {
+                message: e.to_string(),
+            },
+        )?;
 
         let derived_half1 = &derived_key[0..HASH_SIZE];
         let derived_half2 = &derived_key[32..64];
 
-        let cipher = Decryptor::<Aes256>::new(derived_half2.into(), &[0u8; 16].into());
+        let cipher =
+            Decryptor::<Aes256>::new_from_slices(derived_half2, &[0u8; 16]).map_err(|e| {
+                Error::Aes {
+                    message: e.to_string(),
+                }
+            })?;
         let mut buffer = encrypted_data.to_vec();
         let decrypted = cipher
             .decrypt_padded_mut::<cbc::cipher::block_padding::NoPadding>(&mut buffer)
-            .map_err(|e| Error::Aes(e.to_string()))?;
+            .map_err(|e| Error::Aes {
+                message: e.to_string(),
+            })?;
 
         // XOR with derived_half1 to get private key
         let mut private_key = [0u8; HASH_SIZE];
@@ -287,7 +330,7 @@ impl KeyPair {
         let verification_script = Self::get_verification_script_for_key(&private_key);
         let script_hash = UInt160::from_script(&verification_script);
         let address = script_hash.to_address();
-        let computed_hash = &neo_cryptography::hash::sha256(address.as_bytes())[0..4];
+        let computed_hash = &crate::neo_cryptography::hash::sha256(address.as_bytes())[0..4];
 
         if computed_hash != address_hash {
             return Err(Error::InvalidPassword);
@@ -298,8 +341,9 @@ impl KeyPair {
 
     /// Gets verification script for a private key (helper function).
     fn get_verification_script_for_key(private_key: &[u8; HASH_SIZE]) -> Vec<u8> {
-        let public_key = ECC::generate_public_key(private_key).expect("Operation failed");
-        let compressed = ECC::compress_public_key(&public_key).expect("Operation failed");
+        let public_point =
+            ECC::generate_public_key(private_key, ECCurve::secp256r1()).expect("Operation failed");
+        let compressed = ECC::compress_public_key(&public_point).expect("Operation failed");
 
         let mut script = Vec::new();
         script.push(0x0c); // PUSHDATA1

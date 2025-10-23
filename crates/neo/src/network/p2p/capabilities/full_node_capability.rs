@@ -10,9 +10,8 @@
 // modifications are permitted.
 
 use super::node_capability_type::NodeCapabilityType;
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Indicates that a node has complete current state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,14 +37,14 @@ impl Serializable for FullNodeCapability {
         1 + 4 // Type + StartHeight
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&[NodeCapabilityType::FullNode as u8])?;
-        writer.write_all(&self.start_height.to_le_bytes())
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u8(NodeCapabilityType::FullNode.to_byte())?;
+        writer.write_u32(self.start_height)
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let _type = reader.read_u8().map_err(|e| e.to_string())?;
-        let start_height = reader.read_u32().map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let _ = reader.read_u8()?;
+        let start_height = reader.read_u32()?;
         Ok(Self { start_height })
     }
 }

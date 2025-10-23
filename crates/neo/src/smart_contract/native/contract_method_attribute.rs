@@ -31,7 +31,7 @@ impl ContractMethodAttribute {
         Self {
             order,
             name,
-            required_call_flags: CallFlags::None,
+            required_call_flags: CallFlags::NONE,
             parameter_types: Vec::new(),
             return_type: ContractParameterType::Void,
             safe: false,

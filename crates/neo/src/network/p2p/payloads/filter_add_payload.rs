@@ -9,9 +9,9 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Maximum data size (520 bytes)
 const MAX_DATA_SIZE: usize = 520;
@@ -32,32 +32,21 @@ impl FilterAddPayload {
 
 impl Serializable for FilterAddPayload {
     fn size(&self) -> usize {
-        2 + self.data.len() // Data with var length prefix
+        get_var_size(self.data.len() as u64) + self.data.len()
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         // Write data as var bytes
         if self.data.len() > MAX_DATA_SIZE {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Data too large",
-            ));
+            return Err(IoError::invalid_data("Data too large"));
         }
-        writer.write_all(&(self.data.len() as u16).to_le_bytes())?;
-        writer.write_all(&self.data)?;
+        writer.write_var_bytes(&self.data)?;
 
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let data_len = reader.read_var_int().map_err(|e| e.to_string())?;
-        if data_len > MAX_DATA_SIZE as u64 {
-            return Err("Data too large".to_string());
-        }
-
-        let data = reader
-            .read_bytes(data_len as usize)
-            .map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let data = reader.read_var_bytes(MAX_DATA_SIZE)?;
 
         Ok(Self { data })
     }

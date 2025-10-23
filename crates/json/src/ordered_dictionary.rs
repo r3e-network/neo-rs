@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 /// Ordered dictionary that maintains insertion order (matches C# OrderedDictionary<TKey, TValue>)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct OrderedDictionary<K: Clone + Eq + std::hash::Hash, V> {
     pub(crate) items: Vec<(K, V)>,
     index_map: HashMap<K, usize>,

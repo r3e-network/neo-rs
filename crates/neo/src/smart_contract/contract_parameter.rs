@@ -3,15 +3,13 @@
 use crate::cryptography::crypto_utils::ECPoint;
 use crate::smart_contract::ContractParameterType;
 use crate::{UInt160, UInt256};
+use base64::{engine::general_purpose, Engine as _};
 use num_bigint::BigInt;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Represents a parameter of a contract method (matches C# ContractParameter)
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct ContractParameter {
     /// The type of the parameter
-    #[serde(rename = "type")]
     pub param_type: ContractParameterType,
 
     /// The value of the parameter
@@ -19,8 +17,7 @@ pub struct ContractParameter {
 }
 
 /// Possible values for a contract parameter
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Clone, Debug)]
 pub enum ContractParameterValue {
     Any,
     Signature(Vec<u8>),
@@ -33,7 +30,7 @@ pub enum ContractParameterValue {
     String(String),
     Array(Vec<ContractParameter>),
     Map(Vec<(ContractParameter, ContractParameter)>),
-    InteropInterface(Box<dyn std::any::Any>),
+    InteropInterface,
     Void,
 }
 
@@ -55,9 +52,7 @@ impl ContractParameter {
             ContractParameterType::String => ContractParameterValue::String(String::new()),
             ContractParameterType::Array => ContractParameterValue::Array(Vec::new()),
             ContractParameterType::Map => ContractParameterValue::Map(Vec::new()),
-            ContractParameterType::InteropInterface => {
-                ContractParameterValue::InteropInterface(Box::new(()))
-            }
+            ContractParameterType::InteropInterface => ContractParameterValue::InteropInterface,
             ContractParameterType::Void => ContractParameterValue::Void,
         };
 
@@ -73,7 +68,9 @@ impl ContractParameter {
     pub fn set_value(&mut self, text: &str) -> Result<(), String> {
         self.value = match self.param_type {
             ContractParameterType::Signature => {
-                let bytes = base64::decode(text).map_err(|e| e.to_string())?;
+                let bytes = general_purpose::STANDARD
+                    .decode(text)
+                    .map_err(|e| e.to_string())?;
                 if bytes.len() != 64 {
                     return Err("Signature must be 64 bytes".to_string());
                 }
@@ -88,11 +85,11 @@ impl ContractParameter {
                 ContractParameterValue::Integer(val)
             }
             ContractParameterType::Hash160 => {
-                let val = UInt160::from_string(text)?;
+                let val = text.parse::<UInt160>().map_err(|e| e.to_string())?;
                 ContractParameterValue::Hash160(val)
             }
             ContractParameterType::Hash256 => {
-                let val = UInt256::from_string(text)?;
+                let val = text.parse::<UInt256>().map_err(|e| e.to_string())?;
                 ContractParameterValue::Hash256(val)
             }
             ContractParameterType::ByteArray => {
@@ -129,14 +126,14 @@ impl ContractParameter {
         let value = match &self.value {
             ContractParameterValue::Any => serde_json::Value::Null,
             ContractParameterValue::Signature(bytes) => {
-                serde_json::Value::String(base64::encode(bytes))
+                serde_json::Value::String(general_purpose::STANDARD.encode(bytes))
             }
             ContractParameterValue::Boolean(b) => serde_json::Value::Bool(*b),
             ContractParameterValue::Integer(i) => serde_json::Value::String(i.to_string()),
             ContractParameterValue::Hash160(h) => serde_json::Value::String(h.to_string()),
             ContractParameterValue::Hash256(h) => serde_json::Value::String(h.to_string()),
             ContractParameterValue::ByteArray(bytes) => {
-                serde_json::Value::String(base64::encode(bytes))
+                serde_json::Value::String(general_purpose::STANDARD.encode(bytes))
             }
             ContractParameterValue::PublicKey(key) => {
                 serde_json::Value::String(hex::encode(&key.encoded()))

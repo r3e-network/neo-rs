@@ -3,7 +3,7 @@
 //! This module defines the types of items that can be stored on the VM stack.
 
 /// Represents the types in the VM.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum StackItemType {
     /// Represents any type.

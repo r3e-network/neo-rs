@@ -67,7 +67,7 @@ impl Slot {
 
     /// Sets the item at the specified index in the slot.
     /// public StackItem this[int index] { internal set }
-    pub(crate) fn set(&mut self, index: usize, value: StackItem) -> VmResult<()> {
+    pub fn set(&mut self, index: usize, value: StackItem) -> VmResult<()> {
         if index >= self.items.len() {
             return Err(VmError::invalid_operation_msg(format!(
                 "Index out of range: {index}"
@@ -103,10 +103,10 @@ impl Slot {
 
     /// internal void ClearReferences()
     pub(crate) fn clear_references(&mut self) {
-        // foreach (StackItem item in _items)
-        //     _referenceCounter.RemoveStackReference(item);
-        for item in &self.items {
+        for item in &mut self.items {
             self.reference_counter.remove_stack_reference(item);
+            *item = StackItem::Null;
+            self.reference_counter.add_stack_reference(item, 1);
         }
     }
 

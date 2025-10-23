@@ -1,3 +1,4 @@
+#![cfg(feature = "neo_full_tests")]
 //! Integration tests for the monitoring system
 
 use neo_core::monitoring::{

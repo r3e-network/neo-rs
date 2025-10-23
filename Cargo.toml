@@ -29,7 +29,6 @@ members = [
     "crates/plugins",
     
     # Node implementation
-    "node",
 ]
 exclude = [
     "target",

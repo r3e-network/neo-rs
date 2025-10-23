@@ -3,11 +3,11 @@
 use std::{str::FromStr, sync::Arc};
 
 use hex::decode;
+use neo_core::cryptography::crypto_utils::{ECPoint, ECCurve};
 use neo_core::{UInt160, WitnessCondition, WitnessConditionType};
-// Removed neo_cryptography dependency - using external crypto crates directly
 use serde_json::{Map, Value};
 
-use crate::rest_server::rest_server_utility_j_tokens::witness_condition_to_json;
+use crate::rest_server::RestServerUtility;
 
 /// Converts between `WitnessCondition` structures and the REST server JSON representation.
 #[derive(Debug, Default, Clone)]
@@ -21,7 +21,7 @@ impl WitnessConditionJsonConverter {
 
     /// Serialises a witness condition to JSON using the same projection as the C# node.
     pub fn to_json(&self, condition: &WitnessCondition) -> Value {
-        witness_condition_to_json(condition)
+        RestServerUtility::witness_condition_to_j_token(condition)
     }
 
     /// Deserialises a witness condition from JSON. Returns `None` if the payload is invalid.
@@ -37,8 +37,7 @@ fn from_json_internal(value: &Value, remaining_depth: usize) -> Option<WitnessCo
 
     let obj = value.as_object()?;
     let type_value = get_property_case_insensitive(obj, "type")?;
-    let type_str = type_value.as_str()?;
-    let condition_type = parse_condition_type(type_str)?;
+    let condition_type = parse_condition_type_value(type_value)?;
 
     let condition = match condition_type {
         WitnessConditionType::Boolean => {
@@ -109,6 +108,28 @@ fn get_property_case_insensitive<'a>(object: &'a Map<String, Value>, name: &str)
             None
         }
     })
+}
+
+fn parse_condition_type_value(value: &Value) -> Option<WitnessConditionType> {
+    if let Some(text) = value.as_str() {
+        return parse_condition_type(text);
+    }
+
+    if let Some(number) = value.as_u64() {
+        if number <= u8::MAX as u64 {
+            return WitnessConditionType::from_byte(number as u8);
+        }
+        return None;
+    }
+
+    if let Some(number) = value.as_i64() {
+        if (0..=u8::MAX as i64).contains(&number) {
+            return WitnessConditionType::from_byte(number as u8);
+        }
+        return None;
+    }
+
+    None
 }
 
 fn parse_condition_type(name: &str) -> Option<WitnessConditionType> {

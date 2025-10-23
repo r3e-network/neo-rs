@@ -4,10 +4,11 @@
 // It exposes node-centric information through the REST surface while relying on
 // the shared global state supplied by the RestServer plugin.
 
-use crate::rest_server::models::error::ErrorModel;
+use crate::rest_server::models::error::error_model::ErrorModel;
 use crate::rest_server::models::node::{PluginModel, ProtocolSettingsModel, RemoteNodeModel};
 use crate::rest_server::rest_server_plugin::RestServerGlobals;
-use neo_core::{network::p2p::LocalNode, NeoSystem};
+use neo_core::NeoSystem;
+use neo_core::network::p2p::local_node::LocalNode;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 /// Node controller matching C# `Neo.Plugins.RestServer.Controllers.v1.NodeController` behaviour.
@@ -27,31 +28,29 @@ impl NodeController {
         let local_node = Self::local_node()?;
         let mut snapshots = local_node.remote_nodes();
         snapshots.sort_by(|a, b| b.last_block_index.cmp(&a.last_block_index));
-        Ok(snapshots.iter().map(RemoteNodeModel::from).collect())
+        Ok(snapshots
+            .iter()
+            .map(RemoteNodeModel::from_snapshot)
+            .collect())
     }
 
     /// Gets all loaded plugins from the running Neo system.
     pub fn get_plugins(&self) -> Result<Vec<PluginModel>, ErrorModel> {
         let system = Self::neo_system()?;
-        let manager = read_lock(&system.plugin_manager);
-        let plugins = manager
-            .plugins
-            .iter()
-            .map(|plugin| {
-                PluginModel::with_params(
-                    plugin.name().to_string(),
-                    plugin.version().to_string(),
-                    String::new(),
-                )
-            })
-            .collect::<Vec<_>>();
-        Ok(plugins)
+        let plugin_manager = system.plugin_manager();
+        let manager = read_lock(&plugin_manager);
+        Ok(manager
+            .plugin_infos()
+            .into_iter()
+            .map(|(name, version)| PluginModel::with_params(name, version, String::new()))
+            .collect())
     }
 
     /// Gets the protocol settings for the current network.
     pub fn get_settings(&self) -> Result<ProtocolSettingsModel, ErrorModel> {
         let system = Self::neo_system()?;
-        Ok(ProtocolSettingsModel::from(system.settings()))
+        let settings = system.settings();
+        Ok(ProtocolSettingsModel::from(settings))
     }
 
     fn neo_system() -> Result<Arc<NeoSystem>, ErrorModel> {

@@ -21,13 +21,21 @@ use super::{
     peer::PeerCommand,
     task_manager::TaskManagerCommand,
 };
-use crate::neo_system::{NeoSystemContext, ProtocolSettings};
+use crate::ledger::blockchain::{BlockchainCommand, Import as BlockchainImport};
+use crate::ledger::verify_result::VerifyResult;
+use crate::neo_io::BinaryWriter;
 use crate::network::error::NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
+use crate::persistence::data_cache::DataCache;
 use crate::uint256::UInt256;
-use akka::{Actor, ActorContext, ActorRef, ActorResult, Props};
+use crate::{
+    neo_system::{NeoSystemContext, TransactionRouterMessage},
+    protocol_settings::ProtocolSettings,
+};
+use akka::{Actor, ActorContext, ActorResult, Props};
 use async_trait::async_trait;
 use rand::{seq::IteratorRandom, thread_rng};
+use std::any::type_name_of_val;
 use std::collections::{HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -435,10 +443,40 @@ impl RemoteNode {
         transaction: Transaction,
         ctx: &mut ActorContext,
     ) -> ActorResult {
-        let hash = transaction.hash();
+        let mempool_result = {
+            let snapshot = DataCache::new(false);
+            let memory_pool = self.system.memory_pool();
+            let mut pool = memory_pool.lock().expect("memory pool lock poisoned");
+            pool.try_add(transaction.clone(), &snapshot, &self.settings)
+        };
+
+        if mempool_result != VerifyResult::Succeed && mempool_result != VerifyResult::AlreadyInPool
+        {
+            trace!(
+                target: "neo",
+                result = ?mempool_result,
+                "transaction add to memory pool returned non-success"
+            );
+        }
+
+        let hash = self.system.record_transaction(transaction.clone());
         self.notify_inventory_completed(hash, ctx);
         trace!(target: "neo", hash = %hash, "transaction received from remote node");
-        // TODO: forward to mempool/transaction router once available.
+
+        let mut writer = BinaryWriter::new();
+        if let Err(err) = writer.write_serializable(&transaction) {
+            warn!(target: "neo", %hash, error = %err, "failed to serialize transaction for routing");
+            return Ok(());
+        }
+
+        let payload = writer.into_bytes();
+        if let Err(err) = self
+            .system
+            .tx_router
+            .tell(TransactionRouterMessage::RouteTransaction { hash, payload })
+        {
+            warn!(target: "neo", %hash, error = %err, "failed to route transaction to tx router");
+        }
         Ok(())
     }
 
@@ -447,7 +485,18 @@ impl RemoteNode {
         self.last_block_index = block.index();
         self.notify_inventory_completed(hash, ctx);
         trace!(target: "neo", index = block.index(), hash = %hash, "block received from remote node");
-        // TODO: forward to blockchain actor once implemented.
+
+        let import = BlockchainImport {
+            blocks: vec![block],
+            verify: true,
+        };
+        if let Err(err) = self
+            .system
+            .blockchain
+            .tell_from(BlockchainCommand::Import(import), Some(ctx.self_ref()))
+        {
+            warn!(target: "neo", hash = %hash, error = %err, "failed to forward block to blockchain actor");
+        }
         Ok(())
     }
 
@@ -520,7 +569,7 @@ impl RemoteNode {
             return Ok(());
         }
 
-        for group in InvPayload::create_group(InventoryType::TX, hashes) {
+        for group in InvPayload::create_group(InventoryType::Transaction, hashes) {
             self.enqueue_message(NetworkMessage::new(ProtocolMessage::Inv(group)))
                 .await?;
         }
@@ -536,7 +585,7 @@ impl RemoteNode {
         let mut not_found = Vec::new();
 
         match payload.inventory_type {
-            InventoryType::TX => {
+            InventoryType::Transaction => {
                 for hash in payload.hashes.iter().copied() {
                     if let Some(transaction) = self.system.try_get_transaction(&hash) {
                         self.enqueue_message(NetworkMessage::new(ProtocolMessage::Transaction(
@@ -556,6 +605,18 @@ impl RemoteNode {
                         )))
                         .await?;
                         self.last_block_index = block.index();
+                    } else {
+                        not_found.push(hash);
+                    }
+                }
+            }
+            InventoryType::Consensus => {
+                for hash in payload.hashes.iter().copied() {
+                    if let Some(extensible) = self.system.try_get_extensible(&hash) {
+                        self.enqueue_message(NetworkMessage::new(ProtocolMessage::Extensible(
+                            extensible.clone(),
+                        )))
+                        .await?;
                     } else {
                         not_found.push(hash);
                     }
@@ -621,13 +682,14 @@ impl RemoteNode {
                 Ok(())
             }
             ProtocolMessage::GetAddr => {
-                let mut rng = thread_rng();
-                let addresses = self
-                    .local_node
-                    .address_book()
-                    .into_iter()
-                    .filter(|addr| addr.endpoint().map(|e| e.port() > 0).unwrap_or(false))
-                    .choose_multiple(&mut rng, MAX_COUNT_TO_SEND);
+                let addresses = {
+                    let mut rng = thread_rng();
+                    self.local_node
+                        .address_book()
+                        .into_iter()
+                        .filter(|addr| addr.endpoint().map(|e| e.port() > 0).unwrap_or(false))
+                        .choose_multiple(&mut rng, MAX_COUNT_TO_SEND)
+                };
 
                 if addresses.is_empty() {
                     return Ok(());
@@ -651,7 +713,7 @@ impl RemoteNode {
         connection
             .send_message(message.clone())
             .await
-            .map_err(|err| akka::error::AkkaError::system(err.to_string()))?;
+            .map_err(|err| akka::AkkaError::system(err.to_string()))?;
         self.last_sent = Instant::now();
         let index = message.command().to_byte() as usize;
         if index < self.sent_commands.len() {
@@ -734,7 +796,7 @@ impl Actor for RemoteNode {
             Err(other) => {
                 warn!(
                     target: "neo",
-                    message_type = %other.type_id().name(),
+                    message_type = %type_name_of_val(other.as_ref()),
                     "unknown message routed to remote node actor"
                 );
                 Ok(())

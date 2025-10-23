@@ -63,6 +63,12 @@ impl ContractEventDescriptor {
             "parameters": self.parameters.iter().map(|p| p.to_json()).collect::<Vec<_>>(),
         })
     }
+
+    /// Approximate serialized size of the event descriptor.
+    pub fn size(&self) -> usize {
+        let params_size: usize = self.parameters.iter().map(|p| p.size()).sum();
+        1 + self.name.len() + params_size
+    }
 }
 
 impl IInteroperable for ContractEventDescriptor {

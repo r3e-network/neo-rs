@@ -4,12 +4,12 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
-use crate::reference_counter::ReferenceCounter;
+use crate::reference_counter::{CompoundParent, ReferenceCounter};
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::stack_item_vertex::next_stack_item_id;
 use crate::stack_item::StackItem;
+use std::collections::HashSet;
 use std::ops::{Index, IndexMut};
-use std::sync::Arc;
 
 /// Represents a struct of stack items in the VM.
 #[derive(Debug)]
@@ -19,14 +19,14 @@ pub struct Struct {
     /// Unique identifier mirroring reference equality semantics.
     id: usize,
     /// Reference counter shared with the VM (mirrors C# CompoundType semantics).
-    reference_counter: Option<Arc<ReferenceCounter>>,
+    reference_counter: Option<ReferenceCounter>,
     /// Indicates whether the struct is read-only.
     is_read_only: bool,
 }
 
 impl Struct {
     /// Creates a new struct with the specified items and reference counter.
-    pub fn new(items: Vec<StackItem>, reference_counter: Option<Arc<ReferenceCounter>>) -> Self {
+    pub fn new(items: Vec<StackItem>, reference_counter: Option<ReferenceCounter>) -> Self {
         let structure = Self {
             items,
             id: next_stack_item_id(),
@@ -47,7 +47,7 @@ impl Struct {
     }
 
     /// Returns the reference counter assigned by the reference counter, if any.
-    pub fn reference_counter(&self) -> Option<&Arc<ReferenceCounter>> {
+    pub fn reference_counter(&self) -> Option<&ReferenceCounter> {
         self.reference_counter.as_ref()
     }
 
@@ -94,8 +94,9 @@ impl Struct {
         self.ensure_mutable()?;
         if let Some(rc) = &self.reference_counter {
             self.validate_compound_reference(rc, &item)?;
-            rc.remove_stack_reference(&self.items[index]);
-            rc.add_stack_reference(&item, 1);
+            let parent = CompoundParent::Struct(self.id);
+            rc.remove_compound_reference(&self.items[index], parent);
+            rc.add_compound_reference(&item, parent);
         }
 
         self.items[index] = item;
@@ -107,7 +108,7 @@ impl Struct {
         self.ensure_mutable()?;
         if let Some(rc) = &self.reference_counter {
             self.validate_compound_reference(rc, &item)?;
-            rc.add_stack_reference(&item, 1);
+            rc.add_compound_reference(&item, CompoundParent::Struct(self.id));
         }
         self.items.push(item);
         Ok(())
@@ -122,7 +123,7 @@ impl Struct {
             .ok_or_else(|| VmError::invalid_operation_msg("Struct is empty"))?;
 
         if let Some(rc) = &self.reference_counter {
-            rc.remove_stack_reference(&item);
+            rc.remove_compound_reference(&item, CompoundParent::Struct(self.id));
         }
 
         Ok(item)
@@ -142,8 +143,9 @@ impl Struct {
     pub fn clear(&mut self) -> VmResult<()> {
         self.ensure_mutable()?;
         if let Some(rc) = &self.reference_counter {
+            let parent = CompoundParent::Struct(self.id);
             for item in &self.items {
-                rc.remove_stack_reference(item);
+                rc.remove_compound_reference(item, parent);
             }
         }
         self.items.clear();
@@ -151,13 +153,59 @@ impl Struct {
     }
 
     /// Creates a deep copy of the struct.
-    pub fn deep_copy(&self, reference_counter: Option<Arc<ReferenceCounter>>) -> Self {
+    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> Self {
         let mut copy = Self::new(
             self.items.iter().map(|item| item.deep_clone()).collect(),
             reference_counter,
         );
         copy.set_read_only(true);
         copy
+    }
+
+    /// Clones the struct respecting execution limits (mirrors C# Struct.Clone).
+    pub fn clone_with_limits(
+        &self,
+        limits: &crate::execution_engine_limits::ExecutionEngineLimits,
+    ) -> VmResult<Self> {
+        let mut remaining = (limits.max_stack_size as i64) - 1;
+        let mut visited = HashSet::new();
+        self.clone_with_remaining(&mut remaining, &mut visited)
+    }
+
+    fn clone_with_remaining(
+        &self,
+        remaining: &mut i64,
+        visited: &mut HashSet<usize>,
+    ) -> VmResult<Self> {
+        if !visited.insert(self.id) {
+            return Err(VmError::invalid_operation_msg(
+                "Beyond struct subitem clone limits!",
+            ));
+        }
+
+        let mut clone = Struct::new(Vec::new(), self.reference_counter.clone());
+
+        for item in &self.items {
+            *remaining -= 1;
+            if *remaining < 0 {
+                visited.remove(&self.id);
+                return Err(VmError::invalid_operation_msg(
+                    "Beyond struct subitem clone limits!",
+                ));
+            }
+
+            let cloned_item = match item {
+                StackItem::Struct(inner) => {
+                    StackItem::Struct(inner.clone_with_remaining(remaining, visited)?)
+                }
+                _ => item.clone(),
+            };
+
+            clone.push(cloned_item)?;
+        }
+
+        visited.remove(&self.id);
+        Ok(clone)
     }
 
     /// Gets the type of the stack item.
@@ -191,7 +239,7 @@ impl Struct {
 
         let removed = self.items.remove(index);
         if let Some(rc) = &self.reference_counter {
-            rc.remove_stack_reference(&removed);
+            rc.remove_compound_reference(&removed, CompoundParent::Struct(self.id));
         }
 
         Ok(removed)
@@ -212,23 +260,20 @@ impl Struct {
         }
     }
 
-    fn add_reference_for_items(&self, rc: &Arc<ReferenceCounter>) {
+    fn add_reference_for_items(&self, rc: &ReferenceCounter) {
+        let parent = CompoundParent::Struct(self.id);
         for item in &self.items {
             if let Err(err) = self.validate_compound_reference(rc, item) {
                 panic!("{err}");
             }
-            rc.add_stack_reference(item, 1);
+            rc.add_compound_reference(item, parent);
         }
     }
 
-    fn validate_compound_reference(
-        &self,
-        rc: &Arc<ReferenceCounter>,
-        item: &StackItem,
-    ) -> VmResult<()> {
+    fn validate_compound_reference(&self, rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
         match item {
             StackItem::Array(inner) => match inner.reference_counter() {
-                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
                 Some(_) => Err(VmError::invalid_operation_msg(
                     "Can not set a Struct without a ReferenceCounter.".to_string(),
                 )),
@@ -237,7 +282,7 @@ impl Struct {
                 )),
             },
             StackItem::Struct(inner) => match inner.reference_counter() {
-                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
                 Some(_) => Err(VmError::invalid_operation_msg(
                     "Can not set a Struct without a ReferenceCounter.".to_string(),
                 )),
@@ -246,7 +291,7 @@ impl Struct {
                 )),
             },
             StackItem::Map(inner) => match inner.reference_counter() {
-                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
                 Some(_) => Err(VmError::invalid_operation_msg(
                     "Can not set a Struct without a ReferenceCounter.".to_string(),
                 )),

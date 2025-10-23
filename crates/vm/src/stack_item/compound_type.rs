@@ -38,11 +38,11 @@ impl<'a> CompoundType<'a> {
 
     /// Enumerates the child stack items. For maps this yields the values, matching the
     /// semantics used by the C# implementation when tracking references.
-    pub fn sub_items(&self) -> Vec<&'a StackItem> {
+    pub fn sub_items(&self) -> Vec<StackItem> {
         match self.item {
-            StackItem::Array(array) => array.items().iter().collect(),
-            StackItem::Struct(structure) => structure.items().iter().collect(),
-            StackItem::Map(map) => map.items().values().collect(),
+            StackItem::Array(array) => array.iter().cloned().collect(),
+            StackItem::Struct(structure) => structure.items().to_vec(),
+            StackItem::Map(map) => map.items().values().cloned().collect(),
             _ => Vec::new(),
         }
     }

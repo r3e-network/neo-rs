@@ -1,6 +1,5 @@
 //! Complete port of `Neo.SmartContract.IInteroperable` from the C# reference implementation.
 
-use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::StackItem;
 
 /// Represents the object that can be converted to and from [`StackItem`].

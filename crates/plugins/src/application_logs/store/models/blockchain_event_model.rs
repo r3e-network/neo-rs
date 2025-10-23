@@ -1,67 +1,38 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// blockchain_event_model.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-
-use crate::application_logs::store::states::{NotifyLogState, ContractLogState};
+use crate::application_logs::store::states::{ContractLogState, NotifyLogState};
+use neo_core::smart_contract::notify_event_args::NotifyEventArgs;
 use neo_core::UInt160;
 use neo_vm::StackItem;
 
-/// Blockchain event model matching C# BlockchainEventModel exactly
-#[derive(Debug, Clone)]
+/// Execution notification model mirroring the C# plugin output.
+#[derive(Clone, Debug, PartialEq)]
 pub struct BlockchainEventModel {
-    /// Script hash
     pub script_hash: UInt160,
-    /// Event name
     pub event_name: String,
-    /// State items
-    pub state: Vec<Box<dyn StackItem>>,
+    pub state: Vec<StackItem>,
 }
 
 impl BlockchainEventModel {
-    /// Creates a new BlockchainEventModel with parameters
-    /// Matches C# Create method with parameters
-    pub fn create_with_params(
-        script_hash: UInt160,
-        event_name: String,
-        state: Vec<Box<dyn StackItem>>,
-    ) -> Self {
+    pub fn create_from_notification(notification: &NotifyEventArgs) -> Self {
         Self {
-            script_hash,
-            event_name: event_name.unwrap_or_default(),
-            state,
+            script_hash: notification.script_hash,
+            event_name: notification.event_name.clone(),
+            state: notification.state.clone(),
         }
     }
-    
-    /// Creates a new BlockchainEventModel from NotifyLogState
-    /// Matches C# Create method with NotifyLogState
-    pub fn create_from_notify_log_state(
-        notify_log_state: NotifyLogState,
-        state: Vec<Box<dyn StackItem>>,
-    ) -> Self {
+
+    pub fn create_from_notify_state(state: &NotifyLogState, stack: Vec<StackItem>) -> Self {
         Self {
-            script_hash: notify_log_state.script_hash,
-            event_name: notify_log_state.event_name,
-            state,
+            script_hash: state.script_hash,
+            event_name: state.event_name.clone(),
+            state: stack,
         }
     }
-    
-    /// Creates a new BlockchainEventModel from ContractLogState
-    /// Matches C# Create method with ContractLogState
-    pub fn create_from_contract_log_state(
-        contract_log_state: ContractLogState,
-        state: Vec<Box<dyn StackItem>>,
-    ) -> Self {
+
+    pub fn create_from_contract_state(state: &ContractLogState, stack: Vec<StackItem>) -> Self {
         Self {
-            script_hash: contract_log_state.script_hash,
-            event_name: contract_log_state.event_name,
-            state,
+            script_hash: state.notify.script_hash,
+            event_name: state.notify.event_name.clone(),
+            state: stack,
         }
     }
 }

@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 /// HashSet extensions matching C# HashSetExtensions exactly
@@ -19,13 +19,13 @@ pub trait HashSetExtensions<T> {
     fn remove_set(&mut self, other: &HashSet<T>)
     where
         T: Hash + Eq + Clone;
-    
+
     /// Removes elements from the set that are in the other collection.
     /// Matches C# Remove method with ICollection<T>
     fn remove_collection(&mut self, other: &[T])
     where
         T: Hash + Eq + Clone;
-    
+
     /// Removes elements from the set that are keys in the other dictionary.
     /// Matches C# Remove method with IReadOnlyDictionary<T, V>
     fn remove_dict_keys<K, V>(&mut self, other: &HashMap<K, V>)
@@ -45,7 +45,7 @@ where
             self.retain(|item| !other.contains(item));
         }
     }
-    
+
     fn remove_collection(&mut self, other: &[T]) {
         if self.len() > other.len() {
             self.retain(|item| !other.contains(item));
@@ -53,7 +53,7 @@ where
             self.retain(|item| !other.contains(item));
         }
     }
-    
+
     fn remove_dict_keys<K, V>(&mut self, other: &HashMap<K, V>)
     where
         T: Hash + Eq + Clone,

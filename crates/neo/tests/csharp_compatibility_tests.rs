@@ -1,7 +1,8 @@
 //! Comprehensive tests converted from C# Neo unit tests.
 //! These tests ensure 100% compatibility with the C# Neo implementation.
 
-use crate::neo_io::Serializable;
+use neo_core::neo_io::Serializable;
+use neo_core::network::p2p::payloads::Signer;
 use neo_core::*;
 use std::str::FromStr;
 

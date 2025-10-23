@@ -10,10 +10,11 @@
 // modifications are permitted.
 
 use crate::neo_crypto::{ripemd160, sha256};
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::UInt160;
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 use std::sync::Mutex;
 
 // This is designed to allow a MultiSig 21/11 (committee)
@@ -24,7 +25,7 @@ const MAX_INVOCATION_SCRIPT: usize = 1024;
 const MAX_VERIFICATION_SCRIPT: usize = 1024;
 
 /// Represents a witness of an IVerifiable object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Witness {
     /// The invocation script of the witness. Used to pass arguments for verification_script.
     pub invocation_script: Vec<u8>,
@@ -76,12 +77,22 @@ impl Witness {
         Self::new()
     }
 
+    /// Returns the invocation script.
+    pub fn invocation_script(&self) -> &[u8] {
+        &self.invocation_script
+    }
+
+    /// Returns the verification script.
+    pub fn verification_script(&self) -> &[u8] {
+        &self.verification_script
+    }
+
     /// Converts the witness to JSON.
     /// Matches C# ToJson() exactly.
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "invocation": base64::encode(&self.invocation_script),
-            "verification": base64::encode(&self.verification_script)
+            "invocation": general_purpose::STANDARD.encode(&self.invocation_script),
+            "verification": general_purpose::STANDARD.encode(&self.verification_script)
         })
     }
 
@@ -97,6 +108,12 @@ impl Witness {
     }
 }
 
+impl Clone for Witness {
+    fn clone(&self) -> Self {
+        self.clone_witness()
+    }
+}
+
 impl Default for Witness {
     fn default() -> Self {
         Self::new()
@@ -106,76 +123,33 @@ impl Default for Witness {
 impl Serializable for Witness {
     fn size(&self) -> usize {
         // Matches C# Size property: InvocationScript.GetVarSize() + VerificationScript.GetVarSize()
-        let invocation_var_size = if self.invocation_script.len() < 0xFD {
-            1 + self.invocation_script.len()
-        } else if self.invocation_script.len() <= 0xFFFF {
-            3 + self.invocation_script.len()
-        } else {
-            5 + self.invocation_script.len()
-        };
-
-        let verification_var_size = if self.verification_script.len() < 0xFD {
-            1 + self.verification_script.len()
-        } else if self.verification_script.len() <= 0xFFFF {
-            3 + self.verification_script.len()
-        } else {
-            5 + self.verification_script.len()
-        };
-
-        invocation_var_size + verification_var_size
+        get_var_size(self.invocation_script.len() as u64)
+            + self.invocation_script.len()
+            + get_var_size(self.verification_script.len() as u64)
+            + self.verification_script.len()
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         // Write invocation script as var bytes
         if self.invocation_script.len() > MAX_INVOCATION_SCRIPT {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Invocation script too long",
-            ));
+            return Err(IoError::invalid_data("Invocation script too long"));
         }
 
-        // Write var-length encoded size
-        if self.invocation_script.len() < 0xFD {
-            writer.write_all(&[self.invocation_script.len() as u8])?;
-        } else if self.invocation_script.len() <= 0xFFFF {
-            writer.write_all(&[0xFD])?;
-            writer.write_all(&(self.invocation_script.len() as u16).to_le_bytes())?;
-        } else {
-            writer.write_all(&[0xFE])?;
-            writer.write_all(&(self.invocation_script.len() as u32).to_le_bytes())?;
-        }
-        writer.write_all(&self.invocation_script)?;
+        writer.write_var_bytes(&self.invocation_script)?;
 
         // Write verification script as var bytes
         if self.verification_script.len() > MAX_VERIFICATION_SCRIPT {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Verification script too long",
-            ));
+            return Err(IoError::invalid_data("Verification script too long"));
         }
 
-        // Write var-length encoded size
-        if self.verification_script.len() < 0xFD {
-            writer.write_all(&[self.verification_script.len() as u8])?;
-        } else if self.verification_script.len() <= 0xFFFF {
-            writer.write_all(&[0xFD])?;
-            writer.write_all(&(self.verification_script.len() as u16).to_le_bytes())?;
-        } else {
-            writer.write_all(&[0xFE])?;
-            writer.write_all(&(self.verification_script.len() as u32).to_le_bytes())?;
-        }
-        writer.write_all(&self.verification_script)?;
+        writer.write_var_bytes(&self.verification_script)?;
 
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let invocation_script = reader
-            .read_var_bytes_max(MAX_INVOCATION_SCRIPT)
-            .map_err(|e| e.to_string())?;
-        let verification_script = reader
-            .read_var_bytes_max(MAX_VERIFICATION_SCRIPT)
-            .map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let invocation_script = reader.read_var_bytes_max(MAX_INVOCATION_SCRIPT)?;
+        let verification_script = reader.read_var_bytes_max(MAX_VERIFICATION_SCRIPT)?;
 
         Ok(Self {
             invocation_script,

@@ -1,11 +1,10 @@
 //! Network address descriptor with timestamp (mirrors `NetworkAddressWithTime.cs`).
 
 use crate::neo_io::{helper, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::network::p2p::capabilities::{NodeCapability, NodeCapabilityType, ServerCapability};
+use crate::network::p2p::capabilities::{NodeCapability, ServerCapability};
 use crate::network::p2p::payloads::version_payload::MAX_CAPABILITIES;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::iter::FromIterator;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 /// Sent with an AddrPayload to respond to GetAddr messages.
@@ -77,7 +76,7 @@ impl Serializable for NetworkAddressWithTime {
 
         writer.write_var_int(self.capabilities.len() as u64)?;
         for capability in &self.capabilities {
-            capability.serialize(writer)?;
+            writer.write_serializable(capability)?;
         }
         Ok(())
     }
@@ -97,7 +96,7 @@ impl Serializable for NetworkAddressWithTime {
 
         let mut capabilities = Vec::with_capacity(count);
         for _ in 0..count {
-            capabilities.push(NodeCapability::deserialize(reader)?);
+            capabilities.push(<NodeCapability as Serializable>::deserialize(reader)?);
         }
 
         let filtered: Vec<_> = capabilities

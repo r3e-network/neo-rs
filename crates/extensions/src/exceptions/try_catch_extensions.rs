@@ -16,45 +16,55 @@ pub trait TryCatchExtensions<T> {
     fn try_catch<F>(&self, action: F) -> &Self
     where
         F: FnOnce(&Self);
-    
+
     /// Executes an action and catches specific exceptions.
     /// Matches C# TryCatch method with exception type
-    fn try_catch_exception<F, E>(&self, action: F, on_error: Option<fn(&Self, &E)>) -> &Self
+    fn try_catch_exception<F>(
+        &self,
+        action: F,
+        on_error: Option<fn(&Self, &dyn std::error::Error)>,
+    ) -> &Self
     where
-        F: FnOnce(&Self),
-        E: std::error::Error;
-    
+        F: FnOnce(&Self);
+
     /// Executes a function and catches specific exceptions.
     /// Matches C# TryCatch method with function and exception type
-    fn try_catch_function<F, E, R>(&self, func: F, on_error: Option<fn(&Self, &E) -> Option<R>>) -> Option<R>
+    fn try_catch_function<F, R>(
+        &self,
+        func: F,
+        on_error: Option<fn(&Self, &dyn std::error::Error) -> Option<R>>,
+    ) -> Option<R>
     where
-        F: FnOnce(&Self) -> Option<R>,
-        E: std::error::Error;
-    
+        F: FnOnce(&Self) -> Option<R>;
+
     /// Executes an action and re-throws specific exceptions.
     /// Matches C# TryCatchThrow method
     fn try_catch_throw<F, E>(&self, action: F) -> &Self
     where
         F: FnOnce(&Self),
         E: std::error::Error;
-    
+
     /// Executes a function and re-throws specific exceptions.
     /// Matches C# TryCatchThrow method with function
     fn try_catch_throw_function<F, E, R>(&self, func: F) -> Option<R>
     where
         F: FnOnce(&Self) -> Option<R>,
         E: std::error::Error;
-    
+
     /// Executes an action and re-throws specific exceptions with custom message.
     /// Matches C# TryCatchThrow method with error message
     fn try_catch_throw_with_message<F, E>(&self, action: F, error_message: Option<&str>) -> &Self
     where
         F: FnOnce(&Self),
         E: std::error::Error + std::fmt::Display;
-    
+
     /// Executes a function and re-throws specific exceptions with custom message.
     /// Matches C# TryCatchThrow method with function and error message
-    fn try_catch_throw_function_with_message<F, E, R>(&self, func: F, error_message: Option<&str>) -> Option<R>
+    fn try_catch_throw_function_with_message<F, E, R>(
+        &self,
+        func: F,
+        error_message: Option<&str>,
+    ) -> Option<R>
     where
         F: FnOnce(&Self) -> Option<R>,
         E: std::error::Error + std::fmt::Display;
@@ -68,14 +78,17 @@ impl<T> TryCatchExtensions<T> for T {
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| action(self)));
         self
     }
-    
-    fn try_catch_exception<F, E>(&self, action: F, on_error: Option<fn(&Self, &E)>) -> &Self
+
+    fn try_catch_exception<F>(
+        &self,
+        action: F,
+        on_error: Option<fn(&Self, &dyn std::error::Error)>,
+    ) -> &Self
     where
         F: FnOnce(&Self),
-        E: std::error::Error,
     {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| action(self)));
-        if let Err(panic_info) = result {
+        if let Err(_panic_info) = result {
             if let Some(callback) = on_error {
                 // In a real implementation, this would extract the exception type
                 // For now, we'll just call the callback with a generic error
@@ -85,11 +98,14 @@ impl<T> TryCatchExtensions<T> for T {
         }
         self
     }
-    
-    fn try_catch_function<F, E, R>(&self, func: F, on_error: Option<fn(&Self, &E) -> Option<R>>) -> Option<R>
+
+    fn try_catch_function<F, R>(
+        &self,
+        func: F,
+        on_error: Option<fn(&Self, &dyn std::error::Error) -> Option<R>>,
+    ) -> Option<R>
     where
         F: FnOnce(&Self) -> Option<R>,
-        E: std::error::Error,
     {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| func(self)));
         match result {
@@ -104,7 +120,7 @@ impl<T> TryCatchExtensions<T> for T {
             }
         }
     }
-    
+
     fn try_catch_throw<F, E>(&self, action: F) -> &Self
     where
         F: FnOnce(&Self),
@@ -117,7 +133,7 @@ impl<T> TryCatchExtensions<T> for T {
         }
         self
     }
-    
+
     fn try_catch_throw_function<F, E, R>(&self, func: F) -> Option<R>
     where
         F: FnOnce(&Self) -> Option<R>,
@@ -132,7 +148,7 @@ impl<T> TryCatchExtensions<T> for T {
             }
         }
     }
-    
+
     fn try_catch_throw_with_message<F, E>(&self, action: F, error_message: Option<&str>) -> &Self
     where
         F: FnOnce(&Self),
@@ -148,8 +164,12 @@ impl<T> TryCatchExtensions<T> for T {
         }
         self
     }
-    
-    fn try_catch_throw_function_with_message<F, E, R>(&self, func: F, error_message: Option<&str>) -> Option<R>
+
+    fn try_catch_throw_function_with_message<F, E, R>(
+        &self,
+        func: F,
+        error_message: Option<&str>,
+    ) -> Option<R>
     where
         F: FnOnce(&Self) -> Option<R>,
         E: std::error::Error + std::fmt::Display,

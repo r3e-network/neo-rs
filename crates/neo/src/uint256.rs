@@ -40,6 +40,8 @@ pub static ZERO: UInt256 = UInt256 {
 };
 
 impl UInt256 {
+    /// Alias matching C# `UInt256.Length`.
+    pub const LENGTH: usize = UINT256_SIZE;
     /// Creates a new UInt256 instance.
     pub fn new() -> Self {
         Self::default()
@@ -300,7 +302,7 @@ impl Serializable for UInt256 {
         UINT256_SIZE
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::IoResult<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> crate::neo_io::IoResult<()> {
         writer.write_u64(self.value1)?;
         writer.write_u64(self.value2)?;
         writer.write_u64(self.value3)?;
@@ -308,7 +310,7 @@ impl Serializable for UInt256 {
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> neo_io::IoResult<Self> {
+    fn deserialize(reader: &mut MemoryReader) -> crate::neo_io::IoResult<Self> {
         let value1 = reader.read_u64()?;
         let value2 = reader.read_u64()?;
         let value3 = reader.read_u64()?;

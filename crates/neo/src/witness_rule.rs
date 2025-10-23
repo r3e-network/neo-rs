@@ -5,11 +5,32 @@
 //! Implementation of WitnessRule (matches C# WitnessRule exactly).
 
 use crate::neo_config::ADDRESS_SIZE;
-use serde::{Deserialize, Serialize};
+use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::UInt160;
+use hex::{decode as hex_decode, encode as hex_encode};
+use serde::de::Error as SerdeDeError;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::{json, Value};
 use std::fmt;
+use std::str::FromStr;
+
+const ECPOINT_MAX_BYTES: usize = 64;
+
+fn strip_0x(value: &str) -> &str {
+    value.strip_prefix("0x").unwrap_or(value)
+}
+
+fn encode_with_0x(bytes: &[u8]) -> String {
+    format!("0x{}", hex_encode(bytes))
+}
+
+fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
+    hex_decode(strip_0x(value)).map_err(|e| format!("Invalid hex string: {e}"))
+}
 
 /// The action to be taken if the current context meets with the rule (matches C# WitnessRuleAction exactly).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum WitnessRuleAction {
     /// Deny the witness if the condition is met.
@@ -18,8 +39,50 @@ pub enum WitnessRuleAction {
     Allow = 1,
 }
 
+impl WitnessRuleAction {
+    pub fn to_byte(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Deny),
+            1 => Some(Self::Allow),
+            _ => None,
+        }
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "Deny" | "deny" => Ok(Self::Deny),
+            "Allow" | "allow" => Ok(Self::Allow),
+            other => Err(format!("Invalid witness rule action: {other}")),
+        }
+    }
+}
+
+impl Serialize for WitnessRuleAction {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8(self.to_byte())
+    }
+}
+
+impl<'de> Deserialize<'de> for WitnessRuleAction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let byte = u8::deserialize(deserializer)?;
+        WitnessRuleAction::from_byte(byte)
+            .ok_or_else(|| D::Error::custom(format!("Invalid witness rule action byte: {byte}")))
+    }
+}
+
 /// The type of witness condition (matches C# WitnessConditionType exactly).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum WitnessConditionType {
     /// Boolean condition.
@@ -42,8 +105,49 @@ pub enum WitnessConditionType {
     CalledByGroup = 0x29,
 }
 
+impl WitnessConditionType {
+    pub fn to_byte(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0x00 => Some(Self::Boolean),
+            0x01 => Some(Self::Not),
+            0x02 => Some(Self::And),
+            0x03 => Some(Self::Or),
+            0x18 => Some(Self::ScriptHash),
+            0x19 => Some(Self::Group),
+            0x20 => Some(Self::CalledByEntry),
+            0x28 => Some(Self::CalledByContract),
+            0x29 => Some(Self::CalledByGroup),
+            _ => None,
+        }
+    }
+}
+
+impl Serialize for WitnessConditionType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8(self.to_byte())
+    }
+}
+
+impl<'de> Deserialize<'de> for WitnessConditionType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let byte = u8::deserialize(deserializer)?;
+        WitnessConditionType::from_byte(byte)
+            .ok_or_else(|| D::Error::custom(format!("Invalid witness condition type byte: {byte}")))
+    }
+}
+
 /// Represents a witness condition (matches C# WitnessCondition exactly).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WitnessCondition {
     /// Boolean condition with a fixed value.
     Boolean { value: bool },
@@ -66,7 +170,7 @@ pub enum WitnessCondition {
 }
 
 /// The rule used to describe the scope of the witness (matches C# WitnessRule exactly).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WitnessRule {
     /// Indicates the action to be taken if the current context meets with the rule.
     pub action: WitnessRuleAction,
@@ -119,27 +223,155 @@ impl WitnessCondition {
     }
 
     /// Calculates the size of the condition when serialized (matches C# Size property exactly).
+    pub fn size(&self) -> usize {
+        let payload = match self {
+            WitnessCondition::Boolean { .. } => 1, // bool
+            WitnessCondition::Not { condition } => condition.size(),
+            WitnessCondition::And { conditions } | WitnessCondition::Or { conditions } => {
+                get_var_size(conditions.len() as u64)
+                    + conditions.iter().map(|c| c.size()).sum::<usize>()
+            }
+            WitnessCondition::ScriptHash { .. } => ADDRESS_SIZE,
+            WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {
+                get_var_size(group.len() as u64) + group.len()
+            }
+            WitnessCondition::CalledByEntry => 0,
+            WitnessCondition::CalledByContract { .. } => ADDRESS_SIZE,
+        };
+        1 + payload
+    }
+
+    /// Calculates the size of the condition when serialized (matches earlier `len` helper`).
     pub fn len(&self) -> usize {
-        match self {
-            WitnessCondition::Boolean { .. } => 1,
-            WitnessCondition::Not { condition } => 1 + condition.len(),
-            WitnessCondition::And { conditions } => {
-                1 + conditions.iter().map(|e| e.len()).sum::<usize>()
-            }
-            WitnessCondition::Or { conditions } => {
-                1 + conditions.iter().map(|e| e.len()).sum::<usize>()
-            }
-            WitnessCondition::ScriptHash { .. } => 1 + ADDRESS_SIZE, // 1 byte type + ADDRESS_SIZE bytes hash
-            WitnessCondition::Group { group } => 1 + group.len(),
-            WitnessCondition::CalledByEntry => 1,
-            WitnessCondition::CalledByContract { .. } => 1 + ADDRESS_SIZE, // 1 byte type + ADDRESS_SIZE bytes hash
-            WitnessCondition::CalledByGroup { group } => 1 + group.len(),
-        }
+        self.size()
     }
 
     /// Returns true if the condition has zero size when serialized
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.size() == 0
+    }
+
+    pub fn to_json(&self) -> Value {
+        match self {
+            WitnessCondition::Boolean { value } => json!({
+                "type": "Boolean",
+                "value": value,
+            }),
+            WitnessCondition::Not { condition } => json!({
+                "type": "Not",
+                "expression": condition.to_json(),
+            }),
+            WitnessCondition::And { conditions } => json!({
+                "type": "And",
+                "expressions": conditions.iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+            }),
+            WitnessCondition::Or { conditions } => json!({
+                "type": "Or",
+                "expressions": conditions.iter().map(|c| c.to_json()).collect::<Vec<_>>(),
+            }),
+            WitnessCondition::ScriptHash { hash } => json!({
+                "type": "ScriptHash",
+                "hash": hash.to_string(),
+            }),
+            WitnessCondition::Group { group } => json!({
+                "type": "Group",
+                "group": encode_with_0x(group),
+            }),
+            WitnessCondition::CalledByEntry => json!({
+                "type": "CalledByEntry",
+            }),
+            WitnessCondition::CalledByContract { hash } => json!({
+                "type": "CalledByContract",
+                "hash": hash.to_string(),
+            }),
+            WitnessCondition::CalledByGroup { group } => json!({
+                "type": "CalledByGroup",
+                "group": encode_with_0x(group),
+            }),
+        }
+    }
+
+    pub fn from_json(json: &Value) -> Result<Self, String> {
+        let condition_type = json
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "Condition type missing".to_string())?;
+        match condition_type {
+            "Boolean" => {
+                let value = json
+                    .get("value")
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| "Boolean condition missing value".to_string())?;
+                Ok(WitnessCondition::Boolean { value })
+            }
+            "Not" => {
+                let expression = json
+                    .get("expression")
+                    .ok_or_else(|| "Not condition missing expression".to_string())?;
+                let inner = WitnessCondition::from_json(expression)?;
+                Ok(WitnessCondition::Not {
+                    condition: Box::new(inner),
+                })
+            }
+            "And" => {
+                let expressions = json
+                    .get("expressions")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| "And condition missing expressions".to_string())?;
+                let mut conditions = Vec::with_capacity(expressions.len());
+                for expr in expressions {
+                    conditions.push(WitnessCondition::from_json(expr)?);
+                }
+                Ok(WitnessCondition::And { conditions })
+            }
+            "Or" => {
+                let expressions = json
+                    .get("expressions")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| "Or condition missing expressions".to_string())?;
+                let mut conditions = Vec::with_capacity(expressions.len());
+                for expr in expressions {
+                    conditions.push(WitnessCondition::from_json(expr)?);
+                }
+                Ok(WitnessCondition::Or { conditions })
+            }
+            "ScriptHash" => {
+                let hash_str = json
+                    .get("hash")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "ScriptHash condition missing hash".to_string())?;
+                let hash =
+                    UInt160::from_str(hash_str).map_err(|e| format!("Invalid script hash: {e}"))?;
+                Ok(WitnessCondition::ScriptHash { hash })
+            }
+            "Group" => {
+                let group_str = json
+                    .get("group")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "Group condition missing group".to_string())?;
+                let group = decode_hex(group_str)?;
+                Ok(WitnessCondition::Group { group })
+            }
+            "CalledByEntry" => Ok(WitnessCondition::CalledByEntry),
+            "CalledByContract" => {
+                let hash_str = json
+                    .get("hash")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "CalledByContract missing hash".to_string())?;
+                let hash =
+                    UInt160::from_str(hash_str).map_err(|e| format!("Invalid script hash: {e}"))?;
+                Ok(WitnessCondition::CalledByContract { hash })
+            }
+            "CalledByGroup" => {
+                let group_str = json
+                    .get("group")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| "CalledByGroup missing group".to_string())?;
+                let group = decode_hex(group_str)?;
+                Ok(WitnessCondition::CalledByGroup { group })
+            }
+            other => Err(format!("Unsupported witness condition type: {other}")),
+        }
     }
 }
 
@@ -152,6 +384,30 @@ impl WitnessRule {
     /// Validates the rule (matches C# validation exactly).
     pub fn is_valid(&self) -> bool {
         self.condition.is_valid(WitnessCondition::MAX_NESTING_DEPTH)
+    }
+
+    pub fn size(&self) -> usize {
+        1 + self.condition.size()
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "action": self.action.to_string(),
+            "condition": self.condition.to_json(),
+        })
+    }
+
+    pub fn from_json(value: &Value) -> Result<Self, String> {
+        let action_str = value
+            .get("action")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "WitnessRule missing action".to_string())?;
+        let action = WitnessRuleAction::from_str(action_str)?;
+        let condition_value = value
+            .get("condition")
+            .ok_or_else(|| "WitnessRule missing condition".to_string())?;
+        let condition = WitnessCondition::from_json(condition_value)?;
+        Ok(Self { action, condition })
     }
 }
 
@@ -223,6 +479,181 @@ impl fmt::Display for WitnessRule {
             "WitnessRule {{ action: {}, condition: {} }}",
             self.action, self.condition
         )
+    }
+}
+
+impl Serializable for WitnessCondition {
+    fn size(&self) -> usize {
+        WitnessCondition::size(self)
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u8(self.condition_type().to_byte())?;
+        match self {
+            WitnessCondition::Boolean { value } => writer.write_bool(*value)?,
+            WitnessCondition::Not { condition } => {
+                <WitnessCondition as Serializable>::serialize(condition, writer)?;
+            }
+            WitnessCondition::And { conditions } | WitnessCondition::Or { conditions } => {
+                if conditions.is_empty() {
+                    return Err(IoError::invalid_data(
+                        "Composite witness condition requires at least one entry",
+                    ));
+                }
+                if conditions.len() > WitnessCondition::MAX_SUBITEMS {
+                    return Err(IoError::invalid_data(
+                        "Composite witness condition exceeds max subitems",
+                    ));
+                }
+                writer.write_var_int(conditions.len() as u64)?;
+                for condition in conditions {
+                    <WitnessCondition as Serializable>::serialize(condition, writer)?;
+                }
+            }
+            WitnessCondition::ScriptHash { hash } => Serializable::serialize(hash, writer)?,
+            WitnessCondition::Group { group } | WitnessCondition::CalledByGroup { group } => {
+                if group.is_empty() {
+                    return Err(IoError::invalid_data("Group condition requires bytes"));
+                }
+                if group.len() > ECPOINT_MAX_BYTES {
+                    return Err(IoError::invalid_data(
+                        "Group condition exceeds maximum encoded size",
+                    ));
+                }
+                writer.write_var_bytes(group)?;
+            }
+            WitnessCondition::CalledByEntry => {}
+            WitnessCondition::CalledByContract { hash } => {
+                Serializable::serialize(hash, writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let type_byte = reader.read_u8()?;
+        let condition_type = WitnessConditionType::from_byte(type_byte)
+            .ok_or_else(|| IoError::invalid_data("Invalid witness condition type"))?;
+
+        match condition_type {
+            WitnessConditionType::Boolean => {
+                let value = reader.read_bool()?;
+                Ok(WitnessCondition::Boolean { value })
+            }
+            WitnessConditionType::Not => {
+                let inner = <WitnessCondition as Serializable>::deserialize(reader)?;
+                Ok(WitnessCondition::Not {
+                    condition: Box::new(inner),
+                })
+            }
+            WitnessConditionType::And => {
+                let count = reader.read_var_int(WitnessCondition::MAX_SUBITEMS as u64)? as usize;
+                if count == 0 || count > WitnessCondition::MAX_SUBITEMS {
+                    return Err(IoError::invalid_data(
+                        "Invalid AND witness condition length",
+                    ));
+                }
+                let mut conditions = Vec::with_capacity(count);
+                for _ in 0..count {
+                    conditions.push(<WitnessCondition as Serializable>::deserialize(reader)?);
+                }
+                Ok(WitnessCondition::And { conditions })
+            }
+            WitnessConditionType::Or => {
+                let count = reader.read_var_int(WitnessCondition::MAX_SUBITEMS as u64)? as usize;
+                if count == 0 || count > WitnessCondition::MAX_SUBITEMS {
+                    return Err(IoError::invalid_data("Invalid OR witness condition length"));
+                }
+                let mut conditions = Vec::with_capacity(count);
+                for _ in 0..count {
+                    conditions.push(<WitnessCondition as Serializable>::deserialize(reader)?);
+                }
+                Ok(WitnessCondition::Or { conditions })
+            }
+            WitnessConditionType::ScriptHash => {
+                let hash = <UInt160 as Serializable>::deserialize(reader)?;
+                Ok(WitnessCondition::ScriptHash { hash })
+            }
+            WitnessConditionType::Group => {
+                let bytes = reader.read_var_bytes(ECPOINT_MAX_BYTES)?;
+                if bytes.is_empty() {
+                    return Err(IoError::invalid_data(
+                        "Group witness condition missing bytes",
+                    ));
+                }
+                Ok(WitnessCondition::Group { group: bytes })
+            }
+            WitnessConditionType::CalledByEntry => Ok(WitnessCondition::CalledByEntry),
+            WitnessConditionType::CalledByContract => {
+                let hash = <UInt160 as Serializable>::deserialize(reader)?;
+                Ok(WitnessCondition::CalledByContract { hash })
+            }
+            WitnessConditionType::CalledByGroup => {
+                let bytes = reader.read_var_bytes(ECPOINT_MAX_BYTES)?;
+                if bytes.is_empty() {
+                    return Err(IoError::invalid_data(
+                        "CalledByGroup witness condition missing bytes",
+                    ));
+                }
+                Ok(WitnessCondition::CalledByGroup { group: bytes })
+            }
+        }
+    }
+}
+
+impl Serialize for WitnessCondition {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_json().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for WitnessCondition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        WitnessCondition::from_json(&value).map_err(SerdeDeError::custom)
+    }
+}
+
+impl Serializable for WitnessRule {
+    fn size(&self) -> usize {
+        WitnessRule::size(self)
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u8(self.action.to_byte())?;
+        <WitnessCondition as Serializable>::serialize(&self.condition, writer)
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let action = WitnessRuleAction::from_byte(reader.read_u8()?)
+            .ok_or_else(|| IoError::invalid_data("Invalid witness rule action"))?;
+        let condition = <WitnessCondition as Serializable>::deserialize(reader)?;
+        Ok(WitnessRule { action, condition })
+    }
+}
+
+impl Serialize for WitnessRule {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_json().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for WitnessRule {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        WitnessRule::from_json(&value).map_err(SerdeDeError::custom)
     }
 }
 

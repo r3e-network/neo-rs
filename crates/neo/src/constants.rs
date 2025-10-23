@@ -7,15 +7,21 @@
 //! Global constants used throughout the Neo blockchain implementation
 
 pub const ADDRESS_SIZE: usize = 20;
+pub const ADDRESS_VERSION: u8 = 0x35;
 pub const HASH_SIZE: usize = 32;
 pub const MAX_BLOCK_SIZE: usize = 2_097_152; // 2 MB
 pub const MAX_SCRIPT_LENGTH: usize = 1_048_576; // 1 MB
 pub const MAX_SCRIPT_SIZE: usize = MAX_SCRIPT_LENGTH;
-pub const MAX_TRACEABLE_BLOCKS: u32 = 2_160_000; // ~1 year of blocks at 15s
-pub const MAX_TRANSACTIONS_PER_BLOCK: usize = 500_000;
+pub const MAX_TRACEABLE_BLOCKS: u32 = 2_102_400; // 2_102_400 blocks (per ProtocolSettings.Default)
+/// Maximum transactions allowed per block
+pub const MAX_TRANSACTIONS_PER_BLOCK: usize = 512;
+/// Maximum number of transactions retained in the mempool (ProtocolSettings.Default)
+pub const MEMORY_POOL_MAX_TRANSACTIONS: usize = 50_000;
 pub const MAX_TRANSACTION_SIZE: usize = 102_400; // 100 KB
 pub const MILLISECONDS_PER_BLOCK: u64 = 15_000; // 15 seconds
 pub const SECONDS_PER_BLOCK: u64 = 15;
+/// Total initial GAS distribution (datoshi)
+pub const INITIAL_GAS_DISTRIBUTION: u64 = 5_200_000_000_000_000;
 
 // Additional constants specific to neo-core
 /// Number of seconds in one hour

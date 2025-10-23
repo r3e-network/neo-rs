@@ -46,7 +46,7 @@ impl ContractMethodMetadata {
         handler: fn(&mut ApplicationEngine) -> Result<(), String>,
         cpu_fee: i64,
     ) -> Self {
-        Self::new(name, handler, CallFlags::ReadStates, cpu_fee, 0)
+        Self::new(name, handler, CallFlags::READ_STATES, cpu_fee, 0)
     }
     
     /// Creates metadata for a write method
@@ -56,7 +56,7 @@ impl ContractMethodMetadata {
         cpu_fee: i64,
         storage_fee: i64,
     ) -> Self {
-        Self::new(name, handler, CallFlags::States, cpu_fee, storage_fee)
+        Self::new(name, handler, CallFlags::STATES, cpu_fee, storage_fee)
     }
     
     /// Invokes the method

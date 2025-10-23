@@ -1,142 +1,83 @@
-//! TrimmedBlock - matches C# Neo.SmartContract.Native.TrimmedBlock exactly
-
+use crate::ledger::{block_header::BlockHeader, Block};
+use crate::neo_io::{
+    serializable::helper::get_var_size, BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
+};
 use crate::smart_contract::i_interoperable::IInteroperable;
-use crate::{UInt160, UInt256};
+use crate::UInt256;
 use neo_vm::StackItem;
-use num_traits::ToPrimitive;
 
-/// A trimmed block containing only header and transaction hashes (matches C# TrimmedBlock)
-#[derive(Clone, Debug)]
+/// A trimmed block containing only the header and transaction hashes (matches C# TrimmedBlock)
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TrimmedBlock {
-    /// The block hash
-    pub hash: UInt256,
-    
-    /// The block index
-    pub index: u32,
-    
-    /// The block timestamp
-    pub timestamp: u64,
-    
-    /// The previous block hash
-    pub prev_hash: UInt256,
-    
-    /// The next consensus data
-    pub next_consensus: UInt160,
-    
-    /// The witness index
-    pub witness: u16,
-    
-    /// The transaction count
-    pub transaction_count: u32,
-    
-    /// The transaction hashes
+    pub header: BlockHeader,
     pub hashes: Vec<UInt256>,
 }
 
 impl TrimmedBlock {
-    /// Creates a new trimmed block
-    pub fn new(
-        hash: UInt256,
-        index: u32,
-        timestamp: u64,
-        prev_hash: UInt256,
-        next_consensus: UInt160,
-        witness: u16,
-        hashes: Vec<UInt256>,
-    ) -> Self {
+    /// Creates a trimmed block from a full block.
+    pub fn from_block(block: &Block) -> Self {
+        let hashes = block.transactions.iter().map(|tx| tx.hash()).collect();
         Self {
-            hash,
-            index,
-            timestamp,
-            prev_hash,
-            next_consensus,
-            witness,
-            transaction_count: hashes.len() as u32,
+            header: block.header.clone(),
             hashes,
         }
+    }
+
+    /// Returns the block hash.
+    pub fn hash(&self) -> UInt256 {
+        self.header.hash()
+    }
+
+    /// Returns the block index.
+    pub fn index(&self) -> u32 {
+        self.header.index()
+    }
+}
+
+impl Serializable for TrimmedBlock {
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        Serializable::serialize(&self.header, writer)?;
+        writer.write_serializable_vec(&self.hashes)
+    }
+
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let header = BlockHeader::deserialize(reader)?;
+        let hashes = reader.read_serializable_vec::<UInt256>()?;
+        if hashes.len() > u16::MAX as usize {
+            return Err(IoError::invalid_data(
+                "TrimmedBlock contains too many transactions",
+            ));
+        }
+        Ok(Self { header, hashes })
+    }
+
+    fn size(&self) -> usize {
+        self.header.size()
+            + get_var_size(self.hashes.len() as u64)
+            + self.hashes.iter().map(|hash| hash.size()).sum::<usize>()
     }
 }
 
 impl IInteroperable for TrimmedBlock {
-    fn from_stack_item(&mut self, stack_item: StackItem) {
-        if let StackItem::Struct(struct_item) = stack_item {
-            let items = struct_item.items();
-            if items.len() < 7 {
-                return;
-            }
-
-            if let Ok(bytes) = items[0].as_bytes() {
-                if bytes.len() == 32 {
-                    self.hash = UInt256::from_bytes(&bytes);
-                }
-            }
-
-            if let Ok(integer) = items[1].as_int() {
-                if let Some(idx) = integer.to_u32() {
-                    self.index = idx;
-                }
-            }
-
-            if let Ok(integer) = items[2].as_int() {
-                if let Some(ts) = integer.to_u64() {
-                    self.timestamp = ts;
-                }
-            }
-
-            if let Ok(bytes) = items[3].as_bytes() {
-                if bytes.len() == 32 {
-                    self.prev_hash = UInt256::from_bytes(&bytes);
-                }
-            }
-
-            if let Ok(bytes) = items[4].as_bytes() {
-                if bytes.len() == 20 {
-                    self.next_consensus = UInt160::from_bytes(&bytes);
-                }
-            }
-
-            if let Ok(integer) = items[5].as_int() {
-                if let Some(witness) = integer.to_u16() {
-                    self.witness = witness;
-                }
-            }
-
-            if let Ok(hash_items) = items[6].as_array() {
-                self.hashes = hash_items
-                    .iter()
-                    .filter_map(|item| {
-                        item.as_bytes().ok().and_then(|bytes| {
-                            if bytes.len() == 32 {
-                                Some(UInt256::from_bytes(&bytes))
-                            } else {
-                                None
-                            }
-                        })
-                    })
-                    .collect();
-                self.transaction_count = self.hashes.len() as u32;
-            }
-        }
+    fn from_stack_item(&mut self, _stack_item: StackItem) {
+        panic!("TrimmedBlock does not support FromStackItem");
     }
-    
-    fn to_stack_item(&self) -> StackItem {
-        let hashes = self
-            .hashes
-            .iter()
-            .map(|hash| StackItem::from_byte_string(hash.to_bytes()))
-            .collect::<Vec<_>>();
 
+    fn to_stack_item(&self) -> StackItem {
         StackItem::from_struct(vec![
-            StackItem::from_byte_string(self.hash.to_bytes()),
-            StackItem::from_int(self.index),
-            StackItem::from_int(self.timestamp),
-            StackItem::from_byte_string(self.prev_hash.to_bytes()),
-            StackItem::from_byte_string(self.next_consensus.to_bytes()),
-            StackItem::from_int(self.witness),
-            StackItem::from_array(hashes),
+            StackItem::from_byte_string(self.hash().to_bytes()),
+            StackItem::from_int(self.header.version),
+            StackItem::from_byte_string(self.header.previous_hash.to_bytes()),
+            StackItem::from_byte_string(self.header.merkle_root.to_bytes()),
+            StackItem::from_int(self.header.timestamp),
+            StackItem::from_int(self.header.nonce),
+            StackItem::from_int(self.header.index),
+            StackItem::from_int(self.header.primary_index as u32),
+            StackItem::from_byte_string(self.header.next_consensus.to_bytes()),
+            StackItem::from_int(self.hashes.len() as u32),
         ])
     }
-    
+
     fn clone_box(&self) -> Box<dyn IInteroperable> {
         Box::new(self.clone())
     }

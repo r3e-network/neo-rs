@@ -34,7 +34,9 @@ pub fn register_handlers(jump_table: &mut crate::jump_table::JumpTable) {
     jump_table.register(CALLA, calla);
     jump_table.register(CALLT, callt);
     jump_table.register(ABORT, abort);
+    jump_table.register(ABORTMSG, abortmsg);
     jump_table.register(ASSERT, assert);
+    jump_table.register(ASSERTMSG, assertmsg);
     jump_table.register(THROW, throw);
     jump_table.register(TRY, r#try);
     jump_table.register(TRY_L, try_l);
@@ -301,12 +303,24 @@ pub fn abort(_engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmRes
     Err(VmError::Abort)
 }
 
+/// ABORTMSG - Abort execution with message
+pub fn abortmsg(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+    let _ = engine.pop();
+    abort(engine, instruction)
+}
+
 /// ASSERT - Assert condition
 pub fn assert(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     if !engine.pop()?.get_boolean()? {
         return Err(VmError::AssertFailed);
     }
     Ok(())
+}
+
+/// ASSERTMSG - Assert condition with message
+pub fn assertmsg(engine: &mut ExecutionEngine, instruction: &Instruction) -> VmResult<()> {
+    let _ = engine.pop();
+    assert(engine, instruction)
 }
 
 /// THROW - Throw exception
@@ -350,14 +364,50 @@ pub fn endfinally(engine: &mut ExecutionEngine, _instruction: &Instruction) -> V
 pub fn ret(engine: &mut ExecutionEngine, _instruction: &Instruction) -> VmResult<()> {
     if engine.invocation_stack().is_empty() {
         engine.set_state(VMState::HALT);
-    } else {
-        if let Some(mut context) = engine.invocation_stack_mut().pop() {
-            engine.unload_context(&mut context)?;
+        return Ok(());
+    }
+
+    let context_index = engine.invocation_stack().len() - 1;
+    let mut context = engine.invocation_stack_mut().remove(context_index);
+
+    let rvcount = context.rvcount();
+    #[cfg(debug_assertions)]
+    println!(
+        "RET handler: rvcount={}, eval_stack_len={}",
+        rvcount,
+        context.evaluation_stack().len()
+    );
+    if rvcount != 0 {
+        let eval_stack_len = context.evaluation_stack().len();
+        let mut items = Vec::new();
+
+        if rvcount == -1 {
+            for i in 0..eval_stack_len {
+                if let Ok(item) = context.evaluation_stack().peek(i) {
+                    items.push(item.clone());
+                }
+            }
+        } else if rvcount > 0 {
+            let count = (rvcount as usize).min(eval_stack_len);
+            for i in 0..count {
+                if let Ok(item) = context.evaluation_stack().peek(i) {
+                    items.push(item.clone());
+                }
+            }
         }
-        if engine.invocation_stack().is_empty() {
-            engine.set_state(VMState::HALT);
+
+        items.reverse();
+        for item in items {
+            engine.result_stack_mut().push(item);
         }
     }
+
+    engine.unload_context(&mut context)?;
+
+    if engine.invocation_stack().is_empty() {
+        engine.set_state(VMState::HALT);
+    }
+
     Ok(())
 }
 

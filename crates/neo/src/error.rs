@@ -73,6 +73,50 @@ pub enum CoreError {
         message: String,
     },
 
+    /// Base58 decoding failed
+    #[error("Base58 decoding error: {message}")]
+    Base58Decode {
+        /// Error message describing the decoding issue
+        message: String,
+    },
+
+    /// Invalid Wallet Import Format string
+    #[error("Invalid WIF format")]
+    InvalidWif,
+
+    /// Invalid private key bytes
+    #[error("Invalid private key")]
+    InvalidPrivateKey,
+
+    /// Scrypt key derivation failed
+    #[error("Scrypt error: {message}")]
+    Scrypt {
+        /// Error message describing the scrypt failure
+        message: String,
+    },
+
+    /// AES encryption/decryption failed
+    #[error("AES error: {message}")]
+    Aes {
+        /// Error message describing the AES failure
+        message: String,
+    },
+
+    /// Invalid NEP-2 payload
+    #[error("Invalid NEP-2 key")]
+    InvalidNep2Key,
+
+    /// Invalid password supplied for NEP-2 decryption
+    #[error("Invalid password")]
+    InvalidPassword,
+
+    /// Generic catch-all error case
+    #[error("{message}")]
+    Other {
+        /// Description of the error
+        message: String,
+    },
+
     /// Buffer overflow or underflow
     #[error(
         "Buffer overflow: attempted to read {requested} bytes, but only {available} available"
@@ -139,6 +183,20 @@ pub enum CoreError {
         to: String,
     },
 
+    /// Native contract execution error
+    #[error("Native contract error: {message}")]
+    NativeContractError {
+        /// Detailed description of the native contract failure
+        message: String,
+    },
+
+    /// Runtime error
+    #[error("Runtime error: {message}")]
+    RuntimeError {
+        /// Description of the runtime failure
+        message: String,
+    },
+
     /// Validation error
     #[error("Validation error: {message}")]
     Validation {
@@ -186,6 +244,20 @@ impl CoreError {
     /// Create a new invalid operation error
     pub fn invalid_operation<S: Into<String>>(message: S) -> Self {
         Self::InvalidOperation {
+            message: message.into(),
+        }
+    }
+
+    /// Create a new invalid argument error (maps to invalid data internally)
+    pub fn invalid_argument<S: Into<String>>(message: S) -> Self {
+        Self::InvalidData {
+            message: message.into(),
+        }
+    }
+
+    /// Create a new runtime error
+    pub fn runtime_error<S: Into<String>>(message: S) -> Self {
+        Self::RuntimeError {
             message: message.into(),
         }
     }
@@ -254,6 +326,12 @@ impl CoreError {
     }
 
     /// Create a new validation failed error
+    pub fn native_contract<S: Into<String>>(message: S) -> Self {
+        Self::NativeContractError {
+            message: message.into(),
+        }
+    }
+
     pub fn validation_failed<S: Into<String>>(reason: S) -> Self {
         Self::ValidationFailed {
             reason: reason.into(),
@@ -296,6 +374,11 @@ impl CoreError {
                 | CoreError::ValidationFailed { .. }
                 | CoreError::TypeConversion { .. }
                 | CoreError::InsufficientGas { .. }
+                | CoreError::Base58Decode { .. }
+                | CoreError::InvalidWif
+                | CoreError::InvalidPrivateKey
+                | CoreError::InvalidNep2Key
+                | CoreError::InvalidPassword
         )
     }
 
@@ -314,13 +397,22 @@ impl CoreError {
             CoreError::System { .. } => "system",
             CoreError::InsufficientGas { .. } => "resource",
             CoreError::Cryptographic { .. } => "cryptography",
+            CoreError::Base58Decode { .. } => "serialization",
+            CoreError::InvalidWif
+            | CoreError::InvalidPrivateKey
+            | CoreError::InvalidNep2Key
+            | CoreError::InvalidPassword => "validation",
+            CoreError::Scrypt { .. } | CoreError::Aes { .. } => "cryptography",
             CoreError::BufferOverflow { .. } | CoreError::EndOfStream => "buffer",
             CoreError::Configuration { .. } => "configuration",
             CoreError::Timeout { .. } => "timeout",
             CoreError::NotFound { .. } | CoreError::AlreadyExists { .. } => "resource",
             CoreError::ValidationFailed { .. } => "validation",
             CoreError::TypeConversion { .. } => "conversion",
+            CoreError::NativeContractError { .. } => "native_contract",
+            CoreError::RuntimeError { .. } => "runtime",
             CoreError::Validation { .. } => "validation",
+            CoreError::Other { .. } => "unknown",
         }
     }
 }
@@ -328,8 +420,8 @@ impl CoreError {
 /// Result type for core operations
 pub type CoreResult<T> = std::result::Result<T, CoreError>;
 
-/// Alias for compatibility with existing code
-pub type Result<T> = CoreResult<T>;
+/// Generic result alias mirroring `std::result::Result` but defaulting to `CoreError`.
+pub type Result<T, E = CoreError> = std::result::Result<T, E>;
 
 // Standard library error conversions
 impl From<std::io::Error> for CoreError {
@@ -340,6 +432,12 @@ impl From<std::io::Error> for CoreError {
 
 impl From<std::fmt::Error> for CoreError {
     fn from(error: std::fmt::Error) -> Self {
+        CoreError::serialization(error.to_string())
+    }
+}
+
+impl From<crate::neo_io::IoError> for CoreError {
+    fn from(error: crate::neo_io::IoError) -> Self {
         CoreError::serialization(error.to_string())
     }
 }
@@ -370,18 +468,18 @@ impl From<std::str::Utf8Error> for CoreError {
 
 // Neo-specific error conversions
 #[cfg(feature = "neo-io")]
-impl From<neo_io::Error> for CoreError {
-    fn from(error: neo_io::Error) -> Self {
+impl From<crate::neo_io::Error> for CoreError {
+    fn from(error: crate::neo_io::Error) -> Self {
         match error {
-            neo_io::Error::EndOfStream => CoreError::EndOfStream,
-            neo_io::Error::InvalidData(msg) => CoreError::invalid_data(msg),
-            neo_io::Error::FormatException => CoreError::invalid_format("Format exception"),
-            neo_io::Error::Deserialization(msg) => CoreError::deserialization(msg),
-            neo_io::Error::InvalidOperation(msg) => CoreError::invalid_operation(msg),
-            neo_io::Error::Io(msg) => CoreError::io(msg),
-            neo_io::Error::Serialization(msg) => CoreError::serialization(msg),
-            neo_io::Error::InvalidFormat(msg) => CoreError::invalid_format(msg),
-            neo_io::Error::BufferOverflow => {
+            crate::neo_io::Error::EndOfStream => CoreError::EndOfStream,
+            crate::neo_io::Error::invalid_data(msg) => CoreError::invalid_data(msg),
+            crate::neo_io::Error::FormatException => CoreError::invalid_format("Format exception"),
+            crate::neo_io::Error::deserialization(msg) => CoreError::deserialization(msg),
+            crate::neo_io::Error::invalid_operation(msg) => CoreError::invalid_operation(msg),
+            crate::neo_io::Error::Io(msg) => CoreError::io(msg),
+            crate::neo_io::Error::serialization(msg) => CoreError::serialization(msg),
+            crate::neo_io::Error::InvalidFormat(msg) => CoreError::invalid_format(msg),
+            crate::neo_io::Error::BufferOverflow => {
                 CoreError::buffer_overflow(usize::MAX, 0) // Unknown exact sizes
             }
         }

@@ -57,7 +57,7 @@ impl StdLib {
     /// Invokes a method on the StdLib contract.
     pub fn invoke_method(
         &self,
-        engine: &mut ApplicationEngine,
+        _engine: &mut ApplicationEngine,
         method: &str,
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
@@ -72,7 +72,7 @@ impl StdLib {
             "memorySearch" => self.memory_search(args),
             "stringSplit" => self.string_split(args),
             "stringLen" => self.string_len(args),
-            _ => Err(Error::NativeContractError(format!(
+            _ => Err(Error::native_contract(format!(
                 "Unknown method: {}",
                 method
             ))),
@@ -82,16 +82,16 @@ impl StdLib {
     /// Converts a string to an integer.
     fn atoi(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "atoi requires string argument".to_string(),
             ));
         }
 
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::NativeContractError("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
 
         let number = i64::from_str(&string_data)
-            .map_err(|_| Error::NativeContractError("Invalid number format".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid number format".to_string()))?;
 
         Ok(number.to_le_bytes().to_vec())
     }
@@ -99,7 +99,7 @@ impl StdLib {
     /// Converts an integer to a string.
     fn itoa(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() || args[0].len() != 8 {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "itoa requires integer argument".to_string(),
             ));
         }
@@ -115,7 +115,7 @@ impl StdLib {
     /// Encodes data to base64.
     fn base64_encode(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "base64Encode requires data argument".to_string(),
             ));
         }
@@ -127,17 +127,17 @@ impl StdLib {
     /// Decodes data from base64.
     fn base64_decode(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "base64Decode requires string argument".to_string(),
             ));
         }
 
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::NativeContractError("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
 
         let decoded = general_purpose::STANDARD
             .decode(&string_data)
-            .map_err(|_| Error::NativeContractError("Invalid base64 data".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid base64 data".to_string()))?;
 
         Ok(decoded)
     }
@@ -145,7 +145,7 @@ impl StdLib {
     /// Serializes data to JSON.
     fn json_serialize(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "jsonSerialize requires data argument".to_string(),
             ));
         }
@@ -155,7 +155,7 @@ impl StdLib {
 
         let json_value = JsonValue::String(string_data);
         let json_string = serde_json::to_string(&json_value)
-            .map_err(|e| Error::NativeContractError(format!("JSON serialization error: {}", e)))?;
+            .map_err(|e| Error::native_contract(format!("JSON serialization error: {}", e)))?;
 
         Ok(json_string.into_bytes())
     }
@@ -163,17 +163,16 @@ impl StdLib {
     /// Deserializes data from JSON.
     fn json_deserialize(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "jsonDeserialize requires JSON string argument".to_string(),
             ));
         }
 
         let json_string = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::NativeContractError("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
 
-        let json_value: JsonValue = serde_json::from_str(&json_string).map_err(|e| {
-            Error::NativeContractError(format!("JSON deserialization error: {}", e))
-        })?;
+        let json_value: JsonValue = serde_json::from_str(&json_string)
+            .map_err(|e| Error::native_contract(format!("JSON deserialization error: {}", e)))?;
 
         // Convert JSON value back to bytes
         match json_value {
@@ -194,7 +193,7 @@ impl StdLib {
     /// Compares two memory regions.
     fn memory_compare(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "memoryCompare requires two data arguments".to_string(),
             ));
         }
@@ -211,7 +210,7 @@ impl StdLib {
     /// Searches for a pattern in memory.
     fn memory_search(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "memorySearch requires data and pattern arguments".to_string(),
             ));
         }
@@ -237,16 +236,16 @@ impl StdLib {
     /// Splits a string by a delimiter.
     fn string_split(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "stringSplit requires string and delimiter arguments".to_string(),
             ));
         }
 
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::NativeContractError("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
 
         let delimiter = String::from_utf8(args[1].clone())
-            .map_err(|_| Error::NativeContractError("Invalid UTF-8 delimiter".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 delimiter".to_string()))?;
 
         let parts: Vec<&str> = string_data.split(&delimiter).collect();
 
@@ -266,13 +265,13 @@ impl StdLib {
     /// Gets the length of a string.
     fn string_len(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.is_empty() {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "stringLen requires string argument".to_string(),
             ));
         }
 
         let string_data = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::NativeContractError("Invalid UTF-8 string".to_string()))?;
+            .map_err(|_| Error::native_contract("Invalid UTF-8 string".to_string()))?;
 
         let length = string_data.chars().count() as u32;
         Ok(length.to_le_bytes().to_vec())

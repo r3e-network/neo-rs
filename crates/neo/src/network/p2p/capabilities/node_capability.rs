@@ -92,7 +92,7 @@ impl NodeCapability {
     }
 
     pub fn deserialize_from(reader: &mut MemoryReader) -> IoResult<Self> {
-        Self::deserialize(reader)
+        <Self as Serializable>::deserialize(reader)
     }
 
     fn ensure_zero_byte(reader: &mut MemoryReader, context: &str) -> IoResult<()> {

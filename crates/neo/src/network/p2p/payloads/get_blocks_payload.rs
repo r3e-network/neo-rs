@@ -9,10 +9,9 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::UInt256;
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// This message is sent to request for blocks by hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,18 +36,18 @@ impl Serializable for GetBlocksPayload {
         32 + 2 // UInt256 + i16
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        self.hash_start.serialize(writer)?;
-        writer.write_all(&self.count.to_le_bytes())?;
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        Serializable::serialize(&self.hash_start, writer)?;
+        writer.write_i16(self.count)?;
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let hash_start = UInt256::deserialize(reader)?;
-        let count = reader.read_i16().map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let hash_start = <UInt256 as Serializable>::deserialize(reader)?;
+        let count = reader.read_i16()?;
 
         if count < -1 || count == 0 {
-            return Err(format!("Invalid count: {}", count));
+            return Err(IoError::invalid_data("Invalid count"));
         }
 
         Ok(Self { hash_start, count })

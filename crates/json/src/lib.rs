@@ -1,5 +1,7 @@
 //! Neo JSON library - matches C# Neo.Json exactly
 
+pub mod error;
+
 // Module declarations matching C# files
 pub mod j_array;
 pub mod j_boolean;
@@ -16,6 +18,7 @@ pub mod ordered_dictionary_value_collection;
 pub mod utility;
 
 // Re-exports for convenience (matching C# namespace exports)
+pub use error::JsonError;
 pub use j_array::JArray;
 pub use j_boolean::JBoolean;
 pub use j_container::JContainer;

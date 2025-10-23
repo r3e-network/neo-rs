@@ -9,17 +9,18 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::dbft_plugin::consensus::consensus_context::{ConsensusContext, ExtensiblePayload};
+use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
+use neo_core::network::p2p::payloads::ExtensiblePayload;
 use crate::dbft_plugin::messages::{
     ChangeView, Commit, ConsensusMessagePayload, PrepareRequest, PrepareResponse, RecoveryMessage,
     RecoveryRequest,
 };
 use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
-use crate::dbft_plugin::messages::recovery_message::{ChangeViewPayloadCompact, CommitPayloadCompact, PreparationPayloadCompact};
 use neo_core::ledger::TransactionVerificationContext;
 use neo_core::network::p2p::payloads::Witness;
 use neo_core::smart_contract::Contract;
 use neo_core::{Transaction, UInt160, UInt256, TimeProvider};
+use neo_core::neo_io::Serializable;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::debug;
@@ -123,7 +124,7 @@ impl ConsensusContext {
         // Iterate transaction until reach the size or maximum system fee
         for tx in txs {
             // Check if maximum block size has been already exceeded with the current selected set
-            block_size += tx.size();
+            block_size = block_size.saturating_add(tx.size() as u32);
             if block_size > self.dbft_settings.max_block_size {
                 break;
             }
@@ -328,7 +329,7 @@ impl ConsensusContext {
         debug!(target: "dbft::consensus_context", "{}", message);
     }
 
-    fn create_payload(
+    pub(crate) fn create_payload(
         &mut self,
         mut message: ConsensusMessagePayload,
         invocation_script: Option<Vec<u8>>,
@@ -375,7 +376,7 @@ impl ConsensusContext {
 
         let mut hashable = payload.clone();
         let payload_hash = hashable.hash();
-        self.cached_messages.insert(payload_hash, message);
+        self.cached_messages_mut().insert(payload_hash, message);
 
         payload
     }
@@ -383,10 +384,9 @@ impl ConsensusContext {
     fn collect_transactions(&self, limit: usize) -> Vec<Transaction> {
         // Fetch sorted verified transactions from the mempool if available.
         // Falls back to an empty set (empty block proposal) if not accessible.
-        let mempool = &self.neo_system.mem_pool;
-        match mempool.read() {
-            Ok(mp) => mp.get_sorted_verified_transactions(limit),
-            Err(_) => Vec::new(),
-        }
+        // TODO: Integrate with the Rust mempool once transaction ordering is exposed.
+        #[allow(unused_variables)]
+        let limit = limit;
+        Vec::new()
     }
 }

@@ -12,6 +12,10 @@ pub struct JPathToken {
 }
 
 impl JPathToken {
+    pub fn is_root(&self) -> bool {
+        matches!(self.token_type, JPathTokenType::Root)
+    }
+
     /// Parse JSON path expression into tokens
     pub fn parse(expr: &str) -> Vec<JPathToken> {
         let mut tokens = Vec::new();

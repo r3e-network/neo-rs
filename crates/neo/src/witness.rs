@@ -9,7 +9,7 @@ use crate::neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE};
 use crate::neo_io::Serializable;
 use crate::UInt160;
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{convert::TryInto, fmt};
 
 /// Maximum size of invocation script in bytes.
 /// This is designed to allow a MultiSig 21/11 (committee)
@@ -73,6 +73,16 @@ impl Witness {
         Self::new()
     }
 
+    /// Returns the invocation script.
+    pub fn invocation_script(&self) -> &[u8] {
+        &self.invocation_script
+    }
+
+    /// Returns the verification script.
+    pub fn verification_script(&self) -> &[u8] {
+        &self.verification_script
+    }
+
     /// Gets the hash of the verification script (matches C# ScriptHash property).
     /// Calculates RIPEMD160(SHA256(verification_script)) like the C# implementation.
     ///
@@ -101,24 +111,6 @@ impl Witness {
             self.script_hash = Some(UInt160::from_bytes(&hash_bytes).unwrap_or_default());
         }
         self.script_hash.unwrap_or_default()
-    }
-
-    /// Gets the invocation script.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the invocation script
-    pub fn invocation_script(&self) -> &Vec<u8> {
-        &self.invocation_script
-    }
-
-    /// Gets the verification script.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the verification script
-    pub fn verification_script(&self) -> &Vec<u8> {
-        &self.verification_script
     }
 
     /// Gets the size of the witness in bytes after serialization.
@@ -178,6 +170,20 @@ impl Witness {
         // 4. Verify that the public key corresponds to the account
         let computed_account = self.compute_script_hash_from_public_key(&public_key)?;
         Ok(computed_account == *account)
+    }
+
+    /// Verifies a multi-signature witness against the provided message.
+    pub fn verify_multi_signature(
+        &self,
+        _message: &[u8],
+        _account: &UInt160,
+        _required_signatures: usize,
+        _public_keys: &[Vec<u8>],
+        _signatures: &[Vec<u8>],
+    ) -> CoreResult<bool> {
+        Err(CoreError::invalid_operation(
+            "Multi-signature verification is not implemented for this witness type".to_string(),
+        ))
     }
 
     /// Extracts public key from verification script (matches C# verification script parsing exactly).
@@ -251,7 +257,11 @@ impl Witness {
 
         use crate::cryptography::crypto_utils::Secp256r1Crypto;
 
-        Secp256r1Crypto::verify(hash_data, signature, public_key).map_err(|e| {
+        let signature_bytes: [u8; 64] = signature
+            .try_into()
+            .map_err(|_| CoreError::invalid_data("Invalid signature length"))?;
+
+        Secp256r1Crypto::verify(hash_data, &signature_bytes, public_key).map_err(|e| {
             CoreError::Cryptographic {
                 message: format!("ECDSA verification failed: {e}"),
             }
@@ -317,7 +327,7 @@ impl Serializable for Witness {
         invocation_size + verification_size
     }
 
-    fn serialize(&self, writer: &mut neo_io::BinaryWriter) -> neo_io::IoResult<()> {
+    fn serialize(&self, writer: &mut crate::neo_io::BinaryWriter) -> crate::neo_io::IoResult<()> {
         // Write invocation script with variable length encoding
         writer.write_var_bytes(&self.invocation_script)?;
         // Write verification script with variable length encoding
@@ -325,32 +335,12 @@ impl Serializable for Witness {
         Ok(())
     }
 
-    fn deserialize(reader: &mut neo_io::MemoryReader) -> neo_io::IoResult<Self> {
+    fn deserialize(reader: &mut crate::neo_io::MemoryReader) -> crate::neo_io::IoResult<Self> {
         // Read invocation script with variable length encoding
         let invocation_script = reader.read_var_bytes(MAX_INVOCATION_SCRIPT)?;
-        if invocation_script.len() > MAX_INVOCATION_SCRIPT {
-            return Err(neo_io::IoError::InvalidData {
-                context: "invocation_script_deserialize".to_string(),
-                value: format!(
-                    "length {} > max {}",
-                    invocation_script.len(),
-                    MAX_INVOCATION_SCRIPT
-                ),
-            });
-        }
 
         // Read verification script with variable length encoding
         let verification_script = reader.read_var_bytes(MAX_VERIFICATION_SCRIPT)?;
-        if verification_script.len() > MAX_VERIFICATION_SCRIPT {
-            return Err(neo_io::IoError::InvalidData {
-                context: "verification_script_deserialize".to_string(),
-                value: format!(
-                    "length {} > max {}",
-                    verification_script.len(),
-                    MAX_VERIFICATION_SCRIPT
-                ),
-            });
-        }
 
         Ok(Self {
             invocation_script,
@@ -414,9 +404,10 @@ mod tests {
     #[test]
     fn test_witness_serialization() {
         let witness = Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
-        let mut writer = neo_io::BinaryWriter::new();
+        let mut writer = crate::neo_io::BinaryWriter::new();
         <Witness as Serializable>::serialize(&witness, &mut writer).unwrap();
-        let mut reader = neo_io::MemoryReader::new(&writer.to_bytes());
+        let bytes = writer.to_bytes();
+        let mut reader = crate::neo_io::MemoryReader::new(&bytes);
         let deserialized = <Witness as Serializable>::deserialize(&mut reader).unwrap();
         assert_eq!(witness.invocation_script, deserialized.invocation_script);
         assert_eq!(

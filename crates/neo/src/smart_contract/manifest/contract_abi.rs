@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Represents the ABI of a smart contract (matches C# ContractAbi)
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractAbi {
     /// The methods in the ABI
     pub methods: Vec<ContractMethodDescriptor>,
@@ -25,10 +25,6 @@ impl ContractAbi {
         methods: Vec<ContractMethodDescriptor>,
         events: Vec<ContractEventDescriptor>,
     ) -> Self {
-        if methods.is_empty() {
-            panic!("ABI must have at least one method");
-        }
-
         Self {
             methods,
             events,
@@ -85,7 +81,7 @@ impl ContractAbi {
     pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
         let obj = json.as_object().ok_or("Expected object")?;
 
-        let methods = obj
+        let methods: Vec<ContractMethodDescriptor> = obj
             .get("methods")
             .and_then(|v| v.as_array())
             .map(|arr| {
@@ -95,7 +91,7 @@ impl ContractAbi {
             })
             .unwrap_or_default();
 
-        let events = obj
+        let events: Vec<ContractEventDescriptor> = obj
             .get("events")
             .and_then(|v| v.as_array())
             .map(|arr| {
@@ -118,6 +114,30 @@ impl ContractAbi {
             "methods": self.methods.iter().map(|m| m.to_json()).collect::<Vec<_>>(),
             "events": self.events.iter().map(|e| e.to_json()).collect::<Vec<_>>(),
         })
+    }
+
+    /// Approximate serialized size of the ABI.
+    pub fn size(&self) -> usize {
+        let methods_size: usize = self.methods.iter().map(|m| m.size()).sum();
+        let events_size: usize = self.events.iter().map(|e| e.size()).sum();
+        methods_size + events_size
+    }
+    /// Validates the ABI structure.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.methods.is_empty() {
+            return Err("ABI must contain at least one method".to_string());
+        }
+        Ok(())
+    }
+}
+
+impl Default for ContractAbi {
+    fn default() -> Self {
+        Self {
+            methods: Vec::new(),
+            events: Vec::new(),
+            method_dictionary: None,
+        }
     }
 }
 

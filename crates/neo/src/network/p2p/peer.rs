@@ -11,14 +11,15 @@ use super::{
     channels_config::ChannelsConfig, local_node::RemoteNodeSnapshot, payloads::VersionPayload,
 };
 use crate::network::u_pn_p::UPnP;
-use akka::{context::ActorContext, mailbox::Cancelable, ActorRef};
+use akka::{ActorContext, ActorRef, Cancelable};
 use if_addrs::get_if_addrs;
 use rand::{seq::IteratorRandom, thread_rng};
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::fmt;
+use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
-use tracing::{debug, trace, warn};
+use tracing::{trace, warn};
 
 /// Interval used for connection maintenance checks (matches the C# timer).
 const TIMER_INTERVAL: Duration = Duration::from_millis(5_000);
@@ -42,7 +43,6 @@ pub struct ConnectedPeer {
 }
 
 /// Internal state mirroring the C# `Peer` fields.
-#[derive(Debug)]
 pub struct PeerState {
     config: ChannelsConfig,
     listener_tcp_port: u16,
@@ -54,6 +54,21 @@ pub struct PeerState {
     local_addresses: HashSet<IpAddr>,
     timer: Option<Cancelable>,
     upnp_configured: bool,
+}
+
+impl fmt::Debug for PeerState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PeerState")
+            .field("listener_tcp_port", &self.listener_tcp_port)
+            .field("connected_peers", &self.connected_peers.len())
+            .field("unconnected_peers", &self.unconnected_peers.len())
+            .field("connecting_peers", &self.connecting_peers.len())
+            .field("trusted_ip_addresses", &self.trusted_ip_addresses.len())
+            .field("local_addresses", &self.local_addresses)
+            .field("timer_active", &self.timer.is_some())
+            .field("upnp_configured", &self.upnp_configured)
+            .finish()
+    }
 }
 
 impl PeerState {

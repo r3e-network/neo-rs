@@ -9,10 +9,11 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::native::helpers::NativeHelpers;
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Indicates that the transaction is of high priority.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,15 +26,22 @@ impl HighPriorityAttribute {
     }
 
     /// Verify the high priority attribute.
-    pub fn verify(&self, snapshot: &DataCache, tx: &super::transaction::Transaction) -> bool {
-        // TODO: Check if any signer is the committee address when committee methods are available
-        // let committee_address = snapshot.get_committee_address();
-        // tx.signers.iter().any(|s| s.account == committee_address)
-        true
+    pub fn verify(
+        &self,
+        settings: &ProtocolSettings,
+        snapshot: &DataCache,
+        tx: &super::transaction::Transaction,
+    ) -> bool {
+        if settings.standby_committee.is_empty() {
+            return false;
+        }
+
+        let address = NativeHelpers::committee_address(settings, Some(snapshot));
+        tx.signers().iter().any(|signer| signer.account == address)
     }
 
     /// Serialize without type byte.
-    pub fn serialize_without_type(&self, _writer: &mut dyn Write) -> io::Result<()> {
+    pub fn serialize_without_type(&self, _writer: &mut BinaryWriter) -> IoResult<()> {
         Ok(()) // No data to serialize
     }
 }
@@ -49,11 +57,11 @@ impl Serializable for HighPriorityAttribute {
         0 // No additional data
     }
 
-    fn serialize(&self, _writer: &mut dyn Write) -> io::Result<()> {
+    fn serialize(&self, _writer: &mut BinaryWriter) -> IoResult<()> {
         Ok(()) // No data to serialize
     }
 
-    fn deserialize(_reader: &mut MemoryReader) -> Result<Self, String> {
+    fn deserialize(_reader: &mut MemoryReader) -> IoResult<Self> {
         Ok(Self) // No data to deserialize
     }
 }

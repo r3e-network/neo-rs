@@ -7,10 +7,10 @@ use neo_core::ledger::TransactionVerificationContext;
 use neo_core::network::p2p::payloads::{Block, ExtensiblePayload, Witness};
 use neo_core::persistence::{DataCache, IStore, StoreCache};
 use neo_core::sign::ISigner;
-use neo_core::time_provider::TimeProvider;
-use neo_core::{MerkleTree, NeoSystem, Transaction, UInt256};
+use neo_core::neo_cryptography::MerkleTree;
+use neo_core::{NeoSystem, Transaction, UInt256};
 use neo_core::UInt160;
-use neo_core::neo_io::{BinaryWriter, MemoryReader};
+use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::extensions::{BinaryWriterExtensions, MemoryReaderExtensions};
 use neo_core::smart_contract::Contract;
 use neo_core::smart_contract::native::NativeHelpers;
@@ -20,7 +20,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::debug;
 
-pub use neo_core::network::p2p::payloads::ExtensiblePayload;
 
 /// In-memory representation of the consensus state for the dBFT plugin.
 #[allow(clippy::struct_excessive_bools)]
@@ -216,24 +215,29 @@ impl ConsensusContext {
     }
 
     /// Returns true if the node is currently in a view-change state.
-    pub fn view_changing(&self) -> bool {
+    pub fn view_changing(&mut self) -> bool {
         if self.watch_only() {
             return false;
         }
 
         let index = self.my_index as usize;
-        match self.change_view_payloads.get(index).and_then(|payload| payload.as_ref()) {
-            Some(payload) => self
-                .get_message(payload)
+        let payload = self
+            .change_view_payloads
+            .get(index)
+            .and_then(|payload| payload.clone());
+
+        if let Some(payload) = payload {
+            self.get_message(&payload)
                 .and_then(|message| message.as_change_view().cloned())
                 .map(|message| message.new_view_number() > self.view_number)
-                .unwrap_or(false),
-            None => false,
+                .unwrap_or(false)
+        } else {
+            false
         }
     }
 
     /// Returns true if the node should refuse additional payloads due to view change.
-    pub fn not_accepting_payloads_due_to_view_changing(&self) -> bool {
+    pub fn not_accepting_payloads_due_to_view_changing(&mut self) -> bool {
         self.view_changing() && !self.more_than_f_nodes_committed_or_lost()
     }
 
@@ -256,8 +260,15 @@ impl ConsensusContext {
     pub fn save(&mut self) {
         if let Some(store) = &self.store {
             let mut snapshot = store.get_snapshot();
-            snapshot.put(vec![0xF4], self.serialize_state());
-            snapshot.commit();
+            if let Some(inner) = Arc::get_mut(&mut snapshot) {
+                inner.put(vec![0xF4], self.serialize_state());
+                inner.commit();
+            } else {
+                debug!(
+                    target: "dbft::consensus_context",
+                    "Failed to acquire exclusive access to consensus snapshot"
+                );
+            }
         }
     }
 
@@ -497,10 +508,6 @@ impl ConsensusContext {
     }
 
     /// Simple logger helper mirroring the C# logging behaviour.
-    pub(crate) fn log(&self, message: &str) {
-        debug!(target: "dbft::consensus_context", "{}", message);
-    }
-
     /// Ensures internal payload buffers match the validator set size.
     fn resize_payload_buffers(&mut self) {
         let count = self.validators.len();
@@ -508,11 +515,6 @@ impl ConsensusContext {
         self.commit_payloads.resize_with(count, || None);
         self.change_view_payloads.resize_with(count, || None);
         self.last_change_view_payloads.resize_with(count, || None);
-    }
-
-    /// Convenience accessor to the current UTC timestamp in milliseconds.
-    pub(crate) fn current_timestamp(&self) -> u64 {
-        TimeProvider::current().utc_now().timestamp_millis() as u64
     }
 
     /// Returns a reference to the validator set.

@@ -5,7 +5,9 @@
 // here translate core runtime types into the REST-facing models while
 // preserving the exact semantics of the C# implementation.
 
-use crate::rest_server::models::node::{PluginModel, ProtocolSettingsModel, RemoteNodeModel};
+use crate::rest_server::models::node::plugin_model::PluginModel;
+use crate::rest_server::models::node::protocol_settings_model::ProtocolSettingsModel;
+use crate::rest_server::models::node::remote_node_model::RemoteNodeModel;
 use hex::encode_upper;
 use neo_core::hardfork::Hardfork;
 use neo_core::neo_system::ProtocolSettings;
@@ -60,14 +62,16 @@ impl From<&ProtocolSettings> for ProtocolSettingsModel {
 
 impl From<&RemoteNodeSnapshot> for RemoteNodeModel {
     fn from(snapshot: &RemoteNodeSnapshot) -> Self {
-        RemoteNodeModel {
-            remote_address: snapshot.remote_address.ip().to_string(),
-            remote_port: snapshot.remote_port as i32,
-            listen_tcp_port: snapshot.listen_tcp_port as i32,
-            last_block_index: snapshot.last_block_index,
-        }
+        RemoteNodeModel::from_snapshot(snapshot)
     }
 }
+
+impl From<RemoteNodeSnapshot> for RemoteNodeModel {
+    fn from(snapshot: RemoteNodeSnapshot) -> Self {
+        RemoteNodeModel::from_snapshot(&snapshot)
+    }
+}
+
 
 impl From<&PluginInfo> for PluginModel {
     fn from(info: &PluginInfo) -> Self {
@@ -80,7 +84,7 @@ impl From<&PluginInfo> for PluginModel {
 }
 
 fn hardfork_name(fork: Hardfork) -> String {
-    let mut name = format!("{fork:?}");
+    let name = format!("{fork:?}");
     if let Some(stripped) = name.strip_prefix("Hf") {
         stripped.to_string()
     } else {

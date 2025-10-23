@@ -69,13 +69,12 @@ impl MethodToken {
         reader
             .read_exact(&mut hash_bytes)
             .map_err(|e| e.to_string())?;
-        let hash = UInt160::from_bytes(&hash_bytes);
+        let hash = UInt160::from_bytes(&hash_bytes).map_err(|e| e.to_string())?;
 
         // Read method name (var string)
-        let len = reader
-            .read_exact(&mut [0u8; 1])
-            .map_err(|e| e.to_string())?;
-        let len = len as usize;
+        let mut len_buf = [0u8; 1];
+        reader.read_exact(&mut len_buf).map_err(|e| e.to_string())?;
+        let len = len_buf[0] as usize;
         if len > 32 {
             return Err("Method name too long".to_string());
         }

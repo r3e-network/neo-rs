@@ -5,10 +5,10 @@
 
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::neo_config::{HASH_SIZE, SECONDS_PER_BLOCK};
+use crate::neo_config::SECONDS_PER_BLOCK;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
-use crate::UInt160;
+use crate::{ECPoint, UInt160};
 // Removed neo_cryptography dependency - using external crypto crates directly
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -98,7 +98,7 @@ impl RoleManagement {
         match method {
             "getDesignatedByRole" => self.get_designated_by_role(args),
             "designateAsRole" => self.designate_as_role(engine, args),
-            _ => Err(Error::NativeContractError(format!(
+            _ => Err(Error::native_contract(format!(
                 "Unknown method: {}",
                 method
             ))),
@@ -108,26 +108,22 @@ impl RoleManagement {
     /// Gets the designated public keys for a specific role.
     pub fn get_designated_by_role(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() < 2 {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "getDesignatedByRole requires role and index arguments".to_string(),
             ));
         }
 
         // Parse role
         if args[0].is_empty() {
-            return Err(Error::NativeContractError(
-                "Invalid role argument".to_string(),
-            ));
+            return Err(Error::native_contract("Invalid role argument".to_string()));
         }
         let role_value = args[0][0];
         let role = Role::from_u8(role_value)
-            .ok_or_else(|| Error::NativeContractError(format!("Invalid role: {}", role_value)))?;
+            .ok_or_else(|| Error::native_contract(format!("Invalid role: {}", role_value)))?;
 
         // Parse block index
         if args[1].len() != 4 {
-            return Err(Error::NativeContractError(
-                "Invalid index argument".to_string(),
-            ));
+            return Err(Error::native_contract("Invalid index argument".to_string()));
         }
         let index = u32::from_le_bytes([args[1][0], args[1][1], args[1][2], args[1][3]]);
 
@@ -151,20 +147,18 @@ impl RoleManagement {
         args: &[Vec<u8>],
     ) -> Result<Vec<u8>> {
         if args.len() < 2 {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "designateAsRole requires role and public keys arguments".to_string(),
             ));
         }
 
         // Parse role
         if args[0].is_empty() {
-            return Err(Error::NativeContractError(
-                "Invalid role argument".to_string(),
-            ));
+            return Err(Error::native_contract("Invalid role argument".to_string()));
         }
         let role_value = args[0][0];
         let role = Role::from_u8(role_value)
-            .ok_or_else(|| Error::NativeContractError(format!("Invalid role: {}", role_value)))?;
+            .ok_or_else(|| Error::native_contract(format!("Invalid role: {}", role_value)))?;
 
         // Real C# Neo N3 implementation: Public key parsing
         let public_keys = self.parse_public_keys(&args[1])?;
@@ -172,7 +166,7 @@ impl RoleManagement {
         // Validate public keys
         for pubkey in &public_keys {
             if !pubkey.is_valid() {
-                return Err(Error::NativeContractError("Invalid public key".to_string()));
+                return Err(Error::native_contract("Invalid public key".to_string()));
             }
         }
 
@@ -229,9 +223,9 @@ impl RoleManagement {
 
         // Write each public key
         for pubkey in public_keys {
-            let encoded = pubkey.encode_compressed().map_err(|_| {
-                Error::NativeContractError("Failed to encode public key".to_string())
-            })?;
+            let encoded = pubkey
+                .encode_compressed()
+                .map_err(|_| Error::native_contract("Failed to encode public key".to_string()))?;
             result.extend_from_slice(&encoded);
         }
 
@@ -241,7 +235,7 @@ impl RoleManagement {
     /// Parses public keys from bytes.
     fn parse_public_keys(&self, data: &[u8]) -> Result<Vec<ECPoint>> {
         if data.len() < 4 {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "Invalid public keys data".to_string(),
             ));
         }
@@ -252,7 +246,7 @@ impl RoleManagement {
 
         for _ in 0..count {
             if offset + 33 > data.len() {
-                return Err(Error::NativeContractError(
+                return Err(Error::native_contract(
                     "Invalid public key data".to_string(),
                 ));
             }
@@ -261,21 +255,20 @@ impl RoleManagement {
             key_bytes.copy_from_slice(&data[offset..offset + 33]);
 
             if key_bytes.iter().all(|&b| b == 0) {
-                return Err(Error::NativeContractError(
+                return Err(Error::native_contract(
                     "Invalid public key: cannot be all zeros".to_string(),
                 ));
             }
 
             if key_bytes[0] != 0x02 && key_bytes[0] != 0x03 {
-                return Err(Error::NativeContractError(
+                return Err(Error::native_contract(
                     "Invalid public key: invalid compression prefix".to_string(),
                 ));
             }
 
             // Removed neo_cryptography dependency - using external crypto crates directly
-            let pubkey = ECPoint::decode_compressed(&key_bytes, curve).map_err(|_| {
-                Error::NativeContractError("Invalid public key encoding".to_string())
-            })?;
+            let pubkey = ECPoint::decode_compressed(&key_bytes)
+                .map_err(|_| Error::native_contract("Invalid public key encoding".to_string()))?;
 
             public_keys.push(pubkey);
             offset += 33;

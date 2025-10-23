@@ -197,27 +197,32 @@ impl RpcConvertible for Vec<ContractParameter> {
 fn jtoken_to_serde(token: &JToken) -> serde_json::Value {
     match token {
         JToken::Null => serde_json::Value::Null,
-        JToken::Boolean(b) => serde_json::Value::Bool(b.get_boolean()),
-        JToken::Number(n) => serde_json::Number::from_f64(n.get_number())
+        JToken::Boolean(b) => serde_json::Value::Bool(*b),
+        JToken::Number(n) => serde_json::Number::from_f64(*n)
             .map(serde_json::Value::Number)
             .unwrap_or(serde_json::Value::Null),
-        JToken::String(s) => serde_json::Value::String(s.get_string()),
+        JToken::String(s) => serde_json::Value::String(s.clone()),
         JToken::Array(arr) => serde_json::Value::Array(
             arr.children()
-                .iter()
+                .into_iter()
                 .map(|item| item.as_ref().map(jtoken_to_serde).unwrap_or(serde_json::Value::Null))
                 .collect(),
         ),
         JToken::Object(obj) => {
             let mut map = serde_json::Map::new();
-            for (key, value) in obj.properties().iter() {
-                map.insert(key.clone(), jtoken_to_serde(value));
+            for (key, value) in obj.iter() {
+                map.insert(
+                    key.clone(),
+                    value
+                        .as_ref()
+                        .map(jtoken_to_serde)
+                        .unwrap_or(serde_json::Value::Null),
+                );
             }
             serde_json::Value::Object(map)
         }
     }
 }
-
 fn parse_address(text: &str, address_version: u8) -> Result<Address, RpcException> {
     let trimmed = text.trim();
     let mut result = None;

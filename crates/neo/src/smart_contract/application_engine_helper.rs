@@ -6,6 +6,8 @@ use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_NOTIFICATION_COUNT, MAX_NOTIFICATION_SIZE,
 };
 use crate::smart_contract::binary_serializer::BinarySerializer;
+use crate::smart_contract::i_interoperable::IInteroperable;
+use crate::smart_contract::notify_event_args::NotifyEventArgs;
 use crate::smart_contract::trigger_type::TriggerType;
 use crate::UInt160;
 use neo_vm::{StackItem, VMState};
@@ -46,7 +48,7 @@ impl ApplicationEngine {
                 output,
                 "CurrentScriptHash={}{}",
                 current_hash,
-                self.contract_display_name(current_hash)
+                self.contract_display_name(&current_hash)
                     .map(|name| format!("[{name}]"))
                     .unwrap_or_default()
             );
@@ -199,7 +201,8 @@ impl ApplicationEngine {
             .lock()
             .map_err(|_| "Execution context state lock poisoned".to_string())?;
 
-        if self.is_hardfork_enabled(Hardfork::HfEchidna) && self.trigger == TriggerType::Application
+        if self.is_hardfork_enabled(Hardfork::HfEchidna)
+            && self.trigger_type() == TriggerType::Application
         {
             if state.notification_count >= MAX_NOTIFICATION_COUNT {
                 return Err(format!(
@@ -215,17 +218,17 @@ impl ApplicationEngine {
 
     /// Helper to emit log event
     pub fn emit_log_event(&mut self, event: crate::smart_contract::LogEventArgs) {
-        self.logs.push(event);
+        self.push_log(event);
     }
 
     /// Helper to emit notify event
     pub fn emit_notify_event(&mut self, event: crate::smart_contract::NotifyEventArgs) {
-        self.notifications.push(event);
+        self.push_notification(event);
     }
 
     /// Ensures the notification payload size stays within protocol limits.
     pub fn ensure_notification_size(&self, state: &[StackItem]) -> Result<(), String> {
-        let limits = self.vm_engine.engine().limits();
+        let limits = self.execution_limits();
         let serialized =
             BinarySerializer::serialize(&StackItem::from_array(state.to_vec()), limits)
                 .map_err(|e| e.to_string())?;
@@ -247,14 +250,12 @@ impl ApplicationEngine {
         state: Vec<StackItem>,
     ) -> Result<(), String> {
         let container = self
-            .script_container
-            .as_ref()
+            .script_container()
             .ok_or_else(|| "No script container".to_string())?;
 
-        let limits = self.vm_engine.engine().limits();
         let mut copied = Vec::with_capacity(state.len());
         for item in state {
-            copied.push(item.deep_copy(limits).map_err(|e| e.to_string())?);
+            copied.push(item.deep_clone());
         }
 
         let notification =
@@ -265,9 +266,9 @@ impl ApplicationEngine {
 
     /// Helper to get notifications
     pub fn get_notifications(&self, hash: Option<UInt160>) -> Result<Vec<StackItem>, String> {
-        let limits = self.vm_engine.engine().limits();
+        let limits = self.execution_limits();
         let mut result = Vec::new();
-        for notification in &self.notifications {
+        for notification in self.notifications() {
             if hash.map_or(true, |expected| notification.script_hash == expected) {
                 result.push(notification.to_stack_item());
                 if result.len() > limits.max_stack_size as usize {

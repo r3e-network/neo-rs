@@ -1,7 +1,7 @@
 //! Basic Base58 tests - Implementation needs fixing for full C# compatibility.
 //! These tests verify the basic structure and error handling of the Base58 implementation.
 
-use neo_core::crypto_utils::Base58;
+use neo_core::cryptography::crypto_utils::base58;
 
 // ============================================================================
 

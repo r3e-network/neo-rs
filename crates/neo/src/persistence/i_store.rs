@@ -20,7 +20,7 @@ pub type OnNewSnapshotDelegate = Box<dyn Fn(&dyn IStore, Arc<dyn IStoreSnapshot>
 
 /// This interface provides methods for reading, writing from/to database.
 /// Developers should implement this interface to provide new storage engines for NEO.
-pub trait IStore: IReadOnlyStore + IWriteStore + Send + Sync {
+pub trait IStore: IReadOnlyStore + IWriteStore<Vec<u8>, Vec<u8>> + Send + Sync + Any {
     /// Creates a snapshot of the database.
     fn get_snapshot(&self) -> Arc<dyn IStoreSnapshot>;
 

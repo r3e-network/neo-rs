@@ -9,41 +9,51 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::dbft_plugin::consensus::consensus_context::{ConsensusContext, ExtensiblePayload};
+use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
+use neo_core::network::p2p::payloads::ExtensiblePayload;
 use crate::dbft_plugin::consensus::consensus_service::ConsensusService;
 use crate::dbft_plugin::messages::{
     ChangeView, Commit, ConsensusMessagePayload, PrepareRequest, PrepareResponse,
     RecoveryMessage, RecoveryRequest,
 };
-use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
-use neo_core::cryptography::crypto_utils::Crypto;
 use neo_core::ledger::TransactionVerificationContext;
-use neo_core::network::p2p::helper::Helper;
-use neo_core::smart_contract::Contract;
-use neo_core::UInt256;
+use std::collections::VecDeque;
 use std::time::Instant;
 
 impl ConsensusService {
     /// Handles consensus payload
     /// Matches C# OnConsensusPayload method
     pub async fn on_consensus_payload(&mut self, payload: ExtensiblePayload) {
+        let mut queue = VecDeque::from([payload]);
+
+        while let Some(next_payload) = queue.pop_front() {
+            if let Some(follow_up) = self.handle_consensus_payload(next_payload).await {
+                queue.extend(follow_up);
+            }
+        }
+    }
+
+    async fn handle_consensus_payload(
+        &mut self,
+        payload: ExtensiblePayload,
+    ) -> Option<Vec<ExtensiblePayload>> {
         let message_payload = {
             let mut context = self.context.write().await;
 
             if context.block_sent() {
-                return;
+                return None;
             }
 
             let message = match context.get_message(&payload) {
                 Some(msg) => msg,
                 None => {
                     self.log("Failed to deserialize consensus message");
-                    return;
+                    return None;
                 }
             };
 
             if !message.verify(self.neo_system.settings()) {
-                return;
+                return None;
             }
 
             let current_height = context.block().index();
@@ -57,19 +67,13 @@ impl ConsensusService {
                         current_height.saturating_sub(1)
                     ));
                 }
-                return;
+                return None;
             }
 
             let validator_index = message.validator_index() as usize;
             let Some(validator) = context.validators().get(validator_index).cloned() else {
-                return;
+                return None;
             };
-
-            let expected_sender =
-                Contract::create_signature_contract(validator.clone()).script_hash();
-            if payload.sender != expected_sender {
-                return;
-            }
 
             context
                 .last_seen_message_mut()
@@ -81,23 +85,28 @@ impl ConsensusService {
         match message_payload {
             ConsensusMessagePayload::PrepareRequest(request) => {
                 self.on_prepare_request_received(payload.clone(), request).await;
+                None
             }
             ConsensusMessagePayload::PrepareResponse(response) => {
                 self.on_prepare_response_received(payload.clone(), response)
                     .await;
+                None
             }
             ConsensusMessagePayload::ChangeView(change_view) => {
                 self.on_change_view_received(payload.clone(), change_view).await;
+                None
             }
             ConsensusMessagePayload::Commit(commit) => {
                 self.on_commit_received(payload.clone(), commit).await;
+                None
             }
             ConsensusMessagePayload::RecoveryRequest(recovery_request) => {
-                self.on_recovery_request_received(payload.clone(), recovery_request)
+                self.on_recovery_request_received(payload, recovery_request)
                     .await;
+                None
             }
             ConsensusMessagePayload::RecoveryMessage(recovery_message) => {
-                self.on_recovery_message_received(recovery_message).await;
+                Some(self.on_recovery_message_received(recovery_message).await)
             }
         }
     }
@@ -107,7 +116,6 @@ impl ConsensusService {
         payload: ExtensiblePayload,
         message: PrepareRequest,
     ) {
-        let network = self.neo_system.settings.network;
         let missing_hashes = {
             let mut context = self.context.write().await;
 
@@ -133,8 +141,6 @@ impl ConsensusService {
                 return;
             }
 
-            self.extend_timer_by_factor(&context, 2);
-
             self.prepare_request_received_time = Some(Instant::now());
             self.prepare_request_received_block_index = message.block_index();
 
@@ -148,80 +154,16 @@ impl ConsensusService {
             context.transactions = Some(Default::default());
             context.verification_context = TransactionVerificationContext::new();
 
-            let mut request_payload_clone = payload.clone();
-            let request_hash = ConsensusContext::payload_hash(&mut request_payload_clone);
-
-            for index in 0..context.preparation_payloads.len() {
-                if let Some(existing_payload) = context.preparation_payloads[index].clone() {
-                    let remove = context
-                        .get_message(&existing_payload)
-                        .and_then(|message| {
-                            message
-                                .as_prepare_response()
-                                .map(|resp| resp.preparation_hash().clone())
-                        })
-                        .map(|hash| hash != request_hash)
-                        .unwrap_or(false);
-
-                    if remove {
-                        context.preparation_payloads[index] = None;
-                    }
-                }
+            for slot in &mut context.preparation_payloads {
+                *slot = None;
+            }
+            for slot in &mut context.commit_payloads {
+                *slot = None;
             }
 
             let primary_index = context.block().primary_index() as usize;
             if primary_index < context.preparation_payloads.len() {
                 context.preparation_payloads[primary_index] = Some(payload.clone());
-            }
-
-            context.ensure_header();
-
-            if let Ok(sign_data) = Helper::get_sign_data_vec(context.block(), network) {
-                for index in 0..context.commit_payloads.len() {
-                    if let Some(existing_payload) = context.commit_payloads[index].clone() {
-                        let remove = context
-                            .get_message(&existing_payload)
-                            .and_then(|message| message.as_commit().cloned())
-                            .map(|commit| {
-                                commit.view_number() == context.view_number()
-                                    && {
-                                        let public_key = context
-                                            .validators()
-                                            .get(index)
-                                            .map(|point| point.as_bytes().to_vec());
-                                        match public_key {
-                                            Some(pubkey)
-                                                if commit.signature().len() == 64
-                                                    && Crypto::verify_signature_secp256r1(
-                                                        &sign_data,
-                                                        commit.signature(),
-                                                        &pubkey,
-                                                    ) => false,
-                                            _ => true,
-                                        }
-                                    }
-                            })
-                            .unwrap_or(false);
-
-                        if remove {
-                            context.commit_payloads[index] = None;
-                        }
-                    }
-                }
-            } else {
-                self.log("Failed to compute sign data for commit verification");
-                for index in 0..context.commit_payloads.len() {
-                    if let Some(existing_payload) = context.commit_payloads[index].clone() {
-                        let should_clear = context
-                            .get_message(&existing_payload)
-                            .and_then(|message| message.as_commit())
-                            .map(|commit| commit.view_number() == context.view_number())
-                            .unwrap_or(false);
-                        if should_clear {
-                            context.commit_payloads[index] = None;
-                        }
-                    }
-                }
             }
 
             message.transaction_hashes().to_vec()
@@ -260,15 +202,17 @@ impl ConsensusService {
             }
 
             let primary_index = context.block().primary_index() as usize;
-            if let Some(Some(primary_payload)) = context.preparation_payloads.get(primary_index) {
-                let mut payload_clone = primary_payload.clone();
+            let hash_matches = if let Some(Some(primary_payload)) = context.preparation_payloads.get(primary_index).cloned() {
+                let mut payload_clone = primary_payload;
                 let primary_hash = ConsensusContext::payload_hash(&mut payload_clone);
-                if message.preparation_hash() != &primary_hash {
-                    return;
-                }
-            }
+                message.preparation_hash() == &primary_hash
+            } else {
+                true
+            };
 
-            self.extend_timer_by_factor(&context, 2);
+            if !hash_matches {
+                return;
+            }
 
             self.log(&format!(
                 "OnPrepareResponseReceived: height={} view={} index={}",
@@ -333,28 +277,9 @@ impl ConsensusService {
                 return;
             }
 
-            if let Some(existing) = &context.commit_payloads[index] {
-                let mut existing_clone = existing.clone();
-                let existing_hash = ConsensusContext::payload_hash(&mut existing_clone);
-                let mut payload_clone = payload.clone();
-                let payload_hash = ConsensusContext::payload_hash(&mut payload_clone);
-                if existing_hash != payload_hash {
-                    let existing_view = context
-                        .get_message(existing)
-                        .and_then(|m| m.as_commit().map(|c| c.view_number()))
-                        .unwrap_or_default();
-                    self.log(&format!(
-                        "Rejected Commit: height={} index={} view={} existing_view={}",
-                        message.block_index(),
-                        message.validator_index(),
-                        message.view_number(),
-                        existing_view
-                    ));
-                }
+            if context.commit_payloads[index].is_some() {
                 return;
             }
-
-            self.extend_timer_by_factor(&context, 4);
 
             self.log(&format!(
                 "OnCommitReceived: height={} view={} index={}",
@@ -426,7 +351,10 @@ impl ConsensusService {
         self.broadcast_payload(recovery_payload);
     }
 
-    async fn on_recovery_message_received(&mut self, message: RecoveryMessage) {
+    async fn on_recovery_message_received(
+        &mut self,
+        message: RecoveryMessage,
+    ) -> Vec<ExtensiblePayload> {
         self.is_recovering = true;
 
         let (
@@ -443,7 +371,7 @@ impl ConsensusService {
 
             if message_view > current_view && context.commit_sent() {
                 self.is_recovering = false;
-                return;
+                return Vec::new();
             }
 
             self.log(&format!(
@@ -454,7 +382,13 @@ impl ConsensusService {
             ));
 
             let change_view_payloads = if message_view > current_view {
-                message.get_change_view_payloads(&context)
+                match message.get_change_view_payloads(&mut context) {
+                    Ok(payloads) => payloads,
+                    Err(error) => {
+                        self.log(&format!("Failed to rebuild change-view payloads: {error}"));
+                        Vec::new()
+                    }
+                }
             } else {
                 Vec::new()
             };
@@ -463,16 +397,25 @@ impl ConsensusService {
                 && !context.not_accepting_payloads_due_to_view_changing()
                 && !context.commit_sent()
             {
-                (
-                    message.get_prepare_request_payload(&context),
-                    message.get_prepare_response_payloads(&context),
-                )
+                let request = message
+                    .get_prepare_request_payload(&mut context)
+                    .unwrap_or(None);
+                let responses = message
+                    .get_prepare_response_payloads(&mut context)
+                    .unwrap_or_default();
+                (request, responses)
             } else {
                 (None, Vec::new())
             };
 
             let commit_payloads = if message_view <= current_view {
-                message.get_commit_payloads_from_recovery_message(&context)
+                match message.get_commit_payloads_from_recovery_message(&mut context) {
+                    Ok(payloads) => payloads,
+                    Err(error) => {
+                        self.log(&format!("Failed to rebuild commit payloads: {error}"));
+                        Vec::new()
+                    }
+                }
             } else {
                 Vec::new()
             };
@@ -486,34 +429,31 @@ impl ConsensusService {
             )
         };
 
-        let mut processed_change_views = 0usize;
-        let mut processed_prepare_responses = 0usize;
-        let mut processed_commits = 0usize;
-        let mut processed_prepare_request = 0usize;
+        let processed_change_views = change_view_payloads.len();
+        let processed_prepare_responses = prepare_response_payloads.len();
+        let processed_commits = commit_payloads.len();
+        let processed_prepare_request = prepare_request_payload.is_some() as usize;
 
-        for payload in change_view_payloads {
-            processed_change_views += 1;
-            self.on_consensus_payload(payload).await;
-        }
+        let mut queued_payloads = Vec::with_capacity(
+            processed_change_views
+                + processed_prepare_responses
+                + processed_commits
+                + processed_prepare_request,
+        );
 
+        queued_payloads.extend(change_view_payloads);
         if let Some(payload) = prepare_request_payload {
-            processed_prepare_request = 1;
-            self.on_consensus_payload(payload).await;
+            queued_payloads.push(payload);
         }
-
-        for payload in prepare_response_payloads {
-            processed_prepare_responses += 1;
-            self.on_consensus_payload(payload).await;
-        }
-
-        for payload in commit_payloads {
-            processed_commits += 1;
-            self.on_consensus_payload(payload).await;
-        }
+        queued_payloads.extend(prepare_response_payloads);
+        queued_payloads.extend(commit_payloads);
 
         self.is_recovering = false;
 
-        if processed_change_views + processed_prepare_responses + processed_commits + processed_prepare_request
+        if processed_change_views
+            + processed_prepare_responses
+            + processed_commits
+            + processed_prepare_request
             > 0
         {
             self.log(&format!(
@@ -526,5 +466,7 @@ impl ConsensusService {
         }
 
         self.check_expected_view(expected_view).await;
+
+        queued_payloads
     }
 }

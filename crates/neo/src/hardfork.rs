@@ -6,6 +6,7 @@
 
 use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::RwLock;
 
 /// Represents a hardfork in the Neo blockchain (matches C# Hardfork enum exactly).
@@ -22,6 +23,10 @@ pub enum Hardfork {
     HfDomovoi = 3,
     /// Echidna hardfork
     HfEchidna = 4,
+    /// Faun hardfork
+    HfFaun = 5,
+    /// Gorgon hardfork
+    HfGorgon = 6,
 }
 
 /// Hardfork manager for Neo blockchain (matches C# ProtocolSettings.Hardforks exactly).
@@ -35,6 +40,26 @@ lazy_static! {
 }
 
 impl HardforkManager {
+    /// Returns every known hardfork in declaration order.
+    pub const fn all() -> [Hardfork; 7] {
+        [
+            Hardfork::HfAspidochelone,
+            Hardfork::HfBasilisk,
+            Hardfork::HfCockatrice,
+            Hardfork::HfDomovoi,
+            Hardfork::HfEchidna,
+            Hardfork::HfFaun,
+            Hardfork::HfGorgon,
+        ]
+    }
+
+    fn ensure_all(mut hardforks: HashMap<Hardfork, u32>) -> HashMap<Hardfork, u32> {
+        for hardfork in Self::all() {
+            hardforks.entry(hardfork).or_insert(0);
+        }
+        hardforks
+    }
+
     /// Creates a new HardforkManager with default hardfork heights (matches C# ProtocolSettings.Default exactly).
     ///
     /// # Returns
@@ -53,7 +78,9 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfCockatrice, 5450000);
         hardforks.insert(Hardfork::HfDomovoi, 5570000);
         hardforks.insert(Hardfork::HfEchidna, 7300000);
-        Self { hardforks }
+        Self {
+            hardforks: Self::ensure_all(hardforks),
+        }
     }
 
     /// Creates a new HardforkManager with TestNet hardfork heights (matches C# config.testnet.json exactly).
@@ -64,7 +91,9 @@ impl HardforkManager {
         hardforks.insert(Hardfork::HfCockatrice, 3967000);
         hardforks.insert(Hardfork::HfDomovoi, 4144000);
         hardforks.insert(Hardfork::HfEchidna, 5870000);
-        Self { hardforks }
+        Self {
+            hardforks: Self::ensure_all(hardforks),
+        }
     }
 
     /// Gets the global instance of the HardforkManager.
@@ -112,6 +141,24 @@ impl HardforkManager {
 impl Default for HardforkManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl FromStr for Hardfork {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let normalized = value.trim().to_ascii_uppercase();
+        match normalized.as_str() {
+            "HF_ASPIDOCHELONE" | "ASP" => Ok(Hardfork::HfAspidochelone),
+            "HF_BASILISK" => Ok(Hardfork::HfBasilisk),
+            "HF_COCKATRICE" => Ok(Hardfork::HfCockatrice),
+            "HF_DOMOVOI" => Ok(Hardfork::HfDomovoi),
+            "HF_ECHIDNA" => Ok(Hardfork::HfEchidna),
+            "HF_FAUN" => Ok(Hardfork::HfFaun),
+            "HF_GORGON" => Ok(Hardfork::HfGorgon),
+            other => Err(format!("Unknown hardfork '{}'", other)),
+        }
     }
 }
 

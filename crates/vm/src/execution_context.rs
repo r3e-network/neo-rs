@@ -173,6 +173,11 @@ impl ExecutionContext {
         self.shared_states.script_arc()
     }
 
+    /// Returns the reference counter associated with this context.
+    pub fn reference_counter(&self) -> &ReferenceCounter {
+        self.shared_states.reference_counter()
+    }
+
     /// Returns the script hash for this context as a 20-byte array.
     /// This mirrors the C# `Script.ToScriptHash()` behaviour (Hash160).
     pub fn script_hash(&self) -> [u8; 20] {
@@ -238,6 +243,11 @@ impl ExecutionContext {
     /// Returns the number of values to return when the context is unloaded (-1 for all).
     pub fn rvcount(&self) -> i32 {
         self.rvcount
+    }
+
+    /// Sets the return value count for the context.
+    pub fn set_rvcount(&mut self, rvcount: i32) {
+        self.rvcount = rvcount;
     }
 
     /// Returns the evaluation stack for this context.
@@ -407,8 +417,7 @@ impl ExecutionContext {
         let mut shared_states = SharedStates::new(self.script().clone(), reference_counter.clone());
 
         // Copy the evaluation stack
-        self
-            .evaluation_stack()
+        self.evaluation_stack()
             .copy_to(shared_states.evaluation_stack_mut(), None)
             .expect("evaluation stack copy should succeed");
 

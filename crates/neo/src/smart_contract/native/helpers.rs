@@ -4,7 +4,9 @@
 // for dBFT consensus wiring, providing a consistent facade for the Rust port.
 
 use crate::cryptography::crypto_utils::ECPoint;
+use crate::persistence::DataCache;
 use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::native::NeoToken;
 use crate::smart_contract::Contract;
 use crate::{UInt160, UInt256};
 
@@ -32,6 +34,24 @@ impl NativeHelpers {
             .len()
             .saturating_sub((validators.len().saturating_sub(1)) / 3);
         Contract::create_multi_sig_contract(m, validators).script_hash()
+    }
+
+    /// Computes the multi-signature committee address from the current committee list.
+    /// Until the native NEO contract is fully ported, this uses the standby committee from
+    /// protocol settings to mirror the default initialization path in the C# implementation.
+    pub fn committee_address(settings: &ProtocolSettings, snapshot: Option<&DataCache>) -> UInt160 {
+        let committee = snapshot
+            .and_then(|cache| NeoToken::new().committee_from_snapshot(cache))
+            .filter(|members| !members.is_empty())
+            .unwrap_or_else(|| settings.standby_committee.clone());
+
+        if committee.is_empty() {
+            return UInt160::default();
+        }
+
+        let len = committee.len();
+        let m = len.saturating_sub((len.saturating_sub(1)) / 2);
+        Contract::create_multi_sig_contract(m, &committee).script_hash()
     }
 
     /// Gets the current block index (height) from the native ledger contract.

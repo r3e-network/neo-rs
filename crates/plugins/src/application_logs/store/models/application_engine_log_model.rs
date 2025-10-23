@@ -1,18 +1,18 @@
-//! Application Engine Log Model
-//!
-//! Model for application engine logs.
+use crate::application_logs::store::states::EngineLogState;
+use neo_core::UInt160;
 
-use serde::{Deserialize, Serialize};
-
-/// Application Engine Log Model
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Lightweight representation of an engine log entry captured during execution.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ApplicationEngineLogModel {
-    /// Transaction hash
-    pub transaction_hash: String,
-    /// Script hash
-    pub script_hash: String,
-    /// Gas consumed
-    pub gas_consumed: u64,
-    /// Execution time
-    pub execution_time: u64,
+    pub script_hash: UInt160,
+    pub message: String,
+}
+
+impl ApplicationEngineLogModel {
+    pub fn create(state: &EngineLogState) -> Self {
+        Self {
+            script_hash: state.script_hash,
+            message: state.message.clone(),
+        }
+    }
 }

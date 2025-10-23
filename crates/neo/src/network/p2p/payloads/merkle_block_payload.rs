@@ -10,13 +10,14 @@
 // modifications are permitted.
 
 use super::{block::Block, header::Header};
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::uint256::UINT256_SIZE;
 use crate::UInt256;
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Represents a block that is filtered by a BloomFilter.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MerkleBlockPayload {
     /// The header of the block.
     pub header: Header,
@@ -70,67 +71,59 @@ impl MerkleBlockPayload {
 
 impl Serializable for MerkleBlockPayload {
     fn size(&self) -> usize {
-        self.header.size() +
-        1 + // TxCount var int
-        1 + self.hashes.len() * 32 + // Hashes
-        1 + self.flags.len() // Flags
+        self.header.size()
+            + get_var_size(self.tx_count as u64)
+            + get_var_size(self.hashes.len() as u64)
+            + self.hashes.len() * UINT256_SIZE
+            + get_var_size(self.flags.len() as u64)
+            + self.flags.len()
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        self.header.serialize(writer)?;
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        Serializable::serialize(&self.header, writer)?;
 
         // Write tx count as var int
-        if self.tx_count > u16::MAX as u32 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Too many transactions",
-            ));
+        if self.tx_count as u64 > u16::MAX as u64 {
+            return Err(IoError::invalid_data("Too many transactions"));
         }
-        writer.write_all(&[self.tx_count as u8])?;
+        writer.write_var_uint(self.tx_count as u64)?;
 
         // Write hashes
-        writer.write_all(&[self.hashes.len() as u8])?;
+        writer.write_var_uint(self.hashes.len() as u64)?;
         for hash in &self.hashes {
-            hash.serialize(writer)?;
+            writer.write_serializable(hash)?;
         }
 
         // Write flags
-        writer.write_all(&[self.flags.len() as u8])?;
-        writer.write_all(&self.flags)?;
+        let max_flags = ((self.tx_count.max(1) as usize) + 7) / 8;
+        if self.flags.len() > max_flags {
+            return Err(IoError::invalid_data("Flag length exceeds limit"));
+        }
+        writer.write_var_bytes(&self.flags)?;
 
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let header = Header::deserialize(reader)?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let header = <Header as Serializable>::deserialize(reader)?;
 
-        let tx_count = reader.read_var_int().map_err(|e| e.to_string())?;
-        if tx_count > u16::MAX as u64 {
-            return Err("Too many transactions".to_string());
-        }
+        let tx_count = reader.read_var_int(u16::MAX as u64)?;
         let tx_count = tx_count as u32;
 
         // Read hashes
-        let hash_count = reader.read_var_int().map_err(|e| e.to_string())?;
+        let hash_count = reader.read_var_int(tx_count as u64)?;
         if hash_count > tx_count as u64 {
-            return Err("Too many hashes".to_string());
+            return Err(IoError::invalid_data("Too many hashes"));
         }
 
         let mut hashes = Vec::with_capacity(hash_count as usize);
         for _ in 0..hash_count {
-            hashes.push(UInt256::deserialize(reader)?);
+            hashes.push(<UInt256 as Serializable>::deserialize(reader)?);
         }
 
         // Read flags
         let max_flags = ((tx_count.max(1) + 7) / 8) as usize;
-        let flags_len = reader.read_var_int().map_err(|e| e.to_string())?;
-        if flags_len > max_flags as u64 {
-            return Err("Too many flags".to_string());
-        }
-
-        let flags = reader
-            .read_bytes(flags_len as usize)
-            .map_err(|e| e.to_string())?;
+        let flags = reader.read_var_bytes(max_flags)?;
 
         Ok(Self {
             header,

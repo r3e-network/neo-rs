@@ -35,4 +35,3 @@
 //! ```
 
 mod csharp_tests;
-#![cfg(feature = "neo_application_engine")]

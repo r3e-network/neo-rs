@@ -67,6 +67,21 @@ impl ChangeView {
         &mut self.header
     }
 
+    /// Gets the block index carried by the change-view message.
+    pub fn block_index(&self) -> u32 {
+        self.header.block_index
+    }
+
+    /// Gets the validator index that issued the change view.
+    pub fn validator_index(&self) -> u8 {
+        self.header.validator_index
+    }
+
+    /// Gets the current view number reported by the sender.
+    pub fn view_number(&self) -> u8 {
+        self.header.view_number
+    }
+
     /// Gets the timestamp of the change view message.
     pub fn timestamp(&self) -> u64 {
         self.timestamp

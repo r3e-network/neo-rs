@@ -9,12 +9,12 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::Helper;
 use crate::UInt160;
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Represents a notary-assisted transaction attribute.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,10 +35,15 @@ impl NotaryAssisted {
     }
 
     /// Verify the notary-assisted attribute.
-    pub fn verify(&self, _snapshot: &DataCache, tx: &super::transaction::Transaction) -> bool {
+    pub fn verify(
+        &self,
+        _settings: &ProtocolSettings,
+        _snapshot: &DataCache,
+        tx: &super::transaction::Transaction,
+    ) -> bool {
         let notary_hash = Self::get_notary_hash();
 
-        if tx.sender() == notary_hash {
+        if tx.sender() == Some(notary_hash) {
             // Payer is in the second position
             return tx.signers().len() == 2;
         }
@@ -52,15 +57,15 @@ impl NotaryAssisted {
     /// increased by one (for Notary node witness itself).
     pub fn calculate_network_fee(
         &self,
-        _snapshot: &DataCache,
+        base_fee: i64,
         _tx: &super::transaction::Transaction,
     ) -> i64 {
-        (self.nkeys as i64 + 1) * 1000000 // Base fee in datoshi
+        (self.nkeys as i64 + 1) * base_fee
     }
 
     /// Serialize without type byte.
-    pub fn serialize_without_type(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&[self.nkeys])
+    pub fn serialize_without_type(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u8(self.nkeys)
     }
 }
 
@@ -69,12 +74,12 @@ impl Serializable for NotaryAssisted {
         1 // u8
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&[self.nkeys])
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u8(self.nkeys)
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let nkeys = reader.read_u8().map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let nkeys = reader.read_u8()?;
         Ok(Self { nkeys })
     }
 }

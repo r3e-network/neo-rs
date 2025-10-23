@@ -10,9 +10,8 @@
 // modifications are permitted.
 
 use super::node_capability_type::NodeCapabilityType;
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoResult, MemoryReader, Serializable};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Indicates that a node is an archival node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,12 +40,12 @@ impl Serializable for ArchivalNodeCapability {
         1 // Type only
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&[NodeCapabilityType::ArchivalNode as u8])
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u8(NodeCapabilityType::ArchivalNode.to_byte())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let _type = reader.read_u8().map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let _ = reader.read_u8()?;
         Ok(Self)
     }
 }

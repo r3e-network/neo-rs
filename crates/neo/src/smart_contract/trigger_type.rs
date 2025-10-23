@@ -24,6 +24,7 @@ bitflags! {
     }
 }
 
+#[allow(non_upper_case_globals)]
 impl TriggerType {
     pub const OnPersist: TriggerType = TriggerType::ON_PERSIST;
     pub const PostPersist: TriggerType = TriggerType::POST_PERSIST;

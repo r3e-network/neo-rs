@@ -18,9 +18,8 @@ use super::{
 use crate::compression::{
     compress_lz4, decompress_lz4, CompressionError, COMPRESSION_MIN_SIZE, COMPRESSION_THRESHOLD,
 };
-use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::network::{NetworkError, NetworkResult};
-use std::io::{self, Write};
 
 /// Header metadata attached to every P2P message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +29,7 @@ pub struct MessageHeader {
 }
 
 /// Fully decoded network message.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct NetworkMessage {
     /// Header metadata.
     pub header: MessageHeader,
@@ -142,7 +141,7 @@ impl NetworkMessage {
 /// Strongly-typed representation of every payload carried by the Neo P2P
 /// protocol.
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum ProtocolMessage {
     Version(VersionPayload),
     Verack,
@@ -233,9 +232,9 @@ impl ProtocolMessage {
             Self::Verack | Self::GetAddr | Self::Mempool | Self::FilterClear => Ok(Vec::new()),
             Self::Addr(payload) => serialize_payload(payload),
             Self::Ping(payload) | Self::Pong(payload) => serialize_payload(payload),
-            Self::GetHeaders(payload) | Self::GetBlockByIndex(payload) | Self::Headers(payload) => {
-                serialize_payload(payload)
-            }
+            Self::GetHeaders(payload) => serialize_payload(payload),
+            Self::GetBlockByIndex(payload) => serialize_payload(payload),
+            Self::Headers(payload) => serialize_payload(payload),
             Self::GetBlocks(payload) => serialize_payload(payload),
             Self::Inv(payload) | Self::GetData(payload) | Self::NotFound(payload) => {
                 serialize_payload(payload)
@@ -348,14 +347,15 @@ where
         .map_err(|e| NetworkError::InvalidMessage(e.to_string()))
 }
 
-type PayloadResult<T> = Result<T, String>;
+type PayloadResult<T> = IoResult<T>;
 
 fn deserialize_payload<T>(bytes: &[u8]) -> NetworkResult<T>
 where
     T: PayloadDeserializable,
 {
     let mut reader = MemoryReader::new(bytes);
-    let payload = T::deserialize(&mut reader).map_err(|e| NetworkError::InvalidMessage(e))?;
+    let payload =
+        T::deserialize(&mut reader).map_err(|e| NetworkError::InvalidMessage(e.to_string()))?;
     if reader.remaining() != 0 {
         return Err(NetworkError::InvalidMessage(
             "Trailing bytes present after payload deserialization".to_string(),
@@ -376,7 +376,7 @@ fn ensure_empty(command: MessageCommand, bytes: &[u8]) -> NetworkResult<()> {
     }
 }
 
-fn map_io_error(error: io::Error) -> NetworkError {
+fn map_io_error(error: IoError) -> NetworkError {
     NetworkError::InvalidMessage(error.to_string())
 }
 
@@ -385,7 +385,7 @@ fn map_compression_error(error: CompressionError) -> NetworkError {
 }
 
 trait PayloadSerializable {
-    fn serialize_to_vec(&self) -> Result<Vec<u8>, io::Error>;
+    fn serialize_to_vec(&self) -> IoResult<Vec<u8>>;
 }
 
 trait PayloadDeserializable: Sized {
@@ -395,23 +395,23 @@ trait PayloadDeserializable: Sized {
 macro_rules! impl_payload_codec {
     ($type:ty) => {
         impl PayloadSerializable for $type {
-            fn serialize_to_vec(&self) -> Result<Vec<u8>, io::Error> {
-                let mut buffer = Vec::new();
-                self.serialize(&mut buffer)?;
-                Ok(buffer)
+            fn serialize_to_vec(&self) -> IoResult<Vec<u8>> {
+                let mut writer = BinaryWriter::new();
+                Serializable::serialize(self, &mut writer)?;
+                Ok(writer.into_bytes())
             }
         }
 
         impl PayloadDeserializable for $type {
             fn deserialize(reader: &mut MemoryReader) -> PayloadResult<Self> {
-                <$type>::deserialize(reader)
+                <$type as Serializable>::deserialize(reader)
             }
         }
     };
 }
 
 // Implement the codec helpers for every payload that already satisfies the
-// `neo_io::Serializable` contract.
+// `crate::neo_io::Serializable` contract.
 impl_payload_codec!(VersionPayload);
 impl_payload_codec!(AddrPayload);
 impl_payload_codec!(PingPayload);

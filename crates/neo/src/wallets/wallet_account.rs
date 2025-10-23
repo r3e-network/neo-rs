@@ -1,139 +1,178 @@
-// Copyright (C) 2015-2025 The Neo Project.
-//
-// wallet_account.rs file belongs to the neo project and is free
-// software distributed under the MIT software license, see the
-// accompanying file LICENSE in the main directory of the
-// repository or http://www.opensource.org/licenses/mit-license.php
-// for more details.
-//
-// Redistribution and use in source and binary forms with or without
-// modifications are permitted.
-use crate::{
-    protocol_settings::ProtocolSettings,
-    smart_contract::contract::Contract,
-    uint160::UInt160,
-    wallets::{helper::Helper, key_pair::KeyPair},
-};
+//! Wallet account abstraction and standard implementation.
+//!
+//! This module mirrors the behaviour of the C# `Neo.Wallets.WalletAccount`
+//! hierarchy, providing the core primitives used by NEP-6 wallets and other
+//! account containers within the runtime.
 
-/// Represents an account in a wallet.
-/// Matches C# WalletAccount abstract class exactly
-pub trait WalletAccount {
-    /// The hash of the account.
-    /// Matches C# ScriptHash field
+use crate::network::p2p::payloads::transaction::Transaction;
+use crate::network::p2p::payloads::witness::Witness;
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::contract::Contract;
+use crate::wallets::helper::Helper;
+use crate::wallets::key_pair::KeyPair;
+use crate::wallets::wallet::{WalletError, WalletResult};
+use crate::UInt160;
+use neo_vm::op_code::OpCode;
+use std::sync::Arc;
+
+/// Common interface shared by all wallet-backed accounts.
+pub trait WalletAccount: Send + Sync {
+    /// Script hash identifying the account on chain.
     fn script_hash(&self) -> UInt160;
 
-    /// The label of the account.
-    /// Matches C# Label property
-    fn label(&self) -> &str;
+    /// Human readable address corresponding to the script hash.
+    fn address(&self) -> String;
 
-    /// Sets the label of the account.
-    /// Matches C# Label property setter
-    fn set_label(&mut self, label: String);
+    /// Optional user supplied label.
+    fn label(&self) -> Option<&str>;
 
-    /// Indicates whether the account is the default account in the wallet.
-    /// Matches C# IsDefault property
+    /// Updates the stored label.
+    fn set_label(&mut self, label: Option<String>);
+
+    /// Indicates whether this account is marked as the wallet default.
     fn is_default(&self) -> bool;
 
-    /// Sets whether the account is the default account in the wallet.
-    /// Matches C# IsDefault property setter
+    /// Updates the default flag.
     fn set_is_default(&mut self, is_default: bool);
 
-    /// Indicates whether the account is locked.
-    /// Matches C# Lock property
-    fn lock(&self) -> bool;
+    /// Returns `true` when the private key material is currently locked.
+    fn is_locked(&self) -> bool;
 
-    /// Sets whether the account is locked.
-    /// Matches C# Lock property setter
-    fn set_lock(&mut self, lock: bool);
-
-    /// The contract of the account.
-    /// Matches C# Contract property
-    fn contract(&self) -> Option<&Contract>;
-
-    /// Sets the contract of the account.
-    /// Matches C# Contract property setter
-    fn set_contract(&mut self, contract: Option<Contract>);
-
-    /// The address of the account.
-    /// Matches C# Address property
-    fn address(&self) -> String {
-        Helper::to_address(
-            &self.script_hash(),
-            self.protocol_settings().address_version,
-        )
-    }
-
-    /// Indicates whether the account contains a private key.
-    /// Matches C# HasKey property
+    /// Returns whether the account owns signing material (key or NEP-2 payload).
     fn has_key(&self) -> bool;
 
-    /// Indicates whether the account is a watch-only account.
-    /// Matches C# WatchOnly property
-    fn watch_only(&self) -> bool {
-        self.contract().is_none()
-    }
-
-    /// Gets the private key of the account.
-    /// Matches C# GetKey method
+    /// Returns the decrypted key pair if present.
     fn get_key(&self) -> Option<KeyPair>;
 
-    /// Gets the protocol settings.
-    /// Matches C# ProtocolSettings field
-    fn protocol_settings(&self) -> &ProtocolSettings;
+    /// Returns the contract (if any) bound to this account.
+    fn contract(&self) -> Option<&Contract>;
+
+    /// Updates the stored contract.
+    fn set_contract(&mut self, contract: Option<Contract>);
+
+    /// Underlying protocol settings used for address conversions.
+    fn protocol_settings(&self) -> &Arc<ProtocolSettings>;
+
+    /// Attempts to unlock the encrypted key material with the supplied password.
+    fn unlock(&mut self, password: &str) -> WalletResult<bool>;
+
+    /// Locks the account (when a NEP-2 key is available).
+    fn lock(&mut self);
+
+    /// Validates that the supplied password can decrypt the encrypted key.
+    fn verify_password(&self, password: &str) -> WalletResult<bool>;
+
+    /// Exports the key material in WIF format.
+    fn export_wif(&self) -> WalletResult<String>;
+
+    /// Exports the key material encoded as NEP-2.
+    fn export_nep2(&self, password: &str) -> WalletResult<String>;
+
+    /// Creates a witness for the supplied transaction using the account credentials.
+    fn create_witness(&self, transaction: &Transaction) -> WalletResult<Witness>;
 }
 
-/// Base implementation for WalletAccount
-pub struct BaseWalletAccount {
-    /// The hash of the account.
-    /// Matches C# ScriptHash field
-    pub script_hash: UInt160,
-
-    /// The label of the account.
-    /// Matches C# Label field
-    pub label: String,
-
-    /// Indicates whether the account is the default account in the wallet.
-    /// Matches C# IsDefault field
-    pub is_default: bool,
-
-    /// Indicates whether the account is locked.
-    /// Matches C# Lock field
-    pub lock: bool,
-
-    /// The contract of the account.
-    /// Matches C# Contract field
-    pub contract: Option<Contract>,
-
-    /// The protocol settings.
-    /// Matches C# ProtocolSettings field
-    pub protocol_settings: ProtocolSettings,
+/// Concrete wallet account implementation providing the same ergonomics as the
+/// C# `WalletAccount` class.
+#[derive(Debug, Clone)]
+pub struct StandardWalletAccount {
+    script_hash: UInt160,
+    label: Option<String>,
+    is_default: bool,
+    is_locked: bool,
+    contract: Option<Contract>,
+    key_pair: Option<KeyPair>,
+    nep2_key: Option<String>,
+    protocol_settings: Arc<ProtocolSettings>,
 }
 
-impl BaseWalletAccount {
-    /// Initializes a new instance of the BaseWalletAccount class.
-    /// Matches C# constructor exactly
-    pub fn new(script_hash: UInt160, settings: ProtocolSettings) -> Self {
-        BaseWalletAccount {
+impl StandardWalletAccount {
+    /// Creates an account backed by the provided key pair.
+    pub fn new_with_key(
+        key_pair: KeyPair,
+        contract: Option<Contract>,
+        protocol_settings: Arc<ProtocolSettings>,
+        nep2_key: Option<String>,
+    ) -> Self {
+        let script_hash = contract
+            .as_ref()
+            .map(|contract| contract.script_hash())
+            .unwrap_or_else(|| key_pair.get_script_hash());
+
+        Self {
             script_hash,
-            label: String::new(),
+            label: None,
             is_default: false,
-            lock: false,
-            contract: None,
-            protocol_settings: settings,
+            is_locked: false,
+            contract,
+            key_pair: Some(key_pair),
+            nep2_key,
+            protocol_settings,
         }
+    }
+
+    /// Creates a watch-only account for the supplied script hash.
+    pub fn new_watch_only(
+        script_hash: UInt160,
+        contract: Option<Contract>,
+        protocol_settings: Arc<ProtocolSettings>,
+    ) -> Self {
+        Self {
+            script_hash,
+            label: None,
+            is_default: false,
+            is_locked: false,
+            contract,
+            key_pair: None,
+            nep2_key: None,
+            protocol_settings,
+        }
+    }
+
+    /// Creates an account backed solely by a NEP-2 encrypted key.
+    pub fn new_from_encrypted(
+        script_hash: UInt160,
+        nep2_key: String,
+        contract: Option<Contract>,
+        protocol_settings: Arc<ProtocolSettings>,
+    ) -> Self {
+        Self {
+            script_hash,
+            label: None,
+            is_default: false,
+            is_locked: true,
+            contract,
+            key_pair: None,
+            nep2_key: Some(nep2_key),
+            protocol_settings,
+        }
+    }
+
+    /// Returns the stored NEP-2 key (if any).
+    pub fn nep2_key(&self) -> Option<&str> {
+        self.nep2_key.as_deref()
+    }
+
+    /// Replaces the stored NEP-2 payload.
+    pub fn set_nep2_key(&mut self, nep2: Option<String>) {
+        self.nep2_key = nep2;
     }
 }
 
-impl WalletAccount for BaseWalletAccount {
+impl WalletAccount for StandardWalletAccount {
     fn script_hash(&self) -> UInt160 {
         self.script_hash
     }
 
-    fn label(&self) -> &str {
-        &self.label
+    fn address(&self) -> String {
+        Helper::to_address(&self.script_hash, self.protocol_settings.address_version)
     }
 
-    fn set_label(&mut self, label: String) {
+    fn label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+
+    fn set_label(&mut self, label: Option<String>) {
         self.label = label;
     }
 
@@ -145,12 +184,16 @@ impl WalletAccount for BaseWalletAccount {
         self.is_default = is_default;
     }
 
-    fn lock(&self) -> bool {
-        self.lock
+    fn is_locked(&self) -> bool {
+        self.is_locked
     }
 
-    fn set_lock(&mut self, lock: bool) {
-        self.lock = lock;
+    fn has_key(&self) -> bool {
+        self.key_pair.is_some() || self.nep2_key.is_some()
+    }
+
+    fn get_key(&self) -> Option<KeyPair> {
+        self.key_pair.clone()
     }
 
     fn contract(&self) -> Option<&Contract> {
@@ -158,20 +201,87 @@ impl WalletAccount for BaseWalletAccount {
     }
 
     fn set_contract(&mut self, contract: Option<Contract>) {
-        self.contract = contract;
+        if let Some(contract) = contract {
+            self.script_hash = contract.script_hash();
+            self.contract = Some(contract);
+        } else {
+            self.contract = None;
+        }
     }
 
-    fn has_key(&self) -> bool {
-        // In a real implementation, this would check if the account has a private key
-        false
-    }
-
-    fn get_key(&self) -> Option<KeyPair> {
-        // In a real implementation, this would return the private key
-        None
-    }
-
-    fn protocol_settings(&self) -> &ProtocolSettings {
+    fn protocol_settings(&self) -> &Arc<ProtocolSettings> {
         &self.protocol_settings
+    }
+
+    fn unlock(&mut self, password: &str) -> WalletResult<bool> {
+        if !self.is_locked {
+            return Ok(true);
+        }
+
+        let nep2 = match &self.nep2_key {
+            Some(value) => value,
+            None => return Ok(false),
+        };
+
+        match KeyPair::from_nep2_string(nep2, password) {
+            Ok(key_pair) => {
+                self.key_pair = Some(key_pair);
+                self.is_locked = false;
+                Ok(true)
+            }
+            Err(_) => Ok(false),
+        }
+    }
+
+    fn lock(&mut self) {
+        if self.nep2_key.is_some() {
+            self.key_pair = None;
+            self.is_locked = true;
+        }
+    }
+
+    fn verify_password(&self, password: &str) -> WalletResult<bool> {
+        if let Some(nep2) = &self.nep2_key {
+            Ok(KeyPair::from_nep2_string(nep2, password).is_ok())
+        } else {
+            Ok(self.key_pair.is_some())
+        }
+    }
+
+    fn export_wif(&self) -> WalletResult<String> {
+        match &self.key_pair {
+            Some(key) => Ok(key.to_wif()),
+            None => Err(WalletError::AccountLocked),
+        }
+    }
+
+    fn export_nep2(&self, password: &str) -> WalletResult<String> {
+        if let Some(nep2) = &self.nep2_key {
+            return Ok(nep2.clone());
+        }
+
+        let key = self.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
+        key.to_nep2(password)
+            .map_err(|e| WalletError::SigningFailed(e.to_string()))
+    }
+
+    fn create_witness(&self, transaction: &Transaction) -> WalletResult<Witness> {
+        let key = self.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
+        let signature = key
+            .sign(&transaction.get_hash_data())
+            .map_err(|e| WalletError::SigningFailed(e.to_string()))?;
+
+        let verification_script = if let Some(contract) = &self.contract {
+            contract.script.clone()
+        } else {
+            key.get_verification_script()
+        };
+
+        let mut invocation = Vec::with_capacity(signature.len() + 2);
+        invocation.push(OpCode::PUSHDATA1 as u8);
+        invocation.push(signature.len() as u8);
+        invocation.extend_from_slice(&signature);
+
+        Ok(Witness::new_with_scripts(invocation, verification_script))
     }
 }

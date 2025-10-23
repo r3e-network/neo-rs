@@ -3,9 +3,8 @@
 //! This module provides functionality to execute JSON-based VM tests
 //! that match the C# Neo.VM.Tests JSON test format exactly.
 
-use neo_vm::{ExecutionEngine, Script, StackItem, VMState};
+use neo_vm::{ExecutionEngine, Script};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -308,11 +307,11 @@ impl JsonTestRunner {
             .into());
         }
 
-        if let Some(expected_invocation_stack) = &expected.invocation_stack {
+        if let Some(_expected_invocation_stack) = &expected.invocation_stack {
             println!("    Invocation stack verification not yet implemented");
         }
 
-        if let Some(expected_result_stack) = &expected.result_stack {
+        if let Some(_expected_result_stack) = &expected.result_stack {
             println!("    Result stack verification not yet implemented");
         }
 
@@ -338,4 +337,3 @@ mod tests {
         assert_eq!(result, vec![0xf0, 0x40]); // PUSHNULL + RET
     }
 }
-#![cfg(feature = "neo_application_engine")]

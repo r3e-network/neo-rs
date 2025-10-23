@@ -7,6 +7,7 @@ pub mod block_header;
 pub mod blockchain;
 pub mod blockchain_application_executed;
 pub mod header_cache;
+pub mod ledger_context;
 pub mod memory_pool;
 pub mod pool_item;
 pub mod transaction_removal_reason;
@@ -24,6 +25,7 @@ pub use blockchain::{
 };
 pub use blockchain_application_executed::ApplicationExecuted;
 pub use header_cache::HeaderCache;
+pub use ledger_context::LedgerContext;
 pub use memory_pool::MemoryPool;
 pub use pool_item::PoolItem;
 pub use transaction_removal_reason::TransactionRemovalReason;

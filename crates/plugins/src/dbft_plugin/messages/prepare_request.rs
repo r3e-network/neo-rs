@@ -13,7 +13,7 @@ use crate::dbft_plugin::messages::consensus_message::{
     ConsensusMessageError, ConsensusMessageHeader, ConsensusMessageResult,
 };
 use crate::dbft_plugin::types::consensus_message_type::ConsensusMessageType;
-use neo_core::neo_io::{BinaryWriter, MemoryReader};
+use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::neo_system::ProtocolSettings;
 use neo_core::UInt256;
 use std::collections::HashSet;
@@ -90,6 +90,21 @@ impl PrepareRequest {
     /// Returns a mutable reference to the message header.
     pub fn header_mut(&mut self) -> &mut ConsensusMessageHeader {
         &mut self.header
+    }
+
+    /// Gets the block index carried by the request.
+    pub fn block_index(&self) -> u32 {
+        self.header.block_index
+    }
+
+    /// Gets the validator index of the primary that produced the request.
+    pub fn validator_index(&self) -> u8 {
+        self.header.validator_index
+    }
+
+    /// Gets the view number associated with the request.
+    pub fn view_number(&self) -> u8 {
+        self.header.view_number
     }
 
     /// Gets the block version.
@@ -191,7 +206,8 @@ impl PrepareRequest {
 
     /// Verifies the message against the provided protocol settings.
     pub fn verify(&self, settings: &ProtocolSettings) -> bool {
-        if self.header.validator_index as u32 >= settings.validators_count {
+        let validator_count = settings.validators_count.max(0) as u32;
+        if self.header.validator_index as u32 >= validator_count {
             return false;
         }
 

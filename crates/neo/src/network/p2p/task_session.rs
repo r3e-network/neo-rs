@@ -107,7 +107,7 @@ impl TaskSession {
 
     /// Removes and returns any inventory tasks that exceeded the timeout.
     pub fn prune_timed_out_inv_tasks(&mut self, timeout: Duration) -> Vec<UInt256> {
-        self.prune_tasks(&mut self.inv_tasks, timeout)
+        Self::prune_tasks(&mut self.inv_tasks, timeout)
     }
 
     /// Removes and returns any index tasks that exceeded the timeout.
@@ -115,7 +115,7 @@ impl TaskSession {
         self.prune_index_tasks(timeout)
     }
 
-    fn prune_tasks<T>(&mut self, tasks: &mut HashMap<T, Instant>, timeout: Duration) -> Vec<T>
+    fn prune_tasks<T>(tasks: &mut HashMap<T, Instant>, timeout: Duration) -> Vec<T>
     where
         T: Eq + std::hash::Hash + Copy,
     {
@@ -133,7 +133,7 @@ impl TaskSession {
     }
 
     fn prune_index_tasks(&mut self, timeout: Duration) -> Vec<u32> {
-        self.prune_tasks(&mut self.index_tasks, timeout)
+        Self::prune_tasks(&mut self.index_tasks, timeout)
     }
 
     /// Returns an iterator of hashes currently requested from the peer.

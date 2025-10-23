@@ -1,13 +1,14 @@
 //! ContractPermissionDescriptor - matches C# Neo.SmartContract.Manifest.ContractPermissionDescriptor exactly
 
+use super::contract_group::ContractGroup;
 use crate::cryptography::crypto_utils::ECPoint;
 use crate::UInt160;
 use neo_vm::StackItem;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// Describes what contract or group a permission applies to (matches C# ContractPermissionDescriptor)
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContractPermissionDescriptor {
     /// Wildcard - permission applies to any contract
     Wildcard,
@@ -47,6 +48,17 @@ impl ContractPermissionDescriptor {
         }
     }
 
+    /// Checks if this descriptor matches a contract hash using manifest groups.
+    pub fn matches_contract(&self, hash: &UInt160, groups: &[ContractGroup]) -> bool {
+        match self {
+            ContractPermissionDescriptor::Wildcard => true,
+            ContractPermissionDescriptor::Hash(h) => h == hash,
+            ContractPermissionDescriptor::Group(group_key) => {
+                groups.iter().any(|g| &g.pub_key == group_key)
+            }
+        }
+    }
+
     /// Creates from JSON
     pub fn from_json(json: &serde_json::Value) -> Result<Self, String> {
         if let Some(s) = json.as_str() {
@@ -54,7 +66,7 @@ impl ContractPermissionDescriptor {
                 return Ok(ContractPermissionDescriptor::Wildcard);
             }
             // Try to parse as hash
-            if let Ok(hash) = UInt160::from_string(s) {
+            if let Ok(hash) = UInt160::parse(s) {
                 return Ok(ContractPermissionDescriptor::Hash(hash));
             }
             // Try to parse as public key
@@ -116,5 +128,39 @@ impl ContractPermissionDescriptor {
             )),
             len => Err(format!("Invalid descriptor byte length: {}", len)),
         }
+    }
+
+    /// Approximate serialized size of the descriptor.
+    pub fn size(&self) -> usize {
+        match self {
+            ContractPermissionDescriptor::Wildcard => 1,
+            ContractPermissionDescriptor::Hash(_) => 1 + 20,
+            ContractPermissionDescriptor::Group(_) => 1 + 33,
+        }
+    }
+}
+
+impl Serialize for ContractPermissionDescriptor {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            ContractPermissionDescriptor::Wildcard => serializer.serialize_str("*"),
+            ContractPermissionDescriptor::Hash(hash) => serializer.serialize_str(&hash.to_string()),
+            ContractPermissionDescriptor::Group(group) => {
+                serializer.serialize_str(&hex::encode(group.encoded()))
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ContractPermissionDescriptor {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        ContractPermissionDescriptor::from_json(&value).map_err(|e| serde::de::Error::custom(e))
     }
 }

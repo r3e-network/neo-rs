@@ -11,10 +11,14 @@ impl ApplicationEngine {
         let public_key = self.pop_bytes()?;
 
         // Get the verification script container
-        let message = self.get_script_container()?;
+        let container = self
+            .get_script_container()
+            .ok_or_else(|| "No script container available".to_string())?;
+        let message_hash = container.hash().map_err(|e| e.to_string())?;
+        let message_bytes = message_hash.to_bytes();
 
         // Verify signature (simplified - would use actual crypto)
-        Ok(self.verify_signature(&message, &public_key, &signature))
+        Ok(self.verify_signature(&message_bytes, &public_key, &signature))
     }
 
     /// Verifies multiple signatures
@@ -44,7 +48,11 @@ impl ApplicationEngine {
         }
 
         // Get message to verify
-        let message = self.get_script_container()?;
+        let container = self
+            .get_script_container()
+            .ok_or_else(|| "No script container available".to_string())?;
+        let message_hash = container.hash().map_err(|e| e.to_string())?;
+        let message_bytes = message_hash.to_bytes();
 
         // Verify m-of-n signatures
         let mut verified = 0;
@@ -52,7 +60,7 @@ impl ApplicationEngine {
 
         for signature in &signatures {
             while key_index < public_keys.len() {
-                if self.verify_signature(&message, &public_keys[key_index], signature) {
+                if self.verify_signature(&message_bytes, &public_keys[key_index], signature) {
                     verified += 1;
                     key_index += 1;
                     break;
@@ -91,7 +99,7 @@ impl ApplicationEngine {
     }
 
     /// Verifies a signature (helper method)
-    fn verify_signature(&self, message: &[u8], public_key: &[u8], signature: &[u8]) -> bool {
+    fn verify_signature(&self, _message: &[u8], public_key: &[u8], signature: &[u8]) -> bool {
         // Simplified verification - in real implementation would use secp256r1
         if signature.len() != 64 || public_key.len() != 33 {
             return false;

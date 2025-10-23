@@ -133,7 +133,7 @@ fn test_emit_jump() {
 
 #[test]
 fn test_emit_push_big_integer_extended() {
-    for value in -1..=16 {
+    for value in -1i32..=16 {
         let mut builder = ScriptBuilder::new();
         builder
             .emit_push_bigint(BigInt::from(value))

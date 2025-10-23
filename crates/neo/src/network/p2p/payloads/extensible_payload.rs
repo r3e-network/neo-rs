@@ -13,14 +13,20 @@ use super::{
     i_inventory::IInventory, i_verifiable::IVerifiable, inventory_type::InventoryType,
     witness::Witness,
 };
-use crate::neo_io::{MemoryReader, Serializable};
-use crate::{neo_system::ProtocolSettings, persistence::DataCache, UInt160, UInt256};
+use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::persistence::DataCache;
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::native::LedgerContract;
+use crate::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::io::{self, Write};
+
+const MAX_CATEGORY_LENGTH: usize = 32;
+const MAX_DATA_LENGTH: usize = 0x1_0000_00; // 16 MB, matches C# ReadVarMemory upper bound
 
 /// Represents an extensible message that can be relayed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtensiblePayload {
     /// The category of the extension.
     pub category: String,
@@ -62,11 +68,10 @@ impl ExtensiblePayload {
     pub fn verify(
         &self,
         settings: &ProtocolSettings,
-        snapshot: &dyn DataCache,
+        snapshot: &DataCache,
         extensible_witness_white_list: &HashSet<UInt160>,
     ) -> bool {
-        // Get current block height from ledger
-        let height = snapshot.get_current_block_height();
+        let height = LedgerContract::new().current_index(snapshot).unwrap_or(0);
 
         // Check if within valid block range
         if height < self.valid_block_start || height >= self.valid_block_end {
@@ -82,46 +87,58 @@ impl ExtensiblePayload {
         self.verify_witnesses(settings, snapshot, 6_000_000)
     }
 
-    fn serialize_unsigned(&self, writer: &mut dyn Write) -> io::Result<()> {
+    /// Returns the cached hash of the payload, computing it if necessary.
+    pub fn ensure_hash(&mut self) -> UInt256 {
+        if let Some(hash) = self._hash {
+            return hash;
+        }
+
+        let mut writer = BinaryWriter::new();
+        self.serialize_unsigned(&mut writer)
+            .expect("extensible payload serialization should not fail");
+        let hash = UInt256::from(crate::neo_crypto::sha256(&writer.into_bytes()));
+        self._hash = Some(hash);
+        hash
+    }
+
+    /// Convenience accessor mirroring the C# hash property.
+    pub fn hash(&mut self) -> UInt256 {
+        self.ensure_hash()
+    }
+
+    fn serialize_unsigned(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         // Write category as var string (max 32 bytes)
-        let category_bytes = self.category.as_bytes();
-        if category_bytes.len() > 32 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Category too long",
-            ));
+        if self.category.as_bytes().len() > MAX_CATEGORY_LENGTH {
+            return Err(IoError::invalid_data("Category too long"));
         }
-        writer.write_all(&[category_bytes.len() as u8])?;
-        writer.write_all(category_bytes)?;
+        writer.write_var_string(&self.category)?;
 
-        writer.write_all(&self.valid_block_start.to_le_bytes())?;
-        writer.write_all(&self.valid_block_end.to_le_bytes())?;
-        writer.write_all(self.sender.as_bytes())?;
+        writer.write_u32(self.valid_block_start)?;
+        writer.write_u32(self.valid_block_end)?;
+        let sender = self.sender.as_bytes();
+        writer.write_bytes(&sender)?;
 
-        // Write data as var bytes
-        if self.data.len() > 0xFFFFFF {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "Data too long"));
+        if self.data.len() > MAX_DATA_LENGTH {
+            return Err(IoError::invalid_data("Data too long"));
         }
-        writer.write_all(&[self.data.len() as u8])?;
-        writer.write_all(&self.data)?;
+        writer.write_var_bytes(&self.data)?;
 
         Ok(())
     }
 
-    fn deserialize_unsigned(reader: &mut MemoryReader) -> Result<Self, String> {
-        let category = reader.read_var_string(32).map_err(|e| e.to_string())?;
-        let valid_block_start = reader.read_u32().map_err(|e| e.to_string())?;
-        let valid_block_end = reader.read_u32().map_err(|e| e.to_string())?;
+    fn deserialize_unsigned(reader: &mut MemoryReader) -> IoResult<Self> {
+        let category = reader.read_var_string(MAX_CATEGORY_LENGTH)?;
+        let valid_block_start = reader.read_u32()?;
+        let valid_block_end = reader.read_u32()?;
 
         if valid_block_start >= valid_block_end {
-            return Err(format!(
-                "Invalid valid block range: {} >= {}",
-                valid_block_start, valid_block_end
+            return Err(IoError::invalid_data(
+                "Invalid valid block range: start must be less than end",
             ));
         }
 
-        let sender = UInt160::deserialize(reader)?;
-        let data = reader.read_var_bytes().map_err(|e| e.to_string())?;
+        let sender = <UInt160 as Serializable>::deserialize(reader)?;
+        let data = reader.read_var_bytes(MAX_DATA_LENGTH)?;
 
         Ok(Self {
             category,
@@ -141,21 +158,12 @@ impl IInventory for ExtensiblePayload {
     }
 
     fn hash(&mut self) -> UInt256 {
-        if let Some(hash) = self._hash {
-            return hash;
-        }
-
-        // Calculate hash from serialized unsigned data
-        let mut data = Vec::new();
-        self.serialize_unsigned(&mut data).unwrap();
-        let hash = UInt256::from(neo_crypto::sha256(&data));
-        self._hash = Some(hash);
-        hash
+        self.ensure_hash()
     }
 }
 
 impl IVerifiable for ExtensiblePayload {
-    fn get_script_hashes_for_verifying(&self, _snapshot: &dyn DataCache) -> Vec<UInt160> {
+    fn get_script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         vec![self.sender]
     }
 
@@ -170,32 +178,35 @@ impl IVerifiable for ExtensiblePayload {
 
 impl Serializable for ExtensiblePayload {
     fn size(&self) -> usize {
-        1 + self.category.len() + // Category with var length prefix
-        4 + // ValidBlockStart
-        4 + // ValidBlockEnd
-        20 + // Sender (UInt160)
-        1 + self.data.len() + // Data with var length prefix
-        1 + self.witness.size() // Witness with count prefix (always 1)
+        get_var_size(self.category.as_bytes().len() as u64)
+            + self.category.as_bytes().len()
+            + 4
+            + 4
+            + UInt160::LENGTH
+            + get_var_size(self.data.len() as u64)
+            + self.data.len()
+            + get_var_size(1)
+            + self.witness.size()
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         self.serialize_unsigned(writer)?;
         // Write witness count (always 1)
-        writer.write_all(&[1u8])?;
-        self.witness.serialize(writer)?;
+        writer.write_var_uint(1)?;
+        writer.write_serializable(&self.witness)?;
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let mut payload = Self::deserialize_unsigned(reader)?;
 
         // Read witness count (must be 1)
-        let count = reader.read_u8().map_err(|e| e.to_string())?;
+        let count = reader.read_var_uint()?;
         if count != 1 {
-            return Err(format!("Expected 1 witness, got {}", count));
+            return Err(IoError::invalid_data("Expected 1 witness"));
         }
 
-        payload.witness = Witness::deserialize(reader)?;
+        payload.witness = <Witness as Serializable>::deserialize(reader)?;
         Ok(payload)
     }
 }

@@ -16,7 +16,7 @@ pub trait DateTimeExtensions {
     /// Converts a DateTime to timestamp.
     /// Matches C# ToTimestamp method
     fn to_timestamp(&self) -> u32;
-    
+
     /// Converts a DateTime to timestamp in milliseconds.
     /// Matches C# ToTimestampMS method
     fn to_timestamp_ms(&self) -> u64;
@@ -28,7 +28,7 @@ impl DateTimeExtensions for SystemTime {
             .unwrap_or_default()
             .as_secs() as u32
     }
-    
+
     fn to_timestamp_ms(&self) -> u64 {
         self.duration_since(UNIX_EPOCH)
             .unwrap_or_default()

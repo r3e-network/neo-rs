@@ -9,11 +9,12 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::neo_io::{MemoryReader, Serializable};
-use crate::network::p2p::capabilities::{DisableCompressionCapability, NodeCapability};
+use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::network::p2p::capabilities::NodeCapability;
 use crate::network::p2p::local_node::LocalNode;
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
+use std::collections::HashSet;
 
 /// Indicates the maximum number of capabilities contained in a VersionPayload.
 pub const MAX_CAPABILITIES: usize = 32;
@@ -53,7 +54,7 @@ impl VersionPayload {
     ) -> Self {
         let allow_compression = !capabilities
             .iter()
-            .any(|c| matches!(c, NodeCapability::DisableCompression(_)));
+            .any(|c| matches!(c, NodeCapability::DisableCompression));
 
         Self {
             network,
@@ -76,74 +77,65 @@ impl Serializable for VersionPayload {
         4 + // Version
         4 + // Timestamp
         4 + // Nonce
-        self.user_agent.len() + 1 + // UserAgent with var length prefix
-        1 + self.capabilities.iter().map(|c| c.size()).sum::<usize>() // Capabilities
+        get_var_size(self.user_agent.as_bytes().len() as u64)
+            + self.user_agent.as_bytes().len()
+            + get_var_size(self.capabilities.len() as u64)
+            + self.capabilities.iter().map(|c| c.size()).sum::<usize>()
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&self.network.to_le_bytes())?;
-        writer.write_all(&self.version.to_le_bytes())?;
-        writer.write_all(&self.timestamp.to_le_bytes())?;
-        writer.write_all(&self.nonce.to_le_bytes())?;
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u32(self.network)?;
+        writer.write_u32(self.version)?;
+        writer.write_u32(self.timestamp)?;
+        writer.write_u32(self.nonce)?;
 
         // Write user agent as var string
-        let user_agent_bytes = self.user_agent.as_bytes();
-        if user_agent_bytes.len() > 1024 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "User agent too long",
-            ));
+        if self.user_agent.as_bytes().len() > 1024 {
+            return Err(IoError::invalid_data("User agent too long"));
         }
-        writer.write_all(&[user_agent_bytes.len() as u8])?;
-        writer.write_all(user_agent_bytes)?;
+        writer.write_var_string(&self.user_agent)?;
 
         // Write capabilities
         if self.capabilities.len() > MAX_CAPABILITIES {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Too many capabilities",
-            ));
+            return Err(IoError::invalid_data("Too many capabilities"));
         }
-        writer.write_all(&[self.capabilities.len() as u8])?;
+        writer.write_var_uint(self.capabilities.len() as u64)?;
         for capability in &self.capabilities {
-            capability.serialize(writer)?;
+            writer.write_serializable(capability)?;
         }
 
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let network = reader.read_u32().map_err(|e| e.to_string())?;
-        let version = reader.read_u32().map_err(|e| e.to_string())?;
-        let timestamp = reader.read_u32().map_err(|e| e.to_string())?;
-        let nonce = reader.read_u32().map_err(|e| e.to_string())?;
-        let user_agent = reader.read_var_string(1024).map_err(|e| e.to_string())?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let network = reader.read_u32()?;
+        let version = reader.read_u32()?;
+        let timestamp = reader.read_u32()?;
+        let nonce = reader.read_u32()?;
+        let user_agent = reader.read_var_string(1024)?;
 
         // Read capabilities
-        let capability_count = reader.read_var_int().map_err(|e| e.to_string())?;
-        if capability_count > MAX_CAPABILITIES as u64 {
-            return Err("Too many capabilities".to_string());
-        }
+        let capability_count = reader.read_var_int(MAX_CAPABILITIES as u64)? as usize;
 
-        let mut capabilities = Vec::with_capacity(capability_count as usize);
+        let mut capabilities = Vec::with_capacity(capability_count);
         for _ in 0..capability_count {
-            capabilities.push(NodeCapability::deserialize_from(reader)?);
+            capabilities.push(<NodeCapability as Serializable>::deserialize(reader)?);
         }
 
         // Check for duplicate capability types (excluding UnknownCapability)
-        let mut seen_types = std::collections::HashSet::new();
+        let mut seen_types = HashSet::new();
         for capability in &capabilities {
-            if !matches!(capability, NodeCapability::Unknown(_)) {
-                let cap_type = capability.get_type();
+            if !matches!(capability, NodeCapability::Unknown { .. }) {
+                let cap_type = capability.capability_type();
                 if !seen_types.insert(cap_type) {
-                    return Err("Duplicate capability type".to_string());
+                    return Err(IoError::invalid_data("Duplicate capability type"));
                 }
             }
         }
 
         let allow_compression = !capabilities
             .iter()
-            .any(|c| matches!(c, NodeCapability::DisableCompression(_)));
+            .any(|c| matches!(c, NodeCapability::DisableCompression));
 
         Ok(Self {
             network,

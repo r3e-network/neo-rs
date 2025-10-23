@@ -69,19 +69,13 @@ impl RpcError {
     /// Serialises the error into a Neo JSON token (matches C# `ToJson`).
     pub fn to_json(&self) -> JToken {
         let mut obj = JObject::new();
-        obj.set(
-            "code".to_string(),
-            Some(JToken::Number(JNumber::new(self.code as f64).expect("finite code"))),
-        );
+                obj.set("code".to_string(), Some(JToken::Number(self.code as f64)));
         obj.set(
             "message".to_string(),
-            Some(JToken::String(JString::new(self.error_message()))),
+            Some(JToken::String(self.error_message())),
         );
         if let Some(data) = &self.data {
-            obj.set(
-                "data".to_string(),
-                Some(JToken::String(JString::new(data.clone()))),
-            );
+            obj.set("data".to_string(), Some(JToken::String(data.clone())));
         }
         JToken::Object(obj)
     }

@@ -13,13 +13,13 @@ use super::{
     header::Header, i_inventory::IInventory, i_verifiable::IVerifiable,
     inventory_type::InventoryType, transaction::Transaction, witness::Witness,
 };
-use crate::neo_io::{MemoryReader, Serializable};
-use crate::{neo_system::ProtocolSettings, persistence::DataCache, UInt160, UInt256};
+use crate::neo_io::serializable::helper::get_var_size;
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::{persistence::DataCache, UInt160, UInt256};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Represents a block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     /// The header of the block.
     pub header: Header,
@@ -88,9 +88,9 @@ impl Block {
     }
 
     /// Calculates the network fee for the block.
-    pub fn calculate_network_fee(&self, snapshot: &dyn DataCache) -> i64 {
+    pub fn calculate_network_fee(&self, _snapshot: &DataCache) -> i64 {
         // Sum of all transaction network fees
-        self.transactions.iter().map(|tx| tx.network_fee).sum()
+        self.transactions.iter().map(|tx| tx.network_fee()).sum()
     }
 
     /// Rebuilds the merkle root.
@@ -123,7 +123,7 @@ impl IInventory for Block {
 }
 
 impl IVerifiable for Block {
-    fn get_script_hashes_for_verifying(&self, snapshot: &dyn DataCache) -> Vec<UInt160> {
+    fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160> {
         self.header.get_script_hashes_for_verifying(snapshot)
     }
 
@@ -138,41 +138,41 @@ impl IVerifiable for Block {
 
 impl Serializable for Block {
     fn size(&self) -> usize {
-        self.header.size() + 1 + self.transactions.iter().map(|tx| tx.size()).sum::<usize>()
+        self.header.size()
+            + get_var_size(self.transactions.len() as u64)
+            + self.transactions.iter().map(|tx| tx.size()).sum::<usize>()
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
-        self.header.serialize(writer)?;
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        Serializable::serialize(&self.header, writer)?;
 
-        // Write transaction count
-        if self.transactions.len() > 0xFFFF {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Too many transactions",
-            ));
+        const MAX_TRANSACTIONS: u64 = u16::MAX as u64;
+        if self.transactions.len() as u64 > MAX_TRANSACTIONS {
+            return Err(IoError::invalid_data("Too many transactions"));
         }
-        writer.write_all(&[self.transactions.len() as u8])?;
+        writer.write_var_uint(self.transactions.len() as u64)?;
 
         // Write transactions
         for tx in &self.transactions {
-            tx.serialize(writer)?;
+            writer.write_serializable(tx)?;
         }
 
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let header = Header::deserialize(reader)?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let header = <Header as Serializable>::deserialize(reader)?;
 
         // Read transaction count
-        let tx_count = reader.read_var_int().map_err(|e| e.to_string())?;
-        if tx_count > 0xFFFF {
-            return Err("Too many transactions".to_string());
+        const MAX_TRANSACTIONS: u64 = u16::MAX as u64;
+        let tx_count = reader.read_var_int(MAX_TRANSACTIONS)? as usize;
+        if tx_count as u64 > MAX_TRANSACTIONS {
+            return Err(IoError::invalid_data("Too many transactions"));
         }
 
         let mut transactions = Vec::with_capacity(tx_count as usize);
         for _ in 0..tx_count {
-            transactions.push(Transaction::deserialize(reader)?);
+            transactions.push(<Transaction as Serializable>::deserialize(reader)?);
         }
 
         Ok(Self {

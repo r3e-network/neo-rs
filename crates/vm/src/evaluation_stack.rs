@@ -127,8 +127,9 @@ impl EvaluationStack {
 
         let start = self.stack.len() - count;
         for item in &self.stack[start..] {
-            target.reference_counter.add_stack_reference(item, 1);
-            target.stack.push(item.clone());
+            let cloned = item.clone();
+            target.reference_counter.add_stack_reference(&cloned, 1);
+            target.stack.push(cloned);
         }
         Ok(())
     }
@@ -172,6 +173,11 @@ impl EvaluationStack {
     /// Mutable iterator over the stack items from bottom to top.
     pub fn iter_mut(&mut self) -> std::slice::IterMut<StackItem> {
         self.stack.iter_mut()
+    }
+
+    /// Returns a cloned vector of the stack contents in bottom-to-top order.
+    pub fn to_vec(&self) -> Vec<StackItem> {
+        self.stack.clone()
     }
 
     fn resolve_top_index(&self, index_from_top: usize) -> VmResult<usize> {

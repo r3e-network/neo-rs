@@ -11,12 +11,13 @@
 
 use super::memory_snapshot::MemorySnapshot;
 use crate::persistence::{
-    i_read_only_store::IReadOnlyStoreGeneric,
+    i_read_only_store::{IReadOnlyStore, IReadOnlyStoreGeneric},
     i_store::{IStore, OnNewSnapshotDelegate},
     i_store_snapshot::IStoreSnapshot,
     i_write_store::IWriteStore,
     seek_direction::SeekDirection,
 };
+use crate::smart_contract::{storage_key::StorageKey, StorageItem};
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
@@ -77,6 +78,50 @@ impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for MemoryStore {
     }
 }
 
+impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for MemoryStore {
+    fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {
+        let raw_key = key.to_array();
+        self.inner_data
+            .read()
+            .unwrap()
+            .get(&raw_key)
+            .cloned()
+            .map(StorageItem::from_bytes)
+    }
+
+    fn find(
+        &self,
+        key_prefix: Option<&StorageKey>,
+        direction: SeekDirection,
+    ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
+        let data = self.inner_data.read().unwrap();
+        let prefix_bytes = key_prefix.map(|k| k.to_array());
+
+        let mut entries: Vec<_> = data
+            .iter()
+            .filter(|(key, _)| {
+                if let Some(prefix) = prefix_bytes.as_ref() {
+                    key.starts_with(prefix)
+                } else {
+                    true
+                }
+            })
+            .map(|(key, value)| {
+                (
+                    StorageKey::from_bytes(key),
+                    StorageItem::from_bytes(value.clone()),
+                )
+            })
+            .collect();
+
+        if direction == SeekDirection::Backward {
+            entries.reverse();
+        }
+
+        Box::new(entries.into_iter())
+    }
+}
+
 impl IWriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
     fn delete(&mut self, key: Vec<u8>) {
         self.inner_data.write().unwrap().remove(&key);
@@ -86,6 +131,8 @@ impl IWriteStore<Vec<u8>, Vec<u8>> for MemoryStore {
         self.inner_data.write().unwrap().insert(key, value);
     }
 }
+
+impl IReadOnlyStore for MemoryStore {}
 
 impl IStore for MemoryStore {
     fn get_snapshot(&self) -> Arc<dyn IStoreSnapshot> {

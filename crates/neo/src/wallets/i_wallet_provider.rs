@@ -10,16 +10,16 @@
 // modifications are permitted.
 use crate::wallets::Wallet;
 
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 
 /// A provider for obtaining wallet instance.
 /// Matches C# IWalletProvider exactly
 pub trait IWalletProvider {
     /// Triggered when a wallet is opened or closed.
     /// Matches C# WalletChanged event
-    fn wallet_changed(&self) -> mpsc::Receiver<Wallet>;
+    fn wallet_changed(&self) -> mpsc::Receiver<Arc<dyn Wallet>>;
 
     /// Get the currently opened Wallet instance.
     /// Matches C# GetWallet method
-    fn get_wallet(&self) -> Option<Wallet>;
+    fn get_wallet(&self) -> Option<Arc<dyn Wallet>>;
 }

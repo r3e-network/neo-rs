@@ -254,9 +254,9 @@ fn test_script_builder_with_syscall() {
     let instruction = script.get_instruction(0).unwrap();
     assert_eq!(instruction.opcode(), OpCode::SYSCALL);
 
-    // Get the syscall name
-    let name = instruction.syscall_name().unwrap();
-    assert_eq!(name, "System.Runtime.Platform");
+    // Get the syscall hash
+    let expected_hash = ScriptBuilder::hash_syscall("System.Runtime.Platform").unwrap();
+    assert_eq!(instruction.token_u32(), expected_hash);
 
     // Get the RET instruction
     let instruction = script.get_instruction(script.length() - 1).unwrap();

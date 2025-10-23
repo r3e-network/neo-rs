@@ -10,10 +10,11 @@
 // modifications are permitted.
 
 use super::i_store::IStore;
+use std::any::Any;
 use std::sync::Arc;
 
 /// A provider used to create IStore instances.
-pub trait IStoreProvider: Send + Sync {
+pub trait IStoreProvider: Send + Sync + Any {
     /// Gets the name of the IStoreProvider.
     fn name(&self) -> &str;
 

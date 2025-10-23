@@ -10,13 +10,13 @@ pub mod byte_array_comparer;
 pub mod byte_array_equality_comparer;
 pub mod byte_extensions;
 pub mod date_time_extensions;
+pub mod error;
 pub mod integer_extensions;
 pub mod log_level;
+pub mod plugin;
 pub mod secure_string_extensions;
 pub mod string_extensions;
 pub mod utility;
-pub mod error;
-pub mod plugin;
 
 // Collections extensions matching C# Neo.Extensions.Collections
 pub mod collections {
@@ -48,7 +48,7 @@ pub use byte_extensions::ByteExtensions;
 pub use date_time_extensions::DateTimeExtensions;
 pub use integer_extensions::IntegerExtensions;
 pub use log_level::LogLevel;
-pub use secure_string_extensions::{SecureStringExtensions, SecureString};
+pub use secure_string_extensions::{SecureString, SecureStringExtensions};
 pub use string_extensions::StringExtensions;
 pub use utility::Utility;
 
@@ -63,6 +63,6 @@ pub use exceptions::try_catch_extensions::TryCatchExtensions;
 pub use factories::random_number_factory::RandomNumberFactory;
 
 // Re-export net
-pub use net::ip_address_extensions::{IpAddressExtensions, IpEndPointExtensions};
 pub use error::{ExtensionError, ExtensionResult};
+pub use net::ip_address_extensions::{IpAddressExtensions, IpEndPointExtensions};
 pub use plugin::{Plugin, PluginCategory, PluginContext, PluginEvent, PluginInfo, PluginManager};

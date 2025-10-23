@@ -13,7 +13,7 @@ use crate::dbft_plugin::messages::consensus_message::{
     ConsensusMessageError, ConsensusMessageHeader, ConsensusMessageResult,
 };
 use crate::dbft_plugin::types::consensus_message_type::ConsensusMessageType;
-use neo_core::neo_io::{BinaryWriter, MemoryReader};
+use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::UInt256;
 
 /// PrepareResponse message (matches Neo C# PrepareResponse exactly).
@@ -61,6 +61,21 @@ impl PrepareResponse {
     /// Returns a mutable reference to the message header.
     pub fn header_mut(&mut self) -> &mut ConsensusMessageHeader {
         &mut self.header
+    }
+
+    /// Gets the block index carried by the response.
+    pub fn block_index(&self) -> u32 {
+        self.header.block_index
+    }
+
+    /// Gets the validator index of the responder.
+    pub fn validator_index(&self) -> u8 {
+        self.header.validator_index
+    }
+
+    /// Gets the view number for which the response was produced.
+    pub fn view_number(&self) -> u8 {
+        self.header.view_number
     }
 
     /// Gets the preparation hash referenced by this response.

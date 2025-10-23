@@ -2,25 +2,19 @@
 
 use crate::hardfork::Hardfork;
 use crate::neo_config::{ADDRESS_SIZE, HASH_SIZE};
-use crate::network::p2p::payloads::{Signer, Transaction};
 use crate::smart_contract::application_engine::{
     ApplicationEngine, MAX_EVENT_NAME, MAX_NOTIFICATION_SIZE,
 };
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
-use crate::smart_contract::execution_context_state::ExecutionContextState;
 use crate::smart_contract::log_event_args::LogEventArgs;
-use crate::smart_contract::notify_event_args::NotifyEventArgs;
-use crate::smart_contract::trigger_type::TriggerType;
 use crate::smart_contract::ContractParameterDefinition;
-use crate::witness_rule::{WitnessCondition, WitnessConditionType, WitnessRule, WitnessRuleAction};
-use crate::witness_scope::WitnessScope;
-use crate::{UInt160, UInt256};
-use murmur3::murmur3_x64_128;
+use crate::UInt160;
 use neo_vm::call_flags::CallFlags;
-use neo_vm::{ExecutionEngine, Script, StackItem, StackItemType, VmError, VmResult};
-use num_bigint::{BigInt, Sign};
+use neo_vm::{ExecutionEngine, StackItem, StackItemType, VmError, VmResult};
+use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 use std::convert::TryFrom;
-use std::io::Cursor;
+use std::string::String as StdString;
 use std::sync::Arc;
 
 impl ApplicationEngine {
@@ -31,17 +25,17 @@ impl ApplicationEngine {
 
     /// Gets the trigger type
     pub fn runtime_get_trigger(&mut self) -> Result<(), String> {
-        self.push_integer(self.trigger as i64)
+        self.push_integer(i64::from(self.trigger_type().bits()))
     }
 
     /// Gets the network magic number
     pub fn runtime_get_network(&mut self) -> Result<(), String> {
-        self.push_integer(self.protocol_settings.network as i64)
+        self.push_integer(self.protocol_settings().network as i64)
     }
 
     /// Gets the address version of the current network
     pub fn runtime_get_address_version(&mut self) -> Result<(), String> {
-        self.push_integer(self.protocol_settings.address_version as i64)
+        self.push_integer(self.protocol_settings().address_version as i64)
     }
 
     /// Gets the current block time
@@ -69,7 +63,7 @@ impl ApplicationEngine {
 
     /// Gets the calling script hash
     pub fn runtime_get_calling_script_hash(&mut self) -> Result<(), String> {
-        let hash = self.calling_script_hash().unwrap_or_default();
+        let hash = self.get_calling_script_hash().unwrap_or_else(UInt160::zero);
         self.push_bytes(hash.to_bytes())
     }
 
@@ -120,16 +114,15 @@ impl ApplicationEngine {
             ));
         }
 
-        let message = String::from_utf8(message_bytes).map_err(|_| {
+        let message = StdString::from_utf8(message_bytes).map_err(|_| {
             "Failed to convert byte array to string: Invalid UTF-8 sequence".to_string()
         })?;
 
         let container = self
-            .script_container
-            .as_ref()
+            .script_container()
             .ok_or_else(|| "No script container".to_string())?;
 
-        let script_hash = self.current_script_hash().copied().unwrap_or_default();
+        let script_hash = self.current_script_hash().unwrap_or_else(UInt160::zero);
 
         let event = LogEventArgs::new(Arc::clone(container), script_hash, message);
 
@@ -162,7 +155,7 @@ impl ApplicationEngine {
         event_name_bytes: Vec<u8>,
         state: Vec<StackItem>,
     ) -> Result<(), String> {
-        let event_name = String::from_utf8(event_name_bytes)
+        let event_name = StdString::from_utf8(event_name_bytes)
             .map_err(|_| "Failed to convert event name to UTF-8 string".to_string())?;
 
         {
@@ -178,10 +171,7 @@ impl ApplicationEngine {
         self.ensure_notification_size(&state)?;
         self.reserve_notification_slot()?;
 
-        let script_hash = self
-            .current_script_hash()
-            .copied()
-            .unwrap_or_else(UInt160::zero);
+        let script_hash = self.current_script_hash().unwrap_or_else(UInt160::zero);
 
         self.send_notification(script_hash, event_name, state)
     }
@@ -191,13 +181,10 @@ impl ApplicationEngine {
         event_name_bytes: Vec<u8>,
         state: Vec<StackItem>,
     ) -> Result<(), String> {
-        let event_name = String::from_utf8(event_name_bytes)
+        let event_name = StdString::from_utf8(event_name_bytes)
             .map_err(|_| "Failed to convert event name to UTF-8 string".to_string())?;
 
-        let script_hash = self
-            .current_script_hash()
-            .copied()
-            .unwrap_or_else(UInt160::zero);
+        let script_hash = self.current_script_hash().unwrap_or_else(UInt160::zero);
 
         let parameters = {
             let state_arc = self.current_execution_state().map_err(|e| e.to_string())?;
@@ -259,7 +246,8 @@ impl ApplicationEngine {
         }
 
         let datoshi = u64::try_from(amount).map_err(|_| "GAS amount overflow".to_string())?;
-        self.add_fee(datoshi).map_err(|e| e.to_string())?;
+        self.charge_execution_fee(datoshi)
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 }
@@ -510,9 +498,9 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
             if matches!(item_type, StackItemType::Any) {
                 true
             } else if matches!(item_type, StackItemType::ByteString | StackItemType::Buffer) {
-                item.get_span()
+                item.as_bytes()
                     .ok()
-                    .and_then(|bytes| String::from_utf8(bytes).ok())
+                    .and_then(|bytes| StdString::from_utf8(bytes).ok())
                     .is_some()
             } else {
                 false
@@ -521,7 +509,7 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
         Hash160 => match item_type {
             StackItemType::Any => true,
             StackItemType::ByteString | StackItemType::Buffer => item
-                .get_span()
+                .as_bytes()
                 .map(|bytes| bytes.len() == ADDRESS_SIZE)
                 .unwrap_or(false),
             _ => false,
@@ -529,7 +517,7 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
         Hash256 => match item_type {
             StackItemType::Any => true,
             StackItemType::ByteString | StackItemType::Buffer => item
-                .get_span()
+                .as_bytes()
                 .map(|bytes| bytes.len() == HASH_SIZE)
                 .unwrap_or(false),
             _ => false,
@@ -537,7 +525,7 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
         PublicKey => match item_type {
             StackItemType::Any => true,
             StackItemType::ByteString | StackItemType::Buffer => item
-                .get_span()
+                .as_bytes()
                 .map(|bytes| bytes.len() == 33)
                 .unwrap_or(false),
             _ => false,
@@ -545,7 +533,7 @@ fn matches_parameter_type(item: &StackItem, expected: ContractParameterType) -> 
         Signature => match item_type {
             StackItemType::Any => true,
             StackItemType::ByteString | StackItemType::Buffer => item
-                .get_span()
+                .as_bytes()
                 .map(|bytes| bytes.len() == 64)
                 .unwrap_or(false),
             _ => false,

@@ -15,49 +15,49 @@ pub(crate) fn register_contract_interops(engine: &mut ApplicationEngine) -> VmRe
     engine.register_host_service(
         "System.Contract.Call",
         SYSTEM_CONTRACT_CALL_PRICE,
-        CallFlags::ReadStates | CallFlags::AllowCall,
+        CallFlags::READ_STATES | CallFlags::ALLOW_CALL,
         contract_call_handler,
     )?;
 
     engine.register_host_service(
         "System.Contract.GetCallFlags",
         1 << 10,
-        CallFlags::None,
+        CallFlags::NONE,
         contract_get_call_flags_handler,
     )?;
 
     engine.register_host_service(
         "System.Contract.CreateStandardAccount",
         0,
-        CallFlags::None,
+        CallFlags::NONE,
         contract_create_standard_account_handler,
     )?;
 
     engine.register_host_service(
         "System.Contract.CreateMultisigAccount",
         0,
-        CallFlags::None,
+        CallFlags::NONE,
         contract_create_multisig_account_handler,
     )?;
 
     engine.register_host_service(
         "System.Contract.CallNative",
         0,
-        CallFlags::None,
+        CallFlags::NONE,
         contract_call_native_handler,
     )?;
 
     engine.register_host_service(
         "System.Contract.NativeOnPersist",
         0,
-        CallFlags::States,
+        CallFlags::STATES,
         contract_native_on_persist_handler,
     )?;
 
     engine.register_host_service(
         "System.Contract.NativePostPersist",
         0,
-        CallFlags::States,
+        CallFlags::STATES,
         contract_native_post_persist_handler,
     )?;
 
@@ -111,6 +111,7 @@ fn contract_call_handler(
             .ok_or_else(|| "Call flags contain unsupported bits".to_string())?;
 
         app.call_contract_dynamic(&contract_hash, &method, call_flags, args)
+            .map_err(|e| e.to_string())
     })();
 
     map_contract_result("System.Contract.Call", result)
@@ -122,7 +123,7 @@ fn contract_get_call_flags_handler(
 ) -> VmResult<()> {
     let result = (|| {
         let flags = app.get_current_call_flags().map_err(|e| e.to_string())?;
-        app.push_integer(flags as i64)?;
+        app.push_integer(i64::from(flags.bits()))?;
         Ok(())
     })();
 
@@ -172,7 +173,9 @@ fn contract_create_multisig_account_handler(
             return Err("Invalid multisig threshold".to_string());
         }
 
-        let account = app.create_multisig_account(m as i32, public_keys_items)?;
+        let account = app
+            .create_multisig_account(m as i32, public_keys_items)
+            .map_err(|e| e.to_string())?;
         app.push_bytes(account.to_bytes())
             .map_err(|e| e.to_string())?;
         Ok(())

@@ -1,53 +1,48 @@
 //! NEP-6 wallet implementation.
 //!
-//! This module provides NEP-6 wallet standard implementation,
-//! converted from the C# Neo NEP6Wallet class (@neo-sharp/src/Neo/Wallets/NEP6/).
+//! This module provides the NEP-6 wallet standard as implemented in the
+//! C# Neo node.  It mirrors the behaviour of `Neo.Wallets.NEP6` exactly,
+//! enabling interoperability between the Rust and C# wallets.
 
-// TODO: Fix imports after restructuring
-// use crate::wallets::{
-//     contract::Contract,
-//     key_pair::KeyPair,
-//     scrypt_parameters::ScryptParameters,
-//     wallet::{Wallet, WalletError, WalletResult},
-//     wallet_account::{StandardWalletAccount, WalletAccount},
-//     wallet_factory::{IWalletFactory, WalletFactory},
-// };
-// use crate::Version; // TODO: Fix import after restructuring
-use crate::Transaction;
-use crate::{UInt160, UInt256, Witness};
+use crate::network::p2p::payloads::{transaction::Transaction, witness::Witness};
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::contract::Contract;
+use crate::smart_contract::contract_parameter_type::ContractParameterType;
+use crate::wallets::helper::Helper;
+use crate::wallets::key_pair::KeyPair;
+use crate::wallets::version::Version;
+use crate::wallets::wallet::{Wallet, WalletError, WalletResult};
+use crate::wallets::wallet_account::{StandardWalletAccount, WalletAccount};
+use crate::{UInt160, UInt256};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
+use std::fs;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::fs;
-use tokio::sync::RwLock;
+use tokio::sync::RwLock as AsyncRwLock;
 
-/// NEP-6 wallet implementation.
-/// This matches the C# NEP6Wallet class.
-#[derive(Debug)]
+/// NEP-6 wallet representation matching C# `NEP6Wallet`.
+#[derive(Debug, Clone)]
 pub struct Nep6Wallet {
-    name: String,
+    name: Option<String>,
     path: Option<String>,
     version: Version,
     scrypt: ScryptParameters,
-    accounts: RwLock<HashMap<UInt160, Arc<Nep6Account>>>,
-    extra: Option<serde_json::Value>,
-    password_hash: Option<Vec<u8>>,
-    is_locked: bool,
+    accounts: Arc<AsyncRwLock<HashMap<UInt160, Arc<Nep6Account>>>>,
+    extra: Option<Value>,
+    protocol_settings: Arc<ProtocolSettings>,
 }
 
-/// NEP-6 wallet file format.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Nep6WalletFile {
-    name: String,
+    name: Option<String>,
     version: String,
     scrypt: ScryptParameters,
     accounts: Vec<Nep6AccountFile>,
-    extra: Option<serde_json::Value>,
+    extra: Option<Value>,
 }
 
-/// NEP-6 account file format.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Nep6AccountFile {
     address: String,
@@ -55,391 +50,148 @@ struct Nep6AccountFile {
     #[serde(rename = "isDefault")]
     is_default: bool,
     lock: bool,
-    key: Option<String>, // NEP-2 encrypted key
+    key: Option<String>,
     contract: Option<Nep6ContractFile>,
-    extra: Option<serde_json::Value>,
+    extra: Option<Value>,
 }
 
-/// NEP-6 contract file format.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Nep6ContractFile {
-    script: String,          // Hex-encoded script
-    parameters: Vec<String>, // Parameter types
+    script: String,
+    parameters: Vec<String>,
     deployed: bool,
 }
 
-/// NEP-6 account implementation.
+/// NEP-6 account implementation (C# `NEP6Account`).
 #[derive(Debug, Clone)]
 pub struct Nep6Account {
     inner: StandardWalletAccount,
     is_default: bool,
     lock: bool,
-    nep2_key: Option<String>,
-    extra: Option<serde_json::Value>,
+    extra: Option<Value>,
+    _wallet: Arc<Nep6Wallet>,
 }
 
-/// NEP-6 contract representation.
+/// NEP-6 contract wrapper (C# `NEP6Contract`).
 #[derive(Debug, Clone)]
 pub struct Nep6Contract {
-    contract: Contract,
-    deployed: bool,
+    pub contract: Contract,
+    pub deployed: bool,
+}
+
+/// Scrypt parameters used for NEP-2 encryption (C# `ScryptParameters`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScryptParameters {
+    pub n: u32,
+    pub r: u32,
+    pub p: u32,
+}
+
+impl ScryptParameters {
+    pub fn default_nep6() -> Self {
+        Self {
+            n: 16384,
+            r: 8,
+            p: 8,
+        }
+    }
+}
+
+impl Default for ScryptParameters {
+    fn default() -> Self {
+        Self::default_nep6()
+    }
 }
 
 impl Nep6Wallet {
-    /// Creates a new NEP-6 wallet without password (for testing).
-    pub fn new(name: String, path: Option<String>) -> Self {
+    pub fn new(
+        name: Option<String>,
+        path: Option<String>,
+        settings: Arc<ProtocolSettings>,
+    ) -> Self {
         Self {
             name,
             path,
             version: Version::new(1, 0, 0),
             scrypt: ScryptParameters::default_nep6(),
-            accounts: RwLock::new(HashMap::new()),
+            accounts: Arc::new(AsyncRwLock::new(HashMap::new())),
             extra: None,
-            password_hash: None,
-            is_locked: false,
+            protocol_settings: settings,
         }
     }
 
-    /// Creates a new NEP-6 wallet with password.
-    pub fn new_with_password(
-        name: String,
-        path: Option<String>,
+    pub fn from_file(
+        path: &str,
         password: &str,
+        settings: Arc<ProtocolSettings>,
     ) -> WalletResult<Self> {
-        WalletFactory::validate_name(&name).map_err(|e| WalletError::Other(e.to_string()))?;
-
-        if let Some(ref path_str) = path {
-            WalletFactory::validate_path(path_str)
-                .map_err(|e| WalletError::Other(e.to_string()))?;
-        }
-
-        WalletFactory::validate_password(password)
-            .map_err(|e| WalletError::Other(e.to_string()))?;
-
-        let password_hash = Self::hash_password(password);
-
-        Ok(Self {
-            name,
-            path,
-            version: Version::new(1, 0, 0),
-            scrypt: ScryptParameters::default_nep6(),
-            accounts: RwLock::new(HashMap::new()),
-            extra: None,
-            password_hash: Some(password_hash),
-            is_locked: false,
-        })
-    }
-
-    /// Loads a NEP-6 wallet from file.
-    pub async fn load(path: &str, password: &str) -> WalletResult<Self> {
-        WalletFactory::validate_wallet_file(path).map_err(|e| WalletError::Other(e.to_string()))?;
-
-        let content = fs::read_to_string(path)
-            .await
-            .map_err(|e| WalletError::Io(e))?;
-
+        let content = fs::read_to_string(path)?;
         let wallet_file: Nep6WalletFile = serde_json::from_str(&content)
-            .map_err(|e| WalletError::Other(format!("Invalid wallet format: {}", e)))?;
+            .map_err(|e| WalletError::Other(format!("Invalid wallet format: {e}")))?;
+        let version = Version::parse(&wallet_file.version).map_err(|e| WalletError::Other(e))?;
 
-        let version =
-            Version::parse(&wallet_file.version).map_err(|e| WalletError::Other(e.to_string()))?;
-
-        let password_hash = Self::hash_password(password);
-
-        let mut accounts = HashMap::new();
-        for account_file in wallet_file.accounts {
-            let account =
-                Nep6Account::from_file(account_file, &wallet_file.scrypt, password).await?;
-            accounts.insert(account.script_hash(), Arc::new(account));
-        }
-
-        Ok(Self {
-            name: wallet_file.name,
+        let wallet = Self {
+            name: wallet_file.name.clone(),
             path: Some(path.to_string()),
             version,
-            scrypt: wallet_file.scrypt,
-            accounts: RwLock::new(accounts),
-            extra: wallet_file.extra,
-            password_hash: Some(password_hash),
-            is_locked: false,
+            scrypt: wallet_file.scrypt.clone(),
+            accounts: Arc::new(AsyncRwLock::new(HashMap::new())),
+            extra: wallet_file.extra.clone(),
+            protocol_settings: settings.clone(),
+        };
+
+        let mut account_map = HashMap::new();
+        for account_file in wallet_file.accounts {
+            let account = Nep6Account::from_file(account_file, &wallet, password)?;
+            account_map.insert(account.script_hash(), Arc::new(account));
+        }
+
+        *wallet.accounts.blocking_write() = account_map;
+        Ok(wallet)
+    }
+
+    fn to_file(&self) -> WalletResult<Nep6WalletFile> {
+        let accounts = self.accounts.blocking_read();
+        let account_files = accounts
+            .values()
+            .map(|account| account.to_file())
+            .collect::<WalletResult<Vec<_>>>()?;
+
+        Ok(Nep6WalletFile {
+            name: self.name.clone(),
+            version: self.version.to_string(),
+            scrypt: self.scrypt.clone(),
+            accounts: account_files,
+            extra: self.extra.clone(),
         })
     }
 
-    /// Saves the wallet to file.
-    pub async fn save_to_file(&self) -> WalletResult<()> {
+    pub fn persist(&self) -> WalletResult<()> {
         let path = self
             .path
             .as_ref()
-            .ok_or_else(|| WalletError::Other("No path specified".to_string()))?;
-
-        let accounts = self.accounts.read().await;
-        let account_files: Vec<Nep6AccountFile> = accounts
-            .values()
-            .map(|account| account.to_file())
-            .collect::<crate::Result<Vec<_>>>()
+            .ok_or_else(|| WalletError::Other("wallet has no path".to_string()))?;
+        let wallet_file = self.to_file()?;
+        let json = serde_json::to_string_pretty(&wallet_file)
             .map_err(|e| WalletError::Other(e.to_string()))?;
-
-        let wallet_file = Nep6WalletFile {
-            name: self.name.clone(),
-            version: self.version.to_string(),
-            scrypt: self.scrypt.clone(),
-            accounts: account_files,
-            extra: self.extra.clone(),
-        };
-
-        let content = serde_json::to_string_pretty(&wallet_file)
-            .map_err(|e| WalletError::Other(format!("Serialization failed: {}", e)))?;
-
-        fs::write(path, content)
-            .await
-            .map_err(|e| WalletError::Io(e))?;
-
+        fs::write(path, json)?;
         Ok(())
     }
 
-    /// Hashes a password for verification.
-    fn hash_password(password: &str) -> Vec<u8> {
-        use crate::cryptography::crypto_utils::NeoHash;
-        NeoHash::sha256(password.as_bytes()).to_vec()
+    fn protocol_settings(&self) -> &Arc<ProtocolSettings> {
+        &self.protocol_settings
     }
 
-    /// Gets the default account.
-    pub fn get_default_account_internal(&self) -> Option<Arc<Nep6Account>> {
-        let accounts = self.accounts.try_read().ok()?;
-        accounts
-            .values()
-            .find(|account| account.is_default)
-            .cloned()
+    fn add_account(&self, account: Nep6Account) {
+        let mut accounts = self.accounts.blocking_write();
+        accounts.insert(account.script_hash(), Arc::new(account));
     }
-
-    /// Checks if the wallet is locked.
-    pub fn is_locked(&self) -> bool {
-        self.is_locked
-    }
-
-    /// Sets the default account.
-    pub async fn set_default_account_internal(&self, script_hash: &UInt160) -> WalletResult<()> {
-        let mut accounts = self.accounts.write().await;
-
-        // This implements the C# logic: setting default account with proper state management
-
-        // 1. Create updated accounts with new default flags (production state update)
-        let mut updated_accounts = HashMap::new();
-
-        for (hash, account) in accounts.iter() {
-            // 2. Clone account and update default flag (production account management)
-            let mut new_account = (**account).clone();
-            new_account.is_default = hash == script_hash;
-            updated_accounts.insert(*hash, Arc::new(new_account));
-        }
-
-        // 3. Log the default account change for audit trail (production logging)
-        log::info!("Default account changed to: {}", script_hash);
-
-        if updated_accounts.contains_key(script_hash) {
-            *accounts = updated_accounts;
-            Ok(())
-        } else {
-            Err(WalletError::AccountNotFound(*script_hash))
-        }
-    }
-
-    /// Converts the wallet to JSON format.
-    /// This matches the C# NEP6Wallet.ToJson() method.
-    pub fn to_json(&self) -> WalletResult<String> {
-        let accounts = self
-            .accounts
-            .try_read()
-            .map_err(|_| WalletError::Other("Failed to read accounts".to_string()))?;
-
-        let account_files: Vec<Nep6AccountFile> = accounts
-            .values()
-            .map(|account| account.to_file())
-            .collect::<crate::Result<Vec<_>>>()
-            .map_err(|e| WalletError::Other(e.to_string()))?;
-
-        let wallet_file = Nep6WalletFile {
-            name: self.name.clone(),
-            version: self.version.to_string(),
-            scrypt: self.scrypt.clone(),
-            accounts: account_files,
-            extra: self.extra.clone(),
-        };
-
-        serde_json::to_string(&wallet_file)
-            .map_err(|e| WalletError::Other(format!("JSON serialization failed: {}", e)))
-    }
-
-    /// Queries account balance from blockchain (production-ready implementation)
-    async fn query_account_balance(
-        &self,
-        script_hash: &UInt160,
-        asset_id: &UInt256,
-    ) -> WalletResult<i64> {
-        // 1. Create blockchain query request (production RPC request)
-        let balance_request = self.create_balance_query_request(script_hash, asset_id)?;
-
-        // 2. Execute blockchain query (production blockchain integration)
-        match self.execute_blockchain_query(&balance_request).await {
-            Ok(balance) => Ok(balance),
-            Err(e) => {
-                // 3. Handle query error with fallback (production error handling)
-                log::info!("Balance query failed for {}: {}", script_hash, e);
-                Ok(0) // Return 0 as safe fallback
-            }
-        }
-    }
-
-    /// Queries unclaimed GAS for account (production-ready implementation)
-    async fn query_unclaimed_gas_for_account(&self, script_hash: &UInt160) -> WalletResult<i64> {
-        // 1. Create unclaimed GAS query request (production RPC request)
-        let gas_request = self.create_unclaimed_gas_query_request(script_hash)?;
-
-        // 2. Execute blockchain query (production blockchain integration)
-        match self.execute_blockchain_query(&gas_request).await {
-            Ok(unclaimed_gas) => Ok(unclaimed_gas),
-            Err(e) => {
-                // 3. Handle query error with fallback (production error handling)
-                log::info!("Unclaimed GAS query failed for {}: {}", script_hash, e);
-                Ok(0) // Return 0 as safe fallback
-            }
-        }
-    }
-
-    /// Creates balance query request (production-ready implementation)
-    fn create_balance_query_request(
-        &self,
-        script_hash: &UInt160,
-        asset_id: &UInt256,
-    ) -> WalletResult<BlockchainQuery> {
-        Ok(BlockchainQuery::Balance {
-            address: script_hash.clone(),
-            asset_id: asset_id.clone(),
-        })
-    }
-
-    /// Creates unclaimed GAS query request (production-ready implementation)
-    fn create_unclaimed_gas_query_request(
-        &self,
-        script_hash: &UInt160,
-    ) -> WalletResult<BlockchainQuery> {
-        Ok(BlockchainQuery::UnclaimedGas {
-            address: script_hash.clone(),
-        })
-    }
-
-    /// Executes blockchain query (production-ready implementation)
-    async fn execute_blockchain_query(&self, query: &BlockchainQuery) -> WalletResult<i64> {
-        // 1. Log query execution for monitoring (production logging)
-        log::info!("Executing blockchain query: {:?}", query);
-
-        // 1. Create HTTP client for RPC connection (production HTTP client)
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|e| WalletError::Other(format!("Failed to create RPC client: {}", e)))?;
-
-        // 2. Execute RPC query based on type (production RPC implementation)
-        match query {
-            BlockchainQuery::Balance { address, asset_id } => {
-                // 3. Production-ready balance query (matches C# RPC client exactly)
-
-                let rpc_request = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "method": "getnep17balances",
-                    "params": [address.to_string()],
-                    "id": 1
-                });
-
-                // Execute HTTP request to Neo RPC node
-                let response = client
-                    .post("http://localhost:40332") // Default Neo RPC port
-                    .json(&rpc_request)
-                    .send()
-                    .await
-                    .map_err(|e| WalletError::Other(format!("RPC request failed: {}", e)))?;
-
-                let rpc_result: serde_json::Value = response.json().await.map_err(|e| {
-                    WalletError::Other(format!("Failed to parse RPC response: {}", e))
-                })?;
-
-                if let Some(result) = rpc_result.get("result") {
-                    if let Some(balances) = result.get("balance") {
-                        if let Some(balance_array) = balances.as_array() {
-                            for balance_entry in balance_array {
-                                if let Some(asset_hash) = balance_entry.get("assethash") {
-                                    if asset_hash.as_str() == Some(&asset_id.to_string()) {
-                                        if let Some(amount) = balance_entry.get("amount") {
-                                            if let Some(amount_str) = amount.as_str() {
-                                                return amount_str.parse::<i64>().map_err(|e| {
-                                                    WalletError::Other(format!(
-                                                        "Invalid balance amount: {}",
-                                                        e
-                                                    ))
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Ok(0) // Asset not found or zero balance
-            }
-            BlockchainQuery::UnclaimedGas { address } => {
-                // 4. Production-ready unclaimed GAS query (matches C# RPC client exactly)
-
-                let rpc_request = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "method": "getunclaimedgas",
-                    "params": [address.to_string()],
-                    "id": 1
-                });
-
-                // Execute HTTP request to Neo RPC node
-                let response = client
-                    .post("http://localhost:40332") // Default Neo RPC port
-                    .json(&rpc_request)
-                    .send()
-                    .await
-                    .map_err(|e| WalletError::Other(format!("RPC request failed: {}", e)))?;
-
-                // Parse response and extract unclaimed GAS amount
-                let rpc_result: serde_json::Value = response.json().await.map_err(|e| {
-                    WalletError::Other(format!("Failed to parse RPC response: {}", e))
-                })?;
-
-                if let Some(result) = rpc_result.get("result") {
-                    if let Some(unclaimed) = result.get("unclaimed") {
-                        if let Some(unclaimed_str) = unclaimed.as_str() {
-                            return unclaimed_str.parse::<i64>().map_err(|e| {
-                                WalletError::Other(format!("Invalid unclaimed GAS amount: {}", e))
-                            });
-                        }
-                    }
-                }
-
-                Ok(0) // No unclaimed GAS found
-            }
-        }
-    }
-}
-
-/// Blockchain query types (matches C# RPC request types exactly)
-#[derive(Debug, Clone)]
-enum BlockchainQuery {
-    /// Balance query for specific asset
-    Balance { address: UInt160, asset_id: UInt256 },
-    /// Unclaimed GAS query
-    UnclaimedGas { address: UInt160 },
 }
 
 #[async_trait]
 impl Wallet for Nep6Wallet {
     fn name(&self) -> &str {
-        &self.name
+        self.name.as_deref().unwrap_or("")
     }
 
     fn path(&self) -> Option<&str> {
@@ -455,109 +207,98 @@ impl Wallet for Nep6Wallet {
         old_password: &str,
         new_password: &str,
     ) -> WalletResult<bool> {
-        if !self.verify_password(old_password).await? {
-            return Ok(false);
+        if old_password == new_password {
+            return Ok(true);
         }
 
-        WalletFactory::validate_password(new_password)
-            .map_err(|e| WalletError::Other(e.to_string()))?;
+        let mut updated_accounts = Vec::new();
 
-        // Re-encrypt all accounts with new password
-        let mut accounts = self.accounts.write().await;
-        for account in accounts.values_mut() {
-            if let Some(ref nep2_key) = account.nep2_key {
-                // Decrypt with old password and re-encrypt with new password
-                let key_pair = KeyPair::from_nep2(nep2_key.as_bytes(), old_password)
-                    .map_err(|e| WalletError::Other(e.to_string()))?;
+        {
+            let accounts = self.accounts.blocking_read();
+            for (hash, account_arc) in accounts.iter() {
+                let mut account = (**account_arc).clone();
+                if account.inner.nep2_key().is_some() {
+                    let was_locked = account.inner.is_locked();
+                    let unlocked = account
+                        .unlock(old_password)
+                        .map_err(|e| WalletError::Other(e.to_string()))?;
+                    if !unlocked {
+                        return Err(WalletError::InvalidPassword);
+                    }
 
-                let new_nep2 = key_pair
-                    .to_nep2(new_password)
-                    .map_err(|e| WalletError::Other(e.to_string()))?;
+                    let new_nep2 = account.inner.export_nep2(new_password)?;
+                    account.inner.set_nep2_key(Some(new_nep2));
 
-                Arc::get_mut(account).expect("Operation failed").nep2_key = Some(new_nep2);
+                    if was_locked || account.lock {
+                        account.inner.lock();
+                    }
+                }
+
+                updated_accounts.push((*hash, Arc::new(account)));
             }
         }
 
-        self.password_hash = Some(Self::hash_password(new_password));
+        {
+            let mut accounts = self.accounts.blocking_write();
+            accounts.clear();
+            for (hash, account) in updated_accounts {
+                accounts.insert(hash, account);
+            }
+        }
+
+        self.persist()?;
         Ok(true)
     }
 
     fn contains(&self, script_hash: &UInt160) -> bool {
-        let accounts = self.accounts.try_read().expect("Failed to read accounts");
+        let accounts = self.accounts.blocking_read();
         accounts.contains_key(script_hash)
     }
 
-    async fn create_account(&mut self, private_key: &[u8]) -> WalletResult<Arc<dyn WalletAccount>> {
+    async fn create_account(
+        &mut self,
+        private_key: &[u8],
+    ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         let key_pair = KeyPair::from_private_key(private_key)
             .map_err(|e| WalletError::Other(e.to_string()))?;
-
-        let contract = match key_pair.get_public_key_point() {
-            Ok(ec_point) => Contract::create_signature_contract(&ec_point)
+        let contract = Contract::create_signature_contract(
+            key_pair
+                .get_public_key_point()
                 .map_err(|e| WalletError::Other(e.to_string()))?,
-            Err(_) => {
-                let verification_script = key_pair.get_verification_script();
-                let parameter_list = vec![crate::ContractParameterType::Signature];
-                Contract::new(verification_script, parameter_list)
-            }
-        };
-
-        self.create_account_with_contract(contract, Some(key_pair))
-            .await
+        );
+        let account = Nep6Account::with_key(self.clone(), key_pair, contract, None);
+        let account_arc: Arc<dyn crate::wallets::wallet_account::WalletAccount> =
+            Arc::new(account.clone());
+        self.add_account(account);
+        Ok(account_arc)
     }
 
     async fn create_account_with_contract(
         &mut self,
         contract: Contract,
         key_pair: Option<KeyPair>,
-    ) -> WalletResult<Arc<dyn WalletAccount>> {
-        let script_hash = if let Some(ref kp) = key_pair {
-            kp.get_script_hash()
+    ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
+        let account = if let Some(key_pair) = key_pair {
+            Nep6Account::with_key(self.clone(), key_pair, contract, None)
         } else {
-            contract.script_hash()
+            Nep6Account::watch_only(self.clone(), contract.script_hash(), Some(contract))
         };
 
-        let standard_account = if let Some(key_pair) = key_pair {
-            StandardWalletAccount::new_with_key(key_pair, Some(contract))
-        } else {
-            StandardWalletAccount::new_watch_only(script_hash, Some(contract))
-        };
-
-        let nep6_account = Nep6Account {
-            inner: standard_account,
-            is_default: false,
-            lock: false,
-            nep2_key: None,
-            extra: None,
-        };
-
-        let account_arc = Arc::new(nep6_account);
-
-        let mut accounts = self.accounts.write().await;
-        accounts.insert(script_hash, account_arc.clone());
-
-        Ok(account_arc as Arc<dyn WalletAccount>)
+        let account_arc: Arc<dyn crate::wallets::wallet_account::WalletAccount> =
+            Arc::new(account.clone());
+        self.add_account(account);
+        Ok(account_arc)
     }
 
     async fn create_account_watch_only(
         &mut self,
         script_hash: UInt160,
-    ) -> WalletResult<Arc<dyn WalletAccount>> {
-        let standard_account = StandardWalletAccount::new_watch_only(script_hash, None);
-
-        let nep6_account = Nep6Account {
-            inner: standard_account,
-            is_default: false,
-            lock: false,
-            nep2_key: None,
-            extra: None,
-        };
-
-        let account_arc = Arc::new(nep6_account);
-
-        let mut accounts = self.accounts.write().await;
-        accounts.insert(script_hash, account_arc.clone());
-
-        Ok(account_arc as Arc<dyn WalletAccount>)
+    ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
+        let account = Nep6Account::watch_only(self.clone(), script_hash, None);
+        let account_arc: Arc<dyn crate::wallets::wallet_account::WalletAccount> =
+            Arc::new(account.clone());
+        self.add_account(account);
+        Ok(account_arc)
     }
 
     async fn delete_account(&mut self, script_hash: &UInt160) -> WalletResult<bool> {
@@ -565,277 +306,344 @@ impl Wallet for Nep6Wallet {
         Ok(accounts.remove(script_hash).is_some())
     }
 
-    async fn export(&self, path: &str, password: &str) -> WalletResult<()> {
-        // Create a copy of the wallet and save to the specified path
-        let mut exported = self.clone();
-        exported.path = Some(path.to_string());
-        exported.save_to_file().await
+    async fn export(&self, path: &str, _password: &str) -> WalletResult<()> {
+        let wallet_file = self.to_file()?;
+        let json = serde_json::to_string_pretty(&wallet_file)
+            .map_err(|e| WalletError::Other(e.to_string()))?;
+        fs::write(path, json)?;
+        Ok(())
     }
 
-    fn get_account(&self, script_hash: &UInt160) -> Option<Arc<dyn WalletAccount>> {
-        let accounts = self.accounts.try_read().ok()?;
-        accounts
+    fn get_account(
+        &self,
+        script_hash: &UInt160,
+    ) -> Option<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
+        self.accounts
+            .blocking_read()
             .get(script_hash)
-            .map(|account| account.clone() as Arc<dyn WalletAccount>)
+            .cloned()
+            .map(|account| account as Arc<dyn crate::wallets::wallet_account::WalletAccount>)
     }
 
-    fn get_accounts(&self) -> Vec<Arc<dyn WalletAccount>> {
-        let accounts = self.accounts.try_read().expect("Failed to read accounts");
-        accounts
+    fn get_accounts(&self) -> Vec<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
+        self.accounts
+            .blocking_read()
             .values()
-            .map(|account| account.clone() as Arc<dyn WalletAccount>)
+            .cloned()
+            .map(|account| account as Arc<dyn crate::wallets::wallet_account::WalletAccount>)
             .collect()
     }
 
-    async fn get_available_balance(&self, asset_id: &UInt256) -> WalletResult<i64> {
-        // 1. Get all wallet accounts (production account iteration)
-        let accounts = self.accounts.read().await;
-        let mut total_balance = 0i64;
-
-        // 2. Query balance for each account (production balance aggregation)
-        for account in accounts.values() {
-            // 3. Query blockchain for account balance (production blockchain integration)
-            match self
-                .query_account_balance(&account.script_hash(), asset_id)
-                .await
-            {
-                Ok(balance) => total_balance = total_balance.saturating_add(balance),
-                Err(_) => {
-                    // 4. Log balance query error for monitoring (production error handling)
-                    log::info!(
-                        "Warning: Failed to get balance for account {}",
-                        account.script_hash()
-                    );
-                }
-            }
-        }
-
-        Ok(total_balance)
+    async fn get_available_balance(&self, _asset_id: &UInt256) -> WalletResult<i64> {
+        Ok(0)
     }
 
     async fn get_unclaimed_gas(&self) -> WalletResult<i64> {
-        // 1. Get all wallet accounts with NEO tokens (production account filtering)
-        let accounts = self.accounts.read().await;
-        let mut total_unclaimed_gas = 0i64;
-
-        // 2. Query unclaimed GAS for each account (production GAS calculation)
-        for account in accounts.values() {
-            // 3. Query blockchain for unclaimed GAS (production blockchain integration)
-            match self
-                .query_unclaimed_gas_for_account(&account.script_hash())
-                .await
-            {
-                Ok(unclaimed_gas) => {
-                    total_unclaimed_gas = total_unclaimed_gas.saturating_add(unclaimed_gas)
-                }
-                Err(_) => {
-                    // 4. Log unclaimed GAS query error for monitoring (production error handling)
-                    log::info!(
-                        "Warning: Failed to get unclaimed GAS for account {}",
-                        account.script_hash()
-                    );
-                }
-            }
-        }
-
-        Ok(total_unclaimed_gas)
+        Ok(0)
     }
 
-    async fn import_wif(&mut self, wif: &str) -> WalletResult<Arc<dyn WalletAccount>> {
+    async fn import_wif(
+        &mut self,
+        wif: &str,
+    ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         let key_pair = KeyPair::from_wif(wif).map_err(|e| WalletError::Other(e.to_string()))?;
-
-        self.create_account(&key_pair.private_key()).await
+        let contract = Contract::create_signature_contract(
+            key_pair
+                .get_public_key_point()
+                .map_err(|e| WalletError::Other(e.to_string()))?,
+        );
+        let account = Nep6Account::with_key(self.clone(), key_pair, contract, None);
+        let account_arc: Arc<dyn crate::wallets::wallet_account::WalletAccount> =
+            Arc::new(account.clone());
+        self.add_account(account);
+        Ok(account_arc)
     }
 
     async fn import_nep2(
         &mut self,
         nep2_key: &str,
         password: &str,
-    ) -> WalletResult<Arc<dyn WalletAccount>> {
+    ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
         let key_pair = KeyPair::from_nep2_string(nep2_key, password)
             .map_err(|e| WalletError::Other(e.to_string()))?;
-
-        self.create_account(&key_pair.private_key()).await
+        let contract = Contract::create_signature_contract(
+            key_pair
+                .get_public_key_point()
+                .map_err(|e| WalletError::Other(e.to_string()))?,
+        );
+        let account =
+            Nep6Account::with_key(self.clone(), key_pair, contract, Some(nep2_key.to_string()));
+        let account_arc: Arc<dyn crate::wallets::wallet_account::WalletAccount> =
+            Arc::new(account.clone());
+        self.add_account(account);
+        Ok(account_arc)
     }
 
     async fn sign(&self, data: &[u8], script_hash: &UInt160) -> WalletResult<Vec<u8>> {
-        let accounts = self.accounts.read().await;
+        let accounts = self.accounts.blocking_read();
         let account = accounts
             .get(script_hash)
-            .ok_or_else(|| WalletError::AccountNotFound(*script_hash))?;
+            .ok_or_else(|| WalletError::AccountNotFound(*script_hash))?
+            .clone();
 
-        account
-            .sign(data)
-            .await
-            .map_err(|e| WalletError::Other(e.to_string()))
+        if account.inner.is_locked() {
+            return Err(WalletError::AccountLocked);
+        }
+
+        let key = account.inner.get_key().ok_or(WalletError::AccountLocked)?;
+
+        key.sign(data)
+            .map_err(|e| WalletError::SigningFailed(e.to_string()))
     }
 
     async fn sign_transaction(&self, transaction: &mut Transaction) -> WalletResult<()> {
-        // 1. Get transaction hash for signing (production hash calculation)
-        let tx_hash = transaction.hash().map_err(|e| {
-            WalletError::Other(format!("Failed to calculate transaction hash: {}", e))
-        })?;
+        let accounts = self.accounts.blocking_read();
+        let signer_hashes: Vec<UInt160> = transaction
+            .signers()
+            .iter()
+            .map(|signer| signer.account)
+            .collect();
 
-        // 2. Collect all required signers from transaction (production signer analysis)
-        let mut required_signers = Vec::new();
-        for signer in &transaction.signers {
-            if self.contains(&signer.account) {
-                required_signers.push(signer.account);
-            }
-        }
+        for hash in signer_hashes {
+            if let Some(account) = accounts.get(&hash) {
+                if account.inner.is_locked() {
+                    return Err(WalletError::AccountLocked);
+                }
 
-        // 3. Sign transaction for each required signer (production multi-signature support)
-        let accounts = self.accounts.read().await;
-        for signer_hash in required_signers {
-            if let Some(account) = accounts.get(&signer_hash) {
-                // 4. Generate witness for this signer (production witness creation)
-                let witness = account.sign_transaction(transaction).await.map_err(|e| {
-                    WalletError::Other(format!("Failed to sign transaction: {}", e))
-                })?;
-
-                // 5. Add witness to transaction (production witness attachment)
+                let witness = account.inner.create_witness(transaction)?;
                 transaction.add_witness(witness);
             }
-        }
-
-        // 6. Validate transaction integrity after signing (production validation)
-        if transaction.witnesses().is_empty() {
-            return Err(WalletError::Other(
-                "No witnesses generated for transaction".to_string(),
-            ));
         }
 
         Ok(())
     }
 
     async fn unlock(&mut self, password: &str) -> WalletResult<bool> {
-        if self.verify_password(password).await? {
-            self.is_locked = false;
-            Ok(true)
-        } else {
-            Ok(false)
+        let mut updated_accounts = Vec::new();
+
+        {
+            let accounts = self.accounts.blocking_read();
+            for (hash, account_arc) in accounts.iter() {
+                let mut account = (**account_arc).clone();
+                if account.inner.nep2_key().is_some() && account.inner.is_locked() {
+                    let unlocked = account
+                        .unlock(password)
+                        .map_err(|e| WalletError::Other(e.to_string()))?;
+                    if !unlocked {
+                        return Err(WalletError::InvalidPassword);
+                    }
+                }
+                updated_accounts.push((*hash, Arc::new(account)));
+            }
         }
+
+        {
+            let mut accounts = self.accounts.blocking_write();
+            accounts.clear();
+            for (hash, account) in updated_accounts {
+                accounts.insert(hash, account);
+            }
+        }
+
+        Ok(true)
     }
 
     fn lock(&mut self) {
-        self.is_locked = true;
+        let mut updated_accounts = Vec::new();
+
+        {
+            let accounts = self.accounts.blocking_read();
+            for (hash, account_arc) in accounts.iter() {
+                let mut account = (**account_arc).clone();
+                account.inner.lock();
+                updated_accounts.push((*hash, Arc::new(account)));
+            }
+        }
+
+        let mut accounts = self.accounts.blocking_write();
+        accounts.clear();
+        for (hash, account) in updated_accounts {
+            accounts.insert(hash, account);
+        }
     }
 
     async fn verify_password(&self, password: &str) -> WalletResult<bool> {
-        if let Some(ref stored_hash) = self.password_hash {
-            let input_hash = Self::hash_password(password);
-            Ok(stored_hash == &input_hash)
-        } else {
-            Ok(true) // No password set
+        let accounts = self.accounts.blocking_read();
+        for account in accounts.values() {
+            if account.inner.nep2_key().is_some() {
+                if !account.inner.verify_password(password)? {
+                    return Ok(false);
+                }
+            }
         }
+        Ok(true)
     }
 
     async fn save(&self) -> WalletResult<()> {
-        self.save_to_file().await
+        self.persist()
     }
 
-    fn get_default_account(&self) -> Option<Arc<dyn WalletAccount>> {
-        self.get_default_account_internal()
-            .map(|account| account as Arc<dyn WalletAccount>)
+    fn get_default_account(
+        &self,
+    ) -> Option<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
+        self.accounts
+            .blocking_read()
+            .values()
+            .find(|account| account.is_default)
+            .cloned()
+            .map(|account| account as Arc<dyn crate::wallets::wallet_account::WalletAccount>)
     }
 
     async fn set_default_account(&mut self, script_hash: &UInt160) -> WalletResult<()> {
-        self.set_default_account_internal(script_hash).await
-    }
-}
+        let mut updated_accounts = Vec::new();
+        let mut found = false;
 
-impl Clone for Nep6Wallet {
-    fn clone(&self) -> Self {
-        // This implements the C# logic: creating a deep copy of wallet state with proper synchronization
-
-        // 1. Use non-blocking read for Clone trait (production synchronization)
-        let accounts = self
-            .accounts
-            .try_read()
-            .expect("Failed to read accounts for cloning");
-        let cloned_accounts = accounts.clone();
-
-        Self {
-            name: self.name.clone(),
-            path: self.path.clone(),
-            version: self.version.clone(),
-            scrypt: self.scrypt.clone(),
-            accounts: RwLock::new(cloned_accounts),
-            extra: self.extra.clone(),
-            password_hash: self.password_hash.clone(),
-            is_locked: self.is_locked,
+        {
+            let accounts = self.accounts.blocking_read();
+            for (hash, account_arc) in accounts.iter() {
+                let mut account = (**account_arc).clone();
+                let is_target = hash == script_hash;
+                account.is_default = is_target;
+                if is_target {
+                    found = true;
+                }
+                updated_accounts.push((*hash, Arc::new(account)));
+            }
         }
+
+        if !found {
+            return Err(WalletError::AccountNotFound(*script_hash));
+        }
+
+        {
+            let mut accounts = self.accounts.blocking_write();
+            accounts.clear();
+            for (hash, account) in updated_accounts {
+                accounts.insert(hash, account);
+            }
+        }
+
+        self.persist()?;
+        Ok(())
     }
 }
 
 impl Nep6Account {
-    /// Creates a Nep6Account from file format.
-    pub async fn from_file(
-        account_file: Nep6AccountFile,
-        scrypt: &ScryptParameters,
-        password: &str,
-    ) -> WalletResult<Self> {
-        // Parse the address to get script hash
-        let script_hash = UInt160::from_address(&account_file.address)
-            .map_err(|e| WalletError::Other(e.to_string()))?;
-
-        // Create the inner account
-        let inner = if let Some(ref nep2_key) = account_file.key {
-            // Encrypted account
-            StandardWalletAccount::new_from_encrypted(
-                script_hash,
-                nep2_key.as_bytes().to_vec(),
-                None, // Contract will be set later if available
-            )
-        } else {
-            // Watch-only account
-            StandardWalletAccount::new_watch_only(script_hash, None)
-        };
-
-        Ok(Self {
-            inner,
-            is_default: account_file.is_default,
-            lock: account_file.lock,
-            nep2_key: account_file.key,
-            extra: account_file.extra,
-        })
+    fn script_hash(&self) -> UInt160 {
+        self.inner.script_hash()
     }
 
-    /// Converts this account to file format.
-    pub fn to_file(&self) -> crate::Result<Nep6AccountFile> {
+    fn from_file(file: Nep6AccountFile, wallet: &Nep6Wallet, password: &str) -> WalletResult<Self> {
+        let script_hash =
+            Helper::to_script_hash(&file.address, wallet.protocol_settings.address_version)
+                .map_err(WalletError::Other)?;
+
+        let contract_data = match &file.contract {
+            Some(contract_file) => Some(Nep6Contract::from_file(contract_file)?.contract),
+            None => None,
+        };
+
+        let inner = if let Some(ref nep2_key) = file.key {
+            StandardWalletAccount::new_from_encrypted(
+                script_hash,
+                nep2_key.clone(),
+                contract_data.clone(),
+                Arc::clone(&wallet.protocol_settings),
+            )
+        } else {
+            StandardWalletAccount::new_watch_only(
+                script_hash,
+                contract_data,
+                Arc::clone(&wallet.protocol_settings),
+            )
+        };
+
+        let mut account = Self {
+            inner,
+            is_default: file.is_default,
+            lock: file.lock,
+            extra: file.extra,
+            _wallet: Arc::new(wallet.clone()),
+        };
+
+        if account.inner.nep2_key().is_some() {
+            let unlocked = account
+                .inner
+                .unlock(password)
+                .map_err(|e| WalletError::Other(e.to_string()))?;
+            if !unlocked {
+                return Err(WalletError::InvalidPassword);
+            }
+            if account.lock {
+                account.inner.lock();
+            }
+        }
+
+        Ok(account)
+    }
+
+    fn to_file(&self) -> WalletResult<Nep6AccountFile> {
+        let address = self.inner.address();
+        let contract = self.inner.contract().map(Nep6Contract::to_file);
+
         Ok(Nep6AccountFile {
-            address: self.inner.address(),
+            address,
             label: self.inner.label().map(|s| s.to_string()),
             is_default: self.is_default,
             lock: self.lock,
-            key: self.nep2_key.clone(),
-            contract: self.inner.get_contract().map(|c| Nep6ContractFile {
-                script: hex::encode(&c.script),
-                parameters: c
-                    .parameter_list
-                    .iter()
-                    .map(|p| format!("{:?}", p))
-                    .collect(),
-                deployed: self.check_contract_deployment_status(&c.script_hash()), // Production-ready deployment check
-            }),
+            key: self.inner.nep2_key().map(|s| s.to_string()),
+            contract,
             extra: self.extra.clone(),
         })
     }
 
-    /// Checks contract deployment status (production-ready implementation).
-    fn check_contract_deployment_status(&self, script_hash: &UInt160) -> bool {
-        // Real C# Neo N3 implementation: Contract deployment check
+    fn with_key(
+        wallet: Nep6Wallet,
+        key_pair: KeyPair,
+        contract: Contract,
+        nep2_key: Option<String>,
+    ) -> Self {
+        let inner = StandardWalletAccount::new_with_key(
+            key_pair,
+            Some(contract.clone()),
+            Arc::clone(wallet.protocol_settings()),
+            nep2_key,
+        );
 
-        // The C# implementation queries the ContractManagement native contract
-        // - Check if the contract exists in the blockchain state
-        // - Return true if deployed, false otherwise
+        Self {
+            inner,
+            is_default: false,
+            lock: false,
+            extra: None,
+            _wallet: Arc::new(wallet),
+        }
+    }
 
-        let _ = script_hash; // Avoid unused parameter warning
-        false // Default to not deployed
+    fn watch_only(wallet: Nep6Wallet, script_hash: UInt160, contract: Option<Contract>) -> Self {
+        let inner = StandardWalletAccount::new_watch_only(
+            script_hash,
+            contract,
+            Arc::clone(wallet.protocol_settings()),
+        );
+
+        Self {
+            inner,
+            is_default: false,
+            lock: false,
+            extra: None,
+            _wallet: Arc::new(wallet),
+        }
+    }
+
+    fn check_contract_deployment_status(&self, _script_hash: &UInt160) -> bool {
+        false
+    }
+
+    fn to_file_contract(&self) -> Option<Nep6ContractFile> {
+        self.inner.contract().map(Nep6Contract::from_contract)
     }
 }
 
-#[async_trait]
 impl WalletAccount for Nep6Account {
     fn script_hash(&self) -> UInt160 {
         self.inner.script_hash()
@@ -853,6 +661,19 @@ impl WalletAccount for Nep6Account {
         self.inner.set_label(label);
     }
 
+    fn is_default(&self) -> bool {
+        self.is_default
+    }
+
+    fn set_is_default(&mut self, is_default: bool) {
+        self.is_default = is_default;
+        self.inner.set_is_default(is_default);
+    }
+
+    fn is_locked(&self) -> bool {
+        self.inner.is_locked()
+    }
+
     fn has_key(&self) -> bool {
         self.inner.has_key()
     }
@@ -861,49 +682,96 @@ impl WalletAccount for Nep6Account {
         self.inner.get_key()
     }
 
-    fn get_contract(&self) -> Option<&Contract> {
-        self.inner.get_contract()
+    fn contract(&self) -> Option<&Contract> {
+        self.inner.contract()
     }
 
-    fn is_locked(&self) -> bool {
-        self.inner.is_locked() || self.lock
+    fn set_contract(&mut self, contract: Option<Contract>) {
+        self.inner.set_contract(contract);
+    }
+
+    fn protocol_settings(&self) -> &Arc<ProtocolSettings> {
+        self.inner.protocol_settings()
+    }
+
+    fn unlock(&mut self, password: &str) -> WalletResult<bool> {
+        self.inner.unlock(password)
     }
 
     fn lock(&mut self) {
         self.inner.lock();
-        self.lock = true;
     }
 
-    async fn unlock(&mut self, password: &str) -> crate::Result<bool> {
-        if self.inner.unlock(password).await? {
-            self.lock = false;
-            Ok(true)
-        } else {
-            Ok(false)
+    fn verify_password(&self, password: &str) -> WalletResult<bool> {
+        self.inner.verify_password(password)
+    }
+
+    fn export_wif(&self) -> WalletResult<String> {
+        self.inner.export_wif()
+    }
+
+    fn export_nep2(&self, password: &str) -> WalletResult<String> {
+        self.inner.export_nep2(password)
+    }
+
+    fn create_witness(&self, transaction: &Transaction) -> WalletResult<Witness> {
+        self.inner.create_witness(transaction)
+    }
+}
+
+impl Nep6Contract {
+    fn from_file(file: &Nep6ContractFile) -> WalletResult<Self> {
+        let script = hex::decode(&file.script).map_err(|e| WalletError::Other(e.to_string()))?;
+        let parameter_types = file
+            .parameters
+            .iter()
+            .map(|name| parse_parameter_type(name))
+            .collect::<WalletResult<Vec<_>>>()?;
+        let contract = Contract::create(parameter_types, script);
+        Ok(Self {
+            contract,
+            deployed: file.deployed,
+        })
+    }
+
+    fn to_file(contract: &Contract) -> Nep6ContractFile {
+        Nep6ContractFile {
+            script: hex::encode(&contract.script),
+            parameters: contract
+                .parameter_list
+                .iter()
+                .map(|param| param.as_str().to_string())
+                .collect(),
+            deployed: false,
         }
     }
 
-    async fn sign(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
-        self.inner.sign(data).await
+    fn from_contract(contract: &Contract) -> Nep6ContractFile {
+        Self::to_file(contract)
     }
+}
 
-    async fn sign_transaction(&self, transaction: &Transaction) -> crate::Result<Witness> {
-        self.inner.sign_transaction(transaction).await
-    }
+fn parse_parameter_type(name: &str) -> WalletResult<ContractParameterType> {
+    let kind = match name {
+        "Any" => ContractParameterType::Any,
+        "Boolean" => ContractParameterType::Boolean,
+        "Integer" => ContractParameterType::Integer,
+        "ByteArray" => ContractParameterType::ByteArray,
+        "String" => ContractParameterType::String,
+        "Hash160" => ContractParameterType::Hash160,
+        "Hash256" => ContractParameterType::Hash256,
+        "PublicKey" => ContractParameterType::PublicKey,
+        "Signature" => ContractParameterType::Signature,
+        "Array" => ContractParameterType::Array,
+        "Map" => ContractParameterType::Map,
+        "InteropInterface" => ContractParameterType::InteropInterface,
+        "Void" => ContractParameterType::Void,
+        other => {
+            return Err(WalletError::Other(format!(
+                "Unsupported contract parameter type: {other}"
+            )))
+        }
+    };
 
-    async fn verify_password(&self, password: &str) -> crate::Result<bool> {
-        self.inner.verify_password(password).await
-    }
-
-    async fn export_wif(&self) -> crate::Result<String> {
-        self.inner.export_wif().await
-    }
-
-    async fn export_nep2(&self, password: &str) -> crate::Result<String> {
-        self.inner.export_nep2(password).await
-    }
-
-    async fn verify(&self, data: &[u8], signature: &[u8]) -> crate::Result<bool> {
-        self.inner.verify(data, signature).await
-    }
+    Ok(kind)
 }

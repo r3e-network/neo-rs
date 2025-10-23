@@ -3,7 +3,7 @@
 // Rust port of Neo.Plugins.RestServer.Exceptions.TransactionNotFoundException.
 
 use crate::rest_server::exceptions::rest_error_codes::RestErrorCodes;
-use crate::rest_server::models::error::ErrorModel;
+use crate::rest_server::models::error::error_model::ErrorModel;
 use neo_core::UInt256;
 use thiserror::Error;
 

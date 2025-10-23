@@ -3,7 +3,6 @@
 //! The Oracle contract manages external data requests and responses,
 //! enabling smart contracts to access off-chain data sources.
 
-use crate::cryptography::crypto_utils::NeoHash;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::{
@@ -11,7 +10,7 @@ use crate::neo_config::{
 };
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::native::{NativeContract, NativeMethod};
-use crate::{UInt160, UInt256};
+use crate::{cryptography::Crypto, ECPoint, UInt160};
 use log::debug;
 // ECPoint functionality moved to external crypto crates
 use serde::{Deserialize, Serialize};
@@ -211,7 +210,7 @@ impl OracleContract {
             "getPrice" => self.get_price(args),
             "finish" => self.finish(args),
             "verify" => self.verify(args),
-            _ => Err(Error::NativeContractError(format!(
+            _ => Err(Error::native_contract(format!(
                 "Unknown method: {}",
                 method
             ))),
@@ -221,26 +220,26 @@ impl OracleContract {
     /// Creates a new oracle request.
     fn request(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() != 5 {
-            return Err(Error::InvalidOperation(
+            return Err(Error::invalid_operation(
                 "Invalid argument count".to_string(),
             ));
         }
 
         // Parse arguments: url, filter, callback, user_data, gas_for_response
         let url = String::from_utf8(args[0].clone())
-            .map_err(|_| Error::InvalidOperation("Invalid URL".to_string()))?;
+            .map_err(|_| Error::invalid_operation("Invalid URL".to_string()))?;
 
         let filter = if args[1].is_empty() {
             None
         } else {
             Some(
                 String::from_utf8(args[1].clone())
-                    .map_err(|_| Error::InvalidOperation("Invalid filter".to_string()))?,
+                    .map_err(|_| Error::invalid_operation("Invalid filter".to_string()))?,
             )
         };
 
         let callback = String::from_utf8(args[2].clone())
-            .map_err(|_| Error::InvalidOperation("Invalid callback".to_string()))?;
+            .map_err(|_| Error::invalid_operation("Invalid callback".to_string()))?;
 
         let user_data = args[3].clone();
 
@@ -248,34 +247,34 @@ impl OracleContract {
             args[4]
                 .as_slice()
                 .try_into()
-                .map_err(|_| Error::InvalidOperation("Invalid gas amount".to_string()))?,
+                .map_err(|_| Error::invalid_operation("Invalid gas amount".to_string()))?,
         );
 
         // Validate inputs
         if url.len() > self.config.max_url_length {
-            return Err(Error::InvalidOperation("URL too long".to_string()));
+            return Err(Error::invalid_operation("URL too long".to_string()));
         }
 
         if let Some(ref f) = filter {
             if f.len() > self.config.max_filter_length {
-                return Err(Error::InvalidOperation("Filter too long".to_string()));
+                return Err(Error::invalid_operation("Filter too long".to_string()));
             }
         }
 
         if callback.len() > self.config.max_callback_length {
-            return Err(Error::InvalidOperation(
+            return Err(Error::invalid_operation(
                 "Callback name too long".to_string(),
             ));
         }
 
         if user_data.len() > self.config.max_user_data_length {
-            return Err(Error::InvalidOperation("User data too long".to_string()));
+            return Err(Error::invalid_operation("User data too long".to_string()));
         }
 
         if gas_for_response < self.config.min_response_gas
             || gas_for_response > self.config.max_response_gas
         {
-            return Err(Error::InvalidOperation("Invalid gas amount".to_string()));
+            return Err(Error::invalid_operation("Invalid gas amount".to_string()));
         }
 
         // Generate new request ID
@@ -283,7 +282,7 @@ impl OracleContract {
             let mut next_id = self
                 .next_request_id
                 .write()
-                .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
+                .map_err(|_| Error::runtime_error("Failed to acquire lock"))?;
             let id = *next_id;
             *next_id += 1;
             id
@@ -311,7 +310,7 @@ impl OracleContract {
             let mut requests = self
                 .requests
                 .write()
-                .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
+                .map_err(|_| Error::runtime_error("Failed to acquire lock"))?;
             requests.insert(id, request);
         }
 
@@ -329,7 +328,7 @@ impl OracleContract {
     /// Finishes an oracle request with a response.
     fn finish(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() != 3 {
-            return Err(Error::InvalidOperation(
+            return Err(Error::invalid_operation(
                 "Invalid argument count".to_string(),
             ));
         }
@@ -339,20 +338,22 @@ impl OracleContract {
             args[0]
                 .as_slice()
                 .try_into()
-                .map_err(|_| Error::InvalidOperation("Invalid request ID".to_string()))?,
+                .map_err(|_| Error::invalid_operation("Invalid request ID".to_string()))?,
         );
 
         let response_code = if args[1].len() == 1 {
             args[1][0]
         } else {
-            return Err(Error::InvalidOperation("Invalid response code".to_string()));
+            return Err(Error::invalid_operation(
+                "Invalid response code".to_string(),
+            ));
         };
 
         let response_data = args[2].clone();
 
         // Validate response data length
         if response_data.len() > self.config.max_response_length {
-            return Err(Error::InvalidOperation(
+            return Err(Error::invalid_operation(
                 "Response data too long".to_string(),
             ));
         }
@@ -362,10 +363,10 @@ impl OracleContract {
             let mut requests = self
                 .requests
                 .write()
-                .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
+                .map_err(|_| Error::runtime_error("Failed to acquire lock"))?;
             if let Some(request) = requests.get_mut(&request_id) {
                 if request.status != OracleRequestStatus::Pending {
-                    return Err(Error::InvalidOperation(
+                    return Err(Error::invalid_operation(
                         "Request already processed".to_string(),
                     ));
                 }
@@ -379,7 +380,7 @@ impl OracleContract {
 
                 Ok(vec![1]) // Success
             } else {
-                Err(Error::InvalidOperation("Request not found".to_string()))
+                Err(Error::invalid_operation("Request not found".to_string()))
             }
         }
     }
@@ -387,7 +388,7 @@ impl OracleContract {
     /// Verifies oracle response signatures.
     fn verify(&self, args: &[Vec<u8>]) -> Result<Vec<u8>> {
         if args.len() != 2 {
-            return Err(Error::InvalidOperation(
+            return Err(Error::invalid_operation(
                 "Invalid argument count".to_string(),
             ));
         }
@@ -434,12 +435,12 @@ impl OracleContract {
         if let Some(request) = self
             .requests
             .read()
-            .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?
+            .map_err(|_| Error::runtime_error("Failed to acquire lock"))?
             .get(&id)
         {
             Ok(request.clone())
         } else {
-            Err(Error::NativeContractError(
+            Err(Error::native_contract(
                 "Oracle request not found".to_string(),
             ))
         }
@@ -447,7 +448,7 @@ impl OracleContract {
 
     /// Calculates hash of oracle response data.
     pub fn calculate_response_hash(&self, data: &[u8]) -> Result<Vec<u8>> {
-        Ok(Crypto::sha256(data))
+        Ok(Crypto::sha256(data).to_vec())
     }
 
     /// Checks if response was already processed.
@@ -455,7 +456,7 @@ impl OracleContract {
         let requests = self
             .requests
             .read()
-            .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
+            .map_err(|_| Error::runtime_error("Failed to acquire lock"))?;
         if let Some(request) = requests.get(&id) {
             Ok(request.status != OracleRequestStatus::Pending)
         } else {
@@ -481,7 +482,7 @@ impl OracleContract {
         let mut requests = self
             .requests
             .write()
-            .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
+            .map_err(|_| Error::runtime_error("Failed to acquire lock"))?;
         if let Some(request) = requests.get_mut(&id) {
             request.status = OracleRequestStatus::Fulfilled;
         }
@@ -529,7 +530,7 @@ impl OracleContract {
         let mut requests = self
             .requests
             .write()
-            .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
+            .map_err(|_| Error::runtime_error("Failed to acquire lock"))?;
         if let Some(request) = requests.get_mut(&id) {
             request.status = OracleRequestStatus::Fulfilled;
         }
@@ -562,7 +563,7 @@ impl OracleContract {
         let mut requests = self
             .requests
             .write()
-            .map_err(|_| Error::RuntimeError("Failed to acquire lock".to_string()))?;
+            .map_err(|_| Error::runtime_error("Failed to acquire lock"))?;
         requests.remove(&id);
         Ok(())
     }

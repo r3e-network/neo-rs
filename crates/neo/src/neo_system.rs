@@ -1,10 +1,9 @@
 use std::any::Any;
 use std::collections::HashMap;
+use std::fmt;
+use std::future::Future;
 use std::net::SocketAddr;
-use std::sync::{
-    atomic::{AtomicU32, Ordering},
-    Arc, RwLock,
-};
+use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::time::Duration;
 
 use akka::{
@@ -12,21 +11,88 @@ use akka::{
     Props,
 };
 use async_trait::async_trait;
+use tokio::runtime::{Builder as RuntimeBuilder, Handle as RuntimeHandle, RuntimeFlavor};
 use tokio::sync::oneshot;
+use tokio::task::block_in_place;
 use tracing::{debug, warn};
 
+use crate::constants::GENESIS_TIMESTAMP_MS;
 use crate::error::{CoreError, CoreResult};
+use crate::i_event_handlers::IServiceAddedHandler;
 use crate::ledger::blockchain::{Blockchain, BlockchainCommand};
+use crate::ledger::{
+    block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
+    blockchain_application_executed::ApplicationExecuted, LedgerContext, MemoryPool,
+};
+use crate::neo_io::{BinaryWriter, Serializable};
 use crate::network::p2p::{
     payloads::{
         block::Block, extensible_payload::ExtensiblePayload, header::Header,
-        transaction::Transaction,
+        transaction::Transaction, witness::Witness as PayloadWitness,
     },
     ChannelsConfig, LocalNode, LocalNodeCommand, PeerCommand, RemoteNodeSnapshot, TaskManager,
     TaskManagerCommand,
 };
-use crate::persistence::{i_store::IStore, i_store_provider::IStoreProvider, StoreFactory};
+use crate::persistence::{
+    data_cache::DataCache, i_store::IStore, i_store_provider::IStoreProvider,
+    track_state::TrackState, StoreCache, StoreFactory,
+};
+pub use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::application_engine::ApplicationEngine;
+use crate::smart_contract::application_engine::TEST_MODE_GAS;
+use crate::smart_contract::native::helpers::NativeHelpers;
+use crate::smart_contract::native::ledger_contract::{
+    HashOrIndex, LedgerContract, LedgerTransactionStates, PersistedTransactionState,
+};
+use crate::smart_contract::trigger_type::TriggerType;
+use crate::uint160::UInt160;
 use crate::uint256::UInt256;
+use neo_extensions::error::ExtensionError;
+use neo_extensions::plugin::{
+    broadcast_global_event, initialise_global_runtime, shutdown_global_runtime, PluginContext,
+    PluginEvent,
+};
+use neo_vm::OpCode;
+
+fn block_on_extension<F, T>(future: F) -> Result<T, ExtensionError>
+where
+    F: Future<Output = Result<T, ExtensionError>> + Send,
+    T: Send,
+{
+    if let Ok(handle) = RuntimeHandle::try_current() {
+        match handle.runtime_flavor() {
+            RuntimeFlavor::MultiThread => block_in_place(|| handle.block_on(future)),
+            RuntimeFlavor::CurrentThread => RuntimeBuilder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|err| ExtensionError::operation_failed(err.to_string()))?
+                .block_on(future),
+            _ => RuntimeBuilder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|err| ExtensionError::operation_failed(err.to_string()))?
+                .block_on(future),
+        }
+    } else {
+        RuntimeBuilder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|err| ExtensionError::operation_failed(err.to_string()))?
+            .block_on(future)
+    }
+}
+
+fn initialise_plugins(system: &Arc<NeoSystem>) -> CoreResult<()> {
+    let context = PluginContext::from_environment();
+    block_on_extension(initialise_global_runtime(Some(context))).map_err(|err| {
+        CoreError::system(format!("failed to initialize plugin runtime: {}", err))
+    })?;
+    let system_any: Arc<dyn Any + Send + Sync> = system.clone();
+    let event = PluginEvent::NodeStarted { system: system_any };
+    block_on_extension(broadcast_global_event(&event))
+        .map_err(|err| CoreError::system(format!("failed to broadcast NodeStarted: {}", err)))?;
+    Ok(())
+}
 
 /// Trait implemented by all pluggable Neo plugins.
 pub trait Plugin: Send + Sync {
@@ -96,54 +162,6 @@ impl PluginManager {
     }
 }
 
-/// Global protocol settings (matches C# `Neo.ProtocolSettings`).
-#[derive(Debug, Clone)]
-pub struct ProtocolSettings {
-    pub network: u32,
-    pub address_version: u8,
-    pub standby_committee: Vec<neo_cryptography::ECPoint>,
-    pub validators_count: u32,
-    pub seed_list: Vec<String>,
-    pub milliseconds_per_block: u32,
-    pub max_valid_until_block_increment: u32,
-    pub max_transactions_per_block: u32,
-    pub memory_pool_max_transactions: i32,
-    pub max_traceable_blocks: u32,
-    pub initial_gas_distribution: u64,
-    pub hardforks: HashMap<crate::hardfork::Hardfork, u32>,
-}
-
-impl ProtocolSettings {
-    /// Constructs the protocol settings using Neo's production defaults (equivalent to `ProtocolSettings.Default`).
-    pub fn mainnet() -> Self {
-        Self {
-            network: 0x334F454Eu32,
-            address_version: 53,
-            standby_committee: Vec::new(),
-            validators_count: 7,
-            seed_list: vec!["seed1.neo.org".into(), "seed2.neo.org".into()],
-            milliseconds_per_block: crate::constants::MILLISECONDS_PER_BLOCK,
-            max_valid_until_block_increment: 5760,
-            max_transactions_per_block: crate::constants::MAX_TRANSACTIONS_PER_BLOCK,
-            memory_pool_max_transactions: crate::constants::MEMORY_POOL_MAX_TRANSACTIONS,
-            max_traceable_blocks: crate::constants::MAX_TRACEABLE_BLOCKS,
-            initial_gas_distribution: 52_000_000_000_000,
-            hardforks: HashMap::new(),
-        }
-    }
-
-    /// Returns the time between blocks expressed as a [`Duration`].
-    pub fn time_per_block(&self) -> Duration {
-        Duration::from_millis(self.milliseconds_per_block as u64)
-    }
-}
-
-impl Default for ProtocolSettings {
-    fn default() -> Self {
-        Self::mainnet()
-    }
-}
-
 /// Central runtime coordinating all services for a Neo node.
 pub struct NeoSystem {
     settings: ProtocolSettings,
@@ -152,12 +170,16 @@ pub struct NeoSystem {
     local_node: ActorRef,
     task_manager: ActorRef,
     tx_router: ActorRef,
-    services: Arc<RwLock<HashMap<String, Arc<dyn Any + Send + Sync>>>>,
+    services_by_name: Arc<RwLock<HashMap<String, Arc<dyn Any + Send + Sync>>>>,
+    services: Arc<RwLock<Vec<Arc<dyn Any + Send + Sync>>>>,
+    service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>>,
     plugin_manager: Arc<RwLock<PluginManager>>,
     store_provider: Arc<dyn IStoreProvider>,
     store: Arc<dyn IStore>,
     ledger: Arc<LedgerContext>,
+    genesis_block: Arc<Block>,
     context: Arc<NeoSystemContext>,
+    self_ref: Mutex<Weak<NeoSystem>>,
 }
 
 /// Lightweight handle exposing shared system facilities to actors outside the core module.
@@ -174,17 +196,173 @@ pub struct NeoSystemContext {
     /// Reference to the transaction router actor.
     pub tx_router: ActorRef,
     /// Global service registry mirrored from the C# implementation.
-    pub services: Arc<RwLock<HashMap<String, Arc<dyn Any + Send + Sync>>>>,
+    pub services_by_name: Arc<RwLock<HashMap<String, Arc<dyn Any + Send + Sync>>>>,
+    /// Ordered service list used for type-based lookups.
+    pub services: Arc<RwLock<Vec<Arc<dyn Any + Send + Sync>>>>,
+    /// Registered callbacks for service additions.
+    pub service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>>,
     /// Plugin manager shared state for hot-pluggable extensions.
     pub plugin_manager: Arc<RwLock<PluginManager>>,
     /// Store provider used to instantiate persistence backends.
     pub store_provider: Arc<dyn IStoreProvider>,
     /// Active persistence store.
     pub store: Arc<dyn IStore>,
+    /// Cached genesis block shared with the blockchain actor.
+    genesis_block: Arc<Block>,
     ledger: Arc<LedgerContext>,
+    memory_pool: Arc<Mutex<MemoryPool>>,
+    settings: Arc<ProtocolSettings>,
+}
+
+impl fmt::Debug for NeoSystemContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NeoSystemContext")
+            .field("actor_system", &"ActorSystemHandle")
+            .field("blockchain", &self.blockchain)
+            .field("local_node", &self.local_node)
+            .field("task_manager", &self.task_manager)
+            .field("tx_router", &self.tx_router)
+            .field("services", &"ServiceRegistry")
+            .field("plugin_manager", &"PluginManager")
+            .field("store_provider", &"StoreProvider")
+            .field("store", &"Store")
+            .field("ledger_height", &self.ledger.current_height())
+            .field(
+                "memory_pool_size",
+                &self
+                    .memory_pool
+                    .lock()
+                    .map(|pool| pool.count())
+                    .unwrap_or(0usize),
+            )
+            .finish()
+    }
 }
 
 impl NeoSystemContext {
+    pub fn store_cache(&self) -> StoreCache {
+        StoreCache::new_from_store(self.store.clone(), true)
+    }
+
+    /// Returns the canonical genesis block.
+    pub fn genesis_block(&self) -> Arc<Block> {
+        self.genesis_block.clone()
+    }
+
+    /// Shared access to the ledger context.
+    pub fn ledger(&self) -> Arc<LedgerContext> {
+        self.ledger.clone()
+    }
+
+    /// Retrieves the first registered service assignable to `T`.
+    pub fn get_service<T>(&self) -> CoreResult<Option<Arc<T>>>
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        let guard = self
+            .services
+            .read()
+            .map_err(|_| CoreError::system("service registry poisoned"))?;
+
+        for service in guard.iter() {
+            if let Some(typed) = downcast_service::<T>(service) {
+                return Ok(Some(typed));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Retrieves a named service assignable to `T`.
+    pub fn get_named_service<T>(&self, name: &str) -> CoreResult<Option<Arc<T>>>
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        let guard = self
+            .services_by_name
+            .read()
+            .map_err(|_| CoreError::system("service registry poisoned"))?;
+
+        match guard.get(name) {
+            Some(service) => Ok(downcast_service::<T>(service)),
+            None => Ok(None),
+        }
+    }
+
+    fn convert_payload_witness(witness: &PayloadWitness) -> crate::Witness {
+        crate::Witness::new_with_scripts(
+            witness.invocation_script().to_vec(),
+            witness.verification_script().to_vec(),
+        )
+    }
+
+    fn convert_payload_header(header: &Header) -> LedgerBlockHeader {
+        LedgerBlockHeader::new(
+            header.version(),
+            *header.prev_hash(),
+            *header.merkle_root(),
+            header.timestamp(),
+            header.nonce(),
+            header.index(),
+            header.primary_index(),
+            *header.next_consensus(),
+            vec![Self::convert_payload_witness(&header.witness)],
+        )
+    }
+
+    fn convert_payload_block(block: &Block) -> LedgerBlock {
+        LedgerBlock::new(
+            Self::convert_payload_header(&block.header),
+            block.transactions.clone(),
+        )
+    }
+
+    fn convert_witness(witness: crate::Witness) -> PayloadWitness {
+        PayloadWitness::new_with_scripts(
+            witness.invocation_script.clone(),
+            witness.verification_script.clone(),
+        )
+    }
+
+    fn convert_ledger_header(header: LedgerBlockHeader) -> Header {
+        let LedgerBlockHeader {
+            version,
+            previous_hash,
+            merkle_root,
+            timestamp,
+            nonce,
+            index,
+            primary_index,
+            next_consensus,
+            witnesses,
+        } = header;
+
+        let mut converted = Header::new();
+        converted.set_version(version);
+        converted.set_prev_hash(previous_hash);
+        converted.set_merkle_root(merkle_root);
+        converted.set_timestamp(timestamp);
+        converted.set_nonce(nonce);
+        converted.set_index(index);
+        converted.set_primary_index(primary_index);
+        converted.set_next_consensus(next_consensus);
+
+        let witness = witnesses
+            .into_iter()
+            .next()
+            .unwrap_or_else(crate::Witness::new);
+        converted.witness = Self::convert_witness(witness);
+
+        converted
+    }
+
+    fn convert_ledger_block(block: LedgerBlock) -> Block {
+        Block {
+            header: Self::convert_ledger_header(block.header),
+            transactions: block.transactions,
+        }
+    }
+
     /// Returns the current best block index known to the system. This will be wired
     /// to the ledger subsystem once the persistence layer is fully ported.
     pub fn current_block_index(&self) -> u32 {
@@ -193,12 +371,32 @@ impl NeoSystemContext {
 
     /// Attempts to retrieve a transaction from the local mempool or persisted store.
     pub fn try_get_transaction(&self, hash: &UInt256) -> Option<Transaction> {
-        self.ledger.get_transaction(hash)
+        if let Some(tx) = self.ledger.get_transaction(hash) {
+            return Some(tx);
+        }
+
+        let ledger_contract = LedgerContract::new();
+        let store_cache = self.store_cache();
+        ledger_contract
+            .get_transaction_state(&store_cache, hash)
+            .ok()
+            .flatten()
+            .map(|state| state.transaction().clone())
     }
 
     /// Attempts to retrieve a block by its hash from the local store.
     pub fn try_get_block(&self, hash: &UInt256) -> Option<Block> {
-        self.ledger.get_block(hash)
+        if let Some(block) = self.ledger.get_block(hash) {
+            return Some(block);
+        }
+
+        let ledger_contract = LedgerContract::new();
+        let store_cache = self.store_cache();
+        ledger_contract
+            .get_block(&store_cache, HashOrIndex::Hash(hash.clone()))
+            .ok()
+            .flatten()
+            .map(Self::convert_ledger_block)
     }
 
     /// Attempts to retrieve an extensible payload by hash.
@@ -208,12 +406,83 @@ impl NeoSystemContext {
 
     /// Returns block hashes starting at the provided hash, limited by `count`.
     pub fn block_hashes_from(&self, hash_start: &UInt256, count: usize) -> Vec<UInt256> {
-        self.ledger.block_hashes_from(hash_start, count)
+        let mut hashes = self.ledger.block_hashes_from(hash_start, count);
+        if count == 0 {
+            return hashes;
+        }
+
+        if hashes.len() >= count {
+            return hashes;
+        }
+
+        let ledger_contract = LedgerContract::new();
+        let store_cache = self.store_cache();
+        if let Ok(Some(block)) =
+            ledger_contract.get_block(&store_cache, HashOrIndex::Hash(hash_start.clone()))
+        {
+            let mut next_index = block.index().saturating_add(1 + hashes.len() as u32);
+            while hashes.len() < count {
+                match ledger_contract.get_block_hash_by_index(&store_cache, next_index) {
+                    Ok(Some(hash)) => hashes.push(hash),
+                    _ => break,
+                }
+                next_index = next_index.saturating_add(1);
+            }
+        }
+
+        hashes
+    }
+
+    /// Exposes the shared memory pool instance.
+    pub fn memory_pool(&self) -> Arc<Mutex<MemoryPool>> {
+        self.memory_pool.clone()
+    }
+
+    /// Attempts to retrieve a transaction from the in-memory pool without touching persistence.
+    pub fn try_get_transaction_from_mempool(&self, hash: &UInt256) -> Option<Transaction> {
+        let guard = self.memory_pool.lock().ok()?;
+        guard.try_get(hash)
+    }
+
+    /// Protocol settings shared with network components.
+    pub fn settings(&self) -> Arc<ProtocolSettings> {
+        self.settings.clone()
+    }
+
+    /// Returns the block hash at the specified index if known.
+    pub fn block_hash_at(&self, index: u32) -> Option<UInt256> {
+        if let Some(hash) = self.ledger.block_hash_at(index) {
+            return Some(hash);
+        }
+
+        let ledger_contract = LedgerContract::new();
+        let store_cache = self.store_cache();
+        ledger_contract
+            .get_block_hash_by_index(&store_cache, index)
+            .ok()
+            .flatten()
     }
 
     /// Returns headers starting from the supplied index.
     pub fn headers_from_index(&self, index_start: u32, count: usize) -> Vec<Header> {
-        self.ledger.headers_from_index(index_start, count)
+        let mut headers = self.ledger.headers_from_index(index_start, count);
+        if count == 0 || headers.len() >= count {
+            return headers;
+        }
+
+        let ledger_contract = LedgerContract::new();
+        let store_cache = self.store_cache();
+        let mut next_index = index_start.saturating_add(headers.len() as u32);
+
+        while headers.len() < count {
+            match ledger_contract.get_block(&store_cache, HashOrIndex::Index(next_index)) {
+                Ok(Some(block)) => headers.push(Self::convert_ledger_header(block.header)),
+                _ => break,
+            }
+            next_index = next_index.saturating_add(1);
+        }
+
+        headers
     }
 
     /// Returns transaction hashes currently present in the mempool.
@@ -247,128 +516,138 @@ impl NeoSystemContext {
     }
 }
 
-#[derive(Default)]
-pub struct LedgerContext {
-    best_height: AtomicU32,
-    hashes_by_index: RwLock<Vec<UInt256>>,
-    headers_by_index: RwLock<Vec<Option<Header>>>,
-    blocks_by_hash: RwLock<HashMap<UInt256, Block>>,
-    extensibles_by_hash: RwLock<HashMap<UInt256, ExtensiblePayload>>,
-    transactions_by_hash: RwLock<HashMap<UInt256, Transaction>>,
+fn downcast_service<T>(service: &Arc<dyn Any + Send + Sync>) -> Option<Arc<T>>
+where
+    T: Any + Send + Sync + 'static,
+{
+    Arc::downcast::<T>(Arc::clone(service)).ok()
 }
 
-impl LedgerContext {
-    pub fn current_height(&self) -> u32 {
-        self.best_height.load(Ordering::Relaxed)
-    }
-
-    pub fn insert_transaction(&self, transaction: Transaction) -> UInt256 {
-        let hash = transaction.hash();
-        self.transactions_by_hash
-            .write()
-            .unwrap()
-            .insert(hash, transaction);
-        hash
-    }
-
-    pub fn remove_transaction(&self, hash: &UInt256) -> Option<Transaction> {
-        self.transactions_by_hash.write().unwrap().remove(hash)
-    }
-
-    pub fn get_transaction(&self, hash: &UInt256) -> Option<Transaction> {
-        self.transactions_by_hash.read().unwrap().get(hash).cloned()
-    }
-
-    pub fn insert_block(&self, mut block: Block) -> UInt256 {
-        let header = block.header.clone();
-        let index = header.index() as usize;
-        let hash = block.hash();
-
-        self.blocks_by_hash.write().unwrap().insert(hash, block);
-
-        {
-            let mut hashes = self.hashes_by_index.write().unwrap();
-            if hashes.len() <= index {
-                hashes.resize(index + 1, UInt256::zero());
-            }
-            hashes[index] = hash;
-        }
-
-        {
-            let mut headers = self.headers_by_index.write().unwrap();
-            if headers.len() <= index {
-                headers.resize(index + 1, None);
-            }
-            headers[index] = Some(header);
-        }
-
-        self.best_height.fetch_max(index as u32, Ordering::Relaxed);
-        hash
-    }
-
-    pub fn get_block(&self, hash: &UInt256) -> Option<Block> {
-        self.blocks_by_hash.read().unwrap().get(hash).cloned()
-    }
-
-    pub fn insert_extensible(&self, mut payload: ExtensiblePayload) -> UInt256 {
-        let hash = payload.hash();
-        self.extensibles_by_hash
-            .write()
-            .unwrap()
-            .insert(hash, payload);
-        hash
-    }
-
-    pub fn get_extensible(&self, hash: &UInt256) -> Option<ExtensiblePayload> {
-        self.extensibles_by_hash.read().unwrap().get(hash).cloned()
-    }
-
-    pub fn block_hashes_from(&self, hash_start: &UInt256, count: usize) -> Vec<UInt256> {
-        if count == 0 {
-            return Vec::new();
-        }
-
-        let hashes = self.hashes_by_index.read().unwrap();
-        let Some(start_pos) = hashes.iter().position(|hash| hash == hash_start) else {
-            return Vec::new();
+impl NeoSystem {
+    fn create_genesis_block(settings: &ProtocolSettings) -> Block {
+        let mut header = Header::new();
+        header.set_version(0);
+        header.set_prev_hash(UInt256::zero());
+        header.set_merkle_root(UInt256::zero());
+        header.set_timestamp(GENESIS_TIMESTAMP_MS);
+        header.set_nonce(2_083_236_893u64);
+        header.set_index(0);
+        header.set_primary_index(0);
+        let validators = settings.standby_validators();
+        let next_consensus = if validators.is_empty() {
+            UInt160::zero()
+        } else {
+            NativeHelpers::get_bft_address(&validators)
         };
+        header.set_next_consensus(next_consensus);
+        header.witness = PayloadWitness::new_with_scripts(Vec::new(), vec![OpCode::PUSH1 as u8]);
 
-        hashes
-            .iter()
-            .skip(start_pos + 1)
-            .filter(|hash| **hash != UInt256::zero())
-            .take(count)
-            .cloned()
-            .collect()
+        Block {
+            header,
+            transactions: Vec::new(),
+        }
     }
 
-    pub fn headers_from_index(&self, index_start: u32, count: usize) -> Vec<Header> {
-        if count == 0 {
-            return Vec::new();
+    /// Creates a new `StoreCache` bound to the system's underlying store.
+    pub fn store_cache(&self) -> StoreCache {
+        self.context.store_cache()
+    }
+
+    /// Provides direct access to the shared memory pool instance.
+    pub fn mempool(&self) -> Arc<Mutex<MemoryPool>> {
+        self.context.memory_pool()
+    }
+
+    /// Returns the current best block index tracked by the system.
+    pub fn current_block_index(&self) -> u32 {
+        self.context.current_block_index()
+    }
+
+    /// Persists a block through the minimal smart-contract pipeline, returning
+    /// the list of execution summaries produced during processing.
+    pub fn persist_block(&self, block: Block) -> CoreResult<Vec<ApplicationExecuted>> {
+        let ledger_block = NeoSystemContext::convert_payload_block(&block);
+        let mut store_cache = self.context.store_cache();
+        let snapshot = Arc::new(DataCache::new(false));
+
+        let mut on_persist_engine = ApplicationEngine::new(
+            TriggerType::OnPersist,
+            None,
+            Arc::clone(&snapshot),
+            Some(ledger_block.clone()),
+            self.settings.clone(),
+            TEST_MODE_GAS,
+            None,
+        )?;
+
+        on_persist_engine.native_on_persist()?;
+        let on_persist_exec = ApplicationExecuted::new(&mut on_persist_engine);
+        self.actor_system
+            .event_stream()
+            .publish(on_persist_exec.clone());
+
+        let mut executed = Vec::with_capacity(ledger_block.transactions.len() + 2);
+        executed.push(on_persist_exec);
+
+        let mut tx_states = on_persist_engine
+            .take_state::<LedgerTransactionStates>()
+            .unwrap_or_else(|| {
+                LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new())
+            });
+
+        for tx in &ledger_block.transactions {
+            let container: Arc<dyn crate::IVerifiable> = Arc::new(tx.clone());
+            let mut tx_engine = ApplicationEngine::new(
+                TriggerType::Verification,
+                Some(container),
+                Arc::clone(&snapshot),
+                Some(ledger_block.clone()),
+                self.settings.clone(),
+                TEST_MODE_GAS,
+                None,
+            )?;
+
+            tx_engine.set_state(tx_states);
+
+            let executed_tx = ApplicationExecuted::new(&mut tx_engine);
+            self.actor_system
+                .event_stream()
+                .publish(executed_tx.clone());
+            tx_states = tx_engine
+                .take_state::<LedgerTransactionStates>()
+                .unwrap_or_else(|| {
+                    LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new())
+                });
+            executed.push(executed_tx);
         }
 
-        let headers = self.headers_by_index.read().unwrap();
-        let mut collected = Vec::new();
-        let mut index = index_start as usize;
+        on_persist_engine.set_state(tx_states);
+        on_persist_engine.native_post_persist()?;
+        let post_persist_exec = ApplicationExecuted::new(&mut on_persist_engine);
+        self.actor_system
+            .event_stream()
+            .publish(post_persist_exec.clone());
+        executed.push(post_persist_exec);
 
-        while index < headers.len() && collected.len() < count {
-            match &headers[index] {
-                Some(header) => collected.push(header.clone()),
-                None => break,
+        for (key, trackable) in snapshot.tracked_items() {
+            match trackable.state {
+                TrackState::Added => {
+                    store_cache.add(key, trackable.item);
+                }
+                TrackState::Changed => {
+                    store_cache.update(key, trackable.item);
+                }
+                TrackState::Deleted => {
+                    store_cache.delete(key);
+                }
+                TrackState::None | TrackState::NotFound => {}
             }
-            index += 1;
         }
 
-        collected
-    }
+        store_cache.commit();
+        self.context.record_block(block);
 
-    pub fn mempool_transaction_hashes(&self) -> Vec<UInt256> {
-        self.transactions_by_hash
-            .read()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect()
+        Ok(executed)
     }
 }
 
@@ -381,12 +660,17 @@ impl NeoSystem {
         settings: ProtocolSettings,
         storage_provider: Option<Arc<dyn IStoreProvider>>,
         storage_path: Option<String>,
-    ) -> CoreResult<Self> {
+    ) -> CoreResult<Arc<Self>> {
         let actor_system = ActorSystem::new("neo").map_err(to_core_error)?;
         let settings_arc = Arc::new(settings.clone());
+        let genesis_block = Arc::new(Self::create_genesis_block(&settings));
 
-        let services: Arc<RwLock<HashMap<String, Arc<dyn Any + Send + Sync>>>> =
+        let services_by_name: Arc<RwLock<HashMap<String, Arc<dyn Any + Send + Sync>>>> =
             Arc::new(RwLock::new(HashMap::new()));
+        let services: Arc<RwLock<Vec<Arc<dyn Any + Send + Sync>>>> =
+            Arc::new(RwLock::new(Vec::new()));
+        let service_added_handlers: Arc<RwLock<Vec<Arc<dyn IServiceAddedHandler + Send + Sync>>>> =
+            Arc::new(RwLock::new(Vec::new()));
         let plugin_manager = Arc::new(RwLock::new(PluginManager::new()));
 
         let store_provider = storage_provider.unwrap_or_else(|| {
@@ -399,31 +683,31 @@ impl NeoSystem {
         let local_node_state = Arc::new(LocalNode::new(settings_arc.clone(), 10333, user_agent));
         local_node_state.set_seed_list(settings.seed_list.clone());
         let ledger = Arc::new(LedgerContext::default());
+        let memory_pool = Arc::new(Mutex::new(MemoryPool::new(&settings)));
 
         {
-            let mut guard = services
+            let mut by_name_guard = services_by_name
                 .write()
                 .map_err(|_| CoreError::system("service registry poisoned"))?;
-            guard.insert(
-                "LocalNode".to_string(),
-                local_node_state.clone() as Arc<dyn Any + Send + Sync>,
-            );
-            guard.insert(
-                "Store".to_string(),
-                store.clone() as Arc<dyn Any + Send + Sync>,
-            );
-            guard.insert(
-                "StoreProvider".to_string(),
-                store_provider.clone() as Arc<dyn Any + Send + Sync>,
-            );
-            guard.insert(
-                "Ledger".to_string(),
-                ledger.clone() as Arc<dyn Any + Send + Sync>,
-            );
+            let mut list_guard = services
+                .write()
+                .map_err(|_| CoreError::system("service registry poisoned"))?;
+
+            let local_node_any: Arc<dyn Any + Send + Sync> = local_node_state.clone();
+            by_name_guard.insert("LocalNode".to_string(), local_node_any.clone());
+            list_guard.push(local_node_any);
+
+            let ledger_any: Arc<dyn Any + Send + Sync> = ledger.clone();
+            by_name_guard.insert("Ledger".to_string(), ledger_any.clone());
+            list_guard.push(ledger_any);
+
+            let mem_pool_any: Arc<dyn Any + Send + Sync> = memory_pool.clone();
+            by_name_guard.insert("MemoryPool".to_string(), mem_pool_any.clone());
+            list_guard.push(mem_pool_any);
         }
 
         let blockchain = actor_system
-            .actor_of(Blockchain::props(Arc::new(())), "blockchain")
+            .actor_of(Blockchain::props(ledger.clone()), "blockchain")
             .map_err(to_core_error)?;
         let local_node = actor_system
             .actor_of(LocalNode::props(local_node_state.clone()), "local_node")
@@ -435,30 +719,66 @@ impl NeoSystem {
             .actor_of(Props::new(TransactionRouterActor::default), "tx_router")
             .map_err(to_core_error)?;
 
-        blockchain
-            .tell(BlockchainCommand::Initialize)
-            .map_err(to_core_error)?;
-
         let context = Arc::new(NeoSystemContext {
             actor_system: actor_system.handle(),
             blockchain: blockchain.clone(),
             local_node: local_node.clone(),
             task_manager: task_manager.clone(),
             tx_router: tx_router.clone(),
+            services_by_name: services_by_name.clone(),
             services: services.clone(),
+            service_added_handlers: service_added_handlers.clone(),
             plugin_manager: plugin_manager.clone(),
             store_provider: store_provider.clone(),
             store: store.clone(),
+            genesis_block: genesis_block.clone(),
             ledger: ledger.clone(),
+            memory_pool: memory_pool.clone(),
+            settings: settings_arc.clone(),
         });
+
+        if let Ok(mut pool) = memory_pool.lock() {
+            let local_node_ref = local_node.clone();
+            let blockchain_ref = blockchain.clone();
+            pool.transaction_relay = Some(Box::new(move |tx: &Transaction| {
+                let mut writer = BinaryWriter::new();
+                if let Err(error) = tx.serialize(&mut writer) {
+                    debug!(
+                        target: "neo",
+                        %error,
+                        "failed to serialize transaction for mempool rebroadcast"
+                    );
+                    return;
+                }
+
+                let payload = writer.to_bytes();
+                if let Err(error) = local_node_ref.tell_from(
+                    LocalNodeCommand::RelayDirectly { payload },
+                    Some(blockchain_ref.clone()),
+                ) {
+                    debug!(
+                        target: "neo",
+                        %error,
+                        "failed to enqueue relayed transaction from memory pool"
+                    );
+                }
+            }));
+        }
+
+        blockchain
+            .tell(BlockchainCommand::AttachSystem(context.clone()))
+            .map_err(to_core_error)?;
         local_node_state.set_system_context(context.clone());
         task_manager
             .tell(TaskManagerCommand::AttachSystem {
                 context: context.clone(),
             })
             .map_err(to_core_error)?;
+        blockchain
+            .tell(BlockchainCommand::Initialize)
+            .map_err(to_core_error)?;
 
-        Ok(Self {
+        let system = Arc::new(Self {
             settings,
             actor_system,
             blockchain,
@@ -466,12 +786,28 @@ impl NeoSystem {
             task_manager,
             tx_router,
             services,
+            services_by_name,
+            service_added_handlers,
             plugin_manager,
             store_provider,
             store,
             ledger,
+            genesis_block,
             context,
-        })
+            self_ref: Mutex::new(Weak::new()),
+        });
+
+        {
+            let mut weak_guard = system
+                .self_ref
+                .lock()
+                .map_err(|_| CoreError::system("failed to initialise self reference"))?;
+            *weak_guard = Arc::downgrade(&system);
+        }
+
+        initialise_plugins(&system)?;
+
+        Ok(system)
     }
 
     /// View of the underlying actor system.
@@ -522,6 +858,16 @@ impl NeoSystem {
     /// Shared in-memory ledger facade used by networking components.
     pub fn ledger_context(&self) -> Arc<LedgerContext> {
         self.ledger.clone()
+    }
+
+    /// Returns the canonical genesis block for this system instance.
+    pub fn genesis_block(&self) -> Arc<Block> {
+        self.genesis_block.clone()
+    }
+
+    /// Returns the block hash at the given index if available.
+    pub fn block_hash_at(&self, index: u32) -> Option<UInt256> {
+        self.ledger.block_hash_at(index)
     }
 
     /// Starts the local node actor with the supplied networking configuration.
@@ -627,30 +973,118 @@ impl NeoSystem {
     }
 
     /// Registers an arbitrary service instance for later retrieval (parity with C# `NeoSystem.AddService`).
-    pub fn add_service<T>(&self, name: impl Into<String>, service: T) -> CoreResult<()>
+    pub fn add_service<T, S>(&self, service: S) -> CoreResult<()>
     where
-        T: Send + Sync + 'static,
+        T: Any + Send + Sync + 'static,
+        S: Into<Arc<T>>,
     {
-        let mut guard = self
-            .services
-            .write()
-            .map_err(|_| CoreError::system("service registry poisoned"))?;
-        guard.insert(name.into(), Arc::new(service));
+        self.add_service_internal::<T>(None, service.into())
+    }
+
+    /// Registers an arbitrary service instance with an explicit name (compatibility helper).
+    pub fn add_named_service<T, S>(&self, name: impl Into<String>, service: S) -> CoreResult<()>
+    where
+        T: Any + Send + Sync + 'static,
+        S: Into<Arc<T>>,
+    {
+        self.add_service_internal::<T>(Some(name.into()), service.into())
+    }
+
+    fn add_service_internal<T>(&self, name: Option<String>, service: Arc<T>) -> CoreResult<()>
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        let service_any: Arc<dyn Any + Send + Sync> = service.clone();
+
+        {
+            let mut list = self
+                .services
+                .write()
+                .map_err(|_| CoreError::system("service registry poisoned"))?;
+            list.push(service_any.clone());
+        }
+
+        if let Some(ref name_ref) = name {
+            let mut map = self
+                .services_by_name
+                .write()
+                .map_err(|_| CoreError::system("service registry poisoned"))?;
+            map.insert(name_ref.clone(), service_any.clone());
+        }
+
+        self.notify_service_added(service_any, name);
         Ok(())
     }
 
-    /// Retrieves a previously registered service by name.
-    pub fn get_service<T>(&self, name: &str) -> CoreResult<Option<Arc<T>>>
+    fn notify_service_added(&self, service: Arc<dyn Any + Send + Sync>, name: Option<String>) {
+        let sender: &dyn Any = self;
+        if let Ok(handlers) = self.service_added_handlers.read() {
+            for handler in handlers.iter() {
+                handler.neo_system_service_added_handler(sender, service.as_ref());
+            }
+        }
+
+        if let Ok(guard) = self.self_ref.lock() {
+            if let Some(system) = guard.clone().upgrade() {
+                let system_any: Arc<dyn Any + Send + Sync> = system.clone();
+                let event = PluginEvent::ServiceAdded {
+                    system: system_any,
+                    name,
+                    service,
+                };
+                if let Err(err) = block_on_extension(broadcast_global_event(&event)) {
+                    warn!("failed to broadcast ServiceAdded event: {}", err);
+                }
+            }
+        }
+    }
+
+    /// Registers a handler to be notified when services are added.
+    pub fn register_service_added_handler(
+        &self,
+        handler: Arc<dyn IServiceAddedHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        let mut guard = self
+            .service_added_handlers
+            .write()
+            .map_err(|_| CoreError::system("service handler registry poisoned"))?;
+        guard.push(handler);
+        Ok(())
+    }
+
+    /// Retrieves the first registered service assignable to `T`.
+    pub fn get_service<T>(&self) -> CoreResult<Option<Arc<T>>>
     where
-        T: Send + Sync + 'static,
+        T: Any + Send + Sync + 'static,
     {
         let guard = self
             .services
             .read()
             .map_err(|_| CoreError::system("service registry poisoned"))?;
-        Ok(guard
-            .get(name)
-            .and_then(|service| service.clone().downcast::<T>().ok()))
+
+        for service in guard.iter() {
+            if let Some(typed) = downcast_service::<T>(service) {
+                return Ok(Some(typed));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Retrieves a previously registered service by name.
+    pub fn get_named_service<T>(&self, name: &str) -> CoreResult<Option<Arc<T>>>
+    where
+        T: Any + Send + Sync + 'static,
+    {
+        let guard = self
+            .services_by_name
+            .read()
+            .map_err(|_| CoreError::system("service registry poisoned"))?;
+
+        match guard.get(name) {
+            Some(service) => Ok(downcast_service::<T>(service)),
+            None => Ok(None),
+        }
     }
 
     /// Access to the plugin manager for registering plugins.
@@ -669,8 +1103,20 @@ impl NeoSystem {
     }
 
     /// Gracefully shuts down the actor hierarchy.
-    pub async fn shutdown(self) -> CoreResult<()> {
-        self.actor_system.shutdown().await.map_err(to_core_error)
+    pub async fn shutdown(self: Arc<Self>) -> CoreResult<()> {
+        let event = PluginEvent::NodeStopping;
+        if let Err(err) = broadcast_global_event(&event).await {
+            warn!("failed to broadcast NodeStopping event: {}", err);
+        }
+        if let Err(err) = shutdown_global_runtime().await {
+            warn!("failed to shutdown plugin runtime: {}", err);
+        }
+        match Arc::try_unwrap(self) {
+            Ok(system) => system.actor_system.shutdown().await.map_err(to_core_error),
+            Err(_) => Err(CoreError::system(
+                "cannot shutdown NeoSystem while shared references remain",
+            )),
+        }
     }
 }
 
@@ -696,7 +1142,11 @@ impl Actor for TransactionRouterActor {
                 Ok(())
             }
             Err(payload) => {
-                warn!(target: "neo", message_type = %payload.type_id().name(), "unknown message routed to transaction router actor");
+                warn!(
+                    target: "neo",
+                    message_type = ?payload.type_id(),
+                    "unknown message routed to transaction router actor"
+                );
                 Ok(())
             }
         }
@@ -713,8 +1163,73 @@ pub enum TransactionRouterMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::p2p::payloads::witness::Witness as PayloadWitness;
+    use crate::{UInt160, UInt256};
 
-    #[tokio::test]
+    fn sample_u256(byte: u8) -> UInt256 {
+        UInt256::from_bytes(&[byte; 32]).expect("uint256 from bytes")
+    }
+
+    fn sample_u160(byte: u8) -> UInt160 {
+        UInt160::from_bytes(&[byte; 20]).expect("uint160 from bytes")
+    }
+
+    fn sample_ledger_header() -> LedgerBlockHeader {
+        let witness = crate::Witness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
+        LedgerBlockHeader {
+            version: 1,
+            previous_hash: sample_u256(1),
+            merkle_root: sample_u256(2),
+            timestamp: 42,
+            nonce: 7,
+            index: 10,
+            primary_index: 3,
+            next_consensus: sample_u160(5),
+            witnesses: vec![witness],
+        }
+    }
+
+    #[test]
+    fn convert_ledger_header_preserves_fields() {
+        let header = sample_ledger_header();
+        let converted = NeoSystemContext::convert_ledger_header(header.clone());
+
+        assert_eq!(converted.version(), 1);
+        assert_eq!(converted.prev_hash(), &sample_u256(1));
+        assert_eq!(converted.merkle_root(), &sample_u256(2));
+        assert_eq!(converted.timestamp(), 42);
+        assert_eq!(converted.nonce(), 7);
+        assert_eq!(converted.index(), 10);
+        assert_eq!(converted.primary_index(), 3);
+        assert_eq!(converted.next_consensus(), &sample_u160(5));
+
+        let expected_witness = PayloadWitness::new_with_scripts(vec![1, 2, 3], vec![4, 5, 6]);
+        assert_eq!(
+            converted.witness.invocation_script,
+            expected_witness.invocation_script
+        );
+        assert_eq!(
+            converted.witness.verification_script,
+            expected_witness.verification_script
+        );
+
+        assert_eq!(header.witnesses.len(), 1);
+    }
+
+    #[test]
+    fn convert_ledger_block_transfers_transactions() {
+        let header = sample_ledger_header();
+        let txs = Vec::new();
+        let ledger_block = LedgerBlock {
+            header,
+            transactions: txs.clone(),
+        };
+        let block = NeoSystemContext::convert_ledger_block(ledger_block);
+        assert_eq!(block.transactions.len(), txs.len());
+        assert_eq!(block.header.index(), 10);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn local_node_actor_tracks_peers() {
         let system =
             NeoSystem::new(ProtocolSettings::default(), None, None).expect("system to start");

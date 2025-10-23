@@ -1,5 +1,6 @@
 //! InteropDescriptor - matches C# Neo.SmartContract.InteropDescriptor exactly
 
+use crate::hardfork::Hardfork;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::interop_parameter_descriptor::InteropParameterDescriptor;
 use sha2::{Digest, Sha256};
@@ -24,7 +25,7 @@ pub struct InteropDescriptor {
     pub fixed_price: i64,
 
     /// Required Hardfork to be active (if any)
-    pub hardfork: Option<String>,
+    pub hardfork: Option<Hardfork>,
 
     /// The required CallFlags for the interoperable service
     pub required_call_flags: CallFlags,
@@ -57,7 +58,7 @@ impl InteropDescriptor {
         parameters: Vec<InteropParameterDescriptor>,
         fixed_price: i64,
         required_call_flags: CallFlags,
-        hardfork: String,
+        hardfork: Hardfork,
     ) -> Self {
         Self {
             name,
@@ -101,8 +102,8 @@ impl InteropDescriptor {
 
         // Check hardfork if required
         if let Some(ref hardfork) = self.hardfork {
-            if !engine.is_hardfork_enabled(hardfork) {
-                return Err(format!("Hardfork {} not enabled", hardfork));
+            if !engine.is_hardfork_enabled(*hardfork) {
+                return Err(format!("Hardfork {:?} not enabled", hardfork));
             }
         }
 

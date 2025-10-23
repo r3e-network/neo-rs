@@ -35,7 +35,7 @@ pub enum ConsensusMessageError {
 }
 
 impl ConsensusMessageError {
-    fn invalid_data(message: impl Into<String>) -> Self {
+    pub(crate) fn invalid_data(message: impl Into<String>) -> Self {
         Self::InvalidFormat(message.into())
     }
 }
@@ -159,14 +159,21 @@ impl ConsensusMessagePayload {
     /// Serializes the message to a byte vector.
     pub fn to_bytes(&self) -> ConsensusMessageResult<Vec<u8>> {
         let mut writer = BinaryWriter::new();
-        self.header().serialize(&mut writer)?;
         match self {
-            ConsensusMessagePayload::ChangeView(message) => message.write_body(&mut writer)?,
-            ConsensusMessagePayload::PrepareRequest(message) => message.write_body(&mut writer)?,
-            ConsensusMessagePayload::PrepareResponse(message) => message.write_body(&mut writer)?,
-            ConsensusMessagePayload::Commit(message) => message.write_body(&mut writer)?,
-            ConsensusMessagePayload::RecoveryRequest(message) => message.write_body(&mut writer)?,
-            ConsensusMessagePayload::RecoveryMessage(message) => message.write_body(&mut writer)?,
+            ConsensusMessagePayload::ChangeView(message) => message.write_with_header(&mut writer)?,
+            ConsensusMessagePayload::PrepareRequest(message) => {
+                message.write_with_header(&mut writer)?
+            }
+            ConsensusMessagePayload::PrepareResponse(message) => {
+                message.write_with_header(&mut writer)?
+            }
+            ConsensusMessagePayload::Commit(message) => message.write_with_header(&mut writer)?,
+            ConsensusMessagePayload::RecoveryRequest(message) => {
+                message.write_with_header(&mut writer)?
+            }
+            ConsensusMessagePayload::RecoveryMessage(message) => {
+                message.write_with_header(&mut writer)?
+            }
         }
         Ok(writer.into_bytes())
     }
@@ -217,7 +224,8 @@ impl ConsensusMessagePayload {
 
     /// Verifies the message against the provided protocol settings.
     pub fn verify(&self, settings: &ProtocolSettings) -> bool {
-        if self.validator_index() as u32 >= settings.validators_count {
+        let validator_count = settings.validators_count.max(0) as u32;
+        if self.validator_index() as u32 >= validator_count {
             return false;
         }
 

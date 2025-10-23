@@ -3,13 +3,12 @@
 //! This module provides the Map stack item implementation used in the Neo VM.
 
 use crate::error::{VmError, VmResult};
-use crate::reference_counter::ReferenceCounter;
+use crate::reference_counter::{CompoundParent, ReferenceCounter};
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::stack_item_vertex::next_stack_item_id;
 use crate::stack_item::StackItem;
 use num_traits::Zero;
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 const MAX_KEY_SIZE: usize = 64;
 
@@ -21,7 +20,7 @@ pub struct Map {
     /// Unique identifier mirroring reference equality semantics.
     id: usize,
     /// Reference counter shared with the VM (mirrors C# CompoundType semantics).
-    reference_counter: Option<Arc<ReferenceCounter>>,
+    reference_counter: Option<ReferenceCounter>,
     /// Indicates whether the map is read-only.
     is_read_only: bool,
 }
@@ -30,7 +29,7 @@ impl Map {
     /// Creates a new map with the specified items and reference counter.
     pub fn new(
         items: BTreeMap<StackItem, StackItem>,
-        reference_counter: Option<Arc<ReferenceCounter>>,
+        reference_counter: Option<ReferenceCounter>,
     ) -> Self {
         let map = Self {
             items,
@@ -47,7 +46,7 @@ impl Map {
     }
 
     /// Returns the reference counter assigned by the reference counter, if any.
-    pub fn reference_counter(&self) -> Option<&Arc<ReferenceCounter>> {
+    pub fn reference_counter(&self) -> Option<&ReferenceCounter> {
         self.reference_counter.as_ref()
     }
 
@@ -93,12 +92,12 @@ impl Map {
             self.validate_compound_reference(rc, &value)?;
 
             if let Some(old_value) = self.items.get(&key) {
-                rc.remove_stack_reference(old_value);
+                rc.remove_compound_reference(old_value, CompoundParent::Map(self.id));
             } else {
-                rc.add_stack_reference(&key, 1);
+                rc.add_compound_reference(&key, CompoundParent::Map(self.id));
             }
 
-            rc.add_stack_reference(&value, 1);
+            rc.add_compound_reference(&value, CompoundParent::Map(self.id));
         }
 
         self.items.insert(key, value);
@@ -116,8 +115,9 @@ impl Map {
             .ok_or_else(|| VmError::invalid_operation_msg(format!("Key not found: {key:?}")))?;
 
         if let Some(rc) = &self.reference_counter {
-            rc.remove_stack_reference(key);
-            rc.remove_stack_reference(&value);
+            let parent = CompoundParent::Map(self.id);
+            rc.remove_compound_reference(key, parent);
+            rc.remove_compound_reference(&value, parent);
         }
 
         Ok(value)
@@ -143,9 +143,10 @@ impl Map {
     pub fn clear(&mut self) -> VmResult<()> {
         self.ensure_mutable()?;
         if let Some(rc) = &self.reference_counter {
+            let parent = CompoundParent::Map(self.id);
             for (key, value) in &self.items {
-                rc.remove_stack_reference(key);
-                rc.remove_stack_reference(value);
+                rc.remove_compound_reference(key, parent);
+                rc.remove_compound_reference(value, parent);
             }
         }
         self.items.clear();
@@ -168,7 +169,7 @@ impl Map {
     }
 
     /// Creates a deep copy of the map.
-    pub fn deep_copy(&self, reference_counter: Option<Arc<ReferenceCounter>>) -> Self {
+    pub fn deep_copy(&self, reference_counter: Option<ReferenceCounter>) -> Self {
         let mut items = BTreeMap::new();
         for (k, v) in &self.items {
             items.insert(k.deep_clone(), v.deep_clone());
@@ -198,7 +199,8 @@ impl Map {
         }
     }
 
-    fn add_reference_for_entries(&self, rc: &Arc<ReferenceCounter>) {
+    fn add_reference_for_entries(&self, rc: &ReferenceCounter) {
+        let parent = CompoundParent::Map(self.id);
         for (key, value) in &self.items {
             if let Err(err) = self.validate_key(key) {
                 panic!("{err}");
@@ -206,8 +208,8 @@ impl Map {
             if let Err(err) = self.validate_compound_reference(rc, value) {
                 panic!("{err}");
             }
-            rc.add_stack_reference(key, 1);
-            rc.add_stack_reference(value, 1);
+            rc.add_compound_reference(key, parent);
+            rc.add_compound_reference(value, parent);
         }
     }
 
@@ -251,14 +253,10 @@ impl Map {
         }
     }
 
-    fn validate_compound_reference(
-        &self,
-        rc: &Arc<ReferenceCounter>,
-        item: &StackItem,
-    ) -> VmResult<()> {
+    fn validate_compound_reference(&self, rc: &ReferenceCounter, item: &StackItem) -> VmResult<()> {
         match item {
             StackItem::Array(inner) => match inner.reference_counter() {
-                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
                 Some(_) => Err(VmError::invalid_operation_msg(
                     "Can not set a Map value without a ReferenceCounter.".to_string(),
                 )),
@@ -267,7 +265,7 @@ impl Map {
                 )),
             },
             StackItem::Struct(inner) => match inner.reference_counter() {
-                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
                 Some(_) => Err(VmError::invalid_operation_msg(
                     "Can not set a Map value without a ReferenceCounter.".to_string(),
                 )),
@@ -276,7 +274,7 @@ impl Map {
                 )),
             },
             StackItem::Map(inner) => match inner.reference_counter() {
-                Some(child_rc) if Arc::ptr_eq(child_rc, rc) => Ok(()),
+                Some(child_rc) if child_rc.ptr_eq(rc) => Ok(()),
                 Some(_) => Err(VmError::invalid_operation_msg(
                     "Can not set a Map value without a ReferenceCounter.".to_string(),
                 )),

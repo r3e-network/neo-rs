@@ -1,11 +1,8 @@
-//! Store module for Application Logs Plugin
-//!
-//! This module provides the storage implementation matching the C# Neo.Plugins.ApplicationLogs.Store exactly.
-
 pub mod log_storage_store;
-pub mod neo_store;
 pub mod models;
+pub mod neo_store;
 pub mod states;
 
-// Re-export commonly used types
-pub use neo_store::NeoStore;
+pub use log_storage_store::{ContractLogRecord, LogStorageStore};
+pub use models::{ApplicationEngineLogModel, BlockchainEventModel, BlockchainExecutionModel};
+pub use neo_store::{ContractLogEntry, NeoStore};

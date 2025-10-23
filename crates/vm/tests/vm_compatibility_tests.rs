@@ -252,9 +252,7 @@ mod tests {
 
                 // Check each expected value
                 for (i, expected_value) in expected.iter().enumerate() {
-                    let stack_item = result_stack
-                        .peek(i)
-                        .expect("Stack item should exist");
+                    let stack_item = result_stack.peek(i).expect("Stack item should exist");
                     match stack_item.as_int() {
                         Ok(value) => assert_eq!(value.to_string(), *expected_value),
                         Err(_) => panic!("Expected integer value: {}", expected_value),
@@ -304,9 +302,7 @@ mod tests {
                 assert_eq!(result_stack.len(), expected.len());
 
                 for (i, expected_value) in expected.iter().enumerate() {
-                    let stack_item = result_stack
-                        .peek(i)
-                        .expect("Stack item should exist");
+                    let stack_item = result_stack.peek(i).expect("Stack item should exist");
                     match stack_item.as_int() {
                         Ok(value) => assert_eq!(value.to_string(), *expected_value),
                         Err(_) => panic!("Expected integer value: {}", expected_value),
@@ -387,9 +383,7 @@ mod tests {
                 assert_eq!(result_stack.len(), expected.len());
 
                 for (i, expected_value) in expected.iter().enumerate() {
-                    let stack_item = result_stack
-                        .peek(i)
-                        .expect("Stack item should exist");
+                    let stack_item = result_stack.peek(i).expect("Stack item should exist");
                     match stack_item.as_int() {
                         Ok(value) => assert_eq!(value.to_string(), *expected_value),
                         Err(_) => panic!("Expected integer value: {}", expected_value),

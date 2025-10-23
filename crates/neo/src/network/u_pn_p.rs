@@ -14,27 +14,45 @@ use quick_xml::Reader;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// Provides methods for interacting with UPnP devices.
 pub struct UPnP;
 
-/// Static service URL for UPnP
-static mut SERVICE_URL: Option<String> = None;
+#[derive(Clone)]
+struct ServiceState {
+    service_url: Option<String>,
+    timeout: Duration,
+}
 
-/// Gets or sets the timeout for discovering the UPnP device.
-static mut TIMEOUT: Duration = Duration::from_secs(3);
+impl ServiceState {
+    fn new() -> Self {
+        Self {
+            service_url: None,
+            timeout: Duration::from_secs(3),
+        }
+    }
+}
+
+fn service_state() -> &'static Mutex<ServiceState> {
+    static STATE: OnceLock<Mutex<ServiceState>> = OnceLock::new();
+    STATE.get_or_init(|| Mutex::new(ServiceState::new()))
+}
 
 impl UPnP {
     /// Gets the timeout for discovering the UPnP device.
     pub fn get_timeout() -> Duration {
-        unsafe { TIMEOUT }
+        service_state()
+            .lock()
+            .map(|state| state.timeout)
+            .unwrap_or(Duration::from_secs(3))
     }
 
     /// Sets the timeout for discovering the UPnP device.
     pub fn set_timeout(timeout: Duration) {
-        unsafe {
-            TIMEOUT = timeout;
+        if let Ok(mut state) = service_state().lock() {
+            state.timeout = timeout;
         }
     }
 
@@ -88,8 +106,10 @@ impl UPnP {
                                             Self::get_service_url(location_url)
                                         {
                                             if !service_url.is_empty() {
-                                                unsafe {
-                                                    SERVICE_URL = Some(service_url);
+                                                if let Ok(mut state) = service_state().lock() {
+                                                    state.service_url = Some(service_url);
+                                                } else {
+                                                    return false;
                                                 }
                                                 return true;
                                             }
@@ -242,11 +262,13 @@ impl UPnP {
     /// Mirrors C# `UPnP.ForwardPort(int port, ProtocolType protocol, string description)`.
     /// Returns true if the port is successfully forwarded; otherwise, false.
     pub fn forward_port(port: i32, protocol: &str, description: &str) -> bool {
-        let service_url = unsafe {
-            match &SERVICE_URL {
-                Some(url) => url.clone(),
-                None => return false,
-            }
+        let service_url = {
+            let state = service_state().lock().ok();
+            state.and_then(|state| state.service_url.clone())
+        };
+        let service_url = match service_url {
+            Some(url) => url,
+            None => return false,
         };
 
         let internal_ip = match Self::get_local_ip() {
@@ -273,11 +295,13 @@ impl UPnP {
     /// Mirrors C# `UPnP.DeleteForwardingRule(int port, ProtocolType protocol)`.
     /// Returns true if the port forwarding is successfully deleted; otherwise, false.
     pub fn delete_forwarding_rule(port: i32, protocol: &str) -> bool {
-        let service_url = unsafe {
-            match &SERVICE_URL {
-                Some(url) => url.clone(),
-                None => return false,
-            }
+        let service_url = {
+            let state = service_state().lock().ok();
+            state.and_then(|state| state.service_url.clone())
+        };
+        let service_url = match service_url {
+            Some(url) => url,
+            None => return false,
         };
 
         let args = format!(
@@ -292,12 +316,10 @@ impl UPnP {
 
     /// Gets the external IP address from the UPnP device.
     pub fn get_external_ip() -> Option<String> {
-        let service_url = unsafe {
-            match &SERVICE_URL {
-                Some(url) => url.clone(),
-                None => return None,
-            }
-        };
+        let service_url = {
+            let state = service_state().lock().ok();
+            state.and_then(|state| state.service_url.clone())
+        }?;
 
         match Self::run_command(&service_url, "GetExternalIPAddress", "") {
             Ok(response) => {

@@ -4,20 +4,23 @@
 
 use blake2::{Blake2b512, Blake2s256};
 use bs58;
+use core::convert::TryFrom;
 use ed25519_dalek::{
     Signature as Ed25519Signature, SigningKey as Ed25519SigningKey,
     VerifyingKey as Ed25519VerifyingKey,
 };
+use ed25519_dalek::{Signer as _, Verifier as _};
 use hex;
 use p256::{
     ecdsa::{Signature, SigningKey, VerifyingKey},
     PublicKey as P256PublicKey, SecretKey as P256SecretKey,
 };
-use rand::RngCore;
+use rand::{rngs::OsRng, RngCore};
 use ripemd::Ripemd160;
 use secp256k1::{
     Message, PublicKey as Secp256k1PublicKey, Secp256k1, SecretKey as Secp256k1SecretKey,
 };
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256, Sha512};
 use sha3::Keccak256;
 use std::cmp::Ordering;
@@ -98,9 +101,14 @@ pub struct Secp256k1Crypto;
 impl Secp256k1Crypto {
     /// Generates a new random private key
     pub fn generate_private_key() -> [u8; 32] {
-        let secp = Secp256k1::new();
-        let secret_key = Secp256k1SecretKey::new(&mut rand::thread_rng());
-        secret_key.secret_bytes()
+        let mut rng = OsRng;
+        loop {
+            let mut candidate = [0u8; 32];
+            rng.fill_bytes(&mut candidate);
+            if let Ok(secret_key) = Secp256k1SecretKey::from_slice(&candidate) {
+                return secret_key.secret_bytes();
+            }
+        }
     }
 
     /// Derives public key from private key
@@ -153,25 +161,28 @@ pub struct Secp256r1Crypto;
 impl Secp256r1Crypto {
     /// Generates a new random private key
     pub fn generate_private_key() -> [u8; 32] {
-        let secret_key = P256SecretKey::random(&mut rand::thread_rng());
-        secret_key.to_bytes().into()
+        let secret_key = P256SecretKey::random(&mut OsRng);
+        let bytes = secret_key.to_bytes();
+        let mut key = [0u8; 32];
+        key.copy_from_slice(bytes.as_slice());
+        key
     }
 
     /// Derives public key from private key
     pub fn derive_public_key(private_key: &[u8; 32]) -> Result<Vec<u8>, String> {
-        let secret_key = P256SecretKey::from_bytes(private_key.into())
+        let signing_key = SigningKey::try_from(private_key.as_slice())
             .map_err(|e| format!("Invalid private key: {}", e))?;
-        let public_key = secret_key.public_key();
-        Ok(public_key.to_sec1_bytes().to_vec())
+        let verifying_key = VerifyingKey::from(&signing_key);
+        Ok(verifying_key.to_encoded_point(true).as_bytes().to_vec())
     }
 
     /// Signs a message with secp256r1
     pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64], String> {
-        let secret_key = P256SecretKey::from_bytes(private_key.into())
+        let signing_key = SigningKey::try_from(private_key.as_slice())
             .map_err(|e| format!("Invalid private key: {}", e))?;
-        let signing_key = SigningKey::from(secret_key);
         let signature: Signature = signing_key.sign(message);
-        Ok(signature.to_bytes().into())
+        let bytes: [u8; 64] = signature.to_bytes().into();
+        Ok(bytes)
     }
 
     /// Verifies a secp256r1 signature
@@ -180,7 +191,7 @@ impl Secp256r1Crypto {
             .map_err(|e| format!("Invalid public key: {}", e))?;
         let verifying_key = VerifyingKey::from(public_key);
 
-        let signature = Signature::from_bytes(signature.into())
+        let signature = Signature::try_from(signature.as_slice())
             .map_err(|e| format!("Invalid signature: {}", e))?;
 
         Ok(verifying_key.verify(message, &signature).is_ok())
@@ -199,14 +210,14 @@ impl Ed25519Crypto {
 
     /// Derives public key from private key
     pub fn derive_public_key(private_key: &[u8; 32]) -> Result<[u8; 32], String> {
-        let signing_key = Ed25519SigningKey::from_bytes(private_key)
+        let signing_key = Ed25519SigningKey::try_from(private_key.as_slice())
             .map_err(|e| format!("Invalid private key: {}", e))?;
         Ok(signing_key.verifying_key().to_bytes())
     }
 
     /// Signs a message with Ed25519
     pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 64], String> {
-        let signing_key = Ed25519SigningKey::from_bytes(private_key)
+        let signing_key = Ed25519SigningKey::try_from(private_key.as_slice())
             .map_err(|e| format!("Invalid private key: {}", e))?;
         let signature = signing_key.sign(message);
         Ok(signature.to_bytes())
@@ -220,7 +231,7 @@ impl Ed25519Crypto {
     ) -> Result<bool, String> {
         let verifying_key = Ed25519VerifyingKey::from_bytes(public_key)
             .map_err(|e| format!("Invalid public key: {}", e))?;
-        let signature = Ed25519Signature::from_bytes(signature)
+        let signature = Ed25519Signature::try_from(signature.as_slice())
             .map_err(|e| format!("Invalid signature: {}", e))?;
 
         Ok(verifying_key.verify_strict(message, &signature).is_ok())
@@ -241,6 +252,34 @@ impl Base58 {
         bs58::decode(s)
             .into_vec()
             .map_err(|e| format!("Base58 decode error: {}", e))
+    }
+
+    /// Encodes data to Base58Check string (Base58 with 4-byte checksum).
+    pub fn encode_check(data: &[u8]) -> String {
+        let mut payload = Vec::with_capacity(data.len() + 4);
+        payload.extend_from_slice(data);
+        let checksum = NeoHash::hash256(data);
+        payload.extend_from_slice(&checksum[..4]);
+        bs58::encode(payload).into_string()
+    }
+
+    /// Decodes Base58Check string back to bytes, verifying the checksum.
+    pub fn decode_check(s: &str) -> Result<Vec<u8>, String> {
+        let bytes = bs58::decode(s)
+            .into_vec()
+            .map_err(|e| format!("Base58 decode error: {}", e))?;
+
+        if bytes.len() < 4 {
+            return Err("Invalid Base58Check payload: too short".to_string());
+        }
+
+        let (payload, checksum) = bytes.split_at(bytes.len() - 4);
+        let expected = NeoHash::hash256(payload);
+        if checksum != &expected[..4] {
+            return Err("Invalid Base58Check checksum".to_string());
+        }
+
+        Ok(payload.to_vec())
     }
 }
 
@@ -331,6 +370,42 @@ impl ECPoint {
     /// Decodes an ECPoint from bytes (generic).
     pub fn decode(bytes: &[u8], _curve: ECCurve) -> Result<Self, String> {
         Self::from_bytes(bytes)
+    }
+
+    /// Returns true if the point appears to be a valid encoded point for the supported curves.
+    pub fn is_valid(&self) -> bool {
+        match self.encoded.len() {
+            33 => matches!(self.encoded.first(), Some(0x02) | Some(0x03)),
+            65 => matches!(self.encoded.first(), Some(0x04)),
+            _ => false,
+        }
+    }
+
+    /// Returns the point encoded in compressed form.
+    pub fn encode_compressed(&self) -> Result<Vec<u8>, String> {
+        self.encode_point(true)
+    }
+}
+
+impl Serialize for ECPoint {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&hex::encode(self.encoded()))
+    }
+}
+
+impl<'de> Deserialize<'de> for ECPoint {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        let bytes = hex::decode(&value)
+            .map_err(|e| serde::de::Error::custom(format!("Invalid ECPoint hex: {}", e)))?;
+        ECPoint::from_bytes(&bytes)
+            .map_err(|e| serde::de::Error::custom(format!("Invalid ECPoint: {}", e)))
     }
 }
 
@@ -479,6 +554,16 @@ impl Crypto {
         NeoHash::ripemd160(data)
     }
 
+    /// Computes Hash160 (RIPEMD160(SHA256(data))).
+    pub fn hash160(data: &[u8]) -> [u8; 20] {
+        NeoHash::hash160(data)
+    }
+
+    /// Computes Hash256 (double SHA-256).
+    pub fn hash256(data: &[u8]) -> [u8; 32] {
+        NeoHash::hash256(data)
+    }
+
     /// Verifies ECDSA signature with secp256r1
     pub fn verify_signature_secp256r1(data: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
         ECDsa::verify(data, signature, public_key, ECCurve::Secp256r1).unwrap_or(false)
@@ -487,6 +572,56 @@ impl Crypto {
     /// Verifies ECDSA signature with secp256k1
     pub fn verify_signature_secp256k1(data: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
         ECDsa::verify(data, signature, public_key, ECCurve::Secp256k1).unwrap_or(false)
+    }
+
+    pub fn verify_signature_with_curve(
+        data: &[u8],
+        signature: &[u8],
+        public_key: &[u8],
+        curve: &ECCurve,
+        _hash_algorithm: HashAlgorithm,
+    ) -> bool {
+        ECDsa::verify(data, signature, public_key, *curve).unwrap_or(false)
+    }
+
+    /// Verifies a signature against the supplied public key, inferring the curve where possible.
+    pub fn verify_signature_bytes(message: &[u8], signature: &[u8], public_key: &[u8]) -> bool {
+        if signature.len() != 64 {
+            return false;
+        }
+
+        let mut sig = [0u8; 64];
+        sig.copy_from_slice(signature);
+
+        match public_key.len() {
+            32 => {
+                let mut pk = [0u8; 32];
+                pk.copy_from_slice(public_key);
+                Ed25519Crypto::verify(message, &sig, &pk).unwrap_or(false)
+            }
+            33 => {
+                let mut pk = [0u8; 33];
+                pk.copy_from_slice(public_key);
+                if let Ok(true) = Secp256k1Crypto::verify(message, &sig, &pk) {
+                    return true;
+                }
+                Secp256r1Crypto::verify(message, &sig, public_key).unwrap_or(false)
+            }
+            64 | 65 => {
+                if let Ok(true) = Secp256r1Crypto::verify(message, &sig, public_key) {
+                    return true;
+                }
+
+                if let Ok(pk) = Secp256k1PublicKey::from_slice(public_key) {
+                    let compressed = pk.serialize();
+                    let mut buf = [0u8; 33];
+                    buf.copy_from_slice(&compressed);
+                    return Secp256k1Crypto::verify(message, &sig, &buf).unwrap_or(false);
+                }
+                false
+            }
+            _ => Secp256r1Crypto::verify(message, &sig, public_key).unwrap_or(false),
+        }
     }
 }
 
@@ -502,7 +637,7 @@ impl Bls12381Crypto {
     }
 
     /// Signs a message with BLS12-381
-    pub fn sign(message: &[u8], private_key: &[u8; 32]) -> Result<[u8; 96], String> {
+    pub fn sign(_message: &[u8], _private_key: &[u8; 32]) -> Result<[u8; 96], String> {
         // This is a simplified implementation
         // In practice, you'd use the blst crate's BLS signature functionality
         Err("BLS12-381 signing not implemented yet".to_string())
@@ -510,13 +645,70 @@ impl Bls12381Crypto {
 
     /// Verifies a BLS12-381 signature
     pub fn verify(
-        message: &[u8],
-        signature: &[u8; 96],
-        public_key: &[u8; 48],
+        _message: &[u8],
+        _signature: &[u8; 96],
+        _public_key: &[u8; 48],
     ) -> Result<bool, String> {
         // This is a simplified implementation
         // In practice, you'd use the blst crate's BLS verification functionality
         Err("BLS12-381 verification not implemented yet".to_string())
+    }
+}
+
+pub mod base58 {
+    use super::Base58;
+
+    pub fn encode(data: &[u8]) -> String {
+        Base58::encode(data)
+    }
+
+    pub fn decode(s: &str) -> Result<Vec<u8>, String> {
+        Base58::decode(s)
+    }
+
+    pub fn encode_check(data: &[u8]) -> String {
+        Base58::encode_check(data)
+    }
+
+    pub fn decode_check(s: &str) -> Result<Vec<u8>, String> {
+        Base58::decode_check(s)
+    }
+}
+
+pub mod hash {
+    use super::NeoHash;
+
+    pub fn sha256(data: &[u8]) -> [u8; 32] {
+        NeoHash::sha256(data)
+    }
+
+    pub fn sha512(data: &[u8]) -> [u8; 64] {
+        NeoHash::sha512(data)
+    }
+
+    pub fn keccak256(data: &[u8]) -> [u8; 32] {
+        NeoHash::keccak256(data)
+    }
+
+    pub fn ripemd160(data: &[u8]) -> [u8; 20] {
+        NeoHash::ripemd160(data)
+    }
+
+    pub fn hash160(data: &[u8]) -> [u8; 20] {
+        NeoHash::hash160(data)
+    }
+
+    pub fn hash256(data: &[u8]) -> [u8; 32] {
+        NeoHash::hash256(data)
+    }
+}
+
+pub mod murmur {
+    use murmur3::murmur3_32;
+    use std::io::Cursor;
+
+    pub fn murmur32(data: &[u8], seed: u32) -> u32 {
+        murmur3_32(&mut Cursor::new(data), seed).expect("murmur32 hashing should not fail")
     }
 }
 

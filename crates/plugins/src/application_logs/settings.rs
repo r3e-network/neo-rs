@@ -9,7 +9,13 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::sync::RwLock;
+
+static DEFAULT_SETTINGS: Lazy<RwLock<ApplicationLogsSettings>> = Lazy::new(|| {
+    RwLock::new(ApplicationLogsSettings::default())
+});
 
 /// Application Logs settings matching C# ApplicationLogsSettings exactly
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,25 +42,22 @@ pub enum UnhandledExceptionPolicy {
 }
 
 impl ApplicationLogsSettings {
-    /// Default settings instance
-    pub static mut DEFAULT: Option<ApplicationLogsSettings> = None;
-    
     /// Loads settings from configuration
     /// Matches C# Load method
     pub fn load(config: &serde_json::Value) {
         let settings = ApplicationLogsSettings::from_config(config);
-        unsafe {
-            ApplicationLogsSettings::DEFAULT = Some(settings);
+        if let Ok(mut guard) = DEFAULT_SETTINGS.write() {
+            *guard = settings;
         }
     }
     
     /// Gets the default settings
     /// Matches C# Default property
-    pub fn default() -> &'static ApplicationLogsSettings {
-        unsafe {
-            ApplicationLogsSettings::DEFAULT.as_ref()
-                .expect("ApplicationLogsSettings not loaded")
-        }
+    pub fn default() -> ApplicationLogsSettings {
+        DEFAULT_SETTINGS
+            .read()
+            .map(|guard| guard.clone())
+            .unwrap_or_default()
     }
     
     /// Creates settings from configuration
@@ -82,6 +85,18 @@ impl ApplicationLogsSettings {
                     _ => None,
                 })
                 .unwrap_or(UnhandledExceptionPolicy::Ignore),
+        }
+    }
+}
+
+impl Default for ApplicationLogsSettings {
+    fn default() -> Self {
+        Self {
+            path: "ApplicationLogs_{0}".to_string(),
+            network: 5_195_086,
+            max_stack_size: 65_535,
+            debug: false,
+            exception_policy: UnhandledExceptionPolicy::Ignore,
         }
     }
 }

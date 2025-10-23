@@ -9,8 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use xxhash_rust::xxh32::xxh32;
 
 /// Byte array equality comparer matching C# ByteArrayEqualityComparer exactly
 pub struct ByteArrayEqualityComparer;
@@ -19,31 +19,33 @@ impl ByteArrayEqualityComparer {
     /// Default comparer
     /// Matches C# Default property
     pub const DEFAULT: ByteArrayEqualityComparer = ByteArrayEqualityComparer;
-    
+
     /// Creates a new ByteArrayEqualityComparer
     /// Matches C# constructor
     pub fn new() -> Self {
         Self
     }
-    
+
     /// Compares two byte arrays for equality
     /// Matches C# Equals method
     pub fn equals(&self, x: Option<&[u8]>, y: Option<&[u8]>) -> bool {
-        if std::ptr::eq(x, y) {
-            return true;
-        }
-        
         match (x, y) {
             (None, None) => true,
-            (Some(x), Some(y)) => x.len() == y.len() && x == y,
+            (Some(x_bytes), Some(y_bytes)) => {
+                if std::ptr::eq(x_bytes, y_bytes) {
+                    true
+                } else {
+                    x_bytes.len() == y_bytes.len() && x_bytes == y_bytes
+                }
+            }
             _ => false,
         }
     }
-    
+
     /// Gets the hash code for a byte array
     /// Matches C# GetHashCode method
     pub fn get_hash_code(&self, obj: &[u8]) -> u32 {
-        obj.xx_hash3_32(40343) as u32
+        xxh32(obj, 40_343)
     }
 }
 

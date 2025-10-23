@@ -3,9 +3,11 @@
 use crate::cryptography::crypto_utils::ECPoint;
 use crate::smart_contract::contract::Contract;
 use crate::smart_contract::contract_parameter::ContractParameter;
+use crate::smart_contract::contract_parameter::ContractParameterValue;
 use crate::smart_contract::contract_parameter_type::ContractParameterType;
 use crate::{IVerifiable, UInt160};
-use serde::{Deserialize, Serialize};
+use base64::{engine::general_purpose, Engine as _};
+use num_traits::ToPrimitive;
 use std::collections::HashMap;
 
 /// Context item for managing signatures and parameters
@@ -42,7 +44,7 @@ impl ContextItem {
         let script = obj
             .get("script")
             .and_then(|v| v.as_str())
-            .and_then(|s| base64::decode(s).ok());
+            .and_then(|s| general_purpose::STANDARD.decode(s).ok());
 
         let parameters = obj
             .get("parameters")
@@ -61,7 +63,9 @@ impl ContextItem {
                 sigs.iter()
                     .filter_map(|(key, value)| {
                         let pub_key = hex::decode(key).ok().map(ECPoint::new)?;
-                        let sig = value.as_str().and_then(|s| base64::decode(s).ok())?;
+                        let sig = value
+                            .as_str()
+                            .and_then(|s| general_purpose::STANDARD.decode(s).ok())?;
                         Some((pub_key, sig))
                     })
                     .collect()
@@ -82,7 +86,7 @@ impl ContextItem {
         if let Some(ref script) = self.script {
             obj.insert(
                 "script".to_string(),
-                serde_json::Value::String(base64::encode(script)),
+                serde_json::Value::String(general_purpose::STANDARD.encode(script)),
             );
         } else {
             obj.insert("script".to_string(), serde_json::Value::Null);
@@ -95,7 +99,7 @@ impl ContextItem {
         for (key, value) in &self.signatures {
             sigs.insert(
                 hex::encode(&key.encoded()),
-                serde_json::Value::String(base64::encode(value)),
+                serde_json::Value::String(general_purpose::STANDARD.encode(value)),
             );
         }
         obj.insert("signatures".to_string(), serde_json::Value::Object(sigs));
@@ -141,7 +145,7 @@ impl ContractParametersContext {
     fn check_item_completed(item: &ContextItem) -> bool {
         item.parameters
             .iter()
-            .all(|p| !matches!(p.value, crate::smart_contract::ContractParameterValue::Any))
+            .all(|p| !matches!(p.value, ContractParameterValue::Any))
     }
 
     /// Adds a contract to the context
@@ -187,8 +191,7 @@ impl ContractParametersContext {
             if item.parameters.len() == 1
                 && item.parameters[0].param_type == ContractParameterType::Signature
             {
-                item.parameters[0].value =
-                    crate::smart_contract::ContractParameterValue::Signature(signature);
+                item.parameters[0].value = ContractParameterValue::Signature(signature);
                 return Ok(true);
             }
 
@@ -209,7 +212,7 @@ impl ContractParametersContext {
 
         let mut witnesses = Vec::new();
 
-        for (hash, item) in &self.context_items {
+        for (_hash, item) in &self.context_items {
             // Build invocation script from parameters
             let invocation = Self::build_invocation_script(&item.parameters);
 
@@ -231,15 +234,15 @@ impl ContractParametersContext {
 
         for param in parameters.iter().rev() {
             match &param.value {
-                crate::smart_contract::ContractParameterValue::Signature(sig) => {
+                ContractParameterValue::Signature(sig) => {
                     script.push(0x40); // PUSHDATA1
                     script.push(sig.len() as u8);
                     script.extend_from_slice(sig);
                 }
-                crate::smart_contract::ContractParameterValue::Boolean(b) => {
+                ContractParameterValue::Boolean(b) => {
                     script.push(if *b { 0x51 } else { 0x50 }); // PUSH1 or PUSH0
                 }
-                crate::smart_contract::ContractParameterValue::Integer(i) => {
+                ContractParameterValue::Integer(i) => {
                     // Push integer - simplified
                     if let Some(n) = i.to_i64() {
                         if n == -1 {
@@ -299,7 +302,7 @@ impl ContractParametersContext {
 
         if let Some(items) = obj.get("items").and_then(|v| v.as_object()) {
             for (hash_str, item_json) in items {
-                let hash = UInt160::from_string(hash_str)?;
+                let hash = hash_str.parse::<UInt160>().map_err(|e| e.to_string())?;
                 let item = ContextItem::from_json(item_json)?;
                 context.context_items.insert(hash, item);
             }

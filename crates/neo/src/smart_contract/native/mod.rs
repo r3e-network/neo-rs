@@ -8,6 +8,7 @@ pub mod crypto_lib;
 pub mod fungible_token;
 pub mod gas_token;
 // Removed governance_types - not in C# structure
+pub mod hash_index_state;
 pub mod helpers;
 pub mod ledger_contract;
 pub mod native_contract;
@@ -16,13 +17,14 @@ pub mod oracle_contract;
 pub mod policy_contract;
 pub mod role_management;
 pub mod std_lib;
+pub mod trimmed_block;
 
 pub use contract_management::ContractManagement;
 pub use crypto_lib::CryptoLib;
 pub use fungible_token::{DefaultTokenAccountState, FungibleToken, TokenAccountState};
 pub use gas_token::GasToken;
 pub use helpers::NativeHelpers;
-pub use ledger_contract::LedgerContract;
+pub use ledger_contract::{LedgerContract, LedgerTransactionStates};
 pub use native_contract::{NativeContract, NativeContractsCache, NativeMethod};
 pub use neo_token::NeoToken;
 pub use oracle_contract::{OracleContract, OracleRequest, OracleResponse};
@@ -32,10 +34,11 @@ pub use std_lib::StdLib;
 
 use crate::UInt160;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Registry for native contracts.
 pub struct NativeRegistry {
-    contracts: HashMap<UInt160, Box<dyn NativeContract>>,
+    contracts: HashMap<UInt160, Arc<dyn NativeContract>>,
 }
 
 impl NativeRegistry {
@@ -52,26 +55,21 @@ impl NativeRegistry {
     }
 
     /// Registers a native contract.
-    pub fn register(&mut self, contract: Box<dyn NativeContract>) {
+    pub fn register(&mut self, contract: Arc<dyn NativeContract>) {
         self.contracts.insert(contract.hash(), contract);
     }
 
     /// Gets a native contract by hash.
-    pub fn get(&self, hash: &UInt160) -> Option<&dyn NativeContract> {
-        self.contracts.get(hash).map(|c| c.as_ref())
-    }
-
-    /// Gets a mutable reference to a native contract by hash.
-    pub fn get_mut(&mut self, hash: &UInt160) -> Option<&mut dyn NativeContract> {
-        self.contracts.get_mut(hash).map(|c| c.as_mut())
+    pub fn get(&self, hash: &UInt160) -> Option<Arc<dyn NativeContract>> {
+        self.contracts.get(hash).cloned()
     }
 
     /// Gets a native contract by name.
-    pub fn get_by_name(&self, name: &str) -> Option<&dyn NativeContract> {
+    pub fn get_by_name(&self, name: &str) -> Option<Arc<dyn NativeContract>> {
         self.contracts
             .values()
             .find(|contract| contract.name().eq_ignore_ascii_case(name))
-            .map(|contract| contract.as_ref())
+            .cloned()
     }
 
     fn find_hash_by_name(&self, name: &str) -> Option<UInt160> {
@@ -81,7 +79,7 @@ impl NativeRegistry {
             .map(|(hash, _)| hash.clone())
     }
 
-    pub fn take_contract_by_name(&mut self, name: &str) -> Option<Box<dyn NativeContract>> {
+    pub fn take_contract_by_name(&mut self, name: &str) -> Option<Arc<dyn NativeContract>> {
         let hash = self.find_hash_by_name(name)?;
         self.contracts.remove(&hash)
     }
@@ -97,40 +95,38 @@ impl NativeRegistry {
     }
 
     /// Returns mutable references to all registered native contracts.
-    pub fn contracts_mut(&mut self) -> impl Iterator<Item = &mut dyn NativeContract> + '_ {
-        self.contracts
-            .values_mut()
-            .map(|contract| -> &mut dyn NativeContract { contract.as_mut() })
+    pub fn contracts(&self) -> impl Iterator<Item = Arc<dyn NativeContract>> + '_ {
+        self.contracts.values().cloned()
     }
 
     /// Registers standard Neo native contracts.
     fn register_standard_contracts(&mut self) {
         // Register ContractManagement contract
-        self.register(Box::new(ContractManagement::new()));
+        self.register(Arc::new(ContractManagement::new()));
 
         // Register LedgerContract
-        self.register(Box::new(LedgerContract::new()));
+        self.register(Arc::new(LedgerContract::new()));
 
         // Register NEO token contract
-        self.register(Box::new(NeoToken::new()));
+        self.register(Arc::new(NeoToken::new()));
 
         // Register GAS token contract
-        self.register(Box::new(GasToken::new()));
+        self.register(Arc::new(GasToken::new()));
 
         // Register Policy contract
-        self.register(Box::new(PolicyContract::new()));
+        self.register(Arc::new(PolicyContract::new()));
 
         // Register RoleManagement contract
-        self.register(Box::new(RoleManagement::new()));
+        self.register(Arc::new(RoleManagement::new()));
 
         // Register StdLib contract
-        self.register(Box::new(StdLib::new()));
+        self.register(Arc::new(StdLib::new()));
 
         // Register CryptoLib contract
-        self.register(Box::new(CryptoLib::new()));
+        self.register(Arc::new(CryptoLib::new()));
 
         // Register Oracle contract
-        self.register(Box::new(OracleContract::new()));
+        self.register(Arc::new(OracleContract::new()));
     }
 }
 

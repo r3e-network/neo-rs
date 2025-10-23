@@ -1,95 +1,91 @@
-//! JObject - matches C# Neo.Json.JObject exactly
+//! JObject - Rust port of Neo.Json.JObject
+
+use std::fmt;
 
 use crate::j_token::JToken;
 use crate::ordered_dictionary::OrderedDictionary;
-use std::io::Write;
 
-/// Represents a JSON object (matches C# JObject)
-#[derive(Clone, Debug)]
+/// Represents a JSON object (mirrors the behaviour of the C# implementation).
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct JObject {
     properties: OrderedDictionary<String, Option<JToken>>,
 }
 
 impl JObject {
-    /// Initializes a new instance
+    /// Creates an empty object.
     pub fn new() -> Self {
-        Self {
-            properties: OrderedDictionary::new(),
-        }
+        Self::default()
     }
 
-    /// Gets property by name
-    pub fn get(&self, name: &str) -> Option<&JToken> {
-        self.properties.get(name).and_then(|v| v.as_ref())
+    /// Builds an object from an ordered dictionary of properties.
+    pub fn from_properties(properties: OrderedDictionary<String, Option<JToken>>) -> Self {
+        Self { properties }
     }
 
-    /// Sets property
-    pub fn set(&mut self, name: String, value: Option<JToken>) {
-        self.properties.insert(name, value);
-    }
-
-    /// Gets properties
+    /// Returns the underlying ordered dictionary.
     pub fn properties(&self) -> &OrderedDictionary<String, Option<JToken>> {
         &self.properties
     }
 
-    /// Gets mutable properties
+    /// Mutable reference to the underlying ordered dictionary.
     pub fn properties_mut(&mut self) -> &mut OrderedDictionary<String, Option<JToken>> {
         &mut self.properties
     }
 
-    /// Gets children (values)
+    /// Returns a property value by name.
+    pub fn get(&self, name: &str) -> Option<&JToken> {
+        self.properties.get(name).and_then(|value| value.as_ref())
+    }
+
+    /// Sets or replaces the property identified by `name`.
+    pub fn set(&mut self, name: String, value: Option<JToken>) {
+        self.properties.insert(name, value);
+    }
+
+    /// Number of stored properties.
+    pub fn len(&self) -> usize {
+        self.properties.count()
+    }
+
+    /// Returns `true` when the object has no properties.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns the values in insertion order.
     pub fn children(&self) -> Vec<&Option<JToken>> {
         self.properties.values()
     }
 
-    /// Checks if contains property
+    /// Returns an iterator over the `(key, value)` pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &Option<JToken>)> {
+        self.properties.iter()
+    }
+
+    /// Returns `true` if the object contains a property with the supplied name.
     pub fn contains_property(&self, key: &str) -> bool {
         self.properties.contains_key(key)
     }
 
-    /// Clears all properties
+    /// Removes all properties.
     pub fn clear(&mut self) {
         self.properties.clear();
     }
-
-    /// Converts to string
-    pub fn to_string(&self) -> String {
-        let mut result = String::from("{");
-        let mut first = true;
-        for (key, value) in self.properties.iter() {
-            if !first {
-                result.push(',');
-            }
-            first = false;
-            result.push('"');
-            result.push_str(key);
-            result.push_str("\":");
-            if let Some(token) = value {
-                result.push_str(&token.to_string());
-            } else {
-                result.push_str("null");
-            }
-        }
-        result.push('}');
-        result
-    }
-
-    /// Writes to JSON writer
-    pub fn write(&self, writer: &mut dyn Write) -> std::io::Result<()> {
-        writer.write_all(self.to_string().as_bytes())
-    }
-
-    /// Clones the object
-    pub fn clone(&self) -> Self {
-        Self {
-            properties: self.properties.clone(),
-        }
-    }
 }
 
-impl Default for JObject {
-    fn default() -> Self {
-        Self::new()
+impl fmt::Display for JObject {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("{")?;
+        for (index, (key, value)) in self.properties.iter().enumerate() {
+            if index > 0 {
+                f.write_str(",")?;
+            }
+            write!(f, "\"{}\":", key)?;
+            match value {
+                Some(token) => write!(f, "{}", token)?,
+                None => f.write_str("null")?,
+            }
+        }
+        f.write_str("}")
     }
 }

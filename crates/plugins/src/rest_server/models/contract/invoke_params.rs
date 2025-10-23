@@ -4,14 +4,9 @@
 
 use neo_core::network::p2p::payloads::Signer;
 use neo_core::smart_contract::contract_parameter::ContractParameter;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Default)]
 pub struct InvokeParams {
-    #[serde(default)]
     pub contract_parameters: Vec<ContractParameter>,
-    #[serde(default)]
     pub signers: Vec<Signer>,
 }
 

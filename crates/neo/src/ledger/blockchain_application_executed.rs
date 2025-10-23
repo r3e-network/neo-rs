@@ -1,66 +1,103 @@
-//! Blockchain ApplicationExecuted implementation.
-//!
-//! This module provides the ApplicationExecuted functionality exactly matching C# Neo Blockchain.ApplicationExecuted.
+use crate::neo_vm::{StackItem, VMState};
+use crate::network::p2p::payloads::Transaction;
+use crate::smart_contract::{ApplicationEngine, NotifyEventArgs, TriggerType};
 
-// Matches C# using directives exactly:
-// using Neo.Network.P2P.Payloads;
-// using Neo.SmartContract;
-// using Neo.VM;
-// using Neo.VM.Types;
-// using System;
-
-// NOTE: This is a partial class in C# (partial class Blockchain -> partial class ApplicationExecuted)
-// In Rust, this is implemented as a separate file but conceptually part of the Blockchain module
-
-/// namespace Neo.Ledger -> partial class Blockchain -> partial class ApplicationExecuted
+#[derive(Clone)]
 pub struct ApplicationExecuted {
-    /// The transaction that contains the executed script. This field could be null if the contract is invoked by system.
-    /// public Transaction Transaction { get; }
-    pub transaction: Option<crate::transaction::Transaction>,
-
-    /// The trigger of the execution.
-    /// public TriggerType Trigger { get; }
-    pub trigger: crate::smart_contract::TriggerType,
-
-    /// The state of the virtual machine after the contract is executed.
-    /// public VMState VMState { get; }
-    pub vm_state: crate::vm::VMState,
-
-    /// The exception that caused the execution to terminate abnormally. This field could be null if the execution ends normally.
-    /// public Exception Exception { get; }
-    pub exception: Option<String>, // Exception type placeholder
-
-    /// GAS spent to execute.
-    /// public long GasConsumed { get; }
+    pub transaction: Option<Transaction>,
+    pub trigger: TriggerType,
+    pub vm_state: VMState,
+    pub exception: Option<String>,
     pub gas_consumed: i64,
-
-    /// Items on the stack of the virtual machine after execution.
-    /// public StackItem[] Stack { get; }
-    pub stack: Vec<crate::vm::StackItem>,
-
-    /// The notifications sent during the execution.
-    /// public NotifyEventArgs[] Notifications { get; }
-    pub notifications: Vec<crate::smart_contract::NotifyEventArgs>,
+    pub stack: Vec<StackItem>,
+    pub notifications: Vec<NotifyEventArgs>,
 }
 
 impl ApplicationExecuted {
-    /// internal ApplicationExecuted(ApplicationEngine engine)
-    pub(crate) fn new(engine: &crate::smart_contract::ApplicationEngine) -> Self {
+    pub(crate) fn new(engine: &mut ApplicationEngine) -> Self {
+        let transaction = engine
+            .script_container()
+            .and_then(|c| c.as_ref().as_transaction().cloned());
+
+        if let Some(tx) = transaction.as_ref() {
+            let hash = tx.hash();
+            let _ = engine.record_transaction_vm_state(&hash, engine.state());
+        }
+
         Self {
-            // Transaction = engine.ScriptContainer as Transaction;
-            transaction: engine.script_container().and_then(|c| c.as_transaction()),
-            // Trigger = engine.Trigger;
+            transaction,
             trigger: engine.trigger(),
-            // VMState = engine.State;
             vm_state: engine.state(),
-            // GasConsumed = engine.FeeConsumed;
             gas_consumed: engine.fee_consumed(),
-            // Exception = engine.FaultException;
             exception: engine.fault_exception().map(|e| e.to_string()),
-            // Stack = [.. engine.ResultStack];
             stack: engine.result_stack().to_vec(),
-            // Notifications = [.. engine.Notifications];
             notifications: engine.notifications().to_vec(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ledger::{Block, BlockHeader};
+    use crate::network::p2p::payloads::signer::Signer;
+    use crate::network::p2p::payloads::witness::Witness;
+    use crate::persistence::data_cache::DataCache;
+    use crate::protocol_settings::ProtocolSettings;
+    use crate::smart_contract::application_engine::TEST_MODE_GAS;
+    use crate::smart_contract::native::{LedgerContract, NativeContract};
+    use crate::smart_contract::trigger_type::TriggerType;
+    use crate::UInt160;
+    use crate::WitnessScope;
+    use std::sync::Arc;
+
+    fn signed_transaction() -> Transaction {
+        let mut tx = Transaction::new();
+        tx.set_valid_until_block(10);
+        tx.add_signer(Signer::new(
+            UInt160::default(),
+            WitnessScope::CALLED_BY_ENTRY,
+        ));
+        tx.add_witness(Witness::new());
+        tx
+    }
+
+    #[test]
+    fn application_executed_records_vm_state_for_ledger_contract() {
+        let mut transaction = signed_transaction();
+        transaction.set_script(vec![0x01, 0x02, 0x03]);
+        let transaction_hash = transaction.hash();
+
+        let container: Arc<dyn crate::IVerifiable> =
+            Arc::new(transaction.clone()) as Arc<dyn crate::IVerifiable>;
+        let block = Block::new(BlockHeader::default(), vec![transaction.clone()]);
+        let snapshot = Arc::new(DataCache::new(false));
+
+        let mut engine = ApplicationEngine::new(
+            TriggerType::OnPersist,
+            Some(container),
+            Arc::clone(&snapshot),
+            Some(block.clone()),
+            ProtocolSettings::default(),
+            TEST_MODE_GAS,
+            None,
+        )
+        .expect("failed to create engine");
+
+        engine.force_vm_state(VMState::HALT);
+
+        let ledger = LedgerContract::new();
+        NativeContract::on_persist(&ledger, &mut engine).expect("on_persist");
+
+        ApplicationExecuted::new(&mut engine);
+
+        NativeContract::post_persist(&ledger, &mut engine).expect("post_persist");
+
+        let stored_state = ledger
+            .get_transaction_state(snapshot.as_ref(), &transaction_hash)
+            .expect("state query")
+            .expect("state present");
+
+        assert_eq!(stored_state.vm_state(), VMState::HALT);
     }
 }

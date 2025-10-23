@@ -2,7 +2,7 @@
 
 use super::inventory_type::InventoryType;
 use crate::neo_config::HASH_SIZE;
-use crate::neo_io::{helper, BinaryWriter, MemoryReader, Serializable};
+use crate::neo_io::{helper, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::uint256::UInt256;
 use serde::{Deserialize, Serialize};
 
@@ -69,24 +69,15 @@ impl Serializable for InvPayload {
         1 + helper::get_var_size(self.hashes.len() as u64) + self.hashes.len() * HASH_SIZE
     }
 
-    fn serialize(&self, writer: &mut BinaryWriter) -> neo_io::Result<()> {
-        writer.write_u8(self.inventory_type as u8)?;
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u8(self.inventory_type.to_byte())?;
         helper::serialize_array(&self.hashes, writer)?;
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> neo_io::Result<Self> {
-        let ty = match reader.read_u8()? {
-            0x2b => InventoryType::Transaction,
-            0x2c => InventoryType::Block,
-            0xe0 => InventoryType::Consensus,
-            other => {
-                return Err(neo_io::Error::InvalidData(format!(
-                    "Unsupported inventory type: {:#x}",
-                    other
-                )));
-            }
-        };
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let ty = InventoryType::from_byte(reader.read_u8()?)
+            .ok_or_else(|| IoError::invalid_data("Unsupported inventory type encountered"))?;
 
         let hashes = helper::deserialize_array::<UInt256>(reader, MAX_HASHES_COUNT)?;
         Ok(Self {

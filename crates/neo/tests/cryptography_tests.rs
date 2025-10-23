@@ -1,7 +1,7 @@
 //! Comprehensive cryptography tests converted from C# Neo unit tests.
 //! These tests ensure 100% compatibility with the C# Neo cryptography implementation.
 
-use neo_core::crypto_utils::{Ed25519Crypto, NeoHash, Secp256k1Crypto, Secp256r1Crypto};
+use neo_core::cryptography::crypto_utils::{Crypto, Secp256k1Crypto};
 // use std::str::FromStr;
 
 // ============================================================================
@@ -297,7 +297,7 @@ fn test_script_hash_computation() {
 
     // Compute script hash
     let script_hash = helper::public_key_to_script_hash(&public_key);
-    assert_eq!(20, script_hash.len());
+    assert_eq!(20, script_hash.to_array().len());
 
     // Script hash should be deterministic
     let script_hash2 = helper::public_key_to_script_hash(&public_key);
@@ -407,4 +407,83 @@ fn test_compress_public_key_helper() {
     let invalid = vec![0u8; 32];
     let result = compress_public_key(&invalid);
     assert_eq!(invalid, result);
+}
+
+mod helper {
+    use super::Secp256k1Crypto;
+    use neo_core::cryptography::crypto_utils::ECPoint;
+    use neo_core::smart_contract::contract::Contract;
+    use neo_core::UInt160;
+    use secp256k1::{
+        ecdsa::RecoverableSignature, ecdsa::RecoveryId, Message, Secp256k1, SecretKey,
+    };
+    use sha2::{Digest, Sha256};
+    use std::convert::TryInto;
+
+    pub fn generate_private_key() -> [u8; 32] {
+        Secp256k1Crypto::generate_private_key()
+    }
+
+    pub fn private_key_to_public_key(private_key: &[u8]) -> Result<Vec<u8>, String> {
+        let key: [u8; 32] = private_key
+            .try_into()
+            .map_err(|_| "invalid private key length".to_string())?;
+        Secp256k1Crypto::derive_public_key(&key).map(|pk| pk.to_vec())
+    }
+
+    pub fn sign_message(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, String> {
+        let key: [u8; 32] = private_key
+            .try_into()
+            .map_err(|_| "invalid private key length".to_string())?;
+        Secp256k1Crypto::sign(message, &key).map(|sig| sig.to_vec())
+    }
+
+    pub fn sign_message_recoverable(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, String> {
+        let secp = Secp256k1::new();
+        let secret =
+            SecretKey::from_slice(private_key).map_err(|e| format!("invalid private key: {e}"))?;
+
+        let message_hash = Sha256::digest(message);
+        let msg = Message::from_digest_slice(&message_hash)
+            .map_err(|e| format!("invalid message: {e}"))?;
+
+        let signature = secp.sign_ecdsa_recoverable(&msg, &secret);
+        let (recovery_id, bytes) = signature.serialize_compact();
+
+        let mut output = Vec::with_capacity(65);
+        output.extend_from_slice(&bytes);
+        output.push(recovery_id.to_i32() as u8);
+        Ok(output)
+    }
+
+    pub fn recover_public_key(message: &[u8], signature: &[u8]) -> Result<Vec<u8>, String> {
+        if signature.len() != 65 {
+            return Err("recoverable signature must be 65 bytes".to_string());
+        }
+
+        let rec_id = RecoveryId::from_i32(signature[64] as i32)
+            .map_err(|e| format!("invalid recovery id: {e}"))?;
+
+        let mut sig_bytes = [0u8; 64];
+        sig_bytes.copy_from_slice(&signature[..64]);
+        let recoverable = RecoverableSignature::from_compact(&sig_bytes, rec_id)
+            .map_err(|e| format!("invalid signature: {e}"))?;
+
+        let message_hash = Sha256::digest(message);
+        let msg = Message::from_digest_slice(&message_hash)
+            .map_err(|e| format!("invalid message: {e}"))?;
+
+        let secp = Secp256k1::new();
+        let public_key = secp
+            .recover_ecdsa(&msg, &recoverable)
+            .map_err(|e| format!("failed to recover public key: {e}"))?;
+
+        Ok(public_key.serialize().to_vec())
+    }
+
+    pub fn public_key_to_script_hash(public_key: &[u8]) -> UInt160 {
+        let point = ECPoint::from_bytes(public_key).expect("invalid public key bytes");
+        let script = Contract::create_signature_redeem_script(point);
+        UInt160::from_script(&script)
+    }
 }

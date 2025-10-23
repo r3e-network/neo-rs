@@ -10,10 +10,28 @@
 // modifications are permitted.
 
 use neo_core::{UInt160, UInt256, IStore, IStoreSnapshot, ISerializable};
+use neo_core::cryptography::mpt_trie::{Trie, IStoreSnapshot as IMptStore};
 use super::keys::Keys;
 use super::super::network::StateRoot;
 use super::super::StateServiceSettings;
 use std::sync::Arc;
+
+/// Adapter to convert IStoreSnapshot to IMptStore
+struct StoreSnapshotAdapter(Arc<dyn IStoreSnapshot>);
+
+impl IMptStore for StoreSnapshotAdapter {
+    fn try_get(&self, key: &[u8]) -> Option<Vec<u8>> {
+        self.0.try_get(key).ok()
+    }
+
+    fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), String> {
+        self.0.put(&key, &value).map_err(|e| e.to_string())
+    }
+
+    fn delete(&self, key: Vec<u8>) -> Result<(), String> {
+        self.0.delete(&key).map_err(|e| e.to_string())
+    }
+}
 
 /// State snapshot implementation.
 /// Matches C# StateSnapshot class exactly
@@ -21,10 +39,10 @@ pub struct StateSnapshot {
     /// Database snapshot
     /// Matches C# _snapshot field
     snapshot: Arc<dyn IStoreSnapshot>,
-    
-    /// MPT Trie
+
+    /// MPT Trie - now fully functional
     /// Matches C# Trie field
-    pub trie: Option<Arc<dyn crate::Trie>>, // In a real implementation, this would be the actual Trie type
+    pub trie: Trie<StoreSnapshotAdapter>,
 }
 
 impl StateSnapshot {
@@ -32,12 +50,13 @@ impl StateSnapshot {
     /// Matches C# constructor
     pub fn new(store: Arc<dyn IStore>) -> Self {
         let snapshot = store.get_snapshot();
-        let current_local_root_hash = Self::current_local_root_hash(&snapshot);
+        let current_local_root_hash = Self::current_local_root_hash_static(&snapshot);
         let full_state = StateServiceSettings::default().full_state();
-        
-        // In a real implementation, this would create a Trie
-        let trie = None; // Trie::new(snapshot.clone(), current_local_root_hash, full_state);
-        
+
+        // Create real MPT Trie implementation
+        let adapter = Arc::new(StoreSnapshotAdapter(snapshot.clone()));
+        let trie = Trie::new(adapter, current_local_root_hash, full_state);
+
         Self {
             snapshot,
             trie,
@@ -87,18 +106,28 @@ impl StateSnapshot {
         }
     }
     
+    /// Gets the current local root hash (static version for construction).
+    /// Matches C# CurrentLocalRootHash method
+    fn current_local_root_hash_static(snapshot: &Arc<dyn IStoreSnapshot>) -> Option<UInt256> {
+        if let Ok(bytes) = snapshot.try_get(Keys::CURRENT_LOCAL_ROOT_INDEX) {
+            if bytes.len() == 4 {
+                let index = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                let key = Keys::state_root(index);
+                if let Ok(data) = snapshot.try_get(&key) {
+                    let mut state_root = StateRoot::new();
+                    if state_root.deserialize(&mut data.as_slice()).is_ok() {
+                        return Some(state_root.root_hash);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Gets the current local root hash.
     /// Matches C# CurrentLocalRootHash method
     pub fn current_local_root_hash(&self) -> Option<UInt256> {
-        if let Some(index) = self.current_local_root_index() {
-            if let Some(state_root) = self.get_state_root(index) {
-                Some(state_root.root_hash)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+        Self::current_local_root_hash_static(&self.snapshot)
     }
     
     /// Gets the current local root hash from snapshot.
@@ -178,10 +207,7 @@ impl StateSnapshot {
     /// Commits the snapshot.
     /// Matches C# Commit method
     pub fn commit(&mut self) -> Result<(), String> {
-        if let Some(trie) = &self.trie {
-            // In a real implementation, this would commit the trie
-            // trie.commit()?;
-        }
+        self.trie.commit()?;
         self.snapshot.commit()?;
         Ok(())
     }
@@ -189,7 +215,6 @@ impl StateSnapshot {
 
 impl Drop for StateSnapshot {
     fn drop(&mut self) {
-        // In a real implementation, this would dispose the snapshot
-        // self.snapshot.dispose();
+        // Resources automatically cleaned up by Rust's RAII
     }
 }

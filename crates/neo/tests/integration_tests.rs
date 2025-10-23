@@ -1,4 +1,4 @@
-//
+#![cfg(feature = "neo_full_tests")]
 // software distributed under the MIT software license, see the
 // accompanying file LICENSE in the main directory of the
 //
@@ -12,10 +12,14 @@ use neo_core::events::{EventHandler, EventManager};
 use neo_core::extensions::byte_extensions::ByteExtensions;
 use neo_core::hardfork::{Hardfork, HardforkManager};
 use neo_core::neo_system::{NeoSystem, ProtocolSettings};
+use neo_core::neo_vm::VMState;
 use neo_core::network::p2p::local_node::BroadcastEvent;
+use neo_core::network::p2p::payloads::{Block, Header};
+use neo_core::smart_contract::native::LedgerContract;
 use neo_core::transaction_type::ContainsTransactionType;
 use neo_core::uint160::{UInt160, UINT160_SIZE};
 use neo_core::uint256::{UInt256, UINT256_SIZE};
+use neo_core::WitnessScope;
 
 use num_bigint::BigInt;
 
@@ -55,6 +59,55 @@ fn test_uint160_creation_and_comparison() {
     uint5.value3 = 2;
 
     assert!(uint4 < uint5);
+}
+
+#[test]
+fn test_persist_block_records_vm_state() {
+    let settings = ProtocolSettings::default();
+    let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new should succeed");
+
+    let signer = SignerBuilder::create_empty()
+        .scope(WitnessScope::CALLED_BY_ENTRY)
+        .build();
+    let witness = WitnessBuilder::create_empty().build();
+
+    let mut tx = TransactionBuilder::create_empty()
+        .script(vec![0x01])
+        .signers(vec![signer])
+        .witnesses(vec![witness])
+        .build();
+    let tx_hash = tx.hash();
+
+    let mut header = Header::new();
+    header.set_index(0);
+    header.set_primary_index(0);
+    header.witness = WitnessBuilder::create_empty().build();
+
+    let block = Block {
+        header,
+        transactions: vec![tx.clone()],
+    };
+
+    let executed = system
+        .persist_block(block)
+        .expect("persist block should succeed");
+
+    assert_eq!(executed.len(), 1);
+    assert_eq!(executed[0].vm_state, VMState::HALT);
+    let executed_tx = executed[0]
+        .transaction
+        .as_ref()
+        .expect("executed transaction should be available")
+        .hash();
+    assert_eq!(executed_tx, tx_hash);
+
+    let ledger_contract = LedgerContract::new();
+    let store_cache = system.store_cache();
+    let persisted_state = ledger_contract
+        .get_transaction_state(&store_cache, &tx_hash)
+        .expect("read transaction state")
+        .expect("transaction state present");
+    assert_eq!(persisted_state.vm_state(), VMState::HALT);
 }
 
 #[test]
@@ -211,15 +264,16 @@ fn test_event_manager() {
 async fn test_neo_system() {
     let settings = ProtocolSettings::default();
     let system = NeoSystem::new(settings, None, None).expect("NeoSystem::new should succeed");
+    assert!(system.ledger_context().block_hash_at(0).is_some());
 
-    let service = "test_service".to_string();
-    system.add_service("test", service.clone()).unwrap();
+    let service = Arc::new("test_service".to_string());
+    system.add_named_service("test", service.clone()).unwrap();
 
     let retrieved: Arc<String> = system
-        .get_service("test")
+        .get_named_service("test")
         .unwrap()
         .expect("service must exist");
-    assert_eq!(*retrieved, service);
+    assert_eq!(*retrieved, *service);
 
     let endpoint: SocketAddr = "127.0.0.1:20333".parse().unwrap();
     system.add_peer(endpoint, Some(20333), 0, 0, 0).unwrap();

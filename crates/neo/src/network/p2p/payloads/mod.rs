@@ -46,6 +46,7 @@ pub mod witness_rule_action;
 pub mod witness_scope;
 
 // Re-export commonly used types
+pub use crate::ledger::VerifyResult;
 pub use addr_payload::AddrPayload;
 pub use block::Block;
 pub use conflicts::Conflicts;
@@ -69,9 +70,7 @@ pub use oracle_response::OracleResponse;
 pub use oracle_response_code::OracleResponseCode;
 pub use ping_payload::PingPayload;
 pub use signer::Signer;
-pub use transaction::{
-    Transaction, VerifyResult, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE,
-};
+pub use transaction::{Transaction, HEADER_SIZE, MAX_TRANSACTION_ATTRIBUTES, MAX_TRANSACTION_SIZE};
 pub use transaction_attribute::TransactionAttribute;
 pub use transaction_attribute_type::TransactionAttributeType;
 pub use version_payload::VersionPayload;

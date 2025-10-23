@@ -15,19 +15,17 @@ use async_trait::async_trait;
 use neo_core::NeoSystem;
 use neo_core::sign::{ISigner, SignerManager};
 use neo_extensions::error::ExtensionResult;
-use neo_extensions::plugin::{Plugin, PluginCategory, PluginContext, PluginEvent, PluginInfo};
+use neo_extensions::plugin::{Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo};
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
-use neo_core::persistence::{IStore, StoreFactory};
-use neo_core::{UInt256, Transaction};
 
 /// DBFT Plugin implementation matching C# DBFTPlugin exactly
 pub struct DBFTPlugin {
-    info: PluginInfo,
+    base: PluginBase,
     settings: DbftSettings,
     neo_system: Option<Arc<NeoSystem>>,
     consensus: Option<Arc<Mutex<ConsensusService>>>,
@@ -35,20 +33,26 @@ pub struct DBFTPlugin {
 }
 
 impl DBFTPlugin {
-    /// Creates a new DBFTPlugin with settings
-    /// Matches C# constructor with DbftSettings parameter
-    pub fn new(settings: DbftSettings) -> Self {
+    /// Creates a new DBFTPlugin using default settings.
+    pub fn new() -> Self {
+        Self::with_settings(DbftSettings::default())
+    }
+
+    /// Creates a new DBFTPlugin with custom settings.
+    pub fn with_settings(settings: DbftSettings) -> Self {
+        let info = PluginInfo {
+            name: "DBFTPlugin".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Consensus plugin with dBFT algorithm.".to_string(),
+            author: "Neo Project".to_string(),
+            dependencies: vec![],
+            min_neo_version: "3.6.0".to_string(),
+            category: PluginCategory::Consensus,
+            priority: 0,
+        };
+
         Self {
-            info: PluginInfo {
-                name: "DBFTPlugin".to_string(),
-                version: "1.0.0".to_string(),
-                description: "Consensus plugin with dBFT algorithm.".to_string(),
-                author: "Neo Project".to_string(),
-                dependencies: vec![],
-                min_neo_version: "3.6.0".to_string(),
-                category: PluginCategory::Consensus,
-                priority: 0,
-            },
+            base: PluginBase::new(info),
             settings,
             neo_system: None,
             consensus: None,
@@ -97,10 +101,13 @@ impl DBFTPlugin {
 #[async_trait]
 impl Plugin for DBFTPlugin {
     fn info(&self) -> &PluginInfo {
-        &self.info
+        self.base.info()
     }
 
     async fn initialize(&mut self, context: &PluginContext) -> ExtensionResult<()> {
+        if let Err(err) = self.base.ensure_directories() {
+            warn!("DBFTPlugin: unable to create plugin directory: {}", err);
+        }
         let path = context.config_dir.join("DBFTPlugin.json");
         self.configure_from_path(&path)
     }
@@ -119,6 +126,13 @@ impl Plugin for DBFTPlugin {
     async fn handle_event(&mut self, event: &PluginEvent) -> ExtensionResult<()> {
         match event {
             PluginEvent::NodeStarted { system } => {
+                let system = match Arc::downcast::<NeoSystem>(system.clone()) {
+                    Ok(system) => system,
+                    Err(_) => {
+                        warn!("DBFTPlugin: NodeStarted payload was not a NeoSystem instance");
+                        return Ok(());
+                    }
+                };
                 // Only run on matching network
                 if system.settings().network != self.settings.network {
                     self.neo_system = None;
@@ -136,45 +150,17 @@ impl Plugin for DBFTPlugin {
                     }
                 }
 
-                // Attempt to inject a persistence store if the system has one registered
-                // Prefer a registered store; otherwise, fallback to in-memory store for recovery state.
-                let store_opt = system
-                    .get_service::<Arc<dyn IStore>>("Store")
-                    .ok()
-                    .or_else(|| Some(StoreFactory::get_store("Memory", "")));
-                if let Some(store) = store_opt {
-                    if let Some(consensus) = &self.consensus {
-                        let svc = consensus.clone();
-                        tokio::spawn(async move {
-                            svc.set_store(store).await;
-                        });
-                    }
-                }
-                Ok(())
-            }
-            PluginEvent::TransactionReceived { tx_hash } => {
-                // Try to retrieve the transaction from the mempool and feed it to consensus
+                let store = system.store();
                 if let Some(consensus) = &self.consensus {
-                    if let Ok(hash_bytes) = hex::decode(tx_hash.trim_start_matches("0x")) {
-                        if let Ok(hash) = UInt256::try_from(hash_bytes.as_slice()) {
-                            // Try to get from mempool
-                            let mempool = &self.neo_system.as_ref().unwrap().mem_pool;
-                            if let Ok(mp) = mempool.read() {
-                                if let Some(tx) = mp.try_get(&hash) {
-                                    if tx.system_fee() <= self.settings.max_block_system_fee {
-                                        let svc = consensus.clone();
-                                        tokio::spawn(async move {
-                                            let mut guard = svc.lock().await;
-                                            guard.handle_transaction(tx).await;
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    let svc = consensus.clone();
+                    tokio::spawn(async move {
+                        let mut guard = svc.lock().await;
+                        guard.set_store(store).await;
+                    });
                 }
                 Ok(())
             }
+            PluginEvent::TransactionReceived { .. } => Ok(()),
             // The C# plugin filters Transaction messages at the network layer.
             // Our runtime may raise TransactionReceived separately; consensus intake
             // is wired within the node networking once available.
@@ -182,3 +168,5 @@ impl Plugin for DBFTPlugin {
         }
     }
 }
+
+neo_extensions::register_plugin!(DBFTPlugin);

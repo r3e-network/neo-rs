@@ -18,7 +18,7 @@ pub trait CollectionExtensions<K, V> {
     fn remove_where<F>(&mut self, predicate: F, after_removed: Option<fn(&K, &V)>)
     where
         F: Fn(&K, &V) -> bool;
-    
+
     /// Chunks the source collection into chunks of the specified size.
     /// Matches C# Chunk method
     fn chunk(&self, chunk_size: usize) -> Result<Vec<Vec<V>>, String>
@@ -36,13 +36,13 @@ where
         F: Fn(&K, &V) -> bool,
     {
         let mut items_to_remove = Vec::new();
-        
+
         for (key, value) in self.iter() {
             if predicate(key, value) {
                 items_to_remove.push((key.clone(), value.clone()));
             }
         }
-        
+
         for (key, value) in items_to_remove {
             if self.remove(&key).is_some() {
                 if let Some(callback) = after_removed {
@@ -51,7 +51,7 @@ where
             }
         }
     }
-    
+
     fn chunk(&self, chunk_size: usize) -> Result<Vec<Vec<V>>, String>
     where
         V: Clone,
@@ -59,12 +59,12 @@ where
         if chunk_size <= 0 {
             return Err("Chunk size must > 0".to_string());
         }
-        
+
         let values: Vec<V> = self.values().cloned().collect();
         let mut chunks = Vec::new();
         let mut remaining = values.len();
         let mut index = 0;
-        
+
         while remaining > 0 {
             let chunk_size_actual = remaining.min(chunk_size);
             let chunk = values[index..index + chunk_size_actual].to_vec();
@@ -72,7 +72,7 @@ where
             index += chunk_size_actual;
             remaining -= chunk_size_actual;
         }
-        
+
         Ok(chunks)
     }
 }
@@ -86,13 +86,13 @@ where
         F: Fn(&usize, &T) -> bool,
     {
         let mut indices_to_remove = Vec::new();
-        
+
         for (index, item) in self.iter().enumerate() {
             if predicate(&index, item) {
                 indices_to_remove.push((index, item.clone()));
             }
         }
-        
+
         // Remove in reverse order to maintain indices
         for (index, item) in indices_to_remove.iter().rev() {
             if let Some(removed) = self.get(*index) {
@@ -103,7 +103,7 @@ where
             self.remove(*index);
         }
     }
-    
+
     fn chunk(&self, chunk_size: usize) -> Result<Vec<Vec<T>>, String>
     where
         T: Clone,
@@ -111,11 +111,11 @@ where
         if chunk_size <= 0 {
             return Err("Chunk size must > 0".to_string());
         }
-        
+
         let mut chunks = Vec::new();
         let mut remaining = self.len();
         let mut index = 0;
-        
+
         while remaining > 0 {
             let chunk_size_actual = remaining.min(chunk_size);
             let chunk = self[index..index + chunk_size_actual].to_vec();
@@ -123,7 +123,7 @@ where
             index += chunk_size_actual;
             remaining -= chunk_size_actual;
         }
-        
+
         Ok(chunks)
     }
 }

@@ -19,8 +19,7 @@ pub type CompressionResult<T> = Result<T, CompressionError>;
 
 /// Compresses data using LZ4 with the original length prepended.
 pub fn compress_lz4(data: &[u8]) -> CompressionResult<Vec<u8>> {
-    lz4_flex::block::compress_prepend_size(data)
-        .map_err(|e| CompressionError::Compression(e.to_string()))
+    Ok(lz4_flex::block::compress_prepend_size(data))
 }
 
 /// Decompresses LZ4 data (with prepended length) enforcing a maximum size.

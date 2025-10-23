@@ -11,13 +11,13 @@
 
 use super::i_verifiable::IVerifiable;
 use super::witness::Witness;
-use crate::neo_io::{MemoryReader, Serializable};
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use crate::persistence::DataCache;
 use crate::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
 
 /// Represents the header of a block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {
     version: u32,
     prev_hash: UInt256,
@@ -147,57 +147,69 @@ impl Header {
         }
 
         // Calculate hash from serialized data
-        let mut data = Vec::new();
-        self.serialize_unsigned(&mut data).unwrap();
-        let hash = UInt256::from(neo_crypto::sha256(&data));
+        let mut writer = BinaryWriter::new();
+        self.serialize_unsigned(&mut writer)
+            .expect("header serialization should not fail");
+        let hash = UInt256::from(crate::neo_crypto::sha256(&writer.into_bytes()));
         self._hash = Some(hash);
         hash
     }
 
     /// Serialize without witness
-    fn serialize_unsigned(&self, writer: &mut dyn Write) -> io::Result<()> {
-        writer.write_all(&self.version.to_le_bytes())?;
-        writer.write_all(self.prev_hash.as_bytes())?;
-        writer.write_all(self.merkle_root.as_bytes())?;
-        writer.write_all(&self.timestamp.to_le_bytes())?;
-        writer.write_all(&self.nonce.to_le_bytes())?;
-        writer.write_all(&self.index.to_le_bytes())?;
-        writer.write_all(&[self.primary_index])?;
-        writer.write_all(self.next_consensus.as_bytes())?;
+    fn serialize_unsigned(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u32(self.version)?;
+        let prev_hash = self.prev_hash.as_bytes();
+        writer.write_bytes(&prev_hash)?;
+        let merkle_root = self.merkle_root.as_bytes();
+        writer.write_bytes(&merkle_root)?;
+        writer.write_u64(self.timestamp)?;
+        writer.write_u64(self.nonce)?;
+        writer.write_u32(self.index)?;
+        writer.write_u8(self.primary_index)?;
+        let next_consensus = self.next_consensus.as_bytes();
+        writer.write_bytes(&next_consensus)?;
         Ok(())
     }
 }
 
 impl Serializable for Header {
     fn size(&self) -> usize {
-        4 + 32 + 32 + 8 + 8 + 4 + 1 + 20 + 1 + self.witness.size()
+        4 + 32
+            + 32
+            + 8
+            + 8
+            + 4
+            + 1
+            + 20
+            + crate::neo_io::serializable::helper::get_var_size(1)
+            + self.witness.size()
     }
 
-    fn serialize(&self, writer: &mut dyn Write) -> io::Result<()> {
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         self.serialize_unsigned(writer)?;
         // Write witness count (always 1 for header)
-        writer.write_all(&[1u8])?;
-        self.witness.serialize(writer)?;
+        writer.write_var_uint(1)?;
+        writer.write_serializable(&self.witness)?;
         Ok(())
     }
 
-    fn deserialize(reader: &mut MemoryReader) -> Result<Self, String> {
-        let version = reader.read_u32().map_err(|e| e.to_string())?;
-        let prev_hash = UInt256::deserialize(reader)?;
-        let merkle_root = UInt256::deserialize(reader)?;
-        let timestamp = reader.read_u64().map_err(|e| e.to_string())?;
-        let nonce = reader.read_u64().map_err(|e| e.to_string())?;
-        let index = reader.read_u32().map_err(|e| e.to_string())?;
-        let primary_index = reader.read_u8().map_err(|e| e.to_string())?;
-        let next_consensus = UInt160::deserialize(reader)?;
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let version = reader.read_u32()?;
+        let prev_hash = <UInt256 as Serializable>::deserialize(reader)?;
+        let merkle_root = <UInt256 as Serializable>::deserialize(reader)?;
+        let timestamp = reader.read_u64()?;
+        let nonce = reader.read_u64()?;
+        let index = reader.read_u32()?;
+        let primary_index = reader.read_u8()?;
+        let next_consensus = <UInt160 as Serializable>::deserialize(reader)?;
 
         // Read witness count (should be 1)
-        let witness_count = reader.read_var_int().map_err(|e| e.to_string())?;
+        let witness_count = reader.read_var_uint()?;
         if witness_count != 1 {
-            return Err("Invalid witness count for header".to_string());
+            return Err(IoError::invalid_data("Invalid witness count for header"));
         }
 
-        let witness = Witness::deserialize(reader)?;
+        let witness = <Witness as Serializable>::deserialize(reader)?;
 
         Ok(Self {
             version,
@@ -215,7 +227,7 @@ impl Serializable for Header {
 }
 
 impl IVerifiable for Header {
-    fn get_script_hashes_for_verifying(&self, snapshot: &dyn crate::DataCache) -> Vec<UInt160> {
+    fn get_script_hashes_for_verifying(&self, _snapshot: &DataCache) -> Vec<UInt160> {
         if self.prev_hash == UInt256::default() {
             return vec![self.witness.script_hash()];
         }

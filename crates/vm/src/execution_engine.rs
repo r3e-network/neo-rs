@@ -112,12 +112,8 @@ impl ExecutionEngine {
 
     /// Called when an exception causes the VM to enter the FAULT state.
     fn on_fault(&mut self, err: VmError) {
-        // Set the fault exception
-        let message = err.to_string();
-        let exception = StackItem::from_byte_string(message.as_bytes().to_vec());
-        self.uncaught_exception = Some(exception);
-
-        // Set the state to FAULT
+        #[cfg(debug_assertions)]
+        println!("ExecutionEngine fault: {:?}", err);
         self.set_state(VMState::FAULT);
     }
 
@@ -482,17 +478,18 @@ impl ExecutionEngine {
 
     /// Called after executing an instruction.
     fn post_execute_instruction(&mut self, _instruction: &Instruction) -> VmResult<()> {
-        // Update stack depth metrics
-        if let Ok(metrics) = std::env::var("NEO_VM_METRICS") {
-            if metrics == "1" {
-                let _depth = if let Some(context) = self.current_context() {
-                    context.evaluation_stack().len()
-                } else {
-                    0
-                };
-                // crate::metrics::global_metrics().update_stack_depth(depth); // Removed - no C# counterpart
-            }
+        if self.reference_counter.count() < self.limits.max_stack_size as usize {
+            return Ok(());
         }
+
+        let current = self.reference_counter.check_zero_referred();
+        if current > self.limits.max_stack_size as usize {
+            return Err(VmError::invalid_operation_msg(format!(
+                "MaxStackSize exceed: {}/{}",
+                current, self.limits.max_stack_size
+            )));
+        }
+
         Ok(())
     }
 
@@ -595,17 +592,15 @@ impl ExecutionEngine {
         script: Script,
         rvcount: i32,
         initial_position: usize,
-    ) -> VmResult<ExecutionContext> {
+    ) -> VmResult<&ExecutionContext> {
         let context = self.create_context(script, rvcount, initial_position);
         self.load_context(context)?;
 
-        // Return a reference to the loaded context
         self.current_context()
             .ok_or_else(|| VmError::InvalidOperation {
-                operation: "load_script_and_return_context".to_string(),
+                operation: "load_script".to_string(),
                 reason: "No current execution context after loading".to_string(),
             })
-            .map(|ctx| ctx.clone())
     }
 
     /// Returns the item at the specified index from the top of the current stack without removing it.
@@ -1086,13 +1081,16 @@ mod tests {
         ];
         let script = Script::new_relaxed(script_bytes);
 
-        let context = engine
-            .load_script(script, -1, 0)
-            .expect("VM operation should succeed");
+        {
+            let context = engine
+                .load_script(script, -1, 0)
+                .expect("VM operation should succeed");
+
+            assert_eq!(context.instruction_pointer(), 0);
+            assert_eq!(context.rvcount(), -1);
+        }
 
         assert_eq!(engine.invocation_stack().len(), 1);
-        assert_eq!(context.instruction_pointer(), 0);
-        assert_eq!(context.rvcount(), 0);
     }
 
     #[test]

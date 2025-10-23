@@ -51,7 +51,10 @@ impl<T> WildCardContainer<T> {
     }
 
     /// Converts to JSON representation
-    pub fn to_json(&self) -> serde_json::Value {
+    pub fn to_json(&self) -> serde_json::Value
+    where
+        T: Serialize,
+    {
         match self {
             WildCardContainer::Wildcard => serde_json::Value::String("*".to_string()),
             WildCardContainer::List(data) => {
@@ -140,7 +143,7 @@ impl WildCardContainer<String> {
         match self {
             Self::Wildcard => StackItem::null(),
             Self::List(values) => {
-                let items = values
+                let items: Vec<StackItem> = values
                     .iter()
                     .map(|value| StackItem::from_byte_string(value.as_bytes()))
                     .collect();
@@ -150,7 +153,7 @@ impl WildCardContainer<String> {
     }
 }
 
-fn serialize_wildcard<S>(_: &(), serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_wildcard<S>(serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {

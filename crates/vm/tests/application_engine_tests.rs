@@ -1,12 +1,9 @@
-#![cfg(feature = "neo_application_engine")]
-
 //! Integration tests for the Neo VM application engine.
 //! Converted from C# Neo VM unit tests to ensure 100% compatibility.
 
 use neo_vm::application_engine::{ApplicationEngine, TriggerType};
 use neo_vm::execution_engine::VMState;
 use neo_vm::op_code::OpCode;
-use neo_vm::script::Script;
 use neo_vm::script_builder::ScriptBuilder;
 use neo_vm::stack_item::StackItem;
 use num_bigint::BigInt;
@@ -72,6 +69,8 @@ fn test_application_engine_with_interop_call() {
         .expect("emit_syscall failed")
         .emit_opcode(OpCode::RET);
     let script = builder.to_script();
+
+    println!("Interop script: {:?}", script.as_bytes());
 
     // Execute the script
     let state = engine.execute(script);
@@ -692,4 +691,3 @@ fn test_storage_put_operation() {
         "Storage operations should complete with predictable state"
     );
 }
-#![cfg(feature = "neo_application_engine")]

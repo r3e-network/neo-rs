@@ -6,9 +6,12 @@
 use crate::rest_server::rest_server_settings::RestServerSettings;
 use crate::rest_server::rest_web_server::RestWebServer;
 use async_trait::async_trait;
-use neo_core::{LocalNode, NeoSystem};
+use neo_core::network::p2p::local_node::LocalNode;
+use neo_core::NeoSystem;
 use neo_extensions::error::{ExtensionError, ExtensionResult};
-use neo_extensions::plugin::{Plugin, PluginCategory, PluginContext, PluginEvent, PluginInfo};
+use neo_extensions::plugin::{
+    Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
+};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use serde_json::Value;
@@ -49,24 +52,28 @@ impl RestServerGlobals {
 
 /// Rust port of the C# `RestServerPlugin` class.
 pub struct RestServerPlugin {
-    info: PluginInfo,
+    base: PluginBase,
     settings: RestServerSettings,
     server: Option<RestWebServer>,
 }
 
 impl RestServerPlugin {
     pub fn new() -> Self {
+        let info = PluginInfo {
+            name: "RestServer".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Enables REST Web Services for the node".to_string(),
+            author: "Neo Project".to_string(),
+            dependencies: vec![],
+            min_neo_version: "3.6.0".to_string(),
+            category: PluginCategory::Rpc,
+            priority: 0,
+        };
+
+        let base = PluginBase::new(info);
+
         Self {
-            info: PluginInfo {
-                name: "RestServer".to_string(),
-                version: "1.0.0".to_string(),
-                description: "Enables REST Web Services for the node".to_string(),
-                author: "Neo Project".to_string(),
-                dependencies: vec![],
-                min_neo_version: "3.6.0".to_string(),
-                category: PluginCategory::Rpc,
-                priority: 0,
-            },
+            base,
             settings: RestServerSettings::default(),
             server: None,
         }
@@ -78,6 +85,9 @@ impl RestServerPlugin {
     }
 
     fn configure_from_path(&mut self, path: &PathBuf) -> ExtensionResult<()> {
+        if let Err(err) = self.base.ensure_directories() {
+            warn!("RestServer: unable to create plugin directory: {}", err);
+        }
         match fs::read_to_string(path) {
             Ok(contents) => {
                 if contents.trim().is_empty() {
@@ -113,8 +123,9 @@ impl RestServerPlugin {
         if system.settings().network == self.settings.network {
             RestServerGlobals::set_neo_system(system.clone());
 
-            match system.get_service::<LocalNode>("LocalNode") {
-                Ok(node) => RestServerGlobals::set_local_node(node),
+            match system.get_service::<LocalNode>() {
+                Ok(Some(node)) => RestServerGlobals::set_local_node(node),
+                Ok(None) => warn!("RestServer: LocalNode service not registered in NeoSystem"),
                 Err(error) => warn!(
                     "RestServer: unable to resolve LocalNode service from NeoSystem: {}",
                     error
@@ -142,7 +153,7 @@ impl RestServerPlugin {
 #[async_trait]
 impl Plugin for RestServerPlugin {
     fn info(&self) -> &PluginInfo {
-        &self.info
+        self.base.info()
     }
 
     async fn initialize(&mut self, context: &PluginContext) -> ExtensionResult<()> {
@@ -162,7 +173,15 @@ impl Plugin for RestServerPlugin {
 
     async fn handle_event(&mut self, event: &PluginEvent) -> ExtensionResult<()> {
         match event {
-            PluginEvent::NodeStarted { system } => self.on_system_loaded(system.clone()),
+            PluginEvent::NodeStarted { system } => {
+                match Arc::downcast::<NeoSystem>(system.clone()) {
+                    Ok(neo_system) => self.on_system_loaded(neo_system),
+                    Err(_) => {
+                        warn!("RestServer: NodeStarted payload was not a NeoSystem instance");
+                        Ok(())
+                    }
+                }
+            }
             PluginEvent::NodeStopping => {
                 self.stop_server();
                 Ok(())
@@ -171,3 +190,5 @@ impl Plugin for RestServerPlugin {
         }
     }
 }
+
+neo_extensions::register_plugin!(RestServerPlugin);

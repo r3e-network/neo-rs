@@ -14,7 +14,7 @@ pub trait SecureStringExtensions {
     /// Gets the clear text from a secure string.
     /// Matches C# GetClearText method
     fn get_clear_text(&self) -> Result<String, String>;
-    
+
     /// Converts a string to a secure string.
     /// Matches C# ToSecureString method
     fn to_secure_string(&self, as_read_only: bool) -> SecureString;
@@ -33,11 +33,11 @@ impl SecureString {
             read_only: false,
         }
     }
-    
+
     pub fn make_read_only(&mut self) {
         self.read_only = true;
     }
-    
+
     pub fn is_read_only(&self) -> bool {
         self.read_only
     }
@@ -47,10 +47,13 @@ impl SecureStringExtensions for SecureString {
     fn get_clear_text(&self) -> Result<String, String> {
         match String::from_utf8(self.data.clone()) {
             Ok(s) => Ok(s),
-            Err(e) => Err(format!("Failed to convert secure string to clear text: {}", e)),
+            Err(e) => Err(format!(
+                "Failed to convert secure string to clear text: {}",
+                e
+            )),
         }
     }
-    
+
     fn to_secure_string(&self, _as_read_only: bool) -> SecureString {
         SecureString::new(self.data.clone())
     }
@@ -60,7 +63,7 @@ impl SecureStringExtensions for String {
     fn get_clear_text(&self) -> Result<String, String> {
         Ok(self.clone())
     }
-    
+
     fn to_secure_string(&self, as_read_only: bool) -> SecureString {
         let mut secure = SecureString::new(self.as_bytes().to_vec());
         if as_read_only {
@@ -74,7 +77,7 @@ impl SecureStringExtensions for &str {
     fn get_clear_text(&self) -> Result<String, String> {
         Ok(self.to_string())
     }
-    
+
     fn to_secure_string(&self, as_read_only: bool) -> SecureString {
         let mut secure = SecureString::new(self.as_bytes().to_vec());
         if as_read_only {

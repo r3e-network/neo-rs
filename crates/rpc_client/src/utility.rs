@@ -10,8 +10,8 @@
 // modifications are permitted.
 
 use neo_core::{
-    Block, BlockHeader, Contract, ECPoint, KeyPair, NativeContract, 
-    ProtocolSettings, Transaction, UInt160, UInt256, Wallet,
+    Block, BlockHeader, Contract, ECPoint, KeyPair, NativeContract, ProtocolSettings, Transaction,
+    UInt160, UInt256, Wallet, Witness,
 };
 use neo_json::{JObject, JToken};
 use num_bigint::BigInt;
@@ -289,4 +289,23 @@ fn rule_to_json(rule: &neo_core::WitnessRule) -> JObject {
 fn condition_to_json(condition: &neo_core::WitnessCondition) -> JObject {
     // TODO: Implement witness condition to JSON conversion
     JObject::new()
+}
+
+/// Creates a witness from JSON (invocation/verification scripts encoded as base64).
+pub fn witness_from_json(json: &JObject) -> Result<Witness, String> {
+    let invocation = json
+        .get("invocation")
+        .and_then(|v| v.as_string())
+        .ok_or("Missing 'invocation' field")?;
+    let verification = json
+        .get("verification")
+        .and_then(|v| v.as_string())
+        .ok_or("Missing 'verification' field")?;
+
+    let invocation_bytes =
+        base64::decode(invocation).map_err(|err| format!("Invalid invocation script: {err}"))?;
+    let verification_bytes = base64::decode(verification)
+        .map_err(|err| format!("Invalid verification script: {err}"))?;
+
+    Ok(Witness::new_with_scripts(invocation_bytes, verification_bytes))
 }

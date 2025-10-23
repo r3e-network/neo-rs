@@ -8,12 +8,14 @@
 //     contract::Contract, key_pair::KeyPair, wallet_account::WalletAccount,
 //     wallet_factory::IWalletFactory,
 // };
-// use crate::Version; // TODO: Fix import after restructuring
+use crate::protocol_settings::ProtocolSettings;
+use crate::smart_contract::contract::Contract;
+use crate::wallets::{
+    i_wallet_factory::IWalletFactory, key_pair::KeyPair, wallet_account::WalletAccount, Version,
+};
 use crate::Transaction;
 use crate::{UInt160, UInt256};
 use async_trait::async_trait;
-use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 
 /// Result type for wallet operations
@@ -176,21 +178,31 @@ impl WalletManager {
         name: &str,
         path: &str,
         password: &str,
+        settings: &ProtocolSettings,
     ) -> WalletResult<Box<dyn Wallet>> {
         let factory = self
             .get_factory(path)
             .ok_or_else(|| WalletError::Other("No suitable factory found".to_string()))?;
 
-        factory.create_wallet(name, path, password).await
+        factory
+            .create_wallet(name, path, password, settings)
+            .map_err(WalletError::Other)
     }
 
     /// Opens an existing wallet.
-    pub async fn open_wallet(&self, path: &str, password: &str) -> WalletResult<Box<dyn Wallet>> {
+    pub async fn open_wallet(
+        &self,
+        path: &str,
+        password: &str,
+        settings: &ProtocolSettings,
+    ) -> WalletResult<Box<dyn Wallet>> {
         let factory = self
             .get_factory(path)
             .ok_or_else(|| WalletError::Other("No suitable factory found".to_string()))?;
 
-        factory.open_wallet(path, password).await
+        factory
+            .open_wallet(path, password, settings)
+            .map_err(WalletError::Other)
     }
 
     /// Migrates a wallet from one format to another.
@@ -199,6 +211,7 @@ impl WalletManager {
         old_path: &str,
         new_path: &str,
         password: &str,
+        settings: &ProtocolSettings,
     ) -> WalletResult<Box<dyn Wallet>> {
         let old_factory = self
             .get_factory(old_path)
@@ -209,17 +222,19 @@ impl WalletManager {
             .ok_or_else(|| WalletError::Other("No suitable factory for new wallet".to_string()))?;
 
         // Open old wallet
-        let old_wallet = old_factory.open_wallet(old_path, password).await?;
+        let old_wallet = old_factory
+            .open_wallet(old_path, password, settings)
+            .map_err(WalletError::Other)?;
 
         // Create new wallet
         let mut new_wallet = new_factory
-            .create_wallet(old_wallet.name(), new_path, password)
-            .await?;
+            .create_wallet(old_wallet.name(), new_path, password, settings)
+            .map_err(WalletError::Other)?;
 
         // Copy all accounts
         for account in old_wallet.get_accounts() {
             if let Some(key_pair) = account.get_key() {
-                if let Some(contract) = account.get_contract() {
+                if let Some(contract) = account.contract() {
                     new_wallet
                         .create_account_with_contract(contract.clone(), Some(key_pair))
                         .await?;
@@ -242,7 +257,7 @@ impl WalletManager {
     fn get_factory(&self, path: &str) -> Option<&dyn IWalletFactory> {
         self.factories
             .iter()
-            .find(|factory| factory.can_handle(path))
+            .find(|factory| factory.handle(path))
             .map(|factory| factory.as_ref())
     }
 }

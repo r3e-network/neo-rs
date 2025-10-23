@@ -25,7 +25,7 @@ impl ApplicationEngine {
         &mut self,
         context: StorageContext,
     ) -> Result<StorageContext, String> {
-        if !self.has_call_flags(CallFlags::WriteStates) {
+        if !self.has_call_flags(CallFlags::WRITE_STATES) {
             return Err("Write states not allowed".to_string());
         }
 
@@ -38,7 +38,7 @@ impl ApplicationEngine {
         context: StorageContext,
         key: Vec<u8>,
     ) -> Result<Option<Vec<u8>>, String> {
-        if !self.has_call_flags(CallFlags::ReadStates) {
+        if !self.has_call_flags(CallFlags::READ_STATES) {
             return Err("Read states not allowed".to_string());
         }
 
@@ -61,7 +61,7 @@ impl ApplicationEngine {
             return Err("Context is read-only".to_string());
         }
 
-        if !self.has_call_flags(CallFlags::WriteStates) {
+        if !self.has_call_flags(CallFlags::WRITE_STATES) {
             return Err("Write states not allowed".to_string());
         }
 
@@ -86,7 +86,7 @@ impl ApplicationEngine {
             return Err("Context is read-only".to_string());
         }
 
-        if !self.has_call_flags(CallFlags::WriteStates) {
+        if !self.has_call_flags(CallFlags::WRITE_STATES) {
             return Err("Write states not allowed".to_string());
         }
 
@@ -108,7 +108,7 @@ impl ApplicationEngine {
         prefix: Vec<u8>,
         options: FindOptions,
     ) -> Result<StorageIterator, String> {
-        if !self.has_call_flags(CallFlags::ReadStates) {
+        if !self.has_call_flags(CallFlags::READ_STATES) {
             return Err("Read states not allowed".to_string());
         }
 
@@ -311,43 +311,43 @@ pub(crate) fn register_storage_interops(engine: &mut ApplicationEngine) -> VmRes
     engine.register_host_service(
         "System.Storage.GetContext",
         1 << 4,
-        CallFlags::ReadStates,
+        CallFlags::READ_STATES,
         storage_get_context_handler,
     )?;
     engine.register_host_service(
         "System.Storage.GetReadOnlyContext",
         1 << 4,
-        CallFlags::ReadStates,
+        CallFlags::READ_STATES,
         storage_get_read_only_context_handler,
     )?;
     engine.register_host_service(
         "System.Storage.AsReadOnly",
         1 << 4,
-        CallFlags::ReadStates,
+        CallFlags::READ_STATES,
         storage_as_read_only_handler,
     )?;
     engine.register_host_service(
         "System.Storage.Get",
         1 << 15,
-        CallFlags::ReadStates,
+        CallFlags::READ_STATES,
         storage_get_handler,
     )?;
     engine.register_host_service(
         "System.Storage.Put",
         1 << 15,
-        CallFlags::WriteStates,
+        CallFlags::WRITE_STATES,
         storage_put_handler,
     )?;
     engine.register_host_service(
         "System.Storage.Delete",
         1 << 15,
-        CallFlags::WriteStates,
+        CallFlags::WRITE_STATES,
         storage_delete_handler,
     )?;
     engine.register_host_service(
         "System.Storage.Find",
         1 << 15,
-        CallFlags::ReadStates,
+        CallFlags::READ_STATES,
         storage_find_handler,
     )?;
     Ok(())

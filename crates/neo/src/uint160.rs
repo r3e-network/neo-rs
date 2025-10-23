@@ -38,6 +38,8 @@ pub static ZERO: UInt160 = UInt160 {
 };
 
 impl UInt160 {
+    /// Alias matching C# `UInt160.Length`.
+    pub const LENGTH: usize = UINT160_SIZE;
     /// Creates a new UInt160 instance.
     pub fn new() -> Self {
         Self::default()
@@ -418,19 +420,19 @@ impl UInt160 {
     }
 }
 
-impl neo_io::Serializable for UInt160 {
+impl crate::neo_io::Serializable for UInt160 {
     fn size(&self) -> usize {
         UINT160_SIZE
     }
 
-    fn serialize(&self, writer: &mut neo_io::BinaryWriter) -> neo_io::IoResult<()> {
+    fn serialize(&self, writer: &mut crate::neo_io::BinaryWriter) -> crate::neo_io::IoResult<()> {
         writer.write_u64(self.value1)?;
         writer.write_u64(self.value2)?;
         writer.write_u32(self.value3)?;
         Ok(())
     }
 
-    fn deserialize(reader: &mut neo_io::MemoryReader) -> neo_io::IoResult<Self> {
+    fn deserialize(reader: &mut crate::neo_io::MemoryReader) -> crate::neo_io::IoResult<Self> {
         let value1 = reader.read_u64()?;
         let value2 = reader.read_u64()?;
         let value3 = reader.read_u32()?;
@@ -577,12 +579,13 @@ mod tests {
         uint.value2 = 0xfedcba0987654321;
         uint.value3 = 0x12345678;
         // Test serialization
-        let mut writer = neo_io::BinaryWriter::new();
-        <UInt160 as neo_io::Serializable>::serialize(&uint, &mut writer).unwrap();
+        let mut writer = crate::neo_io::BinaryWriter::new();
+        <UInt160 as crate::neo_io::Serializable>::serialize(&uint, &mut writer).unwrap();
         let bytes = writer.to_bytes();
         // Test deserialization
-        let mut reader = neo_io::MemoryReader::new(&bytes);
-        let deserialized = <UInt160 as neo_io::Serializable>::deserialize(&mut reader).unwrap();
+        let mut reader = crate::neo_io::MemoryReader::new(&bytes);
+        let deserialized =
+            <UInt160 as crate::neo_io::Serializable>::deserialize(&mut reader).unwrap();
         assert_eq!(uint, deserialized);
     }
     #[test]

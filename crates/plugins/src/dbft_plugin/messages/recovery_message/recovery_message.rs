@@ -9,21 +9,21 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::dbft_plugin::consensus::consensus_context::{ConsensusContext, ExtensiblePayload};
+use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
+use neo_core::network::p2p::payloads::ExtensiblePayload;
 use crate::dbft_plugin::messages::change_view::ChangeView;
 use crate::dbft_plugin::messages::commit::Commit;
 use crate::dbft_plugin::messages::consensus_message::{
-    ConsensusMessageError, ConsensusMessageHeader, ConsensusMessageResult,
+    ConsensusMessageError, ConsensusMessageHeader, ConsensusMessagePayload, ConsensusMessageResult,
 };
 use crate::dbft_plugin::messages::prepare_request::PrepareRequest;
 use crate::dbft_plugin::messages::prepare_response::PrepareResponse;
 use crate::dbft_plugin::messages::recovery_message::recovery_message_change_view_payload_compact::ChangeViewPayloadCompact;
 use crate::dbft_plugin::messages::recovery_message::recovery_message_commit_payload_compact::CommitPayloadCompact;
 use crate::dbft_plugin::messages::recovery_message::recovery_message_preparation_payload_compact::PreparationPayloadCompact;
-use crate::dbft_plugin::messages::recovery_message::recovery_request::RecoveryRequest;
 use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
 use crate::dbft_plugin::types::consensus_message_type::ConsensusMessageType;
-use neo_core::neo_io::{BinaryWriter, MemoryReader};
+use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::neo_system::ProtocolSettings;
 use neo_core::UInt256;
 use std::collections::HashMap;
@@ -271,8 +271,12 @@ impl RecoveryMessage {
     }
 
     /// Converts the compact change view payloads into full payloads using the provided context.
-    pub fn get_change_view_payloads(&self, context: &ConsensusContext) -> ConsensusMessageResult<Vec<ExtensiblePayload>> {
-        self.change_view_messages
+    pub fn get_change_view_payloads(
+        &self,
+        context: &mut ConsensusContext,
+    ) -> ConsensusMessageResult<Vec<ExtensiblePayload>> {
+        let payloads: Vec<_> = self
+            .change_view_messages
             .values()
             .map(|compact| {
                 let mut message = ChangeView::new(
@@ -283,34 +287,45 @@ impl RecoveryMessage {
                     ChangeViewReason::Timeout,
                 );
                 message.header_mut().validator_index = compact.validator_index;
-                context.create_payload(message, Some(compact.invocation_script.clone()))
+                context.create_payload(
+                    ConsensusMessagePayload::ChangeView(message),
+                    Some(compact.invocation_script.clone()),
+                )
             })
-            .collect()
+            .collect();
+
+        Ok(payloads)
     }
 
     /// Converts the compact commit payloads into full payloads using the provided context.
     pub fn get_commit_payloads_from_recovery_message(
         &self,
-        context: &ConsensusContext,
+        context: &mut ConsensusContext,
     ) -> ConsensusMessageResult<Vec<ExtensiblePayload>> {
-        self.commit_messages
-            .values()
-            .map(|compact| {
-                let message = Commit::new(
-                    self.block_index(),
-                    compact.validator_index,
-                    compact.view_number,
-                    compact.signature.clone(),
-                )?;
-                context.create_payload(message, Some(compact.invocation_script.clone()))
-            })
-            .collect()
+        let mut payloads = Vec::with_capacity(self.commit_messages.len());
+
+        for compact in self.commit_messages.values() {
+            let message = Commit::new(
+                self.block_index(),
+                compact.validator_index,
+                compact.view_number,
+                compact.signature.clone(),
+            )?;
+
+            let payload = context.create_payload(
+                ConsensusMessagePayload::Commit(message),
+                Some(compact.invocation_script.clone()),
+            );
+            payloads.push(payload);
+        }
+
+        Ok(payloads)
     }
 
     /// Gets the prepare request payload from the recovery message, if any.
     pub fn get_prepare_request_payload(
         &self,
-        context: &ConsensusContext,
+        context: &mut ConsensusContext,
     ) -> ConsensusMessageResult<Option<ExtensiblePayload>> {
         match &self.prepare_request_message {
             Some(request) => {
@@ -319,9 +334,11 @@ impl RecoveryMessage {
                     .get(&context.block.primary_index())
                     .map(|compact| compact.invocation_script.clone())
                     .unwrap_or_default();
-                context
-                    .create_payload(request.clone(), Some(invocation))
-                    .map(Some)
+                let payload = context.create_payload(
+                    ConsensusMessagePayload::PrepareRequest(request.clone()),
+                    Some(invocation),
+                );
+                Ok(Some(payload))
             }
             None => Ok(None),
         }
@@ -330,7 +347,7 @@ impl RecoveryMessage {
     /// Produces prepare response payloads derived from the recovery contents.
     pub fn get_prepare_response_payloads(
         &self,
-        context: &ConsensusContext,
+        context: &mut ConsensusContext,
     ) -> ConsensusMessageResult<Vec<ExtensiblePayload>> {
         let preparation_hash = match self.preparation_hash {
             Some(hash) => hash,
@@ -344,24 +361,36 @@ impl RecoveryMessage {
             }
         };
 
-        self.preparation_messages
-            .values()
-            .filter(|compact| compact.validator_index != context.block.primary_index() as u8)
-            .map(|compact| {
-                let message = PrepareResponse::new(
-                    self.block_index(),
-                    compact.validator_index,
-                    self.view_number(),
-                    preparation_hash,
-                );
-                context.create_payload(message, Some(compact.invocation_script.clone()))
-            })
-            .collect()
+        let primary_index = context.block().primary_index() as u8;
+        let mut payloads = Vec::new();
+
+        for compact in self.preparation_messages.values() {
+            if compact.validator_index == primary_index {
+                continue;
+            }
+
+            let message = PrepareResponse::new(
+                self.block_index(),
+                compact.validator_index,
+                self.view_number(),
+                preparation_hash,
+            );
+
+            let payload = context.create_payload(
+                ConsensusMessagePayload::PrepareResponse(message),
+                Some(compact.invocation_script.clone()),
+            );
+            payloads.push(payload);
+        }
+
+        Ok(payloads)
     }
 
     /// Verifies the recovery message against protocol settings.
     pub fn verify(&self, protocol_settings: &ProtocolSettings) -> bool {
-        if self.header.validator_index as u32 >= protocol_settings.validators_count {
+        let validator_count = protocol_settings.validators_count.max(0) as u32;
+
+        if self.header.validator_index as u32 >= validator_count {
             return false;
         }
 
@@ -373,15 +402,15 @@ impl RecoveryMessage {
 
         self.change_view_messages
             .values()
-            .all(|payload| (payload.validator_index as u32) < protocol_settings.validators_count)
+            .all(|payload| (payload.validator_index as u32) < validator_count)
             && self
                 .preparation_messages
                 .values()
-                .all(|payload| (payload.validator_index as u32) < protocol_settings.validators_count)
+                .all(|payload| (payload.validator_index as u32) < validator_count)
             && self
                 .commit_messages
                 .values()
-                .all(|payload| (payload.validator_index as u32) < protocol_settings.validators_count)
+                .all(|payload| (payload.validator_index as u32) < validator_count)
     }
 }
 

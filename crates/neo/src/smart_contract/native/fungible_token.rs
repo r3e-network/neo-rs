@@ -6,7 +6,7 @@
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::native::{NativeContract, NativeMethod};
+use crate::smart_contract::native::NativeContract;
 use crate::UInt160;
 use num_bigint::BigInt;
 
@@ -109,13 +109,13 @@ pub trait FungibleToken: NativeContract {
         amount: &BigInt,
     ) -> Result<()> {
         if amount < &BigInt::from(0) {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "Transfer amount cannot be negative".to_string(),
             ));
         }
 
         if from == to {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "Cannot transfer to same account".to_string(),
             ));
         }

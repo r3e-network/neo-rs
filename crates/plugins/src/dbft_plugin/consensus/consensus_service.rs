@@ -10,7 +10,8 @@
 // modifications are permitted.
 
 use crate::dbft_plugin::dbft_settings::DbftSettings;
-use crate::dbft_plugin::consensus::consensus_context::{ConsensusContext, ExtensiblePayload};
+use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
+use neo_core::network::p2p::payloads::ExtensiblePayload;
 use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
 use neo_core::{NeoSystem, Transaction, UInt256};
 use neo_core::persistence::IStore;
@@ -36,27 +37,27 @@ pub struct Timer {
 /// Consensus Service implementation matching C# ConsensusService exactly
 pub struct ConsensusService {
     /// Consensus context
-    context: Arc<RwLock<ConsensusContext>>,
+    pub(crate) context: Arc<RwLock<ConsensusContext>>,
     /// Whether service is started
     started: bool,
     /// DBFT settings
-    dbft_settings: DbftSettings,
+    pub(crate) dbft_settings: DbftSettings,
     /// Neo system reference
-    neo_system: Arc<NeoSystem>,
+    pub(crate) neo_system: Arc<NeoSystem>,
     /// Timestamp of the last timer change
     clock_started: Instant,
     /// Expected delay for the active timer
     expected_delay: Duration,
     /// Timestamp of the last prepare request received
-    prepare_request_received_time: Option<Instant>,
+    pub(crate) prepare_request_received_time: Option<Instant>,
     /// Block index accompanying the last prepare request
-    prepare_request_received_block_index: u32,
+    pub(crate) prepare_request_received_block_index: u32,
     /// Highest block index observed in commit processing
-    block_received_index: u32,
+    pub(crate) block_received_index: u32,
     /// Recently processed payload hashes (prevents duplicate responses)
-    known_hashes: HashSet<UInt256>,
+    pub(crate) known_hashes: HashSet<UInt256>,
     /// Whether the service is currently replaying recovery messages
-    is_recovering: bool,
+    pub(crate) is_recovering: bool,
 }
 
 impl ConsensusService {
@@ -186,7 +187,7 @@ impl ConsensusService {
     /// Matches C# OnTransaction method
     pub async fn handle_transaction(&mut self, transaction: Transaction) {
         let should_accept = {
-            let context = self.context.read().await;
+            let mut context = self.context.write().await;
 
             if !context.is_backup()
                 || context.not_accepting_payloads_due_to_view_changing()
@@ -216,7 +217,7 @@ impl ConsensusService {
 
     // Private helper methods
     
-    async fn initialize_consensus(&mut self, view_number: u8) {
+    pub(crate) async fn initialize_consensus(&mut self, view_number: u8) {
         let mut context = self.context.write().await;
         context.reset(view_number);
 
@@ -303,8 +304,8 @@ impl ConsensusService {
         self.broadcast_payload(payload);
     }
     
-    async fn request_change_view(&mut self, reason: ChangeViewReason) {
-        let action = {
+    pub(crate) async fn request_change_view(&mut self, reason: ChangeViewReason) {
+        let (payload, need_recovery, expected_view, delay) = {
             let mut context = self.context.write().await;
 
             if context.watch_only() {
@@ -322,8 +323,10 @@ impl ConsensusService {
                 reason,
             ));
 
-            let delay = self.scaled_block_delay(context.time_per_block, (expected_view as u32).saturating_add(1));
-            self.change_timer(delay);
+            let delay = self.scaled_block_delay(
+                context.time_per_block,
+                (expected_view as u32).saturating_add(1),
+            );
 
             let need_recovery = context.count_committed() + context.count_failed() > context.f();
             let payload = if need_recovery {
@@ -332,23 +335,16 @@ impl ConsensusService {
                 Some(context.make_change_view(reason))
             };
 
-            (payload, need_recovery, expected_view)
+            (payload, need_recovery, expected_view, delay)
         };
 
-        match action {
-            (Some(payload), false, expected_view) => {
-                self.broadcast_payload(payload);
-                self.check_expected_view(expected_view).await;
-            }
-            (None, true, _) => {
-                self.request_recovery().await;
-            }
-            (payload_option, _, expected_view) => {
-                if let Some(payload) = payload_option {
-                    self.broadcast_payload(payload);
-                    self.check_expected_view(expected_view).await;
-                }
-            }
+        self.change_timer(delay);
+
+        if let Some(payload) = payload {
+            self.broadcast_payload(payload);
+            self.check_expected_view(expected_view).await;
+        } else if need_recovery {
+            self.request_recovery().await;
         }
     }
         
@@ -367,25 +363,63 @@ impl ConsensusService {
         self.check_prepare_response().await
     }
 
-    fn broadcast_payload(&self, payload: ExtensiblePayload) {
+    pub(crate) fn broadcast_payload(&self, payload: ExtensiblePayload) {
         let mut payload_clone = payload.clone();
         let hash = payload_clone.hash();
         self.log(&format!("Broadcast payload category={} hash={hash}", payload.category));
     }
 
-    fn request_missing_transactions(&self, hashes: &[UInt256]) {
+    pub(crate) fn request_missing_transactions(&self, hashes: &[UInt256]) {
         if hashes.is_empty() {
             return;
         }
         self.log(&format!("Requesting {} missing transactions", hashes.len()));
     }
 
-    fn change_timer(&mut self, delay: Duration) {
+    pub(crate) fn change_timer(&mut self, delay: Duration) {
         self.clock_started = Instant::now();
         self.expected_delay = delay;
     }
 
-    fn extend_timer_by_factor(&mut self, context: &ConsensusContext, max_delay_in_block_times: i32) {
+    pub(crate) async fn extend_timer_async(&mut self, factor: i32) {
+        if factor <= 0 {
+            return;
+        }
+
+        let info = {
+            let mut context = self.context.write().await;
+            if context.watch_only() || context.view_changing() || context.commit_sent() {
+                None
+            } else {
+                Some((context.time_per_block, context.m()))
+            }
+        };
+
+        let Some((time_per_block, validator_m)) = info else {
+            return;
+        };
+
+        let elapsed = self.clock_started.elapsed();
+        let mut remaining = self.expected_delay.saturating_sub(elapsed);
+
+        if validator_m > 0 {
+            let ratio = factor as f64 / validator_m as f64;
+            if ratio.is_finite() && ratio > 0.0 {
+                let additional = time_per_block.mul_f64(ratio);
+                remaining = remaining.saturating_add(additional);
+            }
+        }
+
+        if remaining > Duration::from_secs(0) {
+            self.change_timer(remaining);
+        }
+    }
+
+    pub(crate) fn extend_timer_by_factor(
+        &mut self,
+        context: &mut ConsensusContext,
+        max_delay_in_block_times: i32,
+    ) {
         if max_delay_in_block_times <= 0 {
             return;
         }
@@ -414,10 +448,10 @@ impl ConsensusService {
         if shift >= 31 {
             return Duration::MAX;
         }
-        base.saturating_mul(1u32.saturating_shl(shift))
+        base.saturating_mul(1u32 << shift)
     }
 
-    fn log(&self, message: &str) {
+    pub(crate) fn log(&self, message: &str) {
         info!(target: "dbft::consensus_service", "{}", message);
     }
 }

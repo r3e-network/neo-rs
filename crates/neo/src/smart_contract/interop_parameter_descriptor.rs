@@ -129,12 +129,14 @@ impl InteropParameterDescriptor {
                 StackItem::ByteString(bytes) if bytes.len() == 20 => {
                     let mut arr = [0u8; 20];
                     arr.copy_from_slice(bytes);
-                    Ok(ConvertedValue::UInt160(crate::UInt160::from_bytes(&arr)))
+                    let value = crate::UInt160::from_bytes(&arr).map_err(|e| e.to_string())?;
+                    Ok(ConvertedValue::UInt160(value))
                 }
                 StackItem::Buffer(buffer) if buffer.data().len() == 20 => {
                     let mut arr = [0u8; 20];
                     arr.copy_from_slice(buffer.data());
-                    Ok(ConvertedValue::UInt160(crate::UInt160::from_bytes(&arr)))
+                    let value = crate::UInt160::from_bytes(&arr).map_err(|e| e.to_string())?;
+                    Ok(ConvertedValue::UInt160(value))
                 }
                 _ => Err("Expected UInt160".to_string()),
             },
@@ -143,12 +145,14 @@ impl InteropParameterDescriptor {
                 StackItem::ByteString(bytes) if bytes.len() == 32 => {
                     let mut arr = [0u8; 32];
                     arr.copy_from_slice(bytes);
-                    Ok(ConvertedValue::UInt256(crate::UInt256::from_bytes(&arr)))
+                    let value = crate::UInt256::from_bytes(&arr).map_err(|e| e.to_string())?;
+                    Ok(ConvertedValue::UInt256(value))
                 }
                 StackItem::Buffer(buffer) if buffer.data().len() == 32 => {
                     let mut arr = [0u8; 32];
                     arr.copy_from_slice(buffer.data());
-                    Ok(ConvertedValue::UInt256(crate::UInt256::from_bytes(&arr)))
+                    let value = crate::UInt256::from_bytes(&arr).map_err(|e| e.to_string())?;
+                    Ok(ConvertedValue::UInt256(value))
                 }
                 _ => Err("Expected UInt256".to_string()),
             },

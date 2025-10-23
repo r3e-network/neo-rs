@@ -10,14 +10,23 @@ pub struct StorageItem {
     cache: Option<StorageCache>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 enum StorageCache {
     BigInteger(BigInt),
     Interoperable(Box<dyn IInteroperable>),
 }
 
+impl Clone for StorageCache {
+    fn clone(&self) -> Self {
+        match self {
+            StorageCache::BigInteger(value) => StorageCache::BigInteger(value.clone()),
+            StorageCache::Interoperable(value) => StorageCache::Interoperable(value.clone_box()),
+        }
+    }
+}
+
 /// Interface for interoperable types (placeholder)
-pub trait IInteroperable: std::fmt::Debug {
+pub trait IInteroperable: std::fmt::Debug + Send + Sync {
     fn to_stack_item(&self) -> StackItem;
     fn from_stack_item(&mut self, item: StackItem);
     fn clone_box(&self) -> Box<dyn IInteroperable>;

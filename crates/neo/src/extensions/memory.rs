@@ -1,5 +1,5 @@
 use crate::extensions::byte::ByteExtensions;
-use crate::io::{IoError, IoResult, MemoryReader, Serializable};
+use crate::io::{IoError, IoResult, Serializable};
 
 /// Extension helpers for read-only byte slices matching
 /// `Neo.Extensions.MemoryExtensions`.
@@ -16,7 +16,7 @@ pub trait ReadOnlyMemoryExtensions {
 
 impl ReadOnlyMemoryExtensions for [u8] {
     fn as_serializable_array<T: Serializable>(&self, max: usize) -> IoResult<Vec<T>> {
-        self.as_serializable_array(max)
+        <[u8] as ByteExtensions>::as_serializable_array(self, max)
     }
 
     fn as_serializable<T: Serializable>(&self) -> IoResult<T> {
@@ -25,8 +25,7 @@ impl ReadOnlyMemoryExtensions for [u8] {
                 "Cannot deserialize from an empty ReadOnlyMemory",
             ));
         }
-        let mut reader = MemoryReader::new(self);
-        T::deserialize(&mut reader)
+        <[u8] as ByteExtensions>::as_serializable(self, 0)
     }
 
     fn get_var_size(&self) -> IoResult<usize> {
@@ -37,11 +36,11 @@ impl ReadOnlyMemoryExtensions for [u8] {
 
 impl ReadOnlyMemoryExtensions for Vec<u8> {
     fn as_serializable_array<T: Serializable>(&self, max: usize) -> IoResult<Vec<T>> {
-        self.as_slice().as_serializable_array(max)
+        <[u8] as ReadOnlyMemoryExtensions>::as_serializable_array(self.as_slice(), max)
     }
 
     fn as_serializable<T: Serializable>(&self) -> IoResult<T> {
-        self.as_slice().as_serializable()
+        <[u8] as ReadOnlyMemoryExtensions>::as_serializable(self.as_slice())
     }
 
     fn get_var_size(&self) -> IoResult<usize> {

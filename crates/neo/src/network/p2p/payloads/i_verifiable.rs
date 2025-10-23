@@ -11,12 +11,12 @@
 
 use super::witness::Witness;
 use crate::neo_io::Serializable;
-use crate::{neo_system::ProtocolSettings, persistence::DataCache, UInt160, UInt256};
+use crate::{persistence::DataCache, protocol_settings::ProtocolSettings, UInt160};
 
 /// Represents an object that can be verified in the NEO network.
 pub trait IVerifiable: Serializable {
     /// Gets the script hashes that should be verified for this IVerifiable object.
-    fn get_script_hashes_for_verifying(&self, snapshot: &dyn DataCache) -> Vec<UInt160>;
+    fn get_script_hashes_for_verifying(&self, snapshot: &DataCache) -> Vec<UInt160>;
 
     /// Gets the witnesses of the IVerifiable object.
     fn get_witnesses(&self) -> Vec<&Witness>;
@@ -27,9 +27,9 @@ pub trait IVerifiable: Serializable {
     /// Verify witnesses with a gas limit.
     fn verify_witnesses(
         &self,
-        settings: &ProtocolSettings,
-        snapshot: &dyn DataCache,
-        max_gas: i64,
+        _settings: &ProtocolSettings,
+        _snapshot: &DataCache,
+        _max_gas: i64,
     ) -> bool {
         // This would require VM execution to verify scripts
         // For now, return a placeholder

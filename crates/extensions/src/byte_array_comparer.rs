@@ -21,36 +21,35 @@ impl ByteArrayComparer {
     /// Default comparer
     /// Matches C# Default property
     pub const DEFAULT: ByteArrayComparer = ByteArrayComparer { direction: 1 };
-    
+
     /// Reverse comparer
     /// Matches C# Reverse property
     pub const REVERSE: ByteArrayComparer = ByteArrayComparer { direction: -1 };
-    
+
     /// Creates a new ByteArrayComparer
     /// Matches C# constructor
     pub fn new(direction: i32) -> Self {
         Self { direction }
     }
-    
+
     /// Compares two byte arrays
     /// Matches C# Compare method
     pub fn compare(&self, x: Option<&[u8]>, y: Option<&[u8]>) -> i32 {
-        if std::ptr::eq(x, y) {
-            return 0;
-        }
-        
         match (x, y) {
-            (None, Some(y)) => -(y.len() as i32) * self.direction,
-            (Some(x), None) => (x.len() as i32) * self.direction,
-            (Some(x), Some(y)) => {
-                let comparison = x.cmp(y);
-                match comparison {
+            (None, None) => 0,
+            (None, Some(y_bytes)) => -(y_bytes.len() as i32) * self.direction,
+            (Some(x_bytes), None) => (x_bytes.len() as i32) * self.direction,
+            (Some(x_bytes), Some(y_bytes)) => {
+                if std::ptr::eq(x_bytes, y_bytes) {
+                    return 0;
+                }
+
+                match x_bytes.cmp(y_bytes) {
                     Ordering::Equal => 0,
-                    Ordering::Less => -1 * self.direction,
-                    Ordering::Greater => 1 * self.direction,
+                    Ordering::Less => -self.direction,
+                    Ordering::Greater => self.direction,
                 }
             }
-            (None, None) => 0,
         }
     }
 }

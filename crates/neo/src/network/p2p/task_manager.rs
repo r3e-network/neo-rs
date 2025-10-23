@@ -13,15 +13,13 @@ use super::payloads::{InvPayload, VersionPayload};
 use super::task_session::TaskSession;
 use crate::neo_system::NeoSystemContext;
 use crate::UInt256;
-use akka::{
-    mailbox::Cancelable, message::Terminated, Actor, ActorContext, ActorRef, ActorResult, Props,
-};
+use akka::{Actor, ActorContext, ActorRef, ActorResult, Cancelable, Props, Terminated};
 use async_trait::async_trait;
-use std::any::Any;
+use std::any::{type_name_of_val, Any};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, trace, warn};
+use tracing::{trace, warn};
 
 /// Interval for task manager housekeeping (matches C# `TimerInterval`).
 const TIMER_INTERVAL: Duration = Duration::from_secs(30);
@@ -223,57 +221,64 @@ impl Actor for TaskManagerActor {
         envelope: Box<dyn Any + Send>,
         ctx: &mut ActorContext,
     ) -> ActorResult {
-        if let Ok(command) = envelope.downcast::<TaskManagerCommand>() {
-            match *command {
-                TaskManagerCommand::AttachSystem { context } => {
-                    self.state.attach_system(context);
-                    self.schedule_timer(ctx);
-                }
-                TaskManagerCommand::Register { version } => {
-                    if let Some(sender) = ctx.sender() {
-                        self.state.register_session(sender, version, ctx);
-                    } else {
-                        warn!(target: "neo", "register command without sender");
+        let message_type_name = type_name_of_val(envelope.as_ref());
+
+        match envelope.downcast::<TaskManagerCommand>() {
+            Ok(command) => {
+                match *command {
+                    TaskManagerCommand::AttachSystem { context } => {
+                        self.state.attach_system(context);
+                        self.schedule_timer(ctx);
+                    }
+                    TaskManagerCommand::Register { version } => {
+                        if let Some(sender) = ctx.sender() {
+                            self.state.register_session(sender, version, ctx);
+                        } else {
+                            warn!(target: "neo", "register command without sender");
+                        }
+                    }
+                    TaskManagerCommand::Update { last_block_index } => {
+                        if let Some(sender) = ctx.sender() {
+                            self.state.update_session(&sender, last_block_index);
+                        }
+                    }
+                    TaskManagerCommand::NewTasks { payload } => {
+                        if let Some(sender) = ctx.sender() {
+                            self.state.on_new_tasks(&sender, payload);
+                        }
+                    }
+                    TaskManagerCommand::RestartTasks { payload } => {
+                        if let Some(sender) = ctx.sender() {
+                            self.state.on_restart_tasks(&sender, payload);
+                        }
+                    }
+                    TaskManagerCommand::InventoryCompleted { hash } => {
+                        if let Some(sender) = ctx.sender() {
+                            self.state.complete_inventory(&sender, hash);
+                        }
+                    }
+                    TaskManagerCommand::TimerTick => {
+                        self.state.prune_timeouts();
                     }
                 }
-                TaskManagerCommand::Update { last_block_index } => {
-                    if let Some(sender) = ctx.sender() {
-                        self.state.update_session(&sender, last_block_index);
-                    }
-                }
-                TaskManagerCommand::NewTasks { payload } => {
-                    if let Some(sender) = ctx.sender() {
-                        self.state.on_new_tasks(&sender, payload);
-                    }
-                }
-                TaskManagerCommand::RestartTasks { payload } => {
-                    if let Some(sender) = ctx.sender() {
-                        self.state.on_restart_tasks(&sender, payload);
-                    }
-                }
-                TaskManagerCommand::InventoryCompleted { hash } => {
-                    if let Some(sender) = ctx.sender() {
-                        self.state.complete_inventory(&sender, hash);
-                    }
-                }
-                TaskManagerCommand::TimerTick => {
-                    self.state.prune_timeouts();
-                }
+                Ok(())
             }
-            return Ok(());
+            Err(envelope) => match envelope.downcast::<Terminated>() {
+                Ok(terminated) => {
+                    self.state.remove_session_by_ref(&terminated.actor);
+                    Ok(())
+                }
+                Err(other) => {
+                    warn!(
+                        target: "neo",
+                        message_type = %message_type_name,
+                        "unknown message routed to task manager actor"
+                    );
+                    drop(other);
+                    Ok(())
+                }
+            },
         }
-
-        if let Ok(terminated) = envelope.downcast::<Terminated>() {
-            self.state.remove_session_by_ref(&terminated.actor);
-            return Ok(());
-        }
-
-        warn!(
-            target: "neo",
-            message_type = %envelope.type_id().name(),
-            "unknown message routed to task manager actor"
-        );
-        Ok(())
     }
 
     async fn post_stop(&mut self, _ctx: &mut ActorContext) -> ActorResult {

@@ -1,6 +1,6 @@
 //! BinarySerializer - aligns with `Neo.SmartContract.BinarySerializer`.
 
-use crate::io::memory_reader::{IoError, MemoryReader};
+use crate::neo_io::{IoError, MemoryReader};
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
 use neo_vm::reference_counter::ReferenceCounter;
 use neo_vm::stack_item::array::Array as ArrayItem;
@@ -10,7 +10,6 @@ use neo_vm::stack_item::struct_item::Struct as StructItem;
 use neo_vm::{StackItem, StackItemType};
 use num_bigint::BigInt;
 use std::collections::{BTreeMap, HashSet, VecDeque};
-use std::sync::Arc;
 
 /// Binary serializer helpers for VM stack items.
 pub struct BinarySerializer;
@@ -34,7 +33,7 @@ impl BinarySerializer {
     pub fn deserialize(
         data: &[u8],
         limits: &ExecutionEngineLimits,
-        reference_counter: Option<Arc<ReferenceCounter>>,
+        reference_counter: Option<ReferenceCounter>,
     ) -> Result<StackItem, String> {
         let mut reader = MemoryReader::new(data);
         Self::deserialize_with_limits(
@@ -50,7 +49,7 @@ impl BinarySerializer {
         reader: &mut MemoryReader<'_>,
         max_size: u32,
         max_items: u32,
-        reference_counter: Option<Arc<ReferenceCounter>>,
+        reference_counter: Option<ReferenceCounter>,
     ) -> Result<StackItem, String> {
         let mut pending: Vec<PendingItem> = Vec::new();
         let mut remaining = 1usize;
@@ -78,26 +77,26 @@ impl BinarySerializer {
                 }
                 StackItemType::Integer => {
                     let bytes = reader
-                        .read_var_memory(Self::MAX_INTEGER_SIZE)
+                        .read_var_bytes(Self::MAX_INTEGER_SIZE)
                         .map_err(Self::io_error_to_string)?;
                     let value = if bytes.is_empty() {
                         BigInt::from(0)
                     } else {
-                        BigInt::from_signed_bytes_le(bytes)
+                        BigInt::from_signed_bytes_le(&bytes)
                     };
                     pending.push(PendingItem::Value(StackItem::from_int(value)));
                     total_items += 1;
                 }
                 StackItemType::ByteString => {
                     let bytes = reader
-                        .read_var_memory(max_size as usize)
+                        .read_var_bytes(max_size as usize)
                         .map_err(Self::io_error_to_string)?;
                     pending.push(PendingItem::Value(StackItem::from_byte_string(bytes)));
                     total_items += 1;
                 }
                 StackItemType::Buffer => {
                     let bytes = reader
-                        .read_var_memory(max_size as usize)
+                        .read_var_bytes(max_size as usize)
                         .map_err(Self::io_error_to_string)?;
                     let buffer = BufferItem::new(bytes.to_vec());
                     pending.push(PendingItem::Value(StackItem::Buffer(buffer)));
@@ -329,9 +328,8 @@ impl BinarySerializer {
 
     fn io_error_to_string(error: IoError) -> String {
         match error {
-            IoError::Format => "Invalid binary format".to_string(),
-            IoError::InvalidUtf8 => "Invalid UTF-8 data".to_string(),
-            IoError::Io(e) => e.to_string(),
+            IoError::UnexpectedEof => "Unexpected end of input".to_string(),
+            IoError::InvalidData(message) => message,
         }
     }
 }

@@ -28,7 +28,7 @@ impl ExecutionEngineLimits {
     pub const DEFAULT: Self = Self {
         max_shift: 256,
         max_stack_size: 2 * 1024,
-        max_item_size: (u16::MAX as u32) * 2,
+        max_item_size: 65_536,
         max_comparable_size: 65_536,
         max_invocation_stack_size: 1_024,
         max_try_nesting_depth: 16,

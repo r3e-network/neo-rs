@@ -74,6 +74,21 @@ impl Commit {
         &mut self.header
     }
 
+    /// Gets the block index carried by the commit.
+    pub fn block_index(&self) -> u32 {
+        self.header.block_index
+    }
+
+    /// Gets the validator index carried by the commit.
+    pub fn validator_index(&self) -> u8 {
+        self.header.validator_index
+    }
+
+    /// Gets the view number carried by the commit.
+    pub fn view_number(&self) -> u8 {
+        self.header.view_number
+    }
+
     /// Gets the commit signature.
     pub fn signature(&self) -> &[u8] {
         &self.signature

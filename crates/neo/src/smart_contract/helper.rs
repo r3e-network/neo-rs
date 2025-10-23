@@ -1,8 +1,8 @@
 //! Helper - matches C# Neo.SmartContract.Helper exactly
 
+use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::contract::Contract;
-use crate::smart_contract::contract_parameter_type::ContractParameterType;
-use crate::{UInt160, UInt256};
+use crate::UInt160;
 use neo_vm::{op_code::OpCode, ScriptBuilder};
 use sha2::{Digest, Sha256};
 
@@ -10,6 +10,44 @@ use sha2::{Digest, Sha256};
 pub struct Helper;
 
 impl Helper {
+    /// The maximum GAS that can be consumed when verifying witnesses (in datoshi).
+    pub const MAX_VERIFICATION_GAS: i64 = 1_500_000_00;
+
+    /// Calculates the verification cost for a single-signature contract (in datoshi).
+    pub fn signature_contract_cost() -> i64 {
+        let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8);
+        let syscall_cost = ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
+        push_cost * 2 + syscall_cost + crate::smart_contract::application_engine::CHECK_SIG_PRICE
+    }
+
+    /// Calculates the verification cost for a multi-signature contract (in datoshi).
+    pub fn multi_signature_contract_cost(m: i32, n: i32) -> i64 {
+        let push_cost = ApplicationEngine::get_opcode_price(OpCode::PUSHDATA1 as u8);
+        let mut fee = push_cost * (m as i64 + n as i64);
+
+        let mut builder = ScriptBuilder::new();
+        builder.emit_push_int(m as i64);
+        let m_opcode = builder
+            .to_array()
+            .first()
+            .copied()
+            .unwrap_or(OpCode::PUSH0 as u8);
+        fee += ApplicationEngine::get_opcode_price(m_opcode);
+
+        let mut builder_n = ScriptBuilder::new();
+        builder_n.emit_push_int(n as i64);
+        let n_opcode = builder_n
+            .to_array()
+            .first()
+            .copied()
+            .unwrap_or(OpCode::PUSH0 as u8);
+        fee += ApplicationEngine::get_opcode_price(n_opcode);
+
+        fee += ApplicationEngine::get_opcode_price(OpCode::SYSCALL as u8);
+        fee += crate::smart_contract::application_engine::CHECK_SIG_PRICE * n as i64;
+        fee
+    }
+
     /// Checks if a script is a standard contract
     pub fn is_standard_contract(script: &[u8]) -> bool {
         Self::is_signature_contract(script) || Self::is_multi_sig_contract(script)
@@ -35,7 +73,7 @@ impl Helper {
         }
 
         // Check basic pattern for multi-sig
-        let m = match script[0] {
+        let _m = match script[0] {
             0x51..=0x60 => script[0] - 0x50, // PUSH1-PUSH16
             _ => return false,
         };
@@ -120,5 +158,105 @@ impl Helper {
         builder.emit_push_string(name);
         let script = builder.to_array();
         UInt160::from_script(&script)
+    }
+
+    /// Parses a multi-signature contract script, returning the required signature count and
+    /// the ordered public keys when the script matches the canonical Neo multi-sig format.
+    pub fn parse_multi_sig_contract(script: &[u8]) -> Option<(usize, Vec<Vec<u8>>)> {
+        use neo_vm::op_code::OpCode;
+
+        if script.len() < 42 {
+            return None;
+        }
+
+        let mut offset = 0usize;
+        let first = script[offset];
+        if !(0x51..=0x60).contains(&first) {
+            return None;
+        }
+        let m = (first - 0x50) as usize;
+        offset += 1;
+
+        let mut public_keys = Vec::new();
+        while offset < script.len() {
+            if script[offset] != OpCode::PUSHDATA1 as u8 {
+                break;
+            }
+            offset += 1;
+            if offset >= script.len() {
+                return None;
+            }
+            let key_len = script[offset] as usize;
+            offset += 1;
+            if key_len != 33 || offset + key_len > script.len() {
+                return None;
+            }
+            public_keys.push(script[offset..offset + key_len].to_vec());
+            offset += key_len;
+        }
+
+        if public_keys.is_empty() {
+            return None;
+        }
+        let n = public_keys.len();
+
+        if offset >= script.len() || script[offset] != (0x50 + n as u8) {
+            return None;
+        }
+        offset += 1;
+
+        if script.len() != offset + 5 {
+            return None;
+        }
+        if script[offset] != OpCode::SYSCALL as u8 {
+            return None;
+        }
+        if script[offset + 1..offset + 5] != Self::check_multisig_hash() {
+            return None;
+        }
+
+        if m == 0 || m > n {
+            return None;
+        }
+
+        Some((m, public_keys))
+    }
+
+    /// Parses a multi-signature invocation script, returning the list of signatures when the
+    /// script pushes the expected number of signatures encoded with `PUSHDATA1` opcodes.
+    pub fn parse_multi_sig_invocation(
+        invocation: &[u8],
+        required_signatures: usize,
+    ) -> Option<Vec<Vec<u8>>> {
+        use neo_vm::op_code::OpCode;
+
+        if required_signatures == 0 {
+            return None;
+        }
+
+        let mut signatures = Vec::with_capacity(required_signatures);
+        let mut offset = 0usize;
+        while offset < invocation.len() {
+            if invocation[offset] != OpCode::PUSHDATA1 as u8 {
+                return None;
+            }
+            offset += 1;
+            if offset >= invocation.len() {
+                return None;
+            }
+            let len = invocation[offset] as usize;
+            offset += 1;
+            if len != 64 || offset + len > invocation.len() {
+                return None;
+            }
+            signatures.push(invocation[offset..offset + len].to_vec());
+            offset += len;
+        }
+
+        if signatures.len() == required_signatures {
+            Some(signatures)
+        } else {
+            None
+        }
     }
 }

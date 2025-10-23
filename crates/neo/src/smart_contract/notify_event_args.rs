@@ -3,10 +3,11 @@
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::{IVerifiable, UInt160};
 use neo_vm::StackItem;
+use std::fmt;
 use std::sync::Arc;
 
 /// The EventArgs of ApplicationEngine.Notify (matches C# NotifyEventArgs)
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct NotifyEventArgs {
     /// The container that containing the executed script
     pub script_container: Arc<dyn IVerifiable>,
@@ -35,6 +36,16 @@ impl NotifyEventArgs {
             event_name,
             state,
         }
+    }
+}
+
+impl fmt::Debug for NotifyEventArgs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NotifyEventArgs")
+            .field("script_hash", &self.script_hash)
+            .field("event_name", &self.event_name)
+            .field("state_len", &self.state.len())
+            .finish()
     }
 }
 

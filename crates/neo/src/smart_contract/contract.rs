@@ -34,7 +34,7 @@ impl Contract {
         script_hash: UInt160,
         parameter_list: Vec<ContractParameterType>,
     ) -> Self {
-        let mut contract = Self {
+        let contract = Self {
             script: Vec::new(),
             parameter_list,
             script_hash_cache: OnceLock::new(),
@@ -107,7 +107,7 @@ impl Contract {
 
     /// Gets the address of the contract
     pub fn get_address(&self) -> String {
-        let mut data = Vec::with_capacity(1 + crate::uint160::ADDRESS_SIZE + 4);
+        let mut data = Vec::with_capacity(1 + crate::neo_config::ADDRESS_SIZE + 4);
         // Default address version (0x35) matches ProtocolSettings::default
         data.push(crate::protocol_settings::ProtocolSettings::default_settings().address_version);
         data.extend_from_slice(&self.script_hash().to_bytes());

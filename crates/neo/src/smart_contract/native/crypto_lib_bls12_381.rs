@@ -84,7 +84,7 @@ pub fn pairing(g1_bytes: &[u8], g2_bytes: &[u8]) -> Result<Vec<u8>> {
     let g1_affine = match g1 {
         DecodedValue::G1(p) => G1Affine::from(p),
         _ => {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "bls12381Pairing requires a G1 point as the first argument".to_string(),
             ))
         }
@@ -93,7 +93,7 @@ pub fn pairing(g1_bytes: &[u8], g2_bytes: &[u8]) -> Result<Vec<u8>> {
     let g2_affine = match g2 {
         DecodedValue::G2(p) => G2Affine::from(p),
         _ => {
-            return Err(Error::NativeContractError(
+            return Err(Error::native_contract(
                 "bls12381Pairing requires a G2 point as the second argument".to_string(),
             ))
         }
@@ -112,7 +112,7 @@ fn decode_value(data: &[u8]) -> Result<DecodedValue> {
         G2_COMPRESSED_LEN => parse_g2_compressed(data),
         G2_UNCOMPRESSED_LEN => parse_g2_uncompressed(data),
         GT_SIZE => parse_gt(data),
-        _ => Err(Error::NativeContractError(
+        _ => Err(Error::native_contract(
             "Unsupported BLS12-381 encoding length".to_string(),
         )),
     }
@@ -148,9 +148,9 @@ fn parse_scalar(bytes: &[u8]) -> Result<Scalar> {
 }
 
 fn map_bls_error(err: BlsError) -> Error {
-    Error::NativeContractError(err.to_string())
+    Error::native_contract(err.to_string())
 }
 
 fn type_mismatch_error() -> Error {
-    Error::NativeContractError("BLS12-381 type mismatch".to_string())
+    Error::native_contract("BLS12-381 type mismatch".to_string())
 }

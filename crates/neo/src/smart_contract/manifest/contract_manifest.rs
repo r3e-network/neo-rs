@@ -5,8 +5,8 @@
 
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::neo_config::{HASH_SIZE, MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
-use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
+use crate::neo_config::{MAX_SCRIPT_LENGTH, MAX_SCRIPT_SIZE};
+use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::smart_contract::manifest::{
     ContractAbi, ContractGroup, ContractPermission, ContractPermissionDescriptor, WildCardContainer,
@@ -19,6 +19,10 @@ use std::collections::{BTreeMap, HashMap};
 
 /// Maximum length of a contract manifest in bytes.
 pub const MAX_MANIFEST_LENGTH: usize = u16::MAX as usize;
+
+fn map_json_error(err: serde_json::Error) -> IoError {
+    IoError::invalid_data(err.to_string())
+}
 
 /// Represents the manifest of a smart contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,12 +128,12 @@ impl ContractManifest {
 
     /// Converts the manifest to JSON.
     pub fn to_json(&self) -> Result<Value> {
-        serde_json::to_value(self).map_err(|e| Error::SerializationError(e.to_string()))
+        serde_json::to_value(self).map_err(|e| Error::serialization(e.to_string()))
     }
 
     /// Creates a manifest from a JSON string.
     pub fn from_json_str(json: &str) -> Result<Self> {
-        serde_json::from_str(json).map_err(|e| Error::SerializationError(e.to_string()))
+        serde_json::from_str(json).map_err(|e| Error::serialization(e.to_string()))
     }
 
     /// Alias to maintain backwards compatibility with older code paths.
@@ -147,14 +151,14 @@ impl ContractManifest {
     pub fn validate(&self) -> Result<()> {
         // Validate name
         if self.name.is_empty() {
-            return Err(Error::InvalidManifest(
-                "Contract name cannot be empty".to_string(),
-            ));
+            return Err(Error::invalid_data("Contract name cannot be empty"));
         }
 
         // Validate manifest size
         if self.size() > MAX_MANIFEST_LENGTH {
-            return Err(Error::InvalidManifest("Manifest too large".to_string()));
+            return Err(Error::invalid_data(
+                "Manifest exceeds maximum allowed length",
+            ));
         }
 
         // Validate groups
@@ -164,9 +168,7 @@ impl ContractManifest {
 
         // Validate permissions
         if self.permissions.is_empty() {
-            return Err(Error::InvalidManifest(
-                "At least one permission required".to_string(),
-            ));
+            return Err(Error::invalid_data("At least one permission required"));
         }
 
         for permission in &self.permissions {
@@ -177,16 +179,14 @@ impl ContractManifest {
             for trust in trusts {
                 if let ContractPermissionDescriptor::Group(pub_key) = trust {
                     if !pub_key.is_valid() {
-                        return Err(Error::InvalidManifest(
-                            "Invalid group public key in trusts".to_string(),
-                        ));
+                        return Err(Error::invalid_data("Invalid group public key in trusts"));
                     }
                 }
             }
         }
 
         // Validate ABI
-        self.abi.validate()?;
+        self.abi.validate().map_err(Error::invalid_data)?;
 
         Ok(())
     }
@@ -215,7 +215,12 @@ impl ContractManifest {
     }
 
     /// Gets a method from the ABI by name.
-    pub fn get_method(&self, name: &str) -> Option<&crate::manifest::ContractMethod> {
+    pub fn get_method(
+        &self,
+        name: &str,
+    ) -> Option<
+        &crate::smart_contract::manifest::contract_method_descriptor::ContractMethodDescriptor,
+    > {
         self.abi.methods.iter().find(|m| m.name == name)
     }
 
@@ -226,50 +231,46 @@ impl ContractManifest {
 
     /// Serializes the contract manifest to bytes.
     pub fn serialize(&self, writer: &mut BinaryWriter) -> Result<()> {
-        // Serialize name
+        self.serialize_io(writer)
+            .map_err(|e| Error::serialization(e.to_string()))
+    }
+
+    fn serialize_io(&self, writer: &mut BinaryWriter) -> IoResult<()> {
         writer.write_var_string(&self.name)?;
 
-        // Serialize groups
         writer.write_var_int(self.groups.len() as u64)?;
         for group in &self.groups {
             self.serialize_contract_group(group, writer)?;
         }
 
-        let features_json = serde_json::to_string(&self.features)
-            .map_err(|e| Error::SerializationError(e.to_string()))?;
+        let features_json = serde_json::to_string(&self.features).map_err(map_json_error)?;
         writer.write_var_string(&features_json)?;
 
-        // Serialize supported standards
         writer.write_var_int(self.supported_standards.len() as u64)?;
         for standard in &self.supported_standards {
             writer.write_var_string(standard)?;
         }
 
-        // Serialize ABI using custom serialization
         self.serialize_contract_abi(&self.abi, writer)?;
 
-        // Serialize permissions
         writer.write_var_int(self.permissions.len() as u64)?;
         for permission in &self.permissions {
             self.serialize_contract_permission(permission, writer)?;
         }
 
-        // Serialize trusts
         match &self.trusts {
             WildCardContainer::Wildcard => writer.write_var_int(0)?,
             WildCardContainer::List(trusts) => {
                 writer.write_var_int(trusts.len() as u64)?;
                 for trust in trusts {
-                    let trust_json = serde_json::to_string(trust)
-                        .map_err(|e| Error::SerializationError(e.to_string()))?;
+                    let trust_json = serde_json::to_string(trust).map_err(map_json_error)?;
                     writer.write_var_string(&trust_json)?;
                 }
             }
         }
 
         let extra_json = match &self.extra {
-            Some(value) => serde_json::to_string(value)
-                .map_err(|e| Error::SerializationError(e.to_string()))?,
+            Some(value) => serde_json::to_string(value).map_err(map_json_error)?,
             None => String::new(),
         };
         writer.write_var_string(&extra_json)?;
@@ -279,7 +280,10 @@ impl ContractManifest {
 
     /// Deserializes the contract manifest from bytes.
     pub fn deserialize(reader: &mut MemoryReader) -> Result<Self> {
-        // Deserialize name
+        Self::deserialize_io(reader).map_err(|e| Error::serialization(e.to_string()))
+    }
+
+    fn deserialize_io(reader: &mut MemoryReader) -> IoResult<Self> {
         let name = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max MAX_SCRIPT_SIZE chars for name
 
         // Deserialize groups
@@ -292,8 +296,7 @@ impl ContractManifest {
 
         // Deserialize features
         let features_json = reader.read_var_string(MAX_SCRIPT_LENGTH)?; // Max 64KB for features
-        let features = serde_json::from_str(&features_json)
-            .map_err(|e| Error::SerializationError(e.to_string()))?;
+        let features = serde_json::from_str(&features_json).map_err(map_json_error)?;
 
         // Deserialize supported standards
         let standards_count = reader.read_var_int(256)? as usize; // Max 256 standards
@@ -322,8 +325,8 @@ impl ContractManifest {
             let mut entries = Vec::with_capacity(trusts_count);
             for _ in 0..trusts_count {
                 let trust_json = reader.read_var_string(MAX_SCRIPT_SIZE)?;
-                let trust: ContractPermissionDescriptor = serde_json::from_str(&trust_json)
-                    .map_err(|e| Error::SerializationError(e.to_string()))?;
+                let trust: ContractPermissionDescriptor =
+                    serde_json::from_str(&trust_json).map_err(map_json_error)?;
                 entries.push(trust);
             }
             WildCardContainer::create(entries)
@@ -334,10 +337,7 @@ impl ContractManifest {
         let extra = if extra_json.is_empty() {
             None
         } else {
-            Some(
-                serde_json::from_str(&extra_json)
-                    .map_err(|e| Error::SerializationError(e.to_string()))?,
-            )
+            Some(serde_json::from_str(&extra_json).map_err(map_json_error)?)
         };
 
         Ok(Self {
@@ -357,35 +357,31 @@ impl ContractManifest {
         &self,
         group: &ContractGroup,
         writer: &mut BinaryWriter,
-    ) -> Result<()> {
-        let group_json =
-            serde_json::to_string(group).map_err(|e| Error::SerializationError(e.to_string()))?;
+    ) -> IoResult<()> {
+        let group_json = serde_json::to_string(group).map_err(map_json_error)?;
         writer.write_var_string(&group_json)?;
 
         Ok(())
     }
 
     /// Custom deserialization for ContractGroup
-    fn deserialize_contract_group(reader: &mut MemoryReader) -> Result<ContractGroup> {
+    fn deserialize_contract_group(reader: &mut MemoryReader) -> IoResult<ContractGroup> {
         let group_json = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max 1KB per group
-        let group = serde_json::from_str(&group_json)
-            .map_err(|e| Error::SerializationError(e.to_string()))?;
+        let group = serde_json::from_str(&group_json).map_err(map_json_error)?;
         Ok(group)
     }
 
     /// Custom serialization for ContractAbi (matches C# ContractAbi.ToStackItem exactly)
-    fn serialize_contract_abi(&self, abi: &ContractAbi, writer: &mut BinaryWriter) -> Result<()> {
-        let abi_json =
-            serde_json::to_string(abi).map_err(|e| Error::SerializationError(e.to_string()))?;
+    fn serialize_contract_abi(&self, abi: &ContractAbi, writer: &mut BinaryWriter) -> IoResult<()> {
+        let abi_json = serde_json::to_string(abi).map_err(map_json_error)?;
         writer.write_var_string(&abi_json)?;
         Ok(())
     }
 
     /// Custom deserialization for ContractAbi
-    fn deserialize_contract_abi(reader: &mut MemoryReader) -> Result<ContractAbi> {
+    fn deserialize_contract_abi(reader: &mut MemoryReader) -> IoResult<ContractAbi> {
         let abi_json = reader.read_var_string(MAX_SCRIPT_LENGTH)?; // Max 64KB for ABI
-        let abi = serde_json::from_str(&abi_json)
-            .map_err(|e| Error::SerializationError(e.to_string()))?;
+        let abi = serde_json::from_str(&abi_json).map_err(map_json_error)?;
         Ok(abi)
     }
 
@@ -394,19 +390,31 @@ impl ContractManifest {
         &self,
         permission: &ContractPermission,
         writer: &mut BinaryWriter,
-    ) -> Result<()> {
-        let permission_json = serde_json::to_string(permission)
-            .map_err(|e| Error::SerializationError(e.to_string()))?;
+    ) -> IoResult<()> {
+        let permission_json = serde_json::to_string(permission).map_err(map_json_error)?;
         writer.write_var_string(&permission_json)?;
         Ok(())
     }
 
     /// Custom deserialization for ContractPermission
-    fn deserialize_contract_permission(reader: &mut MemoryReader) -> Result<ContractPermission> {
+    fn deserialize_contract_permission(reader: &mut MemoryReader) -> IoResult<ContractPermission> {
         let permission_json = reader.read_var_string(MAX_SCRIPT_SIZE)?; // Max 1KB per permission
-        let permission = serde_json::from_str(&permission_json)
-            .map_err(|e| Error::SerializationError(e.to_string()))?;
+        let permission = serde_json::from_str(&permission_json).map_err(map_json_error)?;
         Ok(permission)
+    }
+}
+
+impl Serializable for ContractManifest {
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        Self::deserialize_io(reader)
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        self.serialize_io(writer)
+    }
+
+    fn size(&self) -> usize {
+        self.size()
     }
 }
 
@@ -465,11 +473,7 @@ impl IInteroperable for ContractManifest {
             _ => panic!("ContractManifest supported standards must be an array"),
         };
 
-        let mut abi = ContractAbi {
-            methods: Vec::new(),
-            events: Vec::new(),
-            method_dictionary: None,
-        };
+        let mut abi = ContractAbi::default();
         abi.from_stack_item(items[4].clone());
         self.abi = abi;
 
@@ -503,20 +507,8 @@ impl IInteroperable for ContractManifest {
 
         self.extra = match &items[7] {
             StackItem::Null => None,
-            StackItem::ByteString(bytes) | StackItem::Buffer(bytes) => {
-                let slice = match &items[7] {
-                    StackItem::ByteString(b) => b.as_slice(),
-                    StackItem::Buffer(buffer) => buffer.data(),
-                    _ => unreachable!(),
-                };
-                let text = String::from_utf8(slice.to_vec())
-                    .unwrap_or_else(|_| panic!("ContractManifest extra must be UTF-8"));
-                if text == "null" {
-                    None
-                } else {
-                    Some(serde_json::from_str(&text).expect("Invalid JSON in manifest extra"))
-                }
-            }
+            StackItem::ByteString(bytes) => parse_extra_bytes(bytes.as_slice()),
+            StackItem::Buffer(buffer) => parse_extra_bytes(buffer.data()),
             other => panic!(
                 "ContractManifest extra must be byte string or null, found {:?}",
                 other.stack_item_type()
@@ -596,8 +588,25 @@ impl Default for ContractManifest {
             supported_standards: Vec::new(),
             abi: ContractAbi::default(),
             permissions: vec![ContractPermission::default_wildcard()],
-            trusts: Vec::new(),
+            trusts: WildCardContainer::Wildcard,
             extra: None,
         }
+    }
+}
+
+fn parse_extra_bytes(bytes: &[u8]) -> Option<Value> {
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let text = std::str::from_utf8(bytes)
+        .unwrap_or_else(|_| panic!("ContractManifest extra must be UTF-8"));
+
+    if text == "null" {
+        None
+    } else {
+        Some(
+            serde_json::from_str(text).unwrap_or_else(|_| panic!("Invalid JSON in manifest extra")),
+        )
     }
 }

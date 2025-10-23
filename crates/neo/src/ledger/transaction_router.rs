@@ -9,8 +9,8 @@
 // using System;
 
 use super::VerifyResult;
-use crate::neo_system::ProtocolSettings;
 use crate::network::p2p::payloads::Transaction;
+use crate::protocol_settings::ProtocolSettings;
 
 /// namespace Neo.Ledger -> internal class TransactionRouter(NeoSystem system) : UntypedActor
 

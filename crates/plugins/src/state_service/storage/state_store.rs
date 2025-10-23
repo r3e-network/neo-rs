@@ -213,16 +213,19 @@ impl StateStore {
                 if let Some(snapshot) = state_snapshot.as_mut() {
                     match state {
                         TrackState::Added => {
-                            // In a real implementation, this would put the key-value pair
-                            // snapshot.trie.put(key.to_array(), item.to_array());
+                            // Note: Added/Changed need storage item value data
+                            // which is not provided in change_set signature
+                            // This requires DataCache integration to retrieve values
                         },
                         TrackState::Changed => {
-                            // In a real implementation, this would put the key-value pair
-                            // snapshot.trie.put(key.to_array(), item.to_array());
+                            // Note: Added/Changed need storage item value data
+                            // which is not provided in change_set signature
+                            // This requires DataCache integration to retrieve values
                         },
                         TrackState::Deleted => {
-                            // In a real implementation, this would delete the key
-                            // snapshot.trie.delete(key.to_array());
+                            if let Err(e) = snapshot.trie.delete(key.to_array().as_slice()) {
+                                eprintln!("MPT Trie delete error: {}", e);
+                            }
                         },
                         _ => {},
                     }
@@ -230,11 +233,21 @@ impl StateStore {
             }
         }
         
-        // Create state root
+        // Create state root with actual MPT root hash
+        let root_hash = if let Ok(state_snapshot) = self.state_snapshot.lock() {
+            if let Some(snapshot) = state_snapshot.as_ref() {
+                snapshot.trie.root_hash().unwrap_or_default()
+            } else {
+                UInt256::default()
+            }
+        } else {
+            UInt256::default()
+        };
+
         let state_root = StateRoot {
             version: StateRoot::CURRENT_VERSION,
             index: height,
-            root_hash: UInt256::default(), // In a real implementation, this would be the actual root hash
+            root_hash,
             witness: None,
         };
         

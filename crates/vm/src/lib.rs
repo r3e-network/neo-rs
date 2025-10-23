@@ -105,6 +105,8 @@
 extern crate std;
 
 // Core VM modules
+/// High level application engine with syscall integration
+pub mod application_engine;
 /// Exception emitted when a script is invalid during loading
 pub mod bad_script_exception;
 /// Interop service registry and native calls
@@ -161,6 +163,7 @@ pub mod vm_unhandled_exception;
 #[allow(dead_code)]
 pub mod tests;
 
+pub use application_engine::{ApplicationEngine, NotificationEvent, TriggerType};
 pub use bad_script_exception::BadScriptException;
 pub use call_flags::CallFlags;
 pub use catchable_exception::CatchableException;
@@ -178,7 +181,7 @@ pub use instruction::Instruction;
 pub use interop_service::{InteropDescriptor, InteropService};
 pub use jump_table::{InstructionHandler, JumpTable};
 pub use op_code::OpCode;
-pub use reference_counter::ReferenceCounter;
+pub use reference_counter::{CompoundParent, ReferenceCounter};
 pub use script::Script;
 pub use script_builder::ScriptBuilder;
 pub use slot::Slot;

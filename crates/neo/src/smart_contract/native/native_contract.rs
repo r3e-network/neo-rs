@@ -4,7 +4,6 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
-use crate::smart_contract::manifest::ContractMethodDescriptor;
 use crate::UInt160;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -133,7 +132,7 @@ impl BaseNativeContract {
     /// Validates that a method exists and can be called.
     pub fn validate_method_call(&self, method: &str) -> Result<&NativeMethod> {
         self.find_method(method)
-            .ok_or_else(|| Error::NativeContractError(format!("Method not found: {}", method)))
+            .ok_or_else(|| Error::native_contract(format!("Method not found: {}", method)))
     }
 }
 

@@ -218,41 +218,41 @@ fn test_make_script() {
 #[test]
 fn test_stack_item_json_serialization() {
     // Test Integer
-    let item = StackItem::Integer(5.into());
-    let json_str = format!("{{\"type\":\"Integer\",\"value\":\"5\"}}");
+    let _item = StackItem::Integer(5.into());
+    let _json_str = format!("{{\"type\":\"Integer\",\"value\":\"5\"}}");
     // Note: Actual JSON implementation may vary, this tests the concept
 
     // Test Boolean
-    let item = StackItem::Boolean(true);
-    let json_str = format!("{{\"type\":\"Boolean\",\"value\":true}}");
+    let _item = StackItem::Boolean(true);
+    let _json_str = format!("{{\"type\":\"Boolean\",\"value\":true}}");
 
     // Test ByteString
-    let item = StackItem::ByteString(vec![1, 2, 3]);
+    let _item = StackItem::ByteString(vec![1, 2, 3]);
     // Should serialize to base64: AQID
 
     // Test Array
     let items = vec![StackItem::Integer(5.into()), StackItem::Boolean(true)];
-    let item = StackItem::from_array(items);
+    let _item = StackItem::from_array(items);
     // Should contain nested JSON structure
 }
 
 #[test]
 fn test_stack_item_to_parameter() {
     // Test Integer
-    let item = StackItem::Integer(1000.into());
+    let _item = StackItem::Integer(1000.into());
     // Should convert to ContractParameterType::Integer
 
     // Test Boolean
-    let item = StackItem::Boolean(false);
+    let _item = StackItem::Boolean(false);
     // Should convert to ContractParameterType::Boolean
 
     // Test ByteString
-    let item = StackItem::ByteString(vec![1, 2, 3]);
+    let _item = StackItem::ByteString(vec![1, 2, 3]);
     // Should convert to ContractParameterType::ByteArray
 
     // Test Array
     let items = vec![StackItem::Integer(1.into()), StackItem::Boolean(true)];
-    let item = StackItem::from_array(items);
+    let _item = StackItem::from_array(items);
     // Should convert to ContractParameterType::Array
 }
 

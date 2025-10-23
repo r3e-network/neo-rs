@@ -3,18 +3,19 @@
 //! This module provides the ContractManagement native contract which manages
 //! all deployed smart contracts on the Neo blockchain.
 
-use crate::cryptography::crypto_utils::NeoHash;
+use crate::cryptography::Crypto;
 use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
-use crate::neo_config::{HASH_SIZE, MAX_SCRIPT_SIZE};
+use crate::neo_config::MAX_SCRIPT_SIZE;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
+use crate::persistence::DataCache;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::contract_state::{ContractState, NefFile};
 use crate::smart_contract::manifest::{ContractManifest, ContractPermissionDescriptor};
 use crate::smart_contract::native::{NativeContract, NativeMethod};
 use crate::smart_contract::StorageKey;
 use crate::UInt160;
-use serde::{Deserialize, Serialize};
+use neo_vm::{call_flags::CallFlags, StackItem};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::{Arc, RwLock};
@@ -102,6 +103,30 @@ impl ContractManagement {
         vec![PREFIX_MINIMUM_DEPLOYMENT_FEE]
     }
 
+    #[inline]
+    fn stack_item_from_payload(data: Vec<u8>) -> StackItem {
+        if data.is_empty() {
+            StackItem::null()
+        } else {
+            StackItem::from_byte_string(data)
+        }
+    }
+
+    fn invoke_deploy_hook(
+        &self,
+        engine: &mut ApplicationEngine,
+        contract_hash: &UInt160,
+        data: Vec<u8>,
+        is_update: bool,
+    ) -> Result<()> {
+        let args = vec![
+            Self::stack_item_from_payload(data),
+            StackItem::from_bool(is_update),
+        ];
+        engine.call_contract_dynamic(contract_hash, "_deploy", CallFlags::ALL, args)?;
+        Ok(())
+    }
+
     /// Creates a new ContractManagement instance
     pub fn new() -> Self {
         // ContractManagement contract hash: 0xfffdc93764dbaddd97c48f252a53ea4643faa3fd
@@ -133,9 +158,10 @@ impl ContractManagement {
 
     /// Gets the next available contract ID and increments it
     fn get_next_available_id(&self) -> Result<i32> {
-        let mut storage = self.storage.write().map_err(|e| {
-            Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
-        })?;
+        let mut storage = self
+            .storage
+            .write()
+            .map_err(|e| Error::native_contract(format!("Failed to acquire write lock: {}", e)))?;
 
         let id = storage.next_id;
         storage.next_id += 1;
@@ -146,7 +172,7 @@ impl ContractManagement {
     fn calculate_contract_hash(sender: &UInt160, checksum: u32, name: &str) -> UInt160 {
         let mut buffer = Vec::with_capacity(1 + sender.as_bytes().len() + 4 + name.len());
         buffer.push(0xFF); // Contract prefix
-        buffer.extend_from_slice(sender.as_bytes());
+        buffer.extend_from_slice(&sender.as_bytes());
         buffer.extend_from_slice(&checksum.to_le_bytes());
         buffer.extend_from_slice(name.as_bytes());
 
@@ -158,12 +184,12 @@ impl ContractManagement {
     fn validate_nef_file(nef: &NefFile) -> Result<()> {
         // Validate script
         if nef.script.is_empty() {
-            return Err(Error::InvalidData("Empty script".to_string()));
+            return Err(Error::invalid_data("Empty script".to_string()));
         }
 
         // Validate script size
         if nef.script.len() > MAX_SCRIPT_SIZE {
-            return Err(Error::InvalidData(format!(
+            return Err(Error::invalid_data(format!(
                 "Script size {} exceeds maximum {}",
                 nef.script.len(),
                 MAX_SCRIPT_SIZE
@@ -180,7 +206,7 @@ impl ContractManagement {
             u32::from_le_bytes(hash[..4].try_into().expect("Should be 4 bytes"));
 
         if calculated_checksum != nef.checksum {
-            return Err(Error::InvalidData("Invalid NEF checksum".to_string()));
+            return Err(Error::invalid_data("Invalid NEF checksum".to_string()));
         }
 
         Ok(())
@@ -190,7 +216,7 @@ impl ContractManagement {
     fn validate_manifest(manifest: &ContractManifest) -> Result<()> {
         // Validate ABI
         if manifest.abi.methods.is_empty() {
-            return Err(Error::InvalidData(
+            return Err(Error::invalid_data(
                 "Contract must have at least one method".to_string(),
             ));
         }
@@ -205,7 +231,7 @@ impl ContractManagement {
             };
 
             if !contract_valid {
-                return Err(Error::InvalidData(
+                return Err(Error::invalid_data(
                     "Invalid permission definition".to_string(),
                 ));
             }
@@ -215,7 +241,7 @@ impl ContractManagement {
         for group in &manifest.groups {
             // ECPoint always has a value, check signature
             if group.signature.is_empty() {
-                return Err(Error::InvalidData(
+                return Err(Error::invalid_data(
                     "Invalid group definition - missing signature".to_string(),
                 ));
             }
@@ -234,21 +260,21 @@ impl ContractManagement {
     ) -> Result<ContractState> {
         // Parse and validate NEF file
         let mut reader = MemoryReader::new(&nef_file);
-        let nef = <NefFile as neo_io::Serializable>::deserialize(&mut reader)
-            .map_err(|e| Error::Deserialization(format!("Invalid NEF file: {}", e)))?;
+        let nef = <NefFile as crate::neo_io::Serializable>::deserialize(&mut reader)
+            .map_err(|e| Error::deserialization(format!("Invalid NEF file: {}", e)))?;
 
         Self::validate_nef_file(&nef)?;
 
         // Parse and validate manifest
         let manifest: ContractManifest = serde_json::from_str(&manifest_json)
-            .map_err(|e| Error::Deserialization(format!("Invalid manifest: {}", e)))?;
+            .map_err(|e| Error::deserialization(format!("Invalid manifest: {}", e)))?;
 
         Self::validate_manifest(&manifest)?;
 
         // Get sender (deployer)
         let sender = engine
             .get_calling_script_hash()
-            .ok_or_else(|| Error::InvalidOperation("No calling context".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("No calling context".to_string()))?;
 
         // Calculate contract hash
         let contract_hash = Self::calculate_contract_hash(&sender, nef.checksum, &manifest.name);
@@ -256,11 +282,11 @@ impl ContractManagement {
         // Check if contract already exists
         {
             let storage = self.storage.read().map_err(|e| {
-                Error::NativeContractError(format!("Failed to acquire read lock: {}", e))
+                Error::native_contract(format!("Failed to acquire read lock: {}", e))
             })?;
 
             if storage.contracts.contains_key(&contract_hash) {
-                return Err(Error::InvalidOperation(
+                return Err(Error::invalid_operation(
                     "Contract already exists".to_string(),
                 ));
             }
@@ -269,7 +295,7 @@ impl ContractManagement {
         // Check deployment fee
         let deployment_fee = {
             let storage = self.storage.read().map_err(|e| {
-                Error::NativeContractError(format!("Failed to acquire read lock: {}", e))
+                Error::native_contract(format!("Failed to acquire read lock: {}", e))
             })?;
             storage.minimum_deployment_fee
         };
@@ -287,14 +313,14 @@ impl ContractManagement {
         let mut writer = BinaryWriter::new();
         contract
             .serialize(&mut writer)
-            .map_err(|e| Error::Serialization(format!("Failed to serialize contract: {}", e)))?;
+            .map_err(|e| Error::serialization(format!("Failed to serialize contract: {}", e)))?;
         let contract_bytes = writer.to_bytes();
         let contract_hash_bytes = contract_hash.as_bytes();
 
         // Store contract in in-memory cache and prepare metadata snapshots
         let (contract_count_bytes, next_id_bytes, min_fee_bytes) = {
             let mut storage = self.storage.write().map_err(|e| {
-                Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
+                Error::native_contract(format!("Failed to acquire write lock: {}", e))
             })?;
 
             storage.contracts.insert(contract_hash, contract.clone());
@@ -336,7 +362,7 @@ impl ContractManagement {
             .iter()
             .any(|m| m.name == "_deploy")
         {
-            engine.call_contract(contract_hash, "_deploy", vec![data])?;
+            self.invoke_deploy_hook(engine, &contract_hash, data, false)?;
         }
 
         // Emit Deploy event
@@ -356,26 +382,26 @@ impl ContractManagement {
         // Get calling contract hash
         let contract_hash = engine
             .get_calling_script_hash()
-            .ok_or_else(|| Error::InvalidOperation("No calling context".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("No calling context".to_string()))?;
 
         // Get existing contract
         let mut contract = {
             let storage = self.storage.read().map_err(|e| {
-                Error::NativeContractError(format!("Failed to acquire read lock: {}", e))
+                Error::native_contract(format!("Failed to acquire read lock: {}", e))
             })?;
 
             storage
                 .contracts
                 .get(&contract_hash)
                 .cloned()
-                .ok_or_else(|| Error::InvalidOperation("Contract not found".to_string()))?
+                .ok_or_else(|| Error::invalid_operation("Contract not found".to_string()))?
         };
 
         // Update NEF if provided
         if let Some(nef_bytes) = nef_file {
             let mut reader = MemoryReader::new(&nef_bytes);
-            let nef = <NefFile as neo_io::Serializable>::deserialize(&mut reader)
-                .map_err(|e| Error::Deserialization(format!("Invalid NEF file: {}", e)))?;
+            let nef = <NefFile as crate::neo_io::Serializable>::deserialize(&mut reader)
+                .map_err(|e| Error::deserialization(format!("Invalid NEF file: {}", e)))?;
 
             Self::validate_nef_file(&nef)?;
             contract.nef = nef;
@@ -384,7 +410,7 @@ impl ContractManagement {
         // Update manifest if provided
         if let Some(manifest_str) = manifest_json {
             let manifest: ContractManifest = serde_json::from_str(&manifest_str)
-                .map_err(|e| Error::Deserialization(format!("Invalid manifest: {}", e)))?;
+                .map_err(|e| Error::deserialization(format!("Invalid manifest: {}", e)))?;
 
             Self::validate_manifest(&manifest)?;
             contract.manifest = manifest;
@@ -397,12 +423,12 @@ impl ContractManagement {
         let mut writer = BinaryWriter::new();
         contract
             .serialize(&mut writer)
-            .map_err(|e| Error::Serialization(format!("Failed to serialize contract: {}", e)))?;
+            .map_err(|e| Error::serialization(format!("Failed to serialize contract: {}", e)))?;
         let contract_bytes = writer.to_bytes();
 
         {
             let mut storage = self.storage.write().map_err(|e| {
-                Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
+                Error::native_contract(format!("Failed to acquire write lock: {}", e))
             })?;
 
             storage.contracts.insert(contract_hash, contract.clone());
@@ -421,9 +447,9 @@ impl ContractManagement {
             .abi
             .methods
             .iter()
-            .any(|m| m.name == "_update")
+            .any(|m| m.name == "_deploy")
         {
-            engine.call_contract(contract_hash, "_update", vec![data])?;
+            self.invoke_deploy_hook(engine, &contract_hash, data, true)?;
         }
 
         // Emit Update event
@@ -437,35 +463,25 @@ impl ContractManagement {
         // Get calling contract hash
         let contract_hash = engine
             .get_calling_script_hash()
-            .ok_or_else(|| Error::InvalidOperation("No calling context".to_string()))?;
+            .ok_or_else(|| Error::invalid_operation("No calling context".to_string()))?;
 
         // Get contract to destroy
         let contract = {
             let storage = self.storage.read().map_err(|e| {
-                Error::NativeContractError(format!("Failed to acquire read lock: {}", e))
+                Error::native_contract(format!("Failed to acquire read lock: {}", e))
             })?;
 
             storage
                 .contracts
                 .get(&contract_hash)
                 .cloned()
-                .ok_or_else(|| Error::InvalidOperation("Contract not found".to_string()))?
+                .ok_or_else(|| Error::invalid_operation("Contract not found".to_string()))?
         };
 
         // Call contract's _destroy method if it exists
-        if contract
-            .manifest
-            .abi
-            .methods
-            .iter()
-            .any(|m| m.name == "_destroy")
-        {
-            engine.call_contract(contract_hash, "_destroy", vec![])?;
-        }
-
         let (contract_count_bytes, next_id_bytes, min_fee_bytes) = {
             let mut storage = self.storage.write().map_err(|e| {
-                Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
+                Error::native_contract(format!("Failed to acquire write lock: {}", e))
             })?;
 
             storage.contracts.remove(&contract_hash);
@@ -481,11 +497,11 @@ impl ContractManagement {
 
         let context = engine.get_native_storage_context(&self.hash)?;
         engine.delete_storage(&StorageKey::new(
-            self.hash,
+            context.id,
             Self::contract_storage_key(&contract_hash),
         ))?;
         engine.delete_storage(&StorageKey::new(
-            self.hash,
+            context.id,
             Self::contract_id_storage_key(contract.id),
         ))?;
         engine.put_storage_item(&context, &Self::contract_count_key(), &contract_count_bytes)?;
@@ -511,9 +527,10 @@ impl ContractManagement {
             return Ok(());
         }
 
-        let mut storage = self.storage.write().map_err(|e| {
-            Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
-        })?;
+        let mut storage = self
+            .storage
+            .write()
+            .map_err(|e| Error::native_contract(format!("Failed to acquire write lock: {}", e)))?;
 
         storage.contracts.clear();
         storage.contract_ids.clear();
@@ -522,15 +539,17 @@ impl ContractManagement {
         storage.minimum_deployment_fee = DEFAULT_MINIMUM_DEPLOYMENT_FEE;
 
         for (key, item) in entries {
-            if key.is_empty() {
+            let key_bytes = key.suffix();
+            if key_bytes.is_empty() {
                 continue;
             }
 
-            let (prefix, rest) = key.split_first().unwrap();
+            let (prefix, rest) = key_bytes.split_first().unwrap();
+            let value = item.get_value();
             match *prefix {
                 PREFIX_CONTRACT => {
                     if let Ok(contract_hash) = UInt160::from_bytes(rest) {
-                        let mut reader = MemoryReader::new(&item.value);
+                        let mut reader = MemoryReader::new(&value);
                         if let Ok(contract_state) = ContractState::deserialize(&mut reader) {
                             storage
                                 .contract_ids
@@ -544,29 +563,29 @@ impl ContractManagement {
                         let mut id_bytes = [0u8; 4];
                         id_bytes.copy_from_slice(rest);
                         let id = i32::from_le_bytes(id_bytes);
-                        if let Ok(hash) = UInt160::from_bytes(&item.value) {
+                        if let Ok(hash) = UInt160::from_bytes(&value) {
                             storage.contract_ids.insert(id, hash);
                         }
                     }
                 }
                 PREFIX_CONTRACT_COUNT => {
-                    if item.value.len() == 4 {
+                    if value.len() == 4 {
                         let mut buf = [0u8; 4];
-                        buf.copy_from_slice(&item.value[..4]);
+                        buf.copy_from_slice(&value[..4]);
                         storage.contract_count = u32::from_le_bytes(buf);
                     }
                 }
                 PREFIX_NEXT_AVAILABLE_ID => {
-                    if item.value.len() == 4 {
+                    if value.len() == 4 {
                         let mut buf = [0u8; 4];
-                        buf.copy_from_slice(&item.value[..4]);
+                        buf.copy_from_slice(&value[..4]);
                         storage.next_id = i32::from_le_bytes(buf);
                     }
                 }
                 PREFIX_MINIMUM_DEPLOYMENT_FEE => {
-                    if item.value.len() == 8 {
+                    if value.len() == 8 {
                         let mut buf = [0u8; 8];
-                        buf.copy_from_slice(&item.value[..8]);
+                        buf.copy_from_slice(&value[..8]);
                         storage.minimum_deployment_fee = i64::from_le_bytes(buf);
                     }
                 }
@@ -589,18 +608,42 @@ impl ContractManagement {
 
     /// Gets a contract by hash
     pub fn get_contract(&self, hash: &UInt160) -> Result<Option<ContractState>> {
-        let storage = self.storage.read().map_err(|e| {
-            Error::NativeContractError(format!("Failed to acquire read lock: {}", e))
-        })?;
+        let storage = self
+            .storage
+            .read()
+            .map_err(|e| Error::native_contract(format!("Failed to acquire read lock: {}", e)))?;
 
         Ok(storage.contracts.get(hash).cloned())
     }
 
+    /// Gets a contract by hash using the provided snapshot cache (matches C# snapshot lookup).
+    pub fn get_contract_from_snapshot(
+        snapshot: &DataCache,
+        hash: &UInt160,
+    ) -> Result<Option<ContractState>> {
+        let storage_key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
+        let Some(item) = snapshot.get(&storage_key) else {
+            return Ok(None);
+        };
+
+        let bytes = item.get_value();
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+
+        let mut reader = MemoryReader::new(&bytes);
+        let contract = <ContractState as Serializable>::deserialize(&mut reader).map_err(|e| {
+            Error::deserialization(format!("Failed to deserialize contract: {}", e))
+        })?;
+        Ok(Some(contract))
+    }
+
     /// Gets a contract by ID
     pub fn get_contract_by_id(&self, id: i32) -> Result<Option<ContractState>> {
-        let storage = self.storage.read().map_err(|e| {
-            Error::NativeContractError(format!("Failed to acquire read lock: {}", e))
-        })?;
+        let storage = self
+            .storage
+            .read()
+            .map_err(|e| Error::native_contract(format!("Failed to acquire read lock: {}", e)))?;
 
         if let Some(hash) = storage.contract_ids.get(&id) {
             Ok(storage.contracts.get(hash).cloned())
@@ -611,9 +654,10 @@ impl ContractManagement {
 
     /// Checks if a contract has a specific method
     pub fn has_method(&self, hash: &UInt160, method: &str, parameter_count: i32) -> Result<bool> {
-        let storage = self.storage.read().map_err(|e| {
-            Error::NativeContractError(format!("Failed to acquire read lock: {}", e))
-        })?;
+        let storage = self
+            .storage
+            .read()
+            .map_err(|e| Error::native_contract(format!("Failed to acquire read lock: {}", e)))?;
 
         if let Some(contract) = storage.contracts.get(hash) {
             Ok(contract
@@ -629,18 +673,20 @@ impl ContractManagement {
 
     /// Gets all contract hashes
     pub fn get_contract_hashes(&self) -> Result<Vec<UInt160>> {
-        let storage = self.storage.read().map_err(|e| {
-            Error::NativeContractError(format!("Failed to acquire read lock: {}", e))
-        })?;
+        let storage = self
+            .storage
+            .read()
+            .map_err(|e| Error::native_contract(format!("Failed to acquire read lock: {}", e)))?;
 
         Ok(storage.contracts.keys().cloned().collect())
     }
 
     /// Gets the minimum deployment fee
     pub fn get_minimum_deployment_fee(&self) -> Result<i64> {
-        let storage = self.storage.read().map_err(|e| {
-            Error::NativeContractError(format!("Failed to acquire read lock: {}", e))
-        })?;
+        let storage = self
+            .storage
+            .read()
+            .map_err(|e| Error::native_contract(format!("Failed to acquire read lock: {}", e)))?;
 
         Ok(storage.minimum_deployment_fee)
     }
@@ -652,14 +698,14 @@ impl ContractManagement {
         value: i64,
     ) -> Result<()> {
         if value < 0 {
-            return Err(Error::InvalidArgument(
+            return Err(Error::invalid_argument(
                 "Deployment fee cannot be negative".to_string(),
             ));
         }
 
         // Check committee permission
         if !engine.check_committee_witness()? {
-            return Err(Error::InvalidOperation(
+            return Err(Error::invalid_operation(
                 "Committee witness required".to_string(),
             ));
         }
@@ -667,7 +713,7 @@ impl ContractManagement {
         // Update storage
         let (min_fee_bytes, next_id_bytes) = {
             let mut storage = self.storage.write().map_err(|e| {
-                Error::NativeContractError(format!("Failed to acquire write lock: {}", e))
+                Error::native_contract(format!("Failed to acquire write lock: {}", e))
             })?;
 
             storage.minimum_deployment_fee = value;
@@ -720,18 +766,18 @@ impl NativeContract for ContractManagement {
         match method {
             "getContract" => {
                 if args.len() != 1 {
-                    return Err(Error::InvalidArgument(
+                    return Err(Error::invalid_argument(
                         "getContract requires 1 argument".to_string(),
                     ));
                 }
                 let hash = UInt160::from_bytes(&args[0])
-                    .map_err(|e| Error::InvalidArgument(format!("Invalid hash: {}", e)))?;
+                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
                 match self.get_contract(&hash)? {
                     Some(contract) => {
                         // Serialize contract state
                         let mut writer = BinaryWriter::new();
                         contract.serialize(&mut writer).map_err(|e| {
-                            Error::Serialization(format!("Failed to serialize contract: {}", e))
+                            Error::serialization(format!("Failed to serialize contract: {}", e))
                         })?;
                         Ok(writer.to_bytes())
                     }
@@ -740,13 +786,13 @@ impl NativeContract for ContractManagement {
             }
             "deploy" => {
                 if args.len() != 3 {
-                    return Err(Error::InvalidArgument(
+                    return Err(Error::invalid_argument(
                         "deploy requires 3 arguments".to_string(),
                     ));
                 }
                 let nef_bytes = args[0].clone();
                 let manifest_str = String::from_utf8(args[1].clone()).map_err(|e| {
-                    Error::InvalidArgument(format!("Invalid manifest string: {}", e))
+                    Error::invalid_argument(format!("Invalid manifest string: {}", e))
                 })?;
                 let data = args[2].clone();
 
@@ -755,13 +801,13 @@ impl NativeContract for ContractManagement {
                 // Serialize contract state
                 let mut writer = BinaryWriter::new();
                 contract.serialize(&mut writer).map_err(|e| {
-                    Error::Serialization(format!("Failed to serialize contract: {}", e))
+                    Error::serialization(format!("Failed to serialize contract: {}", e))
                 })?;
                 Ok(writer.to_bytes())
             }
             "update" => {
                 if args.len() != 3 {
-                    return Err(Error::InvalidArgument(
+                    return Err(Error::invalid_argument(
                         "update requires 3 arguments".to_string(),
                     ));
                 }
@@ -776,7 +822,7 @@ impl NativeContract for ContractManagement {
                     None
                 } else {
                     Some(String::from_utf8(args[1].clone()).map_err(|e| {
-                        Error::InvalidArgument(format!("Invalid manifest string: {}", e))
+                        Error::invalid_argument(format!("Invalid manifest string: {}", e))
                     })?)
                 };
 
@@ -787,7 +833,7 @@ impl NativeContract for ContractManagement {
             }
             "destroy" => {
                 if !args.is_empty() {
-                    return Err(Error::InvalidArgument(
+                    return Err(Error::invalid_argument(
                         "destroy requires no arguments".to_string(),
                     ));
                 }
@@ -796,7 +842,7 @@ impl NativeContract for ContractManagement {
             }
             "getMinimumDeploymentFee" => {
                 if !args.is_empty() {
-                    return Err(Error::InvalidArgument(
+                    return Err(Error::invalid_argument(
                         "getMinimumDeploymentFee requires no arguments".to_string(),
                     ));
                 }
@@ -805,65 +851,66 @@ impl NativeContract for ContractManagement {
             }
             "setMinimumDeploymentFee" => {
                 if args.len() != 1 {
-                    return Err(Error::InvalidArgument(
+                    return Err(Error::invalid_argument(
                         "setMinimumDeploymentFee requires 1 argument".to_string(),
                     ));
                 }
                 if args[0].len() != 8 {
-                    return Err(Error::InvalidArgument("Invalid fee value".to_string()));
+                    return Err(Error::invalid_argument("Invalid fee value".to_string()));
                 }
                 let value = i64::from_le_bytes(
                     args[0]
                         .as_slice()
                         .try_into()
-                        .map_err(|_| Error::InvalidArgument("Invalid fee value".to_string()))?,
+                        .map_err(|_| Error::invalid_argument("Invalid fee value".to_string()))?,
                 );
                 self.set_minimum_deployment_fee(engine, value)?;
                 Ok(vec![])
             }
             "hasMethod" => {
                 if args.len() != 3 {
-                    return Err(Error::InvalidArgument(
+                    return Err(Error::invalid_argument(
                         "hasMethod requires 3 arguments".to_string(),
                     ));
                 }
                 let hash = UInt160::from_bytes(&args[0])
-                    .map_err(|e| Error::InvalidArgument(format!("Invalid hash: {}", e)))?;
-                let method = String::from_utf8(args[1].clone())
-                    .map_err(|e| Error::InvalidArgument(format!("Invalid method string: {}", e)))?;
+                    .map_err(|e| Error::invalid_argument(format!("Invalid hash: {}", e)))?;
+                let method = String::from_utf8(args[1].clone()).map_err(|e| {
+                    Error::invalid_argument(format!("Invalid method string: {}", e))
+                })?;
                 if args[2].len() != 4 {
-                    return Err(Error::InvalidArgument(
+                    return Err(Error::invalid_argument(
                         "Invalid parameter count".to_string(),
                     ));
                 }
                 let pcount =
                     i32::from_le_bytes(args[2].as_slice().try_into().map_err(|_| {
-                        Error::InvalidArgument("Invalid parameter count".to_string())
+                        Error::invalid_argument("Invalid parameter count".to_string())
                     })?);
                 let result = self.has_method(&hash, &method, pcount)?;
                 Ok(vec![if result { 1 } else { 0 }])
             }
             "getContractById" => {
                 if args.len() != 1 {
-                    return Err(Error::InvalidArgument(
+                    return Err(Error::invalid_argument(
                         "getContractById requires 1 argument".to_string(),
                     ));
                 }
                 if args[0].len() != 4 {
-                    return Err(Error::InvalidArgument("Invalid contract ID".to_string()));
+                    return Err(Error::invalid_argument("Invalid contract ID".to_string()));
                 }
                 let id = i32::from_le_bytes(
                     args[0]
                         .as_slice()
                         .try_into()
-                        .map_err(|_| Error::InvalidArgument("Invalid contract ID".to_string()))?,
+                        .map_err(|_| Error::invalid_argument("Invalid contract ID".to_string()))?,
                 );
                 match self.get_contract_by_id(id)? {
                     Some(contract) => {
                         // Serialize contract state
                         let mut writer = BinaryWriter::new();
                         contract.serialize(&mut writer).map_err(|e| {
-                            Error::Serialization(format!("Failed to serialize contract: {}", e))
+                            Error::serialization(format!("Failed to serialize contract: {}", e))
                         })?;
                         Ok(writer.to_bytes())
                     }
@@ -872,23 +919,23 @@ impl NativeContract for ContractManagement {
             }
             "getContractHashes" => {
                 if !args.is_empty() {
-                    return Err(Error::InvalidArgument(
+                    return Err(Error::invalid_argument(
                         "getContractHashes requires no arguments".to_string(),
                     ));
                 }
                 let hashes = self.get_contract_hashes()?;
                 let mut writer = BinaryWriter::new();
                 writer.write_var_int(hashes.len() as u64).map_err(|e| {
-                    Error::Serialization(format!("Failed to write hash count: {}", e))
+                    Error::serialization(format!("Failed to write hash count: {}", e))
                 })?;
                 for hash in hashes {
                     writer.write_bytes(&hash.as_bytes()).map_err(|e| {
-                        Error::Serialization(format!("Failed to write hash: {}", e))
+                        Error::serialization(format!("Failed to write hash: {}", e))
                     })?;
                 }
                 Ok(writer.to_bytes())
             }
-            _ => Err(Error::NativeContractError(format!(
+            _ => Err(Error::native_contract(format!(
                 "Method {} not found",
                 method
             ))),
