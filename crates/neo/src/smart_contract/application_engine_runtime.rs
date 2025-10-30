@@ -1,5 +1,6 @@
 //! ApplicationEngine.Runtime - matches C# Neo.SmartContract.ApplicationEngine.Runtime.cs exactly
 
+use crate::cryptography::crypto_utils::NeoHash;
 use crate::hardfork::Hardfork;
 use crate::neo_config::{ADDRESS_SIZE, HASH_SIZE};
 use crate::smart_contract::application_engine::{
@@ -11,7 +12,7 @@ use crate::smart_contract::ContractParameterDefinition;
 use crate::UInt160;
 use neo_vm::call_flags::CallFlags;
 use neo_vm::{ExecutionEngine, StackItem, StackItemType, VmError, VmResult};
-use num_bigint::BigInt;
+use num_bigint::{BigInt, Sign};
 use num_traits::ToPrimitive;
 use std::convert::TryFrom;
 use std::string::String as StdString;
@@ -100,6 +101,34 @@ impl ApplicationEngine {
 
         let counter = self.get_invocation_counter(&hash);
         self.push_integer(counter as i64)
+    }
+
+    /// Gets the next random number derived from VRF-like construction (matches C# GetRandom exactly).
+    pub fn runtime_get_random(&mut self) -> Result<(), String> {
+        let network = self.protocol_settings().network;
+        let aspid_enabled = self.is_hardfork_enabled(Hardfork::HfAspidochelone);
+
+        let buffer = if aspid_enabled {
+            let seed = network.wrapping_add(self.random_counter());
+            self.increment_random_counter();
+            NeoHash::murmur128(self.nonce_bytes(), seed)
+        } else {
+            let bytes = NeoHash::murmur128(self.nonce_bytes(), network);
+            self.set_nonce_bytes(bytes);
+            bytes
+        };
+
+        let price: u64 = if aspid_enabled { 1 << 13 } else { 1 << 4 };
+        self.add_runtime_fee(price).map_err(|e| e.to_string())?;
+
+        let bigint = BigInt::from_bytes_le(Sign::Plus, &buffer);
+        self.push(StackItem::from_int(bigint))
+            .map_err(|e| e.to_string())
+    }
+
+    /// Gets the remaining GAS available for execution (matches C# GasLeft).
+    pub fn runtime_gas_left(&mut self) -> Result<(), String> {
+        self.push_integer(self.gas_left())
     }
 
     /// Logs a message
@@ -279,6 +308,16 @@ fn runtime_get_network_handler(
     map_runtime_result("System.Runtime.GetNetwork", app.runtime_get_network())
 }
 
+fn runtime_get_address_version_handler(
+    app: &mut ApplicationEngine,
+    _engine: &mut ExecutionEngine,
+) -> VmResult<()> {
+    map_runtime_result(
+        "System.Runtime.GetAddressVersion",
+        app.runtime_get_address_version(),
+    )
+}
+
 fn runtime_get_time_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -343,6 +382,20 @@ fn runtime_get_invocation_counter_handler(
     )
 }
 
+fn runtime_get_random_handler(
+    app: &mut ApplicationEngine,
+    _engine: &mut ExecutionEngine,
+) -> VmResult<()> {
+    map_runtime_result("System.Runtime.GetRandom", app.runtime_get_random())
+}
+
+fn runtime_gas_left_handler(
+    app: &mut ApplicationEngine,
+    _engine: &mut ExecutionEngine,
+) -> VmResult<()> {
+    map_runtime_result("System.Runtime.GasLeft", app.runtime_gas_left())
+}
+
 fn runtime_log_handler(app: &mut ApplicationEngine, _engine: &mut ExecutionEngine) -> VmResult<()> {
     map_runtime_result("System.Runtime.Log", app.runtime_log())
 }
@@ -399,6 +452,12 @@ pub(crate) fn register_runtime_interops(engine: &mut ApplicationEngine) -> VmRes
         runtime_get_network_handler,
     )?;
     engine.register_host_service(
+        "System.Runtime.GetAddressVersion",
+        1 << 3,
+        CallFlags::NONE,
+        runtime_get_address_version_handler,
+    )?;
+    engine.register_host_service(
         "System.Runtime.GetTime",
         1 << 3,
         CallFlags::NONE,
@@ -439,6 +498,18 @@ pub(crate) fn register_runtime_interops(engine: &mut ApplicationEngine) -> VmRes
         1 << 4,
         CallFlags::NONE,
         runtime_get_invocation_counter_handler,
+    )?;
+    engine.register_host_service(
+        "System.Runtime.GetRandom",
+        0,
+        CallFlags::NONE,
+        runtime_get_random_handler,
+    )?;
+    engine.register_host_service(
+        "System.Runtime.GasLeft",
+        1 << 4,
+        CallFlags::NONE,
+        runtime_gas_left_handler,
     )?;
     engine.register_host_service(
         "System.Runtime.Log",
