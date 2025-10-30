@@ -144,6 +144,8 @@ impl ApplicationEngine {
         let hash = self
             .interop_service_mut()
             .register_host_descriptor(name, price, flags)?;
+        #[cfg(debug_assertions)]
+        println!("Registered syscall {} with hash 0x{:08x}", name, hash);
         self.syscall_map.insert(hash, syscall);
         Ok(())
     }
@@ -339,5 +341,13 @@ impl InteropHost for ApplicationEngine {
                 Ok(())
             }
         }
+    }
+
+    fn on_context_loaded(
+        &mut self,
+        _engine: &mut ExecutionEngine,
+        _context: &crate::execution_context::ExecutionContext,
+    ) -> VmResult<()> {
+        Ok(())
     }
 }

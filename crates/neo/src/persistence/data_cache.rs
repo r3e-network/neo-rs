@@ -44,6 +44,14 @@ pub struct DataCache {
     change_set: Option<Arc<RwLock<HashSet<StorageKey>>>>,
     on_read: Arc<RwLock<Vec<OnEntryDelegate>>>,
     on_update: Arc<RwLock<Vec<OnEntryDelegate>>>,
+    store_get: Option<Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync>>,
+    store_find: Option<
+        Arc<
+            dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)>
+                + Send
+                + Sync,
+        >,
+    >,
 }
 
 impl Clone for DataCache {
@@ -53,6 +61,8 @@ impl Clone for DataCache {
             change_set: self.change_set.as_ref().map(Arc::clone),
             on_read: Arc::clone(&self.on_read),
             on_update: Arc::clone(&self.on_update),
+            store_get: self.store_get.as_ref().map(Arc::clone),
+            store_find: self.store_find.as_ref().map(Arc::clone),
         }
     }
 }
@@ -60,6 +70,21 @@ impl Clone for DataCache {
 impl DataCache {
     /// Creates a new DataCache.
     pub fn new(read_only: bool) -> Self {
+        Self::new_with_store(read_only, None, None)
+    }
+
+    /// Creates a new DataCache with an optional backing store.
+    pub fn new_with_store(
+        read_only: bool,
+        store_get: Option<Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync>>,
+        store_find: Option<
+            Arc<
+                dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)>
+                    + Send
+                    + Sync,
+            >,
+        >,
+    ) -> Self {
         Self {
             dictionary: Arc::new(RwLock::new(HashMap::new())),
             change_set: if read_only {
@@ -69,6 +94,8 @@ impl DataCache {
             },
             on_read: Arc::new(RwLock::new(Vec::new())),
             on_update: Arc::new(RwLock::new(Vec::new())),
+            store_get,
+            store_find,
         }
     }
 
@@ -89,15 +116,30 @@ impl DataCache {
 
     /// Gets an item from the cache.
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
-        let dict = self.dictionary.read().unwrap();
-        if let Some(trackable) = dict.get(key) {
-            if trackable.state == TrackState::Deleted || trackable.state == TrackState::NotFound {
-                return None;
+        if let Some(trackable) = self.dictionary.read().unwrap().get(key) {
+            if trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound {
+                return Some(trackable.item.clone());
             }
-            return Some(trackable.item.clone());
+            return None;
         }
 
-        // Would load from underlying storage here
+        if let Some(getter) = &self.store_get {
+            if let Some(item) = getter(key) {
+                {
+                    let mut dict = self.dictionary.write().unwrap();
+                    dict.entry(key.clone())
+                        .or_insert_with(|| Trackable::new(item.clone(), TrackState::None));
+                }
+
+                let handlers = self.on_read.read().unwrap();
+                for handler in handlers.iter() {
+                    handler(self, key, &item);
+                }
+
+                return Some(item);
+            }
+        }
+
         None
     }
 
@@ -226,22 +268,31 @@ impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
         key_prefix: Option<&StorageKey>,
         direction: SeekDirection,
     ) -> Box<dyn Iterator<Item = (StorageKey, StorageItem)> + '_> {
-        let dict = self.dictionary.read().unwrap();
-        let mut items: Vec<_> = dict
-            .iter()
-            .filter(|(_, trackable)| {
-                trackable.state != TrackState::Deleted && trackable.state != TrackState::NotFound
-            })
-            .filter(|(k, _)| {
-                if let Some(prefix) = key_prefix {
-                    k.id == prefix.id && k.suffix().starts_with(prefix.suffix())
-                } else {
-                    true
-                }
-            })
-            .map(|(k, trackable)| (k.clone(), trackable.item.clone()))
-            .collect();
+        let mut combined: HashMap<StorageKey, StorageItem> = HashMap::new();
 
+        for (key, trackable) in self.dictionary.read().unwrap().iter() {
+            if trackable.state == TrackState::Deleted || trackable.state == TrackState::NotFound {
+                continue;
+            }
+
+            if let Some(prefix) = key_prefix {
+                if key.id != prefix.id || !key.suffix().starts_with(prefix.suffix()) {
+                    continue;
+                }
+            }
+
+            combined
+                .entry(key.clone())
+                .or_insert_with(|| trackable.item.clone());
+        }
+
+        if let Some(finder) = &self.store_find {
+            for (key, value) in finder(key_prefix, SeekDirection::Forward) {
+                combined.entry(key).or_insert(value);
+            }
+        }
+
+        let mut items: Vec<_> = combined.into_iter().collect();
         items.sort_by(|a, b| a.0.suffix().cmp(b.0.suffix()));
 
         if direction == SeekDirection::Backward {

@@ -98,11 +98,13 @@ impl MemoryPool {
     }
 
     /// internal int SortedTxCount => _sortedTransactions.Count;
+    #[allow(dead_code)]
     pub(crate) fn sorted_tx_count(&self) -> usize {
         self.verified_sorted.len()
     }
 
     /// internal int UnverifiedSortedTxCount => _unverifiedSortedTransactions.Count;
+    #[allow(dead_code)]
     pub(crate) fn unverified_sorted_tx_count(&self) -> usize {
         self.unverified_sorted.len()
     }

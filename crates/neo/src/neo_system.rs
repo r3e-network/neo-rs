@@ -17,12 +17,13 @@ use tokio::task::block_in_place;
 use tracing::{debug, warn};
 
 use crate::constants::GENESIS_TIMESTAMP_MS;
+use crate::contains_transaction_type::ContainsTransactionType;
 use crate::error::{CoreError, CoreResult};
 use crate::i_event_handlers::IServiceAddedHandler;
-use crate::ledger::blockchain::{Blockchain, BlockchainCommand};
+use crate::ledger::blockchain::{Blockchain, BlockchainCommand, PreverifyCompleted};
 use crate::ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
-    blockchain_application_executed::ApplicationExecuted, LedgerContext, MemoryPool,
+    blockchain_application_executed::ApplicationExecuted, HeaderCache, LedgerContext, MemoryPool,
 };
 use crate::neo_io::{BinaryWriter, Serializable};
 use crate::network::p2p::{
@@ -34,8 +35,8 @@ use crate::network::p2p::{
     TaskManagerCommand,
 };
 use crate::persistence::{
-    data_cache::DataCache, i_store::IStore, i_store_provider::IStoreProvider,
-    track_state::TrackState, StoreCache, StoreFactory,
+    i_store::IStore, i_store_provider::IStoreProvider, track_state::TrackState, StoreCache,
+    StoreFactory,
 };
 pub use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
@@ -52,6 +53,7 @@ use neo_extensions::plugin::{
     broadcast_global_event, initialise_global_runtime, shutdown_global_runtime, PluginContext,
     PluginEvent,
 };
+use neo_io_crate::{InventoryHash, RelayCache};
 use neo_vm::OpCode;
 
 fn block_on_extension<F, T>(future: F) -> Result<T, ExtensionError>
@@ -162,6 +164,37 @@ impl PluginManager {
     }
 }
 
+const RELAY_CACHE_CAPACITY: usize = 100;
+
+#[derive(Clone)]
+struct RelayExtensibleEntry {
+    hash: UInt256,
+    payload: ExtensiblePayload,
+}
+
+impl RelayExtensibleEntry {
+    fn new(mut payload: ExtensiblePayload) -> Self {
+        let hash = payload.hash();
+        Self { hash, payload }
+    }
+
+    fn payload(&self) -> ExtensiblePayload {
+        self.payload.clone()
+    }
+
+    fn hash(&self) -> UInt256 {
+        self.hash
+    }
+}
+
+impl InventoryHash<UInt256> for RelayExtensibleEntry {
+    fn inventory_hash(&self) -> &UInt256 {
+        &self.hash
+    }
+}
+
+type RelayExtensibleCache = RelayCache<UInt256, RelayExtensibleEntry>;
+
 /// Central runtime coordinating all services for a Neo node.
 pub struct NeoSystem {
     settings: ProtocolSettings,
@@ -211,7 +244,9 @@ pub struct NeoSystemContext {
     genesis_block: Arc<Block>,
     ledger: Arc<LedgerContext>,
     memory_pool: Arc<Mutex<MemoryPool>>,
+    header_cache: Arc<HeaderCache>,
     settings: Arc<ProtocolSettings>,
+    relay_cache: Arc<RelayExtensibleCache>,
 }
 
 impl fmt::Debug for NeoSystemContext {
@@ -235,6 +270,7 @@ impl fmt::Debug for NeoSystemContext {
                     .map(|pool| pool.count())
                     .unwrap_or(0usize),
             )
+            .field("cached_headers", &self.header_cache.count())
             .finish()
     }
 }
@@ -242,6 +278,11 @@ impl fmt::Debug for NeoSystemContext {
 impl NeoSystemContext {
     pub fn store_cache(&self) -> StoreCache {
         StoreCache::new_from_store(self.store.clone(), true)
+    }
+
+    pub fn store_snapshot_cache(&self) -> StoreCache {
+        let snapshot = self.store.get_snapshot();
+        StoreCache::new_from_snapshot(snapshot)
     }
 
     /// Returns the canonical genesis block.
@@ -252,6 +293,26 @@ impl NeoSystemContext {
     /// Shared access to the ledger context.
     pub fn ledger(&self) -> Arc<LedgerContext> {
         self.ledger.clone()
+    }
+
+    /// Provides access to the shared memory pool handle.
+    pub fn memory_pool_handle(&self) -> Arc<Mutex<MemoryPool>> {
+        self.memory_pool.clone()
+    }
+
+    /// Provides access to the shared header cache.
+    pub fn header_cache(&self) -> Arc<HeaderCache> {
+        self.header_cache.clone()
+    }
+
+    /// Returns a clone of the protocol settings.
+    pub fn protocol_settings(&self) -> Arc<ProtocolSettings> {
+        self.settings.clone()
+    }
+
+    /// Access to the actor system event stream.
+    pub fn event_stream(&self) -> EventStreamHandle {
+        self.actor_system.event_stream()
     }
 
     /// Retrieves the first registered service assignable to `T`.
@@ -444,6 +505,44 @@ impl NeoSystemContext {
         guard.try_get(hash)
     }
 
+    /// Determines whether a transaction exists in the mempool or persisted store.
+    pub fn contains_transaction(&self, hash: &UInt256) -> ContainsTransactionType {
+        if let Ok(pool) = self.memory_pool.lock() {
+            if pool.contains_key(hash) {
+                return ContainsTransactionType::ExistsInPool;
+            }
+        }
+
+        let ledger_contract = LedgerContract::new();
+        let store_cache = self.store_cache();
+        if ledger_contract
+            .contains_transaction(&store_cache, hash)
+            .unwrap_or(false)
+        {
+            return ContainsTransactionType::ExistsInLedger;
+        }
+
+        ContainsTransactionType::NotExist
+    }
+
+    /// Determines whether the supplied transaction conflicts with on-chain entries.
+    pub fn contains_conflict_hash(&self, hash: &UInt256, signers: &[UInt160]) -> bool {
+        if signers.is_empty() {
+            return false;
+        }
+
+        let ledger_contract = LedgerContract::new();
+        let store_cache = self.store_cache();
+        let settings = self.settings();
+        let max_traceable = ledger_contract
+            .max_traceable_blocks_snapshot(&store_cache, &settings)
+            .unwrap_or(settings.max_traceable_blocks);
+
+        ledger_contract
+            .contains_conflict_hash(&store_cache, hash, signers, max_traceable)
+            .unwrap_or(false)
+    }
+
     /// Protocol settings shared with network components.
     pub fn settings(&self) -> Arc<ProtocolSettings> {
         self.settings.clone()
@@ -507,7 +606,16 @@ impl NeoSystemContext {
 
     /// Registers an extensible payload with the in-memory ledger cache.
     pub fn record_extensible(&self, payload: ExtensiblePayload) -> UInt256 {
-        self.ledger.insert_extensible(payload)
+        let entry = RelayExtensibleEntry::new(payload.clone());
+        let hash = entry.hash();
+        self.relay_cache.add(entry);
+        self.ledger.insert_extensible(payload);
+        hash
+    }
+
+    /// Attempts to retrieve a recently relayed extensible payload from the cache.
+    pub fn try_get_relay_extensible(&self, hash: &UInt256) -> Option<ExtensiblePayload> {
+        self.relay_cache.try_get(hash).map(|entry| entry.payload())
     }
 
     /// Provides shared access to the underlying ledger context for advanced consumers.
@@ -567,8 +675,8 @@ impl NeoSystem {
     /// the list of execution summaries produced during processing.
     pub fn persist_block(&self, block: Block) -> CoreResult<Vec<ApplicationExecuted>> {
         let ledger_block = NeoSystemContext::convert_payload_block(&block);
-        let mut store_cache = self.context.store_cache();
-        let snapshot = Arc::new(DataCache::new(false));
+        let mut store_cache = self.context.store_snapshot_cache();
+        let snapshot = Arc::new(store_cache.data_cache().clone());
 
         let mut on_persist_engine = ApplicationEngine::new(
             TriggerType::OnPersist,
@@ -683,7 +791,9 @@ impl NeoSystem {
         let local_node_state = Arc::new(LocalNode::new(settings_arc.clone(), 10333, user_agent));
         local_node_state.set_seed_list(settings.seed_list.clone());
         let ledger = Arc::new(LedgerContext::default());
+        let header_cache = Arc::new(HeaderCache::new());
         let memory_pool = Arc::new(Mutex::new(MemoryPool::new(&settings)));
+        let relay_cache = Arc::new(RelayExtensibleCache::new(RELAY_CACHE_CAPACITY));
 
         {
             let mut by_name_guard = services_by_name
@@ -716,7 +826,10 @@ impl NeoSystem {
             .actor_of(TaskManager::props(), "task_manager")
             .map_err(to_core_error)?;
         let tx_router = actor_system
-            .actor_of(Props::new(TransactionRouterActor::default), "tx_router")
+            .actor_of(
+                TransactionRouterActor::props(settings_arc.clone(), blockchain.clone()),
+                "tx_router",
+            )
             .map_err(to_core_error)?;
 
         let context = Arc::new(NeoSystemContext {
@@ -734,6 +847,8 @@ impl NeoSystem {
             genesis_block: genesis_block.clone(),
             ledger: ledger.clone(),
             memory_pool: memory_pool.clone(),
+            header_cache: header_cache.clone(),
+            relay_cache: relay_cache.clone(),
             settings: settings_arc.clone(),
         });
 
@@ -1126,19 +1241,49 @@ fn to_core_error(err: akka::AkkaError) -> CoreError {
 
 // === Actor definitions ====================================================
 
-#[derive(Default)]
-struct TransactionRouterActor;
+struct TransactionRouterActor {
+    settings: Arc<ProtocolSettings>,
+    blockchain: ActorRef,
+}
+
+impl TransactionRouterActor {
+    fn new(settings: Arc<ProtocolSettings>, blockchain: ActorRef) -> Self {
+        Self {
+            settings,
+            blockchain,
+        }
+    }
+
+    fn props(settings: Arc<ProtocolSettings>, blockchain: ActorRef) -> Props {
+        Props::new(move || Self::new(settings.clone(), blockchain.clone()))
+    }
+}
 
 #[async_trait]
 impl Actor for TransactionRouterActor {
     async fn handle(
         &mut self,
         envelope: Box<dyn Any + Send>,
-        _ctx: &mut ActorContext,
+        ctx: &mut ActorContext,
     ) -> ActorResult {
         match envelope.downcast::<TransactionRouterMessage>() {
             Ok(message) => {
-                debug!(target: "neo", ?message, "transaction router message received");
+                match *message {
+                    TransactionRouterMessage::Preverify { transaction, relay } => {
+                        let result = transaction.verify_state_independent(&self.settings);
+                        let completed = PreverifyCompleted {
+                            transaction,
+                            relay,
+                            result,
+                        };
+                        if let Err(error) = self.blockchain.tell_from(
+                            BlockchainCommand::PreverifyCompleted(completed),
+                            ctx.sender(),
+                        ) {
+                            warn!(target: "neo", %error, "failed to deliver preverify result to blockchain actor");
+                        }
+                    }
+                }
                 Ok(())
             }
             Err(payload) => {
@@ -1157,7 +1302,10 @@ impl Actor for TransactionRouterActor {
 
 #[derive(Debug)]
 pub enum TransactionRouterMessage {
-    RouteTransaction { hash: UInt256, payload: Vec<u8> },
+    Preverify {
+        transaction: Transaction,
+        relay: bool,
+    },
 }
 
 #[cfg(test)]

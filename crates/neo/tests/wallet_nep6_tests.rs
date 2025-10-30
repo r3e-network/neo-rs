@@ -35,7 +35,7 @@ fn nep6_wallet_imports_and_signs() -> WalletResult<()> {
     let mut wallet = Nep6Wallet::new(
         Some("test".to_string()),
         Some(wallet_path.clone()),
-        settings,
+        Arc::clone(&settings),
     );
 
     let key_pair = KeyPair::generate().expect("key generation failed");
@@ -80,13 +80,15 @@ fn nep6_wallet_changes_password_and_unlocks() -> WalletResult<()> {
     let mut wallet = Nep6Wallet::new(
         Some("test".to_string()),
         Some(wallet_path.clone()),
-        settings,
+        Arc::clone(&settings),
     );
 
     let key_pair = KeyPair::generate().expect("key generation failed");
     let old_password = "old-secret";
     let new_password = "new-secret";
-    let nep2 = key_pair.to_nep2(old_password).expect("nep2 export");
+    let nep2 = key_pair
+        .to_nep2(old_password, settings.address_version)
+        .expect("nep2 export");
     let script_hash = key_pair.get_script_hash();
 
     let rt = runtime();

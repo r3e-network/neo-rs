@@ -49,10 +49,35 @@ impl RegisteredDescriptor {
 pub trait InteropHost {
     fn invoke_syscall(&mut self, engine: &mut ExecutionEngine, hash: u32) -> VmResult<()>;
 
+    fn on_context_loaded(
+        &mut self,
+        _engine: &mut ExecutionEngine,
+        _context: &ExecutionContext,
+    ) -> VmResult<()> {
+        Ok(())
+    }
     fn on_context_unloaded(
         &mut self,
         _engine: &mut ExecutionEngine,
         _context: &ExecutionContext,
+    ) -> VmResult<()> {
+        Ok(())
+    }
+
+    fn pre_execute_instruction(
+        &mut self,
+        _engine: &mut ExecutionEngine,
+        _context: &ExecutionContext,
+        _instruction: &Instruction,
+    ) -> VmResult<()> {
+        Ok(())
+    }
+
+    fn post_execute_instruction(
+        &mut self,
+        _engine: &mut ExecutionEngine,
+        _context: &ExecutionContext,
+        _instruction: &Instruction,
     ) -> VmResult<()> {
         Ok(())
     }

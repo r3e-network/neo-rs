@@ -39,6 +39,7 @@ use crate::{UInt160, UInt256};
 use neo_vm::evaluation_stack::EvaluationStack;
 use neo_vm::execution_context::ExecutionContext;
 use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use neo_vm::instruction::Instruction;
 use neo_vm::interop_service::InteropHost;
 use neo_vm::jump_table::JumpTable;
 use neo_vm::script::Script;
@@ -79,10 +80,6 @@ impl VmEngineHost {
 
     fn current_context(&self) -> Option<&ExecutionContext> {
         self.engine.current_context()
-    }
-
-    fn current_context_mut(&mut self) -> Option<&mut ExecutionContext> {
-        self.engine.current_context_mut()
     }
 }
 
@@ -141,6 +138,7 @@ pub struct ApplicationEngine {
     entry_script_hash: Option<UInt160>,
     invocation_counter: HashMap<UInt160, u32>,
     nonce_data: [u8; 16],
+    random_times: u32,
     diagnostic: Option<Box<dyn IDiagnostic>>,
     fault_exception: Option<String>,
     states: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
@@ -189,6 +187,7 @@ impl ApplicationEngine {
             entry_script_hash: None,
             invocation_counter: HashMap::new(),
             nonce_data,
+            random_times: 0,
             diagnostic,
             fault_exception: None,
             states: HashMap::new(),
@@ -198,6 +197,11 @@ impl ApplicationEngine {
         app.register_native_contracts();
         app.refresh_policy_settings();
         app.register_default_interops()?;
+
+        if let Some(mut diagnostic) = app.diagnostic.take() {
+            diagnostic.initialized(&mut app);
+            app.diagnostic = Some(diagnostic);
+        }
 
         Ok(app)
     }
@@ -468,9 +472,43 @@ impl ApplicationEngine {
 
     pub fn get_storage_item(&self, context: &StorageContext, key: &[u8]) -> Option<Vec<u8>> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
-        self.snapshot_cache
+        if let Some(item) = self.snapshot_cache.get(&storage_key) {
+            return Some(item.get_value());
+        }
+
+        self.original_snapshot_cache
             .get(&storage_key)
             .map(|item| item.get_value())
+    }
+
+    fn validate_find_options(&self, options: FindOptions) -> Result<(), String> {
+        if options.bits() & !FindOptions::All.bits() != 0 {
+            return Err(format!("Invalid FindOptions value: {options:?}"));
+        }
+
+        let keys_only = options.contains(FindOptions::KeysOnly);
+        let values_only = options.contains(FindOptions::ValuesOnly);
+        let deserialize = options.contains(FindOptions::DeserializeValues);
+        let pick_field0 = options.contains(FindOptions::PickField0);
+        let pick_field1 = options.contains(FindOptions::PickField1);
+
+        if keys_only && (values_only || deserialize || pick_field0 || pick_field1) {
+            return Err("KeysOnly cannot be used with ValuesOnly, DeserializeValues, PickField0, or PickField1".to_string());
+        }
+
+        if values_only && (keys_only || options.contains(FindOptions::RemovePrefix)) {
+            return Err("ValuesOnly cannot be used with KeysOnly or RemovePrefix".to_string());
+        }
+
+        if pick_field0 && pick_field1 {
+            return Err("PickField0 and PickField1 cannot be used together".to_string());
+        }
+
+        if (pick_field0 || pick_field1) && !deserialize {
+            return Err("PickField0 or PickField1 requires DeserializeValues".to_string());
+        }
+
+        Ok(())
     }
 
     pub fn put_storage_item(
@@ -480,8 +518,31 @@ impl ApplicationEngine {
         value: &[u8],
     ) -> Result<()> {
         let storage_key = StorageKey::new(context.id, key.to_vec());
+        let existing = self.snapshot_cache.get(&storage_key);
+        let value_len = value.len();
+        let new_data_size = if let Some(existing_item) = &existing {
+            let old_len = existing_item.size();
+            if value_len == 0 {
+                0
+            } else if value_len <= old_len && value_len > 0 {
+                ((value_len.saturating_sub(1)) / 4) + 1
+            } else if old_len == 0 {
+                value_len
+            } else {
+                ((old_len.saturating_sub(1)) / 4) + 1 + value_len.saturating_sub(old_len)
+            }
+        } else {
+            key.len() + value_len
+        };
+
+        if new_data_size > 0 {
+            let fee_units = new_data_size as u64;
+            let storage_price = self.get_storage_price() as u64;
+            self.add_runtime_fee(fee_units.saturating_mul(storage_price))?;
+        }
+
         let item = StorageItem::from_bytes(value.to_vec());
-        if self.snapshot_cache.get(&storage_key).is_some() {
+        if existing.is_some() {
             self.snapshot_cache.update(storage_key, item);
         } else {
             self.snapshot_cache.add(storage_key, item);
@@ -965,24 +1026,64 @@ impl ApplicationEngine {
         context: &StorageContext,
         prefix: &[u8],
         options: FindOptions,
-    ) -> StorageIterator {
+    ) -> Result<StorageIterator, String> {
+        self.validate_find_options(options)?;
+
         let search_key = StorageKey::new(context.id, prefix.to_vec());
         let direction = if options.contains(FindOptions::Backwards) {
             SeekDirection::Backward
         } else {
             SeekDirection::Forward
         };
-        let entries: Vec<_> = self
-            .snapshot_cache
-            .find(Some(&search_key), direction)
-            .collect();
 
-        StorageIterator::new(entries, prefix.len(), options)
+        let mut entries_map: HashMap<StorageKey, StorageItem> = HashMap::new();
+        for (key, value) in self.snapshot_cache.find(Some(&search_key), direction) {
+            entries_map.insert(key, value);
+        }
+
+        for (key, value) in self
+            .original_snapshot_cache
+            .find(Some(&search_key), direction)
+        {
+            entries_map.entry(key).or_insert(value);
+        }
+
+        let mut entries: Vec<_> = entries_map.into_iter().collect();
+        entries.sort_by(|a, b| a.0.suffix().cmp(b.0.suffix()));
+        if direction == SeekDirection::Backward {
+            entries.reverse();
+        }
+
+        Ok(StorageIterator::new(entries, prefix.len(), options))
     }
 
     /// Gets the storage price from the policy contract (matches C# StoragePrice property).
     fn get_storage_price(&mut self) -> usize {
         self.storage_price as usize
+    }
+
+    pub(crate) fn gas_left(&self) -> i64 {
+        self.fee_amount.saturating_sub(self.fee_consumed)
+    }
+
+    pub(crate) fn nonce_bytes(&self) -> &[u8; 16] {
+        &self.nonce_data
+    }
+
+    pub(crate) fn set_nonce_bytes(&mut self, value: [u8; 16]) {
+        self.nonce_data = value;
+    }
+
+    pub(crate) fn random_counter(&self) -> u32 {
+        self.random_times
+    }
+
+    pub(crate) fn increment_random_counter(&mut self) {
+        self.random_times = self.random_times.wrapping_add(1);
+    }
+
+    pub(crate) fn add_runtime_fee(&mut self, fee: u64) -> Result<()> {
+        self.add_fee(fee)
     }
 
     /// Adds gas fee.
@@ -1007,13 +1108,6 @@ impl ApplicationEngine {
 
     pub fn charge_execution_fee(&mut self, fee: u64) -> Result<()> {
         self.add_fee(fee)
-    }
-
-    /// Queries the original snapshot cache.
-    fn query_blockchain_storage(&self, storage_key: &StorageKey) -> Option<Vec<u8>> {
-        self.original_snapshot_cache
-            .get(storage_key)
-            .map(|item| item.get_value())
     }
 
     /// Emits a notification event.
@@ -1445,16 +1539,6 @@ impl ApplicationEngine {
         Ok(id)
     }
 
-    /// Gets contract hash by ID (helper method for storage operations).
-    fn get_contract_hash_by_id(&self, id: i32) -> Option<UInt160> {
-        for (hash, contract) in &self.contracts {
-            if contract.id == id {
-                return Some(*hash);
-            }
-        }
-        None
-    }
-
     /// Gets contract ID for a given hash.
     fn get_contract_id_by_hash(&self, hash: &UInt160) -> Option<i32> {
         self.contracts.get(hash).map(|contract| contract.id)
@@ -1665,37 +1749,6 @@ impl ApplicationEngine {
         }
     }
 
-    fn configure_current_context_state<F>(&mut self, configure: F) -> Result<()>
-    where
-        F: FnOnce(&mut ExecutionContextState),
-    {
-        let engine = self.vm_engine.engine_mut();
-        let context = engine
-            .current_context_mut()
-            .ok_or_else(|| Error::invalid_operation("No current execution context".to_string()))?;
-        let state_arc =
-            context.get_state_with_factory::<ExecutionContextState, _>(ExecutionContextState::new);
-        let mut state = state_arc.lock().map_err(|_| {
-            Error::invalid_operation("Execution context state lock poisoned".to_string())
-        })?;
-        configure(&mut state);
-        Ok(())
-    }
-
-    fn current_context_script_hash(&self) -> Option<UInt160> {
-        self.vm_engine
-            .engine()
-            .current_context()
-            .and_then(|ctx| UInt160::from_bytes(&ctx.script_hash()).ok())
-    }
-
-    fn initial_policy_settings(_snapshot: &Arc<DataCache>) -> (u32, u32) {
-        (
-            PolicyContract::DEFAULT_EXEC_FEE_FACTOR,
-            PolicyContract::DEFAULT_STORAGE_PRICE,
-        )
-    }
-
     fn refresh_policy_settings(&mut self) {
         if let Some(policy) = self.policy_contract() {
             if let Ok(raw) = policy.invoke(self, "getExecFeeFactor", &[]) {
@@ -1750,6 +1803,9 @@ impl ApplicationEngine {
 impl Drop for ApplicationEngine {
     fn drop(&mut self) {
         self.vm_engine.engine_mut().clear_interop_host();
+        if let Some(diagnostic) = self.diagnostic.as_mut() {
+            diagnostic.disposed();
+        }
     }
 }
 
@@ -1763,6 +1819,17 @@ impl InteropHost for ApplicationEngine {
                 error: "Interop handler not registered".to_string(),
             })
         }
+    }
+
+    fn on_context_loaded(
+        &mut self,
+        _engine: &mut ExecutionEngine,
+        context: &ExecutionContext,
+    ) -> VmResult<()> {
+        if let Some(diagnostic) = self.diagnostic.as_mut() {
+            diagnostic.context_loaded(context);
+        }
+        Ok(())
     }
 
     fn on_context_unloaded(
@@ -1824,6 +1891,34 @@ impl InteropHost for ApplicationEngine {
         self.refresh_context_tracking()
             .map_err(|e| VmError::invalid_operation_msg(e.to_string()))?;
 
+        if let Some(diagnostic) = self.diagnostic.as_mut() {
+            diagnostic.context_unloaded(context);
+        }
+
+        Ok(())
+    }
+
+    fn pre_execute_instruction(
+        &mut self,
+        _engine: &mut ExecutionEngine,
+        _context: &ExecutionContext,
+        instruction: &Instruction,
+    ) -> VmResult<()> {
+        if let Some(diagnostic) = self.diagnostic.as_mut() {
+            diagnostic.pre_execute_instruction(instruction);
+        }
+        Ok(())
+    }
+
+    fn post_execute_instruction(
+        &mut self,
+        _engine: &mut ExecutionEngine,
+        _context: &ExecutionContext,
+        instruction: &Instruction,
+    ) -> VmResult<()> {
+        if let Some(diagnostic) = self.diagnostic.as_mut() {
+            diagnostic.post_execute_instruction(instruction);
+        }
         Ok(())
     }
 }

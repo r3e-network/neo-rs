@@ -13,9 +13,12 @@ use super::{
     header::Header, i_inventory::IInventory, i_verifiable::IVerifiable,
     inventory_type::InventoryType, transaction::Transaction, witness::Witness,
 };
+use crate::ledger::HeaderCache;
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::{persistence::DataCache, UInt160, UInt256};
+use crate::persistence::{DataCache, StoreCache};
+use crate::protocol_settings::ProtocolSettings;
+use crate::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 
 /// Represents a block.
@@ -99,16 +102,27 @@ impl Block {
             self.header.set_merkle_root(UInt256::default());
             return;
         }
-        let payload_hashes: Vec<Vec<u8>> = self
-            .transactions
-            .iter_mut()
-            .map(|tx| tx.hash().as_bytes().to_vec())
-            .collect();
+        let payload_hashes: Vec<UInt256> =
+            self.transactions.iter_mut().map(|tx| tx.hash()).collect();
         if let Some(root) = crate::neo_cryptography::MerkleTree::compute_root(&payload_hashes) {
-            if let Ok(merkle_root) = UInt256::try_from(root.as_slice()) {
-                self.header.set_merkle_root(merkle_root);
-            }
+            self.header.set_merkle_root(root);
         }
+    }
+
+    /// Verifies the block using persisted state.
+    pub fn verify(&self, settings: &ProtocolSettings, store_cache: &StoreCache) -> bool {
+        self.header.verify(settings, store_cache)
+    }
+
+    /// Verifies the block using persisted state and cached headers.
+    pub fn verify_with_cache(
+        &self,
+        settings: &ProtocolSettings,
+        store_cache: &StoreCache,
+        header_cache: &HeaderCache,
+    ) -> bool {
+        self.header
+            .verify_with_cache(settings, store_cache, header_cache)
     }
 }
 

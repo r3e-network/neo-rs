@@ -486,6 +486,9 @@ impl From<neo_io::IoError> for VmError {
         match error {
             neo_io::IoError::Format => VmError::parse("format error"),
             neo_io::IoError::InvalidUtf8 => VmError::parse("invalid utf-8 data"),
+            neo_io::IoError::InvalidData { context, value } => {
+                VmError::parse(format!("{context}: {value}"))
+            }
             neo_io::IoError::Io(inner) => VmError::io(inner.to_string()),
         }
     }

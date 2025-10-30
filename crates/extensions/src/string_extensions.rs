@@ -11,6 +11,8 @@
 
 use std::str;
 
+use neo_io::serializable::helper;
+
 /// String extensions matching C# StringExtensions exactly
 pub trait StringExtensions {
     /// Converts a byte span to a strict UTF8 string.
@@ -73,7 +75,10 @@ impl StringExtensions for &[u8] {
                 } else {
                     format!("Length: {} bytes", self.len())
                 };
-                Err(format!("Failed to decode byte span to UTF-8 string (strict mode): The input contains invalid UTF-8 byte sequences. {}. Ensure all bytes form valid UTF-8 character sequences.", bytes_info))
+                Err(format!(
+                    "Failed to decode byte span to UTF-8 string (strict mode): The input contains invalid UTF-8 byte sequences ({e}). {}. Ensure all bytes form valid UTF-8 character sequences.",
+                    bytes_info
+                ))
             }
         }
     }
@@ -100,7 +105,7 @@ impl StringExtensions for &[u8] {
 
     fn get_var_size(&self) -> Result<usize, String> {
         let size = self.len();
-        Ok(get_var_size(size) + size)
+        Ok(helper::get_var_size_usize(size) + size)
     }
 
     fn trim_start_ignore_case(&self, _prefix: &str) -> String {
@@ -168,7 +173,7 @@ impl StringExtensions for String {
 
     fn get_var_size(&self) -> Result<usize, String> {
         let size = self.get_strict_utf8_byte_count()?;
-        Ok(get_var_size(size) + size)
+        Ok(helper::get_var_size_usize(size) + size)
     }
 
     fn trim_start_ignore_case(&self, prefix: &str) -> String {
@@ -240,7 +245,7 @@ impl StringExtensions for &str {
 
     fn get_var_size(&self) -> Result<usize, String> {
         let size = self.get_strict_utf8_byte_count()?;
-        Ok(get_var_size(size) + size)
+        Ok(helper::get_var_size_usize(size) + size)
     }
 
     fn trim_start_ignore_case(&self, prefix: &str) -> String {
@@ -249,19 +254,5 @@ impl StringExtensions for &str {
         } else {
             self.to_string()
         }
-    }
-}
-
-/// Helper function to get variable size
-/// Matches C# GetVarSize method for integers
-fn get_var_size(value: usize) -> usize {
-    if value < 0xfd {
-        1
-    } else if value <= 0xffff {
-        3
-    } else if value <= 0xffffffff {
-        5
-    } else {
-        9
     }
 }

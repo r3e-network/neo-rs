@@ -1,8 +1,8 @@
 //! JPathToken - matches C# Neo.Json.JPathToken exactly
 
+use crate::error::JsonError;
 use crate::j_path_token_type::JPathTokenType;
 use crate::j_token::JToken;
-use std::collections::VecDeque;
 
 /// JSON path token (matches C# JPathToken)
 #[derive(Clone, Debug)]
@@ -17,7 +17,11 @@ impl JPathToken {
     }
 
     /// Parse JSON path expression into tokens
-    pub fn parse(expr: &str) -> Vec<JPathToken> {
+    pub fn parse(expr: &str) -> Result<Vec<JPathToken>, JsonError> {
+        if expr.is_empty() {
+            return Err(JsonError::format("JSONPath expression cannot be empty"));
+        }
+
         let mut tokens = Vec::new();
         let chars: Vec<char> = expr.chars().collect();
         let mut i = 0;
@@ -38,9 +42,9 @@ impl JPathToken {
                 ':' => token.token_type = JPathTokenType::Colon,
                 '\'' => {
                     token.token_type = JPathTokenType::String;
-                    let (content, len) = Self::parse_string(&chars, i);
+                    let (content, len) = Self::parse_string(&chars, i + 1)?;
                     token.content = Some(content);
-                    i += len - 1;
+                    i += len;
                 }
                 '_' | 'a'..='z' | 'A'..='Z' => {
                     token.token_type = JPathTokenType::Identifier;
@@ -54,26 +58,31 @@ impl JPathToken {
                     token.content = Some(content);
                     i += len - 1;
                 }
-                _ => panic!("Invalid character '{}' at position {}", chars[i], i),
+                ch => {
+                    return Err(JsonError::format(format!(
+                        "Invalid character '{}' at position {}",
+                        ch, i
+                    )));
+                }
             }
 
             tokens.push(token);
             i += 1;
         }
 
-        tokens
+        Ok(tokens)
     }
 
-    fn parse_string(chars: &[char], start: usize) -> (String, usize) {
-        let mut end = start + 1;
+    fn parse_string(chars: &[char], start: usize) -> Result<(String, usize), JsonError> {
+        let mut end = start;
         while end < chars.len() {
             if chars[end] == '\'' {
-                end += 1;
-                return (chars[start..end].iter().collect(), end - start);
+                let slice: String = chars[start..end].iter().collect();
+                return Ok((slice, end - start));
             }
             end += 1;
         }
-        panic!("Unterminated string");
+        Err(JsonError::format("Unterminated string literal in JSONPath"))
     }
 
     fn parse_identifier(chars: &[char], start: usize) -> (String, usize) {
@@ -99,75 +108,110 @@ impl JPathToken {
     }
 
     /// Process JSON path on objects
-    pub fn process_json_path(objects: &mut Vec<Option<JToken>>, mut tokens: VecDeque<JPathToken>) {
+    pub fn evaluate<'a>(
+        tokens: &'a [JPathToken],
+        root: &'a JToken,
+    ) -> Result<Vec<&'a JToken>, JsonError> {
         if tokens.is_empty() {
-            return;
+            return Ok(Vec::new());
         }
 
-        let token = tokens.pop_front().unwrap();
-        let mut new_objects = Vec::new();
+        let mut results: Vec<&JToken> = Vec::new();
+        let mut i = 0;
 
-        match token.token_type {
-            JPathTokenType::Dot => {
-                // Process dot notation
-                if let Some(next) = tokens.front() {
-                    if next.token_type == JPathTokenType::Identifier {
-                        let next = tokens.pop_front().unwrap();
-                        let prop_name = next.content.unwrap_or_default();
-
-                        for obj in objects.iter() {
-                            if let Some(JToken::Object(o)) = obj {
-                                new_objects.push(o.get(&prop_name).cloned());
+        while i < tokens.len() {
+            match tokens[i].token_type {
+                JPathTokenType::Root => {
+                    results.clear();
+                    results.push(root);
+                    i += 1;
+                }
+                JPathTokenType::Dot => {
+                    i += 1;
+                }
+                JPathTokenType::Identifier => {
+                    let name = tokens[i]
+                        .content
+                        .as_ref()
+                        .ok_or_else(|| JsonError::format("Identifier token missing content"))?;
+                    let mut new_results = Vec::new();
+                    for token in &results {
+                        if let JToken::Object(object) = token {
+                            if let Some(value) = object.get(name) {
+                                new_results.push(value);
                             }
                         }
                     }
+                    results = new_results;
+                    i += 1;
                 }
-            }
-            JPathTokenType::LeftBracket => {
-                // Process bracket notation
-                if let Some(next) = tokens.front() {
+                JPathTokenType::LeftBracket => {
+                    i += 1;
+                    if i >= tokens.len() {
+                        return Err(JsonError::format("Unclosed '[' in JSONPath expression"));
+                    }
+                    let next = &tokens[i];
+                    let mut new_results = Vec::new();
                     match next.token_type {
                         JPathTokenType::Number => {
-                            let next = tokens.pop_front().unwrap();
-                            if let Some(index_str) = next.content {
-                                if let Ok(index) = index_str.parse::<usize>() {
-                                    for obj in objects.iter() {
-                                        if let Some(JToken::Array(a)) = obj {
-                                            new_objects.push(a.get(index).cloned());
-                                        }
+                            let index_str = next
+                                .content
+                                .as_ref()
+                                .ok_or_else(|| JsonError::format("Array index missing"))?;
+                            let index: usize = index_str.parse().map_err(|_| {
+                                JsonError::format("Invalid array index in JSONPath expression")
+                            })?;
+                            for token in &results {
+                                if let JToken::Array(array) = token {
+                                    if let Some(value) = array.get(index) {
+                                        new_results.push(value);
                                     }
                                 }
                             }
+                            i += 1;
                         }
                         JPathTokenType::Asterisk => {
-                            tokens.pop_front();
-                            for obj in objects.iter() {
-                                match obj {
-                                    Some(JToken::Array(a)) => {
-                                        for item in a.children() {
-                                            new_objects.push(item.clone());
+                            for token in &results {
+                                match token {
+                                    JToken::Array(array) => {
+                                        for child in array.children() {
+                                            if let Some(value) = child.as_ref() {
+                                                new_results.push(value);
+                                            }
                                         }
                                     }
-                                    Some(JToken::Object(o)) => {
-                                        for value in o.children() {
-                                            new_objects.push(value.clone());
+                                    JToken::Object(object) => {
+                                        for child in object.children() {
+                                            if let Some(value) = child.as_ref() {
+                                                new_results.push(value);
+                                            }
                                         }
                                     }
                                     _ => {}
                                 }
                             }
+                            i += 1;
                         }
-                        _ => {}
+                        _ => return Err(JsonError::format("Unsupported bracket expression")),
                     }
+
+                    if i >= tokens.len() || tokens[i].token_type != JPathTokenType::RightBracket {
+                        return Err(JsonError::format("Missing ']' in JSONPath expression"));
+                    }
+                    i += 1; // consume right bracket
+                    results = new_results;
+                }
+                JPathTokenType::RightBracket | JPathTokenType::Comma | JPathTokenType::Colon => {
+                    i += 1;
+                }
+                _ => {
+                    return Err(JsonError::format(
+                        "Unsupported token in JSONPath expression",
+                    ));
                 }
             }
-            _ => {}
         }
 
-        if !tokens.is_empty() {
-            Self::process_json_path(&mut new_objects, tokens);
-        }
-
-        *objects = new_objects;
+        Ok(results)
     }
 }

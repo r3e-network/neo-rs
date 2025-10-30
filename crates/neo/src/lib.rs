@@ -216,60 +216,11 @@ pub use network::p2p::messages::{
 pub use network::{NetworkError, NetworkResult};
 
 pub mod neo_io {
-    pub use crate::io::Serializable as ISerializable;
-    pub use crate::io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-
-    pub mod serializable {
-        use super::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-
-        pub mod helper {
-            use super::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-
-            /// Returns the number of bytes required to encode a variable-length integer.
-            pub fn get_var_size(value: u64) -> usize {
-                if value < 0xFD {
-                    1
-                } else if value <= 0xFFFF {
-                    3
-                } else if value <= 0xFFFF_FFFF {
-                    5
-                } else {
-                    9
-                }
-            }
-
-            /// Serializes an array of `Serializable` items with a length prefix.
-            pub fn serialize_array<T>(items: &[T], writer: &mut BinaryWriter) -> IoResult<()>
-            where
-                T: Serializable,
-            {
-                writer.write_var_int(items.len() as u64)?;
-                for item in items {
-                    Serializable::serialize(item, writer)?;
-                }
-                Ok(())
-            }
-
-            /// Deserializes an array of `Serializable` items with an upper bound check.
-            pub fn deserialize_array<T>(reader: &mut MemoryReader, max: usize) -> IoResult<Vec<T>>
-            where
-                T: Serializable,
-            {
-                let count = reader.read_var_int(max as u64)? as usize;
-                if count > max {
-                    return Err(IoError::invalid_data("Array length exceeds maximum"));
-                }
-
-                let mut result = Vec::with_capacity(count);
-                for _ in 0..count {
-                    result.push(<T as Serializable>::deserialize(reader)?);
-                }
-                Ok(result)
-            }
-        }
-    }
-
-    pub use serializable::helper;
+    pub use ::neo_io_crate::{
+        serializable::{self, helper},
+        BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
+    };
+    pub use Serializable as ISerializable;
 
     /// Extension helpers for working with `Serializable` values.
     pub trait SerializableExt {
@@ -310,6 +261,7 @@ pub mod neo_crypto {
 
 pub mod neo_cryptography {
     use crate::cryptography::crypto_utils::NeoHash;
+    use crate::UInt256;
 
     /// Generic cryptography error type (matches C# Neo.Cryptography.CryptographyException semantics).
     #[derive(Debug, Clone)]
@@ -382,31 +334,183 @@ pub mod neo_cryptography {
 
     pub use crate::cryptography::crypto_utils::{ECCurve, ECPoint};
 
-    /// Simplified Merkle tree implementation for compatibility tests.
-    pub struct MerkleTree;
+    #[derive(Clone)]
+    struct MerkleTreeNode {
+        hash: UInt256,
+        left: Option<Box<MerkleTreeNode>>,
+        right: Option<Box<MerkleTreeNode>>,
+    }
+
+    impl MerkleTreeNode {
+        fn leaf(hash: UInt256) -> Self {
+            Self {
+                hash,
+                left: None,
+                right: None,
+            }
+        }
+
+        fn is_pruned(&self) -> bool {
+            self.left.is_none() && self.right.is_none()
+        }
+    }
+
+    /// Merkle tree implementation used across the network layer.
+    pub struct MerkleTree {
+        root: Option<Box<MerkleTreeNode>>,
+        depth: usize,
+    }
 
     impl MerkleTree {
-        pub fn compute_root(hashes: &[Vec<u8>]) -> Option<Vec<u8>> {
+        /// Builds a merkle tree from the supplied hashes.
+        pub fn new(hashes: &[UInt256]) -> Self {
             if hashes.is_empty() {
-                return None;
+                return Self {
+                    root: None,
+                    depth: 0,
+                };
             }
 
-            let mut current: Vec<Vec<u8>> = hashes.to_vec();
-            while current.len() > 1 {
-                let mut next = Vec::with_capacity((current.len() + 1) / 2);
-                for chunk in current.chunks(2) {
-                    let combined = if chunk.len() == 2 {
-                        [chunk[0].as_slice(), chunk[1].as_slice()].concat()
+            let mut nodes: Vec<MerkleTreeNode> =
+                hashes.iter().copied().map(MerkleTreeNode::leaf).collect();
+
+            let mut depth = 1;
+            while nodes.len() > 1 {
+                let mut parents = Vec::with_capacity((nodes.len() + 1) / 2);
+                let mut index = 0;
+                while index < nodes.len() {
+                    let left = nodes[index].clone();
+                    let right = if index + 1 < nodes.len() {
+                        nodes[index + 1].clone()
                     } else {
-                        [chunk[0].as_slice(), chunk[0].as_slice()].concat()
+                        left.clone()
                     };
-                    next.push(NeoHash::hash256(&combined).to_vec());
+
+                    let hash = hash_pair(&left.hash, &right.hash);
+                    parents.push(MerkleTreeNode {
+                        hash,
+                        left: Some(Box::new(left)),
+                        right: Some(Box::new(right)),
+                    });
+
+                    index += 2;
                 }
-                current = next;
+                nodes = parents;
+                depth += 1;
             }
 
-            current.into_iter().next()
+            Self {
+                root: Some(Box::new(nodes.pop().expect("merkle root exists"))),
+                depth,
+            }
         }
+
+        /// Returns the depth of the tree (leaf-only trees report depth 1).
+        pub fn depth(&self) -> usize {
+            self.depth
+        }
+
+        /// Computes the merkle root for the supplied hashes.
+        pub fn compute_root(hashes: &[UInt256]) -> Option<UInt256> {
+            let tree = Self::new(hashes);
+            tree.root().copied()
+        }
+
+        /// Returns the root hash when available.
+        pub fn root(&self) -> Option<&UInt256> {
+            self.root.as_ref().map(|node| &node.hash)
+        }
+
+        /// Trims the tree according to the provided bloom-filter flags.
+        ///
+        /// Flags represent which leaves should be retained. When both leaves under
+        /// a node are excluded the branch is pruned and replaced by the parent hash.
+        pub fn trim(&mut self, flags: &[bool]) {
+            let Some(root) = self.root.as_mut() else {
+                return;
+            };
+
+            if self.depth <= 1 {
+                return;
+            }
+
+            let required = 1usize << (self.depth - 1);
+            let mut padded = vec![false; required];
+            for (index, flag) in flags.iter().enumerate().take(required) {
+                padded[index] = *flag;
+            }
+
+            trim_node(root, 0, self.depth, &padded);
+        }
+
+        /// Returns the hashes in depth-first order.
+        pub fn to_hash_array(&self) -> Vec<UInt256> {
+            let mut hashes = Vec::new();
+            if let Some(root) = self.root.as_ref() {
+                depth_first_collect(root, &mut hashes);
+            }
+            hashes
+        }
+    }
+
+    fn depth_first_collect(node: &MerkleTreeNode, hashes: &mut Vec<UInt256>) {
+        if node.left.is_none() {
+            hashes.push(node.hash);
+        } else {
+            if let Some(left) = node.left.as_ref() {
+                depth_first_collect(left, hashes);
+            }
+            if let Some(right) = node.right.as_ref() {
+                depth_first_collect(right, hashes);
+            }
+        }
+    }
+
+    fn trim_node(node: &mut MerkleTreeNode, index: usize, depth: usize, flags: &[bool]) {
+        if depth <= 1 || node.left.is_none() {
+            return;
+        }
+
+        if depth == 2 {
+            let left_flag = flags.get(index * 2).copied().unwrap_or(false);
+            let right_flag = flags.get(index * 2 + 1).copied().unwrap_or(false);
+
+            if !left_flag && !right_flag {
+                node.left = None;
+                node.right = None;
+            }
+            return;
+        }
+
+        if let Some(left) = node.left.as_mut() {
+            trim_node(left, index * 2, depth - 1, flags);
+        }
+        if let Some(right) = node.right.as_mut() {
+            trim_node(right, index * 2 + 1, depth - 1, flags);
+        }
+
+        let left_pruned = node
+            .left
+            .as_ref()
+            .map(|child| child.is_pruned())
+            .unwrap_or(true);
+        let right_pruned = node
+            .right
+            .as_ref()
+            .map(|child| child.is_pruned())
+            .unwrap_or(true);
+
+        if left_pruned && right_pruned {
+            node.left = None;
+            node.right = None;
+        }
+    }
+
+    fn hash_pair(left: &UInt256, right: &UInt256) -> UInt256 {
+        let mut bytes = [0u8; 64];
+        bytes[..32].copy_from_slice(&left.to_array());
+        bytes[32..].copy_from_slice(&right.to_array());
+        UInt256::from(NeoHash::hash256(&bytes))
     }
 }
 

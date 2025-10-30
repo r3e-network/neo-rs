@@ -68,6 +68,7 @@ futures.workspace = true
 neo-vm = { path = "../vm" }
 akka = { path = "../akka" }
 neo-extensions = { path = "../extensions" }
+neo_io_crate = { path = "../io", package = "neo-io" }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

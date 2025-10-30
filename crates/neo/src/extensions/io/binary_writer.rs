@@ -1,4 +1,4 @@
-use crate::io::{BinaryWriter, IoError, IoResult, Serializable};
+use crate::io::{serializable::helper, BinaryWriter, IoError, IoResult, Serializable};
 
 /// Extension helpers for [`BinaryWriter`] mirroring
 /// `Neo.Extensions.IO.BinaryWriterExtensions`.
@@ -20,15 +20,11 @@ impl BinaryWriterExtensions for BinaryWriter {
     }
 
     fn write_serializable_collection<T: Serializable>(&mut self, value: &[T]) -> IoResult<()> {
-        self.write_var_uint(value.len() as u64)?;
-        for item in value {
-            item.serialize(self)?;
-        }
-        Ok(())
+        helper::serialize_array(value, self)
     }
 
     fn write_nullable_array<T: Serializable>(&mut self, value: &[Option<T>]) -> IoResult<()> {
-        self.write_var_uint(value.len() as u64)?;
+        self.write_var_int(value.len() as u64)?;
         for element in value {
             match element {
                 Some(item) => {

@@ -13,7 +13,7 @@ use super::{block::Block, header::Header};
 use crate::neo_io::serializable::helper::get_var_size;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
 use crate::uint256::UINT256_SIZE;
-use crate::UInt256;
+use crate::{neo_cryptography::MerkleTree, UInt256};
 use serde::{Deserialize, Serialize};
 
 /// Represents a block that is filtered by a BloomFilter.
@@ -45,30 +45,68 @@ impl MerkleBlockPayload {
 
     /// Creates from a block and filter flags.
     pub fn create(block: &mut Block, filter_bits: Vec<bool>) -> Self {
-        // Build merkle tree from transaction hashes
+        let tx_count = block.transactions.len() as u32;
         let tx_hashes: Vec<UInt256> = block.transactions.iter_mut().map(|tx| tx.hash()).collect();
+        let mut tree = MerkleTree::new(&tx_hashes);
+        let padded_flags = pad_flags(filter_bits, tree.depth());
+        tree.trim(&padded_flags);
+        let hashes = tree.to_hash_array();
+        let flags = pack_flags(&padded_flags);
 
-        // Create merkle tree and trim based on filter
-        // This is a simplified version - full implementation would use MerkleTree
-        let hashes = tx_hashes.clone(); // Simplified - should be trimmed merkle tree
-
-        // Convert filter bits to bytes
-        let mut flags = vec![0u8; (filter_bits.len() + 7) / 8];
-        for (i, bit) in filter_bits.iter().enumerate() {
-            if *bit {
-                flags[i / 8] |= 1 << (i % 8);
-            }
-        }
-
-        Self {
-            header: block.header.clone(),
-            tx_count: block.transactions.len() as u32,
-            hashes,
-            flags,
-        }
+        Self::new(block.header.clone(), tx_count, hashes, flags)
     }
 }
 
+fn pad_flags(mut flags: Vec<bool>, depth: usize) -> Vec<bool> {
+    if depth <= 1 {
+        if flags.is_empty() {
+            flags.push(false);
+        }
+        return flags;
+    }
+
+    let target_len = 1usize << (depth - 1);
+    if flags.len() > target_len {
+        flags.truncate(target_len);
+    } else if flags.len() < target_len {
+        flags.resize(target_len, false);
+    }
+    flags
+}
+
+fn pack_flags(flags: &[bool]) -> Vec<u8> {
+    let mut bytes = vec![0u8; (flags.len() + 7) / 8];
+    for (index, flag) in flags.iter().enumerate() {
+        if *flag {
+            bytes[index / 8] |= 1 << (index % 8);
+        }
+    }
+    bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pad_flags;
+
+    #[test]
+    fn pad_flags_single_depth_adds_placeholder() {
+        let padded = pad_flags(Vec::new(), 1);
+        assert_eq!(padded, vec![false]);
+
+        let padded = pad_flags(vec![true], 1);
+        assert_eq!(padded, vec![true]);
+    }
+
+    #[test]
+    fn pad_flags_extends_and_truncates_to_width() {
+        // Depth 3 => 4 leaves
+        let padded = pad_flags(vec![true], 3);
+        assert_eq!(padded, vec![true, false, false, false]);
+
+        let padded = pad_flags(vec![true, true, true, true, true], 3);
+        assert_eq!(padded, vec![true, true, true, true]);
+    }
+}
 impl Serializable for MerkleBlockPayload {
     fn size(&self) -> usize {
         self.header.size()

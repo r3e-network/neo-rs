@@ -4,9 +4,12 @@
 
 use crate::error::VmError;
 use crate::error::VmResult;
+use crate::execution_engine_limits::ExecutionEngineLimits;
+use crate::script::Script;
 use crate::stack_item::array::Array as ArrayItem;
 use crate::stack_item::buffer::Buffer as BufferItem;
 use crate::stack_item::map::Map as MapItem;
+use crate::stack_item::pointer::Pointer as PointerItem;
 use crate::stack_item::stack_item_type::StackItemType;
 use crate::stack_item::struct_item::Struct as StructItem;
 use num_bigint::BigInt;
@@ -52,7 +55,7 @@ pub enum StackItem {
     Map(MapItem),
 
     /// Represents a pointer to a position in a script.
-    Pointer(usize),
+    Pointer(PointerItem),
 
     /// Represents an interop interface.
     InteropInterface(Arc<dyn InteropInterface>),
@@ -110,8 +113,8 @@ impl StackItem {
     }
 
     /// Creates a pointer stack item.
-    pub fn from_pointer(value: usize) -> Self {
-        StackItem::Pointer(value)
+    pub fn from_pointer(script: Arc<Script>, position: usize) -> Self {
+        StackItem::Pointer(PointerItem::new(script, position))
     }
 
     /// Creates an interop interface stack item.
@@ -163,7 +166,7 @@ impl StackItem {
             StackItem::Array(a) => Ok(!a.is_empty()),
             StackItem::Struct(s) => Ok(!s.is_empty()),
             StackItem::Map(m) => Ok(!m.is_empty()),
-            StackItem::Pointer(_) => Ok(true),
+            StackItem::Pointer(pointer) => Ok(pointer.to_boolean()),
             StackItem::InteropInterface(_i) => Ok(true),
         }
     }
@@ -213,6 +216,26 @@ impl StackItem {
                 }
             }
             _ => Err(VmError::invalid_type_simple("Cannot convert to Integer")),
+        }
+    }
+
+    /// Returns the boolean value represented by the stack item.
+    pub fn get_boolean(&self) -> VmResult<bool> {
+        self.as_bool()
+    }
+
+    /// Returns the integer value represented by the stack item.
+    pub fn get_integer(&self) -> VmResult<BigInt> {
+        self.as_int()
+    }
+
+    /// Returns the pointer represented by the stack item.
+    pub fn get_pointer(&self) -> VmResult<PointerItem> {
+        match self {
+            StackItem::Pointer(pointer) => Ok(pointer.clone()),
+            _ => Err(VmError::invalid_type_simple(
+                "Cannot convert stack item to pointer",
+            )),
         }
     }
 
@@ -288,6 +311,25 @@ impl StackItem {
         self.deep_clone_with_refs(&mut std::collections::HashMap::new())
     }
 
+    /// Creates a deep copy respecting execution limits (mirrors C# behaviour).
+    pub fn deep_copy(&self, limits: &ExecutionEngineLimits) -> VmResult<Self> {
+        match self {
+            StackItem::Struct(structure) => {
+                let cloned = structure.clone_with_limits(limits)?;
+                Ok(StackItem::Struct(cloned))
+            }
+            StackItem::Array(array) => {
+                let copy = array.deep_copy(array.reference_counter().cloned());
+                Ok(StackItem::Array(copy))
+            }
+            StackItem::Map(map) => {
+                let copy = map.deep_copy(map.reference_counter().cloned());
+                Ok(StackItem::Map(copy))
+            }
+            _ => Ok(self.deep_clone()),
+        }
+    }
+
     /// Creates a deep clone of the stack item with reference tracking to handle cycles.
     fn deep_clone_with_refs(
         &self,
@@ -305,7 +347,7 @@ impl StackItem {
             StackItem::Integer(i) => StackItem::Integer(i.clone()),
             StackItem::ByteString(b) => StackItem::ByteString(b.clone()),
             StackItem::Buffer(b) => StackItem::Buffer(b.clone()),
-            StackItem::Pointer(p) => StackItem::Pointer(*p),
+            StackItem::Pointer(p) => StackItem::Pointer(p.clone()),
             StackItem::InteropInterface(i) => StackItem::InteropInterface(i.clone()),
 
             StackItem::Array(a) => {
@@ -342,10 +384,70 @@ impl StackItem {
     /// Clears all references to other stack items.
     pub fn clear_references(&mut self) {
         match self {
-            StackItem::Array(array) => array.clear(),
-            StackItem::Struct(structure) => structure.clear(),
-            StackItem::Map(map) => map.clear(),
+            StackItem::Array(array) => {
+                let _ = array.clear();
+            }
+            StackItem::Struct(structure) => {
+                let _ = structure.clear();
+            }
+            StackItem::Map(map) => {
+                let _ = map.clear();
+            }
             _ => {}
+        }
+    }
+
+    /// Computes a deterministic hash code compatible with the C# implementation.
+    pub fn get_hash_code(&self) -> i32 {
+        match self {
+            StackItem::Null => 0,
+            StackItem::Boolean(b) => {
+                if *b {
+                    1
+                } else {
+                    0
+                }
+            }
+            StackItem::Integer(i) => hash_bytes(&i.to_signed_bytes_le()),
+            StackItem::ByteString(b) => hash_bytes(b),
+            StackItem::Buffer(b) => hash_bytes(b.data()),
+            StackItem::Array(array) => {
+                let mut hash = combine_hash(17, array.len() as i32);
+                for item in array.iter() {
+                    hash = combine_hash(hash, item.get_hash_code());
+                }
+                hash
+            }
+            StackItem::Struct(structure) => {
+                let mut hash = combine_hash(17, structure.len() as i32);
+                for item in structure.items() {
+                    hash = combine_hash(hash, item.get_hash_code());
+                }
+                hash
+            }
+            StackItem::Map(map) => {
+                let mut hash = combine_hash(17, map.len() as i32);
+                for (key, value) in map.items() {
+                    hash = combine_hash(hash, key.get_hash_code());
+                    hash = combine_hash(hash, value.get_hash_code());
+                }
+                hash
+            }
+            StackItem::Pointer(pointer) => {
+                let script_ptr = pointer.script() as *const Script as usize as u64;
+                let mut hash = 17;
+                hash = combine_hash(hash, (script_ptr & 0xFFFF_FFFF) as i32);
+                hash = combine_hash(hash, ((script_ptr >> 32) & 0xFFFF_FFFF) as i32);
+                hash = combine_hash(hash, pointer.position() as i32);
+                hash
+            }
+            StackItem::InteropInterface(interface) => {
+                let addr = Arc::as_ptr(interface) as *const () as usize as u64;
+                let mut hash = 17;
+                hash = combine_hash(hash, (addr & 0xFFFF_FFFF) as i32);
+                hash = combine_hash(hash, ((addr >> 32) & 0xFFFF_FFFF) as i32);
+                hash
+            }
         }
     }
 
@@ -369,6 +471,15 @@ impl StackItem {
     /// Checks if two stack items are equal.
     pub fn equals(&self, other: &StackItem) -> VmResult<bool> {
         self.equals_with_refs(other, &mut std::collections::HashSet::new())
+    }
+
+    /// Checks if two stack items are equal with execution limits (aligns with C# API).
+    pub fn equals_with_limits(
+        &self,
+        other: &StackItem,
+        _limits: &ExecutionEngineLimits,
+    ) -> VmResult<bool> {
+        self.equals(other)
     }
 
     /// Checks if two stack items are equal with reference tracking to handle cycles.
@@ -563,6 +674,16 @@ impl Ord for StackItem {
     }
 }
 
+fn combine_hash(current: i32, value: i32) -> i32 {
+    current.wrapping_mul(397).wrapping_add(value)
+}
+
+fn hash_bytes(bytes: &[u8]) -> i32 {
+    bytes
+        .iter()
+        .fold(17, |hash, byte| combine_hash(hash, *byte as i32))
+}
+
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
@@ -703,12 +824,12 @@ mod tests {
         // Add cycles
         let array1_clone = array1.clone();
         if let StackItem::Array(array) = &mut array1 {
-            array.push(array1_clone);
+            let _ = array.push(array1_clone);
         }
 
         let array2_clone = array2.clone();
         if let StackItem::Array(array) = &mut array2 {
-            array.push(array2_clone);
+            let _ = array.push(array2_clone);
         }
 
         // The arrays should be equal despite the cycles

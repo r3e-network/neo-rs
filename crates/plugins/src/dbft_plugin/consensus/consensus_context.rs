@@ -3,23 +3,22 @@
 use crate::dbft_plugin::dbft_settings::DbftSettings;
 use crate::dbft_plugin::messages::ConsensusMessagePayload;
 use neo_core::cryptography::ECPoint;
+use neo_core::extensions::{BinaryWriterExtensions, MemoryReaderExtensions};
 use neo_core::ledger::TransactionVerificationContext;
+use neo_core::neo_cryptography::MerkleTree;
+use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::network::p2p::payloads::{Block, ExtensiblePayload, Witness};
 use neo_core::persistence::{DataCache, IStore, StoreCache};
 use neo_core::sign::ISigner;
-use neo_core::neo_cryptography::MerkleTree;
-use neo_core::{NeoSystem, Transaction, UInt256};
-use neo_core::UInt160;
-use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use neo_core::extensions::{BinaryWriterExtensions, MemoryReaderExtensions};
-use neo_core::smart_contract::Contract;
 use neo_core::smart_contract::native::NativeHelpers;
+use neo_core::smart_contract::Contract;
+use neo_core::UInt160;
+use neo_core::{NeoSystem, Transaction, UInt256};
 use neo_vm::ScriptBuilder;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::debug;
-
 
 /// In-memory representation of the consensus state for the dBFT plugin.
 #[allow(clippy::struct_excessive_bools)]
@@ -55,9 +54,7 @@ impl ConsensusContext {
         settings: DbftSettings,
         signer: Arc<dyn ISigner>,
     ) -> Self {
-        let milliseconds_per_block = neo_system
-            .settings()
-            .milliseconds_per_block as u64;
+        let milliseconds_per_block = neo_system.settings().milliseconds_per_block as u64;
         let time_per_block = Duration::from_millis(milliseconds_per_block);
 
         Self {
@@ -169,8 +166,7 @@ impl ConsensusContext {
     /// Returns true if the current proposal has been sent or received.
     pub fn request_sent_or_received(&self) -> bool {
         let primary = self.block.primary_index() as usize;
-        self
-            .preparation_payloads
+        self.preparation_payloads
             .get(primary)
             .map(|payload| payload.is_some())
             .unwrap_or(false)
@@ -183,8 +179,7 @@ impl ConsensusContext {
         }
 
         let index = self.my_index as usize;
-        self
-            .preparation_payloads
+        self.preparation_payloads
             .get(index)
             .map(|payload| payload.is_some())
             .unwrap_or(false)
@@ -197,8 +192,7 @@ impl ConsensusContext {
         }
 
         let index = self.my_index as usize;
-        self
-            .commit_payloads
+        self.commit_payloads
             .get(index)
             .map(|payload| payload.is_some())
             .unwrap_or(false)
@@ -207,9 +201,9 @@ impl ConsensusContext {
     /// Returns true if the block has already been assembled and broadcast.
     pub fn block_sent(&self) -> bool {
         match (&self.transaction_hashes, &self.transactions) {
-            (Some(hashes), Some(transactions)) => hashes
-                .iter()
-                .all(|hash| transactions.contains_key(hash)),
+            (Some(hashes), Some(transactions)) => {
+                hashes.iter().all(|hash| transactions.contains_key(hash))
+            }
             _ => false,
         }
     }
@@ -248,7 +242,9 @@ impl ConsensusContext {
 
     /// Attempts to load consensus state from recovery logs.
     pub fn load(&mut self) -> bool {
-        let Some(store) = &self.store else { return false };
+        let Some(store) = &self.store else {
+            return false;
+        };
         let snapshot = store.get_snapshot();
         match snapshot.try_get(&vec![0xF4]) {
             Some(data) => self.deserialize_state(&data).is_ok(),
@@ -351,7 +347,9 @@ impl ConsensusContext {
         self.view_number = reader.read_u8().map_err(|e| e.to_string())?;
 
         // Transaction hashes
-        let hash_count = reader.read_var_int(u16::MAX as u64).map_err(|e| e.to_string())? as usize;
+        let hash_count = reader
+            .read_var_int(u16::MAX as u64)
+            .map_err(|e| e.to_string())? as usize;
         let mut hashes = Vec::with_capacity(hash_count);
         for _ in 0..hash_count {
             hashes.push(UInt256::deserialize(&mut reader).map_err(|e| e.to_string())?);
@@ -408,7 +406,8 @@ impl ConsensusContext {
             self.data_cache = DataCache::new(true);
 
             // Initialize validators via native helpers (C#-consistent API); fallback to settings.
-            let next_validators = NativeHelpers::get_next_block_validators(self.neo_system.settings());
+            let next_validators =
+                NativeHelpers::get_next_block_validators(self.neo_system.settings());
             let previous_validators = std::mem::take(&mut self.validators);
             self.validators = next_validators;
 
@@ -429,11 +428,12 @@ impl ConsensusContext {
                 // Compute next consensus address using the same branching as C# (refresh vs get)
                 let next_height = NativeHelpers::current_index().saturating_add(1);
                 let committee_members = self.neo_system.settings().committee_members_count();
-                let next_validators = if NativeHelpers::should_refresh_committee(next_height, committee_members) {
-                    NativeHelpers::compute_next_block_validators(self.neo_system.settings())
-                } else {
-                    NativeHelpers::get_next_block_validators(self.neo_system.settings())
-                };
+                let next_validators =
+                    if NativeHelpers::should_refresh_committee(next_height, committee_members) {
+                        NativeHelpers::compute_next_block_validators(self.neo_system.settings())
+                    } else {
+                        NativeHelpers::get_next_block_validators(self.neo_system.settings())
+                    };
                 // Update validators and NextConsensus consistently
                 self.validators = next_validators;
                 let next_consensus = NativeHelpers::get_bft_address(&self.validators);
@@ -469,7 +469,12 @@ impl ConsensusContext {
         } else {
             let count = self.validators.len();
             self.last_change_view_payloads = (0..count)
-                .map(|index| self.change_view_payloads.get(index).cloned().unwrap_or(None))
+                .map(|index| {
+                    self.change_view_payloads
+                        .get(index)
+                        .cloned()
+                        .unwrap_or(None)
+                })
                 .collect();
         }
 
@@ -490,8 +495,7 @@ impl ConsensusContext {
 
         if self.my_index >= 0 {
             if let Some(validator) = self.validators.get(self.my_index as usize) {
-                self
-                    .last_seen_message
+                self.last_seen_message
                     .insert(validator.clone(), self.block.index());
             }
         }
@@ -589,12 +593,8 @@ impl ConsensusContext {
     pub fn ensure_header(&mut self) -> &Block {
         if let Some(hashes) = &self.transaction_hashes {
             if !hashes.is_empty() && self.block.header.merkle_root().is_zero() {
-                let payload_hashes: Vec<Vec<u8>> =
-                    hashes.iter().map(|hash| hash.as_bytes().to_vec()).collect();
-                if let Some(root) = MerkleTree::compute_root(&payload_hashes) {
-                    if let Ok(merkle_root) = UInt256::try_from(root.as_slice()) {
-                        self.block.header.set_merkle_root(merkle_root);
-                    }
+                if let Some(root) = MerkleTree::compute_root(hashes) {
+                    self.block.header.set_merkle_root(root);
                 }
             }
         }

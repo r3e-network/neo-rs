@@ -1,5 +1,8 @@
 //! IDiagnostic - matches C# Neo.SmartContract.IDiagnostic exactly
 
+use neo_vm::execution_context::ExecutionContext;
+use neo_vm::instruction::Instruction;
+
 /// Diagnostic interface for ApplicationEngine (matches C# IDiagnostic)
 pub trait IDiagnostic: std::fmt::Debug {
     /// Called when ApplicationEngine is initialized
@@ -19,18 +22,4 @@ pub trait IDiagnostic: std::fmt::Debug {
 
     /// Called after executing an instruction
     fn post_execute_instruction(&mut self, instruction: &Instruction);
-}
-
-/// Placeholder for ExecutionContext from VM
-#[derive(Debug)]
-pub struct ExecutionContext {
-    pub instruction_pointer: usize,
-    pub script: Vec<u8>,
-}
-
-/// Placeholder for Instruction from VM
-#[derive(Debug)]
-pub struct Instruction {
-    pub op_code: u8,
-    pub operand: Vec<u8>,
 }

@@ -1,5 +1,5 @@
 use crate::compression::{compress_lz4, decompress_lz4, CompressionResult};
-use crate::io::{IoError, IoResult, MemoryReader, Serializable};
+use crate::io::{serializable::helper, IoError, IoResult, MemoryReader, Serializable};
 
 /// Extension helpers for byte slices matching `Neo.Extensions.ByteExtensions`.
 pub trait ByteExtensions {
@@ -37,18 +37,7 @@ impl ByteExtensions for [u8] {
 
     fn as_serializable_array<T: Serializable>(&self, max: usize) -> IoResult<Vec<T>> {
         let mut reader = MemoryReader::new(self);
-        let count = reader.read_var_uint()? as usize;
-        if count > max {
-            return Err(IoError::invalid_data(format!(
-                "Serialisable array length ({count}) exceeds maximum ({max})"
-            )));
-        }
-
-        let mut values = Vec::with_capacity(count);
-        for _ in 0..count {
-            values.push(T::deserialize(&mut reader)?);
-        }
-        Ok(values)
+        helper::deserialize_array::<T>(&mut reader, max)
     }
 }
 

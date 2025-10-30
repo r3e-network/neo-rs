@@ -1,6 +1,9 @@
 //! StorageKey - matches C# Neo.SmartContract.StorageKey exactly
 
 use crate::{UInt160, UInt256};
+use neo_extensions::byte_extensions::{
+    default_xx_hash3_seed, hash_code_combine_i32, ByteExtensions,
+};
 use std::fmt;
 
 /// Represents the keys in contract storage (matches C# StorageKey)
@@ -118,6 +121,13 @@ impl StorageKey {
             return self.build();
         }
         self.cache.as_ref().unwrap().clone()
+    }
+
+    /// Returns the hash code using the same algorithm as the C# implementation.
+    pub fn get_hash_code(&self) -> i32 {
+        let seed = default_xx_hash3_seed();
+        let suffix_hash = self.suffix().xx_hash3_32(seed);
+        hash_code_combine_i32(self.id, suffix_hash)
     }
 
     fn build(&self) -> Vec<u8> {

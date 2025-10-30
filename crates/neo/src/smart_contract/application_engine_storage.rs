@@ -1,5 +1,6 @@
 //! ApplicationEngine.Storage - matches C# Neo.SmartContract.ApplicationEngine.Storage.cs exactly
 
+use crate::hardfork::Hardfork;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::find_options::FindOptions;
@@ -117,7 +118,31 @@ impl ApplicationEngine {
             return Err("Prefix too large".to_string());
         }
 
-        Ok(self.find_storage_entries(&context, &prefix, options))
+        self.find_storage_entries(&context, &prefix, options)
+    }
+
+    pub fn storage_get_local(&mut self, key: Vec<u8>) -> Result<Option<Vec<u8>>, String> {
+        let context = self.storage_get_read_only_context()?;
+        self.storage_get(context, key)
+    }
+
+    pub fn storage_put_local(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), String> {
+        let context = self.storage_get_context()?;
+        self.storage_put(context, key, value)
+    }
+
+    pub fn storage_delete_local(&mut self, key: Vec<u8>) -> Result<(), String> {
+        let context = self.storage_get_context()?;
+        self.storage_delete(context, key)
+    }
+
+    pub fn storage_find_local(
+        &mut self,
+        prefix: Vec<u8>,
+        options: FindOptions,
+    ) -> Result<StorageIterator, String> {
+        let context = self.storage_get_read_only_context()?;
+        self.storage_find(context, prefix, options)
     }
 }
 
@@ -271,6 +296,107 @@ fn storage_delete_handler(
     Ok(())
 }
 
+fn storage_get_local_handler(
+    app: &mut ApplicationEngine,
+    _engine: &mut ExecutionEngine,
+) -> VmResult<()> {
+    let key = app
+        .pop_bytes()
+        .map_err(|e| map_storage_error("System.Storage.Local.Get", e))?;
+
+    match app
+        .storage_get_local(key)
+        .map_err(|e| map_storage_error("System.Storage.Local.Get", e))?
+    {
+        Some(value) => app
+            .push_bytes(value)
+            .map_err(|e| map_storage_error("System.Storage.Local.Get", e))?,
+        None => app
+            .push_null()
+            .map_err(|e| map_storage_error("System.Storage.Local.Get", e))?,
+    }
+    Ok(())
+}
+
+fn storage_put_local_handler(
+    app: &mut ApplicationEngine,
+    _engine: &mut ExecutionEngine,
+) -> VmResult<()> {
+    let value_item = app
+        .pop()
+        .map_err(|e| map_storage_error("System.Storage.Local.Put", e))?;
+    let value = match value_item {
+        StackItem::ByteString(bytes) => bytes,
+        StackItem::Buffer(buffer) => buffer.data().to_vec(),
+        _ => {
+            return Err(map_storage_error(
+                "System.Storage.Local.Put",
+                "Storage value must be a byte array".to_string(),
+            ))
+        }
+    };
+
+    let key_item = app
+        .pop()
+        .map_err(|e| map_storage_error("System.Storage.Local.Put", e))?;
+    let key = match key_item {
+        StackItem::ByteString(bytes) => bytes,
+        StackItem::Buffer(buffer) => buffer.data().to_vec(),
+        _ => {
+            return Err(map_storage_error(
+                "System.Storage.Local.Put",
+                "Storage key must be a byte array".to_string(),
+            ))
+        }
+    };
+
+    app.storage_put_local(key, value)
+        .map_err(|e| map_storage_error("System.Storage.Local.Put", e))?;
+    Ok(())
+}
+
+fn storage_delete_local_handler(
+    app: &mut ApplicationEngine,
+    _engine: &mut ExecutionEngine,
+) -> VmResult<()> {
+    let key = app
+        .pop_bytes()
+        .map_err(|e| map_storage_error("System.Storage.Local.Delete", e))?;
+    app.storage_delete_local(key)
+        .map_err(|e| map_storage_error("System.Storage.Local.Delete", e))?;
+    Ok(())
+}
+
+fn storage_find_local_handler(
+    app: &mut ApplicationEngine,
+    _engine: &mut ExecutionEngine,
+) -> VmResult<()> {
+    let options_bits = app
+        .pop_integer()
+        .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
+    let options = FindOptions::from_bits(options_bits as u8).ok_or_else(|| {
+        map_storage_error(
+            "System.Storage.Local.Find",
+            format!("Invalid FindOptions value: {options_bits}"),
+        )
+    })?;
+
+    let prefix = app
+        .pop_bytes()
+        .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
+
+    let iterator = app
+        .storage_find_local(prefix, options)
+        .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
+
+    let iterator_id = app
+        .store_storage_iterator(iterator)
+        .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
+    app.push_bytes(iterator_id.to_le_bytes().to_vec())
+        .map_err(|e| map_storage_error("System.Storage.Local.Find", e))?;
+    Ok(())
+}
+
 fn storage_find_handler(
     app: &mut ApplicationEngine,
     _engine: &mut ExecutionEngine,
@@ -350,5 +476,31 @@ pub(crate) fn register_storage_interops(engine: &mut ApplicationEngine) -> VmRes
         CallFlags::READ_STATES,
         storage_find_handler,
     )?;
+    if engine.is_hardfork_enabled(Hardfork::HfFaun) {
+        engine.register_host_service(
+            "System.Storage.Local.Get",
+            1 << 15,
+            CallFlags::READ_STATES,
+            storage_get_local_handler,
+        )?;
+        engine.register_host_service(
+            "System.Storage.Local.Put",
+            1 << 15,
+            CallFlags::WRITE_STATES,
+            storage_put_local_handler,
+        )?;
+        engine.register_host_service(
+            "System.Storage.Local.Delete",
+            1 << 15,
+            CallFlags::WRITE_STATES,
+            storage_delete_local_handler,
+        )?;
+        engine.register_host_service(
+            "System.Storage.Local.Find",
+            1 << 15,
+            CallFlags::READ_STATES,
+            storage_find_local_handler,
+        )?;
+    }
     Ok(())
 }

@@ -56,9 +56,16 @@ struct Nep6AccountFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct Nep6ContractParameterFile {
+    name: String,
+    #[serde(rename = "type")]
+    param_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct Nep6ContractFile {
     script: String,
-    parameters: Vec<String>,
+    parameters: Vec<Nep6ContractParameterFile>,
     deployed: bool,
 }
 
@@ -69,6 +76,7 @@ pub struct Nep6Account {
     is_default: bool,
     lock: bool,
     extra: Option<Value>,
+    parameter_names: Vec<String>,
     _wallet: Arc<Nep6Wallet>,
 }
 
@@ -76,6 +84,7 @@ pub struct Nep6Account {
 #[derive(Debug, Clone)]
 pub struct Nep6Contract {
     pub contract: Contract,
+    pub parameter_names: Vec<String>,
     pub deployed: bool,
 }
 
@@ -364,7 +373,8 @@ impl Wallet for Nep6Wallet {
         nep2_key: &str,
         password: &str,
     ) -> WalletResult<Arc<dyn crate::wallets::wallet_account::WalletAccount>> {
-        let key_pair = KeyPair::from_nep2_string(nep2_key, password)
+        let version = self.protocol_settings.address_version;
+        let key_pair = KeyPair::from_nep2_string(nep2_key, password, version)
             .map_err(|e| WalletError::Other(e.to_string()))?;
         let contract = Contract::create_signature_contract(
             key_pair
@@ -538,10 +548,14 @@ impl Nep6Account {
             Helper::to_script_hash(&file.address, wallet.protocol_settings.address_version)
                 .map_err(WalletError::Other)?;
 
-        let contract_data = match &file.contract {
-            Some(contract_file) => Some(Nep6Contract::from_file(contract_file)?.contract),
+        let parsed_contract = match &file.contract {
+            Some(contract_file) => Some(Nep6Contract::from_file(contract_file)?),
             None => None,
         };
+
+        let contract_data = parsed_contract
+            .as_ref()
+            .map(|contract| contract.contract.clone());
 
         let inner = if let Some(ref nep2_key) = file.key {
             StandardWalletAccount::new_from_encrypted(
@@ -553,16 +567,22 @@ impl Nep6Account {
         } else {
             StandardWalletAccount::new_watch_only(
                 script_hash,
-                contract_data,
+                contract_data.clone(),
                 Arc::clone(&wallet.protocol_settings),
             )
         };
+
+        let parameter_names = parsed_contract
+            .map(|contract| contract.parameter_names)
+            .or_else(|| contract_data.as_ref().map(default_parameter_names))
+            .unwrap_or_default();
 
         let mut account = Self {
             inner,
             is_default: file.is_default,
             lock: file.lock,
             extra: file.extra,
+            parameter_names,
             _wallet: Arc::new(wallet.clone()),
         };
 
@@ -584,7 +604,10 @@ impl Nep6Account {
 
     fn to_file(&self) -> WalletResult<Nep6AccountFile> {
         let address = self.inner.address();
-        let contract = self.inner.contract().map(Nep6Contract::to_file);
+        let contract = self
+            .inner
+            .contract()
+            .map(|contract| Nep6Contract::to_file(contract, &self.parameter_names));
 
         Ok(Nep6AccountFile {
             address,
@@ -603,6 +626,7 @@ impl Nep6Account {
         contract: Contract,
         nep2_key: Option<String>,
     ) -> Self {
+        let parameter_names = default_parameter_names(&contract);
         let inner = StandardWalletAccount::new_with_key(
             key_pair,
             Some(contract.clone()),
@@ -615,11 +639,16 @@ impl Nep6Account {
             is_default: false,
             lock: false,
             extra: None,
+            parameter_names,
             _wallet: Arc::new(wallet),
         }
     }
 
     fn watch_only(wallet: Nep6Wallet, script_hash: UInt160, contract: Option<Contract>) -> Self {
+        let parameter_names = contract
+            .as_ref()
+            .map(default_parameter_names)
+            .unwrap_or_default();
         let inner = StandardWalletAccount::new_watch_only(
             script_hash,
             contract,
@@ -631,16 +660,9 @@ impl Nep6Account {
             is_default: false,
             lock: false,
             extra: None,
+            parameter_names,
             _wallet: Arc::new(wallet),
         }
-    }
-
-    fn check_contract_deployment_status(&self, _script_hash: &UInt160) -> bool {
-        false
-    }
-
-    fn to_file_contract(&self) -> Option<Nep6ContractFile> {
-        self.inner.contract().map(Nep6Contract::from_contract)
     }
 }
 
@@ -687,7 +709,13 @@ impl WalletAccount for Nep6Account {
     }
 
     fn set_contract(&mut self, contract: Option<Contract>) {
-        self.inner.set_contract(contract);
+        if let Some(contract) = contract {
+            self.parameter_names = default_parameter_names(&contract);
+            self.inner.set_contract(Some(contract));
+        } else {
+            self.parameter_names.clear();
+            self.inner.set_contract(None);
+        }
     }
 
     fn protocol_settings(&self) -> &Arc<ProtocolSettings> {
@@ -722,32 +750,42 @@ impl WalletAccount for Nep6Account {
 impl Nep6Contract {
     fn from_file(file: &Nep6ContractFile) -> WalletResult<Self> {
         let script = hex::decode(&file.script).map_err(|e| WalletError::Other(e.to_string()))?;
+        let mut parameter_names = Vec::with_capacity(file.parameters.len());
         let parameter_types = file
             .parameters
             .iter()
-            .map(|name| parse_parameter_type(name))
+            .map(|parameter| {
+                parameter_names.push(parameter.name.clone());
+                parse_parameter_type(&parameter.param_type)
+            })
             .collect::<WalletResult<Vec<_>>>()?;
         let contract = Contract::create(parameter_types, script);
         Ok(Self {
             contract,
+            parameter_names,
             deployed: file.deployed,
         })
     }
 
-    fn to_file(contract: &Contract) -> Nep6ContractFile {
+    fn to_file(contract: &Contract, parameter_names: &[String]) -> Nep6ContractFile {
+        let parameters = contract
+            .parameter_list
+            .iter()
+            .enumerate()
+            .map(|(index, param)| Nep6ContractParameterFile {
+                name: parameter_names
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_else(|| format!("parameter{index}")),
+                param_type: param.as_str().to_string(),
+            })
+            .collect();
+
         Nep6ContractFile {
             script: hex::encode(&contract.script),
-            parameters: contract
-                .parameter_list
-                .iter()
-                .map(|param| param.as_str().to_string())
-                .collect(),
+            parameters,
             deployed: false,
         }
-    }
-
-    fn from_contract(contract: &Contract) -> Nep6ContractFile {
-        Self::to_file(contract)
     }
 }
 
@@ -774,4 +812,19 @@ fn parse_parameter_type(name: &str) -> WalletResult<ContractParameterType> {
     };
 
     Ok(kind)
+}
+
+fn default_parameter_names(contract: &Contract) -> Vec<String> {
+    if contract.parameter_list.len() == 1
+        && contract.parameter_list[0] == ContractParameterType::Signature
+    {
+        vec!["signature".to_string()]
+    } else {
+        contract
+            .parameter_list
+            .iter()
+            .enumerate()
+            .map(|(index, _)| format!("parameter{index}"))
+            .collect()
+    }
 }

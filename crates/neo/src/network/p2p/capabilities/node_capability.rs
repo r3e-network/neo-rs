@@ -98,9 +98,9 @@ impl NodeCapability {
     fn ensure_zero_byte(reader: &mut MemoryReader, context: &str) -> IoResult<()> {
         let marker = reader.read_u8()?;
         if marker != 0 {
-            return Err(IoError::format_exception(
+            return Err(IoError::invalid_data_with_context(
                 "NodeCapability::deserialize",
-                &format!("{context} capability contains unexpected data"),
+                format!("{context} capability contains unexpected data"),
             ));
         }
         Ok(())

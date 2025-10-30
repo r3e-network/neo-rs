@@ -1,6 +1,13 @@
 use crate::ledger::LedgerContext;
+use crate::neo_io::{BinaryWriter, Serializable};
 use crate::neo_system::NeoSystemContext;
-use crate::network::p2p::payloads::{block::Block, Transaction};
+use crate::network::p2p::{
+    payloads::{
+        block::Block, extensible_payload::ExtensiblePayload, header::Header,
+        inventory_type::InventoryType, Transaction,
+    },
+    LocalNodeCommand,
+};
 use crate::persistence::StoreCache;
 use crate::smart_contract::native::LedgerContract;
 use crate::{UInt160, UInt256};
@@ -90,23 +97,59 @@ impl Blockchain {
             unverified.remove(&index);
         }
 
+        if let Some(context) = &self.system_context {
+            context.header_cache().remove_up_to(index);
+        }
+
         self._extensible_witness_white_list.write().await.clear();
     }
 
-    async fn handle_import(&self, import: Import) {
-        for mut block in import.blocks {
-            let hash = block.hash();
+    fn handle_headers(&self, headers: Vec<Header>) {
+        if headers.is_empty() {
+            return;
+        }
 
-            if import.verify {
-                tracing::debug!(target: "neo", %hash, "verifying block prior to import");
-                // Full verification logic will be ported alongside the consensus pipeline.
+        let Some(context) = &self.system_context else {
+            return;
+        };
+
+        let header_cache = context.header_cache();
+        let store_cache = context.store_cache();
+        let settings = context.settings();
+        let current_height = context.ledger().current_height();
+        let mut header_height = header_cache
+            .last()
+            .map(|header| header.index())
+            .unwrap_or(current_height);
+
+        for header in headers.into_iter() {
+            let index = header.index();
+            if index <= header_height {
+                continue;
             }
 
-            let mut cache = self._block_cache.write().await;
-            cache.insert(hash, block.clone());
+            if index != header_height + 1 {
+                break;
+            }
 
-            self.handle_persist_completed(PersistCompleted { block })
-                .await;
+            if !header.verify_with_cache(settings.as_ref(), &store_cache, &header_cache) {
+                break;
+            }
+
+            if !header_cache.add(header.clone()) {
+                break;
+            }
+
+            header_height = index;
+        }
+    }
+
+    async fn handle_import(&self, import: Import) {
+        for block in import.blocks {
+            if self.on_new_block(&block, import.verify).await == VerifyResult::Succeed {
+                self.handle_persist_completed(PersistCompleted { block })
+                    .await;
+            }
         }
     }
 
@@ -184,6 +227,251 @@ impl Blockchain {
         }
     }
 
+    async fn handle_block_inventory(
+        &self,
+        mut block: Block,
+        relay: bool,
+        ctx: &ActorContext,
+    ) -> ActorResult {
+        let hash = block.hash();
+        let index = block.index();
+
+        let result = self.on_new_block(&block, true).await;
+
+        if let Some(context) = &self.system_context {
+            let payload = if relay && result == VerifyResult::Succeed {
+                let mut writer = BinaryWriter::new();
+                match Serializable::serialize(&block, &mut writer) {
+                    Ok(()) => Some(writer.into_bytes()),
+                    Err(error) => {
+                        tracing::debug!(
+                            target: "neo",
+                            %error,
+                            "failed to serialize block for relay recording"
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            self.publish_inventory_relay_result(
+                context,
+                hash,
+                InventoryType::Block,
+                Some(index),
+                result,
+                relay,
+                payload,
+                ctx,
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn handle_extensible_inventory(
+        &self,
+        payload: ExtensiblePayload,
+        relay: bool,
+        ctx: &ActorContext,
+    ) -> ActorResult {
+        let mut payload_for_hash = payload.clone();
+        let hash = payload_for_hash.hash();
+
+        let result = self.on_new_extensible(payload.clone()).await;
+
+        if let Some(context) = &self.system_context {
+            let payload_bytes = if relay && result == VerifyResult::Succeed {
+                let mut writer = BinaryWriter::new();
+                match Serializable::serialize(&payload, &mut writer) {
+                    Ok(()) => Some(writer.into_bytes()),
+                    Err(error) => {
+                        tracing::debug!(
+                            target: "neo",
+                            %error,
+                            "failed to serialize extensible payload for relay recording"
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            self.publish_inventory_relay_result(
+                context,
+                hash,
+                InventoryType::Extensible,
+                None,
+                result,
+                relay,
+                payload_bytes,
+                ctx,
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn on_new_block(&self, block: &Block, verify: bool) -> VerifyResult {
+        let Some(context) = &self.system_context else {
+            return VerifyResult::Invalid;
+        };
+
+        let block_index = block.index();
+        let hash = {
+            let mut temp = block.clone();
+            temp.hash()
+        };
+
+        let store_cache = context.store_cache();
+        let settings = context.settings();
+        let header_cache = context.header_cache();
+
+        let current_height = context.ledger().current_height();
+        let header_height = header_cache
+            .last()
+            .map(|header| header.index())
+            .unwrap_or(current_height);
+
+        if block_index <= current_height {
+            return VerifyResult::AlreadyExists;
+        }
+
+        if block_index > header_height + 1 {
+            self.add_unverified_block(block.clone()).await;
+            return VerifyResult::UnableToVerify;
+        }
+
+        if verify {
+            if block_index == header_height + 1 {
+                if !block.verify_with_cache(settings.as_ref(), &store_cache, &header_cache) {
+                    tracing::warn!(
+                        target: "neo",
+                        index = block_index,
+                        %hash,
+                        "block verification failed against header cache"
+                    );
+                    return VerifyResult::Invalid;
+                }
+            } else {
+                let Some(mut header) = header_cache.get(block_index) else {
+                    tracing::warn!(
+                        target: "neo",
+                        index = block_index,
+                        "header entry missing for block"
+                    );
+                    return VerifyResult::Invalid;
+                };
+
+                if header.hash() != hash {
+                    tracing::warn!(
+                        target: "neo",
+                        index = block_index,
+                        %hash,
+                        "block hash does not match cached header"
+                    );
+                    return VerifyResult::Invalid;
+                }
+            }
+        }
+
+        {
+            let cache = self._block_cache.read().await;
+            if cache.contains_key(&hash) {
+                return VerifyResult::AlreadyExists;
+            }
+        }
+
+        {
+            let mut cache = self._block_cache.write().await;
+            cache.insert(hash, block.clone());
+        }
+
+        if block_index == current_height + 1 {
+            self.persist_block_sequence(block.clone()).await;
+            VerifyResult::Succeed
+        } else {
+            if block_index == header_height + 1 {
+                header_cache.add(block.header.clone());
+            }
+            self.add_unverified_block(block.clone()).await;
+            VerifyResult::UnableToVerify
+        }
+    }
+
+    async fn add_unverified_block(&self, block: Block) {
+        let mut unverified = self._block_cache_unverified.write().await;
+        let entry = unverified
+            .entry(block.index())
+            .or_insert_with(UnverifiedBlocksList::new);
+        entry.blocks.push(block);
+    }
+
+    async fn persist_block_sequence(&self, block: Block) {
+        self.handle_persist_completed(PersistCompleted {
+            block: block.clone(),
+        })
+        .await;
+
+        let mut next_index = block.index().saturating_add(1);
+
+        loop {
+            let maybe_block = {
+                let mut unverified = self._block_cache_unverified.write().await;
+                if let Some(entry) = unverified.get_mut(&next_index) {
+                    if let Some(next_block) = entry.blocks.pop() {
+                        if entry.blocks.is_empty() {
+                            unverified.remove(&next_index);
+                        }
+                        Some(next_block)
+                    } else {
+                        unverified.remove(&next_index);
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+
+            let Some(next_block) = maybe_block else {
+                break;
+            };
+
+            self.handle_persist_completed(PersistCompleted {
+                block: next_block.clone(),
+            })
+            .await;
+            next_index = next_index.saturating_add(1);
+        }
+    }
+
+    async fn on_new_extensible(&self, payload: ExtensiblePayload) -> VerifyResult {
+        let Some(context) = &self.system_context else {
+            return VerifyResult::Invalid;
+        };
+
+        let store_cache = context.store_cache();
+        let settings = context.settings();
+
+        {
+            let mut whitelist = self._extensible_witness_white_list.write().await;
+            whitelist.insert(payload.sender);
+        }
+
+        let whitelist = self._extensible_witness_white_list.read().await;
+        let snapshot = store_cache.data_cache();
+
+        if !payload.verify(settings.as_ref(), snapshot, &whitelist) {
+            return VerifyResult::Invalid;
+        }
+
+        context.record_extensible(payload);
+        VerifyResult::Succeed
+    }
+
     fn transaction_exists_on_chain(&self, tx: &Transaction, snapshot: &StoreCache) -> bool {
         LedgerContract::new()
             .contains_transaction(snapshot, &tx.hash())
@@ -234,6 +522,154 @@ impl Blockchain {
         }
     }
 
+    fn on_new_transaction(&self, transaction: &Transaction) -> VerifyResult {
+        let Some(context) = &self.system_context else {
+            return VerifyResult::Invalid;
+        };
+
+        let hash = transaction.hash();
+
+        let memory_pool = context.memory_pool_handle();
+        if let Ok(pool) = memory_pool.lock() {
+            if pool.contains_key(&hash) {
+                return VerifyResult::AlreadyInPool;
+            }
+        }
+
+        let store_cache = context.store_cache();
+        let ledger_contract = LedgerContract::new();
+        if ledger_contract
+            .contains_transaction(&store_cache, &hash)
+            .unwrap_or(false)
+        {
+            return VerifyResult::AlreadyExists;
+        }
+
+        let signers: Vec<UInt160> = transaction
+            .signers()
+            .iter()
+            .map(|signer| signer.account)
+            .collect();
+        if !signers.is_empty() {
+            let settings = context.protocol_settings();
+            let max_traceable = ledger_contract
+                .max_traceable_blocks_snapshot(&store_cache, &settings)
+                .unwrap_or(settings.max_traceable_blocks);
+
+            if ledger_contract
+                .contains_conflict_hash(&store_cache, &hash, &signers, max_traceable)
+                .unwrap_or(false)
+            {
+                return VerifyResult::HasConflicts;
+            }
+        }
+
+        let snapshot = store_cache.data_cache();
+        let settings = context.protocol_settings();
+
+        let add_result = match memory_pool.lock() {
+            Ok(mut pool) => pool.try_add(transaction.clone(), snapshot, &settings),
+            Err(_) => VerifyResult::Invalid,
+        };
+
+        add_result
+    }
+
+    async fn handle_preverify_completed(&self, task: PreverifyCompleted, ctx: &ActorContext) {
+        let Some(context) = &self.system_context else {
+            tracing::debug!(
+                target: "neo",
+                "preverify completed before system context attached; ignoring"
+            );
+            return;
+        };
+
+        let result = if task.result == VerifyResult::Succeed {
+            self.on_new_transaction(&task.transaction)
+        } else {
+            task.result
+        };
+
+        let tx_hash = task.transaction.hash();
+
+        let payload = if task.relay && result == VerifyResult::Succeed {
+            let mut writer = BinaryWriter::new();
+            match Serializable::serialize(&task.transaction, &mut writer) {
+                Ok(()) => Some(writer.into_bytes()),
+                Err(error) => {
+                    tracing::warn!(
+                        target: "neo",
+                        %error,
+                        "failed to serialize transaction for relay recording"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        self.publish_inventory_relay_result(
+            context,
+            tx_hash,
+            InventoryType::Transaction,
+            None,
+            result,
+            task.relay,
+            payload,
+            ctx,
+        );
+    }
+
+    fn publish_inventory_relay_result(
+        &self,
+        context: &Arc<NeoSystemContext>,
+        hash: UInt256,
+        inventory_type: InventoryType,
+        block_index: Option<u32>,
+        result: VerifyResult,
+        relay: bool,
+        payload: Option<Vec<u8>>,
+        ctx: &ActorContext,
+    ) {
+        if relay && result == VerifyResult::Succeed {
+            if let Some(bytes) = payload {
+                if let Err(error) = context
+                    .local_node
+                    .tell(LocalNodeCommand::RelayDirectly { payload: bytes })
+                {
+                    tracing::debug!(
+                        target: "neo",
+                        %error,
+                        "failed to record relay broadcast"
+                    );
+                }
+            }
+        }
+
+        let relay_message = RelayResult {
+            hash,
+            inventory_type,
+            block_index,
+            result,
+        };
+
+        context
+            .actor_system
+            .event_stream()
+            .publish(relay_message.clone());
+
+        if let Some(sender) = ctx.sender() {
+            if let Err(error) = sender.tell(relay_message) {
+                tracing::debug!(
+                    target: "neo",
+                    %error,
+                    "failed to reply with relay result to sender"
+                );
+            }
+        }
+    }
+
     async fn handle_relay_result(&self, _result: RelayResult) {}
 
     async fn initialize(&self) {
@@ -277,6 +713,19 @@ impl Actor for Blockchain {
                     self.handle_fill_memory_pool(fill, ctx).await
                 }
                 BlockchainCommand::Reverify(reverify) => self.handle_reverify(reverify, ctx).await,
+                BlockchainCommand::InventoryBlock { block, relay } => {
+                    self.handle_block_inventory(block, relay, ctx).await?
+                }
+                BlockchainCommand::InventoryExtensible { payload, relay } => {
+                    self.handle_extensible_inventory(payload, relay, ctx)
+                        .await?
+                }
+                BlockchainCommand::PreverifyCompleted(preverify) => {
+                    self.handle_preverify_completed(preverify, ctx).await
+                }
+                BlockchainCommand::Headers(headers) => {
+                    self.handle_headers(headers);
+                }
                 BlockchainCommand::Idle => self.handle_idle(ctx).await,
                 BlockchainCommand::FillCompleted => {}
                 BlockchainCommand::RelayResult(result) => self.handle_relay_result(result).await,
@@ -290,6 +739,7 @@ impl Actor for Blockchain {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct UnverifiedBlocksList {
     blocks: Vec<Block>,
@@ -297,6 +747,7 @@ struct UnverifiedBlocksList {
 }
 
 impl UnverifiedBlocksList {
+    #[allow(dead_code)]
     fn new() -> Self {
         Self {
             blocks: Vec::new(),
@@ -342,8 +793,17 @@ pub struct Reverify {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreverifyCompleted {
+    pub transaction: Transaction,
+    pub relay: bool,
+    pub result: VerifyResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelayResult {
-    pub inventory: Transaction,
+    pub hash: UInt256,
+    pub inventory_type: InventoryType,
+    pub block_index: Option<u32>,
     pub result: VerifyResult,
 }
 
@@ -354,6 +814,16 @@ pub enum BlockchainCommand {
     FillMemoryPool(FillMemoryPool),
     FillCompleted,
     Reverify(Reverify),
+    InventoryBlock {
+        block: Block,
+        relay: bool,
+    },
+    InventoryExtensible {
+        payload: ExtensiblePayload,
+        relay: bool,
+    },
+    PreverifyCompleted(PreverifyCompleted),
+    Headers(Vec<Header>),
     Idle,
     RelayResult(RelayResult),
     Initialize,

@@ -89,18 +89,16 @@ where
 
         for (index, item) in self.iter().enumerate() {
             if predicate(&index, item) {
-                indices_to_remove.push((index, item.clone()));
+                indices_to_remove.push(index);
             }
         }
 
         // Remove in reverse order to maintain indices
-        for (index, item) in indices_to_remove.iter().rev() {
-            if let Some(removed) = self.get(*index) {
-                if let Some(callback) = after_removed {
-                    callback(index, removed);
-                }
+        for index in indices_to_remove.into_iter().rev() {
+            let removed = self.remove(index);
+            if let Some(callback) = after_removed {
+                callback(&index, &removed);
             }
-            self.remove(*index);
         }
     }
 

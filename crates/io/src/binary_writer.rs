@@ -1,5 +1,4 @@
-use super::{serializable::Serializable, IoError, IoResult};
-use std::io::Write;
+use crate::{serializable::Serializable, IoResult};
 
 #[derive(Debug, Clone, Default)]
 pub struct BinaryWriter {
@@ -15,9 +14,15 @@ impl BinaryWriter {
         self.buffer.len()
     }
 
+    #[inline]
     pub fn write_u8(&mut self, value: u8) -> IoResult<()> {
         self.buffer.push(value);
         Ok(())
+    }
+
+    #[inline]
+    pub fn write_byte(&mut self, value: u8) -> IoResult<()> {
+        self.write_u8(value)
     }
 
     pub fn write_bool(&mut self, value: bool) -> IoResult<()> {
@@ -98,9 +103,8 @@ impl BinaryWriter {
     }
 
     pub fn write_all(&mut self, data: &[u8]) -> IoResult<()> {
-        self.buffer
-            .write_all(data)
-            .map_err(|e| IoError::invalid_data(e.to_string()))
+        self.buffer.extend_from_slice(data);
+        Ok(())
     }
 
     pub fn write_serializable<T: Serializable>(&mut self, value: &T) -> IoResult<()> {

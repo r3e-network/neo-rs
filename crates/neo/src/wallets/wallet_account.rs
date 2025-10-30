@@ -223,7 +223,8 @@ impl WalletAccount for StandardWalletAccount {
             None => return Ok(false),
         };
 
-        match KeyPair::from_nep2_string(nep2, password) {
+        let version = self.protocol_settings.address_version;
+        match KeyPair::from_nep2_string(nep2, password, version) {
             Ok(key_pair) => {
                 self.key_pair = Some(key_pair);
                 self.is_locked = false;
@@ -242,7 +243,8 @@ impl WalletAccount for StandardWalletAccount {
 
     fn verify_password(&self, password: &str) -> WalletResult<bool> {
         if let Some(nep2) = &self.nep2_key {
-            Ok(KeyPair::from_nep2_string(nep2, password).is_ok())
+            let version = self.protocol_settings.address_version;
+            Ok(KeyPair::from_nep2_string(nep2, password, version).is_ok())
         } else {
             Ok(self.key_pair.is_some())
         }
@@ -261,7 +263,8 @@ impl WalletAccount for StandardWalletAccount {
         }
 
         let key = self.key_pair.as_ref().ok_or(WalletError::AccountLocked)?;
-        key.to_nep2(password)
+        let version = self.protocol_settings.address_version;
+        key.to_nep2(password, version)
             .map_err(|e| WalletError::SigningFailed(e.to_string()))
     }
 

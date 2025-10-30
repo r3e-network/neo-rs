@@ -1,6 +1,7 @@
 //! JArray - Rust port of Neo.Json.JArray
 
 use std::fmt;
+use std::iter::FromIterator;
 
 use crate::j_token::JToken;
 use crate::JsonError;
@@ -142,6 +143,19 @@ impl Default for JArray {
     }
 }
 
+impl FromIterator<Option<JToken>> for JArray {
+    fn from_iter<T: IntoIterator<Item = Option<JToken>>>(iter: T) -> Self {
+        Self::from_vec(iter.into_iter().collect())
+    }
+}
+
+impl FromIterator<JToken> for JArray {
+    fn from_iter<T: IntoIterator<Item = JToken>>(iter: T) -> Self {
+        let items = iter.into_iter().map(Some).collect();
+        Self::from_vec(items)
+    }
+}
+
 impl fmt::Display for JArray {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("[")?;
@@ -161,6 +175,13 @@ impl fmt::Display for JArray {
 impl From<Vec<Option<JToken>>> for JArray {
     fn from(value: Vec<Option<JToken>>) -> Self {
         Self::from_vec(value)
+    }
+}
+
+impl From<Vec<JToken>> for JArray {
+    fn from(value: Vec<JToken>) -> Self {
+        let items = value.into_iter().map(Some).collect();
+        Self::from_vec(items)
     }
 }
 

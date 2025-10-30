@@ -6,7 +6,7 @@
 use crate::cryptography::Crypto;
 use crate::neo_config::{ADDRESS_SIZE, MAX_SCRIPT_SIZE};
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::smart_contract::{manifest::ContractManifest, CallFlags};
+use crate::smart_contract::{helper::Helper, manifest::ContractManifest, CallFlags};
 use crate::UInt160;
 use std::convert::TryInto;
 
@@ -120,17 +120,7 @@ impl ContractState {
 
     /// Calculates the hash of the contract from its NEF and manifest.
     pub fn calculate_hash(sender: &UInt160, nef_checksum: u32, manifest_name: &str) -> UInt160 {
-        let sender_bytes = sender.as_bytes();
-        let mut buffer = Vec::with_capacity(sender_bytes.len() + 4 + manifest_name.len());
-        buffer.extend_from_slice(&sender_bytes);
-        buffer.extend_from_slice(&nef_checksum.to_le_bytes());
-        buffer.extend_from_slice(manifest_name.as_bytes());
-
-        let hash = Crypto::sha256(&buffer);
-        let prefix: [u8; ADDRESS_SIZE] = hash[..ADDRESS_SIZE]
-            .try_into()
-            .expect("sha256 output shorter than address size");
-        UInt160::from_bytes(&prefix).expect("Operation failed")
+        Helper::get_contract_hash(sender, nef_checksum, manifest_name)
     }
 
     /// Serializes the contract state to bytes.

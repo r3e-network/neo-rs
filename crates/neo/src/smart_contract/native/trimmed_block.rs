@@ -1,6 +1,7 @@
+use crate::extensions::io::memory_reader::MemoryReaderExtensions;
 use crate::ledger::{block_header::BlockHeader, Block};
 use crate::neo_io::{
-    serializable::helper::get_var_size, BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
+    serializable::helper::get_var_size, BinaryWriter, IoResult, MemoryReader, Serializable,
 };
 use crate::smart_contract::i_interoperable::IInteroperable;
 use crate::UInt256;
@@ -14,13 +15,17 @@ pub struct TrimmedBlock {
 }
 
 impl TrimmedBlock {
+    /// Creates a trimmed block from a block header and list of transaction hashes.
+    pub fn create(header: BlockHeader, hashes: Vec<UInt256>) -> Self {
+        Self { header, hashes }
+    }
+
     /// Creates a trimmed block from a full block.
     pub fn from_block(block: &Block) -> Self {
-        let hashes = block.transactions.iter().map(|tx| tx.hash()).collect();
-        Self {
-            header: block.header.clone(),
-            hashes,
-        }
+        Self::create(
+            block.header.clone(),
+            block.transactions.iter().map(|tx| tx.hash()).collect(),
+        )
     }
 
     /// Returns the block hash.
@@ -32,6 +37,11 @@ impl TrimmedBlock {
     pub fn index(&self) -> u32 {
         self.header.index()
     }
+
+    /// Returns the transaction hashes.
+    pub fn hashes(&self) -> &[UInt256] {
+        &self.hashes
+    }
 }
 
 impl Serializable for TrimmedBlock {
@@ -42,12 +52,7 @@ impl Serializable for TrimmedBlock {
 
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let header = BlockHeader::deserialize(reader)?;
-        let hashes = reader.read_serializable_vec::<UInt256>()?;
-        if hashes.len() > u16::MAX as usize {
-            return Err(IoError::invalid_data(
-                "TrimmedBlock contains too many transactions",
-            ));
-        }
+        let hashes = reader.read_serializable_array::<UInt256>(u16::MAX as usize)?;
         Ok(Self { header, hashes })
     }
 

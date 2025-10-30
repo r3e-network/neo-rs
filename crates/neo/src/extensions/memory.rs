@@ -1,5 +1,5 @@
 use crate::extensions::byte::ByteExtensions;
-use crate::io::{IoError, IoResult, Serializable};
+use crate::io::{serializable::helper, IoError, IoResult, Serializable};
 
 /// Extension helpers for read-only byte slices matching
 /// `Neo.Extensions.MemoryExtensions`.
@@ -30,7 +30,7 @@ impl ReadOnlyMemoryExtensions for [u8] {
 
     fn get_var_size(&self) -> IoResult<usize> {
         let length = self.len();
-        Ok(util::var_size(length) + length)
+        Ok(helper::get_var_size_usize(length) + length)
     }
 }
 
@@ -45,21 +45,5 @@ impl ReadOnlyMemoryExtensions for Vec<u8> {
 
     fn get_var_size(&self) -> IoResult<usize> {
         self.as_slice().get_var_size()
-    }
-}
-
-/// Internal utility helpers.
-mod util {
-    /// Returns the size required to encode `value` using the Neo var size rules.
-    pub fn var_size(value: usize) -> usize {
-        if value < 0xFD {
-            1
-        } else if value <= 0xFFFF {
-            3
-        } else if value <= 0xFFFF_FFFF {
-            5
-        } else {
-            9
-        }
     }
 }

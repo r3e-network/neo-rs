@@ -2,9 +2,12 @@
 //!
 //! This module provides a way to programmatically construct scripts for the Neo VM.
 
-use crate::error::VmResult;
+use crate::error::{VmError, VmResult};
 use crate::op_code::OpCode;
 use crate::script::Script;
+use num_bigint::{BigInt, Sign};
+use num_traits::ToPrimitive;
+use sha2::{Digest, Sha256};
 
 /// Helps construct VM scripts programmatically.
 pub struct ScriptBuilder {
@@ -36,15 +39,24 @@ impl ScriptBuilder {
         self
     }
 
+    /// Emits raw bytes without interpretation (utility for parity helpers).
+    pub fn emit_raw(&mut self, bytes: &[u8]) -> &mut Self {
+        self.emit_bytes(bytes)
+    }
+
+    /// Emits an opcode followed by the provided operand bytes.
+    pub fn emit_instruction(&mut self, opcode: OpCode, operand: &[u8]) -> &mut Self {
+        self.emit_opcode(opcode);
+        self.emit_bytes(operand);
+        self
+    }
+
     /// Emits a push operation with the given data.
     pub fn emit_push(&mut self, data: &[u8]) -> &mut Self {
         let len = data.len();
 
-        if len <= 0x75 {
-            self.emit(len as u8);
-            self.script.extend_from_slice(data);
-        } else if len <= 0xFF {
-            // PUSHDATA1
+        if len <= 0xFF {
+            // Always use PUSHDATA1 for small payloads to mirror C# implementation
             self.emit_opcode(OpCode::PUSHDATA1);
             self.emit(len as u8);
             self.script.extend_from_slice(data);
@@ -103,9 +115,9 @@ impl ScriptBuilder {
     /// Emits a push operation for a boolean.
     pub fn emit_push_bool(&mut self, value: bool) -> &mut Self {
         if value {
-            self.emit_opcode(OpCode::PUSH1)
+            self.emit_opcode(OpCode::PUSHT)
         } else {
-            self.emit_opcode(OpCode::PUSH0)
+            self.emit_opcode(OpCode::PUSHF)
         }
     }
 
@@ -124,6 +136,53 @@ impl ScriptBuilder {
         self.emit_push(data)
     }
 
+    /// Emits a push operation for an arbitrary precision integer (C# parity).
+    pub fn emit_push_bigint(&mut self, value: BigInt) -> VmResult<&mut Self> {
+        if value >= BigInt::from(-1) && value <= BigInt::from(16) {
+            if let Some(v) = value.to_i64() {
+                return Ok(self.emit_push_int(v));
+            }
+        }
+
+        let mut bytes = value.to_signed_bytes_le();
+        if bytes.is_empty() {
+            bytes.push(0);
+        }
+
+        let negative = matches!(value.sign(), Sign::Minus);
+        let target_len = if bytes.len() <= 1 {
+            1
+        } else if bytes.len() <= 2 {
+            2
+        } else if bytes.len() <= 4 {
+            4
+        } else if bytes.len() <= 8 {
+            8
+        } else if bytes.len() <= 16 {
+            16
+        } else if bytes.len() <= 32 {
+            32
+        } else {
+            return Err(VmError::invalid_operation_msg(
+                "BigInteger value exceeds PUSHINT256 capacity",
+            ));
+        };
+
+        let padded = pad_signed(&bytes, target_len, negative);
+        let opcode = match target_len {
+            1 => OpCode::PUSHINT8,
+            2 => OpCode::PUSHINT16,
+            4 => OpCode::PUSHINT32,
+            8 => OpCode::PUSHINT64,
+            16 => OpCode::PUSHINT128,
+            32 => OpCode::PUSHINT256,
+            _ => unreachable!(),
+        };
+
+        self.emit_instruction(opcode, &padded);
+        Ok(self)
+    }
+
     /// Emits a push operation for a stack item.
     pub fn emit_push_stack_item(
         &mut self,
@@ -139,13 +198,7 @@ impl ScriptBuilder {
                 self.emit_push_bool(b);
             }
             StackItem::Integer(i) => {
-                use num_traits::ToPrimitive;
-                if let Some(value) = i.to_i64() {
-                    self.emit_push_int(value);
-                } else {
-                    let bytes = i.to_bytes_le().1;
-                    self.emit_push(&bytes);
-                }
+                self.emit_push_bigint(i)?;
             }
             StackItem::ByteString(bytes) => {
                 self.emit_push(&bytes);
@@ -154,7 +207,7 @@ impl ScriptBuilder {
                 self.emit_push(buffer.data());
             }
             StackItem::Array(array) => {
-                let mut items: Vec<_> = array.into_iter().collect();
+                let items: Vec<_> = array.into_iter().collect();
                 let items_len = items.len();
                 for item in items.into_iter().rev() {
                     self.emit_push_stack_item(item)?;
@@ -163,7 +216,7 @@ impl ScriptBuilder {
                 self.emit_pack();
             }
             StackItem::Struct(structure) => {
-                let mut items: Vec<_> = structure.into_iter().collect();
+                let items: Vec<_> = structure.into_iter().collect();
                 let items_len = items.len();
                 for item in items.into_iter().rev() {
                     self.emit_push_stack_item(item)?;
@@ -190,12 +243,14 @@ impl ScriptBuilder {
                     self.emit_opcode(OpCode::SETITEM);
                 }
             }
-            StackItem::Pointer(addr) => {
-                self.emit_push_int(addr as i64);
+            StackItem::Pointer(_) => {
+                return Err(VmError::invalid_operation_msg(
+                    "Cannot serialize Pointer to script".to_string(),
+                ));
             }
             StackItem::InteropInterface(_) => {
                 // InteropInterface cannot be serialized to script
-                return Err(crate::VmError::invalid_operation_msg(
+                return Err(VmError::invalid_operation_msg(
                     "Cannot serialize InteropInterface to script".to_string(),
                 ));
             }
@@ -204,47 +259,74 @@ impl ScriptBuilder {
         Ok(self)
     }
 
-    /// Emits a jump operation.
-    pub fn emit_jump(&mut self, op: OpCode, offset: i16) -> VmResult<&mut Self> {
-        if op != OpCode::JMP && op != OpCode::JMPIF && op != OpCode::JMPIFNOT && op != OpCode::CALL
-        {
-            return Err(crate::error::VmError::InvalidOperation {
-                operation: "emit_jump".to_string(),
-                reason: format!("Invalid jump operation: {:?}", op),
-            });
+    /// Emits a jump operation, automatically upgrading to the long form when needed.
+    pub fn emit_jump(&mut self, mut opcode: OpCode, offset: i32) -> VmResult<&mut Self> {
+        let opcode_value = opcode as u8;
+        if opcode_value < OpCode::JMP as u8 || opcode_value > OpCode::JMPLE_L as u8 {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Invalid jump operation: {:?}",
+                opcode
+            )));
         }
 
-        self.emit_opcode(op);
-
-        // Emit offset as little-endian
-        self.emit((offset & 0xFF) as u8);
-        self.emit(((offset >> 8) & 0xFF) as u8);
+        let is_short = opcode_value % 2 == 0;
+        if is_short {
+            if offset < i8::MIN as i32 || offset > i8::MAX as i32 {
+                opcode = OpCode::try_from(opcode_value + 1)
+                    .map_err(|_| VmError::invalid_operation_msg("Invalid long jump opcode"))?;
+                self.emit_instruction(opcode, &offset.to_le_bytes());
+            } else {
+                let short = (offset as i8) as u8;
+                self.emit_instruction(opcode, &[short]);
+            }
+        } else {
+            self.emit_instruction(opcode, &offset.to_le_bytes());
+        }
 
         Ok(self)
     }
 
     /// Emits a call operation.
-    pub fn emit_call(&mut self, offset: i16) -> VmResult<&mut Self> {
-        self.emit_jump(OpCode::CALL, offset)
+    pub fn emit_call(&mut self, offset: i32) -> VmResult<&mut Self> {
+        if offset < i8::MIN as i32 || offset > i8::MAX as i32 {
+            self.emit_instruction(OpCode::CALL_L, &offset.to_le_bytes());
+        } else {
+            let short = (offset as i8) as u8;
+            self.emit_instruction(OpCode::CALL, &[short]);
+        }
+        Ok(self)
     }
 
     /// Emits a syscall operation.
     pub fn emit_syscall(&mut self, api: &str) -> VmResult<&mut Self> {
-        let api_bytes = api.as_bytes();
-        let api_bytes_len = api_bytes.len();
+        let hash = Self::hash_syscall(api)?;
+        Ok(self.emit_syscall_hash(hash))
+    }
 
-        if api_bytes_len > 252 {
-            return Err(crate::error::VmError::InvalidOperation {
-                operation: "emit_syscall".to_string(),
-                reason: format!("Syscall API too long: {} bytes (max 252)", api_bytes_len),
-            });
+    /// Emits a syscall using a precomputed hash.
+    pub fn emit_syscall_hash(&mut self, hash: u32) -> &mut Self {
+        self.emit_instruction(OpCode::SYSCALL, &hash.to_le_bytes())
+    }
+
+    /// Computes the C#-compatible syscall hash (double SHA-256, little-endian u32).
+    pub fn hash_syscall(api: &str) -> VmResult<u32> {
+        if api.as_bytes().len() > 252 {
+            return Err(VmError::invalid_operation_msg(format!(
+                "Syscall API too long: {} bytes (max 252)",
+                api.as_bytes().len()
+            )));
         }
 
-        self.emit_opcode(OpCode::SYSCALL);
-        self.emit(api_bytes_len as u8);
-        self.script.extend_from_slice(api_bytes);
+        let mut hasher = Sha256::new();
+        hasher.update(api.as_bytes());
+        let first = hasher.finalize();
 
-        Ok(self)
+        let mut hasher = Sha256::new();
+        hasher.update(first);
+        let digest = hasher.finalize();
+
+        let bytes = &digest[..4];
+        Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
     /// Emits an append operation.
@@ -266,12 +348,27 @@ impl ScriptBuilder {
     pub fn to_array(&self) -> Vec<u8> {
         self.script.clone()
     }
+
+    /// Returns the current script length.
+    pub fn len(&self) -> usize {
+        self.script.len()
+    }
 }
 
 impl Default for ScriptBuilder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn pad_signed(bytes: &[u8], target_len: usize, negative: bool) -> Vec<u8> {
+    let mut padded = Vec::with_capacity(target_len);
+    padded.extend_from_slice(bytes);
+    let fill = if negative { 0xFF } else { 0x00 };
+    while padded.len() < target_len {
+        padded.push(fill);
+    }
+    padded
 }
 
 #[cfg(test)]
@@ -320,10 +417,11 @@ mod tests {
     fn test_emit_push_bool() {
         let mut builder = ScriptBuilder::new();
         builder.emit_push_bool(true);
-        builder.emit_push_bool(false);
+        assert_eq!(builder.to_array(), vec![OpCode::PUSHT as u8]);
 
-        let script = builder.to_array();
-        assert_eq!(script, vec![OpCode::PUSH1 as u8, OpCode::PUSH0 as u8]);
+        let mut builder = ScriptBuilder::new();
+        builder.emit_push_bool(false);
+        assert_eq!(builder.to_array(), vec![OpCode::PUSHF as u8]);
     }
 
     #[test]
@@ -342,13 +440,14 @@ mod tests {
 
         let script = builder.to_array();
 
-        assert_eq!(script[0], 3); // Length as opcode
-        assert_eq!(&script[1..4], &[1, 2, 3]);
+        assert_eq!(script[0], OpCode::PUSHDATA1 as u8);
+        assert_eq!(script[1], small_array.len() as u8);
+        assert_eq!(&script[2..5], &[1, 2, 3]);
 
-        assert_eq!(script[4], OpCode::PUSHDATA1 as u8);
-        assert_eq!(script[5], 200); // Length as single byte
+        assert_eq!(script[5], OpCode::PUSHDATA1 as u8);
+        assert_eq!(script[6], 200); // Length as single byte
 
-        let large_array_offset = 4 + 2 + 200;
+        let large_array_offset = 5 + 2 + 200;
         assert_eq!(script[large_array_offset], OpCode::PUSHDATA2 as u8);
         assert_eq!(script[large_array_offset + 1], (65000 & 0xFF) as u8);
         assert_eq!(script[large_array_offset + 2], ((65000 >> 8) & 0xFF) as u8);
@@ -362,7 +461,7 @@ mod tests {
             .expect("emit_jump failed");
 
         let script = builder.to_array();
-        assert_eq!(script, vec![OpCode::JMP as u8, 10, 0]);
+        assert_eq!(script, vec![OpCode::JMP as u8, 10]);
     }
 
     #[test]
@@ -372,15 +471,10 @@ mod tests {
         builder.emit_syscall(api_name).expect("emit_syscall failed");
 
         let script = builder.to_array();
-
-        // Check opcode
+        let expected_hash = ScriptBuilder::hash_syscall(api_name).unwrap();
+        assert_eq!(script.len(), 5);
         assert_eq!(script[0], OpCode::SYSCALL as u8);
-
-        // Check length - "System.Runtime.Log" is 18 characters
-        assert_eq!(script[1], 18);
-
-        let api_bytes = &script[2..20]; // ADDRESS_SIZE = 20
-        assert_eq!(api_bytes, b"System.Runtime.Log");
+        assert_eq!(&script[1..5], &expected_hash.to_le_bytes());
     }
 
     #[test]

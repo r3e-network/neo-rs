@@ -58,6 +58,21 @@ impl Serialize for JToken {
 }
 
 impl JToken {
+    /// Helper constructor for JSON objects from ordered dictionaries.
+    pub fn from_object(properties: OrderedDictionary<String, Option<JToken>>) -> Self {
+        JToken::Object(JObject::from(properties))
+    }
+
+    /// Helper constructor for JSON arrays from optional token vectors.
+    pub fn from_array(items: Vec<Option<JToken>>) -> Self {
+        JToken::Array(JArray::from(items))
+    }
+
+    /// Helper constructor for JSON arrays from token vectors.
+    pub fn from_array_tokens(items: Vec<JToken>) -> Self {
+        JToken::Array(JArray::from(items))
+    }
+
     pub fn get_index(&self, index: usize) -> Result<Option<&JToken>, JsonError> {
         match self {
             JToken::Array(array) => array.get_checked(index),
@@ -208,21 +223,17 @@ impl JToken {
     }
 
     pub fn json_path(&self, expr: &str) -> Result<JArray, JsonError> {
-        let mut objects = vec![Some(self.clone())];
         if expr.is_empty() {
-            return Ok(JArray::from_vec(objects));
+            return Ok(JArray::from_vec(vec![Some(self.clone())]));
         }
 
-        let tokens = JPathToken::parse(expr);
-        let mut queue: std::collections::VecDeque<_> = tokens.into();
-        let first = queue
-            .pop_front()
-            .ok_or_else(|| JsonError::format("JsonPath expression is empty"))?;
-        if !first.is_root() {
-            return Err(JsonError::format("JsonPath must start with '$'"));
-        }
-        JPathToken::process_json_path(&mut objects, queue);
-        Ok(JArray::from_vec(objects))
+        let tokens = JPathToken::parse(expr)?;
+        let results = JPathToken::evaluate(&tokens, self)?;
+        let collected = results
+            .into_iter()
+            .map(|token| Some(token.clone()))
+            .collect();
+        Ok(JArray::from_vec(collected))
     }
 }
 

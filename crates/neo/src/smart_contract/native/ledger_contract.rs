@@ -240,6 +240,19 @@ impl LedgerContract {
         self.load_block_hash(snapshot, index)
     }
 
+    pub fn get_trimmed_block<S>(&self, snapshot: &S, hash: &UInt256) -> Result<Option<TrimmedBlock>>
+    where
+        S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
+    {
+        let key = block_storage_key(self.id, hash);
+        let Some(item) = snapshot.try_get(&key) else {
+            return Ok(None);
+        };
+
+        let trimmed = deserialize_trimmed_block(&item.get_value())?;
+        Ok(Some(trimmed))
+    }
+
     fn try_read_transaction_state<S>(
         &self,
         snapshot: &S,

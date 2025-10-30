@@ -134,7 +134,10 @@ impl Message {
         };
 
         if value > max {
-            return Err(IoError::end_of_stream(0, "message"));
+            return Err(IoError::invalid_data_with_context(
+                "Message::read_var_int",
+                format!("value {value} exceeds maximum {max}"),
+            ));
         }
 
         Ok(value)
@@ -144,10 +147,12 @@ impl Message {
 impl Serializable for Message {
     /// Deserialize message (matches C# ISerializable.Deserialize exactly)
     fn deserialize(reader: &mut MemoryReader) -> crate::neo_io::IoResult<Self> {
-        let flags = MessageFlags::from_byte(reader.read_u8()?)
-            .map_err(|_| IoError::end_of_stream(0, "message"))?;
-        let command = MessageCommand::from_byte(reader.read_u8()?)
-            .map_err(|_| IoError::end_of_stream(0, "message"))?;
+        let flags = MessageFlags::from_byte(reader.read_u8()?).map_err(|_| {
+            IoError::invalid_data_with_context("Message::deserialize", "invalid flags value")
+        })?;
+        let command = MessageCommand::from_byte(reader.read_u8()?).map_err(|_| {
+            IoError::invalid_data_with_context("Message::deserialize", "invalid command value")
+        })?;
 
         // Read payload using VarBytes (matches C# ReadVarMemory)
         let payload_len = Self::read_var_int(reader, PAYLOAD_MAX_SIZE as u64)? as usize;

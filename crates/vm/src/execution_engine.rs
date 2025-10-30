@@ -458,7 +458,7 @@ impl ExecutionEngine {
     }
 
     /// Called before executing an instruction.
-    fn pre_execute_instruction(&mut self, _instruction: &Instruction) -> VmResult<()> {
+    fn pre_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         // Consume gas for instruction execution (disabled - no C# counterpart)
         // if let Err(gas_error) = self.gas_calculator.consume_gas(instruction.opcode()) {
         //     return Err(VmError::invalid_operation_msg(format!(
@@ -473,12 +473,24 @@ impl ExecutionEngine {
         //         crate::metrics::global_metrics().record_instruction();
         //     }
         // }
+        if let Some(host_ptr) = self.interop_host {
+            if let Some(context) = self.current_context().cloned() {
+                unsafe { (&mut *host_ptr).pre_execute_instruction(self, &context, instruction)? };
+            }
+        }
         Ok(())
     }
 
     /// Called after executing an instruction.
-    fn post_execute_instruction(&mut self, _instruction: &Instruction) -> VmResult<()> {
+    fn post_execute_instruction(&mut self, instruction: &Instruction) -> VmResult<()> {
         if self.reference_counter.count() < self.limits.max_stack_size as usize {
+            if let Some(host_ptr) = self.interop_host {
+                if let Some(context) = self.current_context().cloned() {
+                    unsafe {
+                        (&mut *host_ptr).post_execute_instruction(self, &context, instruction)?
+                    };
+                }
+            }
             return Ok(());
         }
 
@@ -488,6 +500,12 @@ impl ExecutionEngine {
                 "MaxStackSize exceed: {}/{}",
                 current, self.limits.max_stack_size
             )));
+        }
+
+        if let Some(host_ptr) = self.interop_host {
+            if let Some(context) = self.current_context().cloned() {
+                unsafe { (&mut *host_ptr).post_execute_instruction(self, &context, instruction)? };
+            }
         }
 
         Ok(())
@@ -504,6 +522,12 @@ impl ExecutionEngine {
 
         // Push the context onto the invocation stack
         self.invocation_stack.push(context);
+
+        if let Some(host_ptr) = self.interop_host {
+            if let Some(new_context) = self.current_context().cloned() {
+                unsafe { (&mut *host_ptr).on_context_loaded(self, &new_context)? };
+            }
+        }
 
         Ok(())
     }

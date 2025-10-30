@@ -7,6 +7,7 @@ use crate::cryptography::{ECCurve, ECDsa, ECC};
 use crate::error::{CoreError as Error, CoreResult as Result};
 use crate::neo_config::HASH_SIZE;
 use crate::smart_contract::helper::Helper;
+use crate::wallets::helper::Helper as WalletHelper;
 use crate::UInt160;
 use aes::Aes256;
 use base64::Engine;
@@ -79,20 +80,24 @@ impl KeyPair {
 
     /// Creates a key pair from a NEP-2 encrypted private key.
     /// The encrypted_key should be base64-encoded NEP-2 data.
-    pub fn from_nep2(encrypted_key: &[u8], password: &str) -> Result<Self> {
+    pub fn from_nep2(encrypted_key: &[u8], password: &str, address_version: u8) -> Result<Self> {
         // First try to decode as base64
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(encrypted_key)
             .map_err(|_| Error::InvalidNep2Key)?;
 
-        let private_key = Self::decrypt_nep2(&decoded, password)?;
+        let private_key = Self::decrypt_nep2(&decoded, password, address_version)?;
         Self::from_private_key(&private_key)
     }
 
     /// Creates a key pair from a NEP-2 encrypted private key string.
     /// The encrypted_key should be a base64-encoded NEP-2 string.
-    pub fn from_nep2_string(encrypted_key: &str, password: &str) -> Result<Self> {
-        Self::from_nep2(encrypted_key.as_bytes(), password)
+    pub fn from_nep2_string(
+        encrypted_key: &str,
+        password: &str,
+        address_version: u8,
+    ) -> Result<Self> {
+        Self::from_nep2(encrypted_key.as_bytes(), password, address_version)
     }
 
     /// Gets the private key.
@@ -154,8 +159,8 @@ impl KeyPair {
     }
 
     /// Exports the key pair to NEP-2 format.
-    pub fn to_nep2(&self, password: &str) -> Result<String> {
-        let encrypted = Self::encrypt_nep2(&self.private_key, password)?;
+    pub fn to_nep2(&self, password: &str, address_version: u8) -> Result<String> {
+        let encrypted = Self::encrypt_nep2(&self.private_key, password, address_version)?;
         Ok(base64::engine::general_purpose::STANDARD.encode(encrypted))
     }
 
@@ -212,16 +217,22 @@ impl KeyPair {
     }
 
     /// Encrypts a private key using NEP-2 standard.
-    fn encrypt_nep2(private_key: &[u8; HASH_SIZE], password: &str) -> Result<Vec<u8>> {
+    fn encrypt_nep2(
+        private_key: &[u8; HASH_SIZE],
+        password: &str,
+        address_version: u8,
+    ) -> Result<Vec<u8>> {
         // NEP-2 parameters
         let n = 16384; // CPU cost
         let r = 8; // Memory cost
         let p = 8; // Parallelization
 
         // Generate address hash
-        let address =
-            UInt160::from_script(&Self::get_verification_script_for_key(private_key)).to_address();
-        let address_hash = &crate::neo_cryptography::hash::sha256(address.as_bytes())[0..4];
+        let script_hash = UInt160::from_script(&Self::get_verification_script_for_key(private_key));
+        let address = WalletHelper::to_address(&script_hash, address_version);
+        let address_hash_full = crate::neo_cryptography::hash::hash256(address.as_bytes());
+        let mut address_hash = [0u8; 4];
+        address_hash.copy_from_slice(&address_hash_full[0..4]);
 
         // Derive key using scrypt
         let n: u32 = n;
@@ -231,11 +242,15 @@ impl KeyPair {
             })?;
 
         let mut derived_key = [0u8; 64];
-        scrypt::scrypt(password.as_bytes(), address_hash, &params, &mut derived_key).map_err(
-            |e| Error::Scrypt {
-                message: e.to_string(),
-            },
-        )?;
+        scrypt::scrypt(
+            password.as_bytes(),
+            &address_hash,
+            &params,
+            &mut derived_key,
+        )
+        .map_err(|e| Error::Scrypt {
+            message: e.to_string(),
+        })?;
 
         // Split derived key
         let derived_half1 = &derived_key[0..HASH_SIZE];
@@ -265,14 +280,18 @@ impl KeyPair {
         let mut result = Vec::with_capacity(39);
         result.extend_from_slice(b"\x01\x42"); // NEP-2 prefix
         result.push(0xe0); // Flags
-        result.extend_from_slice(address_hash);
+        result.extend_from_slice(&address_hash);
         result.extend_from_slice(&encrypted);
 
         Ok(result)
     }
 
     /// Decrypts a NEP-2 encrypted private key.
-    fn decrypt_nep2(encrypted_key: &[u8], password: &str) -> Result<[u8; HASH_SIZE]> {
+    fn decrypt_nep2(
+        encrypted_key: &[u8],
+        password: &str,
+        address_version: u8,
+    ) -> Result<[u8; HASH_SIZE]> {
         if encrypted_key.len() != 39 {
             return Err(Error::InvalidNep2Key);
         }
@@ -329,8 +348,9 @@ impl KeyPair {
         // Verify by checking address hash
         let verification_script = Self::get_verification_script_for_key(&private_key);
         let script_hash = UInt160::from_script(&verification_script);
-        let address = script_hash.to_address();
-        let computed_hash = &crate::neo_cryptography::hash::sha256(address.as_bytes())[0..4];
+        let address = WalletHelper::to_address(&script_hash, address_version);
+        let computed_hash_full = crate::neo_cryptography::hash::hash256(address.as_bytes());
+        let computed_hash = &computed_hash_full[0..4];
 
         if computed_hash != address_hash {
             return Err(Error::InvalidPassword);

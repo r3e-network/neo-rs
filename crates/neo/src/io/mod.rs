@@ -1,18 +1,14 @@
 //! IO module for Neo blockchain
 //!
-//! This module provides IO functionality matching the C# Neo.IO namespace.
+//! This module mirrors the C# Neo.IO namespace by re-exporting the shared `neo-io` crate.
 
 mod binary_reader;
-mod binary_writer;
-mod error;
-mod memory_reader;
-mod serializable;
 
 pub use binary_reader::BinaryReader;
-pub use binary_writer::BinaryWriter;
-pub use error::{IoError, IoResult};
-pub use memory_reader::MemoryReader;
-pub use serializable::Serializable;
+pub use neo_io_crate::{
+    serializable::{self, helper},
+    BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
+};
 
-// Compatibility aliases matching historical naming.
-pub use serializable::Serializable as ISerializable;
+// Compatibility alias matching historical naming.
+pub use Serializable as ISerializable;

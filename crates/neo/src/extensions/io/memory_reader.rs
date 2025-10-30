@@ -1,4 +1,4 @@
-use crate::io::{IoError, IoResult, MemoryReader, Serializable};
+use crate::io::{serializable::helper, IoError, IoResult, MemoryReader, Serializable};
 
 /// Extension helpers for [`MemoryReader`] mirroring
 /// `Neo.Extensions.IO.MemoryReaderExtensions`.
@@ -43,18 +43,6 @@ impl<'a> MemoryReaderExtensions for MemoryReader<'a> {
     }
 
     fn read_serializable_array<T: Serializable>(&mut self, max: usize) -> IoResult<Vec<T>> {
-        let count = self.read_var_uint()? as usize;
-        if count > max {
-            return Err(IoError::invalid_data(format!(
-                "Array length {} exceeds maximum {}",
-                count, max
-            )));
-        }
-
-        let mut items = Vec::with_capacity(count);
-        for _ in 0..count {
-            items.push(T::deserialize(self)?);
-        }
-        Ok(items)
+        helper::deserialize_array::<T>(self, max)
     }
 }

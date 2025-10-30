@@ -34,6 +34,7 @@ pub struct TransactionRouter {
 
 impl TransactionRouter {
     /// Constructor (primary constructor in C#)
+    #[allow(dead_code)]
     pub(crate) fn new(system: &crate::system::NeoSystem) -> Self {
         Self {
             settings: system.settings().clone(),

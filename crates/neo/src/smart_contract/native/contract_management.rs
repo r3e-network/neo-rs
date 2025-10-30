@@ -8,7 +8,7 @@ use crate::error::CoreError as Error;
 use crate::error::CoreResult as Result;
 use crate::neo_config::MAX_SCRIPT_SIZE;
 use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
-use crate::persistence::DataCache;
+use crate::persistence::{DataCache, StoreCache};
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::contract_state::{ContractState, NefFile};
 use crate::smart_contract::manifest::{ContractManifest, ContractPermissionDescriptor};
@@ -623,6 +623,28 @@ impl ContractManagement {
     ) -> Result<Option<ContractState>> {
         let storage_key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
         let Some(item) = snapshot.get(&storage_key) else {
+            return Ok(None);
+        };
+
+        let bytes = item.get_value();
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+
+        let mut reader = MemoryReader::new(&bytes);
+        let contract = <ContractState as Serializable>::deserialize(&mut reader).map_err(|e| {
+            Error::deserialization(format!("Failed to deserialize contract: {}", e))
+        })?;
+        Ok(Some(contract))
+    }
+
+    /// Gets the contract from the provided store cache (including persisted storage).
+    pub fn get_contract_from_store_cache(
+        store_cache: &StoreCache,
+        hash: &UInt160,
+    ) -> Result<Option<ContractState>> {
+        let storage_key = StorageKey::new(Self::ID, Self::contract_storage_key(hash));
+        let Some(item) = store_cache.get(&storage_key) else {
             return Ok(None);
         };
 

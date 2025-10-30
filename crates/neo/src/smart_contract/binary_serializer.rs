@@ -155,7 +155,6 @@ impl BinarySerializer {
                                         "Invalid serialized array data".to_string()
                                     })?);
                                 }
-                                elements.reverse();
                                 StackItem::Array(ArrayItem::new(elements, rc.clone()))
                             }
                             StackItemType::Struct => {
@@ -165,7 +164,6 @@ impl BinarySerializer {
                                         "Invalid serialized struct data".to_string()
                                     })?);
                                 }
-                                elements.reverse();
                                 StackItem::Struct(StructItem::new(elements, rc.clone()))
                             }
                             StackItemType::Map => {
@@ -328,8 +326,10 @@ impl BinarySerializer {
 
     fn io_error_to_string(error: IoError) -> String {
         match error {
-            IoError::UnexpectedEof => "Unexpected end of input".to_string(),
-            IoError::InvalidData(message) => message,
+            IoError::Format => "format error".to_string(),
+            IoError::InvalidUtf8 => "invalid utf-8 data".to_string(),
+            IoError::InvalidData { context, value } => format!("{context}: {value}"),
+            IoError::Io(inner) => inner.to_string(),
         }
     }
 }

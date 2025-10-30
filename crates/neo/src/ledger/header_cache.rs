@@ -35,6 +35,11 @@ impl HeaderCache {
         self.read().back().cloned()
     }
 
+    /// Returns the first header index stored in the cache.
+    pub fn first_index(&self) -> Option<u32> {
+        self.read().front().map(|header| header.index())
+    }
+
     /// Returns an iterator over a snapshot of the cached headers.
     pub fn iter(&self) -> HeaderCacheIter {
         let snapshot = self.read().iter().cloned().collect::<Vec<_>>();
@@ -47,23 +52,45 @@ impl HeaderCache {
     pub fn get(&self, index: u32) -> Option<Header> {
         let headers = self.read();
         let first = headers.front()?;
+        if index < first.index() {
+            return None;
+        }
         let offset = index.checked_sub(first.index())? as usize;
         headers.get(offset).cloned()
     }
 
-    /// Attempts to enqueue a new header. Returns `false` when the cache is full.
+    /// Attempts to enqueue a new header. Drops the oldest header when capacity is exceeded.
     pub fn add(&self, header: Header) -> bool {
         let mut headers = self.write();
+        if let Some(last) = headers.back() {
+            if header.index() <= last.index() {
+                return false;
+            }
+        }
         if headers.len() >= MAX_HEADERS {
-            return false;
+            headers.pop_front();
         }
         headers.push_back(header);
         true
     }
 
-    /// Removes and returns the oldest header, if present.
+    /// Removes the first header when present.
     pub fn try_remove_first(&self) -> Option<Header> {
         self.write().pop_front()
+    }
+
+    /// Removes all headers with index less than or equal to `up_to_index`.
+    pub fn remove_up_to(&self, up_to_index: u32) -> usize {
+        let mut headers = self.write();
+        let mut removed = 0;
+        while let Some(front) = headers.front() {
+            if front.index() > up_to_index {
+                break;
+            }
+            headers.pop_front();
+            removed += 1;
+        }
+        removed
     }
 
     fn read(&self) -> RwLockReadGuard<VecDeque<Header>> {
@@ -95,6 +122,50 @@ impl Iterator for HeaderCacheIter {
 impl ExactSizeIterator for HeaderCacheIter {
     fn len(&self) -> usize {
         self.inner.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_header(index: u32) -> Header {
+        let mut header = Header::new();
+        header.set_index(index);
+        header
+    }
+
+    #[test]
+    fn drops_oldest_when_full() {
+        let cache = HeaderCache::new();
+        for index in 0..=(MAX_HEADERS as u32) {
+            assert!(cache.add(make_header(index)));
+        }
+
+        assert_eq!(cache.count(), MAX_HEADERS);
+        assert_eq!(cache.first_index(), Some(1));
+        assert!(cache.get(0).is_none());
+        assert!(cache.get(1).is_some());
+    }
+
+    #[test]
+    fn rejects_non_increasing_indexes() {
+        let cache = HeaderCache::new();
+        assert!(cache.add(make_header(1)));
+        assert!(!cache.add(make_header(1)));
+        assert!(!cache.add(make_header(0)));
+    }
+
+    #[test]
+    fn remove_up_to_discards_lower_indices() {
+        let cache = HeaderCache::new();
+        for index in 0..5 {
+            cache.add(make_header(index));
+        }
+
+        let removed = cache.remove_up_to(2);
+        assert_eq!(removed, 3);
+        assert_eq!(cache.first_index(), Some(3));
     }
 }
 

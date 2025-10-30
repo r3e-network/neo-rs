@@ -23,7 +23,7 @@ pub trait TimeSource: Send + Sync {
 
     /// Returns the current UTC time as milliseconds since Unix epoch.
     fn utc_now_timestamp_millis(&self) -> i64 {
-        self.utc_now().timestamp_millis()
+        datetime_to_millis(self.utc_now())
     }
 }
 
@@ -62,6 +62,10 @@ impl TimeProvider {
     }
 }
 
+fn datetime_to_millis(datetime: DateTime<Utc>) -> i64 {
+    datetime.timestamp_millis()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,7 +84,9 @@ mod tests {
     impl TimeSource for FixedTimeSource {
         fn utc_now(&self) -> DateTime<Utc> {
             let millis = self.0.load(Ordering::Relaxed);
-            Utc.timestamp_millis(millis)
+            Utc.timestamp_millis_opt(millis)
+                .single()
+                .expect("fixed timestamp is representable")
         }
     }
 

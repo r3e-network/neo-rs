@@ -12,7 +12,7 @@ impl BinaryReader {
         let mut buf = [0u8; 1];
         reader
             .read_exact(&mut buf)
-            .map_err(|_| IoError::UnexpectedEof)?;
+            .map_err(|_| IoError::invalid_data("unexpected end of stream"))?;
         Ok(buf[0])
     }
 
@@ -31,7 +31,7 @@ impl BinaryReader {
         let mut buf = [0u8; 2];
         reader
             .read_exact(&mut buf)
-            .map_err(|_| IoError::UnexpectedEof)?;
+            .map_err(|_| IoError::invalid_data("unexpected end of stream"))?;
         Ok(u16::from_le_bytes(buf))
     }
 
@@ -39,7 +39,7 @@ impl BinaryReader {
         let mut buf = [0u8; 4];
         reader
             .read_exact(&mut buf)
-            .map_err(|_| IoError::UnexpectedEof)?;
+            .map_err(|_| IoError::invalid_data("unexpected end of stream"))?;
         Ok(u32::from_le_bytes(buf))
     }
 
@@ -47,7 +47,7 @@ impl BinaryReader {
         let mut buf = [0u8; 8];
         reader
             .read_exact(&mut buf)
-            .map_err(|_| IoError::UnexpectedEof)?;
+            .map_err(|_| IoError::invalid_data("unexpected end of stream"))?;
         Ok(u64::from_le_bytes(buf))
     }
 
@@ -59,17 +59,15 @@ impl BinaryReader {
         let mut buf = vec![0u8; len];
         reader
             .read_exact(&mut buf)
-            .map_err(|_| IoError::UnexpectedEof)?;
+            .map_err(|_| IoError::invalid_data("unexpected end of stream"))?;
         Ok(buf)
     }
 
-    pub fn read_serializable<T: super::serializable::Serializable, R: Read>(
-        reader: &mut R,
-    ) -> IoResult<T> {
+    pub fn read_serializable<T: super::Serializable, R: Read>(reader: &mut R) -> IoResult<T> {
         let mut buf = Vec::new();
         reader
             .read_to_end(&mut buf)
-            .map_err(|_| IoError::UnexpectedEof)?;
+            .map_err(|_| IoError::invalid_data("unexpected end of stream"))?;
         let mut memory_reader = MemoryReader::new(&buf);
         T::deserialize(&mut memory_reader)
     }

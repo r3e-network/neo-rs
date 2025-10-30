@@ -1,6 +1,7 @@
 //! JObject - Rust port of Neo.Json.JObject
 
 use std::fmt;
+use std::iter::FromIterator;
 
 use crate::j_token::JToken;
 use crate::ordered_dictionary::OrderedDictionary;
@@ -87,5 +88,21 @@ impl fmt::Display for JObject {
             }
         }
         f.write_str("}")
+    }
+}
+
+impl From<OrderedDictionary<String, Option<JToken>>> for JObject {
+    fn from(value: OrderedDictionary<String, Option<JToken>>) -> Self {
+        Self::from_properties(value)
+    }
+}
+
+impl FromIterator<(String, Option<JToken>)> for JObject {
+    fn from_iter<T: IntoIterator<Item = (String, Option<JToken>)>>(iter: T) -> Self {
+        let mut dict = OrderedDictionary::new();
+        for (key, value) in iter {
+            dict.insert(key, value);
+        }
+        Self::from_properties(dict)
     }
 }

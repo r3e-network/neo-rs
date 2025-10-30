@@ -1,15 +1,18 @@
-//! StorageItem - matches C# Neo.SmartContract.StorageItem exactly
+//! StorageItem - matches C# Neo.SmartContract.StorageItem.
+//!
+//! The implementation mirrors the behaviour of `Neo.SmartContract.StorageItem`,
+//! including support for cached `BigInteger` and `IInteroperable` payloads,
+//! var-size accounting, and replica cloning semantics used across the ledger.
 
-use num_bigint::BigInt;
+use crate::neo_io::serializable::helper::get_var_size_bytes;
+use crate::neo_io::{IoResult, MemoryReader};
+use crate::smart_contract::binary_serializer::BinarySerializer;
+use crate::smart_contract::i_interoperable::IInteroperable;
+use neo_vm::execution_engine_limits::ExecutionEngineLimits;
+use num_bigint::{BigInt, Sign};
 use std::fmt;
 
-/// Represents the values in contract storage (matches C# StorageItem)
-#[derive(Clone, Debug)]
-pub struct StorageItem {
-    value: Option<Vec<u8>>,
-    cache: Option<StorageCache>,
-}
-
+#[allow(dead_code)]
 #[derive(Debug)]
 enum StorageCache {
     BigInteger(BigInt),
@@ -25,124 +28,127 @@ impl Clone for StorageCache {
     }
 }
 
-/// Interface for interoperable types (placeholder)
-pub trait IInteroperable: std::fmt::Debug + Send + Sync {
-    fn to_stack_item(&self) -> StackItem;
-    fn from_stack_item(&mut self, item: StackItem);
-    fn clone_box(&self) -> Box<dyn IInteroperable>;
+/// Represents the values in contract storage (matches C# StorageItem).
+#[derive(Debug)]
+pub struct StorageItem {
+    value: Vec<u8>,
+    cache: Option<StorageCache>,
 }
-
-/// Interface for verifiable interoperable types (placeholder)
-pub trait IInteroperableVerifiable: IInteroperable {
-    fn from_stack_item_verified(&mut self, item: StackItem, verify: bool);
-}
-
-/// Placeholder for StackItem
-#[derive(Clone, Debug)]
-pub struct StackItem;
 
 impl StorageItem {
-    /// Initializes a new instance
+    /// Initializes a new instance.
     pub fn new() -> Self {
         Self {
-            value: None,
+            value: Vec::new(),
             cache: None,
         }
     }
 
-    /// Initializes with byte array value
+    /// Initializes with a byte-array value.
     pub fn from_bytes(value: Vec<u8>) -> Self {
-        Self {
-            value: Some(value),
-            cache: None,
-        }
+        Self { value, cache: None }
     }
 
-    /// Initializes with BigInteger value
+    /// Initializes with a BigInteger cache.
     pub fn from_bigint(value: BigInt) -> Self {
         Self {
-            value: None,
+            value: Vec::new(),
             cache: Some(StorageCache::BigInteger(value)),
         }
     }
 
-    /// Get the size
+    /// Returns the encoded size (var-size prefix + payload).
     pub fn size(&self) -> usize {
-        self.get_value().len()
+        get_var_size_bytes(&self.get_value())
     }
 
-    /// Get the byte array value
+    /// Gets the byte-array value.
     pub fn get_value(&self) -> Vec<u8> {
-        if let Some(ref val) = self.value {
-            return val.clone();
+        if !self.value.is_empty() || self.cache.is_none() {
+            return self.value.clone();
         }
 
-        match &self.cache {
-            Some(StorageCache::BigInteger(bi)) => bi.to_bytes_le().1,
-            Some(StorageCache::Interoperable(_)) => {
-                // Would serialize the interoperable here
-                vec![]
+        match self.cache.as_ref().expect("cache checked above") {
+            StorageCache::BigInteger(value) => {
+                let (_, bytes) = value.to_bytes_le();
+                bytes
             }
-            None => vec![],
+            StorageCache::Interoperable(interoperable) => BinarySerializer::serialize(
+                &interoperable.to_stack_item(),
+                &ExecutionEngineLimits::default(),
+            )
+            .unwrap_or_default(),
         }
     }
 
-    /// Set the byte array value
+    /// Sets the byte-array value and clears the cache.
     pub fn set_value(&mut self, value: Vec<u8>) {
-        self.value = Some(value);
+        self.value = value;
         self.cache = None;
     }
 
-    /// Ensure that is serializable and cache the value
+    /// Ensures the value is serializable and cached.
     pub fn seal(&mut self) {
-        // Force value computation
-        let _ = self.get_value();
+        if self.value.is_empty() {
+            self.value = self.get_value();
+        }
     }
 
-    /// Increases the integer value by the specified amount
+    /// Increases the integer value by the specified amount.
     pub fn add(&mut self, integer: BigInt) {
         let current = self.to_bigint();
         self.set_bigint(current + integer);
     }
 
-    /// Creates a clone
-    pub fn clone(&self) -> Self {
-        Self {
-            value: self.value.clone(),
-            cache: self.cache.clone(),
-        }
-    }
-
-    /// Copies value from another StorageItem
+    /// Copies the value and cache from another instance.
     pub fn from_replica(&mut self, replica: &StorageItem) {
         self.value = replica.value.clone();
         self.cache = replica.cache.clone();
     }
 
-    /// Sets the integer value
+    /// Sets the integer value (clears the current bytes).
     pub fn set_bigint(&mut self, integer: BigInt) {
         self.cache = Some(StorageCache::BigInteger(integer));
-        self.value = None;
+        self.value.clear();
     }
 
-    /// Convert to BigInteger
+    /// Converts the stored value to a `BigInt`.
     pub fn to_bigint(&self) -> BigInt {
-        if let Some(StorageCache::BigInteger(ref bi)) = self.cache {
-            return bi.clone();
+        match &self.cache {
+            Some(StorageCache::BigInteger(value)) => value.clone(),
+            _ => {
+                let bytes = self.get_value();
+                BigInt::from_bytes_le(Sign::Plus, &bytes)
+            }
         }
-
-        let bytes = self.get_value();
-        BigInt::from_bytes_le(num_bigint::Sign::Plus, &bytes)
     }
 
-    /// Deserialize from reader
-    pub fn deserialize(&mut self, data: &[u8]) {
-        self.value = Some(data.to_vec());
+    /// Deserialize from a memory reader (matches the C# signature).
+    pub fn deserialize(&mut self, reader: &mut MemoryReader<'_>) -> IoResult<()> {
+        let data = reader.read_to_end()?.to_vec();
+        self.value = data;
+        self.cache = None;
+        Ok(())
     }
 
-    /// Serialize to writer
+    /// Convenience helper to deserialize from raw bytes.
+    pub fn deserialize_from_bytes(&mut self, data: &[u8]) {
+        self.value = data.to_vec();
+        self.cache = None;
+    }
+
+    /// Serialize the value to a byte vector.
     pub fn serialize(&self) -> Vec<u8> {
         self.get_value()
+    }
+}
+
+impl Clone for StorageItem {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            cache: self.cache.clone(),
+        }
     }
 }
 

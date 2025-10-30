@@ -112,17 +112,26 @@ impl ByteExtensions for std::ops::Range<usize> {
     }
 }
 
-const PRIME1: u32 = 2_654_435_761;
 const PRIME2: u32 = 2_246_822_519;
 const PRIME3: u32 = 3_266_489_917;
 const PRIME4: u32 = 668_265_263;
 const PRIME5: u32 = 374_761_393;
 
 fn hash_code_from_u64(value: u64) -> i32 {
-    let component = hash_component_from_u64(value);
+    hash_code_combine_internal(&[hash_component_from_u64(value)])
+}
+
+/// Matches `System.HashCode.Combine(int, int)` from C#.
+pub fn hash_code_combine_i32(a: i32, b: i32) -> i32 {
+    hash_code_combine_internal(&[a as u32, b as u32])
+}
+
+fn hash_code_combine_internal(components: &[u32]) -> i32 {
     let mut hash = mix_empty_state(global_seed());
-    hash = hash.wrapping_add(4);
-    hash = queue_round(hash, component);
+    hash = hash.wrapping_add((components.len() * 4) as u32);
+    for &component in components {
+        hash = queue_round(hash, component);
+    }
     mix_final(hash) as i32
 }
 

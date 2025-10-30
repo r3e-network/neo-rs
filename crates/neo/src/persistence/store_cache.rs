@@ -29,8 +29,21 @@ pub struct StoreCache {
 impl StoreCache {
     /// Initializes a new instance of the StoreCache class with a store.
     pub fn new_from_store(store: Arc<dyn IStore>, read_only: bool) -> Self {
+        let store_for_get = store.clone();
+        let store_for_find = store.clone();
+        let store_get: Arc<dyn Fn(&StorageKey) -> Option<StorageItem> + Send + Sync> =
+            Arc::new(move |key: &StorageKey| store_for_get.try_get(key));
+        let store_find: Arc<
+            dyn Fn(Option<&StorageKey>, SeekDirection) -> Vec<(StorageKey, StorageItem)>
+                + Send
+                + Sync,
+        > = Arc::new(move |prefix, direction| {
+            store_for_find
+                .find(prefix, direction)
+                .collect::<Vec<(StorageKey, StorageItem)>>()
+        });
         Self {
-            data_cache: DataCache::new(read_only),
+            data_cache: DataCache::new_with_store(read_only, Some(store_get), Some(store_find)),
             store: Some(store),
             snapshot: None,
         }

@@ -228,7 +228,7 @@ impl RandomNumberFactory {
 
             let mut current_low_part = low_part;
             while current_low_part < remainder {
-                let (new_random_product, new_low_part) = Self::big_mul(max_value, Self::next_u64());
+                let (_, new_low_part) = Self::big_mul(max_value, Self::next_u64());
                 current_low_part = new_low_part;
             }
         }
