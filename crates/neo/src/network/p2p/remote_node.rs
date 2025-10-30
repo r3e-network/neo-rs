@@ -9,11 +9,14 @@ use super::{
         addr_payload::{AddrPayload, MAX_COUNT_TO_SEND},
         block::Block,
         extensible_payload::ExtensiblePayload,
+        filter_add_payload::FilterAddPayload,
+        filter_load_payload::FilterLoadPayload,
         get_block_by_index_payload::GetBlockByIndexPayload,
         get_blocks_payload::GetBlocksPayload,
         headers_payload::{HeadersPayload, MAX_HEADERS_COUNT},
         inv_payload::{InvPayload, MAX_HASHES_COUNT},
         inventory_type::InventoryType,
+        merkle_block_payload::MerkleBlockPayload,
         ping_payload::PingPayload,
         transaction::Transaction,
         VersionPayload,
@@ -21,35 +24,93 @@ use super::{
     peer::PeerCommand,
     task_manager::TaskManagerCommand,
 };
-use crate::ledger::blockchain::{BlockchainCommand, Import as BlockchainImport};
-use crate::ledger::verify_result::VerifyResult;
-use crate::neo_io::BinaryWriter;
+use crate::contains_transaction_type::ContainsTransactionType;
+use crate::cryptography::BloomFilter;
+use crate::ledger::blockchain::BlockchainCommand;
 use crate::network::error::NetworkError;
 use crate::network::p2p::messages::{NetworkMessage, ProtocolMessage};
-use crate::persistence::data_cache::DataCache;
-use crate::uint256::UInt256;
+use crate::smart_contract::native::ledger_contract::LedgerContract;
 use crate::{
     neo_system::{NeoSystemContext, TransactionRouterMessage},
     protocol_settings::ProtocolSettings,
+    UInt160, UInt256,
 };
-use akka::{Actor, ActorContext, ActorResult, Props};
+use akka::{Actor, ActorContext, ActorResult, Cancelable, Props};
 use async_trait::async_trait;
+use neo_io_crate::{HashSetCache, KeyedCollectionSlim};
 use rand::{seq::IteratorRandom, thread_rng};
 use std::any::type_name_of_val;
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, error, trace, warn};
+
+#[derive(Clone, Copy)]
+struct PendingKnownHash {
+    hash: UInt256,
+    timestamp: Instant,
+}
+
+struct PendingKnownHashes {
+    inner: KeyedCollectionSlim<UInt256, PendingKnownHash>,
+}
+
+impl PendingKnownHashes {
+    fn new(capacity: usize) -> Self {
+        Self {
+            inner: KeyedCollectionSlim::with_selector(capacity, |entry: &PendingKnownHash| {
+                entry.hash
+            }),
+        }
+    }
+
+    fn contains(&self, hash: &UInt256) -> bool {
+        self.inner.contains(hash)
+    }
+
+    fn try_add(&mut self, hash: UInt256, timestamp: Instant) -> bool {
+        self.inner.try_add(PendingKnownHash { hash, timestamp })
+    }
+
+    fn remove(&mut self, hash: &UInt256) -> bool {
+        self.inner.remove(hash)
+    }
+
+    fn clear(&mut self) {
+        self.inner.clear();
+    }
+
+    fn prune_older_than(&mut self, cutoff: Instant) -> usize {
+        let mut removed = 0;
+        loop {
+            let Some(entry) = self.inner.first_or_default() else {
+                break;
+            };
+            if entry.timestamp >= cutoff {
+                break;
+            }
+            if !self.inner.remove_first() {
+                break;
+            }
+            removed += 1;
+        }
+        removed
+    }
+}
+
+const TIMER_INTERVAL: Duration = Duration::from_secs(30);
+const PENDING_HASH_TTL: Duration = Duration::from_secs(60);
+const PING_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Remote node actor responsible for protocol negotiation and message relay.
 pub struct RemoteNode {
     system: Arc<NeoSystemContext>,
     connection: Arc<Mutex<PeerConnection>>,
     endpoint: SocketAddr,
-    local_endpoint: SocketAddr,
+    _local_endpoint: SocketAddr,
     local_version: VersionPayload,
     settings: Arc<ProtocolSettings>,
     config: ChannelsConfig,
@@ -59,9 +120,13 @@ pub struct RemoteNode {
     remote_version: Option<VersionPayload>,
     handshake_complete: bool,
     reader_spawned: bool,
-    known_hashes: HashSet<UInt256>,
+    known_hashes: HashSetCache<UInt256>,
+    sent_hashes: HashSetCache<UInt256>,
+    pending_known_hashes: PendingKnownHashes,
+    bloom_filter: Option<BloomFilter>,
+    timer: Option<Cancelable>,
     last_block_index: u32,
-    last_height_sent: u32,
+    _last_height_sent: u32,
     message_queue_high: VecDeque<NetworkMessage>,
     message_queue_low: VecDeque<NetworkMessage>,
     sent_commands: [bool; 256],
@@ -79,6 +144,82 @@ impl RemoteNode {
         }
     }
 
+    fn should_skip_inventory(&self, hash: &UInt256) -> bool {
+        self.pending_known_hashes.contains(hash)
+            || self.known_hashes.contains(hash)
+            || self.sent_hashes.contains(hash)
+    }
+
+    fn ensure_timer(&mut self, ctx: &mut ActorContext) {
+        if self.timer.is_some() {
+            return;
+        }
+
+        let handle = ctx.schedule_tell_repeatedly_cancelable(
+            TIMER_INTERVAL,
+            TIMER_INTERVAL,
+            &ctx.self_ref(),
+            RemoteNodeCommand::TimerTick,
+            None,
+        );
+        self.timer = Some(handle);
+    }
+
+    fn cancel_timer(&mut self) {
+        if let Some(timer) = self.timer.take() {
+            timer.cancel();
+        }
+    }
+
+    fn on_filter_load(&mut self, payload: &FilterLoadPayload) {
+        if payload.filter.is_empty() || payload.k == 0 {
+            self.bloom_filter = None;
+            return;
+        }
+
+        let bit_size = payload.filter.len() * 8;
+        match BloomFilter::with_bits(bit_size, payload.k as usize, payload.tweak, &payload.filter) {
+            Ok(filter) => self.bloom_filter = Some(filter),
+            Err(error) => {
+                debug!(target: "neo", %error, "failed to load bloom filter from payload");
+                self.bloom_filter = None;
+            }
+        }
+    }
+
+    fn on_filter_clear(&mut self) {
+        self.bloom_filter = None;
+    }
+
+    fn on_filter_add(&mut self, payload: &FilterAddPayload) {
+        if let Some(filter) = self.bloom_filter.as_mut() {
+            filter.add(&payload.data);
+        }
+    }
+
+    fn bloom_filter_flags(&self, block: &Block) -> Option<Vec<bool>> {
+        let filter = self.bloom_filter.as_ref()?;
+        Some(
+            block
+                .transactions
+                .iter()
+                .map(|tx| Self::filter_matches_transaction(filter, tx))
+                .collect(),
+        )
+    }
+
+    fn filter_matches_transaction(filter: &BloomFilter, tx: &Transaction) -> bool {
+        let hash_bytes = tx.hash().to_array();
+        if filter.check(&hash_bytes) {
+            return true;
+        }
+
+        tx.signers().iter().any(|signer| {
+            let account_bytes = signer.account.as_bytes();
+            filter.check(account_bytes.as_ref())
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         system: Arc<NeoSystemContext>,
@@ -92,12 +233,13 @@ impl RemoteNode {
         is_trusted: bool,
         inbound: bool,
     ) -> Self {
+        let cache_capacity = config.max_known_hashes.max(1);
         Self {
             system,
             local_node,
             connection,
             endpoint,
-            local_endpoint,
+            _local_endpoint: local_endpoint,
             local_version,
             settings,
             config,
@@ -106,9 +248,13 @@ impl RemoteNode {
             remote_version: None,
             handshake_complete: false,
             reader_spawned: false,
-            known_hashes: HashSet::new(),
+            known_hashes: HashSetCache::new(cache_capacity),
+            sent_hashes: HashSetCache::new(cache_capacity),
+            pending_known_hashes: PendingKnownHashes::new(cache_capacity),
+            bloom_filter: None,
+            timer: None,
             last_block_index: 0,
-            last_height_sent: 0,
+            _last_height_sent: 0,
             message_queue_high: VecDeque::new(),
             message_queue_low: VecDeque::new(),
             sent_commands: [false; 256],
@@ -147,6 +293,7 @@ impl RemoteNode {
     }
 
     async fn start_protocol(&mut self, ctx: &mut ActorContext) -> ActorResult {
+        self.ensure_timer(ctx);
         self.spawn_reader(ctx);
 
         let mut connection = self.connection.lock().await;
@@ -406,19 +553,58 @@ impl RemoteNode {
             return;
         }
 
-        let mut filtered = Vec::new();
-        for hash in payload.hashes.iter().copied() {
-            if self.known_hashes.insert(hash) {
-                filtered.push(hash);
+        let now = Instant::now();
+        let ledger_contract = LedgerContract::new();
+        let mut hashes = Vec::new();
+
+        match payload.inventory_type {
+            InventoryType::Block => {
+                let store_cache = self.system.store_cache();
+                for hash in payload.hashes.iter().copied() {
+                    if self.should_skip_inventory(&hash) {
+                        continue;
+                    }
+                    if ledger_contract.contains_block(&store_cache, &hash) {
+                        continue;
+                    }
+                    hashes.push(hash);
+                }
+            }
+            InventoryType::Transaction => {
+                let store_cache = self.system.store_cache();
+                for hash in payload.hashes.iter().copied() {
+                    if self.should_skip_inventory(&hash) {
+                        continue;
+                    }
+                    if ledger_contract
+                        .contains_transaction(&store_cache, &hash)
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
+                    hashes.push(hash);
+                }
+            }
+            _ => {
+                for hash in payload.hashes.iter().copied() {
+                    if self.should_skip_inventory(&hash) {
+                        continue;
+                    }
+                    hashes.push(hash);
+                }
             }
         }
 
-        if filtered.is_empty() {
+        if hashes.is_empty() {
             return;
         }
 
+        for hash in &hashes {
+            self.pending_known_hashes.try_add(*hash, now);
+        }
+
         let command = TaskManagerCommand::NewTasks {
-            payload: InvPayload::new(payload.inventory_type, filtered),
+            payload: InvPayload::new(payload.inventory_type, hashes),
         };
         if let Err(err) = self
             .system
@@ -429,9 +615,19 @@ impl RemoteNode {
         }
     }
 
-    fn notify_inventory_completed(&self, hash: UInt256, ctx: &ActorContext) {
+    fn notify_inventory_completed(
+        &self,
+        hash: UInt256,
+        block: Option<Block>,
+        block_index: Option<u32>,
+        ctx: &ActorContext,
+    ) {
         if let Err(err) = self.system.task_manager.tell_from(
-            TaskManagerCommand::InventoryCompleted { hash },
+            TaskManagerCommand::InventoryCompleted {
+                hash,
+                block,
+                block_index,
+            },
             Some(ctx.self_ref()),
         ) {
             warn!(target: "neo", error = %err, "failed to notify task manager about inventory completion");
@@ -443,58 +639,65 @@ impl RemoteNode {
         transaction: Transaction,
         ctx: &mut ActorContext,
     ) -> ActorResult {
-        let mempool_result = {
-            let snapshot = DataCache::new(false);
-            let memory_pool = self.system.memory_pool();
-            let mut pool = memory_pool.lock().expect("memory pool lock poisoned");
-            pool.try_add(transaction.clone(), &snapshot, &self.settings)
-        };
+        let hash = transaction.hash();
+        if !self.known_hashes.try_add(hash) {
+            return Ok(());
+        }
+        self.pending_known_hashes.remove(&hash);
+        self.notify_inventory_completed(hash, None, None, ctx);
 
-        if mempool_result != VerifyResult::Succeed && mempool_result != VerifyResult::AlreadyInPool
-        {
+        let contains = self.system.contains_transaction(&hash);
+        let signer_accounts: Vec<UInt160> = transaction
+            .signers()
+            .iter()
+            .map(|signer| signer.account)
+            .collect();
+        let has_conflict = !signer_accounts.is_empty()
+            && self.system.contains_conflict_hash(&hash, &signer_accounts);
+
+        if contains != ContainsTransactionType::NotExist || has_conflict {
             trace!(
                 target: "neo",
-                result = ?mempool_result,
-                "transaction add to memory pool returned non-success"
+                hash = %hash,
+                contains = ?contains,
+                has_conflict,
+                "transaction skipped because it is already known or conflicts on-chain"
             );
-        }
-
-        let hash = self.system.record_transaction(transaction.clone());
-        self.notify_inventory_completed(hash, ctx);
-        trace!(target: "neo", hash = %hash, "transaction received from remote node");
-
-        let mut writer = BinaryWriter::new();
-        if let Err(err) = writer.write_serializable(&transaction) {
-            warn!(target: "neo", %hash, error = %err, "failed to serialize transaction for routing");
             return Ok(());
         }
 
-        let payload = writer.into_bytes();
-        if let Err(err) = self
-            .system
-            .tx_router
-            .tell(TransactionRouterMessage::RouteTransaction { hash, payload })
-        {
-            warn!(target: "neo", %hash, error = %err, "failed to route transaction to tx router");
+        if let Err(err) = self.system.tx_router.tell_from(
+            TransactionRouterMessage::Preverify {
+                transaction: transaction.clone(),
+                relay: true,
+            },
+            Some(ctx.self_ref()),
+        ) {
+            warn!(target: "neo", %hash, error = %err, "failed to enqueue transaction for preverification");
         }
+
         Ok(())
     }
 
     async fn on_block(&mut self, mut block: Block, ctx: &mut ActorContext) -> ActorResult {
         let hash = block.hash();
+        if !self.known_hashes.try_add(hash) {
+            return Ok(());
+        }
+        self.pending_known_hashes.remove(&hash);
         self.last_block_index = block.index();
-        self.notify_inventory_completed(hash, ctx);
+        let block_clone = block.clone();
+        self.notify_inventory_completed(hash, Some(block_clone), Some(block.index()), ctx);
+        let current_height = self.system.current_block_index();
+        if block.index() > current_height.saturating_add(MAX_HASHES_COUNT as u32) {
+            return Ok(());
+        }
         trace!(target: "neo", index = block.index(), hash = %hash, "block received from remote node");
 
-        let import = BlockchainImport {
-            blocks: vec![block],
-            verify: true,
-        };
-        if let Err(err) = self
-            .system
-            .blockchain
-            .tell_from(BlockchainCommand::Import(import), Some(ctx.self_ref()))
-        {
+        if let Err(err) = self.system.blockchain.tell_from(
+            BlockchainCommand::InventoryBlock { block, relay: true },
+            Some(ctx.self_ref()),
+        ) {
             warn!(target: "neo", hash = %hash, error = %err, "failed to forward block to blockchain actor");
         }
         Ok(())
@@ -506,8 +709,26 @@ impl RemoteNode {
         ctx: &mut ActorContext,
     ) -> ActorResult {
         let hash = payload.hash();
-        self.notify_inventory_completed(hash, ctx);
+        if !self.known_hashes.try_add(hash) {
+            return Ok(());
+        }
+        self.pending_known_hashes.remove(&hash);
+        self.notify_inventory_completed(hash, None, None, ctx);
         trace!(target: "neo", hash = %hash, "extensible payload received");
+        if let Err(err) = self.system.blockchain.tell_from(
+            BlockchainCommand::InventoryExtensible {
+                payload,
+                relay: true,
+            },
+            Some(ctx.self_ref()),
+        ) {
+            warn!(
+                target: "neo",
+                hash = %hash,
+                error = %err,
+                "failed to forward extensible payload to blockchain actor"
+            );
+        }
         Ok(())
     }
 
@@ -527,7 +748,11 @@ impl RemoteNode {
         Ok(())
     }
 
-    fn on_not_found(&self, payload: InvPayload, ctx: &ActorContext) {
+    fn on_not_found(&mut self, payload: InvPayload, ctx: &ActorContext) {
+        for hash in &payload.hashes {
+            self.pending_known_hashes.remove(hash);
+        }
+
         if let Err(err) = self.system.task_manager.tell_from(
             TaskManagerCommand::RestartTasks { payload },
             Some(ctx.self_ref()),
@@ -561,6 +786,23 @@ impl RemoteNode {
                 warn!(target: "neo", error = %err, "failed to report header progress to task manager");
             }
         }
+
+        if !payload.headers.is_empty() {
+            let headers = payload.headers.clone();
+            if let Err(err) = self.system.blockchain.tell_from(
+                BlockchainCommand::Headers(headers.clone()),
+                Some(ctx.self_ref()),
+            ) {
+                warn!(target: "neo", error = %err, "failed to forward headers to blockchain");
+            }
+
+            if let Err(err) = self.system.task_manager.tell_from(
+                TaskManagerCommand::Headers { headers },
+                Some(ctx.self_ref()),
+            ) {
+                warn!(target: "neo", error = %err, "failed to notify task manager about headers");
+            }
+        }
     }
 
     async fn on_mempool(&mut self) -> ActorResult {
@@ -587,9 +829,12 @@ impl RemoteNode {
         match payload.inventory_type {
             InventoryType::Transaction => {
                 for hash in payload.hashes.iter().copied() {
-                    if let Some(transaction) = self.system.try_get_transaction(&hash) {
+                    if !self.sent_hashes.try_add(hash) {
+                        continue;
+                    }
+                    if let Some(transaction) = self.system.try_get_transaction_from_mempool(&hash) {
                         self.enqueue_message(NetworkMessage::new(ProtocolMessage::Transaction(
-                            transaction.clone(),
+                            transaction,
                         )))
                         .await?;
                     } else {
@@ -599,38 +844,42 @@ impl RemoteNode {
             }
             InventoryType::Block => {
                 for hash in payload.hashes.iter().copied() {
-                    if let Some(block) = self.system.try_get_block(&hash) {
-                        self.enqueue_message(NetworkMessage::new(ProtocolMessage::Block(
-                            block.clone(),
-                        )))
-                        .await?;
-                        self.last_block_index = block.index();
+                    if !self.sent_hashes.try_add(hash) {
+                        continue;
+                    }
+                    if let Some(mut block) = self.system.try_get_block(&hash) {
+                        if let Some(flags) = self.bloom_filter_flags(&block) {
+                            let payload = MerkleBlockPayload::create(&mut block, flags);
+                            self.enqueue_message(NetworkMessage::new(
+                                ProtocolMessage::MerkleBlock(payload),
+                            ))
+                            .await?;
+                        } else {
+                            self.enqueue_message(NetworkMessage::new(ProtocolMessage::Block(
+                                block,
+                            )))
+                            .await?;
+                        }
                     } else {
                         not_found.push(hash);
                     }
                 }
             }
-            InventoryType::Consensus => {
+            InventoryType::Consensus | InventoryType::Extensible => {
                 for hash in payload.hashes.iter().copied() {
-                    if let Some(extensible) = self.system.try_get_extensible(&hash) {
-                        self.enqueue_message(NetworkMessage::new(ProtocolMessage::Extensible(
-                            extensible.clone(),
-                        )))
-                        .await?;
-                    } else {
-                        not_found.push(hash);
+                    if !self.sent_hashes.try_add(hash) {
+                        continue;
                     }
-                }
-            }
-            InventoryType::Extensible => {
-                for hash in payload.hashes.iter().copied() {
-                    if let Some(extensible) = self.system.try_get_extensible(&hash) {
+                    if let Some(extensible) = self.system.try_get_relay_extensible(&hash) {
                         self.enqueue_message(NetworkMessage::new(ProtocolMessage::Extensible(
-                            extensible.clone(),
+                            extensible,
                         )))
                         .await?;
-                    } else {
-                        not_found.push(hash);
+                    } else if let Some(extensible) = self.system.try_get_extensible(&hash) {
+                        self.enqueue_message(NetworkMessage::new(ProtocolMessage::Extensible(
+                            extensible,
+                        )))
+                        .await?;
                     }
                 }
             }
@@ -643,6 +892,25 @@ impl RemoteNode {
             }
         }
 
+        Ok(())
+    }
+
+    async fn on_timer(&mut self, ctx: &mut ActorContext) -> ActorResult {
+        let cutoff = Instant::now()
+            .checked_sub(PENDING_HASH_TTL)
+            .unwrap_or_else(Instant::now);
+        let removed = self.pending_known_hashes.prune_older_than(cutoff);
+        if removed > 0 {
+            trace!(target: "neo", removed, "expired pending known hashes removed");
+        }
+
+        if self.handshake_complete && self.last_sent.elapsed() >= PING_INTERVAL {
+            let payload = PingPayload::create(self.current_local_block_index());
+            self.enqueue_message(NetworkMessage::new(ProtocolMessage::Ping(payload)))
+                .await?;
+        }
+
+        self.ensure_timer(ctx);
         Ok(())
     }
 
@@ -677,6 +945,18 @@ impl RemoteNode {
             }
             ProtocolMessage::Mempool => self.on_mempool().await,
             ProtocolMessage::GetData(payload) => self.on_get_data(payload).await,
+            ProtocolMessage::FilterLoad(payload) => {
+                self.on_filter_load(payload);
+                Ok(())
+            }
+            ProtocolMessage::FilterAdd(payload) => {
+                self.on_filter_add(payload);
+                Ok(())
+            }
+            ProtocolMessage::FilterClear => {
+                self.on_filter_clear();
+                Ok(())
+            }
             ProtocolMessage::NotFound(payload) => {
                 self.on_not_found(payload.clone(), ctx);
                 Ok(())
@@ -787,6 +1067,7 @@ impl Actor for RemoteNode {
                 RemoteNodeCommand::Send(message) => self.enqueue_message(message).await,
                 RemoteNodeCommand::Inbound(message) => self.on_inbound(message, ctx).await,
                 RemoteNodeCommand::ConnectionError { error } => self.fail(ctx, error).await,
+                RemoteNodeCommand::TimerTick => self.on_timer(ctx).await,
                 RemoteNodeCommand::Disconnect { reason } => {
                     debug!(target: "neo", endpoint = %self.endpoint, reason, "disconnecting remote node");
                     ctx.stop_self()?;
@@ -811,6 +1092,11 @@ impl Actor for RemoteNode {
             }
             connection.set_state(ConnectionState::Disconnected);
         }
+        self.known_hashes.clear();
+        self.sent_hashes.clear();
+        self.pending_known_hashes.clear();
+        self.bloom_filter = None;
+        self.cancel_timer();
         if let Some(parent) = ctx.parent() {
             let self_ref = ctx.self_ref();
             if let Err(err) = parent.tell(PeerCommand::ConnectionTerminated { actor: self_ref }) {
@@ -822,13 +1108,14 @@ impl Actor for RemoteNode {
 }
 
 /// Remote node control messages.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RemoteNodeCommand {
     StartProtocol,
     Send(NetworkMessage),
     Inbound(NetworkMessage),
     ConnectionError { error: NetworkError },
     Disconnect { reason: String },
+    TimerTick,
 }
 
 fn current_unix_timestamp() -> u64 {
@@ -836,4 +1123,30 @@ fn current_unix_timestamp() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PendingKnownHashes, UInt256};
+    use std::time::{Duration, Instant};
+
+    fn make_hash(byte: u8) -> UInt256 {
+        let mut data = [0u8; 32];
+        data[0] = byte;
+        UInt256::from(data)
+    }
+
+    #[test]
+    fn prune_older_than_removes_stale_entries() {
+        let now = Instant::now();
+        let mut cache = PendingKnownHashes::new(4);
+
+        cache.try_add(make_hash(1), now - Duration::from_secs(120));
+        cache.try_add(make_hash(2), now - Duration::from_secs(30));
+
+        let removed = cache.prune_older_than(now - Duration::from_secs(60));
+        assert_eq!(removed, 1);
+        assert!(!cache.contains(&make_hash(1)));
+        assert!(cache.contains(&make_hash(2)));
+    }
 }
