@@ -110,7 +110,10 @@ impl ChangeView {
     }
 
     /// Serializes the full message including header.
-    pub(crate) fn write_with_header(&self, writer: &mut BinaryWriter) -> ConsensusMessageResult<()> {
+    pub(crate) fn write_with_header(
+        &self,
+        writer: &mut BinaryWriter,
+    ) -> ConsensusMessageResult<()> {
         self.header.serialize(writer)?;
         self.write_body(writer)
     }
@@ -128,10 +131,11 @@ impl ChangeView {
 
         let timestamp = reader.read_u64()?;
         let reason_byte = reader.read_u8()?;
-        let reason = ChangeViewReason::from_byte(reason_byte)
-            .ok_or_else(|| ConsensusMessageError::invalid_data(format!(
+        let reason = ChangeViewReason::from_byte(reason_byte).ok_or_else(|| {
+            ConsensusMessageError::invalid_data(format!(
                 "Invalid ChangeView reason byte {reason_byte:#x}"
-            )))?;
+            ))
+        })?;
 
         Ok(Self {
             header,

@@ -17,11 +17,11 @@ pub struct ErrorModel {
     /// Error's HResult Code
     /// Matches C# Code property
     pub code: i32,
-    
+
     /// Error's name of the type
     /// Matches C# Name property
     pub name: String,
-    
+
     /// Error's exception message
     /// Matches C# Message property
     pub message: String,
@@ -37,7 +37,7 @@ impl ErrorModel {
             message: "An error occurred.".to_string(),
         }
     }
-    
+
     /// Creates a new ErrorModel with parameters
     /// Matches C# constructor with parameters
     pub fn with_params(code: i32, name: String, message: String) -> Self {

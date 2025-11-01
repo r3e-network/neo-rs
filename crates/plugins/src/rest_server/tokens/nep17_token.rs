@@ -40,8 +40,7 @@ impl Nep17Token {
 
         let protocol_settings = neo_system.settings();
 
-        let decimals =
-            invoke_decimals(protocol_settings, Arc::clone(&snapshot), &script_hash)?;
+        let decimals = invoke_decimals(protocol_settings, Arc::clone(&snapshot), &script_hash)?;
         let symbol = invoke_symbol(protocol_settings, Arc::clone(&snapshot), &script_hash)?;
 
         Ok(Self {
@@ -151,13 +150,8 @@ fn invoke_decimals(
     snapshot: Arc<DataCache>,
     script_hash: &UInt160,
 ) -> Result<u8, TokenError> {
-    let (halted, mut stack) = ScriptHelper::invoke_method(
-        settings,
-        snapshot,
-        script_hash,
-        "decimals",
-        &[],
-    )?;
+    let (halted, mut stack) =
+        ScriptHelper::invoke_method(settings, snapshot, script_hash, "decimals", &[])?;
 
     if !halted {
         return Err(TokenError::InvocationFault {

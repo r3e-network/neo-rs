@@ -17,13 +17,13 @@ use serde::{Deserialize, Serialize};
 pub struct RpcAccount {
     /// Account address
     pub address: String,
-    
+
     /// Whether the account has a key
     pub has_key: bool,
-    
+
     /// Account label
     pub label: Option<String>,
-    
+
     /// Whether this is a watch-only account
     pub watch_only: bool,
 }
@@ -35,35 +35,39 @@ impl RpcAccount {
         let mut json = JObject::new();
         json.insert("address".to_string(), JToken::String(self.address.clone()));
         json.insert("haskey".to_string(), JToken::Boolean(self.has_key));
-        
+
         if let Some(ref label) = self.label {
             json.insert("label".to_string(), JToken::String(label.clone()));
         }
-        
+
         json.insert("watchonly".to_string(), JToken::Boolean(self.watch_only));
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let address = json.get("address")
+        let address = json
+            .get("address")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'address' field")?
             .to_string();
-            
-        let has_key = json.get("haskey")
+
+        let has_key = json
+            .get("haskey")
             .and_then(|v| v.as_boolean())
             .ok_or("Missing or invalid 'haskey' field")?;
-            
-        let label = json.get("label")
+
+        let label = json
+            .get("label")
             .and_then(|v| v.as_string())
             .map(|s| s.to_string());
-            
-        let watch_only = json.get("watchonly")
+
+        let watch_only = json
+            .get("watchonly")
             .and_then(|v| v.as_boolean())
             .ok_or("Missing or invalid 'watchonly' field")?;
-            
+
         Ok(Self {
             address,
             has_key,

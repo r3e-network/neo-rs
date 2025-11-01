@@ -43,8 +43,7 @@ impl BasicAuthenticationHandler {
         let username = parts.next().unwrap_or_default();
         let password = parts.next().unwrap_or_default();
 
-        subtle_equals(username, &settings.rest_user)
-            && subtle_equals(password, &settings.rest_pass)
+        subtle_equals(username, &settings.rest_user) && subtle_equals(password, &settings.rest_pass)
     }
 }
 

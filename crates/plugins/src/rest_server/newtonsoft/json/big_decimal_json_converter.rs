@@ -35,7 +35,9 @@ impl BigDecimalJsonConverter {
 
                 Ok(BigDecimal::new(value, decimals))
             }
-            Value::Number(_) => Err("Numeric BigDecimal values must be encoded as objects".to_string()),
+            Value::Number(_) => {
+                Err("Numeric BigDecimal values must be encoded as objects".to_string())
+            }
             _ => Err("Unsupported BigDecimal JSON representation".to_string()),
         }
     }
@@ -59,5 +61,4 @@ impl BigDecimalJsonConverter {
             _ => Err("BigInteger value must be a string or number".to_string()),
         }
     }
-
 }

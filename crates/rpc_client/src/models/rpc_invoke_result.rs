@@ -18,24 +18,24 @@ use serde::{Deserialize, Serialize};
 pub struct RpcInvokeResult {
     /// The script that was invoked
     pub script: String,
-    
+
     /// VM execution state
     pub state: VMState,
-    
+
     /// Gas consumed during execution
     pub gas_consumed: i64,
-    
+
     /// Stack items after execution
     pub stack: Vec<StackItem>,
-    
+
     /// Transaction if available
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tx: Option<String>,
-    
+
     /// Exception message if any
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exception: Option<String>,
-    
+
     /// Session ID if available
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
@@ -48,68 +48,87 @@ impl RpcInvokeResult {
         let mut json = JObject::new();
         json.insert("script".to_string(), JToken::String(self.script.clone()));
         json.insert("state".to_string(), JToken::String(self.state.to_string()));
-        json.insert("gasconsumed".to_string(), JToken::String(self.gas_consumed.to_string()));
-        
+        json.insert(
+            "gasconsumed".to_string(),
+            JToken::String(self.gas_consumed.to_string()),
+        );
+
         if let Some(ref exception) = self.exception {
             json.insert("exception".to_string(), JToken::String(exception.clone()));
         }
-        
+
         // Try to serialize stack items
-        match self.stack.iter().map(|item| item.to_json()).collect::<Result<Vec<_>, _>>() {
+        match self
+            .stack
+            .iter()
+            .map(|item| item.to_json())
+            .collect::<Result<Vec<_>, _>>()
+        {
             Ok(stack_json) => {
                 json.insert("stack".to_string(), JToken::Array(JArray::from(stack_json)));
             }
             Err(_) => {
                 // Handle recursive reference error
-                json.insert("stack".to_string(), JToken::String("error: recursive reference".to_string()));
+                json.insert(
+                    "stack".to_string(),
+                    JToken::String("error: recursive reference".to_string()),
+                );
             }
         }
-        
+
         if let Some(ref tx) = self.tx {
             json.insert("tx".to_string(), JToken::String(tx.clone()));
         }
-        
+
         if let Some(ref session) = self.session {
             json.insert("session".to_string(), JToken::String(session.clone()));
         }
-        
+
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let script = json.get("script")
+        let script = json
+            .get("script")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'script' field")?
             .to_string();
-            
-        let state_str = json.get("state")
+
+        let state_str = json
+            .get("state")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'state' field")?;
-        let state = VMState::from_str(state_str)
-            .map_err(|_| format!("Invalid VM state: {}", state_str))?;
-            
-        let gas_consumed_str = json.get("gasconsumed")
+        let state =
+            VMState::from_str(state_str).map_err(|_| format!("Invalid VM state: {}", state_str))?;
+
+        let gas_consumed_str = json
+            .get("gasconsumed")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'gasconsumed' field")?;
-        let gas_consumed = gas_consumed_str.parse::<i64>()
+        let gas_consumed = gas_consumed_str
+            .parse::<i64>()
             .map_err(|_| format!("Invalid gas consumed value: {}", gas_consumed_str))?;
-            
-        let exception = json.get("exception")
+
+        let exception = json
+            .get("exception")
             .and_then(|v| v.as_string())
             .map(|s| s.to_string());
-            
-        let session = json.get("session")
+
+        let session = json
+            .get("session")
             .and_then(|v| v.as_string())
             .map(|s| s.to_string());
-            
-        let tx = json.get("tx")
+
+        let tx = json
+            .get("tx")
             .and_then(|v| v.as_string())
             .map(|s| s.to_string());
-            
+
         // Try to parse stack items
-        let stack = json.get("stack")
+        let stack = json
+            .get("stack")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -118,7 +137,7 @@ impl RpcInvokeResult {
                     .collect()
             })
             .unwrap_or_default();
-            
+
         Ok(Self {
             script,
             state,
@@ -137,7 +156,7 @@ pub struct RpcStack {
     /// Stack item type
     #[serde(rename = "type")]
     pub item_type: String,
-    
+
     /// Stack item value
     pub value: JToken,
 }
@@ -151,22 +170,18 @@ impl RpcStack {
         json.insert("value".to_string(), self.value.clone());
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let item_type = json.get("type")
+        let item_type = json
+            .get("type")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'type' field")?
             .to_string();
-            
-        let value = json.get("value")
-            .ok_or("Missing 'value' field")?
-            .clone();
-            
-        Ok(Self {
-            item_type,
-            value,
-        })
+
+        let value = json.get("value").ok_or("Missing 'value' field")?.clone();
+
+        Ok(Self { item_type, value })
     }
 }

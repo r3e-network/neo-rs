@@ -89,7 +89,6 @@ impl<'a> StoreIterator<'a> {
     }
 }
 
-
 impl<'a> Iterator for StoreIterator<'a> {
     type Item = (Vec<u8>, Vec<u8>);
 
@@ -116,9 +115,7 @@ impl<'a> Iterator for StoreIterator<'a> {
 
 impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for Store {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        self.db
-            .get(key)
-            .expect("RocksDB get failed")
+        self.db.get(key).expect("RocksDB get failed")
     }
 
     fn contains(&self, key: &Vec<u8>) -> bool {

@@ -734,12 +734,12 @@ impl NeoSystem {
     pub fn persist_block(&self, block: Block) -> CoreResult<Vec<ApplicationExecuted>> {
         let ledger_block = NeoSystemContext::convert_payload_block(&block);
         let mut store_cache = self.context.store_snapshot_cache();
-        let snapshot = Arc::new(store_cache.data_cache().clone());
+        let base_snapshot = Arc::new(store_cache.data_cache().clone());
 
         let mut on_persist_engine = ApplicationEngine::new(
             TriggerType::OnPersist,
             None,
-            Arc::clone(&snapshot),
+            Arc::clone(&base_snapshot),
             Some(ledger_block.clone()),
             self.settings.clone(),
             TEST_MODE_GAS,
@@ -762,11 +762,12 @@ impl NeoSystem {
             });
 
         for tx in &ledger_block.transactions {
+            let tx_snapshot = Arc::new(base_snapshot.as_ref().clone_cache());
             let container: Arc<dyn crate::IVerifiable> = Arc::new(tx.clone());
             let mut tx_engine = ApplicationEngine::new(
                 TriggerType::Application,
                 Some(container),
-                Arc::clone(&snapshot),
+                Arc::clone(&tx_snapshot),
                 Some(ledger_block.clone()),
                 self.settings.clone(),
                 tx.system_fee(),
@@ -797,6 +798,9 @@ impl NeoSystem {
                     vm_state, tx_hash
                 )));
             }
+
+            let tracked = tx_snapshot.tracked_items();
+            base_snapshot.merge_tracked_items(&tracked);
         }
 
         on_persist_engine.set_state(tx_states);
@@ -807,9 +811,9 @@ impl NeoSystem {
             .publish(post_persist_exec.clone());
         executed.push(post_persist_exec);
 
-        self.invoke_committing(&ledger_block, snapshot.as_ref(), &executed);
+        self.invoke_committing(&ledger_block, base_snapshot.as_ref(), &executed);
 
-        for (key, trackable) in snapshot.tracked_items() {
+        for (key, trackable) in base_snapshot.tracked_items() {
             match trackable.state {
                 TrackState::Added => {
                     store_cache.add(key, trackable.item);
@@ -825,7 +829,19 @@ impl NeoSystem {
         }
 
         store_cache.commit();
+
+        // Update in-memory caches with the payload block so networking queries can respond immediately.
         self.context.record_block(block.clone());
+
+        // Notify plugins that a block has been persisted, matching the C# event ordering.
+        let block_hash = ledger_block.hash().to_string();
+        let block_height = ledger_block.index();
+        self.context
+            .broadcast_plugin_event(PluginEvent::BlockReceived {
+                block_hash,
+                block_height,
+            });
+
         self.invoke_committed(&ledger_block);
 
         Ok(executed)

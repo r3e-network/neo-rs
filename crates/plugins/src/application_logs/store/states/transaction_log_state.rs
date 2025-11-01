@@ -1,4 +1,6 @@
-use neo_core::neo_io::{helper::get_var_size, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_core::neo_io::{
+    helper::get_var_size, BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
+};
 use uuid::Uuid;
 
 const GUID_SIZE: usize = 16;

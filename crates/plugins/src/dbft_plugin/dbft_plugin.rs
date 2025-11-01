@@ -12,10 +12,12 @@
 use crate::dbft_plugin::consensus::consensus_service::ConsensusService;
 use crate::dbft_plugin::dbft_settings::DbftSettings;
 use async_trait::async_trait;
-use neo_core::NeoSystem;
 use neo_core::sign::{ISigner, SignerManager};
+use neo_core::NeoSystem;
 use neo_extensions::error::ExtensionResult;
-use neo_extensions::plugin::{Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo};
+use neo_extensions::plugin::{
+    Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
+};
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;

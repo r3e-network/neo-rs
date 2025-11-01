@@ -24,8 +24,7 @@ impl From<&ProtocolSettings> for ProtocolSettingsModel {
             .map(|(fork, height)| (hardfork_name(*fork), *height))
             .collect();
 
-        let validators_count_i32 = i32::try_from(settings.validators_count)
-            .unwrap_or(i32::MAX);
+        let validators_count_i32 = i32::try_from(settings.validators_count).unwrap_or(i32::MAX);
         let validators_count_usize = usize::try_from(settings.validators_count)
             .unwrap_or_else(|_| settings.standby_committee.len());
 
@@ -71,7 +70,6 @@ impl From<RemoteNodeSnapshot> for RemoteNodeModel {
         RemoteNodeModel::from_snapshot(&snapshot)
     }
 }
-
 
 impl From<&PluginInfo> for PluginModel {
     fn from(info: &PluginInfo) -> Self {

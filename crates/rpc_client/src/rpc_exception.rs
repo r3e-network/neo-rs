@@ -17,7 +17,7 @@ use thiserror::Error;
 pub struct RpcException {
     /// Error code (HResult in C#)
     pub code: i32,
-    
+
     /// Error message
     pub message: String,
 }

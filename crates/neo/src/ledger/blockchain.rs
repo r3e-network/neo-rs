@@ -178,12 +178,52 @@ impl Blockchain {
     }
 
     async fn handle_import(&self, import: Import, ctx: &ActorContext) {
-        for block in import.blocks {
-            if self.on_new_block(&block, import.verify).await == VerifyResult::Succeed {
-                self.persist_block_via_system(&block);
-                self.handle_persist_completed(PersistCompleted { block })
-                    .await;
+        let Some(context) = &self.system_context else {
+            tracing::debug!(target: "neo", "import requested before system context attached");
+            if let Some(sender) = ctx.sender() {
+                let _ = sender.tell(ImportCompleted);
             }
+            return;
+        };
+
+        let settings = context.settings();
+        let store_cache = context.store_cache();
+        let ledger_contract = LedgerContract::new();
+        let mut current_height = ledger_contract
+            .current_index(&store_cache)
+            .unwrap_or_else(|_| context.ledger().current_height());
+
+        for block in import.blocks {
+            let index = block.index();
+            match classify_import_block(current_height, index) {
+                ImportDisposition::AlreadySeen => continue,
+                ImportDisposition::FutureGap => {
+                    tracing::warn!(
+                        target: "neo",
+                        expected = current_height + 1,
+                        actual = index,
+                        "import block out of sequence"
+                    );
+                    break;
+                }
+                ImportDisposition::NextExpected => {}
+            }
+
+            if import.verify && !block.verify(settings.as_ref(), &store_cache) {
+                tracing::warn!(
+                    target: "neo",
+                    height = index,
+                    "import block failed verification"
+                );
+                break;
+            }
+
+            self.persist_block_via_system(&block);
+            self.handle_persist_completed(PersistCompleted {
+                block: block.clone(),
+            })
+            .await;
+            current_height = index;
         }
 
         if let Some(sender) = ctx.sender() {
@@ -291,10 +331,11 @@ impl Blockchain {
         if let Some(context) = &self.system_context {
             let store_cache = context.store_cache();
             let settings = context.settings();
+            let header_cache = context.header_cache();
+            let header_backlog = header_cache.count() > 0 || self.ledger.has_future_headers();
             if let Ok(mut pool) = context.memory_pool().lock() {
                 let snapshot = store_cache.data_cache();
                 let max_to_verify = reverify.inventories.len().max(1);
-                let header_backlog = self.ledger.has_future_headers();
                 let more_pending = pool.reverify_top_unverified_transactions(
                     max_to_verify,
                     snapshot,
@@ -303,7 +344,7 @@ impl Blockchain {
                 );
                 drop(pool);
 
-                if more_pending {
+                if should_schedule_reverify_idle(more_pending, header_backlog) {
                     if let Err(error) = ctx.self_ref().tell(BlockchainCommand::Idle) {
                         tracing::debug!(
                             target: "neo",
@@ -715,22 +756,10 @@ impl Blockchain {
             .event_stream()
             .publish(relay_message.clone());
 
-        if result == VerifyResult::Succeed {
-            match inventory_type {
-                InventoryType::Block => {
-                    let height = block_index.unwrap_or(0);
-                    context.broadcast_plugin_event(PluginEvent::BlockReceived {
-                        block_hash: hash.to_string(),
-                        block_height: height,
-                    });
-                }
-                InventoryType::Transaction => {
-                    context.broadcast_plugin_event(PluginEvent::TransactionReceived {
-                        tx_hash: hash.to_string(),
-                    });
-                }
-                _ => {}
-            }
+        if result == VerifyResult::Succeed && matches!(inventory_type, InventoryType::Transaction) {
+            context.broadcast_plugin_event(PluginEvent::TransactionReceived {
+                tx_hash: hash.to_string(),
+            });
         }
 
         if let Some(sender) = ctx.sender() {
@@ -875,6 +904,27 @@ pub struct Reverify {
     pub inventories: Vec<ReverifyItem>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImportDisposition {
+    AlreadySeen,
+    NextExpected,
+    FutureGap,
+}
+
+fn classify_import_block(current_height: u32, block_index: u32) -> ImportDisposition {
+    if block_index <= current_height {
+        ImportDisposition::AlreadySeen
+    } else if block_index == current_height.saturating_add(1) {
+        ImportDisposition::NextExpected
+    } else {
+        ImportDisposition::FutureGap
+    }
+}
+
+fn should_schedule_reverify_idle(more_pending: bool, header_backlog: bool) -> bool {
+    more_pending && !header_backlog
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreverifyCompleted {
     pub transaction: Transaction,
@@ -911,4 +961,35 @@ pub enum BlockchainCommand {
     RelayResult(RelayResult),
     Initialize,
     AttachSystem(Arc<NeoSystemContext>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify_import_block, should_schedule_reverify_idle, ImportDisposition};
+
+    #[test]
+    fn classify_import_block_returns_already_seen_for_past_height() {
+        assert_eq!(classify_import_block(10, 5), ImportDisposition::AlreadySeen);
+        assert_eq!(
+            classify_import_block(10, 10),
+            ImportDisposition::AlreadySeen
+        );
+    }
+
+    #[test]
+    fn classify_import_block_returns_next_expected_when_in_sequence() {
+        assert_eq!(classify_import_block(7, 8), ImportDisposition::NextExpected);
+    }
+
+    #[test]
+    fn classify_import_block_detects_future_gap() {
+        assert_eq!(classify_import_block(3, 8), ImportDisposition::FutureGap);
+    }
+
+    #[test]
+    fn schedule_idle_only_when_more_pending_without_backlog() {
+        assert!(should_schedule_reverify_idle(true, false));
+        assert!(!should_schedule_reverify_idle(false, false));
+        assert!(!should_schedule_reverify_idle(true, true));
+    }
 }

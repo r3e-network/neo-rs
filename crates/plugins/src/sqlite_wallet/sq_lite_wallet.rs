@@ -2,19 +2,15 @@
 //!
 //! Provides SQLite-based wallet functionality for Neo blockchain.
 
+use rusqlite::{params, Connection, Result as SqliteResult};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use rusqlite::{Connection, Result as SqliteResult, params};
 
 use super::{
-    sq_lite_wallet_account::SQLiteWalletAccount,
-    address::Address,
-    key::Key,
-    contract::Contract,
-    verification_contract::VerificationContract,
-    wallet_data_context::WalletDataContext,
+    address::Address, contract::Contract, key::Key, sq_lite_wallet_account::SQLiteWalletAccount,
+    verification_contract::VerificationContract, wallet_data_context::WalletDataContext,
 };
 
 /// SQLite Wallet implementation
@@ -95,7 +91,8 @@ impl SQLiteWallet {
                 created_at INTEGER NOT NULL
             )",
             [],
-        ).map_err(|e| format!("Failed to create accounts table: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to create accounts table: {}", e))?;
 
         // Create keys table
         conn.execute(
@@ -108,7 +105,8 @@ impl SQLiteWallet {
                 FOREIGN KEY (account_id) REFERENCES accounts (id)
             )",
             [],
-        ).map_err(|e| format!("Failed to create keys table: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to create keys table: {}", e))?;
 
         // Create contracts table
         conn.execute(
@@ -121,28 +119,33 @@ impl SQLiteWallet {
                 FOREIGN KEY (account_id) REFERENCES accounts (id)
             )",
             [],
-        ).map_err(|e| format!("Failed to create contracts table: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to create contracts table: {}", e))?;
 
         Ok(())
     }
 
     /// Load accounts from database
     async fn load_accounts(&self, conn: &Connection) -> Result<(), String> {
-        let mut stmt = conn.prepare(
-            "SELECT id, address, label, is_default, lock, contract, created_at FROM accounts"
-        ).map_err(|e| format!("Failed to prepare accounts query: {}", e))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, address, label, is_default, lock, contract, created_at FROM accounts",
+            )
+            .map_err(|e| format!("Failed to prepare accounts query: {}", e))?;
 
-        let account_iter = stmt.query_map([], |row| {
-            Ok(SQLiteWalletAccount {
-                id: row.get(0)?,
-                address: Address::from_string(row.get::<_, String>(1)?)?,
-                label: row.get(2)?,
-                is_default: row.get::<_, i32>(3)? != 0,
-                lock: row.get::<_, i32>(4)? != 0,
-                contract: row.get(5)?,
-                created_at: row.get(6)?,
+        let account_iter = stmt
+            .query_map([], |row| {
+                Ok(SQLiteWalletAccount {
+                    id: row.get(0)?,
+                    address: Address::from_string(row.get::<_, String>(1)?)?,
+                    label: row.get(2)?,
+                    is_default: row.get::<_, i32>(3)? != 0,
+                    lock: row.get::<_, i32>(4)? != 0,
+                    contract: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
             })
-        }).map_err(|e| format!("Failed to query accounts: {}", e))?;
+            .map_err(|e| format!("Failed to query accounts: {}", e))?;
 
         let mut accounts = Vec::new();
         for account_result in account_iter {
@@ -180,7 +183,10 @@ impl SQLiteWallet {
     }
 
     /// Create a new account
-    pub async fn create_account(&self, label: Option<String>) -> Result<SQLiteWalletAccount, String> {
+    pub async fn create_account(
+        &self,
+        label: Option<String>,
+    ) -> Result<SQLiteWalletAccount, String> {
         if !self.is_open {
             return Err("Wallet is not open".to_string());
         }
@@ -224,7 +230,10 @@ impl SQLiteWallet {
     }
 
     /// Get account by address
-    pub async fn get_account(&self, address: &Address) -> Result<Option<SQLiteWalletAccount>, String> {
+    pub async fn get_account(
+        &self,
+        address: &Address,
+    ) -> Result<Option<SQLiteWalletAccount>, String> {
         let accounts = self.accounts.read().await;
         Ok(accounts.iter().find(|a| &a.address == address).cloned())
     }
@@ -246,7 +255,8 @@ impl SQLiteWallet {
         conn.execute(
             "DELETE FROM accounts WHERE address = ?1",
             params![address.to_string()],
-        ).map_err(|e| format!("Failed to delete account: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to delete account: {}", e))?;
 
         // Remove from in-memory list
         let mut accounts = self.accounts.write().await;
@@ -263,7 +273,7 @@ impl SQLiteWallet {
 
         // Update database
         let conn = self.connection.read().await;
-        
+
         // Clear all default flags
         conn.execute("UPDATE accounts SET is_default = 0", [])
             .map_err(|e| format!("Failed to clear default flags: {}", e))?;
@@ -272,7 +282,8 @@ impl SQLiteWallet {
         conn.execute(
             "UPDATE accounts SET is_default = 1 WHERE address = ?1",
             params![address.to_string()],
-        ).map_err(|e| format!("Failed to set default account: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to set default account: {}", e))?;
 
         // Update in-memory list
         let mut accounts = self.accounts.write().await;

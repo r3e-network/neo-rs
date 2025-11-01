@@ -17,14 +17,14 @@ use serde::{Deserialize, Serialize};
 pub struct RpcRequest {
     /// Request ID
     pub id: JToken,
-    
+
     /// JSON-RPC version
     #[serde(rename = "jsonrpc")]
     pub json_rpc: String,
-    
+
     /// Method name
     pub method: String,
-    
+
     /// Method parameters
     pub params: Vec<JToken>,
 }
@@ -39,29 +39,30 @@ impl RpcRequest {
             params,
         }
     }
-    
+
     /// Creates an RPC request from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let id = json.get("id")
-            .ok_or("Missing 'id' field")?
-            .clone();
-            
-        let json_rpc = json.get("jsonrpc")
+        let id = json.get("id").ok_or("Missing 'id' field")?.clone();
+
+        let json_rpc = json
+            .get("jsonrpc")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'jsonrpc' field")?
             .to_string();
-            
-        let method = json.get("method")
+
+        let method = json
+            .get("method")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'method' field")?
             .to_string();
-            
-        let params = json.get("params")
+
+        let params = json
+            .get("params")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().cloned().collect())
             .unwrap_or_default();
-            
+
         Ok(Self {
             id,
             json_rpc,
@@ -69,7 +70,7 @@ impl RpcRequest {
             params,
         })
     }
-    
+
     /// Converts to JSON
     /// Matches C# ToJson
     pub fn to_json(&self) -> JObject {
@@ -77,7 +78,10 @@ impl RpcRequest {
         json.insert("id".to_string(), self.id.clone());
         json.insert("jsonrpc".to_string(), JToken::String(self.json_rpc.clone()));
         json.insert("method".to_string(), JToken::String(self.method.clone()));
-        json.insert("params".to_string(), JToken::Array(JArray::from(self.params.clone())));
+        json.insert(
+            "params".to_string(),
+            JToken::Array(JArray::from(self.params.clone())),
+        );
         json
     }
 }

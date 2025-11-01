@@ -19,10 +19,10 @@ use serde::{Deserialize, Serialize};
 pub struct RpcBlockHeader {
     /// The block header data
     pub header: BlockHeader,
-    
+
     /// Number of confirmations
     pub confirmations: u32,
-    
+
     /// Hash of the next block
     pub next_block_hash: Option<UInt256>,
 }

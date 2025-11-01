@@ -18,10 +18,10 @@ use serde::{Deserialize, Serialize};
 pub struct RpcTransferOut {
     /// Asset hash
     pub asset: UInt160,
-    
+
     /// Script hash of recipient
     pub script_hash: UInt160,
-    
+
     /// Transfer value
     pub value: String,
 }
@@ -33,37 +33,45 @@ impl RpcTransferOut {
         let mut json = JObject::new();
         json.insert("asset".to_string(), JToken::String(self.asset.to_string()));
         json.insert("value".to_string(), JToken::String(self.value.clone()));
-        json.insert("address".to_string(), JToken::String(
-            self.script_hash.to_address(protocol_settings.address_version)
-        ));
+        json.insert(
+            "address".to_string(),
+            JToken::String(
+                self.script_hash
+                    .to_address(protocol_settings.address_version),
+            ),
+        );
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let asset_str = json.get("asset")
+        let asset_str = json
+            .get("asset")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'asset' field")?;
-            
+
         let asset = if asset_str.starts_with("0x") {
             UInt160::parse(asset_str)
         } else {
             UInt160::from_address(asset_str, protocol_settings.address_version)
-        }.map_err(|_| format!("Invalid asset: {}", asset_str))?;
-        
-        let value = json.get("value")
+        }
+        .map_err(|_| format!("Invalid asset: {}", asset_str))?;
+
+        let value = json
+            .get("value")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'value' field")?
             .to_string();
-            
-        let address = json.get("address")
+
+        let address = json
+            .get("address")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'address' field")?;
-            
+
         let script_hash = UInt160::from_address(address, protocol_settings.address_version)
             .map_err(|_| format!("Invalid address: {}", address))?;
-            
+
         Ok(Self {
             asset,
             script_hash,

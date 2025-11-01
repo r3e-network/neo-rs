@@ -20,7 +20,9 @@ impl Snapshot {
     pub fn new(db: Arc<DB>, store: Arc<Store>) -> Self {
         let snapshot = db.snapshot();
         // SAFETY: the snapshot is dropped before the database because we hold an Arc to the DB.
-        let snapshot = unsafe { mem::transmute::<rocksdb::Snapshot<'_>, rocksdb::Snapshot<'static>>(snapshot) };
+        let snapshot = unsafe {
+            mem::transmute::<rocksdb::Snapshot<'_>, rocksdb::Snapshot<'static>>(snapshot)
+        };
 
         Self {
             store,
@@ -34,7 +36,11 @@ impl Snapshot {
         options::read_options_with_snapshot(&self.snapshot)
     }
 
-    fn iterator_from(&self, key_or_prefix: &[u8], direction: SeekDirection) -> SnapshotIterator<'_> {
+    fn iterator_from(
+        &self,
+        key_or_prefix: &[u8],
+        direction: SeekDirection,
+    ) -> SnapshotIterator<'_> {
         let read_options = self.read_options();
         SnapshotIterator::new(self.db.as_ref(), read_options, key_or_prefix, direction)
     }
@@ -100,15 +106,13 @@ impl<'a> Iterator for SnapshotIterator<'a> {
 
 impl IReadOnlyStoreGeneric<Vec<u8>, Vec<u8>> for Snapshot {
     fn try_get(&self, key: &Vec<u8>) -> Option<Vec<u8>> {
-        self
-            .db
+        self.db
             .get_opt(key, &self.read_options())
             .expect("RocksDB snapshot get failed")
     }
 
     fn contains(&self, key: &Vec<u8>) -> bool {
-        self
-            .db
+        self.db
             .get_pinned_opt(key, &self.read_options())
             .expect("RocksDB snapshot contains check failed")
             .is_some()

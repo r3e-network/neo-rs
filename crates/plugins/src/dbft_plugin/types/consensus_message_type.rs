@@ -39,7 +39,7 @@ impl ConsensusMessageType {
             _ => None,
         }
     }
-    
+
     /// Converts to byte value
     pub fn to_byte(self) -> u8 {
         self as u8

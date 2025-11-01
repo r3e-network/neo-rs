@@ -58,8 +58,8 @@ impl BlockchainEventModel {
 
 mod vm_state_serde {
     use neo_vm::vm_state::VMState;
-    use serde::{Deserializer, Serializer};
     use serde::Deserialize;
+    use serde::{Deserializer, Serializer};
 
     pub fn serialize<S>(state: &VMState, serializer: S) -> Result<S::Ok, S::Error>
     where

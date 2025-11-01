@@ -1,7 +1,9 @@
 use super::StateServiceSettings;
 use neo_core::NeoSystem;
 use neo_extensions::error::{ExtensionError, ExtensionResult};
-use neo_extensions::plugin::{Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo};
+use neo_extensions::plugin::{
+    Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
+};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -88,9 +90,9 @@ impl Plugin for StateServicePlugin {
                             warn!("StateService: network mismatch; plugin inactive");
                         }
                     }
-                    Err(_) => warn!(
-                        "StateService: NodeStarted payload was not a NeoSystem instance"
-                    ),
+                    Err(_) => {
+                        warn!("StateService: NodeStarted payload was not a NeoSystem instance")
+                    }
                 }
                 Ok(())
             }

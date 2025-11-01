@@ -1,4 +1,6 @@
-use neo_core::neo_io::{helper::get_var_size, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_core::neo_io::{
+    helper::get_var_size, BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
+};
 use neo_core::UInt160;
 use uuid::Uuid;
 
@@ -13,7 +15,11 @@ pub struct NotifyLogState {
 }
 
 impl NotifyLogState {
-    pub fn create(script_hash: UInt160, event_name: impl Into<String>, stack_item_ids: Vec<Uuid>) -> Self {
+    pub fn create(
+        script_hash: UInt160,
+        event_name: impl Into<String>,
+        stack_item_ids: Vec<Uuid>,
+    ) -> Self {
         Self {
             script_hash,
             event_name: event_name.into(),

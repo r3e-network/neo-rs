@@ -9,8 +9,11 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::{UInt160, ByteString, io::{ISerializable, MemoryReader, BinaryWriter}};
-use serde::{Serialize, Deserialize};
+use neo_core::{
+    io::{BinaryWriter, ISerializable, MemoryReader},
+    ByteString, UInt160,
+};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::num::BigInt;
 
@@ -21,11 +24,11 @@ pub struct Nep11BalanceKey {
     /// User script hash
     /// Matches C# UserScriptHash field
     pub user_script_hash: UInt160,
-    
+
     /// Asset script hash
     /// Matches C# AssetScriptHash field
     pub asset_script_hash: UInt160,
-    
+
     /// Token ID
     /// Matches C# Token field
     pub token: ByteString,
@@ -34,14 +37,18 @@ pub struct Nep11BalanceKey {
 impl Nep11BalanceKey {
     /// Creates a new Nep11BalanceKey instance.
     /// Matches C# constructor
-    pub fn new(user_script_hash: UInt160, asset_script_hash: UInt160, token_id: ByteString) -> Self {
+    pub fn new(
+        user_script_hash: UInt160,
+        asset_script_hash: UInt160,
+        token_id: ByteString,
+    ) -> Self {
         Self {
             user_script_hash,
             asset_script_hash,
             token: token_id,
         }
     }
-    
+
     /// Gets the size of the serialized data.
     /// Matches C# Size property
     pub fn size(&self) -> usize {
@@ -72,13 +79,13 @@ impl Ord for Nep11BalanceKey {
         if user_cmp != Ordering::Equal {
             return user_cmp;
         }
-        
+
         // Compare asset script hash second
         let asset_cmp = self.asset_script_hash.cmp(&other.asset_script_hash);
         if asset_cmp != Ordering::Equal {
             return asset_cmp;
         }
-        
+
         // Compare token by integer value
         let self_token_int = self.token.get_integer();
         let other_token_int = other.token.get_integer();
@@ -90,35 +97,35 @@ impl ISerializable for Nep11BalanceKey {
     fn size(&self) -> usize {
         self.size()
     }
-    
+
     fn serialize(&self, writer: &mut dyn std::io::Write) -> Result<(), String> {
         // Write user script hash
         writer.write_all(&self.user_script_hash.to_bytes())?;
-        
+
         // Write asset script hash
         writer.write_all(&self.asset_script_hash.to_bytes())?;
-        
+
         // Write token with var size
         self.write_var_bytes(writer, &self.token.get_bytes())?;
-        
+
         Ok(())
     }
-    
+
     fn deserialize(&mut self, reader: &mut dyn std::io::Read) -> Result<(), String> {
         // Read user script hash
         let mut user_hash_bytes = [0u8; 20];
         reader.read_exact(&mut user_hash_bytes)?;
         self.user_script_hash = UInt160::from_bytes(&user_hash_bytes);
-        
+
         // Read asset script hash
         let mut asset_hash_bytes = [0u8; 20];
         reader.read_exact(&mut asset_hash_bytes)?;
         self.asset_script_hash = UInt160::from_bytes(&asset_hash_bytes);
-        
+
         // Read token with var size
         let token_bytes = self.read_var_bytes(reader)?;
         self.token = ByteString::from_bytes(&token_bytes);
-        
+
         Ok(())
     }
 }
@@ -142,33 +149,33 @@ impl Nep11BalanceKey {
         writer.write_all(data)?;
         Ok(())
     }
-    
+
     /// Reads variable-length bytes from reader.
     /// Matches C# ReadVarMemory method
     fn read_var_bytes(&self, reader: &mut dyn std::io::Read) -> Result<Vec<u8>, String> {
         let mut length_byte = [0u8; 1];
         reader.read_exact(&mut length_byte)?;
-        
+
         let length = match length_byte[0] {
             len if len < 0xFD => len as usize,
             0xFD => {
                 let mut bytes = [0u8; 2];
                 reader.read_exact(&mut bytes)?;
                 u16::from_le_bytes(bytes) as usize
-            },
+            }
             0xFE => {
                 let mut bytes = [0u8; 4];
                 reader.read_exact(&mut bytes)?;
                 u32::from_le_bytes(bytes) as usize
-            },
+            }
             0xFF => {
                 let mut bytes = [0u8; 8];
                 reader.read_exact(&mut bytes)?;
                 u64::from_le_bytes(bytes) as usize
-            },
+            }
             _ => return Err("Invalid var length prefix".to_string()),
         };
-        
+
         let mut data = vec![0u8; length];
         reader.read_exact(&mut data)?;
         Ok(data)

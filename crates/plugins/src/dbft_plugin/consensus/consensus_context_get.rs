@@ -10,13 +10,13 @@
 // modifications are permitted.
 
 use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
-use crate::dbft_plugin::messages::ConsensusMessagePayload;
 use crate::dbft_plugin::messages::recovery_message::{
     ChangeViewPayloadCompact, CommitPayloadCompact, PreparationPayloadCompact,
 };
+use crate::dbft_plugin::messages::ConsensusMessagePayload;
+use neo_core::neo_io::Serializable;
 use neo_core::network::p2p::payloads::ExtensiblePayload;
 use neo_core::smart_contract::Contract;
-use neo_core::neo_io::Serializable;
 use neo_core::{UInt160, UInt256};
 use tracing::debug;
 
@@ -36,7 +36,8 @@ impl ConsensusContext {
 
         match ConsensusMessagePayload::deserialize_from(&payload_clone.data) {
             Ok(message) => {
-                self.cached_messages_mut().insert(payload_hash, message.clone());
+                self.cached_messages_mut()
+                    .insert(payload_hash, message.clone());
                 Some(message)
             }
             Err(error) => {
@@ -100,7 +101,10 @@ impl ConsensusContext {
     pub fn get_expected_block_size(&self) -> u32 {
         if let Some(transactions) = self.transactions() {
             self.get_expected_block_size_without_transactions(transactions.len())
-                + transactions.values().map(|tx| tx.size() as u32).sum::<u32>()
+                + transactions
+                    .values()
+                    .map(|tx| tx.size() as u32)
+                    .sum::<u32>()
         } else {
             self.get_expected_block_size_without_transactions(0)
         }
@@ -116,7 +120,10 @@ impl ConsensusContext {
     }
 
     /// Computes the expected block size without considering transactions.
-    pub fn get_expected_block_size_without_transactions(&self, expected_transactions: usize) -> u32 {
+    pub fn get_expected_block_size_without_transactions(
+        &self,
+        expected_transactions: usize,
+    ) -> u32 {
         4 + // Version
         32 + // PrevHash
         32 + // MerkleRoot

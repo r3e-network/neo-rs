@@ -135,7 +135,9 @@ impl PrepareRequest {
     /// Serialized size of the message body (excluding header).
     pub(crate) fn body_size(&self) -> usize {
         let hash_size = UInt256::default().size();
-        4 + hash_size + 8 + 8
+        4 + hash_size
+            + 8
+            + 8
             + var_int_size(self.transaction_hashes.len())
             + self.transaction_hashes.len() * hash_size
     }
@@ -154,7 +156,10 @@ impl PrepareRequest {
     }
 
     /// Serializes the full message including header.
-    pub(crate) fn write_with_header(&self, writer: &mut BinaryWriter) -> ConsensusMessageResult<()> {
+    pub(crate) fn write_with_header(
+        &self,
+        writer: &mut BinaryWriter,
+    ) -> ConsensusMessageResult<()> {
         self.header.serialize(writer)?;
         self.write_body(writer)
     }

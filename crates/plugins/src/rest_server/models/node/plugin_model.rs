@@ -17,11 +17,11 @@ pub struct PluginModel {
     /// Name
     /// Matches C# Name property
     pub name: String,
-    
+
     /// Version
     /// Matches C# Version property
     pub version: String,
-    
+
     /// Description
     /// Matches C# Description property
     pub description: String,
@@ -37,7 +37,7 @@ impl PluginModel {
             description: String::new(),
         }
     }
-    
+
     /// Creates a new PluginModel with parameters
     /// Matches C# constructor with parameters
     pub fn with_params(name: String, version: String, description: String) -> Self {

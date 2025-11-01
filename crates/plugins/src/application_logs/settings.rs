@@ -13,9 +13,8 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
 
-static DEFAULT_SETTINGS: Lazy<RwLock<ApplicationLogsSettings>> = Lazy::new(|| {
-    RwLock::new(ApplicationLogsSettings::default())
-});
+static DEFAULT_SETTINGS: Lazy<RwLock<ApplicationLogsSettings>> =
+    Lazy::new(|| RwLock::new(ApplicationLogsSettings::default()));
 
 /// Application Logs settings matching C# ApplicationLogsSettings exactly
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,7 +49,7 @@ impl ApplicationLogsSettings {
             *guard = settings;
         }
     }
-    
+
     /// Gets the default settings
     /// Matches C# Default property
     pub fn default() -> ApplicationLogsSettings {
@@ -59,25 +58,30 @@ impl ApplicationLogsSettings {
             .map(|guard| guard.clone())
             .unwrap_or_default()
     }
-    
+
     /// Creates settings from configuration
     /// Matches C# constructor with IConfigurationSection
     pub fn from_config(config: &serde_json::Value) -> Self {
         Self {
-            path: config.get("Path")
+            path: config
+                .get("Path")
                 .and_then(|v| v.as_str())
                 .unwrap_or("ApplicationLogs_{0}")
                 .to_string(),
-            network: config.get("Network")
+            network: config
+                .get("Network")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(5195086) as u32,
-            max_stack_size: config.get("MaxStackSize")
+            max_stack_size: config
+                .get("MaxStackSize")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(65535) as i32,
-            debug: config.get("Debug")
+            debug: config
+                .get("Debug")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
-            exception_policy: config.get("UnhandledExceptionPolicy")
+            exception_policy: config
+                .get("UnhandledExceptionPolicy")
                 .and_then(|v| v.as_str())
                 .and_then(|s| match s {
                     "StopNode" => Some(UnhandledExceptionPolicy::StopNode),

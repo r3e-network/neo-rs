@@ -2,8 +2,8 @@
 //!
 //! Provides account functionality for SQLite wallet.
 
-use serde::{Deserialize, Serialize};
 use super::address::Address;
+use serde::{Deserialize, Serialize};
 
 /// SQLite Wallet Account structure
 #[derive(Debug, Clone, Serialize, Deserialize)]

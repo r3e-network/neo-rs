@@ -17,10 +17,10 @@ use serde::{Deserialize, Serialize};
 pub struct RpcPlugin {
     /// Plugin name
     pub name: String,
-    
+
     /// Plugin version
     pub version: String,
-    
+
     /// Interfaces implemented by the plugin
     pub interfaces: Vec<String>,
 }
@@ -32,30 +32,37 @@ impl RpcPlugin {
         let mut json = JObject::new();
         json.insert("name".to_string(), JToken::String(self.name.clone()));
         json.insert("version".to_string(), JToken::String(self.version.clone()));
-        
-        let interfaces_array: Vec<JToken> = self.interfaces
+
+        let interfaces_array: Vec<JToken> = self
+            .interfaces
             .iter()
             .map(|s| JToken::String(s.clone()))
             .collect();
-        json.insert("interfaces".to_string(), JToken::Array(JArray::from(interfaces_array)));
-        
+        json.insert(
+            "interfaces".to_string(),
+            JToken::Array(JArray::from(interfaces_array)),
+        );
+
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let name = json.get("name")
+        let name = json
+            .get("name")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'name' field")?
             .to_string();
-            
-        let version = json.get("version")
+
+        let version = json
+            .get("version")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'version' field")?
             .to_string();
-            
-        let interfaces = json.get("interfaces")
+
+        let interfaces = json
+            .get("interfaces")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -64,7 +71,7 @@ impl RpcPlugin {
                     .collect()
             })
             .unwrap_or_default();
-            
+
         Ok(Self {
             name,
             version,

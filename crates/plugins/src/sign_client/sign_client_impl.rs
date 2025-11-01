@@ -73,13 +73,23 @@ impl SecureSignClient for SecureSignClientImpl {
         // In a real implementation, this would make a gRPC call
         Ok(AccountStatus::Single)
     }
-    
-    fn sign_extensible_payload(&self, payload: &ExtensiblePayloadRequest, script_hashes: &[UInt160], network: u32) -> Result<Vec<AccountSigns>, SignException> {
+
+    fn sign_extensible_payload(
+        &self,
+        payload: &ExtensiblePayloadRequest,
+        script_hashes: &[UInt160],
+        network: u32,
+    ) -> Result<Vec<AccountSigns>, SignException> {
         // In a real implementation, this would make a gRPC call
         Ok(Vec::new())
     }
-    
-    fn sign_block(&self, block: &BlockRequest, public_key: &[u8], network: u32) -> Result<Vec<u8>, SignException> {
+
+    fn sign_block(
+        &self,
+        block: &BlockRequest,
+        public_key: &[u8],
+        network: u32,
+    ) -> Result<Vec<u8>, SignException> {
         // In a real implementation, this would make a gRPC call
         Ok(vec![0u8; 64])
     }
@@ -111,22 +121,27 @@ impl ContractParametersContext {
             script_hashes: Vec::new(),
         }
     }
-    
+
     pub fn add_with_script_hash(&mut self, script_hash: UInt160) -> bool {
         self.script_hashes.push(script_hash);
         true
     }
-    
-    pub fn add_signature(&mut self, contract: &Contract, public_key: &ECPoint, signature: &[u8]) -> bool {
+
+    pub fn add_signature(
+        &mut self,
+        contract: &Contract,
+        public_key: &ECPoint,
+        signature: &[u8],
+    ) -> bool {
         // In a real implementation, this would add the signature
         true
     }
-    
+
     pub fn completed(&self) -> bool {
         // In a real implementation, this would check if signing is completed
         false
     }
-    
+
     pub fn get_witnesses(&self) -> Vec<Witness> {
         // In a real implementation, this would return the witnesses
         Vec::new()

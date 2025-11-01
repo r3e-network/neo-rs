@@ -1,6 +1,6 @@
 use super::models::{ApplicationEngineLogModel, BlockchainEventModel, BlockchainExecutionModel};
-use crate::application_logs::store::log_storage_store::LogStorageStore;
 use crate::application_logs::log_reader::LogEventArgs;
+use crate::application_logs::store::log_storage_store::LogStorageStore;
 use crate::application_logs::store::states::{
     BlockLogState, ContractLogState, EngineLogState, ExecutionLogState, NotifyLogState,
     TransactionEngineLogState, TransactionLogState,
@@ -171,15 +171,23 @@ impl NeoStore {
     ) -> IoResult<Vec<ContractLogEntry>> {
         let mut storage = LogStorageStore::new(self.store.get_snapshot());
         let records = match (trigger, event_name) {
-            (Some(t), Some(event)) => storage
-                .find_contract_state_with_trigger_and_event(script_hash, t, event, page, page_size)?,
-            (Some(t), None) => storage.find_contract_state_with_trigger(script_hash, t, page, page_size)?,
+            (Some(t), Some(event)) => storage.find_contract_state_with_trigger_and_event(
+                script_hash,
+                t,
+                event,
+                page,
+                page_size,
+            )?,
+            (Some(t), None) => {
+                storage.find_contract_state_with_trigger(script_hash, t, page, page_size)?
+            }
             (None, _) => storage.find_contract_state(script_hash, page, page_size)?,
         };
 
         let mut entries = Vec::with_capacity(records.len());
         for record in records {
-            let stack = Self::create_stack_item_array(&mut storage, &record.state.notify.stack_item_ids)?;
+            let stack =
+                Self::create_stack_item_array(&mut storage, &record.state.notify.stack_item_ids)?;
             let event = BlockchainEventModel::create_from_contract_state(&record.state, stack);
             entries.push(ContractLogEntry {
                 event,
@@ -222,8 +230,12 @@ impl NeoStore {
                             continue;
                         }
                     }
-                    let stack = Self::create_stack_item_array(&mut storage, &notify_state.stack_item_ids)?;
-                    notifications.push(BlockchainEventModel::create_from_notify_state(&notify_state, stack));
+                    let stack =
+                        Self::create_stack_item_array(&mut storage, &notify_state.stack_item_ids)?;
+                    notifications.push(BlockchainEventModel::create_from_notify_state(
+                        &notify_state,
+                        stack,
+                    ));
                 }
             }
             model = model.with_notifications(notifications);
@@ -249,7 +261,8 @@ impl NeoStore {
         };
 
         let stack = Self::create_stack_item_array(&mut storage, &execution_state.stack_item_ids)?;
-        let mut model = BlockchainExecutionModel::create(TriggerType::Application, &execution_state, stack);
+        let mut model =
+            BlockchainExecutionModel::create(TriggerType::Application, &execution_state, stack);
 
         if let Some(transaction_state) = storage.try_get_transaction_state(hash)? {
             let mut notifications = Vec::new();
@@ -260,8 +273,12 @@ impl NeoStore {
                             continue;
                         }
                     }
-                    let stack = Self::create_stack_item_array(&mut storage, &notify_state.stack_item_ids)?;
-                    notifications.push(BlockchainEventModel::create_from_notify_state(&notify_state, stack));
+                    let stack =
+                        Self::create_stack_item_array(&mut storage, &notify_state.stack_item_ids)?;
+                    notifications.push(BlockchainEventModel::create_from_notify_state(
+                        &notify_state,
+                        stack,
+                    ));
                 }
             }
             model = model.with_notifications(notifications);
@@ -309,7 +326,11 @@ impl NeoStore {
 
         for (index, notify) in executed.notifications.iter().enumerate() {
             let notify_stack_ids = Self::create_stack_item_id_list_from_notify(storage, notify)?;
-            let notify_state = NotifyLogState::create(notify.script_hash, notify.event_name.clone(), notify_stack_ids.clone());
+            let notify_state = NotifyLogState::create(
+                notify.script_hash,
+                notify.event_name.clone(),
+                notify_stack_ids.clone(),
+            );
             let contract_state = ContractLogState::create(
                 executed.transaction.as_ref().map(|tx| tx.hash()),
                 executed.trigger,

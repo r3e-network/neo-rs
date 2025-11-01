@@ -224,7 +224,10 @@ impl RpcServerSettings {
     }
 
     pub fn server_for_network(&self, network: u32) -> Option<RpcServerConfig> {
-        self.servers.iter().find(|cfg| cfg.network == network).cloned()
+        self.servers
+            .iter()
+            .find(|cfg| cfg.network == network)
+            .cloned()
     }
 }
 

@@ -10,24 +10,26 @@ use crate::rest_server::exceptions::{
     uint256_format_exception::UInt256FormatException,
 };
 use crate::rest_server::extensions::ledger_contract_extensions::LedgerContractExtensions;
-use crate::rest_server::models::ledger::MemoryPoolCountModel;
 use crate::rest_server::models::error::error_model::ErrorModel;
+use crate::rest_server::models::ledger::MemoryPoolCountModel;
 use crate::rest_server::rest_server_plugin::RestServerGlobals;
 use crate::rest_server::rest_server_settings::RestServerSettings;
 use crate::rest_server::RestServerUtility;
 use neo_core::error::CoreError;
-use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
 use neo_core::ledger::block::Block as LedgerBlock;
 use neo_core::ledger::block_header::BlockHeader as LedgerBlockHeader;
 use neo_core::network::p2p::payloads::block::Block as NetworkBlock;
 use neo_core::network::p2p::payloads::header::Header as NetworkHeader;
 use neo_core::network::p2p::payloads::witness::Witness as NetworkWitness;
-use neo_core::smart_contract::native::{gas_token::GasToken, ledger_contract::LedgerContract, neo_token::NeoToken, NativeContract};
+use neo_core::smart_contract::native::ledger_contract::HashOrIndex;
+use neo_core::smart_contract::native::{
+    gas_token::GasToken, ledger_contract::LedgerContract, neo_token::NeoToken, NativeContract,
+};
 use neo_core::{NeoSystem, UInt256, Witness as LedgerWitness};
 use serde_json::Value;
 use std::cmp::Ordering;
-use std::sync::Arc;
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub struct LedgerController {
     neo_system: Arc<NeoSystem>,
@@ -45,7 +47,12 @@ impl LedgerController {
         page: Option<i32>,
         size: Option<i32>,
     ) -> Result<Option<Value>, ErrorModel> {
-        self.token_accounts(GasToken::new().id(), GasToken::new().decimals() as i32, page, size)
+        self.token_accounts(
+            GasToken::new().id(),
+            GasToken::new().decimals() as i32,
+            page,
+            size,
+        )
     }
 
     pub fn neo_accounts(
@@ -53,7 +60,12 @@ impl LedgerController {
         page: Option<i32>,
         size: Option<i32>,
     ) -> Result<Option<Value>, ErrorModel> {
-        self.token_accounts(NeoToken::new().id(), NeoToken::new().decimals() as i32, page, size)
+        self.token_accounts(
+            NeoToken::new().id(),
+            NeoToken::new().decimals() as i32,
+            page,
+            size,
+        )
     }
 
     pub fn blocks(
@@ -68,8 +80,9 @@ impl LedgerController {
             .current_index(&store_cache)
             .map_err(Self::map_core_error)?;
 
-        let start = match current_index.checked_sub((page.saturating_sub(1) as u32)
-            .saturating_mul(page_size as u32)) {
+        let start = match current_index
+            .checked_sub((page.saturating_sub(1) as u32).saturating_mul(page_size as u32))
+        {
             Some(value) => value,
             None => return Ok(None),
         };
@@ -192,8 +205,10 @@ impl LedgerController {
             .get_transaction_state(&store_cache, &hash)
             .map_err(Self::map_core_error)?
             .ok_or_else(|| TransactionNotFoundException::new(hash).to_error_model())?;
-        serde_json::to_value(RestServerUtility::transaction_to_j_token(state.transaction()))
-            .map_err(|err| Self::json_error(err.to_string()))
+        serde_json::to_value(RestServerUtility::transaction_to_j_token(
+            state.transaction(),
+        ))
+        .map_err(|err| Self::json_error(err.to_string()))
     }
 
     pub fn transaction_witnesses(&self, hash: &str) -> Result<Value, ErrorModel> {
@@ -247,22 +262,19 @@ impl LedgerController {
         serde_json::to_value(attributes).map_err(|err| Self::json_error(err.to_string()))
     }
 
-    pub fn memory_pool(
-        &self,
-        page: Option<i32>,
-        size: Option<i32>,
-    ) -> Result<Value, ErrorModel> {
+    pub fn memory_pool(&self, page: Option<i32>, size: Option<i32>) -> Result<Value, ErrorModel> {
         let (page, page_size) = Self::resolve_pagination(page, size)?;
         let pool = self.neo_system.mempool();
-        let guard = pool
-            .lock()
-            .map_err(|err| Self::internal_error(format!("Failed to acquire mempool lock: {err}")))?;
+        let guard = pool.lock().map_err(|err| {
+            Self::internal_error(format!("Failed to acquire mempool lock: {err}"))
+        })?;
         let transactions = guard.all_transactions_vec();
         let values: Vec<Value> = transactions
             .iter()
             .map(RestServerUtility::transaction_to_j_token)
             .collect();
-        let paged = Self::paginate_values(values, page, page_size).unwrap_or_else(|| Value::Array(vec![]));
+        let paged =
+            Self::paginate_values(values, page, page_size).unwrap_or_else(|| Value::Array(vec![]));
         Ok(paged)
     }
 
@@ -273,9 +285,9 @@ impl LedgerController {
     ) -> Result<Option<Value>, ErrorModel> {
         let (page, page_size) = Self::resolve_pagination(page, size)?;
         let pool = self.neo_system.mempool();
-        let guard = pool
-            .lock()
-            .map_err(|err| Self::internal_error(format!("Failed to acquire mempool lock: {err}")))?;
+        let guard = pool.lock().map_err(|err| {
+            Self::internal_error(format!("Failed to acquire mempool lock: {err}"))
+        })?;
         if guard.count() == 0 {
             return Ok(None);
         }
@@ -294,9 +306,9 @@ impl LedgerController {
     ) -> Result<Option<Value>, ErrorModel> {
         let (page, page_size) = Self::resolve_pagination(page, size)?;
         let pool = self.neo_system.mempool();
-        let guard = pool
-            .lock()
-            .map_err(|err| Self::internal_error(format!("Failed to acquire mempool lock: {err}")))?;
+        let guard = pool.lock().map_err(|err| {
+            Self::internal_error(format!("Failed to acquire mempool lock: {err}"))
+        })?;
         if guard.count() == 0 {
             return Ok(None);
         }
@@ -310,9 +322,9 @@ impl LedgerController {
 
     pub fn memory_pool_counts(&self) -> Result<MemoryPoolCountModel, ErrorModel> {
         let pool = self.neo_system.mempool();
-        let guard = pool
-            .lock()
-            .map_err(|err| Self::internal_error(format!("Failed to acquire mempool lock: {err}")))?;
+        let guard = pool.lock().map_err(|err| {
+            Self::internal_error(format!("Failed to acquire mempool lock: {err}"))
+        })?;
         Ok(MemoryPoolCountModel::new(
             guard.count(),
             guard.unverified_count(),
@@ -342,11 +354,9 @@ impl LedgerController {
             return Ok(None);
         }
 
-        accounts.sort_by(|a, b| {
-            match b.balance.cmp(&a.balance) {
-                Ordering::Equal => a.script_hash.cmp(&b.script_hash),
-                other => other,
-            }
+        accounts.sort_by(|a, b| match b.balance.cmp(&a.balance) {
+            Ordering::Equal => a.script_hash.cmp(&b.script_hash),
+            other => other,
         });
 
         let paged = Self::paginate_values(
@@ -394,7 +404,10 @@ impl LedgerController {
         network_header
     }
 
-    fn resolve_pagination(page: Option<i32>, size: Option<i32>) -> Result<(usize, usize), ErrorModel> {
+    fn resolve_pagination(
+        page: Option<i32>,
+        size: Option<i32>,
+    ) -> Result<(usize, usize), ErrorModel> {
         let settings = RestServerSettings::current();
         let max_page = settings.max_page_size as i32;
         let page = page.unwrap_or(1);
@@ -419,8 +432,7 @@ impl LedgerController {
     }
 
     fn parse_hash(hash: &str) -> Result<UInt256, ErrorModel> {
-        UInt256::from_str(hash)
-            .map_err(|_| UInt256FormatException::new().to_error_model())
+        UInt256::from_str(hash).map_err(|_| UInt256FormatException::new().to_error_model())
     }
 
     fn map_core_error(error: CoreError) -> ErrorModel {

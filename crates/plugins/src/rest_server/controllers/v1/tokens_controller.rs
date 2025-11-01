@@ -1,5 +1,6 @@
 //! Rust port of `Neo.Plugins.RestServer.Controllers.v1.TokensController`.
 
+use crate::rest_server::binder::uint160_binder_provider::UInt160BinderProvider;
 use crate::rest_server::exceptions::contract_not_found_exception::ContractNotFoundException;
 use crate::rest_server::exceptions::invalid_parameter_range_exception::InvalidParameterRangeException;
 use crate::rest_server::exceptions::nep11_not_supported_exception::Nep11NotSupportedException;
@@ -10,9 +11,9 @@ use crate::rest_server::exceptions::script_hash_format_exception::ScriptHashForm
 use crate::rest_server::helpers::contract_helper::ContractHelper;
 use crate::rest_server::models::error::error_model::ErrorModel;
 use crate::rest_server::models::token::{
-    nep11_token_model::Nep11TokenModel, nep17_token_model::Nep17TokenModel, token_balance_model::TokenBalanceModel,
+    nep11_token_model::Nep11TokenModel, nep17_token_model::Nep17TokenModel,
+    token_balance_model::TokenBalanceModel,
 };
-use crate::rest_server::binder::uint160_binder_provider::UInt160BinderProvider;
 use crate::rest_server::rest_server_plugin::RestServerGlobals;
 use crate::rest_server::rest_server_settings::RestServerSettings;
 use crate::rest_server::tokens::nep11_token::Nep11Token;
@@ -42,8 +43,8 @@ impl TokensController {
     ) -> Result<Option<Vec<Nep17TokenModel>>, ErrorModel> {
         let (page, size) = Self::resolve_pagination(page, size)?;
         let store_cache = self.neo_system.store_cache();
-        let contracts = ContractHelper::list_contracts(&store_cache)
-            .map_err(Self::storage_error)?;
+        let contracts =
+            ContractHelper::list_contracts(&store_cache).map_err(Self::storage_error)?;
 
         let mut supported: Vec<_> = contracts
             .into_iter()
@@ -118,8 +119,8 @@ impl TokensController {
     ) -> Result<Option<Vec<Nep11TokenModel>>, ErrorModel> {
         let (page, size) = Self::resolve_pagination(page, size)?;
         let store_cache = self.neo_system.store_cache();
-        let contracts = ContractHelper::list_contracts(&store_cache)
-            .map_err(Self::storage_error)?;
+        let contracts =
+            ContractHelper::list_contracts(&store_cache).map_err(Self::storage_error)?;
 
         let mut supported: Vec<_> = contracts
             .into_iter()
@@ -190,8 +191,8 @@ impl TokensController {
     pub fn get_balances(&self, address: &str) -> Result<Vec<TokenBalanceModel>, ErrorModel> {
         let owner = Self::parse_script_hash(address)?;
         let store_cache = self.neo_system.store_cache();
-        let contracts = ContractHelper::list_contracts(&store_cache)
-            .map_err(Self::storage_error)?;
+        let contracts =
+            ContractHelper::list_contracts(&store_cache).map_err(Self::storage_error)?;
 
         let mut balances = Vec::new();
 
@@ -240,10 +241,7 @@ impl TokensController {
         Ok(balances)
     }
 
-    fn resolve_pagination(
-        page: Option<i32>,
-        size: Option<i32>,
-    ) -> Result<(i32, i32), ErrorModel> {
+    fn resolve_pagination(page: Option<i32>, size: Option<i32>) -> Result<(i32, i32), ErrorModel> {
         let settings = RestServerSettings::current();
         let max_size = i32::try_from(settings.max_page_size).unwrap_or(i32::MAX);
         let page = page.unwrap_or(1);
@@ -275,25 +273,19 @@ impl TokensController {
                 ContractNotFoundException::new(hash).to_error_model()
             }
             TokenError::NotSupported(hash) => match standard {
-                TokenStandard::Nep17 => {
-                    Nep17NotSupportedException::new(hash).to_error_model()
-                }
-                TokenStandard::Nep11 => {
-                    Nep11NotSupportedException::new(hash).to_error_model()
-                }
+                TokenStandard::Nep17 => Nep17NotSupportedException::new(hash).to_error_model(),
+                TokenStandard::Nep11 => Nep11NotSupportedException::new(hash).to_error_model(),
             },
             TokenError::InvocationFault { method, message } => ErrorModel::with_params(
                 RestErrorCodes::GENERIC_EXCEPTION,
                 format!("InvocationFault({method})"),
                 message,
             ),
-            TokenError::Stack(message) | TokenError::Storage(message) => {
-                ErrorModel::with_params(
-                    RestErrorCodes::GENERIC_EXCEPTION,
-                    "TokenError".to_string(),
-                    message,
-                )
-            }
+            TokenError::Stack(message) | TokenError::Storage(message) => ErrorModel::with_params(
+                RestErrorCodes::GENERIC_EXCEPTION,
+                "TokenError".to_string(),
+                message,
+            ),
             TokenError::Script(err) => ErrorModel::with_params(
                 RestErrorCodes::GENERIC_EXCEPTION,
                 "ScriptHelperError".to_string(),
@@ -329,10 +321,8 @@ mod tests {
     #[test]
     fn map_token_error_for_not_supported() {
         let hash = UInt160::zero();
-        let error_model = TokensController::map_token_error(
-            TokenError::NotSupported(hash),
-            TokenStandard::Nep17,
-        );
+        let error_model =
+            TokensController::map_token_error(TokenError::NotSupported(hash), TokenStandard::Nep17);
         assert_eq!(error_model.code, RestErrorCodes::GENERIC_EXCEPTION);
         assert!(error_model.message.contains("does not support NEP-17"));
     }

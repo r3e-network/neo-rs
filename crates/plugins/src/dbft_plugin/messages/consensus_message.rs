@@ -127,18 +127,18 @@ impl ConsensusMessagePayload {
         let mut reader = MemoryReader::new(data);
         let header = ConsensusMessageHeader::deserialize(&mut reader)?;
         let payload = match header.message_type {
-            ConsensusMessageType::ChangeView => {
-                ConsensusMessagePayload::ChangeView(ChangeView::deserialize_with_header(header, &mut reader)? )
-            }
+            ConsensusMessageType::ChangeView => ConsensusMessagePayload::ChangeView(
+                ChangeView::deserialize_with_header(header, &mut reader)?,
+            ),
             ConsensusMessageType::PrepareRequest => ConsensusMessagePayload::PrepareRequest(
                 PrepareRequest::deserialize_with_header(header, &mut reader)?,
             ),
             ConsensusMessageType::PrepareResponse => ConsensusMessagePayload::PrepareResponse(
                 PrepareResponse::deserialize_with_header(header, &mut reader)?,
             ),
-            ConsensusMessageType::Commit => {
-                ConsensusMessagePayload::Commit(Commit::deserialize_with_header(header, &mut reader)?)
-            }
+            ConsensusMessageType::Commit => ConsensusMessagePayload::Commit(
+                Commit::deserialize_with_header(header, &mut reader)?,
+            ),
             ConsensusMessageType::RecoveryRequest => ConsensusMessagePayload::RecoveryRequest(
                 RecoveryRequest::deserialize_with_header(header, &mut reader)?,
             ),
@@ -160,7 +160,9 @@ impl ConsensusMessagePayload {
     pub fn to_bytes(&self) -> ConsensusMessageResult<Vec<u8>> {
         let mut writer = BinaryWriter::new();
         match self {
-            ConsensusMessagePayload::ChangeView(message) => message.write_with_header(&mut writer)?,
+            ConsensusMessagePayload::ChangeView(message) => {
+                message.write_with_header(&mut writer)?
+            }
             ConsensusMessagePayload::PrepareRequest(message) => {
                 message.write_with_header(&mut writer)?
             }

@@ -7,8 +7,8 @@
 use crate::rest_server::models::error::error_model::ErrorModel;
 use crate::rest_server::models::node::{PluginModel, ProtocolSettingsModel, RemoteNodeModel};
 use crate::rest_server::rest_server_plugin::RestServerGlobals;
-use neo_core::NeoSystem;
 use neo_core::network::p2p::local_node::LocalNode;
+use neo_core::NeoSystem;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 /// Node controller matching C# `Neo.Plugins.RestServer.Controllers.v1.NodeController` behaviour.

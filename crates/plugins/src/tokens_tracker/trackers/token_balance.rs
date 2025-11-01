@@ -9,9 +9,9 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::io::{ISerializable, MemoryReader, BinaryWriter};
+use neo_core::io::{BinaryWriter, ISerializable, MemoryReader};
+use serde::{Deserialize, Serialize};
 use std::num::BigInt;
-use serde::{Serialize, Deserialize};
 
 /// Token balance implementation.
 /// Matches C# TokenBalance class exactly
@@ -20,7 +20,7 @@ pub struct TokenBalance {
     /// Balance amount
     /// Matches C# Balance field
     pub balance: BigInt,
-    
+
     /// Last updated block
     /// Matches C# LastUpdatedBlock field
     pub last_updated_block: u32,
@@ -34,7 +34,7 @@ impl TokenBalance {
             last_updated_block: 0,
         }
     }
-    
+
     /// Creates a new TokenBalance with specified parameters.
     pub fn new_with_params(balance: BigInt, last_updated_block: u32) -> Self {
         Self {
@@ -48,27 +48,27 @@ impl ISerializable for TokenBalance {
     fn size(&self) -> usize {
         self.balance.get_var_size() + 4 // Balance + LastUpdatedBlock
     }
-    
+
     fn serialize(&self, writer: &mut dyn std::io::Write) -> Result<(), String> {
         // Write balance with var size
         self.write_var_bytes(writer, &self.balance.to_bytes_be().1)?;
-        
+
         // Write last updated block
         writer.write_all(&self.last_updated_block.to_le_bytes())?;
-        
+
         Ok(())
     }
-    
+
     fn deserialize(&mut self, reader: &mut dyn std::io::Read) -> Result<(), String> {
         // Read balance with var size
         let balance_bytes = self.read_var_bytes(reader)?;
         self.balance = BigInt::from_bytes_be(num_bigint::Sign::Plus, &balance_bytes);
-        
+
         // Read last updated block
         let mut block_bytes = [0u8; 4];
         reader.read_exact(&mut block_bytes)?;
         self.last_updated_block = u32::from_le_bytes(block_bytes);
-        
+
         Ok(())
     }
 }
@@ -92,33 +92,33 @@ impl TokenBalance {
         writer.write_all(data)?;
         Ok(())
     }
-    
+
     /// Reads variable-length bytes from reader.
     /// Matches C# ReadVarMemory method
     fn read_var_bytes(&self, reader: &mut dyn std::io::Read) -> Result<Vec<u8>, String> {
         let mut length_byte = [0u8; 1];
         reader.read_exact(&mut length_byte)?;
-        
+
         let length = match length_byte[0] {
             len if len < 0xFD => len as usize,
             0xFD => {
                 let mut bytes = [0u8; 2];
                 reader.read_exact(&mut bytes)?;
                 u16::from_le_bytes(bytes) as usize
-            },
+            }
             0xFE => {
                 let mut bytes = [0u8; 4];
                 reader.read_exact(&mut bytes)?;
                 u32::from_le_bytes(bytes) as usize
-            },
+            }
             0xFF => {
                 let mut bytes = [0u8; 8];
                 reader.read_exact(&mut bytes)?;
                 u64::from_le_bytes(bytes) as usize
-            },
+            }
             _ => return Err("Invalid var length prefix".to_string()),
         };
-        
+
         let mut data = vec![0u8; length];
         reader.read_exact(&mut data)?;
         Ok(data)

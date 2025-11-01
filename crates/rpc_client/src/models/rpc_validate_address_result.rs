@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 pub struct RpcValidateAddressResult {
     /// The address that was validated
     pub address: String,
-    
+
     /// Whether the address is valid
     pub is_valid: bool,
 }
@@ -31,22 +31,21 @@ impl RpcValidateAddressResult {
         json.insert("isvalid".to_string(), JToken::Boolean(self.is_valid));
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let address = json.get("address")
+        let address = json
+            .get("address")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'address' field")?
             .to_string();
-            
-        let is_valid = json.get("isvalid")
+
+        let is_valid = json
+            .get("isvalid")
             .and_then(|v| v.as_boolean())
             .ok_or("Missing or invalid 'isvalid' field")?;
-            
-        Ok(Self {
-            address,
-            is_valid,
-        })
+
+        Ok(Self { address, is_valid })
     }
 }

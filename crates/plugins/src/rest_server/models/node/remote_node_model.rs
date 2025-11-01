@@ -18,15 +18,15 @@ pub struct RemoteNodeModel {
     /// Remote peer's ip address
     /// Matches C# RemoteAddress property
     pub remote_address: String,
-    
+
     /// Remote peer's port number
     /// Matches C# RemotePort property
     pub remote_port: i32,
-    
+
     /// Remote peer's listening tcp port
     /// Matches C# ListenTcpPort property
     pub listen_tcp_port: i32,
-    
+
     /// Remote peer's last synced block height
     /// Matches C# LastBlockIndex property
     pub last_block_index: u32,
@@ -43,7 +43,7 @@ impl RemoteNodeModel {
             last_block_index: 0,
         }
     }
-    
+
     /// Creates a new RemoteNodeModel with parameters
     /// Matches C# constructor with parameters
     pub fn with_params(

@@ -11,10 +11,7 @@ pub struct InvokeParams {
 }
 
 impl InvokeParams {
-    pub fn new(
-        contract_parameters: Vec<ContractParameter>,
-        signers: Vec<Signer>,
-    ) -> Self {
+    pub fn new(contract_parameters: Vec<ContractParameter>, signers: Vec<Signer>) -> Self {
         Self {
             contract_parameters,
             signers,

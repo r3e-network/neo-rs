@@ -1,4 +1,6 @@
-use neo_core::neo_io::{helper::get_var_size, BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
+use neo_core::neo_io::{
+    helper::get_var_size, BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
+};
 use neo_core::neo_ledger::ApplicationExecuted;
 use neo_vm::VMState;
 use uuid::Uuid;
@@ -32,7 +34,11 @@ impl Serializable for ExecutionLogState {
             1 => VMState::HALT,
             2 => VMState::FAULT,
             4 => VMState::BREAK,
-            value => return Err(IoError::invalid_data(format!("Invalid VMState value: {value}"))),
+            value => {
+                return Err(IoError::invalid_data(format!(
+                    "Invalid VMState value: {value}"
+                )))
+            }
         };
 
         let exception = reader.read_var_string(usize::MAX)?;
@@ -69,8 +75,7 @@ impl Serializable for ExecutionLogState {
     }
 
     fn size(&self) -> usize {
-        1
-            + get_var_size(self.exception.as_bytes().len() as u64)
+        1 + get_var_size(self.exception.as_bytes().len() as u64)
             + self.exception.as_bytes().len()
             + 8
             + 4

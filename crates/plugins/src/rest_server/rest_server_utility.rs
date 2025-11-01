@@ -5,18 +5,18 @@
 // the UtilsController; additional helpers will be added as the remaining
 // controllers are ported.
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use neo_core::neo_system::ProtocolSettings;
 use neo_core::wallets::helper::Helper as WalletHelper;
 use neo_core::UInt160;
 use neo_vm::script::Script;
 use neo_vm::stack_item::{StackItem, StackItemType};
-use thiserror::Error;
+use num_bigint::BigInt;
 use once_cell::sync::Lazy;
 use serde_json::{Map as JsonMap, Value};
-use num_bigint::BigInt;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum RestServerUtilityError {
@@ -28,8 +28,7 @@ pub enum RestServerUtilityError {
 
 pub struct RestServerUtility;
 
-static EMPTY_SCRIPT: Lazy<Arc<Script>> =
-    Lazy::new(|| Arc::new(Script::new_relaxed(Vec::new())));
+static EMPTY_SCRIPT: Lazy<Arc<Script>> = Lazy::new(|| Arc::new(Script::new_relaxed(Vec::new())));
 
 impl RestServerUtility {
     /// Converts a textual representation (address or script hash) into a `UInt160`.
@@ -42,9 +41,8 @@ impl RestServerUtility {
             return Ok(hash);
         }
 
-        WalletHelper::to_script_hash(address, settings.address_version).map_err(|err| {
-            RestServerUtilityError::InvalidAddress(err)
-        })
+        WalletHelper::to_script_hash(address, settings.address_version)
+            .map_err(|err| RestServerUtilityError::InvalidAddress(err))
     }
 
     /// Attempts to convert the supplied value into a script hash, returning `None` when parsing fails.
@@ -157,26 +155,34 @@ impl RestServerUtility {
     fn stack_item_from_j_token_internal(
         token: &Value,
     ) -> Result<StackItem, RestServerUtilityError> {
-        let obj = token
-            .as_object()
-            .ok_or_else(|| RestServerUtilityError::StackItem("StackItem JSON must be an object".to_string()))?;
+        let obj = token.as_object().ok_or_else(|| {
+            RestServerUtilityError::StackItem("StackItem JSON must be an object".to_string())
+        })?;
 
         let type_value = Self::get_case_insensitive(obj, "type")
             .and_then(Value::as_str)
-            .ok_or_else(|| RestServerUtilityError::StackItem("StackItem JSON requires a type field".to_string()))?;
+            .ok_or_else(|| {
+                RestServerUtilityError::StackItem(
+                    "StackItem JSON requires a type field".to_string(),
+                )
+            })?;
 
-        let value_token = Self::get_case_insensitive(obj, "value")
-            .ok_or_else(|| RestServerUtilityError::StackItem("StackItem JSON requires a value field".to_string()))?;
+        let value_token = Self::get_case_insensitive(obj, "value").ok_or_else(|| {
+            RestServerUtilityError::StackItem("StackItem JSON requires a value field".to_string())
+        })?;
 
-        let stack_type = Self::parse_stack_item_type(type_value)
-            .ok_or_else(|| RestServerUtilityError::StackItem(format!("Unknown StackItemType: {type_value}")))?;
+        let stack_type = Self::parse_stack_item_type(type_value).ok_or_else(|| {
+            RestServerUtilityError::StackItem(format!("Unknown StackItemType: {type_value}"))
+        })?;
 
         let item = match stack_type {
             StackItemType::Any => StackItem::null(),
             StackItemType::Boolean => {
-                let value = value_token
-                    .as_bool()
-                    .ok_or_else(|| RestServerUtilityError::StackItem("Boolean stack item requires bool value".to_string()))?;
+                let value = value_token.as_bool().ok_or_else(|| {
+                    RestServerUtilityError::StackItem(
+                        "Boolean stack item requires bool value".to_string(),
+                    )
+                })?;
                 StackItem::from_bool(value)
             }
             StackItemType::Integer => {
@@ -189,32 +195,39 @@ impl RestServerUtility {
                         ))
                     }
                 };
-                let bigint = BigInt::parse_bytes(text.as_bytes(), 10)
-                    .ok_or_else(|| RestServerUtilityError::StackItem("Invalid integer value".to_string()))?;
+                let bigint = BigInt::parse_bytes(text.as_bytes(), 10).ok_or_else(|| {
+                    RestServerUtilityError::StackItem("Invalid integer value".to_string())
+                })?;
                 StackItem::from_int(bigint)
             }
             StackItemType::ByteString => {
-                let text = value_token
-                    .as_str()
-                    .ok_or_else(|| RestServerUtilityError::StackItem("ByteString stack item requires base64 string".to_string()))?;
-                let bytes = BASE64
-                    .decode(text.as_bytes())
-                    .map_err(|err| RestServerUtilityError::StackItem(format!("Invalid base64: {err}")))?;
+                let text = value_token.as_str().ok_or_else(|| {
+                    RestServerUtilityError::StackItem(
+                        "ByteString stack item requires base64 string".to_string(),
+                    )
+                })?;
+                let bytes = BASE64.decode(text.as_bytes()).map_err(|err| {
+                    RestServerUtilityError::StackItem(format!("Invalid base64: {err}"))
+                })?;
                 StackItem::from_byte_string(bytes)
             }
             StackItemType::Buffer => {
-                let text = value_token
-                    .as_str()
-                    .ok_or_else(|| RestServerUtilityError::StackItem("Buffer stack item requires base64 string".to_string()))?;
-                let bytes = BASE64
-                    .decode(text.as_bytes())
-                    .map_err(|err| RestServerUtilityError::StackItem(format!("Invalid base64: {err}")))?;
+                let text = value_token.as_str().ok_or_else(|| {
+                    RestServerUtilityError::StackItem(
+                        "Buffer stack item requires base64 string".to_string(),
+                    )
+                })?;
+                let bytes = BASE64.decode(text.as_bytes()).map_err(|err| {
+                    RestServerUtilityError::StackItem(format!("Invalid base64: {err}"))
+                })?;
                 StackItem::from_buffer(bytes)
             }
             StackItemType::Array => {
-                let array = value_token
-                    .as_array()
-                    .ok_or_else(|| RestServerUtilityError::StackItem("Array stack item requires array value".to_string()))?;
+                let array = value_token.as_array().ok_or_else(|| {
+                    RestServerUtilityError::StackItem(
+                        "Array stack item requires array value".to_string(),
+                    )
+                })?;
                 let mut items = Vec::with_capacity(array.len());
                 for entry in array {
                     items.push(Self::stack_item_from_j_token_internal(entry)?);
@@ -222,9 +235,11 @@ impl RestServerUtility {
                 StackItem::from_array(items)
             }
             StackItemType::Struct => {
-                let array = value_token
-                    .as_array()
-                    .ok_or_else(|| RestServerUtilityError::StackItem("Struct stack item requires array value".to_string()))?;
+                let array = value_token.as_array().ok_or_else(|| {
+                    RestServerUtilityError::StackItem(
+                        "Struct stack item requires array value".to_string(),
+                    )
+                })?;
                 let mut items = Vec::with_capacity(array.len());
                 for entry in array {
                     items.push(Self::stack_item_from_j_token_internal(entry)?);
@@ -232,9 +247,11 @@ impl RestServerUtility {
                 StackItem::from_struct(items)
             }
             StackItemType::Map => {
-                let array = value_token
-                    .as_array()
-                    .ok_or_else(|| RestServerUtilityError::StackItem("Map stack item requires array value".to_string()))?;
+                let array = value_token.as_array().ok_or_else(|| {
+                    RestServerUtilityError::StackItem(
+                        "Map stack item requires array value".to_string(),
+                    )
+                })?;
                 let mut entries = BTreeMap::new();
                 for entry in array {
                     let obj = entry.as_object().ok_or_else(|| {
@@ -246,9 +263,10 @@ impl RestServerUtility {
                     let key_token = Self::get_case_insensitive(obj, "key").ok_or_else(|| {
                         RestServerUtilityError::StackItem("Map entry missing key".to_string())
                     })?;
-                    let value_token = Self::get_case_insensitive(obj, "value").ok_or_else(|| {
-                        RestServerUtilityError::StackItem("Map entry missing value".to_string())
-                    })?;
+                    let value_token =
+                        Self::get_case_insensitive(obj, "value").ok_or_else(|| {
+                            RestServerUtilityError::StackItem("Map entry missing value".to_string())
+                        })?;
 
                     let key_item = Self::stack_item_from_j_token_internal(key_token)?;
                     let value_item = Self::stack_item_from_j_token_internal(value_token)?;
@@ -257,9 +275,9 @@ impl RestServerUtility {
                 StackItem::from_map(entries)
             }
             StackItemType::Pointer => {
-                let position = value_token
-                    .as_i64()
-                    .ok_or_else(|| RestServerUtilityError::StackItem("Pointer value must be integer".to_string()))?;
+                let position = value_token.as_i64().ok_or_else(|| {
+                    RestServerUtilityError::StackItem("Pointer value must be integer".to_string())
+                })?;
                 let position = usize::try_from(position).map_err(|_| {
                     RestServerUtilityError::StackItem("Pointer position out of range".to_string())
                 })?;
@@ -291,10 +309,7 @@ impl RestServerUtility {
         }
     }
 
-    fn get_case_insensitive<'a>(
-        map: &'a JsonMap<String, Value>,
-        name: &str,
-    ) -> Option<&'a Value> {
+    fn get_case_insensitive<'a>(map: &'a JsonMap<String, Value>, name: &str) -> Option<&'a Value> {
         let lowered = name.to_lowercase();
         map.iter()
             .find(|(key, _)| key.to_lowercase() == lowered)

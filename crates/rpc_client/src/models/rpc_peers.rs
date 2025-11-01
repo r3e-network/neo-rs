@@ -17,10 +17,10 @@ use serde::{Deserialize, Serialize};
 pub struct RpcPeers {
     /// Unconnected peers
     pub unconnected: Vec<RpcPeer>,
-    
+
     /// Bad peers
     pub bad: Vec<RpcPeer>,
-    
+
     /// Connected peers
     pub connected: Vec<RpcPeer>,
 }
@@ -30,32 +30,42 @@ impl RpcPeers {
     /// Matches C# ToJson
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
-        
-        let unconnected_array: Vec<JToken> = self.unconnected
+
+        let unconnected_array: Vec<JToken> = self
+            .unconnected
             .iter()
             .map(|p| JToken::Object(p.to_json()))
             .collect();
-        json.insert("unconnected".to_string(), JToken::Array(JArray::from(unconnected_array)));
-        
-        let bad_array: Vec<JToken> = self.bad
+        json.insert(
+            "unconnected".to_string(),
+            JToken::Array(JArray::from(unconnected_array)),
+        );
+
+        let bad_array: Vec<JToken> = self
+            .bad
             .iter()
             .map(|p| JToken::Object(p.to_json()))
             .collect();
         json.insert("bad".to_string(), JToken::Array(JArray::from(bad_array)));
-        
-        let connected_array: Vec<JToken> = self.connected
+
+        let connected_array: Vec<JToken> = self
+            .connected
             .iter()
             .map(|p| JToken::Object(p.to_json()))
             .collect();
-        json.insert("connected".to_string(), JToken::Array(JArray::from(connected_array)));
-        
+        json.insert(
+            "connected".to_string(),
+            JToken::Array(JArray::from(connected_array)),
+        );
+
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let unconnected = json.get("unconnected")
+        let unconnected = json
+            .get("unconnected")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -64,8 +74,9 @@ impl RpcPeers {
                     .collect()
             })
             .unwrap_or_default();
-            
-        let bad = json.get("bad")
+
+        let bad = json
+            .get("bad")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -74,8 +85,9 @@ impl RpcPeers {
                     .collect()
             })
             .unwrap_or_default();
-            
-        let connected = json.get("connected")
+
+        let connected = json
+            .get("connected")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -84,7 +96,7 @@ impl RpcPeers {
                     .collect()
             })
             .unwrap_or_default();
-            
+
         Ok(Self {
             unconnected,
             bad,
@@ -98,7 +110,7 @@ impl RpcPeers {
 pub struct RpcPeer {
     /// Peer address
     pub address: String,
-    
+
     /// Peer port
     pub port: i32,
 }
@@ -112,24 +124,24 @@ impl RpcPeer {
         json.insert("port".to_string(), JToken::Number(self.port as f64));
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let address = json.get("address")
+        let address = json
+            .get("address")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'address' field")?
             .to_string();
-            
-        let port_str = json.get("port")
+
+        let port_str = json
+            .get("port")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'port' field")?;
-        let port = port_str.parse::<i32>()
+        let port = port_str
+            .parse::<i32>()
             .map_err(|_| format!("Invalid port value: {}", port_str))?;
-            
-        Ok(Self {
-            address,
-            port,
-        })
+
+        Ok(Self { address, port })
     }
 }

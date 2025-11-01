@@ -9,15 +9,15 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::{UInt160, ProtocolSettings, KeyPair};
-use neo_core::wallets::{WalletAccount, BaseWalletAccount};
+use neo_core::wallets::{BaseWalletAccount, WalletAccount};
+use neo_core::{KeyPair, ProtocolSettings, UInt160};
 
 /// SQLite wallet account implementation.
 /// Matches C# SQLiteWalletAccount class exactly
 pub struct SQLiteWalletAccount {
     /// Base wallet account functionality
     base: BaseWalletAccount,
-    
+
     /// The private key of the account
     /// Matches C# Key field
     pub key: Option<KeyPair>,
@@ -32,7 +32,7 @@ impl SQLiteWalletAccount {
             key: None,
         }
     }
-    
+
     /// Sets the private key.
     pub fn set_key(&mut self, key: Option<KeyPair>) {
         self.key = key;
@@ -43,47 +43,47 @@ impl WalletAccount for SQLiteWalletAccount {
     fn script_hash(&self) -> UInt160 {
         self.base.script_hash()
     }
-    
+
     fn label(&self) -> &str {
         self.base.label()
     }
-    
+
     fn set_label(&mut self, label: String) {
         self.base.set_label(label);
     }
-    
+
     fn is_default(&self) -> bool {
         self.base.is_default()
     }
-    
+
     fn set_is_default(&mut self, is_default: bool) {
         self.base.set_is_default(is_default);
     }
-    
+
     fn lock(&self) -> bool {
         self.base.lock()
     }
-    
+
     fn set_lock(&mut self, lock: bool) {
         self.base.set_lock(lock);
     }
-    
+
     fn contract(&self) -> Option<&Contract> {
         self.base.contract()
     }
-    
+
     fn set_contract(&mut self, contract: Option<Contract>) {
         self.base.set_contract(contract);
     }
-    
+
     fn has_key(&self) -> bool {
         self.key.is_some()
     }
-    
+
     fn get_key(&self) -> Option<KeyPair> {
         self.key.clone()
     }
-    
+
     fn protocol_settings(&self) -> &ProtocolSettings {
         self.base.protocol_settings()
     }

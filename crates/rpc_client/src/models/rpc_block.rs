@@ -18,10 +18,10 @@ use serde::{Deserialize, Serialize};
 pub struct RpcBlock {
     /// The block data
     pub block: Block,
-    
+
     /// Number of confirmations
     pub confirmations: u32,
-    
+
     /// Hash of the next block
     pub next_block_hash: Option<UInt256>,
 }
@@ -31,31 +31,38 @@ impl RpcBlock {
     /// Matches C# ToJson
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = crate::utility::block_to_json(&self.block, protocol_settings);
-        json.insert("confirmations".to_string(), neo_json::JToken::Number(self.confirmations as f64));
-        
+        json.insert(
+            "confirmations".to_string(),
+            neo_json::JToken::Number(self.confirmations as f64),
+        );
+
         if let Some(hash) = self.next_block_hash {
-            json.insert("nextblockhash".to_string(), neo_json::JToken::String(hash.to_string()));
+            json.insert(
+                "nextblockhash".to_string(),
+                neo_json::JToken::String(hash.to_string()),
+            );
         } else {
             json.insert("nextblockhash".to_string(), neo_json::JToken::Null);
         }
-        
+
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
         let block = crate::utility::block_from_json(json, protocol_settings)?;
-        
-        let confirmations = json.get("confirmations")
+
+        let confirmations = json
+            .get("confirmations")
             .and_then(|v| v.as_number())
-            .ok_or("Missing or invalid 'confirmations' field")?
-            as u32;
-            
-        let next_block_hash = json.get("nextblockhash")
+            .ok_or("Missing or invalid 'confirmations' field")? as u32;
+
+        let next_block_hash = json
+            .get("nextblockhash")
             .and_then(|v| v.as_string())
             .and_then(|s| UInt256::parse(s).ok());
-            
+
         Ok(Self {
             block,
             confirmations,

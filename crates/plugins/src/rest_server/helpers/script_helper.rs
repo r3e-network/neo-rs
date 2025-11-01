@@ -8,13 +8,13 @@
 use crate::rest_server::rest_server_plugin::RestServerGlobals;
 use crate::rest_server::rest_server_settings::RestServerSettings;
 use crate::rest_server::rest_server_utility::RestServerUtility;
-use neo_core::network::p2p::payloads::transaction::Transaction;
-use neo_core::network::p2p::payloads::Signer;
-use neo_core::network::p2p::payloads::witness::Witness;
 use neo_core::neo_system::ProtocolSettings;
+use neo_core::network::p2p::payloads::transaction::Transaction;
+use neo_core::network::p2p::payloads::witness::Witness;
+use neo_core::network::p2p::payloads::Signer;
 use neo_core::persistence::data_cache::DataCache;
-use neo_core::smart_contract::native::ledger_contract::LedgerContract;
 use neo_core::smart_contract::contract_parameter::ContractParameter;
+use neo_core::smart_contract::native::ledger_contract::LedgerContract;
 use neo_core::smart_contract::{ApplicationEngine, CallFlags, TriggerType};
 use neo_core::UInt160;
 use neo_vm::error::VmError;
@@ -81,8 +81,7 @@ impl ScriptHelper {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let script =
-            build_dynamic_call_script(script_hash, method, CallFlags::ALL, &stack_args)?;
+        let script = build_dynamic_call_script(script_hash, method, CallFlags::ALL, &stack_args)?;
         let gas_limit = RestServerSettings::current().max_gas_invoke;
 
         let mut tx = signers.clone().map(|signer_list| {
@@ -105,7 +104,8 @@ impl ScriptHelper {
 
         let mut engine = ApplicationEngine::new(
             TriggerType::Application,
-            tx.as_ref().map(|transaction| Arc::new(transaction.clone()) as Arc<_>),
+            tx.as_ref()
+                .map(|transaction| Arc::new(transaction.clone()) as Arc<_>),
             Arc::clone(&snapshot),
             None,
             protocol_settings.clone(),
@@ -116,7 +116,11 @@ impl ScriptHelper {
 
         if let Some(transaction) = tx.take() {
             engine
-                .load_script(transaction.script().to_vec(), CallFlags::ALL, Some(*script_hash))
+                .load_script(
+                    transaction.script().to_vec(),
+                    CallFlags::ALL,
+                    Some(*script_hash),
+                )
                 .map_err(|err| ScriptHelperError::Engine(err.to_string()))?;
         } else {
             engine
@@ -159,8 +163,8 @@ impl ScriptHelper {
         signers: Option<Vec<Signer>>,
         witnesses: Option<Vec<Witness>>,
     ) -> Result<ApplicationEngine, ScriptHelperError> {
-        let neo_system = RestServerGlobals::neo_system()
-            .ok_or(ScriptHelperError::NeoSystemUnavailable)?;
+        let neo_system =
+            RestServerGlobals::neo_system().ok_or(ScriptHelperError::NeoSystemUnavailable)?;
         let snapshot = Arc::new(neo_system.store_cache().data_cache().clone());
         let gas_limit = RestServerSettings::current().max_gas_invoke;
         let system_settings = neo_system.settings();
@@ -190,7 +194,8 @@ impl ScriptHelper {
 
         let mut engine = ApplicationEngine::new(
             TriggerType::Application,
-            tx.as_ref().map(|transaction| Arc::new(transaction.clone()) as Arc<_>),
+            tx.as_ref()
+                .map(|transaction| Arc::new(transaction.clone()) as Arc<_>),
             Arc::clone(&snapshot),
             None,
             protocol_settings,

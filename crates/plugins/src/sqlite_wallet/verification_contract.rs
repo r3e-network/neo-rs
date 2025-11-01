@@ -2,8 +2,8 @@
 //!
 //! Provides verification contract functionality for Neo blockchain.
 
-use serde::{Deserialize, Serialize};
 use super::contract::Contract;
+use serde::{Deserialize, Serialize};
 
 /// Verification Contract structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,9 +49,9 @@ impl VerificationContract {
 
     /// Check if contract is valid
     pub fn is_valid(&self) -> bool {
-        self.contract.is_valid() && 
-        !self.public_keys.is_empty() && 
-        self.required_signature_count > 0 &&
-        self.required_signature_count <= self.public_keys.len() as u32
+        self.contract.is_valid()
+            && !self.public_keys.is_empty()
+            && self.required_signature_count > 0
+            && self.required_signature_count <= self.public_keys.len() as u32
     }
 }

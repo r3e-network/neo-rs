@@ -114,6 +114,46 @@ impl DataCache {
         self.on_update.write().unwrap().push(handler);
     }
 
+    /// Creates a deep copy of this cache, including tracked entries and change set state.
+    pub fn clone_cache(&self) -> Self {
+        let clone = DataCache::new_with_store(
+            self.is_read_only(),
+            self.store_get.as_ref().map(Arc::clone),
+            self.store_find.as_ref().map(Arc::clone),
+        );
+
+        {
+            let source = self.dictionary.read().unwrap();
+            let mut target = clone.dictionary.write().unwrap();
+            for (key, trackable) in source.iter() {
+                target.insert(key.clone(), trackable.clone());
+            }
+        }
+
+        if !self.is_read_only() {
+            if let (Some(source), Some(target)) = (&self.change_set, &clone.change_set) {
+                let mut target_guard = target.write().unwrap();
+                for key in source.read().unwrap().iter() {
+                    target_guard.insert(key.clone());
+                }
+            }
+        }
+
+        clone
+    }
+
+    /// Merges tracked changes from another cache into this one.
+    pub fn merge_tracked_items(&self, items: &[(StorageKey, Trackable)]) {
+        for (key, trackable) in items {
+            match trackable.state {
+                TrackState::Added => self.add(key.clone(), trackable.item.clone()),
+                TrackState::Changed => self.update(key.clone(), trackable.item.clone()),
+                TrackState::Deleted => self.delete(key),
+                TrackState::None | TrackState::NotFound => {}
+            }
+        }
+    }
+
     /// Gets an item from the cache.
     pub fn get(&self, key: &StorageKey) -> Option<StorageItem> {
         if let Some(trackable) = self.dictionary.read().unwrap().get(key) {
@@ -257,6 +297,64 @@ impl DataCache {
 }
 
 impl IReadOnlyStore for DataCache {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::smart_contract::StorageKey;
+
+    fn make_key(id: i32, suffix: &[u8]) -> StorageKey {
+        StorageKey::new(id, suffix.to_vec())
+    }
+
+    #[test]
+    fn clone_cache_preserves_entries_and_change_set() {
+        let cache = DataCache::new(false);
+        let key = make_key(1, b"a");
+        cache.add(key.clone(), StorageItem::from_bytes(vec![42]));
+
+        let cloned = cache.clone_cache();
+
+        assert_eq!(
+            cloned.get(&key).unwrap().get_value(),
+            vec![42],
+            "cloned cache should contain original entry"
+        );
+
+        let change_set = cloned.get_change_set();
+        assert!(
+            change_set.contains(&key),
+            "clone should retain pending change set entries"
+        );
+    }
+
+    #[test]
+    fn merge_tracked_items_applies_changes() {
+        let base = DataCache::new(false);
+        let key_added = make_key(2, b"b");
+        let key_updated = make_key(3, b"c");
+
+        base.add(key_updated.clone(), StorageItem::from_bytes(vec![1]));
+
+        let clone = base.clone_cache();
+        clone.add(key_added.clone(), StorageItem::from_bytes(vec![7]));
+        clone.update(key_updated.clone(), StorageItem::from_bytes(vec![9]));
+
+        let tracked = clone.tracked_items();
+        base.merge_tracked_items(&tracked);
+
+        assert_eq!(
+            base.get(&key_added).unwrap().get_value(),
+            vec![7],
+            "merge should add new items"
+        );
+        assert_eq!(
+            base.get(&key_updated).unwrap().get_value(),
+            vec![9],
+            "merge should update existing items"
+        );
+    }
+}
 
 impl IReadOnlyStoreGeneric<StorageKey, StorageItem> for DataCache {
     fn try_get(&self, key: &StorageKey) -> Option<StorageItem> {

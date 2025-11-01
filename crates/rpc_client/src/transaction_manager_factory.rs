@@ -27,7 +27,7 @@ impl TransactionManagerFactory {
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self { rpc_client }
     }
-    
+
     /// Create an unsigned Transaction object with given parameters
     /// Matches C# MakeTransactionAsync
     pub async fn make_transaction(
@@ -36,18 +36,15 @@ impl TransactionManagerFactory {
         signers: &[Signer],
     ) -> Result<TransactionManager, Box<dyn std::error::Error>> {
         // Invoke script to get gas consumption
-        let invoke_result = self.rpc_client
+        let invoke_result = self
+            .rpc_client
             .invoke_script_with_signers(script, signers)
             .await?;
-            
-        self.make_transaction_with_fee(
-            script,
-            invoke_result.gas_consumed,
-            signers,
-            &[],
-        ).await
+
+        self.make_transaction_with_fee(script, invoke_result.gas_consumed, signers, &[])
+            .await
     }
-    
+
     /// Create an unsigned Transaction object with given parameters and attributes
     /// Matches C# MakeTransactionAsync with attributes
     pub async fn make_transaction_with_attributes(
@@ -57,18 +54,15 @@ impl TransactionManagerFactory {
         attributes: &[TransactionAttribute],
     ) -> Result<TransactionManager, Box<dyn std::error::Error>> {
         // Invoke script to get gas consumption
-        let invoke_result = self.rpc_client
+        let invoke_result = self
+            .rpc_client
             .invoke_script_with_signers(script, signers)
             .await?;
-            
-        self.make_transaction_with_fee(
-            script,
-            invoke_result.gas_consumed,
-            signers,
-            attributes,
-        ).await
+
+        self.make_transaction_with_fee(script, invoke_result.gas_consumed, signers, attributes)
+            .await
     }
-    
+
     /// Create an unsigned Transaction object with given parameters and system fee
     /// Matches C# MakeTransactionAsync with systemFee parameter
     pub async fn make_transaction_with_fee(
@@ -80,24 +74,28 @@ impl TransactionManagerFactory {
     ) -> Result<TransactionManager, Box<dyn std::error::Error>> {
         // Get current block count
         let block_count = self.rpc_client.get_block_count().await?;
-        
+
         // Generate random nonce
         let mut rng = rand::thread_rng();
         let nonce = rng.gen::<u32>();
-        
+
         // Create transaction
         let tx = Transaction {
             version: 0,
             nonce,
             script: script.to_vec(),
             signers: signers.to_vec(),
-            valid_until_block: block_count - 1 + self.rpc_client.protocol_settings.max_valid_until_block_increment,
+            valid_until_block: block_count - 1
+                + self
+                    .rpc_client
+                    .protocol_settings
+                    .max_valid_until_block_increment,
             system_fee,
             network_fee: 0, // Will be calculated later
             attributes: attributes.to_vec(),
             witnesses: vec![],
         };
-        
+
         Ok(TransactionManager::new(tx, self.rpc_client.clone()))
     }
 }

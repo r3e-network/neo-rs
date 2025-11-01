@@ -9,17 +9,14 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use base64::{engine::general_purpose, Engine as _};
 use crate::rest_server::rest_server_plugin::RestServerGlobals;
+use base64::{engine::general_purpose, Engine as _};
 use hex::encode as hex_encode;
 use neo_core::network::p2p::payloads::{
-    block::Block,
-    header::Header as BlockHeader,
-    signer::Signer,
-    transaction::Transaction,
-    transaction_attribute::TransactionAttribute,
-    witness::Witness,
+    block::Block, header::Header as BlockHeader, signer::Signer, transaction::Transaction,
+    transaction_attribute::TransactionAttribute, witness::Witness,
 };
+use neo_core::prelude::Serializable;
 use neo_core::smart_contract::contract_state::{ContractState, MethodToken, NefFile};
 use neo_core::smart_contract::manifest::{
     ContractAbi, ContractEventDescriptor, ContractGroup, ContractManifest,
@@ -28,7 +25,6 @@ use neo_core::smart_contract::manifest::{
 };
 use neo_core::witness_rule::WitnessConditionType;
 use neo_core::witness_rule::{WitnessCondition, WitnessRule};
-use neo_core::prelude::Serializable;
 use serde_json::{json, Value};
 use tracing::warn;
 
@@ -343,9 +339,7 @@ impl super::RestServerUtility {
 
     /// Converts contract method parameter to JSON token
     /// Matches C# ContractMethodParameterToJToken method
-    pub fn contract_method_parameter_to_j_token(
-        parameter: &ContractParameterDefinition,
-    ) -> Value {
+    pub fn contract_method_parameter_to_j_token(parameter: &ContractParameterDefinition) -> Value {
         json!({
             "Type": parameter.param_type,
             "Name": parameter.name,

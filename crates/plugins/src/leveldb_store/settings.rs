@@ -21,7 +21,7 @@ impl Default for LevelDBStoreSettings {
     fn default() -> Self {
         Self {
             path: "./data".to_string(),
-            cache_size: 8 * 1024 * 1024, // 8MB
+            cache_size: 8 * 1024 * 1024,        // 8MB
             write_buffer_size: 4 * 1024 * 1024, // 4MB
             max_open_files: 1000,
         }

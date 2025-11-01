@@ -22,9 +22,17 @@ impl RpcError {
         let message = message.into();
         let data = data.and_then(|value| {
             let trimmed = value.trim().to_string();
-            if trimmed.is_empty() { None } else { Some(trimmed) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
         });
-        Self { code, message, data }
+        Self {
+            code,
+            message,
+            data,
+        }
     }
 
     /// Returns the JSON-RPC error code.
@@ -69,7 +77,7 @@ impl RpcError {
     /// Serialises the error into a Neo JSON token (matches C# `ToJson`).
     pub fn to_json(&self) -> JToken {
         let mut obj = JObject::new();
-                obj.set("code".to_string(), Some(JToken::Number(self.code as f64)));
+        obj.set("code".to_string(), Some(JToken::Number(self.code as f64)));
         obj.set(
             "message".to_string(),
             Some(JToken::String(self.error_message())),
@@ -157,10 +165,7 @@ impl RpcError {
 
     /// Wallet fee limit exceeded.
     pub fn wallet_fee_limit() -> Self {
-        Self::simple(
-            -301,
-            "Wallet fee limit exceeded",
-        )
+        Self::simple(-301, "Wallet fee limit exceeded")
     }
 
     /// No wallet opened.

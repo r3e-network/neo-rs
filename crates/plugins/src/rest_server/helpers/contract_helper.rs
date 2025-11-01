@@ -101,8 +101,7 @@ impl ContractHelper {
             return false;
         };
 
-        let symbol_valid =
-            symbol.safe && symbol.return_type == ContractParameterType::String;
+        let symbol_valid = symbol.safe && symbol.return_type == ContractParameterType::String;
         let decimals_valid =
             decimals.safe && decimals.return_type == ContractParameterType::Integer;
         let total_supply_valid =
@@ -181,8 +180,7 @@ impl ContractHelper {
             return false;
         };
 
-        let symbol_valid =
-            symbol.safe && symbol.return_type == ContractParameterType::String;
+        let symbol_valid = symbol.safe && symbol.return_type == ContractParameterType::String;
         let decimals_valid =
             decimals.safe && decimals.return_type == ContractParameterType::Integer;
         let total_supply_valid =
@@ -193,9 +191,9 @@ impl ContractHelper {
             .map(|method| {
                 method.safe
                     && method.return_type == ContractParameterType::Integer
-                && method.parameters.first().map_or(false, |param| {
-                    param.param_type == ContractParameterType::Hash160
-                })
+                    && method.parameters.first().map_or(false, |param| {
+                        param.param_type == ContractParameterType::Hash160
+                    })
             })
             .unwrap_or(false);
 
@@ -295,18 +293,12 @@ impl ContractHelper {
         Self::load_contract(store, script_hash)
     }
 
-    fn load_contract<S>(
-        store: &S,
-        script_hash: &UInt160,
-    ) -> Result<Option<ContractState>, String>
+    fn load_contract<S>(store: &S, script_hash: &UInt160) -> Result<Option<ContractState>, String>
     where
         S: IReadOnlyStoreGeneric<StorageKey, StorageItem>,
     {
-        let key = StorageKey::create_with_uint160(
-            CONTRACT_MANAGEMENT_ID,
-            PREFIX_CONTRACT,
-            script_hash,
-        );
+        let key =
+            StorageKey::create_with_uint160(CONTRACT_MANAGEMENT_ID, PREFIX_CONTRACT, script_hash);
 
         let Some(item) = store.try_get(&key) else {
             return Ok(None);

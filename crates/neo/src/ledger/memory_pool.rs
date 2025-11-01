@@ -674,5 +674,6 @@ mod tests {
             .unverified_sorted
             .iter()
             .any(|candidate| candidate.transaction.hash() == hash));
+        assert_eq!(pool.verified_count(), 0);
     }
 }

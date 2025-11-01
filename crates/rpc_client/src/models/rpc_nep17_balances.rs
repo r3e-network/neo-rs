@@ -20,7 +20,7 @@ use std::str::FromStr;
 pub struct RpcNep17Balances {
     /// User script hash
     pub user_script_hash: UInt160,
-    
+
     /// List of token balances
     pub balances: Vec<RpcNep17Balance>,
 }
@@ -30,24 +30,33 @@ impl RpcNep17Balances {
     /// Matches C# ToJson
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
-        
-        let balances_array: Vec<JToken> = self.balances
+
+        let balances_array: Vec<JToken> = self
+            .balances
             .iter()
             .map(|b| JToken::Object(b.to_json()))
             .collect();
-        json.insert("balance".to_string(), JToken::Array(JArray::from(balances_array)));
-        
-        json.insert("address".to_string(), JToken::String(
-            self.user_script_hash.to_address(protocol_settings.address_version)
-        ));
-        
+        json.insert(
+            "balance".to_string(),
+            JToken::Array(JArray::from(balances_array)),
+        );
+
+        json.insert(
+            "address".to_string(),
+            JToken::String(
+                self.user_script_hash
+                    .to_address(protocol_settings.address_version),
+            ),
+        );
+
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let balances = json.get("balance")
+        let balances = json
+            .get("balance")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -56,14 +65,15 @@ impl RpcNep17Balances {
                     .collect()
             })
             .unwrap_or_default();
-            
-        let address = json.get("address")
+
+        let address = json
+            .get("address")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'address' field")?;
-            
+
         let user_script_hash = UInt160::from_address(address, protocol_settings.address_version)
             .map_err(|_| format!("Invalid address: {}", address))?;
-            
+
         Ok(Self {
             user_script_hash,
             balances,
@@ -76,10 +86,10 @@ impl RpcNep17Balances {
 pub struct RpcNep17Balance {
     /// Asset hash
     pub asset_hash: UInt160,
-    
+
     /// Balance amount
     pub amount: BigInt,
-    
+
     /// Last updated block height
     pub last_updated_block: u32,
 }
@@ -89,36 +99,48 @@ impl RpcNep17Balance {
     /// Matches C# ToJson
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
-        json.insert("assethash".to_string(), JToken::String(self.asset_hash.to_string()));
-        json.insert("amount".to_string(), JToken::String(self.amount.to_string()));
-        json.insert("lastupdatedblock".to_string(), JToken::Number(self.last_updated_block as f64));
+        json.insert(
+            "assethash".to_string(),
+            JToken::String(self.asset_hash.to_string()),
+        );
+        json.insert(
+            "amount".to_string(),
+            JToken::String(self.amount.to_string()),
+        );
+        json.insert(
+            "lastupdatedblock".to_string(),
+            JToken::Number(self.last_updated_block as f64),
+        );
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let asset_hash_str = json.get("assethash")
+        let asset_hash_str = json
+            .get("assethash")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'assethash' field")?;
-            
+
         let asset_hash = if asset_hash_str.starts_with("0x") {
             UInt160::parse(asset_hash_str)
         } else {
             UInt160::from_address(asset_hash_str, protocol_settings.address_version)
-        }.map_err(|_| format!("Invalid asset hash: {}", asset_hash_str))?;
-        
-        let amount_str = json.get("amount")
+        }
+        .map_err(|_| format!("Invalid asset hash: {}", asset_hash_str))?;
+
+        let amount_str = json
+            .get("amount")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'amount' field")?;
-        let amount = BigInt::from_str(amount_str)
-            .map_err(|_| format!("Invalid amount: {}", amount_str))?;
-            
-        let last_updated_block = json.get("lastupdatedblock")
-            .and_then(|v| v.as_number())
-            .ok_or("Missing or invalid 'lastupdatedblock' field")?
-            as u32;
-            
+        let amount =
+            BigInt::from_str(amount_str).map_err(|_| format!("Invalid amount: {}", amount_str))?;
+
+        let last_updated_block =
+            json.get("lastupdatedblock")
+                .and_then(|v| v.as_number())
+                .ok_or("Missing or invalid 'lastupdatedblock' field")? as u32;
+
         Ok(Self {
             asset_hash,
             amount,

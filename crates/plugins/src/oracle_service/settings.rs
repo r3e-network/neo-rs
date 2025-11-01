@@ -43,7 +43,7 @@ impl OracleServiceSettings {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Creates new Oracle Service settings for mainnet
     pub fn mainnet() -> Self {
         Self {
@@ -58,7 +58,7 @@ impl OracleServiceSettings {
             enable_cache: true,
         }
     }
-    
+
     /// Creates new Oracle Service settings for testnet
     pub fn testnet() -> Self {
         Self {

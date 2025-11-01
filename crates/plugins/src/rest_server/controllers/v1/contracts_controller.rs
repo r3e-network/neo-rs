@@ -2,33 +2,32 @@
 //
 // Rust port of `Neo.Plugins.RestServer.Controllers.v1.ContractsController`.
 
+use crate::rest_server::binder::uint160_binder_provider::UInt160BinderProvider;
 use crate::rest_server::exceptions::{
     contract_not_found_exception::ContractNotFoundException,
     invalid_parameter_range_exception::InvalidParameterRangeException,
     json_property_null_or_empty_exception::JsonPropertyNullOrEmptyException,
     node_network_exception::NodeNetworkException,
     query_parameter_not_found_exception::QueryParameterNotFoundException,
-    script_hash_format_exception::ScriptHashFormatException,
-    rest_error_codes::RestErrorCodes,
+    rest_error_codes::RestErrorCodes, script_hash_format_exception::ScriptHashFormatException,
 };
-use crate::rest_server::binder::uint160_binder_provider::UInt160BinderProvider;
-use crate::rest_server::helpers::{contract_helper::ContractHelper, script_helper::ScriptHelper};
 use crate::rest_server::helpers::script_helper::ScriptHelperError;
+use crate::rest_server::helpers::{contract_helper::ContractHelper, script_helper::ScriptHelper};
 use crate::rest_server::models::count_model::CountModel;
 use crate::rest_server::models::error::error_model::ErrorModel;
 use crate::rest_server::models::execution_engine_model::{
     BlockchainEventModel, ExecutionEngineModel,
 };
-use crate::rest_server::rest_server_settings::RestServerSettings;
 use crate::rest_server::rest_server_plugin::RestServerGlobals;
+use crate::rest_server::rest_server_settings::RestServerSettings;
 use crate::rest_server::rest_server_utility::{RestServerUtility, RestServerUtilityError};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use neo_core::persistence::i_read_only_store::IReadOnlyStoreGeneric;
 use neo_core::persistence::seek_direction::SeekDirection;
 use neo_core::smart_contract::contract_state::ContractState;
 use neo_core::smart_contract::native::NativeRegistry;
-use neo_core::smart_contract::ApplicationEngine;
 use neo_core::smart_contract::storage_key::StorageKey;
+use neo_core::smart_contract::ApplicationEngine;
 use neo_core::{NeoSystem, UInt160};
 use serde_json::{json, to_value, Value};
 use std::sync::Arc;
@@ -44,15 +43,11 @@ impl ContractsController {
             .ok_or_else(|| NodeNetworkException::new().to_error_model())
     }
 
-    pub fn list(
-        &self,
-        page: Option<i32>,
-        size: Option<i32>,
-    ) -> Result<Option<Value>, ErrorModel> {
+    pub fn list(&self, page: Option<i32>, size: Option<i32>) -> Result<Option<Value>, ErrorModel> {
         let (page, size) = Self::resolve_pagination(page, size)?;
         let store_cache = self.neo_system.store_cache();
-        let contracts = ContractHelper::list_contracts(&store_cache)
-            .map_err(Self::storage_error)?;
+        let contracts =
+            ContractHelper::list_contracts(&store_cache).map_err(Self::storage_error)?;
 
         if contracts.is_empty() {
             return Ok(None);
@@ -78,8 +73,8 @@ impl ContractsController {
 
     pub fn count(&self) -> Result<Value, ErrorModel> {
         let store_cache = self.neo_system.store_cache();
-        let contracts = ContractHelper::list_contracts(&store_cache)
-            .map_err(Self::storage_error)?;
+        let contracts =
+            ContractHelper::list_contracts(&store_cache).map_err(Self::storage_error)?;
         to_value(CountModel::new(contracts.len() as i32))
             .map_err(|err| Self::serialization_error(err.to_string()))
     }
@@ -91,17 +86,23 @@ impl ContractsController {
 
     pub fn manifest(&self, script_hash: &UInt160) -> Result<Value, ErrorModel> {
         let contract = self.get_contract_state(script_hash)?;
-        Ok(RestServerUtility::contract_manifest_to_j_token(&contract.manifest))
+        Ok(RestServerUtility::contract_manifest_to_j_token(
+            &contract.manifest,
+        ))
     }
 
     pub fn abi(&self, script_hash: &UInt160) -> Result<Value, ErrorModel> {
         let contract = self.get_contract_state(script_hash)?;
-        Ok(RestServerUtility::contract_abi_to_j_token(&contract.manifest.abi))
+        Ok(RestServerUtility::contract_abi_to_j_token(
+            &contract.manifest.abi,
+        ))
     }
 
     pub fn nef(&self, script_hash: &UInt160) -> Result<Value, ErrorModel> {
         let contract = self.get_contract_state(script_hash)?;
-        Ok(RestServerUtility::contract_nef_file_to_j_token(&contract.nef))
+        Ok(RestServerUtility::contract_nef_file_to_j_token(
+            &contract.nef,
+        ))
     }
 
     pub fn storage(&self, script_hash: &UInt160) -> Result<Option<Value>, ErrorModel> {
@@ -143,13 +144,14 @@ impl ContractsController {
         }
 
         if payload.is_null() {
-            return Err(JsonPropertyNullOrEmptyException::with_param_name("invokeParameters")
-                .to_error_model());
+            return Err(
+                JsonPropertyNullOrEmptyException::with_param_name("invokeParameters")
+                    .to_error_model(),
+            );
         }
 
-        let invoke_params =
-            RestServerUtility::contract_invoke_parameters_from_j_token(payload)
-                .map_err(Self::bad_request)?;
+        let invoke_params = RestServerUtility::contract_invoke_parameters_from_j_token(payload)
+            .map_err(Self::bad_request)?;
 
         let contract = self.get_contract_state(script_hash)?;
         let snapshot = Arc::new(self.neo_system.store_cache().data_cache().clone());
@@ -187,10 +189,7 @@ impl ContractsController {
             .ok_or_else(|| ContractNotFoundException::new(*script_hash).to_error_model())
     }
 
-    fn resolve_pagination(
-        page: Option<i32>,
-        size: Option<i32>,
-    ) -> Result<(i32, i32), ErrorModel> {
+    fn resolve_pagination(page: Option<i32>, size: Option<i32>) -> Result<(i32, i32), ErrorModel> {
         let settings = RestServerSettings::current();
         let max_size = i32::try_from(settings.max_page_size).unwrap_or(i32::MAX);
         let page = page.unwrap_or(1);
@@ -212,8 +211,8 @@ impl ContractsController {
             .map(|notification| {
                 let mut state_values = Vec::new();
                 for item in &notification.state {
-                    let value =
-                        RestServerUtility::stack_item_to_j_token(item).map_err(Self::stack_error)?;
+                    let value = RestServerUtility::stack_item_to_j_token(item)
+                        .map_err(Self::stack_error)?;
                     state_values.push(value);
                 }
                 Ok(BlockchainEventModel::new(

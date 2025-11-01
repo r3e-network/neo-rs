@@ -32,8 +32,18 @@ pub trait GrpcChannel: Send + Sync {
 /// Secure sign client trait
 pub trait SecureSignClient: Send + Sync {
     fn get_account_status(&self, public_key: &[u8]) -> Result<AccountStatus, SignException>;
-    fn sign_extensible_payload(&self, payload: &ExtensiblePayloadRequest, script_hashes: &[UInt160], network: u32) -> Result<Vec<AccountSigns>, SignException>;
-    fn sign_block(&self, block: &BlockRequest, public_key: &[u8], network: u32) -> Result<Vec<u8>, SignException>;
+    fn sign_extensible_payload(
+        &self,
+        payload: &ExtensiblePayloadRequest,
+        script_hashes: &[UInt160],
+        network: u32,
+    ) -> Result<Vec<AccountSigns>, SignException>;
+    fn sign_block(
+        &self,
+        block: &BlockRequest,
+        public_key: &[u8],
+        network: u32,
+    ) -> Result<Vec<u8>, SignException>;
 }
 
 /// Account status enum matching C# AccountStatus
@@ -137,7 +147,7 @@ impl SignClient {
             name: String::new(),
         }
     }
-    
+
     /// Creates a new SignClient with settings
     /// Matches C# constructor with settings
     pub fn with_settings(settings: SignSettings) -> Self {
@@ -145,7 +155,7 @@ impl SignClient {
         client.reset(settings);
         client
     }
-    
+
     /// Creates a new SignClient for testing
     /// Matches C# internal constructor for testing
     pub fn for_test(name: String, client: Arc<dyn SecureSignClient>) -> Self {
@@ -153,37 +163,41 @@ impl SignClient {
         sign_client.reset_with_name_and_client(name, Some(client));
         sign_client
     }
-    
+
     /// Gets the description
     /// Matches C# Description property
     pub fn description(&self) -> &'static str {
         "Signer plugin for signer service."
     }
-    
+
     /// Gets the config file path
     /// Matches C# ConfigFile property
     pub fn config_file(&self) -> String {
         "SignClient.json".to_string()
     }
-    
+
     /// Resets the signer with name and client
     /// Matches C# Reset method
-    fn reset_with_name_and_client(&mut self, name: String, client: Option<Arc<dyn SecureSignClient>>) {
+    fn reset_with_name_and_client(
+        &mut self,
+        name: String,
+        client: Option<Arc<dyn SecureSignClient>>,
+    ) {
         if let Some(ref client) = self.client {
             // Unregister signer if name is not empty
             if !self.name.is_empty() {
                 // In a real implementation, this would unregister the signer
             }
         }
-        
+
         self.name = name;
         self.client = client;
-        
+
         if !self.name.is_empty() {
             // In a real implementation, this would register the signer
         }
     }
-    
+
     /// Gets service configuration
     /// Matches C# GetServiceConfig method
     fn get_service_config(&self, settings: &SignSettings) -> ServiceConfig {
@@ -209,76 +223,82 @@ impl SignClient {
             }],
         }
     }
-    
+
     /// Resets the signer with settings
     /// Matches C# Reset method with settings
     fn reset(&mut self, settings: SignSettings) {
         let service_config = self.get_service_config(&settings);
         let vsock_address = settings.get_vsock_address();
-        
+
         let channel: Arc<dyn GrpcChannel> = if let Some(vsock_addr) = vsock_address {
             Vsock::create_channel(vsock_addr, service_config)
         } else {
             // Create regular gRPC channel
-            Arc::new(RegularGrpcChannel::new(settings.endpoint.clone(), service_config))
+            Arc::new(RegularGrpcChannel::new(
+                settings.endpoint.clone(),
+                service_config,
+            ))
         };
-        
+
         // Dispose old channel
         if let Some(ref old_channel) = self.channel {
             old_channel.dispose();
         }
-        
+
         self.channel = Some(channel.clone());
-        self.reset_with_name_and_client(settings.name.clone(), Some(Arc::new(SecureSignClientImpl::new(channel))));
+        self.reset_with_name_and_client(
+            settings.name.clone(),
+            Some(Arc::new(SecureSignClientImpl::new(channel))),
+        );
     }
-    
+
     /// Gets account status command
     /// Matches C# AccountStatusCommand method
     pub fn account_status_command(&self, hex_public_key: &str) -> Result<(), String> {
         if self.client.is_none() {
             return Err("No signer service is connected".to_string());
         }
-        
+
         let client = self.client.as_ref().unwrap();
-        
+
         match ECPoint::decode_point(hex_public_key.as_bytes(), neo_core::ECCurve::Secp256r1) {
-            Ok(public_key) => {
-                match client.get_account_status(&public_key.encode_point(true)) {
-                    Ok(status) => {
-                        println!("Account status: {:?}", status);
-                        Ok(())
-                    }
-                    Err(e) => Err(format!("Failed to get account status: {}", e)),
+            Ok(public_key) => match client.get_account_status(&public_key.encode_point(true)) {
+                Ok(status) => {
+                    println!("Account status: {:?}", status);
+                    Ok(())
                 }
-            }
+                Err(e) => Err(format!("Failed to get account status: {}", e)),
+            },
             Err(e) => Err(format!("Invalid public key: {}", e)),
         }
     }
-    
+
     /// Gets account status
     /// Matches C# GetAccountStatus method
     fn get_account_status(&self, public_key: &ECPoint) -> Result<AccountStatus, SignException> {
         if self.client.is_none() {
-            return Err(SignException { message: "No signer service is connected".to_string() });
+            return Err(SignException {
+                message: "No signer service is connected".to_string(),
+            });
         }
-        
+
         let client = self.client.as_ref().unwrap();
         client.get_account_status(&public_key.encode_point(true))
     }
-    
+
     /// Checks if the account is signable
     /// Matches C# ContainsSignable method
     pub fn contains_signable(&self, public_key: &ECPoint) -> Result<bool, SignException> {
         let status = self.get_account_status(public_key)?;
         Ok(status == AccountStatus::Single || status == AccountStatus::Multiple)
     }
-    
+
     /// Tries to decode public key
     /// Matches C# TryDecodePublicKey method
     fn try_decode_public_key(public_key: &[u8]) -> Option<ECPoint> {
         ECPoint::decode_point(public_key, neo_core::ECCurve::Secp256r1).ok()
     }
-    
+
     /// Configures the plugin
     /// Matches C# Configure method
     pub fn configure(&mut self, config: Option<serde_json::Value>) {
@@ -287,7 +307,7 @@ impl SignClient {
             self.reset(settings);
         }
     }
-    
+
     /// Disposes the plugin
     /// Matches C# Dispose method
     pub fn dispose(&mut self) {

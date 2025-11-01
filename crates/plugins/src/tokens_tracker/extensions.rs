@@ -9,7 +9,7 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::{StackItem, ByteString, IStore, ISerializable, SeekDirection};
+use neo_core::{ByteString, ISerializable, IStore, SeekDirection, StackItem};
 use std::collections::HashMap;
 use std::num::BigInt;
 
@@ -23,7 +23,7 @@ impl Extensions {
     pub fn not_null(item: &StackItem) -> bool {
         !item.is_null()
     }
-    
+
     /// Converts a byte span to base64 string.
     /// Matches C# ToBase64 method
     pub fn to_base64(item: &[u8]) -> String {
@@ -33,21 +33,21 @@ impl Extensions {
             base64::encode(item)
         }
     }
-    
+
     /// Gets the variable size of a ByteString.
     /// Matches C# GetVarSize method for ByteString
     pub fn get_var_size_byte_string(item: &ByteString) -> usize {
         let length = item.len();
         Self::get_var_size(length) + length
     }
-    
+
     /// Gets the variable size of a BigInteger.
     /// Matches C# GetVarSize method for BigInteger
     pub fn get_var_size_big_int(item: &BigInt) -> usize {
         let length = item.bits() / 8 + 1; // Approximate byte count
         Self::get_var_size(length) + length
     }
-    
+
     /// Gets the variable size of a length.
     /// Matches C# GetVarSize method for int
     pub fn get_var_size(length: usize) -> usize {
@@ -61,7 +61,7 @@ impl Extensions {
             9
         }
     }
-    
+
     /// Finds items with a prefix.
     /// Matches C# FindPrefix method
     pub fn find_prefix<TKey, TValue>(
@@ -73,20 +73,20 @@ impl Extensions {
         TValue: ISerializable + Default,
     {
         let mut results = Vec::new();
-        
+
         for (key, value) in db.find(prefix, SeekDirection::Forward)? {
             if !key.starts_with(prefix) {
                 break;
             }
-            
+
             let key_obj = TKey::deserialize(&mut key[1..].as_ref())?;
             let value_obj = TValue::deserialize(&mut value.as_ref())?;
             results.push((key_obj, value_obj));
         }
-        
+
         Ok(results)
     }
-    
+
     /// Finds items in a range.
     /// Matches C# FindRange method
     pub fn find_range<TKey, TValue>(
@@ -99,17 +99,17 @@ impl Extensions {
         TValue: ISerializable + Default,
     {
         let mut results = Vec::new();
-        
+
         for (key, value) in db.find(start_key, SeekDirection::Forward)? {
             if key.as_slice().cmp(end_key) == std::cmp::Ordering::Greater {
                 break;
             }
-            
+
             let key_obj = TKey::deserialize(&mut key[1..].as_ref())?;
             let value_obj = TValue::deserialize(&mut value.as_ref())?;
             results.push((key_obj, value_obj));
         }
-        
+
         Ok(results)
     }
 }
@@ -169,9 +169,13 @@ pub trait IStoreExtensions {
     where
         TKey: ISerializable + Default,
         TValue: ISerializable + Default;
-    
+
     /// Finds items in a range.
-    fn find_range<TKey, TValue>(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<(TKey, TValue)>, String>
+    fn find_range<TKey, TValue>(
+        &self,
+        start_key: &[u8],
+        end_key: &[u8],
+    ) -> Result<Vec<(TKey, TValue)>, String>
     where
         TKey: ISerializable + Default,
         TValue: ISerializable + Default;
@@ -185,8 +189,12 @@ impl IStoreExtensions for dyn IStore {
     {
         Extensions::find_prefix(self, prefix)
     }
-    
-    fn find_range<TKey, TValue>(&self, start_key: &[u8], end_key: &[u8]) -> Result<Vec<(TKey, TValue)>, String>
+
+    fn find_range<TKey, TValue>(
+        &self,
+        start_key: &[u8],
+        end_key: &[u8],
+    ) -> Result<Vec<(TKey, TValue)>, String>
     where
         TKey: ISerializable + Default,
         TValue: ISerializable + Default,

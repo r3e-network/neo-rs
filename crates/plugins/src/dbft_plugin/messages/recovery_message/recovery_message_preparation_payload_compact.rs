@@ -23,7 +23,10 @@ pub struct PreparationPayloadCompact {
 
 impl PreparationPayloadCompact {
     /// Creates a new compact payload.
-    pub fn new(validator_index: u8, invocation_script: Vec<u8>) -> Result<Self, ConsensusMessageError> {
+    pub fn new(
+        validator_index: u8,
+        invocation_script: Vec<u8>,
+    ) -> Result<Self, ConsensusMessageError> {
         if invocation_script.len() > MAX_INVOCATION_SCRIPT {
             return Err(ConsensusMessageError::invalid_data(
                 "Invocation script in PreparationPayloadCompact exceeds maximum length",

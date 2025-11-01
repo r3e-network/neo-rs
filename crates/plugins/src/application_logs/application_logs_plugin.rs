@@ -4,12 +4,14 @@ use crate::application_logs::log_reader::LogReader;
 use crate::application_logs::settings::ApplicationLogsSettings;
 use neo_core::NeoSystem;
 use neo_extensions::error::{ExtensionError, ExtensionResult};
-use neo_extensions::plugin::{Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo};
+use neo_extensions::plugin::{
+    Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
+};
 use serde_json::Value as JsonValue;
 use std::io::ErrorKind;
 use std::sync::Arc;
-use tracing::warn;
 use tokio::fs;
+use tracing::warn;
 
 /// Runtime implementation of the Application Logs plugin.
 pub struct ApplicationLogsPlugin {
@@ -59,7 +61,10 @@ impl Plugin for ApplicationLogsPlugin {
 
     async fn initialize(&mut self, context: &PluginContext) -> ExtensionResult<()> {
         if let Err(err) = self.base.ensure_directories() {
-            warn!("ApplicationLogs: unable to create plugin directory: {}", err);
+            warn!(
+                "ApplicationLogs: unable to create plugin directory: {}",
+                err
+            );
         }
         let config_path = context.config_dir.join("ApplicationLogs.json");
         let mut config_value: Option<JsonValue> = None;
@@ -102,12 +107,12 @@ impl Plugin for ApplicationLogsPlugin {
 
     async fn handle_event(&mut self, event: &PluginEvent) -> ExtensionResult<()> {
         if let PluginEvent::NodeStarted { system } = event {
-                match Arc::downcast::<NeoSystem>(system.clone()) {
-                    Ok(neo_system) => {
-                        self.ensure_reader();
-                        if let Some(reader) = &mut self.log_reader {
-                            reader.on_system_loaded(neo_system);
-                        }
+            match Arc::downcast::<NeoSystem>(system.clone()) {
+                Ok(neo_system) => {
+                    self.ensure_reader();
+                    if let Some(reader) = &mut self.log_reader {
+                        reader.on_system_loaded(neo_system);
+                    }
                 }
                 Err(_) => {
                     warn!("ApplicationLogs: received NodeStarted with unexpected payload");

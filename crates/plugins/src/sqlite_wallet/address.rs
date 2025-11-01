@@ -41,11 +41,11 @@ impl Address {
     fn simple_hash(data: &[u8]) -> Vec<u8> {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         data.hash(&mut hasher);
         let hash = hasher.finish();
-        
+
         // Convert to 20-byte address
         let mut result = vec![0u8; 20];
         for (i, byte) in hash.to_le_bytes().iter().enumerate() {

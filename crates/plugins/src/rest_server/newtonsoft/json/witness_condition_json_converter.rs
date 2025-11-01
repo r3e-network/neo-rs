@@ -3,7 +3,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use hex::decode;
-use neo_core::cryptography::crypto_utils::{ECPoint, ECCurve};
+use neo_core::cryptography::crypto_utils::{ECCurve, ECPoint};
 use neo_core::{UInt160, WitnessCondition, WitnessConditionType};
 use serde_json::{Map, Value};
 
@@ -53,9 +53,7 @@ fn from_json_internal(value: &Value, remaining_depth: usize) -> Option<WitnessCo
         }
         WitnessConditionType::And | WitnessConditionType::Or => {
             let expressions = get_property_case_insensitive(obj, "expressions")?.as_array()?;
-            if expressions.is_empty()
-                || expressions.len() > WitnessCondition::MAX_SUBITEMS
-            {
+            if expressions.is_empty() || expressions.len() > WitnessCondition::MAX_SUBITEMS {
                 return None;
             }
 
@@ -100,7 +98,10 @@ fn from_json_internal(value: &Value, remaining_depth: usize) -> Option<WitnessCo
     }
 }
 
-fn get_property_case_insensitive<'a>(object: &'a Map<String, Value>, name: &str) -> Option<&'a Value> {
+fn get_property_case_insensitive<'a>(
+    object: &'a Map<String, Value>,
+    name: &str,
+) -> Option<&'a Value> {
     object.iter().find_map(|(key, value)| {
         if key.eq_ignore_ascii_case(name) {
             Some(value)
@@ -140,7 +141,9 @@ fn parse_condition_type(name: &str) -> Option<WitnessConditionType> {
         value if value.eq_ignore_ascii_case("Or") => Some(WitnessConditionType::Or),
         value if value.eq_ignore_ascii_case("ScriptHash") => Some(WitnessConditionType::ScriptHash),
         value if value.eq_ignore_ascii_case("Group") => Some(WitnessConditionType::Group),
-        value if value.eq_ignore_ascii_case("CalledByEntry") => Some(WitnessConditionType::CalledByEntry),
+        value if value.eq_ignore_ascii_case("CalledByEntry") => {
+            Some(WitnessConditionType::CalledByEntry)
+        }
         value if value.eq_ignore_ascii_case("CalledByContract") => {
             Some(WitnessConditionType::CalledByContract)
         }
@@ -167,7 +170,9 @@ mod tests {
         let converter = WitnessConditionJsonConverter::default();
         let condition = WitnessCondition::Boolean { value: true };
         let json = converter.to_json(&condition);
-        let parsed = converter.from_json(&json).expect("boolean condition should parse");
+        let parsed = converter
+            .from_json(&json)
+            .expect("boolean condition should parse");
         assert_eq!(condition, parsed);
     }
 }

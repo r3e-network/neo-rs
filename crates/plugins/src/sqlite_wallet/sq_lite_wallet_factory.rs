@@ -9,8 +9,8 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::{ProtocolSettings, Wallet};
 use neo_core::wallets::IWalletFactory;
+use neo_core::{ProtocolSettings, Wallet};
 use std::path::Path;
 
 /// SQLite wallet factory implementation.
@@ -22,13 +22,13 @@ impl SQLiteWalletFactory {
     pub fn new() -> Self {
         Self
     }
-    
+
     /// Gets the name of the factory.
     /// Matches C# Name property
     pub fn name(&self) -> &str {
         "SQLiteWallet"
     }
-    
+
     /// Gets the description of the factory.
     /// Matches C# Description property
     pub fn description(&self) -> &str {
@@ -46,18 +46,29 @@ impl IWalletFactory for SQLiteWalletFactory {
             false
         }
     }
-    
+
     /// Creates a new wallet.
     /// Matches C# CreateWallet method
-    fn create_wallet(&self, name: &str, path: &str, password: &str, settings: &ProtocolSettings) -> Result<Box<dyn Wallet>, String> {
+    fn create_wallet(
+        &self,
+        name: &str,
+        path: &str,
+        password: &str,
+        settings: &ProtocolSettings,
+    ) -> Result<Box<dyn Wallet>, String> {
         // In a real implementation, this would create a SQLite wallet
         // For now, we'll return an error as the SQLite wallet implementation is complex
         Err("SQLite wallet creation not yet implemented".to_string())
     }
-    
+
     /// Opens a wallet.
     /// Matches C# OpenWallet method
-    fn open_wallet(&self, path: &str, password: &str, settings: &ProtocolSettings) -> Result<Box<dyn Wallet>, String> {
+    fn open_wallet(
+        &self,
+        path: &str,
+        password: &str,
+        settings: &ProtocolSettings,
+    ) -> Result<Box<dyn Wallet>, String> {
         // In a real implementation, this would open a SQLite wallet
         // For now, we'll return an error as the SQLite wallet implementation is complex
         Err("SQLite wallet opening not yet implemented".to_string())

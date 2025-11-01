@@ -18,51 +18,51 @@ pub struct ProtocolSettingsModel {
     /// Network
     /// Matches C# Network property
     pub network: u32,
-    
+
     /// AddressVersion
     /// Matches C# AddressVersion property
     pub address_version: u8,
-    
+
     /// ValidatorsCount
     /// Matches C# ValidatorsCount property
     pub validators_count: i32,
-    
+
     /// MillisecondsPerBlock
     /// Matches C# MillisecondsPerBlock property
     pub milliseconds_per_block: u32,
-    
+
     /// MaxValidUntilBlockIncrement
     /// Matches C# MaxValidUntilBlockIncrement property
     pub max_valid_until_block_increment: u32,
-    
+
     /// MaxTransactionsPerBlock
     /// Matches C# MaxTransactionsPerBlock property
     pub max_transactions_per_block: u32,
-    
+
     /// MemoryPoolMaxTransactions
     /// Matches C# MemoryPoolMaxTransactions property
     pub memory_pool_max_transactions: i32,
-    
+
     /// MaxTraceableBlocks
     /// Matches C# MaxTraceableBlocks property
     pub max_traceable_blocks: u32,
-    
+
     /// InitialGasDistribution
     /// Matches C# InitialGasDistribution property
     pub initial_gas_distribution: u64,
-    
+
     /// SeedList
     /// Matches C# SeedList property
     pub seed_list: Vec<String>,
-    
+
     /// Hardforks
     /// Matches C# Hardforks property
     pub hardforks: HashMap<String, u32>,
-    
+
     /// StandbyValidators
     /// Matches C# StandbyValidators property
     pub standby_validators: Vec<String>,
-    
+
     /// StandbyCommittee
     /// Matches C# StandbyCommittee property
     pub standby_committee: Vec<String>,
@@ -88,7 +88,7 @@ impl ProtocolSettingsModel {
             standby_committee: Vec::new(),
         }
     }
-    
+
     /// Creates a new ProtocolSettingsModel with parameters
     /// Matches C# constructor with parameters
     pub fn with_params(

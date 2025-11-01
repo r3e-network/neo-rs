@@ -10,7 +10,6 @@
 // modifications are permitted.
 
 use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
-use neo_core::network::p2p::payloads::ExtensiblePayload;
 use crate::dbft_plugin::messages::change_view::ChangeView;
 use crate::dbft_plugin::messages::commit::Commit;
 use crate::dbft_plugin::messages::consensus_message::{
@@ -25,6 +24,7 @@ use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
 use crate::dbft_plugin::types::consensus_message_type::ConsensusMessageType;
 use neo_core::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use neo_core::neo_system::ProtocolSettings;
+use neo_core::network::p2p::payloads::ExtensiblePayload;
 use neo_core::UInt256;
 use std::collections::HashMap;
 
@@ -144,25 +144,29 @@ impl RecoveryMessage {
 
     /// Serialized size of the message body (excluding header).
     pub(crate) fn body_size(&self) -> usize {
-        let change_view_size = serialized_compact_map_size(&self.change_view_messages, |payload| {
-            payload.size()
-        });
+        let change_view_size =
+            serialized_compact_map_size(&self.change_view_messages, |payload| payload.size());
 
         let prepare_section = if let Some(request) = &self.prepare_request_message {
             1 + request.header().size() + request.body_size()
         } else {
             let hash_size = UInt256::default().size();
-            1 + var_int_size(if self.preparation_hash.is_some() { hash_size } else { 0 })
-                + self.preparation_hash.as_ref().map(|_| hash_size).unwrap_or(0)
+            1 + var_int_size(if self.preparation_hash.is_some() {
+                hash_size
+            } else {
+                0
+            }) + self
+                .preparation_hash
+                .as_ref()
+                .map(|_| hash_size)
+                .unwrap_or(0)
         };
 
-        let preparation_messages_size = serialized_compact_map_size(&self.preparation_messages, |payload| {
-            payload.size()
-        });
+        let preparation_messages_size =
+            serialized_compact_map_size(&self.preparation_messages, |payload| payload.size());
 
-        let commit_messages_size = serialized_compact_map_size(&self.commit_messages, |payload| {
-            payload.size()
-        });
+        let commit_messages_size =
+            serialized_compact_map_size(&self.commit_messages, |payload| payload.size());
 
         change_view_size + prepare_section + preparation_messages_size + commit_messages_size
     }
@@ -198,7 +202,10 @@ impl RecoveryMessage {
     }
 
     /// Serializes the full message including header.
-    pub(crate) fn write_with_header(&self, writer: &mut BinaryWriter) -> ConsensusMessageResult<()> {
+    pub(crate) fn write_with_header(
+        &self,
+        writer: &mut BinaryWriter,
+    ) -> ConsensusMessageResult<()> {
         self.header.serialize(writer)?;
         self.write_body(writer)
     }
@@ -214,9 +221,12 @@ impl RecoveryMessage {
             ));
         }
 
-        let change_view_messages = read_compact_map(reader, u8::MAX as u64, |reader| {
-            ChangeViewPayloadCompact::deserialize(reader)
-        }, |payload| payload.validator_index)?;
+        let change_view_messages = read_compact_map(
+            reader,
+            u8::MAX as u64,
+            |reader| ChangeViewPayloadCompact::deserialize(reader),
+            |payload| payload.validator_index,
+        )?;
 
         let prepare_request_message = if reader.read_bool()? {
             Some(PrepareRequest::deserialize(reader)?)
@@ -246,13 +256,19 @@ impl RecoveryMessage {
             }
         };
 
-        let preparation_messages = read_compact_map(reader, u8::MAX as u64, |reader| {
-            PreparationPayloadCompact::deserialize(reader)
-        }, |payload| payload.validator_index)?;
+        let preparation_messages = read_compact_map(
+            reader,
+            u8::MAX as u64,
+            |reader| PreparationPayloadCompact::deserialize(reader),
+            |payload| payload.validator_index,
+        )?;
 
-        let commit_messages = read_compact_map(reader, u8::MAX as u64, |reader| {
-            CommitPayloadCompact::deserialize(reader)
-        }, |payload| payload.validator_index)?;
+        let commit_messages = read_compact_map(
+            reader,
+            u8::MAX as u64,
+            |reader| CommitPayloadCompact::deserialize(reader),
+            |payload| payload.validator_index,
+        )?;
 
         Ok(Self {
             header,
@@ -352,7 +368,9 @@ impl RecoveryMessage {
         let preparation_hash = match self.preparation_hash {
             Some(hash) => hash,
             None => {
-                if let Some(payload) = context.preparation_payloads()[context.block.primary_index() as usize].as_ref() {
+                if let Some(payload) =
+                    context.preparation_payloads()[context.block.primary_index() as usize].as_ref()
+                {
                     let mut p = payload.clone();
                     ConsensusContext::payload_hash(&mut p)
                 } else {

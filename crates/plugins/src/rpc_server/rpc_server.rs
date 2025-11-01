@@ -40,9 +40,7 @@ impl RpcServer {
         }
         info!(
             "Starting RPC server on {}:{} (network {})",
-            self.settings.bind_address,
-            self.settings.port,
-            self.settings.network
+            self.settings.bind_address, self.settings.port, self.settings.network
         );
         self.started = true;
     }
@@ -92,7 +90,10 @@ pub fn add_pending_handler(network: u32, handler: RpcHandler) {
 }
 
 pub fn take_pending_handlers(network: u32) -> Vec<RpcHandler> {
-    PENDING_HANDLERS.write().remove(&network).unwrap_or_default()
+    PENDING_HANDLERS
+        .write()
+        .remove(&network)
+        .unwrap_or_default()
 }
 
 pub fn register_server(network: u32, server: Arc<RwLock<RpcServer>>) {

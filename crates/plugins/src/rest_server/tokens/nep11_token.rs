@@ -6,6 +6,7 @@ use crate::rest_server::models::token::{
     nep11_token_model::Nep11TokenModel, nep17_token_model::Nep17TokenModel,
 };
 use crate::rest_server::newtonsoft::json::stack_item_json_converter::StackItemJsonConverter;
+use hex::encode_upper;
 use neo_core::big_decimal::BigDecimal;
 use neo_core::neo_system::NeoSystem;
 use neo_core::persistence::data_cache::DataCache;
@@ -16,7 +17,6 @@ use num_traits::ToPrimitive;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use hex::encode_upper;
 
 /// NEP-11 token helper mirroring the behaviour of the C# implementation.
 pub struct Nep11Token {
@@ -45,8 +45,7 @@ impl Nep11Token {
 
         let protocol_settings = neo_system.settings();
 
-        let decimals =
-            invoke_decimals(protocol_settings, Arc::clone(&snapshot), &script_hash)?;
+        let decimals = invoke_decimals(protocol_settings, Arc::clone(&snapshot), &script_hash)?;
         let symbol = invoke_symbol(protocol_settings, Arc::clone(&snapshot), &script_hash)?;
 
         Ok(Self {
@@ -237,7 +236,9 @@ impl Nep11Token {
         }
 
         if token_id.len() > 64 {
-            return Err(TokenError::Stack("tokenId length exceeds 64 bytes".to_string()));
+            return Err(TokenError::Stack(
+                "tokenId length exceeds 64 bytes".to_string(),
+            ));
         }
 
         let arg = StackItem::from_byte_string(token_id.to_vec());
@@ -365,13 +366,8 @@ fn invoke_decimals(
     snapshot: Arc<DataCache>,
     script_hash: &UInt160,
 ) -> Result<u8, TokenError> {
-    let (halted, mut stack) = ScriptHelper::invoke_method(
-        settings,
-        snapshot,
-        script_hash,
-        "decimals",
-        &[],
-    )?;
+    let (halted, mut stack) =
+        ScriptHelper::invoke_method(settings, snapshot, script_hash, "decimals", &[])?;
 
     if !halted {
         return Err(TokenError::InvocationFault {

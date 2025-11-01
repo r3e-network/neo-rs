@@ -19,8 +19,7 @@ impl UInt256JsonConverter {
             .as_str()
             .ok_or_else(|| UInt256FormatException::with_message("value must be a string"))?;
 
-        UInt256::from_str(value).map_err(|_| {
-            UInt256FormatException::with_message(format!("'{value}' is invalid."))
-        })
+        UInt256::from_str(value)
+            .map_err(|_| UInt256FormatException::with_message(format!("'{value}' is invalid.")))
     }
 }

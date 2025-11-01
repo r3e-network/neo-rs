@@ -22,15 +22,16 @@ impl UInt160JsonConverter {
             .ok_or_else(|| ScriptHashFormatException::with_message("value must be a string"))?;
 
         if let Some(system) = RestServerGlobals::neo_system() {
-            RestServerUtility::convert_to_script_hash(value, system.settings())
-                .map_err(|err| match err {
+            RestServerUtility::convert_to_script_hash(value, system.settings()).map_err(|err| {
+                match err {
                     RestServerUtilityError::InvalidAddress(msg) => {
                         ScriptHashFormatException::with_message(msg)
                     }
                     RestServerUtilityError::StackItem(msg) => {
                         ScriptHashFormatException::with_message(msg)
                     }
-                })
+                }
+            })
         } else {
             UInt160::from_str(value).map_err(|_| {
                 ScriptHashFormatException::with_message(format!("'{value}' is invalid."))

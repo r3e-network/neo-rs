@@ -56,27 +56,24 @@ impl ContractNameOrHashOrId {
     pub fn as_id(&self) -> Result<i32, RpcError> {
         match self {
             Self::Id(id) => Ok(*id),
-            other => Err(RpcError::invalid_params().with_data(format!(
-                "Value {other:?} is not a valid contract id"
-            ))),
+            other => Err(RpcError::invalid_params()
+                .with_data(format!("Value {other:?} is not a valid contract id"))),
         }
     }
 
     pub fn as_hash(&self) -> Result<UInt160, RpcError> {
         match self {
             Self::Hash(hash) => Ok(*hash),
-            other => Err(RpcError::invalid_params().with_data(format!(
-                "Value {other:?} is not a valid contract hash"
-            ))),
+            other => Err(RpcError::invalid_params()
+                .with_data(format!("Value {other:?} is not a valid contract hash"))),
         }
     }
 
     pub fn as_name(&self) -> Result<&str, RpcError> {
         match self {
             Self::Name(name) => Ok(name.as_str()),
-            other => Err(RpcError::invalid_params().with_data(format!(
-                "Value {other:?} is not a valid contract name"
-            ))),
+            other => Err(RpcError::invalid_params()
+                .with_data(format!("Value {other:?} is not a valid contract name"))),
         }
     }
 }

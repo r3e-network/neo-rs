@@ -44,5 +44,6 @@ pub fn invalid_signature(data: impl Into<String>) -> RpcError {
 }
 
 pub fn oracle_not_designated_node(oracle_pub: &ECPoint) -> RpcError {
-    RpcError::oracle_not_designated_node().with_data(format!("{} isn't an oracle node.", oracle_pub))
+    RpcError::oracle_not_designated_node()
+        .with_data(format!("{} isn't an oracle node.", oracle_pub))
 }

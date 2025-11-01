@@ -178,10 +178,7 @@ impl LogStorageStore {
         Ok(id)
     }
 
-    pub fn find_block_state(
-        &self,
-        hash: &UInt256,
-    ) -> IoResult<Vec<(BlockLogState, TriggerType)>> {
+    pub fn find_block_state(&self, hash: &UInt256) -> IoResult<Vec<(BlockLogState, TriggerType)>> {
         let prefix_bytes = KeyBuilder::new(PREFIX_ID, PREFIX_BLOCK)
             .add_uint256(hash)
             .into_vec();
@@ -241,10 +238,7 @@ impl LogStorageStore {
         )
     }
 
-    pub fn find_execution_block_state(
-        &self,
-        hash: &UInt256,
-    ) -> IoResult<Vec<(Uuid, TriggerType)>> {
+    pub fn find_execution_block_state(&self, hash: &UInt256) -> IoResult<Vec<(Uuid, TriggerType)>> {
         let prefix_bytes = KeyBuilder::new(PREFIX_ID, PREFIX_EXECUTION_BLOCK)
             .add_uint256(hash)
             .into_vec();
@@ -348,10 +342,7 @@ impl LogStorageStore {
         }
     }
 
-    pub fn try_get_execution_transaction_state(
-        &self,
-        hash: &UInt256,
-    ) -> IoResult<Option<Uuid>> {
+    pub fn try_get_execution_transaction_state(&self, hash: &UInt256) -> IoResult<Option<Uuid>> {
         let key = KeyBuilder::new(PREFIX_ID, PREFIX_EXECUTION_TRANSACTION)
             .add_uint256(hash)
             .into_vec();

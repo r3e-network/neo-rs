@@ -20,10 +20,10 @@ use std::str::FromStr;
 pub struct RpcNep17Transfers {
     /// User script hash
     pub user_script_hash: UInt160,
-    
+
     /// List of sent transfers
     pub sent: Vec<RpcNep17Transfer>,
-    
+
     /// List of received transfers
     pub received: Vec<RpcNep17Transfer>,
 }
@@ -33,30 +33,40 @@ impl RpcNep17Transfers {
     /// Matches C# ToJson
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
-        
-        let sent_array: Vec<JToken> = self.sent
+
+        let sent_array: Vec<JToken> = self
+            .sent
             .iter()
             .map(|t| JToken::Object(t.to_json(protocol_settings)))
             .collect();
         json.insert("sent".to_string(), JToken::Array(JArray::from(sent_array)));
-        
-        let received_array: Vec<JToken> = self.received
+
+        let received_array: Vec<JToken> = self
+            .received
             .iter()
             .map(|t| JToken::Object(t.to_json(protocol_settings)))
             .collect();
-        json.insert("received".to_string(), JToken::Array(JArray::from(received_array)));
-        
-        json.insert("address".to_string(), JToken::String(
-            self.user_script_hash.to_address(protocol_settings.address_version)
-        ));
-        
+        json.insert(
+            "received".to_string(),
+            JToken::Array(JArray::from(received_array)),
+        );
+
+        json.insert(
+            "address".to_string(),
+            JToken::String(
+                self.user_script_hash
+                    .to_address(protocol_settings.address_version),
+            ),
+        );
+
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let sent = json.get("sent")
+        let sent = json
+            .get("sent")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -65,8 +75,9 @@ impl RpcNep17Transfers {
                     .collect()
             })
             .unwrap_or_default();
-            
-        let received = json.get("received")
+
+        let received = json
+            .get("received")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -75,14 +86,15 @@ impl RpcNep17Transfers {
                     .collect()
             })
             .unwrap_or_default();
-            
-        let address = json.get("address")
+
+        let address = json
+            .get("address")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'address' field")?;
-            
+
         let user_script_hash = UInt160::from_address(address, protocol_settings.address_version)
             .map_err(|_| format!("Invalid address: {}", address))?;
-            
+
         Ok(Self {
             user_script_hash,
             sent,
@@ -96,22 +108,22 @@ impl RpcNep17Transfers {
 pub struct RpcNep17Transfer {
     /// Timestamp in milliseconds
     pub timestamp_ms: u64,
-    
+
     /// Asset hash
     pub asset_hash: UInt160,
-    
+
     /// Transfer address script hash
     pub user_script_hash: Option<UInt160>,
-    
+
     /// Transfer amount
     pub amount: BigInt,
-    
+
     /// Block index
     pub block_index: u32,
-    
+
     /// Transfer notify index
     pub transfer_notify_index: u16,
-    
+
     /// Transaction hash
     pub tx_hash: UInt256,
 }
@@ -121,43 +133,65 @@ impl RpcNep17Transfer {
     /// Matches C# ToJson
     pub fn to_json(&self, protocol_settings: &ProtocolSettings) -> JObject {
         let mut json = JObject::new();
-        json.insert("timestamp".to_string(), JToken::Number(self.timestamp_ms as f64));
-        json.insert("assethash".to_string(), JToken::String(self.asset_hash.to_string()));
-        
+        json.insert(
+            "timestamp".to_string(),
+            JToken::Number(self.timestamp_ms as f64),
+        );
+        json.insert(
+            "assethash".to_string(),
+            JToken::String(self.asset_hash.to_string()),
+        );
+
         if let Some(ref user_script_hash) = self.user_script_hash {
-            json.insert("transferaddress".to_string(), JToken::String(
-                user_script_hash.to_address(protocol_settings.address_version)
-            ));
+            json.insert(
+                "transferaddress".to_string(),
+                JToken::String(user_script_hash.to_address(protocol_settings.address_version)),
+            );
         } else {
             json.insert("transferaddress".to_string(), JToken::Null);
         }
-        
-        json.insert("amount".to_string(), JToken::String(self.amount.to_string()));
-        json.insert("blockindex".to_string(), JToken::Number(self.block_index as f64));
-        json.insert("transfernotifyindex".to_string(), JToken::Number(self.transfer_notify_index as f64));
-        json.insert("txhash".to_string(), JToken::String(self.tx_hash.to_string()));
+
+        json.insert(
+            "amount".to_string(),
+            JToken::String(self.amount.to_string()),
+        );
+        json.insert(
+            "blockindex".to_string(),
+            JToken::Number(self.block_index as f64),
+        );
+        json.insert(
+            "transfernotifyindex".to_string(),
+            JToken::Number(self.transfer_notify_index as f64),
+        );
+        json.insert(
+            "txhash".to_string(),
+            JToken::String(self.tx_hash.to_string()),
+        );
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject, protocol_settings: &ProtocolSettings) -> Result<Self, String> {
-        let timestamp_ms = json.get("timestamp")
+        let timestamp_ms = json
+            .get("timestamp")
             .and_then(|v| v.as_number())
-            .ok_or("Missing or invalid 'timestamp' field")?
-            as u64;
-            
-        let asset_hash_str = json.get("assethash")
+            .ok_or("Missing or invalid 'timestamp' field")? as u64;
+
+        let asset_hash_str = json
+            .get("assethash")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'assethash' field")?;
-            
+
         let asset_hash = if asset_hash_str.starts_with("0x") {
             UInt160::parse(asset_hash_str)
         } else {
             UInt160::from_address(asset_hash_str, protocol_settings.address_version)
-        }.map_err(|_| format!("Invalid asset hash: {}", asset_hash_str))?;
-        
-        let user_script_hash = json.get("transferaddress")
+        }
+        .map_err(|_| format!("Invalid asset hash: {}", asset_hash_str))?;
+
+        let user_script_hash = json
+            .get("transferaddress")
             .and_then(|v| v.as_string())
             .and_then(|addr| {
                 if addr.starts_with("0x") {
@@ -166,28 +200,30 @@ impl RpcNep17Transfer {
                     UInt160::from_address(addr, protocol_settings.address_version).ok()
                 }
             });
-            
-        let amount_str = json.get("amount")
+
+        let amount_str = json
+            .get("amount")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'amount' field")?;
-        let amount = BigInt::from_str(amount_str)
-            .map_err(|_| format!("Invalid amount: {}", amount_str))?;
-            
-        let block_index = json.get("blockindex")
+        let amount =
+            BigInt::from_str(amount_str).map_err(|_| format!("Invalid amount: {}", amount_str))?;
+
+        let block_index = json
+            .get("blockindex")
             .and_then(|v| v.as_number())
-            .ok_or("Missing or invalid 'blockindex' field")?
-            as u32;
-            
-        let transfer_notify_index = json.get("transfernotifyindex")
-            .and_then(|v| v.as_number())
-            .ok_or("Missing or invalid 'transfernotifyindex' field")?
-            as u16;
-            
-        let tx_hash = json.get("txhash")
+            .ok_or("Missing or invalid 'blockindex' field")? as u32;
+
+        let transfer_notify_index =
+            json.get("transfernotifyindex")
+                .and_then(|v| v.as_number())
+                .ok_or("Missing or invalid 'transfernotifyindex' field")? as u16;
+
+        let tx_hash = json
+            .get("txhash")
             .and_then(|v| v.as_string())
             .and_then(|s| UInt256::parse(s).ok())
             .ok_or("Missing or invalid 'txhash' field")?;
-            
+
         Ok(Self {
             timestamp_ms,
             asset_hash,

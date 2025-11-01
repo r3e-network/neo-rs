@@ -16,22 +16,22 @@ use serde::{Deserialize, Serialize};
 pub struct DbftSettings {
     /// Recovery logs name
     pub recovery_logs: String,
-    
+
     /// Whether to ignore recovery logs
     pub ignore_recovery_logs: bool,
-    
+
     /// Whether to auto start consensus
     pub auto_start: bool,
-    
+
     /// Network ID
     pub network: u32,
-    
+
     /// Maximum block size
     pub max_block_size: u32,
-    
+
     /// Maximum block system fee
     pub max_block_system_fee: i64,
-    
+
     /// Exception policy
     pub exception_policy: UnhandledExceptionPolicy,
 }
@@ -65,31 +65,38 @@ impl DbftSettings {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Creates DbftSettings from configuration section
     /// Matches C# constructor with IConfigurationSection parameter
     pub fn from_config(config: &serde_json::Value) -> Self {
         Self {
-            recovery_logs: config.get("RecoveryLogs")
+            recovery_logs: config
+                .get("RecoveryLogs")
                 .and_then(|v| v.as_str())
                 .unwrap_or("ConsensusState")
                 .to_string(),
-            ignore_recovery_logs: config.get("IgnoreRecoveryLogs")
+            ignore_recovery_logs: config
+                .get("IgnoreRecoveryLogs")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
-            auto_start: config.get("AutoStart")
+            auto_start: config
+                .get("AutoStart")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
-            network: config.get("Network")
+            network: config
+                .get("Network")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(5195086) as u32,
-            max_block_size: config.get("MaxBlockSize")
+            max_block_size: config
+                .get("MaxBlockSize")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(262144) as u32,
-            max_block_system_fee: config.get("MaxBlockSystemFee")
+            max_block_system_fee: config
+                .get("MaxBlockSystemFee")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(150000000000),
-            exception_policy: config.get("UnhandledExceptionPolicy")
+            exception_policy: config
+                .get("UnhandledExceptionPolicy")
                 .and_then(|v| v.as_str())
                 .and_then(|s| match s {
                     "StopNode" => Some(UnhandledExceptionPolicy::StopNode),

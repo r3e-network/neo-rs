@@ -1,7 +1,7 @@
 use super::notify_log_state::NotifyLogState;
 use neo_core::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use neo_core::{UInt256};
 use neo_core::smart_contract::TriggerType;
+use neo_core::UInt256;
 
 /// Notification metadata specialised with transaction context.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -12,7 +12,11 @@ pub struct ContractLogState {
 }
 
 impl ContractLogState {
-    pub fn create(transaction_hash: Option<UInt256>, trigger: TriggerType, notify: NotifyLogState) -> Self {
+    pub fn create(
+        transaction_hash: Option<UInt256>,
+        trigger: TriggerType,
+        notify: NotifyLogState,
+    ) -> Self {
         Self {
             transaction_hash: transaction_hash.unwrap_or_default(),
             trigger,

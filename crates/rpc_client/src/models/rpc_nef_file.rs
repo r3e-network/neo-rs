@@ -23,17 +23,20 @@ impl RpcNefFile {
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let compiler = json.get("compiler")
+        let compiler = json
+            .get("compiler")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'compiler' field")?
             .to_string();
-            
-        let source = json.get("source")
+
+        let source = json
+            .get("source")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'source' field")?
             .to_string();
-            
-        let tokens = json.get("tokens")
+
+        let tokens = json
+            .get("tokens")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -42,17 +45,18 @@ impl RpcNefFile {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-            
-        let script = json.get("script")
+
+        let script = json
+            .get("script")
             .and_then(|v| v.as_string())
             .and_then(|s| base64::decode(s).ok())
             .ok_or("Missing or invalid 'script' field")?;
-            
-        let checksum = json.get("checksum")
+
+        let checksum = json
+            .get("checksum")
             .and_then(|v| v.as_number())
-            .ok_or("Missing or invalid 'checksum' field")?
-            as u32;
-            
+            .ok_or("Missing or invalid 'checksum' field")? as u32;
+
         Ok(Self {
             nef_file: NefFile {
                 compiler,

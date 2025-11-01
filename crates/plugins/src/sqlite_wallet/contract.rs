@@ -30,11 +30,11 @@ impl Contract {
     fn calculate_hash(script: &[u8]) -> Vec<u8> {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         script.hash(&mut hasher);
         let hash = hasher.finish();
-        
+
         // Convert to 32-byte hash
         let mut result = vec![0u8; 32];
         for (i, byte) in hash.to_le_bytes().iter().enumerate() {

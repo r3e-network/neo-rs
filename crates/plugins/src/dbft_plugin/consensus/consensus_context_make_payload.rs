@@ -10,17 +10,17 @@
 // modifications are permitted.
 
 use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
-use neo_core::network::p2p::payloads::ExtensiblePayload;
 use crate::dbft_plugin::messages::{
     ChangeView, Commit, ConsensusMessagePayload, PrepareRequest, PrepareResponse, RecoveryMessage,
     RecoveryRequest,
 };
 use crate::dbft_plugin::types::change_view_reason::ChangeViewReason;
 use neo_core::ledger::TransactionVerificationContext;
+use neo_core::neo_io::Serializable;
+use neo_core::network::p2p::payloads::ExtensiblePayload;
 use neo_core::network::p2p::payloads::Witness;
 use neo_core::smart_contract::Contract;
-use neo_core::{Transaction, UInt160, UInt256, TimeProvider};
-use neo_core::neo_io::Serializable;
+use neo_core::{TimeProvider, Transaction, UInt160, UInt256};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::debug;
@@ -45,7 +45,7 @@ impl ConsensusContext {
         }
         payload
     }
-    
+
     /// Makes a commit payload
     /// Matches C# MakeCommit method
     pub fn make_commit(&mut self) -> ExtensiblePayload {
@@ -62,16 +62,17 @@ impl ConsensusContext {
 
         self.ensure_header();
         let public_key = self.my_public_key.as_ref().unwrap();
-        let signature = match self
-            .signer
-            .sign_block(&self.block, public_key, self.dbft_settings.network)
-        {
-            Ok(sig) => sig,
-            Err(err) => {
-                self.log(&format!("Failed to sign commit: {err}"));
-                return ExtensiblePayload::new();
-            }
-        };
+        let signature =
+            match self
+                .signer
+                .sign_block(&self.block, public_key, self.dbft_settings.network)
+            {
+                Ok(sig) => sig,
+                Err(err) => {
+                    self.log(&format!("Failed to sign commit: {err}"));
+                    return ExtensiblePayload::new();
+                }
+            };
 
         let commit = Commit::with_params(
             self.block.index(),
@@ -84,7 +85,7 @@ impl ConsensusContext {
         self.commit_payloads[self.my_index as usize] = Some(payload.clone());
         payload
     }
-    
+
     /// Makes a signed payload
     /// Matches C# MakeSignedPayload method
     fn make_signed_payload(&mut self, message: ConsensusMessagePayload) -> ExtensiblePayload {
@@ -92,14 +93,15 @@ impl ConsensusContext {
         self.sign_payload(&mut payload);
         payload
     }
-    
+
     /// Signs a payload
     /// Matches C# SignPayload method
     fn sign_payload(&self, payload: &mut ExtensiblePayload) {
-        match self
-            .signer
-            .sign_extensible_payload(payload, &self.data_cache, self.dbft_settings.network)
-        {
+        match self.signer.sign_extensible_payload(
+            payload,
+            &self.data_cache,
+            self.dbft_settings.network,
+        ) {
             Ok(witness) => {
                 payload.witness = witness;
             }
@@ -109,18 +111,18 @@ impl ConsensusContext {
             }
         }
     }
-    
+
     /// Ensures max block limitation
     /// Matches C# EnsureMaxBlockLimitation method
     pub fn ensure_max_block_limitation(&mut self, txs: Vec<Transaction>) {
         let mut hashes = Vec::new();
         self.transactions = Some(HashMap::new());
         self.verification_context = TransactionVerificationContext::new();
-        
+
         // Expected block size
         let mut block_size = self.get_expected_block_size_without_transactions(txs.len());
         let mut block_system_fee = 0i64;
-        
+
         // Iterate transaction until reach the size or maximum system fee
         for tx in txs {
             // Check if maximum block size has been already exceeded with the current selected set
@@ -128,23 +130,23 @@ impl ConsensusContext {
             if block_size > self.dbft_settings.max_block_size {
                 break;
             }
-            
+
             // Check if maximum block system fee has been already exceeded with the current selected set
             block_system_fee += tx.system_fee();
             if block_system_fee > self.dbft_settings.max_block_system_fee {
                 break;
             }
-            
+
             hashes.push(tx.hash());
             if let Some(transactions) = &mut self.transactions {
                 transactions.insert(tx.hash(), tx.clone());
             }
             self.verification_context.add_transaction(&tx);
         }
-        
+
         self.transaction_hashes = Some(hashes);
     }
-    
+
     /// Makes a prepare request payload
     /// Matches C# MakePrepareRequest method
     pub fn make_prepare_request(&mut self) -> ExtensiblePayload {
@@ -152,17 +154,15 @@ impl ConsensusContext {
         // Limit Speaker proposal to the limit `MaxTransactionsPerBlock` or all available transactions of the mempool
         let sorted_txs = self.collect_transactions(max_transactions_per_block as usize);
         self.ensure_max_block_limitation(sorted_txs);
-        
+
         let timestamp = std::cmp::max(
             TimeProvider::current().utc_now().timestamp_millis() as u64,
-            self.prev_header()
-                .map(|h| h.timestamp() + 1)
-                .unwrap_or(0),
+            self.prev_header().map(|h| h.timestamp() + 1).unwrap_or(0),
         );
         self.block.header.set_timestamp(timestamp);
         let nonce = self.get_nonce();
         self.block.header.set_nonce(nonce);
-        
+
         let prepare_request = PrepareRequest::with_params(
             self.block.index(),
             self.my_index as u8,
@@ -173,12 +173,13 @@ impl ConsensusContext {
             nonce,
             self.transaction_hashes.clone().unwrap_or_default(),
         );
-        
-        let payload = self.make_signed_payload(ConsensusMessagePayload::PrepareRequest(prepare_request));
+
+        let payload =
+            self.make_signed_payload(ConsensusMessagePayload::PrepareRequest(prepare_request));
         self.preparation_payloads[self.my_index as usize] = Some(payload.clone());
         payload
     }
-    
+
     /// Makes a recovery request payload
     /// Matches C# MakeRecoveryRequest method
     pub fn make_recovery_request(&mut self) -> ExtensiblePayload {
@@ -188,10 +189,10 @@ impl ConsensusContext {
             self.view_number,
             TimeProvider::current().utc_now().timestamp_millis() as u64,
         );
-        
+
         self.make_signed_payload(ConsensusMessagePayload::RecoveryRequest(recovery_request))
     }
-    
+
     /// Makes a recovery message payload
     /// Matches C# MakeRecoveryMessage method
     pub fn make_recovery_message(&mut self) -> ExtensiblePayload {
@@ -208,7 +209,7 @@ impl ConsensusContext {
                 transaction_hashes.clone(),
             ));
         }
-        
+
         let mut change_view_messages = HashMap::new();
         let change_payloads: Vec<ExtensiblePayload> = self
             .last_change_view_payloads
@@ -283,10 +284,10 @@ impl ConsensusContext {
             preparation_messages,
             commit_messages,
         );
-        
+
         self.make_signed_payload(ConsensusMessagePayload::RecoveryMessage(recovery_message))
     }
-    
+
     /// Makes a prepare response payload
     /// Matches C# MakePrepareResponse method
     pub fn make_prepare_response(&mut self) -> ExtensiblePayload {
@@ -300,30 +301,35 @@ impl ConsensusContext {
             .and_then(|payload| payload.clone())
             .map(|mut payload| payload.hash())
             .unwrap_or_else(UInt256::default);
-        
+
         let prepare_response = PrepareResponse::with_params(
             self.block.index(),
             self.my_index as u8,
             self.view_number,
             preparation_hash,
         );
-        
-        let payload = self.make_signed_payload(ConsensusMessagePayload::PrepareResponse(prepare_response));
+
+        let payload =
+            self.make_signed_payload(ConsensusMessagePayload::PrepareResponse(prepare_response));
         self.preparation_payloads[self.my_index as usize] = Some(payload.clone());
         payload
     }
-    
+
     /// Gets a nonce for the block
     /// Matches C# GetNonce method
     fn get_nonce(&self) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().hash(&mut hasher);
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+            .hash(&mut hasher);
         hasher.finish()
     }
-    
+
     /// Logs a message
     fn log(&self, message: &str) {
         debug!(target: "dbft::consensus_context", "{}", message);
@@ -347,9 +353,7 @@ impl ConsensusContext {
             header.view_number = self.view_number;
         }
 
-        let data = message
-            .to_bytes()
-            .unwrap_or_else(|_| Vec::new());
+        let data = message.to_bytes().unwrap_or_else(|_| Vec::new());
 
         let mut payload = ExtensiblePayload::new();
         payload.category = "dBFT".to_string();
@@ -363,9 +367,7 @@ impl ConsensusContext {
         payload.data = data;
         payload.witness = Witness::new();
 
-        let validator_key = message
-            .header()
-            .validator_index as usize;
+        let validator_key = message.header().validator_index as usize;
         if let Some(script) = invocation_script {
             payload.witness.invocation_script = script;
         }

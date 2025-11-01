@@ -4,8 +4,8 @@
 
 use super::settings::LevelDBStoreSettings;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -77,7 +77,7 @@ impl LevelDBStore {
         // In a real implementation, this would use the LevelDB library
         let mut cache = self.cache.write().await;
         cache.insert(key.to_string(), value.to_vec());
-        
+
         Ok(())
     }
 
@@ -103,7 +103,7 @@ impl LevelDBStore {
         // In a real implementation, this would use the LevelDB library
         let mut cache = self.cache.write().await;
         cache.remove(key);
-        
+
         Ok(())
     }
 

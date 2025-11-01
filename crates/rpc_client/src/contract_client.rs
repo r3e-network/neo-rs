@@ -9,11 +9,10 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use crate::{RpcClient, TransactionManager, TransactionManagerFactory};
 use crate::models::RpcInvokeResult;
+use crate::{RpcClient, TransactionManager, TransactionManagerFactory};
 use neo_core::{
-    Contract, ContractManifest, KeyPair, NativeContract, 
-    Signer, Transaction, UInt160, WitnessScope
+    Contract, ContractManifest, KeyPair, NativeContract, Signer, Transaction, UInt160, WitnessScope,
 };
 use neo_vm::ScriptBuilder;
 use std::sync::Arc;
@@ -31,7 +30,7 @@ impl ContractClient {
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self { rpc_client }
     }
-    
+
     /// Use RPC method to test invoke operation
     /// Matches C# TestInvokeAsync
     pub async fn test_invoke(
@@ -42,11 +41,11 @@ impl ContractClient {
     ) -> Result<RpcInvokeResult, Box<dyn std::error::Error>> {
         // Create script using script builder
         let script = self.make_script(script_hash, operation, args)?;
-        
+
         // Call RPC invoke script method
         self.rpc_client.invoke_script(&script).await
     }
-    
+
     /// Deploy Contract, return signed transaction
     /// Matches C# CreateDeployContractTxAsync
     pub async fn create_deploy_contract_tx(
@@ -57,7 +56,7 @@ impl ContractClient {
     ) -> Result<Transaction, Box<dyn std::error::Error>> {
         // Build deployment script
         let mut sb = ScriptBuilder::new();
-        
+
         // EmitDynamicCall to ContractManagement.deploy
         let contract_management_hash = NativeContract::contract_management().hash();
         sb.emit_dynamic_call(
@@ -68,35 +67,32 @@ impl ContractClient {
                 manifest.to_json().to_string().into(),
             ],
         )?;
-        
+
         let script = sb.to_array();
-        
+
         // Create sender from public key
-        let sender = Contract::create_signature_redeem_script(&key.public_key())
-            .to_script_hash();
-        
+        let sender = Contract::create_signature_redeem_script(&key.public_key()).to_script_hash();
+
         // Create signers
-        let signers = vec![
-            Signer {
-                account: sender,
-                scopes: WitnessScope::CALLED_BY_ENTRY,
-                allowed_contracts: vec![],
-                allowed_groups: vec![],
-                rules: vec![],
-            }
-        ];
-        
+        let signers = vec![Signer {
+            account: sender,
+            scopes: WitnessScope::CALLED_BY_ENTRY,
+            allowed_contracts: vec![],
+            allowed_groups: vec![],
+            rules: vec![],
+        }];
+
         // Create transaction using TransactionManagerFactory
         let factory = TransactionManagerFactory::new(self.rpc_client.clone());
         let mut manager = factory.make_transaction(&script, &signers).await?;
-        
+
         // Add signature and sign
         manager.add_signature(key)?;
         let transaction = manager.sign().await?;
-        
+
         Ok(transaction)
     }
-    
+
     /// Helper method to create script from contract call
     fn make_script(
         &self,
@@ -105,20 +101,20 @@ impl ContractClient {
         args: Vec<serde_json::Value>,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let mut sb = ScriptBuilder::new();
-        
+
         // Convert args to ContractParameter format and emit
         for arg in args.iter().rev() {
             self.emit_argument(&mut sb, arg)?;
         }
-        
+
         // Emit operation and script hash
         sb.emit_push(operation.as_bytes())?;
         sb.emit_push(&script_hash.to_array())?;
         sb.emit_syscall("System.Contract.Call")?;
-        
+
         Ok(sb.to_array())
     }
-    
+
     /// Helper to emit argument based on type
     fn emit_argument(
         &self,
@@ -136,7 +132,7 @@ impl ContractClient {
                 } else {
                     Err("Invalid number format".into())
                 }
-            },
+            }
             serde_json::Value::String(s) => sb.emit_push(s.as_bytes()),
             serde_json::Value::Array(arr) => {
                 for item in arr {
@@ -144,7 +140,7 @@ impl ContractClient {
                 }
                 sb.emit_push_int(arr.len() as i64)?;
                 sb.emit_pack()
-            },
+            }
             _ => Err("Unsupported argument type".into()),
         }
     }

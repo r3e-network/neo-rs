@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 pub struct RpcUnclaimedGas {
     /// Amount of unclaimed GAS
     pub unclaimed: i64,
-    
+
     /// Address
     pub address: String,
 }
@@ -27,28 +27,31 @@ impl RpcUnclaimedGas {
     /// Matches C# ToJson
     pub fn to_json(&self) -> JObject {
         let mut json = JObject::new();
-        json.insert("unclaimed".to_string(), JToken::String(self.unclaimed.to_string()));
+        json.insert(
+            "unclaimed".to_string(),
+            JToken::String(self.unclaimed.to_string()),
+        );
         json.insert("address".to_string(), JToken::String(self.address.clone()));
         json
     }
-    
+
     /// Creates from JSON
     /// Matches C# FromJson
     pub fn from_json(json: &JObject) -> Result<Self, String> {
-        let unclaimed_str = json.get("unclaimed")
+        let unclaimed_str = json
+            .get("unclaimed")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'unclaimed' field")?;
-        let unclaimed = unclaimed_str.parse::<i64>()
+        let unclaimed = unclaimed_str
+            .parse::<i64>()
             .map_err(|_| format!("Invalid unclaimed value: {}", unclaimed_str))?;
-            
-        let address = json.get("address")
+
+        let address = json
+            .get("address")
             .and_then(|v| v.as_string())
             .ok_or("Missing or invalid 'address' field")?
             .to_string();
-            
-        Ok(Self {
-            unclaimed,
-            address,
-        })
+
+        Ok(Self { unclaimed, address })
     }
 }

@@ -21,7 +21,10 @@ impl Serializable for EngineLogState {
     fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
         let script_hash = UInt160::deserialize(reader)?;
         let message = reader.read_var_string(usize::MAX)?;
-        Ok(Self { script_hash, message })
+        Ok(Self {
+            script_hash,
+            message,
+        })
     }
 
     fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {

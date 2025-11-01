@@ -111,7 +111,10 @@ impl Commit {
     }
 
     /// Serializes the full message including header.
-    pub(crate) fn write_with_header(&self, writer: &mut BinaryWriter) -> ConsensusMessageResult<()> {
+    pub(crate) fn write_with_header(
+        &self,
+        writer: &mut BinaryWriter,
+    ) -> ConsensusMessageResult<()> {
         self.header.serialize(writer)?;
         self.write_body(writer)
     }

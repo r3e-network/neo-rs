@@ -9,8 +9,11 @@
 // Redistribution and use in source and binary forms with or without
 // modifications are permitted.
 
-use neo_core::{UInt160, io::{ISerializable, MemoryReader, BinaryWriter}};
-use serde::{Serialize, Deserialize};
+use neo_core::{
+    io::{BinaryWriter, ISerializable, MemoryReader},
+    UInt160,
+};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 
 /// NEP-17 balance key implementation.
@@ -20,7 +23,7 @@ pub struct Nep17BalanceKey {
     /// User script hash
     /// Matches C# UserScriptHash field
     pub user_script_hash: UInt160,
-    
+
     /// Asset script hash
     /// Matches C# AssetScriptHash field
     pub asset_script_hash: UInt160,
@@ -35,7 +38,7 @@ impl Nep17BalanceKey {
             asset_script_hash,
         }
     }
-    
+
     /// Gets the size of the serialized data.
     /// Matches C# Size property
     pub fn size(&self) -> usize {
@@ -65,7 +68,7 @@ impl Ord for Nep17BalanceKey {
         if user_cmp != Ordering::Equal {
             return user_cmp;
         }
-        
+
         // Compare asset script hash second
         self.asset_script_hash.cmp(&other.asset_script_hash)
     }
@@ -75,28 +78,28 @@ impl ISerializable for Nep17BalanceKey {
     fn size(&self) -> usize {
         self.size()
     }
-    
+
     fn serialize(&self, writer: &mut dyn std::io::Write) -> Result<(), String> {
         // Write user script hash
         writer.write_all(&self.user_script_hash.to_bytes())?;
-        
+
         // Write asset script hash
         writer.write_all(&self.asset_script_hash.to_bytes())?;
-        
+
         Ok(())
     }
-    
+
     fn deserialize(&mut self, reader: &mut dyn std::io::Read) -> Result<(), String> {
         // Read user script hash
         let mut user_hash_bytes = [0u8; 20];
         reader.read_exact(&mut user_hash_bytes)?;
         self.user_script_hash = UInt160::from_bytes(&user_hash_bytes);
-        
+
         // Read asset script hash
         let mut asset_hash_bytes = [0u8; 20];
         reader.read_exact(&mut asset_hash_bytes)?;
         self.asset_script_hash = UInt160::from_bytes(&asset_hash_bytes);
-        
+
         Ok(())
     }
 }

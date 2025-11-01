@@ -10,13 +10,13 @@
 // modifications are permitted.
 
 use crate::dbft_plugin::consensus::consensus_context::ConsensusContext;
-use neo_core::network::p2p::payloads::ExtensiblePayload;
 use crate::dbft_plugin::consensus::consensus_service::ConsensusService;
 use crate::dbft_plugin::messages::{
-    ChangeView, Commit, ConsensusMessagePayload, PrepareRequest, PrepareResponse,
-    RecoveryMessage, RecoveryRequest,
+    ChangeView, Commit, ConsensusMessagePayload, PrepareRequest, PrepareResponse, RecoveryMessage,
+    RecoveryRequest,
 };
 use neo_core::ledger::TransactionVerificationContext;
+use neo_core::network::p2p::payloads::ExtensiblePayload;
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -84,7 +84,8 @@ impl ConsensusService {
 
         match message_payload {
             ConsensusMessagePayload::PrepareRequest(request) => {
-                self.on_prepare_request_received(payload.clone(), request).await;
+                self.on_prepare_request_received(payload.clone(), request)
+                    .await;
                 None
             }
             ConsensusMessagePayload::PrepareResponse(response) => {
@@ -93,7 +94,8 @@ impl ConsensusService {
                 None
             }
             ConsensusMessagePayload::ChangeView(change_view) => {
-                self.on_change_view_received(payload.clone(), change_view).await;
+                self.on_change_view_received(payload.clone(), change_view)
+                    .await;
                 None
             }
             ConsensusMessagePayload::Commit(commit) => {
@@ -202,7 +204,9 @@ impl ConsensusService {
             }
 
             let primary_index = context.block().primary_index() as usize;
-            let hash_matches = if let Some(Some(primary_payload)) = context.preparation_payloads.get(primary_index).cloned() {
+            let hash_matches = if let Some(Some(primary_payload)) =
+                context.preparation_payloads.get(primary_index).cloned()
+            {
                 let mut payload_clone = primary_payload;
                 let primary_hash = ConsensusContext::payload_hash(&mut payload_clone);
                 message.preparation_hash() == &primary_hash
@@ -231,11 +235,7 @@ impl ConsensusService {
         }
     }
 
-    async fn on_change_view_received(
-        &mut self,
-        payload: ExtensiblePayload,
-        message: ChangeView,
-    ) {
+    async fn on_change_view_received(&mut self, payload: ExtensiblePayload, message: ChangeView) {
         let expected_view = {
             let mut context = self.context.write().await;
 
@@ -393,7 +393,8 @@ impl ConsensusService {
                 Vec::new()
             };
 
-            let (prepare_request_payload, prepare_response_payloads) = if message_view == current_view
+            let (prepare_request_payload, prepare_response_payloads) = if message_view
+                == current_view
                 && !context.not_accepting_payloads_due_to_view_changing()
                 && !context.commit_sent()
             {

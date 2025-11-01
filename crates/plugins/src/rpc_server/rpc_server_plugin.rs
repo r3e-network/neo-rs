@@ -5,13 +5,18 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use neo_core::NeoSystem;
 use neo_extensions::error::{ExtensionError, ExtensionResult};
-use neo_extensions::plugin::{Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo};
+use neo_extensions::plugin::{
+    Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
+};
 use parking_lot::RwLock;
 use serde_json::Value;
 use tracing::{info, warn};
 
 use super::rcp_server_settings::{RpcServerConfig, RpcServerSettings};
-use super::rpc_server::{add_pending_handler, get_server, register_server, remove_server, take_pending_handlers, RpcHandler, RpcServer, SERVERS};
+use super::rpc_server::{
+    add_pending_handler, get_server, register_server, remove_server, take_pending_handlers,
+    RpcHandler, RpcServer, SERVERS,
+};
 
 pub struct RpcServerPlugin {
     base: PluginBase,
@@ -149,11 +154,7 @@ impl Plugin for RpcServerPlugin {
                 Ok(())
             }
             PluginEvent::NodeStopping => {
-                let networks: Vec<u32> = SERVERS
-                    .read()
-                    .keys()
-                    .copied()
-                    .collect();
+                let networks: Vec<u32> = SERVERS.read().keys().copied().collect();
                 for network in networks {
                     self.stop_server_for_network(network);
                 }

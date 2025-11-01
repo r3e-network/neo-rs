@@ -13,9 +13,9 @@ use neo_core::smart_contract::TriggerType;
 use neo_core::{NeoSystem, UInt160, UInt256};
 use neo_vm::StackItem;
 use serde_json::{json, Value as JsonValue};
-use tracing::warn;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use tracing::warn;
 
 /// Log event arguments matching the C# `LogEventArgs` contract.
 #[derive(Clone)]
@@ -108,7 +108,9 @@ impl LogReader {
                             .cloned()
                             .collect();
                         if !matching_logs.is_empty() {
-                            if let Err(err) = store.put_transaction_engine_log_state(&tx_hash, &matching_logs) {
+                            if let Err(err) =
+                                store.put_transaction_engine_log_state(&tx_hash, &matching_logs)
+                            {
                                 warn!(target: "neo", "failed to persist engine logs: {err}");
                             }
                         }
@@ -186,7 +188,9 @@ impl LogReader {
         }
 
         if let Some(trigger) = trigger_type {
-            executions.retain(|execution| trigger_to_str(execution.trigger).eq_ignore_ascii_case(&trigger));
+            executions.retain(|execution| {
+                trigger_to_str(execution.trigger).eq_ignore_ascii_case(&trigger)
+            });
         }
 
         let json_executions: Vec<JsonValue> = executions
@@ -299,14 +303,13 @@ impl LogReader {
         };
 
         let result = if let Some(event) = &event_name {
-            store
-                .get_contract_log_with_trigger_and_event(
-                    &script_hash,
-                    TriggerType::Application,
-                    event,
-                    page,
-                    page_size,
-                )
+            store.get_contract_log_with_trigger_and_event(
+                &script_hash,
+                TriggerType::Application,
+                event,
+                page,
+                page_size,
+            )
         } else {
             store.get_contract_log_with_trigger(
                 &script_hash,
@@ -438,12 +441,12 @@ fn stack_item_to_json(item: &StackItem) -> JsonValue {
         StackItem::Integer(value) => json!(value.to_string()),
         StackItem::ByteString(bytes) => json!(hex::encode(bytes)),
         StackItem::Buffer(buffer) => json!(hex::encode(buffer.data())),
-        StackItem::Array(array) => JsonValue::Array(
-            array.items().iter().map(stack_item_to_json).collect(),
-        ),
-        StackItem::Struct(strct) => JsonValue::Array(
-            strct.items().iter().map(stack_item_to_json).collect(),
-        ),
+        StackItem::Array(array) => {
+            JsonValue::Array(array.items().iter().map(stack_item_to_json).collect())
+        }
+        StackItem::Struct(strct) => {
+            JsonValue::Array(strct.items().iter().map(stack_item_to_json).collect())
+        }
         StackItem::Map(map) => {
             let entries = map
                 .iter()

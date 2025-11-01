@@ -4,8 +4,8 @@
 
 use super::settings::StorageDumperSettings;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -109,7 +109,7 @@ impl StorageDumper {
         // Create dump file
         let dump_file = output_path.join("storage_dump.json");
         let json_data = serde_json::to_string_pretty(&*dump_data).map_err(|e| e.to_string())?;
-        
+
         std::fs::write(&dump_file, json_data).map_err(|e| e.to_string())?;
 
         Ok(())

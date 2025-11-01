@@ -18,12 +18,10 @@ impl ECPointJsonConverter {
             .as_str()
             .ok_or_else(|| UInt256FormatException::with_message("value must be a string"))?;
 
-        let bytes = hex::decode(value).map_err(|_| {
-            UInt256FormatException::with_message(format!("'{value}' is invalid."))
-        })?;
+        let bytes = hex::decode(value)
+            .map_err(|_| UInt256FormatException::with_message(format!("'{value}' is invalid.")))?;
 
-        ECPoint::decode(&bytes, ECCurve::Secp256r1).map_err(|_| {
-            UInt256FormatException::with_message(format!("'{value}' is invalid."))
-        })
+        ECPoint::decode(&bytes, ECCurve::Secp256r1)
+            .map_err(|_| UInt256FormatException::with_message(format!("'{value}' is invalid.")))
     }
 }

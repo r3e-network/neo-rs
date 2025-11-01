@@ -59,7 +59,11 @@ impl Plugin for DBFTPlugin {
 pub struct ConsensusService;
 
 impl ConsensusService {
-    pub fn new(_system: Arc<NeoSystem>, _settings: DbftSettings, _signer: Arc<dyn ISigner>) -> Self {
+    pub fn new(
+        _system: Arc<NeoSystem>,
+        _settings: DbftSettings,
+        _signer: Arc<dyn ISigner>,
+    ) -> Self {
         Self
     }
 }

@@ -39,18 +39,16 @@ impl BlockHashOrIndex {
     pub fn as_index(&self) -> Result<u32, RpcError> {
         match self {
             Self::Index(index) => Ok(*index),
-            other => Err(RpcError::invalid_params().with_data(format!(
-                "Value {other:?} is not a valid block index"
-            ))),
+            other => Err(RpcError::invalid_params()
+                .with_data(format!("Value {other:?} is not a valid block index"))),
         }
     }
 
     pub fn as_hash(&self) -> Result<UInt256, RpcError> {
         match self {
             Self::Hash(hash) => Ok(*hash),
-            other => Err(RpcError::invalid_params().with_data(format!(
-                "Value {other:?} is not a valid block hash"
-            ))),
+            other => Err(RpcError::invalid_params()
+                .with_data(format!("Value {other:?} is not a valid block hash"))),
         }
     }
 }

@@ -23,10 +23,7 @@ impl RestServerMiddleware {
                     .and_then(|stem| stem.to_str())
                     .unwrap_or("neo-rs")
                     .to_string();
-                let version = path
-                    .to_string_lossy()
-                    .as_ref()
-                    .get_version();
+                let version = path.to_string_lossy().as_ref().get_version();
                 (name, version)
             }
             Err(_) => ("neo-rs".to_string(), plugin_version.to_string()),

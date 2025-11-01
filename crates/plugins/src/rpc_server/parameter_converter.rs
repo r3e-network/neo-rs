@@ -1,5 +1,4 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use std::str::FromStr;
 use hex;
 use neo_core::cryptography::crypto_utils::ECPoint;
 use neo_core::network::p2p::payloads::signer::Signer;
@@ -10,6 +9,7 @@ use neo_core::uint160::UInt160;
 use neo_core::uint256::UInt256;
 use neo_core::{WitnessRule, WitnessScope};
 use neo_json::{JArray, JObject, JToken};
+use std::str::FromStr;
 use uuid::Uuid;
 
 use super::model::{Address, BlockHashOrIndex, ContractNameOrHashOrId, SignersAndWitnesses};
@@ -36,11 +36,17 @@ pub trait RpcConvertible: Sized {
 pub struct ParameterConverter;
 
 impl ParameterConverter {
-    pub fn convert<T: RpcConvertible>(token: &JToken, ctx: &ConversionContext) -> Result<T, RpcException> {
+    pub fn convert<T: RpcConvertible>(
+        token: &JToken,
+        ctx: &ConversionContext,
+    ) -> Result<T, RpcException> {
         T::from_token(token, ctx)
     }
 
-    pub fn convert_optional<T: RpcConvertible>(token: Option<&JToken>, ctx: &ConversionContext) -> Result<Option<T>, RpcException> {
+    pub fn convert_optional<T: RpcConvertible>(
+        token: Option<&JToken>,
+        ctx: &ConversionContext,
+    ) -> Result<Option<T>, RpcException> {
         match token {
             Some(value) => T::from_token(value, ctx).map(Some),
             None => Ok(None),
@@ -126,14 +132,16 @@ impl RpcConvertible for Vec<Address> {
 impl RpcConvertible for BlockHashOrIndex {
     fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
         let text = token.as_string();
-        BlockHashOrIndex::try_parse(&text).ok_or_else(|| invalid_params(format!("Invalid block hash or index: {}", text)))
+        BlockHashOrIndex::try_parse(&text)
+            .ok_or_else(|| invalid_params(format!("Invalid block hash or index: {}", text)))
     }
 }
 
 impl RpcConvertible for ContractNameOrHashOrId {
     fn from_token(token: &JToken, _ctx: &ConversionContext) -> Result<Self, RpcException> {
         let text = token.as_string();
-        ContractNameOrHashOrId::try_parse(&text).ok_or_else(|| invalid_params(format!("Invalid contract identifier: {}", text)))
+        ContractNameOrHashOrId::try_parse(&text)
+            .ok_or_else(|| invalid_params(format!("Invalid contract identifier: {}", text)))
     }
 }
 
@@ -155,14 +163,14 @@ impl RpcConvertible for SignersAndWitnesses {
         let mut witnesses = Vec::new();
 
         for (index, entry) in array.children().iter().enumerate() {
-            let token = entry
-                .as_ref()
-                .ok_or_else(|| invalid_params(format!("Invalid signer entry at index {}", index)))?;
+            let token = entry.as_ref().ok_or_else(|| {
+                invalid_params(format!("Invalid signer entry at index {}", index))
+            })?;
             let obj = expect_object(token)?;
 
-            let signer_token = obj
-                .get("signer")
-                .ok_or_else(|| invalid_params(format!("Missing signer object at index {}", index)))?;
+            let signer_token = obj.get("signer").ok_or_else(|| {
+                invalid_params(format!("Missing signer object at index {}", index))
+            })?;
             let signer = parse_signer(signer_token, ctx)?;
             signers.push(signer);
 
@@ -183,10 +191,16 @@ impl RpcConvertible for Vec<ContractParameter> {
         let array = expect_array(token)?;
         let mut parameters = Vec::with_capacity(array.count());
         for (index, item) in array.children().iter().enumerate() {
-            let token = item.as_ref().ok_or_else(|| invalid_params(format!("Invalid contract parameter at index {}", index)))?;
+            let token = item.as_ref().ok_or_else(|| {
+                invalid_params(format!("Invalid contract parameter at index {}", index))
+            })?;
             let value = jtoken_to_serde(token);
-            let parameter = ContractParameter::from_json(&value)
-                .map_err(|e| invalid_params(format!("Invalid contract parameter at index {}: {}", index, e)))?;
+            let parameter = ContractParameter::from_json(&value).map_err(|e| {
+                invalid_params(format!(
+                    "Invalid contract parameter at index {}: {}",
+                    index, e
+                ))
+            })?;
             parameters.push(parameter);
         }
         Ok(parameters)
@@ -205,7 +219,11 @@ fn jtoken_to_serde(token: &JToken) -> serde_json::Value {
         JToken::Array(arr) => serde_json::Value::Array(
             arr.children()
                 .into_iter()
-                .map(|item| item.as_ref().map(jtoken_to_serde).unwrap_or(serde_json::Value::Null))
+                .map(|item| {
+                    item.as_ref()
+                        .map(jtoken_to_serde)
+                        .unwrap_or(serde_json::Value::Null)
+                })
                 .collect(),
         ),
         JToken::Object(obj) => {
@@ -286,7 +304,10 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                 .children()
                 .iter()
                 .map(|item| {
-                    let text = item.as_ref().ok_or_else(|| invalid_params("Null contract entry"))?.as_string();
+                    let text = item
+                        .as_ref()
+                        .ok_or_else(|| invalid_params("Null contract entry"))?
+                        .as_string();
                     parse_uint160(&text)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -304,7 +325,8 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                         .as_ref()
                         .ok_or_else(|| invalid_params("Null group entry"))?
                         .as_string();
-                    let bytes = hex::decode(text.trim_start_matches("0x")).map_err(|_| invalid_params("Invalid ECPoint"))?;
+                    let bytes = hex::decode(text.trim_start_matches("0x"))
+                        .map_err(|_| invalid_params("Invalid ECPoint"))?;
                     Ok(ECPoint::new(bytes))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -318,9 +340,12 @@ fn parse_signer(token: &JToken, ctx: &ConversionContext) -> Result<Signer, RpcEx
                 .children()
                 .iter()
                 .map(|item| {
-                    let value = item.as_ref().ok_or_else(|| invalid_params("Null witness rule"))?;
+                    let value = item
+                        .as_ref()
+                        .ok_or_else(|| invalid_params("Null witness rule"))?;
                     let json = jtoken_to_serde(value);
-                    WitnessRule::from_json(&json).map_err(|e| invalid_params(format!("Invalid witness rule: {}", e)))
+                    WitnessRule::from_json(&json)
+                        .map_err(|e| invalid_params(format!("Invalid witness rule: {}", e)))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
         }
@@ -333,13 +358,21 @@ fn parse_witness(token: &JToken) -> Result<Witness, RpcException> {
     let obj = expect_object(token)?;
     let invocation = obj
         .get("invocation")
-        .map(|t| BASE64_STANDARD.decode(t.as_string().trim()).map_err(|_| invalid_params("Invalid invocation script")))
+        .map(|t| {
+            BASE64_STANDARD
+                .decode(t.as_string().trim())
+                .map_err(|_| invalid_params("Invalid invocation script"))
+        })
         .transpose()? // Option<Result> -> Result<Option>
         .unwrap_or_default();
 
     let verification = obj
         .get("verification")
-        .map(|t| BASE64_STANDARD.decode(t.as_string().trim()).map_err(|_| invalid_params("Invalid verification script")))
+        .map(|t| {
+            BASE64_STANDARD
+                .decode(t.as_string().trim())
+                .map_err(|_| invalid_params("Invalid verification script"))
+        })
         .transpose()? // Option<Result> -> Result<Option>
         .unwrap_or_default();
 
@@ -372,7 +405,9 @@ fn parse_witness_scope(text: &str) -> Result<WitnessScope, RpcException> {
         };
 
         if flag == WitnessScope::GLOBAL.bits() && value != 0 {
-            return Err(invalid_params("Global scope cannot be combined with other scopes"));
+            return Err(invalid_params(
+                "Global scope cannot be combined with other scopes",
+            ));
         }
         value |= flag;
     }

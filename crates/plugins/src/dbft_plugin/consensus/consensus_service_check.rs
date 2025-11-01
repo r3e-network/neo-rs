@@ -106,7 +106,9 @@ impl ConsensusService {
 
         if let Some((height, tx_count)) = ready {
             self.block_received_index = height;
-            self.log(&format!("Ready to send Block: height={height} tx={tx_count}"));
+            self.log(&format!(
+                "Ready to send Block: height={height} tx={tx_count}"
+            ));
             self.known_hashes.clear();
         }
     }
@@ -182,11 +184,7 @@ impl ConsensusService {
         let action = {
             let mut context = self.context.write().await;
 
-            let preparation_count = context
-                .preparation_payloads
-                .iter()
-                .flatten()
-                .count();
+            let preparation_count = context.preparation_payloads.iter().flatten().count();
 
             if preparation_count < context.m() {
                 return;

@@ -6,25 +6,21 @@
 
 use crate::rest_server::models::contract::invoke_params::InvokeParams;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use neo_core::cryptography::crypto_utils::{ECPoint, ECCurve};
+use neo_core::cryptography::crypto_utils::{ECCurve, ECPoint};
 use neo_core::network::p2p::payloads::Signer;
-use neo_core::smart_contract::contract_parameter::{
-    ContractParameter, ContractParameterValue,
-};
+use neo_core::smart_contract::contract_parameter::{ContractParameter, ContractParameterValue};
 use neo_core::smart_contract::ContractParameterType;
 use neo_core::{UInt160, UInt256, WitnessScope};
+use neo_vm::stack_item::StackItem;
 use num_bigint::BigInt;
 use serde_json::{Map, Value};
-use std::str::FromStr;
-use neo_vm::stack_item::StackItem;
 use std::collections::BTreeMap;
+use std::str::FromStr;
 
 /// Contract utility functions matching the C# RestServerUtility helpers.
 impl super::RestServerUtility {
     /// Creates an `InvokeParams` instance from a JSON token.
-    pub fn contract_invoke_parameters_from_j_token(
-        token: &Value,
-    ) -> Result<InvokeParams, String> {
+    pub fn contract_invoke_parameters_from_j_token(token: &Value) -> Result<InvokeParams, String> {
         let obj = token
             .as_object()
             .ok_or_else(|| "Invoke parameters JSON must be an object".to_string())?;
@@ -61,25 +57,21 @@ impl super::RestServerUtility {
             .and_then(Value::as_str)
             .ok_or_else(|| "Signer.account must be a string".to_string())
             .and_then(|value| {
-                UInt160::from_str(value)
-                    .map_err(|err| format!("Invalid signer account: {err}"))
+                UInt160::from_str(value).map_err(|err| format!("Invalid signer account: {err}"))
             })?;
 
         let scopes = get_case_insensitive(obj, "scopes")
             .and_then(Value::as_str)
             .ok_or_else(|| "Signer.scopes must be a string".to_string())
             .and_then(|value| {
-                WitnessScope::from_str(value)
-                    .map_err(|err| format!("Invalid witness scope: {err}"))
+                WitnessScope::from_str(value).map_err(|err| format!("Invalid witness scope: {err}"))
             })?;
 
         Ok(Signer::new(account, scopes))
     }
 
     /// Creates a contract parameter from a JSON token.
-    pub fn contract_parameter_from_j_token(
-        token: &Value,
-    ) -> Result<ContractParameter, String> {
+    pub fn contract_parameter_from_j_token(token: &Value) -> Result<ContractParameter, String> {
         let obj = token
             .as_object()
             .ok_or_else(|| "ContractParameter JSON must be an object".to_string())?;
@@ -92,13 +84,11 @@ impl super::RestServerUtility {
         let value_token = get_case_insensitive(obj, "value");
 
         let parameter = match parameter_type {
-            ContractParameterType::Any => {
-                ContractParameter::new(ContractParameterType::Any)
-            }
+            ContractParameterType::Any => ContractParameter::new(ContractParameterType::Any),
             ContractParameterType::Boolean => {
-                let value = value_token
-                    .and_then(Value::as_bool)
-                    .ok_or_else(|| "Boolean contract parameter requires a boolean value".to_string())?;
+                let value = value_token.and_then(Value::as_bool).ok_or_else(|| {
+                    "Boolean contract parameter requires a boolean value".to_string()
+                })?;
                 ContractParameter::with_value(
                     ContractParameterType::Boolean,
                     ContractParameterValue::Boolean(value),
@@ -111,10 +101,8 @@ impl super::RestServerUtility {
                     Value::String(text) => text.to_string(),
                     Value::Number(number) => number.to_string(),
                     _ => {
-                        return Err(
-                            "Integer contract parameter requires a numeric string value"
-                                .to_string(),
-                        )
+                        return Err("Integer contract parameter requires a numeric string value"
+                            .to_string())
                     }
                 };
                 let int = BigInt::from_str(&text)
@@ -139,18 +127,18 @@ impl super::RestServerUtility {
                 )
             }
             ContractParameterType::String => {
-                let text = value_token
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| "String contract parameter requires a string value".to_string())?;
+                let text = value_token.and_then(Value::as_str).ok_or_else(|| {
+                    "String contract parameter requires a string value".to_string()
+                })?;
                 ContractParameter::with_value(
                     ContractParameterType::String,
                     ContractParameterValue::String(text.to_string()),
                 )
             }
             ContractParameterType::Hash160 => {
-                let text = value_token
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| "Hash160 contract parameter requires a string value".to_string())?;
+                let text = value_token.and_then(Value::as_str).ok_or_else(|| {
+                    "Hash160 contract parameter requires a string value".to_string()
+                })?;
                 let hash = UInt160::from_str(text)
                     .map_err(|err| format!("Invalid UInt160 value: {err}"))?;
                 ContractParameter::with_value(
@@ -159,9 +147,9 @@ impl super::RestServerUtility {
                 )
             }
             ContractParameterType::Hash256 => {
-                let text = value_token
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| "Hash256 contract parameter requires a string value".to_string())?;
+                let text = value_token.and_then(Value::as_str).ok_or_else(|| {
+                    "Hash256 contract parameter requires a string value".to_string()
+                })?;
                 let hash = UInt256::from_str(text)
                     .map_err(|err| format!("Invalid UInt256 value: {err}"))?;
                 ContractParameter::with_value(
@@ -170,9 +158,9 @@ impl super::RestServerUtility {
                 )
             }
             ContractParameterType::PublicKey => {
-                let text = value_token
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| "PublicKey contract parameter requires a string value".to_string())?;
+                let text = value_token.and_then(Value::as_str).ok_or_else(|| {
+                    "PublicKey contract parameter requires a string value".to_string()
+                })?;
                 let point = parse_public_key(text)?;
                 ContractParameter::with_value(
                     ContractParameterType::PublicKey,
@@ -180,9 +168,9 @@ impl super::RestServerUtility {
                 )
             }
             ContractParameterType::Array => {
-                let array = value_token
-                    .and_then(Value::as_array)
-                    .ok_or_else(|| "Array contract parameter requires an array value".to_string())?;
+                let array = value_token.and_then(Value::as_array).ok_or_else(|| {
+                    "Array contract parameter requires an array value".to_string()
+                })?;
                 let values = array
                     .iter()
                     .map(Self::contract_parameter_from_j_token)
@@ -222,9 +210,7 @@ impl super::RestServerUtility {
         match &parameter.value {
             ContractParameterValue::Any | ContractParameterValue::Void => Ok(StackItem::null()),
             ContractParameterValue::Boolean(value) => Ok(StackItem::from_bool(*value)),
-            ContractParameterValue::Integer(value) => {
-                Ok(StackItem::from_int(value.clone()))
-            }
+            ContractParameterValue::Integer(value) => Ok(StackItem::from_int(value.clone())),
             ContractParameterValue::Hash160(value) => {
                 Ok(StackItem::from_byte_string(value.to_bytes()))
             }
@@ -260,17 +246,13 @@ impl super::RestServerUtility {
                 Ok(StackItem::from_map(map))
             }
             ContractParameterValue::InteropInterface => Err(
-                "InteropInterface contract parameter is not supported for invocation"
-                    .to_string(),
+                "InteropInterface contract parameter is not supported for invocation".to_string(),
             ),
         }
     }
 }
 
-fn get_case_insensitive<'a>(
-    map: &'a Map<String, Value>,
-    target: &str,
-) -> Option<&'a Value> {
+fn get_case_insensitive<'a>(map: &'a Map<String, Value>, target: &str) -> Option<&'a Value> {
     map.iter()
         .find(|(key, _)| key.eq_ignore_ascii_case(target))
         .map(|(_, value)| value)
@@ -318,13 +300,10 @@ fn parse_public_key(text: &str) -> Result<ECPoint, String> {
             .map_err(|err| format!("Invalid public key encoding: {err}"))?
     };
 
-    ECPoint::decode(&raw, ECCurve::Secp256r1)
-        .map_err(|err| format!("Invalid ECPoint: {err}"))
+    ECPoint::decode(&raw, ECCurve::Secp256r1).map_err(|err| format!("Invalid ECPoint: {err}"))
 }
 
-fn parse_map_entry(
-    entry: &Value,
-) -> Result<(ContractParameter, ContractParameter), String> {
+fn parse_map_entry(entry: &Value) -> Result<(ContractParameter, ContractParameter), String> {
     let obj = entry
         .as_object()
         .ok_or_else(|| "Map entries must be JSON objects".to_string())?;
@@ -360,8 +339,7 @@ mod tests {
             ]
         });
 
-        let result =
-            RestServerUtility::contract_invoke_parameters_from_j_token(&json).unwrap();
+        let result = RestServerUtility::contract_invoke_parameters_from_j_token(&json).unwrap();
         assert_eq!(result.contract_parameters.len(), 2);
         assert_eq!(result.signers.len(), 1);
         assert_eq!(result.signers[0].scopes, WitnessScope::CALLED_BY_ENTRY);

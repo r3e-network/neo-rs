@@ -8,10 +8,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::{
-    sq_lite_wallet_account::SQLiteWalletAccount,
-    address::Address,
-    key::Key,
-    contract::Contract,
+    address::Address, contract::Contract, key::Key, sq_lite_wallet_account::SQLiteWalletAccount,
     verification_contract::VerificationContract,
 };
 
@@ -47,7 +44,10 @@ impl WalletDataContext {
     }
 
     /// Get an account by address
-    pub async fn get_account(&self, address: &Address) -> Result<Option<SQLiteWalletAccount>, String> {
+    pub async fn get_account(
+        &self,
+        address: &Address,
+    ) -> Result<Option<SQLiteWalletAccount>, String> {
         let accounts = self.accounts.read().await;
         Ok(accounts.get(&address.to_string()).cloned())
     }
@@ -106,14 +106,21 @@ impl WalletDataContext {
     }
 
     /// Add a verification contract
-    pub async fn add_verification_contract(&self, address: &Address, contract: VerificationContract) -> Result<(), String> {
+    pub async fn add_verification_contract(
+        &self,
+        address: &Address,
+        contract: VerificationContract,
+    ) -> Result<(), String> {
         let mut verification_contracts = self.verification_contracts.write().await;
         verification_contracts.insert(address.to_string(), contract);
         Ok(())
     }
 
     /// Get a verification contract by address
-    pub async fn get_verification_contract(&self, address: &Address) -> Result<Option<VerificationContract>, String> {
+    pub async fn get_verification_contract(
+        &self,
+        address: &Address,
+    ) -> Result<Option<VerificationContract>, String> {
         let verification_contracts = self.verification_contracts.read().await;
         Ok(verification_contracts.get(&address.to_string()).cloned())
     }
@@ -131,7 +138,12 @@ impl WalletDataContext {
         let keys_count = self.keys.read().await.len();
         let contracts_count = self.contracts.read().await.len();
         let verification_contracts_count = self.verification_contracts.read().await.len();
-        (accounts_count, keys_count, contracts_count, verification_contracts_count)
+        (
+            accounts_count,
+            keys_count,
+            contracts_count,
+            verification_contracts_count,
+        )
     }
 
     /// Clear all data

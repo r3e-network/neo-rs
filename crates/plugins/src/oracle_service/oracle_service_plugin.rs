@@ -2,7 +2,9 @@ use super::oracle_service::OracleService;
 use super::settings::OracleServiceSettings;
 use neo_core::NeoSystem;
 use neo_extensions::error::{ExtensionError, ExtensionResult};
-use neo_extensions::plugin::{Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo};
+use neo_extensions::plugin::{
+    Plugin, PluginBase, PluginCategory, PluginContext, PluginEvent, PluginInfo,
+};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -94,11 +96,9 @@ impl Plugin for OracleServicePlugin {
 
         let config_path = context.config_dir.join("OracleService.json");
         let config = match tokio::fs::read_to_string(&config_path).await {
-            Ok(contents) if !contents.trim().is_empty() => {
-                serde_json::from_str(&contents)
-                    .map_err(|err| ExtensionError::invalid_config(err.to_string()))
-                    .map(Some)?
-            }
+            Ok(contents) if !contents.trim().is_empty() => serde_json::from_str(&contents)
+                .map_err(|err| ExtensionError::invalid_config(err.to_string()))
+                .map(Some)?,
             Ok(_) => None,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
             Err(err) => return Err(err.into()),
@@ -125,7 +125,9 @@ impl Plugin for OracleServicePlugin {
                         // Oracle plugin currently does not require NeoSystem specific data
                         self.start_service().await?;
                     }
-                    Err(_) => warn!("OracleService: NodeStarted payload was not a NeoSystem instance"),
+                    Err(_) => {
+                        warn!("OracleService: NodeStarted payload was not a NeoSystem instance")
+                    }
                 }
                 Ok(())
             }
