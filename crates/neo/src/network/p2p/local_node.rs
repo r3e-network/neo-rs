@@ -261,11 +261,34 @@ impl LocalNode {
 
     /// Generates the version payload broadcast during handshake.
     pub fn version_payload(&self) -> VersionPayload {
-        let capabilities = self
+        let mut capabilities = self
             .capabilities
             .read()
             .map(|g| g.clone())
             .unwrap_or_default();
+
+        let current_height = self
+            .system_context()
+            .map(|context| context.current_block_index())
+            .unwrap_or(0);
+
+        let mut has_full_node = false;
+        for capability in &mut capabilities {
+            if let NodeCapability::FullNode { start_height } = capability {
+                *start_height = current_height;
+                has_full_node = true;
+            }
+        }
+        if !has_full_node {
+            capabilities.push(NodeCapability::full_node(current_height));
+        }
+
+        if !capabilities
+            .iter()
+            .any(|cap| matches!(cap, NodeCapability::ArchivalNode))
+        {
+            capabilities.push(NodeCapability::archival_node());
+        }
 
         VersionPayload::create(
             self.settings.network,

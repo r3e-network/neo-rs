@@ -40,7 +40,7 @@ use async_trait::async_trait;
 use neo_io_crate::{HashSetCache, KeyedCollectionSlim};
 use rand::{seq::IteratorRandom, thread_rng};
 use std::any::type_name_of_val;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -732,6 +732,35 @@ impl RemoteNode {
         Ok(())
     }
 
+    fn on_addr(&mut self, payload: AddrPayload, ctx: &ActorContext) {
+        let mut endpoints = Vec::new();
+        let mut seen = HashSet::new();
+
+        for address in payload.address_list {
+            if let Some(endpoint) = address.endpoint() {
+                if endpoint.port() > 0 && seen.insert(endpoint) {
+                    endpoints.push(endpoint);
+                }
+            }
+        }
+
+        if endpoints.is_empty() {
+            return;
+        }
+
+        if let Some(parent) = ctx.parent() {
+            if let Err(err) = parent.tell(PeerCommand::AddPeers {
+                endpoints,
+            }) {
+                warn!(
+                    target: "neo",
+                    error = %err,
+                    "failed to forward peer addresses to local node"
+                );
+            }
+        }
+    }
+
     async fn on_get_blocks(&mut self, payload: GetBlocksPayload) -> ActorResult {
         let count = Self::normalize_request(payload.count, MAX_HASHES_COUNT);
         let hashes = self.system.block_hashes_from(&payload.hash_start, count);
@@ -941,6 +970,10 @@ impl RemoteNode {
             ProtocolMessage::GetHeaders(payload) => self.on_get_headers(payload.clone()).await,
             ProtocolMessage::Headers(payload) => {
                 self.on_headers(payload.clone(), ctx);
+                Ok(())
+            }
+            ProtocolMessage::Addr(payload) => {
+                self.on_addr(payload.clone(), ctx);
                 Ok(())
             }
             ProtocolMessage::Mempool => self.on_mempool().await,
