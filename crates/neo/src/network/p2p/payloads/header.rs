@@ -11,8 +11,10 @@
 
 use super::i_verifiable::IVerifiable;
 use super::witness::Witness;
+use crate::ledger::HeaderCache;
 use crate::neo_io::{BinaryWriter, IoError, IoResult, MemoryReader, Serializable};
-use crate::persistence::DataCache;
+use crate::persistence::{DataCache, StoreCache};
+use crate::protocol_settings::ProtocolSettings;
 use crate::{UInt160, UInt256};
 use serde::{Deserialize, Serialize};
 
@@ -169,6 +171,24 @@ impl Header {
         let next_consensus = self.next_consensus.as_bytes();
         writer.write_bytes(&next_consensus)?;
         Ok(())
+    }
+}
+
+impl Header {
+    /// Verifies the header using the provided store cache.
+    pub fn verify(&self, _settings: &ProtocolSettings, _store_cache: &StoreCache) -> bool {
+        // TODO: Port full header verification logic from C# implementation.
+        true
+    }
+
+    /// Verifies the header using persisted state and cached headers.
+    pub fn verify_with_cache(
+        &self,
+        settings: &ProtocolSettings,
+        store_cache: &StoreCache,
+        _header_cache: &HeaderCache,
+    ) -> bool {
+        self.verify(settings, store_cache)
     }
 }
 

@@ -1,7 +1,6 @@
 use crate::ledger::LedgerContext;
 use crate::neo_io::{MemoryReader, Serializable};
 use crate::neo_system::NeoSystemContext;
-use neo_extensions::plugin::PluginEvent;
 use crate::network::p2p::{
     local_node::RelayInventory,
     payloads::{
@@ -15,6 +14,7 @@ use crate::smart_contract::native::LedgerContract;
 use crate::{UInt160, UInt256};
 use akka::{Actor, ActorContext, ActorResult, Props};
 use async_trait::async_trait;
+use neo_extensions::plugin::PluginEvent;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
@@ -58,12 +58,15 @@ impl Blockchain {
             return;
         };
 
+        let mut block_for_hash = block.clone();
+        let hash = block_for_hash.hash();
+
         if let Err(error) = system.persist_block(block.clone()) {
             tracing::warn!(
                 target: "neo",
                 %error,
                 index = block.index(),
-                hash = %block.hash(),
+                hash = %hash,
                 "failed to persist block via NeoSystem"
             );
         }
@@ -281,13 +284,6 @@ impl Blockchain {
                             "failed to deserialize extensible payload during reverify"
                         );
                     }
-                }
-                _ => {
-                    tracing::trace!(
-                        target: "neo",
-                        inventory = ?item.inventory_type,
-                        "unsupported inventory type in reverify request"
-                    );
                 }
             }
         }
@@ -724,13 +720,13 @@ impl Blockchain {
                 InventoryType::Block => {
                     let height = block_index.unwrap_or(0);
                     context.broadcast_plugin_event(PluginEvent::BlockReceived {
-                        block_hash: format!("{hash}"),
+                        block_hash: hash.to_string(),
                         block_height: height,
                     });
                 }
                 InventoryType::Transaction => {
                     context.broadcast_plugin_event(PluginEvent::TransactionReceived {
-                        tx_hash: format!("{hash}"),
+                        tx_hash: hash.to_string(),
                     });
                 }
                 _ => {}

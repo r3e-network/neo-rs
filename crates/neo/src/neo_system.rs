@@ -217,7 +217,6 @@ pub struct NeoSystem {
 }
 
 /// Lightweight handle exposing shared system facilities to actors outside the core module.
-#[derive(Clone)]
 pub struct NeoSystemContext {
     /// Handle to the underlying Akka system for scheduling and event stream access.
     pub actor_system: ActorSystemHandle,
@@ -808,7 +807,7 @@ impl NeoSystem {
             .publish(post_persist_exec.clone());
         executed.push(post_persist_exec);
 
-        self.invoke_committing(&block, &snapshot, &executed);
+        self.invoke_committing(&ledger_block, snapshot.as_ref(), &executed);
 
         for (key, trackable) in snapshot.tracked_items() {
             match trackable.state {
@@ -827,7 +826,7 @@ impl NeoSystem {
 
         store_cache.commit();
         self.context.record_block(block.clone());
-        self.invoke_committed(&block);
+        self.invoke_committed(&ledger_block);
 
         Ok(executed)
     }
@@ -1257,23 +1256,18 @@ impl NeoSystem {
 
     fn invoke_committing(
         &self,
-        block: &Block,
-        snapshot: &Arc<DataCache>,
+        block: &LedgerBlock,
+        snapshot: &DataCache,
         application_executed: &[ApplicationExecuted],
     ) {
         if let Ok(handlers) = self.context.committing_handlers().read() {
             for handler in handlers.iter() {
-                handler.blockchain_committing_handler(
-                    self,
-                    block,
-                    snapshot.as_ref(),
-                    application_executed,
-                );
+                handler.blockchain_committing_handler(self, block, snapshot, application_executed);
             }
         }
     }
 
-    fn invoke_committed(&self, block: &Block) {
+    fn invoke_committed(&self, block: &LedgerBlock) {
         if let Ok(handlers) = self.context.committed_handlers().read() {
             for handler in handlers.iter() {
                 handler.blockchain_committed_handler(self, block);

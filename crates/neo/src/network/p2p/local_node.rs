@@ -189,7 +189,7 @@ impl LocalNode {
         self.read_peers().values().cloned().collect()
     }
 
-    pub fn remote_entries(&self) -> Vec<RemoteActorEntry> {
+    fn remote_entries(&self) -> Vec<RemoteActorEntry> {
         self.remote_nodes
             .read()
             .map(|guard| guard.values().cloned().collect())
