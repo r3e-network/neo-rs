@@ -749,9 +749,7 @@ impl RemoteNode {
         }
 
         if let Some(parent) = ctx.parent() {
-            if let Err(err) = parent.tell(PeerCommand::AddPeers {
-                endpoints,
-            }) {
+            if let Err(err) = parent.tell(PeerCommand::AddPeers { endpoints }) {
                 warn!(
                     target: "neo",
                     error = %err,

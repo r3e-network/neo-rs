@@ -21,7 +21,7 @@ pub use block::Block;
 pub use block_header::BlockHeader;
 pub use blockchain::{
     Blockchain, BlockchainCommand, FillCompleted, FillMemoryPool, Import, ImportCompleted,
-    PersistCompleted, PreverifyCompleted, RelayResult, Reverify,
+    PersistCompleted, PreverifyCompleted, RelayResult, Reverify, ReverifyItem,
 };
 pub use blockchain_application_executed::ApplicationExecuted;
 pub use header_cache::HeaderCache;

@@ -16,10 +16,13 @@ use super::{
     peer::{PeerCommand, PeerState, PeerTimer, MAX_COUNT_FROM_SEED_LIST},
     remote_node::{RemoteNode, RemoteNodeCommand},
 };
+use crate::neo_io::{BinaryWriter, MemoryReader, Serializable};
 use crate::network::p2p::payloads::{
-    addr_payload::MAX_COUNT_TO_SEND, network_address_with_time::NetworkAddressWithTime,
-    VersionPayload,
+    addr_payload::MAX_COUNT_TO_SEND, block::Block, extensible_payload::ExtensiblePayload,
+    inventory_type::InventoryType, network_address_with_time::NetworkAddressWithTime,
+    transaction::Transaction, VersionPayload,
 };
+use crate::network::p2p::{NetworkMessage, ProtocolMessage};
 use crate::{neo_system::NeoSystemContext, protocol_settings::ProtocolSettings};
 use akka::{Actor, ActorContext, ActorRef, ActorResult, Props, Terminated};
 use async_trait::async_trait;
@@ -186,20 +189,21 @@ impl LocalNode {
         self.read_peers().values().cloned().collect()
     }
 
+    pub fn remote_entries(&self) -> Vec<RemoteActorEntry> {
+        self.remote_nodes
+            .read()
+            .map(|guard| guard.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// Records a relay broadcast (mirrors LocalNode.OnRelayDirectly semantics).
-    pub fn record_relay<B>(&self, payload: B)
-    where
-        B: AsRef<[u8]>,
-    {
-        self.record_broadcast(BroadcastEvent::Relay(payload.as_ref().to_vec()));
+    pub fn record_relay(&self, inventory: &RelayInventory) {
+        self.record_broadcast(BroadcastEvent::Relay(inventory.to_bytes()));
     }
 
     /// Records a direct send broadcast.
-    pub fn record_send<B>(&self, payload: B)
-    where
-        B: AsRef<[u8]>,
-    {
-        self.record_broadcast(BroadcastEvent::Direct(payload.as_ref().to_vec()));
+    pub fn record_send(&self, inventory: &RelayInventory) {
+        self.record_broadcast(BroadcastEvent::Direct(inventory.to_bytes()));
     }
 
     /// Returns the captured broadcast history.
@@ -532,6 +536,42 @@ pub enum BroadcastEvent {
     Direct(Vec<u8>),
 }
 
+#[derive(Debug, Clone)]
+pub enum RelayInventory {
+    Block(Block),
+    Transaction(Transaction),
+    Extensible(ExtensiblePayload),
+}
+
+impl RelayInventory {
+    pub fn inventory_type(&self) -> InventoryType {
+        match self {
+            RelayInventory::Block(_) => InventoryType::Block,
+            RelayInventory::Transaction(_) => InventoryType::Transaction,
+            RelayInventory::Extensible(_) => InventoryType::Extensible,
+        }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut writer = BinaryWriter::new();
+        match self {
+            RelayInventory::Block(block) => {
+                Serializable::serialize(block, &mut writer)
+                    .expect("failed to serialize block inventory");
+            }
+            RelayInventory::Transaction(tx) => {
+                Serializable::serialize(tx, &mut writer)
+                    .expect("failed to serialize transaction inventory");
+            }
+            RelayInventory::Extensible(payload) => {
+                Serializable::serialize(payload, &mut writer)
+                    .expect("failed to serialize extensible inventory");
+            }
+        }
+        writer.into_bytes()
+    }
+}
+
 fn current_unix_timestamp() -> u64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(duration) => duration.as_secs(),
@@ -722,11 +762,19 @@ impl LocalNodeActor {
             LocalNodeCommand::GetInstance { reply } => {
                 let _ = reply.send(self.state.clone());
             }
-            LocalNodeCommand::RelayDirectly { payload } => {
-                self.state.record_relay(payload);
+            LocalNodeCommand::RelayDirectly {
+                inventory,
+                block_index,
+            } => {
+                self.state.record_relay(&inventory);
+                self.send_inventory_to_peers(&inventory, block_index, true);
             }
-            LocalNodeCommand::SendDirectly { payload } => {
-                self.state.record_send(payload);
+            LocalNodeCommand::SendDirectly {
+                inventory,
+                block_index,
+            } => {
+                self.state.record_send(&inventory);
+                self.send_inventory_to_peers(&inventory, block_index, false);
             }
             LocalNodeCommand::RegisterRemoteNode {
                 actor,
@@ -827,6 +875,60 @@ impl LocalNodeActor {
                 self.state.clear_pending(&endpoint);
                 self.requeue_endpoint(endpoint);
                 Ok(())
+            }
+        }
+    }
+
+    fn send_inventory_to_peers(
+        &self,
+        inventory: &RelayInventory,
+        block_index: Option<u32>,
+        restrict_block_height: bool,
+    ) {
+        match inventory {
+            RelayInventory::Block(block) => {
+                let target_index = block_index.unwrap_or(block.index());
+                for entry in self.state.remote_entries() {
+                    if restrict_block_height && entry.snapshot.last_block_index >= target_index {
+                        continue;
+                    }
+
+                    let message = NetworkMessage::new(ProtocolMessage::Block(block.clone()));
+                    if let Err(error) = entry.actor.tell(RemoteNodeCommand::Send(message)) {
+                        warn!(
+                            target: "neo",
+                            remote = %entry.snapshot.remote_address,
+                            %error,
+                            "failed to relay block to peer"
+                        );
+                    }
+                }
+            }
+            RelayInventory::Transaction(tx) => {
+                for entry in self.state.remote_entries() {
+                    let message = NetworkMessage::new(ProtocolMessage::Transaction(tx.clone()));
+                    if let Err(error) = entry.actor.tell(RemoteNodeCommand::Send(message)) {
+                        warn!(
+                            target: "neo",
+                            remote = %entry.snapshot.remote_address,
+                            %error,
+                            "failed to relay transaction to peer"
+                        );
+                    }
+                }
+            }
+            RelayInventory::Extensible(payload) => {
+                for entry in self.state.remote_entries() {
+                    let message = NetworkMessage::new(ProtocolMessage::Extensible(payload.clone()));
+                    if let Err(error) = entry.actor.tell(RemoteNodeCommand::Send(message)) {
+                        warn!(
+                            target: "neo",
+                            remote = %entry.snapshot.remote_address,
+                            %error,
+                            "failed to relay extensible payload to peer"
+                        );
+                    }
+                }
             }
         }
     }
@@ -1049,10 +1151,12 @@ pub enum LocalNodeCommand {
         reply: oneshot::Sender<Arc<LocalNode>>,
     },
     RelayDirectly {
-        payload: Vec<u8>,
+        inventory: RelayInventory,
+        block_index: Option<u32>,
     },
     SendDirectly {
-        payload: Vec<u8>,
+        inventory: RelayInventory,
+        block_index: Option<u32>,
     },
     RegisterRemoteNode {
         actor: ActorRef,

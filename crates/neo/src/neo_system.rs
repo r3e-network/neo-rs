@@ -19,14 +19,14 @@ use tracing::{debug, warn};
 use crate::constants::GENESIS_TIMESTAMP_MS;
 use crate::contains_transaction_type::ContainsTransactionType;
 use crate::error::{CoreError, CoreResult};
-use crate::i_event_handlers::IServiceAddedHandler;
+use crate::i_event_handlers::{ICommittedHandler, ICommittingHandler, IServiceAddedHandler};
 use crate::ledger::blockchain::{Blockchain, BlockchainCommand, PreverifyCompleted};
 use crate::ledger::{
     block::Block as LedgerBlock, block_header::BlockHeader as LedgerBlockHeader,
     blockchain_application_executed::ApplicationExecuted, HeaderCache, LedgerContext, MemoryPool,
 };
-use crate::neo_io::{BinaryWriter, Serializable};
 use crate::network::p2p::{
+    local_node::RelayInventory,
     payloads::{
         block::Block, extensible_payload::ExtensiblePayload, header::Header,
         transaction::Transaction, witness::Witness as PayloadWitness,
@@ -35,12 +35,13 @@ use crate::network::p2p::{
     TaskManagerCommand,
 };
 use crate::persistence::{
-    i_store::IStore, i_store_provider::IStoreProvider, track_state::TrackState, StoreCache,
-    StoreFactory,
+    data_cache::DataCache, i_store::IStore, i_store_provider::IStoreProvider,
+    track_state::TrackState, StoreCache, StoreFactory,
 };
 pub use crate::protocol_settings::ProtocolSettings;
 use crate::smart_contract::application_engine::ApplicationEngine;
 use crate::smart_contract::application_engine::TEST_MODE_GAS;
+use crate::smart_contract::call_flags::CallFlags;
 use crate::smart_contract::native::helpers::NativeHelpers;
 use crate::smart_contract::native::ledger_contract::{
     HashOrIndex, LedgerContract, LedgerTransactionStates, PersistedTransactionState,
@@ -54,7 +55,7 @@ use neo_extensions::plugin::{
     PluginEvent,
 };
 use neo_io_crate::{InventoryHash, RelayCache};
-use neo_vm::OpCode;
+use neo_vm::{vm_state::VMState, OpCode};
 
 fn block_on_extension<F, T>(future: F) -> Result<T, ExtensionError>
 where
@@ -247,6 +248,9 @@ pub struct NeoSystemContext {
     header_cache: Arc<HeaderCache>,
     settings: Arc<ProtocolSettings>,
     relay_cache: Arc<RelayExtensibleCache>,
+    system: RwLock<Option<Weak<NeoSystem>>>,
+    committing_handlers: Arc<RwLock<Vec<Arc<dyn ICommittingHandler + Send + Sync>>>>,
+    committed_handlers: Arc<RwLock<Vec<Arc<dyn ICommittedHandler + Send + Sync>>>>,
 }
 
 impl fmt::Debug for NeoSystemContext {
@@ -308,6 +312,55 @@ impl NeoSystemContext {
     /// Returns a clone of the protocol settings.
     pub fn protocol_settings(&self) -> Arc<ProtocolSettings> {
         self.settings.clone()
+    }
+
+    /// Sets a weak reference to the owning NeoSystem.
+    pub fn set_system(&self, system: Weak<NeoSystem>) {
+        if let Ok(mut guard) = self.system.write() {
+            *guard = Some(system);
+        }
+    }
+
+    /// Attempts to upgrade to a strong reference to the NeoSystem.
+    pub fn neo_system(&self) -> Option<Arc<NeoSystem>> {
+        self.system
+            .read()
+            .ok()
+            .and_then(|guard| guard.as_ref().and_then(|weak| weak.upgrade()))
+    }
+
+    pub fn register_committing_handler(
+        &self,
+        handler: Arc<dyn ICommittingHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        let mut guard = self
+            .committing_handlers
+            .write()
+            .map_err(|_| CoreError::system("committing handler registry poisoned"))?;
+        guard.push(handler);
+        Ok(())
+    }
+
+    pub fn register_committed_handler(
+        &self,
+        handler: Arc<dyn ICommittedHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        let mut guard = self
+            .committed_handlers
+            .write()
+            .map_err(|_| CoreError::system("committed handler registry poisoned"))?;
+        guard.push(handler);
+        Ok(())
+    }
+
+    pub fn committing_handlers(
+        &self,
+    ) -> Arc<RwLock<Vec<Arc<dyn ICommittingHandler + Send + Sync>>>> {
+        Arc::clone(&self.committing_handlers)
+    }
+
+    pub fn committed_handlers(&self) -> Arc<RwLock<Vec<Arc<dyn ICommittedHandler + Send + Sync>>>> {
+        Arc::clone(&self.committed_handlers)
     }
 
     /// Access to the actor system event stream.
@@ -706,16 +759,21 @@ impl NeoSystem {
         for tx in &ledger_block.transactions {
             let container: Arc<dyn crate::IVerifiable> = Arc::new(tx.clone());
             let mut tx_engine = ApplicationEngine::new(
-                TriggerType::Verification,
+                TriggerType::Application,
                 Some(container),
                 Arc::clone(&snapshot),
                 Some(ledger_block.clone()),
                 self.settings.clone(),
-                TEST_MODE_GAS,
+                tx.system_fee(),
                 None,
             )?;
 
             tx_engine.set_state(tx_states);
+            tx_engine.load_script(tx.script().to_vec(), CallFlags::ALL, None)?;
+            tx_engine.execute()?;
+
+            let vm_state = tx_engine.state();
+            let tx_hash = tx.hash();
 
             let executed_tx = ApplicationExecuted::new(&mut tx_engine);
             self.actor_system
@@ -727,6 +785,13 @@ impl NeoSystem {
                     LedgerTransactionStates::new(Vec::<PersistedTransactionState>::new())
                 });
             executed.push(executed_tx);
+
+            if vm_state != VMState::HALT {
+                return Err(CoreError::system(format!(
+                    "transaction execution halted in state {:?} for hash {}",
+                    vm_state, tx_hash
+                )));
+            }
         }
 
         on_persist_engine.set_state(tx_states);
@@ -736,6 +801,8 @@ impl NeoSystem {
             .event_stream()
             .publish(post_persist_exec.clone());
         executed.push(post_persist_exec);
+
+        self.invoke_committing(&block, &snapshot, &executed);
 
         for (key, trackable) in snapshot.tracked_items() {
             match trackable.state {
@@ -753,7 +820,8 @@ impl NeoSystem {
         }
 
         store_cache.commit();
-        self.context.record_block(block);
+        self.context.record_block(block.clone());
+        self.invoke_committed(&block);
 
         Ok(executed)
     }
@@ -850,25 +918,20 @@ impl NeoSystem {
             header_cache: header_cache.clone(),
             relay_cache: relay_cache.clone(),
             settings: settings_arc.clone(),
+            system: RwLock::new(None),
+            committing_handlers: Arc::new(RwLock::new(Vec::new())),
+            committed_handlers: Arc::new(RwLock::new(Vec::new())),
         });
 
         if let Ok(mut pool) = memory_pool.lock() {
             let local_node_ref = local_node.clone();
             let blockchain_ref = blockchain.clone();
             pool.transaction_relay = Some(Box::new(move |tx: &Transaction| {
-                let mut writer = BinaryWriter::new();
-                if let Err(error) = tx.serialize(&mut writer) {
-                    debug!(
-                        target: "neo",
-                        %error,
-                        "failed to serialize transaction for mempool rebroadcast"
-                    );
-                    return;
-                }
-
-                let payload = writer.to_bytes();
                 if let Err(error) = local_node_ref.tell_from(
-                    LocalNodeCommand::RelayDirectly { payload },
+                    LocalNodeCommand::RelayDirectly {
+                        inventory: RelayInventory::Transaction(tx.clone()),
+                        block_index: None,
+                    },
                     Some(blockchain_ref.clone()),
                 ) {
                     debug!(
@@ -911,6 +974,8 @@ impl NeoSystem {
             context,
             self_ref: Mutex::new(Weak::new()),
         });
+
+        system.context.set_system(Arc::downgrade(&system));
 
         {
             let mut weak_guard = system
@@ -1074,16 +1139,30 @@ impl NeoSystem {
     }
 
     /// Records a relay broadcast via the local node actor.
-    pub fn relay_directly(&self, payload: Vec<u8>) -> CoreResult<()> {
+    pub fn relay_directly(
+        &self,
+        inventory: RelayInventory,
+        block_index: Option<u32>,
+    ) -> CoreResult<()> {
         self.local_node
-            .tell(LocalNodeCommand::RelayDirectly { payload })
+            .tell(LocalNodeCommand::RelayDirectly {
+                inventory,
+                block_index,
+            })
             .map_err(to_core_error)
     }
 
     /// Records a direct send broadcast via the local node actor.
-    pub fn send_directly(&self, payload: Vec<u8>) -> CoreResult<()> {
+    pub fn send_directly(
+        &self,
+        inventory: RelayInventory,
+        block_index: Option<u32>,
+    ) -> CoreResult<()> {
         self.local_node
-            .tell(LocalNodeCommand::SendDirectly { payload })
+            .tell(LocalNodeCommand::SendDirectly {
+                inventory,
+                block_index,
+            })
             .map_err(to_core_error)
     }
 
@@ -1103,6 +1182,22 @@ impl NeoSystem {
         S: Into<Arc<T>>,
     {
         self.add_service_internal::<T>(Some(name.into()), service.into())
+    }
+
+    /// Registers a handler invoked before block commit.
+    pub fn register_committing_handler(
+        &self,
+        handler: Arc<dyn ICommittingHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        self.context.register_committing_handler(handler)
+    }
+
+    /// Registers a handler invoked after block commit completes.
+    pub fn register_committed_handler(
+        &self,
+        handler: Arc<dyn ICommittedHandler + Send + Sync>,
+    ) -> CoreResult<()> {
+        self.context.register_committed_handler(handler)
     }
 
     fn add_service_internal<T>(&self, name: Option<String>, service: Arc<T>) -> CoreResult<()>
@@ -1150,6 +1245,32 @@ impl NeoSystem {
                 if let Err(err) = block_on_extension(broadcast_global_event(&event)) {
                     warn!("failed to broadcast ServiceAdded event: {}", err);
                 }
+            }
+        }
+    }
+
+    fn invoke_committing(
+        &self,
+        block: &Block,
+        snapshot: &Arc<DataCache>,
+        application_executed: &[ApplicationExecuted],
+    ) {
+        if let Ok(handlers) = self.context.committing_handlers().read() {
+            for handler in handlers.iter() {
+                handler.blockchain_committing_handler(
+                    self,
+                    block,
+                    snapshot.as_ref(),
+                    application_executed,
+                );
+            }
+        }
+    }
+
+    fn invoke_committed(&self, block: &Block) {
+        if let Ok(handlers) = self.context.committed_handlers().read() {
+            for handler in handlers.iter() {
+                handler.blockchain_committed_handler(self, block);
             }
         }
     }

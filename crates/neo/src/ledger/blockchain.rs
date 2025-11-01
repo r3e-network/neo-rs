@@ -1,7 +1,8 @@
 use crate::ledger::LedgerContext;
-use crate::neo_io::{BinaryWriter, Serializable};
+use crate::neo_io::Serializable;
 use crate::neo_system::NeoSystemContext;
 use crate::network::p2p::{
+    local_node::RelayInventory,
     payloads::{
         block::Block, extensible_payload::ExtensiblePayload, header::Header,
         inventory_type::InventoryType, Transaction,
@@ -45,6 +46,34 @@ impl Blockchain {
 
     pub fn props(ledger: Arc<LedgerContext>) -> Props {
         Props::new(move || Self::new(ledger.clone()))
+    }
+
+    fn persist_block_via_system(&self, block: &Block) {
+        let Some(context) = &self.system_context else {
+            return;
+        };
+
+        let Some(system) = context.neo_system() else {
+            return;
+        };
+
+        if let Err(error) = system.persist_block(block.clone()) {
+            tracing::warn!(
+                target: "neo",
+                %error,
+                index = block.index(),
+                hash = %block.hash(),
+                "failed to persist block via NeoSystem"
+            );
+        }
+    }
+
+    fn deserialize_inventory<T>(payload: &[u8]) -> Option<T>
+    where
+        T: Serializable,
+    {
+        let mut reader = MemoryReader::new(payload);
+        T::deserialize(&mut reader).ok()
     }
 
     async fn handle_persist_completed(&self, persist: PersistCompleted) {
@@ -144,12 +173,17 @@ impl Blockchain {
         }
     }
 
-    async fn handle_import(&self, import: Import) {
+    async fn handle_import(&self, import: Import, ctx: &ActorContext) {
         for block in import.blocks {
             if self.on_new_block(&block, import.verify).await == VerifyResult::Succeed {
+                self.persist_block_via_system(&block);
                 self.handle_persist_completed(PersistCompleted { block })
                     .await;
             }
+        }
+
+        if let Some(sender) = ctx.sender() {
+            let _ = sender.tell(ImportCompleted);
         }
     }
 
@@ -199,6 +233,64 @@ impl Blockchain {
     }
 
     async fn handle_reverify(&self, reverify: Reverify, ctx: &ActorContext) {
+        for item in &reverify.inventories {
+            match item.inventory_type {
+                InventoryType::Block => {
+                    if let Some(block) = Self::deserialize_inventory::<Block>(&item.payload) {
+                        if let Err(error) = self.handle_block_inventory(block, false, ctx).await {
+                            tracing::debug!(
+                                target: "neo",
+                                %error,
+                                "failed to reverify block inventory"
+                            );
+                        }
+                    } else {
+                        tracing::debug!(
+                            target: "neo",
+                            "failed to deserialize block payload during reverify"
+                        );
+                    }
+                }
+                InventoryType::Transaction => {
+                    if let Some(tx) = Self::deserialize_inventory::<Transaction>(&item.payload) {
+                        let _ = self.on_new_transaction(&tx);
+                    } else {
+                        tracing::debug!(
+                            target: "neo",
+                            "failed to deserialize transaction payload during reverify"
+                        );
+                    }
+                }
+                InventoryType::Consensus | InventoryType::Extensible => {
+                    if let Some(payload) =
+                        Self::deserialize_inventory::<ExtensiblePayload>(&item.payload)
+                    {
+                        if let Err(error) =
+                            self.handle_extensible_inventory(payload, false, ctx).await
+                        {
+                            tracing::debug!(
+                                target: "neo",
+                                %error,
+                                "failed to reverify extensible payload"
+                            );
+                        }
+                    } else {
+                        tracing::debug!(
+                            target: "neo",
+                            "failed to deserialize extensible payload during reverify"
+                        );
+                    }
+                }
+                _ => {
+                    tracing::trace!(
+                        target: "neo",
+                        inventory = ?item.inventory_type,
+                        "unsupported inventory type in reverify request"
+                    );
+                }
+            }
+        }
+
         if let Some(context) = &self.system_context {
             let store_cache = context.store_cache();
             let settings = context.settings();
@@ -239,19 +331,8 @@ impl Blockchain {
         let result = self.on_new_block(&block, true).await;
 
         if let Some(context) = &self.system_context {
-            let payload = if relay && result == VerifyResult::Succeed {
-                let mut writer = BinaryWriter::new();
-                match Serializable::serialize(&block, &mut writer) {
-                    Ok(()) => Some(writer.into_bytes()),
-                    Err(error) => {
-                        tracing::debug!(
-                            target: "neo",
-                            %error,
-                            "failed to serialize block for relay recording"
-                        );
-                        None
-                    }
-                }
+            let inventory = if relay && result == VerifyResult::Succeed {
+                Some(RelayInventory::Block(block.clone()))
             } else {
                 None
             };
@@ -263,7 +344,7 @@ impl Blockchain {
                 Some(index),
                 result,
                 relay,
-                payload,
+                inventory,
                 ctx,
             );
         }
@@ -283,19 +364,8 @@ impl Blockchain {
         let result = self.on_new_extensible(payload.clone()).await;
 
         if let Some(context) = &self.system_context {
-            let payload_bytes = if relay && result == VerifyResult::Succeed {
-                let mut writer = BinaryWriter::new();
-                match Serializable::serialize(&payload, &mut writer) {
-                    Ok(()) => Some(writer.into_bytes()),
-                    Err(error) => {
-                        tracing::debug!(
-                            target: "neo",
-                            %error,
-                            "failed to serialize extensible payload for relay recording"
-                        );
-                        None
-                    }
-                }
+            let inventory = if relay && result == VerifyResult::Succeed {
+                Some(RelayInventory::Extensible(payload.clone()))
             } else {
                 None
             };
@@ -307,7 +377,7 @@ impl Blockchain {
                 None,
                 result,
                 relay,
-                payload_bytes,
+                inventory,
                 ctx,
             );
         }
@@ -398,7 +468,7 @@ impl Blockchain {
                 header_cache.add(block.header.clone());
             }
             self.add_unverified_block(block.clone()).await;
-            VerifyResult::UnableToVerify
+            VerifyResult::Succeed
         }
     }
 
@@ -411,6 +481,7 @@ impl Blockchain {
     }
 
     async fn persist_block_sequence(&self, block: Block) {
+        self.persist_block_via_system(&block);
         self.handle_persist_completed(PersistCompleted {
             block: block.clone(),
         })
@@ -440,6 +511,7 @@ impl Blockchain {
                 break;
             };
 
+            self.persist_block_via_system(&next_block);
             self.handle_persist_completed(PersistCompleted {
                 block: next_block.clone(),
             })
@@ -592,23 +664,6 @@ impl Blockchain {
 
         let tx_hash = task.transaction.hash();
 
-        let payload = if task.relay && result == VerifyResult::Succeed {
-            let mut writer = BinaryWriter::new();
-            match Serializable::serialize(&task.transaction, &mut writer) {
-                Ok(()) => Some(writer.into_bytes()),
-                Err(error) => {
-                    tracing::warn!(
-                        target: "neo",
-                        %error,
-                        "failed to serialize transaction for relay recording"
-                    );
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
         self.publish_inventory_relay_result(
             context,
             tx_hash,
@@ -616,7 +671,11 @@ impl Blockchain {
             None,
             result,
             task.relay,
-            payload,
+            if task.relay && result == VerifyResult::Succeed {
+                Some(RelayInventory::Transaction(task.transaction.clone()))
+            } else {
+                None
+            },
             ctx,
         );
     }
@@ -629,15 +688,15 @@ impl Blockchain {
         block_index: Option<u32>,
         result: VerifyResult,
         relay: bool,
-        payload: Option<Vec<u8>>,
+        inventory: Option<RelayInventory>,
         ctx: &ActorContext,
     ) {
         if relay && result == VerifyResult::Succeed {
-            if let Some(bytes) = payload {
-                if let Err(error) = context
-                    .local_node
-                    .tell(LocalNodeCommand::RelayDirectly { payload: bytes })
-                {
+            if let Some(inv) = inventory {
+                if let Err(error) = context.local_node.tell(LocalNodeCommand::RelayDirectly {
+                    inventory: inv,
+                    block_index,
+                }) {
                     tracing::debug!(
                         target: "neo",
                         %error,
@@ -687,6 +746,7 @@ impl Blockchain {
         let genesis = context.genesis_block();
         let block = genesis.as_ref().clone();
         tracing::info!(target: "neo", "persisting genesis block during initialization");
+        self.persist_block_via_system(&block);
         self.handle_persist_completed(PersistCompleted { block })
             .await;
     }
@@ -708,7 +768,7 @@ impl Actor for Blockchain {
                 BlockchainCommand::PersistCompleted(persist) => {
                     self.handle_persist_completed(persist).await
                 }
-                BlockchainCommand::Import(import) => self.handle_import(import).await,
+                BlockchainCommand::Import(import) => self.handle_import(import, ctx).await,
                 BlockchainCommand::FillMemoryPool(fill) => {
                     self.handle_fill_memory_pool(fill, ctx).await
                 }
@@ -788,8 +848,16 @@ pub struct FillMemoryPool {
 pub struct FillCompleted;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReverifyItem {
+    pub inventory_type: InventoryType,
+    pub payload: Vec<u8>,
+    #[serde(default)]
+    pub block_index: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Reverify {
-    pub inventories: Vec<Transaction>,
+    pub inventories: Vec<ReverifyItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

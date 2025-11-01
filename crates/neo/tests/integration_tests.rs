@@ -14,7 +14,8 @@ use neo_core::hardfork::{Hardfork, HardforkManager};
 use neo_core::neo_system::{NeoSystem, ProtocolSettings};
 use neo_core::neo_vm::VMState;
 use neo_core::network::p2p::local_node::BroadcastEvent;
-use neo_core::network::p2p::payloads::{Block, Header};
+use neo_core::network::p2p::payloads::{Block, Header, Transaction};
+use neo_core::network::p2p::RelayInventory;
 use neo_core::smart_contract::native::LedgerContract;
 use neo_core::transaction_type::ContainsTransactionType;
 use neo_core::uint160::{UInt160, UINT160_SIZE};
@@ -288,8 +289,15 @@ async fn test_neo_system() {
     assert!(system.remove_peer(endpoint).await.unwrap());
     assert_eq!(system.peer_count().await.unwrap(), 0);
 
-    system.relay_directly(vec![1, 2, 3]).unwrap();
-    system.send_directly(vec![4, 5]).unwrap();
+    let mut tx = Transaction::new();
+    tx.set_script(vec![0x01]);
+
+    system
+        .relay_directly(RelayInventory::Transaction(tx.clone()), None)
+        .unwrap();
+    system
+        .send_directly(RelayInventory::Transaction(tx), None)
+        .unwrap();
 
     let state = system.local_node_state().await.unwrap();
     let history = state.broadcast_history();

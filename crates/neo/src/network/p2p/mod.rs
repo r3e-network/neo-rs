@@ -31,7 +31,7 @@ pub use channels_config::ChannelsConfig;
 pub use connection::PeerConnection;
 pub use helper::Helper;
 pub use local_node::{
-    BroadcastEvent, LocalNode, LocalNodeActor, LocalNodeCommand, RemoteNodeSnapshot,
+    BroadcastEvent, LocalNode, LocalNodeActor, LocalNodeCommand, RelayInventory, RemoteNodeSnapshot,
 };
 pub use message::Message;
 pub use message_command::MessageCommand;
