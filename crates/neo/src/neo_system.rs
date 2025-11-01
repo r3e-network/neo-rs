@@ -329,6 +329,12 @@ impl NeoSystemContext {
             .and_then(|guard| guard.as_ref().and_then(|weak| weak.upgrade()))
     }
 
+    pub fn broadcast_plugin_event(&self, event: PluginEvent) {
+        if let Err(err) = block_on_extension(broadcast_global_event(&event)) {
+            debug!(target: "neo", %err, "failed to broadcast plugin event");
+        }
+    }
+
     pub fn register_committing_handler(
         &self,
         handler: Arc<dyn ICommittingHandler + Send + Sync>,

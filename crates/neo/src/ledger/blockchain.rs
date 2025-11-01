@@ -1,6 +1,7 @@
 use crate::ledger::LedgerContext;
-use crate::neo_io::Serializable;
+use crate::neo_io::{MemoryReader, Serializable};
 use crate::neo_system::NeoSystemContext;
+use neo_extensions::plugin::PluginEvent;
 use crate::network::p2p::{
     local_node::RelayInventory,
     payloads::{
@@ -717,6 +718,24 @@ impl Blockchain {
             .actor_system
             .event_stream()
             .publish(relay_message.clone());
+
+        if result == VerifyResult::Succeed {
+            match inventory_type {
+                InventoryType::Block => {
+                    let height = block_index.unwrap_or(0);
+                    context.broadcast_plugin_event(PluginEvent::BlockReceived {
+                        block_hash: format!("{hash}"),
+                        block_height: height,
+                    });
+                }
+                InventoryType::Transaction => {
+                    context.broadcast_plugin_event(PluginEvent::TransactionReceived {
+                        tx_hash: format!("{hash}"),
+                    });
+                }
+                _ => {}
+            }
+        }
 
         if let Some(sender) = ctx.sender() {
             if let Err(error) = sender.tell(relay_message) {
