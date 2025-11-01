@@ -1,0 +1,19 @@
+// Copyright (C) 2015-2025 The Neo Project.
+//
+// i_message_received_handler.rs file belongs to the neo project and is free
+// software distributed under the MIT software license, see the
+// accompanying file LICENSE in the main directory of the
+// repository or http://www.opensource.org/licenses/mit-license.php
+// for more details.
+//
+// Redistribution and use in source and binary forms with or without
+// modifications are permitted.
+use crate::{neo_system::NeoSystem, network::message::Message};
+
+/// Message received handler interface matching C# IMessageReceivedHandler exactly
+pub trait IMessageReceivedHandler {
+    /// The handler of MessageReceived event from RemoteNode
+    /// Triggered when a new message is received from a peer RemoteNode
+    /// Matches C# RemoteNode_MessageReceived_Handler method
+    fn remote_node_message_received_handler(&self, system: &NeoSystem, message: &Message) -> bool;
+}

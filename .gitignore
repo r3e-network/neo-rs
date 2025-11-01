@@ -1,15 +1,63 @@
-/target
+# Build artifacts
+/target/
 **/target/
 /Cargo.lock
-.idea/
 
-/neo-wasm
+# Data and logs
+*.log
+*.acc
+*.zip
+/data/
+**/data/
+/logs/
+**/logs/
 **/log/
-/.vscode
+
+# Database files
+*.db
+*.db-*
+*.db-shm
+*.db-wal
+
+# Test artifacts
+/tmp/
+**/tmp/
+*.tmp
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
 **/.DS_Store
+Thumbs.db
 
-# Added by cargo
-#
-# already existing elements were commented out
+# AI / tool artifacts
+.claude-flow/
+.hive-mind/
+.cargo-ai/
 
-#/target
+# Compiled binaries
+neo-node
+neo-cli
+*.exe
+
+# Development artifacts
+*.bak
+*.orig
+*.rej
+
+# Large test data
+chain.*
+blockchain_data/
+testnet_data/
+
+# Generated documentation
+/docs/build/
+
+# Project-specific directories
+/neo-wasm

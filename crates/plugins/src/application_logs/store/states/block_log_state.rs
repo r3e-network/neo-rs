@@ -1,0 +1,49 @@
+use neo_core::neo_io::{
+    helper::get_var_size, BinaryWriter, IoError, IoResult, MemoryReader, Serializable,
+};
+use uuid::Uuid;
+
+const GUID_SIZE: usize = 16;
+
+/// Tracks notification identifiers emitted during block persistence.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BlockLogState {
+    pub notify_log_ids: Vec<Uuid>,
+}
+
+impl BlockLogState {
+    pub fn create(ids: Vec<Uuid>) -> Self {
+        Self {
+            notify_log_ids: ids,
+        }
+    }
+}
+
+impl Serializable for BlockLogState {
+    fn deserialize(reader: &mut MemoryReader) -> IoResult<Self> {
+        let count = reader.read_u32()? as usize;
+        let mut notify_log_ids = Vec::with_capacity(count);
+        for _ in 0..count {
+            let bytes = reader.read_var_bytes(GUID_SIZE)?;
+            if bytes.len() != GUID_SIZE {
+                return Err(IoError::invalid_data("Invalid GUID length"));
+            }
+            let mut buffer = [0u8; GUID_SIZE];
+            buffer.copy_from_slice(&bytes);
+            notify_log_ids.push(Uuid::from_bytes_le(buffer));
+        }
+        Ok(Self { notify_log_ids })
+    }
+
+    fn serialize(&self, writer: &mut BinaryWriter) -> IoResult<()> {
+        writer.write_u32(self.notify_log_ids.len() as u32)?;
+        for id in &self.notify_log_ids {
+            writer.write_var_bytes(&id.to_bytes_le())?;
+        }
+        Ok(())
+    }
+
+    fn size(&self) -> usize {
+        4 + self.notify_log_ids.len() * (get_var_size(GUID_SIZE as u64) + GUID_SIZE)
+    }
+}

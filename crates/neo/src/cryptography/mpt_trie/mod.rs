@@ -1,0 +1,17 @@
+//! Merkle Patricia Trie implementation ported from the C# Neo node.
+//!
+//! This module mirrors `Neo.Cryptography.MPTTrie` providing the `Node`, `Cache`
+//! and `Trie` types together with the supporting serialization logic used
+//! throughout the Neo stack.
+
+mod cache;
+mod error;
+mod node;
+mod node_type;
+mod trie;
+
+pub use cache::{Cache, IStoreSnapshot};
+pub use error::{MptError, MptResult};
+pub use node::Node;
+pub use node_type::NodeType;
+pub use trie::{Trie, TrieEntry};
