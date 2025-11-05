@@ -36,6 +36,8 @@ exclude = [
     "docs",
     "examples",
     "tests",
+    "neo-node",
+    "neo-cli",
 ]
 
 [workspace.package]

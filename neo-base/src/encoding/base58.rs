@@ -4,7 +4,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::hash::Sha256;
+use crate::hash::double_sha256;
 
 pub trait ToBase58Check {
     fn to_base58_check(&self) -> String;
@@ -15,7 +15,7 @@ impl<T: AsRef<[u8]>> ToBase58Check for T {
         let mut buf = Vec::with_capacity(1 + self.as_ref().len() + 1 + 4);
         buf.extend(self.as_ref());
 
-        let check = buf.sha256().sha256();
+        let check = double_sha256(&buf);
         buf.extend(&check[..4]);
         bs58::encode(buf).into_string()
     }
@@ -57,7 +57,8 @@ impl FromBase58Check for Vec<u8> {
             return Err(Self::Error::InvalidLength);
         }
 
-        let sha = (&decoded[..decoded.len() - 4]).sha256().sha256();
+        let payload = &decoded[..decoded.len() - 4];
+        let sha = double_sha256(payload);
         if sha[..4] != decoded[decoded.len() - 4..] {
             return Err(Self::Error::InvalidChecksum);
         }

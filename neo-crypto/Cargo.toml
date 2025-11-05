@@ -1,29 +1,34 @@
 [package]
 name = "neo-crypto"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 thiserror = { version = "2", default-features = false }
-
-zeroize = { version = "1.8", default-features = false, features = ["alloc", "zeroize_derive"] }
-subtle  = { version = "2.6", default-features = false }
-
-aes  = { version = "0.8", default-features = false }
-p256 = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa", "ecdh"]}
-
-sha2   = { version = "0.10", default-features = false }
-hmac   = { version = "0.12", default-features = false }
-scrypt = { version = "0.11", default-features = false }
+zeroize   = { version = "1.8", default-features = false, features = ["alloc", "zeroize_derive"] }
+subtle    = { version = "2.6", default-features = false }
+aes       = { version = "0.8", default-features = false }
+p256      = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa", "ecdh"] }
+sha2      = { version = "0.10", default-features = false }
+hmac      = { version = "0.12", default-features = false }
+scrypt    = { version = "0.11", default-features = false }
+neo-base  = { path = "../neo-base", default-features = false }
 
 [features]
 default = []
 
 std = [
     "thiserror/std",
+    "neo-base/std",
     "sha2/default",
 ]
 
 enclave = [
     "sha2/force-soft"
 ]
+
+[dev-dependencies]
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+hex-literal = "0.4"
+
+[workspace]

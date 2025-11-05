@@ -1,6 +1,21 @@
 [package]
 name = "neo-vm"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+license = "MIT"
+description = "Stack-based virtual machine for the Neo N3 Rust node"
+
+[features]
+default = ["std"]
+std = ["thiserror/std"]
 
 [dependencies]
+neo-base = { path = "../neo-base", default-features = false }
+neo-contract = { path = "../neo-contract" }
+neo-store = { path = "../neo-store" }
+thiserror = { version = "2", default-features = false }
+
+[dev-dependencies]
+neo-store = { path = "../neo-store" }
+
+[workspace]

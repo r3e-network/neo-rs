@@ -1,0 +1,18 @@
+[package]
+name = "integration-demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+neo-base = { path = "../neo-base", default-features = false, features = ["std", "derive"] }
+neo-crypto = { path = "../neo-crypto", default-features = false, features = ["std"] }
+neo-store = { path = "../neo-store" }
+neo-p2p = { path = "../neo-p2p" }
+anyhow = "1"
+bytes = "1"
+hex = "0.4"
+tokio-util = "0.7"
+p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+clap = { version = "4", features = ["derive"] }
+
+[workspace]

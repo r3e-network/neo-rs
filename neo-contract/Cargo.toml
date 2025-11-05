@@ -1,6 +1,23 @@
 [package]
 name = "neo-contract"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+license = "MIT"
+description = "Contract execution helpers for the Neo N3 Rust node"
+
+[features]
+default = ["std"]
+std = [
+    "neo-base/std",
+    "neo-crypto/std",
+]
 
 [dependencies]
+neo-base = { path = "../neo-base", default-features = false, features = ["derive"] }
+neo-crypto = { path = "../neo-crypto", default-features = false, features = ["std"] }
+neo-store = { path = "../neo-store" }
+serde = { version = "1", default-features = false, features = ["derive"] }
+thiserror = { version = "2", default-features = false }
+dashmap = "5.5"
+
+[workspace]

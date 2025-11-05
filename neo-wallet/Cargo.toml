@@ -1,0 +1,25 @@
+[package]
+name = "neo-wallet"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Wallet and keystore primitives for the Neo N3 Rust node"
+
+[features]
+default = ["std"]
+std = ["thiserror/std", "neo-base/std", "neo-crypto/std", "serde/std"]
+
+[dependencies]
+neo-base = { path = "../neo-base", default-features = false, features = ["derive"] }
+neo-crypto = { path = "../neo-crypto", default-features = false, features = ["std"] }
+neo-store = { path = "../neo-store" }
+serde = { version = "1", default-features = false, features = ["derive"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+thiserror = { version = "2", default-features = false }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+
+[dev-dependencies]
+hex-literal = "0.4"
+
+[workspace]

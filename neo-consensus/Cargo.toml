@@ -1,6 +1,31 @@
 [package]
 name = "neo-consensus"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+license = "MIT"
+description = "Consensus primitives (dBFT) for the Neo N3 Rust implementation"
+
+[features]
+default = ["std", "store"]
+std = [
+    "neo-base/std",
+    "neo-crypto/std",
+    "thiserror/std",
+    "serde/std",
+]
+store = ["neo-store"]
 
 [dependencies]
+neo-base = { path = "../neo-base", default-features = false, features = ["derive"] }
+neo-crypto = { path = "../neo-crypto", default-features = false, features = ["std"] }
+thiserror = { version = "2", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive"] }
+serde_repr = "0.1"
+hashbrown = "0.14"
+neo-store = { path = "../neo-store", optional = true }
+
+[dev-dependencies]
+hex-literal = "0.4"
+rand = { version = "0.8", features = ["std", "std_rng"] }
+
+[workspace]

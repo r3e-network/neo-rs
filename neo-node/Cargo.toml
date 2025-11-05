@@ -1,0 +1,30 @@
+[package]
+name = "neo-node"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Lightweight scaffold for running a Neo N3 Rust node"
+
+[dependencies]
+neo-base = { path = "../neo-base" }
+neo-crypto = { path = "../neo-crypto" }
+neo-store = { path = "../neo-store", features = ["sled"] }
+neo-consensus = { path = "../neo-consensus" }
+neo-p2p = { path = "../neo-p2p" }
+neo-wallet = { path = "../neo-wallet" }
+neo-runtime = { path = "../neo-runtime" }
+anyhow = "1.0"
+axum = { version = "0.7", default-features = false, features = ["macros", "json", "tokio", "http1", "query"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.35", features = ["macros", "rt-multi-thread", "signal", "net", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+clap = { version = "4.4", features = ["derive"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+hex = "0.4"
+
+[dev-dependencies]
+tower = { version = "0.4", features = ["util"] }
+tempfile = "3"

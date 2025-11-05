@@ -1,7 +1,7 @@
 [package]
 name = "neo-base"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 bytes     = { version = "1.10", default-features = false }
@@ -9,6 +9,8 @@ thiserror = { version = "2", default-features = false }
 
 sha2   = { version = "0.10", default-features = false }
 ripemd = { version = "0.1", default-features = false }
+sha3   = { version = "0.10", default-features = false }
+neo-proc-macros = { path = "../neo-proc-macros", optional = true }
 
 bs58   = { version = "0.5", default-features = false, features = ["alloc"] }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
@@ -17,8 +19,13 @@ hex    = { version = "0.4", default-features = false, features = ["alloc"] }
 chrono = { version = "0.4", optional = true}
 serde  = { version = "1", default-features = false, features = ["alloc", "derive"] }
 
+[dev-dependencies]
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
 [features]
 default = []
+
+derive = ["neo-proc-macros"]
 
 std = [
     "bs58/default",
@@ -29,3 +36,5 @@ std = [
 ]
 
 enclave = ["sha2/force-soft"]
+
+[workspace]

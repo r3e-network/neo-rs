@@ -1,53 +1,54 @@
-// Copyright @ 2025 - Present, R3E Network
-// All Rights Reserved
+use alloc::vec::Vec;
 
-use alloc::vec;
+use crate::hash::{double_sha256, Hash256};
 
-use crate::hash::{Sha256, SlicesSha256};
-
-pub trait MerkleSha256 {
-    /// return the root hash of the merkle tree, in little endian
-    fn merkle_sha256(&self) -> [u8; 32];
-}
-
-impl<T: AsRef<[[u8; 32]]>> MerkleSha256 for T {
-    fn merkle_sha256(&self) -> [u8; 32] {
-        let hashes = self.as_ref();
-        if hashes.len() == 0 {
-            return [0u8; 32];
-        }
-
-        if hashes.len() == 1 {
-            return hashes[0];
-        }
-
-        let mut nodes = vec![[0u8; 32]; (hashes.len() + 1) / 2];
-        for k in 0..nodes.len() {
-            nodes[k] = children_sha256(2 * k, hashes);
-        }
-
-        let mut prev = nodes.len();
-        let mut right = (nodes.len() + 1) / 2;
-        while prev > right {
-            for k in 0..right {
-                nodes[k] = children_sha256(2 * k, &nodes[..prev]);
+/// Build a Merkle tree using double SHA-256 hashing and return the root hash.
+pub fn merkle_root(leaves: &[Hash256]) -> Hash256 {
+    match leaves.len() {
+        0 => Hash256::ZERO,
+        1 => leaves[0],
+        _ => {
+            let mut level: Vec<Hash256> = leaves.to_vec();
+            while level.len() > 1 {
+                let mut next = Vec::with_capacity((level.len() + 1) / 2);
+                for chunk in level.chunks(2) {
+                    let left = chunk[0].0;
+                    let right = if chunk.len() == 2 {
+                        chunk[1].0
+                    } else {
+                        chunk[0].0
+                    };
+                    let mut buffer = [0u8; 64];
+                    buffer[..32].copy_from_slice(&left);
+                    buffer[32..].copy_from_slice(&right);
+                    next.push(Hash256::new(double_sha256(&buffer)));
+                }
+                level = next;
             }
-
-            prev = right;
-            right = (right + 1) / 2;
+            level[0]
         }
-
-        nodes[0]
     }
 }
 
-#[inline]
-fn children_sha256(off: usize, hashes: &[[u8; 32]]) -> [u8; 32] {
-    let two = if off + 1 >= hashes.len() {
-        [&hashes[off], &hashes[off]]
-    } else {
-        [&hashes[off], &hashes[off + 1]]
-    };
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hash::sha256;
 
-    two.iter().slices_sha256().sha256()
+    #[test]
+    fn merkle_root_balanced() {
+        let leaves = (0..4u64)
+            .map(|v| Hash256::new(double_sha256(&v.to_le_bytes())))
+            .collect::<Vec<_>>();
+
+        let root = merkle_root(&leaves);
+        assert_ne!(root, Hash256::ZERO);
+    }
+
+    #[test]
+    fn merkle_root_single() {
+        let hash = Hash256::new(sha256(b"neo-n3"));
+        let root = merkle_root(&[hash]);
+        assert_eq!(root, hash);
+    }
 }

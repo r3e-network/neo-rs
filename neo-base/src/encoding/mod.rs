@@ -15,11 +15,12 @@ pub use wif::*;
 
 use alloc::string::String;
 
-use serde::{Deserialize, Deserializer, Serializer, de::Error};
+use alloc::format;
+use serde::{de::Error, Deserialize, Deserializer, Serializer};
 
 #[inline]
 pub fn encode_hex_u64<S: Serializer>(item: &u64, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&alloc::format!("{:016X}", item))
+    serializer.serialize_str(&format!("{:016X}", item))
 }
 
 #[inline]

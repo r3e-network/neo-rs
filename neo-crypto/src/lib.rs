@@ -3,8 +3,14 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+//! High-level cryptography helpers used across the Neo N3 Rust stack.
+//!
+//! The crate intentionally wraps the lower-level primitives provided by
+//! `p256`, `aes`, `hmac`, and `scrypt` so higher layers can remain protocol
+//! focused.  All serialisation integrates with `neo-base`'s binary codec and
+//! the design goals are documented in `docs/specs/neo-modules.md#neo-crypto`.
+
 extern crate alloc;
-extern crate core;
 
 pub mod aes;
 pub mod ecc256;
@@ -12,25 +18,32 @@ pub mod ecdsa;
 pub mod hmac;
 pub mod scrypt;
 
+use alloc::fmt;
 use subtle::ConstantTimeEq;
 use zeroize::ZeroizeOnDrop;
 
-/// SecretKey is an abstraction of a key that need to be kept secret
-#[derive(Debug, Clone, ZeroizeOnDrop)]
+use neo_base::encoding::{DecodeError, NeoDecode, NeoEncode, NeoRead, NeoWrite};
+
+/// Heap allocated secret key wrapper that guarantees zeroisation on drop and
+/// constant-time equality checks.
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct SecretKey<const N: usize> {
     key: [u8; N],
 }
 
-impl<const N: usize> AsRef<[u8]> for SecretKey<N> {
+impl<const N: usize> SecretKey<N> {
     #[inline]
-    fn as_ref(&self) -> &[u8] {
-        self.key.as_ref()
+    pub fn from_array(array: [u8; N]) -> Self {
+        Self { key: array }
     }
-}
 
-impl<const N: usize> AsRef<[u8; N]> for SecretKey<N> {
     #[inline]
-    fn as_ref(&self) -> &[u8; N] {
+    pub fn into_array(self) -> [u8; N] {
+        self.key
+    }
+
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
         &self.key
     }
 }
@@ -39,6 +52,12 @@ impl<const N: usize> Default for SecretKey<N> {
     #[inline]
     fn default() -> Self {
         Self { key: [0u8; N] }
+    }
+}
+
+impl<const N: usize> fmt::Debug for SecretKey<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("SecretKey").field(&"***").finish()
     }
 }
 
@@ -57,3 +76,29 @@ impl<const N: usize> PartialEq<[u8]> for SecretKey<N> {
         self.key.ct_eq(other).into()
     }
 }
+
+impl<const N: usize> AsRef<[u8]> for SecretKey<N> {
+    #[inline]
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl<const N: usize> NeoEncode for SecretKey<N> {
+    #[inline]
+    fn neo_encode<W: NeoWrite>(&self, writer: &mut W) {
+        writer.write_bytes(&self.key);
+    }
+}
+
+impl<const N: usize> NeoDecode for SecretKey<N> {
+    #[inline]
+    fn neo_decode<R: NeoRead>(reader: &mut R) -> Result<Self, DecodeError> {
+        let mut buf = [0u8; N];
+        reader.read_into(&mut buf)?;
+        Ok(SecretKey { key: buf })
+    }
+}
+
+pub use ecc256::{Keypair, PrivateKey, PublicKey};
+pub use ecdsa::{Secp256r1Sign, Secp256r1Verify, SignatureBytes};

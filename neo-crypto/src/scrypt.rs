@@ -56,7 +56,7 @@ impl<T: AsRef<[u8]>> DeriveScryptKey for T {
         }
 
         let key = self.as_ref();
-        let params = scrypt::Params::new(scrypt.n.ilog2() as u8, scrypt.r, scrypt.p, key.len())
+        let params = scrypt::Params::new(scrypt.n.ilog2() as u8, scrypt.r, scrypt.p, N)
             .map_err(|_err| ScryptDeriveError::InvalidParams)?;
 
         let mut derived = Zeroizing::new([0u8; N]);

@@ -1,4 +1,17 @@
-// Copyright @ 2025 - present, R3E Network
-// All Rights Reserved
+#![cfg_attr(not(feature = "std"), no_std)]
 
+//! Contract utilities for the Neo N3 Rust implementation.
+//!
+//! The crate focuses on contract metadata (`ContractManifest`), native contract
+//! registration, and a minimal runtime that interacts with the storage layer.
+
+extern crate alloc;
+
+pub mod error;
+pub mod manifest;
 pub mod native;
+pub mod runtime;
+
+pub use manifest::{ContractManifest, ContractMethod, ContractParameter, PermissionKind};
+pub use native::{NativeContract, NativeRegistry};
+pub use runtime::{ExecutionContext, GasMeter, InvocationResult};

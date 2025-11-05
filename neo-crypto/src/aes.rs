@@ -1,8 +1,10 @@
 // Copyright @ 2025 - present, R3E Network
 // All Rights Reserved
 
-use aes::Aes256;
+#[allow(deprecated)]
+use aes::cipher::generic_array::GenericArray;
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::Aes256;
 
 pub const AES256_KEY_SIZE: usize = 32;
 
@@ -27,8 +29,12 @@ impl Aes256EcbCipher for [u8] {
             return Err(AesEcbError::InvalidDataLength);
         }
 
-        data.chunks_mut(AES_BLOCK_SIZE)
-            .for_each(|block| cipher.encrypt_block(block.into()));
+        for chunk in data.chunks_mut(AES_BLOCK_SIZE) {
+            #[allow(deprecated)]
+            {
+                cipher.encrypt_block(GenericArray::from_mut_slice(chunk));
+            }
+        }
         Ok(())
     }
 
@@ -38,8 +44,46 @@ impl Aes256EcbCipher for [u8] {
             return Err(AesEcbError::InvalidDataLength);
         }
 
-        data.chunks_mut(AES_BLOCK_SIZE)
-            .for_each(|block| cipher.decrypt_block(block.into()));
+        for chunk in data.chunks_mut(AES_BLOCK_SIZE) {
+            #[allow(deprecated)]
+            {
+                cipher.decrypt_block(GenericArray::from_mut_slice(chunk));
+            }
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hex_literal::hex;
+
+    #[test]
+    fn aes_ecb_roundtrip() {
+        let key = hex!(
+            "603deb1015ca71be2b73aef0857d7781
+             1f352c073b6108d72d9810a30914dff4"
+        );
+
+        let mut block = hex!(
+            "6bc1bee22e409f96e93d7e117393172a
+             ae2d8a571e03ac9c9eb76fac45af8e51"
+        )
+        .to_vec();
+
+        key.as_slice()
+            .aes256_ecb_encrypt_aligned(&mut block)
+            .unwrap();
+        key.as_slice()
+            .aes256_ecb_decrypt_aligned(&mut block)
+            .unwrap();
+        assert_eq!(
+            block,
+            hex!(
+                "6bc1bee22e409f96e93d7e117393172a
+                 ae2d8a571e03ac9c9eb76fac45af8e51"
+            )
+        );
     }
 }
